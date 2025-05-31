@@ -2,164 +2,260 @@
 // No props needed for Hero section
 ---
 
-<section class="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
-  <!-- Background Elements -->
+<section class="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white min-h-screen flex items-center">
+  <!-- Enhanced Background Elements -->
   <div class="absolute inset-0">
-    <!-- Gradient Overlay -->
-    <div class="absolute inset-0 bg-gradient-to-br from-slate-900/90 via-slate-800/80 to-slate-900/90"></div>
+    <!-- Primary Gradient Overlay -->
+    <div class="absolute inset-0 bg-gradient-to-br from-slate-900/95 via-slate-800/90 to-slate-900/95"></div>
     
-    <!-- Animated Background Pattern -->
-    <div class="absolute inset-0 opacity-10">
-      <div class="absolute top-0 -left-4 w-72 h-72 bg-blue-500 rounded-full mix-blend-multiply filter blur-xl animate-blob"></div>
-      <div class="absolute top-0 -right-4 w-72 h-72 bg-purple-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-2000"></div>
-      <div class="absolute -bottom-8 left-20 w-72 h-72 bg-pink-500 rounded-full mix-blend-multiply filter blur-xl animate-blob animation-delay-4000"></div>
+    <!-- Animated Background Orbs -->
+    <div class="absolute inset-0 opacity-20">
+      <div class="absolute top-10 -left-10 w-96 h-96 bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full mix-blend-multiply filter blur-3xl animate-float"></div>
+      <div class="absolute top-20 -right-10 w-80 h-80 bg-gradient-to-r from-purple-500 to-pink-400 rounded-full mix-blend-multiply filter blur-3xl animate-float-delayed"></div>
+      <div class="absolute -bottom-20 left-1/4 w-72 h-72 bg-gradient-to-r from-pink-500 to-orange-400 rounded-full mix-blend-multiply filter blur-3xl animate-float-slow"></div>
     </div>
     
-    <!-- Grid Pattern -->
-    <div class="absolute inset-0 bg-grid-pattern opacity-5"></div>
+    <!-- Floating Particles -->
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+      <div class="particle absolute w-2 h-2 bg-blue-400/30 rounded-full animate-particle-1"></div>
+      <div class="particle absolute w-1 h-1 bg-purple-400/40 rounded-full animate-particle-2"></div>
+      <div class="particle absolute w-1.5 h-1.5 bg-pink-400/30 rounded-full animate-particle-3"></div>
+      <div class="particle absolute w-1 h-1 bg-cyan-400/50 rounded-full animate-particle-4"></div>
+      <div class="particle absolute w-2 h-2 bg-indigo-400/20 rounded-full animate-particle-5"></div>
+    </div>
+    
+    <!-- Geometric Patterns -->
+    <div class="absolute inset-0 opacity-5">
+      <div class="absolute top-1/4 left-1/4 w-32 h-32 border border-white/20 rotate-45 animate-spin-slow"></div>
+      <div class="absolute bottom-1/4 right-1/4 w-24 h-24 border border-white/30 rotate-12 animate-pulse-slow"></div>
+    </div>
+    
+    <!-- Enhanced Grid Pattern -->
+    <div class="absolute inset-0 bg-grid-pattern opacity-[0.03]"></div>
   </div>
 
-  <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 lg:py-32">
+  <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 lg:py-32 z-10">
     <div class="text-center max-w-5xl mx-auto">
-      <!-- Badge -->
-      <div class="inline-flex items-center px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-sm font-medium text-white/90 mb-8">
-        <span class="w-2 h-2 bg-green-400 rounded-full mr-2 animate-pulse"></span>
-        The Evolution of On2Air - Now BaseOut
+      <!-- Enhanced Badge with Glow -->
+      <div class="inline-flex items-center px-6 py-3 rounded-full bg-gradient-to-r from-blue-500/10 to-purple-500/10 backdrop-blur-sm border border-white/20 text-sm font-medium text-white/90 mb-8 shadow-lg hover:shadow-blue-500/20 transition-all duration-300 group">
+        <span class="w-2 h-2 bg-green-400 rounded-full mr-3 animate-pulse shadow-lg shadow-green-400/50"></span>
+        <span class="group-hover:text-white transition-colors">The Evolution of On2Air - Now BaseOut</span>
       </div>
 
-      <!-- Main Headline -->
-      <h1 class="text-4xl sm:text-5xl lg:text-7xl font-bold tracking-tight mb-6">
-        <span class="block">The Tool You</span>
-        <span class="block bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+      <!-- Enhanced Main Headline with Text Animation -->
+      <h1 class="text-4xl sm:text-5xl lg:text-7xl font-bold tracking-tight mb-6 animate-fade-in-up">
+        <span class="block text-white drop-shadow-lg">The Tool You</span>
+        <span class="block bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent animate-gradient-x">
           Can't Live Without
         </span>
-        <span class="block text-3xl sm:text-4xl lg:text-5xl font-semibold text-white/90 mt-2">
+        <span class="block text-3xl sm:text-4xl lg:text-5xl font-semibold text-gray-100 mt-2 drop-shadow-md">
           for Enterprise Airtable
         </span>
       </h1>
 
-      <!-- Subheadline -->
-      <p class="text-lg sm:text-xl lg:text-2xl text-white/80 font-light leading-relaxed mb-12 max-w-4xl mx-auto">
+      <!-- Enhanced Subheadline -->
+      <p class="text-lg sm:text-xl lg:text-2xl text-gray-200 font-light leading-relaxed mb-12 max-w-4xl mx-auto animate-fade-in-up animation-delay-200">
         Transform your critical Airtable environments into enterprise-grade data architecture with 
-        <span class="text-white font-medium">complete backup & recovery</span>, 
-        <span class="text-white font-medium">AI-powered analytics</span>, and 
-        <span class="text-white font-medium">governance & compliance</span> — 
+        <span class="text-white font-medium bg-gradient-to-r from-blue-400/20 to-purple-400/20 px-2 py-1 rounded">complete backup & recovery</span>, 
+        <span class="text-white font-medium bg-gradient-to-r from-purple-400/20 to-pink-400/20 px-2 py-1 rounded">AI-powered analytics</span>, and 
+        <span class="text-white font-medium bg-gradient-to-r from-pink-400/20 to-orange-400/20 px-2 py-1 rounded">governance & compliance</span> — 
         all while keeping your team's beloved Airtable workflow intact.
       </p>
 
-      <!-- Value Props Grid -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12 max-w-4xl mx-auto">
-        <div class="bg-white/5 backdrop-blur-sm rounded-xl p-6 border border-white/10">
-          <div class="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center mb-4 mx-auto">
+      <!-- Enhanced Value Props Grid with Hover Effects -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12 max-w-4xl mx-auto animate-fade-in-up animation-delay-400">
+        <div class="group bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-blue-500/20">
+          <div class="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-xl flex items-center justify-center mb-4 mx-auto group-hover:scale-110 transition-transform duration-300 shadow-lg">
             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
             </svg>
           </div>
-          <h3 class="text-lg font-semibold text-white mb-2">Enterprise-Grade Security</h3>
-          <p class="text-white/70 text-sm">Complete data backup, disaster recovery, and SOC 2 compliance for mission-critical operations.</p>
+          <h3 class="text-lg font-semibold text-white mb-2 group-hover:text-blue-200 transition-colors">Enterprise-Grade Security</h3>
+          <p class="text-white/70 text-sm group-hover:text-white/90 transition-colors">Complete data backup, disaster recovery, and SOC 2 compliance for mission-critical operations.</p>
         </div>
 
-        <div class="bg-white/5 backdrop-blur-sm rounded-xl p-6 border border-white/10">
-          <div class="w-12 h-12 bg-gradient-to-br from-purple-400 to-purple-600 rounded-lg flex items-center justify-center mb-4 mx-auto">
+        <div class="group bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-purple-500/20">
+          <div class="w-12 h-12 bg-gradient-to-br from-purple-400 to-purple-600 rounded-xl flex items-center justify-center mb-4 mx-auto group-hover:scale-110 transition-transform duration-300 shadow-lg">
             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
             </svg>
           </div>
-          <h3 class="text-lg font-semibold text-white mb-2">AI-Powered Analytics</h3>
-          <p class="text-white/70 text-sm">Advanced insights and custom reporting that goes far beyond Airtable's native limitations.</p>
+          <h3 class="text-lg font-semibold text-white mb-2 group-hover:text-purple-200 transition-colors">AI-Powered Analytics</h3>
+          <p class="text-white/70 text-sm group-hover:text-white/90 transition-colors">Advanced insights and custom reporting that goes far beyond Airtable's native limitations.</p>
         </div>
 
-        <div class="bg-white/5 backdrop-blur-sm rounded-xl p-6 border border-white/10">
-          <div class="w-12 h-12 bg-gradient-to-br from-pink-400 to-pink-600 rounded-lg flex items-center justify-center mb-4 mx-auto">
+        <div class="group bg-white/5 backdrop-blur-sm rounded-2xl p-6 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-pink-500/20">
+          <div class="w-12 h-12 bg-gradient-to-br from-pink-400 to-pink-600 rounded-xl flex items-center justify-center mb-4 mx-auto group-hover:scale-110 transition-transform duration-300 shadow-lg">
             <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
             </svg>
           </div>
-          <h3 class="text-lg font-semibold text-white mb-2">Schema Intelligence</h3>
-          <p class="text-white/70 text-sm">Visual data modeling, relationship mapping, and governance for complex base architectures.</p>
+          <h3 class="text-lg font-semibold text-white mb-2 group-hover:text-pink-200 transition-colors">Schema Intelligence</h3>
+          <p class="text-white/70 text-sm group-hover:text-white/90 transition-colors">Visual data modeling, relationship mapping, and governance for complex base architectures.</p>
         </div>
       </div>
 
-      <!-- CTA Buttons -->
-      <div class="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
-        <a href="#" class="group inline-flex items-center px-8 py-4 text-lg font-semibold text-slate-900 bg-white rounded-xl hover:bg-gray-50 transition-all duration-200 shadow-xl hover:shadow-2xl transform hover:-translate-y-1">
-          Start 14-Day Free Trial
-          <svg class="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <!-- Enhanced CTA Buttons with Better Effects -->
+      <div class="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12 animate-fade-in-up animation-delay-600">
+        <a href="#" class="group relative inline-flex items-center px-8 py-4 text-lg font-semibold text-slate-900 bg-gradient-to-r from-white to-gray-100 rounded-xl hover:from-gray-100 hover:to-white transition-all duration-300 shadow-xl hover:shadow-2xl transform hover:-translate-y-1 overflow-hidden">
+          <div class="absolute inset-0 bg-gradient-to-r from-blue-400/20 to-purple-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+          <span class="relative">Start 14-Day Free Trial</span>
+          <svg class="relative ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
           </svg>
         </a>
         
-        <a href="#" class="inline-flex items-center px-8 py-4 text-lg font-semibold text-white border-2 border-white/30 rounded-xl hover:bg-white/10 transition-all duration-200 backdrop-blur-sm">
-          <svg class="mr-2 w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <a href="#" class="group inline-flex items-center px-8 py-4 text-lg font-semibold text-white border-2 border-white/30 rounded-xl hover:bg-white/10 hover:border-white/50 transition-all duration-300 backdrop-blur-sm relative overflow-hidden">
+          <div class="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-purple-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+          <svg class="relative mr-2 w-5 h-5 group-hover:scale-110 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h1m4 0h1m-7-4h.01M12 5h.01M12 19h.01"></path>
           </svg>
-          See Live Demo
+          <span class="relative">See Live Demo</span>
         </a>
       </div>
 
-      <!-- Social Proof -->
-      <div class="flex flex-col items-center">
-        <p class="text-white/60 text-sm mb-6">Trusted by enterprise teams with mission-critical Airtable environments</p>
+      <!-- Enhanced Social Proof with Counters -->
+      <div class="flex flex-col items-center animate-fade-in-up animation-delay-800">
+        <p class="text-gray-300 text-sm mb-6">Trusted by enterprise teams with mission-critical Airtable environments</p>
         
-        <!-- Customer Metrics -->
+        <!-- Enhanced Customer Metrics with Animation -->
         <div class="flex flex-wrap justify-center gap-8 text-center">
-          <div class="flex flex-col">
-            <span class="text-2xl font-bold text-white">500TB+</span>
-            <span class="text-white/60 text-sm">Data Protected</span>
+          <div class="group flex flex-col hover:scale-110 transition-transform duration-300">
+            <span class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent counter" data-target="500">0</span>
+            <span class="text-gray-400 text-sm group-hover:text-gray-300 transition-colors">TB+ Data Protected</span>
           </div>
-          <div class="flex flex-col">
-            <span class="text-2xl font-bold text-white">99.9%</span>
-            <span class="text-white/60 text-sm">Uptime SLA</span>
+          <div class="group flex flex-col hover:scale-110 transition-transform duration-300">
+            <span class="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">99.9%</span>
+            <span class="text-gray-400 text-sm group-hover:text-gray-300 transition-colors">Uptime SLA</span>
           </div>
-          <div class="flex flex-col">
-            <span class="text-2xl font-bold text-white">4.9/5</span>
-            <span class="text-white/60 text-sm">Customer Rating</span>
+          <div class="group flex flex-col hover:scale-110 transition-transform duration-300">
+            <span class="text-3xl font-bold bg-gradient-to-r from-pink-400 to-orange-400 bg-clip-text text-transparent">4.9/5</span>
+            <span class="text-gray-400 text-sm group-hover:text-gray-300 transition-colors">Customer Rating</span>
           </div>
-          <div class="flex flex-col">
-            <span class="text-2xl font-bold text-white">&lt;5min</span>
-            <span class="text-white/60 text-sm">Setup Time</span>
+          <div class="group flex flex-col hover:scale-110 transition-transform duration-300">
+            <span class="text-3xl font-bold bg-gradient-to-r from-orange-400 to-yellow-400 bg-clip-text text-transparent">&lt;5min</span>
+            <span class="text-gray-400 text-sm group-hover:text-gray-300 transition-colors">Setup Time</span>
           </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Bottom Gradient -->
-  <div class="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+  <!-- Enhanced Bottom Gradient with Glow -->
+  <div class="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent shadow-lg shadow-white/20"></div>
 </section>
 
 <style>
-  @keyframes blob {
-    0% {
-      transform: translate(0px, 0px) scale(1);
-    }
-    33% {
-      transform: translate(30px, -50px) scale(1.1);
-    }
-    66% {
-      transform: translate(-20px, 20px) scale(0.9);
-    }
-    100% {
-      transform: translate(0px, 0px) scale(1);
-    }
+  /* Enhanced Animations */
+  @keyframes float {
+    0%, 100% { transform: translate(0px, 0px) scale(1) rotate(0deg); }
+    33% { transform: translate(30px, -30px) scale(1.1) rotate(120deg); }
+    66% { transform: translate(-20px, 20px) scale(0.9) rotate(240deg); }
   }
 
-  .animate-blob {
-    animation: blob 7s infinite;
+  @keyframes float-delayed {
+    0%, 100% { transform: translate(0px, 0px) scale(1) rotate(0deg); }
+    33% { transform: translate(-25px, -35px) scale(1.05) rotate(-120deg); }
+    66% { transform: translate(25px, 15px) scale(0.95) rotate(-240deg); }
   }
 
-  .animation-delay-2000 {
-    animation-delay: 2s;
+  @keyframes float-slow {
+    0%, 100% { transform: translate(0px, 0px) scale(1) rotate(0deg); }
+    50% { transform: translate(15px, -15px) scale(1.02) rotate(180deg); }
   }
 
-  .animation-delay-4000 {
-    animation-delay: 4s;
+  @keyframes gradient-x {
+    0%, 100% { background-size: 200% 200%; background-position: left center; }
+    50% { background-size: 200% 200%; background-position: right center; }
   }
+
+  @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes pulse-slow { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.8; } }
+
+  @keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Particle Animations */
+  @keyframes particle-1 {
+    0% { transform: translate(0, 100vh) scale(0); }
+    10% { transform: translate(10px, 90vh) scale(1); }
+    90% { transform: translate(-10px, -10vh) scale(1); }
+    100% { transform: translate(0, -10vh) scale(0); }
+  }
+
+  @keyframes particle-2 {
+    0% { transform: translate(0, 100vh) scale(0); }
+    15% { transform: translate(-20px, 80vh) scale(1); }
+    85% { transform: translate(20px, -10vh) scale(1); }
+    100% { transform: translate(0, -10vh) scale(0); }
+  }
+
+  @keyframes particle-3 {
+    0% { transform: translate(0, 100vh) scale(0); }
+    20% { transform: translate(15px, 75vh) scale(1); }
+    80% { transform: translate(-15px, -10vh) scale(1); }
+    100% { transform: translate(0, -10vh) scale(0); }
+  }
+
+  @keyframes particle-4 {
+    0% { transform: translate(0, 100vh) scale(0); }
+    25% { transform: translate(-25px, 70vh) scale(1); }
+    75% { transform: translate(25px, -10vh) scale(1); }
+    100% { transform: translate(0, -10vh) scale(0); }
+  }
+
+  @keyframes particle-5 {
+    0% { transform: translate(0, 100vh) scale(0); }
+    30% { transform: translate(30px, 65vh) scale(1); }
+    70% { transform: translate(-30px, -10vh) scale(1); }
+    100% { transform: translate(0, -10vh) scale(0); }
+  }
+
+  .animate-float { animation: float 8s ease-in-out infinite; }
+  .animate-float-delayed { animation: float-delayed 10s ease-in-out infinite; }
+  .animate-float-slow { animation: float-slow 12s ease-in-out infinite; }
+  .animate-gradient-x { animation: gradient-x 4s ease infinite; }
+  .animate-spin-slow { animation: spin-slow 20s linear infinite; }
+  .animate-pulse-slow { animation: pulse-slow 4s ease-in-out infinite; }
+  .animate-fade-in-up { animation: fade-in-up 0.8s ease-out forwards; }
+
+  .animate-particle-1 { 
+    animation: particle-1 15s linear infinite;
+    left: 10%;
+    animation-delay: 0s;
+  }
+  .animate-particle-2 { 
+    animation: particle-2 12s linear infinite;
+    left: 25%;
+    animation-delay: 3s;
+  }
+  .animate-particle-3 { 
+    animation: particle-3 18s linear infinite;
+    left: 50%;
+    animation-delay: 6s;
+  }
+  .animate-particle-4 { 
+    animation: particle-4 14s linear infinite;
+    left: 75%;
+    animation-delay: 9s;
+  }
+  .animate-particle-5 { 
+    animation: particle-5 16s linear infinite;
+    left: 90%;
+    animation-delay: 12s;
+  }
+
+  .animation-delay-200 { animation-delay: 200ms; }
+  .animation-delay-400 { animation-delay: 400ms; }
+  .animation-delay-600 { animation-delay: 600ms; }
+  .animation-delay-800 { animation-delay: 800ms; }
 
   .bg-grid-pattern {
     background-image: 
-      linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
-    background-size: 50px 50px;
+      linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    background-size: 60px 60px;
   }
 </style> 
