@@ -1,0 +1,39 @@
+---
+export interface Props {
+  class?: string;
+  width?: string;
+  height?: string;
+}
+
+const { class: className = "h-8 w-8", width, height } = Astro.props;
+---
+
+<!-- BaseOut Logo - Mountain layers representing data architecture -->
+<svg 
+  class={className} 
+  width={width} 
+  height={height} 
+  viewBox="0 0 64 64" 
+  fill="none" 
+  xmlns="http://www.w3.org/2000/svg"
+  role="img"
+  aria-label="BaseOut Logo"
+>
+  <!-- Background layer -->
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="#E6F2F2" stroke="#2D5A5A" stroke-width="2"/>
+  
+  <!-- Mountain layers representing data architecture -->
+  <!-- Bottom layer -->
+  <path d="M12 44 L20 32 L28 36 L36 28 L44 32 L52 24 L52 44 L12 44 Z" fill="#4A7C7C"/>
+  
+  <!-- Middle layer -->
+  <path d="M16 40 L22 30 L30 34 L38 26 L46 30 L52 22 L52 40 L16 40 Z" fill="#2D5A5A"/>
+  
+  <!-- Top layer -->
+  <path d="M20 36 L26 28 L32 30 L40 24 L48 28 L52 20 L52 36 L20 36 Z" fill="#1A3434"/>
+  
+  <!-- Geometric accent lines representing data connections -->
+  <line x1="20" y1="44" x2="44" y2="44" stroke="#2D5A5A" stroke-width="1.5" opacity="0.6"/>
+  <line x1="24" y1="40" x2="40" y2="40" stroke="#2D5A5A" stroke-width="1" opacity="0.4"/>
+  <line x1="28" y1="36" x2="36" y2="36" stroke="#2D5A5A" stroke-width="0.5" opacity="0.3"/>
+</svg> 

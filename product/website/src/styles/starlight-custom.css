@@ -1,0 +1,22 @@
+/* Custom styles for Starlight documentation theme */
+
+/* Apply BaseOut brand colors to Starlight */
+:root {
+  --sl-color-accent: #2D5A5A;
+  --sl-color-accent-low: #E6F2F2;
+  --sl-color-accent-high: #1A3434;
+}
+
+/* Custom styling for BaseOut brand consistency */
+.site-title {
+  color: var(--sl-color-accent);
+}
+
+/* Override default Starlight styling to match BaseOut brand */
+.sl-nav a {
+  color: #5D6D7E;
+}
+
+.sl-nav a:hover {
+  color: var(--sl-color-accent);
+} 

@@ -1,0 +1,1183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baseout Brand Guidelines Showcase</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700;800&family=Source+Code+Pro:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.css" rel="stylesheet" />
+    <style>
+        :root {
+            /* Brand Colors */
+            --baseout-teal: #2D5A5A;
+            --baseout-teal-light: #4A7C7C;
+            --baseout-teal-dark: #1A3434;
+            --mountain-green: #3D6B3D;
+            --data-blue: #2E4A6B;
+            --peak-orange: #D17A3A;
+            --charcoal: #2C3E50;
+            --slate-gray: #5D6D7E;
+            --light-gray: #8E9AAF;
+            --background-gray: #F4F6F8;
+            --pure-white: #FFFFFF;
+            --success-green: #27AE60;
+            --warning-yellow: #F39C12;
+            --error-red: #E74C3C;
+            --info-blue: #3498DB;
+            
+            /* Typography */
+            --font-primary: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --font-display: 'Outfit', Inter, sans-serif;
+            --font-code: 'Source Code Pro', 'SF Mono', Monaco, Consolas, monospace;
+            
+            /* Spacing System (8px base) */
+            --space-micro: 4px;
+            --space-xs: 8px;
+            --space-s: 16px;
+            --space-m: 24px;
+            --space-l: 32px;
+            --space-xl: 48px;
+            --space-xxl: 64px;
+            --space-massive: 96px;
+            
+            /* Grid */
+            --max-width: 1200px;
+            --gutter: 24px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-primary);
+            font-size: 16px;
+            line-height: 1.5;
+            color: var(--charcoal);
+            background-color: var(--pure-white);
+        }
+
+        /* Layout System */
+        .container {
+            width: 100%;
+            max-width: var(--max-width);
+            margin: 0 auto;
+            padding: 0 var(--gutter);
+        }
+
+        .section {
+            padding: var(--space-xl) 0;
+            border-bottom: 1px solid var(--background-gray);
+        }
+
+        .grid {
+            display: grid;
+            gap: var(--gutter);
+        }
+
+        .grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+        .grid-3 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+        .grid-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+
+        /* Typography Hierarchy */
+        .display-text {
+            font-family: var(--font-display);
+            font-size: 48px;
+            font-weight: 700;
+            line-height: 1.1;
+            letter-spacing: -0.02em;
+            color: var(--charcoal);
+            margin-bottom: var(--space-s);
+        }
+
+        .heading-1 {
+            font-family: var(--font-primary);
+            font-size: 36px;
+            font-weight: 600;
+            line-height: 1.2;
+            letter-spacing: -0.01em;
+            color: var(--charcoal);
+            margin-bottom: var(--space-s);
+        }
+
+        .heading-2 {
+            font-family: var(--font-primary);
+            font-size: 28px;
+            font-weight: 600;
+            line-height: 1.25;
+            color: var(--charcoal);
+            margin-bottom: var(--space-s);
+        }
+
+        .heading-3 {
+            font-family: var(--font-primary);
+            font-size: 22px;
+            font-weight: 500;
+            line-height: 1.3;
+            color: var(--charcoal);
+            margin-bottom: var(--space-s);
+        }
+
+        .heading-4 {
+            font-family: var(--font-primary);
+            font-size: 18px;
+            font-weight: 500;
+            line-height: 1.35;
+            color: var(--charcoal);
+            margin-bottom: var(--space-xs);
+        }
+
+        .body-large {
+            font-size: 18px;
+            line-height: 1.6;
+            color: var(--charcoal);
+            margin-bottom: var(--space-s);
+        }
+
+        .body-regular {
+            font-size: 16px;
+            line-height: 1.5;
+            color: var(--charcoal);
+            margin-bottom: var(--space-s);
+        }
+
+        .body-small {
+            font-size: 14px;
+            line-height: 1.4;
+            color: var(--slate-gray);
+            margin-bottom: var(--space-s);
+        }
+
+        .caption {
+            font-size: 12px;
+            line-height: 1.4;
+            letter-spacing: 0.01em;
+            color: var(--light-gray);
+        }
+
+        .code {
+            font-family: var(--font-code);
+            font-size: 14px;
+            line-height: 1.6;
+            background: var(--background-gray);
+            padding: var(--space-xs);
+            border-radius: 4px;
+            display: inline-block;
+        }
+
+        /* Navigation */
+        .nav {
+            background: var(--pure-white);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            padding: var(--space-s) 0;
+        }
+
+        .nav-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: var(--font-primary);
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--baseout-teal);
+            text-decoration: none;
+        }
+
+        .nav-menu {
+            display: flex;
+            list-style: none;
+            gap: var(--space-m);
+        }
+
+        .nav-menu a {
+            text-decoration: none;
+            color: var(--charcoal);
+            font-weight: 500;
+            padding: var(--space-xs) var(--space-s);
+            border-radius: 4px;
+            transition: background-color 0.2s;
+        }
+
+        .nav-menu a:hover {
+            background-color: var(--background-gray);
+        }
+
+        /* Hero Section */
+        .hero {
+            background: linear-gradient(135deg, var(--baseout-teal) 0%, var(--baseout-teal-light) 100%);
+            color: var(--pure-white);
+            text-align: center;
+            padding: var(--space-massive) 0;
+        }
+
+        .hero .display-text {
+            color: var(--pure-white);
+        }
+
+        /* Color Palette */
+        .color-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: var(--space-m);
+        }
+
+        .color-swatch {
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .color-block {
+            height: 120px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--pure-white);
+            font-weight: 600;
+        }
+
+        .color-info {
+            padding: var(--space-s);
+            background: var(--pure-white);
+        }
+
+        .color-name {
+            font-weight: 600;
+            margin-bottom: var(--space-micro);
+        }
+
+        .color-hex {
+            font-family: var(--font-code);
+            font-size: 12px;
+            color: var(--slate-gray);
+        }
+
+        /* Cards */
+        .card {
+            background: var(--pure-white);
+            border-radius: 8px;
+            padding: var(--space-m);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: var(--space-m);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-s);
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-block;
+            padding: 12px var(--space-m);
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: 500;
+            text-align: center;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--peak-orange);
+            color: var(--pure-white);
+        }
+
+        .btn-primary:hover {
+            background: #B86A32;
+        }
+
+        .btn-secondary {
+            background: var(--baseout-teal);
+            color: var(--pure-white);
+        }
+
+        .btn-secondary:hover {
+            background: var(--baseout-teal-dark);
+        }
+
+        /* Status Badges */
+        .badge {
+            padding: 4px var(--space-xs);
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: var(--success-green);
+            color: var(--pure-white);
+        }
+
+        .badge-warning {
+            background: var(--warning-yellow);
+            color: var(--pure-white);
+        }
+
+        .badge-error {
+            background: var(--error-red);
+            color: var(--pure-white);
+        }
+
+        /* Voice & Tone Examples */
+        .tone-example {
+            border-left: 4px solid var(--baseout-teal);
+            padding: var(--space-s);
+            background: var(--background-gray);
+            margin: var(--space-s) 0;
+        }
+
+        .tone-label {
+            font-weight: 600;
+            color: var(--baseout-teal);
+            margin-bottom: var(--space-micro);
+        }
+
+        /* Layout Examples */
+        .layout-demo {
+            border: 2px dashed var(--light-gray);
+            padding: var(--space-s);
+            margin: var(--space-s) 0;
+            border-radius: 4px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .display-text { font-size: 36px; }
+            .heading-1 { font-size: 28px; }
+            .heading-2 { font-size: 24px; }
+            
+            .nav-menu {
+                gap: var(--space-s);
+            }
+            
+            .hero {
+                padding: var(--space-xl) 0;
+            }
+        }
+
+        /* Utility Classes */
+        .text-teal { color: var(--baseout-teal); }
+        .text-gray { color: var(--slate-gray); }
+        .bg-gray { background-color: var(--background-gray); }
+        .mb-0 { margin-bottom: 0; }
+        .mb-s { margin-bottom: var(--space-s); }
+        .mb-m { margin-bottom: var(--space-m); }
+        .mt-m { margin-top: var(--space-m); }
+
+        /* FlowBite Theming */
+        body {
+            --tw-ring-offset-shadow: 0 0 #0000;
+            --tw-ring-shadow: 0 0 #0000;
+            --tw-shadow: 0 0 #0000;
+            --tw-shadow-colored: 0 0 #0000;
+        }
+
+        /* Baseout Button Styles (retained for non-Flowbite specific if any) */
+        .btn-primary {
+            background-color: var(--peak-orange) !important;
+            color: var(--pure-white) !important;
+            border-radius: 4px !important;
+            padding: 10px var(--space-m) !important; /* Adjusted padding */
+            font-weight: 500 !important;
+            transition: background-color 0.2s !important;
+            line-height: 1.5; /* Ensure consistent line height */
+        }
+        .btn-primary:hover {
+            background-color: #B86A32 !important; /* Darker Peak Orange */
+        }
+
+        .btn-secondary {
+            background-color: var(--baseout-teal) !important;
+            color: var(--pure-white) !important;
+            border-radius: 4px !important;
+            padding: 10px var(--space-m) !important; /* Adjusted padding */
+            font-weight: 500 !important;
+            transition: background-color 0.2s !important;
+            line-height: 1.5; /* Ensure consistent line height */
+        }
+        .btn-secondary:hover {
+            background-color: var(--baseout-teal-dark) !important;
+        }
+
+        /* Flowbite Color Theming - Refactored */
+
+        /* Blue (Baseout Teal) */
+        [class*="bg-blue-"] {
+            background-color: var(--baseout-teal) !important;
+        }
+        /* Ensure text color contrasts with Baseout Teal background */
+        [class*="bg-blue-"][class*="text-"]:not([class*="text-white"]):not([class*="text-gray-"]) {
+             color: var(--pure-white) !important;
+        }
+        button[class*="bg-blue-"]:hover,
+        a[class*="bg-blue-"]:hover {
+            background-color: var(--baseout-teal-dark) !important;
+        }
+        [class*="text-blue-"] {
+            color: var(--baseout-teal) !important;
+        }
+        [class*="border-blue-"] {
+            border-color: var(--baseout-teal) !important;
+        }
+        [class*="ring-blue-"] {
+            --tw-ring-color: var(--baseout-teal-light) !important;
+        }
+
+        /* Green (Success Green) */
+        [class*="bg-green-"] {
+            background-color: var(--success-green) !important;
+        }
+        [class*="bg-green-"][class*="text-"]:not([class*="text-white"]):not([class*="text-gray-"]) {
+             color: var(--pure-white) !important;
+        }
+        button[class*="bg-green-"]:hover,
+        a[class*="bg-green-"]:hover {
+            background-color: #1E8449 !important; /* Darker Success Green */
+        }
+        [class*="text-green-"] {
+            color: var(--success-green) !important;
+        }
+        [class*="border-green-"] {
+            border-color: var(--success-green) !important;
+        }
+        [class*="ring-green-"] {
+            --tw-ring-color: #A9DFBF !important; /* Lighter Success Green for ring */
+        }
+
+        /* Red (Error Red) */
+        [class*="bg-red-"] {
+            background-color: var(--error-red) !important;
+        }
+         [class*="bg-red-"][class*="text-"]:not([class*="text-white"]):not([class*="text-gray-"]) {
+             color: var(--pure-white) !important;
+        }
+        button[class*="bg-red-"]:hover,
+        a[class*="bg-red-"]:hover {
+            background-color: #C0392B !important; /* Darker Error Red */
+        }
+        [class*="text-red-"] {
+            color: var(--error-red) !important;
+        }
+        [class*="border-red-"] {
+            border-color: var(--error-red) !important;
+        }
+        [class*="ring-red-"] {
+            --tw-ring-color: #F5B7B1 !important; /* Lighter Error Red for ring */
+        }
+
+        /* Yellow (Warning Yellow) */
+        [class*="bg-yellow-"] {
+            background-color: var(--warning-yellow) !important;
+        }
+        [class*="bg-yellow-"][class*="text-"]:not([class*="text-black"]):not([class*="text-charcoal"]):not([class*="text-gray-"]) {
+             color: var(--charcoal) !important; /* Dark text for readability on yellow */
+        }
+        button[class*="bg-yellow-"]:hover,
+        a[class*="bg-yellow-"]:hover {
+            background-color: #D4AC0D !important; /* Darker Warning Yellow */
+        }
+        [class*="text-yellow-"] {
+            color: var(--warning-yellow) !important; /* Use cautiously, may need dark bg */
+        }
+        /* Override Flowbite's default dark text on yellow for better brand consistency if needed */
+        .text-yellow-800 { color: var(--charcoal) !important; }
+        .dark .text-yellow-300 { color: var(--charcoal) !important; }
+        
+        [class*="border-yellow-"] {
+            border-color: var(--warning-yellow) !important;
+        }
+        [class*="ring-yellow-"] {
+            --tw-ring-color: #FAD7A0 !important; /* Lighter Warning Yellow for ring */
+        }
+        
+        /* Peak Orange (Accent) - for classes like bg-primary- */
+        [class*="bg-primary-"] {
+            background-color: var(--peak-orange) !important;
+        }
+        [class*="bg-primary-"][class*="text-"]:not([class*="text-white"]):not([class*="text-gray-"]) {
+             color: var(--pure-white) !important;
+        }
+        button[class*="bg-primary-"]:hover,
+        a[class*="bg-primary-"]:hover {
+            background-color: #B86A32 !important; /* Darker Peak Orange */
+        }
+        [class*="text-primary-"] {
+            color: var(--peak-orange) !important;
+        }
+        [class*="border-primary-"] {
+            border-color: var(--peak-orange) !important;
+        }
+        [class*="ring-primary-"] {
+            --tw-ring-color: #E59866 !important; /* Lighter Peak Orange for ring */
+        }
+
+        /* Gray (Neutrals) - More granular control */
+        .bg-gray-50 { background-color: var(--background-gray) !important; }
+        .bg-gray-100 { background-color: var(--pure-white) !important; border: 1px solid var(--background-gray); } /* Common for light cards/bg */
+        .bg-gray-200 { background-color: var(--light-gray) !important; opacity: 0.7; } /* Used for subtle backgrounds or borders */
+        .bg-gray-300 { background-color: var(--light-gray) !important; }
+        .bg-gray-400 { background-color: var(--slate-gray) !important; color: var(--pure-white)!important;}
+        .bg-gray-500 { background-color: var(--slate-gray) !important; color: var(--pure-white) !important; }
+        .bg-gray-600 { background-color: var(--charcoal) !important; color: var(--pure-white) !important; }
+        .bg-gray-700, .dark .bg-gray-700 { background-color: var(--charcoal) !important; color: var(--pure-white) !important; }
+        .dark .bg-gray-800 { background-color: var(--baseout-teal-dark) !important; } /* Example dark mode modal bg */
+        
+        .text-gray-500 { color: var(--slate-gray) !important; }
+        .text-gray-600 { color: var(--slate-gray) !important; }
+        .text-gray-700 { color: var(--charcoal) !important; }
+        .text-gray-900 { color: var(--charcoal) !important; }
+        .dark .text-gray-300 { color: var(--light-gray) !important; }
+        .dark .text-gray-400 { color: var(--slate-gray) !important; }
+        .dark .text-white { color: var(--pure-white) !important; }
+
+        .border-gray-200 { border-color: var(--background-gray) !important; }
+        .border-gray-300 { border-color: var(--light-gray) !important; }
+        .border-gray-400 { border-color: var(--slate-gray) !important; }
+        .border-gray-500 { border-color: var(--slate-gray) !important; }
+        .dark .border-gray-600 { border-color: var(--slate-gray) !important; }
+        .dark .border-gray-500 { border-color: var(--light-gray) !important; }
+
+        /* Forms */
+        input[type="text"],
+        input[type="email"],
+        input[type="password"],
+        input[type="search"],
+        input[type="tel"],
+        input[type="url"],
+        textarea,
+        select {
+            font-family: var(--font-primary) !important;
+            color: var(--charcoal) !important;
+            background-color: var(--pure-white) !important;
+            border: 1px solid var(--light-gray) !important;
+            border-radius: 4px !important;
+            padding: 10px 12px !important;
+        }
+        input[type="text"]:focus,
+        input[type="email"]:focus,
+        input[type="password"]:focus,
+        input[type="search"]:focus,
+        input[type="tel"]:focus,
+        input[type="url"]:focus,
+        textarea:focus,
+        select:focus {
+            border-color: var(--baseout-teal) !important;
+            box-shadow: 0 0 0 2px rgba(45, 90, 90, 0.2) !important;
+        }
+
+        /* Dark mode adjustments (if Flowbite adds dark mode classes we can target them) */
+        /* For now, this is a generic placeholder if you implement a dark toggle */
+        .dark .bg-gray-800 { background-color: var(--charcoal) !important; }
+        .dark .text-gray-400 { color: var(--light-gray) !important; }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="container">
+            <div class="nav-container">
+                <a href="#" class="logo">baseout</a>
+                <ul class="nav-menu">
+                    <li><a href="#overview">Overview</a></li>
+                    <li><a href="#colors">Colors</a></li>
+                    <li><a href="#typography">Typography</a></li>
+                    <li><a href="#layout">Layout</a></li>
+                    <li><a href="#voice">Voice & Tone</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero" id="overview">
+        <div class="container">
+            <h1 class="display-text">Baseout Brand Guidelines</h1>
+            <p class="body-large">Transform complex data challenges into competitive advantages with enterprise-grade solutions that grow with your business.</p>
+            <a href="#colors" class="btn btn-primary">Explore Guidelines</a>
+        </div>
+    </section>
+
+    <!-- Brand Overview -->
+    <section class="section">
+        <div class="container">
+            <h2 class="heading-1">Brand Overview</h2>
+            <div class="grid grid-3">
+                <div class="card">
+                    <h3 class="heading-4 text-teal">Vision</h3>
+                    <p class="body-regular mb-0">To be the bedrock of modern data architecture</p>
+                </div>
+                <div class="card">
+                    <h3 class="heading-4 text-teal">Mission</h3>
+                    <p class="body-regular mb-0">Simplifying complex data challenges through elegant, powerful solutions</p>
+                </div>
+                <div class="card">
+                    <h3 class="heading-4 text-teal">Values</h3>
+                    <p class="body-regular mb-0">Reliability, Clarity, Innovation, Trust</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Logo Usage -->
+    <section class="section">
+        <div class="container">
+            <h2 class="heading-1">Logo Usage</h2>
+            <div class="grid grid-2">
+                <div class="card">
+                    <h3 class="heading-3">Horizontal Logo (Primary)</h3>
+                    <div style="padding: var(--space-m); text-align: center; background: var(--background-gray);">
+                        <div style="font-family: var(--font-primary); font-size: 24px; font-weight: 600; color: var(--baseout-teal);">⛰️ baseout</div>
+                    </div>
+                    <p class="body-small mt-m mb-0">Default version for most applications. Minimum width: 120px digital, 1.5" print.</p>
+                </div>
+                <div class="card">
+                    <h3 class="heading-3">Symbol Only</h3>
+                    <div style="padding: var(--space-m); text-align: center; background: var(--background-gray);">
+                        <div style="font-size: 32px; color: var(--baseout-teal);">⛰️</div>
+                    </div>
+                    <p class="body-small mt-m mb-0">Use when brand is established. Minimum size: 24px digital, 0.5" print.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Color Palette -->
+    <section class="section" id="colors">
+        <div class="container">
+            <h2 class="heading-1">Color Palette</h2>
+            
+            <h3 class="heading-2">Primary Colors</h3>
+            <div class="color-grid">
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--baseout-teal);">Baseout Teal</div>
+                    <div class="color-info">
+                        <div class="color-name">Baseout Teal</div>
+                        <div class="color-hex">#2D5A5A</div>
+                        <p class="caption">Primary brand color for logos, buttons, headers</p>
+                    </div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--baseout-teal-light);">Teal Light</div>
+                    <div class="color-info">
+                        <div class="color-name">Baseout Teal Light</div>
+                        <div class="color-hex">#4A7C7C</div>
+                        <p class="caption">Hover states, secondary elements, backgrounds</p>
+                    </div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--baseout-teal-dark);">Teal Dark</div>
+                    <div class="color-info">
+                        <div class="color-name">Baseout Teal Dark</div>
+                        <div class="color-hex">#1A3434</div>
+                        <p class="caption">Text on light backgrounds, borders, accents</p>
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="heading-2 mt-m">Secondary Colors</h3>
+            <div class="color-grid">
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--mountain-green);">Mountain Green</div>
+                    <div class="color-info">
+                        <div class="color-name">Mountain Green</div>
+                        <div class="color-hex">#3D6B3D</div>
+                        <p class="caption">Success states, positive indicators, nature themes</p>
+                    </div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--data-blue);">Data Blue</div>
+                    <div class="color-info">
+                        <div class="color-name">Data Blue</div>
+                        <div class="color-hex">#2E4A6B</div>
+                        <p class="caption">Data visualization, technical content, links</p>
+                    </div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--peak-orange);">Peak Orange</div>
+                    <div class="color-info">
+                        <div class="color-name">Peak Orange</div>
+                        <div class="color-hex">#D17A3A</div>
+                        <p class="caption">Call-to-action buttons, highlights, warnings</p>
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="heading-2 mt-m">Neutral Colors</h3>
+            <div class="color-grid">
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--charcoal);">Charcoal</div>
+                    <div class="color-info">
+                        <div class="color-name">Charcoal</div>
+                        <div class="color-hex">#2C3E50</div>
+                        <p class="caption">Primary text, headlines</p>
+                    </div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--slate-gray);">Slate Gray</div>
+                    <div class="color-info">
+                        <div class="color-name">Slate Gray</div>
+                        <div class="color-hex">#5D6D7E</div>
+                        <p class="caption">Secondary text, captions</p>
+                    </div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--light-gray);">Light Gray</div>
+                    <div class="color-info">
+                        <div class="color-name">Light Gray</div>
+                        <div class="color-hex">#8E9AAF</div>
+                        <p class="caption">Placeholder text, disabled states, subtle elements</p>
+                    </div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--background-gray); color: var(--charcoal);">Background Gray</div>
+                    <div class="color-info">
+                        <div class="color-name">Background Gray</div>
+                        <div class="color-hex">#F4F6F8</div>
+                        <p class="caption">Page backgrounds, card backgrounds</p>
+                    </div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--pure-white); color: var(--charcoal); border: 1px solid var(--background-gray);">Pure White</div>
+                    <div class="color-info">
+                        <div class="color-name">Pure White</div>
+                        <div class="color-hex">#FFFFFF</div>
+                        <p class="caption">Primary backgrounds, content areas</p>
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="heading-2 mt-m">Functional Colors</h3>
+            <div class="color-grid">
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--success-green);">Success</div>
+                    <div class="color-info">
+                        <div class="color-name">Success Green</div>
+                        <div class="color-hex">#27AE60</div>
+                        <p class="caption">Success messages, completed states</p>
+                    </div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--warning-yellow);">Warning</div>
+                    <div class="color-info">
+                        <div class="color-name">Warning Yellow</div>
+                        <div class="color-hex">#F39C12</div>
+                        <p class="caption">Warning messages, caution states</p>
+                    </div>
+                </div>
+                <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--error-red);">Error</div>
+                    <div class="color-info">
+                        <div class="color-name">Error Red</div>
+                        <div class="color-hex">#E74C3C</div>
+                        <p class="caption">Error messages, critical alerts</p>
+                    </div>
+                </div>
+                 <div class="color-swatch">
+                    <div class="color-block" style="background-color: var(--info-blue);">Info Blue</div>
+                    <div class="color-info">
+                        <div class="color-name">Info Blue</div>
+                        <div class="color-hex">#3498DB</div>
+                        <p class="caption">Information messages, neutral notifications</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Typography -->
+    <section class="section" id="typography">
+        <div class="container">
+            <h2 class="heading-1">Typography System</h2>
+            
+            <div class="grid grid-2">
+                <div>
+                    <h3 class="heading-2">Typography Hierarchy</h3>
+                    <div class="card">
+                        <div class="display-text">Display Text</div>
+                        <p class="caption">Outfit Bold, 48px - Hero headlines</p>
+                    </div>
+                    <div class="card">
+                        <h1 class="heading-1 mb-0">Heading 1</h1>
+                        <p class="caption">Inter SemiBold, 36px - Main headings</p>
+                    </div>
+                    <div class="card">
+                        <h2 class="heading-2 mb-0">Heading 2</h2>
+                        <p class="caption">Inter SemiBold, 28px - Section headings</p>
+                    </div>
+                    <div class="card">
+                        <h3 class="heading-3 mb-0">Heading 3</h3>
+                        <p class="caption">Inter Medium, 22px - Subsections</p>
+                    </div>
+                    <div class="card">
+                        <p class="body-large mb-0">Body Large Text - Important paragraphs and lead content that needs emphasis.</p>
+                        <p class="caption">Inter Regular, 18px</p>
+                    </div>
+                    <div class="card">
+                        <p class="body-regular mb-0">Body Regular - Standard paragraph text for most content areas and general reading.</p>
+                        <p class="caption">Inter Regular, 16px</p>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="heading-2">Font Families</h3>
+                    <div class="card">
+                        <h4 class="heading-4">Inter (Primary)</h4>
+                        <p class="body-regular">Modern sans-serif optimized for digital screens. Used for headers, UI elements, and body text.</p>
+                        <div style="font-family: var(--font-primary); font-size: 24px; margin: var(--space-s) 0;">
+                            Aa Bb Cc Dd Ee Ff Gg Hh
+                        </div>
+                        <p class="caption">Regular (400), Medium (500), SemiBold (600), Bold (700)</p>
+                    </div>
+                    
+                    <div class="card">
+                        <h4 class="heading-4">Outfit (Display)</h4>
+                        <p class="body-regular">Geometric sans-serif for large headlines and hero text.</p>
+                        <div style="font-family: var(--font-display); font-size: 24px; font-weight: 700; margin: var(--space-s) 0;">
+                            Aa Bb Cc Dd Ee Ff Gg Hh
+                        </div>
+                        <p class="caption">SemiBold (600), Bold (700), ExtraBold (800)</p>
+                    </div>
+                    
+                    <div class="card">
+                        <h4 class="heading-4">Source Code Pro (Code)</h4>
+                        <p class="body-regular">Monospace font for code blocks and technical documentation.</p>
+                        <div style="font-family: var(--font-code); font-size: 16px; margin: var(--space-s) 0;">
+                            const baseout = 'data-platform';
+                        </div>
+                        <p class="caption">Regular (400), Medium (500), SemiBold (600)</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Spacing & Layout -->
+    <section class="section" id="layout">
+        <div class="container">
+            <h2 class="heading-1">Layout & Spacing System</h2>
+            
+            <div class="grid grid-2">
+                <div>
+                    <h3 class="heading-2">Spacing Scale (8px base)</h3>
+                    <div class="card">
+                        <div style="display: flex; align-items: center; margin-bottom: var(--space-xs);">
+                            <div style="width: 4px; height: 20px; background: var(--baseout-teal); margin-right: var(--space-s);"></div>
+                            <span>4px - Micro spacing</span>
+                        </div>
+                        <div style="display: flex; align-items: center; margin-bottom: var(--space-xs);">
+                            <div style="width: 8px; height: 20px; background: var(--baseout-teal); margin-right: var(--space-s);"></div>
+                            <span>8px - Extra small</span>
+                        </div>
+                        <div style="display: flex; align-items: center; margin-bottom: var(--space-xs);">
+                            <div style="width: 16px; height: 20px; background: var(--baseout-teal); margin-right: var(--space-s);"></div>
+                            <span>16px - Small</span>
+                        </div>
+                        <div style="display: flex; align-items: center; margin-bottom: var(--space-xs);">
+                            <div style="width: 24px; height: 20px; background: var(--baseout-teal); margin-right: var(--space-s);"></div>
+                            <span>24px - Medium</span>
+                        </div>
+                        <div style="display: flex; align-items: center; margin-bottom: var(--space-xs);">
+                            <div style="width: 48px; height: 20px; background: var(--baseout-teal); margin-right: var(--space-s);"></div>
+                            <span>48px - Extra large</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="heading-2">Grid System</h3>
+                    <div class="card">
+                        <p class="body-regular"><strong>12-column grid</strong> with 24px gutters</p>
+                        <p class="body-regular">Max width: 1200px</p>
+                        <p class="body-regular">Breakpoints: 480px, 768px, 1024px, 1440px</p>
+                        
+                        <div class="layout-demo">
+                            <div style="display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; margin-top: var(--space-s);">
+                                <div style="background: var(--baseout-teal-light); height: 20px; border-radius: 2px;"></div>
+                                <div style="background: var(--baseout-teal-light); height: 20px; border-radius: 2px;"></div>
+                                <div style="background: var(--baseout-teal-light); height: 20px; border-radius: 2px;"></div>
+                                <div style="background: var(--baseout-teal-light); height: 20px; border-radius: 2px;"></div>
+                                <div style="background: var(--baseout-teal-light); height: 20px; border-radius: 2px;"></div>
+                                <div style="background: var(--baseout-teal-light); height: 20px; border-radius: 2px;"></div>
+                                <div style="background: var(--baseout-teal-light); height: 20px; border-radius: 2px;"></div>
+                                <div style="background: var(--baseout-teal-light); height: 20px; border-radius: 2px;"></div>
+                                <div style="background: var(--baseout-teal-light); height: 20px; border-radius: 2px;"></div>
+                                <div style="background: var(--baseout-teal-light); height: 20px; border-radius: 2px;"></div>
+                                <div style="background: var(--baseout-teal-light); height: 20px; border-radius: 2px;"></div>
+                                <div style="background: var(--baseout-teal-light); height: 20px; border-radius: 2px;"></div>
+                            </div>
+                            <p class="caption" style="margin-top: var(--space-xs);">12-column grid visualization</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- UI Components -->
+    <section class="section" id="components">
+        <div class="container">
+            <h2 class="heading-1">UI Components (Powered by FlowBite)</h2>
+            <p class="body-large mb-m">A showcase of common UI elements styled according to Baseout brand guidelines, utilizing the FlowBite library.</p>
+
+            <!-- Buttons -->
+            <h3 class="heading-2">Buttons</h3>
+            <div class="card mb-m">
+                <h4 class="heading-3">Variants</h4>
+                <div class="flex flex-wrap gap-4 items-center mb-s">
+                    <button type="button" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 me-2 mb-2 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">Primary (Baseout Teal)</button>
+                    <button type="button" class="text-white bg-primary-700 hover:bg-primary-800 focus:ring-4 focus:ring-primary-300 font-medium rounded-lg text-sm px-5 py-2.5 me-2 mb-2 dark:bg-primary-600 dark:hover:bg-primary-700 focus:outline-none dark:focus:ring-primary-800">Accent (Peak Orange)</button>
+                    <button type="button" class="py-2.5 px-5 me-2 mb-2 text-sm font-medium text-gray-900 focus:outline-none bg-white rounded-lg border border-gray-200 hover:bg-gray-100 hover:text-blue-700 focus:z-10 focus:ring-4 focus:ring-gray-100 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700">Outline (Teal)</button>
+                </div>
+                <h4 class="heading-3 mt-s">Sizes</h4>
+                <div class="flex flex-wrap gap-4 items-center">
+                    <button type="button" class="text-white bg-blue-700 hover:bg-blue-800 font-medium rounded-lg text-xs px-3 py-1.5 text-center me-2 mb-2">Small</button>
+                    <button type="button" class="text-white bg-blue-700 hover:bg-blue-800 font-medium rounded-lg text-sm px-5 py-2.5 text-center me-2 mb-2">Default</button>
+                    <button type="button" class="text-white bg-blue-700 hover:bg-blue-800 font-medium rounded-lg text-base px-6 py-3 text-center me-2 mb-2">Large</button>
+                </div>
+            </div>
+
+            <!-- Alerts -->
+            <h3 class="heading-2">Alerts</h3>
+            <div class="card mb-m space-y-4">
+                <div id="alert-1" class="flex items-center p-4 mb-4 text-blue-800 rounded-lg bg-blue-50 dark:bg-gray-800 dark:text-blue-400" role="alert">
+                    <svg class="flex-shrink-0 w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 15H8a1 1 0 0 1 0-2h1v-3H8a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 0 1 0 2Z"/>
+                    </svg>
+                    <span class="sr-only">Info</span>
+                    <div class="ms-3 text-sm font-medium">This is an informational alert. (Styled with Baseout Teal)</div>
+                </div>
+                <div id="alert-2" class="flex items-center p-4 mb-4 text-green-800 rounded-lg bg-green-50 dark:bg-gray-800 dark:text-green-400" role="alert">
+                    <svg class="flex-shrink-0 w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 15H8a1 1 0 0 1 0-2h1v-3H8a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 0 1 0 2Z"/>
+                    </svg>
+                    <span class="sr-only">Success</span>
+                    <div class="ms-3 text-sm font-medium">This is a success alert. (Styled with Baseout Success Green)</div>
+                </div>
+                <div id="alert-3" class="flex items-center p-4 mb-4 text-yellow-800 rounded-lg bg-yellow-50 dark:bg-gray-800 dark:text-yellow-300" role="alert">
+                     <svg class="flex-shrink-0 w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 15H8a1 1 0 0 1 0-2h1v-3H8a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 0 1 0 2Z"/>
+                    </svg>
+                    <span class="sr-only">Warning</span>
+                    <div class="ms-3 text-sm font-medium">This is a warning alert. (Styled with Baseout Warning Yellow)</div>
+                </div>
+                <div id="alert-4" class="flex items-center p-4 text-red-800 rounded-lg bg-red-50 dark:bg-gray-800 dark:text-red-400" role="alert">
+                     <svg class="flex-shrink-0 w-4 h-4" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 15H8a1 1 0 0 1 0-2h1v-3H8a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 0 1 0 2Z"/>
+                    </svg>
+                    <span class="sr-only">Error</span>
+                    <div class="ms-3 text-sm font-medium">This is an error alert. (Styled with Baseout Error Red)</div>
+                </div>
+            </div>
+
+            <!-- Badges -->
+            <h3 class="heading-2">Badges</h3>
+            <div class="card mb-m">
+                <div class="flex flex-wrap gap-2">
+                    <span class="bg-blue-100 text-blue-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded dark:bg-blue-900 dark:text-blue-300">Baseout Teal</span>
+                    <span class="bg-green-100 text-green-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded dark:bg-green-900 dark:text-green-300">Success Green</span>
+                    <span class="bg-yellow-100 text-yellow-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded dark:bg-yellow-900 dark:text-yellow-300">Warning Yellow</span>
+                    <span class="bg-red-100 text-red-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded dark:bg-red-900 dark:text-red-300">Error Red</span>
+                    <span class="bg-primary-100 text-primary-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded dark:bg-primary-900 dark:text-primary-300">Peak Orange</span>
+                    <span class="bg-gray-100 text-gray-800 text-xs font-medium me-2 px-2.5 py-0.5 rounded dark:bg-gray-700 dark:text-gray-300">Neutral Gray</span>
+                </div>
+            </div>
+            
+            <!-- Cards -->
+            <h3 class="heading-2">Cards</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-m mb-m">
+                <div class="max-w-sm bg-white border border-gray-200 rounded-lg shadow dark:bg-gray-800 dark:border-gray-700">
+                    <a href="#">
+                        <img class="rounded-t-lg" src="https://via.placeholder.com/400x250/2D5A5A/FFFFFF?text=Baseout+Feature" alt="Placeholder Image" />
+                    </a>
+                    <div class="p-5">
+                        <a href="#">
+                            <h5 class="mb-2 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Data Synchronization</h5>
+                        </a>
+                        <p class="mb-3 font-normal text-gray-700 dark:text-gray-400">Seamlessly sync your data sources with Baseout's robust and reliable platform. Get started in minutes.</p>
+                        <a href="#" class="inline-flex items-center px-3 py-2 text-sm font-medium text-center text-white bg-blue-700 rounded-lg hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800">
+                            Learn More
+                            <svg class="rtl:rotate-180 w-3.5 h-3.5 ms-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 10">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 5h12m0 0L9 1m4 4L9 9"/>
+                            </svg>
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Forms -->
+            <h3 class="heading-2">Forms</h3>
+            <div class="card mb-m">
+                <form class="space-y-6">
+                    <div>
+                        <label for="email" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Your email</label>
+                        <input type="email" name="email" id="email" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-600 dark:border-gray-500 dark:placeholder-gray-400 dark:text-white" placeholder="name@company.com" required />
+                    </div>
+                    <div>
+                        <label for="countries" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Select an option</label>
+                        <select id="countries" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500">
+                            <option selected>Choose a country</option>
+                            <option value="US">United States</option>
+                            <option value="CA">Canada</option>
+                            <option value="FR">France</option>
+                            <option value="DE">Germany</option>
+                        </select>
+                    </div>
+                    <div class="flex items-start">
+                        <div class="flex items-center h-5">
+                            <input id="remember" type="checkbox" value="" class="w-4 h-4 border border-gray-300 rounded bg-gray-50 focus:ring-3 focus:ring-blue-300 dark:bg-gray-700 dark:border-gray-600 dark:focus:ring-blue-600 dark:ring-offset-gray-800" required />
+                        </div>
+                        <label for="remember" class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-300">Remember me</label>
+                    </div>
+                    <button type="submit" class="w-full text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800">Login to your account</button>
+                </form>
+            </div>
+
+            <!-- Modals -->
+            <h3 class="heading-2">Modals</h3>
+            <div class="card mb-m">
+                <!-- Modal toggle -->
+                <button data-modal-target="default-modal" data-modal-toggle="default-modal" class="block text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800" type="button">
+                  Toggle modal
+                </button>
+
+                <!-- Main modal -->
+                <div id="default-modal" tabindex="-1" aria-hidden="true" class="hidden overflow-y-auto overflow-x-hidden fixed top-0 right-0 left-0 z-50 justify-center items-center w-full md:inset-0 h-[calc(100%-1rem)] max-h-full">
+                    <div class="relative p-4 w-full max-w-2xl max-h-full">
+                        <!-- Modal content -->
+                        <div class="relative bg-white rounded-lg shadow dark:bg-gray-700">
+                            <!-- Modal header -->
+                            <div class="flex items-center justify-between p-4 md:p-5 border-b rounded-t dark:border-gray-600">
+                                <h3 class="text-xl font-semibold text-gray-900 dark:text-white">
+                                    Baseout Modal Title
+                                </h3>
+                                <button type="button" class="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ms-auto inline-flex justify-center items-center dark:hover:bg-gray-600 dark:hover:text-white" data-modal-hide="default-modal">
+                                    <svg class="w-3 h-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 14">
+                                        <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"/>
+                                    </svg>
+                                    <span class="sr-only">Close modal</span>
+                                </button>
+                            </div>
+                            <!-- Modal body -->
+                            <div class="p-4 md:p-5 space-y-4">
+                                <p class="text-base leading-relaxed text-gray-500 dark:text-gray-400">
+                                    This is a sample modal dialog from FlowBite, styled with Baseout's branding. You can use modals for important notifications, forms, or additional information.
+                                </p>
+                                <p class="text-base leading-relaxed text-gray-500 dark:text-gray-400">
+                                   The modal background, text colors, and button styles should align with the overall brand theme.
+                                </p>
+                            </div>
+                            <!-- Modal footer -->
+                            <div class="flex items-center p-4 md:p-5 border-t border-gray-200 rounded-b dark:border-gray-600">
+                                <button data-modal-hide="default-modal" type="button" class="text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:outline-none focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-green-500 dark:hover:bg-green-600 dark:focus:ring-green-800">I accept</button>
+                                <button data-modal-hide="default-modal" type="button" class="py-2.5 px-5 ms-3 text-sm font-medium text-gray-900 focus:outline-none bg-white rounded-lg border border-gray-200 hover:bg-blue-700 hover:text-white focus:z-10 focus:ring-4 focus:ring-gray-100 dark:focus:ring-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:text-white dark:hover:bg-gray-700">Decline</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Tooltips -->
+            <h3 class="heading-2">Tooltips</h3>
+            <div class="card mb-m">
+                 <button data-tooltip-target="tooltip-default" type="button" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800">Hover for Tooltip</button>
+                <div id="tooltip-default" role="tooltip" class="absolute z-10 invisible inline-block px-3 py-2 text-sm font-medium text-white transition-opacity duration-300 bg-gray-900 rounded-lg shadow-sm opacity-0 tooltip dark:bg-gray-700">
+                    Baseout Tooltip Example
+                    <div class="tooltip-arrow" data-popper-arrow></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Voice & Tone -->
+    <section class="section" id="voice">
+        <div class="container">
+            <h2 class="heading-1">Voice & Tone Examples</h2>
+            
+            <div class="grid grid-2">
+                <div>
+                    <h3 class="heading-2">Core Voice</h3>
+                    <p class="body-large">Baseout speaks as a <strong>trusted expert who makes complex things simple</strong>. We're the knowledgeable teammate who always has your back.</p>
+                    
+                    <div class="tone-example">
+                        <div class="tone-label">Marketing Copy</div>
+                        <p class="body-regular mb-0">"Transform your data infrastructure with enterprise-grade solutions that scale with your business."</p>
+                    </div>
+                    
+                    <div class="tone-example">
+                        <div class="tone-label">Product Interface</div>
+                        <p class="body-regular mb-0">"Your data sync is complete. Ready to explore your insights?"</p>
+                    </div>
+                    
+                    <div class="tone-example">
+                        <div class="tone-label">Technical Documentation</div>
+                        <p class="body-regular mb-0">"Configure your API endpoint by adding the baseURL parameter to your initialization object."</p>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="heading-2">Messaging Framework</h3>
+                    <div class="card">
+                        <h4 class="heading-4">Primary Message</h4>
+                        <p class="body-regular">"Build data infrastructure that scales"</p>
+                    </div>
+                    
+                    <div class="card">
+                        <h4 class="heading-4">Value Proposition</h4>
+                        <p class="body-regular">"Transform complex data challenges into competitive advantages"</p>
+                    </div>
+                    
+                    <div class="card">
+                        <h4 class="heading-4">For Technical Teams</h4>
+                        <p class="body-regular mb-0">"Build robust data pipelines with enterprise-grade tools designed by developers, for developers."</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer style="background: var(--charcoal); color: var(--pure-white); padding: var(--space-xl) 0;">
+        <div class="container">
+            <div class="grid grid-3">
+                <div>
+                    <div class="logo" style="color: var(--pure-white); margin-bottom: var(--space-s);">baseout</div>
+                    <p class="body-regular" style="color: var(--light-gray);">Build data infrastructure that scales. Transform complex challenges into competitive advantages.</p>
+                </div>
+                <div>
+                    <h4 class="heading-4" style="color: var(--pure-white);">Guidelines</h4>
+                    <ul style="list-style: none;">
+                        <li style="margin-bottom: var(--space-xs);"><a href="#" style="color: var(--light-gray); text-decoration: none;">Logo Usage</a></li>
+                        <li style="margin-bottom: var(--space-xs);"><a href="#" style="color: var(--light-gray); text-decoration: none;">Color Palette</a></li>
+                        <li style="margin-bottom: var(--space-xs);"><a href="#" style="color: var(--light-gray); text-decoration: none;">Typography</a></li>
+                        <li style="margin-bottom: var(--space-xs);"><a href="#" style="color: var(--light-gray); text-decoration: none;">Iconography</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="heading-4" style="color: var(--pure-white);">Resources</h4>
+                    <ul style="list-style: none;">
+                        <li style="margin-bottom: var(--space-xs);"><a href="#" style="color: var(--light-gray); text-decoration: none;">Brand Assets</a></li>
+                        <li style="margin-bottom: var(--space-xs);"><a href="#" style="color: var(--light-gray); text-decoration: none;">Templates</a></li>
+                        <li style="margin-bottom: var(--space-xs);"><a href="#" style="color: var(--light-gray); text-decoration: none;">Quick Reference</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div style="border-top: 1px solid var(--slate-gray); margin-top: var(--space-m); padding-top: var(--space-m); text-align: center;">
+                <p class="caption" style="color: var(--light-gray);">© 2024 Baseout. Brand guidelines v1.0</p>
+            </div>
+        </div>
+    </footer>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script>
+</body>
+</html> 
