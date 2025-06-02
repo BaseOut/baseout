@@ -1,0 +1,565 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navigation from '../components/Navigation.astro';
+import Footer from '../components/Footer.astro';
+---
+
+<Layout 
+  title="Platforms - BaseOut Enterprise Data Infrastructure"
+  description="Connect your enterprise data infrastructure across multiple platforms. See supported integrations and vote for future platform support."
+>
+  <Navigation />
+  
+  <!-- Hero Section -->
+  <section class="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white py-24">
+    <div class="absolute inset-0">
+      <div class="absolute inset-0 bg-gradient-to-br from-slate-900/30 via-slate-800/20 to-slate-900/30"></div>
+      <div class="absolute inset-0 opacity-20">
+        <div class="absolute top-10 -left-10 w-96 h-96 rounded-full filter blur-3xl" style="background: linear-gradient(135deg, #2D5A5A, #4A7C7C);"></div>
+        <div class="absolute bottom-10 -right-10 w-80 h-80 rounded-full filter blur-3xl" style="background: linear-gradient(135deg, #3D6B3D, #D17A3A);"></div>
+      </div>
+    </div>
+
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 z-10">
+      <div class="text-center max-w-4xl mx-auto">
+        <div class="inline-flex items-center px-6 py-3 rounded-full backdrop-blur-sm border text-sm font-medium mb-8 shadow-lg" style="background: linear-gradient(135deg, rgba(45, 90, 90, 0.3), rgba(74, 124, 124, 0.4)); border-color: rgba(255, 255, 255, 0.3); color: #FFFFFF !important; font-family: 'Inter', sans-serif;">
+          <span class="w-2 h-2 rounded-full mr-3 animate-pulse" style="background-color: #4ADE80 !important;"></span>
+          Platform Integrations
+        </div>
+
+        <h1 class="font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight mb-6" style="font-family: 'Outfit', sans-serif; color: white !important;">
+          <span class="block" style="color: white !important;">Connect Every</span>
+          <span class="block" style="background: linear-gradient(135deg, #4ADE80, #22D3EE, #F59E0B); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; color: transparent;">
+            Platform You Use
+          </span>
+        </h1>
+
+        <p class="font-primary text-xl leading-relaxed mb-12 max-w-3xl mx-auto" style="font-family: 'Inter', sans-serif; color: rgba(255, 255, 255, 0.95) !important;">
+          BaseOut seamlessly integrates with your existing tools and platforms. See what's supported now and vote for future integrations.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Currently Supported Platforms -->
+  <section class="py-24 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16">
+        <div class="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium mb-6 shadow-lg" style="background: linear-gradient(135deg, #2D5A5A20, #4A7C7C20); border: 1px solid #4A7C7C30; color: #2D5A5A; font-family: 'Inter', sans-serif;">
+          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+          </svg>
+          Ready to Use
+        </div>
+        
+        <h2 class="font-display text-4xl sm:text-5xl font-bold mb-6" style="color: #1f2937; font-family: 'Outfit', sans-serif;">
+          Currently Supported
+          <span class="bg-gradient-to-r bg-clip-text " style="background: linear-gradient(135deg, #2D5A5A, #4A7C7C);">
+            Platforms
+          </span>
+        </h2>
+        
+        <p class="font-primary text-xl text-gray-600 max-w-3xl mx-auto" style="font-family: 'Inter', sans-serif;">
+          Start using these platforms immediately with full BaseOut integration and enterprise-grade reliability.
+        </p>
+      </div>
+
+      <!-- Supported Platforms Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+        <!-- Airtable -->
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-orange-100 to-red-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <svg class="w-8 h-8 text-orange-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">Airtable</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">Full database sync and real-time updates</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <span class="w-2 h-2 rounded-full bg-green-400 mr-2"></span>
+              Active
+            </span>
+          </div>
+        </div>
+
+        <!-- More supported platforms... -->
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <svg class="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M4.5 12.75l6 6 9-13.5"/>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">PostgreSQL</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">Enterprise database integration</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <span class="w-2 h-2 rounded-full bg-green-400 mr-2"></span>
+              Active
+            </span>
+          </div>
+        </div>
+
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <svg class="w-8 h-8 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">MySQL</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">Reliable database connectivity</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <span class="w-2 h-2 rounded-full bg-green-400 mr-2"></span>
+              Active
+            </span>
+          </div>
+        </div>
+
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <svg class="w-8 h-8 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">REST APIs</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">Custom API integrations</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <span class="w-2 h-2 rounded-full bg-green-400 mr-2"></span>
+              Active
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Future Platforms -->
+  <section class="py-24 bg-gray-50">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="text-center mb-16">
+        <div class="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium mb-6 shadow-lg" style="background: linear-gradient(135deg, rgba(249, 115, 22, 0.1), rgba(234, 88, 12, 0.15)); border: 1px solid rgba(249, 115, 22, 0.3); color: #EA580C; font-family: 'Inter', sans-serif;">
+          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+          </svg>
+          Coming Soon
+        </div>
+        
+        <h2 class="font-display text-4xl sm:text-5xl font-bold mb-6" style="color: #1f2937; font-family: 'Outfit', sans-serif;">
+          Vote for Future
+          <span class="bg-gradient-to-r bg-clip-text " style="background: linear-gradient(135deg, #EA580C, #F59E0B);">
+            Platform Support
+          </span>
+        </h2>
+        
+        <p class="font-primary text-xl text-gray-600 max-w-3xl mx-auto" style="font-family: 'Inter', sans-serif;">
+          Help us prioritize which platforms to support next. Click on any platform to vote and get notified when it's ready.
+        </p>
+      </div>
+
+      <!-- Future Platforms Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+        <!-- Notion -->
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer platform-vote" data-platform="Notion">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <svg class="w-8 h-8 text-gray-700" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M4.459 4.208c.746.606 1.026.56 2.428.466l13.215-.793c.28 0 .047-.28-.046-.326L17.86 1.968c-.42-.326-.981-.7-2.055-.607L3.01 2.295c-.466.046-.56.28-.374.466zm.793 3.08v13.904c0 .747.373 1.027 1.214.98l14.523-.84c.841-.046.935-.56.935-1.167V6.354c0-.606-.233-.933-.748-.887l-15.177.887c-.56.047-.747.327-.747.933zm14.337.745c.093.42 0 .84-.42.888l-.7.14v10.264c-.608.327-1.168.514-1.635.514-.748 0-.935-.234-1.495-.933l-4.577-7.186v6.952L12.21 19s0 .84-1.168.84l-3.222.186c-.093-.186 0-.653.327-.746l.84-.233V9.854L7.822 9.76c-.094-.42.14-1.026.793-1.073l3.456-.233 4.764 7.279v-6.44l-1.215-.139c-.093-.514.28-.887.747-.933zM1.936 1.035l13.31-.98c1.634-.14 2.055-.047 3.082.7l4.249 2.986c.7.513.934.653.934 1.213v16.378c0 1.026-.373 1.634-1.68 1.726l-15.458.934c-.98.047-1.448-.093-1.962-.747l-3.129-4.06c-.56-.747-.793-1.306-.793-1.96V2.667c0-.839.374-1.54 1.447-1.632z"/>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">Notion</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">Knowledge base and documentation sync</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+              <span class="w-2 h-2 rounded-full bg-orange-400 mr-2"></span>
+              Vote to prioritize
+            </span>
+          </div>
+        </div>
+
+        <!-- Google Sheets -->
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer platform-vote" data-platform="Google Sheets">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <svg class="w-8 h-8 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M19.5 3H4.5C3.12 3 2 4.12 2 5.5v13C2 19.88 3.12 21 4.5 21h15c1.38 0 2.5-1.12 2.5-2.5v-13C22 4.12 20.88 3 19.5 3zM18 18H6V6h12v12z"/>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">Google Sheets</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">Spreadsheet data synchronization</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+              <span class="w-2 h-2 rounded-full bg-orange-400 mr-2"></span>
+              Vote to prioritize
+            </span>
+          </div>
+        </div>
+
+        <!-- Salesforce -->
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer platform-vote" data-platform="Salesforce">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <svg class="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M8.5 11.5c-.3 0-.5-.2-.5-.5s.2-.5.5-.5.5.2.5.5-.2.5-.5.5z"/>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">Salesforce</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">CRM and sales data integration</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+              <span class="w-2 h-2 rounded-full bg-orange-400 mr-2"></span>
+              Vote to prioritize
+            </span>
+          </div>
+        </div>
+
+        <!-- HubSpot -->
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer platform-vote" data-platform="HubSpot">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-orange-100 to-red-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <svg class="w-8 h-8 text-orange-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">HubSpot</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">Marketing and sales automation</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+              <span class="w-2 h-2 rounded-full bg-orange-400 mr-2"></span>
+              Vote to prioritize
+            </span>
+          </div>
+        </div>
+
+        <!-- Monday.com -->
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer platform-vote" data-platform="Monday.com">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-100 to-pink-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <svg class="w-8 h-8 text-purple-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">Monday.com</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">Project management workflows</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+              <span class="w-2 h-2 rounded-full bg-orange-400 mr-2"></span>
+              Vote to prioritize
+            </span>
+          </div>
+        </div>
+
+        <!-- Slack -->
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer platform-vote" data-platform="Slack">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-green-100 to-teal-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <svg class="w-8 h-8 text-green-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313z"/>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">Slack</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">Team communication and alerts</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+              <span class="w-2 h-2 rounded-full bg-orange-400 mr-2"></span>
+              Vote to prioritize
+            </span>
+          </div>
+        </div>
+
+        <!-- Jira -->
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer platform-vote" data-platform="Jira">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-100 to-indigo-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <svg class="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M11.53 2c0 2.4 1.97 4.37 4.37 4.37h1.69c2.4 0 4.37 1.97 4.37 4.37s-1.97 4.37-4.37 4.37H16.9c-2.4 0-4.37-1.97-4.37-4.37V2z"/>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">Jira</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">Issue tracking and agile workflows</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+              <span class="w-2 h-2 rounded-full bg-orange-400 mr-2"></span>
+              Vote to prioritize
+            </span>
+          </div>
+        </div>
+
+        <!-- Trello -->
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border border-gray-100 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer platform-vote" data-platform="Trello">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-blue-100 to-cyan-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+              <svg class="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M3 3h18a3 3 0 013 3v12a3 3 0 01-3 3H3a3 3 0 01-3-3V6a3 3 0 013-3zm2 4v8h4V7H5zm8 0v5h4V7h-4z"/>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">Trello</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">Kanban board management</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+              <span class="w-2 h-2 rounded-full bg-orange-400 mr-2"></span>
+              Vote to prioritize
+            </span>
+          </div>
+        </div>
+
+        <!-- Suggest a Platform -->
+        <div class="group bg-white rounded-2xl p-8 shadow-lg border-2 border-dashed border-gray-300 hover:border-orange-400 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer platform-suggest" data-platform="Custom Platform">
+          <div class="flex flex-col items-center text-center">
+            <div class="w-16 h-16 rounded-xl bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-dashed border-gray-300 group-hover:border-orange-400 flex items-center justify-center mb-4 group-hover:scale-110 transition-all duration-300">
+              <svg class="w-8 h-8 text-gray-500 group-hover:text-orange-500 transition-colors duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+              </svg>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;">Suggest a Platform</h3>
+            <p class="text-sm text-gray-600 mb-4" style="font-family: 'Inter', sans-serif;">Don't see your platform? Let us know!</p>
+            <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700 group-hover:bg-orange-100 group-hover:text-orange-800 transition-colors duration-300">
+              <span class="w-2 h-2 rounded-full bg-gray-400 group-hover:bg-orange-400 mr-2 transition-colors duration-300"></span>
+              Suggest new platform
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Modal for Platform Voting -->
+  <div id="voting-modal" class="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-50 hidden">
+    <div class="flex items-center justify-center min-h-screen p-4 w-full">
+      <div class="bg-white rounded-3xl shadow-2xl max-w-md w-full mx-auto p-8 transform scale-95 transition-all duration-300">
+        <div class="text-center">
+          <div class="w-16 h-16 bg-gradient-to-br from-orange-100 to-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <svg class="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+            </svg>
+          </div>
+          
+          <h3 class="text-2xl font-bold text-gray-900 mb-2" style="font-family: 'Outfit', sans-serif;" id="modal-platform-name">Platform Name</h3>
+          <p class="text-gray-600 mb-8" style="font-family: 'Inter', sans-serif;" id="modal-description">Help us prioritize this platform integration. We'll notify you when it's ready!</p>
+          
+          <form id="platform-vote-form" class="space-y-6">
+            <!-- Platform Name Field (hidden by default, shown for custom suggestions) -->
+            <div id="platform-name-field" class="hidden">
+              <label for="platform-name" class="block text-sm font-medium text-gray-700 mb-2" style="font-family: 'Inter', sans-serif;">Platform Name</label>
+              <input 
+                type="text" 
+                id="platform-name" 
+                name="platformName" 
+                class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
+                placeholder="e.g., Zapier, Airtable, etc."
+                style="font-family: 'Inter', sans-serif;"
+              />
+            </div>
+
+            <!-- Platform Website Field (hidden by default, shown for custom suggestions) -->
+            <div id="platform-website-field" class="hidden">
+              <label for="platform-website" class="block text-sm font-medium text-gray-700 mb-2" style="font-family: 'Inter', sans-serif;">Platform Website</label>
+              <input 
+                type="url" 
+                id="platform-website" 
+                name="platformWebsite" 
+                class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
+                placeholder="https://example.com"
+                style="font-family: 'Inter', sans-serif;"
+              />
+            </div>
+            
+            <div>
+              <label for="voter-email" class="block text-sm font-medium text-gray-700 mb-2" style="font-family: 'Inter', sans-serif;">Email Address</label>
+              <input 
+                type="email" 
+                id="voter-email" 
+                name="email" 
+                required
+                class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
+                placeholder="your@email.com"
+                style="font-family: 'Inter', sans-serif;"
+              />
+            </div>
+            
+            <div>
+              <label for="use-case" class="block text-sm font-medium text-gray-700 mb-2" style="font-family: 'Inter', sans-serif;" id="use-case-label">How would you use this integration? (Optional)</label>
+              <textarea 
+                id="use-case" 
+                name="useCase" 
+                rows="3"
+                class="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200 resize-none"
+                placeholder="Tell us about your use case..."
+                style="font-family: 'Inter', sans-serif;"
+              ></textarea>
+            </div>
+            
+            <div class="flex gap-4">
+              <button 
+                type="button" 
+                id="close-modal"
+                class="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all duration-200 font-semibold cursor-pointer"
+                style="font-family: 'Inter', sans-serif;"
+              >
+                Cancel
+              </button>
+              <button 
+                type="submit"
+                class="flex-1 px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl hover:from-orange-600 hover:to-red-600 transition-all duration-200 font-semibold shadow-lg cursor-pointer"
+                style="font-family: 'Inter', sans-serif;"
+                id="submit-button"
+              >
+                Vote & Get Notified
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <Footer />
+</Layout>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+  
+  /* Modal animation */
+  #voting-modal.show {
+    display: flex !important;
+  }
+  
+  #voting-modal.show > div > div {
+    transform: scale(1);
+  }
+  
+  /* Platform card hover effects */
+  .platform-vote:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  }
+</style>
+
+<script>
+  // Platform voting modal functionality
+  document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('voting-modal');
+    const closeModalBtn = document.getElementById('close-modal');
+    const platformCards = document.querySelectorAll('.platform-vote');
+    const platformSuggestCard = document.querySelector('.platform-suggest');
+    const modalPlatformName = document.getElementById('modal-platform-name');
+    const modalDescription = document.getElementById('modal-description');
+    const votingForm = document.getElementById('platform-vote-form') as HTMLFormElement;
+    const platformNameField = document.getElementById('platform-name-field');
+    const platformWebsiteField = document.getElementById('platform-website-field');
+    const platformNameInput = document.getElementById('platform-name') as HTMLInputElement;
+    const platformWebsiteInput = document.getElementById('platform-website') as HTMLInputElement;
+    const useCaseLabel = document.getElementById('use-case-label');
+    const submitButton = document.getElementById('submit-button');
+    
+    if (!modal || !closeModalBtn || !modalPlatformName || !votingForm || !modalDescription || 
+        !platformNameField || !platformWebsiteField || !useCaseLabel || !submitButton) {
+      console.error('Required elements not found');
+      return;
+    }
+    
+    let selectedPlatform = '';
+    let isCustomSuggestion = false;
+    
+    // Open modal for existing platforms
+    platformCards.forEach(card => {
+      card.addEventListener('click', function() {
+        selectedPlatform = this.getAttribute('data-platform') || '';
+        isCustomSuggestion = false;
+        
+        // Set up modal for existing platform voting
+        modalPlatformName.textContent = selectedPlatform;
+        modalDescription.textContent = "Help us prioritize this platform integration. We'll notify you when it's ready!";
+        useCaseLabel.textContent = "How would you use this integration? (Optional)";
+        submitButton.textContent = "Vote & Get Notified";
+        
+        // Hide custom fields
+        platformNameField.classList.add('hidden');
+        platformWebsiteField.classList.add('hidden');
+        platformNameInput.required = false;
+        platformWebsiteInput.required = false;
+        
+        modal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+      });
+    });
+    
+    // Open modal for custom platform suggestion
+    if (platformSuggestCard) {
+      platformSuggestCard.addEventListener('click', function() {
+        selectedPlatform = 'Custom Platform Suggestion';
+        isCustomSuggestion = true;
+        
+        // Set up modal for custom platform suggestion
+        modalPlatformName.textContent = "Suggest a Platform";
+        modalDescription.textContent = "Tell us about a platform you'd like us to integrate with. We'll review your suggestion and notify you of our progress!";
+        useCaseLabel.textContent = "How would you use this platform? (Optional)";
+        submitButton.textContent = "Submit Suggestion";
+        
+        // Show custom fields
+        platformNameField.classList.remove('hidden');
+        platformWebsiteField.classList.remove('hidden');
+        platformNameInput.required = true;
+        platformWebsiteInput.required = false; // Website is optional
+        
+        modal.classList.add('show');
+        document.body.style.overflow = 'hidden';
+      });
+    }
+    
+    // Close modal
+    function closeModal() {
+      if (modal) {
+        modal.classList.remove('show');
+        document.body.style.overflow = 'auto';
+        votingForm.reset();
+        
+        // Reset custom fields
+        platformNameField.classList.add('hidden');
+        platformWebsiteField.classList.add('hidden');
+        platformNameInput.required = false;
+        platformWebsiteInput.required = false;
+      }
+    }
+    
+    closeModalBtn.addEventListener('click', closeModal);
+    
+    // Close modal when clicking outside
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) {
+        closeModal();
+      }
+    });
+    
+    // Handle form submission
+    votingForm.addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      const formData = new FormData(votingForm);
+      const voteData: any = {
+        platform: selectedPlatform,
+        email: formData.get('email'),
+        useCase: formData.get('useCase'),
+        isCustomSuggestion: isCustomSuggestion
+      };
+      
+      // Add custom platform fields if it's a suggestion
+      if (isCustomSuggestion) {
+        voteData.platformName = formData.get('platformName');
+        voteData.platformWebsite = formData.get('platformWebsite');
+      }
+      
+      // Here you would typically send the data to your backend
+      console.log('Platform vote/suggestion submitted:', voteData);
+      
+      // Show success message
+      const successMessage = isCustomSuggestion 
+        ? `Thank you for suggesting ${formData.get('platformName')}! We'll review your suggestion and notify you of our progress.`
+        : `Thank you for voting for ${selectedPlatform}! We'll notify you when it's ready.`;
+      
+      alert(successMessage);
+      
+      closeModal();
+    });
+    
+    // Escape key to close modal
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape' && modal && modal.classList.contains('show')) {
+        closeModal();
+      }
+    });
+  });
+</script> 

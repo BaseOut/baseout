@@ -1,0 +1,388 @@
+---
+interface Props {
+  showToggle?: boolean;
+  showCTA?: boolean;
+  title?: string;
+  subtitle?: string;
+}
+
+const { 
+  showToggle = true, 
+  showCTA = true, 
+  title = "Simple, Transparent Pricing",
+  subtitle = "Start with a 14-day free trial, then choose the plan that grows with your data needs."
+} = Astro.props;
+---
+
+<div class="max-w-7xl mx-auto container-padding">
+  <!-- Section header -->
+  {(title || subtitle || showToggle) && (
+    <div class="text-center mb-16 animate-on-scroll">
+      {title && (
+        <h2 class="text-h1 text-charcoal mb-4">
+          {title}
+        </h2>
+      )}
+      {subtitle && (
+        <p class="text-xl text-slate max-w-3xl mx-auto mb-8">
+          {subtitle}
+        </p>
+      )}
+      
+      <!-- Pricing Toggle -->
+      {showToggle && (
+        <div class="flex items-center justify-center space-x-4 mb-8">
+          <span class="text-lg font-medium text-slate" id="monthly-label">Monthly</span>
+          <div class="relative">
+            <button 
+              id="pricing-toggle" 
+              class="relative inline-flex h-8 w-16 items-center rounded-full bg-teal-600 transition-colors focus:outline-none focus:ring-2 focus:ring-teal-600 focus:ring-offset-2" 
+              role="switch" 
+              aria-checked="true"
+              onclick="togglePricing()"
+            >
+              <span 
+                id="toggle-indicator"
+                class="inline-block h-6 w-6 transform rounded-full bg-white shadow-lg transition-transform translate-x-9"
+              ></span>
+            </button>
+          </div>
+          <span class="text-lg font-medium text-charcoal" id="annual-label">
+            Annual 
+            <span class="inline-block ml-1 px-2 py-1 text-xs font-semibold text-white bg-green-600 rounded-full">
+              2 months free
+            </span>
+          </span>
+        </div>
+      )}
+    </div>
+  )}
+
+  <!-- Pricing cards -->
+  <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
+    <!-- Launch Plan -->
+    <div class="pricing-card animate-on-scroll">
+      <div class="text-center mb-8">
+        <h3 class="text-h3 text-charcoal mb-2">Launch</h3>
+        <p class="text-slate mb-4">Perfect for getting started</p>
+        <div class="text-4xl font-bold text-baseout-teal mb-1">
+          <span id="launch-price">$99</span>
+        </div>
+        <div class="text-slate text-sm">
+          <span id="launch-period">/month (billed annually)</span>
+        </div>
+        <div class="text-xs text-baseout-mountain mt-1">
+          <span id="launch-savings">Save $240/year</span>
+        </div>
+      </div>
+      
+      <ul class="space-y-3 mb-8 text-sm">
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          25 bases
+        </li>
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          4-hour sync
+        </li>
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          50GB storage
+        </li>
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          Email support
+        </li>
+      </ul>
+      
+      <a href="/signup?plan=launch" class="w-full btn-secondary">
+        Start Free Trial
+      </a>
+    </div>
+
+    <!-- Scale Plan -->
+    <div class="pricing-card featured animate-on-scroll">
+      <div class="text-center mb-8">
+        <h3 class="text-h3 text-charcoal mb-2">Scale</h3>
+        <p class="text-slate mb-4">For growing businesses</p>
+        <div class="text-4xl font-bold text-baseout-teal mb-1">
+          <span id="scale-price">$299</span>
+        </div>
+        <div class="text-slate text-sm">
+          <span id="scale-period">/month (billed annually)</span>
+        </div>
+        <div class="text-xs text-baseout-mountain mt-1">
+          <span id="scale-savings">Save $720/year</span>
+        </div>
+      </div>
+      
+      <ul class="space-y-3 mb-8 text-sm">
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          100 bases
+        </li>
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          1-hour sync
+        </li>
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          250GB storage
+        </li>
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          Advanced analytics
+        </li>
+      </ul>
+      
+      <a href="/signup?plan=scale" class="w-full btn-primary">
+        Start Free Trial
+      </a>
+    </div>
+
+    <!-- Impact Plan -->
+    <div class="pricing-card animate-on-scroll">
+      <div class="text-center mb-8">
+        <h3 class="text-h3 text-charcoal mb-2">Impact</h3>
+        <p class="text-slate mb-4">For large organizations</p>
+        <div class="text-4xl font-bold text-baseout-teal mb-1">
+          <span id="impact-price">$599</span>
+        </div>
+        <div class="text-slate text-sm">
+          <span id="impact-period">/month (billed annually)</span>
+        </div>
+        <div class="text-xs text-baseout-mountain mt-1">
+          <span id="impact-savings">Save $1,440/year</span>
+        </div>
+      </div>
+      
+      <ul class="space-y-3 mb-8 text-sm">
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          500 bases
+        </li>
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          15-minute sync
+        </li>
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          1TB storage
+        </li>
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          AI insights
+        </li>
+      </ul>
+      
+      <a href="/signup?plan=impact" class="w-full btn-secondary">
+        Start Free Trial
+      </a>
+    </div>
+
+    <!-- Enterprise Plan -->
+    <div class="pricing-card animate-on-scroll">
+      <div class="text-center mb-8">
+        <h3 class="text-h3 text-charcoal mb-2">Enterprise</h3>
+        <p class="text-slate mb-4">For enterprise scale</p>
+        <div class="text-4xl font-bold text-baseout-teal mb-1">Custom</div>
+        <div class="text-slate text-sm">Contact for pricing</div>
+      </div>
+      
+      <ul class="space-y-3 mb-8 text-sm">
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          Unlimited bases
+        </li>
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          Real-time sync
+        </li>
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          5TB+ storage
+        </li>
+        <li class="flex items-center">
+          <svg class="w-4 h-4 text-baseout-mountain mr-3" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
+          </svg>
+          Dedicated support
+        </li>
+      </ul>
+      
+      <a href="/contact" class="w-full btn-secondary">
+        Contact Sales
+      </a>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  {showCTA && (
+    <div class="text-center animate-on-scroll">
+      <p class="text-slate mb-6">All plans include a 14-day free trial with full feature access</p>
+      <a href="/pricing" class="btn-tertiary">
+        View detailed pricing →
+      </a>
+    </div>
+  )}
+</div>
+
+<script is:inline>
+  // Pricing data
+  const pricingData = {
+    launch: {
+      monthly: { price: 119, period: '/month', savings: '' },
+      annual: { price: 99, period: '/month (billed annually)', savings: 'Save $240/year' }
+    },
+    scale: {
+      monthly: { price: 359, period: '/month', savings: '' },
+      annual: { price: 299, period: '/month (billed annually)', savings: 'Save $720/year' }
+    },
+    impact: {
+      monthly: { price: 719, period: '/month', savings: '' },
+      annual: { price: 599, period: '/month (billed annually)', savings: 'Save $1,440/year' }
+    }
+  };
+
+  // Current pricing mode (starts with annual)
+  let isAnnual = true;
+
+  function togglePricing() {
+    isAnnual = !isAnnual;
+    
+    // Update toggle appearance
+    const toggle = document.getElementById('pricing-toggle');
+    const indicator = document.getElementById('toggle-indicator');
+    const monthlyLabel = document.getElementById('monthly-label');
+    const annualLabel = document.getElementById('annual-label');
+    
+    if (!toggle || !indicator || !monthlyLabel || !annualLabel) return;
+    
+    if (isAnnual) {
+      // Annual mode
+      toggle.setAttribute('aria-checked', 'true');
+      toggle.classList.add('bg-teal-600');
+      toggle.classList.remove('bg-gray-300');
+      indicator.classList.add('translate-x-9');
+      indicator.classList.remove('translate-x-1');
+      monthlyLabel.classList.remove('text-charcoal');
+      monthlyLabel.classList.add('text-slate');
+      annualLabel.classList.add('text-charcoal');
+      annualLabel.classList.remove('text-slate');
+    } else {
+      // Monthly mode
+      toggle.setAttribute('aria-checked', 'false');
+      toggle.classList.remove('bg-teal-600');
+      toggle.classList.add('bg-gray-300');
+      indicator.classList.remove('translate-x-9');
+      indicator.classList.add('translate-x-1');
+      monthlyLabel.classList.add('text-charcoal');
+      monthlyLabel.classList.remove('text-slate');
+      annualLabel.classList.remove('text-charcoal');
+      annualLabel.classList.add('text-slate');
+    }
+    
+    // Update pricing display
+    updatePricing();
+  }
+
+  function updatePricing() {
+    const mode = isAnnual ? 'annual' : 'monthly';
+    
+    // Update each plan
+    Object.keys(pricingData).forEach(plan => {
+      const data = pricingData[plan][mode];
+      const priceElement = document.getElementById(`${plan}-price`);
+      const periodElement = document.getElementById(`${plan}-period`);
+      const savingsElement = document.getElementById(`${plan}-savings`);
+      
+      if (priceElement) {
+        priceElement.textContent = `$${data.price}`;
+      }
+      
+      if (periodElement) {
+        periodElement.textContent = data.period;
+      }
+      
+      if (savingsElement) {
+        if (data.savings) {
+          savingsElement.textContent = data.savings;
+          savingsElement.style.display = 'block';
+        } else {
+          savingsElement.style.display = 'none';
+        }
+      }
+    });
+  }
+
+  // Initialize pricing on page load
+  document.addEventListener('DOMContentLoaded', function() {
+    updatePricing();
+  });
+</script>
+
+<style>
+  .pricing-card {
+    background-color: white;
+    border-radius: 1rem;
+    padding: 1.5rem;
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+    border: 1px solid rgb(243 244 246);
+    transition: box-shadow 0.3s ease;
+  }
+  
+  .pricing-card:hover {
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  }
+  
+  .pricing-card.featured {
+    position: relative;
+    ring-width: 2px;
+    ring-color: var(--baseout-teal, #2D5A5A);
+    border: 2px solid var(--baseout-teal, #2D5A5A);
+  }
+  
+  .pricing-card.featured::before {
+    content: 'Most Popular';
+    position: absolute;
+    top: -0.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--baseout-teal, #2D5A5A);
+    color: white;
+    padding: 0.25rem 1rem;
+    border-radius: 9999px;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+</style> 

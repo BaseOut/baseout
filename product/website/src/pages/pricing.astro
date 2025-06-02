@@ -1,0 +1,545 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Navigation from '../components/Navigation.astro';
+import Footer from '../components/Footer.astro';
+import PricingCards from '../components/PricingCards.astro';
+---
+
+<Layout 
+  title="Pricing - BaseOut Enterprise Data Infrastructure"
+  description="Transparent pricing for enterprise-grade Airtable data infrastructure. 14-day free trial with all features included."
+>
+  <Navigation />
+  
+  <!-- Hero Section -->
+  <section class="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white py-24">
+    <div class="absolute inset-0">
+      <div class="absolute inset-0 bg-gradient-to-br from-slate-900/30 via-slate-800/20 to-slate-900/30"></div>
+      <div class="absolute inset-0 opacity-20">
+        <div class="absolute top-10 -left-10 w-96 h-96 rounded-full filter blur-3xl" style="background: linear-gradient(135deg, #2D5A5A, #4A7C7C);"></div>
+        <div class="absolute bottom-10 -right-10 w-80 h-80 rounded-full filter blur-3xl" style="background: linear-gradient(135deg, #3D6B3D, #D17A3A);"></div>
+      </div>
+    </div>
+
+    <div class="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 z-10">
+      <div class="text-center max-w-4xl mx-auto">
+        <div class="inline-flex items-center px-6 py-3 rounded-full backdrop-blur-sm border text-sm font-medium mb-8 shadow-lg" style="background: linear-gradient(135deg, rgba(45, 90, 90, 0.3), rgba(74, 124, 124, 0.4)); border-color: rgba(255, 255, 255, 0.3); color: #FFFFFF !important; font-family: 'Inter', sans-serif;">
+          <span class="w-2 h-2 rounded-full mr-3 animate-pulse" style="background-color: #4ADE80 !important;"></span>
+          Enterprise Pricing Plans
+        </div>
+
+        <h1 class="font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight mb-6" style="font-family: 'Outfit', sans-serif; color: white !important;">
+          <span class="block" style="color: white !important;">Simple, Transparent</span>
+          <span class="block" style="background: linear-gradient(135deg, #4ADE80, #22D3EE, #F59E0B); background-clip: text; -webkit-background-clip: text; -webkit-text-fill-color: transparent; color: transparent;">
+            Enterprise Pricing
+          </span>
+        </h1>
+
+        <p class="font-primary text-xl leading-relaxed mb-12 max-w-3xl mx-auto" style="font-family: 'Inter', sans-serif; color: rgba(255, 255, 255, 0.95) !important;">
+          Start with a 14-day free trial, then choose the plan that scales with your data infrastructure needs. All plans include full feature access.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pricing Plans -->
+  <section class="py-24 bg-gray-50">
+    <PricingCards 
+      showToggle={true}
+      showCTA={false}
+      title=""
+      subtitle=""
+    />
+  </section>
+
+  <!-- Feature Comparison Section -->
+  <section class="py-24 bg-white">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <!-- Section Header -->
+      <div class="text-center mb-16">
+        <div class="inline-flex items-center px-4 py-2 rounded-full text-sm font-medium mb-6 shadow-lg" style="background: linear-gradient(135deg, #2D5A5A20, #4A7C7C20); border: 1px solid #4A7C7C30; color: #2D5A5A; font-family: 'Inter', sans-serif;">
+          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+          </svg>
+          Complete Feature Comparison
+        </div>
+        
+        <h2 class="font-display text-4xl sm:text-5xl font-bold mb-6" style="color: #1f2937; font-family: 'Outfit', sans-serif;">
+          Choose the Right Plan for
+          <span class="bg-gradient-to-r bg-clip-text " style="background: linear-gradient(135deg, #2D5A5A, #4A7C7C);">
+            Your Enterprise
+          </span>
+        </h2>
+        
+        <p class="font-primary text-xl text-gray-600 max-w-3xl mx-auto" style="font-family: 'Inter', sans-serif;">
+          Compare all features across our enterprise-grade plans to find the perfect fit for your data infrastructure needs.
+        </p>
+      </div>
+
+      <!-- Feature Comparison Table -->
+      <div class="relative">
+        <!-- Table Container -->
+        <div class="bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full">
+              <!-- Header -->
+              <thead>
+                <tr class="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900">
+                  <th class="text-left py-8 px-8 font-bold text-white text-lg tracking-wide" style="font-family: 'Outfit', sans-serif;">
+                    Features & Benefits
+                  </th>
+                  <th class="text-center py-8 px-6 font-bold text-white text-lg" style="font-family: 'Outfit', sans-serif;">
+                    <div class="flex flex-col items-center space-y-2">
+                      <span>Launch</span>
+                      <span class="text-sm font-normal text-gray-300">Starter</span>
+                    </div>
+                  </th>
+                  <th class="text-center py-8 px-6 font-bold text-white text-lg scale-header" style="font-family: 'Outfit', sans-serif;">
+                    <div class="flex flex-col items-center space-y-2">
+                      <span>Scale</span>
+                      <span class="text-sm font-normal text-gray-300">Growth</span>
+                    </div>
+                  </th>
+                  <th class="text-center py-8 px-6 font-bold text-white text-lg" style="font-family: 'Outfit', sans-serif;">
+                    <div class="flex flex-col items-center space-y-2">
+                      <span>Impact</span>
+                      <span class="text-sm font-normal text-gray-300">Enterprise</span>
+                    </div>
+                  </th>
+                  <th class="text-center py-8 px-6 font-bold text-white text-lg" style="font-family: 'Outfit', sans-serif;">
+                    <div class="flex flex-col items-center space-y-2">
+                      <span>Enterprise</span>
+                      <span class="text-sm font-normal text-gray-300">Custom</span>
+                    </div>
+                  </th>
+                </tr>
+              </thead>
+              
+              <tbody>
+                <!-- Pricing Section -->
+                <tr class="bg-gradient-to-r from-teal-50 to-blue-50">
+                  <td colspan="5" class="py-6 px-8">
+                    <div class="flex items-center space-x-3">
+                      <div class="w-3 h-3 rounded-full bg-gradient-to-r from-teal-500 to-blue-500"></div>
+                      <h3 class="text-xl font-bold text-slate-900" style="font-family: 'Outfit', sans-serif;">Pricing Plans</h3>
+                    </div>
+                  </td>
+                </tr>
+                
+                <tr class="group hover:bg-gray-50/50 transition-all duration-200">
+                  <td class="py-6 px-8 font-semibold text-slate-800" style="font-family: 'Inter', sans-serif;">
+                    <div class="flex items-center space-x-3">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"></path>
+                      </svg>
+                      <span>Monthly Pricing</span>
+                    </div>
+                  </td>
+                  <td class="py-6 px-6 text-center">
+                    <div class="font-bold text-2xl text-slate-900" style="font-family: 'Outfit', sans-serif;">$119</div>
+                    <div class="text-sm text-slate-500">per month</div>
+                  </td>
+                  <td class="py-6 px-6 text-center scale-cell">
+                    <div class="font-bold text-2xl text-slate-900" style="font-family: 'Outfit', sans-serif;">$359</div>
+                    <div class="text-sm text-slate-500">per month</div>
+                  </td>
+                  <td class="py-6 px-6 text-center">
+                    <div class="font-bold text-2xl text-slate-900" style="font-family: 'Outfit', sans-serif;">$719</div>
+                    <div class="text-sm text-slate-500">per month</div>
+                  </td>
+                  <td class="py-6 px-6 text-center">
+                    <div class="font-bold text-2xl text-slate-900" style="font-family: 'Outfit', sans-serif;">Custom</div>
+                    <div class="text-sm text-slate-500">contact sales</div>
+                  </td>
+                </tr>
+                
+                <tr class="group hover:bg-gray-50/50 transition-all duration-200 border-b border-gray-100">
+                  <td class="py-6 px-8 font-semibold text-slate-800" style="font-family: 'Inter', sans-serif;">
+                    <div class="flex items-center space-x-3">
+                      <svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                      </svg>
+                      <span>Annual Pricing</span>
+                      <span class="bg-gradient-to-r from-green-100 to-emerald-100 text-green-800 text-xs px-2 py-1 rounded-full font-medium">Save 20%</span>
+                    </div>
+                  </td>
+                  <td class="py-6 px-6 text-center">
+                    <div class="font-bold text-2xl text-orange-600" style="font-family: 'Outfit', sans-serif;">$99</div>
+                    <div class="text-sm text-slate-500">per month</div>
+                  </td>
+                  <td class="py-6 px-6 text-center scale-cell">
+                    <div class="font-bold text-2xl text-orange-600" style="font-family: 'Outfit', sans-serif;">$299</div>
+                    <div class="text-sm text-slate-500">per month</div>
+                  </td>
+                  <td class="py-6 px-6 text-center">
+                    <div class="font-bold text-2xl text-orange-600" style="font-family: 'Outfit', sans-serif;">$599</div>
+                    <div class="text-sm text-slate-500">per month</div>
+                  </td>
+                  <td class="py-6 px-6 text-center">
+                    <div class="font-bold text-2xl text-orange-600" style="font-family: 'Outfit', sans-serif;">Custom</div>
+                    <div class="text-sm text-slate-500">contact sales</div>
+                  </td>
+                </tr>
+
+                <!-- Core Infrastructure -->
+                <tr class="bg-gradient-to-r from-slate-50 to-gray-50">
+                  <td colspan="5" class="py-6 px-8">
+                    <div class="flex items-center space-x-3">
+                      <div class="w-3 h-3 rounded-full bg-gradient-to-r from-slate-600 to-slate-800"></div>
+                      <h3 class="text-xl font-bold text-slate-900" style="font-family: 'Outfit', sans-serif;">Core Infrastructure</h3>
+                    </div>
+                  </td>
+                </tr>
+                
+                <tr class="group hover:bg-gray-50/50 transition-all duration-200">
+                  <td class="py-5 px-8 text-slate-700" style="font-family: 'Inter', sans-serif;">
+                    <div class="flex items-center space-x-3">
+                      <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"></path>
+                      </svg>
+                      <span class="font-medium">Connected Bases</span>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">25</span>
+                  </td>
+                  <td class="py-5 px-6 text-center scale-cell">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">100</span>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">500</span>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-800">Unlimited</span>
+                  </td>
+                </tr>
+                
+                <tr class="group hover:bg-gray-50/50 transition-all duration-200">
+                  <td class="py-5 px-8 text-slate-700" style="font-family: 'Inter', sans-serif;">
+                    <div class="flex items-center space-x-3">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                      </svg>
+                      <span class="font-medium">Sync Frequency</span>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-amber-100 text-amber-800">4 hours</span>
+                  </td>
+                  <td class="py-5 px-6 text-center scale-cell">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">1 hour</span>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">15 min</span>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gradient-to-r from-emerald-100 to-green-100 text-emerald-800">Real-time</span>
+                  </td>
+                </tr>
+                
+                <tr class="group hover:bg-gray-50/50 transition-all duration-200">
+                  <td class="py-5 px-8 text-slate-700" style="font-family: 'Inter', sans-serif;">
+                    <div class="flex items-center space-x-3">
+                      <svg class="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
+                      </svg>
+                      <span class="font-medium">Backup Storage</span>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">50GB</span>
+                  </td>
+                  <td class="py-5 px-6 text-center scale-cell">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">250GB</span>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">1TB</span>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-800">5TB+</span>
+                  </td>
+                </tr>
+
+                <!-- Advanced Features -->
+                <tr class="bg-gradient-to-r from-indigo-50 to-purple-50">
+                  <td colspan="5" class="py-6 px-8">
+                    <div class="flex items-center space-x-3">
+                      <div class="w-3 h-3 rounded-full bg-gradient-to-r from-indigo-500 to-purple-500"></div>
+                      <h3 class="text-xl font-bold text-slate-900" style="font-family: 'Outfit', sans-serif;">Advanced Features</h3>
+                    </div>
+                  </td>
+                </tr>
+                
+                <tr class="group hover:bg-gray-50/50 transition-all duration-200">
+                  <td class="py-5 px-8 text-slate-700" style="font-family: 'Inter', sans-serif;">
+                    <div class="flex items-center space-x-3">
+                      <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                      </svg>
+                      <span class="font-medium">Advanced Analytics</span>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100">
+                      <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center scale-cell">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                  </td>
+                </tr>
+                
+                <tr class="group hover:bg-gray-50/50 transition-all duration-200">
+                  <td class="py-5 px-8 text-slate-700" style="font-family: 'Inter', sans-serif;">
+                    <div class="flex items-center space-x-3">
+                      <svg class="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                      </svg>
+                      <span class="font-medium">AI-Powered Insights</span>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100">
+                      <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center scale-cell">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100">
+                      <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Security & Compliance -->
+                <tr class="bg-gradient-to-r from-red-50 to-pink-50">
+                  <td colspan="5" class="py-6 px-8">
+                    <div class="flex items-center space-x-3">
+                      <div class="w-3 h-3 rounded-full bg-gradient-to-r from-red-500 to-pink-500"></div>
+                      <h3 class="text-xl font-bold text-slate-900" style="font-family: 'Outfit', sans-serif;">Security & Compliance</h3>
+                    </div>
+                  </td>
+                </tr>
+                
+                <tr class="group hover:bg-gray-50/50 transition-all duration-200">
+                  <td class="py-5 px-8 text-slate-700" style="font-family: 'Inter', sans-serif;">
+                    <div class="flex items-center space-x-3">
+                      <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                      </svg>
+                      <span class="font-medium">SOC 2 Type II Compliance</span>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center scale-cell">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                  </td>
+                </tr>
+                
+                <tr class="group hover:bg-gray-50/50 transition-all duration-200">
+                  <td class="py-5 px-8 text-slate-700" style="font-family: 'Inter', sans-serif;">
+                    <div class="flex items-center space-x-3">
+                      <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path>
+                      </svg>
+                      <span class="font-medium">Single Sign-On (SSO)</span>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100">
+                      <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                      </svg>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center scale-cell">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <div class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-green-100">
+                      <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                      </svg>
+                    </div>
+                  </td>
+                </tr>
+
+                <!-- Support -->
+                <tr class="bg-gradient-to-r from-emerald-50 to-teal-50">
+                  <td colspan="5" class="py-6 px-8">
+                    <div class="flex items-center space-x-3">
+                      <div class="w-3 h-3 rounded-full bg-gradient-to-r from-emerald-500 to-teal-500"></div>
+                      <h3 class="text-xl font-bold text-slate-900" style="font-family: 'Outfit', sans-serif;">Support & SLA</h3>
+                    </div>
+                  </td>
+                </tr>
+                
+                <tr class="group hover:bg-gray-50/50 transition-all duration-200">
+                  <td class="py-5 px-8 text-slate-700" style="font-family: 'Inter', sans-serif;">
+                    <div class="flex items-center space-x-3">
+                      <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192L5.636 18.364M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                      </svg>
+                      <span class="font-medium">Support Response Time</span>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">24 hours</span>
+                  </td>
+                  <td class="py-5 px-6 text-center scale-cell">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800">4 hours</span>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">2 hours</span>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gradient-to-r from-emerald-100 to-green-100 text-emerald-800">30 min</span>
+                  </td>
+                </tr>
+                
+                <tr class="group hover:bg-gray-50/50 transition-all duration-200 border-b border-gray-100">
+                  <td class="py-5 px-8 text-slate-700" style="font-family: 'Inter', sans-serif;">
+                    <div class="flex items-center space-x-3">
+                      <svg class="w-5 h-5 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"></path>
+                      </svg>
+                      <span class="font-medium">Uptime SLA Guarantee</span>
+                    </div>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">99.5%</span>
+                  </td>
+                  <td class="py-5 px-6 text-center scale-cell">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">99.9%</span>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">99.95%</span>
+                  </td>
+                  <td class="py-5 px-6 text-center">
+                    <span class="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gradient-to-r from-emerald-100 to-green-100 text-emerald-800">99.99%</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- CTA -->
+      <div class="text-center mt-16">
+        <p class="text-gray-600 mb-8 text-lg" style="font-family: 'Inter', sans-serif;">Ready to get started? All plans include a 14-day free trial with full feature access.</p>
+        <div class="flex flex-col sm:flex-row gap-4 justify-center">
+          <a href="#plans" class="inline-flex items-center px-8 py-4 text-lg font-semibold text-white rounded-xl transition-all duration-300 shadow-xl hover:shadow-2xl transform hover:-translate-y-1" style="background: linear-gradient(135deg, #D17A3A, #D17A3A); font-family: 'Inter', sans-serif;">
+            <span>Start Free Trial</span>
+            <svg class="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+            </svg>
+          </a>
+          <a href="/features" class="inline-flex items-center px-8 py-4 text-lg font-semibold border-2 rounded-xl hover:bg-white/10 transition-all duration-300 backdrop-blur-sm" style="border-color: #4A7C7C; color: #4A7C7C; font-family: 'Inter', sans-serif;">
+            <span>Learn More About Features</span>
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <Footer />
+</Layout>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+  /* Scale column highlighting - subtle background */
+  .scale-header,
+  .scale-cell {
+    background: linear-gradient(135deg, rgba(249, 115, 22, 0.03), rgba(234, 88, 12, 0.05)) !important;
+    position: relative;
+  }
+  
+  /* Enhance the Scale header with subtle styling */
+  .scale-header {
+    background: linear-gradient(135deg, rgba(249, 115, 22, 0.1), rgba(234, 88, 12, 0.15)) !important;
+  }
+  
+  /* Smooth transitions for table rows */
+  .group:hover .scale-cell {
+    background: linear-gradient(135deg, rgba(249, 115, 22, 0.08), rgba(234, 88, 12, 0.12)) !important;
+  }
+  
+  /* Ensure proper z-index for Most Popular badge */
+  .relative .absolute div {
+    z-index: 30;
+  }
+</style> 
