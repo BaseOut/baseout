@@ -2,31 +2,34 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "baseout-server",
   "main": "./src/index.ts",
-  "compatibility_date": "2025-01-01",
+  "compatibility_date": "2026-04-22",
   "compatibility_flags": ["nodejs_compat"],
 
-  // Durable Objects
-  // "durable_objects": {
-  //   "bindings": [
-  //     { "name": "PER_CONNECTION_DO", "class_name": "PerConnectionDO" },
-  //     { "name": "PER_SPACE_DO", "class_name": "PerSpaceDO" }
-  //   ]
-  // },
-  // "migrations": [
-  //   { "tag": "v1", "new_classes": ["PerConnectionDO", "PerSpaceDO"] }
-  // ],
+  // Durable Objects — canonical names per CLAUDE.md §5.3.
+  // ConnectionDO: per-Airtable-Connection rate-limit gateway + state holder.
+  // SpaceDO: per-Space scheduler + backup controller.
+  "durable_objects": {
+    "bindings": [
+      { "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
+      { "name": "SPACE_DO", "class_name": "SpaceDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ConnectionDO", "SpaceDO"] }
+  ],
 
-  // R2 buckets
+  // R2 buckets — TODO(phase-1): wire when backup output streaming lands.
   // "r2_buckets": [
   //   { "binding": "BACKUP_BUCKET", "bucket_name": "baseout-backups" }
   // ],
 
-  // D1 databases
-  // "d1_databases": [
-  //   { "binding": "MASTER_D1", "database_name": "baseout-master-d1", "database_id": "..." }
+  // Hyperdrive — TODO(phase-1): wire when per-request masterDb factory hits real Postgres.
+  // Pattern: dev uses process.env.DATABASE_URL; deployed envs use env.HYPERDRIVE.connectionString.
+  // "hyperdrive": [
+  //   { "binding": "HYPERDRIVE", "id": "<hyperdrive-id>", "localConnectionString": "postgres://..." }
   // ],
 
-  // Cron triggers (one per background service)
+  // Cron triggers — TODO(phase-2): one per background service.
   // "triggers": {
   //   "crons": [
   //     "0 6 * * *",     // webhook renewal — daily at 06:00 UTC
@@ -40,15 +43,13 @@
   // Service bindings (incoming forwards from hooks + api)
   // are configured via the Cloudflare dashboard once those Workers exist.
 
-  // Secrets (set via `wrangler secret put`):
-  //   DATABASE_URL
-  //   MASTER_ENCRYPTION_KEY
-  //   TRIGGER_DEV_API_KEY
-  //   CLOUDFLARE_API_TOKEN
-  //   STRIPE_API_KEY
-  //   MAILGUN_API_KEY
-  //   SERVICE_HMAC_TO_WEB
-  //   INTERNAL_RECEIVE_HMAC
+  // Secrets (set via `wrangler secret put` in deployed envs; .dev.vars locally):
+  //   INTERNAL_TOKEN          — shared secret with apps/web (BACKUP_ENGINE_INTERNAL_TOKEN)
+  //   DATABASE_URL            — master DB (postgres-js per-request, per CLAUDE.md §5.1)
+  //   MASTER_ENCRYPTION_KEY   — AES-256-GCM key for *_enc columns
+  //   TRIGGER_SECRET_KEY      — Trigger.dev v3 server-side key
+  //   TRIGGER_PROJECT_REF     — Trigger.dev project ID
+  //   CLOUDFLARE_API_TOKEN, STRIPE_API_KEY, MAILGUN_API_KEY — phase-2
 
   "env": {
     "production": {

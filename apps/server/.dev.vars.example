@@ -1,8 +1,31 @@
-DATABASE_URL=postgres://localhost:5432/baseout_dev
-MASTER_ENCRYPTION_KEY=
-TRIGGER_DEV_API_KEY=
-CLOUDFLARE_API_TOKEN=
-STRIPE_API_KEY=sk_test_
-MAILGUN_API_KEY=
-SERVICE_HMAC_TO_WEB=
-INTERNAL_RECEIVE_HMAC=
+# Local-dev configuration for apps/server (Cloudflare Worker — backup engine).
+# Copy to .dev.vars and fill in real values. .dev.vars is gitignored.
+# CI gets these from GitHub secrets / wrangler secret put at deploy time.
+
+# === Master DB (baseout-master Postgres on DigitalOcean) ===
+# The engine reads connections + writes backup_runs here. apps/web owns
+# the schema (migrations live there) and writes all customer-facing data into
+# the same DB — point this at the same value apps/web has.
+#
+# Local dev requires your laptop's public IP on the openside-db cluster's
+# Trusted Sources list (Cloudflare Console → Databases → openside-db →
+# Settings → Trusted Sources).
+DATABASE_URL=postgres://USER:PASS@HOST:25060/baseout-dev?sslmode=require
+
+# === Trigger.dev ===
+# Project-scoped secret key from https://cloud.trigger.dev for the
+# baseout-backup-engine project. CI uses TRIGGER_ACCESS_TOKEN for deploys.
+TRIGGER_SECRET_KEY=tr_dev_xxxxxxxxxxxxxxxxxxxx
+TRIGGER_PROJECT_REF=proj_xxxxxxxxxxxxxxxxxxxx
+
+# === Internal-token gate ===
+# Shared secret between apps/web (which calls the engine to enqueue
+# backups) and the engine for /api/internal/* routes. 32+ random bytes, base64.
+# apps/web must hold the same value in its .env / .dev.vars as
+# BACKUP_ENGINE_INTERNAL_TOKEN.
+INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness
+
+# === Optional: local-dev TLS bypass ===
+# Set DRIZZLE_SSL=false ONLY if connecting to a local Postgres without TLS.
+# Leave unset / "require" for any DigitalOcean managed DB.
+# DRIZZLE_SSL=require
