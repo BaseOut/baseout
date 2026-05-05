@@ -1,0 +1,62 @@
+---
+import { cn } from '../../lib/ui';
+
+interface Props {
+  variant?: 'primary' | 'secondary' | 'tonal' | 'outline' | 'ghost' | 'danger' | 'danger-ghost' | 'success' | 'warning';
+  size?: 'sm' | 'md' | 'lg';
+  icon?: boolean;
+  loading?: boolean;
+  disabled?: boolean;
+  href?: string;
+  type?: 'button' | 'submit' | 'reset';
+  class?: string;
+  [key: string]: unknown;
+}
+
+const {
+  variant = 'primary',
+  size,
+  icon = false,
+  loading = false,
+  disabled = false,
+  href,
+  type = 'button',
+  class: className = '',
+  ...rest
+} = Astro.props;
+
+const variantMap: Record<string, string> = {
+  primary:      'btn-primary',
+  secondary:    'btn-secondary',
+  tonal:        'btn-soft btn-primary',
+  outline:      'btn-outline',
+  ghost:        'btn-ghost',
+  danger:       'btn-error',
+  'danger-ghost': 'btn-ghost text-error',
+  success:      'btn-success',
+  warning:      'btn-warning',
+};
+
+const classes = cn(
+  'btn',
+  variantMap[variant] || 'btn-primary',
+  size === 'sm' && 'btn-sm',
+  size === 'lg' && 'btn-lg',
+  icon && 'btn-square',
+  className,
+);
+
+const Tag = href ? 'a' : 'button';
+---
+
+<Tag
+  class={classes}
+  href={href}
+  type={!href ? type : undefined}
+  disabled={!href && (disabled || loading) ? true : undefined}
+  aria-disabled={href && disabled ? 'true' : undefined}
+  {...rest}
+>
+  {loading && <span class="loading loading-spinner loading-sm"></span>}
+  <slot />
+</Tag>

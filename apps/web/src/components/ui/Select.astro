@@ -1,0 +1,112 @@
+---
+import { cn, inputId as deriveId } from '../../lib/ui';
+
+interface Option {
+  value: string;
+  label: string;
+}
+
+interface Props {
+  label?: string;
+  name?: string;
+  id?: string;
+  value?: string;
+  options: Option[];
+  placeholder?: string;
+  icon?: string;
+  size?: 'sm' | 'md' | 'lg';
+  error?: string;
+  hint?: string;
+  required?: boolean;
+  disabled?: boolean;
+  class?: string;
+}
+
+const {
+  label,
+  name,
+  id,
+  value,
+  options,
+  placeholder,
+  icon,
+  size,
+  error,
+  hint,
+  required = false,
+  disabled = false,
+  class: className = '',
+} = Astro.props;
+
+const elId = deriveId(id, name, label);
+
+const selectClasses = cn(
+  'select',
+  size === 'sm' && 'select-sm',
+  size === 'lg' && 'select-lg',
+  error && 'select-error',
+  'w-full',
+);
+
+const wrapperClasses = cn('fieldset', className);
+
+const describedBy = error ? `${elId}-error` : hint ? `${elId}-hint` : undefined;
+---
+
+<fieldset class={wrapperClasses}>
+  {label && (
+    <legend class="fieldset-legend">
+      {label}{required && <span class="text-error"> *</span>}
+    </legend>
+  )}
+
+  {icon ? (
+    <label class={selectClasses}>
+      <span class="material-symbols-outlined icon-md opacity-50">{icon}</span>
+      <select
+        id={elId}
+        name={name}
+        required={required}
+        disabled={disabled}
+        class="grow"
+        aria-invalid={error ? 'true' : undefined}
+        aria-describedby={describedBy}
+      >
+        {placeholder && (
+          <option value="" selected={!value}>{placeholder}</option>
+        )}
+        {options.map((opt) => (
+          <option value={opt.value} selected={value === opt.value}>{opt.label}</option>
+        ))}
+      </select>
+    </label>
+  ) : (
+    <select
+      id={elId}
+      name={name}
+      required={required}
+      disabled={disabled}
+      class={selectClasses}
+      aria-invalid={error ? 'true' : undefined}
+      aria-describedby={describedBy}
+    >
+      {placeholder && (
+        <option value="" selected={!value}>{placeholder}</option>
+      )}
+      {options.map((opt) => (
+        <option value={opt.value} selected={value === opt.value}>{opt.label}</option>
+      ))}
+    </select>
+  )}
+
+  {error && (
+    <p id={`${elId}-error`} class="fieldset-label text-error flex items-center gap-1" role="alert">
+      <span class="material-symbols-outlined icon-sm">error</span>
+      {error}
+    </p>
+  )}
+
+  {hint && !error && (
+    <p id={`${elId}-hint`} class="fieldset-label">{hint}</p>
+  )}
+</fieldset>

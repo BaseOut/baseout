@@ -1,0 +1,57 @@
+---
+import { cn } from '../../lib/ui';
+
+interface Tab {
+  id: string;
+  label: string;
+  icon?: string;
+  count?: number | string;
+  disabled?: boolean;
+}
+
+interface Props {
+  tabs: Tab[];
+  name?: string;
+  activeTab?: string;
+  variant?: 'underline' | 'pills' | 'pills-full' | 'boxed' | 'vertical' | 'submenu';
+  class?: string;
+}
+
+const {
+  tabs,
+  name = 'tabs',
+  activeTab,
+  variant = 'underline',
+  class: className = '',
+} = Astro.props;
+
+const active = activeTab ?? tabs[0]?.id;
+
+/* DaisyUI native variants vs custom */
+const variantMap: Record<string, string> = {
+  underline:  'tabs tabs-border',
+  boxed:      'tabs tabs-lift',
+  pills:      'tabs tabs-pills',
+  'pills-full': 'tabs tabs-pills-full',
+  vertical:   'tabs tabs-vertical',
+  submenu:    'tabs tabs-submenu',
+};
+
+const tabsClasses = cn(
+  variantMap[variant] || 'tabs tabs-border',
+  className,
+);
+---
+
+<div class={tabsClasses} role="tablist">
+  {tabs.map((tab) => (
+    <input
+      type="radio"
+      name={name}
+      class="tab"
+      aria-label={tab.label}
+      checked={tab.id === active}
+      disabled={tab.disabled || undefined}
+    />
+  ))}
+</div>

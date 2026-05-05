@@ -1,0 +1,109 @@
+---
+import { cn, inputId as deriveId } from '../../lib/ui';
+
+interface Props {
+  label?: string;
+  type?: 'text' | 'email' | 'password' | 'search' | 'tel' | 'url' | 'number';
+  name?: string;
+  id?: string;
+  placeholder?: string;
+  value?: string;
+  icon?: string;
+  iconRight?: string;
+  size?: 'sm' | 'md' | 'lg';
+  error?: string;
+  success?: boolean;
+  hint?: string;
+  required?: boolean;
+  disabled?: boolean;
+  readonly?: boolean;
+  autocomplete?: string;
+  class?: string;
+  [key: string]: unknown;
+}
+
+const {
+  label,
+  type = 'text',
+  name,
+  id,
+  placeholder,
+  value,
+  icon,
+  iconRight,
+  size,
+  error,
+  success = false,
+  hint,
+  required = false,
+  disabled = false,
+  readonly: isReadonly = false,
+  autocomplete,
+  class: className = '',
+  ...rest
+} = Astro.props;
+
+const elId = deriveId(id, name, label);
+
+const inputClasses = cn(
+  'input',
+  size === 'sm' && 'input-sm',
+  size === 'lg' && 'input-lg',
+  error && 'input-error',
+  success && 'input-success',
+  'w-full',
+);
+
+const wrapperClasses = cn('fieldset', className);
+
+const describedBy = error ? `${elId}-error` : hint ? `${elId}-hint` : undefined;
+
+const inputAttrs = {
+  id: elId,
+  type,
+  name,
+  placeholder,
+  value,
+  required,
+  disabled,
+  readonly: isReadonly,
+  autocomplete,
+  'aria-label': label,
+  'aria-invalid': error ? ('true' as const) : undefined,
+  'aria-describedby': describedBy,
+  ...rest,
+};
+---
+
+<fieldset class={wrapperClasses}>
+  {label && (
+    <legend class="fieldset-legend">
+      {label}{required && <span class="text-error"> *</span>}
+    </legend>
+  )}
+
+  {(icon || iconRight) ? (
+    <label class={inputClasses}>
+      {icon && (
+        <span class="material-symbols-outlined icon-md opacity-50" aria-hidden="true">{icon}</span>
+      )}
+      <input class="grow" {...inputAttrs} />
+      {iconRight && (
+        <span class="material-symbols-outlined icon-md opacity-50 cursor-pointer" aria-hidden="true">{iconRight}</span>
+      )}
+    </label>
+  ) : (
+    <input class={inputClasses} {...inputAttrs} />
+  )}
+
+  {error && (
+    <p id={`${elId}-error`} class="fieldset-label text-error flex items-center gap-1" role="alert">
+      <span class="material-symbols-outlined icon-sm">error</span>
+      {error}
+    </p>
+  )}
+
+  {hint && !error && (
+    <p id={`${elId}-hint`} class="fieldset-label">{hint}</p>
+  )}
+</fieldset>

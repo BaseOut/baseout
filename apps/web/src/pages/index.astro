@@ -1,0 +1,58 @@
+---
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import DashboardView from '../views/DashboardView.astro';
+import { getBreadcrumbs } from '../lib/config';
+import { getIntegrationsState } from '../lib/integrations';
+import type { IntegrationsState } from '../stores/connections';
+
+const breadcrumbs = getBreadcrumbs('/');
+const { account, db } = Astro.locals;
+
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+const integrations: IntegrationsState =
+  orgId && spaceId
+    ? await getIntegrationsState(db, orgId, spaceId)
+    : { connections: [], bases: [], tierBasesPerSpace: 5, hasBackupConfig: false };
+
+const showSuccessModal = Astro.url.searchParams.get('connected') === '1';
+const errorReason = Astro.url.searchParams.get('error');
+---
+
+<SidebarLayout pageTitle="Dashboard Overview" breadcrumbs={breadcrumbs}>
+  <DashboardView
+    account={account}
+    integrations={integrations}
+    showSuccessModal={showSuccessModal}
+    errorReason={errorReason}
+  />
+</SidebarLayout>
+
+<script
+  type="application/json"
+  id="account-state"
+  is:inline
+  set:html={JSON.stringify(account).replace(/</g, '\\u003c')}
+/>
+
+<script
+  type="application/json"
+  id="integrations-state"
+  is:inline
+  set:html={JSON.stringify(integrations).replace(/</g, '\\u003c')}
+/>
+
+<script>
+  import { $account } from '../stores/account';
+  import { $integrations } from '../stores/connections';
+
+  const accountEl = document.getElementById('account-state');
+  if (accountEl?.textContent) {
+    $account.set(JSON.parse(accountEl.textContent));
+  }
+
+  const integrationsEl = document.getElementById('integrations-state');
+  if (integrationsEl?.textContent) {
+    $integrations.set(JSON.parse(integrationsEl.textContent));
+  }
+</script>

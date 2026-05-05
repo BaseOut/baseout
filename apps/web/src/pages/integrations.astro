@@ -1,0 +1,45 @@
+---
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import IntegrationsView from '../views/IntegrationsView.astro';
+import { getBreadcrumbs } from '../lib/config';
+import { getIntegrationsState } from '../lib/integrations';
+import type { IntegrationsState } from '../stores/connections';
+
+const breadcrumbs = getBreadcrumbs('/integrations');
+const { account, db } = Astro.locals;
+
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+
+const state: IntegrationsState =
+  orgId && spaceId
+    ? await getIntegrationsState(db, orgId, spaceId)
+    : { connections: [], bases: [], tierBasesPerSpace: 5, hasBackupConfig: false };
+
+const connectedParam = Astro.url.searchParams.get('connected');
+const errorParam = Astro.url.searchParams.get('error');
+const statusCode: 'connected' | 'error' | null = connectedParam
+  ? 'connected'
+  : errorParam
+    ? 'error'
+    : null;
+---
+
+<SidebarLayout pageTitle="Integrations" breadcrumbs={breadcrumbs}>
+  <IntegrationsView state={state} statusCode={statusCode} errorReason={errorParam} />
+</SidebarLayout>
+
+<script
+  type="application/json"
+  id="integrations-state"
+  is:inline
+  set:html={JSON.stringify(state).replace(/</g, '\\u003c')}
+/>
+
+<script>
+  import { $integrations } from '../stores/connections';
+  const el = document.getElementById('integrations-state');
+  if (el?.textContent) {
+    $integrations.set(JSON.parse(el.textContent));
+  }
+</script>

@@ -1,0 +1,38 @@
+{
+  "name": "@opensided/openside-identity-schema",
+  "description": "Openside-wide staff identity & RBAC schema. Drizzle tables + types for the openside-identity Postgres DB. Consumed by every Openside admin/ops surface (baseout-admin, baseout-backup-engine, future osai-admin, etc.).",
+  "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Opensided/openside-identity-schema.git"
+  },
+  "type": "module",
+  "files": [
+    "src/",
+    "drizzle.config.ts",
+    "migrations/"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "generate": "drizzle-kit generate",
+    "migrate": "drizzle-kit migrate"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "peerDependencies": {
+    "drizzle-orm": ">=0.45.0"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.10",
+    "drizzle-orm": "^0.45.2"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  }
+}

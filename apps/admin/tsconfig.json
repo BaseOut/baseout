@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "jsx": "preserve"
+  },
+  "include": ["src/**/*", "src/**/*.astro"],
+  "exclude": ["node_modules", "dist", ".astro"]
+}

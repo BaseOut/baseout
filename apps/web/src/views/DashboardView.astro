@@ -1,0 +1,205 @@
+---
+import Card from '../components/ui/Card.astro';
+import Button from '../components/ui/Button.astro';
+import ConnectAirtableModal from './ConnectAirtableModal.astro';
+import { buildDashboardModel } from '../lib/dashboard';
+import type { AccountContext } from '../lib/account';
+import type { IntegrationsState } from '../stores/connections';
+
+interface Props {
+  account: AccountContext | null;
+  integrations: IntegrationsState;
+  showSuccessModal: boolean;
+  errorReason: string | null;
+}
+
+const { account, integrations, showSuccessModal, errorReason } = Astro.props;
+const model = buildDashboardModel(account);
+
+const hasAirtableConnection = integrations.connections.some(
+  (c) => c.platformSlug === 'airtable' && c.status === 'active',
+);
+
+// Until Step 2 (base selection) ships, the most honest next-step when a
+// connection already exists is "no action required" — otherwise we would
+// prompt the user to re-connect a platform they already connected.
+const effectiveNextStep = hasAirtableConnection ? null : model.nextStep;
+
+// Initial state for $dashboard hydration. Keeps client-side subscribers in
+// sync with the SSR'd markup on first paint.
+const dashboardState = { model, hasAirtableConnection };
+
+const modalMode: 'pre-connect' | 'success' = showSuccessModal
+  ? 'success'
+  : 'pre-connect';
+
+const errorLabels: Record<string, string> = {
+  access_denied: 'You declined to give Baseout access to your Airtable.',
+  missing_code: 'Airtable did not return an authorization code.',
+  missing_handoff: 'Your session expired before Airtable returned. Please try again.',
+  invalid_handoff: 'We could not verify the sign-in handoff. Please try again.',
+  state_mismatch: 'Security check failed. Please start the connection over.',
+  user_mismatch: 'This connection does not belong to the signed-in user.',
+  token_exchange_failed: 'Airtable rejected the connection. Please try again.',
+  api_call_failed: 'We connected to Airtable but could not list your bases.',
+  persist_failed: 'The connection succeeded but we could not save it. Please try again.',
+  not_configured: 'Airtable integration is not configured on this environment.',
+};
+
+const errorMessage = errorReason
+  ? (errorLabels[errorReason] ?? 'Connection failed. Please try again.')
+  : null;
+---
+
+<div class="space-y-8 animate-in fade-in duration-700">
+
+  <!-- Welcome header -->
+  <header>
+    <h1 class="text-2xl font-bold tracking-tight">{model.greeting}</h1>
+    {model.orgName && (
+      <p class="text-sm text-base-content/60 mt-1">
+        You're signed in to <span class="font-medium text-base-content">{model.orgName}</span>.
+      </p>
+    )}
+  </header>
+
+  {errorMessage && (
+    <div role="alert" class="alert alert-error">
+      <span>{errorMessage}</span>
+    </div>
+  )}
+
+  <!-- Org / Space / Next-step cards -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+    <Card variant="outlined">
+      <p class="text-sm font-medium text-base-content/60 mb-1">Organization</p>
+      <h3 class="text-lg font-semibold truncate">{model.orgName ?? '—'}</h3>
+    </Card>
+
+    <Card variant="outlined">
+      <p class="text-sm font-medium text-base-content/60 mb-1">Active Space</p>
+      <h3 class="text-lg font-semibold truncate" data-dashboard-space-name>{model.spaceName ?? '—'}</h3>
+      <p
+        class="mt-2 inline-flex items-center gap-1.5 text-xs font-medium rounded-box border border-base-300 bg-base-200 px-2 py-0.5 text-base-content/70"
+        data-dashboard-space-status
+        hidden={!model.spaceStatusLabel}
+      >
+        <span
+          class={`w-1.5 h-1.5 rounded-full ${model.state === 'active' ? 'bg-success' : 'bg-warning'}`}
+          data-dashboard-space-dot
+        ></span>
+        <span data-dashboard-space-status-label>{model.spaceStatusLabel ?? ''}</span>
+      </p>
+    </Card>
+
+    <Card variant="outlined">
+      <p class="text-sm font-medium text-base-content/60 mb-1">Next Step</p>
+      <div data-dashboard-next-step hidden={!effectiveNextStep}>
+        <h3 class="text-lg font-semibold leading-snug" data-dashboard-next-step-label>
+          {effectiveNextStep?.label ?? ''}
+        </h3>
+        <Button
+          variant="primary"
+          class="mt-4"
+          data-open-modal="connect-airtable-modal"
+        >
+          <span
+            class="material-symbols-outlined icon-md mr-1"
+            data-dashboard-next-step-icon
+          >{effectiveNextStep?.icon ?? ''}</span>
+          Continue setup
+        </Button>
+      </div>
+      <h3
+        class="text-lg font-semibold leading-snug text-base-content/60"
+        data-dashboard-next-step-done
+        hidden={!!effectiveNextStep}
+      >
+        You're all set.
+      </h3>
+    </Card>
+  </div>
+
+  <!-- Secondary cards (generic scaffolding, out of scope for hydration) -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+     <Card variant="outlined">
+        <div class="flex items-center gap-3 mb-4">
+           <div class="w-2 h-2 rounded-full bg-success animate-pulse"></div>
+           <h3 class="font-bold">System Status</h3>
+        </div>
+        <p class="text-sm text-base-content/60 mb-6">All systems are operational. Last check performed 5 minutes ago.</p>
+        <div class="flex gap-1 h-8">
+           {Array.from({length: 20}).map(() => (
+              <div class="flex-1 bg-success/20 hover:bg-success transition-colors rounded-sm cursor-help" title="99.9% Uptime"></div>
+           ))}
+        </div>
+     </Card>
+
+     <Card variant="outlined">
+        <h3 class="font-bold mb-4">Quick Links</h3>
+        <ul class="space-y-2">
+           <li><a href="/integrations" class="text-sm text-base-content/60 hover:text-primary flex items-center gap-2 group"><span class="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">link</span> Manage integrations</a></li>
+           <li><a href="/settings" class="text-sm text-base-content/60 hover:text-primary flex items-center gap-2 group"><span class="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">settings</span> Space settings</a></li>
+           <li><a href="/help" class="text-sm text-base-content/60 hover:text-primary flex items-center gap-2 group"><span class="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">help_center</span> Documentation</a></li>
+        </ul>
+     </Card>
+  </div>
+
+</div>
+
+<ConnectAirtableModal
+  mode={modalMode}
+  bases={integrations.bases}
+  open={showSuccessModal}
+/>
+
+<script
+  type="application/json"
+  id="dashboard-state"
+  is:inline
+  set:html={JSON.stringify(dashboardState).replace(/</g, '\\u003c')}
+/>
+
+<script>
+  import { $dashboard, type DashboardState } from '../stores/dashboard';
+
+  const el = document.getElementById('dashboard-state');
+  if (el?.textContent) {
+    $dashboard.set(JSON.parse(el.textContent) as DashboardState);
+  }
+
+  function setText(selector: string, value: string): void {
+    const node = document.querySelector<HTMLElement>(selector);
+    if (node && node.textContent !== value) node.textContent = value;
+  }
+
+  function setHidden(selector: string, hidden: boolean): void {
+    const node = document.querySelector<HTMLElement>(selector);
+    if (node && node.hidden !== hidden) node.hidden = hidden;
+  }
+
+  function render(state: DashboardState): void {
+    const { model, hasAirtableConnection } = state;
+    const next = hasAirtableConnection ? null : model.nextStep;
+
+    setText('[data-dashboard-space-name]', model.spaceName ?? '—');
+
+    setHidden('[data-dashboard-space-status]', !model.spaceStatusLabel);
+    setText('[data-dashboard-space-status-label]', model.spaceStatusLabel ?? '');
+    const dot = document.querySelector<HTMLElement>('[data-dashboard-space-dot]');
+    if (dot) {
+      const wantActive = model.state === 'active';
+      dot.classList.toggle('bg-success', wantActive);
+      dot.classList.toggle('bg-warning', !wantActive);
+    }
+
+    setHidden('[data-dashboard-next-step]', !next);
+    setHidden('[data-dashboard-next-step-done]', !!next);
+    setText('[data-dashboard-next-step-label]', next?.label ?? '');
+    setText('[data-dashboard-next-step-icon]', next?.icon ?? '');
+  }
+
+  $dashboard.subscribe((state) => {
+    if (state) render(state);
+  });
+</script>

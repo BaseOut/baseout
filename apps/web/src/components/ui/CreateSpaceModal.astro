@@ -1,0 +1,35 @@
+---
+import Modal from './Modal.astro';
+import TextInput from './TextInput.astro';
+import Button from './Button.astro';
+---
+
+<Modal id="create-space-modal" size="sm" title="Create new Space">
+  <form id="create-space-form" class="space-y-4" novalidate>
+    <TextInput
+      type="text"
+      name="name"
+      label="Space name"
+      placeholder="e.g. Staging"
+      required
+      autocomplete="off"
+      maxlength="100"
+    />
+
+    <div
+      id="create-space-error"
+      class="fieldset-label text-error flex items-center gap-1 hidden"
+      role="alert"
+    >
+      <span class="material-symbols-outlined icon-sm">error</span>
+      <span id="create-space-error-text"></span>
+    </div>
+
+    <div class="flex justify-end gap-2 pt-2">
+      <Button type="button" variant="ghost" data-create-space-cancel>Cancel</Button>
+      <Button type="submit" variant="primary" id="create-space-submit">
+        Create Space
+      </Button>
+    </div>
+  </form>
+</Modal>

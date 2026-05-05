@@ -1,0 +1,71 @@
+/* ── Feature Badge / Trust Indicator ─────────────────────────────── */
+@layer components {
+
+  /* ── Base ── */
+  .feature-badge {
+    @apply inline-flex items-center gap-2.5
+           px-4 py-2.5
+           rounded-xl
+           bg-white/10
+           backdrop-blur-sm
+           text-white/90
+           select-none;
+  }
+
+  .feature-badge-icon {
+    @apply text-[18px] shrink-0;
+  }
+
+  .feature-badge-label {
+    @apply text-sm font-medium whitespace-nowrap;
+  }
+
+  /* ── Outline ── */
+  .feature-badge-outline {
+    @apply bg-transparent border border-white/20;
+  }
+
+  /* ── Filled ── */
+  .feature-badge-filled {
+    @apply bg-white/15;
+  }
+
+  /* ── Glass ── */
+  .feature-badge-glass {
+    @apply bg-white/5 border border-white/10 backdrop-blur-md;
+  }
+
+  /* ── Sizes ── */
+  .feature-badge-sm {
+    @apply px-3 py-2 gap-2;
+  }
+
+  .feature-badge-sm .feature-badge-icon {
+    @apply text-[16px];
+  }
+
+  .feature-badge-sm .feature-badge-label {
+    @apply text-xs;
+  }
+
+  .feature-badge-lg {
+    @apply px-5 py-3 gap-3;
+  }
+
+  .feature-badge-lg .feature-badge-icon {
+    @apply text-[22px];
+  }
+
+  .feature-badge-lg .feature-badge-label {
+    @apply text-base;
+  }
+
+  /* ── Light surface variant (for use on light backgrounds) ── */
+  .feature-badge-on-light {
+    @apply bg-base-200 text-base-content;
+  }
+
+  .feature-badge-on-light.feature-badge-outline {
+    @apply border-base-300/40;
+  }
+}

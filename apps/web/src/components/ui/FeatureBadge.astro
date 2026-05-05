@@ -1,0 +1,37 @@
+---
+import { cn } from '../../lib/ui';
+
+interface Props {
+  icon: string;
+  label: string;
+  variant?: 'default' | 'outline' | 'filled' | 'glass';
+  size?: 'sm' | 'md' | 'lg';
+  iconFilled?: boolean;
+  class?: string;
+}
+
+const {
+  icon,
+  label,
+  variant = 'default',
+  size = 'md',
+  iconFilled = false,
+  class: className = '',
+} = Astro.props;
+
+const classes = cn(
+  'feature-badge',
+  variant !== 'default' && `feature-badge-${variant}`,
+  size !== 'md' && `feature-badge-${size}`,
+  className,
+);
+---
+
+<div class={classes}>
+  <span
+    class:list={['feature-badge-icon material-symbols-outlined', iconFilled && 'icon-filled']}
+  >
+    {icon}
+  </span>
+  <span class="feature-badge-label">{label}</span>
+</div>

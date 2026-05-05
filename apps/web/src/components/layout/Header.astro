@@ -1,0 +1,66 @@
+---
+interface Props {
+  notificationCount?: number;
+}
+
+const { notificationCount = 0 } = Astro.props;
+---
+
+<!-- Topbar -->
+<div
+  role="navigation"
+  aria-label="Navbar"
+  class="flex items-center justify-between px-3"
+  id="layout-topbar"
+  transition:persist="baseout-topbar"
+>
+  <!-- Left: Sidebar toggle (mobile only) -->
+  <div class="inline-flex items-center">
+    <label
+      class="btn btn-square btn-ghost btn-sm lg:hidden"
+      aria-label="Toggle sidebar"
+      for="layout-sidebar-toggle-trigger"
+    >
+      <span class="material-symbols-outlined icon-xl">menu</span>
+    </label>
+  </div>
+
+  <!-- Right: Notifications -->
+  <div class="inline-flex items-center gap-0.5">
+    <button
+      class="btn btn-circle btn-ghost btn-sm relative"
+      aria-label={`Notifications${notificationCount > 0 ? ` (${notificationCount})` : ''}`}
+    >
+      <span class="material-symbols-outlined icon-lg">notifications</span>
+      {notificationCount > 0 && (
+        <div class="status status-error status-sm absolute end-1 top-1"></div>
+      )}
+    </button>
+  </div>
+</div>
+
+<script>
+  import { $pageHeader, type PageHeaderState } from '../../stores/pageHeader';
+  import type { Breadcrumb } from '../../lib/types';
+
+  function readState(): PageHeaderState {
+    const el = document.getElementById('page-header-state');
+    if (!el?.textContent) return { breadcrumbs: [] };
+    try {
+      const raw = JSON.parse(el.textContent) as { title?: string | null; breadcrumbs?: Breadcrumb[] };
+      return {
+        title: raw.title ?? undefined,
+        breadcrumbs: Array.isArray(raw.breadcrumbs) ? raw.breadcrumbs : [],
+      };
+    } catch {
+      return { breadcrumbs: [] };
+    }
+  }
+
+  function syncFromDom() {
+    $pageHeader.set(readState());
+  }
+
+  syncFromDom();
+  document.addEventListener('astro:after-swap', syncFromDom);
+</script>

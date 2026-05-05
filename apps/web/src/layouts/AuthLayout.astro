@@ -1,0 +1,62 @@
+---
+import Layout from './Layout.astro';
+import { getProductName } from '../lib/config';
+
+interface Props {
+  title?: string;
+  description?: string;
+  brandDescription?: string;
+}
+
+const productName = getProductName();
+
+const {
+  title = `Sign In — ${productName}`,
+  description = 'Sign in to your account',
+  brandDescription = 'Protect your Airtable data. Automate backups. Restore with confidence.',
+} = Astro.props;
+
+const FEATURES = [
+  { icon: 'iconify lucide--shield-check', label: 'Automated daily backups' },
+  { icon: 'iconify lucide--rotate-ccw', label: 'Point-in-time restore' },
+  { icon: 'iconify lucide--git-branch', label: 'Schema health monitoring' },
+];
+---
+
+<Layout title={title} description={description}>
+  <div class="auth-layout" data-theme="baseout">
+    <!-- ── Brand Panel (left) ── -->
+    <div class="auth-brand">
+      <div class="auth-brand-bg"></div>
+      <div class="auth-brand-mesh"></div>
+
+      <div class="auth-brand-content">
+        <img
+          src="/images/logo/logo-vertical.png"
+          alt={productName}
+          class="auth-brand-logo-img"
+        />
+
+        <p class="auth-brand-description">{brandDescription}</p>
+
+        <div class="auth-brand-divider"></div>
+
+        <div class="auth-brand-features">
+          {FEATURES.map((f) => (
+            <div class="auth-brand-feature">
+              <i class={`${f.icon} auth-brand-feature-icon`} aria-hidden="true"></i>
+              <span>{f.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Form Panel (right) ── -->
+    <div class="auth-panel">
+      <div class="auth-card">
+        <slot />
+      </div>
+    </div>
+  </div>
+</Layout>

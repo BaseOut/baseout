@@ -1,0 +1,42 @@
+---
+interface Crumb {
+  label: string;
+  href?: string;
+  icon?: string;
+}
+
+interface Props {
+  items: Crumb[];
+  class?: string;
+}
+
+const {
+  items,
+  class: className = '',
+} = Astro.props;
+
+const wrapperClasses = [
+  'breadcrumbs text-sm',
+  className,
+].filter(Boolean).join(' ');
+---
+
+<div class={wrapperClasses}>
+  <ul>
+    {items.map((item, i) => (
+      <li>
+        {item.href && i < items.length - 1 ? (
+          <a href={item.href} class="flex items-center gap-1">
+            {item.icon && <span class="material-symbols-outlined icon-md">{item.icon}</span>}
+            {item.label}
+          </a>
+        ) : (
+          <span class="flex items-center gap-1" aria-current={i === items.length - 1 ? 'page' : undefined}>
+            {item.icon && <span class="material-symbols-outlined icon-md">{item.icon}</span>}
+            {item.label}
+          </span>
+        )}
+      </li>
+    ))}
+  </ul>
+</div>

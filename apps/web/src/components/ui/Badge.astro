@@ -1,0 +1,46 @@
+---
+import { cn } from '../../lib/ui';
+
+interface Props {
+  variant?: 'default' | 'primary' | 'secondary' | 'tertiary' | 'success' | 'warning' | 'error' | 'primary-solid' | 'success-solid' | 'error-solid';
+  size?: 'sm' | 'md' | 'lg';
+  outline?: boolean;
+  dot?: boolean;
+  class?: string;
+}
+
+const {
+  variant = 'default',
+  size,
+  outline = false,
+  dot = false,
+  class: className = '',
+} = Astro.props;
+
+const variantMap: Record<string, string> = {
+  default:        'badge-ghost',
+  primary:        'badge-soft badge-primary',
+  secondary:      'badge-soft badge-secondary',
+  tertiary:       'badge-soft badge-accent',
+  success:        'badge-soft badge-success',
+  warning:        'badge-soft badge-warning',
+  error:          'badge-soft badge-error',
+  'primary-solid': 'badge-primary',
+  'success-solid': 'badge-success',
+  'error-solid':   'badge-error',
+};
+
+const classes = cn(
+  'badge',
+  variantMap[variant] || 'badge-ghost',
+  size === 'sm' && 'badge-sm',
+  size === 'lg' && 'badge-lg',
+  outline && 'badge-outline',
+  className,
+);
+---
+
+<span class={classes}>
+  {dot && <span class="w-1.5 h-1.5 rounded-full bg-current"></span>}
+  <slot />
+</span>

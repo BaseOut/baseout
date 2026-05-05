@@ -1,0 +1,259 @@
+/* ── Layout Overrides ────────────────────────────────────────────── */
+/* Sidebar: sticky so it stays in view while main content scrolls  */
+#layout-sidebar {
+  position: sticky;
+}
+
+/* ── DaisyUI Overrides & Custom Components ──────────────────────── */
+/* Styles that DaisyUI / Nexus don't provide natively              */
+@layer components {
+
+  /* ── Card Sections (DaisyUI card-body exists, these extend it) ── */
+  .card-header {
+    @apply px-6 py-4 flex items-center justify-between gap-4
+           border-b border-base-300/40
+           bg-base-200/40;
+  }
+
+  .card-footer {
+    @apply px-6 py-4 flex items-center gap-3
+           border-t border-base-300/40
+           bg-base-200/40;
+  }
+
+  .card-description {
+    @apply text-sm opacity-70;
+  }
+
+  .card-icon-area {
+    @apply w-12 h-12 rounded-xl flex items-center justify-center shrink-0;
+  }
+
+  .card-icon-area-primary   { @apply bg-primary/15 text-primary; }
+  .card-icon-area-secondary { @apply bg-secondary/15 text-secondary; }
+  .card-icon-area-tertiary  { @apply bg-accent/15 text-accent; }
+  .card-icon-area-error     { @apply bg-error/15 text-error; }
+  .card-icon-area-success   { @apply bg-success/15 text-success; }
+
+  /* ── Tab Extensions (pills, pills-full, submenu, vertical) ───── */
+  .tabs-pills {
+    @apply gap-1 border-0 p-1
+           bg-base-200 rounded-xl w-fit;
+  }
+
+  .tabs-pills .tab {
+    @apply rounded-lg px-4 py-2;
+  }
+
+  .tabs-pills .tab::after {
+    @apply hidden;
+  }
+
+  .tabs-pills .tab[aria-selected="true"],
+  .tabs-pills .tab.tab-active,
+  .tabs-pills .tab:checked {
+    @apply bg-base-100 text-base-content shadow-xs;
+  }
+
+  .tabs-pills-full {
+    @apply gap-1 border-0 p-1
+           bg-base-200 rounded-xl w-full;
+  }
+
+  .tabs-pills-full .tab {
+    @apply rounded-lg px-4 py-2 flex-1 justify-center;
+  }
+
+  .tabs-pills-full .tab::after {
+    @apply hidden;
+  }
+
+  .tabs-pills-full .tab[aria-selected="true"],
+  .tabs-pills-full .tab.tab-active,
+  .tabs-pills-full .tab:checked {
+    @apply bg-base-100 text-base-content shadow-xs;
+  }
+
+  .tabs-submenu {
+    @apply gap-1 border-0 p-1
+           bg-base-100 rounded-xl shadow-sm w-fit;
+  }
+
+  .tabs-submenu .tab {
+    @apply rounded-lg px-4 py-2;
+  }
+
+  .tabs-submenu .tab::after {
+    @apply hidden;
+  }
+
+  .tabs-submenu .tab[aria-selected="true"],
+  .tabs-submenu .tab.tab-active,
+  .tabs-submenu .tab:checked {
+    @apply bg-primary text-primary-content;
+  }
+
+  .tabs-vertical {
+    @apply flex-col border-b-0 border-r border-base-300/40;
+  }
+
+  .tabs-vertical .tab {
+    @apply w-full justify-start;
+  }
+
+  .tabs-vertical .tab::after {
+    @apply top-0 bottom-0 left-auto right-0 w-0.5 h-auto scale-x-100 scale-y-0;
+  }
+
+  .tabs-vertical .tab.tab-active::after {
+    @apply scale-y-100;
+  }
+
+  /* ── Tab Count Badge ──────────────────────────────────────────── */
+  .tab-count {
+    @apply inline-flex items-center gap-1
+           font-semibold text-[10px] leading-none
+           px-2 py-0.5 rounded-full whitespace-nowrap select-none
+           bg-base-300 text-base-content/60;
+  }
+
+  .tab.tab-active .tab-count,
+  .tab:checked .tab-count {
+    @apply bg-primary/20 text-primary;
+  }
+
+  /* ── Tab Panel ────────────────────────────────────────────────── */
+  .tab-panel {
+    @apply py-4 text-sm text-base-content;
+  }
+
+  /* ── Pagination ───────────────────────────────────────────────── */
+  .pagination {
+    @apply flex items-center gap-1;
+  }
+
+  .page-btn {
+    @apply w-9 h-9 flex items-center justify-center rounded-lg
+           text-sm font-medium opacity-70
+           border border-transparent
+           hover:bg-base-200 hover:opacity-100
+           transition-colors duration-150 cursor-pointer;
+  }
+
+  .page-btn-active {
+    @apply bg-primary text-primary-content border-primary opacity-100
+           hover:bg-primary hover:text-primary-content;
+  }
+
+  .page-btn:disabled,
+  .page-btn[aria-disabled='true'] {
+    @apply opacity-40 cursor-not-allowed pointer-events-none;
+  }
+
+  /* ── Dialog / Confirm (compact modal) ─────────────────────────── */
+  .dialog-box {
+    @apply relative w-full max-w-sm
+           bg-base-100
+           rounded-box shadow-lg p-6
+           flex flex-col gap-4;
+  }
+
+  .dialog-icon {
+    @apply w-12 h-12 rounded-full flex items-center justify-center;
+  }
+
+  .dialog-icon-primary { @apply bg-primary/15 text-primary; }
+  .dialog-icon-error   { @apply bg-error/15 text-error; }
+  .dialog-icon-success { @apply bg-success/15 text-success; }
+  .dialog-icon-warning { @apply bg-warning/15 text-warning; }
+
+  /* ── Tooltip ──────────────────────────────────────────────────── */
+  .custom-tooltip {
+    @apply relative inline-flex;
+  }
+
+  .custom-tooltip-content {
+    @apply absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2
+           px-3 py-1.5 rounded-lg
+           bg-neutral text-neutral-content text-xs font-medium
+           whitespace-nowrap pointer-events-none
+           opacity-0 scale-95 transition-all duration-150
+           shadow-sm;
+  }
+
+  .custom-tooltip:hover .custom-tooltip-content,
+  .custom-tooltip:focus-within .custom-tooltip-content {
+    @apply opacity-100 scale-100;
+  }
+
+  /* ── Toast / Snackbar ─────────────────────────────────────────── */
+  .toast-container {
+    @apply fixed bottom-6 right-6 z-50 flex flex-col gap-2 items-end;
+  }
+
+  .custom-toast {
+    @apply flex items-center gap-3
+           px-4 py-3.5 rounded-xl
+           bg-neutral text-neutral-content
+           shadow-lg text-sm font-medium
+           max-w-sm min-w-64
+           transition-all duration-300;
+  }
+
+  .custom-toast-success { @apply bg-success text-success-content; }
+  .custom-toast-error   { @apply bg-error text-error-content; }
+  .custom-toast-warning { @apply bg-warning text-warning-content; }
+  .custom-toast-info    { @apply bg-primary text-primary-content; }
+
+  .custom-toast-close {
+    @apply ml-auto w-6 h-6 flex items-center justify-center
+           rounded-full opacity-70 hover:opacity-100 cursor-pointer
+           hover:bg-white/10 transition-colors duration-150;
+  }
+
+  /* ── Table Overrides ──────────────────────────────────────────── */
+  .table-wrapper {
+    @apply w-full overflow-x-auto rounded-box border border-base-300/30;
+  }
+
+  .table tbody tr.row-selected {
+    @apply bg-primary/10;
+  }
+
+  .table tbody tr.row-danger {
+    @apply bg-error/10;
+  }
+
+  .table-sort {
+    @apply cursor-pointer hover:opacity-100 select-none;
+  }
+
+  .table-pagination {
+    @apply flex items-center justify-between px-4 py-3
+           border-t border-base-300/30
+           text-sm opacity-70
+           bg-base-100;
+  }
+
+  /* ── Status Dots ──────────────────────────────────────────────── */
+  .status-dot {
+    @apply inline-block w-2 h-2 rounded-full;
+  }
+
+  .status-dot-online  { @apply bg-success; }
+  .status-dot-away    { @apply bg-warning; }
+  .status-dot-busy    { @apply bg-error; }
+  .status-dot-offline { @apply bg-neutral; }
+
+  /* ── Avatar Status Badge Extensions ───────────────────────────── */
+  .avatar-status {
+    @apply absolute bottom-0 right-0
+           w-2.5 h-2.5 rounded-full border-2 border-base-100;
+  }
+
+  .avatar-status-online  { @apply bg-success; }
+  .avatar-status-away    { @apply bg-warning; }
+  .avatar-status-busy    { @apply bg-error; }
+  .avatar-status-offline { @apply bg-neutral; }
+
+}

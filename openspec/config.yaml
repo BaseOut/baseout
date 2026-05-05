@@ -1,0 +1,61 @@
+schema: spec-driven
+
+context: |
+  ## Product
+  Baseout is a SaaS platform for Airtable backup, restore, schema intelligence, and data ingestion.
+  It is a multi-tenant system where customers connect their Airtable workspaces, configure Spaces,
+  and access tiered capabilities (Backup, Restore, Schema, Data, AI, Analytics, Governance, Integrations).
+
+  ## Domain Model (canonical terms — use these exactly in specs, code, and copy)
+  - Organization: top-level billing entity (one per customer company)
+  - Space: container within an Org bound to one Platform; primary unit of config and billing
+  - Platform: supported external source (V1: Airtable only; future: Notion, HubSpot, Salesforce)
+  - Connection: authenticated OAuth/API-key link between an Org and a Platform; serves multiple Spaces
+  - Base / Table / Field / Record / Attachment / Automation / Interface / View: Airtable entities (map directly)
+  - Pricing tiers: Community (free) → Starter → Growth → Pro → Business → Enterprise
+
+  ## Monorepo Layout (pnpm workspaces)
+  Apps — all Cloudflare Workers unless noted; each independently versioned and deployed:
+  - apps/web      (@baseout/web)    — customer-facing Astro SSR app + /api/* endpoints; Cloudflare Pages+Workers
+  - apps/admin    (@baseout/admin)  — internal admin Astro SSR app, Google SSO; Cloudflare Workers
+  - apps/server   (@baseout/server) — data plane: backup/restore engine, Durable Objects, Trigger.dev cron, On2Air migration
+  - apps/api      (@baseout/api)    — public versioned inbound API at api.baseout.com
+  - apps/sql      (@baseout/sql)    — public read-only SQL API at sql.baseout.com (Pro+)
+  - apps/hooks    (@baseout/hooks)  — Airtable webhook receiver at webhooks.baseout.com
+
+  Packages:
+  - packages/db-schema  (@baseout/db-schema) — Drizzle schema + migrations; consumed by all apps at a pinned version
+  - packages/shared     (@baseout/shared)    — AES-256-GCM encryption, HMAC service tokens, error types, Zod helpers, logging
+  - packages/ui         (@baseout/ui)        — shared Astro/React UI components
+
+  ## Tech Stack
+  Language:     TypeScript (strict, ESNext, verbatimModuleSyntax)
+  Runtime:      Cloudflare Workers (all backend apps); Node ≥20 for tooling
+  Frontend:     Astro SSR (web, admin); React islands; React Flow (schema graph); Shepherd.js (tours)
+  Database:     PostgreSQL — DigitalOcean shared PG (Starter/Growth/Pro), Neon/Supabase dedicated (Business+)
+  ORM:          Drizzle ORM
+  Auth:         better-auth (magic link, email+password, 2FA TOTP, Enterprise SAML); Airtable OAuth for Connections only
+  Background:   Trigger.dev V3 workflows (one job per base backup, unlimited concurrency)
+  State:        Cloudflare Durable Objects (per-Connection rate-limit gateway, per-Space backup state machine)
+  Storage:      Cloudflare R2 (managed); BYOS: Google Drive, Dropbox, Box, OneDrive, S3, Frame.io
+  Billing:      Stripe (subscriptions, add-ons, one-time credit packs, webhooks with idempotency table)
+  Email:        Mailgun + React Email templates
+  Validation:   Zod
+  Testing:      Vitest (unit/integration); Playwright (e2e on web); msw (HTTP mocking); Docker PG + Miniflare D1 in CI
+  Deployment:   wrangler (Workers), Cloudflare Pages (web/admin)
+  Package mgr:  pnpm 9
+
+  ## Cross-App Communication
+  - apps/hooks  → apps/server: forwards verified Airtable webhook payloads (HMAC service token)
+  - apps/api    → apps/server: forwards validated inbound API payloads (HMAC service token)
+  - apps/web    → apps/server: triggers backup/restore runs, reads progress via WebSocket DO
+  - apps/admin  → apps/server: super-admin operations
+  - apps/sql    → client DBs: read-only queries via Hyperdrive, provisioned by apps/server
+  - All cross-app HTTP calls authenticated via HMAC service tokens from @baseout/shared
+
+  ## Conventions
+  DB schema:    snake_case columns, UUID PKs, created_at/modified_at timestamps, _enc suffix for AES-encrypted columns
+  App naming:   short single-word directory (web, admin, server, api, sql, hooks); package = @baseout/<dir>; worker = baseout-<dir>
+  Specs:        requirements use SHALL/MUST; scenarios use WHEN/THEN with #### headers
+  Commits:      conventional commits (feat/fix/chore/refactor/docs)
+  Environments: production / staging per Worker (wrangler env)

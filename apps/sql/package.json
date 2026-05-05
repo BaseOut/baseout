@@ -1,0 +1,24 @@
+{
+  "name": "@baseout/sql",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Public versioned read-only SQL API at sql.baseout.com. See ./openspec/proposal.md.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "tsup src/index.ts --format esm --dts",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts",
+    "openapi:generate": "tsx scripts/generate-openapi.ts"
+  },
+  "dependencies": {
+    "@baseout/db-schema": "workspace:*",
+    "@baseout/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240924.0",
+    "wrangler": "^3.78.0"
+  }
+}

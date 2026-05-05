@@ -1,0 +1,27 @@
+---
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import Card from '../components/ui/Card.astro';
+import { getBreadcrumbs } from '../lib/config';
+
+const breadcrumbs = getBreadcrumbs('/backups');
+---
+
+<SidebarLayout pageTitle="Backups" breadcrumbs={breadcrumbs}>
+  <div class="space-y-8 animate-in fade-in duration-700">
+    <header>
+      <h1 class="text-2xl font-bold tracking-tight">Backups</h1>
+      <p class="text-sm text-base-content/60 mt-1">
+        Backup runs are temporarily unavailable while the backup engine is rebuilt as apps/server.
+      </p>
+    </header>
+
+    <Card variant="outlined">
+      <p class="text-sm text-base-content/60">
+        Use the
+        <a href="/integrations" class="link link-primary mx-1">Integrations</a>
+        page to manage which bases are included in your Space's backup configuration. Backup
+        runs will resume once apps/server is online.
+      </p>
+    </Card>
+  </div>
+</SidebarLayout>

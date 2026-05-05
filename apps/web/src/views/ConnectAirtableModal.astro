@@ -1,0 +1,109 @@
+---
+import Modal from '../components/ui/Modal.astro';
+import Button from '../components/ui/Button.astro';
+import type { BaseSummary } from '../stores/connections';
+
+interface Props {
+  mode: 'pre-connect' | 'success';
+  bases: BaseSummary[];
+  /** Auto-open on page load (used for the success-after-redirect case). */
+  open: boolean;
+}
+
+const { mode, bases, open } = Astro.props;
+const title =
+  mode === 'pre-connect'
+    ? 'Connect your first Airtable base'
+    : 'Airtable connected';
+---
+
+<Modal id="connect-airtable-modal" title={title} size="md" open={open}>
+  {mode === 'pre-connect' ? (
+    <div class="space-y-4">
+      <p class="text-sm text-base-content/70">
+        You'll be redirected to Airtable to approve access. Baseout reads your
+        schema, records, and attachments — it never writes back to your bases.
+      </p>
+      <ul class="text-sm text-base-content/70 list-disc pl-5 space-y-1">
+        <li>Automatic schema discovery for every base on your account</li>
+        <li>Encrypted OAuth tokens (AES-256-GCM) stored at rest</li>
+        <li>You can disconnect at any time from Integrations</li>
+      </ul>
+      <div class="pt-2 flex items-center gap-3">
+        <form
+          method="POST"
+          action="/api/connections/airtable/start"
+          data-airtable-connect
+          data-astro-reload
+        >
+          <Button type="submit" variant="primary" data-connect-submit>
+            Connect Airtable
+          </Button>
+        </form>
+        <form method="dialog">
+          <Button type="submit" variant="ghost">Cancel</Button>
+        </form>
+      </div>
+    </div>
+  ) : (
+    <div class="space-y-4">
+      <p class="text-sm text-base-content/70">
+        {bases.length > 0
+          ? `We found ${bases.length} base${bases.length === 1 ? '' : 's'} in your Airtable account.`
+          : "Your Airtable account is connected, but we didn't find any bases."}
+      </p>
+      {bases.length > 0 && (
+        <ul class="divide-y divide-base-300/50 border border-base-300/50 rounded-box max-h-64 overflow-auto">
+          {bases.map((b) => (
+            <li class="px-3 py-2 flex items-center justify-between gap-3">
+              <span class="truncate font-medium">{b.name}</span>
+              <span class="font-mono text-xs text-base-content/60">{b.atBaseId}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p class="text-xs text-base-content/60">
+        Next up: choose which bases to back up. (Coming soon.)
+      </p>
+      <form method="dialog" class="flex justify-end">
+        <Button type="submit" variant="primary">Done</Button>
+      </form>
+    </div>
+  )}
+</Modal>
+
+<script>
+  import { setButtonLoading } from '../lib/ui';
+
+  const form = document.querySelector<HTMLFormElement>(
+    'form[data-airtable-connect]',
+  );
+  const submit = form?.querySelector<HTMLButtonElement>('[data-connect-submit]');
+  form?.addEventListener('submit', () => {
+    if (submit) setButtonLoading(submit, true);
+    // Page navigates away on submit; spinner clears on unload.
+  });
+
+  // Triggers that ask us to open the modal from elsewhere on the page
+  // (e.g. the dashboard Next-Step card).
+  document
+    .querySelectorAll<HTMLElement>('[data-open-modal="connect-airtable-modal"]')
+    .forEach((el) => {
+      el.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const dlg = document.getElementById(
+          'connect-airtable-modal',
+        ) as HTMLDialogElement | null;
+        dlg?.showModal();
+      });
+    });
+
+  // If we landed here via ?connected=1, strip the query param so a refresh
+  // doesn't reopen the success modal again.
+  const search = new URL(location.href).searchParams;
+  if (search.get('connected') === '1') {
+    const url = new URL(location.href);
+    url.searchParams.delete('connected');
+    history.replaceState(null, '', url.toString());
+  }
+</script>

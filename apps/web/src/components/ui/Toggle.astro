@@ -1,0 +1,65 @@
+---
+import { cn, inputId as deriveId } from '../../lib/ui';
+
+interface Props {
+  label?: string;
+  description?: string;
+  name?: string;
+  id?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  size?: 'sm' | 'md' | 'lg';
+  class?: string;
+}
+
+const {
+  label,
+  description,
+  name,
+  id,
+  checked = false,
+  disabled = false,
+  size,
+  class: className = '',
+} = Astro.props;
+
+const elId = deriveId(id, name, label);
+
+const toggleClasses = cn(
+  'toggle toggle-primary',
+  size === 'sm' && 'toggle-sm',
+  size === 'lg' && 'toggle-lg',
+);
+
+const wrapperClasses = cn(
+  'flex items-start gap-3',
+  disabled && 'opacity-35 cursor-not-allowed',
+  className,
+);
+---
+
+<div class={wrapperClasses}>
+  <input
+    type="checkbox"
+    id={elId}
+    name={name}
+    checked={checked}
+    disabled={disabled}
+    role="switch"
+    aria-checked={checked ? 'true' : 'false'}
+    class={toggleClasses}
+  />
+
+  {(label || description) && (
+    <div class="flex flex-col gap-0.5 select-none">
+      {label && (
+        <label for={elId} class="label cursor-pointer">
+          {label}
+        </label>
+      )}
+      {description && (
+        <span class="fieldset-label">{description}</span>
+      )}
+    </div>
+  )}
+</div>

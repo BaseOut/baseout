@@ -1,0 +1,201 @@
+/* ── Auth Layout ─────────────────────────────────────────────────── */
+@layer components {
+
+  /* ── Split layout container ── */
+  .auth-layout {
+    @apply flex h-screen w-full overflow-hidden;
+  }
+
+  /* ── Brand / marketing panel (left, wide) ── */
+  .auth-brand {
+    @apply hidden lg:flex
+           flex-col items-center justify-center
+           gap-8 p-12
+           relative overflow-hidden;
+    flex: 1 1 0;
+    background: linear-gradient(180deg, #09090d 0%, #0a0f14 50%, #09090d 100%);
+  }
+
+  .auth-brand-bg {
+    @apply absolute inset-0 pointer-events-none;
+    background-image: url('/images/auth-bg.png');
+    background-size: cover;
+    background-position: top;
+    opacity: 0.6;
+  }
+
+  .auth-brand-mesh {
+    @apply absolute inset-0 opacity-10 pointer-events-none;
+    background-image:
+      linear-gradient(30deg, transparent 40%, oklch(var(--color-primary) / 0.03) 45%, transparent 50%),
+      linear-gradient(150deg, transparent 40%, oklch(var(--color-primary) / 0.02) 45%, transparent 50%),
+      linear-gradient(270deg, transparent 40%, oklch(var(--color-primary) / 0.03) 45%, transparent 50%);
+    background-size: 100px 100px;
+  }
+
+  .auth-brand-content {
+    @apply relative z-10 flex flex-col items-center gap-8;
+  }
+
+  .auth-brand-logo-img {
+    height: 6rem;
+    width: auto;
+    margin: 0 auto;
+  }
+
+  .auth-brand-description {
+    font-size: 15px;
+    line-height: 1.5;
+    max-width: 400px;
+    text-align: center;
+    color: color-mix(in oklab, white 50%, transparent);
+  }
+
+  .auth-brand-divider {
+    height: 2px;
+    width: 3rem;
+    border-radius: 9999px;
+    background: var(--color-primary);
+    margin: 0 auto;
+  }
+
+  .auth-brand-features {
+    @apply flex flex-col gap-4;
+  }
+
+  .auth-brand-feature {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: color-mix(in oklab, white 60%, transparent);
+  }
+
+  .auth-brand-feature-icon {
+    color: var(--color-success);
+    font-size: 18px;
+  }
+
+  /* ── Form panel (right, fixed 480px) ── */
+  .auth-panel {
+    @apply flex flex-col items-center justify-center
+           h-full
+           bg-base-100;
+    width: 100%;
+    padding: 0 1rem;
+  }
+
+  @media (min-width: 1024px) {
+    .auth-panel {
+      width: 480px;
+      flex: 0 0 480px;
+      padding: 0 2.5rem;
+    }
+  }
+
+  .auth-card {
+    @apply w-full;
+    max-width: 360px;
+  }
+
+  .auth-card-inner {
+    @apply flex flex-col;
+  }
+
+  /* ── Form-column logo (theme-aware swap) ── */
+  .auth-form-logo {
+    display: flex;
+    justify-content: center;
+    margin-top: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .auth-form-logo-img {
+    height: 2rem;
+    width: auto;
+  }
+
+  .auth-form-logo-light {
+    display: inline;
+  }
+
+  .auth-form-logo-dark {
+    display: none;
+  }
+
+  [data-theme="baseout"] .auth-form-logo-light {
+    display: none;
+  }
+
+  [data-theme="baseout"] .auth-form-logo-dark {
+    display: inline;
+  }
+
+  /* ── Typography ── */
+  .auth-card-title {
+    font-size: 26px;
+    font-weight: 700;
+    text-align: center;
+    color: var(--color-base-content);
+  }
+
+  .auth-card-subtitle {
+    font-size: 14px;
+    text-align: center;
+    margin-top: 4px;
+    color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+  }
+
+  /* ── Form ── */
+  .auth-form {
+    @apply flex flex-col gap-4;
+  }
+
+  .auth-form-header {
+    @apply flex items-center justify-between;
+  }
+
+  .auth-form-link {
+    @apply text-xs font-semibold text-primary
+           hover:text-primary/80 transition-colors
+           tracking-wide uppercase;
+  }
+
+  /* ── "or continue with" divider ── */
+  .auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .auth-divider-line {
+    height: 1px;
+    flex: 1;
+    background: color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  }
+
+  .auth-divider-label {
+    font-size: 12px;
+    color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+  }
+
+  /* ── Footer ── */
+  .auth-footer {
+    @apply text-center mt-6 space-y-3;
+  }
+
+  .auth-footer-text {
+    @apply text-sm;
+    color: color-mix(in oklab, var(--color-base-content) 60%, transparent);
+  }
+
+  .auth-footer-link {
+    @apply font-semibold text-primary
+           hover:text-primary/80 transition-colors;
+  }
+
+  .auth-copyright {
+    @apply text-xs tracking-wider uppercase;
+    color: color-mix(in oklab, var(--color-base-content) 40%, transparent);
+  }
+}

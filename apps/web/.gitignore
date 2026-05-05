@@ -1,0 +1,50 @@
+# build output
+dist/
+# generated types
+.astro/
+# wrangler / miniflare local state
+.wrangler/
+worker-configuration.d.ts
+# wrangler.jsonc is generated from wrangler.jsonc.example by scripts/launch.mjs
+# (it contains the local Postgres connection string from .env)
+wrangler.jsonc
+
+# dependencies
+node_modules/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+
+# environment variables — real secrets never commit; .env.example is tracked
+.env
+.env.*
+!.env.example
+.dev.vars
+
+# SQLite database
+auth.db
+auth.db-wal
+auth.db-shm
+
+# macOS-specific files
+.DS_Store
+
+# jetbrains setting folder
+.idea/
+
+# product specs — local reference only, do not commit
+docs/
+!docs/Baseout_Backlog.md
+!docs/Baseout_Backlog_MVP.md
+
+# local schema scratch dirs
+schema-cluster-over
+schema-osai
+schema-starter
+
+# local pipeline / roadmap notes
+pipeline-roadmap.md

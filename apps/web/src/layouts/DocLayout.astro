@@ -1,0 +1,37 @@
+---
+import SidebarLayout from './SidebarLayout.astro';
+import DocNav from '../components/docs/DocNav.astro';
+import type { NavItem, UserInfo, Breadcrumb } from '../lib/types';
+
+interface Section {
+  id: string;
+  label: string;
+}
+
+interface Props {
+  title?: string;
+  brandName?: string;
+  version?: string;
+  currentSpace?: string;
+  navItems?: NavItem[];
+  user?: UserInfo;
+  pageTitle?: string;
+  breadcrumbs?: Breadcrumb[];
+  notificationCount?: number;
+  showCreate?: boolean;
+  sections?: Section[];
+}
+
+const { sections, ...rest } = Astro.props;
+---
+
+<SidebarLayout {...rest}>
+  <div class="flex gap-8 max-w-5xl mx-auto">
+    <div class="flex-1 min-w-0 space-y-12">
+      <slot />
+    </div>
+    {sections && sections.length > 0 && (
+      <DocNav sections={sections} />
+    )}
+  </div>
+</SidebarLayout>

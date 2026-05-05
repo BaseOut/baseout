@@ -1,0 +1,48 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1776367978548,
+      "tag": "0000_deep_freak",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776368775465,
+      "tag": "0001_daily_thanos",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776805178378,
+      "tag": "0002_ambiguous_patch",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1776811916793,
+      "tag": "0003_signup_profile_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777583410752,
+      "tag": "0004_user_role_and_backup_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777585708747,
+      "tag": "0005_clean_agent_brand",
+      "breakpoints": true
+    }
+  ]
+}

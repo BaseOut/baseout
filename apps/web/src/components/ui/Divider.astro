@@ -1,0 +1,39 @@
+---
+import { cn } from '../../lib/ui';
+
+interface Props {
+  text?: string;
+  variant?: 'default' | 'subtle' | 'strong' | 'dashed';
+  orientation?: 'horizontal' | 'vertical';
+  spacing?: 'none' | 'sm' | 'md' | 'lg';
+  class?: string;
+}
+
+const {
+  text,
+  variant = 'default',
+  orientation = 'horizontal',
+  spacing = 'md',
+  class: className = '',
+} = Astro.props;
+
+const spacingMap: Record<string, string> = {
+  none: 'my-0',
+  sm:   'my-2',
+  md:   'my-4',
+  lg:   'my-6',
+};
+
+const dividerClasses = cn(
+  'divider',
+  orientation === 'vertical' && 'divider-horizontal',
+  spacingMap[spacing] || spacingMap.md,
+  variant === 'subtle' && 'opacity-40',
+  variant === 'dashed' && 'border-dashed',
+  className,
+);
+---
+
+<div class={dividerClasses} role="separator">
+  {text && <span class="text-xs font-medium tracking-widest uppercase">{text}</span>}
+</div>

@@ -1,0 +1,58 @@
+{
+  "product": {
+    "name": "Baseout",
+    "version": "v0.1.0"
+  },
+  "owner": {
+    "firstName": "Autumn",
+    "lastName": "Shakespeare",
+    "email": "autumn@openside.com"
+  },
+  "navigation": {
+    "top": [
+      {
+        "label": "Home",
+        "href": "/",
+        "icon": "iconify lucide--layout-dashboard"
+      },
+      {
+        "label": "Backups",
+        "href": "/backups",
+        "icon": "iconify lucide--archive"
+      },
+      {
+        "label": "Restore",
+        "href": "/restore",
+        "icon": "iconify lucide--rotate-ccw"
+      },
+      {
+        "label": "Schema",
+        "href": "/schema",
+        "icon": "iconify lucide--git-branch"
+      },
+      {
+        "label": "Integrations",
+        "href": "/integrations",
+        "icon": "iconify lucide--plug"
+      },
+      {
+        "label": "Reports",
+        "href": "/reports",
+        "icon": "iconify lucide--file-text"
+      }
+    ],
+    "bottom": [
+      {
+        "label": "Settings",
+        "href": "/settings",
+        "icon": "iconify lucide--settings"
+      },
+      {
+        "label": "Help Center",
+        "href": "/help",
+        "icon": "iconify lucide--help-circle"
+      }
+    ]
+  },
+  "createdAt": "2026-04-15T21:24:03.360Z"
+}

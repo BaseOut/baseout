@@ -1,0 +1,146 @@
+---
+import AuthLayout from '../layouts/AuthLayout.astro';
+import TextInput from '../components/ui/TextInput.astro';
+import Button from '../components/ui/Button.astro';
+import { getProductName } from '../lib/config';
+
+const productName = getProductName();
+---
+
+<AuthLayout title={`Sign In — ${productName}`}>
+  <div class="auth-card-inner" data-login-root>
+    <div class="auth-form-logo">
+      <img src="/images/brand/horizontal-blue.svg" alt={productName} class="auth-form-logo-img auth-form-logo-light" />
+      <img src="/images/brand/horizontal-cyan.svg" alt="" class="auth-form-logo-img auth-form-logo-dark" />
+    </div>
+
+    <div data-login-form>
+      <div class="text-center mb-5">
+        <h2 class="auth-card-title">Welcome back</h2>
+        <p class="auth-card-subtitle">Sign in to your account to continue</p>
+      </div>
+
+      <form id="login-form" class="auth-form" novalidate>
+        <TextInput
+          type="email"
+          name="email"
+          label="Work Email"
+          icon="mail"
+          placeholder="name@company.com"
+          autocomplete="email"
+          required
+        />
+
+        <div id="login-error" class="fieldset-label text-error flex items-center gap-1 hidden" role="alert">
+          <span class="material-symbols-outlined icon-sm">error</span>
+          <span id="login-error-text"></span>
+        </div>
+
+        <Button variant="primary" type="submit" class="w-full mt-1">
+          Send Sign-In Link
+        </Button>
+      </form>
+
+      <div class="auth-divider mt-4">
+        <span class="auth-divider-line"></span>
+        <span class="auth-divider-label">or continue with</span>
+        <span class="auth-divider-line"></span>
+      </div>
+
+      <button
+        type="button"
+        class="btn btn-outline w-full gap-2 mt-4"
+        disabled
+        aria-disabled="true"
+        title="Coming soon"
+      >
+        <i class="fa-brands fa-google" aria-hidden="true"></i>
+        Google
+      </button>
+    </div>
+
+    <div data-login-sent class="hidden">
+      <div class="text-center mb-5">
+        <h2 class="auth-card-title">Check your email</h2>
+        <p class="auth-card-subtitle">
+          If an account exists for <span data-login-sent-email class="font-medium"></span>,
+          we sent a sign-in link. The link expires in 5 minutes.
+        </p>
+      </div>
+      <p class="auth-card-subtitle mt-4">
+        Didn't receive it? <button type="button" data-login-again class="auth-footer-link">Try a different email</button>
+      </p>
+    </div>
+
+    <div class="auth-footer mt-auto">
+      <p class="auth-footer-text">
+        Don't have an account?
+        <a href="/register" class="auth-footer-link">Register</a>
+      </p>
+      <p class="auth-copyright">&copy; {new Date().getFullYear()} {productName.toUpperCase()}</p>
+    </div>
+  </div>
+</AuthLayout>
+
+<script>
+  import { showFormError, hideFormError } from '../lib/auth-utils';
+  import { authClient } from '../lib/auth-client';
+  import { setButtonLoading } from '../lib/ui';
+
+  function init() {
+    const formPanel = document.querySelector<HTMLElement>('[data-login-form]');
+    const sentPanel = document.querySelector<HTMLElement>('[data-login-sent]');
+    const sentEmail = document.querySelector<HTMLElement>('[data-login-sent-email]');
+    const againBtn = document.querySelector<HTMLButtonElement>('[data-login-again]');
+
+    const loginForm = document.getElementById('login-form') as HTMLFormElement | null;
+    const loginError = document.getElementById('login-error') as HTMLElement | null;
+    const loginErrorText = document.getElementById('login-error-text') as HTMLElement | null;
+    const submitBtn = loginForm?.querySelector('button[type="submit"]') as HTMLButtonElement | null;
+
+    if (!loginForm || !loginError || !loginErrorText || !submitBtn || !formPanel || !sentPanel || !sentEmail || !againBtn) {
+      return;
+    }
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(loginForm);
+      const email = (formData.get('email') as string)?.trim().toLowerCase();
+
+      hideFormError(loginError);
+
+      if (!email) {
+        showFormError(loginError, loginErrorText, 'Please enter your email address.');
+        return;
+      }
+
+      setButtonLoading(submitBtn, true);
+      try {
+        const { error } = await authClient.signIn.magicLink({
+          email,
+          callbackURL: '/welcome',
+        });
+
+        if (error) {
+          showFormError(loginError, loginErrorText, error.message ?? 'Could not send sign-in link. Please try again.');
+          return;
+        }
+
+        sentEmail.textContent = email;
+        formPanel.classList.add('hidden');
+        sentPanel.classList.remove('hidden');
+      } finally {
+        setButtonLoading(submitBtn, false);
+      }
+    });
+
+    againBtn.addEventListener('click', () => {
+      sentPanel.classList.add('hidden');
+      formPanel.classList.remove('hidden');
+      loginForm.reset();
+    });
+  }
+
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>

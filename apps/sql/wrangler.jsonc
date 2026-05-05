@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-sql",
+  "main": "./src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Routes
+  // "routes": [
+  //   { "pattern": "sql.baseout.com/v1/*", "zone_name": "baseout.com" }
+  // ],
+
+  // Hyperdrive bindings (PG connection pool)
+  // "hyperdrive": [
+  //   { "binding": "MASTER_DB", "id": "..." }
+  // ],
+
+  // Secrets (set via `wrangler secret put`):
+  //   DATABASE_URL
+  //   MASTER_ENCRYPTION_KEY
+  //   SERVICE_HMAC_TO_SERVER
+
+  "env": {
+    "production": {
+      "name": "baseout-sql"
+    },
+    "staging": {
+      "name": "baseout-sql-staging"
+    }
+  }
+}

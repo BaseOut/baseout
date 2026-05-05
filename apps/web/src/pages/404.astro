@@ -1,0 +1,12 @@
+---
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import NotFoundView from '../views/NotFoundView.astro';
+
+Astro.response.status = 404;
+
+const breadcrumbs = [{ label: 'Home', href: '/' }, { label: '404' }];
+---
+
+<SidebarLayout pageTitle="Page Not Found" breadcrumbs={breadcrumbs}>
+  <NotFoundView />
+</SidebarLayout>

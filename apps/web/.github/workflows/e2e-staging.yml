@@ -1,0 +1,52 @@
+name: e2e-staging
+
+on:
+  workflow_dispatch:
+  # Auto-fire after a successful dev deploy so the Playwright tracer gates
+  # the dev → staging/prod promotion path. Filter to push-triggered ci.yml
+  # runs so PR-only runs (which skip deploy-dev) don't ping the live worker.
+  workflow_run:
+    workflows: ['ci']
+    types: [completed]
+    branches: [autumn/baseout-initial-refactor, staging]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run'
+       && github.event.workflow_run.conclusion == 'success'
+       && github.event.workflow_run.event == 'push')
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          FONTAWESOME_TOKEN: ${{ secrets.FONTAWESOME_TOKEN }}
+        run: npm ci
+      - name: Install Playwright browsers
+        run: npm run test:e2e:install
+      - name: Run Playwright
+        env:
+          # Tracer runs against the existing baseout-dev worker. No new DO /
+          # CF infra needed. When a real staging worker exists, swap this URL.
+          E2E_TARGET_URL: https://baseout-dev.openside.workers.dev
+          E2E_TEST_TOKEN: ${{ secrets.E2E_TEST_TOKEN }}
+          E2E_INBOX_DOMAIN: ${{ secrets.E2E_INBOX_DOMAIN }}
+        run: npm run test:e2e
+      - name: Upload Playwright report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

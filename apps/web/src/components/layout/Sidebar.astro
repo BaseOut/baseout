@@ -1,0 +1,744 @@
+---
+import type { NavItem, UserInfo } from '../../lib/types';
+import CreateSpaceModal from '../ui/CreateSpaceModal.astro';
+
+interface Props {
+  brandName?: string;
+  version?: string;
+  currentSpace?: string;
+  spaces?: { id: string; name: string }[];
+  navItems?: NavItem[];
+  footerNavItems?: NavItem[];
+  user?: UserInfo;
+  organization?: { id: string; name: string; slug: string } | null;
+  /** @deprecated No longer rendered; kept for back-compat with existing callers. */
+  showAiAssistant?: boolean;
+  currentPath?: string;
+}
+
+const {
+  brandName     = 'Baseout',
+  version,
+  currentSpace,
+  spaces,
+  navItems      = [
+    { label: 'Home',       href: '/',           icon: 'iconify lucide--layout-dashboard' },
+    { label: 'Components', href: '/components', icon: 'iconify lucide--shapes' },
+  ],
+  footerNavItems = [
+    { label: 'Settings',    href: '/settings', icon: 'iconify lucide--settings' },
+    { label: 'Help Center', href: '/help',     icon: 'iconify lucide--help-circle' },
+  ],
+  user = { name: 'Guest', email: 'guest@example.com', role: 'viewer' },
+  organization = null,
+  currentPath     = Astro.url.pathname,
+} = Astro.props;
+
+function isActive(item: NavItem): boolean {
+  if (item.children) {
+    return item.children.some(c => c.href && (currentPath === c.href || (c.href !== '/' && currentPath.startsWith(c.href))));
+  }
+  return !!(item.href && (currentPath === item.href || (item.href !== '/' && currentPath.startsWith(item.href))));
+}
+
+function isChildActive(child: NavItem): boolean {
+  return !!(child.href && (currentPath === child.href || (child.href !== '/' && currentPath.startsWith(child.href))));
+}
+
+function renderBadges(item: NavItem) {
+  const badges: Array<{ text: string; isNew: boolean }> = [];
+  if (item.badges) {
+    for (const b of item.badges) {
+      badges.push({ text: b === 'new' ? 'New' : b, isNew: b === 'new' });
+    }
+  } else if (item.badge) {
+    badges.push({ text: item.badge, isNew: false });
+  }
+  return badges;
+}
+
+function getInitials(s: string): string {
+  const parts = s.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+// Deterministic per-space color (no `color` field on Space yet).
+function spaceColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) {
+    h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  }
+  return `hsl(${Math.abs(h) % 360} 65% 50%)`;
+}
+
+const nameParts = user.name.split(' ');
+const shortName = nameParts.length > 1
+  ? `${nameParts[0]} ${nameParts[1].charAt(0)}.`
+  : nameParts[0];
+
+const handle = '@' + (user.email.split('@')[0] || 'user');
+
+const currentSpaceColor = currentSpace ? spaceColor(currentSpace) : '';
+const spaceInitials     = currentSpace ? getInitials(currentSpace) : '';
+const hasMultipleSpaces = !!(spaces && spaces.length > 1);
+---
+
+<!-- Brand: full logo expanded, icon-only in rail -->
+<div class="flex h-16 min-h-16 items-center justify-between gap-3 ps-5 pe-4 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:ps-0 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:pe-0">
+  <a href="/" class="flex items-center grow min-w-0 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden" aria-label={brandName}>
+    <img src="/images/logo/logo-dark.svg" alt={brandName} class="brand-logo-cyan h-7.5 w-auto" />
+    <img src="/images/logo/logo-light.svg" alt={brandName} class="brand-logo-blue h-7.5 w-auto" />
+  </a>
+  <a href="/" class="hidden items-center justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:flex" aria-label={brandName}>
+    <img src="/images/logo/icon-dark.svg" alt={brandName} class="brand-logo-cyan h-7 w-auto" />
+    <img src="/images/logo/icon-light.svg" alt={brandName} class="brand-logo-blue h-7 w-auto" />
+  </a>
+</div>
+
+<!-- Floating rail toggle — desktop only, on the sidebar's right border -->
+<label
+  for="layout-sidebar-hover-trigger"
+  title="Toggle sidebar"
+  class="absolute top-[18px] left-[242px] group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:left-[52px] z-[100] flex size-7 cursor-pointer items-center justify-center rounded-full border border-base-content/15 bg-base-100 text-base-content/50 hover:text-base-content hover:border-base-content/30 transition-all duration-300 max-lg:hidden"
+>
+  <i class="iconify lucide--panel-left-close size-3.5 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden"></i>
+  <i class="iconify lucide--panel-left-open size-3.5 hidden group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:block"></i>
+</label>
+
+{organization && (
+  <p class="px-5 -mt-2 mb-2 text-[11px] font-medium uppercase tracking-wider text-base-content/50 truncate group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
+    {organization.name}
+  </p>
+)}
+
+<!-- Space selector -->
+<div class="mb-3 px-2.5 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-1" data-space-selector>
+  {currentSpace ? (
+    <>
+      {/* Expanded state */}
+      <div class="dropdown dropdown-bottom dropdown-start w-full group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
+        <div
+          tabindex="0"
+          role="button"
+          data-space-pill
+          class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg border border-base-content/15 px-3 h-9 hover:border-base-content/30 transition-colors"
+        >
+          <span
+            data-space-pill-initials
+            class="size-6 shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold text-white"
+            style={`background-color: ${currentSpaceColor};`}
+          >
+            {spaceInitials}
+          </span>
+          <span data-space-pill-name class="min-w-0 grow truncate text-sm font-medium">{currentSpace}</span>
+          <i class="iconify lucide--chevrons-up-down text-base-content/40 size-3.5 shrink-0"></i>
+        </div>
+        <ul
+          role="menu"
+          tabindex="0"
+          data-space-list
+          class="dropdown-content menu bg-base-100 rounded-box border border-base-content/10 mt-1 w-[calc(100%-0.25rem)] p-1 shadow-[0px_10px_40px_0px] shadow-base-content/5 z-50"
+        >
+          {hasMultipleSpaces && spaces!.map((s) => {
+            const active = s.name === currentSpace;
+            return (
+              <li data-space-list-item data-space-id={s.id}>
+                <button
+                  type="button"
+                  data-space-switch
+                  data-space-id={s.id}
+                  disabled={active}
+                  class="flex items-center gap-2.5"
+                >
+                  <span
+                    class="size-6 shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold text-white"
+                    style={`background-color: ${spaceColor(s.name)};`}
+                  >
+                    {getInitials(s.name)}
+                  </span>
+                  <span class="truncate">{s.name}</span>
+                  {active && <i class="iconify lucide--check text-primary ms-auto size-3.5"></i>}
+                </button>
+              </li>
+            );
+          })}
+          <li data-space-create-row class={hasMultipleSpaces ? 'border-t border-base-content/10 mt-1 pt-1' : ''}>
+            <button
+              type="button"
+              data-create-space
+              class="flex items-center gap-2 text-base-content/50 hover:text-base-content"
+            >
+              <i class="iconify lucide--plus size-3.5"></i>
+              <span>Create New Space</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      {/* Rail state — initials badge only */}
+      <div class="hidden w-full group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:flex items-center justify-center">
+        <label for="layout-sidebar-hover-trigger" class="cursor-pointer" title={currentSpace}>
+          <span
+            data-space-rail-initials
+            class="size-7 shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold text-white"
+            style={`background-color: ${currentSpaceColor};`}
+          >
+            {spaceInitials}
+          </span>
+        </label>
+      </div>
+    </>
+  ) : (
+    <>
+      {/* Zero-space: no Space exists, offer creation */}
+      <button
+        type="button"
+        data-create-space
+        class="flex w-full cursor-pointer items-center gap-2.5 rounded-lg border border-base-content/15 px-3 h-9 hover:border-base-content/30 transition-colors text-base-content/60 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden"
+      >
+        <i class="iconify lucide--plus size-3.5"></i>
+        <span class="text-sm font-medium">Create Space</span>
+      </button>
+      <div class="hidden w-full group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:flex items-center justify-center">
+        <button
+          type="button"
+          data-create-space
+          title="Create Space"
+          class="size-7 shrink-0 rounded-md flex items-center justify-center border border-base-content/15 text-base-content/60 hover:text-base-content"
+        >
+          <i class="iconify lucide--plus size-3.5"></i>
+        </button>
+      </div>
+    </>
+  )}
+</div>
+
+<CreateSpaceModal />
+
+<!-- Scrollable Navigation -->
+<div class="relative min-h-0 grow">
+  <div class="size-full overflow-y-auto">
+    <div class="mb-3 space-y-0.5 px-2.5 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-1">
+      {navItems.map((item) => {
+        /* Section title */
+        if (item.isTitle) {
+          return (
+            <p class="menu-label px-2.5 pt-3 pb-1.5 first:pt-0 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">{item.label}</p>
+          );
+        }
+
+        /* Disabled leaf */
+        if (item.isDisabled) {
+          return (
+            <span
+              class="menu-item sidebar-tip pointer-events-none text-base-content/40 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0"
+              aria-disabled="true"
+              data-tip={item.label}
+            >
+              <i class={`${item.icon} text-base-content/30 size-4 shrink-0`}></i>
+              <span class="grow group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">{item.label}</span>
+              <span class="group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
+                {renderBadges(item).map(b => (
+                  b.isNew
+                    ? <div class="border-base-300 bg-base-200 text-base-content/40 rounded-box border px-1.5 text-[12px]">{b.text}</div>
+                    : <div class="bg-base-200 text-base-content/40 rounded-box px-1.5 text-[12px]">{b.text}</div>
+                ))}
+              </span>
+            </span>
+          );
+        }
+
+        const active = isActive(item);
+
+        /* Parent item with children — collapse component */
+        if (item.children) {
+          return (
+            <div class="group collapse">
+              <input
+                type="checkbox"
+                name="sidebar-menu-parent-item"
+                checked={active}
+                class="peer"
+                aria-label={`Expand ${item.label}`}
+              />
+              <div
+                class="collapse-title sidebar-tip px-2.5 py-1.5 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0"
+                data-tip={item.label}
+              >
+                <i class={`${item.icon} size-4 shrink-0`}></i>
+                <span class="grow group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">{item.label}</span>
+                <span class="group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
+                  {renderBadges(item).map(b => (
+                    b.isNew
+                      ? <div class="border-primary/20 bg-primary/10 text-primary rounded-box border px-1.5 text-[12px]">{b.text}</div>
+                      : <div class="bg-secondary text-secondary-content rounded-box px-1.5 text-[12px]">{b.text}</div>
+                  ))}
+                </span>
+                <i class="iconify lucide--chevron-right arrow-icon size-3.5 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden"></i>
+              </div>
+              <div class="collapse-content ms-6.5 !p-0 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
+                <div class="mt-0.5 space-y-0.5">
+                  {item.children.map((child) => {
+                    const childActive = isChildActive(child);
+                    return (
+                      <a
+                        href={child.href ?? '#'}
+                        class={`menu-item ${childActive ? 'active' : ''} ${child.isDimmed ? 'opacity-30 text-base-content/50' : ''}`}
+                        aria-current={childActive ? 'page' : undefined}
+                      >
+                        {child.icon && <i class={`${child.icon} size-4 shrink-0`}></i>}
+                        <span class="grow">{child.label}</span>
+                        {renderBadges(child).map(b => (
+                          b.isNew
+                            ? <div class="border-primary/20 bg-primary/10 text-primary rounded-box border px-1.5 text-[12px]">{b.text}</div>
+                            : <div class="bg-secondary text-secondary-content rounded-box px-1.5 text-[12px]">{b.text}</div>
+                        ))}
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        /* Leaf item — simple link */
+        return (
+          <a
+            href={item.href ?? '#'}
+            class={`menu-item sidebar-tip ${active ? 'active' : ''} ${item.isDimmed ? 'opacity-30 text-base-content/50' : ''} group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0`}
+            aria-current={active ? 'page' : undefined}
+            data-tip={item.label}
+          >
+            <i class={`${item.icon} size-4 shrink-0`}></i>
+            <span class="grow group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">{item.label}</span>
+            <span class="group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
+              {renderBadges(item).map(b => (
+                b.isNew
+                  ? <div class="border-primary/20 bg-primary/10 text-primary rounded-box border px-1.5 text-[12px]">{b.text}</div>
+                  : <div class="bg-secondary text-secondary-content rounded-box px-1.5 text-[12px]">{b.text}</div>
+              ))}
+            </span>
+          </a>
+        );
+      })}
+    </div>
+  </div>
+  <!-- Fade gradient overlay -->
+  <div class="from-base-100/60 pointer-events-none absolute start-0 end-0 bottom-0 h-7 bg-linear-to-t to-transparent"></div>
+</div>
+
+<!-- Footer: nav items + profile -->
+<div class="mb-2 mt-2">
+  {footerNavItems.length > 0 && (
+    <div class="mb-1 space-y-0.5 px-2.5 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-1">
+      {footerNavItems.map((item) => {
+        const active = !!(item.href && (currentPath === item.href || (item.href !== '/' && currentPath.startsWith(item.href))));
+        return (
+          <a
+            href={item.href ?? '#'}
+            class={`menu-item sidebar-tip ${active ? 'active' : ''} group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0`}
+            aria-current={active ? 'page' : undefined}
+            data-tip={item.label}
+          >
+            <i class={`${item.icon} size-4 shrink-0`}></i>
+            <span class="grow group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">{item.label}</span>
+          </a>
+        );
+      })}
+    </div>
+  )}
+
+  {version && (
+    <p class="px-5 pb-1.5 text-[11px] font-medium text-base-content/40 tracking-wider group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">{version}</p>
+  )}
+
+  <hr class="border-base-300 my-2 border-dashed" />
+
+  <!-- Expanded profile dropdown -->
+  <div class="dropdown dropdown-top dropdown-end w-full group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
+    <div
+      tabindex="0"
+      role="button"
+      class="bg-base-200 hover:bg-base-300 rounded-box mx-2 flex cursor-pointer items-center gap-2.5 px-3 py-2 transition-all"
+    >
+      <div class="avatar shrink-0">
+        <div class="bg-base-200 mask mask-squircle w-8">
+          {user.avatar ? (
+            <img src={user.avatar} alt={user.name} />
+          ) : (
+            <div class="w-full h-full flex items-center justify-center bg-primary/15 text-primary">
+              <span class="text-xs font-bold" data-user-initial>{user.name.charAt(0).toUpperCase()}</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div class="grow -space-y-0.5 min-w-0">
+        <p class="text-sm font-medium truncate" data-user-shortname>{shortName}</p>
+        <p class="text-base-content/60 text-xs truncate" data-user-handle>{handle}</p>
+      </div>
+      <i class="iconify lucide--chevrons-up-down text-base-content/60 size-4"></i>
+    </div>
+
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box shadow-base-content/4 mb-1 w-52 p-1 shadow-[0px_-10px_40px_0px]"
+    >
+      <ul role="menu" class="menu p-0">
+        <li>
+          <a href="/profile">
+            <i class="iconify lucide--user size-4"></i>
+            <span>My Profile</span>
+          </a>
+        </li>
+        <li>
+          <a href="/settings">
+            <i class="iconify lucide--settings size-4"></i>
+            <span>Settings</span>
+          </a>
+        </li>
+        <li>
+          <a href="/help">
+            <i class="iconify lucide--help-circle size-4"></i>
+            <span>Help</span>
+          </a>
+        </li>
+      </ul>
+      <hr class="border-base-content/10 my-1" />
+      <ul role="menu" class="menu p-0">
+        <li>
+          <a id="sidebar-logout" href="/login" data-astro-reload class="text-error hover:bg-error/10">
+            <i class="iconify lucide--log-out size-4"></i>
+            <span>Sign Out</span>
+          </a>
+        </li>
+      </ul>
+      <hr class="border-base-content/10 my-1" />
+      <div class="flex items-center justify-between px-2 py-1.5">
+        <div class="flex items-center gap-2">
+          <i class="iconify lucide--sun text-base-content/60 size-3.5"></i>
+          <input type="checkbox" id="theme-toggle" class="theme-controller toggle toggle-xs" value="baseout" aria-label="Toggle theme" />
+          <i class="iconify lucide--moon text-base-content/60 size-3.5"></i>
+        </div>
+        <button type="button" class="btn btn-ghost btn-xs btn-square" aria-label="Preferences">
+          <i class="iconify lucide--settings-2 text-base-content/60 size-3.5"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rail profile dropdown -->
+  <div class="dropdown dropdown-right dropdown-end hidden w-full group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:block">
+    <div
+      tabindex="0"
+      role="button"
+      title={user.name}
+      class="bg-base-200 hover:bg-base-300 rounded-box mx-1 flex cursor-pointer items-center justify-center py-1.5"
+    >
+      <div class="avatar shrink-0">
+        <div class="bg-base-200 mask mask-squircle w-8">
+          {user.avatar ? (
+            <img src={user.avatar} alt={user.name} />
+          ) : (
+            <div class="w-full h-full flex items-center justify-center bg-primary/15 text-primary">
+              <span class="text-xs font-bold">{user.name.charAt(0).toUpperCase()}</span>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+    <div
+      tabindex="0"
+      class="dropdown-content bg-base-100 rounded-box shadow-base-content/4 ml-1 w-52 p-1 shadow-[0px_-10px_40px_0px]"
+    >
+      <ul role="menu" class="menu p-0">
+        <li>
+          <a href="/profile">
+            <i class="iconify lucide--user size-4"></i>
+            <span>My Profile</span>
+          </a>
+        </li>
+        <li>
+          <a href="/settings">
+            <i class="iconify lucide--settings size-4"></i>
+            <span>Settings</span>
+          </a>
+        </li>
+        <li>
+          <a href="/help">
+            <i class="iconify lucide--help-circle size-4"></i>
+            <span>Help</span>
+          </a>
+        </li>
+      </ul>
+      <hr class="border-base-content/10 my-1" />
+      <ul role="menu" class="menu p-0">
+        <li>
+          <a id="sidebar-logout-rail" href="/login" data-astro-reload class="text-error hover:bg-error/10">
+            <i class="iconify lucide--log-out size-4"></i>
+            <span>Sign Out</span>
+          </a>
+        </li>
+      </ul>
+      <hr class="border-base-content/10 my-1" />
+      <div class="flex items-center justify-between px-2 py-1.5">
+        <div class="flex items-center gap-2">
+          <i class="iconify lucide--sun text-base-content/60 size-3.5"></i>
+          <input type="checkbox" class="theme-controller toggle toggle-xs" value="baseout" aria-label="Toggle theme" data-sidebar-rail-theme />
+          <i class="iconify lucide--moon text-base-content/60 size-3.5"></i>
+        </div>
+        <button type="button" class="btn btn-ghost btn-xs btn-square" aria-label="Preferences">
+          <i class="iconify lucide--settings-2 text-base-content/60 size-3.5"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  import { authClient } from '../../lib/auth-client';
+  import { $account } from '../../stores/account';
+  import { $spaces, refreshSpaces } from '../../stores/spaces';
+  import type { SpaceSummary, SpacesState } from '../../stores/spaces';
+  import { setButtonLoading } from '../../lib/ui';
+  import { showFormError, hideFormError } from '../../lib/auth-utils';
+
+  function initialsOf(name: string): string {
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return '?';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+
+  function colorOf(name: string): string {
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+    return `hsl(${Math.abs(h) % 360} 65% 50%)`;
+  }
+
+  function buildSwitchItem(s: SpaceSummary, active: boolean): HTMLLIElement {
+    const li = document.createElement('li');
+    li.dataset.spaceListItem = '';
+    li.dataset.spaceId = s.id;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.dataset.spaceSwitch = '';
+    btn.dataset.spaceId = s.id;
+    btn.disabled = active;
+    btn.className = 'flex items-center gap-2.5';
+
+    const badge = document.createElement('span');
+    badge.className = 'size-6 shrink-0 rounded-md flex items-center justify-center text-[10px] font-bold text-white';
+    badge.style.backgroundColor = colorOf(s.name);
+    badge.textContent = initialsOf(s.name);
+
+    const label = document.createElement('span');
+    label.className = 'truncate';
+    label.textContent = s.name;
+
+    btn.appendChild(badge);
+    btn.appendChild(label);
+
+    if (active) {
+      const check = document.createElement('i');
+      check.className = 'iconify lucide--check text-primary ms-auto size-3.5';
+      btn.appendChild(check);
+    }
+
+    li.appendChild(btn);
+    return li;
+  }
+
+  function patchListItem(li: HTMLLIElement, s: SpaceSummary, isActive: boolean): void {
+    const btn = li.querySelector<HTMLButtonElement>('[data-space-switch]');
+    if (!btn) return;
+    btn.disabled = isActive;
+    let check = btn.querySelector<HTMLElement>('.fa-check');
+    if (isActive && !check) {
+      const i = document.createElement('i');
+      i.className = 'iconify lucide--check text-primary ms-auto size-3.5';
+      btn.appendChild(i);
+    } else if (!isActive && check) {
+      check.remove();
+    }
+    const label = btn.querySelector<HTMLElement>('.truncate');
+    if (label && label.textContent !== s.name) label.textContent = s.name;
+  }
+
+  function renderSelectorFromStore(state: SpacesState): void {
+    const pill = document.querySelector<HTMLElement>('[data-space-pill]');
+    const list = document.querySelector<HTMLUListElement>('[data-space-list]');
+    const rail = document.querySelector<HTMLElement>('[data-space-rail-initials]');
+    const createRow = list?.querySelector<HTMLLIElement>('[data-space-create-row]');
+    if (!pill || !list || !createRow) return;
+
+    const active = state.list.find((s) => s.id === state.activeSpaceId) ?? state.list[0];
+    if (!active) return;
+
+    const pillName = pill.querySelector<HTMLElement>('[data-space-pill-name]');
+    const pillBadge = pill.querySelector<HTMLElement>('[data-space-pill-initials]');
+    if (pillName && pillName.textContent !== active.name) pillName.textContent = active.name;
+    if (pillBadge) {
+      const initials = initialsOf(active.name);
+      const color = colorOf(active.name);
+      if (pillBadge.textContent !== initials) pillBadge.textContent = initials;
+      if (pillBadge.style.backgroundColor !== color) pillBadge.style.backgroundColor = color;
+    }
+    if (rail) {
+      const initials = initialsOf(active.name);
+      const color = colorOf(active.name);
+      if (rail.textContent !== initials) rail.textContent = initials;
+      if (rail.style.backgroundColor !== color) rail.style.backgroundColor = color;
+    }
+
+    const existing = Array.from(list.querySelectorAll<HTMLLIElement>('[data-space-list-item]'));
+    const existingIds = existing.map((el) => el.dataset.spaceId ?? '');
+    const desired = state.list.length > 1 ? state.list : [];
+    const desiredIds = desired.map((s) => s.id);
+    const sameShape =
+      existingIds.length === desiredIds.length &&
+      existingIds.every((id, i) => id === desiredIds[i]);
+
+    if (sameShape) {
+      existing.forEach((li) => {
+        const s = desired.find((x) => x.id === li.dataset.spaceId);
+        if (s) patchListItem(li, s, s.id === active.id);
+      });
+      return;
+    }
+
+    existing.forEach((el) => el.remove());
+    for (const s of desired) {
+      list.insertBefore(buildSwitchItem(s, s.id === active.id), createRow);
+    }
+    if (desired.length > 0) {
+      createRow.classList.add('border-t', 'border-base-content/10', 'mt-1', 'pt-1');
+    } else {
+      createRow.classList.remove('border-t', 'border-base-content/10', 'mt-1', 'pt-1');
+    }
+  }
+
+  async function handleSwitch(btn: HTMLButtonElement): Promise<void> {
+    const spaceId = btn.dataset.spaceId;
+    if (!spaceId || btn.disabled) return;
+    const prev = $spaces.get();
+    if (!prev || prev.activeSpaceId === spaceId) return;
+
+    btn.disabled = true;
+    const res = await fetch('/api/spaces/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spaceId }),
+    });
+    if (!res.ok) {
+      btn.disabled = false;
+      return;
+    }
+    $spaces.set({ ...prev, activeSpaceId: spaceId });
+    (document.activeElement as HTMLElement | null)?.blur();
+  }
+
+  function init() {
+    const logoutHandler = async (e: Event) => {
+      e.preventDefault();
+      await authClient.signOut();
+      $account.set(null);
+      $spaces.set(null);
+      window.location.href = '/login';
+    };
+    document.getElementById('sidebar-logout')?.addEventListener('click', logoutHandler);
+    document.getElementById('sidebar-logout-rail')?.addEventListener('click', logoutHandler);
+
+    const themeToggles = document.querySelectorAll<HTMLInputElement>('#theme-toggle, [data-sidebar-rail-theme]');
+    const isDark = localStorage.getItem('theme') === 'dark';
+    themeToggles.forEach((t) => { t.checked = isDark; });
+    const applyTheme = (dark: boolean) => {
+      localStorage.setItem('theme', dark ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', dark ? 'baseout' : 'baseout-light');
+      themeToggles.forEach((t) => { t.checked = dark; });
+    };
+    themeToggles.forEach((t) => {
+      t.addEventListener('change', () => applyTheme(t.checked));
+    });
+
+    const modal = document.getElementById('create-space-modal') as HTMLDialogElement | null;
+    const createForm = document.getElementById('create-space-form') as HTMLFormElement | null;
+    const errorEl = document.getElementById('create-space-error') as HTMLElement | null;
+    const errorText = document.getElementById('create-space-error-text') as HTMLElement | null;
+    const submitBtn = document.getElementById('create-space-submit') as HTMLButtonElement | null;
+
+    const openCreateModal = () => {
+      if (!modal) return;
+      if (errorEl) hideFormError(errorEl);
+      createForm?.reset();
+      modal.showModal();
+      const nameInput = createForm?.querySelector<HTMLInputElement>('input[name="name"]');
+      nameInput?.focus();
+    };
+
+    const selector = document.querySelector<HTMLElement>('[data-space-selector]');
+    selector?.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const switchBtn = target.closest<HTMLButtonElement>('[data-space-switch]');
+      if (switchBtn) {
+        handleSwitch(switchBtn);
+        return;
+      }
+      const createBtn = target.closest<HTMLButtonElement>('[data-create-space]');
+      if (createBtn) {
+        openCreateModal();
+      }
+    });
+
+    document.querySelectorAll<HTMLButtonElement>('[data-create-space-cancel]').forEach((btn) => {
+      btn.addEventListener('click', () => modal?.close());
+    });
+
+    createForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!submitBtn || !errorEl || !errorText) return;
+      hideFormError(errorEl);
+
+      const data = new FormData(createForm);
+      const name = (data.get('name') as string | null)?.trim() ?? '';
+      if (!name) {
+        showFormError(errorEl, errorText, 'Please enter a Space name.');
+        return;
+      }
+
+      setButtonLoading(submitBtn, true);
+      try {
+        const res = await fetch('/api/spaces', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        if (res.ok) {
+          const hadSelector = !!document.querySelector('[data-space-pill]');
+          if (hadSelector) {
+            await refreshSpaces();
+            modal?.close();
+          } else {
+            window.location.reload();
+          }
+          return;
+        }
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        showFormError(errorEl, errorText, body.error ?? 'Could not create Space.');
+      } finally {
+        setButtonLoading(submitBtn, false);
+      }
+    });
+
+  }
+
+  $spaces.subscribe((state) => {
+    if (state) renderSelectorFromStore(state);
+  });
+
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>

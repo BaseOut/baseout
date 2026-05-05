@@ -1,0 +1,31 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-hooks",
+  "main": "./src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Routes
+  // "routes": [
+  //   { "pattern": "webhooks.baseout.com/webhooks/airtable/*", "zone_name": "baseout.com" }
+  // ],
+
+  // Service bindings — outgoing to baseout-server
+  // "services": [
+  //   { "binding": "SERVER", "service": "baseout-server" }
+  // ],
+
+  // Secrets (set via `wrangler secret put`):
+  //   DATABASE_URL
+  //   MASTER_ENCRYPTION_KEY
+  //   SERVICE_HMAC_TO_SERVER
+
+  "env": {
+    "production": {
+      "name": "baseout-hooks"
+    },
+    "staging": {
+      "name": "baseout-hooks-staging"
+    }
+  }
+}

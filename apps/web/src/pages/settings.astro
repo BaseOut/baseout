@@ -1,0 +1,22 @@
+---
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import Card from '../components/ui/Card.astro';
+import { getBreadcrumbs } from '../lib/config';
+
+const breadcrumbs = getBreadcrumbs('/settings');
+---
+
+<SidebarLayout pageTitle="Settings" breadcrumbs={breadcrumbs}>
+  <div class="space-y-8 animate-in fade-in duration-700">
+    <Card variant="outlined">
+      <div class="flex items-center gap-3 mb-4">
+        <span class="material-symbols-outlined icon-xl text-primary">tune</span>
+        <h3 class="text-lg font-bold">Account Settings</h3>
+      </div>
+      <p class="text-sm opacity-70">
+        Baseout uses passwordless magic-link sign-in — there is no password to manage.
+        Additional account controls will appear here as they are added.
+      </p>
+    </Card>
+  </div>
+</SidebarLayout>

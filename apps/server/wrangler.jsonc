@@ -1,0 +1,61 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-server",
+  "main": "./src/index.ts",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Durable Objects
+  // "durable_objects": {
+  //   "bindings": [
+  //     { "name": "PER_CONNECTION_DO", "class_name": "PerConnectionDO" },
+  //     { "name": "PER_SPACE_DO", "class_name": "PerSpaceDO" }
+  //   ]
+  // },
+  // "migrations": [
+  //   { "tag": "v1", "new_classes": ["PerConnectionDO", "PerSpaceDO"] }
+  // ],
+
+  // R2 buckets
+  // "r2_buckets": [
+  //   { "binding": "BACKUP_BUCKET", "bucket_name": "baseout-backups" }
+  // ],
+
+  // D1 databases
+  // "d1_databases": [
+  //   { "binding": "MASTER_D1", "database_name": "baseout-master-d1", "database_id": "..." }
+  // ],
+
+  // Cron triggers (one per background service)
+  // "triggers": {
+  //   "crons": [
+  //     "0 6 * * *",     // webhook renewal — daily at 06:00 UTC
+  //     "*/15 * * * *",  // OAuth token refresh — every 15 minutes
+  //     "0 * * * *",     // trial-expiry monitor — hourly
+  //     "0 * * * *",     // quota-usage monitor — hourly
+  //     "0 2 * * *"      // smart-cleanup scheduler — daily at 02:00 UTC
+  //   ]
+  // },
+
+  // Service bindings (incoming forwards from hooks + api)
+  // are configured via the Cloudflare dashboard once those Workers exist.
+
+  // Secrets (set via `wrangler secret put`):
+  //   DATABASE_URL
+  //   MASTER_ENCRYPTION_KEY
+  //   TRIGGER_DEV_API_KEY
+  //   CLOUDFLARE_API_TOKEN
+  //   STRIPE_API_KEY
+  //   MAILGUN_API_KEY
+  //   SERVICE_HMAC_TO_WEB
+  //   INTERNAL_RECEIVE_HMAC
+
+  "env": {
+    "production": {
+      "name": "baseout-server"
+    },
+    "staging": {
+      "name": "baseout-server-staging"
+    }
+  }
+}

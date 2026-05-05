@@ -1,0 +1,107 @@
+---
+// Staff /ops console — backup runs across all customers.
+//
+// Gated by middleware.applyOpsGate (role === 'super'). Only @openside.com
+// staff who have been promoted via the auth-factory's databaseHooks reach
+// this route; anyone else gets a 403.
+//
+// Data source: baseout.backup_runs in the master DB. Engine writes rows
+// here from its Trigger.dev tasks; this page reads them.
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import { backupRuns } from '../../db/schema/core';
+import { desc } from 'drizzle-orm';
+
+const { db, user } = Astro.locals;
+
+const recentRuns = await db
+  .select({
+    id: backupRuns.id,
+    spaceId: backupRuns.spaceId,
+    connectionId: backupRuns.connectionId,
+    status: backupRuns.status,
+    triggeredBy: backupRuns.triggeredBy,
+    recordCount: backupRuns.recordCount,
+    tableCount: backupRuns.tableCount,
+    startedAt: backupRuns.startedAt,
+    completedAt: backupRuns.completedAt,
+    errorMessage: backupRuns.errorMessage,
+    createdAt: backupRuns.createdAt,
+  })
+  .from(backupRuns)
+  .orderBy(desc(backupRuns.createdAt))
+  .limit(50);
+
+const statusColor: Record<string, string> = {
+  succeeded: 'badge-success',
+  running: 'badge-info',
+  queued: 'badge-ghost',
+  failed: 'badge-error',
+  trial_complete: 'badge-warning',
+};
+---
+
+<SidebarLayout pageTitle="Ops — Backup Runs" breadcrumbs={[{ label: 'Ops', href: '/ops' }]}>
+  <div class="p-6 space-y-6">
+    <div class="flex items-baseline justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold">Backup runs</h1>
+        <p class="text-sm text-base-content/60 mt-1">
+          50 most-recent runs across all organizations.
+        </p>
+      </div>
+      <div class="text-sm text-base-content/70">
+        {user?.email} <span class="badge badge-primary badge-sm ml-2">{user?.role}</span>
+      </div>
+    </div>
+
+    {recentRuns.length === 0 ? (
+      <div class="alert alert-info">
+        <span>No backup runs yet. Engine writes rows here once Trigger.dev tasks execute.</span>
+      </div>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-base-300">
+        <table class="table table-zebra">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Triggered</th>
+              <th>Connection</th>
+              <th>Space</th>
+              <th>Records</th>
+              <th>Tables</th>
+              <th>Started</th>
+              <th>Completed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recentRuns.map((r) => (
+              <tr>
+                <td>
+                  <span class={`badge ${statusColor[r.status] ?? 'badge-ghost'} badge-sm`}>
+                    {r.status}
+                  </span>
+                  {r.errorMessage && (
+                    <div class="text-xs text-error/80 mt-1 max-w-xs truncate" title={r.errorMessage}>
+                      {r.errorMessage}
+                    </div>
+                  )}
+                </td>
+                <td class="text-xs text-base-content/70">{r.triggeredBy}</td>
+                <td class="font-mono text-xs">{r.connectionId.slice(0, 8)}…</td>
+                <td class="font-mono text-xs">{r.spaceId.slice(0, 8)}…</td>
+                <td class="text-right tabular-nums">{r.recordCount ?? '—'}</td>
+                <td class="text-right tabular-nums">{r.tableCount ?? '—'}</td>
+                <td class="text-xs whitespace-nowrap">
+                  {r.startedAt ? new Date(r.startedAt).toLocaleString() : '—'}
+                </td>
+                <td class="text-xs whitespace-nowrap">
+                  {r.completedAt ? new Date(r.completedAt).toLocaleString() : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+</SidebarLayout>

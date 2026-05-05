@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-admin",
+  "main": "./dist/_worker.js/index.js",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Routes
+  // "routes": [
+  //   { "pattern": "admin.baseout.com/*", "zone_name": "baseout.com" }
+  // ],
+
+  // Secrets (set via `wrangler secret put`):
+  //   DATABASE_URL
+  //   MASTER_ENCRYPTION_KEY
+  //   GOOGLE_SSO_CLIENT_SECRET
+  //   SERVICE_HMAC_TO_BACKUP
+
+  "env": {
+    "production": {
+      "name": "baseout-admin"
+    },
+    "staging": {
+      "name": "baseout-admin-staging"
+    }
+  }
+}

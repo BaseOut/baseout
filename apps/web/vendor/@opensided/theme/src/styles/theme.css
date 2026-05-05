@@ -1,0 +1,51 @@
+/**
+ * theme.css — Global typography + radius overrides
+ * All color themes are defined in daisyui.css
+ * All font imports and variables are in typography.css
+ */
+
+/* ── Typography ────────────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.025em;
+    font-weight: 600;
+}
+
+strong {
+    font-weight: 600;
+}
+
+/* ── Radius overrides ──────────────────────────────────── */
+[data-radius="none"] {
+    --radius-field:    0px;
+    --radius-box:      0px;
+    --rounded-box:     0px;
+    --radius-selector: 0px;
+}
+
+[data-radius="sm"] {
+    --radius-field:    0.25rem;
+    --radius-box:      0.25rem;
+    --rounded-box:     0.25rem;
+    --radius-selector: 0.25rem;
+}
+
+[data-radius="md"] {
+    --radius-field:    0.5rem;
+    --radius-box:      0.5rem;
+    --rounded-box:     0.5rem;
+    --radius-selector: 0.5rem;
+}
+
+[data-radius="lg"] {
+    --radius-field:    1rem;
+    --radius-box:      1rem;
+    --rounded-box:     1rem;
+    --radius-selector: 1rem;
+}
+
+[data-radius="pill"] {
+    --radius-field:    20px;
+    --radius-box:      20px;
+    --rounded-box:     20px;
+    --radius-selector: 20px;
+}

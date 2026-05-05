@@ -1,0 +1,148 @@
+// Template for wrangler.jsonc — committed to git.
+//
+// scripts/launch.mjs renders this into wrangler.jsonc at dev/build time,
+// substituting the DATABASE_URL placeholder below with the value from .env.
+//
+// Magic-link base URL: auth-factory.ts reads `env.PUBLIC_AUTH_BASE_URL` as
+// an explicit override and falls back to per-request Host-header detection
+// when absent. The `npm run dev` and `npm run wrangler` scripts pass the var
+// via `wrangler dev --var PUBLIC_AUTH_BASE_URL:http://localhost:4331`, so
+// the literal value below is what gets baked into the deployed dev worker.
+// Top-level config = dev environment (worker `baseout-dev`).
+// `env.staging` and `env.production` override the dev-specific bits.
+//
+// Wrangler does NOT inherit non-inheritable keys (vars, hyperdrive,
+// kv_namespaces, send_email) from top-level into env blocks — every
+// env redeclares the full set. See:
+// https://developers.cloudflare.com/workers/wrangler/configuration/#environments
+//
+// Deploy:
+//   npm run deploy             # dev      → baseout-dev.openside.workers.dev
+//   npm run deploy:staging     # staging  → baseout-staging.openside.workers.dev
+//   npm run deploy:production  # prod     → baseout.dev (custom domain)
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-dev",
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env"
+  ],
+  "observability": {
+    "enabled": false,
+    "logs": {
+      "enabled": false
+    }
+  },
+  "dev": {
+    "port": 4331
+  },
+  // Non-secret runtime config baked into the deployed worker.
+  //
+  // EMAIL_FROM: verified sender header for the `EMAIL` send_email binding.
+  //   Not sensitive — lives in committed config, not a wrangler secret.
+  //   See PRD §20 and `.env.example`. `astro dev` does NOT read this —
+  //   sendEmail() short-circuits to a console log when import.meta.env.DEV
+  //   is true; `.dev.vars` carries the value for `wrangler dev --remote`.
+  //
+  // PUBLIC_AUTH_BASE_URL: explicit origin Better Auth uses to mint magic-
+  //   link URLs. Without this, auth-factory's per-request resolver falls
+  //   back to `https://baseout.dev` for any non-loopback host (so links
+  //   generated from `baseout-dev.openside.workers.dev` would point at a
+  //   domain with no DNS). `npm run dev` and `npm run wrangler` override
+  //   via `wrangler dev --var` for local development.
+  "vars": {
+    "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
+    "PUBLIC_AUTH_BASE_URL": "https://baseout-dev.openside.workers.dev",
+    // dev-only — DO NOT replicate to env.staging or env.production.
+    // Gates the /api/internal/test/last-verification endpoint that
+    // Playwright uses to fetch magic-link tokens. The endpoint enforces
+    // its own HMAC + email-pattern checks; this var is the outermost
+    // build-time switch. Absence in staging/prod = the route 401s at
+    // the middleware (route is not bypassed → auth required → no session).
+    "E2E_TEST_MODE": "true"
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "ba2652f40f864918a2da0849f24d12a2",
+      "localConnectionString": "{{DATABASE_URL}}"
+    }
+  ],
+  "send_email": [
+    {
+      "name": "EMAIL"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "SESSION",
+      "id": "d5cac1df2216476eaeb38e9fca639559"
+    }
+  ],
+  "env": {
+    "staging": {
+      "name": "baseout-staging",
+      "vars": {
+        "EMAIL_FROM": "Baseout <login@mail.staging.baseout.dev>",
+        "PUBLIC_AUTH_BASE_URL": "https://baseout-staging.openside.workers.dev"
+      },
+      // TODO(staging): provision a Hyperdrive pointing at the staging
+      // Postgres cluster and swap this `id`. The placeholder will fail
+      // `wrangler deploy --env staging` until a real id is in place —
+      // fail-loud is intentional, it prevents staging from ever
+      // accidentally pointing at the dev or prod database.
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "STAGING_HYPERDRIVE_ID_PLACEHOLDER",
+          "localConnectionString": "{{DATABASE_URL}}"
+        }
+      ],
+      "send_email": [
+        {
+          "name": "EMAIL"
+        }
+      ],
+      // TODO(staging): provision a KV namespace for staging sessions
+      // and swap this `id`. See ops-setup doc for the wrangler kv command.
+      "kv_namespaces": [
+        {
+          "binding": "SESSION",
+          "id": "STAGING_KV_PLACEHOLDER"
+        }
+      ]
+    },
+    "production": {
+      "name": "baseout",
+      "vars": {
+        "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
+        "PUBLIC_AUTH_BASE_URL": "https://baseout.dev"
+      },
+      // TODO(prod): provision a Hyperdrive pointing at the prod Postgres
+      // cluster and swap this `id`. Placeholder forces fail-loud at
+      // `wrangler versions upload` so prod can never silently reuse the
+      // dev Hyperdrive.
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "PROD_HYPERDRIVE_ID_PLACEHOLDER",
+          "localConnectionString": "{{DATABASE_URL}}"
+        }
+      ],
+      "send_email": [
+        {
+          "name": "EMAIL"
+        }
+      ],
+      // TODO(prod): provision a KV namespace for prod sessions and swap
+      // this `id`. See ops-setup doc for the wrangler kv command.
+      "kv_namespaces": [
+        {
+          "binding": "SESSION",
+          "id": "PROD_KV_PLACEHOLDER"
+        }
+      ]
+    }
+  }
+}

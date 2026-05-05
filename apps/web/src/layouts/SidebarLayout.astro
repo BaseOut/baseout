@@ -1,0 +1,120 @@
+---
+import Layout from './Layout.astro';
+import Sidebar from '../components/layout/Sidebar.astro';
+import Header  from '../components/layout/Header.astro';
+import { getPageContext } from '../lib/config';
+import type { NavItem, UserInfo, Breadcrumb } from '../lib/types';
+
+interface Props {
+  // <head>
+  title?: string;
+  description?: string;
+
+  // Sidebar
+  brandName?:      string;
+  version?:        string;
+  currentSpace?:   string;
+  spaces?:         { id: string; name: string }[];
+  navItems?:       NavItem[];
+  footerNavItems?: NavItem[];
+  user?:           UserInfo;
+  organization?:   { id: string; name: string; slug: string } | null;
+
+  // Header
+  pageTitle?:          string;
+  breadcrumbs?:        Breadcrumb[];
+  notificationCount?:  number;
+}
+
+const ctx = getPageContext(Astro.locals);
+const spacesState = {
+  list: ctx.spaces,
+  activeSpaceId: Astro.locals.account?.space?.id ?? null,
+};
+
+const {
+  title,
+  description,
+
+  brandName     = ctx.productName,
+  version       = ctx.productVersion,
+  currentSpace  = ctx.currentSpace ?? undefined,
+  spaces        = ctx.spaces,
+  navItems      = ctx.navItems,
+  footerNavItems = ctx.footerNavItems,
+  user          = ctx.user,
+  organization  = ctx.organization,
+
+  pageTitle,
+  breadcrumbs,
+  notificationCount,
+} = Astro.props;
+
+const currentPath = Astro.url.pathname;
+const resolvedTitle = title ?? (pageTitle ? `${pageTitle} | ${brandName}` : brandName);
+---
+
+<Layout title={resolvedTitle} description={description}>
+  <div class="flex min-h-screen relative">
+    <input type="checkbox" id="layout-sidebar-toggle-trigger" class="hidden" aria-label="Toggle sidebar" />
+    <input type="checkbox" id="layout-sidebar-hover-trigger" class="hidden" aria-label="Collapse sidebar to rail" />
+    <div id="layout-sidebar-hover" class="bg-base-300 h-screen w-1"></div>
+
+    <div id="layout-sidebar" class="sidebar-menu flex flex-col">
+      <Sidebar
+        brandName={brandName}
+        version={version}
+        currentSpace={currentSpace}
+        spaces={spaces}
+        navItems={navItems}
+        footerNavItems={footerNavItems}
+        user={user}
+        organization={organization}
+        currentPath={currentPath}
+      />
+    </div>
+
+    <label for="layout-sidebar-toggle-trigger" id="layout-sidebar-backdrop"></label>
+
+    <div class="flex flex-1 flex-col min-w-0">
+      <Header notificationCount={notificationCount} />
+
+      <script
+        type="application/json"
+        id="page-header-state"
+        is:inline
+        set:html={JSON.stringify({ title: pageTitle ?? null, breadcrumbs: breadcrumbs ?? [] }).replace(/</g, '\\u003c')}
+      />
+
+      <script
+        type="application/json"
+        id="spaces-state"
+        is:inline
+        set:html={JSON.stringify(spacesState).replace(/</g, '\\u003c')}
+      />
+
+      <main id="layout-content" class="flex-1 p-6 md:p-8">
+        <slot />
+      </main>
+    </div>
+  </div>
+</Layout>
+
+<script is:inline>
+  // Auto-close sidebar on mobile navigation (View Transitions)
+  document.addEventListener('astro:after-swap', function() {
+    var el = document.getElementById('layout-sidebar-toggle-trigger');
+    if (el && window.innerWidth < 1024) {
+      el.checked = false;
+    }
+  });
+</script>
+
+<script>
+  import { $spaces } from '../stores/spaces';
+
+  const el = document.getElementById('spaces-state');
+  if (el?.textContent) {
+    $spaces.set(JSON.parse(el.textContent));
+  }
+</script>

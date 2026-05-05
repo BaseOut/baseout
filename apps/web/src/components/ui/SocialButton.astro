@@ -1,0 +1,63 @@
+---
+import { cn } from '../../lib/ui';
+
+/**
+ * SocialButton — A button for third-party authentication providers.
+ * Displays the provider's icon/logo alongside the provider name.
+ */
+interface Props {
+  provider: 'google' | 'github' | 'apple' | 'microsoft' | 'slack';
+  size?: 'sm' | 'md' | 'lg';
+  variant?: 'outline' | 'filled';
+  iconOnly?: boolean;
+  disabled?: boolean;
+  href?: string;
+  class?: string;
+  [key: string]: unknown;
+}
+
+const {
+  provider,
+  size = 'md',
+  variant = 'outline',
+  iconOnly = false,
+  disabled = false,
+  href,
+  class: className = '',
+  ...rest
+} = Astro.props;
+
+const providerLabels: Record<string, string> = {
+  google: 'Google',
+  github: 'GitHub',
+  apple: 'Apple',
+  microsoft: 'Microsoft',
+  slack: 'Slack',
+};
+
+const label = providerLabels[provider] || provider;
+
+const classes = cn(
+  'social-btn',
+  `social-btn-${variant}`,
+  size !== 'md' && `social-btn-${size}`,
+  iconOnly && 'social-btn-icon-only',
+  className,
+);
+
+const Tag = href ? 'a' : 'button';
+---
+
+<Tag
+  class={classes}
+  href={href}
+  type={!href ? 'button' : undefined}
+  disabled={!href && disabled ? true : undefined}
+  aria-label={iconOnly ? `Sign in with ${label}` : undefined}
+  {...rest}
+>
+  <span class="social-btn-logo" data-provider={provider}>
+    <i class={`fa-brands fa-${provider}`} aria-hidden="true"></i>
+  </span>
+  {!iconOnly && <span class="social-btn-label">{label}</span>}
+</Tag>

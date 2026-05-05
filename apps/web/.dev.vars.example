@@ -1,0 +1,12 @@
+# Local development secrets for @baseout/web. Copy to .dev.vars and fill in.
+# .dev.vars is gitignored.
+DATABASE_URL=postgres://localhost:5432/baseout_dev
+MASTER_ENCRYPTION_KEY=
+BETTER_AUTH_SECRET=
+STRIPE_SECRET_KEY=sk_test_
+STRIPE_WEBHOOK_SECRET=whsec_
+MAILGUN_API_KEY=
+AIRTABLE_OAUTH_CLIENT_SECRET=
+SERVICE_HMAC_TO_BACKUP=
+POSTHOG_PROJECT_KEY=
+DUB_CO_API_KEY=

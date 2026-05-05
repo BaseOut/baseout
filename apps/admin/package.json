@@ -1,0 +1,24 @@
+{
+  "name": "@baseout/admin",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Internal Astro SSR admin app at admin.baseout.com (Google SSO). See ./openspec/proposal.md.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "astro build",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx,.astro"
+  },
+  "dependencies": {
+    "@baseout/db-schema": "workspace:*",
+    "@baseout/shared": "workspace:*",
+    "@baseout/ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240924.0",
+    "wrangler": "^3.78.0"
+  }
+}

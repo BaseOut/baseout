@@ -1,0 +1,28 @@
+// Committed test-profile wrangler config for Miniflare-backed integration
+// tests. Hyperdrive `id` is a placeholder — local tests resolve via
+// `localConnectionString`, which points at the Postgres service from
+// `docker-compose.test.yml` (or the CI service container).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-test",
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_compat_populate_process_env"
+  ],
+  "vars": {
+    "BETTER_AUTH_URL": "http://localhost:4331",
+    // Test-only static secret. 32+ chars required by better-auth's session
+    // signing. Real BETTER_AUTH_SECRET lives in wrangler secrets / .env;
+    // never reuse this value outside the test harness.
+    "BETTER_AUTH_SECRET": "test-only-secret-min-32-chars-aaaaaaaaaaaa",
+    "EMAIL_FROM": "Baseout Test <test@example.invalid>"
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "test-hyperdrive-local",
+      "localConnectionString": "postgres://postgres:postgres@127.0.0.1:5432/baseout_test"
+    }
+  ]
+}

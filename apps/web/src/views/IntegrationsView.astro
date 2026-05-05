@@ -1,0 +1,292 @@
+---
+import Card from '../components/ui/Card.astro';
+import Button from '../components/ui/Button.astro';
+import Badge from '../components/ui/Badge.astro';
+import type { IntegrationsState } from '../stores/connections';
+
+interface Props {
+  state: IntegrationsState;
+  /** Query-string status passed through from Astro.url.searchParams. */
+  statusCode: 'connected' | 'error' | null;
+  errorReason: string | null;
+}
+
+const { state, statusCode, errorReason } = Astro.props;
+
+const airtable = state.connections.find((c) => c.platformSlug === 'airtable') ?? null;
+const bases = state.bases;
+
+const comingSoon = [
+  { slug: 'notion',     name: 'Notion',     tagline: 'Back up pages, databases, and blocks.' },
+  { slug: 'hubspot',    name: 'HubSpot',    tagline: 'Back up contacts, companies, and deals.' },
+  { slug: 'salesforce', name: 'Salesforce', tagline: 'Back up objects, flows, and metadata.' },
+];
+
+const errorLabels: Record<string, string> = {
+  access_denied: 'You declined to give Baseout access to your Airtable.',
+  missing_code: 'Airtable did not return an authorization code.',
+  missing_handoff: 'Your session expired before Airtable returned. Please try again.',
+  invalid_handoff: 'We could not verify the sign-in handoff. Please try again.',
+  state_mismatch: 'Security check failed. Please start the connection over.',
+  user_mismatch: 'This connection does not belong to the signed-in user.',
+  token_exchange_failed: 'Airtable rejected the connection. Please try again.',
+  api_call_failed: 'We connected to Airtable but could not list your bases.',
+  persist_failed: 'The connection succeeded but we could not save it. Please try again.',
+  not_configured: 'Airtable integration is not configured on this environment.',
+};
+
+const errorMessage = errorReason ? (errorLabels[errorReason] ?? 'Connection failed. Please try again.') : null;
+
+// Maps connections.status (active|invalid|refreshing|pending_reauth) → Badge presentation.
+type StatusBadgeProps = {
+  variant: 'success' | 'warning' | 'error' | 'default';
+  label: string;
+  dot: boolean;
+};
+const statusBadgeMap: Record<string, StatusBadgeProps> = {
+  active:         { variant: 'success', label: 'Connected',         dot: true  },
+  refreshing:     { variant: 'warning', label: 'Refreshing tokens', dot: true  },
+  pending_reauth: { variant: 'warning', label: 'Reconnect required', dot: false },
+  invalid:        { variant: 'error',   label: 'Disconnected',      dot: false },
+};
+const statusBadge: StatusBadgeProps = airtable
+  ? (statusBadgeMap[airtable.status] ?? { variant: 'default', label: airtable.status, dot: false })
+  : { variant: 'default', label: 'Not connected', dot: false };
+
+const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth' || airtable.status === 'invalid');
+---
+
+<div class="space-y-8 animate-in fade-in duration-700">
+
+  <header>
+    <h1 class="text-2xl font-bold tracking-tight">Integrations</h1>
+    <p class="text-sm text-base-content/60 mt-1">
+      Connect a data platform to begin backing up your content.
+    </p>
+  </header>
+
+  {statusCode === 'connected' && (
+    <div role="status" class="alert alert-success">
+      <span>Airtable connected. {bases.length > 0 ? `We found ${bases.length} base${bases.length === 1 ? '' : 's'}.` : 'No bases were found in your Airtable account.'}</span>
+    </div>
+  )}
+
+  {statusCode === 'error' && errorMessage && (
+    <div role="alert" class="alert alert-error">
+      <span>{errorMessage}</span>
+    </div>
+  )}
+
+  <!-- Platform cards -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+    <!-- Airtable -->
+    <Card variant="outlined">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <h2 class="text-lg font-semibold">Airtable</h2>
+          <p class="text-sm text-base-content/60 mt-1">
+            Back up schema, records, and attachments from your Airtable bases.
+          </p>
+        </div>
+        <Badge variant={statusBadge.variant} dot={statusBadge.dot}>{statusBadge.label}</Badge>
+      </div>
+
+      {airtable ? (
+        <div class="mt-6 space-y-4">
+          {needsReconnect && (
+            <div role="alert" class={`alert ${airtable.status === 'invalid' ? 'alert-error' : 'alert-warning'}`}>
+              <div class="flex-1">
+                <p class="font-medium">
+                  {airtable.status === 'invalid'
+                    ? 'This Airtable connection is no longer active.'
+                    : 'Airtable needs you to re-authorize Baseout.'}
+                </p>
+                <p class="text-xs opacity-80 mt-1">
+                  Reconnect to resume backups for this Space.
+                </p>
+              </div>
+              <form
+                method="POST"
+                action="/api/connections/airtable/start"
+                data-airtable-connect
+                data-astro-reload
+              >
+                <Button type="submit" variant="primary" data-connect-submit>
+                  Reconnect Airtable
+                </Button>
+              </form>
+            </div>
+          )}
+          <dl class="text-sm space-y-1">
+            <div class="flex gap-2">
+              <dt class="text-base-content/60 w-28">Airtable user</dt>
+              <dd class="font-mono text-xs">{airtable.airtableUserId ?? '—'}</dd>
+            </div>
+            {airtable.isEnterprise && (
+              <div class="flex gap-2">
+                <dt class="text-base-content/60 w-28">Plan</dt>
+                <dd><Badge variant="primary">Enterprise</Badge></dd>
+              </div>
+            )}
+            <div class="flex gap-2">
+              <dt class="text-base-content/60 w-28">Bases discovered</dt>
+              <dd class="font-semibold">{airtable.basesCount}</dd>
+            </div>
+          </dl>
+
+          {bases.length > 0 && (
+            <div>
+              <div class="flex items-baseline justify-between mt-4 mb-2 gap-3">
+                <h3 class="text-sm font-medium">Bases to back up</h3>
+                <p class="text-xs text-base-content/60">
+                  {state.tierBasesPerSpace === null
+                    ? `${bases.filter((b) => b.isIncluded).length} selected`
+                    : `${bases.filter((b) => b.isIncluded).length} of ${state.tierBasesPerSpace} allowed`}
+                </p>
+              </div>
+              <form
+                method="POST"
+                action={`/api/spaces/${Astro.locals.account?.space?.id}/backup-config/bases`}
+                data-base-selection-form
+                data-space-id={Astro.locals.account?.space?.id ?? ''}
+                data-tier-bases-per-space={state.tierBasesPerSpace ?? ''}
+              >
+                <ul class="divide-y divide-base-300/50 border border-base-300/50 rounded-box">
+                  {bases.map((b) => (
+                    <li class="px-3 py-2 flex items-center justify-between gap-3">
+                      <label class="flex items-center gap-3 flex-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          name="atBaseIds"
+                          value={b.id}
+                          checked={b.isIncluded}
+                          class="checkbox checkbox-sm"
+                          data-base-checkbox
+                        />
+                        <span class="truncate font-medium">{b.name}</span>
+                      </label>
+                      <span class="font-mono text-xs text-base-content/60">{b.atBaseId}</span>
+                    </li>
+                  ))}
+                </ul>
+                <div class="flex items-center justify-between mt-3 gap-3">
+                  <p class="text-xs text-base-content/60" data-selection-error role="alert" hidden></p>
+                  <Button type="submit" variant="primary" data-base-selection-submit>
+                    Save selection
+                  </Button>
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+      ) : (
+        <form
+          method="POST"
+          action="/api/connections/airtable/start"
+          class="mt-6"
+          data-airtable-connect
+          data-astro-reload
+        >
+          <Button type="submit" variant="primary" data-connect-submit>
+            Connect Airtable
+          </Button>
+          <p class="text-xs text-base-content/60 mt-3">
+            You'll be redirected to Airtable to approve access.
+          </p>
+        </form>
+      )}
+    </Card>
+
+    <!-- Coming soon platforms -->
+    {comingSoon.map((p) => (
+      <Card variant="outlined" class="opacity-60">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-semibold">{p.name}</h2>
+            <p class="text-sm text-base-content/60 mt-1">{p.tagline}</p>
+          </div>
+          <Badge variant="default">Coming soon</Badge>
+        </div>
+      </Card>
+    ))}
+
+  </div>
+
+</div>
+
+<script>
+  import { setButtonLoading } from '../lib/ui';
+
+  // Existing OAuth-start spinner
+  const oauthForms = document.querySelectorAll<HTMLFormElement>('form[data-airtable-connect]');
+  oauthForms.forEach((form) => {
+    const submit = form.querySelector<HTMLButtonElement>('[data-connect-submit]');
+    form.addEventListener('submit', () => {
+      if (submit) setButtonLoading(submit, true);
+    });
+  });
+
+  // Base-selection form
+  const selectionForm = document.querySelector<HTMLFormElement>('form[data-base-selection-form]');
+  if (selectionForm) {
+    const submit = selectionForm.querySelector<HTMLButtonElement>('[data-base-selection-submit]');
+    const errorEl = selectionForm.querySelector<HTMLElement>('[data-selection-error]');
+    const tierCapRaw = selectionForm.dataset.tierBasesPerSpace;
+    const tierCap = tierCapRaw === '' || tierCapRaw === undefined ? null : Number(tierCapRaw);
+
+    function showError(msg: string | null) {
+      if (!errorEl) return;
+      if (msg) {
+        errorEl.textContent = msg;
+        errorEl.hidden = false;
+      } else {
+        errorEl.textContent = '';
+        errorEl.hidden = true;
+      }
+    }
+
+    // Live cap check on every change.
+    selectionForm.addEventListener('change', () => {
+      const checked = selectionForm.querySelectorAll<HTMLInputElement>('[data-base-checkbox]:checked').length;
+      if (tierCap !== null && checked > tierCap) {
+        showError(`Your tier allows ${tierCap} bases per space. Deselect ${checked - tierCap} to continue.`);
+      } else {
+        showError(null);
+      }
+    });
+
+    selectionForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const action = selectionForm.action;
+      const checked = Array.from(
+        selectionForm.querySelectorAll<HTMLInputElement>('[data-base-checkbox]:checked'),
+      ).map((el) => el.value);
+
+      if (tierCap !== null && checked.length > tierCap) {
+        showError(`Your tier allows ${tierCap} bases per space. Deselect ${checked.length - tierCap} to continue.`);
+        return;
+      }
+      showError(null);
+
+      if (submit) setButtonLoading(submit, true);
+      try {
+        const res = await fetch(action, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ atBaseIds: checked }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          showError(body.error === 'over_tier_limit' ? 'Selection exceeds your tier limit.' : 'Could not save selection.');
+          return;
+        }
+        window.location.reload();
+      } catch {
+        showError('Network error. Please try again.');
+      } finally {
+        if (submit) setButtonLoading(submit, false);
+      }
+    });
+  }
+</script>

@@ -1,0 +1,159 @@
+---
+import AuthLayout from '../layouts/AuthLayout.astro';
+import TextInput from '../components/ui/TextInput.astro';
+import Select from '../components/ui/Select.astro';
+import Checkbox from '../components/ui/Checkbox.astro';
+import Button from '../components/ui/Button.astro';
+import { getProductName } from '../lib/config';
+
+const productName = getProductName();
+const user = Astro.locals.user;
+
+const referralOptions = [
+  { value: 'google', label: 'Google' },
+  { value: 'twitter_x', label: 'Twitter / X' },
+  { value: 'friend', label: 'Friend' },
+  { value: 'podcast', label: 'Podcast' },
+  { value: 'other', label: 'Other' },
+];
+---
+
+<AuthLayout title={`Welcome — ${productName}`}>
+  <div class="auth-card-inner">
+    <h2 class="auth-card-title">Welcome{user?.email ? `, ${user.email}` : ''}</h2>
+    <p class="auth-card-subtitle">A few quick details and you're in.</p>
+
+    <form id="welcome-form" class="auth-form" novalidate>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <TextInput
+          type="text"
+          name="firstName"
+          label="First Name"
+          icon="person"
+          placeholder="Ada"
+          autocomplete="given-name"
+          required
+        />
+        <TextInput
+          type="text"
+          name="lastName"
+          label="Last Name"
+          placeholder="Lovelace"
+          autocomplete="family-name"
+          required
+        />
+      </div>
+
+      <TextInput
+        type="text"
+        name="jobTitle"
+        label="Job Title"
+        icon="badge"
+        placeholder="Founder"
+        autocomplete="organization-title"
+        required
+      />
+
+      <TextInput
+        type="text"
+        name="orgName"
+        label="Organization Name"
+        icon="business"
+        placeholder="Acme Corp"
+        autocomplete="organization"
+        required
+      />
+
+      <Select
+        name="referralSource"
+        label="How did you hear about us?"
+        icon="campaign"
+        placeholder="Select one (optional)"
+        options={referralOptions}
+      />
+
+      <Checkbox
+        name="marketingOptIn"
+        label="I'd like to receive product updates and announcements."
+      />
+
+      <Checkbox name="termsAccepted" label="I agree to the terms and privacy policy" />
+
+      <div id="welcome-error" class="fieldset-label text-error flex items-center gap-1 hidden" role="alert">
+        <span class="material-symbols-outlined icon-sm">error</span>
+        <span id="welcome-error-text"></span>
+      </div>
+
+      <Button variant="primary" type="submit" class="w-full mt-1">
+        Continue
+        <span class="material-symbols-outlined icon-lg ml-1">arrow_forward</span>
+      </Button>
+    </form>
+  </div>
+</AuthLayout>
+
+<script>
+  import { showFormError, hideFormError } from '../lib/auth-utils';
+  import { setButtonLoading } from '../lib/ui';
+
+  function init() {
+    const form = document.getElementById('welcome-form') as HTMLFormElement | null;
+    const errorEl = document.getElementById('welcome-error') as HTMLElement | null;
+    const errorText = document.getElementById('welcome-error-text') as HTMLElement | null;
+    const submitBtn = form?.querySelector('button[type="submit"]') as HTMLButtonElement | null;
+
+    if (!form || !errorEl || !errorText || !submitBtn) return;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = new FormData(form);
+      const firstName = ((data.get('firstName') as string) ?? '').trim();
+      const lastName = ((data.get('lastName') as string) ?? '').trim();
+      const jobTitle = ((data.get('jobTitle') as string) ?? '').trim();
+      const orgName = ((data.get('orgName') as string) ?? '').trim();
+      const referralSourceRaw = ((data.get('referralSource') as string) ?? '').trim();
+      const marketingOptIn = !!data.get('marketingOptIn');
+      const termsAccepted = !!data.get('termsAccepted');
+
+      hideFormError(errorEl);
+
+      if (!firstName) return showFormError(errorEl, errorText, 'Please enter your first name.');
+      if (!lastName) return showFormError(errorEl, errorText, 'Please enter your last name.');
+      if (!jobTitle) return showFormError(errorEl, errorText, 'Please enter your job title.');
+      if (!orgName) return showFormError(errorEl, errorText, 'Please enter your organization name.');
+      if (!termsAccepted)
+        return showFormError(errorEl, errorText, 'Please accept the terms to continue.');
+
+      const payload: Record<string, unknown> = {
+        firstName,
+        lastName,
+        jobTitle,
+        orgName,
+        marketingOptIn,
+        termsAccepted,
+      };
+      if (referralSourceRaw) payload.referralSource = referralSourceRaw;
+
+      setButtonLoading(submitBtn, true);
+      try {
+        const res = await fetch('/api/onboarding/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          showFormError(errorEl, errorText, body.error ?? 'Could not complete onboarding. Try again.');
+          return;
+        }
+        window.location.href = '/';
+      } finally {
+        setButtonLoading(submitBtn, false);
+      }
+    });
+  }
+
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>

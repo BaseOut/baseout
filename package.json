@@ -1,0 +1,31 @@
+{
+  "name": "baseout",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Baseout monorepo — backup, restore, and data intelligence layer for Airtable",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20",
+    "pnpm": ">=9"
+  },
+  "scripts": {
+    "postinstall": "node scripts/fix-symlinks.js",
+    "fix:symlinks": "node scripts/fix-symlinks.js",
+    "build": "pnpm -r --parallel run build",
+    "test": "pnpm -r --parallel run test",
+    "typecheck": "pnpm -r --parallel run typecheck",
+    "lint": "pnpm -r --parallel run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml,astro}\"",
+    "dev:web": "pnpm --filter @baseout/web dev",
+    "dev:server": "pnpm --filter @baseout/server dev",
+    "dev:admin": "pnpm --filter @baseout/admin dev",
+    "dev:api": "pnpm --filter @baseout/api dev",
+    "dev:sql": "pnpm --filter @baseout/sql dev",
+    "dev:hooks": "pnpm --filter @baseout/hooks dev"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.0"
+  }
+}

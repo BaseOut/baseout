@@ -1,0 +1,47 @@
+name: promote-prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_spec:
+        description: 'Optional version spec (blank = latest uploaded; or "abc123@10 def456@90" for gradual rollout)'
+        required: false
+        default: ''
+      message:
+        description: 'Promotion message'
+        required: false
+        default: 'manual promotion via Actions'
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    if: false  # gated until prod Hyperdrive + DB provisioned (DO auth pending). See pipeline-roadmap.md "Awaiting DO authorization".
+    environment: production
+    concurrency:
+      group: promote-prod
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          FONTAWESOME_TOKEN: ${{ secrets.FONTAWESOME_TOKEN }}
+        run: npm ci
+      - name: Promote (or split traffic between) Worker version(s)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          VERSION_SPEC: ${{ inputs.version_spec }}
+          MESSAGE: ${{ inputs.message }}
+        run: |
+          if [ -n "$VERSION_SPEC" ]; then
+            npx wrangler versions deploy --name baseout --message "$MESSAGE" --yes $VERSION_SPEC
+          else
+            npx wrangler versions deploy --name baseout --message "$MESSAGE" --yes
+          fi

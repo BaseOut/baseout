@@ -1,0 +1,43 @@
+---
+import { cn, inputId as deriveId } from '../../lib/ui';
+
+interface Props {
+  label?: string;
+  name?: string;
+  id?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  value?: string;
+  class?: string;
+}
+
+const {
+  label,
+  name,
+  id,
+  checked = false,
+  disabled = false,
+  value,
+  class: className = '',
+} = Astro.props;
+
+const elId = deriveId(id, name, label);
+
+const wrapperClasses = cn('flex items-center gap-2.5 cursor-pointer', className);
+---
+
+<label class={wrapperClasses}>
+  <input
+    type="checkbox"
+    id={elId}
+    name={name}
+    value={value}
+    checked={checked}
+    disabled={disabled}
+    class="checkbox checkbox-primary checkbox-sm"
+    aria-checked={checked ? 'true' : 'false'}
+  />
+  {label && (
+    <span class="label text-sm">{label}</span>
+  )}
+</label>

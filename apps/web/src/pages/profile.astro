@@ -1,0 +1,156 @@
+---
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import Card from '../components/ui/Card.astro';
+import TextInput from '../components/ui/TextInput.astro';
+import Button from '../components/ui/Button.astro';
+import Avatar from '../components/ui/Avatar.astro';
+import { users } from '../db/schema';
+import { eq } from 'drizzle-orm';
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Profile' },
+];
+const user = Astro.locals.user;
+const db = Astro.locals.db;
+
+let memberSince = '';
+if (user) {
+  const [row] = await db
+    .select({ createdAt: users.createdAt })
+    .from(users)
+    .where(eq(users.id, user.id))
+    .limit(1);
+  if (row) {
+    memberSince = row.createdAt.toLocaleDateString('en-US', {
+      month: 'long',
+      year: 'numeric',
+    });
+  }
+}
+
+const initials = user
+  ? user.name.split(' ').map((p: string) => p[0]).join('').toUpperCase().slice(0, 2)
+  : '?';
+---
+
+<SidebarLayout pageTitle="Profile" breadcrumbs={breadcrumbs}>
+  <div class="space-y-8 animate-in fade-in duration-700">
+
+    <Card variant="outlined">
+      <div class="flex items-center gap-3 mb-6">
+        <span class="material-symbols-outlined icon-xl text-primary">person</span>
+        <h3 class="text-lg font-bold">Profile Information</h3>
+      </div>
+
+      <div class="flex flex-col md:flex-row gap-8">
+        <div class="flex flex-col items-center md:items-start gap-3 md:min-w-48">
+          <Avatar
+            src={user?.image ?? undefined}
+            initials={initials}
+            size="2xl"
+          />
+          <div class="text-center md:text-left">
+            <h4 id="profile-user-name" class="text-base font-semibold" data-user-name>{user?.name}</h4>
+            <p class="text-sm text-base-content/60">{user?.email}</p>
+            {memberSince && (
+              <p class="text-xs text-base-content/40 mt-1">Member since {memberSince}</p>
+            )}
+          </div>
+        </div>
+
+        <div class="flex-1 max-w-md">
+          <form id="profile-form" class="space-y-5" novalidate>
+            <TextInput
+              type="text"
+              name="name"
+              label="Full Name"
+              icon="person"
+              placeholder="Your full name"
+              value={user?.name}
+              autocomplete="name"
+              required
+            />
+
+            <TextInput
+              type="email"
+              name="email"
+              label="Email Address"
+              icon="mail"
+              value={user?.email}
+              readonly
+              hint="Contact support to change your email address."
+            />
+
+            <div id="profile-error" class="fieldset-label text-error flex items-center gap-1 hidden" role="alert">
+              <span class="material-symbols-outlined icon-sm">error</span>
+              <span id="profile-error-text"></span>
+            </div>
+
+            <div id="profile-success" class="fieldset-label text-success flex items-center gap-1 hidden" role="status">
+              <span class="material-symbols-outlined icon-sm">check_circle</span>
+              <span id="profile-success-text"></span>
+            </div>
+
+            <Button variant="primary" type="submit">
+              <span class="material-symbols-outlined icon-lg">save</span>
+              Save Changes
+            </Button>
+          </form>
+        </div>
+      </div>
+    </Card>
+
+  </div>
+</SidebarLayout>
+
+<script>
+  import { showFormError, hideFormError, showFormSuccess, hideFormSuccess } from '../lib/auth-utils';
+  import { authClient } from '../lib/auth-client';
+  import { setButtonLoading } from '../lib/ui';
+
+  function init() {
+    const profileForm = document.getElementById('profile-form') as HTMLFormElement;
+    const profileError = document.getElementById('profile-error') as HTMLElement;
+    const profileErrorText = document.getElementById('profile-error-text') as HTMLElement;
+    const profileSuccess = document.getElementById('profile-success') as HTMLElement;
+    const profileSuccessText = document.getElementById('profile-success-text') as HTMLElement;
+    const profileSubmitBtn = profileForm?.querySelector('button[type="submit"]') as HTMLButtonElement;
+
+    profileForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(profileForm);
+      const name = (formData.get('name') as string)?.trim();
+
+      hideFormError(profileError);
+      hideFormSuccess(profileSuccess);
+
+      if (!name) {
+        showFormError(profileError, profileErrorText, 'Please enter your name.');
+        return;
+      }
+
+      setButtonLoading(profileSubmitBtn, true);
+      try {
+        const { error } = await authClient.updateUser({ name });
+
+        if (error) {
+          showFormError(profileError, profileErrorText, error.message ?? 'Failed to update profile.');
+        } else {
+          showFormSuccess(profileSuccess, profileSuccessText, 'Profile updated successfully.');
+          const parts = name.split(' ');
+          const shortName = parts.length > 1 ? `${parts[0]} ${parts[1].charAt(0)}.` : parts[0];
+          const initial = name.charAt(0).toUpperCase();
+          document.querySelectorAll('[data-user-name]').forEach(el => el.textContent = name);
+          document.querySelectorAll('[data-user-shortname]').forEach(el => el.textContent = shortName);
+          document.querySelectorAll('[data-user-initial]').forEach(el => el.textContent = initial);
+        }
+      } finally {
+        setButtonLoading(profileSubmitBtn, false);
+      }
+    });
+  }
+
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>

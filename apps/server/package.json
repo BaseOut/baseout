@@ -1,0 +1,23 @@
+{
+  "name": "@baseout/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Backup engine, restore engine, background services, schema diff, DB provisioning, On2Air migration. See ./openspec/proposal.md.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "tsup src/index.ts --format esm --dts",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts"
+  },
+  "dependencies": {
+    "@baseout/db-schema": "workspace:*",
+    "@baseout/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240924.0",
+    "wrangler": "^3.78.0"
+  }
+}

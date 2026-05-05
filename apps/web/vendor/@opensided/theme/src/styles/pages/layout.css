@@ -1,0 +1,211 @@
+:root {
+    --layout-sidebar-width: 256px;
+}
+
+/* == Layout: Sidebar == */
+.sidebar-menu {
+    .menu-label {
+        @apply text-base-content/70 text-sm font-medium;
+    }
+
+    .menu-item {
+        @apply rounded-box flex h-8 items-center gap-2 px-2.5 text-sm;
+    }
+
+    a,
+    .menu-item-link {
+        @apply cursor-pointer;
+
+        &.menu-item {
+            @apply hover:bg-base-200;
+
+            &.active {
+                @apply bg-base-200 font-medium;
+            }
+        }
+    }
+
+    .collapse {
+        input {
+            @apply min-h-8 p-0;
+        }
+
+        .collapse-title {
+            @apply peer-hover:bg-base-200 rounded-box flex min-h-8 items-center gap-2 text-sm;
+
+            .arrow-icon {
+                @apply opacity-60 transition-all;
+            }
+
+            &:is(:where(.peer):checked ~ *) {
+                @apply font-medium;
+                .arrow-icon {
+                    @apply rotate-90 opacity-100;
+                }
+            }
+        }
+
+        .collapse-content {
+            &:before {
+                @apply bg-base-content/10 absolute start-4 top-10 bottom-2 w-px;
+                content: "";
+            }
+        }
+    }
+}
+
+/* == Layout: Sidebar == */
+
+#layout-sidebar {
+    width: var(--layout-sidebar-width);
+    min-width: var(--layout-sidebar-width);
+    background: var(--layout-sidebar-background);
+    max-height: 100vh;
+    overflow: visible;
+
+    @apply relative top-0 bottom-0 z-20 flex flex-col transition-[width,_min-width,_margin,_top,_max-height,_border-radius] duration-300;
+
+    &.hide {
+        margin-inline-start: calc(var(--layout-sidebar-width) * -1);
+    }
+}
+
+/* == Layout: Topbar == */
+
+#layout-topbar {
+    background: var(--layout-topbar-background);
+    @apply sticky top-0 z-10 max-h-16 min-h-16 transition-[top,_margin,_border-radius] duration-300;
+}
+
+/* == Layout: Content == */
+
+#layout-content {
+    @apply grow p-6 transition-all;
+}
+
+/* == Sidebar: Toggle == */
+
+#layout-sidebar-toggle-trigger:checked ~ #layout-sidebar {
+    margin-inline-start: calc(var(--layout-sidebar-width) * -1);
+}
+
+#layout-sidebar-hover {
+    @apply fixed top-0 bottom-0 left-0 z-11 hidden;
+}
+
+#layout-sidebar-hover-trigger:checked ~ #layout-sidebar {
+    width: 64px;
+    min-width: 64px;
+    overflow: visible;
+}
+
+/* Sidebar collapsed tooltips — mirrors DaisyUI .tooltip.tooltip-right */
+#layout-sidebar-hover-trigger:checked ~ #layout-sidebar .sidebar-tip {
+    --tt-bg: var(--color-neutral);
+    --tt-off: calc(100% + 0.5rem);
+    --tt-tail: calc(100% + 1px + 0.25rem);
+    position: relative;
+
+    &[data-tip]::before {
+        content: attr(data-tip);
+        border-radius: var(--radius-field);
+        text-align: center;
+        white-space: normal;
+        max-width: 20rem;
+        width: max-content;
+        color: var(--color-neutral-content);
+        background-color: var(--tt-bg);
+        padding-block: 0.25rem;
+        padding-inline: 0.5rem;
+        font-size: 0.875rem;
+        line-height: 1.25;
+        opacity: 0;
+        pointer-events: none;
+        position: absolute;
+        z-index: 50;
+        transform: translateX(calc(var(--tt-pos, -0.25rem) + 0.25rem)) translateY(-50%);
+        inset: 50% auto auto var(--tt-off);
+        transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1) 75ms,
+                    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1) 75ms;
+    }
+
+    &::after {
+        content: "";
+        opacity: 0;
+        background-color: var(--tt-bg);
+        pointer-events: none;
+        width: 0.625rem;
+        height: 0.25rem;
+        mask-position: -1px 0;
+        mask-repeat: no-repeat;
+        mask-image: url("data:image/svg+xml,%3Csvg width='10' height='4' viewBox='0 0 8 4' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0.500009 1C3.5 1 3.00001 4 5.00001 4C7 4 6.5 1 9.5 1C10 1 10 0.499897 10 0H0C-1.99338e-08 0.5 0 1 0.500009 1Z' fill='black'/%3E%3C/svg%3E%0A");
+        display: block;
+        position: absolute;
+        z-index: 50;
+        transform: translateX(var(--tt-pos, -0.25rem)) translateY(-50%) rotate(90deg);
+        inset: 50% auto auto calc(var(--tt-tail) + 1px);
+        transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1) 75ms,
+                    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1) 75ms;
+    }
+
+    &:hover::before,
+    &:hover::after {
+        opacity: 1;
+        --tt-pos: 0rem;
+        transition: opacity 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+                    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+}
+
+/* == Layout: Monochrome Layer == */
+
+#layout-monochrome-layer {
+    @apply pointer-events-none fixed inset-0 z-[999999] opacity-0 grayscale-100 backdrop-opacity-100 transition-all duration-1000;
+}
+
+html[data-monochrome-enabled] #layout-monochrome-layer {
+    @apply opacity-100;
+}
+
+/* == Sidebar: @media for small devices (phone, tablet), <= lg size == */
+
+@media (max-width: theme(--breakpoint-lg)) {
+    #layout-sidebar {
+        @apply fixed z-[500];
+    }
+
+    /* = Tweaks for hide on mobile device by default = */
+    #layout-sidebar-toggle-trigger:not(:checked) ~ #layout-sidebar {
+        margin-inline-start: calc(var(--layout-sidebar-width) * -1);
+    }
+    #layout-sidebar-toggle-trigger:checked ~ #layout-sidebar {
+        margin-inline-start: 0;
+    }
+    #layout-sidebar-toggle-trigger:checked ~ #layout-sidebar-backdrop {
+        @apply bg-base-content/5 fixed inset-0 z-[499] transition-all;
+    }
+}
+
+/* == Overrides: specific to material theme and non-material theme == */
+
+html:not([data-theme="material"], [data-theme="material-dark"]) {
+    #layout-sidebar {
+        @apply border-base-200 border-e-[1px];
+    }
+
+    #layout-topbar {
+        @apply border-base-200 border-b;
+    }
+}
+
+html[data-theme="material"],
+html[data-theme="material-dark"] {
+    #layout-sidebar {
+        max-height: calc(100vh - 32px);
+        @apply rounded-box top-4 bottom-4 ms-4;
+    }
+
+    #layout-topbar {
+        @apply rounded-box static mx-5 mt-4;
+    }
+}

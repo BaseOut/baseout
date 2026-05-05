@@ -1,0 +1,81 @@
+---
+import { cn } from '../../lib/ui';
+
+interface Props {
+  src?: string;
+  alt?: string;
+  initials?: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  shape?: 'circle' | 'square';
+  color?: 'teal' | 'amber' | 'cyan';
+  status?: 'online' | 'away' | 'busy' | 'offline';
+  class?: string;
+}
+
+const {
+  src,
+  alt = '',
+  initials,
+  size = 'md',
+  shape = 'circle',
+  color = 'teal',
+  status,
+  class: className = '',
+} = Astro.props;
+
+const sizeMap: Record<string, string> = {
+  xs:  'w-6 h-6 text-[10px]',
+  sm:  'w-8 h-8 text-xs',
+  md:  'w-10 h-10 text-sm',
+  lg:  'w-12 h-12 text-base',
+  xl:  'w-16 h-16 text-lg',
+  '2xl': 'w-20 h-20 text-xl',
+};
+
+const colorMap: Record<string, string> = {
+  teal:  'bg-primary/20 text-primary',
+  amber: 'bg-accent/20 text-accent',
+  cyan:  'bg-secondary/20 text-secondary',
+};
+
+const statusClassMap: Record<string, string> = {
+  online:  'online',
+  offline: 'offline',
+};
+
+const innerClasses = cn(
+  sizeMap[size] || sizeMap.md,
+  shape === 'circle' ? 'rounded-full' : 'rounded-box',
+  'overflow-hidden flex items-center justify-center',
+  !src && (colorMap[color] || colorMap.teal),
+);
+
+const wrapperClasses = cn(
+  src ? 'avatar' : 'avatar placeholder',
+  statusClassMap[status ?? ''],
+  className,
+);
+---
+
+{status ? (
+  <div class="relative inline-flex">
+    <div class={wrapperClasses}>
+      <div class={innerClasses}>
+        {src
+          ? <img src={src} alt={alt} class="w-full h-full object-cover" />
+          : <span class="font-semibold select-none">{initials}</span>
+        }
+      </div>
+    </div>
+    <span class={`avatar-status avatar-status-${status}`} aria-label={status}></span>
+  </div>
+) : (
+  <div class={wrapperClasses}>
+    <div class={innerClasses}>
+      {src
+        ? <img src={src} alt={alt} class="w-full h-full object-cover" />
+        : <span class="font-semibold select-none">{initials}</span>
+      }
+    </div>
+  </div>
+)}

@@ -1,0 +1,13 @@
+/* ── Brand logo (theme-aware swap) ──────────────────────
+   Two <img> tags in markup, one for each theme. Default
+   (light theme): show twilight-blue logo. Dark theme:
+   show arctic-cyan logo. Keys off [data-theme="baseout"].
+   ─────────────────────────────────────────────────────── */
+
+@layer components {
+  .brand-logo-cyan { display: none; }
+  .brand-logo-blue { display: inline-block; }
+
+  [data-theme="baseout"] .brand-logo-cyan { display: inline-block; }
+  [data-theme="baseout"] .brand-logo-blue { display: none; }
+}

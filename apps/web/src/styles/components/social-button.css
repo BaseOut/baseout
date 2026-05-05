@@ -1,0 +1,72 @@
+/* ── Social Authentication Buttons ───────────────────────────────── */
+@layer components {
+
+  /* ── Base ── */
+  .social-btn {
+    @apply inline-flex items-center justify-center gap-3
+           w-full h-11 px-4
+           rounded-xl
+           text-sm font-medium
+           cursor-pointer select-none
+           transition-all duration-150
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  .social-btn-logo {
+    @apply flex items-center justify-center shrink-0;
+  }
+
+  .social-btn-label {
+    @apply whitespace-nowrap;
+  }
+
+  /* ── Outline variant (default) ── */
+  .social-btn-outline {
+    @apply bg-base-100
+           border border-base-300/60
+           text-base-content
+           hover:bg-base-200 hover:border-base-300
+           focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:outline-none;
+  }
+
+  /* ── Filled variant ── */
+  .social-btn-filled {
+    @apply bg-base-300
+           border border-transparent
+           text-base-content
+           hover:bg-base-300/80
+           focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:outline-none;
+  }
+
+  /* ── Sizes ── */
+  .social-btn-sm {
+    @apply h-9 px-3 text-xs gap-2 rounded-lg;
+  }
+
+  .social-btn-sm .social-btn-logo svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .social-btn-lg {
+    @apply h-13 px-5 text-base gap-3 rounded-2xl;
+  }
+
+  .social-btn-lg .social-btn-logo svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* ── Icon-only ── */
+  .social-btn-icon-only {
+    @apply w-11 px-0;
+  }
+
+  .social-btn-icon-only.social-btn-sm {
+    @apply w-9;
+  }
+
+  .social-btn-icon-only.social-btn-lg {
+    @apply w-13;
+  }
+}

@@ -1,0 +1,34 @@
+---
+import { cn } from '../../lib/ui';
+
+interface Props {
+  variant?: 'default' | 'elevated' | 'outlined' | 'tonal' | 'primary';
+  hover?: boolean;
+  class?: string;
+}
+
+const {
+  variant = 'default',
+  hover = false,
+  class: className = '',
+} = Astro.props;
+
+const variantMap: Record<string, string> = {
+  default:  'bg-base-100 border border-base-300/30',
+  elevated: 'bg-base-100 shadow-md',
+  outlined: 'bg-base-100 border border-base-300/50',
+  tonal:    'bg-base-200 border-0',
+  primary:  'bg-primary text-primary-content border-0',
+};
+
+const classes = cn(
+  'card p-6 rounded-box overflow-hidden transition-shadow duration-200',
+  variantMap[variant] || variantMap.default,
+  hover && 'hover:shadow-sm cursor-pointer',
+  className,
+);
+---
+
+<div class={classes}>
+  <slot />
+</div>

@@ -1,0 +1,11 @@
+---
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PlaceholderView from '../views/PlaceholderView.astro';
+import { getBreadcrumbs } from '../lib/config';
+
+const breadcrumbs = getBreadcrumbs('/schema');
+---
+
+<SidebarLayout pageTitle="Schema" breadcrumbs={breadcrumbs}>
+  <PlaceholderView label="Schema" />
+</SidebarLayout>
