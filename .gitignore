@@ -17,6 +17,10 @@ packages/*/test-results/
 # OpenSpec rotating-symlink marker (apps/server picks one of multiple in-flight changes)
 apps/server/.openspec-target
 
+# Personal / ephemeral
+meeting.link
+brainstorm-agenda.html
+
 # Environment + secrets (NEVER commit)
 .dev.vars
 .dev.vars.local
