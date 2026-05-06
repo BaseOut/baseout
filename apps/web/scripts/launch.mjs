@@ -26,7 +26,7 @@ function checkRequiredEnv() {
 }
 
 function renderWranglerConfig() {
-  if (command !== 'dev' && command !== 'build') return null;
+  if (command !== 'dev' && command !== 'build' && command !== 'render-config') return null;
   if (!existsSync(WRANGLER_TEMPLATE_PATH)) {
     return `Missing wrangler.jsonc.example at ${WRANGLER_TEMPLATE_PATH}.`;
   }
@@ -65,6 +65,10 @@ async function main() {
     console.error('');
     process.exit(1);
   }
+
+  // CI uses render-config to produce wrangler.jsonc for `wrangler types`
+  // without spawning astro. The renderer above is the only step needed.
+  if (command === 'render-config') return;
 
   // Setup wizard is interactive and only useful on first local run.
   // In CI, app-config.json must already be committed.
