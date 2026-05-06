@@ -1,0 +1,25 @@
+// Test-profile wrangler config for the @cloudflare/vitest-pool-workers harness.
+// Defines the DO bindings + migrations the test isolate needs to mount the
+// worker entry point.
+//
+// Note: `vars` are NOT defined here. Test values are passed via
+// `miniflare.bindings` in vitest.config.ts so they cleanly override any
+// `.dev.vars` the developer has locally — without that override, miniflare's
+// .dev.vars loader would shadow the test bindings with real local secrets.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-server-test",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": ["nodejs_compat"],
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
+      { "name": "SPACE_DO", "class_name": "SpaceDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ConnectionDO", "SpaceDO"] }
+  ]
+}
