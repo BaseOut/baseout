@@ -14,6 +14,9 @@ apps/*/test-results/
 apps/*/.superpowers/
 packages/*/test-results/
 
+# OpenSpec rotating-symlink marker (apps/server picks one of multiple in-flight changes)
+apps/server/.openspec-target
+
 # Environment + secrets (NEVER commit)
 .dev.vars
 .dev.vars.local

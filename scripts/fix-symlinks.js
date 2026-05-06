@@ -21,9 +21,23 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ROOT = dirname(__dirname);
 
+// apps/server can be worked by multiple agents in parallel — each agent's
+// in-flight server change folder is picked via apps/server/.openspec-target
+// (single-line file, gitignored). Default when the marker is absent:
+const SERVER_OPENSPEC_DEFAULT_TARGET = "airtable-client";
+
+function resolveServerOpenspecTarget() {
+  const markerPath = join(ROOT, "apps/server/.openspec-target");
+  if (existsSync(markerPath)) {
+    const raw = readFileSync(markerPath, "utf8").trim();
+    if (raw) return raw;
+  }
+  return SERVER_OPENSPEC_DEFAULT_TARGET;
+}
+
 const LINKS = [
   ["apps/web/openspec",                "../../openspec/changes/baseout-web"],
-  ["apps/server/openspec",             "../../openspec/changes/baseout-backup"],
+  ["apps/server/openspec",             `../../openspec/changes/${resolveServerOpenspecTarget()}`],
   ["apps/admin/openspec",              "../../openspec/changes/baseout-admin"],
   ["apps/api/openspec",                "../../openspec/changes/baseout-api"],
   ["apps/sql/openspec",                "../../openspec/changes/baseout-sql"],
@@ -45,8 +59,12 @@ for (const [src, target] of LINKS) {
   }
 
   let action = "create"; // "create" | "skip" | "replace"
-  if (existsSync(srcAbs)) {
-    const stat = lstatSync(srcAbs);
+  // Use lstatSync (not existsSync) so dangling symlinks — e.g. left over after
+  // an in-flight change folder is moved to archive — are still detected.
+  let srcStat = null;
+  try { srcStat = lstatSync(srcAbs); } catch { srcStat = null; }
+  if (srcStat) {
+    const stat = srcStat;
     if (stat.isSymbolicLink()) {
       const current = readlinkSync(srcAbs);
       if (current === target) {
