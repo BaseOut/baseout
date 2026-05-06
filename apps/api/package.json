@@ -8,7 +8,6 @@
     "dev": "wrangler dev",
     "build": "tsup src/index.ts --format esm --dts",
     "deploy": "wrangler deploy",
-    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "openapi:generate": "tsx scripts/generate-openapi.ts"

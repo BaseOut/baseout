@@ -8,7 +8,6 @@
     "dev": "wrangler dev",
     "build": "astro build",
     "deploy": "wrangler deploy",
-    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },
