@@ -1,11 +1,37 @@
 ---
 import SidebarLayout from '../layouts/SidebarLayout.astro';
-import PlaceholderView from '../views/PlaceholderView.astro';
-import { getBreadcrumbs } from '../lib/config';
+import Card from '../components/ui/Card.astro';
+import { getBreadcrumbs, getOwner } from '../lib/config';
 
 const breadcrumbs = getBreadcrumbs('/help');
+const supportEmail = getOwner().email;
+const mailtoUrl = `mailto:${supportEmail}?subject=${encodeURIComponent('Baseout — Help request')}`;
 ---
 
-<SidebarLayout pageTitle="Help Center" breadcrumbs={breadcrumbs}>
-  <PlaceholderView label="Help Center" />
+<SidebarLayout pageTitle="Help" breadcrumbs={breadcrumbs}>
+  <div class="space-y-6 animate-in fade-in duration-700 max-w-2xl">
+    <Card variant="outlined">
+      <div class="flex items-start gap-4">
+        <span class="iconify lucide--life-buoy text-primary size-8 shrink-0 mt-1"></span>
+        <div class="min-w-0 space-y-3">
+          <h2 class="text-lg font-bold">Help &amp; Support</h2>
+          <p class="text-sm text-base-content/70">
+            In-app chat support is coming soon. In the meantime, send us a note —
+            we usually reply within one business day.
+          </p>
+          <div class="flex flex-col sm:flex-row sm:items-center gap-3 pt-2">
+            <a
+              class="btn btn-primary btn-sm"
+              href={mailtoUrl}
+              data-help-mailto
+            >
+              <i class="iconify lucide--mail size-4"></i>
+              <span>Email support</span>
+            </a>
+            <span class="text-xs text-base-content/60 select-all">{supportEmail}</span>
+          </div>
+        </div>
+      </div>
+    </Card>
+  </div>
 </SidebarLayout>
