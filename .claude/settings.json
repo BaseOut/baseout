@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "enabledMcpjsonServers": ["lat"],
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "scripts/lat-check-all.sh",
+            "timeout": 60,
+            "statusMessage": "Validating lat.md graphs"
+          }
+        ]
+      }
+    ]
+  }
+}

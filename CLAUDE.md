@@ -158,6 +158,24 @@ Debug output must not ship.
 
 Per-app changes flow through `openspec/changes/<changename>/` using `opsx:propose|apply|archive`, not free-form docs. Cross-cutting changes (e.g. `web-client-isolation`) get no per-app symlink. Archived changes flow into `openspec/specs/`.
 
+## 3.7 Knowledge Graph (lat.md)
+
+Persistent knowledge about how the system **currently works** lives in the [lat.md](https://github.com/1st1/lat.md) graph. Per-change proposals live in OpenSpec (§3.6). Together they cover both halves of the picture — see [lat.md/openspec-vs-lat.md](lat.md/openspec-vs-lat.md) for the long-form rule of thumb.
+
+**Layout (hybrid root + per-app):**
+
+- [lat.md/](lat.md/) — cross-cutting: domain model, naming, monorepo layout, security model, tech stack, cross-app comms, pricing, schema overview, engineering principles.
+- [apps/<name>/lat.md/](apps/) — per-app internals: routes, auth flow, durable objects, db mirror, etc.
+
+**Rules:**
+
+- When you learn a load-bearing fact about the current system, write it into the appropriate `lat.md/` section. Don't bury it in a commit message, a PR description, or a one-off note in `shared/internal/`.
+- When you propose a change to behaviour, that's an OpenSpec proposal. The lat.md graph is updated **after** the change ships.
+- Run `lat check` before claiming work is complete. The Stop hook in [.claude/settings.json](.claude/settings.json) calls [scripts/lat-check-all.sh](scripts/lat-check-all.sh) automatically; CI runs the same script.
+- Use wiki refs `[[file#H1#H2]]` within a single graph. **Across graphs** (root ↔ per-app, or app-to-app) use plain markdown links — `lat check` doesn't validate cross-graph wiki refs.
+- Add `// @lat: [[section-id]]` reverse refs at the top of load-bearing files only (already done for `apps/server/src/middleware.ts`, the DOs, `master-schema.ts`, `apps/web/src/middleware.ts`, `apps/web/src/lib/account.ts`, `apps/web/src/stores/account.ts`). Don't retrofit scaffold code.
+- The `lat` MCP server is registered in [.mcp.json](.mcp.json) — query the graph via MCP (`lat search`, `lat section`, `lat refs`) rather than shelling out via Bash where possible.
+
 ---
 
 # 4. Frontend Standards (eventual `apps/web/`)

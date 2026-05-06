@@ -1,3 +1,4 @@
+// @lat: [[durable-objects#Durable Objects#ConnectionDO]]
 // ConnectionDO — per-Airtable-Connection rate-limit gateway + state holder.
 //
 // Phase 1 will add: leaky-bucket throttling per Connection, queueing of

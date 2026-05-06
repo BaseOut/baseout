@@ -1,3 +1,4 @@
+// @lat: [[state-management#State Management#Store Layout]]
 import { atom } from 'nanostores'
 import type { AccountContext } from '../lib/account'
 

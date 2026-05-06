@@ -1,3 +1,5 @@
+// @lat: [[architecture#Architecture#Middleware]]
+// @lat: [[surface-contract#Surface Contract#Internal Auth]]
 // Per-request middleware: INTERNAL_TOKEN gate for /api/internal/* + masterDb attachment.
 //
 // Per CLAUDE.md §5.2:

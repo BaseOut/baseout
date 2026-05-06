@@ -1,3 +1,5 @@
+// @lat: [[auth#Auth#Route Protection]]
+// @lat: [[architecture#Architecture#Per-Request Locals]]
 import { defineMiddleware } from "astro:middleware";
 import { env } from "cloudflare:workers";
 import { createDb } from "./db";

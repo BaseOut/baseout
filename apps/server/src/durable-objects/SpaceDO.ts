@@ -1,3 +1,4 @@
+// @lat: [[durable-objects#Durable Objects#SpaceDO]]
 // SpaceDO — per-Space scheduler + backup controller.
 //
 // Phase 1 will add: scheduled-backup state machine, Trigger.dev task
