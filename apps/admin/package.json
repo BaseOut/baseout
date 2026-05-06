@@ -10,7 +10,7 @@
     "deploy": "wrangler deploy",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . --ext .ts,.tsx,.astro"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@baseout/db-schema": "workspace:*",

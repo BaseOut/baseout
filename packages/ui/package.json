@@ -18,7 +18,7 @@
     "dev": "tsup src/index.ts --format esm --dts --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . --ext .ts,.tsx,.astro"
+    "lint": "eslint ."
   },
   "peerDependencies": {
     "react": "^18.0.0",

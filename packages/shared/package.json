@@ -33,7 +33,7 @@
     "dev": "tsup src/index.ts src/encryption.ts src/hmac.ts src/errors.ts src/logging.ts --format esm --dts --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint . --ext .ts"
+    "lint": "eslint ."
   },
   "devDependencies": {
     "tsup": "^8.3.0"
