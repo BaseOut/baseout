@@ -1,5 +1,7 @@
 import type { APIRoute } from 'astro'
 import { switchActiveSpace, SpaceError } from '../../../lib/spaces'
+import { getAccountContext } from '../../../lib/account'
+import { getIntegrationsState } from '../../../lib/integrations'
 import {
   extractSessionTokenCookie,
   invalidateSessionCache,
@@ -43,7 +45,20 @@ export const POST: APIRoute = async ({ request, locals }) => {
       spaceId,
     })
     invalidateSessionCache(sessionToken)
-    return jsonResponse({ ok: true }, 200)
+
+    // Re-load the account and integrations payloads against the new active
+    // space. Returning these in the response lets the client update all three
+    // hydrated stores ($account, $integrations, $spaces) in a single tick
+    // instead of reloading the page.
+    const account = await getAccountContext(locals.db, locals.user.id)
+    const newSpaceId = account?.space?.id ?? spaceId
+    const integrations = await getIntegrationsState(locals.db, orgId, newSpaceId)
+    const spaces = {
+      list: account?.spaces ?? [],
+      activeSpaceId: account?.space?.id ?? null,
+    }
+
+    return jsonResponse({ ok: true, account, integrations, spaces }, 200)
   } catch (err) {
     if (err instanceof SpaceError && err.detail.kind === 'forbidden') {
       return jsonResponse({ error: err.detail.message }, 403)

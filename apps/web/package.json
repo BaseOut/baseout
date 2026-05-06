@@ -22,6 +22,7 @@
     "seed": "node --env-file=.env --import tsx/esm scripts/seed.ts",
     "typecheck": "astro check",
     "lint": "eslint .",
+    "test": "vitest run",
     "test:unit": "vitest run",
     "test:unit:watch": "vitest",
     "test:unit:coverage": "vitest run --coverage",

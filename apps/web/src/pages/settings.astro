@@ -2,21 +2,213 @@
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import Card from '../components/ui/Card.astro';
 import { getBreadcrumbs } from '../lib/config';
+import { and, count, eq } from 'drizzle-orm';
+import {
+  organizationMembers,
+  platforms,
+  subscriptionItems,
+  subscriptions,
+  users,
+} from '../db/schema';
 
 const breadcrumbs = getBreadcrumbs('/settings');
+const { account, db } = Astro.locals;
+const orgId = account?.organization?.id ?? null;
+
+interface SubState {
+  tier: string | null;
+  status: string | null;
+  trialEndsAt: Date | null;
+}
+
+let sub: SubState = { tier: null, status: null, trialEndsAt: null };
+let memberCount = 0;
+let ownerEmail: string | null = null;
+
+if (orgId) {
+  const [subRow] = await db
+    .select({
+      tier: subscriptionItems.tier,
+      trialEndsAt: subscriptionItems.trialEndsAt,
+      status: subscriptions.status,
+    })
+    .from(subscriptionItems)
+    .innerJoin(subscriptions, eq(subscriptions.id, subscriptionItems.subscriptionId))
+    .innerJoin(platforms, eq(platforms.id, subscriptionItems.platformId))
+    .where(
+      and(
+        eq(subscriptions.organizationId, orgId),
+        eq(platforms.slug, 'airtable'),
+      ),
+    )
+    .limit(1);
+  if (subRow) {
+    sub = {
+      tier: subRow.tier,
+      status: subRow.status,
+      trialEndsAt: subRow.trialEndsAt,
+    };
+  }
+
+  const [memberRow] = await db
+    .select({ c: count() })
+    .from(organizationMembers)
+    .where(eq(organizationMembers.organizationId, orgId));
+  memberCount = memberRow?.c ?? 0;
+
+  const [owner] = await db
+    .select({ email: users.email })
+    .from(organizationMembers)
+    .innerJoin(users, eq(users.id, organizationMembers.userId))
+    .where(
+      and(
+        eq(organizationMembers.organizationId, orgId),
+        eq(organizationMembers.role, 'owner'),
+      ),
+    )
+    .limit(1);
+  ownerEmail = owner?.email ?? null;
+}
+
+const isTrialing = sub.status === 'trialing';
+const trialDaysLeft =
+  isTrialing && sub.trialEndsAt
+    ? Math.max(
+        0,
+        Math.ceil((sub.trialEndsAt.getTime() - Date.now()) / 86_400_000),
+      )
+    : null;
+const trialNearExpiry = trialDaysLeft !== null && trialDaysLeft <= 2;
+
+function formatTier(tier: string | null): string {
+  if (!tier) return 'No active plan';
+  return `${tier.charAt(0).toUpperCase()}${tier.slice(1)} Plan`;
+}
+
+const planLabel = isTrialing
+  ? trialDaysLeft === 0
+    ? 'Trial expires today'
+    : `Trial expires in ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'}`
+  : formatTier(sub.tier);
+
+// Per design D3: account-deletion ships disabled with tooltip until the
+// `deletion_requests` schema lands (cutover plan §3.17 / future change).
+const deletionEnabled = false;
 ---
 
 <SidebarLayout pageTitle="Settings" breadcrumbs={breadcrumbs}>
-  <div class="space-y-8 animate-in fade-in duration-700">
+  <div class="space-y-6 animate-in fade-in duration-700 max-w-3xl">
+
+    <!-- Plan / Trial state -->
     <Card variant="outlined">
-      <div class="flex items-center gap-3 mb-4">
-        <span class="material-symbols-outlined icon-xl text-primary">tune</span>
-        <h3 class="text-lg font-bold">Account Settings</h3>
+      <div class="flex items-start justify-between gap-4">
+        <div class="min-w-0">
+          <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-1">
+            Plan
+          </h3>
+          <p class="text-lg font-bold truncate">{planLabel}</p>
+          {isTrialing && (
+            <p class="text-sm text-base-content/60 mt-1">
+              {sub.tier
+                ? `${formatTier(sub.tier)} during the trial period.`
+                : 'Trial period in progress.'}
+            </p>
+          )}
+        </div>
+        <span
+          class={
+            'badge badge-soft ' +
+            (trialNearExpiry ? 'badge-warning' : 'badge-primary')
+          }
+        >
+          {isTrialing ? 'Trial' : (sub.tier ? formatTier(sub.tier) : 'No plan')}
+        </span>
       </div>
-      <p class="text-sm opacity-70">
-        Baseout uses passwordless magic-link sign-in — there is no password to manage.
-        Additional account controls will appear here as they are added.
-      </p>
     </Card>
+
+    <!-- Organization info -->
+    <Card variant="outlined">
+      <h3 class="text-sm font-semibold uppercase tracking-wide text-base-content/60 mb-3">
+        Organization
+      </h3>
+      <dl class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div>
+          <dt class="text-xs text-base-content/60">Name</dt>
+          <dd class="text-sm font-medium truncate">
+            {account?.organization?.name ?? '—'}
+          </dd>
+        </div>
+        <div>
+          <dt class="text-xs text-base-content/60">Members</dt>
+          <dd class="text-sm font-medium">{memberCount}</dd>
+        </div>
+        <div>
+          <dt class="text-xs text-base-content/60">Owner</dt>
+          <dd class="text-sm font-medium truncate">{ownerEmail ?? '—'}</dd>
+        </div>
+      </dl>
+    </Card>
+
+    <!-- Sign out -->
+    <Card variant="outlined">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div class="min-w-0">
+          <h3 class="text-sm font-semibold">Sign out of Baseout</h3>
+          <p class="text-sm text-base-content/60">
+            Ends this session on this device. You'll need a fresh magic-link to sign back in.
+          </p>
+        </div>
+        <button
+          id="settings-signout"
+          type="button"
+          class="btn btn-outline btn-sm"
+          aria-label="Sign out"
+        >
+          <i class="iconify lucide--log-out size-4"></i>
+          <span>Sign out</span>
+        </button>
+      </div>
+    </Card>
+
+    <!-- Account deletion (disabled — D3) -->
+    <Card variant="outlined">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div class="min-w-0">
+          <h3 class="text-sm font-semibold text-error">Delete account</h3>
+          <p class="text-sm text-base-content/60">
+            Permanently removes your user from Baseout. Organizations you own
+            require a separate request before deletion is finalized.
+          </p>
+        </div>
+        <button
+          id="settings-delete"
+          type="button"
+          class="btn btn-outline btn-error btn-sm"
+          disabled={!deletionEnabled}
+          title={!deletionEnabled ? 'Account deletion is being wired up. Check back soon.' : undefined}
+          aria-disabled={!deletionEnabled ? 'true' : undefined}
+        >
+          Request deletion
+        </button>
+      </div>
+    </Card>
+
   </div>
 </SidebarLayout>
+
+<script>
+  import { signOutAndRedirect } from '../lib/auth-client';
+
+  function init(): void {
+    const btn = document.getElementById('settings-signout');
+    if (!btn || !(btn instanceof HTMLButtonElement)) return;
+    if (btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
+    btn.addEventListener('click', async () => {
+      await signOutAndRedirect(btn);
+    });
+  }
+
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>

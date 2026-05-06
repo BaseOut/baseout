@@ -498,10 +498,13 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
 </div>
 
 <script>
-  import { authClient } from '../../lib/auth-client';
+  import { signOutAndRedirect } from '../../lib/auth-client';
   import { $account } from '../../stores/account';
+  import type { AccountContext } from '../../lib/account';
   import { $spaces, refreshSpaces } from '../../stores/spaces';
   import type { SpaceSummary, SpacesState } from '../../stores/spaces';
+  import { $integrations } from '../../stores/connections';
+  import type { IntegrationsState } from '../../stores/connections';
   import { setButtonLoading } from '../../lib/ui';
   import { showFormError, hideFormError } from '../../lib/auth-utils';
 
@@ -621,6 +624,13 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
     }
   }
 
+  interface SwitchResponse {
+    ok: true;
+    account: AccountContext | null;
+    integrations: IntegrationsState;
+    spaces: SpacesState;
+  }
+
   async function handleSwitch(btn: HTMLButtonElement): Promise<void> {
     const spaceId = btn.dataset.spaceId;
     if (!spaceId || btn.disabled) return;
@@ -628,26 +638,32 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
     if (!prev || prev.activeSpaceId === spaceId) return;
 
     btn.disabled = true;
-    const res = await fetch('/api/spaces/switch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ spaceId }),
-    });
-    if (!res.ok) {
+    try {
+      const res = await fetch('/api/spaces/switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spaceId }),
+      });
+      if (!res.ok) return;
+
+      const body = (await res.json()) as SwitchResponse;
+      // Update in this order: account → integrations → spaces. The dashboard
+      // store subscribes to $spaces and refetches on activeSpaceId change, so
+      // setting $spaces last ensures the subscriber sees a coherent
+      // post-switch view of $account and $integrations.
+      $account.set(body.account);
+      $integrations.set(body.integrations);
+      $spaces.set(body.spaces);
+      (document.activeElement as HTMLElement | null)?.blur();
+    } finally {
       btn.disabled = false;
-      return;
     }
-    $spaces.set({ ...prev, activeSpaceId: spaceId });
-    (document.activeElement as HTMLElement | null)?.blur();
   }
 
   function init() {
     const logoutHandler = async (e: Event) => {
       e.preventDefault();
-      await authClient.signOut();
-      $account.set(null);
-      $spaces.set(null);
-      window.location.href = '/login';
+      await signOutAndRedirect();
     };
     document.getElementById('sidebar-logout')?.addEventListener('click', logoutHandler);
     document.getElementById('sidebar-logout-rail')?.addEventListener('click', logoutHandler);

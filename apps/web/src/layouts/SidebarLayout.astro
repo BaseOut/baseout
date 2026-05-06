@@ -111,10 +111,8 @@ const resolvedTitle = title ?? (pageTitle ? `${pageTitle} | ${brandName}` : bran
 </script>
 
 <script>
-  import { $spaces } from '../stores/spaces';
-
-  const el = document.getElementById('spaces-state');
-  if (el?.textContent) {
-    $spaces.set(JSON.parse(el.textContent));
-  }
+  // The `$spaces` store self-hydrates from #spaces-state on module init
+  // and re-hydrates on `astro:after-swap`. Importing it here ensures the
+  // module is included in the bundle for any page that uses SidebarLayout.
+  import '../stores/spaces';
 </script>
