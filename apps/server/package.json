@@ -9,6 +9,7 @@
     "render-config": "node --env-file-if-exists=.env scripts/launch.mjs dev",
     "build": "tsup src/index.ts --format esm --dts",
     "deploy": "node --env-file-if-exists=.env scripts/launch.mjs deploy && wrangler deploy",
+    "deploy:dev": "node --env-file-if-exists=.env scripts/launch.mjs deploy && wrangler deploy --env dev",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."

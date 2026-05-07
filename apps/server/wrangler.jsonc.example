@@ -75,7 +75,31 @@
   //   TRIGGER_PROJECT_REF     — Trigger.dev project ID
   //   CLOUDFLARE_API_TOKEN, STRIPE_API_KEY, MAILGUN_API_KEY — phase-2
 
+  // Wrangler does NOT inherit non-inheritable keys (vars, hyperdrive,
+  // kv_namespaces, send_email, durable_objects) from top-level into env
+  // blocks — every env redeclares the full set. Migrations stay top-level.
+  // See: https://developers.cloudflare.com/workers/wrangler/configuration/#environments
+  //
+  // env.staging / env.production are placeholders today — they'll get full
+  // redeclarations under the follow-up openspec change covering staging+prod
+  // service-binding wiring.
   "env": {
+    "dev": {
+      "name": "baseout-server-dev",
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "ba2652f40f864918a2da0849f24d12a2",
+          "localConnectionString": "{{DATABASE_URL}}"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
+          { "name": "SPACE_DO", "class_name": "SpaceDO" }
+        ]
+      }
+    },
     "production": {
       "name": "baseout-server"
     },
