@@ -7,6 +7,7 @@ import { createMasterDb } from "./db/worker";
 import { applyMiddleware } from "./middleware";
 import { healthHandler } from "./pages/api/health";
 import { internalPingHandler } from "./pages/api/internal/ping";
+import { dbSmokeHandler } from "./pages/api/internal/db-smoke";
 import { whoamiHandler } from "./pages/api/internal/connections/whoami";
 
 const CONNECTIONS_WHOAMI_RE =
@@ -55,6 +56,9 @@ export default {
       }
       if (url.pathname === "/api/internal/ping") {
         return await internalPingHandler(request, env, ctx, locals);
+      }
+      if (url.pathname === "/api/internal/__db-smoke") {
+        return await dbSmokeHandler(request, env, ctx, locals);
       }
 
       // PoC-only DO smoke test: forwards to ConnectionDO by stable name.
