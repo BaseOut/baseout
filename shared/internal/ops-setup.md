@@ -72,22 +72,65 @@ wrangler secret put --env production STRIPE_TRIAL_PRICE_ID
 ### Engine (@baseout/server) — deploy preconditions
 
 The backup engine is a separate Cloudflare Worker. apps/web reaches it via
-a service binding (declared in `apps/web/wrangler.jsonc.example` for
-`env.staging` + `env.production`). The binding's `service` field must match
-the engine's deployed worker name, and a few secrets must be set per env
-before any request to `/api/internal/*` returns a useful response.
+a service binding (declared in `apps/web/wrangler.jsonc.example`). The
+binding's `service` field must match the engine's deployed worker name,
+and a few secrets must be set per env before any request to
+`/api/internal/*` returns a useful response.
 
 **Worker names (the binding is name-matched):**
 
-| apps/web env | Web binding's `service` field | apps/server worker name (set in `apps/server/wrangler.jsonc`) |
+| apps/web env | Web binding's `service` field | apps/server worker name (set in `apps/server/wrangler.jsonc.example`) |
 |---|---|---|
+| dev        | `baseout-server-dev`     | `env.dev.name = baseout-server-dev`         |
 | staging    | `baseout-server-staging` | `env.staging.name = baseout-server-staging` |
 | production | `baseout-server`         | `env.production.name = baseout-server`      |
 
-The dev block of apps/web's wrangler intentionally has **no** service binding
-to apps/server — `wrangler dev --remote` would fail-fast on a non-deployed
-service. Once apps/server has a deployed `baseout-dev`, the binding can be
-added to the dev block in a follow-up.
+The dev binding lands first per openspec change `baseout-web-server-service-binding`.
+Staging + production bindings are deferred to a follow-up openspec change
+(those Workers aren't deployed yet — declaring the binding now would
+fail-resolve at deploy).
+
+### Local dev: deploying baseout-server-dev
+
+apps/web runs `wrangler dev --remote` to keep real R2/KV/Hyperdrive/email
+bindings during local dev. `--remote` runs the Worker on Cloudflare's edge,
+which refuses outbound `fetch()` to RFC1918/loopback (so `http://localhost:4341`
+returns 403). The service binding sidesteps this — but it has to resolve to a
+real deployed Worker.
+
+**One-time setup (per developer):**
+
+```sh
+# 1. Set the three required Cloudflare Secrets on the dev env:
+pnpm --filter @baseout/server exec wrangler secret put INTERNAL_TOKEN --env dev
+pnpm --filter @baseout/server exec wrangler secret put BASEOUT_ENCRYPTION_KEY --env dev
+pnpm --filter @baseout/server exec wrangler secret put DATABASE_URL --env dev
+# (Values: pull from your local apps/server/.dev.vars — same secrets the
+#  team's existing dev DB uses. INTERNAL_TOKEN must match apps/web's
+#  BACKUP_ENGINE_INTERNAL_TOKEN; BASEOUT_ENCRYPTION_KEY must match apps/web's.)
+
+# 2. Deploy:
+pnpm --filter @baseout/server deploy:dev
+
+# 3. Sanity check:
+curl https://baseout-server-dev.openside.workers.dev/api/health           # → 200 + JSON liveness
+curl -X POST https://baseout-server-dev.openside.workers.dev/api/internal/ping  # → 401 unauthorized (proves the gate is live)
+```
+
+**When to redeploy:** any time `apps/server` source changes that touch
+the test-connection probe path or any `/api/internal/*` route the dev
+flow exercises. The redeploy takes ~10 seconds.
+
+**Verifying the binding is healthy end-to-end:**
+
+1. Open `https://localhost:4331/integrations` (apps/web dev server).
+2. Click **Test connection** on the Airtable card.
+3. Expected: `Connected. Airtable user: …` (success), or
+   `airtable_token_rejected` (token expired — reconnect Airtable to verify).
+4. If you see `engine_unreachable` / 503, redeploy via `pnpm --filter @baseout/server deploy:dev`.
+5. If you see `unauthorized` / 502, the `INTERNAL_TOKEN` on apps/server doesn't
+   match `BACKUP_ENGINE_INTERNAL_TOKEN` on apps/web — re-run `wrangler secret put`
+   on the side that's wrong.
 
 **Hyperdrive (apps/server only):** the binding is currently commented out
 in `apps/server/wrangler.jsonc`. Until provisioned, the runtime falls back

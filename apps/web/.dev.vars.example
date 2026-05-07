@@ -12,15 +12,18 @@ POSTHOG_PROJECT_KEY=
 DUB_CO_API_KEY=
 
 # === Backup engine (@baseout/server) ===
-# apps/web calls @baseout/server over HTTP with x-internal-token header
-# (CLAUDE.md §5.2 + §3.3). Both vars below must match apps/server's
-# .dev.vars: BACKUP_ENGINE_URL points at apps/server's wrangler dev port,
-# and BACKUP_ENGINE_INTERNAL_TOKEN equals apps/server's INTERNAL_TOKEN.
+# apps/web reaches @baseout/server through a Cloudflare Worker service
+# binding (env.BACKUP_ENGINE) declared in wrangler.jsonc.example. There is
+# no URL to configure — Cloudflare resolves the binding to the deployed
+# Worker named `baseout-server-<env>` in the same account.
 #
-# URL: matches apps/server's wrangler dev port (8787 = wrangler default).
-BACKUP_ENGINE_URL=http://localhost:8787
-# Token: same value as apps/server's INTERNAL_TOKEN (32+ random bytes, base64).
-# Generate once: `openssl rand -base64 32`. Paste the same value into both
-# apps/web/.dev.vars (here as BACKUP_ENGINE_INTERNAL_TOKEN) and
-# apps/server/.dev.vars (as INTERNAL_TOKEN). Mismatch = engine 401 → web 502.
+# Deploy precondition (one-time per developer):
+#   pnpm --filter @baseout/server deploy:dev
+# This lands `baseout-server-dev.openside.workers.dev`, which the dev
+# binding resolves to. See shared/internal/ops-setup.md for details +
+# how to redeploy when apps/server changes.
+#
+# Token: defense-in-depth header sent on every binding fetch — must equal
+# apps/server's INTERNAL_TOKEN (32+ random bytes, base64). Generate once:
+# `openssl rand -base64 32`. Mismatch = engine 401 → web 502.
 BACKUP_ENGINE_INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness

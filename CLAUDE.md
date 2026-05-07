@@ -275,7 +275,7 @@ src/
 ## 5.2 Backend Surface Contract
 
 - Public: `/api/health` (liveness probe).
-- Internal: `/api/internal/*` gated by `x-internal-token` header. Frontend calls these to enqueue work.
+- Internal: `/api/internal/*` gated by `x-internal-token` header. Frontend reaches these via the `BACKUP_ENGINE` Cloudflare Worker service binding (declared in `apps/web/wrangler.jsonc.example`), not over public HTTP. The token gate stays as defense-in-depth alongside the binding's network-level isolation.
 - No other public surface. No customer auth. No UI.
 
 ## 5.3 Backend File Organization
