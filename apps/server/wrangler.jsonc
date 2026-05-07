@@ -23,16 +23,19 @@
   //   { "binding": "BACKUP_BUCKET", "bucket_name": "baseout-backups" }
   // ],
 
-  // Hyperdrive — uncomment + provision a real id before deploy.
-  // Local wrangler dev does NOT need this; resolveDbUrl in src/db/worker.ts
-  // falls back to DATABASE_URL from .dev.vars when env.HYPERDRIVE is unset.
-  // "hyperdrive": [
-  //   {
-  //     "binding": "HYPERDRIVE",
-  //     "id": "<hyperdrive-id>",
-  //     "localConnectionString": "postgres://USER:PASS@HOST:25060/baseout-dev?sslmode=require"
-  //   }
-  // ],
+  // Hyperdrive — local dev uses localConnectionString; the `id` is just a
+  // label until the Hyperdrive is provisioned for staging/production deploy.
+  // postgres-js direct TLS hangs inside workerd's nodejs_compat — Hyperdrive
+  // (which proxies the connection) is what actually makes per-request
+  // postgres-js usable from a Worker. See apps/web/wrangler.jsonc for the
+  // matching binding (same dev DB cluster, same id is fine for local dev).
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "ba2652f40f864918a2da0849f24d12a2",
+      "localConnectionString": "{{DATABASE_URL}}"
+    }
+  ],
 
   // Cron triggers — TODO(phase-2): one per background service.
   // "triggers": {
