@@ -6,3 +6,7 @@
 // migration source. Per CLAUDE.md §5.3.
 
 export * from "./connections";
+export * from "./backup-runs";
+export * from "./backup-configurations";
+export * from "./backup-configuration-bases";
+export * from "./at-bases";

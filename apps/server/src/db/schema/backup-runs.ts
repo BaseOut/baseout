@@ -1,0 +1,48 @@
+// MIRROR of apps/web/src/db/schema/core.ts:322 (canonical writer).
+// Migrations: apps/web/drizzle/0004_user_role_and_backup_runs.sql
+//             apps/web/drizzle/0006_windy_sauron.sql (trigger_run_ids column)
+//
+// apps/web INSERTs each row on user-triggered or scheduled run-create.
+// apps/server flips status (queued → running → succeeded | failed |
+// trial_complete), writes per-run counts on completion, and stores the
+// fan-out array of Trigger.dev run IDs in trigger_run_ids.
+//
+// Columns the engine neither reads nor writes (createdAt, errorMessage we
+// only write, etc.) are intentionally omitted following the same pattern as
+// connections.ts. Add columns when the engine actually needs them — never
+// migrate from this side.
+//
+// Per CLAUDE.md §5.3.
+
+import {
+  boolean,
+  integer,
+  jsonb,
+  pgSchema,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
+
+const baseout = pgSchema("baseout");
+
+export const backupRuns = baseout.table("backup_runs", {
+  id: text("id").primaryKey(),
+  spaceId: text("space_id").notNull(),
+  connectionId: text("connection_id").notNull(),
+  status: text("status").notNull(),
+  // 'queued' | 'running' | 'succeeded' | 'failed' | 'trial_complete'
+  isTrial: boolean("is_trial").notNull(),
+  recordCount: integer("record_count"),
+  tableCount: integer("table_count"),
+  attachmentCount: integer("attachment_count"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  errorMessage: text("error_message"),
+  triggerRunIds: jsonb("trigger_run_ids").$type<string[]>(),
+  // JSON array of Trigger.dev v3 run IDs — one per included base. Set by
+  // the run-start handler when fanning out; consumed by run-complete to
+  // determine when all per-base work has reported in.
+  modifiedAt: timestamp("modified_at", { withTimezone: true }).notNull(),
+});
+
+export type BackupRunRow = typeof backupRuns.$inferSelect;
