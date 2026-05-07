@@ -69,6 +69,93 @@ wrangler secret put --env production STRIPE_TRIAL_PRICE_ID
 - `STRIPE_TRIAL_PRICE_ID` — staging uses a test-mode `price_*`, production
   uses a live-mode `price_*`. Same Stripe account, different modes.
 
+### Engine (@baseout/server) — deploy preconditions
+
+The backup engine is a separate Cloudflare Worker. apps/web reaches it via
+a service binding (declared in `apps/web/wrangler.jsonc.example` for
+`env.staging` + `env.production`). The binding's `service` field must match
+the engine's deployed worker name, and a few secrets must be set per env
+before any request to `/api/internal/*` returns a useful response.
+
+**Worker names (the binding is name-matched):**
+
+| apps/web env | Web binding's `service` field | apps/server worker name (set in `apps/server/wrangler.jsonc`) |
+|---|---|---|
+| staging    | `baseout-server-staging` | `env.staging.name = baseout-server-staging` |
+| production | `baseout-server`         | `env.production.name = baseout-server`      |
+
+The dev block of apps/web's wrangler intentionally has **no** service binding
+to apps/server — `wrangler dev --remote` would fail-fast on a non-deployed
+service. Once apps/server has a deployed `baseout-dev`, the binding can be
+added to the dev block in a follow-up.
+
+**Hyperdrive (apps/server only):** the binding is currently commented out
+in `apps/server/wrangler.jsonc`. Until provisioned, the runtime falls back
+to the `DATABASE_URL` secret. To enable Hyperdrive:
+
+```
+wrangler hyperdrive create baseout-server-staging --connection-string="$STAGING_DATABASE_URL"
+wrangler hyperdrive create baseout-server-prod    --connection-string="$PROD_DATABASE_URL"
+```
+
+Then uncomment the `hyperdrive` block in `apps/server/wrangler.jsonc`,
+swap the `<hyperdrive-id>` for the real id (per env), and re-deploy.
+
+**Secrets (per env):**
+
+```
+# apps/server
+wrangler secret put --env staging    --name baseout-server INTERNAL_TOKEN
+wrangler secret put --env staging    --name baseout-server BASEOUT_ENCRYPTION_KEY
+wrangler secret put --env staging    --name baseout-server DATABASE_URL          # while Hyperdrive is commented
+wrangler secret put --env staging    --name baseout-server TRIGGER_SECRET_KEY
+wrangler secret put --env staging    --name baseout-server TRIGGER_PROJECT_REF
+# repeat with --env production --name baseout-server (note: production worker
+# is also named "baseout-server" — see env.production.name above)
+
+# apps/web
+wrangler secret put --env staging    BACKUP_ENGINE_INTERNAL_TOKEN              # MUST equal apps/server's INTERNAL_TOKEN
+wrangler secret put --env production BACKUP_ENGINE_INTERNAL_TOKEN
+# BASEOUT_ENCRYPTION_KEY is presumably already set on apps/web (the OAuth
+# callback writes encrypted tokens with it). The same value MUST be
+# available to apps/server — set the engine's BASEOUT_ENCRYPTION_KEY to
+# the exact same base64 string.
+```
+
+**Parity rules (the most common deploy break):**
+
+- `apps/server.INTERNAL_TOKEN` ≡ `apps/web.BACKUP_ENGINE_INTERNAL_TOKEN`
+  (per env). A mismatch yields 401 unauthorized at the engine middleware,
+  surfaced to apps/web's route as a 502.
+- `apps/server.BASEOUT_ENCRYPTION_KEY` ≡ `apps/web.BASEOUT_ENCRYPTION_KEY`
+  (per env). A mismatch yields 500 `decrypt_failed` at the engine when it
+  tries to decrypt a Connection's `access_token_enc`.
+- `DATABASE_URL` (or Hyperdrive) on apps/server points at the **same**
+  Postgres cluster apps/web writes Connections to. Otherwise the engine's
+  `connection_not_found` response is just "different DB."
+
+**Post-deploy smoke (per env):**
+
+1. Visit the deployed apps/web URL, log in, complete the Airtable Connect
+   OAuth flow if not already done. This creates a row in
+   `baseout.connections`.
+2. Find the `connections.id`:
+   ```sql
+   SELECT id, status FROM baseout.connections
+     WHERE organization_id = '<your-org-id>'
+     ORDER BY created_at DESC LIMIT 1;
+   ```
+3. On the integrations page, click **Test connection**. Expect:
+   `Connected. Airtable user: <email or id> · N scopes.`
+   Or curl directly (proves the engine without the IDOR-guard layer):
+   ```
+   curl -X POST -H "x-internal-token: $INTERNAL_TOKEN" \
+     https://baseout-server-staging.openside.workers.dev/api/internal/connections/<id>/whoami
+   ```
+4. If the response is non-200, the body's `error` field names the failed
+   precondition (see status-code matrix in
+   `apps/server/src/pages/api/internal/connections/whoami.ts`).
+
 ---
 
 ## 2. DigitalOcean — Postgres per env
