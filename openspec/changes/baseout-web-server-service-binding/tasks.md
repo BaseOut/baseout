@@ -41,6 +41,11 @@
 - [x] 7.1 Added "Local dev: deploying baseout-server-dev" subsection to [shared/internal/ops-setup.md](../../../shared/internal/ops-setup.md). Covers one-time secrets + deploy, redeploy cadence, sanity-check curls, and end-to-end verification via /integrations Test connection. Also corrected the prior "dev intentionally has no service binding" wording (was outdated — dev is the first binding to land per this change). Worker-name table extended with the dev row.
 - [x] 7.2 Tweaked CLAUDE.md §5.2 "Backend Surface Contract": "Frontend reaches these via the `BACKUP_ENGINE` Cloudflare Worker service binding ... not over public HTTP. The token gate stays as defense-in-depth alongside the binding's network-level isolation." Rest of the section intact.
 
+## 7.5 Real findings during verification (added during apply)
+
+- [x] 7.5.1 **`remote: true` is required on the service binding entry.** Cloudflare's modern docs surface this — without it, `wrangler dev --remote` (legacy mode) doesn't actually wire the binding to the deployed sibling Worker, and `binding.fetch()` returns 403. Updated `apps/web/wrangler.jsonc.example` and added the rationale to the inline comment block + [shared/internal/ops-setup.md](../../../shared/internal/ops-setup.md).
+- [x] 7.5.2 **UX gap closed: Reconnect button now surfaces after a failed Test connection.** The route at [apps/web/src/pages/api/connections/airtable/test.ts](../../../apps/web/src/pages/api/connections/airtable/test.ts) flips `connections.status` → `'pending_reauth'` when the engine returns `airtable_token_rejected`, and the IntegrationsView client script reloads the page after a needs-reconnect result so the existing SSR-conditional Reconnect Airtable button renders. The cron-OAuth-refresh openspec change will eventually do this proactively from the engine side.
+
 ## 8. End-to-end verification
 
 - [ ] 8.1 Stop both dev workers. Restart `pnpm --filter @baseout/web dev`.

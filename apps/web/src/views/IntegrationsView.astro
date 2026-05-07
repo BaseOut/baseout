@@ -251,6 +251,7 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
       error?: string;
       connection_status?: string;
       airtable_status?: number;
+      upstream_status?: number;
     }
 
     function showResult(text: string, kind: 'ok' | 'warn' | 'err'): void {
@@ -279,10 +280,27 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
           return 'The backup engine is not running. Start `pnpm --filter @baseout/server dev`.';
         case 'server_misconfigured':
           return 'The backup engine URL/token is not configured. Contact support.';
+        case 'unauthorized':
+          return 'Service-to-service auth failed (web↔engine token mismatch). Contact support.';
+        case 'decrypt_failed':
+          return 'Stored credentials could not be decrypted. Reconnect Airtable.';
+        case 'engine_error':
+          return `Engine returned an unexpected error (HTTP ${body.upstream_status ?? status}). Try again.`;
         default:
           return `Test failed (HTTP ${status}). Please try again.`;
       }
     }
+
+    // Engine error codes that signal the user needs to re-OAuth. The route
+    // already flipped connections.status → 'pending_reauth' for these (or the
+    // status was already 'pending_reauth'/'invalid' and the route surfaced
+    // it via 'connection_status'); reload so the Reconnect Airtable button
+    // surfaces from the SSR `needsReconnect` predicate.
+    const NEEDS_RECONNECT = new Set([
+      'airtable_token_rejected',
+      'connection_status',
+      'decrypt_failed',
+    ]);
 
     button?.addEventListener('click', async () => {
       if (!button || !connectionId) return;
@@ -304,6 +322,12 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
         } else {
           const body = (await res.json().catch(() => ({}))) as ErrorBody;
           showResult(describeError(body, res.status), 'err');
+          if (body.error && NEEDS_RECONNECT.has(body.error)) {
+            // Brief delay so the user can read the message before the page
+            // reloads. After reload, IntegrationsView re-renders with the
+            // Reconnect Airtable button visible.
+            setTimeout(() => window.location.reload(), 1500);
+          }
         }
       } catch {
         showResult('Network error. Please try again.', 'err');

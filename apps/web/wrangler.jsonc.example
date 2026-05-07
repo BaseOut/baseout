@@ -87,13 +87,24 @@
   // apps/web runs `wrangler dev --remote`. INTERNAL_TOKEN gate on apps/server
   // stays as defense-in-depth.
   //
+  // `remote: true` is REQUIRED for the binding to resolve to the deployed
+  // baseout-server-dev Worker during local dev. Without it, modern Wrangler
+  // (4.x) doesn't wire service bindings to deployed siblings even under the
+  // legacy `wrangler dev --remote` flag — `binding.fetch()` returns 403
+  // because the binding has nothing to forward to. See:
+  // https://developers.cloudflare.com/workers/development-testing/#remote-bindings
+  //
+  // `remote: true` is local-dev-only — deployed Workers always resolve the
+  // binding to the named sibling Worker in the same account regardless.
+  //
   // Staging + production service blocks are deferred to a follow-up openspec
   // change — those Workers (baseout-server-staging, baseout-server) aren't
   // deployed yet, so resolving the binding would fail at deploy.
   "services": [
     {
       "binding": "BACKUP_ENGINE",
-      "service": "baseout-server-dev"
+      "service": "baseout-server-dev",
+      "remote": true
     }
   ],
   "env": {

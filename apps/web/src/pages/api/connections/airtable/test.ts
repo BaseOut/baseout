@@ -72,11 +72,6 @@ export const POST: APIRoute = async ({ locals, request }) => {
     return jsonResponse({ error: 'connection_not_found' }, 404)
   }
 
-  // env.BACKUP_ENGINE is the service binding declared in wrangler.jsonc.example;
-  // env.BACKUP_ENGINE_INTERNAL_TOKEN is a Cloudflare Secret. Both are required.
-  // wrangler types generates the binding as optional (`Fetcher | undefined`)
-  // even though it's non-optional in our wrangler.jsonc, so the runtime check
-  // doubles as the type narrow.
   if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) {
     return jsonResponse(
       {
@@ -87,11 +82,26 @@ export const POST: APIRoute = async ({ locals, request }) => {
       503,
     )
   }
+
   const engine = createBackupEngine({
     binding: env.BACKUP_ENGINE,
     internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
   })
   const result = await engine.whoami(connectionId)
+
+  // If Airtable rejected the stored token, flip the row to pending_reauth so
+  // IntegrationsView's `needsReconnect` predicate flips true and the existing
+  // Reconnect Airtable button surfaces on next render. The browser-side test
+  // handler triggers a page reload on this code so the button appears without
+  // a manual refresh. The cron-OAuth-refresh openspec change will eventually
+  // do this proactively from the engine side; doing it here in the meantime
+  // closes the UX gap.
+  if (!result.ok && result.code === 'airtable_token_rejected') {
+    await locals.db
+      .update(connections)
+      .set({ status: 'pending_reauth', modifiedAt: new Date() })
+      .where(eq(connections.id, connectionId))
+  }
   if (result.ok) {
     return jsonResponse(
       { connectionId: result.connectionId, airtable: result.airtable },

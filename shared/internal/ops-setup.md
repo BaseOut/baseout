@@ -121,6 +121,14 @@ curl -X POST https://baseout-server-dev.openside.workers.dev/api/internal/ping  
 the test-connection probe path or any `/api/internal/*` route the dev
 flow exercises. The redeploy takes ~10 seconds.
 
+**Gotcha — `remote: true` is required on the service binding.** Modern
+Wrangler (4.x) doesn't wire service bindings to deployed sibling Workers
+during local dev unless the binding entry sets `"remote": true`, even under
+the legacy `wrangler dev --remote` flag. Without it, `binding.fetch()`
+returns 403 from Cloudflare's edge. The flag is local-dev-only — deployed
+Workers always resolve the binding to the named sibling regardless. See
+`apps/web/wrangler.jsonc.example` for the canonical shape.
+
 **Verifying the binding is healthy end-to-end:**
 
 1. Open `https://localhost:4331/integrations` (apps/web dev server).
