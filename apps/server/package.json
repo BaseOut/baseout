@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Backup engine, restore engine, background services, schema diff, DB provisioning, On2Air migration. See ./openspec/proposal.md.",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --port 4341",
     "build": "tsup src/index.ts --format esm --dts",
     "deploy": "wrangler deploy",
     "test": "vitest run",
@@ -14,7 +14,9 @@
   },
   "dependencies": {
     "@baseout/db-schema": "workspace:*",
-    "@baseout/shared": "workspace:*"
+    "@baseout/shared": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.14.9",

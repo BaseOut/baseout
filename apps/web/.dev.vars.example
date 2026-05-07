@@ -10,3 +10,15 @@ AIRTABLE_OAUTH_CLIENT_SECRET=
 SERVICE_HMAC_TO_BACKUP=
 POSTHOG_PROJECT_KEY=
 DUB_CO_API_KEY=
+
+# === Backup engine (@baseout/server) ===
+# Cloudflare service binding (declared in wrangler.jsonc as
+# `services[].binding = BACKUP_ENGINE`) handles the apps/web → apps/server
+# transport. Local dev: run `pnpm --filter @baseout/server dev` first; the
+# wrangler dev registry routes the binding between local instances.
+# Deployed: routes worker-to-worker.
+#
+# INTERNAL_TOKEN is still required at the engine middleware. This var must
+# match the engine's INTERNAL_TOKEN exactly (same 32+ random bytes, base64).
+# Generate: `openssl rand -base64 32`.
+BACKUP_ENGINE_INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness

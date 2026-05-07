@@ -18,6 +18,9 @@ const TEST_BINDINGS = {
   INTERNAL_TOKEN: "test-only-internal-token-min-32-chars-aaaa",
   DATABASE_URL:
     "postgres://postgres:postgres@127.0.0.1:5432/baseout_test_unused",
+  // 32 zero bytes, base64 — tests inject their own keys via deps; this just
+  // satisfies the typed Env shape so the worker entry boots.
+  BASEOUT_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
   TRIGGER_SECRET_KEY: "tr_dev_test_unused",
   TRIGGER_PROJECT_REF: "proj_test_unused",
 };

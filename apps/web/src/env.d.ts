@@ -27,5 +27,17 @@ declare namespace App {
 }
 
 declare module 'cloudflare:workers' {
-  interface ProvidedEnv extends Env {}
+  interface ProvidedEnv extends Env {
+    /**
+     * Cloudflare service binding to @baseout/server (the backup engine).
+     * Optional because the binding is declared only in env.staging + env.production
+     * of wrangler.jsonc — dev (`wrangler dev --remote`) intentionally has no
+     * binding, since `--remote` upload validation would fail without a deployed
+     * engine. The route at /api/connections/airtable/test handles undefined
+     * by returning 503 server_misconfigured.
+     */
+    BACKUP_ENGINE?: Fetcher;
+    /** Shared secret with @baseout/server's INTERNAL_TOKEN. Sent as x-internal-token header on every call to the engine. */
+    BACKUP_ENGINE_INTERNAL_TOKEN: string;
+  }
 }

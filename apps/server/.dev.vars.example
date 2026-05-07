@@ -25,6 +25,16 @@ TRIGGER_PROJECT_REF=proj_xxxxxxxxxxxxxxxxxxxx
 # BACKUP_ENGINE_INTERNAL_TOKEN.
 INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness
 
+# === Master encryption key (decrypt-only at the engine) ===
+# AES-256-GCM key for the *_enc columns in baseout.connections (and other
+# encrypted-at-rest columns). Same value apps/web has in its
+# BASEOUT_ENCRYPTION_KEY var. The engine NEVER writes encrypted tokens —
+# apps/web's OAuth callback is the canonical writer; cron-oauth-refresh
+# (a future change) will be the second writer. The engine only decrypts
+# what's already in the DB.
+# Generate: `openssl rand -base64 32`.
+BASEOUT_ENCRYPTION_KEY=replace-with-base64-of-32-random-bytes
+
 # === Optional: local-dev TLS bypass ===
 # Set DRIZZLE_SSL=false ONLY if connecting to a local Postgres without TLS.
 # Leave unset / "require" for any DigitalOcean managed DB.

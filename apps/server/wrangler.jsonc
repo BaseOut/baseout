@@ -23,10 +23,15 @@
   //   { "binding": "BACKUP_BUCKET", "bucket_name": "baseout-backups" }
   // ],
 
-  // Hyperdrive — TODO(phase-1): wire when per-request masterDb factory hits real Postgres.
-  // Pattern: dev uses process.env.DATABASE_URL; deployed envs use env.HYPERDRIVE.connectionString.
+  // Hyperdrive — uncomment + provision a real id before deploy.
+  // Local wrangler dev does NOT need this; resolveDbUrl in src/db/worker.ts
+  // falls back to DATABASE_URL from .dev.vars when env.HYPERDRIVE is unset.
   // "hyperdrive": [
-  //   { "binding": "HYPERDRIVE", "id": "<hyperdrive-id>", "localConnectionString": "postgres://..." }
+  //   {
+  //     "binding": "HYPERDRIVE",
+  //     "id": "<hyperdrive-id>",
+  //     "localConnectionString": "postgres://USER:PASS@HOST:25060/baseout-dev?sslmode=require"
+  //   }
   // ],
 
   // Cron triggers — TODO(phase-2): one per background service.
@@ -46,7 +51,8 @@
   // Secrets (set via `wrangler secret put` in deployed envs; .dev.vars locally):
   //   INTERNAL_TOKEN          — shared secret with apps/web (BACKUP_ENGINE_INTERNAL_TOKEN)
   //   DATABASE_URL            — master DB (postgres-js per-request, per CLAUDE.md §5.1)
-  //   MASTER_ENCRYPTION_KEY   — AES-256-GCM key for *_enc columns
+  //                             only used in local wrangler dev; deployed envs read HYPERDRIVE.
+  //   BASEOUT_ENCRYPTION_KEY  — AES-256-GCM key for *_enc columns; must match apps/web
   //   TRIGGER_SECRET_KEY      — Trigger.dev v3 server-side key
   //   TRIGGER_PROJECT_REF     — Trigger.dev project ID
   //   CLOUDFLARE_API_TOKEN, STRIPE_API_KEY, MAILGUN_API_KEY — phase-2

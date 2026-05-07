@@ -83,6 +83,12 @@ importers:
       '@baseout/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@cloudflare/workers-types@4.20260504.1)(kysely@0.28.17)(postgres@3.4.9)
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: ^0.14.9

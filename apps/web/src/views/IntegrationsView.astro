@@ -135,6 +135,14 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
             </div>
           </dl>
 
+          <!-- Test connection — calls @baseout/server's whoami probe via /api/connections/airtable/test. -->
+          <div class="flex items-center gap-3 mt-2" data-test-connection data-connection-id={airtable.id}>
+            <Button type="button" variant="ghost" data-test-connection-submit>
+              Test connection
+            </Button>
+            <p class="text-xs" data-test-connection-result role="status" aria-live="polite"></p>
+          </div>
+
           {bases.length > 0 && (
             <div>
               <div class="flex items-baseline justify-between mt-4 mb-2 gap-3">
@@ -226,6 +234,84 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
       if (submit) setButtonLoading(submit, true);
     });
   });
+
+  // Test-connection button — POSTs to /api/connections/airtable/test, which
+  // calls the engine's whoami probe and surfaces the result inline.
+  const testRoot = document.querySelector<HTMLElement>('[data-test-connection]');
+  if (testRoot) {
+    const button = testRoot.querySelector<HTMLButtonElement>('[data-test-connection-submit]');
+    const result = testRoot.querySelector<HTMLElement>('[data-test-connection-result]');
+    const connectionId = testRoot.dataset.connectionId ?? '';
+
+    interface SuccessBody {
+      connectionId: string;
+      airtable: { id: string; scopes: string[]; email?: string };
+    }
+    interface ErrorBody {
+      error?: string;
+      connection_status?: string;
+      airtable_status?: number;
+    }
+
+    function showResult(text: string, kind: 'ok' | 'warn' | 'err'): void {
+      if (!result) return;
+      result.textContent = text;
+      result.className = `text-xs ${
+        kind === 'ok'
+          ? 'text-success'
+          : kind === 'warn'
+            ? 'text-warning'
+            : 'text-error'
+      }`;
+    }
+
+    function describeError(body: ErrorBody, status: number): string {
+      switch (body.error) {
+        case 'connection_not_found':
+          return 'This Airtable connection is not visible to your account.';
+        case 'connection_status':
+          return `Connection status is "${body.connection_status ?? 'unknown'}". Reconnect Airtable to refresh.`;
+        case 'airtable_token_rejected':
+          return 'Airtable rejected the stored token. Reconnect Airtable.';
+        case 'airtable_upstream':
+          return `Airtable returned ${body.airtable_status ?? 'an error'}. Try again in a moment.`;
+        case 'engine_unreachable':
+          return 'The backup engine is not running. Start `pnpm --filter @baseout/server dev`.';
+        case 'server_misconfigured':
+          return 'The backup engine URL/token is not configured. Contact support.';
+        default:
+          return `Test failed (HTTP ${status}). Please try again.`;
+      }
+    }
+
+    button?.addEventListener('click', async () => {
+      if (!button || !connectionId) return;
+      setButtonLoading(button, true);
+      showResult('Checking…', 'warn');
+      try {
+        const res = await fetch('/api/connections/airtable/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ connection_id: connectionId }),
+        });
+        if (res.ok) {
+          const body = (await res.json()) as SuccessBody;
+          const userBit = body.airtable.email ?? body.airtable.id;
+          showResult(
+            `Connected. Airtable user: ${userBit} · ${body.airtable.scopes.length} scopes.`,
+            'ok',
+          );
+        } else {
+          const body = (await res.json().catch(() => ({}))) as ErrorBody;
+          showResult(describeError(body, res.status), 'err');
+        }
+      } catch {
+        showResult('Network error. Please try again.', 'err');
+      } finally {
+        setButtonLoading(button, false);
+      }
+    });
+  }
 
   // Base-selection form
   const selectionForm = document.querySelector<HTMLFormElement>('form[data-base-selection-form]');

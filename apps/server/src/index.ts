@@ -2,10 +2,15 @@
 // Headless API only: /api/health (public) + /api/internal/* (INTERNAL_TOKEN-gated).
 // Per CLAUDE.md §5.2.
 
-import type { Env } from "./env";
+import type { AppLocals, Env } from "./env";
+import { createMasterDb } from "./db/worker";
 import { applyMiddleware } from "./middleware";
 import { healthHandler } from "./pages/api/health";
 import { internalPingHandler } from "./pages/api/internal/ping";
+import { whoamiHandler } from "./pages/api/internal/connections/whoami";
+
+const CONNECTIONS_WHOAMI_RE =
+  /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
 
 // Re-export Durable Object classes so workerd can resolve their bindings.
 // Required even when Astro adapter wraps the entry — see CLAUDE.md §5.1.
@@ -25,25 +30,53 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<Response> {
-    const url = new URL(request.url);
-    const mw = applyMiddleware(request, env, ctx);
+    const mw = applyMiddleware(request, env);
     if (mw.res) return mw.res;
 
-    if (url.pathname === "/api/health") {
-      return healthHandler(request, env, ctx, mw.locals);
-    }
-    if (url.pathname === "/api/internal/ping") {
-      return internalPingHandler(request, env, ctx, mw.locals);
-    }
+    // Per CLAUDE.md §5.1: per-request masterDb. Built lazily on first access
+    // so handlers that don't need the DB (health, ping) don't pay for it
+    // and don't crash when DATABASE_URL/HYPERDRIVE is misconfigured.
+    // Wrapped in an object so closure reassignment survives TS narrowing.
+    const slot: { value: ReturnType<typeof createMasterDb> | null } = {
+      value: null,
+    };
+    const locals: AppLocals = {
+      getMasterDb() {
+        if (!slot.value) slot.value = createMasterDb(env);
+        return slot.value;
+      },
+    };
 
-    // PoC-only DO smoke test: forwards to ConnectionDO by stable name.
-    // Token-gated via the /api/internal/ prefix in middleware.
-    if (url.pathname === "/api/internal/__do-smoke") {
-      const id = env.CONNECTION_DO.idFromName("smoke-test");
-      return env.CONNECTION_DO.get(id).fetch(request);
-    }
+    try {
+      const url = new URL(request.url);
 
-    return notFound();
+      if (url.pathname === "/api/health") {
+        return await healthHandler(request, env, ctx, locals);
+      }
+      if (url.pathname === "/api/internal/ping") {
+        return await internalPingHandler(request, env, ctx, locals);
+      }
+
+      // PoC-only DO smoke test: forwards to ConnectionDO by stable name.
+      // Token-gated via the /api/internal/ prefix in middleware.
+      if (url.pathname === "/api/internal/__do-smoke") {
+        const id = env.CONNECTION_DO.idFromName("smoke-test");
+        return await env.CONNECTION_DO.get(id).fetch(request);
+      }
+
+      if (request.method === "POST") {
+        const m = CONNECTIONS_WHOAMI_RE.exec(url.pathname);
+        if (m) {
+          return await whoamiHandler(request, env, ctx, locals, m[1]!);
+        }
+      }
+
+      return notFound();
+    } finally {
+      // Tear down only if a handler actually built the masterDb. Avoids a
+      // wasted `sql.end` cycle on health / ping which never query.
+      if (slot.value) ctx.waitUntil(slot.value.sql.end({ timeout: 5 }));
+    }
   },
 
   async scheduled(
