@@ -1,0 +1,4 @@
+# wrangler.jsonc is generated from wrangler.jsonc.example by scripts/launch.mjs.
+# It contains the local Postgres connection string (sourced from .dev.vars)
+# which must never be committed. Per CLAUDE.md §3.3 + PRD §20.1.
+wrangler.jsonc

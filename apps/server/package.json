@@ -5,9 +5,10 @@
   "type": "module",
   "description": "Backup engine, restore engine, background services, schema diff, DB provisioning, On2Air migration. See ./openspec/proposal.md.",
   "scripts": {
-    "dev": "wrangler dev --port 4341",
+    "dev": "node --env-file-if-exists=.dev.vars scripts/launch.mjs dev && wrangler dev --port 4341",
+    "render-config": "node --env-file-if-exists=.dev.vars scripts/launch.mjs dev",
     "build": "tsup src/index.ts --format esm --dts",
-    "deploy": "wrangler deploy",
+    "deploy": "node --env-file-if-exists=.dev.vars scripts/launch.mjs deploy && wrangler deploy",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."

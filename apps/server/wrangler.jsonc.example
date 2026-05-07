@@ -1,3 +1,18 @@
+// Template for apps/server/wrangler.jsonc. Rendered by scripts/launch.mjs:
+//   - the DATABASE_URL placeholder below is replaced with the value from
+//     .dev.vars, written into the gitignored wrangler.jsonc
+//
+// Why a template + renderer (mirrors apps/web's pattern):
+//   localConnectionString is read by `wrangler dev` BEFORE .dev.vars is
+//   loaded by the worker runtime, so it can't come from a runtime secret.
+//   Committing the literal credential is forbidden (CLAUDE.md §3.3 +
+//   PRD §20.1: secrets via Cloudflare Secrets or .env, never committed).
+//   The template lets us version control the structure while the credential
+//   stays in apps/server/.dev.vars (gitignored).
+//
+// Deployed Workers do NOT use localConnectionString — they connect via the
+// Hyperdrive `id`. So the placeholder rendering matters only for local dev.
+
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "baseout-server",
