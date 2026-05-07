@@ -338,6 +338,10 @@ export const backupRuns = baseout.table('backup_runs', {
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   errorMessage: text('error_message'),
+  triggerRunIds: jsonb('trigger_run_ids').$type<string[]>(),
+  // JSON array of Trigger.dev v3 run IDs (one per included base). Set when the
+  // engine fans out to per-base tasks; consumed by the run-complete callback to
+  // determine when all per-base work has reported in.
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

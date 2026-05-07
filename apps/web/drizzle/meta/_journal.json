@@ -43,6 +43,13 @@
       "when": 1777585708747,
       "tag": "0005_clean_agent_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778189527324,
+      "tag": "0006_windy_sauron",
+      "breakpoints": true
     }
   ]
 }
