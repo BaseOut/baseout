@@ -12,8 +12,8 @@
 // `env.staging` and `env.production` override the dev-specific bits.
 //
 // Wrangler does NOT inherit non-inheritable keys (vars, hyperdrive,
-// kv_namespaces, send_email) from top-level into env blocks — every
-// env redeclares the full set. See:
+// kv_namespaces, send_email, services, durable_objects) from top-level
+// into env blocks — every env redeclares the full set. See:
 // https://developers.cloudflare.com/workers/wrangler/configuration/#environments
 //
 // Deploy:
@@ -78,6 +78,22 @@
     {
       "binding": "SESSION",
       "id": "d5cac1df2216476eaeb38e9fca639559"
+    }
+  ],
+  // Service binding to @baseout/server. Routes engine calls (the test-
+  // connection probe, future enqueue/restore endpoints) through Cloudflare's
+  // internal Worker-to-Worker network rather than public HTTP. Bypasses the
+  // RFC1918 / loopback fetch ban that breaks plain-fetch transport when
+  // apps/web runs `wrangler dev --remote`. INTERNAL_TOKEN gate on apps/server
+  // stays as defense-in-depth.
+  //
+  // Staging + production service blocks are deferred to a follow-up openspec
+  // change — those Workers (baseout-server-staging, baseout-server) aren't
+  // deployed yet, so resolving the binding would fail at deploy.
+  "services": [
+    {
+      "binding": "BACKUP_ENGINE",
+      "service": "baseout-server-dev"
     }
   ],
   "env": {

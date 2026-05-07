@@ -14,39 +14,21 @@
 
 ## 3. Declare the service binding on apps/web
 
-- [ ] 3.1 Edit [apps/web/wrangler.jsonc.example](../../../apps/web/wrangler.jsonc.example): add a top-level `services` block:
-  ```jsonc
-  "services": [
-    { "binding": "BACKUP_ENGINE", "service": "baseout-server-dev" }
-  ],
-  ```
-  Place it alongside the other top-level non-inheritable bindings (after `kv_namespaces`).
-- [ ] 3.2 In the same file, add `services` blocks to `env.staging` (pointing at `baseout-server-staging`) and `env.production` (pointing at `baseout-server`). Mirror the comment block already in the file noting non-inheritable keys.
-- [ ] 3.3 Regenerate Cloudflare types: `pnpm --filter @baseout/web cf-typegen`. Confirm `worker-configuration.d.ts` (gitignored) now declares `BACKUP_ENGINE: Fetcher` on `Env`.
-- [ ] 3.4 Edit [apps/web/src/env.d.ts](../../../apps/web/src/env.d.ts) `ProvidedEnv` — remove `BACKUP_ENGINE_URL`. The `BACKUP_ENGINE` field comes from generated types so does not need an explicit declaration here; if the generated type doesn't carry the field for some reason, declare `BACKUP_ENGINE: Fetcher` here. Keep `BACKUP_ENGINE_INTERNAL_TOKEN`.
+- [x] 3.1 Edit [apps/web/wrangler.jsonc.example](../../../apps/web/wrangler.jsonc.example): added top-level `services` block declaring `BACKUP_ENGINE` → `baseout-server-dev`. Updated the inheritance comment block to include `services` (and `durable_objects`, which had the same gotcha on the apps/server side).
+- [x] 3.2 ~~Add `services` blocks to `env.staging` and `env.production`.~~ **Deferred to follow-up openspec change** per agreement: those Workers (`baseout-server-staging`, `baseout-server`) aren't deployed yet; declaring the binding now would fail-resolve at deploy. Will land alongside staging/prod Hyperdrive + KV provisioning.
+- [x] 3.3 Ran `pnpm --filter @baseout/web cf-typegen`. `worker-configuration.d.ts` now declares `BACKUP_ENGINE?: Fetcher /* baseout-server-dev */` on the dev `Env`. **Note:** wrangler types marks bindings as optional even when non-optional in config; the runtime `if (!env.BACKUP_ENGINE) ...` guard in test.ts (task 5.1) covers it.
+- [x] 3.4 Edited [apps/web/src/env.d.ts](../../../apps/web/src/env.d.ts) `ProvidedEnv` — removed `BACKUP_ENGINE_URL`, added `BACKUP_ENGINE: Fetcher` as a fallback declaration (in case generated types are stale). `BACKUP_ENGINE_INTERNAL_TOKEN` retained.
 
 ## 4. Refactor the engine client
 
-- [ ] 4.1 Update [apps/web/src/lib/backup-engine.ts](../../../apps/web/src/lib/backup-engine.ts):
-  - `BackupEngineOptions`: `{ binding: Fetcher, internalToken: string }`. Drop `url` and `fetchImpl`.
-  - `createBackupEngine`: replace the `joinUrl` + global `fetch` call with `options.binding.fetch(\`https://engine\${path}\`, init)`. The placeholder host is irrelevant — Cloudflare routes by binding.
-  - Update the file header comment block — replace the URL-configuration paragraph with the binding paragraph from [design.md](./design.md) §Web Client API. Reference `env.BACKUP_ENGINE` and the `services` block instead of `BACKUP_ENGINE_URL`.
-  - Keep `EngineWhoamiResult`, `EngineWhoamiSuccess`, `EngineWhoamiError`, and `KNOWN_ERROR_CODES` exactly as they are.
-- [ ] 4.2 Update [apps/web/src/lib/backup-engine.test.ts](../../../apps/web/src/lib/backup-engine.test.ts):
-  - Add a `fetcherStub(handler)` helper at the top of the file that returns a `Fetcher`-shaped object whose `.fetch` invokes `handler(new Request(input, init))`.
-  - Rewire each existing test from `fetchImpl` to `binding`. Assertions on URL/method/headers stay — assert on the `Request` the handler received.
-  - Drop the "handles trailing slash on the base URL" test. Replace it with: "calls binding.fetch with method POST and the canonical /api/internal/connections/:id/whoami path" (the path-not-URL invariant the binding now enforces).
-  - Run `pnpm --filter @baseout/web test:unit -- backup-engine`. Expect 10/10 green.
+- [x] 4.1 Updated [apps/web/src/lib/backup-engine.ts](../../../apps/web/src/lib/backup-engine.ts): `BackupEngineOptions` now `{ binding: Fetcher, internalToken: string }` (dropped `url` + `fetchImpl`). `createBackupEngine` uses `options.binding.fetch('https://engine' + path, init)`. Header rewritten to describe the service-binding transport. `EngineWhoamiResult`, `EngineWhoamiSuccess`, `EngineWhoamiError`, `KNOWN_ERROR_CODES` unchanged.
+- [x] 4.2 Rewrote [apps/web/src/lib/backup-engine.test.ts](../../../apps/web/src/lib/backup-engine.test.ts) with `fetcherStub(handler)` helper returning `{ fetch: vi.fn(...) }` shape. All 10 tests rewired from `fetchImpl` → `binding`. Dropped "handles trailing slash on the base URL" (URL-resolution no longer applies); replaced with "passes the connection_id through encodeURIComponent on the path" (the canonical-path invariant the binding now enforces). 10/10 green.
 
 ## 5. Update the route to use the binding
 
-- [ ] 5.1 Edit [apps/web/src/pages/api/connections/airtable/test.ts](../../../apps/web/src/pages/api/connections/airtable/test.ts):
-  - Replace the `workerEnv` cast block (lines ~75-87 today) with a check that `env.BACKUP_ENGINE_INTERNAL_TOKEN` is set. The `BACKUP_ENGINE` binding is non-optional in the binding declaration, so it's always present at runtime — the explicit existence check can be dropped.
-  - Replace `createBackupEngine({ url: ..., internalToken: ... })` with `createBackupEngine({ binding: env.BACKUP_ENGINE, internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN })`.
-  - The `server_misconfigured` early-return (today checks for missing URL+token) should now check only the token. URL is no longer in the picture.
-  - Confirm `mapEngineCodeToStatus` import and call site is unchanged.
-- [ ] 5.2 Run `pnpm --filter @baseout/web typecheck`. Expect 0 errors.
-- [ ] 5.3 Run `pnpm --filter @baseout/web test:unit -- test.spec`. Expect 10/10 green (no logic change to the helper).
+- [x] 5.1 Updated [apps/web/src/pages/api/connections/airtable/test.ts](../../../apps/web/src/pages/api/connections/airtable/test.ts): dropped the `workerEnv` cast for `BACKUP_ENGINE_URL`; reads `env.BACKUP_ENGINE` directly. `server_misconfigured` early-return now checks both the binding AND the token (the binding is required because `wrangler types` marks it as optional — the runtime guard doubles as the type narrow). `createBackupEngine({ binding, internalToken })` per the new shape.
+- [x] 5.2 `pnpm --filter @baseout/web typecheck` — 0 errors.
+- [x] 5.3 `pnpm --filter @baseout/web exec vitest run src/pages/api/connections/airtable/test.spec.ts` — 10/10 green (no logic change; helper untouched).
 
 ## 6. Trim the env config
 

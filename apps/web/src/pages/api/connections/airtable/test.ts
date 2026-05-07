@@ -18,6 +18,7 @@ import { and, eq } from 'drizzle-orm'
 import { connections } from '../../../../db/schema/core'
 import { platforms } from '../../../../db/schema/core'
 import { createBackupEngine } from '../../../../lib/backup-engine'
+import { mapEngineCodeToStatus } from './_engine-status'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -71,23 +72,24 @@ export const POST: APIRoute = async ({ locals, request }) => {
     return jsonResponse({ error: 'connection_not_found' }, 404)
   }
 
-  const workerEnv = env as unknown as {
-    BACKUP_ENGINE_URL?: string
-    BACKUP_ENGINE_INTERNAL_TOKEN?: string
-  }
-  if (!workerEnv.BACKUP_ENGINE_URL || !workerEnv.BACKUP_ENGINE_INTERNAL_TOKEN) {
+  // env.BACKUP_ENGINE is the service binding declared in wrangler.jsonc.example;
+  // env.BACKUP_ENGINE_INTERNAL_TOKEN is a Cloudflare Secret. Both are required.
+  // wrangler types generates the binding as optional (`Fetcher | undefined`)
+  // even though it's non-optional in our wrangler.jsonc, so the runtime check
+  // doubles as the type narrow.
+  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) {
     return jsonResponse(
       {
         error: 'server_misconfigured',
         message:
-          'Backup engine URL or token is not configured. Contact support.',
+          'Backup engine binding or token is not configured. Contact support.',
       },
       503,
     )
   }
   const engine = createBackupEngine({
-    url: workerEnv.BACKUP_ENGINE_URL,
-    internalToken: workerEnv.BACKUP_ENGINE_INTERNAL_TOKEN,
+    binding: env.BACKUP_ENGINE,
+    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
   })
   const result = await engine.whoami(connectionId)
   if (result.ok) {
@@ -97,21 +99,11 @@ export const POST: APIRoute = async ({ locals, request }) => {
     )
   }
 
-  // Map engine error codes to a status the browser can act on. The route
-  // returns the engine's HTTP status passthrough where it makes sense, so the
-  // UI can show "Reconnect" vs "Try again" hints based on `code` alone.
-  const responseStatus =
-    result.code === 'connection_not_found'
-      ? 404
-      : result.code === 'invalid_connection_id'
-        ? 400
-        : result.code === 'connection_status'
-          ? 409
-          : result.code === 'server_misconfigured'
-            ? 503
-            : result.code === 'engine_unreachable'
-              ? 503
-              : 502
+  // Map every engine error code to a status the browser can act on. The body's
+  // `error` field is the stable contract the UI dispatches on (see
+  // describeError() in IntegrationsView.astro). Status codes are chosen so
+  // that 4xx = user can fix (reconnect), 5xx = operator/upstream problem.
+  const responseStatus = mapEngineCodeToStatus(result.code)
   return jsonResponse(
     {
       error: result.code,
@@ -126,3 +118,4 @@ export const POST: APIRoute = async ({ locals, request }) => {
     responseStatus,
   )
 }
+

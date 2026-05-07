@@ -1,12 +1,12 @@
 /**
  * Internal-API client for @baseout/server (the backup engine).
  *
- * apps/web calls into the engine over plain HTTP (configurable URL), gated by
- * INTERNAL_TOKEN sent as the `x-internal-token` header. Today this client
- * exposes a single method (`whoami`) that proves a Connection's stored token
- * still works against Airtable. Future engine endpoints (run-now, cancel-run,
- * list-progress, etc.) extend this same client — they reuse the URL + token
- * resolution and the typed-error shape below.
+ * apps/web calls into the engine over a Cloudflare Worker service binding,
+ * gated by INTERNAL_TOKEN sent as the `x-internal-token` header. Today this
+ * client exposes a single method (`whoami`) that proves a Connection's
+ * stored token still works against Airtable. Future engine endpoints (run-
+ * now, cancel-run, list-progress, etc.) extend this same client — they
+ * reuse the binding + token plumbing and the typed-error shape below.
  *
  * The internal token NEVER reaches the browser. This client runs server-side
  * inside the Astro Worker; the browser POSTs to apps/web routes that wrap it.
@@ -14,12 +14,16 @@
  * Wire format mirrors the engine's status-code matrix at:
  *   apps/server/src/pages/api/internal/connections/whoami.ts
  *
- * URL configuration:
- *   - Local dev: env.BACKUP_ENGINE_URL = http://localhost:8787 (apps/server's
- *     wrangler dev port, default).
- *   - Deployed: env.BACKUP_ENGINE_URL = the deployed @baseout/server URL
- *     (e.g. https://baseout-server.openside.workers.dev), set via
- *     `wrangler secret put BACKUP_ENGINE_URL --env <env>` per environment.
+ * Transport:
+ *   - apps/web declares `services: [{ binding: "BACKUP_ENGINE", service:
+ *     "baseout-server-<env>" }]` in wrangler.jsonc.example. At runtime
+ *     `env.BACKUP_ENGINE` is a `Fetcher` that routes through Cloudflare's
+ *     internal Worker-to-Worker network — never public DNS, no RFC1918
+ *     edge ban, identical behaviour in `wrangler dev --remote` and in
+ *     deployed envs.
+ *   - The placeholder host on the request URL is irrelevant — Cloudflare
+ *     binds by name, not by Host header. apps/server reads only the path
+ *     + headers + body.
  *
  * Per CLAUDE.md §5.2 + §3.3 — same wire format used in production.
  */
@@ -64,12 +68,13 @@ export interface EngineWhoamiError {
 export type EngineWhoamiResult = EngineWhoamiSuccess | EngineWhoamiError;
 
 export interface BackupEngineOptions {
-  /** Engine base URL, e.g. http://localhost:8787 in dev. */
-  url: string;
+  /**
+   * Service binding to the @baseout/server Worker. Provided by Cloudflare
+   * at runtime as `env.BACKUP_ENGINE`. Tests inject a `Fetcher`-shaped stub.
+   */
+  binding: Fetcher;
   /** Shared secret matching the engine's INTERNAL_TOKEN. */
   internalToken: string;
-  /** Optional fetch override for tests. */
-  fetchImpl?: typeof fetch;
 }
 
 export interface BackupEngineClient {
@@ -87,21 +92,20 @@ const KNOWN_ERROR_CODES: ReadonlySet<EngineWhoamiError["code"]> = new Set([
   "airtable_upstream",
 ]);
 
-function joinUrl(base: string, path: string): string {
-  const trimmed = base.endsWith("/") ? base.slice(0, -1) : base;
-  return `${trimmed}${path}`;
-}
-
 export function createBackupEngine(
   options: BackupEngineOptions,
 ): BackupEngineClient {
-  const fetchImpl = options.fetchImpl ?? fetch;
   return {
     async whoami(connectionId) {
       const path = `/api/internal/connections/${encodeURIComponent(connectionId)}/whoami`;
+      // Service bindings expose `.fetch(input, init?)` exactly like global
+      // fetch. The base URL is irrelevant — Cloudflare routes by binding,
+      // not by Host header — but `Fetcher.fetch()` requires an absolute URL
+      // input, so we use a stable placeholder. apps/server reads only the
+      // path + headers + body.
       let res: Response;
       try {
-        res = await fetchImpl(joinUrl(options.url, path), {
+        res = await options.binding.fetch(`https://engine${path}`, {
           method: "POST",
           headers: {
             "x-internal-token": options.internalToken,
