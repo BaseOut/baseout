@@ -4,8 +4,10 @@
 // stripped down — apps/server has no Astro setup wizard / app-config.
 //
 // Invoked from package.json before `wrangler dev` and `wrangler deploy`.
-// Reads DATABASE_URL from process.env (loaded via `node --env-file=.dev.vars`
+// Reads DATABASE_URL from process.env (loaded via `node --env-file=.env`
 // in the npm scripts). The rendered wrangler.jsonc is gitignored.
+// Wrangler's runtime worker secrets continue to live in .dev.vars (auto-
+// loaded by `wrangler dev` itself).
 //
 // `localConnectionString` is local-dev-only — deployed Workers connect via
 // the Hyperdrive `id`. So an unrendered template would fail wrangler dev
@@ -36,7 +38,7 @@ const dbUrl = process.env.DATABASE_URL || (isDev ? null : DEV_DB_PLACEHOLDER);
 if (!dbUrl) {
   console.error(
     "\n  DATABASE_URL is not set." +
-      "\n  Copy apps/server/.dev.vars.example to apps/server/.dev.vars and fill it in.\n",
+      "\n  Add it to apps/server/.env (see apps/server/.dev.vars.example for the value template).\n",
   );
   process.exit(1);
 }
