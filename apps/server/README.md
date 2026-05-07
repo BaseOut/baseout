@@ -12,8 +12,18 @@ cp .dev.vars.example .dev.vars
 # INTERNAL_TOKEN MUST match apps/web's BACKUP_ENGINE_INTERNAL_TOKEN.
 
 pnpm install
-pnpm --filter @baseout/server dev   # → http://localhost:4341
+pnpm --filter @baseout/server dev   # → http://localhost:8787
 ```
+
+Or bring up both `apps/web` and `apps/server` in parallel:
+
+```bash
+pnpm dev:all
+# → apps/web on https://localhost:4331
+# → apps/server on http://localhost:8787
+```
+
+Both `.dev.vars` files must share the same `INTERNAL_TOKEN` value (the web side calls it `BACKUP_ENGINE_INTERNAL_TOKEN`). Mismatch → engine returns 401 → web returns 502 with `error: "unauthorized"`. See `shared/internal/ops-setup.md` §1 (Engine subsection) for the full parity rules.
 
 ## Manual smoke: prove the Connection scaffold
 
@@ -33,7 +43,7 @@ pnpm --filter @baseout/server dev
 INTERNAL_TOKEN=$(grep ^INTERNAL_TOKEN apps/server/.dev.vars | cut -d= -f2-)
 curl -X POST \
   -H "x-internal-token: $INTERNAL_TOKEN" \
-  http://localhost:4341/api/internal/connections/<connection-id>/whoami
+  http://localhost:8787/api/internal/connections/<connection-id>/whoami
 ```
 
 Expected response (200):
