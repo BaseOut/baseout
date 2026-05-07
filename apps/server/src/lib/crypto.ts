@@ -1,20 +1,19 @@
 /**
- * AES-256-GCM decryption for at-rest OAuth tokens.
+ * AES-256-GCM encryption + decryption for at-rest OAuth tokens.
  *
  * Per PRD §20.2: OAuth access + refresh tokens are encrypted before writing
- * to the master DB. apps/web is the canonical writer; apps/server reads the
- * encrypted column and decrypts here. The master key (env.BASEOUT_ENCRYPTION_KEY,
- * base64-encoded 32 bytes) MUST match apps/web's value.
+ * to the master DB. apps/web is the canonical writer (OAuth callback);
+ * apps/server is a co-writer (OAuth-refresh cron — see openspec change
+ * baseout-server-cron-oauth-refresh). Both must produce the same format and
+ * use the same master key (env.BASEOUT_ENCRYPTION_KEY, base64-encoded 32
+ * bytes).
  *
- * Format produced by apps/web/src/lib/crypto.ts (canonical encryption side):
+ * Format (matches apps/web/src/lib/crypto.ts byte-for-byte):
  *   base64( iv (12 bytes) || ciphertext+tag )
  * GCM auth tag is appended to the ciphertext by Web Crypto automatically.
  *
- * This file intentionally exports ONLY `decryptToken`. The engine never
- * encrypts tokens — that is apps/web's role (OAuth callback) and, in the
- * future, the cron-oauth-refresh task. When refresh lands, an `encryptToken`
- * export joins this file (no extraction to packages/shared until there's
- * a second real call site).
+ * Consolidation to packages/shared/src/encryption.ts is deferred until a
+ * second non-Worker consumer appears (today both consumers run on workerd).
  */
 
 const KEY_BYTES = 32;
@@ -25,6 +24,14 @@ function base64ToBytes(b64: string): Uint8Array {
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) {
+    bin += String.fromCharCode(bytes[i] as number);
+  }
+  return btoa(bin);
 }
 
 async function importKey(keyB64: string): Promise<CryptoKey> {
@@ -46,8 +53,27 @@ async function importKey(keyB64: string): Promise<CryptoKey> {
     keyBuf,
     { name: "AES-GCM" },
     false,
-    ["decrypt"],
+    ["encrypt", "decrypt"],
   );
+}
+
+export async function encryptToken(
+  plaintext: string,
+  keyB64: string,
+): Promise<string> {
+  const key = await importKey(keyB64);
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+  const encoded = new TextEncoder().encode(plaintext);
+  const cipherBuf = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    encoded,
+  );
+  const cipher = new Uint8Array(cipherBuf);
+  const blob = new Uint8Array(iv.length + cipher.length);
+  blob.set(iv, 0);
+  blob.set(cipher, iv.length);
+  return bytesToBase64(blob);
 }
 
 export async function decryptToken(

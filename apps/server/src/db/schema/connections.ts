@@ -2,12 +2,13 @@
 //
 // apps/web owns the connections table — its OAuth callback INSERTs/UPDATEs
 // rows, and the master DB migrations are generated from apps/web/drizzle/.
-// This mirror declares ONLY the columns the engine reads (id, status, the
-// _enc tokens, expiry, scopes, platform_config). Columns the engine never
-// reads (display_name, scope, space_id, max_concurrent_sessions,
-// invalidated_at, last_used_at, created_at, modified_at, created_by_user_id)
-// are intentionally omitted — the omission documents intent, and adding
-// columns later is one line.
+// This mirror declares the columns the engine reads (id, status, the _enc
+// tokens, expiry, scopes, platform_config) plus the columns the engine
+// writes during the OAuth-refresh cron (status, *_enc tokens, expiry, scopes,
+// modified_at, invalidated_at). Columns the engine neither reads nor writes
+// (display_name, scope, space_id, max_concurrent_sessions, last_used_at,
+// created_at, created_by_user_id) are intentionally omitted — the omission
+// documents intent, and adding columns later is one line.
 //
 // Per CLAUDE.md §5.3: "apps/server mirrors specific tables… with header
 // comments naming the canonical migration source." This file MUST NOT be
@@ -29,6 +30,11 @@ export const connections = baseout.table("connections", {
   scopes: text("scopes"),
   platformConfig: jsonb("platform_config"),
   // airtable: { at_user_id, at_workspace_id, is_enterprise_scope }
+  invalidatedAt: timestamp("invalidated_at", { withTimezone: true }),
+  // set when the OAuth-refresh cron transitions a row to status='invalid'
+  modifiedAt: timestamp("modified_at", { withTimezone: true }).notNull(),
+  // updated by the cron on every status transition; canonical default lives
+  // in apps/web's migration.
 });
 
 export type ConnectionRow = typeof connections.$inferSelect;

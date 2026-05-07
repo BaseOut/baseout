@@ -1,9 +1,9 @@
 ## 1. Schema mirror + crypto
 
-- [ ] 1.1 Extend [apps/server/src/db/schema/connections.ts](../../../apps/server/src/db/schema/connections.ts) to declare the columns the cron writes: `modifiedAt` plus `accessTokenEnc`, `refreshTokenEnc`, `tokenExpiresAt`, `status` already there. Update the file's header comment to note the cron is now a writer of these columns.
-- [ ] 1.2 Add `encryptToken(plaintext: string, keyB64: string): Promise<string>` to [apps/server/src/lib/crypto.ts](../../../apps/server/src/lib/crypto.ts). Output format must match [apps/web/src/lib/crypto.ts](../../../apps/web/src/lib/crypto.ts): `base64(iv (12 bytes) ‖ ciphertext+tag)`. Update the file header to remove the "intentionally exports ONLY decryptToken" wording.
-- [ ] 1.3 Unit test `encryptToken` ↔ `decryptToken` round-trip with a 32-byte key and a 200-byte plaintext. Add to `apps/server/tests/unit/crypto.test.ts`.
-- [ ] 1.4 Cross-app round-trip: write a tiny script (or Vitest test) that encrypts with `apps/server`'s `encryptToken` and decrypts with `apps/web`'s `decryptToken` (and vice versa). Confirm format compatibility before any cron code lands.
+- [x] 1.1 Extend [apps/server/src/db/schema/connections.ts](../../../apps/server/src/db/schema/connections.ts) to declare the columns the cron writes: `modifiedAt` + `invalidatedAt`. Header comment updated to note the cron is now a writer.
+- [x] 1.2 Add `encryptToken(plaintext: string, keyB64: string): Promise<string>` to [apps/server/src/lib/crypto.ts](../../../apps/server/src/lib/crypto.ts). Output format matches [apps/web/src/lib/crypto.ts](../../../apps/web/src/lib/crypto.ts) byte-for-byte: `base64(iv (12 bytes) ‖ ciphertext+tag)`. Header rewritten to reflect dual-writer reality.
+- [x] 1.3 Round-trip tests added to [apps/server/tests/integration/crypto.test.ts](../../../apps/server/tests/integration/crypto.test.ts) (apps/server has no `tests/unit/` dir; the existing crypto.test.ts is the unit-equivalent file inside the workerd pool). 11 tests pass: encrypt→decrypt round-trip, format compat with apps/web's decrypt path, fresh IV per call, key-mismatch rejection, invalid key rejection.
+- [x] 1.4 Cross-app round-trip via [scripts/verify-crypto-compat.ts](../../../scripts/verify-crypto-compat.ts) — single script imports both apps' `encryptToken`/`decryptToken` and runs all 4 cross-products (web→web, web→server, server→server, server→web). Run via `node --experimental-strip-types scripts/verify-crypto-compat.ts`. All 4 pass.
 
 ## 2. Airtable refresh RPC
 

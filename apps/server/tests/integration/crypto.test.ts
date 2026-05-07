@@ -1,14 +1,19 @@
-// Unit-level tests for the AES-256-GCM decrypt helper.
+// Unit-level tests for the AES-256-GCM encrypt + decrypt helpers.
 //
-// Generates a fresh ciphertext at test time using crypto.subtle directly,
-// then asserts the helper round-trips it. Format must match apps/web's
-// crypto.ts (the canonical writer): base64( iv (12 bytes) || ciphertext+tag ).
+// Two layers of coverage:
+//   - decryptToken is fed ciphertext from an inline helper that mirrors
+//     apps/web's encryption byte-for-byte, asserting backward compatibility
+//     with the canonical writer.
+//   - encryptToken (added for the OAuth-refresh cron) is round-tripped
+//     through decryptToken to assert the engine's own writer/reader are
+//     symmetric, and through the inline helper to assert format equivalence
+//     with apps/web.
 //
 // Runs inside the workerd vitest pool because that's the only configured
 // pool. Web Crypto is available there.
 
 import { describe, expect, it } from "vitest";
-import { decryptToken } from "../../src/lib/crypto";
+import { decryptToken, encryptToken } from "../../src/lib/crypto";
 
 const KEY_BYTES = 32;
 const IV_BYTES = 12;
@@ -88,6 +93,78 @@ describe("decryptToken", () => {
     const ciphertext = await encryptForTest("x", KEY_B64);
     const shortKeyB64 = bytesToBase64(new Uint8Array(16)); // 16 bytes, not 32
     await expect(decryptToken(ciphertext, shortKeyB64)).rejects.toThrow(
+      new RegExp(`must decode to ${KEY_BYTES} bytes`),
+    );
+  });
+});
+
+describe("encryptToken", () => {
+  it("round-trips a plaintext through decryptToken with the same key", async () => {
+    const plaintext = "patXXXXXXXXXXXXXX.aabbccddee0011223344";
+    const ciphertext = await encryptToken(plaintext, KEY_B64);
+    const recovered = await decryptToken(ciphertext, KEY_B64);
+    expect(recovered).toBe(plaintext);
+  });
+
+  it("produces output decryptable by the apps/web-format helper (cross-app compat)", async () => {
+    // The inline helper at the top of this file mirrors apps/web/src/lib/
+    // crypto.ts byte-for-byte. If apps/server's encryptToken diverges from
+    // that format, this test fails before any cron code can corrupt prod
+    // tokens — the explicit guard for cross-app crypto compatibility called
+    // out in the design doc.
+    const plaintext = "secret-token-from-engine";
+    const ciphertext = await encryptToken(plaintext, KEY_B64);
+
+    // Decode and validate format: base64( iv (12 bytes) || ciphertext+tag ).
+    const blob = base64ToBytes(ciphertext);
+    expect(blob.length).toBeGreaterThan(IV_BYTES);
+
+    // Round-trip via the apps/web mirror by reconstructing the helper's
+    // decrypt path inline (the helper itself only encrypts).
+    const iv = blob.slice(0, IV_BYTES);
+    const cipher = blob.slice(IV_BYTES);
+    const raw = base64ToBytes(KEY_B64);
+    const keyBuf = new ArrayBuffer(raw.byteLength);
+    new Uint8Array(keyBuf).set(raw);
+    const key = await crypto.subtle.importKey(
+      "raw",
+      keyBuf,
+      { name: "AES-GCM" },
+      false,
+      ["decrypt"],
+    );
+    const plainBuf = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv },
+      key,
+      cipher,
+    );
+    expect(new TextDecoder().decode(plainBuf)).toBe(plaintext);
+  });
+
+  it("produces a fresh IV on each call (no nonce reuse)", async () => {
+    const plaintext = "stable-input";
+    const a = await encryptToken(plaintext, KEY_B64);
+    const b = await encryptToken(plaintext, KEY_B64);
+    expect(a).not.toBe(b);
+
+    // First 12 bytes of the base64-decoded blob are the IV — confirm distinct.
+    const ivA = base64ToBytes(a).slice(0, IV_BYTES);
+    const ivB = base64ToBytes(b).slice(0, IV_BYTES);
+    expect(Array.from(ivA)).not.toEqual(Array.from(ivB));
+  });
+
+  it("decrypted ciphertext fails under a different key (auth tag rejects)", async () => {
+    const ciphertext = await encryptToken("secret-value", KEY_B64);
+    await expect(decryptToken(ciphertext, ALT_KEY_B64)).rejects.toThrow();
+  });
+
+  it("rejects an invalid encryption key", async () => {
+    await expect(encryptToken("x", "!!!not-base64!!!")).rejects.toThrow();
+  });
+
+  it("rejects a wrong-length encryption key", async () => {
+    const shortKeyB64 = bytesToBase64(new Uint8Array(16));
+    await expect(encryptToken("x", shortKeyB64)).rejects.toThrow(
       new RegExp(`must decode to ${KEY_BYTES} bytes`),
     );
   });
