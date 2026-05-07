@@ -1,11 +1,11 @@
 /**
  * Internal-API client for @baseout/server (the backup engine).
  *
- * apps/web calls into the engine via a Cloudflare service binding (no public
- * URL hop), gated by INTERNAL_TOKEN. Today this client exposes a single
- * method (`whoami`) that proves a Connection's stored token still works
- * against Airtable. Future engine endpoints (run-now, cancel-run, list-
- * progress, etc.) extend this same client — they reuse the binding-fetcher
+ * apps/web calls into the engine over plain HTTP (configurable URL), gated by
+ * INTERNAL_TOKEN sent as the `x-internal-token` header. Today this client
+ * exposes a single method (`whoami`) that proves a Connection's stored token
+ * still works against Airtable. Future engine endpoints (run-now, cancel-run,
+ * list-progress, etc.) extend this same client — they reuse the URL + token
  * resolution and the typed-error shape below.
  *
  * The internal token NEVER reaches the browser. This client runs server-side
@@ -14,12 +14,14 @@
  * Wire format mirrors the engine's status-code matrix at:
  *   apps/server/src/pages/api/internal/connections/whoami.ts
  *
- * Service binding declared in apps/web/wrangler.jsonc — `services[].binding =
- * BACKUP_ENGINE`, pointing at the worker named "baseout-server". The URL host
- * passed to `fetcher.fetch(...)` is a placeholder ignored by Cloudflare;
- * routing is by binding, not DNS. Local dev: both wrangler-dev instances
- * find each other via the dev registry. Deployed: routed worker-to-worker
- * inside Cloudflare.
+ * URL configuration:
+ *   - Local dev: env.BACKUP_ENGINE_URL = http://localhost:8787 (apps/server's
+ *     wrangler dev port, default).
+ *   - Deployed: env.BACKUP_ENGINE_URL = the deployed @baseout/server URL
+ *     (e.g. https://baseout-server.openside.workers.dev), set via
+ *     `wrangler secret put BACKUP_ENGINE_URL --env <env>` per environment.
+ *
+ * Per CLAUDE.md §5.2 + §3.3 — same wire format used in production.
  */
 
 export interface EngineWhoamiSuccess {
@@ -62,13 +64,12 @@ export interface EngineWhoamiError {
 export type EngineWhoamiResult = EngineWhoamiSuccess | EngineWhoamiError;
 
 export interface BackupEngineOptions {
-  /**
-   * Cloudflare service binding to @baseout/server. Tests pass a stub
-   * Fetcher; production code passes `env.BACKUP_ENGINE`.
-   */
-  fetcher: Fetcher;
+  /** Engine base URL, e.g. http://localhost:8787 in dev. */
+  url: string;
   /** Shared secret matching the engine's INTERNAL_TOKEN. */
   internalToken: string;
+  /** Optional fetch override for tests. */
+  fetchImpl?: typeof fetch;
 }
 
 export interface BackupEngineClient {
@@ -86,20 +87,21 @@ const KNOWN_ERROR_CODES: ReadonlySet<EngineWhoamiError["code"]> = new Set([
   "airtable_upstream",
 ]);
 
-// Placeholder host for Fetcher.fetch — Cloudflare ignores it, routing by
-// service binding instead of DNS. Required because URL must parse.
-const ENGINE_PLACEHOLDER_HOST = "https://engine";
+function joinUrl(base: string, path: string): string {
+  const trimmed = base.endsWith("/") ? base.slice(0, -1) : base;
+  return `${trimmed}${path}`;
+}
 
 export function createBackupEngine(
   options: BackupEngineOptions,
 ): BackupEngineClient {
-  const fetcher = options.fetcher;
+  const fetchImpl = options.fetchImpl ?? fetch;
   return {
     async whoami(connectionId) {
-      const url = `${ENGINE_PLACEHOLDER_HOST}/api/internal/connections/${encodeURIComponent(connectionId)}/whoami`;
+      const path = `/api/internal/connections/${encodeURIComponent(connectionId)}/whoami`;
       let res: Response;
       try {
-        res = await fetcher.fetch(url, {
+        res = await fetchImpl(joinUrl(options.url, path), {
           method: "POST",
           headers: {
             "x-internal-token": options.internalToken,

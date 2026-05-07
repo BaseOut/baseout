@@ -72,21 +72,21 @@ export const POST: APIRoute = async ({ locals, request }) => {
   }
 
   const workerEnv = env as unknown as {
-    BACKUP_ENGINE?: Fetcher
+    BACKUP_ENGINE_URL?: string
     BACKUP_ENGINE_INTERNAL_TOKEN?: string
   }
-  if (!workerEnv.BACKUP_ENGINE || !workerEnv.BACKUP_ENGINE_INTERNAL_TOKEN) {
+  if (!workerEnv.BACKUP_ENGINE_URL || !workerEnv.BACKUP_ENGINE_INTERNAL_TOKEN) {
     return jsonResponse(
       {
         error: 'server_misconfigured',
         message:
-          'Backup engine binding or token is not configured. Contact support.',
+          'Backup engine URL or token is not configured. Contact support.',
       },
       503,
     )
   }
   const engine = createBackupEngine({
-    fetcher: workerEnv.BACKUP_ENGINE,
+    url: workerEnv.BACKUP_ENGINE_URL,
     internalToken: workerEnv.BACKUP_ENGINE_INTERNAL_TOKEN,
   })
   const result = await engine.whoami(connectionId)

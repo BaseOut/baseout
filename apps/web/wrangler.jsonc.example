@@ -80,18 +80,6 @@
       "id": "d5cac1df2216476eaeb38e9fca639559"
     }
   ],
-  // Cloudflare service binding to @baseout/server (the backup engine) is
-  // declared ONLY in env.staging + env.production below — those are the envs
-  // that have (or will have) a deployed `baseout-server` worker.
-  //
-  // Why not here in the dev block? `wrangler dev --remote` validates every
-  // declared binding against deployed Cloudflare resources at upload time.
-  // Declaring the binding in dev with no deployed engine fails the upload.
-  // The route at apps/web/src/pages/api/connections/airtable/test.ts already
-  // returns 503 server_misconfigured when env.BACKUP_ENGINE is undefined.
-  //
-  // For local round-trip testing before deploy, run wrangler dev WITHOUT
-  // --remote and pass `--service BACKUP_ENGINE=baseout-server` at the CLI.
   "env": {
     "staging": {
       "name": "baseout-staging",
@@ -123,10 +111,6 @@
           "binding": "SESSION",
           "id": "STAGING_KV_PLACEHOLDER"
         }
-      ],
-      // TODO(staging): point at deployed `baseout-server-staging`.
-      "services": [
-        { "binding": "BACKUP_ENGINE", "service": "baseout-server-staging" }
       ]
     },
     "production": {
@@ -158,9 +142,6 @@
           "binding": "SESSION",
           "id": "PROD_KV_PLACEHOLDER"
         }
-      ],
-      "services": [
-        { "binding": "BACKUP_ENGINE", "service": "baseout-server" }
       ]
     }
   }
