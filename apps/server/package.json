@@ -12,7 +12,9 @@
     "deploy:dev": "node --env-file-if-exists=.env scripts/launch.mjs deploy && wrangler deploy --env dev",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "smoke:seed": "node --env-file-if-exists=.env scripts/smoke-seed-run.mjs seed",
+    "smoke:cleanup": "node --env-file-if-exists=.env scripts/smoke-seed-run.mjs cleanup"
   },
   "dependencies": {
     "@baseout/db-schema": "workspace:*",

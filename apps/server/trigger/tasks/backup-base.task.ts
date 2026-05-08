@@ -8,12 +8,16 @@
 // process.env (the Trigger.dev runner is in Node, not workerd, so process.env
 // is the canonical source).
 //
-// Phase 8's POST /api/internal/runs/:runId/start handler is the canonical
-// enqueue site: it joins backup_runs + connections + spaces + organizations +
-// at_bases to assemble this payload before calling tasks.trigger("backup-base").
+// After runBackupBase returns, the wrapper POSTs the per-base result to
+// /api/internal/runs/:runId/complete (Phase 8b). The triggerRunId is
+// ctx.run.id — Trigger.dev's run ID — which the run-complete handler uses
+// as the idempotency key (it lives in backup_runs.trigger_run_ids set by
+// runs/start). Transport errors are swallowed per the plan: the
+// ConnectionDO's lock alarm + Phase 11 reconciliation are the safety nets
+// for missed completions.
 
 import { task } from "@trigger.dev/sdk";
-import { runBackupBase } from "./backup-base";
+import { runBackupBase, type BackupBaseResult } from "./backup-base";
 
 export interface BackupBaseTaskPayload {
   runId: string;
@@ -28,10 +32,49 @@ export interface BackupBaseTaskPayload {
   runStartedAt: string;
 }
 
+function trimSlash(s: string): string {
+  return s.endsWith("/") ? s.slice(0, -1) : s;
+}
+
+async function postCompletion(
+  engineUrl: string,
+  internalToken: string,
+  runId: string,
+  triggerRunId: string,
+  atBaseId: string,
+  result: BackupBaseResult,
+): Promise<void> {
+  const url = `${trimSlash(engineUrl)}/api/internal/runs/${encodeURIComponent(
+    runId,
+  )}/complete`;
+  const body = {
+    triggerRunId,
+    atBaseId,
+    status: result.status,
+    tablesProcessed: result.tablesProcessed,
+    recordsProcessed: result.recordsProcessed,
+    attachmentsProcessed: result.attachmentsProcessed,
+    ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
+  };
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-internal-token": internalToken,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    // Fire-and-forget. The DO alarm + Phase 11 reconciliation will catch
+    // missed completions if the POST fails transport-wise.
+  }
+}
+
 export const backupBaseTask = task({
   id: "backup-base",
   maxDuration: 600,
-  run: async (payload: BackupBaseTaskPayload) => {
+  run: async (payload: BackupBaseTaskPayload, { ctx }) => {
     const engineUrl = process.env.BACKUP_ENGINE_URL;
     const internalToken = process.env.INTERNAL_TOKEN;
     if (!engineUrl) {
@@ -41,12 +84,23 @@ export const backupBaseTask = task({
       throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
     }
 
-    return runBackupBase(
+    const result = await runBackupBase(
       {
         ...payload,
         runStartedAt: new Date(payload.runStartedAt),
       },
       { engineUrl, internalToken },
     );
+
+    await postCompletion(
+      engineUrl,
+      internalToken,
+      payload.runId,
+      ctx.run.id,
+      payload.atBaseId,
+      result,
+    );
+
+    return result;
   },
 });
