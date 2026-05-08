@@ -89,6 +89,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@cloudflare/workers-types@4.20260504.1)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(postgres@3.4.9)
+      papaparse:
+        specifier: ^5.5.3
+        version: 5.5.3
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
@@ -102,6 +105,9 @@ importers:
       '@trigger.dev/build':
         specifier: ^4.4.5
         version: 4.4.5(typescript@5.9.3)
+      '@types/papaparse':
+        specifier: ^5.5.2
+        version: 5.5.2
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.14)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.4)
@@ -2417,6 +2423,9 @@ packages:
   '@types/node@25.6.0':
     resolution: {integrity: sha512-+qIYRKdNYJwY3vRCZMdJbPLJAtGjQBudzZzdzwQYkEPQd+PJGixUL5QfvCLDaULoLv+RhT3LDkwEfKaAkgSmNQ==}
 
+  '@types/papaparse@5.5.2':
+    resolution: {integrity: sha512-gFnFp/JMzLHCwRf7tQHrNnfhN4eYBVYYI897CGX4MY1tzY9l2aLkVyx2IlKZ/SAqDbB3I1AOZW5gTMGGsqWliA==}
+
   '@types/set-cookie-parser@2.4.10':
     resolution: {integrity: sha512-GGmQVGpQWUe5qglJozEjZV/5dyxbOOZ0LHe/lqyWssB88Y4svNfst0uqBVscdDeIKl5Jy5+aPSvy7mI9tYRguw==}
 
@@ -4190,6 +4199,9 @@ packages:
 
   package-manager-detector@1.6.0:
     resolution: {integrity: sha512-61A5ThoTiDG/C8s8UMZwSorAGwMJ0ERVGj2OjoW5pAalsNOg15+iQiPzrLJ4jhZ1HJzmC2PIHT2oEiH3R5fzNA==}
+
+  papaparse@5.5.3:
+    resolution: {integrity: sha512-5QvjGxYVjxO59MGU2lHVYpRWBBtKHnlIAcSe1uNFCkkptUh63NFRj0FJQm7nR67puEruUci/ZkjmEFrjCAyP4A==}
 
   parse-latin@7.0.0:
     resolution: {integrity: sha512-mhHgobPPua5kZ98EF4HWiH167JWBfl4pvAIXXdbaVohtK7a6YBOy56kvhCqduqyo/f3yrHFWmqmiMg/BkBkYYQ==}
@@ -6988,6 +7000,10 @@ snapshots:
     dependencies:
       undici-types: 7.19.2
 
+  '@types/papaparse@5.5.2':
+    dependencies:
+      '@types/node': 25.6.0
+
   '@types/set-cookie-parser@2.4.10':
     dependencies:
       '@types/node': 25.6.0
@@ -9047,6 +9063,8 @@ snapshots:
   p-timeout@7.0.1: {}
 
   package-manager-detector@1.6.0: {}
+
+  papaparse@5.5.3: {}
 
   parse-latin@7.0.0:
     dependencies:

@@ -1,6 +1,11 @@
 # Local-dev configuration for apps/server (Cloudflare Worker — backup engine).
 # Copy to .dev.vars and fill in real values. .dev.vars is gitignored.
 # CI gets these from GitHub secrets / wrangler secret put at deploy time.
+#
+# DO NOT wrap values in quotes (KEY="value"). Wrangler's .dev.vars loader
+# treats the surrounding quotes as part of the value, so `INTERNAL_TOKEN="abc"`
+# becomes the literal string `"abc"` (with quotes) at runtime. Mismatched
+# against any caller that sent the bare token. Write `KEY=value` exactly.
 
 # === Master DB (baseout-master Postgres on DigitalOcean) ===
 # The engine reads connections + writes backup_runs here. apps/web owns

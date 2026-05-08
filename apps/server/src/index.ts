@@ -10,9 +10,12 @@ import { internalPingHandler } from "./pages/api/internal/ping";
 import { dbSmokeHandler } from "./pages/api/internal/db-smoke";
 import { triggerSmokeHandler } from "./pages/api/internal/trigger-smoke";
 import { whoamiHandler } from "./pages/api/internal/connections/whoami";
+import { uploadCsvHandler } from "./pages/api/internal/runs/upload-csv";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
+const RUNS_UPLOAD_CSV_RE =
+  /^\/api\/internal\/runs\/([^/]+)\/upload-csv$/;
 
 // Re-export Durable Object classes so workerd can resolve their bindings.
 // Required even when Astro adapter wraps the entry — see CLAUDE.md §5.1.
@@ -77,6 +80,14 @@ export default {
         if (m) {
           return await whoamiHandler(request, env, ctx, locals, m[1]!);
         }
+      }
+
+      // Upload-csv handles its own method check so non-POST returns 405
+      // (rather than 404) — gives the caller a clearer wire-error if it
+      // somehow fires the wrong verb.
+      const upload = RUNS_UPLOAD_CSV_RE.exec(url.pathname);
+      if (upload) {
+        return await uploadCsvHandler(request, env, ctx, locals, upload[1]!);
       }
 
       return notFound();
