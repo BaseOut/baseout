@@ -15,6 +15,7 @@ import {
   type ConnectionDOProxyAction,
 } from "./pages/api/internal/connections/do-proxy";
 import { uploadCsvHandler } from "./pages/api/internal/runs/upload-csv";
+import { runsStartHandler } from "./pages/api/internal/runs/start";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
@@ -22,6 +23,7 @@ const CONNECTIONS_DO_PROXY_RE =
   /^\/api\/internal\/connections\/([^/]+)\/(lock|unlock|token)$/;
 const RUNS_UPLOAD_CSV_RE =
   /^\/api\/internal\/runs\/([^/]+)\/upload-csv$/;
+const RUNS_START_RE = /^\/api\/internal\/runs\/([^/]+)\/start$/;
 
 // Re-export Durable Object classes so workerd can resolve their bindings.
 // Required even when Astro adapter wraps the entry — see CLAUDE.md §5.1.
@@ -103,6 +105,12 @@ export default {
       const upload = RUNS_UPLOAD_CSV_RE.exec(url.pathname);
       if (upload) {
         return await uploadCsvHandler(request, env, ctx, locals, upload[1]!);
+      }
+
+      // Run-start: same method-check-inside-handler pattern as upload-csv.
+      const start = RUNS_START_RE.exec(url.pathname);
+      if (start) {
+        return await runsStartHandler(request, env, ctx, locals, start[1]!);
       }
 
       return notFound();

@@ -16,6 +16,8 @@
 import { configure, tasks } from "@trigger.dev/sdk";
 import type { Env } from "../env";
 import type { pingTask } from "../../trigger/tasks/_ping";
+import type { backupBaseTask } from "../../trigger/tasks/backup-base.task";
+import type { BackupBaseTaskPayload } from "./runs/start";
 
 function configureFromEnv(env: Env): void {
   configure({ accessToken: env.TRIGGER_SECRET_KEY });
@@ -32,5 +34,23 @@ export async function enqueuePing(
 ): Promise<TriggerHandle> {
   configureFromEnv(env);
   const handle = await tasks.trigger<typeof pingTask>("_ping", payload);
+  return { id: handle.id };
+}
+
+/**
+ * Enqueue one backup-base run. The handler at /api/internal/runs/:runId/
+ * start (Phase 8a) calls this once per included base in the backup_runs
+ * row, then persists the returned IDs to backup_runs.trigger_run_ids so
+ * /api/internal/runs/:runId/complete (Phase 8b) can match completions.
+ */
+export async function enqueueBackupBase(
+  env: Env,
+  payload: BackupBaseTaskPayload,
+): Promise<TriggerHandle> {
+  configureFromEnv(env);
+  const handle = await tasks.trigger<typeof backupBaseTask>(
+    "backup-base",
+    payload,
+  );
   return { id: handle.id };
 }
