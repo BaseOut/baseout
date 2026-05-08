@@ -10,10 +10,16 @@ import { internalPingHandler } from "./pages/api/internal/ping";
 import { dbSmokeHandler } from "./pages/api/internal/db-smoke";
 import { triggerSmokeHandler } from "./pages/api/internal/trigger-smoke";
 import { whoamiHandler } from "./pages/api/internal/connections/whoami";
+import {
+  connectionDOProxyHandler,
+  type ConnectionDOProxyAction,
+} from "./pages/api/internal/connections/do-proxy";
 import { uploadCsvHandler } from "./pages/api/internal/runs/upload-csv";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
+const CONNECTIONS_DO_PROXY_RE =
+  /^\/api\/internal\/connections\/([^/]+)\/(lock|unlock|token)$/;
 const RUNS_UPLOAD_CSV_RE =
   /^\/api\/internal\/runs\/([^/]+)\/upload-csv$/;
 
@@ -79,6 +85,15 @@ export default {
         const m = CONNECTIONS_WHOAMI_RE.exec(url.pathname);
         if (m) {
           return await whoamiHandler(request, env, ctx, locals, m[1]!);
+        }
+        const proxy = CONNECTIONS_DO_PROXY_RE.exec(url.pathname);
+        if (proxy) {
+          return await connectionDOProxyHandler(
+            request,
+            env,
+            proxy[1]!,
+            proxy[2]! as ConnectionDOProxyAction,
+          );
         }
       }
 
