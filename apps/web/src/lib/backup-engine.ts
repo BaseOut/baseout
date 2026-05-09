@@ -67,6 +67,37 @@ export interface EngineWhoamiError {
 
 export type EngineWhoamiResult = EngineWhoamiSuccess | EngineWhoamiError;
 
+export interface EngineStartRunSuccess {
+  ok: true;
+  runId: string;
+  /** One Trigger.dev run id per included base — order matches the at_bases selection. */
+  triggerRunIds: string[];
+}
+
+/**
+ * Non-2xx outcomes from POST /api/internal/runs/:runId/start. The codes
+ * mirror `ProcessRunStartResult["error"]` in @baseout/server (see
+ * apps/server/src/lib/runs/start.ts) plus the middleware's `unauthorized`
+ * and the client-only `engine_unreachable` / `engine_error`.
+ */
+export interface EngineStartRunError {
+  ok: false;
+  code:
+    | "unauthorized"
+    | "run_not_found"
+    | "run_already_started"
+    | "connection_not_found"
+    | "invalid_connection"
+    | "config_not_found"
+    | "unsupported_storage_type"
+    | "no_bases_selected"
+    | "engine_unreachable"
+    | "engine_error";
+  status: number;
+}
+
+export type EngineStartRunResult = EngineStartRunSuccess | EngineStartRunError;
+
 export interface BackupEngineOptions {
   /**
    * Service binding to the @baseout/server Worker. Provided by Cloudflare
@@ -79,6 +110,7 @@ export interface BackupEngineOptions {
 
 export interface BackupEngineClient {
   whoami(connectionId: string): Promise<EngineWhoamiResult>;
+  startRun(runId: string): Promise<EngineStartRunResult>;
 }
 
 const KNOWN_ERROR_CODES: ReadonlySet<EngineWhoamiError["code"]> = new Set([
@@ -91,6 +123,18 @@ const KNOWN_ERROR_CODES: ReadonlySet<EngineWhoamiError["code"]> = new Set([
   "airtable_token_rejected",
   "airtable_upstream",
 ]);
+
+const KNOWN_START_RUN_ERROR_CODES: ReadonlySet<EngineStartRunError["code"]> =
+  new Set([
+    "unauthorized",
+    "run_not_found",
+    "run_already_started",
+    "connection_not_found",
+    "invalid_connection",
+    "config_not_found",
+    "unsupported_storage_type",
+    "no_bases_selected",
+  ]);
 
 export function createBackupEngine(
   options: BackupEngineOptions,
@@ -142,6 +186,41 @@ export function createBackupEngine(
         out.upstreamStatus = body.upstream_status;
       }
       return out;
+    },
+
+    async startRun(runId) {
+      const path = `/api/internal/runs/${encodeURIComponent(runId)}/start`;
+      let res: Response;
+      try {
+        res = await options.binding.fetch(`https://engine${path}`, {
+          method: "POST",
+          headers: {
+            "x-internal-token": options.internalToken,
+            accept: "application/json",
+          },
+        });
+      } catch {
+        return { ok: false, code: "engine_unreachable", status: 0 };
+      }
+
+      if (res.ok) {
+        const body = (await res.json()) as Omit<EngineStartRunSuccess, "ok">;
+        return { ok: true, ...body };
+      }
+
+      let body: Record<string, unknown> = {};
+      try {
+        body = (await res.json()) as Record<string, unknown>;
+      } catch {
+        // engine returned non-JSON (rare); fall through with empty body
+      }
+      const rawCode = typeof body.error === "string" ? body.error : undefined;
+      const code: EngineStartRunError["code"] =
+        rawCode &&
+        KNOWN_START_RUN_ERROR_CODES.has(rawCode as EngineStartRunError["code"])
+          ? (rawCode as EngineStartRunError["code"])
+          : "engine_error";
+      return { ok: false, code, status: res.status };
     },
   };
 }

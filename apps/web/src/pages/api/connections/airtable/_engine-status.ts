@@ -1,15 +1,21 @@
-// Pure mapping from EngineWhoamiError["code"] (the engine client's typed
-// error union) to the HTTP status this route returns to the browser.
+// Pure mapping from engine error codes (from BackupEngineClient's typed error
+// unions) to the HTTP status this route returns to the browser.
 // Underscore-prefixed: Astro file-based routing skips it. Lives here (not in
-// src/lib/) because it's only the Airtable-test route's mapping; if a second
-// route ever needs the same translation, lift it then.
+// src/lib/) because it's the airtable-test route's mapping today; the
+// Phase 9 backup-runs route also imports it. If a third route ever needs
+// the same translation, lift this to src/lib/.
 //
 // 4xx = user can act (reconnect / fix input).
 // 5xx = operator or upstream problem (no user action helps).
 
-import type { EngineWhoamiError } from '../../../../lib/backup-engine'
+import type {
+  EngineWhoamiError,
+  EngineStartRunError,
+} from '../../../../lib/backup-engine'
 
-export type EngineErrorCode = EngineWhoamiError['code']
+export type EngineErrorCode =
+  | EngineWhoamiError['code']
+  | EngineStartRunError['code']
 
 export function mapEngineCodeToStatus(code: EngineErrorCode): number {
   switch (code) {
@@ -42,5 +48,24 @@ export function mapEngineCodeToStatus(code: EngineErrorCode): number {
     // Engine returned an HTTP status with an error code we don't know yet.
     case 'engine_error':
       return 502
+    // Phase 9 — startRun: defensive (queued row deleted between INSERT and
+    // engine fan-out).
+    case 'run_not_found':
+      return 404
+    // Phase 9 — startRun: row exists but already running/succeeded; UI polls.
+    case 'run_already_started':
+      return 409
+    // Phase 9 — startRun: connection.status !== 'active'; show reconnect prompt.
+    case 'invalid_connection':
+      return 409
+    // Phase 9 — startRun: user hasn't completed the storage/frequency wizard.
+    case 'config_not_found':
+      return 404
+    // Phase 9 — startRun: defense-in-depth; StoragePicker should already block.
+    case 'unsupported_storage_type':
+      return 422
+    // Phase 9 — startRun: wizard step 2 wasn't completed.
+    case 'no_bases_selected':
+      return 422
   }
 }

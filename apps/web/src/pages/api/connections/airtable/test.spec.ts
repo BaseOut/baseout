@@ -21,6 +21,13 @@ describe('mapEngineCodeToStatus', () => {
     ['server_misconfigured', 503],
     ['engine_unreachable', 503],
     ['engine_error', 502],
+    // Phase 9 — start-run codes from @baseout/server's processRunStart
+    ['run_not_found', 404],
+    ['run_already_started', 409],
+    ['invalid_connection', 409],
+    ['config_not_found', 404],
+    ['unsupported_storage_type', 422],
+    ['no_bases_selected', 422],
   ] as const)('maps %s → %i', (code, expected) => {
     expect(mapEngineCodeToStatus(code)).toBe(expected)
   })
