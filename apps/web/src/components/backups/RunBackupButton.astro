@@ -1,0 +1,128 @@
+---
+/**
+ * Wizard step 5 + dashboard CTA — kicks off a manual backup run.
+ *
+ * Click → setButtonLoading(true) → POST /api/spaces/:spaceId/backup-runs
+ * → render success/error in the inline status area → clear loading in
+ * `finally`. Disabled when the caller passes connectionStatus !== 'active'.
+ *
+ * The component dispatches a `backup-run-started` CustomEvent on success
+ * so the BackupHistoryWidget (Phase 10c) can refresh its run list
+ * immediately rather than waiting for the next poll tick.
+ *
+ * Props:
+ *   spaceId           — UUID of the active Space
+ *   connectionStatus  — 'active' | 'pending_reauth' | 'invalid' | null
+ */
+
+interface Props {
+  spaceId: string
+  connectionStatus?: string | null
+}
+
+const { spaceId, connectionStatus = null } = Astro.props as Props
+
+const isReady = connectionStatus === 'active'
+---
+
+<div
+  class="rounded-lg border border-base-300 p-4 sm:p-6"
+  data-run-backup
+  data-space-id={spaceId}
+>
+  <h3 class="text-base font-semibold">Run backup now</h3>
+  <p class="mt-1 text-sm text-base-content/70">
+    Kicks off a manual backup of the bases you've selected. The result
+    appears in the backup history below within about a minute.
+  </p>
+
+  {!isReady && (
+    <p class="mt-3 text-sm text-warning" role="alert">
+      Connect Airtable before running a backup.
+    </p>
+  )}
+
+  <button
+    type="button"
+    class="btn btn-primary mt-4 min-h-11"
+    disabled={!isReady}
+    data-run-backup-button
+  >
+    Run backup now
+  </button>
+
+  <p
+    role="status"
+    class="mt-3 hidden text-sm text-success"
+    data-run-backup-status
+  ></p>
+  <p
+    role="alert"
+    class="mt-3 hidden text-sm text-error"
+    data-run-backup-error
+  ></p>
+</div>
+
+<script>
+  import { setButtonLoading } from '../../lib/ui'
+  import {
+    runBackup,
+    describeRunBackupError,
+  } from '../../lib/backups/run-backup'
+
+  const root = document.querySelector<HTMLElement>('[data-run-backup]')
+  if (root) {
+    const spaceId = root.dataset.spaceId!
+    const button = root.querySelector<HTMLButtonElement>(
+      '[data-run-backup-button]',
+    )
+    const status = root.querySelector<HTMLParagraphElement>(
+      '[data-run-backup-status]',
+    )
+    const error = root.querySelector<HTMLParagraphElement>(
+      '[data-run-backup-error]',
+    )
+
+    function showStatus(msg: string) {
+      if (!status || !error) return
+      status.textContent = msg
+      status.hidden = false
+      status.classList.remove('hidden')
+      error.hidden = true
+      error.classList.add('hidden')
+    }
+    function showError(msg: string) {
+      if (!status || !error) return
+      error.textContent = msg
+      error.hidden = false
+      error.classList.remove('hidden')
+      status.hidden = true
+      status.classList.add('hidden')
+    }
+
+    if (button) {
+      button.addEventListener('click', async () => {
+        setButtonLoading(button, true)
+        try {
+          const result = await runBackup(spaceId)
+          if (result.ok) {
+            showStatus('Backup started. Watch the history below for progress.')
+            window.dispatchEvent(
+              new CustomEvent('backup-run-started', {
+                detail: {
+                  runId: result.runId,
+                  triggerRunIds: result.triggerRunIds,
+                  spaceId,
+                },
+              }),
+            )
+          } else {
+            showError(describeRunBackupError(result.error))
+          }
+        } finally {
+          setButtonLoading(button, false)
+        }
+      })
+    }
+  }
+</script>

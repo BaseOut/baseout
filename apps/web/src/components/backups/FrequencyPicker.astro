@@ -1,0 +1,156 @@
+---
+/**
+ * Wizard step 3 — Backup frequency picker.
+ *
+ * Renders a radio group of all four frequencies; the ones above the
+ * org's current tier are visibly disabled with an "available on <tier>"
+ * tooltip. On change, the picker PATCHes /api/spaces/:spaceId/backup-config
+ * to persist the selection.
+ *
+ * Props:
+ *   spaceId               — UUID of the active Space
+ *   selectedFrequency     — currently saved frequency (defaults to 'monthly')
+ *   availableFrequencies  — what this tier can pick (per Features §6.1)
+ */
+import type { Frequency } from '../../lib/capabilities/tier-capabilities'
+
+interface Props {
+  spaceId: string
+  selectedFrequency?: Frequency
+  availableFrequencies: readonly Frequency[]
+}
+
+const {
+  spaceId,
+  selectedFrequency = 'monthly',
+  availableFrequencies,
+} = Astro.props as Props
+
+const ALL_OPTIONS: { value: Frequency; label: string; helper: string }[] = [
+  { value: 'monthly', label: 'Monthly', helper: 'One scheduled backup per month' },
+  { value: 'weekly', label: 'Weekly', helper: 'One scheduled backup per week' },
+  { value: 'daily', label: 'Daily', helper: 'One scheduled backup per day' },
+  {
+    value: 'instant',
+    label: 'Instant',
+    helper: 'Webhook-driven — captures changes as they happen',
+  },
+]
+
+const NAME = 'backup-frequency'
+---
+
+<section
+  class="rounded-lg border border-base-300 p-4 sm:p-6"
+  data-frequency-picker
+  data-space-id={spaceId}
+  aria-labelledby="frequency-picker-heading"
+>
+  <h3 id="frequency-picker-heading" class="text-base font-semibold">
+    Backup frequency
+  </h3>
+  <p class="mt-1 text-sm text-base-content/70">
+    Pick how often Baseout should run a scheduled backup. Manual runs are
+    available on every plan; scheduled execution is captured for a later phase.
+  </p>
+
+  <fieldset class="mt-4 grid gap-3" data-frequency-fieldset>
+    <legend class="sr-only">Backup frequency</legend>
+    {ALL_OPTIONS.map((opt) => {
+      const allowed = availableFrequencies.includes(opt.value)
+      return (
+        <label
+          class:list={[
+            'flex min-h-11 items-start gap-3 rounded-md border border-base-300 p-3 cursor-pointer',
+            'hover:bg-base-200/50',
+            !allowed && 'opacity-60 cursor-not-allowed',
+          ]}
+          aria-disabled={!allowed ? 'true' : undefined}
+          title={!allowed ? 'Available on a higher tier' : undefined}
+        >
+          <input
+            type="radio"
+            name={NAME}
+            value={opt.value}
+            class="radio radio-primary mt-0.5"
+            checked={opt.value === selectedFrequency}
+            disabled={!allowed}
+            data-frequency-radio
+          />
+          <span class="flex-1">
+            <span class="block text-sm font-medium">{opt.label}</span>
+            <span class="block text-xs text-base-content/70">{opt.helper}</span>
+          </span>
+        </label>
+      )
+    })}
+  </fieldset>
+
+  <p
+    role="status"
+    class="mt-3 hidden text-sm text-success"
+    data-frequency-status
+  ></p>
+  <p
+    role="alert"
+    class="mt-3 hidden text-sm text-error"
+    data-frequency-error
+  ></p>
+</section>
+
+<script>
+  import { saveBackupConfig } from '../../lib/backups/save-config'
+
+  const root = document.querySelector<HTMLElement>('[data-frequency-picker]')
+  if (root) {
+    const spaceId = root.dataset.spaceId!
+    const status = root.querySelector<HTMLParagraphElement>(
+      '[data-frequency-status]',
+    )
+    const error = root.querySelector<HTMLParagraphElement>(
+      '[data-frequency-error]',
+    )
+    const radios = root.querySelectorAll<HTMLInputElement>(
+      '[data-frequency-radio]',
+    )
+
+    function showStatus(msg: string) {
+      if (!status || !error) return
+      status.textContent = msg
+      status.hidden = false
+      status.classList.remove('hidden')
+      error.hidden = true
+      error.classList.add('hidden')
+    }
+    function showError(msg: string) {
+      if (!status || !error) return
+      error.textContent = msg
+      error.hidden = false
+      error.classList.remove('hidden')
+      status.hidden = true
+      status.classList.add('hidden')
+    }
+
+    async function handleChange(value: string) {
+      const result = await saveBackupConfig({
+        spaceId,
+        frequency: value as 'monthly' | 'weekly' | 'daily' | 'instant',
+      })
+      if (result.ok) {
+        showStatus(`Frequency set to ${value}.`)
+      } else if (result.error === 'frequency_not_allowed') {
+        showError('That frequency is not available on your plan.')
+      } else {
+        showError('Could not save the frequency. Please try again.')
+      }
+    }
+
+    for (const radio of radios) {
+      radio.addEventListener('change', () => {
+        if (radio.checked) {
+          void handleChange(radio.value)
+        }
+      })
+    }
+  }
+</script>

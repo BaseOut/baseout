@@ -1,0 +1,183 @@
+---
+/**
+ * Wizard step 4 — Storage destination picker.
+ *
+ * MVP: only Cloudflare R2 (managed) is selectable. Other rows are
+ * visibly disabled with a "Coming soon" label so users can see the
+ * roadmap without being able to pick them. The PATCH route also rejects
+ * non-r2_managed values as defense-in-depth.
+ *
+ * Props:
+ *   spaceId             — UUID of the active Space
+ *   selectedStorageType — currently saved value (defaults to 'r2_managed')
+ */
+
+interface Props {
+  spaceId: string
+  selectedStorageType?: string
+}
+
+const { spaceId, selectedStorageType = 'r2_managed' } = Astro.props as Props
+
+const ALL_OPTIONS: {
+  value: string
+  label: string
+  helper: string
+  enabled: boolean
+}[] = [
+  {
+    value: 'r2_managed',
+    label: 'Cloudflare R2 (managed by Baseout)',
+    helper: 'Default — encrypted at rest, no setup required.',
+    enabled: true,
+  },
+  {
+    value: 'google_drive',
+    label: 'Google Drive',
+    helper: 'Coming soon — pick a folder in your Google Drive.',
+    enabled: false,
+  },
+  {
+    value: 'dropbox',
+    label: 'Dropbox',
+    helper: 'Coming soon — proxy-streamed to your Dropbox.',
+    enabled: false,
+  },
+  {
+    value: 'box',
+    label: 'Box',
+    helper: 'Coming soon — proxy-streamed to your Box.',
+    enabled: false,
+  },
+  {
+    value: 'onedrive',
+    label: 'OneDrive',
+    helper: 'Coming soon — pick a folder in your OneDrive.',
+    enabled: false,
+  },
+  {
+    value: 's3',
+    label: 'Amazon S3',
+    helper: 'Growth+ — your own S3 bucket. Coming soon.',
+    enabled: false,
+  },
+]
+
+const NAME = 'backup-storage'
+---
+
+<section
+  class="rounded-lg border border-base-300 p-4 sm:p-6"
+  data-storage-picker
+  data-space-id={spaceId}
+  aria-labelledby="storage-picker-heading"
+>
+  <h3 id="storage-picker-heading" class="text-base font-semibold">
+    Storage destination
+  </h3>
+  <p class="mt-1 text-sm text-base-content/70">
+    Where Baseout writes the CSV backup. R2 is the managed default; bring-
+    your-own-storage providers ship in a later phase.
+  </p>
+
+  <fieldset class="mt-4 grid gap-3" data-storage-fieldset>
+    <legend class="sr-only">Storage destination</legend>
+    {ALL_OPTIONS.map((opt) => (
+      <label
+        class:list={[
+          'flex min-h-11 items-start gap-3 rounded-md border border-base-300 p-3 cursor-pointer',
+          'hover:bg-base-200/50',
+          !opt.enabled && 'opacity-60 cursor-not-allowed',
+        ]}
+        aria-disabled={!opt.enabled ? 'true' : undefined}
+        title={!opt.enabled ? 'Coming soon' : undefined}
+      >
+        <input
+          type="radio"
+          name={NAME}
+          value={opt.value}
+          class="radio radio-primary mt-0.5"
+          checked={opt.value === selectedStorageType}
+          disabled={!opt.enabled}
+          data-storage-radio
+        />
+        <span class="flex-1">
+          <span class="block text-sm font-medium">
+            {opt.label}
+            {!opt.enabled && (
+              <span class="ml-2 align-middle inline-block px-1.5 py-0.5 rounded bg-base-200 text-xs text-base-content/70">
+                Coming soon
+              </span>
+            )}
+          </span>
+          <span class="block text-xs text-base-content/70">{opt.helper}</span>
+        </span>
+      </label>
+    ))}
+  </fieldset>
+
+  <p
+    role="status"
+    class="mt-3 hidden text-sm text-success"
+    data-storage-status
+  ></p>
+  <p
+    role="alert"
+    class="mt-3 hidden text-sm text-error"
+    data-storage-error
+  ></p>
+</section>
+
+<script>
+  import { saveBackupConfig } from '../../lib/backups/save-config'
+
+  const root = document.querySelector<HTMLElement>('[data-storage-picker]')
+  if (root) {
+    const spaceId = root.dataset.spaceId!
+    const status = root.querySelector<HTMLParagraphElement>(
+      '[data-storage-status]',
+    )
+    const error = root.querySelector<HTMLParagraphElement>(
+      '[data-storage-error]',
+    )
+    const radios = root.querySelectorAll<HTMLInputElement>(
+      '[data-storage-radio]',
+    )
+
+    function showStatus(msg: string) {
+      if (!status || !error) return
+      status.textContent = msg
+      status.hidden = false
+      status.classList.remove('hidden')
+      error.hidden = true
+      error.classList.add('hidden')
+    }
+    function showError(msg: string) {
+      if (!status || !error) return
+      error.textContent = msg
+      error.hidden = false
+      error.classList.remove('hidden')
+      status.hidden = true
+      status.classList.add('hidden')
+    }
+
+    async function handleChange(value: string) {
+      const result = await saveBackupConfig({ spaceId, storageType: value })
+      if (result.ok) {
+        showStatus('Storage destination saved.')
+      } else if (result.error === 'unsupported_storage_type') {
+        showError('That storage destination is not yet supported.')
+      } else {
+        showError('Could not save the storage destination. Please try again.')
+      }
+    }
+
+    for (const radio of radios) {
+      radio.addEventListener('change', () => {
+        if (radio.checked) {
+          void handleChange(radio.value)
+        }
+      })
+    }
+  }
+</script>
