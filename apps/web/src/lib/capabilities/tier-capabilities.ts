@@ -16,18 +16,27 @@ export type Tier =
   | 'business'
   | 'enterprise'
 
+/**
+ * Backup-frequency labels per Features §6.1. Trial is mapped to starter
+ * via the null-tier fallback in getTierCapabilities (Features §5.5.4 —
+ * trial inherits Starter capability gating).
+ */
+export type Frequency = 'monthly' | 'weekly' | 'daily' | 'instant'
+
 export interface TierCapabilitySet {
   /** Maximum Bases that can be selected for backup in a single Space. null = unlimited (Enterprise). */
   basesPerSpace: number | null
+  /** Backup frequencies the user can select. Per Features §6.1. */
+  frequencies: Frequency[]
 }
 
 export const TIER_CAPABILITIES: Record<Tier, TierCapabilitySet> = {
-  starter:    { basesPerSpace: 5 },
-  launch:     { basesPerSpace: 10 },
-  growth:     { basesPerSpace: 15 },
-  pro:        { basesPerSpace: 25 },
-  business:   { basesPerSpace: 50 },
-  enterprise: { basesPerSpace: null },
+  starter:    { basesPerSpace: 5,    frequencies: ['monthly'] },
+  launch:     { basesPerSpace: 10,   frequencies: ['monthly', 'weekly'] },
+  growth:     { basesPerSpace: 15,   frequencies: ['monthly', 'weekly'] },
+  pro:        { basesPerSpace: 25,   frequencies: ['monthly', 'weekly', 'daily'] },
+  business:   { basesPerSpace: 50,   frequencies: ['monthly', 'weekly', 'daily', 'instant'] },
+  enterprise: { basesPerSpace: null, frequencies: ['monthly', 'weekly', 'daily', 'instant'] },
 }
 
 /**

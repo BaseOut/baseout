@@ -14,6 +14,29 @@ describe('TIER_CAPABILITIES', () => {
     expect(TIER_CAPABILITIES.business.basesPerSpace).toBe(50)
     expect(TIER_CAPABILITIES.enterprise.basesPerSpace).toBeNull()
   })
+
+  it('declares frequencies for every tier per Features §6.1', () => {
+    expect(TIER_CAPABILITIES.starter.frequencies).toEqual(['monthly'])
+    expect(TIER_CAPABILITIES.launch.frequencies).toEqual(['monthly', 'weekly'])
+    expect(TIER_CAPABILITIES.growth.frequencies).toEqual(['monthly', 'weekly'])
+    expect(TIER_CAPABILITIES.pro.frequencies).toEqual([
+      'monthly',
+      'weekly',
+      'daily',
+    ])
+    expect(TIER_CAPABILITIES.business.frequencies).toEqual([
+      'monthly',
+      'weekly',
+      'daily',
+      'instant',
+    ])
+    expect(TIER_CAPABILITIES.enterprise.frequencies).toEqual([
+      'monthly',
+      'weekly',
+      'daily',
+      'instant',
+    ])
+  })
 })
 
 describe('getTierCapabilities', () => {
