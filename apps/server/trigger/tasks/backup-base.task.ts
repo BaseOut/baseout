@@ -36,6 +36,43 @@ function trimSlash(s: string): string {
   return s.endsWith("/") ? s.slice(0, -1) : s;
 }
 
+// Phase 10d: per-table progress callback. Fires after each successful CSV
+// upload so the frontend's history poll can render live counts before the
+// final /complete call lands. Same x-internal-token + JSON shape as
+// postCompletion; same fire-and-forget swallow on transport errors.
+async function postProgress(
+  engineUrl: string,
+  internalToken: string,
+  runId: string,
+  triggerRunId: string,
+  atBaseId: string,
+  recordsAppended: number,
+  tableCompleted: boolean,
+): Promise<void> {
+  const url = `${trimSlash(engineUrl)}/api/internal/runs/${encodeURIComponent(
+    runId,
+  )}/progress`;
+  const body = {
+    triggerRunId,
+    atBaseId,
+    recordsAppended,
+    tableCompleted,
+  };
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-internal-token": internalToken,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    // Fire-and-forget. /complete writes the authoritative final totals;
+    // any missed progress event self-heals at end-of-run.
+  }
+}
+
 async function postCompletion(
   engineUrl: string,
   internalToken: string,
@@ -98,7 +135,20 @@ export const backupBaseTask = task({
           ...payload,
           runStartedAt: new Date(payload.runStartedAt),
         },
-        { engineUrl, internalToken },
+        {
+          engineUrl,
+          internalToken,
+          postProgress: (event) =>
+            postProgress(
+              engineUrl,
+              internalToken,
+              payload.runId,
+              ctx.run.id,
+              payload.atBaseId,
+              event.recordsAppended,
+              event.tableCompleted,
+            ),
+        },
       );
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);

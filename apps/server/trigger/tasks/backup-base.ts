@@ -53,12 +53,26 @@ interface AirtableClientShape {
   ) => Promise<AirtableRecordsPage>;
 }
 
+export interface BackupBaseProgressEvent {
+  /** Number of records uploaded by the just-completed table. */
+  recordsAppended: number;
+  /** Always true at the per-table call site; reserved for future per-page granularity. */
+  tableCompleted: boolean;
+}
+
 export interface BackupBaseDeps {
   engineUrl: string;
   internalToken: string;
   fetchImpl?: typeof fetch;
   airtableClient?: AirtableClientShape;
   sleepImpl?: (ms: number) => Promise<void>;
+  /**
+   * Fire-and-forget per-table progress callback (Phase 10d). Closure is owned
+   * by the Trigger.dev wrapper, which captures runId + triggerRunId + atBaseId
+   * and posts to /api/internal/runs/:runId/progress. Default no-op so existing
+   * tests pass unchanged.
+   */
+  postProgress?: (event: BackupBaseProgressEvent) => Promise<void>;
 }
 
 export type BackupBaseStatus =
@@ -224,6 +238,22 @@ export async function runBackupBase(
         csv,
         fetchImpl: fetchFn,
       });
+
+      // Phase 10d: fire-and-forget progress event after the table CSV lands
+      // in R2. Bumps backup_runs.{record_count,table_count} so the frontend's
+      // poll picks up live counts before /complete writes the final totals.
+      // Wrapped in try/catch as belt-and-braces; the wrapper's helper already
+      // swallows transport errors.
+      if (deps.postProgress) {
+        try {
+          await deps.postProgress({
+            recordsAppended: collected.length,
+            tableCompleted: true,
+          });
+        } catch {
+          // swallow — /complete is authoritative and will overwrite final totals
+        }
+      }
 
       tablesProcessed += 1;
       recordsProcessed += collected.length;

@@ -243,4 +243,130 @@ describe("runBackupBase", () => {
     const uploadCalls = calls.filter((c) => c.url.includes("/upload-csv"));
     expect(uploadCalls).toHaveLength(2);
   });
+
+  // Phase 10d: per-table progress callback.
+  it("calls postProgress once per table after a successful upload", async () => {
+    const { fetchMock } = makeFetchMock();
+    const tables = [
+      {
+        id: "tbl1",
+        name: "T1",
+        primaryFieldId: "fld1",
+        fields: [{ id: "fld1", name: "X", type: "singleLineText" }],
+      },
+      {
+        id: "tbl2",
+        name: "T2",
+        primaryFieldId: "fld1",
+        fields: [{ id: "fld1", name: "X", type: "singleLineText" }],
+      },
+      {
+        id: "tbl3",
+        name: "T3",
+        primaryFieldId: "fld1",
+        fields: [{ id: "fld1", name: "X", type: "singleLineText" }],
+      },
+    ];
+    const client = makeAirtableClient({
+      schema: { tables },
+      pages: [
+        {
+          records: [
+            { id: "r1", createdTime: "2026-01-01", fields: { X: "a" } },
+            { id: "r2", createdTime: "2026-01-01", fields: { X: "b" } },
+          ],
+        },
+        {
+          records: [
+            { id: "r3", createdTime: "2026-01-01", fields: { X: "c" } },
+          ],
+        },
+        {
+          records: [
+            { id: "r4", createdTime: "2026-01-01", fields: { X: "d" } },
+            { id: "r5", createdTime: "2026-01-01", fields: { X: "e" } },
+            { id: "r6", createdTime: "2026-01-01", fields: { X: "f" } },
+          ],
+        },
+      ],
+    });
+
+    const postProgress = vi.fn(async () => undefined);
+
+    const result = await runBackupBase(
+      { ...BASE_INPUT, isTrial: false },
+      {
+        engineUrl: ENGINE,
+        internalToken: TOKEN,
+        fetchImpl: fetchMock,
+        airtableClient: client,
+        sleepImpl: async () => undefined,
+        postProgress,
+      },
+    );
+
+    expect(result.status).toBe("succeeded");
+    expect(result.tablesProcessed).toBe(3);
+    expect(result.recordsProcessed).toBe(6);
+
+    // One fire per table, in upload order, with tableCompleted=true and
+    // recordsAppended matching that table's page rows.
+    expect(postProgress).toHaveBeenCalledTimes(3);
+    expect(postProgress.mock.calls[0]![0]).toEqual({
+      recordsAppended: 2,
+      tableCompleted: true,
+    });
+    expect(postProgress.mock.calls[1]![0]).toEqual({
+      recordsAppended: 1,
+      tableCompleted: true,
+    });
+    expect(postProgress.mock.calls[2]![0]).toEqual({
+      recordsAppended: 3,
+      tableCompleted: true,
+    });
+  });
+
+  it("swallows a thrown postProgress so the backup still completes", async () => {
+    const { fetchMock } = makeFetchMock();
+    const client = makeAirtableClient({
+      schema: {
+        tables: [
+          {
+            id: "tbl1",
+            name: "T1",
+            primaryFieldId: "fld1",
+            fields: [{ id: "fld1", name: "X", type: "singleLineText" }],
+          },
+        ],
+      },
+      pages: [
+        {
+          records: [
+            { id: "r1", createdTime: "2026-01-01", fields: { X: "a" } },
+          ],
+        },
+      ],
+    });
+
+    const postProgress = vi.fn(async () => {
+      throw new Error("transport boom");
+    });
+
+    const result = await runBackupBase(
+      { ...BASE_INPUT, isTrial: false },
+      {
+        engineUrl: ENGINE,
+        internalToken: TOKEN,
+        fetchImpl: fetchMock,
+        airtableClient: client,
+        sleepImpl: async () => undefined,
+        postProgress,
+      },
+    );
+
+    // Run still succeeds — /complete is the authoritative writer.
+    expect(result.status).toBe("succeeded");
+    expect(result.tablesProcessed).toBe(1);
+    expect(postProgress).toHaveBeenCalledTimes(1);
+  });
 });
