@@ -5,6 +5,8 @@ import Badge from '../components/ui/Badge.astro';
 import FrequencyPicker from '../components/backups/FrequencyPicker.astro';
 import StoragePicker from '../components/backups/StoragePicker.astro';
 import RunBackupButton from '../components/backups/RunBackupButton.astro';
+import BackupHistoryWidget from '../components/backups/BackupHistoryWidget.astro';
+import type { BackupRunSummary } from '../lib/backup-runs/types';
 import type { IntegrationsState } from '../stores/connections';
 
 interface Props {
@@ -12,9 +14,10 @@ interface Props {
   /** Query-string status passed through from Astro.url.searchParams. */
   statusCode: 'connected' | 'error' | null;
   errorReason: string | null;
+  initialRuns?: BackupRunSummary[];
 }
 
-const { state, statusCode, errorReason } = Astro.props;
+const { state, statusCode, errorReason, initialRuns = [] } = Astro.props;
 
 const airtable = state.connections.find((c) => c.platformSlug === 'airtable') ?? null;
 const bases = state.bases;
@@ -241,6 +244,13 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
     ))}
 
   </div>
+
+  {Astro.locals.account?.space?.id && airtable !== null && (
+    <BackupHistoryWidget
+      spaceId={Astro.locals.account.space.id}
+      runs={initialRuns}
+    />
+  )}
 
 </div>
 

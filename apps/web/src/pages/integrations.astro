@@ -1,9 +1,14 @@
 ---
+import { desc, eq } from 'drizzle-orm';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import IntegrationsView from '../views/IntegrationsView.astro';
 import { getBreadcrumbs } from '../lib/config';
 import { getIntegrationsState } from '../lib/integrations';
+import { listRecentRuns } from '../lib/backup-runs/list';
+import type { BackupRunRowLike } from '../lib/backup-runs/list';
+import type { BackupRunSummary } from '../lib/backup-runs/types';
 import type { IntegrationsState } from '../stores/connections';
+import { backupRuns } from '../db/schema';
 
 const breadcrumbs = getBreadcrumbs('/integrations');
 const { account, db } = Astro.locals;
@@ -23,6 +28,33 @@ const state: IntegrationsState =
         policy: { frequency: 'monthly', storageType: 'r2_managed' },
       };
 
+const initialRuns: BackupRunSummary[] =
+  spaceId && db
+    ? await listRecentRuns(spaceId, 10, {
+        fetchRuns: async (sid, lim) => {
+          const rows = await db
+            .select({
+              id: backupRuns.id,
+              status: backupRuns.status,
+              isTrial: backupRuns.isTrial,
+              recordCount: backupRuns.recordCount,
+              tableCount: backupRuns.tableCount,
+              attachmentCount: backupRuns.attachmentCount,
+              startedAt: backupRuns.startedAt,
+              completedAt: backupRuns.completedAt,
+              errorMessage: backupRuns.errorMessage,
+              triggerRunIds: backupRuns.triggerRunIds,
+              createdAt: backupRuns.createdAt,
+            })
+            .from(backupRuns)
+            .where(eq(backupRuns.spaceId, sid))
+            .orderBy(desc(backupRuns.createdAt))
+            .limit(lim);
+          return rows as BackupRunRowLike[];
+        },
+      })
+    : [];
+
 const connectedParam = Astro.url.searchParams.get('connected');
 const errorParam = Astro.url.searchParams.get('error');
 const statusCode: 'connected' | 'error' | null = connectedParam
@@ -33,7 +65,12 @@ const statusCode: 'connected' | 'error' | null = connectedParam
 ---
 
 <SidebarLayout pageTitle="Integrations" breadcrumbs={breadcrumbs}>
-  <IntegrationsView state={state} statusCode={statusCode} errorReason={errorParam} />
+  <IntegrationsView
+    state={state}
+    statusCode={statusCode}
+    errorReason={errorParam}
+    initialRuns={initialRuns}
+  />
 </SidebarLayout>
 
 <script
