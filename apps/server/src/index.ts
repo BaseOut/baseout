@@ -17,6 +17,7 @@ import {
 import { uploadCsvHandler } from "./pages/api/internal/runs/upload-csv";
 import { runsStartHandler } from "./pages/api/internal/runs/start";
 import { runsCompleteHandler } from "./pages/api/internal/runs/complete";
+import { runsProgressHandler } from "./pages/api/internal/runs/progress";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
@@ -26,6 +27,7 @@ const RUNS_UPLOAD_CSV_RE =
   /^\/api\/internal\/runs\/([^/]+)\/upload-csv$/;
 const RUNS_START_RE = /^\/api\/internal\/runs\/([^/]+)\/start$/;
 const RUNS_COMPLETE_RE = /^\/api\/internal\/runs\/([^/]+)\/complete$/;
+const RUNS_PROGRESS_RE = /^\/api\/internal\/runs\/([^/]+)\/progress$/;
 
 // Re-export Durable Object classes so workerd can resolve their bindings.
 // Required even when Astro adapter wraps the entry — see CLAUDE.md §5.1.
@@ -124,6 +126,18 @@ export default {
           ctx,
           locals,
           complete[1]!,
+        );
+      }
+
+      // Run-progress (Phase 10d): same method-check-inside-handler pattern.
+      const progress = RUNS_PROGRESS_RE.exec(url.pathname);
+      if (progress) {
+        return await runsProgressHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          progress[1]!,
         );
       }
 
