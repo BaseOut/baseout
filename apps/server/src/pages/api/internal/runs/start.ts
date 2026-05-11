@@ -113,6 +113,9 @@ export async function runsStartHandler(
         return (rows[0] ?? null) as BackupConfigurationRow | null;
       },
       fetchIncludedBases: async (configId) => {
+        // backup_configuration_bases.at_base_id is a FK to at_bases.id (UUID),
+        // NOT to at_bases.at_base_id (the Airtable identifier "appXXX..."). The
+        // column name is misleading — see apps/web/src/db/schema/core.ts.
         const rows = await db
           .select({
             atBaseId: atBases.atBaseId,
@@ -121,7 +124,7 @@ export async function runsStartHandler(
           .from(backupConfigurationBases)
           .innerJoin(
             atBases,
-            eq(atBases.atBaseId, backupConfigurationBases.atBaseId),
+            eq(atBases.id, backupConfigurationBases.atBaseId),
           )
           .where(
             and(
