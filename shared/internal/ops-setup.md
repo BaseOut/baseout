@@ -350,3 +350,77 @@ before V1 traffic.
   Investigate, fix, reship through staging.
 - Rotate `BETTER_AUTH_SECRET` on a schedule; rotating staging and prod separately
   lets you test the rotation flow in staging first.
+
+## 7. Backup smoke — local Playwright + manual click-through
+
+Backups MVP Phase 11 has two regression gates against the deployed `baseout-dev`
+worker. Run before any release that touches `apps/server/src/lib/runs/`,
+`apps/server/src/pages/api/internal/runs/`, `apps/web/src/lib/backup-runs/`,
+`apps/web/src/views/IntegrationsView.astro`, or
+`apps/web/src/components/backups/*`.
+
+### 7.1 Playwright happy-path (automated)
+
+```bash
+cd apps/web
+TOKEN=$(grep '^E2E_TEST_TOKEN=' .dev.vars | cut -d= -f2-)
+E2E_TARGET_URL=https://baseout-dev.openside.workers.dev \
+E2E_TEST_TOKEN="$TOKEN" \
+E2E_INBOX_DOMAIN=e2e.invalid \
+pnpm test:e2e -- backup-happy-path
+```
+
+Expected: `1 passed` in ~12s. The spec seeds an `e2e-*@e2e.invalid` user with a
+fully onboarded org/space/Airtable connection (one base included), signs in via
+magic-link, clicks **Run backup now** on `/integrations`, and asserts a fresh
+non-terminal row appears in the BackupHistoryWidget. Does NOT assert the run
+reaches `succeeded` — that requires either the dev-env Trigger.dev runner
+(`npx trigger.dev@latest dev` from `apps/server`) consuming the dev queue, OR
+the `E2E_TEST_MODE` inline-execution short-circuit that's tracked as a
+follow-up.
+
+If `E2E_TEST_TOKEN` is missing or mismatched between local `.dev.vars` and
+the deployed worker, the spec fails with `getMagicLink: no fresh token`. Resync
+with `printf '%s' "$TOKEN" | pnpm exec wrangler secret put E2E_TEST_TOKEN` from
+`apps/web/`.
+
+### 7.2 Manual click-through (real Airtable, with Trigger.dev runner)
+
+For an end-to-end demo or when verifying R2 + Trigger.dev integration:
+
+```bash
+# Terminal 1
+pnpm dev:all                                  # web :4331 (HTTPS), server :8787
+
+# Terminal 2
+cd apps/server && npx trigger.dev@latest dev  # consumes dev-env queue
+```
+
+Then in a browser, signed in with a real Airtable connection and at least one
+base ticked + saved:
+
+1. Open `https://localhost:4331/integrations`.
+2. Click **Run backup now**. Confirmation toast: "Backup started…".
+3. Navigate to `/` (Home) or stay on `/integrations` — both render the
+   BackupHistoryWidget.
+4. Row should tick `Queued` → `Running` → `Succeeded` within ~30s.
+5. Verify the CSV in R2: `wrangler r2 object list baseout-backups-dev --remote`.
+
+If the row sticks at `Running` for > 30s, the runner in Terminal 2 isn't
+consuming the queue — check its logs.
+
+### 7.3 Deployed-end-to-end (no laptop required)
+
+Requires a `tr_prod_*` Trigger.dev key on the deployed `baseout-server-dev`
+(currently the project only has a `tr_dev_*` key, so this path is not yet
+operational). To enable:
+
+1. Generate a prod-env key in the Trigger.dev dashboard for project
+   `proj_lklmptmrmrkeaszrmhcs`.
+2. `cd apps/server && pnpm exec wrangler secret put TRIGGER_SECRET_KEY --env dev`
+   and paste the new key.
+3. The Trigger.dev cloud already has `backup-base` deployed in its prod env
+   (version `20260511.1`).
+
+After that, clicking Run backup now from `baseout-dev.openside.workers.dev`
+runs end-to-end with no developer machine involved.
