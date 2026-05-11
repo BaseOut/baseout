@@ -33,7 +33,10 @@ import type { BackupEngineClient } from '../../../../lib/backup-engine'
 import type { AccountContext } from '../../../../lib/account'
 import type { AppDb } from '../../../../db'
 import { listRecentRuns } from '../../../../lib/backup-runs/list'
-import type { BackupRunRowLike } from '../../../../lib/backup-runs/list'
+import type {
+  BackupRunRowLike,
+  IncludedBase,
+} from '../../../../lib/backup-runs/list'
 import { startBackupRun } from '../../../../lib/backup-runs/start'
 import type {
   StartBackupRunDeps,
@@ -126,6 +129,7 @@ export interface HandleGetInput {
   limitParam: string | null
   fetchSpaceById: (spaceId: string) => Promise<SpaceRow | null>
   fetchRuns: (spaceId: string, limit: number) => Promise<BackupRunRowLike[]>
+  fetchIncludedBases: (spaceId: string) => Promise<IncludedBase[]>
 }
 
 export async function handleGet(input: HandleGetInput): Promise<Response> {
@@ -157,7 +161,10 @@ export async function handleGet(input: HandleGetInput): Promise<Response> {
   const runs: BackupRunSummary[] = await listRecentRuns(
     input.spaceId,
     limit,
-    { fetchRuns: input.fetchRuns },
+    {
+      fetchRuns: input.fetchRuns,
+      fetchIncludedBases: input.fetchIncludedBases,
+    },
   )
 
   return jsonResponse({ runs }, 200)
@@ -286,11 +293,17 @@ export const GET: APIRoute = async ({ locals, params, url }) => {
       return (row as SpaceRow | undefined) ?? null
     },
     fetchRuns: async (sid, lim) => {
+      // LEFT JOIN connections + backup_configurations so the widget detail
+      // panel can show connection.displayName + storage destination without
+      // a follow-up round-trip per run. Both joins are LEFT so a missing
+      // connection (deleted) or missing configuration (Space never had one)
+      // doesn't drop the run row from the history list.
       const rows = await db
         .select({
           id: backupRuns.id,
           status: backupRuns.status,
           isTrial: backupRuns.isTrial,
+          triggeredBy: backupRuns.triggeredBy,
           recordCount: backupRuns.recordCount,
           tableCount: backupRuns.tableCount,
           attachmentCount: backupRuns.attachmentCount,
@@ -299,12 +312,47 @@ export const GET: APIRoute = async ({ locals, params, url }) => {
           errorMessage: backupRuns.errorMessage,
           triggerRunIds: backupRuns.triggerRunIds,
           createdAt: backupRuns.createdAt,
+          connectionId: backupRuns.connectionId,
+          connectionDisplayName: connections.displayName,
+          configStorageType: backupConfigurations.storageType,
+          configMode: backupConfigurations.mode,
         })
         .from(backupRuns)
+        .leftJoin(connections, eq(connections.id, backupRuns.connectionId))
+        .leftJoin(
+          backupConfigurations,
+          eq(backupConfigurations.spaceId, backupRuns.spaceId),
+        )
         .where(eq(backupRuns.spaceId, sid))
         .orderBy(desc(backupRuns.createdAt))
         .limit(lim)
       return rows as BackupRunRowLike[]
+    },
+    fetchIncludedBases: async (sid) => {
+      // One round-trip per GET — shared across all rows in the response.
+      // Same `is_included = true` filter the engine's start path uses.
+      const rows = await db
+        .select({
+          id: atBases.id,
+          name: atBases.name,
+        })
+        .from(backupConfigurationBases)
+        .innerJoin(
+          backupConfigurations,
+          eq(
+            backupConfigurations.id,
+            backupConfigurationBases.backupConfigurationId,
+          ),
+        )
+        .innerJoin(atBases, eq(atBases.id, backupConfigurationBases.atBaseId))
+        .where(
+          and(
+            eq(backupConfigurations.spaceId, sid),
+            eq(backupConfigurationBases.isIncluded, true),
+          ),
+        )
+        .orderBy(atBases.name)
+      return rows as IncludedBase[]
     },
   })
 }
@@ -314,7 +362,3 @@ export const GET: APIRoute = async ({ locals, params, url }) => {
 export const PUT: APIRoute = async () => jsonResponse({ error: 'method_not_allowed' }, 405)
 export const PATCH: APIRoute = async () => jsonResponse({ error: 'method_not_allowed' }, 405)
 export const DELETE: APIRoute = async () => jsonResponse({ error: 'method_not_allowed' }, 405)
-
-// Quiet TS6133 — atBases is reserved for the IDOR-safe space lookup
-// extension if we ever need to surface base names in the GET response.
-void atBases

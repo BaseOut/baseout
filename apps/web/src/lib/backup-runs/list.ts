@@ -16,13 +16,15 @@ import type { BackupRunSummary } from "./types";
 
 /**
  * Slim shape covering the subset of `backup_runs` columns the helper
- * reads. Mirrors apps/web/src/db/schema/core.ts:322 — keep in sync if
- * either side adds a column the summary surfaces.
+ * reads, plus the LEFT-JOIN-derived connection + configuration fields.
+ * Mirrors apps/web/src/db/schema/core.ts:322 — keep in sync if either
+ * side adds a column the summary surfaces.
  */
 export interface BackupRunRowLike {
   id: string;
   status: string;
   isTrial: boolean;
+  triggeredBy: string;
   recordCount: number | null;
   tableCount: number | null;
   attachmentCount: number | null;
@@ -31,6 +33,25 @@ export interface BackupRunRowLike {
   errorMessage: string | null;
   triggerRunIds: string[] | null;
   createdAt: Date;
+  /** FK on backup_runs — non-null in schema; may not resolve under LEFT JOIN. */
+  connectionId: string;
+  /** LEFT JOIN result — null when the connection was deleted. */
+  connectionDisplayName: string | null;
+  /** LEFT JOIN result — null when no configuration row exists for the Space. */
+  configStorageType: string | null;
+  /** LEFT JOIN result — null when no configuration row exists for the Space. */
+  configMode: string | null;
+}
+
+/**
+ * Per-Space included-bases list (one round-trip per GET, not per run).
+ * Reflects current `backup_configuration_bases` selection — not a per-run
+ * snapshot. Stamped onto every BackupRunSummary so the widget detail
+ * panel can render without a second fetch.
+ */
+export interface IncludedBase {
+  id: string;
+  name: string;
 }
 
 export interface ListRecentRunsDeps {
@@ -38,6 +59,7 @@ export interface ListRecentRunsDeps {
     spaceId: string,
     limit: number,
   ) => Promise<BackupRunRowLike[]>;
+  fetchIncludedBases: (spaceId: string) => Promise<IncludedBase[]>;
 }
 
 export async function listRecentRuns(
@@ -45,15 +67,30 @@ export async function listRecentRuns(
   limit: number,
   deps: ListRecentRunsDeps,
 ): Promise<BackupRunSummary[]> {
-  const rows = await deps.fetchRuns(spaceId, limit);
-  return rows.map(rowToSummary);
+  const [rows, includedBases] = await Promise.all([
+    deps.fetchRuns(spaceId, limit),
+    deps.fetchIncludedBases(spaceId),
+  ]);
+  return rows.map((row) => rowToSummary(row, includedBases));
 }
 
-function rowToSummary(row: BackupRunRowLike): BackupRunSummary {
+function rowToSummary(
+  row: BackupRunRowLike,
+  includedBases: IncludedBase[],
+): BackupRunSummary {
+  const connection =
+    row.connectionDisplayName === null && row.connectionId === ""
+      ? null
+      : { id: row.connectionId, displayName: row.connectionDisplayName };
+  const configuration =
+    row.configStorageType !== null && row.configMode !== null
+      ? { storageType: row.configStorageType, mode: row.configMode }
+      : null;
   return {
     id: row.id,
     status: row.status,
     isTrial: row.isTrial,
+    triggeredBy: row.triggeredBy,
     recordCount: row.recordCount,
     tableCount: row.tableCount,
     attachmentCount: row.attachmentCount,
@@ -62,5 +99,8 @@ function rowToSummary(row: BackupRunRowLike): BackupRunSummary {
     errorMessage: row.errorMessage,
     triggerRunIds: row.triggerRunIds,
     createdAt: row.createdAt.toISOString(),
+    connection,
+    configuration,
+    includedBases,
   };
 }

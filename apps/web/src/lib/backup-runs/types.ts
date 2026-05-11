@@ -74,6 +74,7 @@ export interface BackupRunSummary {
   id: string;
   status: string;
   isTrial: boolean;
+  triggeredBy: string;
   recordCount: number | null;
   tableCount: number | null;
   attachmentCount: number | null;
@@ -82,4 +83,22 @@ export interface BackupRunSummary {
   errorMessage: string | null;
   triggerRunIds: string[] | null;
   createdAt: string;
+  /**
+   * Connection used at start-time. Engine writes `connectionId` on the
+   * backup_runs row; the route LEFT JOINs to surface displayName for the
+   * detail panel. Null when the connection has since been deleted.
+   */
+  connection: { id: string; displayName: string | null } | null;
+  /**
+   * Space's backup configuration at fetch-time. The PRD doesn't snapshot
+   * per-run, so this reflects current state. LEFT JOIN — null when no
+   * configuration row exists yet.
+   */
+  configuration: { storageType: string; mode: string } | null;
+  /**
+   * Bases currently included in the Space's backup configuration. NOT a
+   * per-run snapshot — engine doesn't capture that today. UI labels this
+   * as "Currently selected bases" with a caveat note.
+   */
+  includedBases: { id: string; name: string }[];
 }

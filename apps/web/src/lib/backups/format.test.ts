@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
-  statusLabel,
-  statusBadgeClass,
-  formatDuration,
   describeCounts,
+  expandedTimestamp,
+  formatDuration,
+  formatTriggeredBy,
+  healthBadgeClass,
+  healthStatus,
+  statusBadgeClass,
+  statusLabel,
 } from './format'
 import type { BackupRunSummary } from '../backup-runs/types'
 
@@ -12,6 +16,7 @@ function run(overrides: Partial<BackupRunSummary> = {}): BackupRunSummary {
     id: 'r_1',
     status: 'queued',
     isTrial: false,
+    triggeredBy: 'manual',
     recordCount: null,
     tableCount: null,
     attachmentCount: null,
@@ -20,6 +25,9 @@ function run(overrides: Partial<BackupRunSummary> = {}): BackupRunSummary {
     errorMessage: null,
     triggerRunIds: null,
     createdAt: '2026-05-09T00:00:00.000Z',
+    connection: null,
+    configuration: null,
+    includedBases: [],
     ...overrides,
   }
 }
@@ -181,5 +189,88 @@ describe('describeCounts', () => {
         run({ status: 'succeeded', tableCount: 2, recordCount: 50, attachmentCount: 0 }),
       ),
     ).not.toContain('attachment')
+  })
+})
+
+describe('healthStatus', () => {
+  it('returns failure for status=failed', () => {
+    expect(healthStatus(run({ status: 'failed' }))).toBe('failure')
+  })
+
+  it('returns failure for status=failed even when errorMessage is present', () => {
+    // 'failed' wins over 'warning' — the order in the rule matters.
+    expect(
+      healthStatus(run({ status: 'failed', errorMessage: 'boom' })),
+    ).toBe('failure')
+  })
+
+  it('returns warning for trial_truncated', () => {
+    expect(healthStatus(run({ status: 'trial_truncated' }))).toBe('warning')
+  })
+
+  it('returns warning when a non-failed run carries a sticky errorMessage', () => {
+    // The engine writes errorMessage on partial-success cases as a soft
+    // signal even when the status is succeeded. Surface as 'warning'.
+    expect(
+      healthStatus(run({ status: 'succeeded', errorMessage: 'one base skipped' })),
+    ).toBe('warning')
+  })
+
+  it('returns good for succeeded with no errorMessage', () => {
+    expect(healthStatus(run({ status: 'succeeded' }))).toBe('good')
+  })
+
+  it('returns good for running / queued / trial_complete (no signal yet)', () => {
+    expect(healthStatus(run({ status: 'running' }))).toBe('good')
+    expect(healthStatus(run({ status: 'queued' }))).toBe('good')
+    expect(healthStatus(run({ status: 'trial_complete' }))).toBe('good')
+  })
+})
+
+describe('healthBadgeClass', () => {
+  it.each([
+    ['good', 'badge-success'],
+    ['warning', 'badge-warning'],
+    ['failure', 'badge-error'],
+  ] as const)('%s → %s', (h, expected) => {
+    expect(healthBadgeClass(h)).toBe(expected)
+  })
+})
+
+describe('formatTriggeredBy', () => {
+  it.each([
+    ['manual', 'Manual'],
+    ['scheduled', 'Scheduled'],
+    ['webhook', 'Webhook'],
+    ['trial', 'Trial'],
+  ])('%s → %s', (input, expected) => {
+    expect(formatTriggeredBy(input)).toBe(expected)
+  })
+
+  it('title-cases multi-word snake_case values', () => {
+    expect(formatTriggeredBy('first_run_manual')).toBe('First Run Manual')
+  })
+
+  it('falls back to em-dash for empty input', () => {
+    expect(formatTriggeredBy('')).toBe('—')
+  })
+})
+
+describe('expandedTimestamp', () => {
+  it('returns em-dash for null', () => {
+    expect(expandedTimestamp(null)).toBe('—')
+  })
+
+  it('returns em-dash for unparseable input', () => {
+    expect(expandedTimestamp('not-a-date')).toBe('—')
+  })
+
+  it('returns a non-empty locale string for a valid ISO timestamp', () => {
+    // Don't pin the exact format — locale string varies by Node version
+    // and by the host's default locale. Just assert it's a reasonable
+    // string with the year in it.
+    const out = expandedTimestamp('2026-05-09T18:30:00.000Z')
+    expect(out).not.toBe('—')
+    expect(out).toMatch(/2026/)
   })
 })

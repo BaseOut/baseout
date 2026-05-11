@@ -25,6 +25,7 @@ function makeRun(overrides: Partial<BackupRunSummary> = {}): BackupRunSummary {
     id: 'r_1',
     status: 'running',
     isTrial: false,
+    triggeredBy: 'manual',
     recordCount: null,
     tableCount: null,
     attachmentCount: null,
@@ -33,6 +34,9 @@ function makeRun(overrides: Partial<BackupRunSummary> = {}): BackupRunSummary {
     errorMessage: null,
     triggerRunIds: null,
     createdAt: '2026-05-08T18:00:00.000Z',
+    connection: null,
+    configuration: null,
+    includedBases: [],
     ...overrides,
   }
 }

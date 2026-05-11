@@ -227,6 +227,7 @@ const r1: BackupRunRowLike = {
   id: 'r_1',
   status: 'succeeded',
   isTrial: false,
+  triggeredBy: 'manual',
   recordCount: 100,
   tableCount: 2,
   attachmentCount: 0,
@@ -235,6 +236,10 @@ const r1: BackupRunRowLike = {
   errorMessage: null,
   triggerRunIds: ['run_a'],
   createdAt: new Date('2026-05-08T18:30:00.000Z'),
+  connectionId: 'conn_1',
+  connectionDisplayName: 'Main Airtable',
+  configStorageType: 'r2_managed',
+  configMode: 'static',
 }
 
 describe('handleGet', () => {
@@ -248,6 +253,7 @@ describe('handleGet', () => {
         organizationId: ORG_ID,
       })),
       fetchRuns: vi.fn(async () => []),
+      fetchIncludedBases: vi.fn(async () => []),
     })
     expect(res.status).toBe(401)
   })
@@ -259,6 +265,7 @@ describe('handleGet', () => {
       limitParam: null,
       fetchSpaceById: vi.fn(async () => null),
       fetchRuns: vi.fn(async () => []),
+      fetchIncludedBases: vi.fn(async () => []),
     })
     expect(res.status).toBe(400)
   })
@@ -273,6 +280,7 @@ describe('handleGet', () => {
         organizationId: 'some-other-org',
       })),
       fetchRuns: vi.fn(async () => []),
+      fetchIncludedBases: vi.fn(async () => []),
     })
     expect(res.status).toBe(403)
     expect(await readJson(res)).toEqual({ error: 'space_org_mismatch' })
@@ -288,6 +296,7 @@ describe('handleGet', () => {
         organizationId: ORG_ID,
       })),
       fetchRuns: vi.fn(async () => [r1]),
+      fetchIncludedBases: vi.fn(async () => [{ id: 'b_1', name: 'CRM' }]),
     })
     expect(res.status).toBe(200)
     const body = await readJson(res)
@@ -297,6 +306,7 @@ describe('handleGet', () => {
           id: 'r_1',
           status: 'succeeded',
           isTrial: false,
+          triggeredBy: 'manual',
           recordCount: 100,
           tableCount: 2,
           attachmentCount: 0,
@@ -305,6 +315,9 @@ describe('handleGet', () => {
           errorMessage: null,
           triggerRunIds: ['run_a'],
           createdAt: '2026-05-08T18:30:00.000Z',
+          connection: { id: 'conn_1', displayName: 'Main Airtable' },
+          configuration: { storageType: 'r2_managed', mode: 'static' },
+          includedBases: [{ id: 'b_1', name: 'CRM' }],
         },
       ],
     })
@@ -321,6 +334,7 @@ describe('handleGet', () => {
         organizationId: ORG_ID,
       })),
       fetchRuns,
+      fetchIncludedBases: vi.fn(async () => []),
     })
     expect(fetchRuns).toHaveBeenCalledWith(SPACE_ID, 10)
   })
@@ -336,6 +350,7 @@ describe('handleGet', () => {
         organizationId: ORG_ID,
       })),
       fetchRuns,
+      fetchIncludedBases: vi.fn(async () => []),
     })
     expect(fetchRuns).toHaveBeenCalledWith(SPACE_ID, 25)
   })
@@ -351,6 +366,7 @@ describe('handleGet', () => {
         organizationId: ORG_ID,
       })),
       fetchRuns,
+      fetchIncludedBases: vi.fn(async () => []),
     })
     expect(fetchRuns).toHaveBeenCalledWith(SPACE_ID, 100)
   })
@@ -366,6 +382,7 @@ describe('handleGet', () => {
         organizationId: ORG_ID,
       })),
       fetchRuns,
+      fetchIncludedBases: vi.fn(async () => []),
     })
     expect(fetchRuns).toHaveBeenCalledWith(SPACE_ID, 10)
   })

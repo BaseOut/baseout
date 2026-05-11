@@ -71,6 +71,66 @@ export function formatDuration(
 }
 
 /**
+ * Health derivation rule per PRD §6.2 (good / warning / failure).
+ *   - 'failed' status                           → 'failure'
+ *   - 'trial_truncated' OR sticky errorMessage  → 'warning'
+ *   - everything else (incl. terminal success,
+ *     queued, running)                          → 'good'
+ *
+ * This sits alongside the atomic `status` field — `status` is the engine's
+ * state machine, `healthStatus` is the customer-facing trust signal.
+ */
+export type HealthStatus = 'good' | 'warning' | 'failure'
+
+export function healthStatus(run: BackupRunSummary): HealthStatus {
+  if (run.status === 'failed') return 'failure'
+  if (run.status === 'trial_truncated' || run.errorMessage !== null) {
+    return 'warning'
+  }
+  return 'good'
+}
+
+/** daisyUI badge color class for a health chip. */
+export function healthBadgeClass(health: HealthStatus): string {
+  switch (health) {
+    case 'good':
+      return 'badge-success'
+    case 'warning':
+      return 'badge-warning'
+    case 'failure':
+      return 'badge-error'
+  }
+}
+
+/**
+ * Title-case the engine's free-text `triggered_by` field for display.
+ * Snake_case → spaces → Title Case. Falls back to the raw value when empty.
+ */
+export function formatTriggeredBy(value: string): string {
+  if (!value) return '—'
+  return value
+    .split(/[_\s]+/)
+    .filter((part) => part.length > 0)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ')
+}
+
+/**
+ * Full locale-formatted timestamp for the detail panel (collapsed row uses
+ * the shorter `toLocaleString()`). Returns '—' on null/invalid so the panel
+ * never renders 'Invalid Date'.
+ */
+export function expandedTimestamp(iso: string | null): string {
+  if (!iso) return '—'
+  const date = new Date(iso)
+  if (!Number.isFinite(date.getTime())) return '—'
+  return date.toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  })
+}
+
+/**
  * One-line summary for a row, used by the widget's <li> body. Returns the
  * record/table/attachment counts when present, falling back to a status-
  * specific message.

@@ -1,6 +1,11 @@
 ---
 /**
- * Dashboard tile — shows the last N backup runs for a Space.
+ * Dashboard tile — shows the last N Backup Runs for a Space.
+ *
+ * Each row is a <details> accordion. Collapsed: status badge + start time +
+ * duration + one-line counts (unchanged from Phase 10c). Expanded: per-run
+ * detail panel with health, trigger, connection, destination, full counts,
+ * timestamps, currently-selected bases, error callout, and support IDs.
  *
  * SSR renders the initial list from the `runs` prop; the client hydrates
  * those rows into the $backupRuns store via a <script type="application/
@@ -8,10 +13,22 @@
  * own once every run is terminal. Listens for the `backup-run-started`
  * CustomEvent dispatched by RunBackupButton so a freshly-kicked-off run
  * appears without waiting for the next poll tick.
+ *
+ * Open/closed accordion state is preserved across polls because the client
+ * script upserts (mutates children of existing <details> nodes) rather
+ * than replacing innerHTML. The native <details> `open` attribute is the
+ * source of truth — no separate state set required.
+ *
+ * TODO(playwright): cover accordion open/close + open-state-survives-poll
+ * once the Backups MVP push lands.
  */
 import {
   describeCounts,
+  expandedTimestamp,
   formatDuration,
+  formatTriggeredBy,
+  healthBadgeClass,
+  healthStatus,
   statusBadgeClass,
   statusLabel,
 } from '../../lib/backups/format'
@@ -23,6 +40,17 @@ interface Props {
 }
 
 const { spaceId, runs } = Astro.props as Props
+
+function healthLabel(h: 'good' | 'warning' | 'failure'): string {
+  return h === 'good' ? 'Healthy' : h === 'warning' ? 'Warning' : 'Failure'
+}
+
+function destinationLabel(
+  cfg: BackupRunSummary['configuration'],
+): string {
+  if (!cfg) return '—'
+  return `${cfg.storageType} · ${cfg.mode}`
+}
 ---
 
 <section
@@ -40,40 +68,138 @@ const { spaceId, runs } = Astro.props as Props
 
   {runs.length === 0 ? (
     <p class="mt-3 text-sm text-base-content/70" data-backup-history-empty>
-      No backup runs yet. Click <em>Run backup now</em> to start one.
+      No Backup Runs yet. Click <em>Run backup now</em> to start one.
     </p>
   ) : (
-    <ol class="mt-3 grid gap-2" data-backup-history-list>
+    <ol class="mt-3 grid gap-2 list-none p-0" data-backup-history-list>
       {runs.map((run) => {
         const duration = formatDuration(run.startedAt, run.completedAt)
+        const health = healthStatus(run)
         return (
-          <li
-            class="grid gap-1 rounded-md border border-base-200 p-3"
-            data-run-id={run.id}
-          >
-            <div class="flex items-center gap-2">
-              <span class:list={['badge badge-sm', statusBadgeClass(run.status)]}>
-                {statusLabel(run.status)}
-              </span>
-              <span class="text-xs text-base-content/60">
-                {run.startedAt && (
-                  <time datetime={run.startedAt}>
-                    {new Date(run.startedAt).toLocaleString()}
-                  </time>
+          <li class="list-none" data-run-id={run.id}>
+            <details class="collapse collapse-arrow border border-base-200 bg-base-100 rounded-md">
+              <summary class="collapse-title cursor-pointer min-h-[44px] py-3 grid gap-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class:list={['badge badge-sm', statusBadgeClass(run.status)]}>
+                    {statusLabel(run.status)}
+                  </span>
+                  <span class="text-xs text-base-content/60">
+                    {run.startedAt && (
+                      <time datetime={run.startedAt}>
+                        {new Date(run.startedAt).toLocaleString()}
+                      </time>
+                    )}
+                    {!run.startedAt && run.createdAt && (
+                      <time datetime={run.createdAt}>
+                        queued {new Date(run.createdAt).toLocaleString()}
+                      </time>
+                    )}
+                  </span>
+                  {duration && (
+                    <span class="text-xs text-base-content/60 ml-auto">
+                      {duration}
+                    </span>
+                  )}
+                </div>
+                <p class="text-sm text-base-content/80">{describeCounts(run)}</p>
+              </summary>
+
+              <div class="collapse-content grid gap-4 text-sm">
+                <div class="flex flex-wrap items-center gap-2 pt-2">
+                  <span class:list={['badge badge-sm', healthBadgeClass(health)]}>
+                    {healthLabel(health)}
+                  </span>
+                  <span class="text-xs text-base-content/70">
+                    Triggered by {formatTriggeredBy(run.triggeredBy)}
+                  </span>
+                  {run.isTrial && (
+                    <span class="badge badge-sm badge-warning">Trial</span>
+                  )}
+                </div>
+
+                <div class="stats stats-horizontal shadow-sm bg-base-200">
+                  <div class="stat py-2 px-3">
+                    <div class="stat-title text-xs">Tables</div>
+                    <div class="stat-value text-xl">
+                      {run.tableCount ?? '—'}
+                    </div>
+                  </div>
+                  <div class="stat py-2 px-3">
+                    <div class="stat-title text-xs">Records</div>
+                    <div class="stat-value text-xl">
+                      {run.recordCount ?? '—'}
+                    </div>
+                  </div>
+                  <div class="stat py-2 px-3">
+                    <div class="stat-title text-xs">Attachments</div>
+                    <div class="stat-value text-xl">
+                      {run.attachmentCount ?? '—'}
+                    </div>
+                  </div>
+                </div>
+
+                <dl class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
+                  <dt class="text-xs text-base-content/60">Started</dt>
+                  <dd>{expandedTimestamp(run.startedAt)}</dd>
+                  <dt class="text-xs text-base-content/60">Completed</dt>
+                  <dd>{expandedTimestamp(run.completedAt)}</dd>
+                  <dt class="text-xs text-base-content/60">Duration</dt>
+                  <dd>{duration ?? '—'}</dd>
+                  <dt class="text-xs text-base-content/60">Connection</dt>
+                  <dd>{run.connection?.displayName ?? '—'}</dd>
+                  <dt class="text-xs text-base-content/60">Destination</dt>
+                  <dd>{destinationLabel(run.configuration)}</dd>
+                </dl>
+
+                <div>
+                  <h4 class="text-xs font-semibold uppercase tracking-wide text-base-content/60 mb-1">
+                    Currently selected bases
+                  </h4>
+                  {run.includedBases.length === 0 ? (
+                    <p class="text-sm text-base-content/70">No bases currently selected.</p>
+                  ) : (
+                    <ul class="list-disc pl-5 grid gap-0.5">
+                      {run.includedBases.map((base) => (
+                        <li>{base.name}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <p class="mt-1 text-xs text-base-content/50">
+                    Reflects current Space configuration; per-run snapshot coming with audit-log work.
+                  </p>
+                </div>
+
+                {run.errorMessage && (
+                  <div class="alert alert-error" role="alert">
+                    <span class="text-sm">{run.errorMessage}</span>
+                  </div>
                 )}
-                {!run.startedAt && run.createdAt && (
-                  <time datetime={run.createdAt}>
-                    queued {new Date(run.createdAt).toLocaleString()}
-                  </time>
-                )}
-              </span>
-              {duration && (
-                <span class="text-xs text-base-content/60 ml-auto">
-                  {duration}
-                </span>
-              )}
-            </div>
-            <p class="text-sm text-base-content/80">{describeCounts(run)}</p>
+
+                <details class="border-t border-base-200 pt-2">
+                  <summary class="cursor-pointer text-xs text-base-content/60">
+                    Support / debugging
+                  </summary>
+                  <dl class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs">
+                    <dt class="text-base-content/60">Run ID</dt>
+                    <dd>
+                      <code class="text-xs">{run.id}</code>
+                    </dd>
+                    <dt class="text-base-content/60">Trigger run IDs</dt>
+                    <dd>
+                      {run.triggerRunIds && run.triggerRunIds.length > 0 ? (
+                        <ul class="grid gap-0.5">
+                          {run.triggerRunIds.map((id) => (
+                            <li><code class="text-xs">{id}</code></li>
+                          ))}
+                        </ul>
+                      ) : (
+                        '—'
+                      )}
+                    </dd>
+                  </dl>
+                </details>
+              </div>
+            </details>
           </li>
         )
       })}
@@ -97,7 +223,11 @@ const { spaceId, runs } = Astro.props as Props
   } from '../../stores/backup-runs'
   import {
     describeCounts,
+    expandedTimestamp,
     formatDuration,
+    formatTriggeredBy,
+    healthBadgeClass,
+    healthStatus,
     statusBadgeClass,
     statusLabel,
   } from '../../lib/backups/format'
@@ -112,7 +242,18 @@ const { spaceId, runs } = Astro.props as Props
       .replace(/'/g, '&#039;')
   }
 
-  function renderRow(run: BackupRunSummary): string {
+  function healthLabel(h: 'good' | 'warning' | 'failure'): string {
+    return h === 'good' ? 'Healthy' : h === 'warning' ? 'Warning' : 'Failure'
+  }
+
+  function destinationLabel(
+    cfg: BackupRunSummary['configuration'],
+  ): string {
+    if (!cfg) return '—'
+    return `${cfg.storageType} · ${cfg.mode}`
+  }
+
+  function summaryInnerHtml(run: BackupRunSummary): string {
     const badge = statusBadgeClass(run.status)
     const label = escapeHtml(statusLabel(run.status))
     const counts = escapeHtml(describeCounts(run))
@@ -127,16 +268,150 @@ const { spaceId, runs } = Astro.props as Props
     const durationHtml = duration
       ? `<span class="text-xs text-base-content/60 ml-auto">${escapeHtml(duration)}</span>`
       : ''
-    return `<li class="grid gap-1 rounded-md border border-base-200 p-3" data-run-id="${escapeHtml(
-      run.id,
-    )}">
-      <div class="flex items-center gap-2">
+    return `
+      <div class="flex items-center gap-2 flex-wrap">
         <span class="badge badge-sm ${badge}">${label}</span>
         <span class="text-xs text-base-content/60">${startedDisplay}</span>
         ${durationHtml}
       </div>
-      <p class="text-sm text-base-content/80">${counts}</p>
-    </li>`
+      <p class="text-sm text-base-content/80">${counts}</p>`
+  }
+
+  function basesListHtml(run: BackupRunSummary): string {
+    if (run.includedBases.length === 0) {
+      return `<p class="text-sm text-base-content/70">No bases currently selected.</p>`
+    }
+    const items = run.includedBases
+      .map((b) => `<li>${escapeHtml(b.name)}</li>`)
+      .join('')
+    return `<ul class="list-disc pl-5 grid gap-0.5">${items}</ul>`
+  }
+
+  function triggerIdsHtml(run: BackupRunSummary): string {
+    if (!run.triggerRunIds || run.triggerRunIds.length === 0) return '—'
+    const items = run.triggerRunIds
+      .map((id) => `<li><code class="text-xs">${escapeHtml(id)}</code></li>`)
+      .join('')
+    return `<ul class="grid gap-0.5">${items}</ul>`
+  }
+
+  function errorAlertHtml(run: BackupRunSummary): string {
+    if (!run.errorMessage) return ''
+    return `<div class="alert alert-error" role="alert"><span class="text-sm">${escapeHtml(
+      run.errorMessage,
+    )}</span></div>`
+  }
+
+  function trialBadgeHtml(run: BackupRunSummary): string {
+    return run.isTrial
+      ? `<span class="badge badge-sm badge-warning">Trial</span>`
+      : ''
+  }
+
+  function detailInnerHtml(run: BackupRunSummary): string {
+    const health = healthStatus(run)
+    const healthBadge = healthBadgeClass(health)
+    const duration = formatDuration(run.startedAt, run.completedAt)
+    return `
+      <div class="flex flex-wrap items-center gap-2 pt-2">
+        <span class="badge badge-sm ${healthBadge}">${escapeHtml(healthLabel(health))}</span>
+        <span class="text-xs text-base-content/70">Triggered by ${escapeHtml(
+          formatTriggeredBy(run.triggeredBy),
+        )}</span>
+        ${trialBadgeHtml(run)}
+      </div>
+
+      <div class="stats stats-horizontal shadow-sm bg-base-200">
+        <div class="stat py-2 px-3">
+          <div class="stat-title text-xs">Tables</div>
+          <div class="stat-value text-xl">${
+            run.tableCount === null ? '—' : escapeHtml(String(run.tableCount))
+          }</div>
+        </div>
+        <div class="stat py-2 px-3">
+          <div class="stat-title text-xs">Records</div>
+          <div class="stat-value text-xl">${
+            run.recordCount === null ? '—' : escapeHtml(String(run.recordCount))
+          }</div>
+        </div>
+        <div class="stat py-2 px-3">
+          <div class="stat-title text-xs">Attachments</div>
+          <div class="stat-value text-xl">${
+            run.attachmentCount === null
+              ? '—'
+              : escapeHtml(String(run.attachmentCount))
+          }</div>
+        </div>
+      </div>
+
+      <dl class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1">
+        <dt class="text-xs text-base-content/60">Started</dt>
+        <dd>${escapeHtml(expandedTimestamp(run.startedAt))}</dd>
+        <dt class="text-xs text-base-content/60">Completed</dt>
+        <dd>${escapeHtml(expandedTimestamp(run.completedAt))}</dd>
+        <dt class="text-xs text-base-content/60">Duration</dt>
+        <dd>${duration ? escapeHtml(duration) : '—'}</dd>
+        <dt class="text-xs text-base-content/60">Connection</dt>
+        <dd>${
+          run.connection?.displayName
+            ? escapeHtml(run.connection.displayName)
+            : '—'
+        }</dd>
+        <dt class="text-xs text-base-content/60">Destination</dt>
+        <dd>${escapeHtml(destinationLabel(run.configuration))}</dd>
+      </dl>
+
+      <div>
+        <h4 class="text-xs font-semibold uppercase tracking-wide text-base-content/60 mb-1">
+          Currently selected bases
+        </h4>
+        ${basesListHtml(run)}
+        <p class="mt-1 text-xs text-base-content/50">
+          Reflects current Space configuration; per-run snapshot coming with audit-log work.
+        </p>
+      </div>
+
+      ${errorAlertHtml(run)}
+
+      <details class="border-t border-base-200 pt-2">
+        <summary class="cursor-pointer text-xs text-base-content/60">Support / debugging</summary>
+        <dl class="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs">
+          <dt class="text-base-content/60">Run ID</dt>
+          <dd><code class="text-xs">${escapeHtml(run.id)}</code></dd>
+          <dt class="text-base-content/60">Trigger run IDs</dt>
+          <dd>${triggerIdsHtml(run)}</dd>
+        </dl>
+      </details>`
+  }
+
+  function newRowElement(run: BackupRunSummary): HTMLLIElement {
+    const li = document.createElement('li')
+    li.className = 'list-none'
+    li.dataset.runId = run.id
+
+    const det = document.createElement('details')
+    det.className =
+      'collapse collapse-arrow border border-base-200 bg-base-100 rounded-md'
+
+    const summary = document.createElement('summary')
+    summary.className = 'collapse-title cursor-pointer min-h-[44px] py-3 grid gap-1'
+    summary.innerHTML = summaryInnerHtml(run)
+
+    const content = document.createElement('div')
+    content.className = 'collapse-content grid gap-4 text-sm'
+    content.innerHTML = detailInnerHtml(run)
+
+    det.appendChild(summary)
+    det.appendChild(content)
+    li.appendChild(det)
+    return li
+  }
+
+  function updateRow(li: HTMLLIElement, run: BackupRunSummary): void {
+    const summary = li.querySelector('summary.collapse-title')
+    const content = li.querySelector('.collapse-content')
+    if (summary instanceof HTMLElement) summary.innerHTML = summaryInnerHtml(run)
+    if (content instanceof HTMLElement) content.innerHTML = detailInnerHtml(run)
   }
 
   function render(runs: readonly BackupRunSummary[]): void {
@@ -159,7 +434,7 @@ const { spaceId, runs } = Astro.props as Props
         p.className = 'mt-3 text-sm text-base-content/70'
         p.dataset.backupHistoryEmpty = ''
         p.textContent =
-          'No backup runs yet. Click "Run backup now" to start one.'
+          'No Backup Runs yet. Click "Run backup now" to start one.'
         root.appendChild(p)
       }
       return
@@ -168,11 +443,40 @@ const { spaceId, runs } = Astro.props as Props
     if (empty) empty.remove()
     if (!list) {
       list = document.createElement('ol')
-      list.className = 'mt-3 grid gap-2'
+      list.className = 'mt-3 grid gap-2 list-none p-0'
       list.dataset.backupHistoryList = ''
       root.appendChild(list)
     }
-    list.innerHTML = runs.map(renderRow).join('')
+
+    // In-place upsert: keep <details> nodes alive so their `open` state
+    // survives the 10s poll re-render. Match by data-run-id, update the
+    // children, reorder via appendChild (idempotent move).
+    const existing = new Map<string, HTMLLIElement>()
+    list.querySelectorAll<HTMLLIElement>('li[data-run-id]').forEach((li) => {
+      const id = li.dataset.runId
+      if (id) existing.set(id, li)
+    })
+
+    const nextIds = new Set(runs.map((r) => r.id))
+    for (const [id, li] of existing) {
+      if (!nextIds.has(id)) {
+        li.remove()
+        existing.delete(id)
+      }
+    }
+
+    for (const run of runs) {
+      let li = existing.get(run.id)
+      if (li) {
+        updateRow(li, run)
+      } else {
+        li = newRowElement(run)
+        existing.set(run.id, li)
+      }
+      // appendChild on an existing node is a move; the loop runs in render
+      // order so the final DOM order matches `runs`.
+      list.appendChild(li)
+    }
   }
 
   // Hydrate from the JSON-script tag.
