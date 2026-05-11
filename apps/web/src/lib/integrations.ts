@@ -16,7 +16,26 @@ import {
   platforms,
 } from '../db/schema'
 import { resolveCapabilities } from './capabilities/resolve'
-import type { BaseSummary, ConnectionSummary, IntegrationsState } from '../stores/connections'
+import type { Frequency } from './capabilities/tier-capabilities'
+import type {
+  BackupPolicy,
+  BaseSummary,
+  ConnectionSummary,
+  IntegrationsState,
+} from '../stores/connections'
+
+const VALID_FREQUENCIES: ReadonlySet<Frequency> = new Set([
+  'monthly',
+  'weekly',
+  'daily',
+  'instant',
+])
+
+function asFrequency(raw: string | null | undefined): Frequency {
+  return raw && VALID_FREQUENCIES.has(raw as Frequency)
+    ? (raw as Frequency)
+    : 'monthly'
+}
 
 interface PlatformConfig {
   at_user_id?: string
@@ -57,7 +76,11 @@ export async function getIntegrationsState(
     .where(eq(atBases.spaceId, spaceId))
 
   const [config] = await db
-    .select({ id: backupConfigurations.id })
+    .select({
+      id: backupConfigurations.id,
+      frequency: backupConfigurations.frequency,
+      storageType: backupConfigurations.storageType,
+    })
     .from(backupConfigurations)
     .where(eq(backupConfigurations.spaceId, spaceId))
     .limit(1)
@@ -107,10 +130,17 @@ export async function getIntegrationsState(
     }
   })
 
+  const policy: BackupPolicy = {
+    frequency: asFrequency(config?.frequency ?? null),
+    storageType: config?.storageType ?? 'r2_managed',
+  }
+
   return {
     connections: connectionSummaries,
     bases,
     tierBasesPerSpace: caps.capabilities.basesPerSpace,
+    availableFrequencies: caps.capabilities.frequencies,
     hasBackupConfig: Boolean(config),
+    policy,
   }
 }

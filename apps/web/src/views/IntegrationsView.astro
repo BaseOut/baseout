@@ -2,6 +2,9 @@
 import Card from '../components/ui/Card.astro';
 import Button from '../components/ui/Button.astro';
 import Badge from '../components/ui/Badge.astro';
+import FrequencyPicker from '../components/backups/FrequencyPicker.astro';
+import StoragePicker from '../components/backups/StoragePicker.astro';
+import RunBackupButton from '../components/backups/RunBackupButton.astro';
 import type { IntegrationsState } from '../stores/connections';
 
 interface Props {
@@ -185,6 +188,24 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
                   </Button>
                 </div>
               </form>
+            </div>
+          )}
+
+          {Astro.locals.account?.space?.id && bases.length > 0 && (
+            <div class="grid gap-4 mt-6">
+              <FrequencyPicker
+                spaceId={Astro.locals.account.space.id}
+                selectedFrequency={state.policy.frequency}
+                availableFrequencies={state.availableFrequencies}
+              />
+              <StoragePicker
+                spaceId={Astro.locals.account.space.id}
+                selectedStorageType={state.policy.storageType}
+              />
+              <RunBackupButton
+                spaceId={Astro.locals.account.space.id}
+                connectionStatus={airtable?.status ?? null}
+              />
             </div>
           )}
         </div>

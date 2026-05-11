@@ -1,19 +1,28 @@
 ---
 import Card from '../components/ui/Card.astro';
 import Button from '../components/ui/Button.astro';
+import BackupHistoryWidget from '../components/backups/BackupHistoryWidget.astro';
 import ConnectAirtableModal from './ConnectAirtableModal.astro';
 import { buildDashboardModel } from '../lib/dashboard';
 import type { AccountContext } from '../lib/account';
 import type { IntegrationsState } from '../stores/connections';
+import type { BackupRunSummary } from '../lib/backup-runs/types';
 
 interface Props {
   account: AccountContext | null;
   integrations: IntegrationsState;
   showSuccessModal: boolean;
   errorReason: string | null;
+  initialRuns?: BackupRunSummary[];
 }
 
-const { account, integrations, showSuccessModal, errorReason } = Astro.props;
+const {
+  account,
+  integrations,
+  showSuccessModal,
+  errorReason,
+  initialRuns = [],
+} = Astro.props;
 const model = buildDashboardModel(account);
 
 const hasAirtableConnection = integrations.connections.some(
@@ -119,6 +128,10 @@ const errorMessage = errorReason
       </h3>
     </Card>
   </div>
+
+  {account?.space?.id && hasAirtableConnection && (
+    <BackupHistoryWidget spaceId={account.space.id} runs={initialRuns} />
+  )}
 
   <!-- Secondary cards (generic scaffolding, out of scope for hydration) -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-8">

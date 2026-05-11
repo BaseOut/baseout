@@ -1,4 +1,5 @@
 import { atom } from 'nanostores'
+import type { Frequency } from '../lib/capabilities/tier-capabilities'
 
 /**
  * Summary of a connection safe for client-side consumption.
@@ -23,13 +24,24 @@ export interface BaseSummary {
   isIncluded: boolean
 }
 
+export interface BackupPolicy {
+  /** Currently saved frequency (defaults to 'monthly' from the schema). */
+  frequency: Frequency
+  /** Currently saved storage destination (defaults to 'r2_managed'). */
+  storageType: string
+}
+
 export interface IntegrationsState {
   connections: ConnectionSummary[]
   bases: BaseSummary[]
   /** Tier cap for "Bases per Space" (Features §4.1). null = unlimited (Enterprise). */
   tierBasesPerSpace: number | null
+  /** Frequencies the active org's tier can pick (Features §6.1). */
+  availableFrequencies: readonly Frequency[]
   /** Whether a backup_configurations row exists for the active Space. */
   hasBackupConfig: boolean
+  /** Current backup policy for the Space. Always present (defaults applied). */
+  policy: BackupPolicy
 }
 
 export const $integrations = atom<IntegrationsState | null>(null)

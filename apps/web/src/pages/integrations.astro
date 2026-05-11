@@ -14,7 +14,14 @@ const spaceId = account?.space?.id ?? null;
 const state: IntegrationsState =
   orgId && spaceId
     ? await getIntegrationsState(db, orgId, spaceId)
-    : { connections: [], bases: [], tierBasesPerSpace: 5, hasBackupConfig: false };
+    : {
+        connections: [],
+        bases: [],
+        tierBasesPerSpace: 5,
+        availableFrequencies: ['monthly'],
+        hasBackupConfig: false,
+        policy: { frequency: 'monthly', storageType: 'r2_managed' },
+      };
 
 const connectedParam = Astro.url.searchParams.get('connected');
 const errorParam = Astro.url.searchParams.get('error');

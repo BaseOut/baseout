@@ -1,0 +1,224 @@
+---
+/**
+ * Dashboard tile — shows the last N backup runs for a Space.
+ *
+ * SSR renders the initial list from the `runs` prop; the client hydrates
+ * those rows into the $backupRuns store via a <script type="application/
+ * json"> tag and starts a 10-second poll on mount. Polling stops on its
+ * own once every run is terminal. Listens for the `backup-run-started`
+ * CustomEvent dispatched by RunBackupButton so a freshly-kicked-off run
+ * appears without waiting for the next poll tick.
+ */
+import {
+  describeCounts,
+  formatDuration,
+  statusBadgeClass,
+  statusLabel,
+} from '../../lib/backups/format'
+import type { BackupRunSummary } from '../../lib/backup-runs/types'
+
+interface Props {
+  spaceId: string
+  runs: BackupRunSummary[]
+}
+
+const { spaceId, runs } = Astro.props as Props
+---
+
+<section
+  class="rounded-lg border border-base-300 p-4 sm:p-6"
+  data-backup-history
+  data-space-id={spaceId}
+  aria-labelledby="backup-history-heading"
+>
+  <header class="flex items-baseline justify-between gap-2">
+    <h3 id="backup-history-heading" class="text-base font-semibold">
+      Backup history
+    </h3>
+    <span class="text-xs text-base-content/60">last {runs.length || 0}</span>
+  </header>
+
+  {runs.length === 0 ? (
+    <p class="mt-3 text-sm text-base-content/70" data-backup-history-empty>
+      No backup runs yet. Click <em>Run backup now</em> to start one.
+    </p>
+  ) : (
+    <ol class="mt-3 grid gap-2" data-backup-history-list>
+      {runs.map((run) => {
+        const duration = formatDuration(run.startedAt, run.completedAt)
+        return (
+          <li
+            class="grid gap-1 rounded-md border border-base-200 p-3"
+            data-run-id={run.id}
+          >
+            <div class="flex items-center gap-2">
+              <span class:list={['badge badge-sm', statusBadgeClass(run.status)]}>
+                {statusLabel(run.status)}
+              </span>
+              <span class="text-xs text-base-content/60">
+                {run.startedAt && (
+                  <time datetime={run.startedAt}>
+                    {new Date(run.startedAt).toLocaleString()}
+                  </time>
+                )}
+                {!run.startedAt && run.createdAt && (
+                  <time datetime={run.createdAt}>
+                    queued {new Date(run.createdAt).toLocaleString()}
+                  </time>
+                )}
+              </span>
+              {duration && (
+                <span class="text-xs text-base-content/60 ml-auto">
+                  {duration}
+                </span>
+              )}
+            </div>
+            <p class="text-sm text-base-content/80">{describeCounts(run)}</p>
+          </li>
+        )
+      })}
+    </ol>
+  )}
+</section>
+
+<script
+  type="application/json"
+  data-backup-history-state
+  is:inline
+  set:html={JSON.stringify(runs).replace(/</g, '\\u003c')}
+/>
+
+<script>
+  import {
+    $backupRuns,
+    setRuns,
+    startPolling,
+    stopPolling,
+  } from '../../stores/backup-runs'
+  import {
+    describeCounts,
+    formatDuration,
+    statusBadgeClass,
+    statusLabel,
+  } from '../../lib/backups/format'
+  import type { BackupRunSummary } from '../../lib/backup-runs/types'
+
+  function escapeHtml(s: string): string {
+    return s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;')
+  }
+
+  function renderRow(run: BackupRunSummary): string {
+    const badge = statusBadgeClass(run.status)
+    const label = escapeHtml(statusLabel(run.status))
+    const counts = escapeHtml(describeCounts(run))
+    const duration = formatDuration(run.startedAt, run.completedAt)
+    const startedAt = run.startedAt ?? run.createdAt
+    const startedPrefix = run.startedAt ? '' : 'queued '
+    const startedDisplay = startedAt
+      ? `<time datetime="${escapeHtml(startedAt)}">${startedPrefix}${escapeHtml(
+          new Date(startedAt).toLocaleString(),
+        )}</time>`
+      : ''
+    const durationHtml = duration
+      ? `<span class="text-xs text-base-content/60 ml-auto">${escapeHtml(duration)}</span>`
+      : ''
+    return `<li class="grid gap-1 rounded-md border border-base-200 p-3" data-run-id="${escapeHtml(
+      run.id,
+    )}">
+      <div class="flex items-center gap-2">
+        <span class="badge badge-sm ${badge}">${label}</span>
+        <span class="text-xs text-base-content/60">${startedDisplay}</span>
+        ${durationHtml}
+      </div>
+      <p class="text-sm text-base-content/80">${counts}</p>
+    </li>`
+  }
+
+  function render(runs: readonly BackupRunSummary[]): void {
+    const root = document.querySelector<HTMLElement>('[data-backup-history]')
+    if (!root) return
+    const counter = root.querySelector<HTMLElement>(
+      'header > span.text-xs',
+    )
+    if (counter) counter.textContent = `last ${runs.length}`
+
+    const empty = root.querySelector<HTMLElement>(
+      '[data-backup-history-empty]',
+    )
+    let list = root.querySelector<HTMLElement>('[data-backup-history-list]')
+
+    if (runs.length === 0) {
+      if (list) list.remove()
+      if (!empty) {
+        const p = document.createElement('p')
+        p.className = 'mt-3 text-sm text-base-content/70'
+        p.dataset.backupHistoryEmpty = ''
+        p.textContent =
+          'No backup runs yet. Click "Run backup now" to start one.'
+        root.appendChild(p)
+      }
+      return
+    }
+
+    if (empty) empty.remove()
+    if (!list) {
+      list = document.createElement('ol')
+      list.className = 'mt-3 grid gap-2'
+      list.dataset.backupHistoryList = ''
+      root.appendChild(list)
+    }
+    list.innerHTML = runs.map(renderRow).join('')
+  }
+
+  // Hydrate from the JSON-script tag.
+  const stateEl = document.querySelector<HTMLScriptElement>(
+    '[data-backup-history-state]',
+  )
+  if (stateEl?.textContent) {
+    try {
+      const parsed = JSON.parse(stateEl.textContent) as BackupRunSummary[]
+      setRuns(parsed)
+    } catch {
+      // SSR hydration corrupt — fall through, polling will repopulate.
+    }
+  }
+
+  // Subscribe and re-render on every store update.
+  $backupRuns.subscribe(render)
+
+  // Begin polling for the active Space. Picks up the spaceId from the
+  // section's data attribute.
+  const root = document.querySelector<HTMLElement>('[data-backup-history]')
+  const spaceId = root?.dataset.spaceId
+  async function fetchFn(sid: string): Promise<BackupRunSummary[]> {
+    const res = await fetch(
+      `/api/spaces/${encodeURIComponent(sid)}/backup-runs?limit=10`,
+      { headers: { accept: 'application/json' } },
+    )
+    if (!res.ok) return $backupRuns.get()
+    const body = (await res.json()) as { runs: BackupRunSummary[] }
+    return body.runs
+  }
+
+  if (spaceId) {
+    startPolling(spaceId, fetchFn)
+
+    // RunBackupButton fires this on a successful POST; refresh the list
+    // immediately so the new run appears without a 10s wait.
+    window.addEventListener('backup-run-started', async () => {
+      const fresh = await fetchFn(spaceId)
+      setRuns(fresh)
+    })
+
+    // Astro view-transitions: stop the poll before the page swaps so we
+    // don't leak the timer onto the next page.
+    document.addEventListener('astro:before-swap', () => stopPolling(), {
+      once: true,
+    })
+  }
+</script>
