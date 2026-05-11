@@ -76,10 +76,16 @@ export function formatDuration(
  * specific message.
  */
 export function describeCounts(run: BackupRunSummary): string {
+  // Failed runs surface their errorMessage regardless of count values — the
+  // engine-side patch writes table_count=0 / record_count=0 alongside the
+  // errorMessage on a thrown failure, so the counts-only branch below would
+  // mask it as "0 tables · 0 records" without this short-circuit.
+  if (run.status === 'failed') {
+    return run.errorMessage ?? 'Failed'
+  }
   if (run.recordCount === null && run.tableCount === null) {
     if (run.status === 'queued') return 'Waiting to start…'
     if (run.status === 'running') return 'In progress…'
-    if (run.status === 'failed') return run.errorMessage ?? 'Failed'
     return ''
   }
   const parts: string[] = []

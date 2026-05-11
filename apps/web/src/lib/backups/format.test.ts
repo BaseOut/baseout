@@ -132,6 +132,23 @@ describe('describeCounts', () => {
     expect(describeCounts(run({ status: 'failed' }))).toBe('Failed')
   })
 
+  it('surfaces errorMessage on failed runs even when counts are 0 (not null)', () => {
+    // The task wrapper's catch branch writes table_count=0 / record_count=0
+    // alongside the errorMessage. Without the failed-short-circuit, the
+    // counts-only branch would mask the error as "0 tables · 0 records".
+    expect(
+      describeCounts(
+        run({
+          status: 'failed',
+          tableCount: 0,
+          recordCount: 0,
+          attachmentCount: 0,
+          errorMessage: 'Airtable returned 401: invalid token',
+        }),
+      ),
+    ).toBe('Airtable returned 401: invalid token')
+  })
+
   it('joins counts when the run has captured data', () => {
     expect(
       describeCounts(

@@ -84,13 +84,32 @@ export const backupBaseTask = task({
       throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
     }
 
-    const result = await runBackupBase(
-      {
-        ...payload,
-        runStartedAt: new Date(payload.runStartedAt),
-      },
-      { engineUrl, internalToken },
-    );
+    // Wrap runBackupBase in try/catch so an unexpected throw (Airtable 401,
+    // network reset, R2 proxy failure, etc.) still surfaces to the master
+    // DB row via postCompletion. Without this, a throw inside the task body
+    // leaves backup_runs.status='running' forever — the DO lock alarm
+    // releases the ConnectionDO lock, but no other observer flips the run
+    // status. Phase 11 reconciliation was the planned safety net; this
+    // catch is the cheaper interim mitigation.
+    let result: BackupBaseResult;
+    try {
+      result = await runBackupBase(
+        {
+          ...payload,
+          runStartedAt: new Date(payload.runStartedAt),
+        },
+        { engineUrl, internalToken },
+      );
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      result = {
+        status: "failed",
+        tablesProcessed: 0,
+        recordsProcessed: 0,
+        attachmentsProcessed: 0,
+        errorMessage,
+      };
+    }
 
     await postCompletion(
       engineUrl,
