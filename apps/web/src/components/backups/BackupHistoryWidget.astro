@@ -278,7 +278,7 @@ function destinationLabel(
         <span class="text-xs text-base-content/60">${startedDisplay}</span>
         ${durationHtml}
       </div>
-      <p class="text-sm text-base-content/80">${counts}</p>`
+      <p class="text-sm text-base-content/80 transition-colors duration-200" role="status" aria-live="polite">${counts}</p>`
   }
 
   function basesListHtml(run: BackupRunSummary): string {
