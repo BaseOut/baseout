@@ -30,7 +30,11 @@ export const backupRuns = baseout.table("backup_runs", {
   spaceId: text("space_id").notNull(),
   connectionId: text("connection_id").notNull(),
   status: text("status").notNull(),
-  // 'queued' | 'running' | 'succeeded' | 'failed' | 'trial_complete'
+  // 'queued' | 'running' | 'succeeded' | 'failed' | 'trial_complete' | 'trial_truncated' | 'cancelling' | 'cancelled'
+  // Canonical writer is apps/web per CLAUDE.md §2; apps/server flips the
+  // status through the engine lifecycle. 'cancelling' is the intermediate
+  // state the cancel route writes before Trigger.dev acks; 'cancelled' is
+  // terminal.
   isTrial: boolean("is_trial").notNull(),
   recordCount: integer("record_count"),
   tableCount: integer("table_count"),

@@ -32,6 +32,7 @@ import {
   statusBadgeClass,
   statusLabel,
 } from '../../lib/backups/format'
+import { isCancellable } from '../../lib/backups/cancel-button'
 import type { BackupRunSummary } from '../../lib/backup-runs/types'
 
 interface Props {
@@ -118,6 +119,16 @@ function destinationLabel(
                   </span>
                   {run.isTrial && (
                     <span class="badge badge-sm badge-warning">Trial</span>
+                  )}
+                  {isCancellable(run.status) && (
+                    <button
+                      type="button"
+                      class="btn btn-xs btn-outline btn-warning ml-auto"
+                      data-cancel-run={run.id}
+                      aria-label={`Cancel backup run ${run.id}`}
+                    >
+                      Cancel
+                    </button>
                   )}
                 </div>
 
@@ -230,6 +241,10 @@ function destinationLabel(
     statusBadgeClass,
     statusLabel,
   } from '../../lib/backups/format'
+  import {
+    cancelButtonHtml,
+    handleCancelClick,
+  } from '../../lib/backups/cancel-button'
   import type { BackupRunSummary } from '../../lib/backup-runs/types'
 
   function escapeHtml(s: string): string {
@@ -318,6 +333,7 @@ function destinationLabel(
           formatTriggeredBy(run.triggeredBy),
         )}</span>
         ${trialBadgeHtml(run)}
+        ${cancelButtonHtml(run)}
       </div>
 
       <div class="stats stats-horizontal shadow-sm bg-base-200">
@@ -477,6 +493,16 @@ function destinationLabel(
       list.appendChild(li)
     }
   }
+
+  // Delegated cancel-button click handler. Listens on document so it
+  // survives ClientRouter re-renders without per-page-load re-binding —
+  // the buttons are re-emitted on every poll tick (in-place upsert), and
+  // the closest() lookup binds intent to the runId stored on the
+  // attribute rather than to the specific DOM node. Logic lives in
+  // src/lib/backups/cancel-button.ts so it's unit-testable.
+  document.addEventListener('click', (event) => {
+    void handleCancelClick(event)
+  })
 
   // Hydration + subscribe + polling + cleanup all live in widget-lifecycle.ts,
   // wired to Astro's ClientRouter lifecycle (astro:page-load / before-swap).

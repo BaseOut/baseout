@@ -40,6 +40,8 @@ describe('statusLabel', () => {
     ['failed', 'Failed'],
     ['trial_complete', 'Trial complete'],
     ['trial_truncated', 'Trial — truncated'],
+    ['cancelling', 'Cancelling'],
+    ['cancelled', 'Cancelled'],
   ])('%s → %s', (s, expected) => {
     expect(statusLabel(s)).toBe(expected)
   })
@@ -57,6 +59,8 @@ describe('statusBadgeClass', () => {
     ['queued', 'badge-ghost'],
     ['trial_complete', 'badge-warning'],
     ['trial_truncated', 'badge-warning'],
+    ['cancelling', 'badge-warning'],
+    ['cancelled', 'badge-neutral'],
   ])('%s → %s', (s, expected) => {
     expect(statusBadgeClass(s)).toBe(expected)
   })

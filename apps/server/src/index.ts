@@ -18,6 +18,7 @@ import { uploadCsvHandler } from "./pages/api/internal/runs/upload-csv";
 import { runsStartHandler } from "./pages/api/internal/runs/start";
 import { runsCompleteHandler } from "./pages/api/internal/runs/complete";
 import { runsProgressHandler } from "./pages/api/internal/runs/progress";
+import { runsCancelHandler } from "./pages/api/internal/runs/cancel";
 import { runOAuthRefreshTick } from "./lib/oauth-refresh";
 
 const CONNECTIONS_WHOAMI_RE =
@@ -29,6 +30,7 @@ const RUNS_UPLOAD_CSV_RE =
 const RUNS_START_RE = /^\/api\/internal\/runs\/([^/]+)\/start$/;
 const RUNS_COMPLETE_RE = /^\/api\/internal\/runs\/([^/]+)\/complete$/;
 const RUNS_PROGRESS_RE = /^\/api\/internal\/runs\/([^/]+)\/progress$/;
+const RUNS_CANCEL_RE = /^\/api\/internal\/runs\/([^/]+)\/cancel$/;
 
 // Re-export Durable Object classes so workerd can resolve their bindings.
 // Required even when Astro adapter wraps the entry — see CLAUDE.md §5.1.
@@ -139,6 +141,19 @@ export default {
           ctx,
           locals,
           progress[1]!,
+        );
+      }
+
+      // Run-cancel: same method-check-inside-handler pattern. Handles 405
+      // for non-POST + 400 for non-UUID runId before touching the DB.
+      const cancel = RUNS_CANCEL_RE.exec(url.pathname);
+      if (cancel) {
+        return await runsCancelHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          cancel[1]!,
         );
       }
 

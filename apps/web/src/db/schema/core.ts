@@ -328,7 +328,9 @@ export const backupRuns = baseout.table('backup_runs', {
     .notNull()
     .references(() => connections.id, { onDelete: 'restrict' }),
   status: text('status').notNull().default('queued'),
-  // 'queued' | 'running' | 'succeeded' | 'failed' | 'trial_complete'
+  // 'queued' | 'running' | 'succeeded' | 'failed' | 'trial_complete' | 'trial_truncated' | 'cancelling' | 'cancelled'
+  // (Application-level constraint — column is plain text, no enum to migrate.
+  //  'cancelling' is an intermediate state; 'cancelled' is terminal.)
   triggeredBy: text('triggered_by').notNull(),
   // free-text; engine-defined (e.g. 'manual', 'scheduled', 'webhook', 'trial')
   isTrial: boolean('is_trial').notNull().default(false),

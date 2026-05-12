@@ -98,6 +98,37 @@ export interface EngineStartRunError {
 
 export type EngineStartRunResult = EngineStartRunSuccess | EngineStartRunError;
 
+export interface EngineCancelRunSuccess {
+  ok: true;
+  /**
+   * Trigger.dev run IDs the engine asked to cancel. Empty array when the
+   * run was still 'queued' (no fan-out yet). Order matches the run row's
+   * trigger_run_ids array.
+   */
+  cancelledTriggerRunIds: string[];
+}
+
+/**
+ * Non-2xx outcomes from POST /api/internal/runs/:runId/cancel. Mirrors
+ * `ProcessRunCancelResult["error"]` in @baseout/server (see
+ * apps/server/src/lib/runs/cancel.ts) plus the middleware's `unauthorized`
+ * and the client-only `engine_unreachable` / `engine_error`.
+ */
+export interface EngineCancelRunError {
+  ok: false;
+  code:
+    | "unauthorized"
+    | "run_not_found"
+    | "run_already_terminal"
+    | "engine_unreachable"
+    | "engine_error";
+  status: number;
+}
+
+export type EngineCancelRunResult =
+  | EngineCancelRunSuccess
+  | EngineCancelRunError;
+
 export interface BackupEngineOptions {
   /**
    * Service binding to the @baseout/server Worker. Provided by Cloudflare
@@ -111,6 +142,7 @@ export interface BackupEngineOptions {
 export interface BackupEngineClient {
   whoami(connectionId: string): Promise<EngineWhoamiResult>;
   startRun(runId: string): Promise<EngineStartRunResult>;
+  cancelRun(runId: string): Promise<EngineCancelRunResult>;
 }
 
 const KNOWN_ERROR_CODES: ReadonlySet<EngineWhoamiError["code"]> = new Set([
@@ -134,6 +166,13 @@ const KNOWN_START_RUN_ERROR_CODES: ReadonlySet<EngineStartRunError["code"]> =
     "config_not_found",
     "unsupported_storage_type",
     "no_bases_selected",
+  ]);
+
+const KNOWN_CANCEL_RUN_ERROR_CODES: ReadonlySet<EngineCancelRunError["code"]> =
+  new Set([
+    "unauthorized",
+    "run_not_found",
+    "run_already_terminal",
   ]);
 
 export function createBackupEngine(
@@ -219,6 +258,49 @@ export function createBackupEngine(
         rawCode &&
         KNOWN_START_RUN_ERROR_CODES.has(rawCode as EngineStartRunError["code"])
           ? (rawCode as EngineStartRunError["code"])
+          : "engine_error";
+      return { ok: false, code, status: res.status };
+    },
+
+    async cancelRun(runId) {
+      const path = `/api/internal/runs/${encodeURIComponent(runId)}/cancel`;
+      let res: Response;
+      try {
+        res = await options.binding.fetch(`https://engine${path}`, {
+          method: "POST",
+          headers: {
+            "x-internal-token": options.internalToken,
+            accept: "application/json",
+          },
+        });
+      } catch {
+        return { ok: false, code: "engine_unreachable", status: 0 };
+      }
+
+      if (res.ok) {
+        const body = (await res.json()) as {
+          ok: true;
+          cancelledTriggerRunIds: string[];
+        };
+        return {
+          ok: true,
+          cancelledTriggerRunIds: body.cancelledTriggerRunIds ?? [],
+        };
+      }
+
+      let body: Record<string, unknown> = {};
+      try {
+        body = (await res.json()) as Record<string, unknown>;
+      } catch {
+        // engine returned non-JSON (rare); fall through with empty body
+      }
+      const rawCode = typeof body.error === "string" ? body.error : undefined;
+      const code: EngineCancelRunError["code"] =
+        rawCode &&
+        KNOWN_CANCEL_RUN_ERROR_CODES.has(
+          rawCode as EngineCancelRunError["code"],
+        )
+          ? (rawCode as EngineCancelRunError["code"])
           : "engine_error";
       return { ok: false, code, status: res.status };
     },

@@ -28,6 +28,10 @@ const TERMINAL_STATUSES = new Set([
   'failed',
   'trial_complete',
   'trial_truncated',
+  'cancelled',
+  // 'cancelling' is intentionally NOT terminal — polling must continue to
+  // observe the engine's flip from 'cancelling' → 'cancelled' after
+  // Trigger.dev's runs.cancel acks.
 ])
 
 export function isTerminalStatus(status: string): boolean {

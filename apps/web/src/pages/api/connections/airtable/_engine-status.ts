@@ -11,11 +11,13 @@
 import type {
   EngineWhoamiError,
   EngineStartRunError,
+  EngineCancelRunError,
 } from '../../../../lib/backup-engine'
 
 export type EngineErrorCode =
   | EngineWhoamiError['code']
   | EngineStartRunError['code']
+  | EngineCancelRunError['code']
 
 export function mapEngineCodeToStatus(code: EngineErrorCode): number {
   switch (code) {
@@ -67,5 +69,10 @@ export function mapEngineCodeToStatus(code: EngineErrorCode): number {
     // Phase 9 — startRun: wizard step 2 wasn't completed.
     case 'no_bases_selected':
       return 422
+    // Phase 8.cancel — cancelRun: run is already terminal (or another
+    // cancel won the CAS). UI polls — chip will reflect the actual
+    // terminal state on the next tick.
+    case 'run_already_terminal':
+      return 409
   }
 }

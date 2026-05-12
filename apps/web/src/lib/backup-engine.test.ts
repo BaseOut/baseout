@@ -305,3 +305,105 @@ describe('createBackupEngine.startRun', () => {
     )
   })
 })
+
+describe('createBackupEngine.cancelRun', () => {
+  it('calls binding.fetch with method POST and the canonical /api/internal/runs/:id/cancel path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, cancelledTriggerRunIds: ['run_a'] }, 200),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await engine.cancelRun(RUN_ID)
+    expect(binding.fetch).toHaveBeenCalledOnce()
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(`/api/internal/runs/${RUN_ID}/cancel`)
+    expect(url.origin).toBe(PLACEHOLDER_BASE)
+    const init = captured![1] as RequestInit
+    expect(init.method).toBe('POST')
+    const headers = init.headers as Record<string, string>
+    expect(headers['x-internal-token']).toBe(TOKEN)
+    expect(headers.accept).toBe('application/json')
+  })
+
+  it('returns ok:true with cancelledTriggerRunIds on 200', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse(
+        { ok: true, cancelledTriggerRunIds: ['run_a', 'run_b'] },
+        200,
+      ),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.cancelRun(RUN_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.cancelledTriggerRunIds).toEqual(['run_a', 'run_b'])
+    }
+  })
+
+  it('returns ok:true with empty cancelledTriggerRunIds when the queued run had none', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, cancelledTriggerRunIds: [] }, 200),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.cancelRun(RUN_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.cancelledTriggerRunIds).toEqual([])
+    }
+  })
+
+  it.each([
+    ['run_not_found', 404],
+    ['run_already_terminal', 409],
+    ['unauthorized', 401],
+  ] as const)('maps %s with status %i', async (code, status) => {
+    const binding = fetcherStub(() => jsonResponse({ error: code }, status))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.cancelRun(RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe(code)
+      expect(result.status).toBe(status)
+    }
+  })
+
+  it('maps unknown error codes to engine_error', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'something_new' }, 418),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.cancelRun(RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_error')
+      expect(result.status).toBe(418)
+    }
+  })
+
+  it('maps fetch failure (engine unreachable) to engine_unreachable status:0', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.cancelRun(RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_unreachable')
+      expect(result.status).toBe(0)
+    }
+  })
+
+  it('passes the run_id through encodeURIComponent on the path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, cancelledTriggerRunIds: [] }, 200),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const dirty = '99999999-aaaa-bbbb-cccc-dddddddddddd/escape#x'
+    await engine.cancelRun(dirty)
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(
+      `/api/internal/runs/${encodeURIComponent(dirty)}/cancel`,
+    )
+  })
+})
