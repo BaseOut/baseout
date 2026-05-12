@@ -1,9 +1,96 @@
 ---
+import { and, desc, eq } from 'drizzle-orm';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import Card from '../components/ui/Card.astro';
+import BackupHistoryWidget from '../components/backups/BackupHistoryWidget.astro';
+import RunBackupButton from '../components/backups/RunBackupButton.astro';
 import { getBreadcrumbs } from '../lib/config';
+import { getIntegrationsState } from '../lib/integrations';
+import { listRecentRuns } from '../lib/backup-runs/list';
+import type { BackupRunRowLike, IncludedBase } from '../lib/backup-runs/list';
+import type { BackupRunSummary } from '../lib/backup-runs/types';
+import {
+  atBases,
+  backupConfigurationBases,
+  backupConfigurations,
+  backupRuns,
+  connections,
+} from '../db/schema';
 
 const breadcrumbs = getBreadcrumbs('/backups');
+const { account, db } = Astro.locals;
+
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+
+const integrations =
+  orgId && spaceId ? await getIntegrationsState(db, orgId, spaceId) : null;
+const airtable =
+  integrations?.connections.find((c) => c.platformSlug === 'airtable') ?? null;
+const hasAirtableConnection = airtable?.status === 'active';
+
+const initialRuns: BackupRunSummary[] =
+  spaceId && db && hasAirtableConnection
+    ? await listRecentRuns(spaceId, 25, {
+        fetchRuns: async (sid, lim) => {
+          const rows = await db
+            .select({
+              id: backupRuns.id,
+              status: backupRuns.status,
+              isTrial: backupRuns.isTrial,
+              triggeredBy: backupRuns.triggeredBy,
+              recordCount: backupRuns.recordCount,
+              tableCount: backupRuns.tableCount,
+              attachmentCount: backupRuns.attachmentCount,
+              startedAt: backupRuns.startedAt,
+              completedAt: backupRuns.completedAt,
+              errorMessage: backupRuns.errorMessage,
+              triggerRunIds: backupRuns.triggerRunIds,
+              createdAt: backupRuns.createdAt,
+              connectionId: backupRuns.connectionId,
+              connectionDisplayName: connections.displayName,
+              configStorageType: backupConfigurations.storageType,
+              configMode: backupConfigurations.mode,
+            })
+            .from(backupRuns)
+            .leftJoin(connections, eq(connections.id, backupRuns.connectionId))
+            .leftJoin(
+              backupConfigurations,
+              eq(backupConfigurations.spaceId, backupRuns.spaceId),
+            )
+            .where(eq(backupRuns.spaceId, sid))
+            .orderBy(desc(backupRuns.createdAt))
+            .limit(lim);
+          return rows as BackupRunRowLike[];
+        },
+        fetchIncludedBases: async (sid) => {
+          const rows = await db
+            .select({ id: atBases.id, name: atBases.name })
+            .from(backupConfigurationBases)
+            .innerJoin(
+              backupConfigurations,
+              eq(
+                backupConfigurations.id,
+                backupConfigurationBases.backupConfigurationId,
+              ),
+            )
+            .innerJoin(
+              atBases,
+              eq(atBases.id, backupConfigurationBases.atBaseId),
+            )
+            .where(
+              and(
+                eq(backupConfigurations.spaceId, sid),
+                eq(backupConfigurationBases.isIncluded, true),
+              ),
+            )
+            .orderBy(atBases.name);
+          return rows as IncludedBase[];
+        },
+      })
+    : [];
+
+const spaceName = account?.space?.name ?? null;
 ---
 
 <SidebarLayout pageTitle="Backups" breadcrumbs={breadcrumbs}>
@@ -11,17 +98,28 @@ const breadcrumbs = getBreadcrumbs('/backups');
     <header>
       <h1 class="text-2xl font-bold tracking-tight">Backups</h1>
       <p class="text-sm text-base-content/60 mt-1">
-        Backup runs are temporarily unavailable while the backup engine is rebuilt as apps/server.
+        {spaceName
+          ? `Backup runs for ${spaceName}.`
+          : 'Backup runs for your Space.'}
       </p>
     </header>
 
-    <Card variant="outlined">
-      <p class="text-sm text-base-content/60">
-        Use the
-        <a href="/integrations" class="link link-primary mx-1">Integrations</a>
-        page to manage which bases are included in your Space's backup configuration. Backup
-        runs will resume once apps/server is online.
-      </p>
-    </Card>
+    {!spaceId || !hasAirtableConnection ? (
+      <Card variant="outlined">
+        <p class="text-sm">
+          Connect Airtable on the
+          <a href="/integrations" class="link link-primary mx-1">Integrations</a>
+          page to start backing up your bases.
+        </p>
+      </Card>
+    ) : (
+      <>
+        <RunBackupButton
+          spaceId={spaceId}
+          connectionStatus={airtable?.status ?? null}
+        />
+        <BackupHistoryWidget spaceId={spaceId} runs={initialRuns} />
+      </>
+    )}
   </div>
 </SidebarLayout>
