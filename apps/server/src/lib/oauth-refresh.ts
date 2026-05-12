@@ -56,7 +56,8 @@ export interface OAuthRefreshLogEvent {
     | "invalid"
     | "claim_skipped"
     | "decrypt_failed"
-    | "cas_lost";
+    | "cas_lost"
+    | "unexpected_error";
   latencyMs: number;
   reason?: string;
 }
@@ -84,6 +85,7 @@ function emptyOutcomes(): OAuthRefreshTickResult["outcomes"] {
     claim_skipped: 0,
     decrypt_failed: 0,
     cas_lost: 0,
+    unexpected_error: 0,
   };
 }
 
@@ -114,16 +116,38 @@ export async function runOAuthRefreshTick(
     return { considered: 0, claimed: 0, outcomes };
   }
 
-  // Selection — see openspec design.md §Selection Query. Lookahead is 20m,
-  // cadence 15m, so a single missed tick still leaves one retry window.
+  // Selection — see openspec design.md §Selection Query and the Phase B2
+  // plan (~/.claude/plans/drifting-sprouting-wirth.md). Two arms:
+  //
+  //   1. status='active' AND (expiry is null OR within 20m lookahead).
+  //      The null-or-near predicate recovers connections where
+  //      apps/web's persist wrote `token_expires_at = null` because
+  //      Airtable's token response was missing `expires_in`. SQL
+  //      `NULL < timestamp` is NULL (not TRUE), so the Phase B1 form
+  //      silently skipped these rows.
+  //
+  //   2. status='refreshing' AND modified_at older than 5 minutes.
+  //      Reaps rows stranded by an earlier tick's uncaught throw between
+  //      CAS-claim and applyOutcome. The 5-minute floor avoids racing a
+  //      live tick whose refresh RPC is still in flight (the SDK
+  //      handler's 60s timeout + a generous safety margin).
+  //
+  // NULLS FIRST orders the most-urgent (null-expiry) rows first so a
+  // claimed LIMIT bucket prioritizes them when the candidate set is
+  // large.
   const candidates = (await deps.db.execute(sql`
     SELECT id, refresh_token_enc, token_expires_at, scopes, platform_config
     FROM baseout.connections
     WHERE platform_id = ${airtablePlatformId}
-      AND status = 'active'
       AND refresh_token_enc IS NOT NULL
-      AND token_expires_at < now() + interval '${sql.raw(LOOKAHEAD_INTERVAL_SQL)}'
-    ORDER BY token_expires_at ASC
+      AND (
+        (status = 'active'
+          AND (token_expires_at IS NULL
+               OR token_expires_at < now() + interval '${sql.raw(LOOKAHEAD_INTERVAL_SQL)}'))
+        OR (status = 'refreshing'
+          AND modified_at < now() - interval '5 minutes')
+      )
+    ORDER BY token_expires_at ASC NULLS FIRST
     LIMIT ${SELECT_LIMIT}
   `)) as unknown as SelectedRow[];
 
@@ -132,16 +156,21 @@ export async function runOAuthRefreshTick(
   for (const row of candidates) {
     const startedAt = nowMs();
 
-    // CAS claim — `WHERE status = 'active'` so a concurrent cron tick that
-    // already flipped this row to 'refreshing' wins, and a concurrent
-    // apps/web OAuth callback that just wrote fresh tokens (status='active')
-    // is not claimed (the callback wrote `token_expires_at` further out,
-    // but even if it didn't, claiming it here would be benign — it would
-    // just refresh again). RETURNING confirms the claim succeeded.
+    // CAS claim — accepts status IN ('active', 'refreshing') so the
+    // stuck-reap arm of the selection can re-take ownership of a row
+    // stranded by an earlier tick's uncaught throw. Phase B1 required
+    // status='active' which silently excluded stuck rows from recovery.
+    //
+    // Concurrency note: two ticks claiming the same stuck row will both
+    // win this CAS and both will call refresh. applyOutcome's
+    // `WHERE status='refreshing'` then admits whichever UPDATE lands
+    // last. The 5-minute stale-threshold in the selection arm makes this
+    // race rare in practice; the trade-off is accepted in exchange for
+    // ensuring stuck rows are always reaped.
     const claim = (await deps.db.execute(sql`
       UPDATE baseout.connections
       SET status = 'refreshing', modified_at = now()
-      WHERE id = ${row.id} AND status = 'active'
+      WHERE id = ${row.id} AND status IN ('active', 'refreshing')
       RETURNING id
     `)) as unknown as Array<{ id: string }>;
     if (claim.length === 0) {
@@ -201,21 +230,45 @@ export async function runOAuthRefreshTick(
       continue;
     }
 
-    const outcome: RefreshOutcome = await refresh({
-      refreshToken: plaintextRefresh,
-      clientId: deps.clientId,
-      clientSecret: deps.clientSecret,
-    });
+    // Wrap refresh + applyOutcome in try/catch (Phase B2). An uncaught
+    // throw between CAS-claim and applyOutcome would leave the row
+    // stranded at status='refreshing'. Phase B1's selection only matched
+    // status='active', so stranded rows were never reaped — producing
+    // the every-couple-of-hours disconnect symptom. Now: catch any
+    // throw, revert to 'active' so the next tick retries, record an
+    // unexpected_error outcome. Do NOT re-throw; the per-row loop must
+    // keep going (one bad row doesn't poison the whole tick).
+    try {
+      const outcome: RefreshOutcome = await refresh({
+        refreshToken: plaintextRefresh,
+        clientId: deps.clientId,
+        clientSecret: deps.clientSecret,
+      });
 
-    await applyOutcome(deps.db, row.id, outcome, deps.encryptionKey, outcomes, (kind, reason) =>
+      await applyOutcome(deps.db, row.id, outcome, deps.encryptionKey, outcomes, (kind, reason) =>
+        log({
+          event: "oauth_refresh",
+          connectionId: row.id,
+          outcome: kind,
+          latencyMs: nowMs() - startedAt,
+          reason,
+        }),
+      );
+    } catch (err) {
+      await deps.db.execute(sql`
+        UPDATE baseout.connections
+        SET status = 'active', modified_at = now()
+        WHERE id = ${row.id} AND status = 'refreshing'
+      `);
+      outcomes.unexpected_error += 1;
       log({
         event: "oauth_refresh",
         connectionId: row.id,
-        outcome: kind,
+        outcome: "unexpected_error",
         latencyMs: nowMs() - startedAt,
-        reason,
-      }),
-    );
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   return { considered: candidates.length, claimed, outcomes };

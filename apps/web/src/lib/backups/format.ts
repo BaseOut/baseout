@@ -143,9 +143,21 @@ export function describeCounts(run: BackupRunSummary): string {
   if (run.status === 'failed') {
     return run.errorMessage ?? 'Failed'
   }
+  // Phase 10d: while a run is in flight AND the engine has started bumping
+  // record_count via /api/internal/runs/:id/progress, show a live "Backing
+  // up… N records" counter so users see motion before /complete writes the
+  // final totals. The "no counts yet" branch keeps the legacy "In progress…"
+  // copy for the brief window between status='running' and the first
+  // /progress event.
+  if (run.status === 'running') {
+    if (run.recordCount === null && run.tableCount === null) {
+      return 'In progress…'
+    }
+    const n = run.recordCount ?? 0
+    return `Backing up… ${n} record${n === 1 ? '' : 's'}`
+  }
   if (run.recordCount === null && run.tableCount === null) {
     if (run.status === 'queued') return 'Waiting to start…'
-    if (run.status === 'running') return 'In progress…'
     return ''
   }
   const parts: string[] = []

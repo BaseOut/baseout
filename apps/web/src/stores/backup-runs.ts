@@ -38,7 +38,11 @@ function allTerminal(runs: BackupRunSummary[]): boolean {
   return runs.every((r) => isTerminalStatus(r.status))
 }
 
-const POLL_INTERVAL_MS = 10_000
+// Phase 10d: dropped from 10s to 2s so the live "Backing up… N records"
+// counter in BackupHistoryWidget feels responsive. The interval only ticks
+// while any run is non-terminal; once every run is `succeeded` / `failed`
+// / `trial_*`, the timer stops on its own (see allTerminal check in tick).
+const POLL_INTERVAL_MS = 2_000
 
 let activeTimeout: ReturnType<typeof setTimeout> | null = null
 let activeToken = 0

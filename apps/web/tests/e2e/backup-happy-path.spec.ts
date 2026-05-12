@@ -173,7 +173,7 @@ test('seeded user clicks Run backup now and sees a fresh run row in the history 
   // 6. The history widget renders below the platform-cards grid (added in
   //    commit a83b24d). Wait for at least one row with a non-terminal badge
   //    to appear — the widget hydrates from SSR with no rows, then either
-  //    the page reloads to pick up the new one, or the 10s poll picks it up,
+  //    the page reloads to pick up the new one, or the 2s poll picks it up,
   //    or the backup-run-started event triggers an immediate refresh.
   const widget = page.locator('[data-backup-history]')
   await expect(widget).toBeVisible({ timeout: 10_000 })

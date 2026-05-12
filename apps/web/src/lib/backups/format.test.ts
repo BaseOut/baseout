@@ -124,6 +124,37 @@ describe('describeCounts', () => {
     expect(describeCounts(run({ status: 'running' }))).toBe('In progress…')
   })
 
+  it('renders "Backing up… N records" for running rows with a live counter (Phase 10d)', () => {
+    // The engine's /api/internal/runs/:id/progress route bumps record_count
+    // as table-page uploads land. While status='running', we surface that
+    // counter as the row body so users see motion before /complete writes
+    // the final totals.
+    expect(
+      describeCounts(
+        run({ status: 'running', recordCount: 142, tableCount: 0 }),
+      ),
+    ).toBe('Backing up… 142 records')
+  })
+
+  it('renders "Backing up… 1 record" (singular) at recordCount=1', () => {
+    expect(
+      describeCounts(
+        run({ status: 'running', recordCount: 1, tableCount: 0 }),
+      ),
+    ).toBe('Backing up… 1 record')
+  })
+
+  it('renders "Backing up… 0 records" when only tableCount has been bumped yet', () => {
+    // Initial state right after the engine writes its first /progress with
+    // tableCompleted=true but record-count is still 0. The counter still
+    // renders rather than falling back to "In progress…".
+    expect(
+      describeCounts(
+        run({ status: 'running', recordCount: 0, tableCount: 1 }),
+      ),
+    ).toBe('Backing up… 0 records')
+  })
+
   it('renders "Waiting to start…" for queued rows', () => {
     expect(describeCounts(run({ status: 'queued' }))).toBe('Waiting to start…')
   })

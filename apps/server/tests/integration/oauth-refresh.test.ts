@@ -33,6 +33,26 @@ interface ScriptedResponse {
   rows: unknown[];
 }
 
+function summarizeSql(q: unknown): string {
+  // Drizzle's sql tagged-template object has a `queryChunks` array of
+  // StringChunk (literal SQL) and Param (interpolated value) entries.
+  // Walk both and join into a single string so tests can assert on SQL
+  // shape (Phase B2 contract tests). Falls back to String(q) if the
+  // shape doesn't match expectations.
+  const chunks = (q as { queryChunks?: unknown[] }).queryChunks;
+  if (!Array.isArray(chunks)) return String(q);
+  return chunks
+    .map((c) => {
+      if (c == null) return "";
+      if (typeof c === "string") return c;
+      if (typeof c === "object" && "value" in (c as object)) {
+        return String((c as { value: unknown }).value);
+      }
+      return "";
+    })
+    .join(" ");
+}
+
 function makeFakeDb(scripted: ScriptedResponse[]): {
   db: AppDb;
   calls: string[];
@@ -40,11 +60,11 @@ function makeFakeDb(scripted: ScriptedResponse[]): {
   const calls: string[] = [];
   let cursor = 0;
   const execute = vi.fn(async (q: unknown) => {
-    // Drizzle's sql tagged-template returns a SQL object; the call signature
-    // is db.execute(sql). For inspection we don't need to parse it — we
-    // just need to advance through the scripted responses in order. Capture
-    // a string fingerprint for assertion convenience.
-    calls.push(String((q as { queryChunks?: unknown }).queryChunks ?? q));
+    // Capture a readable SQL fingerprint so contract tests can assert on
+    // predicate shapes (Phase B2). The scripted-rows mechanism otherwise
+    // doesn't enforce SQL semantics — that's covered by the real-DB
+    // integration test (still deferred per the file header).
+    calls.push(summarizeSql(q));
     const next = scripted[cursor];
     cursor += 1;
     if (!next) {
@@ -94,6 +114,7 @@ describe("runOAuthRefreshTick", () => {
         claim_skipped: 0,
         decrypt_failed: 0,
         cas_lost: 0,
+        unexpected_error: 0,
       },
     });
     expect(logs[0]?.reason).toBe("airtable_platform_not_seeded");
@@ -409,5 +430,206 @@ describe("runOAuthRefreshTick", () => {
     expect(result.claimed).toBe(2);
     expect(result.outcomes.success).toBe(1);
     expect(result.outcomes.pending_reauth).toBe(1);
+  });
+
+  // Phase B2 — defensive coverage for the disconnect symptom.
+  // See ~/.claude/plans/drifting-sprouting-wirth.md for context.
+
+  it("picks up candidates with token_expires_at = null (Phase B2)", async () => {
+    // The Phase B1 WHERE clause silently excluded rows where
+    // token_expires_at IS NULL because SQL NULL < timestamp is NULL, not
+    // TRUE. apps/web's persist.ts writes null when Airtable's response
+    // omits expires_in, producing the symptom of the connection never
+    // refreshing. B2 widens the predicate to match null expiries.
+    const seed = await buildSeed("refresh-token-null-expiry");
+    const { db } = makeFakeDb([
+      { rows: [{ id: AIRTABLE_PLATFORM_ID }] },
+      {
+        rows: [
+          {
+            id: "conn-null-expiry",
+            refresh_token_enc: seed,
+            token_expires_at: null,
+            scopes: null,
+            platform_config: null,
+          },
+        ],
+      },
+      { rows: [{ id: "conn-null-expiry" }] }, // CAS claim
+      { rows: [{ id: "conn-null-expiry" }] }, // success-path UPDATE
+    ]);
+    const refresh = vi.fn(
+      async (): Promise<RefreshOutcome> => ({
+        kind: "success",
+        accessToken: "new-access",
+        refreshToken: "new-refresh",
+        expiresAtMs: FROZEN_NOW + 3600 * 1000,
+        scope: "data.records:read",
+      }),
+    );
+
+    const result = await runOAuthRefreshTick(defaultDeps({ db, refresh }));
+
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(result.considered).toBe(1);
+    expect(result.claimed).toBe(1);
+    expect(result.outcomes.success).toBe(1);
+  });
+
+  it("candidate SELECT mentions IS NULL and 'refreshing' (Phase B2 contract)", async () => {
+    // The fake AppDb only returns scripted rows; SQL semantics aren't
+    // executed. So we contract-test the SELECT query string instead,
+    // pinning the predicates that recover null-expiry rows and reap
+    // stuck 'refreshing' rows. Real Postgres semantics for these
+    // predicates are well-defined; the orchestrator just needs to ASK
+    // for the right rows.
+    const { db, calls } = makeFakeDb([
+      { rows: [{ id: AIRTABLE_PLATFORM_ID }] },
+      { rows: [] },
+    ]);
+
+    await runOAuthRefreshTick(defaultDeps({ db }));
+
+    const selectQuery = calls[1] ?? "";
+    expect(selectQuery).toContain("IS NULL");
+    expect(selectQuery).toContain("refreshing");
+  });
+
+  it("processes rows stuck at status='refreshing' (CAS-claim accepts both states, Phase B2)", async () => {
+    // A prior tick may have hit an uncaught throw between CAS-claim and
+    // applyOutcome, leaving the row pinned at status='refreshing'. B1's
+    // CAS-claim required status='active', so stuck rows were never reaped.
+    // B2 widens the CAS-claim to status IN ('active', 'refreshing') so the
+    // SELECT's stuck-reap arm can re-attempt them.
+    const seed = await buildSeed("refresh-token-stuck");
+    const { db, calls } = makeFakeDb([
+      { rows: [{ id: AIRTABLE_PLATFORM_ID }] },
+      {
+        rows: [
+          {
+            id: "conn-stuck",
+            refresh_token_enc: seed,
+            token_expires_at: new Date(FROZEN_NOW - 10 * 60_000),
+            scopes: null,
+            platform_config: null,
+          },
+        ],
+      },
+      { rows: [{ id: "conn-stuck" }] },
+      { rows: [{ id: "conn-stuck" }] },
+    ]);
+    const refresh = vi.fn(
+      async (): Promise<RefreshOutcome> => ({
+        kind: "success",
+        accessToken: "new-stuck",
+        refreshToken: "new-stuck-refresh",
+        expiresAtMs: FROZEN_NOW + 3600 * 1000,
+        scope: null,
+      }),
+    );
+
+    const result = await runOAuthRefreshTick(defaultDeps({ db, refresh }));
+
+    expect(result.considered).toBe(1);
+    expect(result.outcomes.success).toBe(1);
+    const claimQuery = calls[2] ?? "";
+    expect(claimQuery).toContain("active");
+    expect(claimQuery).toContain("refreshing");
+  });
+
+  it("reverts row to 'active' when refresh throws unexpectedly (Phase B2)", async () => {
+    // Without a try/catch around the per-row body, a synthetic throw
+    // would leave the CAS-claim's status='refreshing' write in place and
+    // strand the row forever. B2 wraps the body so any throw triggers a
+    // revert UPDATE + unexpected_error outcome.
+    const seed = await buildSeed("refresh-token-throws");
+    const { db } = makeFakeDb([
+      { rows: [{ id: AIRTABLE_PLATFORM_ID }] },
+      {
+        rows: [
+          {
+            id: "conn-throws",
+            refresh_token_enc: seed,
+            token_expires_at: new Date(FROZEN_NOW + 5 * 60_000),
+            scopes: null,
+            platform_config: null,
+          },
+        ],
+      },
+      { rows: [{ id: "conn-throws" }] }, // CAS claim
+      { rows: [] }, // revert UPDATE (status='active')
+    ]);
+
+    const refresh = vi.fn(async () => {
+      throw new Error("synthetic upstream parse failure");
+    });
+
+    const logs: OAuthRefreshLogEvent[] = [];
+    const result = await runOAuthRefreshTick(
+      defaultDeps({
+        db,
+        refresh: refresh as never,
+        log: (e) => logs.push(e),
+      }),
+    );
+
+    expect(refresh).toHaveBeenCalledOnce();
+    expect(result.outcomes.unexpected_error).toBe(1);
+    expect(result.outcomes.success).toBe(0);
+    expect(
+      logs.find((e) => e.outcome === "unexpected_error")?.reason,
+    ).toContain("synthetic upstream parse failure");
+  });
+
+  it("continues processing remaining rows when one throws (Phase B2)", async () => {
+    // A thrown row must not abort the per-row loop — the catch is
+    // per-iteration, not per-tick. Belt-and-braces against partial-tick
+    // outages.
+    const seedA = await buildSeed("refresh-A");
+    const seedB = await buildSeed("refresh-B");
+    const { db } = makeFakeDb([
+      { rows: [{ id: AIRTABLE_PLATFORM_ID }] },
+      {
+        rows: [
+          {
+            id: "conn-throws",
+            refresh_token_enc: seedA,
+            token_expires_at: new Date(FROZEN_NOW + 5 * 60_000),
+            scopes: null,
+            platform_config: null,
+          },
+          {
+            id: "conn-ok",
+            refresh_token_enc: seedB,
+            token_expires_at: new Date(FROZEN_NOW + 5 * 60_000),
+            scopes: null,
+            platform_config: null,
+          },
+        ],
+      },
+      { rows: [{ id: "conn-throws" }] }, // claim A
+      { rows: [] }, // revert UPDATE for A
+      { rows: [{ id: "conn-ok" }] }, // claim B
+      { rows: [{ id: "conn-ok" }] }, // success UPDATE for B
+    ]);
+
+    let call = 0;
+    const refresh = vi.fn(async (): Promise<RefreshOutcome> => {
+      call += 1;
+      if (call === 1) throw new Error("first row blew up");
+      return {
+        kind: "success",
+        accessToken: "B-new",
+        refreshToken: "B-new-refresh",
+        expiresAtMs: FROZEN_NOW + 3600 * 1000,
+        scope: null,
+      };
+    });
+
+    const result = await runOAuthRefreshTick(defaultDeps({ db, refresh }));
+
+    expect(result.considered).toBe(2);
+    expect(result.outcomes.unexpected_error).toBe(1);
+    expect(result.outcomes.success).toBe(1);
   });
 });

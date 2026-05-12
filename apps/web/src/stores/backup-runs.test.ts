@@ -78,20 +78,20 @@ describe('polling', () => {
     startPolling(SPACE_ID, fetchFn)
     // No timers fired yet — no fetches.
     expect(fetchFn).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(9_999)
+    await vi.advanceTimersByTimeAsync(1_999)
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
-  it('calls fetchFn at t+10s and then every 10s while non-terminal', async () => {
+  it('calls fetchFn at t+2s and then every 2s while non-terminal', async () => {
     const fetchFn = vi.fn(async () => [makeRun({ status: 'running' })])
     startPolling(SPACE_ID, fetchFn)
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(2_000)
     expect(fetchFn).toHaveBeenCalledTimes(1)
 
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(2_000)
     expect(fetchFn).toHaveBeenCalledTimes(2)
 
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(2_000)
     expect(fetchFn).toHaveBeenCalledTimes(3)
   })
 
@@ -103,10 +103,10 @@ describe('polling', () => {
       return [makeRun({ status: 'succeeded' })]
     })
     startPolling(SPACE_ID, fetchFn)
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(2_000)
     expect(fetchFn).toHaveBeenCalledTimes(1)
 
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(2_000)
     expect(fetchFn).toHaveBeenCalledTimes(2)
 
     // All runs terminal — further ticks should NOT trigger fetches.
@@ -117,7 +117,7 @@ describe('polling', () => {
   it('stops polling when first poll already returns terminal runs', async () => {
     const fetchFn = vi.fn(async () => [makeRun({ status: 'succeeded' })])
     startPolling(SPACE_ID, fetchFn)
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(2_000)
     expect(fetchFn).toHaveBeenCalledTimes(1)
 
     await vi.advanceTimersByTimeAsync(60_000)
@@ -127,7 +127,7 @@ describe('polling', () => {
   it('stopPolling clears the timer', async () => {
     const fetchFn = vi.fn(async () => [makeRun({ status: 'running' })])
     startPolling(SPACE_ID, fetchFn)
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(2_000)
     expect(fetchFn).toHaveBeenCalledTimes(1)
 
     stopPolling()
@@ -139,12 +139,12 @@ describe('polling', () => {
     const f1 = vi.fn(async () => [makeRun({ status: 'running' })])
     const f2 = vi.fn(async () => [makeRun({ status: 'running' })])
     startPolling(SPACE_ID, f1)
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(2_000)
     expect(f1).toHaveBeenCalledTimes(1)
 
     // Replace before the next tick fires.
     startPolling(SPACE_ID, f2)
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(2_000)
     expect(f1).toHaveBeenCalledTimes(1) // never re-called
     expect(f2).toHaveBeenCalledTimes(1)
   })
@@ -158,10 +158,10 @@ describe('polling', () => {
       return n === 1 ? [r1] : [r2]
     })
     startPolling(SPACE_ID, fetchFn)
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(2_000)
     expect($backupRuns.get()).toEqual([r1])
 
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(2_000)
     expect($backupRuns.get()).toEqual([r2])
   })
 })

@@ -20,9 +20,16 @@ import {
   buildClearCookie,
   openHandoffPayload,
   readHandoffCookie,
+  type OAuthHandoffPayload,
 } from '../../../../lib/airtable/cookie'
 import { exchangeCodeForTokens } from '../../../../lib/airtable/oauth'
 import { persistAirtableConnection } from '../../../../lib/airtable/persist'
+import { sanitizeReturnTo } from '../../../../lib/airtable/return-to'
+
+function appendQuery(path: string, key: string, value: string): string {
+  const sep = path.includes('?') ? '&' : '?'
+  return `${path}${sep}${key}=${encodeURIComponent(value)}`
+}
 
 function redirectWith(
   location: string,
@@ -40,7 +47,29 @@ function redirectWith(
 export const GET: APIRoute = async ({ locals, request, url }) => {
   const isSecure = url.protocol === 'https:'
   const clearCookie = buildClearCookie({ secure: isSecure })
-  const failUrl = (code: string) => `/?error=${encodeURIComponent(code)}`
+
+  const workerEnv = env as unknown as {
+    AIRTABLE_OAUTH_CLIENT_ID?: string
+    AIRTABLE_OAUTH_CLIENT_SECRET?: string
+    BASEOUT_ENCRYPTION_KEY?: string
+    AIRTABLE_STUBS_ENABLED?: string
+  }
+
+  // Open the handoff cookie up front so error redirects can land on the
+  // originating page (returnTo) when we have one. If the cookie is missing
+  // or won't decrypt we fall through to the default redirect target.
+  const sealed = readHandoffCookie(request.headers.get('cookie'))
+  let handoff: OAuthHandoffPayload | null = null
+  if (sealed && workerEnv.BASEOUT_ENCRYPTION_KEY) {
+    try {
+      handoff = await openHandoffPayload(sealed, workerEnv.BASEOUT_ENCRYPTION_KEY)
+    } catch {
+      handoff = null
+    }
+  }
+  const returnTo = sanitizeReturnTo(handoff?.returnTo) ?? '/'
+  const failUrl = (code: string) => appendQuery(returnTo, 'error', code)
+  const successUrl = appendQuery(returnTo, 'connected', '1')
 
   const airtableError = url.searchParams.get('error')
   if (airtableError) {
@@ -53,27 +82,17 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
     return redirectWith(failUrl('missing_code'), clearCookie)
   }
 
-  const workerEnv = env as unknown as {
-    AIRTABLE_OAUTH_CLIENT_ID?: string
-    AIRTABLE_OAUTH_CLIENT_SECRET?: string
-    BASEOUT_ENCRYPTION_KEY?: string
-    AIRTABLE_STUBS_ENABLED?: string
-  }
   if (!workerEnv.BASEOUT_ENCRYPTION_KEY) {
     return redirectWith(failUrl('not_configured'), clearCookie)
   }
 
   const { tokenUrl, apiBase } = resolveAirtableUrls(workerEnv, url.origin)
 
-  const sealed = readHandoffCookie(request.headers.get('cookie'))
   if (!sealed) {
     return redirectWith(failUrl('missing_handoff'), clearCookie)
   }
 
-  let handoff
-  try {
-    handoff = await openHandoffPayload(sealed, workerEnv.BASEOUT_ENCRYPTION_KEY)
-  } catch {
+  if (!handoff) {
     return redirectWith(failUrl('invalid_handoff'), clearCookie)
   }
 
@@ -132,5 +151,5 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
     return redirectWith(failUrl('persist_failed'), clearCookie)
   }
 
-  return redirectWith('/?connected=1', clearCookie)
+  return redirectWith(successUrl, clearCookie)
 }

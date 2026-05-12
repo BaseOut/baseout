@@ -25,6 +25,7 @@ import {
   buildSetCookie,
   sealHandoffPayload,
 } from '../../../../lib/airtable/cookie'
+import { sanitizeReturnTo } from '../../../../lib/airtable/return-to'
 
 function jsonError(message: string, status: number): Response {
   return new Response(JSON.stringify({ error: message }), {
@@ -33,11 +34,19 @@ function jsonError(message: string, status: number): Response {
   })
 }
 
-export const POST: APIRoute = async ({ locals, url }) => {
+export const POST: APIRoute = async ({ locals, request, url }) => {
   if (!locals.user) return jsonError('Not authenticated', 401)
   const account = locals.account
   if (!account?.organization || !account?.space) {
     return jsonError('No active organization or space', 403)
+  }
+
+  let returnTo: string | null = null
+  try {
+    const form = await request.clone().formData()
+    returnTo = sanitizeReturnTo(form.get('returnTo'))
+  } catch {
+    returnTo = null
   }
 
   const workerEnv = env as unknown as {
@@ -77,6 +86,7 @@ export const POST: APIRoute = async ({ locals, url }) => {
       spaceId: account.space.id,
       userId: locals.user.id,
       redirectUri,
+      ...(returnTo ? { returnTo } : {}),
     },
     workerEnv.BASEOUT_ENCRYPTION_KEY,
   )

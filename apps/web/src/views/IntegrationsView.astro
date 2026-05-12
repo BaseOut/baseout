@@ -118,6 +118,7 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
                 data-airtable-connect
                 data-astro-reload
               >
+                <input type="hidden" name="returnTo" value="/integrations" />
                 <Button type="submit" variant="primary" data-connect-submit>
                   Reconnect Airtable
                 </Button>
@@ -163,6 +164,7 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
               data-airtable-connect
               data-astro-reload
             >
+              <input type="hidden" name="returnTo" value="/integrations" />
               <Button type="submit" variant="ghost" data-connect-submit>
                 Reconnect Airtable
               </Button>
@@ -243,6 +245,7 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
           data-airtable-connect
           data-astro-reload
         >
+          <input type="hidden" name="returnTo" value="/integrations" />
           <Button type="submit" variant="primary" data-connect-submit>
             Connect Airtable
           </Button>
