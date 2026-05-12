@@ -1,6 +1,14 @@
 ## Why
 
-Users running a backup expect the BackupHistoryWidget row's status chip to flip from `running` → `succeeded` (or `failed` / `trial_complete` / `trial_truncated`) without manual intervention. Today, that only happens on a full page refresh — when the user has navigated to the dashboard or `/integrations` from another in-app page, the chip stays frozen at its SSR-rendered status even though the engine has long since flipped the underlying `backup_runs.status` field and the polling endpoint correctly returns the new value.
+Users running a backup expect the BackupHistoryWidget row's status chip to flip from `running` → `succeeded` (or `failed` / `trial_complete` / `trial_truncated`) without manual intervention. Today, that only happens on a full page refresh.
+
+**Two independent defects produce the same symptom.** The first round of this change addressed only one of them; the user reported the chip *still* didn't flip without a refresh on `/integrations`, surfacing the second. Both fixes ship in this change:
+
+1. **Polling-state-machine defect (Phase 2 — the actual user-reported bug).** The poll loop at [`apps/web/src/stores/backup-runs.ts:77-92`](../../../apps/web/src/stores/backup-runs.ts#L77-L92) calls `if (allTerminal(runs)) { stopPolling(); return }` on every tick. On a page with only historical `succeeded` runs (the common case) or with no runs at all (the first-time case), the loop self-suspends at +2s. When the user clicks **Run backup now**, the widget's `backup-run-started` listener does a single immediate refresh but does **not** restart polling — so the new `running` row appears, but its chip never updates because the loop is dead. The engine flips the status to `succeeded` server-side; the browser has no live read path to discover it. Refresh → SSR delivers the now-terminal status → chip finally reads "Succeeded".
+
+2. **ClientRouter script-lifecycle defect (Phase 1 — the original hypothesis).** The widget's `<script>` previously ran setup at module-top, which under Astro's `<ClientRouter />` (imported in [Layout.astro:6](../../../apps/web/src/layouts/Layout.astro#L6)) executes exactly once per browser session. After any in-app navigation the polling timer + `backup-run-started` listener never re-attached, so the chip stayed frozen on subsequent visits.
+
+Defect 1 is the one the user hit on the integrations page without navigation. Defect 2 is the orthogonal regression that surfaced during the same investigation. Both are real; both ship in this change.
 
 The polling primitive (`startPolling` in [`src/stores/backup-runs.ts`](../../../apps/web/src/stores/backup-runs.ts)), the nanostore subscriber (`$backupRuns.subscribe(render)`), and the in-place upsert render (preserving each `<details>` row's `open` state) are all correctly implemented from Phase 10c + 10d. The defect is one layer up: the [`<script>`](../../../apps/web/src/components/backups/BackupHistoryWidget.astro) block that wires those primitives together only executes once per browser session, not once per page mount.
 
@@ -15,10 +23,17 @@ The symptom — "chip doesn't update unless I refresh" — is the visible half. 
 
 ## What Changes
 
-- **Move imperative setup into an `astro:page-load` handler** in [`apps/web/src/components/backups/BackupHistoryWidget.astro`](../../../apps/web/src/components/backups/BackupHistoryWidget.astro): JSON-script hydration, `$backupRuns.subscribe(render)`, `startPolling`, the `backup-run-started` event listener. The handler fires on initial full page load AND on every ClientRouter navigation, so polling resumes on every visit to a widget-rendering page.
-- **Move cleanup into an `astro:before-swap` handler** without `{ once: true }`, and unbind everything the page-load handler registered: stop polling, unsubscribe from `$backupRuns`, remove the `backup-run-started` window listener. Re-registration on next page-load is clean.
-- **Add an `astro:page-load`-aware test** to [`apps/web/tests/e2e/backup-happy-path.spec.ts`](../../../apps/web/tests/e2e/backup-happy-path.spec.ts): navigate `/integrations` → `/` → `/integrations`, kick off a backup, wait ≤4 seconds, assert the status chip flips to `succeeded` **without a page reload**. Pins the regression so it can't come back.
-- **Add Vitest coverage** in [`apps/web/src/components/backups/BackupHistoryWidget.spec.ts`](../../../apps/web/src/components/backups/BackupHistoryWidget.spec.ts) (or extend the closest existing widget spec) that fires synthetic `astro:page-load` and `astro:before-swap` events at the script and asserts the subscribe / unsubscribe pair runs exactly once per mount.
+**Phase 1 — ClientRouter script lifecycle** (already shipped earlier in this change):
+
+- **Extract setup / teardown into a testable sibling module:** [`apps/web/src/lib/backups/widget-lifecycle.ts`](../../../apps/web/src/lib/backups/widget-lifecycle.ts) owns the JSON-script hydration, `$backupRuns.subscribe(render)`, `startPolling`, and the `backup-run-started` listener — all wrapped in `setupBackupHistory` + `teardownBackupHistory` + `registerBackupHistoryLifecycle`. The widget's `<script>` reduces to one `registerBackupHistoryLifecycle({ render })` call.
+- **Wire `astro:page-load` + `astro:before-swap`** (no `{ once: true }`) so setup re-runs on every ClientRouter navigation and teardown cleans up cleanly.
+- **Vitest coverage** in [`apps/web/src/lib/backups/widget-lifecycle.test.ts`](../../../apps/web/src/lib/backups/widget-lifecycle.test.ts): 4 tests covering page-load setup, before-swap teardown, double-mount safety, and widget-absent no-op.
+- **Playwright regression** in [`apps/web/tests/e2e/backup-happy-path.spec.ts`](../../../apps/web/tests/e2e/backup-happy-path.spec.ts): counts `/backup-runs?` GET requests after in-app navigation `/integrations` → `/` → `/integrations` — verifies polling resumes without `page.reload()`.
+
+**Phase 2 — listener re-arms polling** (this round, addressing the actual user-reported bug):
+
+- **Re-arm polling in the `backup-run-started` listener** at [`widget-lifecycle.ts:80-84`](../../../apps/web/src/lib/backups/widget-lifecycle.ts#L80-L84). After the immediate `fetchRuns` + `setRuns(fresh)`, call `startPolling(spaceId, fetchRuns)`. `startPolling` is already idempotent — its first call is `stopPolling()` — so this is safe whether or not the loop was already suspended. Without this, the chip never flips on a fresh backup unless the loop happened to still be running for an unrelated reason.
+- **Pin the regression with a Vitest case** in [`widget-lifecycle.test.ts`](../../../apps/web/src/lib/backups/widget-lifecycle.test.ts): uses `vi.useFakeTimers()`, drives the all-terminal self-suspend, dispatches `backup-run-started`, advances the fake clock past the next 2s tick, asserts `fetchRuns` is called from a poll tick (not just the listener's immediate refresh).
 
 ## Out of Scope
 

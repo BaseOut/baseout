@@ -219,12 +219,7 @@ function destinationLabel(
 />
 
 <script>
-  import {
-    $backupRuns,
-    setRuns,
-    startPolling,
-    stopPolling,
-  } from '../../stores/backup-runs'
+  import { registerBackupHistoryLifecycle } from '../../lib/backups/widget-lifecycle'
   import {
     describeCounts,
     expandedTimestamp,
@@ -483,50 +478,9 @@ function destinationLabel(
     }
   }
 
-  // Hydrate from the JSON-script tag.
-  const stateEl = document.querySelector<HTMLScriptElement>(
-    '[data-backup-history-state]',
-  )
-  if (stateEl?.textContent) {
-    try {
-      const parsed = JSON.parse(stateEl.textContent) as BackupRunSummary[]
-      setRuns(parsed)
-    } catch {
-      // SSR hydration corrupt — fall through, polling will repopulate.
-    }
-  }
-
-  // Subscribe and re-render on every store update.
-  $backupRuns.subscribe(render)
-
-  // Begin polling for the active Space. Picks up the spaceId from the
-  // section's data attribute.
-  const root = document.querySelector<HTMLElement>('[data-backup-history]')
-  const spaceId = root?.dataset.spaceId
-  async function fetchFn(sid: string): Promise<BackupRunSummary[]> {
-    const res = await fetch(
-      `/api/spaces/${encodeURIComponent(sid)}/backup-runs?limit=10`,
-      { headers: { accept: 'application/json' } },
-    )
-    if (!res.ok) return $backupRuns.get()
-    const body = (await res.json()) as { runs: BackupRunSummary[] }
-    return body.runs
-  }
-
-  if (spaceId) {
-    startPolling(spaceId, fetchFn)
-
-    // RunBackupButton fires this on a successful POST; refresh the list
-    // immediately so the new run appears without a 10s wait.
-    window.addEventListener('backup-run-started', async () => {
-      const fresh = await fetchFn(spaceId)
-      setRuns(fresh)
-    })
-
-    // Astro view-transitions: stop the poll before the page swaps so we
-    // don't leak the timer onto the next page.
-    document.addEventListener('astro:before-swap', () => stopPolling(), {
-      once: true,
-    })
-  }
+  // Hydration + subscribe + polling + cleanup all live in widget-lifecycle.ts,
+  // wired to Astro's ClientRouter lifecycle (astro:page-load / before-swap).
+  // Module-top execution only registers the listeners — setup runs INSIDE
+  // page-load so it fires on every navigation, not once per session.
+  registerBackupHistoryLifecycle({ render })
 </script>

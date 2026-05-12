@@ -1,8 +1,51 @@
 ## Overview
 
-Make BackupHistoryWidget's client-side polling lifecycle survive Astro `<ClientRouter />` navigations by hooking `astro:page-load` and `astro:before-swap` instead of running setup once at module evaluation.
+Two independent defects keep BackupHistoryWidget's status chip from flipping without a full page refresh. Both ship in this change:
 
-## Root cause (definitive)
+1. **The polling state machine self-suspends on all-terminal and the `backup-run-started` listener doesn't re-arm it** — the user-visible bug on the integrations page without any navigation. Fix: one extra `startPolling(spaceId, fetchRuns)` call inside the listener.
+2. **The widget's `<script>` block runs once per browser session under `<ClientRouter />`** — a regression for any in-app navigation. Fix: move setup/teardown into `astro:page-load` / `astro:before-swap` handlers.
+
+The second was diagnosed first and shipped first. Smoke testing surfaced the first, which this change subsequently addresses in the same openspec slot. The two fixes are independent and additive: each closes a real path to the symptom; together they cover both.
+
+## Root cause #1 (Phase 2 — the user-reported bug): polling self-suspends, listener never re-arms
+
+[`apps/web/src/stores/backup-runs.ts:77-92`](../../../apps/web/src/stores/backup-runs.ts#L77-L92) — the per-tick body of the chained `setTimeout`:
+
+```ts
+async function tick(): Promise<void> {
+  if (token !== activeToken) return
+  try {
+    const runs = await fetchFn(spaceId)
+    if (token !== activeToken) return
+    setRuns(runs)
+    if (allTerminal(runs)) {
+      stopPolling()
+      return
+    }
+  } catch { /* swallow */ }
+  schedule()
+}
+```
+
+`allTerminal([])` is `true` (vacuous quantification). `allTerminal([all_succeeded_history])` is `true`. So the loop self-suspends at +2s on the common "freshly-loaded page with no live runs" state.
+
+When the user clicks **Run backup now**:
+
+1. `POST /api/spaces/:id/backup-runs` → server returns runId.
+2. `RunBackupButton` dispatches `backup-run-started`.
+3. Pre-fix `widget-lifecycle.ts:80-84`:
+   ```ts
+   onBackupRunStarted = async () => {
+     const fresh = await fetchRuns(spaceId)
+     setRuns(fresh)
+   }
+   ```
+   Runs one immediate fetch, calls `setRuns` with the new `running` row. The row appears in the DOM via the existing `$backupRuns.subscribe(render)` path.
+4. **But polling stopped in step (1) of the page lifecycle.** The listener does NOT call `startPolling`. No further fetches go out. The engine eventually flips status to `succeeded` server-side. The browser never sees it until full page reload.
+
+The fix is one line — append `startPolling(spaceId, fetchRuns)` to the listener body. `startPolling`'s first call is `stopPolling()`, so it's idempotent.
+
+## Root cause #2 (Phase 1 — orthogonal regression for in-app navigation)
 
 [`apps/web/src/layouts/Layout.astro:6`](../../../apps/web/src/layouts/Layout.astro#L6):
 

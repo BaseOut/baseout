@@ -183,3 +183,108 @@ test('seeded user clicks Run backup now and sees a fresh run row in the history 
   })
   await expect(freshRow.first()).toBeVisible({ timeout: 30_000 })
 })
+
+/**
+ * Regression test for openspec/changes/baseout-backup-history-live-status.
+ *
+ * Before the lifecycle fix, the widget's <script> ran setup exactly once per
+ * browser session under Astro's <ClientRouter />. Any in-app navigation —
+ * even just leaving /integrations and coming back — left the widget mounted
+ * without a polling timer, so the status chip never flipped without a full
+ * page reload.
+ *
+ * This test asserts polling RESUMES after in-app navigation by counting
+ * fetch requests to /api/spaces/.../backup-runs in a 5-second window after
+ * the user navigates back to a widget-rendering page.
+ */
+test('backup history polling resumes after in-app navigation', async ({
+  page,
+}) => {
+  test.setTimeout(180_000)
+  const inboxDomain = process.env.E2E_INBOX_DOMAIN ?? 'e2e.invalid'
+  const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  const email = `e2e-backup-nav-${suffix}@${inboxDomain}`
+
+  const targetUrl = requireEnv('E2E_TARGET_URL')
+  const testToken = requireEnv('E2E_TEST_TOKEN')
+
+  await seedBackupHappyPath(targetUrl, testToken, email)
+
+  // Sign in (same pattern as the happy-path test).
+  await page.goto('/login')
+  await page.getByLabel(/email/i).fill(email)
+  const mintedSince = Date.now()
+  await page.getByRole('button', { name: /sign[ -]?in|magic link|continue/i }).click()
+  await expect(
+    page.getByRole('heading', { name: /check your email|magic link|sent/i }),
+  ).toBeVisible({ timeout: 15_000 })
+  const magicLinkUrl = await pollMagicLink(targetUrl, testToken, email, mintedSince)
+  await page.goto(magicLinkUrl)
+
+  // Initial mount: /integrations renders the widget; polling starts.
+  await page.goto('/integrations')
+  await expect(page.locator('[data-backup-history]')).toBeVisible({
+    timeout: 20_000,
+  })
+
+  // Track every /backup-runs fetch from now on.
+  const pollHits: string[] = []
+  page.on('request', (req) => {
+    const url = req.url()
+    if (
+      url.includes('/api/spaces/') &&
+      url.includes('/backup-runs?')
+    ) {
+      pollHits.push(url)
+    }
+  })
+
+  // Confirm polling is alive on the initial page: at least one tick in 5s.
+  // (Cadence is 2s while any non-terminal run is in the store; with an
+  // empty store the loop self-suspends after the first allTerminal check.
+  // Force a non-empty store by waiting until a /backup-runs response has
+  // happened OR — for the seeded user with no historic runs — fall through
+  // to the dispatch step which will surface a row.)
+  await page.waitForTimeout(5_000)
+
+  // The widget self-suspends polling when all runs are terminal (or empty),
+  // so just-after-mount the loop may already be paused. The real regression
+  // is captured by the post-navigation poll count below.
+  pollHits.length = 0
+
+  // Click an in-app link to navigate away. The header / sidebar has at least
+  // one link out of /integrations; we use the home link as the canonical
+  // anchor. `page.click` follows the link via ClientRouter (no full reload).
+  await page.click('a[href="/"]')
+  await expect(page).toHaveURL(/\/$/)
+
+  // Navigate back to /integrations. This is the regression-prone path: the
+  // widget gets re-rendered SSR-style but, before the fix, its <script>
+  // never re-evaluated, so polling never resumed.
+  await page.click('a[href="/integrations"]')
+  await expect(page).toHaveURL(/\/integrations/)
+  await expect(page.locator('[data-backup-history]')).toBeVisible({
+    timeout: 10_000,
+  })
+
+  // Kick off a run so the store has a non-terminal entry — that's what
+  // un-suspends the polling loop. Then verify polling fires after the
+  // navigation.
+  pollHits.length = 0
+  const runBtn = page.getByRole('button', { name: /run backup now/i })
+  await expect(runBtn).toBeVisible({ timeout: 20_000 })
+  await runBtn.click()
+
+  // Within 8 seconds of the click we should see at least 2 backup-runs
+  // GET requests (one immediate from backup-run-started, plus at least one
+  // 2s poll tick). Before the fix, the count would stay at 1 (or 0 if the
+  // backup-run-started listener was also lost on swap, which it was under
+  // `{ once: true }` cleanup).
+  await page.waitForFunction(
+    () => true,
+    null,
+    { timeout: 8_000 },
+  ).catch(() => undefined)
+  await page.waitForTimeout(8_000)
+  expect(pollHits.length).toBeGreaterThanOrEqual(2)
+})
