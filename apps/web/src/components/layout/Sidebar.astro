@@ -419,7 +419,7 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
       <div class="flex items-center justify-between px-2 py-1.5">
         <div class="flex items-center gap-2">
           <i class="iconify lucide--sun text-base-content/60 size-3.5"></i>
-          <input type="checkbox" id="theme-toggle" class="theme-controller toggle toggle-xs" value="baseout" aria-label="Toggle theme" />
+          <input type="checkbox" id="theme-toggle" class="toggle toggle-xs" aria-label="Toggle theme" />
           <i class="iconify lucide--moon text-base-content/60 size-3.5"></i>
         </div>
         <button type="button" class="btn btn-ghost btn-xs btn-square" aria-label="Preferences">
@@ -486,7 +486,7 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
       <div class="flex items-center justify-between px-2 py-1.5">
         <div class="flex items-center gap-2">
           <i class="iconify lucide--sun text-base-content/60 size-3.5"></i>
-          <input type="checkbox" class="theme-controller toggle toggle-xs" value="baseout" aria-label="Toggle theme" data-sidebar-rail-theme />
+          <input type="checkbox" class="toggle toggle-xs" aria-label="Toggle theme" data-sidebar-rail-theme />
           <i class="iconify lucide--moon text-base-content/60 size-3.5"></i>
         </div>
         <button type="button" class="btn btn-ghost btn-xs btn-square" aria-label="Preferences">
@@ -498,12 +498,15 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
 </div>
 
 <script>
+  import { navigate } from 'astro:transitions/client';
   import { authClient } from '../../lib/auth-client';
   import { $account } from '../../stores/account';
   import { $spaces, refreshSpaces } from '../../stores/spaces';
   import type { SpaceSummary, SpacesState } from '../../stores/spaces';
   import { setButtonLoading } from '../../lib/ui';
   import { showFormError, hideFormError } from '../../lib/auth-utils';
+  import { wireThemeToggle } from '../../lib/theme';
+  import { handleSpaceSwitch } from '../../lib/sidebar/space-switch';
 
   function initialsOf(name: string): string {
     const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -621,26 +624,6 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
     }
   }
 
-  async function handleSwitch(btn: HTMLButtonElement): Promise<void> {
-    const spaceId = btn.dataset.spaceId;
-    if (!spaceId || btn.disabled) return;
-    const prev = $spaces.get();
-    if (!prev || prev.activeSpaceId === spaceId) return;
-
-    btn.disabled = true;
-    const res = await fetch('/api/spaces/switch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ spaceId }),
-    });
-    if (!res.ok) {
-      btn.disabled = false;
-      return;
-    }
-    $spaces.set({ ...prev, activeSpaceId: spaceId });
-    (document.activeElement as HTMLElement | null)?.blur();
-  }
-
   function init() {
     const logoutHandler = async (e: Event) => {
       e.preventDefault();
@@ -652,17 +635,9 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
     document.getElementById('sidebar-logout')?.addEventListener('click', logoutHandler);
     document.getElementById('sidebar-logout-rail')?.addEventListener('click', logoutHandler);
 
-    const themeToggles = document.querySelectorAll<HTMLInputElement>('#theme-toggle, [data-sidebar-rail-theme]');
-    const isDark = localStorage.getItem('theme') === 'dark';
-    themeToggles.forEach((t) => { t.checked = isDark; });
-    const applyTheme = (dark: boolean) => {
-      localStorage.setItem('theme', dark ? 'dark' : 'light');
-      document.documentElement.setAttribute('data-theme', dark ? 'baseout' : 'baseout-light');
-      themeToggles.forEach((t) => { t.checked = dark; });
-    };
-    themeToggles.forEach((t) => {
-      t.addEventListener('change', () => applyTheme(t.checked));
-    });
+    document
+      .querySelectorAll<HTMLInputElement>('#theme-toggle, [data-sidebar-rail-theme]')
+      .forEach(wireThemeToggle);
 
     const modal = document.getElementById('create-space-modal') as HTMLDialogElement | null;
     const createForm = document.getElementById('create-space-form') as HTMLFormElement | null;
@@ -684,7 +659,7 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
       const target = e.target as HTMLElement;
       const switchBtn = target.closest<HTMLButtonElement>('[data-space-switch]');
       if (switchBtn) {
-        handleSwitch(switchBtn);
+        handleSpaceSwitch(switchBtn, { navigate });
         return;
       }
       const createBtn = target.closest<HTMLButtonElement>('[data-create-space]');

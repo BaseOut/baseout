@@ -98,7 +98,7 @@ const showSuccessModal = Astro.url.searchParams.get('connected') === '1';
 const errorReason = Astro.url.searchParams.get('error');
 ---
 
-<SidebarLayout pageTitle="Dashboard Overview" breadcrumbs={breadcrumbs}>
+<SidebarLayout pageTitle="Dashboard Overview" breadcrumbs={breadcrumbs} spaceScoped={true}>
   <DashboardView
     account={account}
     integrations={integrations}

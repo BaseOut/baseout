@@ -24,6 +24,10 @@ interface Props {
   pageTitle?:          string;
   breadcrumbs?:        Breadcrumb[];
   notificationCount?:  number;
+
+  // Page interior re-renders on Space switch when true.
+  // Default false: switch updates the sidebar pill but leaves the page body alone.
+  spaceScoped?:        boolean;
 }
 
 const ctx = getPageContext(Astro.locals);
@@ -48,6 +52,8 @@ const {
   pageTitle,
   breadcrumbs,
   notificationCount,
+
+  spaceScoped   = false,
 } = Astro.props;
 
 const currentPath = Astro.url.pathname;
@@ -60,7 +66,7 @@ const resolvedTitle = title ?? (pageTitle ? `${pageTitle} | ${brandName}` : bran
     <input type="checkbox" id="layout-sidebar-hover-trigger" class="hidden" aria-label="Collapse sidebar to rail" />
     <div id="layout-sidebar-hover" class="bg-base-300 h-screen w-1"></div>
 
-    <div id="layout-sidebar" class="sidebar-menu flex flex-col">
+    <div id="layout-sidebar" class="sidebar-menu flex flex-col" transition:persist="baseout-sidebar">
       <Sidebar
         brandName={brandName}
         version={version}
@@ -93,7 +99,7 @@ const resolvedTitle = title ?? (pageTitle ? `${pageTitle} | ${brandName}` : bran
         set:html={JSON.stringify(spacesState).replace(/</g, '\\u003c')}
       />
 
-      <main id="layout-content" class="flex-1 p-6 md:p-8">
+      <main id="layout-content" class="flex-1 p-6 md:p-8" data-space-scoped={spaceScoped ? 'true' : 'false'}>
         <slot />
       </main>
     </div>
