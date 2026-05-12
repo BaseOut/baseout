@@ -101,7 +101,11 @@ function destinationLabel(
                     </span>
                   )}
                 </div>
-                <p class="text-sm text-base-content/80">{describeCounts(run)}</p>
+                <p
+                  class="text-sm text-base-content/80 transition-colors duration-200"
+                  role="status"
+                  aria-live="polite"
+                >{describeCounts(run)}</p>
               </summary>
 
               <div class="collapse-content grid gap-4 text-sm">
