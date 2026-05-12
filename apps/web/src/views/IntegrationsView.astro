@@ -149,6 +149,29 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
             <p class="text-xs" data-test-connection-result role="status" aria-live="polite"></p>
           </div>
 
+          <!-- Always-visible Reconnect — manual fallback for stale tokens. The
+               loud alert above already covers `pending_reauth`/`invalid`; this
+               button gives the user an escape hatch even when status='active'
+               (e.g., before the proactive cron has caught a near-expiry). Posts
+               to the same /api/connections/airtable/start endpoint as the
+               first-time Connect form; persist.ts upserts on the existing row. -->
+          {!needsReconnect && (
+            <form
+              method="POST"
+              action="/api/connections/airtable/start"
+              class="flex flex-wrap items-center gap-3"
+              data-airtable-connect
+              data-astro-reload
+            >
+              <Button type="submit" variant="ghost" data-connect-submit>
+                Reconnect Airtable
+              </Button>
+              <span class="text-xs text-base-content/60">
+                Refreshes tokens. Use if backups fail with an auth error.
+              </span>
+            </form>
+          )}
+
           {bases.length > 0 && (
             <div>
               <div class="flex items-baseline justify-between mt-4 mb-2 gap-3">

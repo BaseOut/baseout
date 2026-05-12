@@ -10,8 +10,16 @@ export interface Env {
   DATABASE_URL: string;
   /** Hyperdrive binding — used in deployed envs (production / staging). Optional locally. */
   HYPERDRIVE?: Hyperdrive;
-  /** AES-256-GCM key (base64-encoded 32 bytes) — must match apps/web. Decrypt-only at the engine. */
+  /**
+   * AES-256-GCM key (base64-encoded 32 bytes) — must match apps/web.
+   * The engine reads for decrypt and (Phase B1) writes during the OAuth-
+   * refresh cron's success path.
+   */
   BASEOUT_ENCRYPTION_KEY: string;
+  /** Airtable OAuth app client_id (must match apps/web). Used by the OAuth-refresh cron. */
+  AIRTABLE_OAUTH_CLIENT_ID: string;
+  /** Airtable OAuth app client_secret (must match apps/web). Used by the OAuth-refresh cron. */
+  AIRTABLE_OAUTH_CLIENT_SECRET: string;
   /** Trigger.dev v3 project-scoped secret key. */
   TRIGGER_SECRET_KEY: string;
   /** Trigger.dev project reference. */

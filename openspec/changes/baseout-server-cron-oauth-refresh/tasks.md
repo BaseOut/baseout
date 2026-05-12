@@ -7,60 +7,43 @@
 
 ## 2. Airtable refresh RPC
 
-- [ ] 2.1 Create [apps/server/src/lib/airtable-refresh.ts](../../../apps/server/src/lib/airtable-refresh.ts). Single export: `refreshAirtableAccessToken(input)` returning `RefreshOutcome` (see [design.md](./design.md) §Refresh RPC).
-- [ ] 2.2 Implement the POST to `https://airtable.com/oauth1/v1/token` with `grant_type=refresh_token`, `refresh_token`, `client_id`, `client_secret` form-encoded. Mirror the request shape from [apps/web/src/lib/airtable/oauth.ts](../../../apps/web/src/lib/airtable/oauth.ts) `refreshAirtableTokens` exactly — do not improvise headers or body encoding.
-- [ ] 2.3 Map response to `RefreshOutcome`:
-  - 200 + valid body → `{ kind: 'success', accessToken, refreshToken, expiresAtMs, scopes }`. `expiresAtMs = Date.now() + (response.expires_in * 1000)`.
-  - 400 with `error: 'invalid_grant'` (or revoked/removed) → `{ kind: 'pending_reauth', reason }`.
+- [x] 2.1 Create [apps/server/src/lib/airtable-refresh.ts](../../../apps/server/src/lib/airtable-refresh.ts). Single export: `refreshAirtableAccessToken(input)` returning `RefreshOutcome` (see [design.md](./design.md) §Refresh RPC).
+- [x] 2.2 Implement the POST to `https://airtable.com/oauth2/v1/token` with `grant_type=refresh_token`, `refresh_token`, `client_id`, `client_secret` form-encoded. **Endpoint corrected from oauth1 → oauth2** (canonical lives in [apps/web/src/lib/airtable/config.ts](../../../apps/web/src/lib/airtable/config.ts) as `AIRTABLE_TOKEN_URL`).
+- [x] 2.3 Map response to `RefreshOutcome`:
+  - 200 + valid body → `{ kind: 'success', accessToken, refreshToken, expiresAtMs, scope }`. `expiresAtMs = nowMs() + (response.expires_in * 1000)`. Missing `refresh_token` on a 200 → treated as `'invalid'` (avoid clobbering DB column with null).
+  - 400 with `error: 'invalid_grant' | 'invalid_request_or_grant' | 'unauthorized_client' | 'access_denied'` → `{ kind: 'pending_reauth', reason }`.
   - 5xx, 429, network error → `{ kind: 'transient', reason, retryAfterMs }`.
   - Anything else → `{ kind: 'invalid', reason }`.
-- [ ] 2.4 Unit-test the response mapper with `msw`-style fixture responses for each branch.
+- [x] 2.4 Unit-test the response mapper. Lives at [apps/server/tests/integration/airtable-refresh.test.ts](../../../apps/server/tests/integration/airtable-refresh.test.ts) (apps/server still has no `tests/unit/` dir; same convention as crypto.test.ts). 11 tests covering each branch + request shape assertion.
 
 ## 3. Refresh orchestrator
 
-- [ ] 3.1 Create [apps/server/src/lib/oauth-refresh.ts](../../../apps/server/src/lib/oauth-refresh.ts). Exports `runOAuthRefreshTick(env, ctx, masterDb)`.
-- [ ] 3.2 Resolve and cache the Airtable platform UUID at module scope from `baseout.platforms WHERE slug = 'airtable'`.
-- [ ] 3.3 Implement the selection query from [design.md](./design.md) §Selection Query. `LIMIT 100`.
-- [ ] 3.4 For each row, run the CAS claim: `UPDATE … SET status = 'refreshing', modified_at = now() WHERE id = $1 AND status = 'active' RETURNING …`. Skip rows where the claim returns 0.
-- [ ] 3.5 Decrypt `refresh_token_enc` via `decryptToken`. On decrypt failure, transition row to `'invalid'` (CAS-guarded by `WHERE status = 'refreshing'`) and continue to the next row.
-- [ ] 3.6 Call `refreshAirtableAccessToken`. Branch on `RefreshOutcome.kind`:
-  - `success`: encrypt new tokens; `UPDATE ... SET access_token_enc, refresh_token_enc, token_expires_at, scopes, status = 'active', modified_at = now() WHERE id = $1 AND status = 'refreshing'`. If 0 rows match, log + skip (apps/web overwrote mid-flight).
-  - `pending_reauth`: `UPDATE ... SET status = 'pending_reauth', modified_at = now() WHERE id = $1 AND status = 'refreshing'`.
-  - `transient`: `UPDATE ... SET status = 'active', modified_at = now() WHERE id = $1 AND status = 'refreshing'` (revert; next tick retries).
-  - `invalid`: `UPDATE ... SET status = 'invalid', invalidated_at = now(), modified_at = now() WHERE id = $1 AND status = 'refreshing'`.
-- [ ] 3.7 Per-row structured log via `@baseout/shared`'s logger: `{ event: 'oauth_refresh', connection_id, outcome, latency_ms }`.
+- [x] 3.1 Created [apps/server/src/lib/oauth-refresh.ts](../../../apps/server/src/lib/oauth-refresh.ts). Exports `runOAuthRefreshTick(deps)`. Pure-function-with-DI pattern (matches Phase 7/8a/8b convention); `db`, `encryptionKey`, `clientId`, `clientSecret`, `refresh`, `nowMs`, and `log` are all deps.
+- [x] 3.2 Airtable platform UUID resolved per tick (not cached at module scope) — a re-seed of `baseout.platforms` would otherwise pin to a stale UUID until the worker restarts. The query is cheap and runs once per tick.
+- [x] 3.3 Selection query from [design.md](./design.md) §Selection Query implemented. `LIMIT 100`.
+- [x] 3.4 CAS claim: `UPDATE … SET status='refreshing', modified_at=now() WHERE id=$1 AND status='active' RETURNING id`. Skip with `claim_skipped` outcome counter on 0 rows.
+- [x] 3.5 Decrypt failure → row → `'invalid'` (CAS-guarded), counter increment, continue.
+- [x] 3.6 All four `RefreshOutcome.kind` branches implemented, each with `WHERE status='refreshing'` CAS guard. Success-path 0-row UPDATE → `cas_lost` counter (apps/web overwrote mid-flight).
+- [x] 3.7 Per-row structured log emitted via injected `log` dep. Real wiring at scheduled-handler call site stringifies to stdout (no shared logger lib in apps/server yet; switch is a follow-up).
 
 ## 4. Wire into Worker
 
-- [ ] 4.1 Extend [apps/server/src/index.ts](../../../apps/server/src/index.ts) `scheduled` handler. The existing TODO comment line goes; the new body:
-  - Build per-request masterDb via `createMasterDb(env, ctx)`.
-  - Call `runOAuthRefreshTick(env, ctx, masterDb)`.
-  - `ctx.waitUntil(masterDb.sql.end({ timeout: 5 }))` on completion (or via the existing teardown path if `createMasterDb` already wires it).
-- [ ] 4.2 Uncomment the OAuth-refresh cron line in [apps/server/wrangler.jsonc](../../../apps/server/wrangler.jsonc): `"*/15 * * * *"`. Leave the other commented cron entries in place; only this one is in scope.
-- [ ] 4.3 Add `AIRTABLE_OAUTH_CLIENT_ID` and `AIRTABLE_OAUTH_CLIENT_SECRET` to the Secrets list in the wrangler.jsonc comment block, and to [apps/server/.dev.vars.example](../../../apps/server/.dev.vars.example). Confirm `BASEOUT_ENCRYPTION_KEY` is already there.
-- [ ] 4.4 Update [apps/server/src/env.d.ts](../../../apps/server/src/env.d.ts) `Env` type with `AIRTABLE_OAUTH_CLIENT_ID: string` and `AIRTABLE_OAUTH_CLIENT_SECRET: string`. Confirm `BASEOUT_ENCRYPTION_KEY` is typed.
+- [x] 4.1 Extended [apps/server/src/index.ts](../../../apps/server/src/index.ts) `scheduled` handler: branches on `event.cron`, builds per-request `masterDb`, calls `runOAuthRefreshTick`, tears down via `ctx.waitUntil(sql.end({timeout:5}))`. Logs the tick summary (considered/claimed/per-outcome).
+- [x] 4.2 Activated the OAuth-refresh cron in [apps/server/wrangler.jsonc.example](../../../apps/server/wrangler.jsonc.example): `"*/15 * * * *"`. Other cron entries left commented (future changes).
+- [x] 4.3 `AIRTABLE_OAUTH_CLIENT_ID` + `AIRTABLE_OAUTH_CLIENT_SECRET` added to the Secrets list in wrangler.jsonc.example comments and to [apps/server/.dev.vars.example](../../../apps/server/.dev.vars.example). `BASEOUT_ENCRYPTION_KEY` already present (per Phase 1 commit `97cba60`).
+- [x] 4.4 Updated [apps/server/src/env.d.ts](../../../apps/server/src/env.d.ts) with the two new env vars; `BASEOUT_ENCRYPTION_KEY` already typed.
 
 ## 5. Tests
 
-- [ ] 5.1 Integration test at `apps/server/tests/integration/oauth-refresh.test.ts`:
-  - Spin up a local Postgres harness for `apps/server`. `apps/server` doesn't have its own `docker-compose.test.yml` yet — either reuse `apps/web/docker-compose.test.yml` against the same dev DB, or add a minimal one for `apps/server`. Pick whichever is faster; either is OK for this change.
-  - Seed `baseout.platforms` with the Airtable row + `baseout.organizations` + a `baseout.connections` row whose `token_expires_at` is 5 minutes from now and `status = 'active'`.
-  - Mock `https://airtable.com/oauth1/v1/token` via `msw`.
-  - Drive the `scheduled` export directly with a synthetic `ScheduledEvent`.
-- [ ] 5.2 Test cases (one `describe` block each):
-  - Success: cron transitions `active → refreshing → active`; new ciphertext decrypts to the new plaintext access token; `token_expires_at` advances; `modified_at` updates.
-  - `pending_reauth`: Airtable returns `400 invalid_grant`; row ends `pending_reauth`.
-  - Transient: Airtable returns `503`; row ends back at `active`.
-  - Invalid: Airtable returns `200` with malformed body; row ends `invalid`.
-  - Concurrency: pre-set `status = 'refreshing'` on the row before driving the cron; assert the row is **skipped** (no UPDATE).
-  - Concurrency mid-flight: stub `refreshAirtableAccessToken` to delay; while it's in flight, externally UPDATE the row to `status = 'active'` with new tokens (simulating `apps/web` callback). Assert the cron's success-path UPDATE matches 0 rows and the externally-written tokens survive.
-- [ ] 5.3 Add `apps/server/tests/unit/airtable-refresh.test.ts` for the response mapper (covered in 2.4).
-- [ ] 5.4 Add `apps/server/tests/unit/crypto.test.ts` round-trip test (covered in 1.3).
+- [x] 5.1 Integration test at [apps/server/tests/integration/oauth-refresh.test.ts](../../../apps/server/tests/integration/oauth-refresh.test.ts). **Pure-function shape, not real-Postgres.** Injects a fake `AppDb` whose `.execute` returns scripted rows in call order. Each test scripts the platform-lookup → selection → per-row(claim + outcome-update) sequence. Covers all 4 outcomes + both concurrency paths + decrypt failure + multi-row aggregation. Spinning up a real Postgres harness for apps/server is deferred to a follow-up (would need its own docker-compose.test.yml).
+- [x] 5.2 Test cases (10 total): platform-not-seeded bail; no-candidates bail; success path; pending_reauth (invalid_grant); transient (5xx); invalid (unknown error); claim-skipped (concurrent claimer); cas-lost (mid-flight apps/web overwrite); decrypt-failed (corrupt cipher); multi-row aggregation.
+- [x] 5.3 Mapper unit tests at [apps/server/tests/integration/airtable-refresh.test.ts](../../../apps/server/tests/integration/airtable-refresh.test.ts) (2.4 above).
+- [x] 5.4 Crypto round-trip already shipped in Phase 1 ([apps/server/tests/integration/crypto.test.ts](../../../apps/server/tests/integration/crypto.test.ts)).
 
 ## 6. Verification + ship
 
-- [ ] 6.1 `pnpm --filter @baseout/server typecheck` clean.
-- [ ] 6.2 `pnpm --filter @baseout/server test` clean. CI green.
+- [x] 6.1 `pnpm --filter @baseout/server exec tsc --noEmit` clean.
+- [x] 6.2 `pnpm --filter @baseout/server test` — 161 passed + 1 skipped / 162 total. `pnpm --filter @baseout/web test` — 335/335.
 - [ ] 6.3 In `wrangler dev --remote`, hit `http://localhost:.../__scheduled?cron=*%2F15+*+*+*+*` and confirm logs show one tick; seeded connection moves through the success path; new ciphertext decrypts correctly when read back.
 - [ ] 6.4 In `apps/web` (running locally against the same DB), open `/integrations` and confirm the seeded connection still renders correctly. Force `status = 'pending_reauth'` via SQL and confirm the Reconnect CTA appears.
 - [ ] 6.5 Deploy to staging. Set `AIRTABLE_OAUTH_CLIENT_ID`, `AIRTABLE_OAUTH_CLIENT_SECRET`, `BASEOUT_ENCRYPTION_KEY` via `wrangler secret put` if not already set. Verify cron fires by tailing `wrangler tail` for a 15-minute window.

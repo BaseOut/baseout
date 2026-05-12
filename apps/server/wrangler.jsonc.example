@@ -58,27 +58,32 @@
     }
   ],
 
-  // Cron triggers — TODO(phase-2): one per background service.
-  // "triggers": {
-  //   "crons": [
-  //     "0 6 * * *",     // webhook renewal — daily at 06:00 UTC
-  //     "*/15 * * * *",  // OAuth token refresh — every 15 minutes
-  //     "0 * * * *",     // trial-expiry monitor — hourly
-  //     "0 * * * *",     // quota-usage monitor — hourly
-  //     "0 2 * * *"      // smart-cleanup scheduler — daily at 02:00 UTC
-  //   ]
-  // },
+  // Cron triggers. OAuth refresh is active (Phase B1 / openspec
+  // baseout-server-cron-oauth-refresh). Other entries stay commented until
+  // their own changes ship.
+  "triggers": {
+    "crons": [
+      "*/15 * * * *" // OAuth token refresh — every 15 minutes (openspec/changes/baseout-server-cron-oauth-refresh/)
+      // "0 6 * * *",   // webhook renewal — daily at 06:00 UTC (future change)
+      // "0 * * * *",   // trial-expiry monitor — hourly (future change)
+      // "0 * * * *",   // quota-usage monitor — hourly (future change)
+      // "0 2 * * *"    // smart-cleanup scheduler — daily at 02:00 UTC (future change)
+    ]
+  },
 
   // Service bindings (incoming forwards from hooks + api)
   // are configured via the Cloudflare dashboard once those Workers exist.
 
   // Secrets (set via `wrangler secret put` in deployed envs; .dev.vars locally):
-  //   INTERNAL_TOKEN          — shared secret with apps/web (BACKUP_ENGINE_INTERNAL_TOKEN)
-  //   DATABASE_URL            — master DB (postgres-js per-request, per CLAUDE.md §5.1)
-  //                             only used in local wrangler dev; deployed envs read HYPERDRIVE.
-  //   BASEOUT_ENCRYPTION_KEY  — AES-256-GCM key for *_enc columns; must match apps/web
-  //   TRIGGER_SECRET_KEY      — Trigger.dev v3 server-side key
-  //   TRIGGER_PROJECT_REF     — Trigger.dev project ID
+  //   INTERNAL_TOKEN              — shared secret with apps/web (BACKUP_ENGINE_INTERNAL_TOKEN)
+  //   DATABASE_URL                — master DB (postgres-js per-request, per CLAUDE.md §5.1)
+  //                                  only used in local wrangler dev; deployed envs read HYPERDRIVE.
+  //   BASEOUT_ENCRYPTION_KEY      — AES-256-GCM key for *_enc columns; must match apps/web
+  //   TRIGGER_SECRET_KEY          — Trigger.dev v3 server-side key
+  //   TRIGGER_PROJECT_REF         — Trigger.dev project ID
+  //   AIRTABLE_OAUTH_CLIENT_ID    — Airtable OAuth app client_id (must match apps/web). Used by the
+  //                                  OAuth-refresh cron — the same Connection app's credentials.
+  //   AIRTABLE_OAUTH_CLIENT_SECRET — Airtable OAuth app client_secret (must match apps/web).
   //   CLOUDFLARE_API_TOKEN, STRIPE_API_KEY, MAILGUN_API_KEY — phase-2
 
   // Wrangler does NOT inherit non-inheritable keys (vars, hyperdrive,

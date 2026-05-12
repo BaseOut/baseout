@@ -30,15 +30,24 @@ TRIGGER_PROJECT_REF=proj_xxxxxxxxxxxxxxxxxxxx
 # BACKUP_ENGINE_INTERNAL_TOKEN.
 INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness
 
-# === Master encryption key (decrypt-only at the engine) ===
+# === Master encryption key (cron now reads AND writes) ===
 # AES-256-GCM key for the *_enc columns in baseout.connections (and other
 # encrypted-at-rest columns). Same value apps/web has in its
-# BASEOUT_ENCRYPTION_KEY var. The engine NEVER writes encrypted tokens —
-# apps/web's OAuth callback is the canonical writer; cron-oauth-refresh
-# (a future change) will be the second writer. The engine only decrypts
-# what's already in the DB.
+# BASEOUT_ENCRYPTION_KEY var. apps/web's OAuth callback is the canonical
+# writer at initial connect; the engine's OAuth-refresh cron is the second
+# writer (openspec/changes/baseout-server-cron-oauth-refresh/). All other
+# engine paths only decrypt.
 # Generate: `openssl rand -base64 32`.
 BASEOUT_ENCRYPTION_KEY=replace-with-base64-of-32-random-bytes
+
+# === Airtable OAuth app credentials (cron-only — same as apps/web) ===
+# Used by the OAuth-refresh cron to POST grant_type=refresh_token to
+# https://airtable.com/oauth2/v1/token with HTTP Basic auth on
+# client_id:client_secret. Must match the values in apps/web/.dev.vars.
+# Boss owns the OAuth app — see memory project_leaked_secrets_pending_rotate
+# for rotation steps.
+AIRTABLE_OAUTH_CLIENT_ID=
+AIRTABLE_OAUTH_CLIENT_SECRET=
 
 # === Optional: local-dev TLS bypass ===
 # Set DRIZZLE_SSL=false ONLY if connecting to a local Postgres without TLS.
