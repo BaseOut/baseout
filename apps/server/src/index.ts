@@ -14,7 +14,6 @@ import {
   connectionDOProxyHandler,
   type ConnectionDOProxyAction,
 } from "./pages/api/internal/connections/do-proxy";
-import { uploadCsvHandler } from "./pages/api/internal/runs/upload-csv";
 import { runsStartHandler } from "./pages/api/internal/runs/start";
 import { runsCompleteHandler } from "./pages/api/internal/runs/complete";
 import { runsProgressHandler } from "./pages/api/internal/runs/progress";
@@ -25,8 +24,6 @@ const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
 const CONNECTIONS_DO_PROXY_RE =
   /^\/api\/internal\/connections\/([^/]+)\/(lock|unlock|token)$/;
-const RUNS_UPLOAD_CSV_RE =
-  /^\/api\/internal\/runs\/([^/]+)\/upload-csv$/;
 const RUNS_START_RE = /^\/api\/internal\/runs\/([^/]+)\/start$/;
 const RUNS_COMPLETE_RE = /^\/api\/internal\/runs\/([^/]+)\/complete$/;
 const RUNS_PROGRESS_RE = /^\/api\/internal\/runs\/([^/]+)\/progress$/;
@@ -106,15 +103,9 @@ export default {
         }
       }
 
-      // Upload-csv handles its own method check so non-POST returns 405
+      // Run-start handles its own method check so non-POST returns 405
       // (rather than 404) — gives the caller a clearer wire-error if it
       // somehow fires the wrong verb.
-      const upload = RUNS_UPLOAD_CSV_RE.exec(url.pathname);
-      if (upload) {
-        return await uploadCsvHandler(request, env, ctx, locals, upload[1]!);
-      }
-
-      // Run-start: same method-check-inside-handler pattern as upload-csv.
       const start = RUNS_START_RE.exec(url.pathname);
       if (start) {
         return await runsStartHandler(request, env, ctx, locals, start[1]!);

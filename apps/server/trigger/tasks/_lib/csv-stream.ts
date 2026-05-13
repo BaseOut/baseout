@@ -2,9 +2,8 @@
 //
 // Runs in Node (Trigger.dev runner), not workerd. Pure function: given one
 // page of records and the explicit field list, returns the CSV string for
-// that page. The task pages records out of Airtable and POSTs the CSV bytes
-// to apps/server's /api/internal/runs/:runId/upload-csv route, which writes
-// to R2 via the BACKUP_BUCKET binding.
+// that page. The task pages records out of Airtable and writes each table's
+// CSV to local disk via writeCsvToLocalDisk under apps/server/.backups/.
 //
 // Output shape (CRLF line endings + RFC-4180-style quoting via Papa Parse):
 //   header,row\r\n

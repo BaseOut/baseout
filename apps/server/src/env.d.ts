@@ -28,13 +28,6 @@ export interface Env {
   CONNECTION_DO: DurableObjectNamespace;
   /** Per-Space scheduler DO. */
   SPACE_DO: DurableObjectNamespace;
-  /**
-   * Managed R2 bucket for backup CSV output. The Trigger.dev backup-base
-   * task can't reach this binding (it runs in Node, not workerd) — it POSTs
-   * CSV bytes to /api/internal/runs/:runId/upload-csv and the Worker writes
-   * via this binding. Bucket: baseout-backups-dev (per Phase 0.1).
-   */
-  BACKUP_BUCKET: R2Bucket;
 }
 
 export interface AppLocals {

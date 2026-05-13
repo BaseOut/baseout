@@ -21,12 +21,5 @@
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["ConnectionDO", "SpaceDO"] }
-  ],
-
-  // Miniflare emulates R2 in-memory; the binding name must match production.
-  // The bucket_name string is opaque to miniflare; pick the prod-shaped one
-  // so tests are explicit about what they're standing in for.
-  "r2_buckets": [
-    { "binding": "BACKUP_BUCKET", "bucket_name": "baseout-backups-dev" }
   ]
 }

@@ -33,17 +33,6 @@
     { "tag": "v1", "new_sqlite_classes": ["ConnectionDO", "SpaceDO"] }
   ],
 
-  // R2 buckets — managed backup output. The Worker writes here via the
-  // BACKUP_BUCKET binding when the Trigger.dev backup-base task POSTs each
-  // table's CSV through /api/internal/runs/:runId/upload-csv. The task
-  // itself runs in Node and cannot use the binding directly — this proxy
-  // pattern keeps R2 access on the Worker, where the binding lives.
-  // Bucket `baseout-backups-dev` is created manually per Phase 0.1 of the
-  // backups MVP plan.
-  "r2_buckets": [
-    { "binding": "BACKUP_BUCKET", "bucket_name": "baseout-backups-dev" }
-  ],
-
   // Hyperdrive — local dev uses localConnectionString; the `id` is just a
   // label until the Hyperdrive is provisioned for staging/production deploy.
   // postgres-js direct TLS hangs inside workerd's nodejs_compat — Hyperdrive
@@ -109,10 +98,7 @@
           { "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
           { "name": "SPACE_DO", "class_name": "SpaceDO" }
         ]
-      },
-      "r2_buckets": [
-        { "binding": "BACKUP_BUCKET", "bucket_name": "baseout-backups-dev" }
-      ]
+      }
     },
     "production": {
       "name": "baseout-server"

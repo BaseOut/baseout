@@ -13,7 +13,8 @@
 //   4. Trial gate on table count: if isTrial && tables>5, slice to 5 →
 //      status='trial_truncated' on success.
 //   5. Per table: page records → normalize per field type → pageToCsv →
-//      putCsvViaProxy at buildR2Key path.
+//      writeCsvToLocalDisk at buildR2Key path (rooted under
+//      apps/server/.backups/ — R2 has been removed entirely).
 //   6. Trial gate on record count: cumulative >=1000 → trim, stop, status=
 //      'trial_complete'.
 //   7. POST .../unlock in finally.
@@ -30,7 +31,7 @@ import {
 import { buildR2Key } from "./_lib/r2-path";
 import { pageToCsv } from "./_lib/csv-stream";
 import { normalizeFieldValue } from "./_lib/field-normalizer";
-import { putCsvViaProxy } from "./_lib/r2-proxy-write";
+import { writeCsvToLocalDisk } from "./_lib/local-fs-write";
 
 export interface BackupBaseInput {
   runId: string;
@@ -73,6 +74,13 @@ export interface BackupBaseDeps {
    * tests pass unchanged.
    */
   postProgress?: (event: BackupBaseProgressEvent) => Promise<void>;
+  /**
+   * Test seam for the local-disk CSV writer. Defaults to writeCsvToLocalDisk
+   * which writes under apps/server/.backups/. The integration test harness
+   * runs inside workerd-vitest where host-fs writes don't behave like Node,
+   * so tests inject a recording fake here.
+   */
+  writeCsv?: (relativeKey: string, csv: string) => Promise<unknown>;
 }
 
 export type BackupBaseStatus =
@@ -230,20 +238,13 @@ export async function runBackupBase(
         tableName: table.name,
       });
 
-      await putCsvViaProxy({
-        engineUrl: engineBase,
-        internalToken: deps.internalToken,
-        runId: input.runId,
-        key,
-        csv,
-        fetchImpl: fetchFn,
-      });
+      await (deps.writeCsv ?? writeCsvToLocalDisk)(key, csv);
 
       // Phase 10d: fire-and-forget progress event after the table CSV lands
-      // in R2. Bumps backup_runs.{record_count,table_count} so the frontend's
-      // poll picks up live counts before /complete writes the final totals.
-      // Wrapped in try/catch as belt-and-braces; the wrapper's helper already
-      // swallows transport errors.
+      // on disk. Bumps backup_runs.{record_count,table_count} so the
+      // frontend's poll picks up live counts before /complete writes the
+      // final totals. Wrapped in try/catch as belt-and-braces; the
+      // wrapper's helper already swallows transport errors.
       if (deps.postProgress) {
         try {
           await deps.postProgress({

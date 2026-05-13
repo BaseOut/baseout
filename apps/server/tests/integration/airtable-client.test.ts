@@ -2,8 +2,8 @@
 //
 // This client runs in Node (Trigger.dev runner) in production but is platform-
 // neutral — it only uses fetch(), so it runs unchanged inside the workerd
-// vitest pool. We exercise it via injected `fetchImpl` (the same seam pattern
-// r2-proxy-write.ts uses) so tests don't make real Airtable calls.
+// vitest pool. We exercise it via injected `fetchImpl` so tests don't make
+// real Airtable calls.
 //
 // Coverage:
 //   - listBases       — GET /v0/meta/bases

@@ -14,9 +14,8 @@
 // No refresh logic here — token refresh is a separate change owned by
 // apps/server's scheduled cron.
 //
-// Test seam: `fetchImpl?` injection mirrors the pattern in r2-proxy-write.ts
-// and apps/web's backup-engine.ts. Tests pass a vi.fn(); production uses
-// global fetch.
+// Test seam: `fetchImpl?` injection mirrors apps/web's backup-engine.ts.
+// Tests pass a vi.fn(); production uses global fetch.
 
 const AIRTABLE_BASE_URL = "https://api.airtable.com";
 

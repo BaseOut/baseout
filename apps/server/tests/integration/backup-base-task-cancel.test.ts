@@ -56,9 +56,6 @@ function makeFetchMock(): {
           { status: 200 },
         );
       }
-      if (url.includes("/upload-csv")) {
-        return new Response(JSON.stringify({ ok: true }), { status: 200 });
-      }
       return new Response(JSON.stringify({ error: "unexpected_url" }), {
         status: 500,
       });

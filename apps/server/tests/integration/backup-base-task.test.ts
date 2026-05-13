@@ -3,8 +3,11 @@
 // function and test that, since the Trigger.dev test harness isn't wired in.
 //
 // The pure function takes injectable HTTP fetch + Airtable client deps. Tests
-// use vi.fn() for both. R2 path correctness is verified by inspecting the
-// /upload-csv call body, not by hitting real R2 (that's Phase 11 territory).
+// use vi.fn() for both. Backup-path correctness is verified by inspecting
+// the deps.writeCsv injection — under workerd-vitest we can't reliably
+// exercise the real fs writer, so the harness records the (relativeKey,
+// csv) pairs and asserts on them. Real-disk behavior is covered by the
+// manual smoke run.
 
 import { describe, expect, it, vi } from "vitest";
 import { runBackupBase } from "../../trigger/tasks/backup-base";
@@ -53,23 +56,29 @@ function makeFetchMock(): {
           { status: 200 },
         );
       }
-      if (url.includes("/upload-csv")) {
-        const body = init?.body ? JSON.parse(String(init.body)) : {};
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            key: body.key,
-            size: String(body.body).length,
-          }),
-          { status: 200 },
-        );
-      }
       return new Response(JSON.stringify({ error: "unexpected_url" }), {
         status: 500,
       });
     },
   );
   return { fetchMock: fetchMock as unknown as typeof fetch, calls };
+}
+
+interface RecordedWrite {
+  key: string;
+  csv: string;
+}
+
+function makeWriteCsv(): {
+  writeCsv: (key: string, csv: string) => Promise<unknown>;
+  writes: RecordedWrite[];
+} {
+  const writes: RecordedWrite[] = [];
+  const writeCsv = vi.fn(async (key: string, csv: string) => {
+    writes.push({ key, csv });
+    return { path: `/fake/.backups/${key}`, size: csv.length };
+  });
+  return { writeCsv, writes };
 }
 
 function makeAirtableClient(opts: {
@@ -100,8 +109,9 @@ const BASE_INPUT = {
 };
 
 describe("runBackupBase", () => {
-  it("happy path: 1 table, 2 records → 1 CSV uploaded with canonical key", async () => {
+  it("happy path: 1 table, 2 records → 1 CSV written with canonical path", async () => {
     const { fetchMock, calls } = makeFetchMock();
+    const { writeCsv, writes } = makeWriteCsv();
     const client = makeAirtableClient({
       schema: {
         tables: [
@@ -131,6 +141,7 @@ describe("runBackupBase", () => {
         fetchImpl: fetchMock,
         airtableClient: client,
         sleepImpl: async () => undefined,
+        writeCsv,
       },
     );
 
@@ -141,13 +152,11 @@ describe("runBackupBase", () => {
       attachmentsProcessed: 0,
     });
 
-    const upload = calls.find((c) => c.url.includes("/upload-csv"));
-    expect(upload).toBeDefined();
-    const uploadBody = JSON.parse(String(upload!.init.body));
-    expect(uploadBody.key).toBe(
+    expect(writes).toHaveLength(1);
+    expect(writes[0]!.key).toBe(
       "acme/MySpace/ProjectsDB/2026-05-02T12-00-00Z/Tasks.csv",
     );
-    expect(uploadBody.body).toContain("Name\r\nfoo\r\nbar");
+    expect(writes[0]!.csv).toContain("Name\r\nfoo\r\nbar");
 
     expect(calls.some((c) => c.url.endsWith("/lock"))).toBe(true);
     expect(calls.some((c) => c.url.endsWith("/unlock"))).toBe(true);
@@ -159,7 +168,8 @@ describe("runBackupBase", () => {
   });
 
   it("trial mode with >5 tables → backs up first 5 only and returns trial_truncated", async () => {
-    const { fetchMock, calls } = makeFetchMock();
+    const { fetchMock } = makeFetchMock();
+    const { writeCsv, writes } = makeWriteCsv();
     const tables = Array.from({ length: 7 }, (_, i) => ({
       id: `tbl${i + 1}`,
       name: `T${i + 1}`,
@@ -181,6 +191,7 @@ describe("runBackupBase", () => {
         fetchImpl: fetchMock,
         airtableClient: client,
         sleepImpl: async () => undefined,
+        writeCsv,
       },
     );
 
@@ -188,12 +199,12 @@ describe("runBackupBase", () => {
     expect(result.tablesProcessed).toBe(5);
     expect(client.getBaseSchema).toHaveBeenCalledTimes(1);
     expect(client.listRecords).toHaveBeenCalledTimes(5);
-    const uploadCalls = calls.filter((c) => c.url.includes("/upload-csv"));
-    expect(uploadCalls).toHaveLength(5);
+    expect(writes).toHaveLength(5);
   });
 
   it("trial mode hits 1000-record cap mid-table → returns trial_complete", async () => {
-    const { fetchMock, calls } = makeFetchMock();
+    const { fetchMock } = makeFetchMock();
+    const { writeCsv, writes } = makeWriteCsv();
     // Two tables. First yields 600 records over two pages; second yields 600
     // records over one page. After table 1 (600 of 1000) we move to table 2;
     // table 2's first page (600) pushes total to 1200, so we trim to fit
@@ -234,19 +245,20 @@ describe("runBackupBase", () => {
         fetchImpl: fetchMock,
         airtableClient: client,
         sleepImpl: async () => undefined,
+        writeCsv,
       },
     );
 
     expect(result.status).toBe("trial_complete");
     expect(result.recordsProcessed).toBe(1000);
     expect(result.tablesProcessed).toBe(2);
-    const uploadCalls = calls.filter((c) => c.url.includes("/upload-csv"));
-    expect(uploadCalls).toHaveLength(2);
+    expect(writes).toHaveLength(2);
   });
 
   // Phase 10d: per-table progress callback.
-  it("calls postProgress once per table after a successful upload", async () => {
+  it("calls postProgress once per table after a successful write", async () => {
     const { fetchMock } = makeFetchMock();
+    const { writeCsv } = makeWriteCsv();
     const tables = [
       {
         id: "tbl1",
@@ -302,6 +314,7 @@ describe("runBackupBase", () => {
         airtableClient: client,
         sleepImpl: async () => undefined,
         postProgress,
+        writeCsv,
       },
     );
 
@@ -328,6 +341,7 @@ describe("runBackupBase", () => {
 
   it("swallows a thrown postProgress so the backup still completes", async () => {
     const { fetchMock } = makeFetchMock();
+    const { writeCsv } = makeWriteCsv();
     const client = makeAirtableClient({
       schema: {
         tables: [
@@ -361,6 +375,7 @@ describe("runBackupBase", () => {
         airtableClient: client,
         sleepImpl: async () => undefined,
         postProgress,
+        writeCsv,
       },
     );
 
