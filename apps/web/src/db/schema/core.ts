@@ -405,6 +405,12 @@ export const backupConfigurations = baseout.table('backup_configurations', {
   // 'static' | 'dynamic' — Features §6.2
   storageType: text('storage_type').notNull().default('r2_managed'),
   // 'r2_managed' | 'google_drive' | 'dropbox' | 'box' | 'onedrive' | 's3' | 'frame_io' | 'byos'
+  nextScheduledAt: timestamp('next_scheduled_at', { withTimezone: true }),
+  // Engine-owned. SpaceDO writes this on every alarm-set / alarm-fire so the
+  // IntegrationsView can render "Next backup: <date>" without recomputing
+  // from frequency. NULL until the first PATCH /backup-config OR the
+  // bootstrap script hits this Space's DO. Phase B of
+  // baseout-backup-schedule-and-cancel.
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

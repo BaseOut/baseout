@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "smoke:seed": "node --env-file-if-exists=.env scripts/smoke-seed-run.mjs seed",
-    "smoke:cleanup": "node --env-file-if-exists=.env scripts/smoke-seed-run.mjs cleanup"
+    "smoke:cleanup": "node --env-file-if-exists=.env scripts/smoke-seed-run.mjs cleanup",
+    "bootstrap:space-do-alarms": "node --env-file-if-exists=.env scripts/bootstrap-space-do-alarms.mjs"
   },
   "dependencies": {
     "@baseout/db-schema": "workspace:*",

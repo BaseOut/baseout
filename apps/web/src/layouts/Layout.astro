@@ -16,7 +16,7 @@ const {
 } = Astro.props;
 ---
 <!doctype html>
-<html lang="en" data-theme="baseout-light" data-font-family="geist" class="group/html">
+<html lang="en" data-theme="baseout-light" data-font-family="geist" class="group/html" style="color-scheme: light dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -37,14 +37,17 @@ const {
     <ClientRouter />
     <script is:inline>
       function applyTheme() {
-        const theme = localStorage.getItem('theme') || 'light';
-        document.documentElement.setAttribute('data-theme', theme === 'dark' ? 'baseout' : 'baseout-light');
+        var stored = null;
+        try { stored = localStorage.getItem('theme'); } catch (e) { /* private mode */ }
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var isDark = stored === 'dark' || (!stored && prefersDark);
+        document.documentElement.setAttribute('data-theme', isDark ? 'baseout' : 'baseout-light');
       }
       applyTheme();
       document.addEventListener('astro:after-swap', applyTheme);
     </script>
   </head>
-  <body class="font-sans text-base-content antialiased transition-colors duration-300">
+  <body class="font-sans text-base-content antialiased">
     <slot />
   </body>
 </html>

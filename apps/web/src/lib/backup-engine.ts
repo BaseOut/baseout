@@ -129,6 +129,33 @@ export type EngineCancelRunResult =
   | EngineCancelRunSuccess
   | EngineCancelRunError;
 
+export interface EngineSetSpaceFrequencySuccess {
+  ok: true;
+  /** Unix-ms the SpaceDO scheduled the next alarm for. */
+  nextFireMs: number;
+}
+
+/**
+ * Non-2xx outcomes from POST /api/internal/spaces/:spaceId/set-frequency.
+ * 400 codes come from the route's body/uuid guards; 502 wraps a non-2xx
+ * from the SpaceDO itself (e.g. malformed frequency reaching the DO).
+ */
+export interface EngineSetSpaceFrequencyError {
+  ok: false;
+  code:
+    | "unauthorized"
+    | "invalid_request"
+    | "invalid_frequency"
+    | "space_do_error"
+    | "engine_unreachable"
+    | "engine_error";
+  status: number;
+}
+
+export type EngineSetSpaceFrequencyResult =
+  | EngineSetSpaceFrequencySuccess
+  | EngineSetSpaceFrequencyError;
+
 export interface BackupEngineOptions {
   /**
    * Service binding to the @baseout/server Worker. Provided by Cloudflare
@@ -143,6 +170,10 @@ export interface BackupEngineClient {
   whoami(connectionId: string): Promise<EngineWhoamiResult>;
   startRun(runId: string): Promise<EngineStartRunResult>;
   cancelRun(runId: string): Promise<EngineCancelRunResult>;
+  setSpaceFrequency(
+    spaceId: string,
+    frequency: string,
+  ): Promise<EngineSetSpaceFrequencyResult>;
 }
 
 const KNOWN_ERROR_CODES: ReadonlySet<EngineWhoamiError["code"]> = new Set([
@@ -174,6 +205,15 @@ const KNOWN_CANCEL_RUN_ERROR_CODES: ReadonlySet<EngineCancelRunError["code"]> =
     "run_not_found",
     "run_already_terminal",
   ]);
+
+const KNOWN_SET_FREQUENCY_ERROR_CODES: ReadonlySet<
+  EngineSetSpaceFrequencyError["code"]
+> = new Set([
+  "unauthorized",
+  "invalid_request",
+  "invalid_frequency",
+  "space_do_error",
+]);
 
 export function createBackupEngine(
   options: BackupEngineOptions,
@@ -258,6 +298,45 @@ export function createBackupEngine(
         rawCode &&
         KNOWN_START_RUN_ERROR_CODES.has(rawCode as EngineStartRunError["code"])
           ? (rawCode as EngineStartRunError["code"])
+          : "engine_error";
+      return { ok: false, code, status: res.status };
+    },
+
+    async setSpaceFrequency(spaceId, frequency) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/set-frequency`;
+      let res: Response;
+      try {
+        res = await options.binding.fetch(`https://engine${path}`, {
+          method: "POST",
+          headers: {
+            "x-internal-token": options.internalToken,
+            "content-type": "application/json",
+            accept: "application/json",
+          },
+          body: JSON.stringify({ frequency }),
+        });
+      } catch {
+        return { ok: false, code: "engine_unreachable", status: 0 };
+      }
+
+      if (res.ok) {
+        const body = (await res.json()) as { ok: true; nextFireMs: number };
+        return { ok: true, nextFireMs: body.nextFireMs };
+      }
+
+      let body: Record<string, unknown> = {};
+      try {
+        body = (await res.json()) as Record<string, unknown>;
+      } catch {
+        // engine returned non-JSON (rare); fall through with empty body
+      }
+      const rawCode = typeof body.error === "string" ? body.error : undefined;
+      const code: EngineSetSpaceFrequencyError["code"] =
+        rawCode &&
+        KNOWN_SET_FREQUENCY_ERROR_CODES.has(
+          rawCode as EngineSetSpaceFrequencyError["code"],
+        )
+          ? (rawCode as EngineSetSpaceFrequencyError["code"])
           : "engine_error";
       return { ok: false, code, status: res.status };
     },

@@ -21,24 +21,12 @@
 //   unsupported_storage_type    → 422
 //   no_bases_selected           → 422
 
-import { and, eq } from "drizzle-orm";
 import type { AppLocals, Env } from "../../../../env";
 import {
-  atBases,
-  backupConfigurationBases,
-  backupConfigurations,
-  backupRuns,
-  connections,
-  type BackupConfigurationRow,
-  type BackupRunRow,
-  type ConnectionRow,
-} from "../../../../db/schema";
-import { enqueueBackupBase } from "../../../../lib/trigger-client";
-import {
   processRunStart,
-  type IncludedBase,
   type ProcessRunStartResult,
 } from "../../../../lib/runs/start";
+import { buildRunStartDeps } from "../../../../lib/runs/start-deps";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -81,73 +69,14 @@ export async function runsStartHandler(
   }
 
   // The pure function takes injected DB queries. Production wiring uses the
-  // per-request masterDb; tests substitute vi.fn() deps and call
+  // per-request masterDb + buildRunStartDeps (shared with the SpaceDO
+  // scheduler in Phase B). Tests substitute vi.fn() deps and call
   // processRunStart directly (see runs-start.test.ts).
   const { db } = locals.getMasterDb();
 
   const result = await processRunStart(
     { runId },
-    {
-      fetchRunById: async (id) => {
-        const rows = await db
-          .select()
-          .from(backupRuns)
-          .where(eq(backupRuns.id, id))
-          .limit(1);
-        return (rows[0] ?? null) as BackupRunRow | null;
-      },
-      fetchConnectionById: async (id) => {
-        const rows = await db
-          .select()
-          .from(connections)
-          .where(eq(connections.id, id))
-          .limit(1);
-        return (rows[0] ?? null) as ConnectionRow | null;
-      },
-      fetchConfigBySpace: async (spaceId) => {
-        const rows = await db
-          .select()
-          .from(backupConfigurations)
-          .where(eq(backupConfigurations.spaceId, spaceId))
-          .limit(1);
-        return (rows[0] ?? null) as BackupConfigurationRow | null;
-      },
-      fetchIncludedBases: async (configId) => {
-        // backup_configuration_bases.at_base_id is a FK to at_bases.id (UUID),
-        // NOT to at_bases.at_base_id (the Airtable identifier "appXXX..."). The
-        // column name is misleading — see apps/web/src/db/schema/core.ts.
-        const rows = await db
-          .select({
-            atBaseId: atBases.atBaseId,
-            name: atBases.name,
-          })
-          .from(backupConfigurationBases)
-          .innerJoin(
-            atBases,
-            eq(atBases.id, backupConfigurationBases.atBaseId),
-          )
-          .where(
-            and(
-              eq(backupConfigurationBases.backupConfigurationId, configId),
-              eq(backupConfigurationBases.isIncluded, true),
-            ),
-          );
-        return rows as IncludedBase[];
-      },
-      updateRunStarted: async (id, startedAt) => {
-        await db
-          .update(backupRuns)
-          .set({ status: "running", startedAt, modifiedAt: startedAt })
-          .where(eq(backupRuns.id, id));
-      },
-      updateRunTriggerIds: async (id, triggerRunIds) => {
-        await db
-          .update(backupRuns)
-          .set({ triggerRunIds, modifiedAt: new Date() })
-          .where(eq(backupRuns.id, id));
-      },
-      enqueueBackupBase: (payload) => enqueueBackupBase(env, payload),
-    },
+    buildRunStartDeps(db, env),
   );
 
   if (result.ok) {

@@ -123,6 +123,27 @@ export function formatTriggeredBy(value: string): string {
 }
 
 /**
+ * Format the IntegrationsView "Next backup: <date>" line. Reads
+ * backup_configurations.next_scheduled_at — the unix-ms timestamp the
+ * SpaceDO scheduled. NULL is rendered as "Not yet scheduled" (no schedule
+ * armed yet — either pre-bootstrap or instant-frequency).
+ *
+ * Locale-aware via Intl.DateTimeFormat; the user's browser locale wins
+ * over our server timezone. MVP fires all alarms at 00:00 UTC, so the
+ * displayed time reflects what that boundary looks like in the viewer's
+ * timezone.
+ */
+export function formatNextScheduledAt(iso: string | null): string {
+  if (!iso) return 'Not yet scheduled'
+  const date = new Date(iso)
+  if (!Number.isFinite(date.getTime())) return 'Not yet scheduled'
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
+}
+
+/**
  * Full locale-formatted timestamp for the detail panel (collapsed row uses
  * the shorter `toLocaleString()`). Returns '—' on null/invalid so the panel
  * never renders 'Invalid Date'.

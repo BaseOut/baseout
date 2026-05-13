@@ -10,3 +10,5 @@ export * from "./backup-runs";
 export * from "./backup-configurations";
 export * from "./backup-configuration-bases";
 export * from "./at-bases";
+export * from "./spaces";
+export * from "./platforms";

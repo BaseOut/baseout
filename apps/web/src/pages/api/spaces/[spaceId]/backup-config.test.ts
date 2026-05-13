@@ -40,6 +40,10 @@ function makeDeps(
     })),
     resolveTier: vi.fn(async () => 'pro' as const),
     upsertConfig: vi.fn(async () => {}),
+    // Phase B: defaults to null so existing tests that don't care about
+    // the SpaceDO hand-off pass unchanged. Tests targeting the hand-off
+    // override with vi.fn().
+    onScheduledFrequencyChange: null,
     ...overrides,
   }
 }
@@ -199,5 +203,81 @@ describe('handlePatch', () => {
       spaceId: SPACE_ID,
       frequency: 'weekly',
     })
+  })
+
+  // Phase B: SpaceDO hand-off ─────────────────────────────────────────────
+
+  it('calls onScheduledFrequencyChange with the new frequency on a successful PATCH', async () => {
+    const onScheduledFrequencyChange = vi.fn(async () => undefined)
+    const d = makeDeps({ onScheduledFrequencyChange })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'daily' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+    expect(onScheduledFrequencyChange).toHaveBeenCalledWith(SPACE_ID, 'daily')
+  })
+
+  it('does NOT call onScheduledFrequencyChange when only storageType changed', async () => {
+    const onScheduledFrequencyChange = vi.fn(async () => undefined)
+    const d = makeDeps({ onScheduledFrequencyChange })
+    await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { storageType: 'r2_managed' },
+      ...d,
+    })
+    expect(onScheduledFrequencyChange).not.toHaveBeenCalled()
+  })
+
+  it("does NOT call onScheduledFrequencyChange for frequency='instant' (out of scope)", async () => {
+    const onScheduledFrequencyChange = vi.fn(async () => undefined)
+    // 'instant' is only allowed at Business+ per Features §6.1 — use that
+    // tier so the policy doesn't reject the body before we get to the
+    // hand-off decision. The point of the test is the hand-off skip,
+    // not the tier gate.
+    const d = makeDeps({
+      onScheduledFrequencyChange,
+      resolveTier: vi.fn(async () => 'business' as const),
+    })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      // The PATCH should accept the new frequency but skip the SpaceDO
+      // hand-off — instant is webhook-driven (separate change).
+      body: { frequency: 'instant' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+    expect(onScheduledFrequencyChange).not.toHaveBeenCalled()
+  })
+
+  it('still returns 200 when the SpaceDO hand-off throws (best-effort)', async () => {
+    const onScheduledFrequencyChange = vi.fn(async () => {
+      throw new Error('engine_unreachable')
+    })
+    const d = makeDeps({ onScheduledFrequencyChange })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'daily' },
+      ...d,
+    })
+    // Hand-off failure must not undo the config UPSERT — the bootstrap
+    // script catches up. Status stays 200.
+    expect(res.status).toBe(200)
+  })
+
+  it('handles null onScheduledFrequencyChange (engine binding not wired)', async () => {
+    const d = makeDeps({ onScheduledFrequencyChange: null })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'daily' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
   })
 })

@@ -80,6 +80,7 @@ export async function getIntegrationsState(
       id: backupConfigurations.id,
       frequency: backupConfigurations.frequency,
       storageType: backupConfigurations.storageType,
+      nextScheduledAt: backupConfigurations.nextScheduledAt,
     })
     .from(backupConfigurations)
     .where(eq(backupConfigurations.spaceId, spaceId))
@@ -133,6 +134,10 @@ export async function getIntegrationsState(
   const policy: BackupPolicy = {
     frequency: asFrequency(config?.frequency ?? null),
     storageType: config?.storageType ?? 'r2_managed',
+    nextScheduledAt:
+      config?.nextScheduledAt instanceof Date
+        ? config.nextScheduledAt.toISOString()
+        : (config?.nextScheduledAt as string | null | undefined) ?? null,
   }
 
   return {

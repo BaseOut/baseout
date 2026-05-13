@@ -14,6 +14,7 @@
  */
 
 import type { APIRoute } from 'astro'
+import { env } from 'cloudflare:workers'
 import { and, eq, sql } from 'drizzle-orm'
 import {
   backupConfigurations,
@@ -27,6 +28,7 @@ import {
 } from '../../../../lib/backup-config/persist-policy'
 import { resolveCapabilities } from '../../../../lib/capabilities/resolve'
 import type { Tier } from '../../../../lib/capabilities/tier-capabilities'
+import { createBackupEngine } from '../../../../lib/backup-engine'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -50,6 +52,19 @@ export interface HandlePatchInput {
   fetchSpaceById: (spaceId: string) => Promise<SpaceRowSlim | null>
   resolveTier: (organizationId: string) => Promise<Tier | null>
   upsertConfig: (input: UpsertConfigInput) => Promise<void>
+  /**
+   * Phase B of baseout-backup-schedule-and-cancel. Called after a
+   * successful upsert if the body included a scheduled frequency
+   * (monthly / weekly / daily). Forwards to the engine's
+   * /api/internal/spaces/:spaceId/set-frequency proxy which drives the
+   * per-Space DO's alarm + writes next_scheduled_at. May be null in
+   * environments where the engine binding isn't wired — in that case
+   * the call is skipped (the bootstrap script will pick up the schedule
+   * on the next manual run).
+   */
+  onScheduledFrequencyChange:
+    | ((spaceId: string, frequency: string) => Promise<void>)
+    | null
 }
 
 export async function handlePatch(input: HandlePatchInput): Promise<Response> {
@@ -79,6 +94,25 @@ export async function handlePatch(input: HandlePatchInput): Promise<Response> {
   )
 
   if (result.ok) {
+    // Phase B: after a successful upsert, hand off to the SpaceDO via
+    // the engine proxy if the body included a scheduled frequency.
+    // 'instant' is webhook-driven (out of scope this change). Engine
+    // failures are swallowed — the bootstrap script catches up later.
+    const newFrequency = input.body.frequency
+    if (
+      input.onScheduledFrequencyChange &&
+      typeof newFrequency === 'string' &&
+      (newFrequency === 'monthly' ||
+        newFrequency === 'weekly' ||
+        newFrequency === 'daily')
+    ) {
+      try {
+        await input.onScheduledFrequencyChange(input.spaceId, newFrequency)
+      } catch {
+        // Schedule hand-off is best-effort. The config is already
+        // persisted; the alarm can be re-armed by the bootstrap script.
+      }
+    }
     return jsonResponse({ ok: true }, 200)
   }
   switch (result.error) {
@@ -149,7 +183,27 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
       return resolved.tier
     },
     upsertConfig: buildUpsert(db),
+    onScheduledFrequencyChange: buildScheduledFrequencyHandoff(),
   })
+}
+
+/**
+ * Build the engine-proxy callback that hands new scheduled frequencies
+ * off to the SpaceDO. Returns null when the BACKUP_ENGINE binding or
+ * INTERNAL_TOKEN is missing — in that environment the schedule won't be
+ * armed until the bootstrap script runs.
+ */
+function buildScheduledFrequencyHandoff():
+  | ((spaceId: string, frequency: string) => Promise<void>)
+  | null {
+  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  const engine = createBackupEngine({
+    binding: env.BACKUP_ENGINE,
+    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+  })
+  return async (spaceId, frequency) => {
+    await engine.setSpaceFrequency(spaceId, frequency)
+  }
 }
 
 export const POST: APIRoute = async () =>

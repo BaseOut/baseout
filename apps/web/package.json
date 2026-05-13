@@ -20,6 +20,8 @@
     "setup": "node scripts/setup.mjs --force",
     "setup:tokens": "node scripts/setup.mjs --tokens-only",
     "seed": "node --env-file=.env --import tsx/esm scripts/seed.ts",
+    "db:migrate": "node --env-file-if-exists=.env scripts/migrate.mjs",
+    "db:check": "node --env-file-if-exists=.env scripts/check-migrations.mjs",
     "typecheck": "astro check",
     "lint": "eslint .",
     "test:unit": "vitest run",

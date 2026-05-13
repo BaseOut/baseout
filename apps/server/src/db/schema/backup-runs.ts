@@ -22,11 +22,15 @@ import {
   text,
   timestamp,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 const baseout = pgSchema("baseout");
 
 export const backupRuns = baseout.table("backup_runs", {
-  id: text("id").primaryKey(),
+  // .default mirrors the canonical DB default (gen_random_uuid()) so
+  // Drizzle's INSERT-type surface lets us omit `id` on a SpaceDO scheduled
+  // insert. This file is never migrated from — see header.
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   spaceId: text("space_id").notNull(),
   connectionId: text("connection_id").notNull(),
   status: text("status").notNull(),
@@ -35,6 +39,10 @@ export const backupRuns = baseout.table("backup_runs", {
   // status through the engine lifecycle. 'cancelling' is the intermediate
   // state the cancel route writes before Trigger.dev acks; 'cancelled' is
   // terminal.
+  triggeredBy: text("triggered_by").notNull(),
+  // 'manual' | 'scheduled' | 'webhook' | 'trial' (engine-defined free text).
+  // The SpaceDO scheduler (Phase B of baseout-backup-schedule-and-cancel)
+  // INSERTs rows with triggered_by='scheduled' on every alarm fire.
   isTrial: boolean("is_trial").notNull(),
   recordCount: integer("record_count"),
   tableCount: integer("table_count"),
@@ -46,7 +54,12 @@ export const backupRuns = baseout.table("backup_runs", {
   // JSON array of Trigger.dev v3 run IDs — one per included base. Set by
   // the run-start handler when fanning out; consumed by run-complete to
   // determine when all per-base work has reported in.
-  modifiedAt: timestamp("modified_at", { withTimezone: true }).notNull(),
+  modifiedAt: timestamp("modified_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  // .defaultNow() mirrors the canonical DB default so INSERTs from the
+  // SpaceDO scheduler can omit modified_at. This file is never migrated
+  // from — see header.
 });
 
 export type BackupRunRow = typeof backupRuns.$inferSelect;

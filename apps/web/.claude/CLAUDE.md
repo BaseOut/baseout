@@ -132,6 +132,24 @@ Debug output must not ship. Before any commit — especially anything destined f
 - **PRs:** CI lint (`no-console` ESLint rule) must be green. A failing `no-console` check blocks merge — do not disable the rule to get green.
 - **Never** use `git commit --no-verify` to bypass the pre-commit hook that checks for console statements.
 
+## 5.5. Schema Changes Must Migrate Before They Ship
+
+If a change adds, removes, renames, or retypes a column in [src/db/schema/](../src/db/schema/) — or touches a Drizzle schema in any way that produces a new file under [drizzle/](../drizzle/) — the migration **must be applied to the dev DB in the same change that introduces the code that reads or writes the new column**. Schema-aware SSR will 404 (catch-all) or 500 the moment a `SELECT` references a missing column, and the failure mode is opaque (no helpful error in the rendered page).
+
+**Rules:**
+
+- After running `pnpm db:generate` (or hand-writing a migration), run `pnpm db:migrate` before exercising any UI that touches the affected table. Both scripts live in [package.json](../package.json).
+- `pnpm dev` runs `scripts/check-migrations.mjs` automatically as part of `scripts/launch.mjs`. If the journal under [drizzle/meta/](../drizzle/meta/) lists more migrations than the `drizzle.__drizzle_migrations` tracking table has applied rows, dev startup bails with the exact `pnpm db:migrate` command to run. **Do not bypass this gate by editing the journal.**
+- If a Drizzle column read fails at SSR time and renders a generic 404 / 500, this is almost always schema drift — run `pnpm db:check` first before debugging the page logic.
+- For changes that intentionally land schema and code in separate PRs (e.g. expand-then-contract refactors): note the order explicitly in the OpenSpec proposal's `tasks.md` so reviewers see the dependency.
+
+## 5.6. Don't Hand-Read or Hand-Write `.test.ts` Files As Routes
+
+`src/pages/api/` includes co-located test files (`*.test.ts`). Astro file-based routing scans all `.ts` files in `src/pages/` — co-located tests are tolerated because they export no `GET` / `POST` / etc. handlers. When adding a new route in a nested directory:
+
+- Place the test file beside the route (`route.ts` + `route.test.ts`).
+- Never import `cloudflare:workers` at module top of a test file — `vi.mock('cloudflare:workers', () => ({ env: {} }))` before the dynamic `await import('./route')`, mirroring the existing `backup-runs.test.ts` pattern.
+
 ---
 
 # UI/UX Frontend Development Standards

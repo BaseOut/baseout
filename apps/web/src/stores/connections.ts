@@ -29,6 +29,13 @@ export interface BackupPolicy {
   frequency: Frequency
   /** Currently saved storage destination (defaults to 'r2_managed'). */
   storageType: string
+  /**
+   * Engine-written timestamp of the next scheduled fire (ISO-8601) or
+   * null when no alarm has been armed yet (pre-bootstrap or
+   * instant-frequency). Surface in the IntegrationsView "Next backup:
+   * <date>" line. Phase B of baseout-backup-schedule-and-cancel.
+   */
+  nextScheduledAt: string | null
 }
 
 export interface IntegrationsState {

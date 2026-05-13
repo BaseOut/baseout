@@ -18,12 +18,15 @@ import {
 
 describe("schema mirrors", () => {
   it("backup_runs exposes the columns the engine reads + writes", () => {
+    // Phase B of baseout-backup-schedule-and-cancel: triggeredBy is
+    // INSERTed by the SpaceDO alarm with the literal 'scheduled'.
     expect(Object.keys(getTableColumns(backupRuns)).sort()).toEqual(
       [
         "id",
         "spaceId",
         "connectionId",
         "status",
+        "triggeredBy",
         "isTrial",
         "recordCount",
         "tableCount",
@@ -37,9 +40,19 @@ describe("schema mirrors", () => {
     );
   });
 
-  it("backup_configurations exposes mode + storageType (read by run-start)", () => {
+  it("backup_configurations exposes the columns the engine reads + writes", () => {
+    // Phase B of baseout-backup-schedule-and-cancel: frequency is read by
+    // the SpaceDO alarm; nextScheduledAt is written by the SpaceDO after
+    // every alarm-set / alarm-fire.
     expect(Object.keys(getTableColumns(backupConfigurations)).sort()).toEqual(
-      ["id", "spaceId", "mode", "storageType"].sort(),
+      [
+        "id",
+        "spaceId",
+        "frequency",
+        "mode",
+        "storageType",
+        "nextScheduledAt",
+      ].sort(),
     );
   });
 

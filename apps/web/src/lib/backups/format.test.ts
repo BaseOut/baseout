@@ -3,6 +3,7 @@ import {
   describeCounts,
   expandedTimestamp,
   formatDuration,
+  formatNextScheduledAt,
   formatTriggeredBy,
   healthBadgeClass,
   healthStatus,
@@ -288,6 +289,30 @@ describe('formatTriggeredBy', () => {
 
   it('falls back to em-dash for empty input', () => {
     expect(formatTriggeredBy('')).toBe('—')
+  })
+})
+
+describe('formatNextScheduledAt', () => {
+  it('returns "Not yet scheduled" for null', () => {
+    expect(formatNextScheduledAt(null)).toBe('Not yet scheduled')
+  })
+
+  it('returns "Not yet scheduled" for unparseable input', () => {
+    expect(formatNextScheduledAt('not-a-date')).toBe('Not yet scheduled')
+  })
+
+  it('returns a non-empty locale string with the year for a valid ISO timestamp', () => {
+    const out = formatNextScheduledAt('2026-06-01T00:00:00.000Z')
+    expect(out).not.toBe('Not yet scheduled')
+    expect(out).toMatch(/2026/)
+  })
+
+  it('includes a time component (Intl.DateTimeFormat timeStyle: short)', () => {
+    // We don't pin the exact format (locale + TZ vary) — just assert
+    // a digit-digit time substring is present so the formatter never
+    // silently drops time-of-day.
+    const out = formatNextScheduledAt('2026-06-01T13:45:00.000Z')
+    expect(out).toMatch(/\d{1,2}:\d{2}/)
   })
 })
 

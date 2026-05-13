@@ -57,3 +57,48 @@ body {
 .material-symbols-outlined.icon-filled {
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
+
+/* ── Theme swap (View Transitions API) ──────────────────── */
+/* Tunes the cross-fade emitted by document.startViewTransition() in
+   src/lib/theme.ts. Pseudo-elements only exist while a transition is in
+   flight; selectors are silently ignored on browsers without VT support. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 220ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+/* While the theme is mid-swap, kill every per-element transition so the
+   page snaps to the new palette in one frame and the root cross-fade is the
+   only thing animating. Without this, components with their own
+   `transition-colors` (sidebar items, daisyUI buttons, etc.) keep running
+   their own 150–300 ms fades and trickle out of sync. */
+html.theme-swapping *,
+html.theme-swapping *::before,
+html.theme-swapping *::after {
+  transition: none !important;
+  animation: none !important;
+}
+
+/* When the swap starts inside a daisyUI dropdown (e.g. the profile menu that
+   holds the theme toggle), pin its dropdown-content to the fully-visible state.
+   daisyUI hides it via `display: none; opacity: 0; scale: 95%` when neither
+   `:focus-within` nor `.dropdown-open` matches; the View Transition snapshot
+   can perturb that match and the dropdown's `@keyframes dropdown` re-fires,
+   producing a visible close-and-reopen. These overrides win on specificity +
+   `!important` and apply only while `data-theme-swap-pin` is on the dropdown
+   (set in src/lib/theme.ts, cleared on baseout:theme-swap-end). */
+.dropdown[data-theme-swap-pin] > .dropdown-content {
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  scale: 100% !important;
+  pointer-events: auto !important;
+  animation: none !important;
+  transition: none !important;
+}

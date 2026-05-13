@@ -6,6 +6,7 @@ import FrequencyPicker from '../components/backups/FrequencyPicker.astro';
 import StoragePicker from '../components/backups/StoragePicker.astro';
 import RunBackupButton from '../components/backups/RunBackupButton.astro';
 import BackupHistoryWidget from '../components/backups/BackupHistoryWidget.astro';
+import { formatNextScheduledAt } from '../lib/backups/format';
 import type { BackupRunSummary } from '../lib/backup-runs/types';
 import type { IntegrationsState } from '../stores/connections';
 
@@ -226,6 +227,11 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
                 selectedFrequency={state.policy.frequency}
                 availableFrequencies={state.availableFrequencies}
               />
+              <p class="text-xs text-base-content/60" data-next-scheduled>
+                Next backup: <span class="font-medium text-base-content/80">
+                  {formatNextScheduledAt(state.policy.nextScheduledAt)}
+                </span>
+              </p>
               <StoragePicker
                 spaceId={Astro.locals.account.space.id}
                 selectedStorageType={state.policy.storageType}

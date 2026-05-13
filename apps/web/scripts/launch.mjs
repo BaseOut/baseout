@@ -86,6 +86,25 @@ async function main() {
     process.exit(1);
   }
 
+  // Bail early on migration drift — every other major change has broken the
+  // dev loop by shipping schema-aware code without applying the matching
+  // migration. The check is silent when in sync and prints the exact fix
+  // command otherwise. Dev-only — `build` runs in CI without a master DB.
+  if (isDev) {
+    const driftCheck = spawn(
+      'node',
+      ['--env-file-if-exists=.env', 'scripts/check-migrations.mjs'],
+      { stdio: 'inherit', shell: true, cwd: ROOT },
+    );
+    await new Promise((resolveProc, rejectProc) => {
+      driftCheck.on('exit', (code) => {
+        if (code === 0) resolveProc();
+        else process.exit(code ?? 1);
+      });
+      driftCheck.on('error', rejectProc);
+    });
+  }
+
   const child = spawn('npx', ['astro', command], {
     stdio: 'inherit',
     shell: true,

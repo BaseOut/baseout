@@ -559,13 +559,16 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
     const btn = li.querySelector<HTMLButtonElement>('[data-space-switch]');
     if (!btn) return;
     btn.disabled = isActive;
-    let check = btn.querySelector<HTMLElement>('.fa-check');
-    if (isActive && !check) {
-      const i = document.createElement('i');
-      i.className = 'iconify lucide--check text-primary ms-auto size-3.5';
-      btn.appendChild(i);
-    } else if (!isActive && check) {
-      check.remove();
+    const checks = btn.querySelectorAll<HTMLElement>('.lucide--check');
+    if (isActive) {
+      checks.forEach((el, idx) => { if (idx > 0) el.remove(); });
+      if (checks.length === 0) {
+        const i = document.createElement('i');
+        i.className = 'iconify lucide--check text-primary ms-auto size-3.5';
+        btn.appendChild(i);
+      }
+    } else {
+      checks.forEach((el) => el.remove());
     }
     const label = btn.querySelector<HTMLElement>('.truncate');
     if (label && label.textContent !== s.name) label.textContent = s.name;
