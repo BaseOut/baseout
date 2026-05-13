@@ -81,7 +81,7 @@ Depends on Phase A only for the cancel button being useful on `triggered_by='sch
 
 ### B.7 — Phase B verification
 
-- [ ] B.7.1 `pnpm --filter @baseout/server typecheck && pnpm --filter @baseout/server test` — all green.
+- [x] B.7.1 `pnpm --filter @baseout/server typecheck && pnpm --filter @baseout/server test` — all green. (Unblocked by [baseout-server-spacedo-alarm-test-isolation-fix](../baseout-server-spacedo-alarm-test-isolation-fix/) — three alarm-storage tests were red from `6d887a6` until that change collapsed them to a single-block `runInDurableObject` pattern + bumped `FIXED_NOW` past the 2026-05-13 wall-clock boundary.)
 - [ ] B.7.2 `pnpm --filter @baseout/web typecheck && pnpm --filter @baseout/web test:unit` — all green.
 - [ ] B.7.3 Human checkpoint smoke:
   - PATCH a Space's `backup-config` to set frequency to `daily`. Wait one tick (the bootstrap script writes `next_scheduled_at` for tomorrow 00:00 UTC).

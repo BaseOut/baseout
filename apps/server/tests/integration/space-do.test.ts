@@ -31,7 +31,12 @@ const ORG_ID = "22222222-2222-2222-2222-222222222222";
 const CONFIG_ID = "33333333-3333-3333-3333-333333333333";
 const CONN_ID = "44444444-4444-4444-4444-444444444444";
 const RUN_ID = "55555555-5555-5555-5555-555555555555";
-const FIXED_NOW = new Date("2026-05-12T14:23:00.000Z");
+// Far-future date so workerd doesn't clamp setAlarm(pastTimestamp) — when
+// FIXED_NOW is in the past relative to real wall-clock, computeNextFire's
+// output (e.g. tomorrow-from-FIXED_NOW midnight UTC) is also in the past,
+// and state.storage.setAlarm clamps to "fire ASAP" instead of persisting
+// the requested timestamp verbatim. Bump on review if 2030+ ever arrives.
+const FIXED_NOW = new Date("2030-01-15T14:23:00.000Z");
 
 // The DO addresses itself by `state.id.name` (set by idFromName(spaceId)).
 // Each test threads its DO-name through deps as the spaceId so assertions
@@ -64,23 +69,27 @@ function depsFor(
 
 describe("SpaceDO POST /set-frequency", () => {
   it("computes next-fire via computeNextFire and calls state.storage.setAlarm", async () => {
+    // Drive the action via inst.fetch inside the same runInDurableObject
+    // block as the storage read-back so both touch the same isolate.
+    // A split pattern (stub.fetch → second runInDurableObject for getAlarm)
+    // crosses an isolate boundary under @cloudflare/vitest-pool-workers
+    // and the alarm read returns null.
     const spaceId = `set-freq-${crypto.randomUUID()}`;
     const stub = getStub(spaceId);
 
-    await runInDurableObject(stub, async (inst) => {
+    await runInDurableObject(stub, async (inst, state) => {
       inst.setSchedulerDepsForTests(depsFor(spaceId));
-    });
+      const res = await inst.fetch(
+        new Request("http://do/set-frequency", {
+          method: "POST",
+          body: JSON.stringify({ spaceId, frequency: "daily" }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { ok: boolean; nextFireMs: number };
+      expect(body.ok).toBe(true);
+      expect(body.nextFireMs).toBe(computeNextFire("daily", FIXED_NOW));
 
-    const res = await stub.fetch("http://do/set-frequency", {
-      method: "POST",
-      body: JSON.stringify({ spaceId, frequency: "daily" }),
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { ok: boolean; nextFireMs: number };
-    expect(body.ok).toBe(true);
-    expect(body.nextFireMs).toBe(computeNextFire("daily", FIXED_NOW));
-
-    await runInDurableObject(stub, async (_inst, state) => {
       const scheduledFor = await state.storage.getAlarm();
       expect(scheduledFor).toBe(computeNextFire("daily", FIXED_NOW));
     });
@@ -125,9 +134,16 @@ describe("SpaceDO alarm() — happy path", () => {
     const stub = getStub(spaceId);
     const deps = depsFor(spaceId);
 
-    await runInDurableObject(stub, async (inst) => {
+    // Both the alarm() invocation AND the state.storage.getAlarm() read-back
+    // happen in the same runInDurableObject block so both touch the same
+    // isolate. A second runInDurableObject would see the alarm read-back as
+    // null under @cloudflare/vitest-pool-workers.
+    await runInDurableObject(stub, async (inst, state) => {
       inst.setSchedulerDepsForTests(deps);
       await inst.alarm();
+      // Re-sets the alarm so the next fire happens on schedule.
+      const next = await state.storage.getAlarm();
+      expect(next).toBe(computeNextFire("daily", FIXED_NOW));
     });
 
     expect(deps.fetchConfig).toHaveBeenCalledOnce();
@@ -143,12 +159,6 @@ describe("SpaceDO alarm() — happy path", () => {
       CONFIG_ID,
       computeNextFire("daily", FIXED_NOW),
     );
-
-    // Re-sets the alarm so the next fire happens on schedule.
-    await runInDurableObject(stub, async (_inst, state) => {
-      const next = await state.storage.getAlarm();
-      expect(next).toBe(computeNextFire("daily", FIXED_NOW));
-    });
   });
 });
 
@@ -207,9 +217,12 @@ describe("SpaceDO alarm() — error gates", () => {
       fetchActiveAirtableConnection: vi.fn(async () => null),
     });
 
-    await runInDurableObject(stub, async (inst) => {
+    // Single-block pattern: alarm() and getAlarm() in the same isolate.
+    await runInDurableObject(stub, async (inst, state) => {
       inst.setSchedulerDepsForTests(deps);
       await inst.alarm();
+      const next = await state.storage.getAlarm();
+      expect(next).toBe(computeNextFire("daily", FIXED_NOW));
     });
 
     expect(deps.insertScheduledRun).not.toHaveBeenCalled();
@@ -219,10 +232,6 @@ describe("SpaceDO alarm() — error gates", () => {
       CONFIG_ID,
       computeNextFire("daily", FIXED_NOW),
     );
-    await runInDurableObject(stub, async (_inst, state) => {
-      const next = await state.storage.getAlarm();
-      expect(next).toBe(computeNextFire("daily", FIXED_NOW));
-    });
   });
 
   it("rolls back the inserted run when runStart fails (e.g. no_bases_selected)", async () => {
