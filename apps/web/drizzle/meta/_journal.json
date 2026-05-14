@@ -57,6 +57,13 @@
       "when": 1778628107221,
       "tag": "0007_backup_schedule_and_cancel",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1778771240840,
+      "tag": "0008_workspace_rediscovery",
+      "breakpoints": true
     }
   ]
 }

@@ -158,6 +158,11 @@ export const atBases = baseout.table('at_bases', {
     .references(() => spaces.id, { onDelete: 'cascade' }),
   atBaseId: text('at_base_id').notNull(),      // Airtable base ID e.g. "appXXXXXXXXX"
   name: text('name').notNull(),                // cached from last API scan
+  discoveredVia: text('discovered_via').notNull().default('oauth_callback'),
+  // 'oauth_callback' | 'rediscovery_scheduled' | 'rediscovery_manual'
+  // Set on INSERT only — `onConflictDoUpdate` omits this column from the set-list
+  // so the original discovery source is preserved across rediscoveries.
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
@@ -405,6 +410,10 @@ export const backupConfigurations = baseout.table('backup_configurations', {
   // 'static' | 'dynamic' — Features §6.2
   storageType: text('storage_type').notNull().default('r2_managed'),
   // 'r2_managed' | 'google_drive' | 'dropbox' | 'box' | 'onedrive' | 's3' | 'frame_io' | 'byos'
+  autoAddFutureBases: boolean('auto_add_future_bases').notNull().default(false),
+  // When true, bases discovered via rediscovery (alarm or manual rescan) are
+  // included in the next backup run automatically — subject to the tier
+  // `basesPerSpace` cap. See workspace-rediscovery change.
   nextScheduledAt: timestamp('next_scheduled_at', { withTimezone: true }),
   // Engine-owned. SpaceDO writes this on every alarm-set / alarm-fire so the
   // IntegrationsView can render "Next backup: <date>" without recomputing
@@ -442,4 +451,33 @@ export const backupConfigurationBases = baseout.table('backup_configuration_base
     table.atBaseId,
   ),
   index('backup_configuration_bases_config_id_idx').on(table.backupConfigurationId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// SPACE EVENTS
+// Minimal per-Space notification surface. Each row is a user-visible event
+// (currently only 'bases_discovered' from workspace rediscovery). The
+// IntegrationsView reads unread rows on SSR and renders an inline banner.
+// Designed as a tiny additive surface — future kinds (token_expiry,
+// schema_drift) land as new `kind` values without schema changes. If a
+// full notification stack ships later, migrate via INSERT … SELECT.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const spaceEvents = baseout.table('space_events', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  // 'bases_discovered' (V1) — additive
+  payload: jsonb('payload').notNull(),
+  // For 'bases_discovered':
+  //   { discovered: AtBaseId[], autoAdded: AtBaseId[],
+  //     blockedByTier: AtBaseId[], tierCap: number | null }
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+}, (table) => [
+  index('space_events_space_id_active_idx')
+    .on(table.spaceId)
+    .where(sql`${table.dismissedAt} IS NULL`),
 ])

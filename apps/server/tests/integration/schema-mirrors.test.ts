@@ -43,7 +43,8 @@ describe("schema mirrors", () => {
   it("backup_configurations exposes the columns the engine reads + writes", () => {
     // Phase B of baseout-backup-schedule-and-cancel: frequency is read by
     // the SpaceDO alarm; nextScheduledAt is written by the SpaceDO after
-    // every alarm-set / alarm-fire.
+    // every alarm-set / alarm-fire. Workspace rediscovery adds
+    // autoAddFutureBases — read on alarm + manual rescan.
     expect(Object.keys(getTableColumns(backupConfigurations)).sort()).toEqual(
       [
         "id",
@@ -51,22 +52,37 @@ describe("schema mirrors", () => {
         "frequency",
         "mode",
         "storageType",
+        "autoAddFutureBases",
         "nextScheduledAt",
       ].sort(),
     );
   });
 
-  it("backup_configuration_bases exposes the join shape (read by run-start)", () => {
+  it("backup_configuration_bases exposes the join shape (read by run-start) + isAutoDiscovered (written by rediscovery)", () => {
     expect(
       Object.keys(getTableColumns(backupConfigurationBases)).sort(),
     ).toEqual(
-      ["id", "backupConfigurationId", "atBaseId", "isIncluded"].sort(),
+      [
+        "id",
+        "backupConfigurationId",
+        "atBaseId",
+        "isIncluded",
+        "isAutoDiscovered",
+      ].sort(),
     );
   });
 
-  it("at_bases exposes id, spaceId, atBaseId, name (read by run-start)", () => {
+  it("at_bases exposes the columns the engine reads + writes (incl. rediscovery)", () => {
     expect(Object.keys(getTableColumns(atBases)).sort()).toEqual(
-      ["id", "spaceId", "atBaseId", "name"].sort(),
+      [
+        "id",
+        "spaceId",
+        "atBaseId",
+        "name",
+        "discoveredVia",
+        "firstSeenAt",
+        "lastSeenAt",
+      ].sort(),
     );
   });
 });
