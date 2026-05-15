@@ -22,7 +22,8 @@
     "dev:api": "pnpm --filter @baseout/api dev",
     "dev:sql": "pnpm --filter @baseout/sql dev",
     "dev:hooks": "pnpm --filter @baseout/hooks dev",
-    "dev:all": "pnpm --filter @baseout/web --filter @baseout/server --parallel run dev"
+    "dev:workflows": "pnpm --filter @baseout/workflows dev",
+    "dev:all": "pnpm --filter @baseout/web --filter @baseout/server --filter @baseout/workflows --parallel run dev"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

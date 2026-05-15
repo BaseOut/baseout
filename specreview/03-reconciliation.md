@@ -76,7 +76,7 @@ These are places where the OpenSpec change docs and the real repo no longer agre
 
 **Spec says:** Trigger.dev v3 owns long-running backup jobs (one per base, unlimited concurrency).
 
-**Reality:** `trigger.config.ts` + `backup-base.task.ts` scaffold exists in `apps/server/trigger/`. Real workload not wired. Spec assumes per-environment Trigger.dev projects + concurrency cost validation pre-launch.
+**Reality:** `trigger.config.ts` + `backup-base.task.ts` scaffold exists in `apps/workflows/` (split out from `apps/server/` 2026-05). Real workload not wired. Spec assumes per-environment Trigger.dev projects + concurrency cost validation pre-launch.
 
 **Resolution:** keep on plan. Validate concurrency cost during Phase 6 (pre-launch hardening) as the tasks file says.
 

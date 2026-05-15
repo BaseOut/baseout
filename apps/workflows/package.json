@@ -1,0 +1,33 @@
+{
+  "name": "@baseout/workflows",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Trigger.dev v3 task project. Runs on Trigger.dev's Node runner (NOT in a Cloudflare Worker). Enqueued from apps/server via the @trigger.dev/sdk binding.",
+  "main": "./trigger/tasks/index.ts",
+  "exports": {
+    ".": "./trigger/tasks/index.ts",
+    "./tasks/_ping": "./trigger/tasks/_ping.ts",
+    "./tasks/backup-base.task": "./trigger/tasks/backup-base.task.ts"
+  },
+  "scripts": {
+    "dev": "trigger dev",
+    "deploy": "trigger deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@baseout/db-schema": "workspace:*",
+    "@baseout/shared": "workspace:*",
+    "@trigger.dev/sdk": "4.4.6",
+    "papaparse": "^5.5.3"
+  },
+  "devDependencies": {
+    "@trigger.dev/build": "4.4.6",
+    "@types/node": "^22.0.0",
+    "@types/papaparse": "^5.5.2",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.5"
+  }
+}

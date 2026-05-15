@@ -24,5 +24,5 @@ All edits are in [apps/server/tests/integration/space-do.test.ts](../../../apps/
 - [x] A.3.3 `cd apps/server && pnpm typecheck` — clean.
 - [x] A.3.4 `cd apps/web && pnpm typecheck && pnpm exec vitest run` — clean / **425** passing (no spillover from the apps/server change).
 - [ ] A.3.5 `git diff --staged | grep -nE '^\+.*(console\.|debugger)'` — no stray debug statements.
-- [ ] A.3.6 Tick `B.7.1` in [openspec/changes/baseout-backup-schedule-and-cancel/tasks.md](../baseout-backup-schedule-and-cancel/tasks.md) once this lands — the Phase B verification gate now passes, unblocking the Phase B archive.
-- [ ] A.3.7 On user approval: stage by name (`git add apps/server/tests/integration/space-do.test.ts openspec/changes/baseout-server-spacedo-alarm-test-isolation-fix/ openspec/changes/baseout-backup-schedule-and-cancel/tasks.md`) + commit locally + push to `origin/autumn/server-setup`.
+- [ ] A.3.6 Tick `B.7.1` in [openspec/changes/baseout-server-schedule-and-cancel/tasks.md](../baseout-server-schedule-and-cancel/tasks.md) once this lands — the Phase B verification gate now passes, unblocking the Phase B archive.
+- [ ] A.3.7 On user approval: stage by name (`git add apps/server/tests/integration/space-do.test.ts openspec/changes/baseout-server-spacedo-alarm-test-isolation-fix/ openspec/changes/baseout-server-schedule-and-cancel/tasks.md`) + commit locally + push to `origin/autumn/server-setup`.

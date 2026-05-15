@@ -23,7 +23,8 @@ const ROOT = dirname(__dirname);
 
 const LINKS = [
   ["apps/web/openspec",                "../../openspec/changes/baseout-web"],
-  ["apps/server/openspec",             "../../openspec/changes/baseout-backup"],
+  ["apps/server/openspec",             "../../openspec/changes/baseout-server"],
+  ["apps/workflows/openspec",          "../../openspec/changes/baseout-workflows"],
   ["apps/admin/openspec",              "../../openspec/changes/baseout-admin"],
   ["apps/api/openspec",                "../../openspec/changes/baseout-api"],
   ["apps/sql/openspec",                "../../openspec/changes/baseout-sql"],

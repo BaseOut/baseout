@@ -26,5 +26,5 @@ The browser should talk to exactly one origin: `apps/web`. `apps/web` is already
 
 - `openspec/changes/baseout-web/design.md` — update live-progress, run-trigger, and data-read decisions
 - `openspec/changes/baseout-web/tasks.md` — update tasks 4.2, 4.7, 4.13, 4.14, 4.16, 5.2, 5.12; add DO binding + service binding setup tasks
-- `openspec/changes/baseout-backup/design.md` — add HMAC enforcement rule; remove `baseout-web` from list of parties with a direct WebSocket contract to the DO
+- `openspec/changes/baseout-server/design.md` — add HMAC enforcement rule; remove `baseout-web` from list of parties with a direct WebSocket contract to the DO
 - `apps/web/wrangler.jsonc` — add DO namespace binding (script_name: baseout-server) and service binding to baseout-server

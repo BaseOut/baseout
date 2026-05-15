@@ -15,12 +15,12 @@ Snapshot of `apps/server` and `apps/web` spec-vs-code alignment. Intended as a w
 
 - `CLAUDE.md` (repo root)
 - `shared/Baseout_PRD.md` / `Baseout_Features.md` / `Baseout_Implementation_Plan.md` (referenced via OpenSpec changes)
-- `openspec/changes/baseout-backup/{proposal,tasks}.md`
+- `openspec/changes/baseout-server/{proposal,tasks}.md`
 - `openspec/changes/baseout-web/{proposal,STATUS,tasks}.md`
 - `openspec/changes/baseout-server-cron-oauth-refresh/{proposal,tasks}.md`
 - `openspec/changes/baseout-web-server-service-binding{,-staging-prod}/proposal.md`
 - `openspec/changes/baseout-web-space-scoped-interior/proposal.md`
-- `openspec/changes/baseout-backup-history-live-status/proposal.md`
+- `openspec/changes/baseout-server-history-live-status/proposal.md`
 - `openspec/changes/web-client-isolation/proposal.md`
 - `openspec/changes/baseout-db-schema/proposal.md`
 - `apps/server/src/**` and `apps/web/src/**` directory inventories
@@ -28,15 +28,15 @@ Snapshot of `apps/server` and `apps/web` spec-vs-code alignment. Intended as a w
 
 ### Source material added in 05-update (HEAD `cddff0c`)
 
-- `openspec/changes/baseout-backup-schedule-and-cancel/{proposal,tasks}.md`
-- `openspec/changes/baseout-backup-attachments/proposal.md`
-- `openspec/changes/baseout-backup-byos-destinations/proposal.md`
-- `openspec/changes/baseout-backup-dynamic-mode/proposal.md`
-- `openspec/changes/baseout-backup-instant-webhook/proposal.md`
-- `openspec/changes/baseout-backup-retention-and-cleanup/proposal.md`
-- `openspec/changes/baseout-backup-trial-quota-enforcement/proposal.md`
-- `openspec/changes/baseout-backup-manual-quota-and-credits/proposal.md`
-- `openspec/changes/baseout-backup-automations-interfaces-docs/proposal.md`
+- `openspec/changes/baseout-server-schedule-and-cancel/{proposal,tasks}.md`
+- `openspec/changes/baseout-server-attachments/proposal.md`
+- `openspec/changes/baseout-server-byos-destinations/proposal.md`
+- `openspec/changes/baseout-server-dynamic-mode/proposal.md`
+- `openspec/changes/baseout-server-instant-webhook/proposal.md`
+- `openspec/changes/baseout-server-retention-and-cleanup/proposal.md`
+- `openspec/changes/baseout-server-trial-quota-enforcement/proposal.md`
+- `openspec/changes/baseout-server-manual-quota-and-credits/proposal.md`
+- `openspec/changes/baseout-server-automations-interfaces-docs/proposal.md`
 - `openspec/changes/baseout-server-spacedo-alarm-test-isolation-fix/proposal.md`
 - `openspec/changes/baseout-web-smooth-theme-swap/proposal.md`
 - Commit `8fc1f61` (R2 removal) diff stat
