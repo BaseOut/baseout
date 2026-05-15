@@ -139,6 +139,9 @@ function buildUpsert(db: AppDb): (input: UpsertConfigInput) => Promise<void> {
     }
     if (upsert.frequency !== undefined) insertValues.frequency = upsert.frequency
     if (upsert.storageType !== undefined) insertValues.storageType = upsert.storageType
+    if (upsert.autoAddFutureBases !== undefined) {
+      insertValues.autoAddFutureBases = upsert.autoAddFutureBases
+    }
 
     await db
       .insert(backupConfigurations)
@@ -148,6 +151,9 @@ function buildUpsert(db: AppDb): (input: UpsertConfigInput) => Promise<void> {
         set: {
           ...(upsert.frequency !== undefined && { frequency: upsert.frequency }),
           ...(upsert.storageType !== undefined && { storageType: upsert.storageType }),
+          ...(upsert.autoAddFutureBases !== undefined && {
+            autoAddFutureBases: upsert.autoAddFutureBases,
+          }),
           modifiedAt: now,
         },
       })

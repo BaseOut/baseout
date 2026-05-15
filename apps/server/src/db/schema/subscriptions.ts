@@ -3,11 +3,13 @@
 //
 // One Stripe subscription per Organization. apps/web is the canonical
 // writer (Stripe webhook + onboarding). apps/server reads
-// `organization_id` during workspace rediscovery to resolve the tier on
-// the connected subscription_items row (`basesPerSpace` cap).
+// `organization_id` + `status` during workspace rediscovery to resolve
+// the tier on the connected subscription_items row (`basesPerSpace` cap).
+// Only 'active' and 'trialing' subscriptions resolve; others fall back to
+// the starter cap.
 //
-// Columns intentionally omitted: stripeSubscriptionId, status,
-// createdAt, modifiedAt — engine doesn't read them.
+// Columns intentionally omitted: stripeSubscriptionId, createdAt,
+// modifiedAt — engine doesn't read them.
 //
 // Per CLAUDE.md §5.3.
 
@@ -18,6 +20,9 @@ const baseout = pgSchema("baseout");
 export const subscriptions = baseout.table("subscriptions", {
   id: text("id").primaryKey(),
   organizationId: text("organization_id").notNull(),
+  status: text("status").notNull(),
+  // 'trialing' | 'active' | 'past_due' | 'cancelled' | 'incomplete' |
+  // 'incomplete_expired'. Engine filters to active/trialing for tier resolution.
 });
 
 export type SubscriptionRow = typeof subscriptions.$inferSelect;

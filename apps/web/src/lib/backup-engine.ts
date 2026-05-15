@@ -156,6 +156,39 @@ export type EngineSetSpaceFrequencyResult =
   | EngineSetSpaceFrequencySuccess
   | EngineSetSpaceFrequencyError;
 
+export interface EngineRescanBasesSuccess {
+  ok: true;
+  discovered: number;
+  autoAdded: number;
+  blockedByTier: number;
+}
+
+/**
+ * Non-2xx outcomes from POST /api/internal/spaces/:spaceId/rescan-bases.
+ * 404 codes come from the engine's context resolver (space, config); 409
+ * means the Space has no active Airtable connection; 502 wraps Airtable
+ * Meta API failures the engine couldn't absorb via retry.
+ */
+export interface EngineRescanBasesError {
+  ok: false;
+  code:
+    | "unauthorized"
+    | "invalid_request"
+    | "space_not_found"
+    | "config_not_found"
+    | "connection_not_found"
+    | "airtable_error"
+    | "engine_unreachable"
+    | "engine_error";
+  status: number;
+  /** Echo of the engine's `upstream_status` on airtable_error. */
+  upstreamStatus?: number;
+}
+
+export type EngineRescanBasesResult =
+  | EngineRescanBasesSuccess
+  | EngineRescanBasesError;
+
 export interface BackupEngineOptions {
   /**
    * Service binding to the @baseout/server Worker. Provided by Cloudflare
@@ -174,6 +207,7 @@ export interface BackupEngineClient {
     spaceId: string,
     frequency: string,
   ): Promise<EngineSetSpaceFrequencyResult>;
+  rescanBases(spaceId: string): Promise<EngineRescanBasesResult>;
 }
 
 const KNOWN_ERROR_CODES: ReadonlySet<EngineWhoamiError["code"]> = new Set([
@@ -213,6 +247,17 @@ const KNOWN_SET_FREQUENCY_ERROR_CODES: ReadonlySet<
   "invalid_request",
   "invalid_frequency",
   "space_do_error",
+]);
+
+const KNOWN_RESCAN_BASES_ERROR_CODES: ReadonlySet<
+  EngineRescanBasesError["code"]
+> = new Set([
+  "unauthorized",
+  "invalid_request",
+  "space_not_found",
+  "config_not_found",
+  "connection_not_found",
+  "airtable_error",
 ]);
 
 export function createBackupEngine(
@@ -339,6 +384,56 @@ export function createBackupEngine(
           ? (rawCode as EngineSetSpaceFrequencyError["code"])
           : "engine_error";
       return { ok: false, code, status: res.status };
+    },
+
+    async rescanBases(spaceId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/rescan-bases`;
+      let res: Response;
+      try {
+        res = await options.binding.fetch(`https://engine${path}`, {
+          method: "POST",
+          headers: {
+            "x-internal-token": options.internalToken,
+            "content-type": "application/json",
+            accept: "application/json",
+          },
+          body: "{}",
+        });
+      } catch {
+        return { ok: false, code: "engine_unreachable", status: 0 };
+      }
+
+      if (res.ok) {
+        const body = (await res.json()) as Omit<
+          EngineRescanBasesSuccess,
+          "ok"
+        >;
+        return { ok: true, ...body };
+      }
+
+      let body: Record<string, unknown> = {};
+      try {
+        body = (await res.json()) as Record<string, unknown>;
+      } catch {
+        // engine returned non-JSON (rare); fall through with empty body
+      }
+      const rawCode = typeof body.error === "string" ? body.error : undefined;
+      const code: EngineRescanBasesError["code"] =
+        rawCode &&
+        KNOWN_RESCAN_BASES_ERROR_CODES.has(
+          rawCode as EngineRescanBasesError["code"],
+        )
+          ? (rawCode as EngineRescanBasesError["code"])
+          : "engine_error";
+      const out: EngineRescanBasesError = {
+        ok: false,
+        code,
+        status: res.status,
+      };
+      if (typeof body.upstream_status === "number") {
+        out.upstreamStatus = body.upstream_status;
+      }
+      return out;
     },
 
     async cancelRun(runId) {

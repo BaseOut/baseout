@@ -14,6 +14,8 @@ import {
   backupConfigurations,
   backupConfigurationBases,
   atBases,
+  subscriptions,
+  subscriptionItems,
 } from "../../src/db/schema";
 
 describe("schema mirrors", () => {
@@ -83,6 +85,18 @@ describe("schema mirrors", () => {
         "firstSeenAt",
         "lastSeenAt",
       ].sort(),
+    );
+  });
+
+  it("subscriptions exposes the columns the engine reads (workspace rediscovery tier resolver)", () => {
+    expect(Object.keys(getTableColumns(subscriptions)).sort()).toEqual(
+      ["id", "organizationId", "status"].sort(),
+    );
+  });
+
+  it("subscription_items exposes the columns the engine reads (workspace rediscovery tier resolver)", () => {
+    expect(Object.keys(getTableColumns(subscriptionItems)).sort()).toEqual(
+      ["id", "subscriptionId", "platformId", "tier"].sort(),
     );
   });
 });

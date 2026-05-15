@@ -17,11 +17,14 @@
 // Per CLAUDE.md §5.3.
 
 import { pgSchema, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 const baseout = pgSchema("baseout");
 
 export const atBases = baseout.table("at_bases", {
-  id: text("id").primaryKey(),
+  // .default mirrors the canonical DB default so engine INSERTs from
+  // workspace rediscovery can omit `id`. Never migrated from this side.
+  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   spaceId: text("space_id").notNull(),
   atBaseId: text("at_base_id").notNull(),
   name: text("name").notNull(),
@@ -29,8 +32,10 @@ export const atBases = baseout.table("at_bases", {
   // 'oauth_callback' | 'rediscovery_scheduled' | 'rediscovery_manual'.
   // Engine sets on INSERT only; on upsert conflict the column is omitted
   // from the set-list so the original discovery source is preserved.
-  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull(),
-  // Set by the DB default on first insert. Engine reads but does not write.
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  // .defaultNow() mirrors the canonical DB default so INSERTs can omit it.
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   // Engine bumps on every rediscovery upsert.
 });

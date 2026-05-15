@@ -143,4 +143,66 @@ describe('persistBackupConfigPolicy', () => {
     )
     expect(result).toEqual({ ok: false, error: 'frequency_not_allowed' })
   })
+
+  // workspace-rediscovery: autoAddFutureBases coverage
+  it('accepts autoAddFutureBases=true alone and forwards it to the upsert', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      {
+        spaceId: SPACE_ID,
+        body: { autoAddFutureBases: true },
+        tier: 'starter',
+      },
+      d,
+    )
+    expect(result).toEqual({ ok: true })
+    expect(d.upsertConfig).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      autoAddFutureBases: true,
+    })
+  })
+
+  it('accepts autoAddFutureBases=false alone and forwards it to the upsert', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      {
+        spaceId: SPACE_ID,
+        body: { autoAddFutureBases: false },
+        tier: 'pro',
+      },
+      d,
+    )
+    expect(result).toEqual({ ok: true })
+    expect(d.upsertConfig).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      autoAddFutureBases: false,
+    })
+  })
+
+  it('rejects autoAddFutureBases when not a boolean', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      {
+        spaceId: SPACE_ID,
+        body: { autoAddFutureBases: 'yes' },
+        tier: 'pro',
+      },
+      d,
+    )
+    expect(result).toEqual({ ok: false, error: 'invalid_request' })
+    expect(d.upsertConfig).not.toHaveBeenCalled()
+  })
+
+  it('does not tier-gate autoAddFutureBases (tier-cap applies at rediscovery time)', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      {
+        spaceId: SPACE_ID,
+        body: { autoAddFutureBases: true },
+        tier: null,
+      },
+      d,
+    )
+    expect(result).toEqual({ ok: true })
+  })
 })

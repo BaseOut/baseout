@@ -19,6 +19,7 @@ import { runsCompleteHandler } from "./pages/api/internal/runs/complete";
 import { runsProgressHandler } from "./pages/api/internal/runs/progress";
 import { runsCancelHandler } from "./pages/api/internal/runs/cancel";
 import { spacesSetFrequencyHandler } from "./pages/api/internal/spaces/set-frequency";
+import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
 import { runOAuthRefreshTick } from "./lib/oauth-refresh";
 
 const CONNECTIONS_WHOAMI_RE =
@@ -31,6 +32,8 @@ const RUNS_PROGRESS_RE = /^\/api\/internal\/runs\/([^/]+)\/progress$/;
 const RUNS_CANCEL_RE = /^\/api\/internal\/runs\/([^/]+)\/cancel$/;
 const SPACES_SET_FREQUENCY_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/set-frequency$/;
+const SPACES_RESCAN_BASES_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/rescan-bases$/;
 
 // Re-export Durable Object classes so workerd can resolve their bindings.
 // Required even when Astro adapter wraps the entry — see CLAUDE.md §5.1.
@@ -163,6 +166,21 @@ export default {
           ctx,
           locals,
           setFreq[1]!,
+        );
+      }
+
+      // Workspace rediscovery — manual rescan. apps/web's POST
+      // /api/spaces/:spaceId/rescan-bases proxies here. Method-check inside
+      // handler so non-POST returns 405. Same alarm pure-fn runs in Phase 4
+      // (SpaceDO) for scheduled rediscovery.
+      const rescanBases = SPACES_RESCAN_BASES_RE.exec(url.pathname);
+      if (rescanBases) {
+        return await spacesRescanBasesHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          rescanBases[1]!,
         );
       }
 

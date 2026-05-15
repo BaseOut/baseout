@@ -14,13 +14,16 @@
 // Per CLAUDE.md §5.3.
 
 import { boolean, pgSchema, text } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 const baseout = pgSchema("baseout");
 
 export const backupConfigurationBases = baseout.table(
   "backup_configuration_bases",
   {
-    id: text("id").primaryKey(),
+    // .default mirrors the canonical DB default so engine INSERTs from
+    // workspace rediscovery auto-add can omit `id`.
+    id: text("id").primaryKey().default(sql`gen_random_uuid()`),
     backupConfigurationId: text("backup_configuration_id").notNull(),
     atBaseId: text("at_base_id").notNull(),
     isIncluded: boolean("is_included").notNull(),
