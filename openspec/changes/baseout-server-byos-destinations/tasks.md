@@ -1,3 +1,21 @@
+## Phase 0 — Re-introduce managed R2 binding (per [`baseout-r2-stance`](../baseout-r2-stance/proposal.md))
+
+### 0.1 — Wrangler config
+
+- [ ] 0.1.1 Re-add `BACKUPS_R2` binding to [apps/server/wrangler.jsonc.example](../../../apps/server/wrangler.jsonc.example) per `git show 8fc1f61^:apps/server/wrangler.jsonc.example`.
+- [ ] 0.1.2 Re-add the same binding to `apps/server/wrangler.test.jsonc` (Miniflare R2).
+- [ ] 0.1.3 Provision the production R2 bucket (`baseout-backups`); capture R2 credentials in Cloudflare Secrets per [CLAUDE.md §3.3](../../../CLAUDE.md).
+
+### 0.2 — Env typing
+
+- [ ] 0.2.1 Re-add `BACKUPS_R2: R2Bucket` to the `Env` interface in [apps/server/src/env.d.ts](../../../apps/server/src/env.d.ts).
+- [ ] 0.2.2 Regenerate `worker-configuration.d.ts` if wrangler types are regenerated from the binding.
+
+### 0.3 — Dev path selector
+
+- [ ] 0.3.1 Add `STORAGE_DEV_MODE` env var (default `local-fs`) so dev keeps writing to `apps/server/.backups/` without R2 credentials.
+- [ ] 0.3.2 Document the env var in [apps/server/CLAUDE.md](../../../apps/server/CLAUDE.md) under the Trigger.dev section.
+
 ## Phase A — Schema
 
 ### A.1 — Migration

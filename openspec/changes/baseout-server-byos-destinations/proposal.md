@@ -1,6 +1,8 @@
+> **Depends on**: [`baseout-r2-stance`](../baseout-r2-stance/proposal.md) — Per the decision recorded there, managed R2 is the default destination. Phase 0 below re-introduces the `BACKUPS_R2` binding that was removed in commit `8fc1f61`.
+
 ## Why
 
-The `StoragePicker` UI in [apps/web/src/components/backups/StoragePicker.astro](../../../apps/web/src/components/backups/StoragePicker.astro) shows seven destination options — `r2_managed`, `google_drive`, `dropbox`, `box`, `onedrive`, `s3`, `frame_io` — but only `r2_managed` is selectable. Every other option is locked with a "Coming soon" label. The engine has no `StorageWriter` interface, no OAuth tokens for any non-Airtable provider, and no per-provider write path. The `backup-base.task.ts` writes straight to `env.BACKUPS_R2` via `r2.put`.
+The `StoragePicker` UI in [apps/web/src/components/backups/StoragePicker.astro](../../../apps/web/src/components/backups/StoragePicker.astro) shows seven destination options — `r2_managed`, `google_drive`, `dropbox`, `box`, `onedrive`, `s3`, `frame_io` — but only `r2_managed` is selectable. Every other option is locked with a "Coming soon" label. The engine has no `StorageWriter` interface, no OAuth tokens for any non-Airtable provider, and no per-provider write path. The `backup-base.task.ts` currently writes via [`local-fs-write.ts`](../../../apps/server/trigger/tasks/_lib/local-fs-write.ts) (dev-only path after `8fc1f61` removed the R2 binding).
 
 [PRD §7.2](../../../shared/Baseout_PRD.md) lists BYOS as a V1 Must-Have:
 
@@ -21,6 +23,16 @@ The existing openspec change `baseout-backup/specs/storage-destinations/spec.md`
 **Scope decision**: ship all six providers in one change. Splitting per-provider would create six near-identical OAuth proposal files. The phase structure lets the team ship Google Drive first (the most common) and add the others incrementally — but the architecture, the schema, and the `StorageWriter` interface are common across all of them, so they belong in one change.
 
 ## What Changes
+
+### Phase 0 — Re-introduce managed R2 binding
+
+Required first because commit `8fc1f61` removed it. Without this phase, Phase B's `r2-managed.ts` strategy has nothing to wrap, and the downstream `baseout-server-attachments` Phase B and `baseout-server-retention-and-cleanup` cleanup paths are blocked.
+
+- Re-add `BACKUPS_R2` binding to [apps/server/wrangler.jsonc.example](../../../apps/server/wrangler.jsonc.example) and `apps/server/wrangler.test.jsonc`. The shape was last present at `git show 8fc1f61^:apps/server/wrangler.jsonc.example`.
+- Re-add `BACKUPS_R2: R2Bucket` to the `Env` interface in [apps/server/src/env.d.ts](../../../apps/server/src/env.d.ts).
+- Provision the production R2 bucket (`baseout-backups`) and capture the bucket name + access keys in Cloudflare Secrets per [CLAUDE.md §3.3](../../../CLAUDE.md).
+- Recover the deleted `r2-proxy-write.ts` helper as a starting point for `r2-managed.ts` (`git show 8fc1f61^:apps/server/trigger/tasks/_lib/r2-proxy-write.ts`) — but rewrap it behind the `StorageWriter` interface defined in Phase B rather than re-introducing the standalone helper.
+- The dev path stays at [`local-fs-write.ts`](../../../apps/server/trigger/tasks/_lib/local-fs-write.ts), selected by an env var (e.g. `STORAGE_DEV_MODE=local-fs`). The decision whether to switch dev to Miniflare-R2 is deferred to the Phase 0 implementer.
 
 ### Phase A — `storage_destinations` schema
 

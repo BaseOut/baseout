@@ -15,3 +15,16 @@ allowBuilds:
 # public for at least 7 days (10080 minutes). Lets newly compromised
 # versions be discovered and yanked before we pick them up.
 minimumReleaseAge: 10080
+
+# Packages excluded from the minimumReleaseAge gate. Two reasons land
+# packages here: (a) registry metadata is missing the `time` field that the
+# policy needs to compute age, or (b) we deliberately want to track newer
+# vendor releases. The age policy still applies to the rest of the
+# dependency tree.
+# - @trigger.dev/*: vendor releases land faster than 7 days and at least
+#   one package (@trigger.dev/build) ships without the `time` metadata.
+#   The whole namespace is excluded so transitives (@trigger.dev/core etc.)
+#   resolve cleanly. SDK pinned at 4.4.6 in apps/server + apps/workflows.
+# Future pin bumps should re-check whether the exclusion is still needed.
+minimumReleaseAgeExclude:
+  - "@trigger.dev/*"
