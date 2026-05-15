@@ -2,7 +2,7 @@
 
 ## Why
 
-Commit `6d887a6` (chore: batch-ship Phase B + theme + openspec proposals) landed Phase B of [baseout-backup-schedule-and-cancel](../baseout-backup-schedule-and-cancel/) with **3 known-red tests** in [apps/server/tests/integration/space-do.test.ts](../../../apps/server/tests/integration/space-do.test.ts):
+Commit `6d887a6` (chore: batch-ship Phase B + theme + openspec proposals) landed Phase B of [baseout-backup-schedule-and-cancel](../baseout-server-schedule-and-cancel/) with **3 known-red tests** in [apps/server/tests/integration/space-do.test.ts](../../../apps/server/tests/integration/space-do.test.ts):
 
 | # | Test | What it asserts |
 |---|---|---|
@@ -10,7 +10,7 @@ Commit `6d887a6` (chore: batch-ship Phase B + theme + openspec proposals) landed
 | 2 | `SpaceDO alarm() — happy path > inserts a scheduled run, calls runStart, recomputes alarm, writes next_scheduled_at` | After `alarm()`, the re-armed alarm is readable from storage. |
 | 3 | `SpaceDO alarm() — error gates > reschedules but skips the fire when no active Airtable connection exists` | The no-connection branch still re-arms the alarm. |
 
-All three fail with `expected null to be <some-timestamp>`. They block the Phase B verification gate [`B.7.1`](../baseout-backup-schedule-and-cancel/tasks.md) (`pnpm --filter @baseout/server test — all green`) and any future CI gate on this branch — and they keep [baseout-backup-schedule-and-cancel](../baseout-backup-schedule-and-cancel/) from being archived.
+All three fail with `expected null to be <some-timestamp>`. They block the Phase B verification gate [`B.7.1`](../baseout-server-schedule-and-cancel/tasks.md) (`pnpm --filter @baseout/server test — all green`) and any future CI gate on this branch — and they keep [baseout-backup-schedule-and-cancel](../baseout-server-schedule-and-cancel/) from being archived.
 
 Two distinct bugs in the **tests** (the SpaceDO production code is correct — `state.storage.setAlarm` is called at both [SpaceDO.ts:194](../../../apps/server/src/durable-objects/SpaceDO.ts) and [SpaceDO.ts:168](../../../apps/server/src/durable-objects/SpaceDO.ts)):
 
@@ -47,7 +47,7 @@ No new capability. Touches existing `backup-scheduling` only at the test layer; 
 
 ## Impact
 
-- Unblocks Phase B archive for [baseout-backup-schedule-and-cancel](../baseout-backup-schedule-and-cancel/) (`B.7.1` flips green).
+- Unblocks Phase B archive for [baseout-backup-schedule-and-cancel](../baseout-server-schedule-and-cancel/) (`B.7.1` flips green).
 - Server test suite reaches `202 passing / 0 failing / 1 skipped` — the first fully-green run on `autumn/server-setup`.
 - No effect on running systems, no migration, no deploy.
 

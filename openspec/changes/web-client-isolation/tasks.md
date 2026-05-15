@@ -35,7 +35,7 @@
 
 - [ ] 6.1 Update `openspec/changes/baseout-web/design.md` — replace "Live progress is consumed via WebSocket from `baseout-backup`" with the new cross-Worker DO binding pattern; update Phase 3 and Phase 4 descriptions
 - [ ] 6.2 Update `openspec/changes/baseout-web/tasks.md` — rewrite tasks 4.2, 4.7, 4.13, 4.14, 4.16, 5.2, 5.12 to reference `apps/web` proxy routes; add new binding setup tasks
-- [ ] 6.3 Update `openspec/changes/baseout-backup/design.md` — add HMAC enforcement decision; update stakeholder note that `apps/web` accesses the DO via cross-Worker binding, not a direct browser connection
+- [ ] 6.3 Update `openspec/changes/baseout-server/design.md` — add HMAC enforcement decision; update stakeholder note that `apps/web` accesses the DO via cross-Worker binding, not a direct browser connection
 
 ## 7. Verify
 

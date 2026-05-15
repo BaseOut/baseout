@@ -1,6 +1,6 @@
 # baseout-server-spacedo-alarm-test-isolation-fix
 
-Fixes 3 alarm-storage tests in [apps/server/tests/integration/space-do.test.ts](../../../apps/server/tests/integration/space-do.test.ts) that shipped red in commit `6d887a6` and were blocking the Phase B verification gate `B.7.1` (`pnpm --filter @baseout/server test — all green`) of [baseout-backup-schedule-and-cancel](../baseout-backup-schedule-and-cancel/).
+Fixes 3 alarm-storage tests in [apps/server/tests/integration/space-do.test.ts](../../../apps/server/tests/integration/space-do.test.ts) that shipped red in commit `6d887a6` and were blocking the Phase B verification gate `B.7.1` (`pnpm --filter @baseout/server test — all green`) of [baseout-backup-schedule-and-cancel](../baseout-server-schedule-and-cancel/).
 
 The SpaceDO production code was already correct — `state.storage.setAlarm(nextFireMs)` fires at both call sites. Two interacting bugs in the **test** caused the failure:
 

@@ -3,9 +3,9 @@
 // processRunStart() validates a queued backup_run row, transitions it to
 // 'running', and fans out one Trigger.dev backup-base task per included
 // base. All side-effects (DB queries, task enqueue) are injected as deps —
-// this mirrors the Phase 7 pattern (`runBackupBase` in trigger/tasks/
-// backup-base.ts) so the validation paths are unit-testable without
-// touching Postgres or Trigger.dev.
+// this mirrors the Phase 7 pattern (`runBackupBase` in
+// apps/workflows/trigger/tasks/backup-base.ts) so the validation paths
+// are unit-testable without touching Postgres or Trigger.dev.
 //
 // Phase 8 scope decisions (captured in the plan resume note):
 //   - β: orgSlug ← connection.organizationId (UUID, not slug);
@@ -43,10 +43,12 @@ export interface IncludedBase {
 
 /**
  * Wire-shape payload for the backup-base Trigger.dev task. Mirrors
- * `BackupBaseTaskPayload` in trigger/tasks/backup-base.task.ts. Re-declared
- * here (rather than imported) because the lib/runs path lives on the Worker
- * side — importing from `trigger/tasks/` would pull the Trigger.dev SDK
- * into the Worker bundle.
+ * `BackupBaseTaskPayload` in apps/workflows/trigger/tasks/backup-base.task.ts.
+ * Re-declared here (rather than imported) because the lib/runs path lives on
+ * the Worker side — importing the task body from `@baseout/workflows` would
+ * pull the Trigger.dev SDK + papaparse into the Worker bundle. The type-only
+ * re-export in `apps/workflows/trigger/tasks/index.ts` is still used by
+ * trigger-client.ts for `tasks.trigger<typeof X>(...)` payload typing.
  */
 export interface BackupBaseTaskPayload {
   runId: string;

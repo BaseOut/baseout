@@ -33,12 +33,13 @@ Per [shared/Baseout_Implementation_Plan.md](shared/Baseout_Implementation_Plan.m
 
 ```
 apps/
-  web/      Frontend Astro SSR app — auth, OAuth Connect, dashboard, settings
-  server/   Backup/restore engine — Durable Objects, R2, schema discovery, Trigger.dev
-  admin/    Admin / observability surfaces
-  api/      Public + internal API layer
-  sql/      Direct SQL access (Business+ tier)
-  hooks/    Webhooks
+  web/        Frontend Astro SSR app — auth, OAuth Connect, dashboard, settings
+  server/     Backup/restore engine Worker — Durable Objects, schema discovery, enqueues Trigger.dev tasks
+  workflows/  Trigger.dev v3 task project — backup-base + other long-running task definitions (Node runner)
+  admin/      Admin / observability surfaces
+  api/        Public + internal API layer
+  sql/        Direct SQL access (Business+ tier)
+  hooks/      Webhooks
 packages/
   db-schema/  Drizzle schema (shared)
   shared/     Shared types + utilities
@@ -56,12 +57,13 @@ Package manager pinned at `pnpm@9.12.0`. New apps go in `apps/<name>/` with pack
 
 `brand/`, `shared/`, `product/info/` (older marketing overview), `product/website/` (Astro marketing site — not yet relocated to `apps/web/`). The full frontend implementation and backup engine each live in their own repos today and will migrate into `apps/web/` and `apps/server/` respectively.
 
-## Repo Split: Frontend vs Backend
+## Repo Split: Frontend vs Backend vs Workflows
 
-Baseout is conceptually two Workers + one shared Postgres, regardless of where the code currently lives:
+Baseout is conceptually two Workers + one Trigger.dev task project + one shared Postgres, regardless of where the code currently lives:
 
 - **Frontend (eventual `apps/web/`)** — Astro SSR app, auth + magic-link, OAuth Connect flows, integrations dashboard, settings, marketing pages, middleware, `/ops` staff console, master-DB schema ownership.
-- **Backend / backup engine (eventual `apps/server/`)** — Headless Cloudflare Worker. Exposes only `/api/health` (public probe) and `/api/internal/*` (`INTERNAL_TOKEN`-gated). Hosts Durable Objects (per-Connection rate-limit gateway, per-Space scheduler), runs Trigger.dev v3 tasks, writes backup output to R2 or BYOS.
+- **Backend / backup engine (`apps/server/`)** — Headless Cloudflare Worker. Exposes only `/api/health` (public probe) and `/api/internal/*` (`INTERNAL_TOKEN`-gated). Hosts Durable Objects (per-Connection rate-limit gateway, per-Space scheduler), enqueues Trigger.dev tasks via `@trigger.dev/sdk`. Cron-only background work that fits inside Worker wall-clock budget runs here too.
+- **Workflows (`apps/workflows/`)** — Trigger.dev v3 task project. Tasks run on Trigger.dev's **Node** runner (unlimited concurrency, no Worker time limit) and are enqueued from the Backend Worker. Houses the per-base backup task and any future long-running async work. Writes backup output to local disk (R2 was removed) — eventually BYOS.
 
 **Rules:**
 
@@ -69,6 +71,7 @@ Baseout is conceptually two Workers + one shared Postgres, regardless of where t
 - Backend reads OAuth tokens written by the frontend; both must agree on the master encryption key.
 - If you find yourself adding a UI component, an `/ops` page, or a `better-auth` instance to the backend, you're proposing the wrong split — surface it before coding.
 - Master-DB schema migrations are owned by the frontend. The backend mirrors specific tables (e.g. `backup_runs`, `backup_configuration_bases`) with header comments naming the canonical migration source.
+- Workflows is Node-only: never import `cloudflare:workers`, never assume workerd globals. The Backend Worker bundle stays SDK-only — task references are `import type { … } from "@baseout/workflows"` so task bodies don't leak into the Worker bundle.
 
 ---
 
@@ -295,25 +298,49 @@ src/
     ConnectionDO.ts       per-Connection rate-limit gateway
     SpaceDO.ts            per-Space scheduler
   lib/
-    trigger-client.ts     Helpers for enqueuing Trigger.dev tasks
+    trigger-client.ts     Helpers for enqueuing Trigger.dev tasks (type-only `import type` from @baseout/workflows)
   pages/
     api/
       health.ts           Public liveness probe
       internal/           INTERNAL_TOKEN-gated routes
-trigger/
-  tasks/                  Trigger.dev v3 task implementations
-trigger.config.ts         Trigger.dev project config (maxDuration: 600 default)
 drizzle/                  Engine-owned migrations (none yet — backup_runs migration lives in frontend)
 scripts/
   launch.mjs              Renders wrangler.jsonc + .dev.vars from .env, then runs astro
   migrate.mjs             Wrapper for drizzle-kit migrate against master DB
 ```
 
-There is intentionally no `src/components/`, `src/layouts/`, `src/pages/login.astro`, `src/pages/ops/`, `src/pages/api/auth/`, `src/lib/auth-factory.ts`, `src/lib/authz.ts`, `src/lib/email/`, `src/lib/ui.ts`, `src/styles/`, or `vendor/@opensided/` in the backend. All of that is frontend.
+There is intentionally no `src/components/`, `src/layouts/`, `src/pages/login.astro`, `src/pages/ops/`, `src/pages/api/auth/`, `src/lib/auth-factory.ts`, `src/lib/authz.ts`, `src/lib/email/`, `src/lib/ui.ts`, `src/styles/`, or `vendor/@opensided/` in the backend. All of that is frontend. Trigger.dev task **bodies** live in `apps/workflows/` — never reintroduce a `trigger/` directory or `trigger.config.ts` here.
 
 ---
 
-# 6. Development Checklist
+# 6. Workflows Standards (`apps/workflows/`)
+
+Trigger.dev v3 task project. Runs on the Trigger.dev cloud's **Node** runner — NOT inside workerd. The Backend Worker enqueues via `@trigger.dev/sdk`.
+
+- **Runtime: Node only.** Never import `cloudflare:workers`. `process.env` is the source of truth for runtime config (`BACKUP_ENGINE_URL`, `INTERNAL_TOKEN`, `AIRTABLE_*`, BYOS provider keys), populated from the Trigger.dev env-vars UI per environment.
+- **Pure orchestration is separated from the task wrapper.** Each task has a pure-async-function module (`backup-base.ts`) that takes injected deps, and a thin wrapper (`backup-base.task.ts`) that adapts the JSON payload, reads env vars, and calls the pure function. Tests target the pure module.
+- **Type-only exports.** `trigger/tasks/index.ts` re-exports task references as `export type` so the Backend Worker can `tasks.trigger<typeof X>(...)` without bundling the task body.
+- **Engine callback contract.** Tasks POST per-table progress and a final completion to `/api/internal/runs/:runId/{progress,complete}`. Transport errors are fire-and-forget — the run-row state machine + DO lock alarm are the safety nets.
+- **Test runner.** Plain Vitest with `environment: "node"` — no `@cloudflare/vitest-pool-workers`. External APIs (Airtable, R2/BYOS, engine HTTP) mocked at the boundary.
+- **File layout.**
+
+```
+trigger/
+  tasks/
+    index.ts              Type-only re-exports for Worker consumers
+    _ping.ts              Smoke task
+    backup-base.task.ts   Trigger.dev wrapper
+    backup-base.ts        Pure orchestration (testable)
+    _lib/                 Pure helpers — airtable client, csv stream, field normalizer, fs writer, path layout
+trigger.config.ts         Trigger.dev project config (maxDuration: 600 default; per-task overrides allowed)
+tests/                    Vitest (Node) — one file per pure module + task wrapper
+```
+
+There is intentionally no `src/`, no UI, no DB layer here — the workflows app holds task code, helpers, and tests only.
+
+---
+
+# 7. Development Checklist
 
 Before requesting review:
 
@@ -330,10 +357,11 @@ Before requesting review:
 - [ ] No hardcoded values; uses theme tokens (frontend UI work)
 - [ ] If touching mirrored DB schema, the canonical migration in the frontend is updated to match
 - [ ] If touching auth, secrets, or external integrations — security review points called out
+- [ ] If touching a Trigger.dev task body, change lives in `apps/workflows/`. If touching the enqueue path, change lives in `apps/server/`. Cross-app contract (payload shape, callback shape) updated on both sides if it shifts.
 
 ---
 
-# 7. Asking, Confirming, Committing
+# 8. Asking, Confirming, Committing
 
 - Don't commit, push, or open a PR without explicit user approval. Approving a plan does not authorize individual git actions.
 - Create new commits rather than amending — when a pre-commit hook fails, the commit didn't happen, so `--amend` would modify the previous commit.

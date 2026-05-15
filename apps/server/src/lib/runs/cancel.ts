@@ -10,7 +10,7 @@
 // Cancellation is best-effort on the Trigger.dev side: any per-task
 // rejection is logged + swallowed by the dep, so the run still flips to
 // terminal. The actual task receives an AbortError on its next await
-// point; the existing backup-base.task.ts outer try/catch handles that as
+// point; the existing apps/workflows backup-base.task.ts outer try/catch handles that as
 // a regular failure and POSTs to /complete, which no-ops against a
 // terminal row.
 //

@@ -19,7 +19,7 @@
  *
  * Trial flag: `is_trial=false` for MVP. The engine task enforces a runtime
  * cap regardless of the flag for trial users (TRIAL_RECORD_CAP=1000,
- * TRIAL_TABLE_CAP=5 in apps/server/trigger/tasks/backup-base.ts), but for
+ * TRIAL_TABLE_CAP=5 in apps/workflows/trigger/tasks/backup-base.ts), but for
  * accuracy a follow-up should resolve trial state from subscription_items.
  * TODO(trial): set is_trial from subscriptionItems.trialEndsAt > now().
  */

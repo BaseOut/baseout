@@ -3,7 +3,7 @@
 // Locks are scoped to a Connection (Airtable account binding). Two backup
 // tasks running across two Spaces that share one Connection must serialize
 // at the DO so we don't blow Airtable's per-account quota. The DO is the
-// rate-limit gateway per openspec/changes/baseout-backup/design.md.
+// rate-limit gateway per openspec/changes/baseout-server/design.md.
 //
 // Each test calls a fresh DO id (random crypto.randomUUID name) so in-memory
 // lock state from one test never leaks into the next.

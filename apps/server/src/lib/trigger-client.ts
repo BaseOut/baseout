@@ -15,8 +15,7 @@
 
 import { configure, tasks } from "@trigger.dev/sdk";
 import type { Env } from "../env";
-import type { pingTask } from "../../trigger/tasks/_ping";
-import type { backupBaseTask } from "../../trigger/tasks/backup-base.task";
+import type { pingTask, backupBaseTask } from "@baseout/workflows";
 import type { BackupBaseTaskPayload } from "./runs/start";
 
 function configureFromEnv(env: Env): void {

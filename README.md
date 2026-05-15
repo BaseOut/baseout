@@ -1,6 +1,6 @@
 # Baseout
 
-Backup, restore, and data intelligence layer for Airtable. Monorepo containing six independently-deployed Cloudflare Workers projects plus three shared workspace packages.
+Backup, restore, and data intelligence layer for Airtable. Monorepo containing six independently-deployed Cloudflare Workers projects, one Trigger.dev task project, and three shared workspace packages.
 
 ## What is Baseout?
 
@@ -16,9 +16,16 @@ The main customer-facing surface. Astro SSR deployed to Cloudflare Workers. Owns
 ---
 
 ### `apps/server` — Data plane (`@baseout/server`)
-The backend engine. Cloudflare Worker with Durable Objects and Trigger.dev V3 integration. Owns: the backup engine (per-Space state machine DO + one Trigger.dev job per Base), the restore engine (Base/table/point-in-time scope), all six BYOS storage destinations (Google Drive, Dropbox, Box, OneDrive, S3, Frame.io) plus R2 managed storage, schema diff and health score computation, background cron services (webhook renewal, OAuth token refresh, trial-expiry monitor, quota monitor, smart-cleanup scheduler), DB provisioning for Pro+ client databases, and the On2Air migration script.
+The backend engine Worker. Cloudflare Worker with Durable Objects; enqueues Trigger.dev tasks via `@trigger.dev/sdk`. Owns: the per-Space state machine DO + per-Connection rate-limit DO, the restore engine (Base/table/point-in-time scope), all six BYOS storage destinations (Google Drive, Dropbox, Box, OneDrive, S3, Frame.io) plus R2 managed storage, schema diff and health score computation, background cron services (webhook renewal, OAuth token refresh, trial-expiry monitor, quota monitor, smart-cleanup scheduler), DB provisioning for Pro+ client databases, and the On2Air migration script.
 
-→ Specs: [`openspec/changes/baseout-backup/`](openspec/changes/baseout-backup/)
+→ Specs: [`openspec/changes/baseout-server/`](openspec/changes/baseout-server/)
+
+---
+
+### `apps/workflows` — Trigger.dev tasks (`@baseout/workflows`)
+Trigger.dev v3 task project. Runs on Trigger.dev's Node runner — NOT inside a Cloudflare Worker. Hosts long-running async work that exceeds Worker wall-clock budgets: the per-base backup task, future per-base restore, attachment ingestion, retention cleanup, trial-email cron, etc. Enqueued from `apps/server` via `tasks.trigger<typeof X>(...)` with type-only references from `@baseout/workflows`.
+
+→ Specs: [`openspec/changes/baseout-workflows/`](openspec/changes/baseout-workflows/) plus paired `baseout-workflows-<topic>` siblings for each in-flight Trigger.dev workload (attachments, cleanup, dynamic-mode provisioning, instant-webhook, etc.)
 
 ---
 
@@ -75,7 +82,8 @@ apps/admin       → apps/server (HTTP, HMAC service token — super-admin ops)
 baseout/
 ├─ apps/
 │  ├─ web/          # Customer Astro SSR app + /api/* endpoints
-│  ├─ server/       # Backup/restore engine, Durable Objects, cron, migration
+│  ├─ server/       # Backup/restore engine Worker, Durable Objects, cron, migration
+│  ├─ workflows/    # Trigger.dev v3 task project — long-running async work (Node runner)
 │  ├─ admin/        # Internal admin Astro SSR app (Google SSO)
 │  ├─ api/          # Public inbound API (api.baseout.com)
 │  ├─ sql/          # Public read-only SQL API (sql.baseout.com)
@@ -118,9 +126,11 @@ for app in web server admin api sql hooks; do
   cp apps/$app/.dev.vars.example apps/$app/.dev.vars
   # edit apps/$app/.dev.vars with your DB string, API keys, etc.
 done
+# workflows uses .env (Trigger.dev runner is Node, not workerd):
+cp apps/workflows/.env.example apps/workflows/.env 2>/dev/null || true
 
 # 7. Run a single app locally
-pnpm dev:web          # or dev:server, dev:admin, dev:api, dev:sql, dev:hooks
+pnpm dev:web          # or dev:server, dev:admin, dev:api, dev:sql, dev:hooks, dev:workflows
 
 # 8. Run tests across the whole workspace
 pnpm test
