@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Internal Astro SSR admin app at admin.baseout.com (Google SSO). See ./openspec/proposal.md.",
+  "description": "Internal Astro SSR admin app at admin.baseout.com (Google SSO). See openspec/changes/admin/proposal.md.",
   "scripts": {
     "dev": "wrangler dev",
     "build": "astro build",

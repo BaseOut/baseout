@@ -54,22 +54,36 @@ Trigger.dev v3 task definitions SHALL live in their own top-level app at `apps/w
 - **AND** it SHALL retain `@trigger.dev/sdk` as a runtime dependency for `tasks.trigger()`
 - **AND** it SHALL NOT depend on `papaparse` (the CSV serializer moved into workflows)
 
-### Requirement: OpenSpec change family naming aligns with apps
-In-flight OpenSpec changes SHALL be named after the app whose surface they primarily touch. The data-plane parent change SHALL be `baseout-server` (renamed from the historical `baseout-backup`); each in-flight follow-up SHALL be `baseout-server-<topic>`. Trigger.dev-task work SHALL live in `baseout-workflows-<topic>` siblings paired with their server-side counterpart.
+### Requirement: OpenSpec change family naming follows three prefixes
+In-flight OpenSpec changes SHALL use one of three prefixes:
 
-#### Scenario: parent change name matches app directory
-- **WHEN** `openspec/changes/` is enumerated
-- **THEN** `openspec/changes/baseout-server/` SHALL exist (renamed from `baseout-backup`)
-- **AND** `openspec/changes/baseout-workflows/` SHALL exist as a sibling parent for the Trigger.dev project boundary
-- **AND** no folder under `openspec/changes/` SHALL start with `baseout-backup` (archived changes excluded)
+1. **`<app>-<topic>`** — single-app code change. The `<app>` segment SHALL match a directory under `apps/` (`web`, `server`, `workflows`, `admin`, `api`, `sql`, `hooks`). The parent / umbrella change for an app SHALL be the bare `<app>` (no topic suffix).
+2. **`shared-<topic>`** — code change that touches two or more apps as a unit (the change MUST land across multiple `apps/*` source trees to function).
+3. **`system-<topic>`** — structural / repo-shape / tooling change (workspace package, openspec convention, root scripts, CI, architectural-decision-records). Touches `packages/`, `scripts/`, `openspec/`, root config, or no runtime code at all.
 
-#### Scenario: in-flight follow-ups follow the naming convention
-- **WHEN** a new follow-up change is filed against the data plane
-- **THEN** it SHALL be named `baseout-server-<topic>` if it primarily modifies the Cloudflare Worker
-- **AND** it SHALL be named `baseout-workflows-<topic>` if it primarily adds or modifies a Trigger.dev task
-- **AND** mixed changes SHALL be filed as a pair (one of each), cross-referencing via `proposal.md`
+No active change folder under `openspec/changes/` SHALL begin with `baseout-` (the historical prefix was retired 2026-05; archived changes are exempt).
 
-#### Scenario: openspec symlinks per app
-- **WHEN** `apps/server/openspec` is read
-- **THEN** it SHALL be a symlink pointing at `../../openspec/changes/baseout-server`
-- **AND** `apps/workflows/openspec` SHALL be a symlink pointing at `../../openspec/changes/baseout-workflows`
+#### Scenario: app-prefixed change
+- **WHEN** an in-flight change modifies code in exactly one `apps/*` directory
+- **THEN** the change SHALL be named `<app>-<topic>` where `<app>` is that directory's name
+- **AND** the parent / umbrella change for the app SHALL be the bare `<app>`
+
+#### Scenario: shared-prefixed change
+- **WHEN** an in-flight change modifies source files in two or more `apps/*` directories as a single unit
+- **THEN** the change SHALL be named `shared-<topic>`
+- **AND** documentation cross-references that merely mention another app SHALL NOT trigger the `shared-` prefix — the test is whether reverting the change requires touching files in multiple apps
+
+#### Scenario: system-prefixed change
+- **WHEN** an in-flight change modifies the repository's structure, tooling, workspace packages under `packages/`, root scripts, CI config, openspec conventions, or records an architectural decision without runtime-code impact
+- **THEN** the change SHALL be named `system-<topic>`
+
+#### Scenario: paired sibling changes
+- **WHEN** server-side work has a Trigger.dev-task counterpart
+- **THEN** the work SHALL be filed as a pair (`server-<topic>` + `workflows-<topic>`), each touching one app
+- **AND** the two SHALL cross-reference each other in `proposal.md`
+- **AND** the pair SHALL NOT be filed as a single `shared-<topic>` (each sibling is genuinely single-app)
+
+#### Scenario: discovery via root npm script
+- **WHEN** a developer wants to see all changes for a prefix
+- **THEN** running `pnpm openspec:changes <prefix>` SHALL list the parent change first followed by every `<prefix>-<topic>` follow-up, with task progress for each
+- **AND** `<prefix>` SHALL accept `web` / `server` / `workflows` / `admin` / `api` / `sql` / `hooks` / `shared` / `system`

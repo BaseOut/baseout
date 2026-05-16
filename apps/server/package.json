@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Backup engine, restore engine, background services, schema diff, DB provisioning, On2Air migration. See ./openspec/proposal.md.",
+  "description": "Backup engine, restore engine, background services, schema diff, DB provisioning, On2Air migration. See openspec/changes/server/proposal.md.",
   "scripts": {
     "dev": "node --env-file-if-exists=.env scripts/launch.mjs dev && wrangler dev --port 8787",
     "render-config": "node --env-file-if-exists=.env scripts/launch.mjs dev",

@@ -47,7 +47,7 @@ packages/
 openspec/     OpenSpec changes + specs (driven by opsx:propose|apply|archive)
 shared/       Product-spec docs (PRD, Features, Implementation Plan, Backlog)
 brand/        Brand assets + guidelines
-scripts/      Repo automation (incl. fix-symlinks.js postinstall)
+scripts/      Repo automation (e.g. openspec-changes.mjs — `pnpm openspec:changes <app>` lists changes for an app)
 references/   Third-party reference material
 ```
 
@@ -160,7 +160,32 @@ Debug output must not ship.
 
 ## 3.6 OpenSpec-Driven Changes
 
-Per-app changes flow through `openspec/changes/<changename>/` using `opsx:propose|apply|archive`, not free-form docs. Cross-cutting changes (e.g. `web-client-isolation`) get no per-app symlink. Archived changes flow into `openspec/specs/`.
+All non-trivial changes flow through `openspec/changes/<changename>/` using `opsx:propose|apply|archive`, not free-form docs. Changes live flat under `openspec/changes/`; group them by **prefix**, not by nested folders. Archived changes flow into `openspec/specs/`.
+
+### Change naming convention
+
+Pick the prefix based on what the change actually touches:
+
+- **`<app>-<topic>`** — code-only scope is one app under `apps/`. The prefix MUST match the directory name (`web`, `server`, `workflows`, `admin`, `api`, `sql`, `hooks`). The parent / umbrella change for an app is just `<app>` (no topic suffix).
+  - Example: `server-attachments`, `web-smooth-theme-swap`, `workflows-restore`, `server` (parent).
+  - When server-side and workflows-side work pair off (one Trigger.dev task + one Worker route), file **two** changes — `server-<topic>` + `workflows-<topic>` — and cross-reference each other in `proposal.md`. Each remains single-app.
+
+- **`shared-<topic>`** — code change that touches more than one app as a unit (i.e., the change MUST land across multiple apps' source trees to function).
+  - Example: a service-binding wiring that adds a `services` block to apps/web AND `env` typing on apps/server; a cross-Worker DO binding that adds the namespace binding on apps/web AND new DO handlers on apps/server.
+  - Heuristic: if reverting the change requires touching files in two or more `apps/*` directories, it's `shared-*`.
+
+- **`system-<topic>`** — structural / repo-shape / tooling changes that aren't tied to any one app's runtime code. Includes monorepo layout shifts, workspace package introductions, openspec convention changes, root scripts, CI, lint/typecheck infra, third-party SDK upgrades that span the whole repo, architectural-decision-records (R2 storage stance, encryption-key rotation policy, etc.).
+  - Example: `system-db-schema` (workspace package extraction), `system-r2-stance` (architectural decision), `system-pnpm-version-bump`.
+
+### Where the boundary blurs
+
+- A `shared-*` change usually decomposes into one or more `<app>-<topic>` follow-ups once the cross-cutting wire is in place. File the shared parent first; spawn the per-app follow-ups as they emerge.
+- A `system-*` change rarely touches runtime code at all — it changes how code is *organized*. If you find yourself writing real business logic inside a `system-*` change, you've probably crossed into `shared-*` or `<app>-*` territory; re-scope.
+- "Touches" means "the code change goes into the file." Documentation cross-references in `proposal.md` / `design.md` that mention another app's files don't count as touching.
+
+### Discovery
+
+`pnpm openspec:changes <app>` lists every change whose prefix matches the app name (parent + follow-ups + task progress). `openspec list | grep '^shared-'` and `openspec list | grep '^system-'` cover the cross-cutting buckets.
 
 ---
 

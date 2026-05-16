@@ -11,49 +11,49 @@ Baseout lets teams back up, restore, and query their Airtable data. Customers co
 ### `apps/web` — Customer app (`@baseout/web`)
 The main customer-facing surface. Astro SSR deployed to Cloudflare Workers. Owns: authentication (better-auth — magic link, email+password, 2FA, SAML), the onboarding wizard, the dashboard (live backup progress via WebSocket, storage usage, health scores), all feature UIs (Backup, Restore, Schema, Data, AI, Integrations), Stripe billing UX, and the `/api/*` endpoints the browser calls. Also hosts the Airtable extension embed and On2Air migration UX.
 
-→ Specs: [`openspec/changes/baseout-web/`](openspec/changes/baseout-web/)
+→ Specs: [`openspec/changes/web/`](openspec/changes/web/)
 
 ---
 
 ### `apps/server` — Data plane (`@baseout/server`)
 The backend engine Worker. Cloudflare Worker with Durable Objects; enqueues Trigger.dev tasks via `@trigger.dev/sdk`. Owns: the per-Space state machine DO + per-Connection rate-limit DO, the restore engine (Base/table/point-in-time scope), all six BYOS storage destinations (Google Drive, Dropbox, Box, OneDrive, S3, Frame.io) plus R2 managed storage, schema diff and health score computation, background cron services (webhook renewal, OAuth token refresh, trial-expiry monitor, quota monitor, smart-cleanup scheduler), DB provisioning for Pro+ client databases, and the On2Air migration script.
 
-→ Specs: [`openspec/changes/baseout-server/`](openspec/changes/baseout-server/)
+→ Specs: [`openspec/changes/server/`](openspec/changes/server/)
 
 ---
 
 ### `apps/workflows` — Trigger.dev tasks (`@baseout/workflows`)
 Trigger.dev v3 task project. Runs on Trigger.dev's Node runner — NOT inside a Cloudflare Worker. Hosts long-running async work that exceeds Worker wall-clock budgets: the per-base backup task, future per-base restore, attachment ingestion, retention cleanup, trial-email cron, etc. Enqueued from `apps/server` via `tasks.trigger<typeof X>(...)` with type-only references from `@baseout/workflows`.
 
-→ Specs: [`openspec/changes/baseout-workflows/`](openspec/changes/baseout-workflows/) plus paired `baseout-workflows-<topic>` siblings for each in-flight Trigger.dev workload (attachments, cleanup, dynamic-mode provisioning, instant-webhook, etc.)
+→ Specs: [`openspec/changes/workflows/`](openspec/changes/workflows/) plus paired `workflows-<topic>` siblings for each in-flight Trigger.dev workload (attachments, cleanup, dynamic-mode provisioning, instant-webhook, etc.)
 
 ---
 
 ### `apps/admin` — Internal admin (`@baseout/admin`)
 Internal operations dashboard. Astro SSR, Google SSO, Cloudflare Workers. Super-admin access to Organizations, Spaces, billing state, run history, and on-call tooling.
 
-→ Specs: [`openspec/changes/baseout-admin/`](openspec/changes/baseout-admin/)
+→ Specs: [`openspec/changes/admin/`](openspec/changes/admin/)
 
 ---
 
 ### `apps/api` — Inbound API (`@baseout/api`)
 Public versioned ingestion API at `api.baseout.com`. Cloudflare Worker. Accepts token-authenticated HTTP POSTs from external scripts and AI agents, validates payloads, enforces tier-based rate limits, debits credits, and forwards validated payloads to `apps/server` via HMAC service token. Does not write to client DBs directly.
 
-→ Specs: [`openspec/changes/baseout-api/`](openspec/changes/baseout-api/)
+→ Specs: [`openspec/changes/api/`](openspec/changes/api/)
 
 ---
 
 ### `apps/sql` — SQL API (`@baseout/sql`)
 Public read-only SQL API at `sql.baseout.com` (Pro+). Cloudflare Worker with Hyperdrive. Accepts token-authenticated SELECT queries, enforces read-only safety, executes against the Space's client DB under a read-only role, and debits credits. Structurally symmetric to `apps/api` — same `api_tokens` table, same OpenAPI publishing pattern.
 
-→ Specs: [`openspec/changes/baseout-sql/`](openspec/changes/baseout-sql/)
+→ Specs: [`openspec/changes/sql/`](openspec/changes/sql/)
 
 ---
 
 ### `apps/hooks` — Webhook receiver (`@baseout/hooks`)
 Public Airtable webhook receiver at `webhooks.baseout.com`. Cloudflare Worker. Owns the public Airtable webhook callback endpoint: verifies HMAC signatures, coalesces payloads, and forwards to `apps/server`'s internal ingestion endpoint. Deployed and versioned independently so signature-scheme rotations never require a data-plane deploy.
 
-→ Specs: [`openspec/changes/baseout-hooks/`](openspec/changes/baseout-hooks/)
+→ Specs: [`openspec/changes/hooks/`](openspec/changes/hooks/)
 
 ---
 
@@ -61,7 +61,7 @@ Public Airtable webhook receiver at `webhooks.baseout.com`. Cloudflare Worker. O
 
 | Package | Description |
 |---|---|
-| [`packages/db-schema`](packages/db-schema/) | Drizzle schema + migrations for the master DB. The single source of truth for all table definitions. Consumed by all six apps at a pinned version. Schema changes are coordinated events. → [`openspec/changes/baseout-db-schema/`](openspec/changes/baseout-db-schema/) |
+| [`packages/db-schema`](packages/db-schema/) | Drizzle schema + migrations for the master DB. The single source of truth for all table definitions. Consumed by all six apps at a pinned version. Schema changes are coordinated events. → [`openspec/changes/db-schema/`](openspec/changes/db-schema/) |
 | [`packages/shared`](packages/shared/) | AES-256-GCM encryption, HMAC service-token issuer/validator, structured error types, logging helpers, common Zod helpers. Used by all six apps for cross-app auth and internal utilities. |
 | [`packages/ui`](packages/ui/) | Astro/React component library shared between `web` and `admin`. |
 
@@ -93,7 +93,7 @@ baseout/
 │  ├─ ui/           # Shared Astro/React components
 │  └─ shared/       # Encryption, HMAC tokens, error types, Zod helpers
 ├─ openspec/        # Spec-driven workflow — proposals, designs, specs, tasks
-│  ├─ changes/      # One change per app/package (symlinked into each app/openspec/)
+│  ├─ changes/      # One change per app/package (flat layout; query via `pnpm openspec:changes <app>`)
 │  └─ specs/        # Living capability specs (merged from archived changes)
 ├─ shared/          # Cross-cutting product docs (Features, DB Schema, Pricing)
 └─ archive/         # Original PRDs (historical reference only)
@@ -139,15 +139,34 @@ pnpm test
 pnpm typecheck
 ```
 
-### OpenSpec symlinks
+### Finding OpenSpec changes
 
-Each app and package has an `openspec/` symlink pointing into `openspec/changes/<name>/`, so `apps/web/openspec/proposal.md` and `openspec/changes/baseout-web/proposal.md` are the same file. On Mac/Linux these resolve correctly after `git clone`. The postinstall script (`scripts/fix-symlinks.js`) repairs broken symlinks automatically on `pnpm install` — useful on Windows or after a clone with `core.symlinks=false`.
+OpenSpec changes live flat under `openspec/changes/<name>/`. The prefix groups them:
+
+- `<app>-<topic>` — single-app change (prefix matches a directory under `apps/`, e.g. `server-attachments`, `web-smooth-theme-swap`)
+- `shared-<topic>` — code change that touches two or more apps as a unit (e.g. `shared-server-service-binding`, `shared-websocket-progress`)
+- `system-<topic>` — structural / repo-shape / tooling change (e.g. `system-db-schema`, `system-r2-stance`)
+
+See `CLAUDE.md` §3.6 for the full rule.
+
+To list changes by prefix:
 
 ```bash
-pnpm fix:symlinks     # run manually if needed
+pnpm openspec:changes web        # web + every web-*
+pnpm openspec:changes server     # server + every server-*
+pnpm openspec:changes workflows  # workflows + every workflows-*
+pnpm openspec:changes shared     # cross-app changes
+pnpm openspec:changes system     # structural / tooling changes
 ```
 
-**Windows:** before cloning, run `git config --global core.symlinks true` and enable Developer Mode (Settings → Privacy & Security → For developers).
+Or use the OpenSpec CLI directly:
+
+```bash
+openspec list                    # all active changes
+openspec list | grep '^server'   # filter by prefix
+openspec show server             # full content of one change
+openspec validate <change>       # validate a specific change
+```
 
 ## Deployment
 
@@ -166,8 +185,8 @@ pnpm fix:symlinks     # run manually if needed
 
 ```bash
 openspec list                              # all active changes
-openspec status --change baseout-web       # status of one change
-openspec show baseout-web                  # full content of one change
+openspec status --change web       # status of one change
+openspec show web                  # full content of one change
 openspec validate --all                    # validate everything
 ```
 

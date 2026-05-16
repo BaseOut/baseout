@@ -9,13 +9,12 @@
     "pnpm": ">=9"
   },
   "scripts": {
-    "postinstall": "node scripts/fix-symlinks.js",
-    "fix:symlinks": "node scripts/fix-symlinks.js",
     "build": "pnpm -r --parallel run build",
     "test": "pnpm -r --parallel run test",
     "typecheck": "pnpm -r --parallel run typecheck",
     "lint": "pnpm -r --parallel run lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml,astro}\"",
+    "openspec:changes": "node scripts/openspec-changes.mjs",
     "dev:web": "pnpm --filter @baseout/web dev",
     "dev:server": "pnpm --filter @baseout/server dev",
     "dev:admin": "pnpm --filter @baseout/admin dev",
