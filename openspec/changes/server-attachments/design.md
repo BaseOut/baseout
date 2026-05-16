@@ -92,7 +92,7 @@ The Trigger.dev task's `maxDuration: 600` is the harder constraint. Mitigation:
 
 ### Per-table progress
 
-The existing `postProgress` callback (from `server-history-live-status` and Phase 10d) gains an `attachmentsDownloaded: number` field. Wire it in `apps/workflows/trigger/tasks/backup-base.task.ts` after each per-table page completes.
+The existing `postProgress` callback (from `web-history-live-status` and Phase 10d) gains an `attachmentsDownloaded: number` field. Wire it in `apps/workflows/trigger/tasks/backup-base.task.ts` after each per-table page completes.
 
 ### Structured logs
 

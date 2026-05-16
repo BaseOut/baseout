@@ -185,7 +185,7 @@ test('seeded user clicks Run backup now and sees a fresh run row in the history 
 })
 
 /**
- * Regression test for openspec/changes/baseout-server-history-live-status.
+ * Regression test for openspec/changes/web-history-live-status.
  *
  * Before the lifecycle fix, the widget's <script> ran setup exactly once per
  * browser session under Astro's <ClientRouter />. Any in-app navigation —

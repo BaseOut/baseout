@@ -1,4 +1,4 @@
-# server-history-live-status
+# web-history-live-status
 
 Fixes a regression where the BackupHistoryWidget's status chip stops updating after any in-app navigation, forcing the user to do a full page refresh to see whether a backup succeeded or failed. Root cause: the widget's `<script>` block runs once per session under Astro's `<ClientRouter />` (view transitions), so its `startPolling()` call never re-fires on subsequent page mounts.
 

@@ -197,5 +197,5 @@ The schema types update concurrently in `apps/web/src/db/schema/core.ts` (canoni
 
 - The Trigger.dev v3 + ConnectionDO + R2-proxy backup path. `runs/start`, `backup-base.task.ts`, `postCompletion`, `postProgress` all stay as-is.
 - The OAuth refresh cron from `server-cron-oauth-refresh`. Unrelated.
-- The live-status polling from `server-history-live-status`. Unrelated; cancellation status flips ride the same polling path.
+- The live-status polling from `web-history-live-status`. Unrelated; cancellation status flips ride the same polling path.
 - The wizard step 2 base picker. The MVP "what to back up" answer is locked at bases-only here.

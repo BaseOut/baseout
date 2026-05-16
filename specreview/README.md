@@ -20,7 +20,7 @@ Snapshot of `apps/server` and `apps/web` spec-vs-code alignment. Intended as a w
 - `openspec/changes/baseout-server-cron-oauth-refresh/{proposal,tasks}.md`
 - `openspec/changes/baseout-web-server-service-binding{,-staging-prod}/proposal.md`
 - `openspec/changes/baseout-web-space-scoped-interior/proposal.md`
-- `openspec/changes/baseout-server-history-live-status/proposal.md`
+- `openspec/changes/web-history-live-status/proposal.md`
 - `openspec/changes/web-client-isolation/proposal.md`
 - `openspec/changes/baseout-db-schema/proposal.md`
 - `apps/server/src/**` and `apps/web/src/**` directory inventories
