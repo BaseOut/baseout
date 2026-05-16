@@ -1,3 +1,5 @@
+> **Depends on**: [`baseout-r2-stance`](../baseout-r2-stance/proposal.md) — Phase B's R2-writing path requires [`baseout-server-byos-destinations`](../baseout-server-byos-destinations/proposal.md) Phase 0 to land first (R2 binding + `StorageWriter` interface). Phase A (schema + `attachment_dedup` table) is independent and can ship before that.
+
 ## Why
 
 The `baseout-backup` engine emits `[N attachments]` as a placeholder string in every cell where an Airtable attachment field has values. See [apps/workflows/trigger/tasks/_lib/field-normalizer.ts](../../../apps/workflows/trigger/tasks/_lib/field-normalizer.ts). No actual file bytes are downloaded; no R2 object is written. The CSV ends up with a count where the data should be.

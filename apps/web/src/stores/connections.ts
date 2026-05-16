@@ -36,6 +36,31 @@ export interface BackupPolicy {
    * <date>" line. Phase B of baseout-backup-schedule-and-cancel.
    */
   nextScheduledAt: string | null
+  /**
+   * When true, bases newly discovered in the Airtable workspace by the
+   * SpaceDO alarm or a manual rescan are auto-included in the next
+   * backup run — subject to the tier basesPerSpace cap. Per PRD Phase 1C
+   * and the workspace-rediscovery change.
+   */
+  autoAddFutureBases: boolean
+}
+
+/**
+ * One unread row from `space_events` — surfaced inline in the
+ * IntegrationsView banner. Currently only the `bases_discovered` kind
+ * is produced; future kinds (token_expiry, schema_drift) will land as
+ * additive `kind` values without a schema change.
+ */
+export interface SpaceEventSummary {
+  id: string
+  kind: 'bases_discovered'
+  createdAt: string
+  payload: {
+    discovered: string[]
+    autoAdded: string[]
+    blockedByTier: string[]
+    tierCap: number | null
+  }
 }
 
 export interface IntegrationsState {
@@ -49,6 +74,12 @@ export interface IntegrationsState {
   hasBackupConfig: boolean
   /** Current backup policy for the Space. Always present (defaults applied). */
   policy: BackupPolicy
+  /**
+   * Unread per-Space events to render as the inline banner on the
+   * integrations page. Engine writes 'bases_discovered' rows during
+   * workspace rediscovery; the UI dismisses them via the dismiss route.
+   */
+  unreadEvents: SpaceEventSummary[]
 }
 
 export const $integrations = atom<IntegrationsState | null>(null)

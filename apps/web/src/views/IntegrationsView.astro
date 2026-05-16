@@ -84,6 +84,50 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
     </div>
   )}
 
+  {/* Workspace rediscovery banner — one card per unread space_events row. */}
+  {state.unreadEvents.length > 0 && Astro.locals.account?.space?.id && (
+    <div class="space-y-2" data-space-events-banner data-space-id={Astro.locals.account.space.id}>
+      {state.unreadEvents.map((event) => (
+        <div
+          role="status"
+          class="alert alert-info shadow-sm"
+          data-space-event-id={event.id}
+        >
+          <div class="flex-1">
+            <p class="font-medium">
+              {event.payload.discovered.length === 1
+                ? '1 new base discovered in your Airtable workspace.'
+                : `${event.payload.discovered.length} new bases discovered in your Airtable workspace.`}
+            </p>
+            <p class="text-xs opacity-80 mt-1">
+              {event.payload.autoAdded.length > 0 && (
+                <span>{event.payload.autoAdded.length} auto-added to your backups. </span>
+              )}
+              {event.payload.blockedByTier.length > 0 && (
+                <span>
+                  {event.payload.blockedByTier.length} not included — you're at your tier limit
+                  {event.payload.tierCap !== null ? ` of ${event.payload.tierCap}` : ''}. Upgrade to include them.
+                </span>
+              )}
+              {event.payload.autoAdded.length === 0 && event.payload.blockedByTier.length === 0 && (
+                <span>Turn on "Auto-add new bases" below to include future bases automatically.</span>
+              )}
+            </p>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            data-space-event-dismiss
+            data-space-event-id={event.id}
+          >
+            Dismiss
+          </Button>
+        </div>
+      ))}
+    </div>
+  )}
+
   <!-- Platform cards -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
@@ -173,6 +217,34 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
                 Refreshes tokens. Use if backups fail with an auth error.
               </span>
             </form>
+          )}
+
+          {!needsReconnect && Astro.locals.account?.space?.id && (
+            <div
+              class="mt-4 flex flex-wrap items-center gap-3"
+              data-rescan-workspace
+              data-space-id={Astro.locals.account.space.id}
+            >
+              <Button type="button" variant="ghost" size="sm" data-rescan-submit>
+                Rescan workspace
+              </Button>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  class="toggle toggle-sm"
+                  checked={state.policy.autoAddFutureBases}
+                  data-auto-add-toggle
+                  data-space-id={Astro.locals.account.space.id}
+                />
+                <span class="text-sm">Auto-add new bases</span>
+              </label>
+              <p
+                class="text-xs text-base-content/60"
+                data-rescan-result
+                role="status"
+                aria-live="polite"
+              ></p>
+            </div>
           )}
 
           {bases.length > 0 && (
@@ -462,4 +534,186 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
       }
     });
   }
+
+  // Rescan-workspace button — POSTs to /api/spaces/:spaceId/rescan-bases,
+  // which proxies to the engine's manual rediscovery. The engine upserts
+  // at_bases and writes a space_events row; the inline result tells the
+  // user what changed and prompts a manual refresh to see the new bases
+  // in the list (no auto-reload — chosen so the user controls when their
+  // current selection / scroll position resets).
+  const rescanRoot = document.querySelector<HTMLElement>('[data-rescan-workspace]');
+  if (rescanRoot) {
+    const rescanBtn = rescanRoot.querySelector<HTMLButtonElement>('[data-rescan-submit]');
+    const rescanResult = rescanRoot.querySelector<HTMLElement>('[data-rescan-result]');
+    const rescanSpaceId = rescanRoot.dataset.spaceId ?? '';
+
+    interface RescanSuccess {
+      ok: true;
+      discovered: number;
+      autoAdded: number;
+      blockedByTier: number;
+    }
+    interface RescanError {
+      error?: string;
+    }
+
+    function showRescanResult(text: string, kind: 'ok' | 'warn' | 'err' | 'neutral'): void {
+      if (!rescanResult) return;
+      rescanResult.textContent = text;
+      const tone =
+        kind === 'ok'
+          ? 'text-success'
+          : kind === 'warn'
+            ? 'text-warning'
+            : kind === 'err'
+              ? 'text-error'
+              : 'text-base-content/60';
+      rescanResult.className = `text-xs ${tone}`;
+    }
+
+    function describeRescanError(body: RescanError, status: number): string {
+      switch (body.error) {
+        case 'connection_not_found':
+          return 'No active Airtable connection. Reconnect Airtable to rescan.';
+        case 'space_not_found':
+        case 'space_org_mismatch':
+          return 'This space is not visible to your account.';
+        case 'config_not_found':
+          return 'This space has no backup configuration yet.';
+        case 'airtable_error':
+          return 'Airtable did not respond as expected. Try again in a moment.';
+        case 'engine_unreachable':
+          return 'The backup engine is not running. Start `pnpm --filter @baseout/server dev`.';
+        case 'server_misconfigured':
+          return 'The backup engine binding or token is not configured. Contact support.';
+        case 'unauthorized':
+          return 'Service-to-service auth failed (web↔engine token mismatch). Contact support.';
+        case 'engine_error':
+          return `Engine returned an unexpected error (HTTP ${status}). Try again.`;
+        default:
+          return `Rescan failed (HTTP ${status}). Please try again.`;
+      }
+    }
+
+    function composeRescanSummary(body: RescanSuccess): { text: string; kind: 'ok' | 'warn' } {
+      const { discovered, autoAdded, blockedByTier } = body;
+      if (discovered === 0) {
+        return { text: 'No new bases found.', kind: 'ok' };
+      }
+      const noun = discovered === 1 ? 'base' : 'bases';
+      let text =
+        autoAdded > 0
+          ? `Found ${discovered} new ${noun}; auto-added ${autoAdded}. Reload the page to see them.`
+          : `Found ${discovered} new ${noun}. Reload the page to include them.`;
+      if (blockedByTier > 0) {
+        text += ` ${blockedByTier} blocked by tier.`;
+        return { text, kind: 'warn' };
+      }
+      return { text, kind: 'ok' };
+    }
+
+    rescanBtn?.addEventListener('click', async () => {
+      if (!rescanBtn || !rescanSpaceId) return;
+      setButtonLoading(rescanBtn, true);
+      showRescanResult('Scanning Airtable…', 'neutral');
+      try {
+        const res = await fetch(
+          `/api/spaces/${encodeURIComponent(rescanSpaceId)}/rescan-bases`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{}',
+          },
+        );
+        if (res.ok) {
+          const body = (await res.json()) as RescanSuccess;
+          const summary = composeRescanSummary(body);
+          showRescanResult(summary.text, summary.kind);
+          // Reload so the banner (driven by SSR-read space_events) appears
+          // and any auto-added bases land in the list. Brief delay lets the
+          // user read the inline summary before the page resets.
+          if (body.discovered > 0) {
+            setTimeout(() => window.location.reload(), 1200);
+          }
+        } else {
+          const body = (await res.json().catch(() => ({}))) as RescanError;
+          showRescanResult(describeRescanError(body, res.status), 'err');
+        }
+      } catch {
+        showRescanResult('Network error. Please try again.', 'err');
+      } finally {
+        setButtonLoading(rescanBtn, false);
+      }
+    });
+  }
+
+  // Auto-add toggle — PATCHes /api/spaces/:spaceId/backup-config with
+  // { autoAddFutureBases }. Persistence is checked on the next SSR read; if
+  // the PATCH fails, we revert the checkbox to its prior state so the UI
+  // doesn't lie about saved server state.
+  const autoAddToggle = document.querySelector<HTMLInputElement>(
+    '[data-auto-add-toggle]',
+  );
+  if (autoAddToggle) {
+    const toggleSpaceId = autoAddToggle.dataset.spaceId ?? '';
+    autoAddToggle.addEventListener('change', async () => {
+      if (!toggleSpaceId) return;
+      const previous = !autoAddToggle.checked; // optimistic flip already happened
+      const desired = autoAddToggle.checked;
+      autoAddToggle.disabled = true;
+      try {
+        const res = await fetch(
+          `/api/spaces/${encodeURIComponent(toggleSpaceId)}/backup-config`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ autoAddFutureBases: desired }),
+          },
+        );
+        if (!res.ok) {
+          autoAddToggle.checked = previous;
+        }
+      } catch {
+        autoAddToggle.checked = previous;
+      } finally {
+        autoAddToggle.disabled = false;
+      }
+    });
+  }
+
+  // Banner dismiss — one button per unread space_events row. POSTs to
+  // /api/spaces/:spaceId/space-events/:eventId/dismiss, then hides the
+  // card on success. The whole banner container disappears once the last
+  // card is gone.
+  const dismissButtons = document.querySelectorAll<HTMLButtonElement>(
+    '[data-space-event-dismiss]',
+  );
+  const bannerRoot = document.querySelector<HTMLElement>(
+    '[data-space-events-banner]',
+  );
+  const dismissSpaceId = bannerRoot?.dataset.spaceId ?? '';
+  dismissButtons.forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const eventId = btn.dataset.spaceEventId ?? '';
+      if (!eventId || !dismissSpaceId) return;
+      setButtonLoading(btn, true);
+      try {
+        const res = await fetch(
+          `/api/spaces/${encodeURIComponent(dismissSpaceId)}/space-events/${encodeURIComponent(eventId)}/dismiss`,
+          { method: 'POST' },
+        );
+        if (res.ok || res.status === 404) {
+          const card = btn.closest('[data-space-event-id]');
+          card?.remove();
+          if (bannerRoot && bannerRoot.querySelectorAll('[data-space-event-id]').length === 0) {
+            bannerRoot.remove();
+          }
+        }
+      } catch {
+        // leave card visible so the user can retry
+      } finally {
+        setButtonLoading(btn, false);
+      }
+    });
+  });
 </script>

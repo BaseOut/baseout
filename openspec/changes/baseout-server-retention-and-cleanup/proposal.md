@@ -1,3 +1,5 @@
+> **Depends on**: [`baseout-r2-stance`](../baseout-r2-stance/proposal.md) — The cleanup engine's `DELETE` path requires [`baseout-server-byos-destinations`](../baseout-server-byos-destinations/proposal.md) Phase 0 to land first (`StorageWriter.delete()` is the call site). Phase A (retention-policy schema + `backup_runs.deleted_at`) is independent.
+
 ## Why
 
 The `baseout-backup-schedule-and-cancel` change lights up the cron half of the lifecycle. The other half — **when to delete old backups** — has no implementation yet. R2 is the source of cost-per-GB for managed-storage Spaces; without an automated cleanup loop, every scheduled backup adds to the bill forever.

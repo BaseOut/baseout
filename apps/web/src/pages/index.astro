@@ -30,7 +30,13 @@ const integrations: IntegrationsState =
         tierBasesPerSpace: 5,
         availableFrequencies: ['monthly'],
         hasBackupConfig: false,
-        policy: { frequency: 'monthly', storageType: 'r2_managed', nextScheduledAt: null },
+        policy: {
+          frequency: 'monthly',
+          storageType: 'r2_managed',
+          nextScheduledAt: null,
+          autoAddFutureBases: false,
+        },
+        unreadEvents: [],
       };
 
 const initialRuns: BackupRunSummary[] =

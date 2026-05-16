@@ -1,3 +1,5 @@
+> **Blocked tasks**: The cleanup-execution path (`StorageWriter.delete` call sites) depends on [`baseout-server-byos-destinations`](../baseout-server-byos-destinations/proposal.md) Phase 0 landing first (R2 binding + `StorageWriter` interface). Phase A (schema) is independent and can ship before that.
+
 ## Phase A — Master DB schema
 
 Ship + smoke + commit before Phase B starts.

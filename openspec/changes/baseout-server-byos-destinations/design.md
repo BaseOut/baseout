@@ -1,6 +1,6 @@
 ## Overview
 
-Seven phases. The load-bearing chain is A (schema) → B (interface) → C (one provider's connect flow + strategy, end-to-end). Each subsequent provider after the first is a parallel + smaller workstream — same shape, different SDK. Recommended order:
+Eight phases (0 plus A–G). Phase 0 re-introduces the managed R2 binding removed by commit `8fc1f61` (per [`baseout-r2-stance`](../baseout-r2-stance/proposal.md)). The remaining seven phases follow as originally drafted. The load-bearing chain is 0 (R2 binding) → A (schema) → B (interface) → C (one provider's connect flow + strategy, end-to-end). Each subsequent provider after the first is a parallel + smaller workstream — same shape, different SDK. Recommended order:
 
 1. Google Drive (highest customer demand, well-documented SDK)
 2. S3 (no OAuth, simpler — IAM-keys form)

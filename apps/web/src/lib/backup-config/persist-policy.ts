@@ -25,7 +25,7 @@ import {
   type Tier,
 } from '../capabilities/tier-capabilities'
 
-const ALLOWED_BODY_KEYS = new Set(['frequency', 'storageType'])
+const ALLOWED_BODY_KEYS = new Set(['frequency', 'storageType', 'autoAddFutureBases'])
 const ALL_FREQUENCIES: ReadonlySet<Frequency> = new Set([
   'monthly',
   'weekly',
@@ -45,6 +45,7 @@ export interface UpsertConfigInput {
   spaceId: string
   frequency?: Frequency
   storageType?: string
+  autoAddFutureBases?: boolean
 }
 
 export interface PersistBackupConfigPolicyDeps {
@@ -92,8 +93,24 @@ export async function persistBackupConfigPolicy(
     storageType = v
   }
 
+  // 3b. Validate autoAddFutureBases. Booleans only — tier-gating happens
+  //     on the engine side at rediscovery time (it just won't auto-add
+  //     past the cap), so no tier check needed here.
+  let autoAddFutureBases: boolean | undefined
+  if ('autoAddFutureBases' in input.body) {
+    const v = input.body.autoAddFutureBases
+    if (typeof v !== 'boolean') {
+      return { ok: false, error: 'invalid_request' }
+    }
+    autoAddFutureBases = v
+  }
+
   // 4. Reject empty bodies (no-op upsert).
-  if (frequency === undefined && storageType === undefined) {
+  if (
+    frequency === undefined &&
+    storageType === undefined &&
+    autoAddFutureBases === undefined
+  ) {
     return { ok: false, error: 'invalid_request' }
   }
 
@@ -110,6 +127,9 @@ export async function persistBackupConfigPolicy(
   const upsertInput: UpsertConfigInput = { spaceId: input.spaceId }
   if (frequency !== undefined) upsertInput.frequency = frequency
   if (storageType !== undefined) upsertInput.storageType = storageType
+  if (autoAddFutureBases !== undefined) {
+    upsertInput.autoAddFutureBases = autoAddFutureBases
+  }
   await deps.upsertConfig(upsertInput)
 
   return { ok: true }

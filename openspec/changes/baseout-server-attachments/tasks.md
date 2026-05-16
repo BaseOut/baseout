@@ -1,3 +1,5 @@
+> **Blocked tasks**: Every task in Phase B and beyond depends on [`baseout-server-byos-destinations`](../baseout-server-byos-destinations/proposal.md) Phase 0 landing first (R2 binding + `StorageWriter` interface). Phase A (schema) is independent and can ship before that. Tasks below are flagged where blocked.
+
 ## Phase A — Schema
 
 ### A.1 — Migration

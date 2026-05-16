@@ -35,7 +35,9 @@ const state: IntegrationsState =
           frequency: 'monthly',
           storageType: 'r2_managed',
           nextScheduledAt: null,
+          autoAddFutureBases: false,
         },
+        unreadEvents: [],
       };
 
 const initialRuns: BackupRunSummary[] =
