@@ -4,7 +4,7 @@ Workflows-side counterpart to [`baseout-server-trial-quota-enforcement`](../base
 
 ## What Changes
 
-- New scheduled task `apps/workflows/trigger/tasks/trial-email-cron.task.ts`. Daily cron. Reads the engine's "orgs with trials expiring in {7, 3, 1, 0} days" list via engine-callback. For each row, POSTs a `trial-email-trigger` event to the server side. Mailgun call + template render live on the server.
+- New scheduled task `apps/workflows/trigger/tasks/trial-email-cron.task.ts`. Daily cron. Reads the engine's "orgs with trials expiring in {7, 3, 1, 0} days" list via engine-callback. For each row, POSTs a `trial-email-trigger` event to the server side. Template render + Cloudflare Workers `send_email` dispatch live on the server.
 
 ## Out of Scope
 

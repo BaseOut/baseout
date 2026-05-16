@@ -1,6 +1,15 @@
 ## Why
 
-`baseout-admin` is the internal operator surface for Baseout staff: organization browser, subscription dashboard, backup-run viewer, database-provisioning tracker, connection-health dashboard, background-service monitor, On2Air migration status, manual admin actions, error log search, and an immutable audit trail. It has a different audience (Baseout staff, not customers), different auth (Google Workspace SSO), and a different deploy/uptime tolerance than the customer-facing `baseout-web`. None of it exists yet. This change establishes `baseout-admin` as one of six independently versioned and deployed runtime repos in the new container layout.
+`baseout-admin` is the internal operator surface for Baseout staff: organization browser, subscription dashboard, backup-run viewer, database-provisioning tracker, connection-health dashboard, background-service monitor, On2Air migration status, manual admin actions, error log search, and an immutable audit trail. It has a different audience (Baseout staff, not customers), different auth (Google Workspace SSO), and a different deploy/uptime tolerance than the customer-facing `apps/web`. This change establishes `apps/admin/` as a standalone runtime app in the monorepo.
+
+## Status note (2026-05)
+
+**Deferred per `specreview/03-reconciliation.md` §8 recommendation B.** The staff console currently lives at `/ops/*` inside `apps/web` (admin-gated by `users.user_role = 'admin'`). `apps/admin/` exists as a placeholder Worker that returns 200 text. Promote this change from deferred to active when *either* condition holds:
+
+1. The `/ops` UI in apps/web reaches >5 distinct pages (today: 1-2), OR
+2. The staff console needs an auth shape that the customer auth boundary can't host (e.g., Google Workspace SSO without polluting the customer login flow).
+
+Until then, `apps/admin/` is a stub and its tasks are inert. Don't archive — the requirements still describe the eventual shape; only the timing slips.
 
 ## What Changes
 

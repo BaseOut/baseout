@@ -1,6 +1,6 @@
 ## Why
 
-The `StoragePicker` UI in [apps/web/src/components/backups/StoragePicker.astro](../../../apps/web/src/components/backups/StoragePicker.astro) shows seven destination options — `r2_managed`, `google_drive`, `dropbox`, `box`, `onedrive`, `s3`, `frame_io` — but only `r2_managed` is selectable. Every other option is locked with a "Coming soon" label. The engine has no `StorageWriter` interface, no OAuth tokens for any non-Airtable provider, and no per-provider write path. The `backup-base.task.ts` writes straight to `env.BACKUPS_R2` via `r2.put`.
+The `StoragePicker` UI in [apps/web/src/components/backups/StoragePicker.astro](../../../apps/web/src/components/backups/StoragePicker.astro) shows seven destination options — `r2_managed`, `google_drive`, `dropbox`, `box`, `onedrive`, `s3`, `frame_io` — but only `r2_managed` is selectable. Every other option is locked with a "Coming soon" label. The engine has no `StorageWriter` interface, no OAuth tokens for any non-Airtable provider, and no per-provider write path. The `backup-base.task.ts` currently writes to local disk via `apps/workflows/trigger/tasks/_lib/local-fs-write.ts` (R2 was removed in commit `8fc1f61` so the task could ship on Trigger.dev's Node runner without a Worker-only binding). R2-managed is the **first** BYOS destination this change re-introduces — it lands behind the same `StorageWriter` interface as the BYOS providers, not as a bespoke fast path.
 
 [PRD §7.2](../../../shared/Baseout_PRD.md) lists BYOS as a V1 Must-Have:
 
@@ -57,7 +57,7 @@ The existing openspec change `baseout-backup/specs/storage-destinations/spec.md`
   ```
 
 - Implementations under `apps/server/src/lib/storage/strategies/`:
-  - `r2-managed.ts` — wraps the existing `env.BACKUPS_R2.put` path. Tier-gating: all.
+  - `r2-managed.ts` — reintroduces R2 via the Worker's `env.BACKUPS_R2` binding (re-added as part of this change; the previous direct-write was removed in `8fc1f61`). Tier-gating: all. Default destination when no `storage_destinations` row exists for a Space.
   - `google-drive.ts` — OAuth2 + Drive v3 API. Tier-gating: all.
   - `dropbox.ts` — OAuth2 + Dropbox API + chunked upload. `proxyStreamMode=true`. Tier-gating: all.
   - `box.ts` — OAuth2 + Box API + chunked upload. `proxyStreamMode=true`. Tier-gating: all.

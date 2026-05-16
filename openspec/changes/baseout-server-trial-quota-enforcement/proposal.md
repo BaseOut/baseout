@@ -62,7 +62,7 @@ The engine's `/runs/complete` already sets `status='trial_complete'` or `'trial_
 
 ### Phase E — Email lifecycle
 
-Three new emails via Mailgun + React Email templates (per CLAUDE.md §3.3):
+Three new emails via the Cloudflare Workers `send_email` binding + React Email templates (mirrors `apps/web/src/lib/email/send.ts`):
 
 1. **Trial Welcome** — sent on sign-up. Onboarding CTA.
 2. **Trial Expiry Warning** — sent on day 5 of the 7-day trial. Upgrade CTA.

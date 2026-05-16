@@ -2,7 +2,7 @@
 
 `apps/web` (`@baseout/web`) is the Astro 6 SSR application that runs on Cloudflare Workers, port 4331 in dev. It owns the customer-facing UI surface and the `/api/*` endpoints that power it. After the port from `baseout-starter` HEAD (`29dfb5b`), it builds, type-checks, and runs end-to-end against a real Hyperdrive-fronted Postgres for auth, Airtable connections, and Stripe trial creation. Engine-coupled UI (the "Run Backup Now" form) is removed pending the rebuild of `apps/server`.
 
-This document describes what is **actually shipped** in the port. The original v1 design — covering Mailgun, password / 2FA / SAML, WebSocket progress, AI documentation, embedded mode, full BYOS, etc. — remains the long-term target; per-capability gaps are listed in [STATUS.md](./STATUS.md) and will be filled by future `opsx:propose` changes.
+This document describes what is **actually shipped** in the port. The original v1 design — covering password / 2FA / SAML, WebSocket progress, AI documentation, embedded mode, full BYOS, etc. — remains the long-term target; per-capability gaps are listed in [STATUS.md](./STATUS.md) and will be filled by future `opsx:propose` changes. Email transport is the Cloudflare Workers `send_email` binding (no third-party ESP).
 
 ## Stack
 
@@ -14,7 +14,7 @@ This document describes what is **actually shipped** in the port. The original v
 | Auth | better-auth 1.6.5 | magic-link only; sealed cookies; KV-backed session storage |
 | DB | PostgreSQL via Hyperdrive | DigitalOcean shared PG; `postgres-js` client per-request |
 | ORM | Drizzle ORM 0.45.2 + drizzle-kit 0.31.10 | migrations in `apps/web/drizzle/` (0001 → 0005) |
-| Mail | Resend | dev mode logs to console; only the magic-link template is wired |
+| Mail | Cloudflare Workers `send_email` binding | dev mode logs to console; only the magic-link template is wired |
 | Billing | Stripe 22.0.2 | trial customer + subscription creation; webhook receiver and idempotency table are deferred |
 | Styling | Tailwind 4 + daisyUI 5.5.19 | per-app components in `src/components/ui/` |
 | State | nanostores 1.3.0 | `src/stores/` — hydrated server state, see CLAUDE.md §4 |
@@ -62,7 +62,7 @@ apps/web/
 
 - `src/pages/login.astro` posts to `/api/auth/sign-in/magic-link` (better-auth handler).
 - `src/lib/auth-factory.ts` mints the magic-link URL with origin validation; trusted-domain list is in env.
-- Email template at `src/lib/email/magic-link.ts`; sent via Resend (`RESEND_API_KEY`). Dev mode logs the link to the console.
+- Email template at `src/lib/email/magic-link.ts`; sent via the Cloudflare Workers `send_email` binding (see `src/lib/email/send.ts`). Dev mode logs the link to the console.
 - Session is sealed-cookie + KV-backed (`SESSIONS_KV` binding). `src/middleware.ts` enforces auth on protected routes.
 - Password / 2FA / SAML are **not implemented**. The v1 contracts in `specs/authentication/spec.md` cover the broader vision; only the magic-link clauses are met today.
 
@@ -127,7 +127,6 @@ Each is a candidate for `opsx:propose <name>`:
 | Change | Why deferred |
 |---|---|
 | `baseout-web-auth-extended` | password + 2FA TOTP + SAML — needs better-auth plugins + UI work |
-| `baseout-web-mailgun` | swap Resend → Mailgun + React Email templates |
 | `baseout-web-websocket-progress` | depends on `apps/server` durable object existing |
 | `baseout-web-capability-api` | wrap the resolver lib in `/api/me/capabilities` + 5-min cache |
 | `baseout-web-stripe-full` | webhooks + idempotency + plan upgrade + add-ons + credit packs |

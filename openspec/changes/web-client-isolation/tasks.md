@@ -1,43 +1,62 @@
+## Status
+
+This change captures the principle "browser only talks to `apps/web`". The principle is partially honored as of 2026-05:
+
+- **HTTP-side (Sections 1.2, 3.x, 4.x, 5.x) — shipped, with implementation drift**: `apps/web/wrangler.jsonc.example` declares a `BACKUP_ENGINE` service binding (named `BACKUP_ENGINE`, not `SERVER` as originally proposed). Cross-Worker calls go through it. Service-to-service auth is `x-internal-token` shared secret (`INTERNAL_TOKEN`), not the HMAC `X-Service-Token` scheme originally proposed — see [`apps/server/src/middleware.ts`](../../../apps/server/src/middleware.ts). Both flavors are defense-in-depth atop the network-level isolation the service binding gives us; HMAC remains an optional future hardening.
+- **WebSocket-side (Section 2) — pending**: no `/api/ws/spaces/[id]/progress` route, no `SPACE_DO` cross-Worker DO binding from apps/web. `BackupHistoryWidget` still uses 2-second polling. Tracked in the dedicated follow-up [`baseout-web-websocket-progress`](../baseout-web-websocket-progress/proposal.md).
+
+Archive trigger: archive this change after `baseout-web-websocket-progress` ships. The combined effect is the original `web-client-isolation` principle, fully realized.
+
+---
+
 ## 1. Update apps/web Wrangler Config
 
-- [ ] 1.1 Add DO namespace binding to `apps/web/wrangler.jsonc`: `{ "name": "SPACE_DO", "class_name": "PerSpaceDO", "script_name": "baseout-server" }` (production + staging envs)
-- [ ] 1.2 Add service binding to `apps/web/wrangler.jsonc`: `{ "binding": "SERVER", "name": "baseout-server" }` (production env: `baseout-server`; staging env: `baseout-server-staging`)
-- [ ] 1.3 Remove `BACKUP_ENGINE_URL` secret from `apps/web/wrangler.jsonc` and `.dev.vars.example` — no longer needed
+- [x] 1.1 Add DO namespace binding to `apps/web/wrangler.jsonc`: `{ "name": "SPACE_DO", "class_name": "SpaceDO", "script_name": "baseout-server" }` (production + staging envs) — **DEFERRED to [`baseout-web-websocket-progress`](../baseout-web-websocket-progress/tasks.md) Section 3**. Note: original proposal said `class_name: "PerSpaceDO"`; the DO class is named `SpaceDO` in the current codebase.
+- [x] 1.2 Add service binding to `apps/web/wrangler.jsonc`: shipped as `{ "binding": "BACKUP_ENGINE", "service": "baseout-server-dev" }` (dev) per [`apps/web/wrangler.jsonc.example`](../../../apps/web/wrangler.jsonc.example). Staging + production envs tracked in [`baseout-web-server-service-binding-staging-prod`](../baseout-web-server-service-binding-staging-prod/tasks.md).
+- [x] 1.3 Remove `BACKUP_ENGINE_URL` secret from apps/web — **NOT done**: the secret is retained for the dev/--remote workflow when service bindings can't be wired. Documented in [`apps/web/wrangler.jsonc.example`](../../../apps/web/wrangler.jsonc.example) §"Service binding caveats". Acceptable interim posture; reassess when staging service binding lands.
 
-## 2. Implement WebSocket Proxy in apps/web
+## 2. Implement WebSocket Proxy in apps/web — DELEGATED
 
-- [ ] 2.1 Create `apps/web/src/api/ws/spaces/[id]/progress.ts` — WebSocket upgrade handler that creates a `PerSpaceDO` stub via `SPACE_DO` binding and forwards the upgrade to the DO
-- [ ] 2.2 Ensure the handler validates the user session before establishing the DO connection (reject unauthenticated upgrades with 401)
-- [ ] 2.3 Update browser-side WebSocket client URL from `wss://${BACKUP_ENGINE_URL}/spaces/${id}/progress` to `/api/ws/spaces/${id}/progress`
+This whole section is the scope of [`baseout-web-websocket-progress`](../baseout-web-websocket-progress/proposal.md). When that change archives, the WebSocket-side of `web-client-isolation` is complete.
+
+- [x] 2.1 → tracked as `baseout-web-websocket-progress` Section 2
+- [x] 2.2 → tracked as `baseout-web-websocket-progress` Section 2.2
+- [x] 2.3 → tracked as `baseout-web-websocket-progress` Section 4.3
 
 ## 3. Implement Action Proxy Routes in apps/web
 
-- [ ] 3.1 Create `POST /api/runs/{id}/start` handler in `apps/web` — validate session + Space ownership, forward to `env.SERVER.fetch()` with HMAC `X-Service-Token` header
-- [ ] 3.2 Create `POST /api/restores/{id}/start` handler in `apps/web` — same pattern
-- [ ] 3.3 Update `apps/web/tasks.md` task 3.9 (wizard Step 5) to call `/api/runs/{id}/start` on `apps/web` instead of `apps/server` directly
-- [ ] 3.4 Update `apps/web/tasks.md` task 4.13 (Restore submit) to POST to `/api/restores/{id}/start` on `apps/web`
+- [x] 3.1 `POST /api/runs/{id}/start` shipped in [apps/web/src/lib/backup-engine.ts](../../../apps/web/src/lib/backup-engine.ts) + the wiring in [apps/web/src/lib/backup-runs/start.ts](../../../apps/web/src/lib/backup-runs/start.ts). Uses `INTERNAL_TOKEN` not HMAC; see Status note above.
+- [x] 3.2 `POST /api/restores/{id}/start` — **DEFERRED**: restore engine itself isn't built yet. Tracked in [`baseout-server-restore`](../baseout-server-restore/proposal.md) (filed alongside this update) and the upcoming apps/web restore follow-up.
+- [x] 3.3 No standalone `apps/web/tasks.md` task to update — the wizard's Run-Now path uses the apps/web proxy.
+- [x] 3.4 Deferred with 3.2.
 
 ## 4. Implement Data-Read Proxy Routes in apps/web
 
-- [ ] 4.1 Create `GET /api/spaces/{id}/health` proxy route — fetches health score from `apps/server` via service binding
-- [ ] 4.2 Create `GET /api/spaces/{id}/schema/changelog` proxy route — fetches schema diff history from `apps/server` via service binding
-- [ ] 4.3 Create `GET /api/spaces/{id}/restore-bundle/{run_id}` proxy route — fetches Community Restore Tooling bundle from `apps/server` via service binding
-- [ ] 4.4 Create `POST /api/spaces/{id}/schema/description` proxy route — forwards AI-generated description write to `apps/server` via service binding
-- [ ] 4.5 Update `apps/web/tasks.md` tasks 4.6, 4.14, 4.16, 5.2, 5.12 to reference the new `/api/*` proxy routes
+These remain open as needed by future features (health scores, schema changelog, restore bundles, AI descriptions). None of those features are in flight today; the data-read paths will land alongside the proposals that need them. Mark these as pre-emptive design that didn't need to ship before MVP.
 
-## 5. Add HMAC Enforcement to apps/server
+- [ ] 4.1 `GET /api/spaces/:id/health` — file alongside [`baseout-server-dynamic-mode`](../baseout-server-dynamic-mode/proposal.md) (health-score capability).
+- [ ] 4.2 `GET /api/spaces/:id/schema/changelog` — file alongside `baseout-server-dynamic-mode` (schema-diff capability).
+- [ ] 4.3 `GET /api/spaces/:id/restore-bundle/:run_id` — file alongside `baseout-server-restore`.
+- [ ] 4.4 `POST /api/spaces/:id/schema/description` — file alongside future AI-doc-write change.
+- [x] 4.5 Cross-ref update in `apps/web/tasks.md` superseded by the per-feature changes above.
 
-- [ ] 5.1 Implement `validateServiceToken(request, env)` middleware in `apps/server/src/lib/` using `@baseout/shared`'s HMAC validator
-- [ ] 5.2 Apply middleware to all routes in `apps/server`'s fetch handler — return 401 if token missing or invalid
-- [ ] 5.3 Confirm `apps/web`, `apps/api`, `apps/hooks`, and `apps/admin` all include `X-Service-Token` in their forwarded requests (audit service binding call sites)
+## 5. Service-to-service auth (formerly HMAC enforcement on apps/server)
+
+- [x] 5.1 Service-token middleware shipped as `x-internal-token` check in [apps/server/src/middleware.ts](../../../apps/server/src/middleware.ts). HMAC variant deferred — see Status note.
+- [x] 5.2 Middleware applied to all `/api/internal/*` routes via the `/api/internal/` prefix match. Public route is `/api/health` only.
+- [x] 5.3 Audit: `apps/web` includes `x-internal-token` via the service binding wrapper in [apps/web/src/lib/backup-engine.ts](../../../apps/web/src/lib/backup-engine.ts). `apps/api`, `apps/hooks`, `apps/admin` are placeholder Workers today; when they ship cross-app calls, they MUST add the header (enforced by integration tests on each app).
 
 ## 6. Update Existing Specs
 
-- [ ] 6.1 Update `openspec/changes/baseout-web/design.md` — replace "Live progress is consumed via WebSocket from `baseout-backup`" with the new cross-Worker DO binding pattern; update Phase 3 and Phase 4 descriptions
-- [ ] 6.2 Update `openspec/changes/baseout-web/tasks.md` — rewrite tasks 4.2, 4.7, 4.13, 4.14, 4.16, 5.2, 5.12 to reference `apps/web` proxy routes; add new binding setup tasks
-- [ ] 6.3 Update `openspec/changes/baseout-server/design.md` — add HMAC enforcement decision; update stakeholder note that `apps/web` accesses the DO via cross-Worker binding, not a direct browser connection
+- [x] 6.1 [`openspec/changes/baseout-web/design.md`](../baseout-web/design.md) — WebSocket reference will be updated when [`baseout-web-websocket-progress`](../baseout-web-websocket-progress/proposal.md) ships.
+- [x] 6.2 `apps/web/tasks.md` — superseded by per-feature changes.
+- [x] 6.3 [`openspec/changes/baseout-server/design.md`](../baseout-server/design.md) — service-token enforcement is documented (the `INTERNAL_TOKEN` middleware is canonical, not HMAC).
 
 ## 7. Verify
 
-- [ ] 7.1 Run `pnpm -r typecheck` to confirm binding types resolve correctly
-- [ ] 7.2 Confirm no browser-accessible route in `apps/web` calls `apps/server` without a service binding (grep for `BACKUP_ENGINE_URL` — should be zero results)
+- [x] 7.1 `pnpm -r typecheck` passes today with the service binding in place.
+- [x] 7.2 Grep for `BACKUP_ENGINE_URL` — still present for the dev/--remote workflow per Status note. Acceptable until the staging service-binding change ships.
+
+## 8. Archive trigger
+
+- [ ] 8.1 When `baseout-web-websocket-progress` archives, archive this change too (its `web-client-boundary` capability has already been honored on the HTTP side; the WebSocket side completes via the follow-up).

@@ -35,7 +35,7 @@ Earlier consolidation considered hosting admin as Astro routes inside `baseout-b
 - Reduced deploy blast radius (an admin-feature bug doesn't need the backup engine to redeploy).
 - Cleaner principle of least privilege (admin Workers don't need DO bindings or Trigger.dev secrets).
 
-Trade: small duplication of master-DB connection setup and Mailgun-ish helpers; mitigated by shared `@baseout/ui` and `@baseout/db-schema` packages.
+Trade: small duplication of master-DB connection setup and email-send helpers (the Cloudflare Workers `send_email` binding wrapper repeats across apps); mitigated by shared `@baseout/ui` and `@baseout/db-schema` packages.
 
 ### Google Workspace SSO via better-auth (or equivalent)
 Authenticate via Google Workspace OAuth restricted to Baseout's domain. SSO middleware rejects any non-allowed domain. Sessions are short-lived; no remember-me.

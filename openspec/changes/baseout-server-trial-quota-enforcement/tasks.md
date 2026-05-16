@@ -50,7 +50,7 @@
 Trial-email cron task owned by [`baseout-workflows-trial-quota-enforcement`](../baseout-workflows-trial-quota-enforcement/tasks.md). Server side owns:
 
 - [ ] E.3.1 New `apps/server/src/pages/api/internal/trials/expiring.ts` — GET `?in=7,3,1,0` → list of orgs with trials expiring in the requested windows.
-- [ ] E.3.2 New `apps/server/src/pages/api/internal/orgs/:id/trial-email.ts` — POST `{ daysRemaining }` → Mailgun template render + send.
+- [ ] E.3.2 New `apps/server/src/pages/api/internal/orgs/:id/trial-email.ts` — POST `{ daysRemaining }` → React Email template render + Cloudflare Workers `send_email` dispatch.
 - [ ] E.3.3 Idempotency columns `trial_expiry_warning_sent_at` + `trial_expired_email_sent_at` prevent duplicate sends.
 - [ ] E.3.4 Tests: pure function `decideTrialEmails(row, now)` → which emails to send. Lives in `apps/server/tests/integration/`.
 

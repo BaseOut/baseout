@@ -6,7 +6,7 @@ A Trigger.dev scheduled task `credit-balance-alerts` SHALL run once daily, compa
 #### Scenario: alert at threshold crossing
 - **WHEN** an Org's ratio crosses from below to at-or-above a threshold (50 / 75 / 90 / 100%) between yesterday's and today's snapshot
 - **THEN** the task SHALL POST `/api/internal/orgs/:id/credit-alert` with `{ threshold, ratio }` + `x-internal-token`
-- **AND** the server side SHALL render + dispatch the Mailgun email
+- **AND** the server side SHALL render the React Email template + dispatch via the Cloudflare Workers `send_email` binding
 - **AND** the task SHALL emit `event: 'credit_alert_dispatched'` per send
 
 #### Scenario: no-flip case

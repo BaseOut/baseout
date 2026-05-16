@@ -2,30 +2,30 @@
 
 ### Requirement: Templates and senders
 
-`baseout-web` SHALL implement React Email templates and Mailgun sends for: Magic Link, Password Reset, 2FA setup confirmation, Trial Welcome, Migration Welcome, Upgrade Confirmation, Payment Failed (dunning), Team Invitation.
+`baseout-web` SHALL implement React Email templates and dispatch via the Cloudflare Workers `send_email` binding (see [`apps/web/src/lib/email/send.ts`](../../../../../apps/web/src/lib/email/send.ts)) for: Magic Link, Password Reset, 2FA setup confirmation, Trial Welcome, Migration Welcome, Upgrade Confirmation, Payment Failed (dunning), Team Invitation.
 
 #### Scenario: Magic Link send
 
 - **WHEN** a user requests a magic link
-- **THEN** the Magic Link template is rendered via React Email and sent via Mailgun within 30 seconds
+- **THEN** the Magic Link template is rendered via React Email and dispatched via the Cloudflare Workers `send_email` binding within 30 seconds
 
-### Requirement: Sending domain and key isolation
+### Requirement: Sending domain and binding isolation
 
-Sends SHALL use sending domain `mail.baseout.com` (DKIM/SPF/DMARC). `baseout-web`'s Mailgun API key SHALL be a separate key from any other repo's, held in Cloudflare Secrets.
+Sends SHALL use sending domain `mail.baseout.com` (DKIM/SPF/DMARC). `baseout-web`'s `send_email` binding SHALL be a separate per-Worker binding from any other app's, so revocation of one Worker's send-from privileges doesn't affect the other.
 
 #### Scenario: Independent dispatch
 
 - **WHEN** `baseout-web` sends Trial Welcome
-- **THEN** Mailgun is called directly using `baseout-web`'s key without coordination with any other repo
+- **THEN** the Cloudflare Email Workers binding scoped to `baseout-web` is called directly without coordination with any other app
 
 ### Requirement: No internal email-dispatch endpoint
 
-There SHALL NOT be an internal "send-email" endpoint exposed by `baseout-web` to any other repo. Each email-sending repo (`baseout-web`, `baseout-backup`) calls Mailgun directly with its own key.
+There SHALL NOT be an internal "send-email" endpoint exposed by `baseout-web` to any other app. Each email-sending app (`baseout-web`, `baseout-server`) calls its own `send_email` binding directly.
 
-#### Scenario: baseout-backup sends its own email
+#### Scenario: baseout-server sends its own email
 
-- **WHEN** `baseout-backup` needs to send Backup Failure
-- **THEN** `baseout-backup` invokes Mailgun directly with its own key, not via `baseout-web`
+- **WHEN** `baseout-server` needs to send Backup Failure
+- **THEN** `baseout-server` invokes its own Cloudflare Workers `send_email` binding, not via `baseout-web`
 
 ### Requirement: Migration Welcome on first login
 

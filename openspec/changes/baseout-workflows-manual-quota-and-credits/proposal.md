@@ -5,10 +5,10 @@ Workflows-side counterpart to [`baseout-server-manual-quota-and-credits`](../bas
 ## What Changes
 
 - Update `apps/workflows/trigger/tasks/backup-base.ts` (pure module) to track `attachmentBytesByBase: { [baseId]: number }` alongside the existing record/table counts. Emit it on the per-base completion payload posted by the wrapper.
-- New scheduled task `apps/workflows/trigger/tasks/credit-balance-alerts.task.ts`. Daily cron. Pure module + wrapper. For each Org with credit activity, compute yesterday's vs today's `total_consumed/total_granted` ratio; on crossing a 50/75/90/100% threshold, POST an email-trigger event to `/api/internal/orgs/:id/credit-alert`. Mailgun call lives on the server side.
+- New scheduled task `apps/workflows/trigger/tasks/credit-balance-alerts.task.ts`. Daily cron. Pure module + wrapper. For each Org with credit activity, compute yesterday's vs today's `total_consumed/total_granted` ratio; on crossing a 50/75/90/100% threshold, POST an email-trigger event to `/api/internal/orgs/:id/credit-alert`. Template render + Cloudflare Workers `send_email` dispatch live on the server side.
 
 ## Out of Scope
 
 - `credit_transactions` master-DB schema, `chargeCredits()` server-side helper, Stripe metered-usage reporter, mid-run pause logic — all server-side.
 - apps/web Settings → Billing screen — apps/web.
-- Mailgun template + send — server-side.
+- React Email template + Cloudflare Workers `send_email` dispatch — server-side.

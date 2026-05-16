@@ -41,7 +41,6 @@ The following capabilities arrived already-implemented in the port; ticking them
 Listed for traceability; **not** in scope for this change:
 
 - [ ] 3.1 Password / 2FA TOTP / SAML auth → `baseout-web-auth-extended`
-- [ ] 3.2 Mailgun + React Email migration → `baseout-web-mailgun`
 - [ ] 3.3 `GET /api/me/capabilities` HTTP endpoint + 5-min cache + `enforceCapability` middleware → `baseout-web-capability-api`
 - [ ] 3.4 Stripe webhook receiver, idempotency table, dunning, plan upgrade/downgrade, add-ons, credit packs → `baseout-web-stripe-full`
 - [ ] 3.5 BYOS storage destination OAuth (Drive / Dropbox / Box / OneDrive / S3 / Frame.io) → `baseout-web-byos-storage`
@@ -64,6 +63,6 @@ Listed for traceability; **not** in scope for this change:
 - [ ] 4.1 Rotate the leaked Fontawesome token (`9A19FB16-…`) at fontawesome.com; set `FONTAWESOME_TOKEN` in shell rc / direnv
 - [ ] 4.2 Provision Hyperdrive IDs for staging + production in `apps/web/wrangler.jsonc`
 - [ ] 4.3 Provision KV namespace (`SESSIONS_KV`) for staging + production
-- [ ] 4.4 Set `wrangler secret`s per env: `RESEND_API_KEY`, `STRIPE_SECRET_KEY`, `STRIPE_TRIAL_PRICE_ID`, `BASEOUT_ENCRYPTION_KEY`, `AIRTABLE_OAUTH_CLIENT_ID/_SECRET`, `BETTER_AUTH_SECRET`, `DATABASE_URL`
+- [ ] 4.4 Set `wrangler secret`s per env: `STRIPE_SECRET_KEY`, `STRIPE_TRIAL_PRICE_ID`, `BASEOUT_ENCRYPTION_KEY`, `AIRTABLE_OAUTH_CLIENT_ID/_SECRET`, `BETTER_AUTH_SECRET`, `DATABASE_URL`. Email uses the Cloudflare Workers `send_email` binding declared in `wrangler.jsonc` — no API key needed.
 - [ ] 4.5 After verification, archive `/Users/autumnshakespeare/dev/baseout/baseout-starter` and `baseout-backup-engine` (mark read-only; do not delete until prod is on the monorepo)
 - [ ] 4.6 Update memory note `project_monorepo_migration.md` to reflect: skeleton was at planning repo HEAD (resolved); engine abandoned; apps/web ported from `29dfb5b` minus engine wire

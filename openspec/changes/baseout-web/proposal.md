@@ -14,7 +14,6 @@
 - Defer (now-explicit non-goals for this change; tracked as future deltas):
   - `@baseout/db-schema` extraction (the `backup_runs` / `backup_configurations` schema stays mirrored in `apps/web/src/db/schema/core.ts`).
   - `@baseout/ui` adoption (the app continues to ship its own `src/components/ui/` + Daisyui).
-  - Mailgun migration (Resend remains the email transport).
   - Password / 2FA / SAML auth (magic-link is the only enabled method).
   - WebSocket progress, AI-assisted documentation, embedded-extension mode, migration UX, full BYOS storage flow — all depend on `apps/server` or have their own future change.
   - "Run Backup Now" UI in `/backups` returns when `apps/server` lands.
@@ -28,7 +27,7 @@ This change alters the **status** of every capability listed in the original v1 
 - `authentication`: implemented with **magic-link only** via better-auth 1.6.5; password / 2FA / SAML are deferred.
 - `backups-ui`: page exists; the **Run-Now** form is removed pending `apps/server` rebuild.
 - `capability-resolution`: resolver **library** (`src/lib/capabilities/resolve.ts`) implemented; the `/api/me/capabilities` HTTP endpoint and 5-minute cache are deferred.
-- `web-email-notifications`: **Resend**, not Mailgun; only the magic-link template is wired today.
+- `web-email-notifications`: dispatched via the Cloudflare Workers `send_email` binding (see `src/lib/email/send.ts`); only the magic-link template is wired today.
 - `dashboard`, `integrations-ui`, `stripe-billing`, `restore-ui`, `schema-ui`, `trial-enforcement`, `onboarding-wizard`: partial; concrete deltas captured in [STATUS.md](./STATUS.md) and [tasks.md](./tasks.md).
 
 ### Capabilities Not Yet Implemented
@@ -38,12 +37,12 @@ This change alters the **status** of every capability listed in the original v1 
 ## Impact
 
 - **New code path**: `apps/web/` (Cloudflare Workers, Astro SSR, port 4331 dev). Replaces the standalone `baseout-starter` repo as the canonical home for customer-app code.
-- **External dependencies (used today)**: Cloudflare Workers + Hyperdrive, DigitalOcean PostgreSQL (master DB), better-auth, Resend, Stripe, Airtable OAuth + REST, Tailwind 4 + daisyUI 5, Drizzle 0.45, Astro 6.1, Vitest, Playwright. Deferred: Mailgun, PostHog, dub.co, React Email, React Flow, Floating UI, Shepherd.js — all listed in the v1 design but not yet wired.
+- **External dependencies (used today)**: Cloudflare Workers + Hyperdrive + Email Workers `send_email` binding, DigitalOcean PostgreSQL (master DB), better-auth, Stripe, Airtable OAuth + REST, Tailwind 4 + daisyUI 5, Drizzle 0.45, Astro 6.1, Vitest, Playwright. Deferred: PostHog, dub.co, React Email, React Flow, Floating UI, Shepherd.js — listed in the v1 design but not yet wired.
 - **Cross-repo contracts**:
   - With `apps/server` (yet to be rebuilt): the previous direct HTTP RPC wire is removed. When `apps/server` lands, a new openspec change reintroduces the run-trigger and (per the parallel `web-client-isolation` proposal) routes browser traffic through `apps/web` proxies rather than direct cross-origin calls.
   - With `apps/{api,sql,hooks,admin}`: nothing wired today — those apps remain skeleton stubs.
 - **Master DB ownership**: unchanged from the v1 proposal in scope — `apps/web` continues to own user-scoped tables (`organizations`, `organization_members`, `connections`, `spaces`, `bases`, `subscriptions`, `subscription_items`, `backup_configurations`, `storage_destinations`, etc.). The `backup_runs` reader path is preserved (the table exists; nothing writes to it until `apps/server` lands).
-- **Secrets**: `RESEND_API_KEY`, `BETTER_AUTH_SECRET`, `STRIPE_SECRET_KEY` + `STRIPE_TRIAL_PRICE_ID`, `BASEOUT_ENCRYPTION_KEY`, `AIRTABLE_OAUTH_CLIENT_ID` / `_SECRET`, `DATABASE_URL`. Removed: `BACKUP_ENGINE_URL`, `BACKUP_ENGINE_INTERNAL_TOKEN`. Workspace-level: `FONTAWESOME_TOKEN`, `NPM_TOKEN` (env-var form in root `.npmrc`).
+- **Secrets**: `BETTER_AUTH_SECRET`, `STRIPE_SECRET_KEY` + `STRIPE_TRIAL_PRICE_ID`, `BASEOUT_ENCRYPTION_KEY`, `AIRTABLE_OAUTH_CLIENT_ID` / `_SECRET`, `DATABASE_URL`. Email transport uses the Cloudflare Workers `send_email` binding declared in `wrangler.jsonc` — no third-party email key required. Removed: `BACKUP_ENGINE_URL`, `BACKUP_ENGINE_INTERNAL_TOKEN`. Workspace-level: `FONTAWESOME_TOKEN`, `NPM_TOKEN` (env-var form in root `.npmrc`).
 - **Operational**: dev port 4331 (https via local mkcert); Cloudflare Workers `baseout-dev` / `baseout-staging` / `baseout` (production) targets exist in `wrangler.jsonc` (Hyperdrive IDs filled for dev only — staging / prod still placeholders that need provisioning before deploy).
 
 ## Reversibility

@@ -72,6 +72,7 @@ Baseout is conceptually two Workers + one Trigger.dev task project + one shared 
 - If you find yourself adding a UI component, an `/ops` page, or a `better-auth` instance to the backend, you're proposing the wrong split — surface it before coding.
 - Master-DB schema migrations are owned by the frontend. The backend mirrors specific tables (e.g. `backup_runs`, `backup_configuration_bases`) with header comments naming the canonical migration source.
 - Workflows is Node-only: never import `cloudflare:workers`, never assume workerd globals. The Backend Worker bundle stays SDK-only — task references are `import type { … } from "@baseout/workflows"` so task bodies don't leak into the Worker bundle.
+- **`/ops` console placement**: staff-only `/ops/*` routes live inside `apps/web` (admin-gated by `users.user_role = 'admin'`), not in `apps/admin/`. `apps/admin/` exists as a deploy-target placeholder; promote staff console work into it only when `/ops` outgrows >5 distinct pages or needs a non-customer auth shape (e.g., Google Workspace SSO). See `openspec/changes/baseout-admin/proposal.md` §"Status note".
 
 ---
 

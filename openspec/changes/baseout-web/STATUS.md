@@ -20,7 +20,7 @@ The `specs/<capability>/spec.md` files describe the **target** SHALL/MUST contra
 | `capability-resolution` | Partial | Resolver **library** in `src/lib/capabilities/resolve.ts` reads tier from Stripe product metadata. The `GET /api/me/capabilities` HTTP endpoint, 5-minute cache, and `enforceCapability` middleware — not implemented. |
 | `trial-enforcement` | Partial | 7-day trial via Stripe trial subscription. The "1 successful run" trigger and runtime data caps (1K records / 5 tables / 100 attachments) live in `apps/server` (not yet rebuilt). |
 | `in-app-notifications` | Not Yet | `notifications` table reader, dashboard panel, mark-as-read, preference UI — not implemented. |
-| `web-email-notifications` | Partial | Resend (not Mailgun). Magic-link template wired. Password Reset / 2FA setup / Trial Welcome / Migration Welcome / Upgrade Confirmation / Payment Failed / Team Invitation — not implemented. |
+| `web-email-notifications` | Partial | Cloudflare Workers `send_email` binding (canonical transport — see `src/lib/email/send.ts`). Magic-link template wired. Password Reset / 2FA setup / Trial Welcome / Migration Welcome / Upgrade Confirmation / Payment Failed / Team Invitation — not implemented. |
 | `migration-ux` | Not Yet | "Complete Your Migration" screen + re-auth flows — not implemented. |
 | `airtable-extension-embedding` | Not Yet | Frame detection, postMessage framework, compact embedded layout — not implemented. |
 | `integrations-ui` | Partial | Connection status surface + reconnect CTA implemented (`src/views/IntegrationsView.astro`). Inbound API token CRUD, SQL REST endpoint URL display, Direct SQL connection string display — not implemented (depend on `apps/api` + `apps/sql`). |

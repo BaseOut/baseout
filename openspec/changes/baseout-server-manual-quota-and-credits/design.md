@@ -226,7 +226,7 @@ UI components (under `apps/web/src/components/billing/`):
 
 Two trigger points:
 
-1. **Threshold crossing** — when `total_consumed / total_granted` crosses 50% / 75% / 90% / 100%, send the appropriate email. Implementation: a daily Trigger.dev cron task scans `credit_balances` and compares each Org's previous-day ratio to today's; on threshold crossing, dispatches email via Mailgun.
+1. **Threshold crossing** — when `total_consumed / total_granted` crosses 50% / 75% / 90% / 100%, send the appropriate email. Implementation: a daily Trigger.dev cron task scans `credit_balances` and compares each Org's previous-day ratio to today's; on threshold crossing, dispatches email via the Cloudflare Workers `send_email` binding.
 2. **Overage-cap reached** — when `total_consumed > total_granted` and `overage_mode='cap'` and `cap_action='pause'`, all subsequent creditable POSTs return 402. The 402 response shape and the alert email both include "raise cap" CTA + link.
 
 ## Phase G — Stripe overage reporting

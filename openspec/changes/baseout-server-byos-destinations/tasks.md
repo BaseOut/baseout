@@ -23,7 +23,7 @@
 
 ### B.2 — R2 managed strategy (no behavior change, refactor only)
 
-- [ ] B.2.1 New file `apps/server/src/lib/storage/strategies/r2-managed.ts` — wraps existing `env.BACKUPS_R2.put`/`get`/`delete`. Implements the full interface.
+- [ ] B.2.1 New file `apps/server/src/lib/storage/strategies/r2-managed.ts` — reintroduces R2 (removed in commit `8fc1f61`) behind the `StorageWriter` interface. Re-add `env.BACKUPS_R2` binding to `apps/server/wrangler.jsonc.example`. Wraps `put`/`get`/`delete`. Implements the full interface.
 - [ ] B.2.2 TDD: `r2-managed.test.ts` — writeFile streams to R2 bucket via Miniflare; getDownloadUrl + delete also covered.
 - [ ] B.2.3 Workflows-side refactor of `backup-base.task.ts` to use `makeStorageWriter` is owned by [`baseout-workflows-byos-destinations`](../baseout-workflows-byos-destinations/tasks.md). Server side guarantees `makeStorageWriter` API stability.
 

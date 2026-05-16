@@ -96,7 +96,7 @@
 
 ### F.1 — Threshold-crossing detection
 
-- [ ] F.1.1 Credit-balance-alerts scheduled task owned by [`baseout-workflows-manual-quota-and-credits`](../baseout-workflows-manual-quota-and-credits/tasks.md). Server side owns the engine-callback endpoints the task hits (`/api/internal/credit-orgs`, `/api/internal/orgs/:id/credit-alert`) + Mailgun call + template render.
+- [ ] F.1.1 Credit-balance-alerts scheduled task owned by [`baseout-workflows-manual-quota-and-credits`](../baseout-workflows-manual-quota-and-credits/tasks.md). Server side owns the engine-callback endpoints the task hits (`/api/internal/credit-orgs`, `/api/internal/orgs/:id/credit-alert`) + React Email template render + Cloudflare Workers `send_email` dispatch.
 - [ ] F.1.2 Tests: pure function `detectCrossings(prevRatio, currRatio): Threshold[]` covers all cases.
 
 ### F.2 — Email templates

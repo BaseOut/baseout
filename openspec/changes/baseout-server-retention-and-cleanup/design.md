@@ -137,7 +137,11 @@ export const cleanupExpiredSnapshots = schedules.task({
     const result = await runCleanupPass({
       now: new Date(payload.timestamp),
       db: createMasterDb(),
-      r2: env.BACKUPS_R2,
+      // Pass the active StorageWriter resolver (per baseout-server-byos-destinations).
+      // R2-managed is one provider; cleanup deletes via writer.delete(key).
+      // Direct env.BACKUPS_R2 use was removed in commit 8fc1f61 — reintroduced as
+      // a strategy in the BYOS change family.
+      makeWriter: (dest) => makeStorageWriter(dest, env, masterKey),
       logger: ctx.logger,
     })
     return result

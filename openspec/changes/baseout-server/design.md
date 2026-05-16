@@ -7,7 +7,7 @@ Stakeholders: engineering (the `baseout-server` team owning the data plane), ope
 Constraints carried in from product:
 - **Privacy differentiator**: static-on-BYOS runs MUST stream through memory only — no record data on Baseout disk.
 - **Schema package owned by `packages/db-schema/`** — `baseout-server` imports `@baseout/db-schema` and never redefines tables.
-- **Email ownership lives with the side that detects the trigger** — `baseout-server` calls Mailgun directly with its own key.
+- **Email ownership lives with the side that detects the trigger** — `baseout-server` dispatches via the Cloudflare Workers `send_email` binding scoped to its own Worker (mirroring `apps/web`'s pattern in `apps/web/src/lib/email/send.ts`).
 - **Trigger.dev for backup workflows** (not Workers cron) — needed for unlimited concurrency and no per-run time limits.
 - **Per-Connection rate-limit gateway** — multiple Spaces can share an Airtable Connection; serialized at the Connection level.
 - **The public Airtable webhook receiver is in `baseout-webhook-ingestion`** — `baseout-server` exposes only an internal forward target via service binding.

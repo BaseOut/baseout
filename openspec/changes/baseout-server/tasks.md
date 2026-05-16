@@ -4,7 +4,7 @@
 - [ ] 1.2 Wire GitHub Actions CI on `apps/server/` (Vitest on every PR; Docker PG + Miniflare D1 in CI)
 - [ ] 1.3 Provision one Cloudflare Workers project per environment (production + staging) with a single `wrangler.jsonc` declaring cron triggers, DO bindings, R2/D1 bindings, route bindings (internal-call hostname + service-binding receivers from webhook-ingestion + inbound-api)
 - [ ] 1.4 Consume `@baseout/db-schema` (pinned version)
-- [ ] 1.5 Populate Cloudflare Secrets (master DB string, encryption key, Trigger.dev key, Cloudflare API token, Stripe key, Mailgun key, service-to-`baseout-web` HMAC, internal-receive HMAC for webhook-ingestion + inbound-api forwards) for both environments
+- [ ] 1.5 Populate Cloudflare Secrets (master DB string, encryption key, Trigger.dev key, Cloudflare API token, Stripe key, `INTERNAL_TOKEN` shared with apps/web + sibling Workers) for both environments. Email transport is the Cloudflare Workers `send_email` binding declared in `wrangler.jsonc` — no third-party email secret required.
 - [ ] 1.6 Set up Trigger.dev account with one project per environment
 - [ ] 1.7 Provision DigitalOcean shared PG cluster with schema-level isolation conventions
 - [ ] 1.8 Set up Neon / Supabase accounts for Dedicated PG provisioning
@@ -117,7 +117,7 @@
 ## 7. Phase 6 — Email Templates + Pre-Launch Hardening
 
 - [ ] 7.1 Build React Email templates: Backup Audit Report, Monthly Backup Summary, Backup Failure Alert, Backup Warning Alert, Trial Cap Hit, Trial Expiry Warning, Trial Expired, Dead Connection Warning ×4, Quota Warning (75/90/100%), Overage Started, Overage Cap Reached, Schema Change Notification, Health Score Change, Restore Complete, Webhook Renewal Failure
-- [ ] 7.2 Wire Mailgun SDK with `baseout-server`-scoped API key + sending domain `mail.baseout.com`
+- [ ] 7.2 Wire Cloudflare Workers `send_email` binding scoped to `apps/server` with sending domain `mail.baseout.com` (DKIM/SPF/DMARC). Mirrors the pattern in `apps/web/src/lib/email/send.ts`.
 - [ ] 7.3 Configure Logpush destination (R2 or external) for error log archive
 - [ ] 7.4 Wire tail Workers for real-time error streaming
 - [ ] 7.5 Configure Health Checks per critical endpoint
@@ -134,7 +134,7 @@
 ## 8. Definition of Done — `baseout-server` V1 Launch
 
 - [ ] 8.1 Backup engine: scheduled, manual, and webhook-triggered runs functional
-- [ ] 8.2 Static backup writes to R2 + all 6 BYOS destinations
+- [ ] 8.2 Static backup writes to all configured destinations behind the `StorageWriter` interface — R2-managed (re-introduced via `baseout-server-byos-destinations`) + the six BYOS providers (Google Drive, Dropbox, Box, OneDrive, S3, Frame.io)
 - [ ] 8.3 Dynamic backup writes to D1 (schema + full), Shared PG, Dedicated PG, BYODB
 - [ ] 8.4 Trial cap enforced at run level
 - [ ] 8.5 DO topology stable (per-Connection + per-Space)
@@ -148,7 +148,7 @@
 - [ ] 8.13 Dead-connection 4-touch cadence functional
 - [ ] 8.14 On2Air migration script run successfully against staging fixtures
 - [ ] 8.15 Direct SQL Access: read-only role + connection string surface (Business+) functional
-- [ ] 8.16 All `baseout-server`-owned React Email templates send via Mailgun
+- [ ] 8.16 All `baseout-server`-owned React Email templates send via the Cloudflare Workers `send_email` binding
 - [ ] 8.17 Observability: Logpush, tail Workers, health checks, on-call routing wired
 - [ ] 8.18 Load test passes; concurrent runs do not deadlock
 - [ ] 8.19 Security review complete; secrets rotation drill passed

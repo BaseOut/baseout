@@ -202,7 +202,7 @@ The `oauth_states` table (or signed cookie) prevents CSRF + replay.
 
 ## Phase F — Engine integration
 
-In `backup-base.task.ts`, replace the direct `env.BACKUPS_R2.put` call:
+In `apps/workflows/trigger/tasks/backup-base.task.ts`, replace the current `writeCsvToLocalDisk` call (which is the temporary post-R2-removal stand-in) with the `StorageWriter` lookup + call:
 
 ```ts
 const dest = await loadStorageDestination(ctx.spaceId, deps.db)
