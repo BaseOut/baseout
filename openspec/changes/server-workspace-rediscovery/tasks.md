@@ -45,14 +45,9 @@
 - [x] 2.6.1 `pnpm --filter @baseout/server typecheck` — green.
 - [x] 2.6.2 New `capability-mirrors.test.ts` contains no `console.*` / `debugger`; the annotated `run-deps.ts` lines are unchanged.
 
-## Phase 3 — Scheduled rescan via SpaceDO alarm (DEFERRED)
+## Phase 3 — Scheduled rescan via SpaceDO alarm
 
-Out of scope. Tracked separately. Will pick up after [`server-schedule-and-cancel`](../server-schedule-and-cancel/proposal.md) archives.
-
-- [ ] 3.1 Inside `SpaceDO.alarm()`, invoke `runWorkspaceRediscovery` with `triggeredBy: 'alarm'`.
-- [ ] 3.2 Decide cadence (per-Space vs per-tier).
-- [ ] 3.3 Retry-with-backoff design for transient Airtable errors.
-- [ ] 3.4 Tests covering the alarm + backup-run interleaving (rediscovery should not race a running backup; ordering inside `SpaceDO.alarm()` matters).
+Split into its own change: [`server-rediscovery-alarm`](../server-rediscovery-alarm/proposal.md). Picks up after `server-schedule-and-cancel` archives.
 
 ## Verification
 

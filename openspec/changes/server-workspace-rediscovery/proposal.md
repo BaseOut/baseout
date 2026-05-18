@@ -46,19 +46,15 @@ Already shipped. No further work in this change. Documenting for completeness:
   - [apps/server/tests/integration/rediscovery-run.test.ts](../../../apps/server/tests/integration/rediscovery-run.test.ts) — pure-fn coverage of all six branches: no-fresh, toggle-off, toggle-on-within-cap, toggle-on-over-cap, null-cap (enterprise), Airtable-error.
   - [apps/server/tests/integration/spaces-rescan-bases-route.test.ts](../../../apps/server/tests/integration/spaces-rescan-bases-route.test.ts) — route-shape coverage: 401 without token, 405 for non-POST, 400 for non-UUID, the four resolved-error paths, the happy path.
 
-### Phase 3 — Scheduled rescan via SpaceDO alarm (DEFERRED)
+### Phase 3 — Scheduled rescan via SpaceDO alarm (SPLIT OUT)
 
-Out of scope for this change. Lands after [`server-schedule-and-cancel`](../server-schedule-and-cancel/proposal.md) archives — that change owns the SpaceDO alarm scheduler. Phase 3 will:
-
-- Trigger `runWorkspaceRediscovery` from inside `SpaceDO.alarm()` with `triggeredBy: 'alarm'`.
-- Decide the cadence: per-Space (every 24h?) vs per-tier (Business+ runs every 6h, Starter every 7d?). To be settled in Phase 3's own design doc.
-- Use the same pure orchestrator — no new policy decisions belong here; if the manual path is correct, the alarm path is correct.
+Lifted into [`server-rediscovery-alarm`](../server-rediscovery-alarm/proposal.md). Picks up after `server-schedule-and-cancel` archives. The pure orchestrator's `triggeredBy: 'alarm'` seam is the contract between this change and the split-out one.
 
 ## Out of Scope
 
 | Deferred to | Item |
 |---|---|
-| Phase 3 of this change | `SpaceDO.alarm()` integration for scheduled rediscovery. |
+| [`server-rediscovery-alarm`](../server-rediscovery-alarm/proposal.md) | `SpaceDO.alarm()` integration for scheduled rediscovery. |
 | Paired [`web-workspace-rediscovery`](../web-workspace-rediscovery/proposal.md) | Frontend Rescan button, banner UI, `space_events` dismiss endpoint, auto-add toggle in Integrations view. |
 | [`server-instant-webhook`](../server-instant-webhook/proposal.md) | Webhook-driven real-time drift detection inside already-selected bases (not a rediscovery concern). |
 | [`server-dynamic-mode`](../server-dynamic-mode/proposal.md) | Schema-diff inside individual bases (handled by the per-run backup task today). |
