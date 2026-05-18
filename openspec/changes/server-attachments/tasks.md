@@ -1,4 +1,4 @@
-> **Blocked tasks**: Every task in Phase B and beyond depends on [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase 0 landing first (R2 binding + `StorageWriter` interface). Phase A (schema) is independent and can ship before that. Tasks below are flagged where blocked.
+> **Depends on**: [`system-r2-stance`](../system-r2-stance/proposal.md). The R2-write path itself lives in the paired [`workflows-attachments`](../workflows-attachments/tasks.md) change and is **blocked on [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase 0** (R2 binding + `StorageWriter` interface). The tasks in **this** file (server-side: dedup-schema in Phase A; composite-id pure helpers in B.1; lookup-endpoint in B.2; observability/trial/UI in C–F) are R2-independent and can ship before Phase 0 lands. The end-to-end smoke in Phase G needs both this change and `workflows-attachments` to have shipped, so it is gated on Phase 0 transitively.
 
 ## Phase A — Schema
 

@@ -1,4 +1,4 @@
-> **Blocked tasks**: The cleanup-execution path (`StorageWriter.delete` call sites) depends on [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase 0 landing first (R2 binding + `StorageWriter` interface). Phase A (schema) is independent and can ship before that.
+> **Depends on**: [`system-r2-stance`](../system-r2-stance/proposal.md). The cleanup-execution path (any task that calls `StorageWriter.delete` against R2) is **blocked on [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase 0** (R2 binding + `StorageWriter` interface). Phases A (schema), B (capability resolver), C.1 (`decideDeletions` pure function), C.4 (backfill script), and F (docs) are R2-independent and can ship before Phase 0 lands. Tasks blocked on Phase 0 are flagged inline below with `[blocked on byos-destinations Phase 0]`.
 
 ## Phase A — Master DB schema
 
@@ -44,9 +44,9 @@ Independent of D/E/F. Ship + smoke before any UI work.
 
 ### C.2 — `runCleanupPass` integration
 
-- [ ] C.2.1 TDD red: `apps/server/tests/integration/retention/run-cleanup-pass.test.ts` (new). Uses real local Postgres + Miniflare R2. Seeds three Spaces with mixed policy tiers + run-age fixtures. Asserts the expected R2 keys are deleted + `deleted_at` is set on the expected rows.
-- [ ] C.2.2 Implement `apps/server/src/lib/retention/run-cleanup-pass.ts` per design.md §Phase C.2. Watch green.
-- [ ] C.2.3 Verify idempotency: re-run the same pass against the post-state. Assert no further R2 deletes, no further `deleted_at` updates.
+- [ ] C.2.1 `[blocked on byos-destinations Phase 0]` TDD red: `apps/server/tests/integration/retention/run-cleanup-pass.test.ts` (new). Uses real local Postgres + Miniflare R2. Seeds three Spaces with mixed policy tiers + run-age fixtures. Asserts the expected R2 keys are deleted + `deleted_at` is set on the expected rows.
+- [ ] C.2.2 `[blocked on byos-destinations Phase 0]` Implement `apps/server/src/lib/retention/run-cleanup-pass.ts` per design.md §Phase C.2. Watch green.
+- [ ] C.2.3 `[blocked on byos-destinations Phase 0]` Verify idempotency: re-run the same pass against the post-state. Assert no further R2 deletes, no further `deleted_at` updates.
 
 ### C.3 — Trigger.dev scheduled task (owned by sibling)
 
@@ -61,8 +61,8 @@ Moved to [`workflows-retention-and-cleanup`](../workflows-retention-and-cleanup/
 
 ### C.5 — Human checkpoint (destructive path)
 
-- [ ] C.5.1 Seed dev DB with ~5 Spaces each with 20 fake backup runs spanning 2 years. Run the bootstrap script. Run the cron task once. Assert R2 keys + `deleted_at` flips match expectation.
-- [ ] C.5.2 Capture the structured log output. Confirm the per-Space counts add up. Pause for human approval before any prod deploy.
+- [ ] C.5.1 `[blocked on byos-destinations Phase 0]` Seed dev DB with ~5 Spaces each with 20 fake backup runs spanning 2 years. Run the bootstrap script. Run the cron task once. Assert R2 keys + `deleted_at` flips match expectation.
+- [ ] C.5.2 `[blocked on byos-destinations Phase 0]` Capture the structured log output. Confirm the per-Space counts add up. Pause for human approval before any prod deploy.
 
 ### C.6 — Phase C verification
 
@@ -75,8 +75,8 @@ Depends on Phase C (engine path) + optionally `server-manual-quota-and-credits` 
 
 ### D.1 — Engine route
 
-- [ ] D.1.1 TDD red: `apps/server/tests/integration/cleanup-route.test.ts`. Cases: 401 missing token; 400 invalid UUID; 404 space-not-found; 200 happy (returns `{ deletedRunIds, deletedObjectCount }`).
-- [ ] D.1.2 Implement `apps/server/src/pages/api/internal/spaces/[spaceId]/cleanup.ts` per design.md §Phase D. Wire into `apps/server/src/index.ts` with `CLEANUP_RE = /^\/api\/internal\/spaces\/([^/]+)\/cleanup$/`.
+- [ ] D.1.1 `[blocked on byos-destinations Phase 0]` TDD red: `apps/server/tests/integration/cleanup-route.test.ts`. Cases: 401 missing token; 400 invalid UUID; 404 space-not-found; 200 happy (returns `{ deletedRunIds, deletedObjectCount }`).
+- [ ] D.1.2 `[blocked on byos-destinations Phase 0]` Implement `apps/server/src/pages/api/internal/spaces/[spaceId]/cleanup.ts` per design.md §Phase D. Wire into `apps/server/src/index.ts` with `CLEANUP_RE = /^\/api\/internal\/spaces\/([^/]+)\/cleanup$/`.
 
 ### D.2 — apps/web client + route
 

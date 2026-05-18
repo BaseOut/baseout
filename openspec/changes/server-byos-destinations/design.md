@@ -11,6 +11,62 @@ Eight phases (0 plus A–G). Phase 0 re-introduces the managed R2 binding remove
 
 Architectural call: **one strategy class per provider, behind a common `StorageWriter` interface.** No conditional logic in the per-base task — strategy selection happens at run start, the task only knows about the interface. This makes adding a 7th provider a matter of dropping a new file under `strategies/`.
 
+## Phase 0 — Re-introduce managed R2 binding
+
+Required first per [`system-r2-stance`](../system-r2-stance/proposal.md). Commit `8fc1f61` removed the `BACKUPS_R2` Cloudflare Workers binding from `apps/server`; this phase re-introduces it before any `StorageWriter` strategy can land.
+
+### Binding shape: Workers binding API, not S3-compatible API
+
+R2 exposes two access surfaces: a native Cloudflare Workers **binding** (e.g. `env.BACKUPS_R2.put(...)`) and an S3-compatible HTTP API. The strategy class uses the binding API for these reasons:
+
+- **Pre-`8fc1f61` parity.** The deleted `r2-proxy-write.ts` was binding-based. Reintroducing the same shape minimizes diff surface and risk.
+- **No HTTP client in the Worker.** Binding methods are direct calls into the runtime; the S3 API would pull in Signature v4 + a streaming fetch wrapper. Strictly more code inside workerd's 1MB bundle limit.
+- **No egress cost.** Binding traffic stays inside Cloudflare's network; S3-API traffic over HTTPS is metered as egress.
+- **Per-bucket signed URLs.** The binding provides `bucket.createSignedUrl(...)` (used by the future restore engine) without needing Signature v4 implementation.
+
+The S3-compatible API stays available for any future "external S3-style endpoint" use case (e.g. third-party tooling that needs to read R2 from outside Cloudflare). It is **not** the path used by `R2ManagedWriter`.
+
+### Strategy class: `R2ManagedWriter`
+
+The Phase B `StorageWriter` interface lands as part of this same change. Its first implementation:
+
+```ts
+// apps/server/src/lib/storage/strategies/r2-managed.ts
+export class R2ManagedWriter implements StorageWriter {
+  constructor(private bucket: R2Bucket) {}
+
+  async init() { /* no-op: bucket lifecycle is provisioned out-of-band */ }
+
+  async writeFile(stream: ReadableStream, path: string, mimeType?: string) {
+    const r = await this.bucket.put(path, stream, { httpMetadata: { contentType: mimeType } })
+    return { destinationKey: r.key, sizeBytes: r.size }
+  }
+
+  async getDownloadUrl(path: string) {
+    // R2 binding signed URL; short-lived (e.g. 5 min)
+    return this.bucket.createSignedUrl(path, { expiresIn: 300 })
+  }
+
+  async delete(path: string) { await this.bucket.delete(path) }
+}
+```
+
+No `proxyStreamMode` flag — managed R2 always stages the CSV / attachment to its own bucket; proxy-streaming only applies to providers (Box, Dropbox) whose APIs require the client to pipe rather than two-hop.
+
+### Restoration steps
+
+1. Re-add `BACKUPS_R2` to [apps/server/wrangler.jsonc.example](../../../apps/server/wrangler.jsonc.example) and `apps/server/wrangler.test.jsonc`. The exact block is recoverable via `git show 8fc1f61^:apps/server/wrangler.jsonc.example`.
+2. Re-add `BACKUPS_R2: R2Bucket` to the `Env` interface in [apps/server/src/env.d.ts](../../../apps/server/src/env.d.ts).
+3. Provision the production R2 bucket (`backups`). Capture credentials in Cloudflare Secrets per [CLAUDE.md §3.3](../../../CLAUDE.md).
+4. Add a `STORAGE_DEV_MODE` env var (default `local-fs`) so local development keeps writing to `apps/server/.backups/` via [`local-fs-write.ts`](../../../apps/server/trigger/tasks/_lib/local-fs-write.ts) without needing R2 credentials.
+
+### Out of Phase 0
+
+- The `StorageWriter` interface declaration itself (it's defined in Phase B alongside `makeStorageWriter`; Phase 0 just guarantees the binding the `R2ManagedWriter` will need).
+- Re-creating the deleted `r2-proxy-write.ts` standalone helper. The post-`8fc1f61` shape has the write call inside `R2ManagedWriter`, not in a free-floating helper.
+- Switching the dev path to Miniflare-R2. Deferred — `local-fs-write.ts` is sufficient for now.
+- Workflows-side enqueue plumbing. The strategy-class swap inside `backup-base.task.ts` happens in [`workflows-byos-destinations`](../workflows-byos-destinations/tasks.md).
+
 ## Phase A — `storage_destinations` schema
 
 ```sql

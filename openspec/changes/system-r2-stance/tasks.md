@@ -4,7 +4,7 @@ This change has no code tasks. The only outputs are edits to three existing prop
 
 ### 1.1 — `server-byos-destinations`
 
-- [ ] 1.1.1 Edit [openspec/changes/server-byos-destinations/proposal.md](../server-byos-destinations/proposal.md) — prepend a new Phase 0 under "What Changes":
+- [x] 1.1.1 Edit [openspec/changes/server-byos-destinations/proposal.md](../server-byos-destinations/proposal.md) — prepend a new Phase 0 under "What Changes":
   - **Phase 0 — Re-introduce managed R2 binding + `StorageWriter` interface.**
     - Re-add `BACKUPS_R2` binding to `apps/server/wrangler.jsonc.example` and `wrangler.test.jsonc` (the example block exists in `git log` pre-`8fc1f61`).
     - Re-add `env.BACKUPS_R2: R2Bucket` to `apps/server/src/env.d.ts`.
@@ -12,22 +12,22 @@ This change has no code tasks. The only outputs are edits to three existing prop
     - Implement `r2-managed.ts` as the first strategy. It is a refactor of the deleted `trigger/tasks/_lib/r2-proxy-write.ts` (recoverable from `git show 8fc1f61^:apps/server/trigger/tasks/_lib/r2-proxy-write.ts`).
   - Renumber the existing Phase A → B, B → C, etc.
   - Add a link at the top of the proposal: "Depends on: [`system-r2-stance`](../system-r2-stance/proposal.md) decision."
-- [ ] 1.1.2 Edit the paired [openspec/changes/server-byos-destinations/tasks.md](../server-byos-destinations/tasks.md) — prepend the matching Phase 0 task block (binding restoration → interface → r2-managed strategy → unit tests).
-- [ ] 1.1.3 Edit [openspec/changes/server-byos-destinations/design.md](../server-byos-destinations/design.md) — add a Phase 0 design subsection covering the binding shape (R2 access via Workers binding API, not S3-API) and the strategy class.
+- [x] 1.1.2 Edit the paired [openspec/changes/server-byos-destinations/tasks.md](../server-byos-destinations/tasks.md) — prepend the matching Phase 0 task block (binding restoration → interface → r2-managed strategy → unit tests).
+- [x] 1.1.3 Edit [openspec/changes/server-byos-destinations/design.md](../server-byos-destinations/design.md) — add a Phase 0 design subsection covering the binding shape (R2 access via Workers binding API, not S3-API) and the strategy class.
 
 ### 1.2 — `server-attachments`
 
-- [ ] 1.2.1 Edit [openspec/changes/server-attachments/proposal.md](../server-attachments/proposal.md) — under "Out of Scope" or a new top-of-file "Depends on" line, note: "Phase B's R2-writing path requires [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase 0 to land first (R2 binding + `StorageWriter` interface). Phase A (schema + dedup table) is independent and can ship before that."
-- [ ] 1.2.2 Edit the paired [openspec/changes/server-attachments/tasks.md](../server-attachments/tasks.md) — mark every Phase B task with a leading "**(blocked on `byos-destinations` Phase 0)**" note.
+- [x] 1.2.1 Edit [openspec/changes/server-attachments/proposal.md](../server-attachments/proposal.md) — under "Out of Scope" or a new top-of-file "Depends on" line, note: "Phase B's R2-writing path requires [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase 0 to land first (R2 binding + `StorageWriter` interface). Phase A (schema + dedup table) is independent and can ship before that."
+- [x] 1.2.2 Edit the paired [openspec/changes/server-attachments/tasks.md](../server-attachments/tasks.md) — mark every Phase B task with a leading "**(blocked on `byos-destinations` Phase 0)**" note. _Implemented as a refined top-of-file banner: the server-side Phase B tasks turned out to be the dedup-lookup endpoint + pure-helper work (the R2 write lives in the paired `workflows-attachments` change), so the banner names the workflows-side blocker directly rather than per-task markers on R2-independent tasks._
 
 ### 1.3 — `server-retention-and-cleanup`
 
-- [ ] 1.3.1 Edit [openspec/changes/server-retention-and-cleanup/proposal.md](../server-retention-and-cleanup/proposal.md) — under "Out of Scope" or a new top-of-file "Depends on" line, note: "The cleanup engine's `DELETE` path requires [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase 0 to land first (`StorageWriter.delete()` is the call site). Phase A (retention-policy schema) is independent."
-- [ ] 1.3.2 Edit the paired [openspec/changes/server-retention-and-cleanup/tasks.md](../server-retention-and-cleanup/tasks.md) — mark every cleanup-execution task with the "**(blocked on `byos-destinations` Phase 0)**" note.
+- [x] 1.3.1 Edit [openspec/changes/server-retention-and-cleanup/proposal.md](../server-retention-and-cleanup/proposal.md) — under "Out of Scope" or a new top-of-file "Depends on" line, note: "The cleanup engine's `DELETE` path requires [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase 0 to land first (`StorageWriter.delete()` is the call site). Phase A (retention-policy schema) is independent."
+- [x] 1.3.2 Edit the paired [openspec/changes/server-retention-and-cleanup/tasks.md](../server-retention-and-cleanup/tasks.md) — mark every cleanup-execution task with the "**(blocked on `byos-destinations` Phase 0)**" note. _Implemented: top-of-file banner names the blocked-vs-independent sections, plus inline `[blocked on byos-destinations Phase 0]` markers on C.2.1–C.2.3 (`runCleanupPass`), C.5.1–C.5.2 (destructive smoke), and D.1.1–D.1.2 (engine cleanup route)._
 
 ### 1.4 — Specreview note
 
-- [ ] 1.4.1 Edit [specreview/05-update-2026-05-13b.md](../../../specreview/05-update-2026-05-13b.md) §A — append a short "**Resolved**: see [`system-r2-stance`](../openspec/changes/system-r2-stance/proposal.md)." line so future readers don't re-litigate.
+- [x] 1.4.1 Edit [specreview/05-update-2026-05-13b.md](../../../specreview/05-update-2026-05-13b.md) §A — append a short "**Resolved**: see [`system-r2-stance`](../openspec/changes/system-r2-stance/proposal.md)." line so future readers don't re-litigate. _Implemented: pre-existing "Resolved" line was pointing at the old `baseout-r2-stance` slug from before the openspec rework; updated to `system-r2-stance`, also dated 2026-05-18 and clarified which downstream proposals carry the depends-on banner._
 
 ## Verification
 
