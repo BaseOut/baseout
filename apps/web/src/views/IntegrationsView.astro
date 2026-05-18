@@ -90,7 +90,7 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
       {state.unreadEvents.map((event) => (
         <div
           role="status"
-          class="alert alert-info shadow-sm"
+          class="alert alert-info shadow-sm flex-col items-start sm:flex-row sm:items-center"
           data-space-event-id={event.id}
         >
           <div class="flex-1">
@@ -237,6 +237,11 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
                   data-space-id={Astro.locals.account.space.id}
                 />
                 <span class="text-sm">Auto-add new bases</span>
+                <span
+                  class="loading loading-spinner loading-xs hidden"
+                  data-auto-add-spinner
+                  aria-hidden="true"
+                ></span>
               </label>
               <p
                 class="text-xs text-base-content/60"
@@ -656,11 +661,16 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
   );
   if (autoAddToggle) {
     const toggleSpaceId = autoAddToggle.dataset.spaceId ?? '';
+    const autoAddSpinner = document.querySelector<HTMLElement>(
+      '[data-auto-add-spinner]',
+    );
     autoAddToggle.addEventListener('change', async () => {
       if (!toggleSpaceId) return;
       const previous = !autoAddToggle.checked; // optimistic flip already happened
       const desired = autoAddToggle.checked;
       autoAddToggle.disabled = true;
+      autoAddToggle.setAttribute('aria-busy', 'true');
+      autoAddSpinner?.classList.remove('hidden');
       try {
         const res = await fetch(
           `/api/spaces/${encodeURIComponent(toggleSpaceId)}/backup-config`,
@@ -677,6 +687,8 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
         autoAddToggle.checked = previous;
       } finally {
         autoAddToggle.disabled = false;
+        autoAddToggle.removeAttribute('aria-busy');
+        autoAddSpinner?.classList.add('hidden');
       }
     });
   }
