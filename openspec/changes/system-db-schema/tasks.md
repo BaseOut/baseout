@@ -1,15 +1,15 @@
 ## 1. Phase 0 — Setup
 
-- [ ] 1.1 Create `packages/db-schema/` directory with `package.json` (name `@baseout/db-schema`, version 0.1.0)
-- [ ] 1.2 Add Drizzle ORM + drizzle-kit + tsup as dependencies
-- [ ] 1.3 Add `drizzle.config.ts` pointing at master DB connection (env-based)
-- [ ] 1.4 Set up build pipeline (`tsup` to emit ESM + types)
+- [x] 1.1 `packages/db-schema/` directory exists with `package.json` (name `@baseout/db-schema`, version 0.1.0, `private: true`).
+- [x] 1.2 Drizzle ORM (`^0.45.2`) + drizzle-kit (`^0.31.10`) + tsup (`^8.3.0`) declared. Versions aligned with apps/web during the auth-tables tracer-bullet so workspace consumers and the package resolve to the same drizzle-orm instance (mismatched majors caused 732 nominal type errors in the first attempt).
+- [ ] 1.3 Add `drizzle.config.ts` pointing at master DB connection (env-based) — deferred; canonical drizzle.config.ts stays in `apps/web/` until more tables move into the package (Phase 1 §§ 2.2–2.12). The apps/web config currently still names the schema files locally (`./src/db/schema/auth.ts`, `./src/db/schema/core.ts`); drizzle-kit reads through the auth.ts shim to the package.
+- [ ] 1.4 Set up build pipeline (`tsup` to emit ESM + types) — **intentionally bypassed for workspace consumption.** Package `main`/`types`/`exports` point at `./src/index.ts` directly so Astro/Vite, vitest-pool-workers, and drizzle-kit all read source through pnpm workspace symlinks. `exports` declares `types`, `import`, AND `default` conditions — the `default` fallback is required for drizzle-kit's CJS bin to resolve the package. Flip back to `./dist/*` if the package ever needs external publication.
 - [ ] 1.5 Set up publish pipeline (GitHub Packages or private npm) gated on `main` merge
 - [ ] 1.6 Configure GitHub Actions CI: typecheck, build, schema-vs-migration verification
 
 ## 2. Phase 1 — Schema Authoring
 
-- [ ] 2.1 Author schema for `organizations`, `organization_members`, `users`
+- [x] 2.1 Authored schema for `users` (also `sessions`, `accounts`, `verifications` — the Better Auth quartet) in [packages/db-schema/src/schema/auth.ts](../../../packages/db-schema/src/schema/auth.ts). Re-exported from the package barrel. `organizations` and `organization_members` are still in [apps/web/src/db/schema/core.ts](../../../apps/web/src/db/schema/core.ts) — they FK into `users.id` from the canonical side, which works fine through the package import; their own move is a future slice.
 - [ ] 2.2 Author schema for `connections` (with `_enc` token columns)
 - [ ] 2.3 Author schema for `spaces`, `bases`, `backup_configurations`
 - [ ] 2.4 Author schema for `subscriptions`, `subscription_items`, `plan_definitions`, `plan_limits`, `plan_credit_config`
