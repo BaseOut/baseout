@@ -18,7 +18,7 @@
 ### 1.3 — Tests
 
 - [x] 1.3.1 New file [apps/web/src/pages/api/spaces/[spaceId]/rescan-bases.test.ts](../../../apps/web/src/pages/api/spaces/[spaceId]/rescan-bases.test.ts) — covers 401, 400 (no spaceId / non-UUID), 403 (no Space, Org mismatch), 503 (no binding), all engine error mappings, and the happy 200 path.
-- [ ] 1.3.2 Run `pnpm --filter @baseout/web test rescan-bases` — green.
+- [x] 1.3.2 Run `pnpm --filter @baseout/web test rescan-bases` — green (8 tests).
 
 ## Phase 2 — Banner state hydration
 
@@ -32,7 +32,7 @@
 - [x] 2.2.1 [apps/web/src/lib/integrations.ts](../../../apps/web/src/lib/integrations.ts) — query unread `space_events` with `dismissed_at IS NULL`, ordered DESC by `created_at`, LIMIT 10.
 - [x] 2.2.2 Filter to `kind = 'bases_discovered'` and map payload arrays defensively (`Array.isArray` guards on each field).
 - [x] 2.2.3 Add `autoAddFutureBases` to the SELECT against `backup_configurations`.
-- [ ] 2.2.4 Run `pnpm --filter @baseout/web typecheck` — green.
+- [x] 2.2.4 Run `pnpm --filter @baseout/web typecheck` — green (0 errors, 4 pre-existing hints).
 
 ## Phase 3 — Banner UI + dismiss endpoint
 
@@ -42,7 +42,7 @@
 - [x] 3.1.2 Banner copy: discovered / autoAdded / blockedByTier counts; hide zero-count subclauses.
 - [x] 3.1.3 "Rescan bases" button — wires to `setButtonLoading` per [apps/web/.claude/CLAUDE.md §12](../../../apps/web/.claude/CLAUDE.md).
 - [x] 3.1.4 "Dismiss" button — calls dismiss endpoint and hides the banner.
-- [ ] 3.1.5 Mobile responsiveness — banner stacks vertically at < 640px width.
+- [x] 3.1.5 Mobile responsiveness — banner now carries `flex-col items-start sm:flex-row sm:items-center` so the discovery copy and Dismiss button stack vertically under 640px and restore daisyUI's row default at sm+. Edit at [apps/web/src/views/IntegrationsView.astro](../../../apps/web/src/views/IntegrationsView.astro) (alert div).
 
 ### 3.2 — Dismiss endpoint
 
@@ -53,7 +53,7 @@
 ### 3.3 — Dismiss tests
 
 - [x] 3.3.1 New file [apps/web/src/pages/api/spaces/[spaceId]/space-events/[eventId]/dismiss.test.ts](../../../apps/web/src/pages/api/spaces/[spaceId]/space-events/[eventId]/dismiss.test.ts) — covers 401, 403, 404 (non-existent event), 404 (event-not-in-space), 200 (happy), 200 (already dismissed).
-- [ ] 3.3.2 Run `pnpm --filter @baseout/web test dismiss` — green.
+- [x] 3.3.2 Run `pnpm --filter @baseout/web test dismiss` — green (6 tests).
 
 ## Phase 4 — Auto-add toggle persistence
 
@@ -67,20 +67,20 @@
 ### 4.2 — Policy tests
 
 - [x] 4.2.1 [apps/web/src/lib/backup-config/persist-policy.test.ts](../../../apps/web/src/lib/backup-config/persist-policy.test.ts) — new branches: bool-only body, bool with frequency, bool with storageType, type mismatch (number), empty body.
-- [ ] 4.2.2 Run `pnpm --filter @baseout/web test persist-policy` — green.
+- [x] 4.2.2 Run `pnpm --filter @baseout/web test persist-policy` — green (14 tests).
 
 ### 4.3 — IntegrationsView toggle
 
 - [x] 4.3.1 Toggle control bound to `autoAddFutureBases` state.
 - [x] 4.3.2 On change → PATCH `/api/spaces/:id/backup-config` with `{ autoAddFutureBases }`.
 - [x] 4.3.3 Optimistic store update, rollback on non-2xx (same pattern as storage-type picker).
-- [ ] 4.3.4 Loading state via `setButtonLoading` (or equivalent toggle-loading helper).
+- [x] 4.3.4 Loading state on the auto-add toggle: added a `loading loading-spinner loading-xs` daisyUI span inside the toggle's `<label>` (hidden by default), and the inline change-handler now flips `aria-busy="true"` on the input and unhides the spinner inside the existing `try`, then clears both in `finally`. `setButtonLoading` is button-scoped per [apps/web/src/lib/ui.ts](../../../apps/web/src/lib/ui.ts); the checkbox needed the equivalent shape, not the helper itself.
 
 ## Verification
 
-- [ ] All tests green: `pnpm --filter @baseout/web test rescan-bases dismiss persist-policy integrations`.
-- [ ] Typecheck green: `pnpm --filter @baseout/web typecheck`.
-- [ ] Build green: `pnpm --filter @baseout/web build`.
-- [ ] No stray `console.*` or `debugger`: `git diff --staged | grep -E '(console\\.|debugger)'` empty per [apps/web/.claude/CLAUDE.md §5](../../../apps/web/.claude/CLAUDE.md).
+- [x] All tests green: `pnpm --filter @baseout/web exec vitest run rescan-bases dismiss persist-policy` — **3 files, 28 passed**. ("integrations" matched no test file — there is no `integrations*.test.ts` in this repo today.)
+- [x] Typecheck green: `pnpm --filter @baseout/web typecheck` — 0 errors / 0 warnings / 4 pre-existing hints.
+- [x] Build green: `CLOUDFLARE_ACCOUNT_ID=<openside-org> pnpm --filter @baseout/web build` — server bundle built in 6.81s.
+- [x] No stray `console.*` or `debugger`: working-tree diff contains zero `console.` / `debugger` additions in the changed file ([apps/web/src/views/IntegrationsView.astro](../../../apps/web/src/views/IntegrationsView.astro)).
 - [ ] Smoke: connect Airtable workspace → add a base to Airtable → click Rescan in Integrations → banner shows new base → dismiss → banner gone. Repeat with auto-add toggled on; verify the base appears in `backup_configuration_bases`.
 - [ ] Tier-cap edge case: with toggle on and at-cap, the banner shows `blockedByTier` count > 0 and the discovered bases are not auto-added.

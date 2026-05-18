@@ -23,6 +23,6 @@ All edits are in [apps/server/tests/integration/space-do.test.ts](../../../apps/
 - [x] A.3.2 `cd apps/server && pnpm test` — full suite green: **31 files, 202 passing + 1 skipped, 0 failing**.
 - [x] A.3.3 `cd apps/server && pnpm typecheck` — clean.
 - [x] A.3.4 `cd apps/web && pnpm typecheck && pnpm exec vitest run` — clean / **425** passing (no spillover from the apps/server change).
-- [ ] A.3.5 `git diff --staged | grep -nE '^\+.*(console\.|debugger)'` — no stray debug statements.
-- [ ] A.3.6 Tick `B.7.1` in [openspec/changes/server-schedule-and-cancel/tasks.md](../server-schedule-and-cancel/tasks.md) once this lands — the Phase B verification gate now passes, unblocking the Phase B archive.
-- [ ] A.3.7 On user approval: stage by name (`git add apps/server/tests/integration/space-do.test.ts openspec/changes/server-spacedo-alarm-test-isolation-fix/ openspec/changes/server-schedule-and-cancel/tasks.md`) + commit locally + push to `origin/autumn/server-setup`.
+- [x] A.3.5 Re-checked the diff on `apps/server/tests/integration/space-do.test.ts` against the working tree — no `console.` / `debugger` added. (Phase A test edits were already committed in an earlier batch; this re-scan confirms nothing slipped in since.)
+- [x] A.3.6 `B.7.1` in [openspec/changes/server-schedule-and-cancel/tasks.md](../server-schedule-and-cancel/tasks.md) is already ticked (server suite passes; the three alarm-storage tests are green under the single-block `runInDurableObject` pattern).
+- [ ] A.3.7 On user approval: stage by name (`git add openspec/changes/server-spacedo-alarm-test-isolation-fix/tasks.md`) + commit locally. Production-code files (`space-do.test.ts`, `server-schedule-and-cancel/tasks.md`) already landed earlier on this branch, so they aren't part of this commit.

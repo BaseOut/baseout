@@ -11,5 +11,5 @@
 
 ## 3. Verification
 
-- [ ] 3.1 `pnpm --filter @baseout/workflows test` — green for the cancel test.
-- [ ] 3.2 Cross-check: server-side `server-schedule-and-cancel` tasks list no longer carries the now-completed A.2.5 workflows test bullet; it's mirrored here.
+- [x] 3.1 `pnpm --filter @baseout/workflows test` — green for the cancel test. Full suite: **6 files, 37 passed**.
+- [x] 3.2 Cross-check: server-side `server-schedule-and-cancel` A.2.5 is ticked and explicitly delegates to this change ("Workflows-side AbortError handling + cancel test live in `workflows-schedule-and-cancel`"). No stale stranded bullet.
