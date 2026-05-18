@@ -31,14 +31,44 @@ This change is the extraction: turn `packages/db-schema/` into the real canonica
 
 - The `backup-engine`, `restore-engine`, `airtable-webhook-coalescing`, `backup-credit-consumption`, `dead-connection-cadence`, and `direct-sql-access` capabilities currently call out engine-side schema mirroring; after this change lands, those capabilities stop carrying mirror-maintenance obligations.
 
-## Status note (2026-05)
+## Status note (updated 2026-05-18)
 
-This change is **not started**. The extraction is recommended by `specreview/03-reconciliation.md` §4 ("extract now") and the case has only gotten stronger as the mirror count has grown. Two reasons to wait:
+**Started.** First tracer slice landed in commit `590015a` on 2026-05-18 — the Better Auth quartet (`users`, `sessions`, `accounts`, `verifications`) plus the shared `baseout` pgSchema declaration moved from `apps/web/src/db/schema/auth.ts` into `packages/db-schema/src/schema/auth.ts`. apps/web's `auth.ts` is now a re-export shim so every existing consumer (`core.ts`, the barrel, `profile.astro`, the last-verification test route, `drizzle.config.ts`) keeps its import path unchanged.
 
-1. **In-flight backup MVP**: the data plane is mid-buildout. A schema-package extraction touching every mirror file at once would conflict with feature branches.
-2. **No pressing pain**: the 7-table mirror set today is annoying but tractable. The pain becomes acute once attachments, restore_runs, and the credit ledger land — all in flight.
+The tracer validated the workspace consumption model end-to-end (typecheck, vitest, db:check, drizzle-kit check, drizzle-kit generate). Remaining Phase 1 work (organizations, connections, spaces, subscriptions, backups, restores, storage, attachments, credits, notifications, audit log, idempotency) is the bulk of the lift and is best done in one or two cohesive slices rather than 11 small ones.
 
-**Recommendation**: schedule this change immediately after the next batch-ship to `main` and before the attachments + restore + credits changes land. That's the cheapest extraction point: minimal in-flight branch conflicts, biggest payoff before the mirror count doubles.
+## Lessons from the auth-tables tracer (2026-05-18)
+
+Three surprises caught us mid-extraction. Each is now documented policy so the next slice avoids them.
+
+### 1. Pin drizzle-orm + drizzle-kit to apps/web's versions, not independent ranges
+
+The package originally declared `drizzle-orm: ^0.36.0`; apps/web declared `^0.45.2`. pnpm dutifully resolved two separate copies, and TypeScript saw two nominally distinct `PgColumn<...>` type universes for the same table shapes. Result: 732 phantom type errors in apps/web, all on `db.insert(...).values({ ... })` and similar shapes. Bumping the package to match apps/web (`0.45.2` / `0.31.10`) eliminated them.
+
+**Policy**: `packages/db-schema/package.json` MUST pin drizzle-orm and drizzle-kit to the same exact ranges apps/web declares. When apps/web bumps, the package bumps in the same commit. The dep ranges in apps/web's `dependencies` block are the source of truth.
+
+### 2. The `exports` field needs a `default` condition for drizzle-kit's CJS bin
+
+A package pointing `main`/`types`/`exports.types`/`exports.import` at `./src/index.ts` works for Astro/Vite, vitest-pool-workers, and `drizzle-kit check`. But `drizzle-kit generate` and `drizzle-kit migrate` shell into a CJS `bin.cjs` script that asks Node's resolver for `require`/`default` conditions — neither of which was present — and fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+
+**Policy**: the `exports.` block MUST declare `types`, `import`, AND `default` (in that order; `default` is the CJS fallback). All three point at `./src/index.ts` while we're on the workspace-source-import model. If we ever flip to dist-based publication, `default` becomes the `require` entry pointing at `./dist/index.cjs` and `import` points at `./dist/index.js`.
+
+### 3. The owner of the schema needs an explicit workspace dep too
+
+`packages/db-schema/` was scaffolded in May with six apps (admin, api, hooks, server, sql, workflows) declaring `"@baseout/db-schema": "workspace:*"` as forward-declarations. apps/web was deliberately omitted because *it owned the schema*. The moment the auth-tables shim tried to import from `@baseout/db-schema`, the resolver failed: apps/web's package.json didn't list the dep, so pnpm hadn't symlinked it into `apps/web/node_modules/@baseout/`.
+
+**Policy**: any app whose source imports from `@baseout/db-schema` MUST declare `"@baseout/db-schema": "workspace:*"` in its `dependencies` block. apps/web now does. The remaining five forward-declarations are addressed in the slim-half phase below.
+
+## Workspace consumption model (replaces the original "Internal npm package" plan)
+
+The original design assumed each runtime repo would consume a published npm version. The monorepo split changed that. Today:
+
+- The package is consumed via `workspace:*` symlinks. No external publishing.
+- The package's `main`/`types`/`exports` point at `./src/index.ts`. No build step required for workspace use.
+- Astro/Vite, `@cloudflare/vitest-pool-workers`, and drizzle-kit all read source through the symlink. Each toolchain handles TypeScript natively.
+- Migrations stay in the consumer side (`apps/web/drizzle/`) until enough of the schema has relocated to make a single owning `drizzle/` directory under the package the cheapest move. That cutover is its own task; it's not implicit in any single Phase 1 slice.
+
+If Baseout ever splits into multiple repos again, flip the package.json `main`/`types`/`exports` back to `./dist/*`, add the tsup build to CI, and stand the publish pipeline back up. The Phase 0 "build pipeline" and "publish pipeline" tasks describe that path; they're intentionally not blocking the workspace-only adoption.
 
 ## Impact
 

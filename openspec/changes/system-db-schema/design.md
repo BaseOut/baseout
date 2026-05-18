@@ -1,3 +1,23 @@
+## Status update (2026-05-18 — workspace model adopted)
+
+This design.md predates the monorepo split. The original plan assumed `@baseout/db-schema` would be a published internal npm package consumed by separate runtime repos with semver pinning. The repo consolidation changed that: today the package is consumed via `workspace:*` symlinks inside the monorepo, with no external publication.
+
+**Authoritative sections of this doc are now**:
+- "Schema source in TypeScript Drizzle" (file layout under `src/schema/*.ts`)
+- "Encryption convention" (`_enc` suffix on AES-256-GCM columns)
+- "Manual production migration approval" (still a gate, but applied to the package's owned `drizzle/` directory once the bulk of Phase 1 lands and migration ownership relocates)
+- Naming conventions (snake_case, UUID PKs, `created_at`/`modified_at`)
+
+**Superseded sections** (see `proposal.md` §"Workspace consumption model" + §"Lessons from the auth-tables tracer" for the current shape):
+- "Internal npm package" → workspace:* symlinks, no publication
+- "Semver / patch-minor-major" → all apps in the monorepo track the same commit; multi-version coexistence is a non-goal
+- "Phase 3 — CI + publish" → CI checks still apply; publish-on-merge does not
+- "Phase 4 — Runtime-repo consumption" → replaced by the workspace-consumption-polish phase in `tasks.md` (slim half + per-app dep declarations as imports land)
+
+The Open Questions table at the bottom (S1: registry, S2: encryption helper location) is also stale: S1 is moot in the workspace model; S2 still applies but lives outside this change.
+
+---
+
 ## Context
 
 `packages/db-schema/` is the single source of truth for the master DB schema. It's a small, deliberately minimal package — Drizzle schema files, generated migrations, and a publishing pipeline. Every runtime repo (`web`, `server`, `admin`, `inbound-api`, `sql-rest-api`, `webhook-ingestion`) consumes it as `@baseout/db-schema` at a pinned version. Schema changes are coordinated events: a schema change typically requires runtime-repo updates, deployed in order.
