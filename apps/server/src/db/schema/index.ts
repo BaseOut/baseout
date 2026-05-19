@@ -15,3 +15,5 @@ export * from "./platforms";
 export * from "./subscriptions";
 export * from "./subscription-items";
 export * from "./space-events";
+export * from "./e2e-pending-airtable-bases";
+export * from "./storage-destinations";

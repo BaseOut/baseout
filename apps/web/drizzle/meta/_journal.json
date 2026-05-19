@@ -64,6 +64,27 @@
       "when": 1778771240840,
       "tag": "0008_workspace_rediscovery",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1779228059668,
+      "tag": "0009_e2e_pending_airtable_bases",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779231357740,
+      "tag": "0010_storage_destinations",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1779231485485,
+      "tag": "0011_oauth_states",
+      "breakpoints": true
     }
   ]
 }

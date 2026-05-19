@@ -17,6 +17,7 @@
 
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -462,6 +463,97 @@ export const backupConfigurationBases = baseout.table('backup_configuration_base
 // schema_drift) land as new `kind` values without schema changes. If a
 // full notification stack ships later, migrate via INSERT … SELECT.
 // ———————————————————————————————————————————————————————————————————————————
+
+// ———————————————————————————————————————————————————————————————————————————
+// E2E_PENDING_AIRTABLE_BASES — test-only stub for workspace rescan e2e
+//
+// Holds the "Airtable workspace listing" that apps/server's rediscovery
+// orchestrator reads when `env.E2E_TEST_MODE === 'true'` instead of calling
+// the real Airtable Meta API. Seeded by
+// /api/internal/test/seed-workspace-rediscovery. Empty in prod (the seed
+// endpoint is gated behind the same E2E_TEST_MODE + HMAC pair as
+// /api/internal/test/seed-backup-happy-path).
+//
+// Per CLAUDE.md §5.2 — keep the surface small; this table exists solely
+// so Playwright can drive the rescan UI deterministically.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const e2ePendingAirtableBases = baseout.table('e2e_pending_airtable_bases', {
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  atBaseId: text('at_base_id').notNull(),
+  name: text('name').notNull(),
+}, (table) => [
+  unique('e2e_pending_airtable_bases_pk').on(table.spaceId, table.atBaseId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// STORAGE DESTINATIONS
+// One row per Space — the backup engine writes here. Type CHECK constraint is
+// scoped to MVP values; per-provider follow-up changes (box, onedrive, s3,
+// frame_io) ALTER TABLE to widen the constraint when they ship. OAuth tokens
+// stored AES-256-GCM encrypted (_enc suffix) per PRD §20.2.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const storageDestinations = baseout.table('storage_destinations', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  // 'r2_managed' | 'google_drive' | 'dropbox' — enforced by CHECK constraint below
+  oauthAccessTokenEnc: text('oauth_access_token_enc'),
+  oauthRefreshTokenEnc: text('oauth_refresh_token_enc'),
+  oauthExpiresAt: timestamp('oauth_expires_at', { withTimezone: true }),
+  oauthScope: text('oauth_scope'),
+  oauthAccountEmail: text('oauth_account_email'),
+  providerFolderId: text('provider_folder_id'),
+  providerAccountId: text('provider_account_id'),
+  connectedByUserId: text('connected_by_user_id')
+    .references(() => users.id, { onDelete: 'set null' }),
+  connectedAt: timestamp('connected_at', { withTimezone: true }).defaultNow(),
+  lastValidatedAt: timestamp('last_validated_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique('storage_destinations_space_unique').on(table.spaceId),
+  index('storage_destinations_space_id_idx').on(table.spaceId),
+  check(
+    'storage_destinations_type_check',
+    sql`${table.type} IN ('r2_managed','google_drive','dropbox')`,
+  ),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// OAUTH STATES
+// CSRF / state-handoff fallback for the storage-destination OAuth Connect
+// flow. Primary state container is a sealed encrypted cookie; this table is
+// defense-in-depth so the engine can produce a clearer "session expired"
+// error when the cookie is missing. Rows expire after 10 minutes — the
+// created_at index supports periodic purge.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const oauthStates = baseout.table('oauth_states', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  state: text('state').notNull(),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  provider: text('provider').notNull(),
+  // 'google_drive' | 'dropbox' — enforced by CHECK constraint below
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique('oauth_states_state_unique').on(table.state),
+  index('oauth_states_created_at_idx').on(table.createdAt),
+  check(
+    'oauth_states_provider_check',
+    sql`${table.provider} IN ('google_drive','dropbox')`,
+  ),
+])
 
 export const spaceEvents = baseout.table('space_events', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()`),
