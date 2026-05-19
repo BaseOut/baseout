@@ -28,6 +28,21 @@ export interface Env {
   CONNECTION_DO: DurableObjectNamespace;
   /** Per-Space scheduler DO. */
   SPACE_DO: DurableObjectNamespace;
+  /**
+   * Managed R2 bucket for backup CSV + attachment output. Restored per
+   * server-byos-destinations Phase 0. Workflows tasks can't reach this
+   * binding (Node runner, not workerd) — the engine exposes a proxy upload
+   * route in Phase B/E so the writer call lands here.
+   */
+  BACKUPS_R2: R2Bucket;
+  /**
+   * Storage path selector for the dev path. Default `local-fs` keeps
+   * backups writing to `apps/server/.backups/` via local-fs-write.ts so
+   * `pnpm dev` works without R2 credentials. Set to `r2` to exercise the
+   * managed-R2 writer in dev (requires real bucket / Miniflare-R2 wiring;
+   * deferred follow-up).
+   */
+  STORAGE_DEV_MODE?: "local-fs" | "r2";
 }
 
 export interface AppLocals {

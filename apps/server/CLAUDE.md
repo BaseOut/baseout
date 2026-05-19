@@ -79,3 +79,12 @@ client.defineJob({
 ```
 
 Use SDK (`@trigger.dev/sdk`), check `result.ok` before accessing `result.output`
+
+## Storage destinations (`server-byos-destinations` Phase 0)
+
+The `BACKUPS_R2` Worker binding (wrangler.jsonc.example top-level + env.dev + wrangler.test.jsonc) is the managed-R2 destination behind the StorageWriter interface. The Trigger.dev backup-base task can't reach the binding directly (Node runner) — Phase B/E exposes a proxy upload route on the engine for the workflows runner to POST CSV chunks through.
+
+`STORAGE_DEV_MODE` selects the dev write path:
+
+- `local-fs` (default) — keeps the current `apps/server/.backups/` writes via `trigger/tasks/_lib/local-fs-write.ts`. No R2 credentials needed; `pnpm dev` boots without provisioning a bucket.
+- `r2` — exercises the managed-R2 writer in dev. Requires either a real `baseout-backups-dev` R2 bucket or Miniflare-R2 wiring (deferred follow-up — Phase 0 leaves the dev mode at `local-fs`).
