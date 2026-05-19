@@ -10,7 +10,10 @@
 // manual smoke run.
 
 import { describe, expect, it, vi } from "vitest";
-import { runBackupBase } from "../trigger/tasks/backup-base";
+import {
+  runBackupBase,
+  type BackupBaseProgressEvent,
+} from "../trigger/tasks/backup-base";
 import type {
   AirtableSchema,
   AirtableRecordsPage,
@@ -30,7 +33,7 @@ function makeFetchMock(): {
 } {
   const calls: CapturedCall[] = [];
   const fetchMock = vi.fn(
-    async (input: RequestInfo | URL, init?: RequestInit) => {
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url =
         typeof input === "string"
           ? input
@@ -303,7 +306,9 @@ describe("runBackupBase", () => {
       ],
     });
 
-    const postProgress = vi.fn(async () => undefined);
+    const postProgress = vi.fn(
+      async (_event: BackupBaseProgressEvent) => undefined,
+    );
 
     const result = await runBackupBase(
       { ...BASE_INPUT, isTrial: false },

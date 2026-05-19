@@ -47,12 +47,12 @@ This change captures the workflows app boundary itself. Per-task work (the actua
 - [x] 5.2 `git mv openspec/changes/server-<topic> → openspec/changes/server-<topic>` for every in-flight change in the family
 - [x] 5.3 Update `apps/server/openspec` symlink target to `../../openspec/changes/server`
 - [x] 5.4 Create `apps/workflows/openspec` symlink → `../../openspec/changes/workflows`
-- [ ] 5.5 For each in-flight `server-<topic>` that touches Trigger.dev tasks, create a sibling `workflows-<topic>` change with proposal.md + tasks.md scoping the workflows-side work; trim those bullets from the server-side change.
+- [x] 5.5 For each in-flight `server-<topic>` that touches Trigger.dev tasks, create a sibling `workflows-<topic>` change with proposal.md + tasks.md scoping the workflows-side work; trim those bullets from the server-side change.
 
 ## 6. Verification
 
-- [ ] 6.1 `pnpm install` resolves without errors; `@baseout/workflows` workspace symlink lands in `apps/server/node_modules/`
-- [ ] 6.2 `pnpm --filter @baseout/server typecheck` passes
-- [ ] 6.3 `pnpm --filter @baseout/workflows typecheck` passes
-- [ ] 6.4 `pnpm --filter @baseout/workflows test` runs the migrated test suite green
-- [ ] 6.5 `pnpm --filter @baseout/server test` still passes (no test moved out should regress)
+- [x] 6.1 `pnpm install` resolves without errors; `@baseout/workflows` workspace symlink lands in `apps/server/node_modules/`
+- [x] 6.2 `pnpm --filter @baseout/server typecheck` passes
+- [x] 6.3 `pnpm --filter @baseout/workflows typecheck` passes
+- [x] 6.4 `pnpm --filter @baseout/workflows test` runs the migrated test suite green
+- [x] 6.5 `pnpm --filter @baseout/server test` still passes (no test moved out should regress)

@@ -34,7 +34,7 @@ function makeFetchMock(): {
 } {
   const calls: CapturedCall[] = [];
   const fetchMock = vi.fn(
-    async (input: RequestInfo | URL, init?: RequestInit) => {
+    async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url =
         typeof input === "string"
           ? input
@@ -151,7 +151,7 @@ describe("runBackupBase — cancellation mid-flight (Trigger.dev abort injection
     // original abort is the one that bubbles out of runBackupBase.
     const calls: CapturedCall[] = [];
     const fetchMock = vi.fn(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
+      async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
         const url =
           typeof input === "string"
             ? input
