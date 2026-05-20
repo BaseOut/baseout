@@ -45,6 +45,16 @@ Once the server starts, visit [http://localhost:4331](http://localhost:4331).
 | `npm run setup`     | Re-run the setup wizard (resets your config)             |
 | `npm run astro ...` | Run Astro CLI commands directly (e.g. `astro check`)    |
 
+## AI Verification of UI Changes
+
+Claude (via Claude Code) verifies UI-touching changes in this app automatically before claiming a task done, driving a real Chromium through the [Playwright MCP](https://github.com/microsoft/playwright-mcp) server registered project-scoped in [`.mcp.json`](../../.mcp.json) at the repo root. The full rule is in [.claude/CLAUDE.md §3.5](.claude/CLAUDE.md). One-time setup:
+
+1. **Restart Claude Code** in this workspace so the `playwright` MCP server is picked up from `.mcp.json`.
+2. **Make sure `.dev.vars` has `E2E_TEST_TOKEN`** set to a 32-byte base64 random value (`openssl rand -base64 32`). The dev wrangler config already sets `E2E_TEST_MODE=true`; without the token, Claude's auth step during verification 401s. See [`.dev.vars.example`](.dev.vars.example).
+3. **Keep `pnpm dev` running** in another terminal while Claude is working. Claude prechecks reachability of `https://localhost:4331` before each verification pass and will pause and ask you to start dev if it's down.
+
+Caveat: `apps/web`'s `BACKUP_ENGINE` service binding is `"remote": true`, so engine-dependent pages still talk to the deployed dev engine. Claude verifies the *web* surface; engine-state correctness is verified separately when relevant.
+
 ## Project Structure
 
 ```

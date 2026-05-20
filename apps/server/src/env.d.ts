@@ -43,6 +43,14 @@ export interface Env {
    * deferred follow-up).
    */
   STORAGE_DEV_MODE?: "local-fs" | "r2";
+  /**
+   * When `"true"`, the workspace rediscovery dep-builder reads from
+   * `baseout.e2e_pending_airtable_bases` instead of decrypting the
+   * connection token and calling Airtable's Meta API. Gated to dev/staging
+   * envs that also set `E2E_TEST_MODE` on apps/web. Unset in production.
+   * See openspec/changes/web-rescan-e2e/.
+   */
+  E2E_TEST_MODE?: string;
 }
 
 export interface AppLocals {

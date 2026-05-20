@@ -49,6 +49,18 @@ BASEOUT_ENCRYPTION_KEY=replace-with-base64-of-32-random-bytes
 AIRTABLE_OAUTH_CLIENT_ID=
 AIRTABLE_OAUTH_CLIENT_SECRET=
 
+# === E2E test mode (local Playwright only) ===
+# When set to "true", apps/server's workspace-rediscovery dep-builder reads
+# from baseout.e2e_pending_airtable_bases instead of decrypting the
+# connection token and calling Airtable's Meta API. The seed token written
+# by apps/web's /api/internal/test/seed-workspace-rediscovery is a
+# non-decryptable stub, so this flag is REQUIRED for the local Playwright
+# flow (apps/web's `dev:e2e-local` script + apps/server local dev). Unset
+# (or anything other than the literal string "true") leaves production
+# behavior intact: token gets decrypted, Airtable's Meta API gets called.
+# See openspec/changes/web-rescan-e2e/.
+# E2E_TEST_MODE=true
+
 # === Optional: local-dev TLS bypass ===
 # Set DRIZZLE_SSL=false ONLY if connecting to a local Postgres without TLS.
 # Leave unset / "require" for any DigitalOcean managed DB.

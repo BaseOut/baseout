@@ -99,6 +99,45 @@ Follow the red-green-refactor loop for all non-trivial code. Use [Vitest](https:
 - Every PR must include tests for the change. CI blocks merge on failing tests.
 - Regression before fix: reproduce every bug with a failing test before patching.
 
+## 3.5. AI Verification of UI Changes
+
+Pre-written Playwright specs only cover ~5% of this app's UI surface. To close the gap, the Playwright MCP server (registered project-scoped via [.mcp.json](../../../.mcp.json) at the repo root) gives Claude a real Chromium that drives the local dev server. Claude is expected to use this MCP to verify UI-touching changes itself, before claiming a task done — replacing "you eyeball the change in a browser" with "Claude eyeballs it and reports back."
+
+### When verification is required
+
+If a change touches any of these paths in `apps/web/`, the verification pass below runs before the task is considered complete:
+
+- `src/pages/**/*.astro`
+- `src/components/**/*.astro`
+- `src/layouts/**/*.astro`
+- `src/middleware.ts`
+- `src/lib/auth-client.ts`
+- `src/lib/account.ts`
+- `src/stores/**`
+- `src/styles/**`
+
+**Exception:** pure copy-only changes with no behavior change (typo fix, aesthetically-equivalent class swap) may skip verification but **must** be explicitly noted in the change description (commit body or, when PRs are in use, the PR body). Anything else — new component, new route, changed interactivity, changed conditional rendering, changed auth/middleware behavior — needs verification.
+
+### The verification pass
+
+1. **Confirm dev server is up.** `curl -k -fsS https://localhost:4331 > /dev/null` (or hit a known unauthenticated route). If unreachable, stop and instruct the user to run `pnpm --filter @baseout/web dev` in another terminal, then wait for them to confirm before resuming.
+2. **Navigate** to the affected route(s) via Playwright MCP `browser_navigate`.
+3. **Sign in if needed.** For authenticated routes, follow the same flow used by [tests/e2e/fixtures.ts](../tests/e2e/fixtures.ts): generate a fresh per-session email of the form `e2e-claude-<timestamp>-<rand>@e2e.invalid` (satisfies the `/^e2e-[a-z0-9-]+@[a-z0-9.-]+$/` input gate on [last-verification.ts](../src/pages/api/internal/test/last-verification.ts)); navigate to `/register`, submit; HMAC-sign the email with `E2E_TEST_TOKEN` and `GET /api/internal/test/last-verification?email=<addr>` with the `X-E2E-Test-Auth` header; navigate to the returned `/api/auth/magic-link/verify?token=…` URL.
+4. **Exercise the specific change.** New/changed element → confirm in accessibility-tree snapshot (`browser_snapshot`). New/changed interaction → trigger it (`browser_click` / `browser_type`), observe the resulting DOM or URL change. New/changed form → fill and submit, observe response state. Middleware/routing change → navigate to relevant routes, observe redirects/auth gates.
+5. **Check the page** for: status 200 on the document load, no JS console errors caught by the MCP, no unexpected same-origin 4xx/5xx network calls. Treat the 4xx/5xx check as a heuristic — surface unexpected ones; don't fail on intentional probes the page is designed to handle.
+6. **Take a screenshot** via `browser_take_screenshot` and keep the path/inline image to attach to the report.
+7. **Report back** to the user: pass/fail summary, screenshot, any console errors caught, any unexpected network failures, and a one-line description of what was exercised.
+
+If the verification fails, treat it like a failing test: diagnose the cause (your change or pre-existing breakage) and fix before claiming done. Don't paper over by skipping the verification step.
+
+### Engine-dependent flows
+
+Pages that depend on engine state (backup history widget, rescan banner with live data, anything that calls through `BACKUP_ENGINE`) still talk to the **deployed dev engine** because the service binding in [apps/web/wrangler.jsonc](../wrangler.jsonc) is `"remote": true`. Verification will navigate to those pages and exercise the UI surface, but cannot guarantee engine-side state is correct — call this out in the report rather than silently passing. If the page renders correctly given current engine state (even if state is "empty" or "stale"), that counts as verification of the *web change*; engine-state correctness is a separate concern for the engine work.
+
+### Why this rule exists
+
+The previous attempt (the reverted "local Playwright runner") only made it easier to run *pre-written* specs locally. That left every change without a pre-written spec stuck in the "user eyeballs the browser" loop. This rule moves the verification responsibility from authoring-time (write a spec, then it runs forever) to execution-time (Claude actually drives the page after the change). The MCP gives us coverage on day one for every surface Claude touches, not just the 3 with specs today.
+
 ## 4. State Management: `nanostores`
 
 For all cross-component reactive state in the Astro app, use [`nanostores`](https://github.com/nanostores/nanostores). There is no official `@nanostores/astro` package — hydrate server state into the store via a `<script type="application/json">` tag and a small module script that calls `$store.set(...)` on the client. For framework-specific hooks inside an island, install the matching adapter (`@nanostores/react`, `@nanostores/preact`, `@nanostores/solid`, `@nanostores/vue`, or `@nanostores/lit`) as needed.
@@ -276,6 +315,7 @@ Any client-side interaction that waits on the server **must** show a visible loa
 - [ ] No console errors or warnings
 - [ ] No stray `console.*` or `debugger` statements in the diff (see §5 Commit Hygiene)
 - [ ] Astro build completes without errors (`npm run build`)
+- [ ] AI verification pass green for UI-touching changes: dev server up, target route(s) navigated, change exercised, no console/network errors, screenshot attached — or copy-only carve-out explicitly noted in the change description (see §3.5)
 
 ### 14. File Organization
 ```

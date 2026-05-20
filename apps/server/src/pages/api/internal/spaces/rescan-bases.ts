@@ -54,6 +54,7 @@ export async function spacesRescanBasesHandler(
     spaceId,
     triggeredBy: "manual",
     encryptionKey: env.BASEOUT_ENCRYPTION_KEY,
+    e2eTestMode: env.E2E_TEST_MODE === "true",
   });
 
   if (!deps.ok) {

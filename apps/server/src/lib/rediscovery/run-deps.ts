@@ -20,6 +20,7 @@ import {
   backupConfigurationBases,
   backupConfigurations,
   connections,
+  e2ePendingAirtableBases,
   platforms,
   spaceEvents,
   spaces,
@@ -44,6 +45,15 @@ export interface BuildRediscoveryDepsInput {
   spaceId: string;
   triggeredBy: RediscoveryTrigger;
   encryptionKey: string;
+  /**
+   * When true, the resolved deps' `listAirtableBases` reads from the
+   * test-only `e2e_pending_airtable_bases` table instead of decrypting
+   * the connection token and calling Airtable's Meta API. The stub
+   * token written by apps/web's seed endpoint is non-decryptable, so
+   * this branch must also skip `decryptToken`. Upstream callers gate on
+   * `env.E2E_TEST_MODE === "true"`. See openspec/changes/web-rescan-e2e/.
+   */
+  e2eTestMode?: boolean;
 }
 
 export interface RediscoveryContext {
@@ -103,6 +113,23 @@ export async function buildRediscoveryDeps(
     return { ok: false, error: "connection_not_found" };
   }
 
+  // E2E_TEST_MODE short-circuit: read the workspace listing from the
+  // test-only table and skip token decryption entirely. The stub token
+  // seeded by apps/web's seed-workspace-rediscovery is not real ciphertext.
+  if (input.e2eTestMode) {
+    return {
+      ok: true,
+      context: {
+        configId: config.id,
+        organizationId: space.organizationId,
+      },
+      deps: buildDeps({
+        db,
+        airtableListBases: () => listE2EPendingBases(db, spaceId),
+      }),
+    };
+  }
+
   const accessToken = await decryptToken(
     connectionRow.accessTokenEnc,
     encryptionKey,
@@ -120,6 +147,33 @@ export async function buildRediscoveryDeps(
       airtableListBases: () => airtable.listBases(),
     }),
   };
+}
+
+/**
+ * Reads the seeded workspace listing for `spaceId` from
+ * `baseout.e2e_pending_airtable_bases` and shapes it like the Airtable Meta
+ * API response. Exported so unit tests can drive it with a stub db.
+ *
+ * Permission level is fixed to "create" — the rediscovery orchestrator
+ * doesn't gate behavior on permissionLevel, so a stable value keeps the
+ * stub minimal.
+ */
+export async function listE2EPendingBases(
+  db: AppDb,
+  spaceId: string,
+): Promise<AirtableBaseSummary[]> {
+  const rows = await db
+    .select({
+      atBaseId: e2ePendingAirtableBases.atBaseId,
+      name: e2ePendingAirtableBases.name,
+    })
+    .from(e2ePendingAirtableBases)
+    .where(eq(e2ePendingAirtableBases.spaceId, spaceId));
+  return rows.map((r) => ({
+    id: r.atBaseId,
+    name: r.name,
+    permissionLevel: "create",
+  }));
 }
 
 interface DepsWiring {

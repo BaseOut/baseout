@@ -31,3 +31,18 @@ DUB_CO_API_KEY=
 # apps/server's INTERNAL_TOKEN (32+ random bytes, base64). Generate once:
 # `openssl rand -base64 32`. Mismatch = engine 401 → web 502.
 BACKUP_ENGINE_INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness
+
+# === E2E / AI-verification token ===
+# HMAC secret consumed by /api/internal/test/last-verification, the test-only
+# endpoint that lets Playwright (and Claude's MCP-driven AI verification, see
+# apps/web/.claude/CLAUDE.md §3.5) read back a magic-link token without going
+# through a real inbox. Must match the value used by the caller to sign the
+# email in the X-E2E-Test-Auth header. Generate with `openssl rand -base64 32`.
+#
+# Required for: `pnpm test:e2e` against the local dev worker, and Claude's
+# AI verification pass during UI-touching work. Without it set the test
+# endpoint 401s and verification cannot sign in.
+#
+# Production / staging hold the equivalent value via `wrangler secret put
+# E2E_TEST_TOKEN`. Leave unset in any environment where E2E_TEST_MODE != "true".
+E2E_TEST_TOKEN=replace-with-32-bytes-of-base64-randomness

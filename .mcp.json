@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--headless",
+        "--isolated",
+        "--ignore-https-errors",
+        "--allowed-origins",
+        "https://localhost:*;https://baseout-dev.openside.workers.dev"
+      ]
+    }
+  }
+}
