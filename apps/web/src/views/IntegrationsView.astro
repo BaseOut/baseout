@@ -14,11 +14,17 @@ interface Props {
   state: IntegrationsState;
   /** Query-string status passed through from Astro.url.searchParams. */
   statusCode: 'connected' | 'error' | null;
+  /**
+   * Raw value of `?connected=` — '1' / 'airtable' (legacy) for Airtable, or
+   * 'google-drive' for the Google Drive OAuth callback. Drives the success
+   * banner copy. Other strings render the generic success message.
+   */
+  connectedParam?: string | null;
   errorReason: string | null;
   initialRuns?: BackupRunSummary[];
 }
 
-const { state, statusCode, errorReason, initialRuns = [] } = Astro.props;
+const { state, statusCode, connectedParam = null, errorReason, initialRuns = [] } = Astro.props;
 
 const airtable = state.connections.find((c) => c.platformSlug === 'airtable') ?? null;
 const bases = state.bases;
@@ -72,7 +78,16 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
     </p>
   </header>
 
-  {statusCode === 'connected' && (
+  {statusCode === 'connected' && connectedParam === 'google-drive' && (
+    <div role="status" class="alert alert-success">
+      <span>
+        Google Drive connected{state.googleDriveAccountEmail ? ` as ${state.googleDriveAccountEmail}` : ''}.
+        A Baseout-&lt;space&gt; folder has been created in your Drive.
+      </span>
+    </div>
+  )}
+
+  {statusCode === 'connected' && connectedParam !== 'google-drive' && (
     <div role="status" class="alert alert-success">
       <span>Airtable connected. {bases.length > 0 ? `We found ${bases.length} base${bases.length === 1 ? '' : 's'}.` : 'No bases were found in your Airtable account.'}</span>
     </div>
@@ -312,6 +327,8 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
               <StoragePicker
                 spaceId={Astro.locals.account.space.id}
                 selectedStorageType={state.policy.storageType}
+                googleDriveConnected={state.googleDriveConnected}
+                googleDriveAccountEmail={state.googleDriveAccountEmail}
               />
               <RunBackupButton
                 spaceId={Astro.locals.account.space.id}

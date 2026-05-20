@@ -38,6 +38,8 @@ const state: IntegrationsState =
           autoAddFutureBases: false,
         },
         unreadEvents: [],
+        googleDriveConnected: false,
+        googleDriveAccountEmail: null,
       };
 
 const initialRuns: BackupRunSummary[] =
@@ -114,6 +116,7 @@ const statusCode: 'connected' | 'error' | null = connectedParam
   <IntegrationsView
     state={state}
     statusCode={statusCode}
+    connectedParam={connectedParam}
     errorReason={errorParam}
     initialRuns={initialRuns}
   />

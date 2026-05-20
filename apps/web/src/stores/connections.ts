@@ -80,6 +80,15 @@ export interface IntegrationsState {
    * workspace rediscovery; the UI dismisses them via the dismiss route.
    */
   unreadEvents: SpaceEventSummary[]
+  /**
+   * True if a `storage_destinations` row of type 'google_drive' exists for
+   * the active Space — drives the StoragePicker "Connected" affordance.
+   * MVP only tracks Google Drive here; other providers land as their
+   * follow-up changes ship.
+   */
+  googleDriveConnected: boolean
+  /** Display email for the connected Google account, or null when not connected. */
+  googleDriveAccountEmail: string | null
 }
 
 export const $integrations = atom<IntegrationsState | null>(null)

@@ -15,6 +15,7 @@ import {
   connections,
   platforms,
   spaceEvents,
+  storageDestinations,
 } from '../db/schema'
 import { resolveCapabilities } from './capabilities/resolve'
 import type { Frequency } from './capabilities/tier-capabilities'
@@ -144,6 +145,24 @@ export async function getIntegrationsState(
     autoAddFutureBases: config?.autoAddFutureBases ?? false,
   }
 
+  // Storage destination — one row per Space. For MVP only the google_drive
+  // arm is exposed in UI; other types fall back to the synthetic r2_managed
+  // default. The OAuth Connect flow upserts this row (lib/google-drive/
+  // persist.ts).
+  const [destination] = await db
+    .select({
+      type: storageDestinations.type,
+      oauthAccountEmail: storageDestinations.oauthAccountEmail,
+    })
+    .from(storageDestinations)
+    .where(eq(storageDestinations.spaceId, spaceId))
+    .limit(1)
+
+  const googleDriveConnected = destination?.type === 'google_drive'
+  const googleDriveAccountEmail = googleDriveConnected
+    ? (destination?.oauthAccountEmail ?? null)
+    : null
+
   // Unread space_events for the banner. Workspace rediscovery is the only
   // writer today (kind = 'bases_discovered'); other kinds will be additive.
   const eventRows = await db
@@ -198,5 +217,7 @@ export async function getIntegrationsState(
     hasBackupConfig: Boolean(config),
     policy,
     unreadEvents,
+    googleDriveConnected,
+    googleDriveAccountEmail,
   }
 }

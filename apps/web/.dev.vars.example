@@ -7,6 +7,10 @@ STRIPE_SECRET_KEY=sk_test_
 STRIPE_WEBHOOK_SECRET=whsec_
 MAILGUN_API_KEY=
 AIRTABLE_OAUTH_CLIENT_SECRET=
+# Google OAuth (Drive). App registered in Google Cloud Console.
+# Redirect URI on Worker side: <origin>/oauth/callback/google
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
 SERVICE_HMAC_TO_BACKUP=
 POSTHOG_PROJECT_KEY=
 DUB_CO_API_KEY=

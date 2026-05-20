@@ -2,22 +2,33 @@
 /**
  * Wizard step 4 — Storage destination picker.
  *
- * MVP: only Cloudflare R2 (managed) is selectable. Other rows are
- * visibly disabled with a "Coming soon" label so users can see the
- * roadmap without being able to pick them. The PATCH route also rejects
- * non-r2_managed values as defense-in-depth.
+ * MVP: Cloudflare R2 (managed) + Google Drive are selectable. Drive
+ * requires an OAuth connection first — the row exposes a "Connect Google
+ * Drive" link that goes through /api/connections/storage/google-drive/
+ * authorize. Once connected, the radio is selectable and `oauth_account_email`
+ * shows. Other rows remain disabled with a "Coming soon" label.
  *
  * Props:
- *   spaceId             — UUID of the active Space
- *   selectedStorageType — currently saved value (defaults to 'r2_managed')
+ *   spaceId                  — UUID of the active Space
+ *   selectedStorageType      — currently saved value (defaults to 'r2_managed')
+ *   googleDriveConnected     — true if storage_destinations has a google_drive
+ *                              row for this Space (callback success)
+ *   googleDriveAccountEmail  — `oauth_account_email` for display
  */
 
 interface Props {
   spaceId: string
   selectedStorageType?: string
+  googleDriveConnected?: boolean
+  googleDriveAccountEmail?: string | null
 }
 
-const { spaceId, selectedStorageType = 'r2_managed' } = Astro.props as Props
+const {
+  spaceId,
+  selectedStorageType = 'r2_managed',
+  googleDriveConnected = false,
+  googleDriveAccountEmail = null,
+} = Astro.props as Props
 
 const ALL_OPTIONS: {
   value: string
@@ -34,8 +45,10 @@ const ALL_OPTIONS: {
   {
     value: 'google_drive',
     label: 'Google Drive',
-    helper: 'Coming soon — pick a folder in your Google Drive.',
-    enabled: false,
+    helper: googleDriveConnected
+      ? `Connected as ${googleDriveAccountEmail ?? 'Google account'}.`
+      : 'Connect a Google account so Baseout can write CSVs into a Baseout-<space> folder.',
+    enabled: googleDriveConnected,
   },
   {
     value: 'dropbox',
@@ -82,38 +95,64 @@ const NAME = 'backup-storage'
 
   <fieldset class="mt-4 grid gap-3" data-storage-fieldset>
     <legend class="sr-only">Storage destination</legend>
-    {ALL_OPTIONS.map((opt) => (
-      <label
-        class:list={[
-          'flex min-h-11 items-start gap-3 rounded-md border border-base-300 p-3 cursor-pointer',
-          'hover:bg-base-200/50',
-          !opt.enabled && 'opacity-60 cursor-not-allowed',
-        ]}
-        aria-disabled={!opt.enabled ? 'true' : undefined}
-        title={!opt.enabled ? 'Coming soon' : undefined}
-      >
-        <input
-          type="radio"
-          name={NAME}
-          value={opt.value}
-          class="radio radio-primary mt-0.5"
-          checked={opt.value === selectedStorageType}
-          disabled={!opt.enabled}
-          data-storage-radio
-        />
-        <span class="flex-1">
-          <span class="block text-sm font-medium">
-            {opt.label}
-            {!opt.enabled && (
-              <span class="ml-2 align-middle inline-block px-1.5 py-0.5 rounded bg-base-200 text-xs text-base-content/70">
-                Coming soon
-              </span>
+    {ALL_OPTIONS.map((opt) => {
+      const isGoogle = opt.value === 'google_drive'
+      const showConnectAction = isGoogle && !googleDriveConnected
+      const isComingSoon = !opt.enabled && !showConnectAction
+      return (
+        <label
+          class:list={[
+            'flex min-h-11 items-start gap-3 rounded-md border border-base-300 p-3 cursor-pointer',
+            'hover:bg-base-200/50',
+            isComingSoon && 'opacity-60 cursor-not-allowed',
+          ]}
+          aria-disabled={isComingSoon ? 'true' : undefined}
+          title={isComingSoon ? 'Coming soon' : undefined}
+        >
+          <input
+            type="radio"
+            name={NAME}
+            value={opt.value}
+            class="radio radio-primary mt-0.5"
+            checked={opt.value === selectedStorageType}
+            disabled={!opt.enabled}
+            data-storage-radio
+          />
+          <span class="flex-1">
+            <span class="block text-sm font-medium">
+              {opt.label}
+              {isComingSoon && (
+                <span class="ml-2 align-middle inline-block px-1.5 py-0.5 rounded bg-base-200 text-xs text-base-content/70">
+                  Coming soon
+                </span>
+              )}
+              {isGoogle && googleDriveConnected && (
+                <span class="ml-2 align-middle inline-block px-1.5 py-0.5 rounded bg-success/10 text-xs text-success">
+                  Connected
+                </span>
+              )}
+            </span>
+            <span class="block text-xs text-base-content/70">{opt.helper}</span>
+            {showConnectAction && (
+              <form
+                method="POST"
+                action="/api/connections/storage/google-drive/authorize"
+                class="mt-2"
+              >
+                <input type="hidden" name="returnTo" value="/integrations" />
+                <button
+                  type="submit"
+                  class="btn btn-primary btn-sm"
+                  data-connect-google-drive
+                >
+                  Connect Google Drive
+                </button>
+              </form>
             )}
           </span>
-          <span class="block text-xs text-base-content/70">{opt.helper}</span>
-        </span>
-      </label>
-    ))}
+        </label>
+      )
+    })}
   </fieldset>
 
   <p
