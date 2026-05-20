@@ -179,7 +179,7 @@ describe('handlePatch', () => {
     const res = await handlePatch({
       account: makeAccount(),
       spaceId: SPACE_ID,
-      body: { frequency: 'daily', storageType: 'r2_managed' },
+      body: { frequency: 'daily', storageType: 'google_drive' },
       ...d,
     })
     expect(res.status).toBe(200)
@@ -187,7 +187,7 @@ describe('handlePatch', () => {
     expect(d.upsertConfig).toHaveBeenCalledWith({
       spaceId: SPACE_ID,
       frequency: 'daily',
-      storageType: 'r2_managed',
+      storageType: 'google_drive',
     })
   })
 
@@ -226,7 +226,7 @@ describe('handlePatch', () => {
     await handlePatch({
       account: makeAccount(),
       spaceId: SPACE_ID,
-      body: { storageType: 'r2_managed' },
+      body: { storageType: 'google_drive' },
       ...d,
     })
     expect(onScheduledFrequencyChange).not.toHaveBeenCalled()

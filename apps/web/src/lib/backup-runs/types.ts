@@ -92,9 +92,12 @@ export interface BackupRunSummary {
   /**
    * Space's backup configuration at fetch-time. The PRD doesn't snapshot
    * per-run, so this reflects current state. LEFT JOIN — null when no
-   * configuration row exists yet.
+   * configuration row exists yet. `storageType` is also nullable per
+   * openspec/changes/system-r2-park: the `r2_managed` schema default was
+   * dropped, so new configs carry null until the user connects a BYOS
+   * destination.
    */
-  configuration: { storageType: string; mode: string } | null;
+  configuration: { storageType: string | null; mode: string } | null;
   /**
    * Bases currently included in the Space's backup configuration. NOT a
    * per-run snapshot — engine doesn't capture that today. UI labels this

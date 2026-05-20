@@ -14,7 +14,7 @@ describe('saveBackupConfig', () => {
   it('PATCHes the canonical URL with the body', async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse({ ok: true }))
     await saveBackupConfig(
-      { spaceId: SPACE_ID, frequency: 'monthly', storageType: 'r2_managed' },
+      { spaceId: SPACE_ID, frequency: 'monthly', storageType: 'google_drive' },
       { fetchImpl: fetchImpl as unknown as typeof fetch },
     )
     expect(fetchImpl).toHaveBeenCalledOnce()
@@ -23,7 +23,7 @@ describe('saveBackupConfig', () => {
     expect(init?.method).toBe('PATCH')
     expect(JSON.parse(init?.body as string)).toEqual({
       frequency: 'monthly',
-      storageType: 'r2_managed',
+      storageType: 'google_drive',
     })
   })
 

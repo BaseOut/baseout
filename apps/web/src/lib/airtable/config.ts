@@ -18,8 +18,29 @@ export const AIRTABLE_SCOPES = [
   'webhook:manage',
 ] as const
 
-export function getRedirectUri(origin: string): string {
-  return `${origin.replace(/\/$/, '')}/api/connections/airtable/callback`
+/**
+ * Build the redirect URI Airtable will send the user back to.
+ *
+ * Mirrors the rationale in google-drive/config.ts: under `wrangler dev
+ * --remote` the Worker's `url.origin` is the deployed workers.dev hostname,
+ * not the localhost URL the browser sees. Without an override, Airtable
+ * either rejects the URI (if not in its allowlist) or — worse — accepts it
+ * and lands the browser on a different origin than the one holding the
+ * better-auth session cookie, returning 401 on the callback. `env.PUBLIC_
+ * AUTH_BASE_URL` already carries the canonical browser-visible origin
+ * (used by Better Auth for magic-link URLs). Prefer it when set; fall back
+ * to the request origin for callers that haven't plumbed env yet + tests.
+ */
+export interface PublicOriginEnv {
+  PUBLIC_AUTH_BASE_URL?: string
+}
+
+export function getRedirectUri(
+  origin: string,
+  env: PublicOriginEnv = {},
+): string {
+  const base = (env.PUBLIC_AUTH_BASE_URL ?? origin).replace(/\/$/, '')
+  return `${base}/api/connections/airtable/callback`
 }
 
 export interface AirtableOAuthEnv {

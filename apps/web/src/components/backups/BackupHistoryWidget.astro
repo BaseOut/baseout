@@ -50,7 +50,11 @@ function destinationLabel(
   cfg: BackupRunSummary['configuration'],
 ): string {
   if (!cfg) return '—'
-  return `${cfg.storageType} · ${cfg.mode}`
+  // storageType is null until the user connects a BYOS destination per
+  // openspec/changes/system-r2-park — show "no destination" rather than
+  // letting "null" leak into the UI.
+  const dest = cfg.storageType ?? 'no destination'
+  return `${dest} · ${cfg.mode}`
 }
 ---
 
@@ -264,7 +268,11 @@ function destinationLabel(
     cfg: BackupRunSummary['configuration'],
   ): string {
     if (!cfg) return '—'
-    return `${cfg.storageType} · ${cfg.mode}`
+    // storageType is null until the user connects a BYOS destination per
+    // openspec/changes/system-r2-park — show "no destination" rather than
+    // letting "null" leak into the UI.
+    const dest = cfg.storageType ?? 'no destination'
+    return `${dest} · ${cfg.mode}`
   }
 
   function summaryInnerHtml(run: BackupRunSummary): string {

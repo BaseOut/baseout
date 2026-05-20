@@ -33,17 +33,11 @@
     { "tag": "v1", "new_sqlite_classes": ["ConnectionDO", "SpaceDO"] }
   ],
 
-  // R2 buckets — managed backup destination. Restored per
-  // openspec/changes/server-byos-destinations Phase 0 (decision-of-record in
-  // archived system-r2-stance: R2 stays as the all-tiers default behind the
-  // StorageWriter interface). The Trigger.dev backup-base task runs on
-  // Node and can't reach this binding directly; the engine exposes a
-  // proxy upload route (Phase B / E) so the workflows runner writes through
-  // the Worker. Bucket `baseout-backups-dev` is created out-of-band per
-  // server-byos-destinations task 0.1.3.
-  "r2_buckets": [
-    { "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-dev" }
-  ],
+  // Managed R2 is paused per openspec/changes/system-r2-park. The
+  // BACKUPS_R2 binding + r2_buckets block were removed; the dev + prod
+  // write paths are BYOS via the StorageWriter interface. A future
+  // server-r2-revive change restores the binding (recoverable via
+  // `git show fbdc26e^.. -- apps/server/wrangler.jsonc.example`).
 
   // Hyperdrive — local dev uses localConnectionString; the `id` is just a
   // label until the Hyperdrive is provisioned for staging/production deploy.
@@ -110,10 +104,7 @@
           { "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
           { "name": "SPACE_DO", "class_name": "SpaceDO" }
         ]
-      },
-      "r2_buckets": [
-        { "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-dev" }
-      ]
+      }
     },
     "production": {
       "name": "baseout-server"

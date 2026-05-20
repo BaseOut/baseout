@@ -33,7 +33,10 @@ const state: IntegrationsState =
         hasBackupConfig: false,
         policy: {
           frequency: 'monthly',
-          storageType: 'r2_managed',
+          // Per openspec/changes/system-r2-park, managed R2 is paused —
+          // the unauthed fallback policy carries null storageType so the
+          // UI surfaces the StoragePicker "Connect a destination" path.
+          storageType: null,
           nextScheduledAt: null,
           autoAddFutureBases: false,
         },

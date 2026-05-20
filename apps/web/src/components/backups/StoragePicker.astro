@@ -2,15 +2,19 @@
 /**
  * Wizard step 4 — Storage destination picker.
  *
- * MVP: Cloudflare R2 (managed) + Google Drive are selectable. Drive
+ * Per openspec/changes/system-r2-park, managed R2 is paused. Google Drive
+ * is the recommended (and today, only selectable) destination. Drive
  * requires an OAuth connection first — the row exposes a "Connect Google
  * Drive" link that goes through /api/connections/storage/google-drive/
- * authorize. Once connected, the radio is selectable and `oauth_account_email`
- * shows. Other rows remain disabled with a "Coming soon" label.
+ * authorize. Once connected, the radio is selectable and
+ * `oauth_account_email` shows. R2 stays in the list as a "Paused" row so
+ * existing customers see the reason; other rows remain disabled with a
+ * "Coming soon" label.
  *
  * Props:
  *   spaceId                  — UUID of the active Space
- *   selectedStorageType      — currently saved value (defaults to 'r2_managed')
+ *   selectedStorageType      — currently saved value (null until the user
+ *                              connects a BYOS destination, post-pause)
  *   googleDriveConnected     — true if storage_destinations has a google_drive
  *                              row for this Space (callback success)
  *   googleDriveAccountEmail  — `oauth_account_email` for display
@@ -18,14 +22,14 @@
 
 interface Props {
   spaceId: string
-  selectedStorageType?: string
+  selectedStorageType?: string | null
   googleDriveConnected?: boolean
   googleDriveAccountEmail?: string | null
 }
 
 const {
   spaceId,
-  selectedStorageType = 'r2_managed',
+  selectedStorageType = null,
   googleDriveConnected = false,
   googleDriveAccountEmail = null,
 } = Astro.props as Props
@@ -35,20 +39,22 @@ const ALL_OPTIONS: {
   label: string
   helper: string
   enabled: boolean
+  comingSoonLabel?: string
 }[] = [
-  {
-    value: 'r2_managed',
-    label: 'Cloudflare R2 (managed by Baseout)',
-    helper: 'Default — encrypted at rest, no setup required.',
-    enabled: true,
-  },
   {
     value: 'google_drive',
     label: 'Google Drive',
     helper: googleDriveConnected
       ? `Connected as ${googleDriveAccountEmail ?? 'Google account'}.`
-      : 'Connect a Google account so Baseout can write CSVs into a Baseout-<space> folder.',
+      : 'Recommended — connect a Google account so Baseout can write CSVs into a Baseout-<space> folder.',
     enabled: googleDriveConnected,
+  },
+  {
+    value: 'r2_managed',
+    label: 'Cloudflare R2 (managed by Baseout)',
+    helper: 'Paused — managed storage is on hold per system-r2-park; revisit later.',
+    enabled: false,
+    comingSoonLabel: 'Paused',
   },
   {
     value: 'dropbox',
@@ -89,8 +95,8 @@ const NAME = 'backup-storage'
     Storage destination
   </h3>
   <p class="mt-1 text-sm text-base-content/70">
-    Where Baseout writes the CSV backup. R2 is the managed default; bring-
-    your-own-storage providers ship in a later phase.
+    Where Baseout writes the CSV backup. Connect a destination so the
+    engine has somewhere to write — managed storage is paused for now.
   </p>
 
   <fieldset class="mt-4 grid gap-3" data-storage-fieldset>
@@ -107,7 +113,7 @@ const NAME = 'backup-storage'
             isComingSoon && 'opacity-60 cursor-not-allowed',
           ]}
           aria-disabled={isComingSoon ? 'true' : undefined}
-          title={isComingSoon ? 'Coming soon' : undefined}
+          title={isComingSoon ? (opt.comingSoonLabel ?? 'Coming soon') : undefined}
         >
           <input
             type="radio"
@@ -123,7 +129,7 @@ const NAME = 'backup-storage'
               {opt.label}
               {isComingSoon && (
                 <span class="ml-2 align-middle inline-block px-1.5 py-0.5 rounded bg-base-200 text-xs text-base-content/70">
-                  Coming soon
+                  {opt.comingSoonLabel ?? 'Coming soon'}
                 </span>
               )}
               {isGoogle && googleDriveConnected && (
@@ -138,6 +144,7 @@ const NAME = 'backup-storage'
                 method="POST"
                 action="/api/connections/storage/google-drive/authorize"
                 class="mt-2"
+                data-astro-reload
               >
                 <input type="hidden" name="returnTo" value="/integrations" />
                 <button

@@ -19,15 +19,17 @@
 //        (5 tables / 1000 records). Add the column + the pre-enqueue
 //        check together when the cleanup phase mirrors orgs/spaces.
 //
-// Reminders pinned in the plan:
-//   - storageType: only 'r2_managed' is valid in MVP. Reject otherwise.
-//     The Phase 10.4 StoragePicker UI only enables r2_managed so this
-//     should never fire from the supported flow — defense-in-depth.
+// Storage-destination validation (per openspec/changes/system-r2-park):
+//   - storageType MUST NOT be 'r2_managed' — managed R2 is paused.
+//   - The Space MUST have a connected storage_destinations row. Without it
+//     the workflows runner has nothing to write to. The row's `type` value
+//     also drives the StorageWriter dispatch downstream.
 
 import type {
   BackupConfigurationRow,
   BackupRunRow,
   ConnectionRow,
+  StorageDestinationRow,
 } from "../../db/schema";
 
 export interface ProcessRunStartInput {
@@ -69,6 +71,9 @@ export interface ProcessRunStartDeps {
   fetchConfigBySpace: (
     spaceId: string,
   ) => Promise<BackupConfigurationRow | null>;
+  fetchStorageDestinationBySpace: (
+    spaceId: string,
+  ) => Promise<StorageDestinationRow | null>;
   fetchIncludedBases: (configId: string) => Promise<IncludedBase[]>;
   updateRunStarted: (runId: string, startedAt: Date) => Promise<void>;
   updateRunTriggerIds: (runId: string, triggerRunIds: string[]) => Promise<void>;
@@ -89,7 +94,8 @@ export type ProcessRunStartResult =
         | "connection_not_found"
         | "invalid_connection"
         | "config_not_found"
-        | "unsupported_storage_type"
+        | "managed_r2_paused"
+        | "no_storage_destination"
         | "no_bases_selected";
     };
 
@@ -120,8 +126,21 @@ export async function processRunStart(
   //    storage/frequency picker yet.
   const config = await deps.fetchConfigBySpace(run.spaceId);
   if (!config) return { ok: false, error: "config_not_found" };
-  if (config.storageType !== "r2_managed") {
-    return { ok: false, error: "unsupported_storage_type" };
+
+  // 3a. Managed R2 is paused per openspec/changes/system-r2-park. Reject any
+  //     config that still names it. Reviving R2 = re-add the dispatch case
+  //     in storage-writer.ts AND drop this guard.
+  if (config.storageType === "r2_managed") {
+    return { ok: false, error: "managed_r2_paused" };
+  }
+
+  // 3b. With R2 paused, every Space MUST have a connected BYOS destination
+  //     row before its first backup. The downstream writer dispatch reads
+  //     the row to pick a strategy; missing means the user hasn't completed
+  //     the OAuth Connect flow yet.
+  const destination = await deps.fetchStorageDestinationBySpace(run.spaceId);
+  if (!destination) {
+    return { ok: false, error: "no_storage_destination" };
   }
 
   // 4. At least one base must be marked is_included=true.

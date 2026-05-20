@@ -48,6 +48,16 @@ describe('persistBackupConfigPolicy', () => {
     expect(d.upsertConfig).not.toHaveBeenCalled()
   })
 
+  it('rejects r2_managed per system-r2-park (managed storage paused)', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      { spaceId: SPACE_ID, body: { storageType: 'r2_managed' }, tier: 'starter' },
+      d,
+    )
+    expect(result).toEqual({ ok: false, error: 'unsupported_storage_type' })
+    expect(d.upsertConfig).not.toHaveBeenCalled()
+  })
+
   it('rejects unknown fields with invalid_request', async () => {
     const d = deps()
     const result = await persistBackupConfigPolicy(
@@ -85,7 +95,7 @@ describe('persistBackupConfigPolicy', () => {
     const result = await persistBackupConfigPolicy(
       {
         spaceId: SPACE_ID,
-        body: { frequency: 'daily', storageType: 'r2_managed' },
+        body: { frequency: 'daily', storageType: 'google_drive' },
         tier: 'pro',
       },
       d,
@@ -95,7 +105,7 @@ describe('persistBackupConfigPolicy', () => {
     expect(d.upsertConfig).toHaveBeenCalledWith({
       spaceId: SPACE_ID,
       frequency: 'daily',
-      storageType: 'r2_managed',
+      storageType: 'google_drive',
     })
   })
 
@@ -115,13 +125,13 @@ describe('persistBackupConfigPolicy', () => {
   it('upserts only storageType when frequency is absent', async () => {
     const d = deps()
     const result = await persistBackupConfigPolicy(
-      { spaceId: SPACE_ID, body: { storageType: 'r2_managed' }, tier: 'starter' },
+      { spaceId: SPACE_ID, body: { storageType: 'google_drive' }, tier: 'starter' },
       d,
     )
     expect(result).toEqual({ ok: true })
     expect(d.upsertConfig).toHaveBeenCalledWith({
       spaceId: SPACE_ID,
-      storageType: 'r2_managed',
+      storageType: 'google_drive',
     })
   })
 

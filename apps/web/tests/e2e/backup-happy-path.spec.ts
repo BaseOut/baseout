@@ -14,9 +14,13 @@
  * Intentionally NOT covered (deferred):
  *   - Assert the run reaches `succeeded`. That requires an apps/server
  *     E2E_TEST_MODE short-circuit that runs runBackupBase inline against
- *     stub Airtable + real R2, plus stub endpoints for /v0/{baseId}/...
- *     records pagination. Tracked as a follow-up after this spec lands.
- *   - Assert a CSV exists in R2. Same blocker as above.
+ *     stub Airtable + a stub BYOS destination, plus stub endpoints for
+ *     /v0/{baseId}/... records pagination. Tracked as a follow-up after
+ *     this spec lands.
+ *   - Assert a CSV lands in the BYOS destination. Same blocker as above.
+ *     (Pre openspec/changes/system-r2-park this referenced "real R2";
+ *     managed R2 is paused so the asserted destination is now BYOS —
+ *     Google Drive, the only Connect flow shipped today.)
  *
  * Why a seed-endpoint shortcut instead of walking the full OAuth +
  * onboarding flow: the post-magic-link onboarding wizard plus the Airtable

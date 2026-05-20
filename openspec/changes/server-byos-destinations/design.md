@@ -1,8 +1,10 @@
 ## Overview
 
-Eight phases (0 plus A–G). Phase 0 re-introduces the managed R2 binding removed by commit `8fc1f61` (per [`system-r2-stance`](../system-r2-stance/proposal.md)). The remaining seven phases follow as originally drafted. The load-bearing chain is 0 (R2 binding) → A (schema) → B (interface) → C (one provider's connect flow + strategy, end-to-end). Each subsequent provider after the first is a parallel + smaller workstream — same shape, different SDK. Recommended order:
+> Per [`system-r2-park`](../system-r2-park/proposal.md), the managed-R2 Phase 0 work is parked. Phases A (schema) and B (`StorageWriter` interface + BYOS strategies) remain in scope. The `storage_destinations.type` CHECK constraint keeps `r2_managed` as a permitted value so revival is a one-flag flip rather than a migration; no strategy class ships under that name today. The `makeStorageWriter` factory's `r2_managed` case throws "managed R2 paused" until a future `server-r2-revive` change re-adds the strategy.
 
-1. Google Drive (highest customer demand, well-documented SDK)
+Seven phases (A–G). The load-bearing chain is A (schema) → B (interface) → C (one provider's connect flow + strategy, end-to-end). Each subsequent provider after the first is a parallel + smaller workstream — same shape, different SDK. Recommended order:
+
+1. Google Drive (highest customer demand, well-documented SDK; **default destination** per [`system-r2-park`](../system-r2-park/proposal.md))
 2. S3 (no OAuth, simpler — IAM-keys form)
 3. Dropbox (proxy streaming, sets the pattern for Box)
 4. Box
@@ -10,62 +12,6 @@ Eight phases (0 plus A–G). Phase 0 re-introduces the managed R2 binding remove
 6. Frame.io (Growth+, lowest priority)
 
 Architectural call: **one strategy class per provider, behind a common `StorageWriter` interface.** No conditional logic in the per-base task — strategy selection happens at run start, the task only knows about the interface. This makes adding a 7th provider a matter of dropping a new file under `strategies/`.
-
-## Phase 0 — Re-introduce managed R2 binding
-
-Required first per [`system-r2-stance`](../system-r2-stance/proposal.md). Commit `8fc1f61` removed the `BACKUPS_R2` Cloudflare Workers binding from `apps/server`; this phase re-introduces it before any `StorageWriter` strategy can land.
-
-### Binding shape: Workers binding API, not S3-compatible API
-
-R2 exposes two access surfaces: a native Cloudflare Workers **binding** (e.g. `env.BACKUPS_R2.put(...)`) and an S3-compatible HTTP API. The strategy class uses the binding API for these reasons:
-
-- **Pre-`8fc1f61` parity.** The deleted `r2-proxy-write.ts` was binding-based. Reintroducing the same shape minimizes diff surface and risk.
-- **No HTTP client in the Worker.** Binding methods are direct calls into the runtime; the S3 API would pull in Signature v4 + a streaming fetch wrapper. Strictly more code inside workerd's 1MB bundle limit.
-- **No egress cost.** Binding traffic stays inside Cloudflare's network; S3-API traffic over HTTPS is metered as egress.
-- **Per-bucket signed URLs.** The binding provides `bucket.createSignedUrl(...)` (used by the future restore engine) without needing Signature v4 implementation.
-
-The S3-compatible API stays available for any future "external S3-style endpoint" use case (e.g. third-party tooling that needs to read R2 from outside Cloudflare). It is **not** the path used by `R2ManagedWriter`.
-
-### Strategy class: `R2ManagedWriter`
-
-The Phase B `StorageWriter` interface lands as part of this same change. Its first implementation:
-
-```ts
-// apps/server/src/lib/storage/strategies/r2-managed.ts
-export class R2ManagedWriter implements StorageWriter {
-  constructor(private bucket: R2Bucket) {}
-
-  async init() { /* no-op: bucket lifecycle is provisioned out-of-band */ }
-
-  async writeFile(stream: ReadableStream, path: string, mimeType?: string) {
-    const r = await this.bucket.put(path, stream, { httpMetadata: { contentType: mimeType } })
-    return { destinationKey: r.key, sizeBytes: r.size }
-  }
-
-  async getDownloadUrl(path: string) {
-    // R2 binding signed URL; short-lived (e.g. 5 min)
-    return this.bucket.createSignedUrl(path, { expiresIn: 300 })
-  }
-
-  async delete(path: string) { await this.bucket.delete(path) }
-}
-```
-
-No `proxyStreamMode` flag — managed R2 always stages the CSV / attachment to its own bucket; proxy-streaming only applies to providers (Box, Dropbox) whose APIs require the client to pipe rather than two-hop.
-
-### Restoration steps
-
-1. Re-add `BACKUPS_R2` to [apps/server/wrangler.jsonc.example](../../../apps/server/wrangler.jsonc.example) and `apps/server/wrangler.test.jsonc`. The exact block is recoverable via `git show 8fc1f61^:apps/server/wrangler.jsonc.example`.
-2. Re-add `BACKUPS_R2: R2Bucket` to the `Env` interface in [apps/server/src/env.d.ts](../../../apps/server/src/env.d.ts).
-3. Provision the production R2 bucket (`backups`). Capture credentials in Cloudflare Secrets per [CLAUDE.md §3.3](../../../CLAUDE.md).
-4. Add a `STORAGE_DEV_MODE` env var (default `local-fs`) so local development keeps writing to `apps/server/.backups/` via [`local-fs-write.ts`](../../../apps/server/trigger/tasks/_lib/local-fs-write.ts) without needing R2 credentials.
-
-### Out of Phase 0
-
-- The `StorageWriter` interface declaration itself (it's defined in Phase B alongside `makeStorageWriter`; Phase 0 just guarantees the binding the `R2ManagedWriter` will need).
-- Re-creating the deleted `r2-proxy-write.ts` standalone helper. The post-`8fc1f61` shape has the write call inside `R2ManagedWriter`, not in a free-floating helper.
-- Switching the dev path to Miniflare-R2. Deferred — `local-fs-write.ts` is sufficient for now.
-- Workflows-side enqueue plumbing. The strategy-class swap inside `backup-base.task.ts` happens in [`workflows-byos-destinations`](../workflows-byos-destinations/tasks.md).
 
 ## Phase A — `storage_destinations` schema
 
@@ -105,7 +51,7 @@ CREATE INDEX storage_destinations_space_id_idx ON baseout.storage_destinations (
 
 The `_enc` columns hold AES-256-GCM ciphertext per CLAUDE.md §3.3. The plaintext is `{ accessToken, refreshToken, etc }` JSON-serialized then encrypted.
 
-For `r2_managed`, the row exists with `type='r2_managed'` and all secret columns NULL — the engine just routes to managed R2.
+The `r2_managed` value remains in the CHECK constraint per [`system-r2-park`](../system-r2-park/proposal.md) — reviving managed R2 should be a one-flag flip, not a migration. No rows are written with `type='r2_managed'` today; the engine rejects writes to that type until a future `server-r2-revive` change re-adds the strategy.
 
 ## Phase B — `StorageWriter` interface
 
@@ -153,16 +99,18 @@ export function makeStorageWriter(
 ): StorageWriter
 ```
 
-The `makeStorageWriter` factory dispatches on `dest.type`:
+The `makeStorageWriter` factory dispatches on `dest.type`. The `r2_managed` case remains in the type union (per the schema CHECK constraint) but throws "managed R2 paused per system-r2-park" until a future `server-r2-revive` change re-adds the strategy:
 
 ```ts
 switch (dest.type) {
-  case 'r2_managed':   return new R2ManagedWriter(env.BACKUPS_R2)
+  case 'r2_managed':   throw new Error('managed R2 paused per system-r2-park')
   case 'google_drive': return new GoogleDriveWriter(decrypt(dest.oauth_access_token_enc, masterKey), dest.provider_folder_id)
   case 'dropbox':      return new DropboxWriter(decrypt(...), dest.provider_folder_id)
   // ...
 }
 ```
+
+Validation upstream of the factory (in [apps/server/src/lib/runs/start.ts](../../../apps/server/src/lib/runs/start.ts)) rejects runs against `type='r2_managed'` before the task is enqueued, so the throw above is defense-in-depth, not a user-visible error.
 
 ## Phase C — Per-provider strategies
 
@@ -235,7 +183,10 @@ type StorageDestinationType = 'r2_managed' | 'google_drive' | 'dropbox' | 'box' 
 
 resolveStorageDestinations(tier: TierName): { allowedTypes: StorageDestinationType[] }
 
-// Trial/Starter/Launch: ['r2_managed', 'google_drive', 'dropbox', 'box', 'onedrive']
+// Per system-r2-park, `r2_managed` is omitted from every tier's allowedTypes — the
+// type stays in the union (so a future server-r2-revive can re-promote it without
+// a schema change) but no tier may write a row with that type today.
+// Trial/Starter/Launch: ['google_drive', 'dropbox', 'box', 'onedrive']
 // Growth/Pro/Business/Enterprise: same + ['s3', 'frame_io']
 // Pro+: same + ['custom']  (custom out of scope for this change)
 ```
@@ -258,7 +209,7 @@ The `oauth_states` table (or signed cookie) prevents CSRF + replay.
 
 ## Phase F — Engine integration
 
-In `apps/workflows/trigger/tasks/backup-base.task.ts`, replace the current `writeCsvToLocalDisk` call (which is the temporary post-R2-removal stand-in) with the `StorageWriter` lookup + call:
+In `apps/workflows/trigger/tasks/backup-base.task.ts`, replace the current `writeCsvToLocalDisk` call with the `StorageWriter` lookup + call. Per [`system-r2-park`](../system-r2-park/proposal.md), `loadStorageDestination` MUST return a connected BYOS row — there is no managed-R2 fallback to stage to, so the task fails fast if no destination is connected:
 
 ```ts
 const dest = await loadStorageDestination(ctx.spaceId, deps.db)
@@ -266,7 +217,7 @@ const writer = makeStorageWriter(dest, deps.env, deps.masterKey)
 await writer.init()
 
 if (writer.proxyStreamMode) {
-  // Box / Dropbox: pipe Airtable stream directly through writeFile, no R2 stage.
+  // Box / Dropbox: pipe Airtable stream directly through writeFile.
   await writer.writeFile(airtableStream, `${ctx.runId}/${baseId}/records.csv`, 'text/csv')
 } else {
   // Default: buffer the CSV in memory (already does this for CSV serialization),
@@ -317,5 +268,5 @@ Attachment streaming (per `server-attachments`) routes through the same `writer.
 - The per-base task envelope (Trigger.dev v3, `maxDuration: 600`, ConnectionDO lock).
 - The CSV format. Whether the CSV lands in R2 or Google Drive doesn't change the bytes.
 - Restore. Out of scope; will consume `getDownloadUrl` when it lands.
-- The retention engine. Will consume `writer.delete(path)` for managed R2; BYOS destinations are customer-managed for retention per Features §6.6.
+- The retention engine. Per [`system-r2-park`](../system-r2-park/proposal.md), every destination is BYOS; `runCleanupPass` sets `backup_runs.deleted_at` for history-widget hiding but never calls `writer.delete()` on customer storage (BYOS retention is the customer's responsibility per Features §6.6).
 - The encryption-key shape. Same AES-256-GCM helper from `@baseout/shared`.

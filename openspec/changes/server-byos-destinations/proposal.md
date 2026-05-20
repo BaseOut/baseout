@@ -1,9 +1,9 @@
-> **Depends on**: [`system-r2-stance`](../system-r2-stance/proposal.md) — Per the decision recorded there, managed R2 is the default destination. Phase 0 below re-introduces the `BACKUPS_R2` binding that was removed in commit `8fc1f61`.
+> **Depends on**: [`system-r2-park`](../system-r2-park/proposal.md) — Managed R2 is paused; this change ships the `StorageWriter` interface + BYOS provider strategies only. The Phase 0 work that previously restored the `BACKUPS_R2` binding is parked in Out of Scope.
 
 ## Why
 
 
-The `StoragePicker` UI in [apps/web/src/components/backups/StoragePicker.astro](../../../apps/web/src/components/backups/StoragePicker.astro) shows seven destination options — `r2_managed`, `google_drive`, `dropbox`, `box`, `onedrive`, `s3`, `frame_io` — but only `r2_managed` is selectable. Every other option is locked with a "Coming soon" label. The engine has no `StorageWriter` interface, no OAuth tokens for any non-Airtable provider, and no per-provider write path. The `backup-base.task.ts` currently writes to local disk via `apps/workflows/trigger/tasks/_lib/local-fs-write.ts` (R2 was removed in commit `8fc1f61` so the task could ship on Trigger.dev's Node runner without a Worker-only binding). R2-managed is the **first** BYOS destination this change re-introduces — it lands behind the same `StorageWriter` interface as the BYOS providers, not as a bespoke fast path.
+The `StoragePicker` UI in [apps/web/src/components/backups/StoragePicker.astro](../../../apps/web/src/components/backups/StoragePicker.astro) shows seven destination options — `r2_managed`, `google_drive`, `dropbox`, `box`, `onedrive`, `s3`, `frame_io` — but only `r2_managed` is selectable. Every other option is locked with a "Coming soon" label. The engine has no `StorageWriter` interface, no OAuth tokens for any non-Airtable provider, and no per-provider write path. The `backup-base.task.ts` currently writes to local disk via `apps/workflows/trigger/tasks/_lib/local-fs-write.ts` (R2 was removed in commit `8fc1f61` so the task could ship on Trigger.dev's Node runner without a Worker-only binding). Per [`system-r2-park`](../system-r2-park/proposal.md), managed R2 is paused; the BYOS providers below become the only writeable production destinations in V1.
 
 
 [PRD §7.2](../../../shared/Baseout_PRD.md) lists BYOS as a V1 Must-Have:
@@ -25,16 +25,6 @@ The existing openspec change `server/specs/storage-destinations/spec.md` already
 **Scope decision**: ship all six providers in one change. Splitting per-provider would create six near-identical OAuth proposal files. The phase structure lets the team ship Google Drive first (the most common) and add the others incrementally — but the architecture, the schema, and the `StorageWriter` interface are common across all of them, so they belong in one change.
 
 ## What Changes
-
-### Phase 0 — Re-introduce managed R2 binding
-
-Required first because commit `8fc1f61` removed it. Without this phase, Phase B's `r2-managed.ts` strategy has nothing to wrap, and the downstream `server-attachments` Phase B and `server-retention-and-cleanup` cleanup paths are blocked.
-
-- Re-add `BACKUPS_R2` binding to [apps/server/wrangler.jsonc.example](../../../apps/server/wrangler.jsonc.example) and `apps/server/wrangler.test.jsonc`. The shape was last present at `git show 8fc1f61^:apps/server/wrangler.jsonc.example`.
-- Re-add `BACKUPS_R2: R2Bucket` to the `Env` interface in [apps/server/src/env.d.ts](../../../apps/server/src/env.d.ts).
-- Provision the production R2 bucket (`backups`) and capture the bucket name + access keys in Cloudflare Secrets per [CLAUDE.md §3.3](../../../CLAUDE.md).
-- Recover the deleted `r2-proxy-write.ts` helper as a starting point for `r2-managed.ts` (`git show 8fc1f61^:apps/server/trigger/tasks/_lib/r2-proxy-write.ts`) — but rewrap it behind the `StorageWriter` interface defined in Phase B rather than re-introducing the standalone helper.
-- The dev path stays at [`local-fs-write.ts`](../../../apps/server/trigger/tasks/_lib/local-fs-write.ts), selected by an env var (e.g. `STORAGE_DEV_MODE=local-fs`). The decision whether to switch dev to Miniflare-R2 is deferred to the Phase 0 implementer.
 
 ### Phase A — `storage_destinations` schema
 
@@ -71,19 +61,19 @@ Required first because commit `8fc1f61` removed it. Without this phase, Phase B'
   ```
 
 - Implementations under `apps/server/src/lib/storage/strategies/`:
-  - `r2-managed.ts` — reintroduces R2 via the Worker's `env.BACKUPS_R2` binding (re-added as part of this change; the previous direct-write was removed in `8fc1f61`). Tier-gating: all. Default destination when no `storage_destinations` row exists for a Space.
-  - `google-drive.ts` — OAuth2 + Drive v3 API. Tier-gating: all.
+  - `google-drive.ts` — OAuth2 + Drive v3 API. Tier-gating: all. Default destination per [`system-r2-park`](../system-r2-park/proposal.md); a Space MUST have a connected `storage_destinations` row before its first backup can run.
   - `dropbox.ts` — OAuth2 + Dropbox API + chunked upload. `proxyStreamMode=true`. Tier-gating: all.
   - `box.ts` — OAuth2 + Box API + chunked upload. `proxyStreamMode=true`. Tier-gating: all.
   - `onedrive.ts` — OAuth2 + Microsoft Graph API. Tier-gating: all.
   - `s3.ts` — IAM access-key auth + S3 PutObject (or multipart for large files). Tier-gating: Growth+.
   - `frame-io.ts` — OAuth2 + Frame.io API. Tier-gating: Growth+.
 
-- **Strategy selection** in `backup-base.task.ts`:
+- **Strategy selection** in `backup-base.task.ts`. Per [`system-r2-park`](../system-r2-park/proposal.md), there is no managed-R2 fallback — `loadStorageDestination` MUST return a connected BYOS row, or the run is rejected up front in `start.ts`.
 
   ```ts
-  const dest = await loadStorageDestination(spaceId, db)
-  const writer = makeStorageWriter(dest, env, masterKey)
+  // Example: a Space connected to Google Drive
+  const dest = await loadStorageDestination(spaceId, db)  // throws if no row
+  const writer = makeStorageWriter(dest, env, masterKey)  // e.g. GoogleDriveWriter
   await writer.init()
   await writer.writeFile(stream, path)
   ```
@@ -124,6 +114,8 @@ Required first because commit `8fc1f61` removed it. Without this phase, Phase B'
 
 | Deferred to | Item |
 |---|---|
+| Future change — R2 revival (per [`system-r2-park`](../system-r2-park/proposal.md)) | Re-introduce managed R2 binding + `r2-managed.ts` strategy (was Phase 0 pre-`system-r2-park`). Restoration steps were: re-add `BACKUPS_R2` to `wrangler.jsonc.example` / `wrangler.test.jsonc` / `env.d.ts`; provision the production R2 bucket; rewrap the deleted `r2-proxy-write.ts` behind `StorageWriter`. Recoverable via `git show fbdc26e^.. -- apps/server/wrangler.jsonc.example apps/server/wrangler.test.jsonc apps/server/src/env.d.ts` and `git show 52c1315 -- apps/server/src/lib/storage/strategies/r2-managed.ts`. |
+| Future change — R2 revival | `STORAGE_DEV_MODE` env var that previously selected between R2 (managed) and `local-fs-write.ts` (dev). The dev path stays at `local-fs-write.ts` unconditionally until R2 returns. |
 | Future change `server-custom-byos` | Custom/BYOS Pro+ destination per Features §6.6 — for self-hosted storage with a customer-provided endpoint. Different auth model (HMAC service token); separate concern. |
 | Future change `server-storage-failover` | Auto-failover to managed R2 when a BYOS provider is unreachable for > N minutes. Today: failure marks the run failed; next retry. |
 | Future change `server-byos-folder-picker` | Rich GUI folder picker for OAuth destinations (browse the connected account's directory tree). First-pass MVP creates a `Baseout-<spaceId>` folder at the root. |
@@ -163,8 +155,8 @@ Required first because commit `8fc1f61` removed it. Without this phase, Phase B'
 
 - **Phase A** (schema): additive. Reverting leaves the table empty.
 - **Phase B** (interface): pure code addition.
-- **Phase C** (OAuth flows): can be feature-flagged per provider. Disconnecting a Space's BYOS destination falls back to managed R2.
+- **Phase C** (OAuth flows): can be feature-flagged per provider. Disconnecting a Space's BYOS destination blocks the next backup run (no managed-R2 fallback — managed R2 is paused per [`system-r2-park`](../system-r2-park/proposal.md)).
 - **Phase D** (capability gating): roll-forward; reverting removes the lock.
-- **Phase E** (proxy streaming): the `proxyStreamMode` branch is opt-in; removing it falls back to R2-stage-then-write (works but slow for those providers).
+- **Phase E** (proxy streaming): the `proxyStreamMode` branch is opt-in; removing it falls back to buffer-in-memory-then-write (works but slow for large files on those providers — and there is no R2 staging available per [`system-r2-park`](../system-r2-park/proposal.md)).
 
 The only forward-only data is the customer-side written files. If we revert after a customer has BYOS-written snapshots, those snapshots remain in the customer's storage — that's fine because they own it. Baseout's master DB metadata stays consistent.

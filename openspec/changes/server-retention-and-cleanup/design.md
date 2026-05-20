@@ -1,13 +1,15 @@
 ## Overview
 
-Six phases. Phase A (schema) → Phase B (resolver) → Phase C (cleanup engine) are the load-bearing chain; D/E/F are layered on top. Phases A+B+C land first as one "engine works on hardcoded defaults" milestone before any user-editable UI. That lets us smoke the destructive R2 delete path in isolation before adding the manual-trigger button and the settings page.
+> Per [`system-r2-park`](../system-r2-park/proposal.md), this cleanup engine no longer issues destination-side `DELETE` requests. The Phase C work below simplifies to "decide which runs are expired → UPDATE `backup_runs.deleted_at`." References to "R2 delete," "deleted object count," and the R2 list-by-prefix pattern in earlier drafts of this file are kept for historical context with inline strike-through notes; a future `server-r2-revive` change would re-add the destination-side delete path.
+
+Six phases. Phase A (schema) → Phase B (resolver) → Phase C (cleanup engine) are the load-bearing chain; D/E/F are layered on top. Phases A+B+C land first as one "engine works on hardcoded defaults" milestone before any user-editable UI. That lets us smoke the metadata-expiration path in isolation before adding the manual-trigger button and the settings page.
 
 Hard architectural call: **cleanup runs on a Trigger.dev scheduled task, not a SpaceDO alarm.** Rationale:
 
 - SpaceDO alarms are per-Space. With ~thousands of Spaces and most policies firing daily/weekly/monthly, the alarm topology is wasteful — N alarms doing the same thing.
 - Trigger.dev v3 scheduled tasks already exist in [apps/workflows/trigger/tasks/](../../../apps/workflows/trigger/tasks/). Cron coverage, retries, observability come free.
 - The cleanup task scans `backup_runs` once per hour across all Spaces in a single pass. At MVP scale (low hundreds of Spaces × ~10 retained runs each) this is a single sub-second query.
-- The decision *which runs to keep/delete* is a pure function `decideDeletions(runs, policy, now)`. Easy to unit-test in isolation; the cron is a thin wrapper that fans out R2 deletes.
+- The decision *which runs to keep/expire* is a pure function `decideDeletions(runs, policy, now)`. Easy to unit-test in isolation; the cron is a thin wrapper that UPDATEs `backup_runs.deleted_at` (no destination-side delete per [`system-r2-park`](../system-r2-park/proposal.md)).
 
 If MVP scale ever grows past ~50k Spaces, the topology can flip to per-Space DO alarms without changing the pure function. Out of scope for this change.
 
@@ -49,7 +51,7 @@ ALTER TABLE baseout.backup_runs
   ADD COLUMN deleted_at timestamp with time zone NULL;
 ```
 
-Soft-delete marker. Set when the cleanup engine deletes the R2 objects for this run. Existing history-listing queries (`SELECT * FROM backup_runs WHERE space_id = $1 ORDER BY started_at DESC`) keep working unchanged; the new UI path filters or labels `deleted_at IS NOT NULL` rows.
+Soft-delete marker. Set when the cleanup engine expires a run (the metadata is hidden from the history widget; per [`system-r2-park`](../system-r2-park/proposal.md), no destination-side delete is issued). Existing history-listing queries (`SELECT * FROM backup_runs WHERE space_id = $1 ORDER BY started_at DESC`) keep working unchanged; the new UI path filters or labels `deleted_at IS NOT NULL` rows.
 
 ## Phase B — Capability resolution
 
@@ -80,7 +82,7 @@ Per-tier defaults derived from [Features §6.9 + §3](../../../shared/Baseout_Fe
 | Business | `custom`, free-form, default = three-tier shape | 24mo window |
 | Enterprise | `custom`, free-form | unbounded |
 
-The "tier-cap" column is enforced at decide-time, not at policy-edit-time — a Business user can write a Custom policy that keeps everything forever; the cleanup engine still respects the 24mo window as the upper bound. (Implementation: `decideDeletions` always deletes runs older than `tier-cap` regardless of policy.)
+The "tier-cap" column is enforced at decide-time, not at policy-edit-time — a Business user can write a Custom policy that keeps everything forever; the cleanup engine still respects the 24mo window as the upper bound. (Implementation: `decideDeletions` always expires runs older than `tier-cap` regardless of policy.)
 
 ## Phase C — Cleanup engine architecture
 
@@ -137,11 +139,9 @@ export const cleanupExpiredSnapshots = schedules.task({
     const result = await runCleanupPass({
       now: new Date(payload.timestamp),
       db: createMasterDb(),
-      // Pass the active StorageWriter resolver (per server-byos-destinations).
-      // R2-managed is one provider; cleanup deletes via writer.delete(key).
-      // Direct env.BACKUPS_R2 use was removed in commit 8fc1f61 — reintroduced as
-      // a strategy in the BYOS change family.
-      makeWriter: (dest) => makeStorageWriter(dest, env, masterKey),
+      // Per system-r2-park, no StorageWriter is passed — runCleanupPass only
+      // updates backup_runs.deleted_at. BYOS retention is the customer's
+      // responsibility per Features §6.6.
       logger: ctx.logger,
     })
     return result
@@ -157,16 +157,14 @@ export const cleanupExpiredSnapshots = schedules.task({
    - SELECT its non-deleted runs ordered by `started_at DESC`.
    - Resolve `tierCapDays` from the Space's organization's subscription tier.
    - Call `decideDeletions(runs, policy, tierCapDays, now)`.
-   - For each `delete` runId:
-     - `r2.list({ prefix: spaceId + '/' + runId + '/' })` → bulk delete keys.
-     - `UPDATE backup_runs SET deleted_at = now() WHERE id = $runId`.
+   - For each expired runId: `UPDATE backup_runs SET deleted_at = now() WHERE id = $runId`. Per [`system-r2-park`](../system-r2-park/proposal.md), no destination-side `DELETE` is issued.
 3. Aggregate counts + log structured event.
 
-### R2 delete safety
+### Safety (metadata-only path)
 
-- Always delete by prefix `<spaceId>/<runId>/`. Never by run-ID alone — there's no Space-scoped bucket isolation in MVP, so a global delete-by-runId could in theory hit collisions if runIds ever overlap across Spaces (they shouldn't with UUIDs, but the prefix is cheap insurance).
-- R2 has no built-in versioning unless explicitly enabled. Operator decision (out of scope) whether to enable bucket versioning for a recoverable grace window. If enabled, the soft-delete-with-grace follow-up becomes a simple "don't issue final DELETE for 7 days" tweak.
-- Failures during list/delete: log + skip; the next hour's pass picks up the same row (idempotent because `deleted_at` is only set AFTER R2 delete succeeds).
+Per [`system-r2-park`](../system-r2-park/proposal.md), the cleanup engine does NOT touch destination-side storage. The only mutation is `UPDATE backup_runs SET deleted_at = now()`, which is reversible via a simple UPDATE back to NULL. Failures during the UPDATE: log + skip; the next hour's pass picks up the same row (idempotent because the WHERE clause filters `deleted_at IS NULL`).
+
+(Pre-`system-r2-park`, this section described R2 delete safety — list-by-prefix, R2 versioning, ordering of metadata-vs-bytes. A future `server-r2-revive` change re-introduces that content.)
 
 ## Phase D — Manual-cleanup trigger
 
@@ -178,10 +176,12 @@ export const cleanupExpiredSnapshots = schedules.task({
 POST /api/internal/spaces/:spaceId/cleanup
 Headers: x-internal-token
 Body:    { force?: boolean, charged?: boolean }
-Returns: { deletedRunIds, deletedObjectCount, creditsCharged? }
+Returns: { expiredRunIds, creditsCharged? }
         | 404 { error: 'space_not_found' }
         | 402 { error: 'insufficient_credits' }
 ```
+
+(Pre-`system-r2-park` the return included `deletedObjectCount` — removed because no destination-side delete occurs.)
 
 `apps/web/src/pages/api/spaces/[spaceId]/cleanup.ts` (new):
 
@@ -194,7 +194,7 @@ Returns: { deletedRunIds, deletedObjectCount, creditsCharged? }
 
 If `server-manual-quota-and-credits` has shipped:
 - The apps/web route decrements credits BEFORE calling the engine. If decrement fails (insufficient credits), return 402 without calling the engine.
-- The engine just deletes; the credit accounting is the frontend's concern.
+- The engine just sets `deleted_at`; the credit accounting is the frontend's concern.
 
 If it hasn't shipped:
 - The apps/web route logs a structured "would-charge-10-credits" event and proceeds. The button is feature-flagged off in production until the credits change lands.
@@ -212,7 +212,7 @@ Retention policy
 
 Cleanup
   Next automated pass: <relative time based on cron schedule>
-  Last cleanup: <timestamp from logs> · <N> snapshots deleted
+  Last cleanup: <timestamp from logs> · <N> snapshots expired
   [ Run cleanup now (10 credits) ]
 ```
 
@@ -237,12 +237,12 @@ No changes to existing wire shapes.
 | Pure | `decideDeletions` — all five policy tiers + tier-cap + trial-cap edge cases. Time-injected. |
 | Pure | `resolveRetentionPolicy` — all seven tiers × all knob bounds. |
 | Pure | `parseRetentionPatchPayload` — validates incoming PATCH against tier capabilities. |
-| Integration | `runCleanupPass` — uses real local Postgres + Miniflare R2. Seeds three Spaces with mixed policy tiers + a mix of run ages + statuses; asserts the right set is deleted. |
+| Integration | `runCleanupPass` — uses real local Postgres only (no R2 / Miniflare bucket needed per [`system-r2-park`](../system-r2-park/proposal.md)). Seeds three Spaces with mixed policy tiers + a mix of run ages + statuses; asserts the right set has `deleted_at` set. Mock the absence of any storage-write call. |
 | Integration | Engine cleanup route — 401 / 400 / 404 / 402 / 200. |
 | Integration | apps/web cleanup route — 401 / 403 IDOR / 200 / 402. |
 | Integration | apps/web retention-policy PATCH — 401 / 403 / 400 (knob OOB) / 200. |
 | Cron | Trigger.dev scheduled-task harness — call the task `run()` directly with a fake `now`, assert it runs the pass exactly once. |
-| Playwright | Settings page: edit `dailyWindowDays`, save, verify persisted. Click "Run cleanup now", verify the deleted-count toast + the history widget greys out the deleted rows. |
+| Playwright | Settings page: edit `dailyWindowDays`, save, verify persisted. Click "Run cleanup now", verify the expired-count toast + the history widget greys out the expired rows. |
 
 ## Master DB migration
 
@@ -280,8 +280,8 @@ The schema types update in `apps/web/src/db/schema/core.ts` (canonical) + new en
 
 - **Backfill**: on migration, all existing Spaces have `backup_retention_policies` row absent. The cleanup engine falls back to `resolveRetentionPolicy(tier)` defaults; no migration script needed for first pass. A separate one-time job (Phase C.6) inserts default policy rows for every existing Space so the PATCH UI has something to load.
 - **Cron overlap**: Trigger.dev guards against overlapping runs of the same scheduled task. If a cleanup pass takes longer than an hour (unlikely at MVP scale), the next pass is queued; Trigger.dev v3's `cron` semantics drop missed fires if behind by more than one interval.
-- **Observability**: structured `event: 'backup_cleanup_pass'` log per pass with aggregate counts; `event: 'backup_cleanup_space'` per Space with > 0 deletions. Tee to PostHog as a product analytics event so we can build a "snapshots saved" dashboard.
-- **Cost**: R2 ops cost is tiny (cents per month at MVP). The savings on storage dominate by orders of magnitude.
+- **Observability**: structured `event: 'backup_cleanup_pass'` log per pass with aggregate counts; `event: 'backup_cleanup_space'` per Space with > 0 expirations. Tee to PostHog as a product analytics event so we can build a "snapshots expired" dashboard.
+- **Cost**: zero direct destination-side cost (BYOS — customer pays for their own storage per [`system-r2-park`](../system-r2-park/proposal.md)). The cleanup engine's only mutation is a single UPDATE per expired row.
 
 ## What this design deliberately doesn't change
 

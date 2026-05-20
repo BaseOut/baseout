@@ -409,8 +409,14 @@ export const backupConfigurations = baseout.table('backup_configurations', {
   // 'monthly' | 'weekly' | 'daily' | 'instant' — gated by tier per Features §6.1
   mode: text('mode').notNull().default('static'),
   // 'static' | 'dynamic' — Features §6.2
-  storageType: text('storage_type').notNull().default('r2_managed'),
+  storageType: text('storage_type'),
   // 'r2_managed' | 'google_drive' | 'dropbox' | 'box' | 'onedrive' | 's3' | 'frame_io' | 'byos'
+  // Per openspec/changes/system-r2-park, the NOT NULL constraint + 'r2_managed'
+  // DEFAULT were dropped: managed R2 is paused so the column carries NULL
+  // until the user connects a BYOS destination (Google Drive ships first per
+  // shared-byos-drive-dropbox / cea7f08). The engine's runs/start.ts rejects
+  // runs with `storageType === 'r2_managed'` (managed_r2_paused) and rejects
+  // runs without a connected storage_destinations row (no_storage_destination).
   autoAddFutureBases: boolean('auto_add_future_bases').notNull().default(false),
   // When true, bases discovered via rediscovery (alarm or manual rescan) are
   // included in the next backup run automatically — subject to the tier

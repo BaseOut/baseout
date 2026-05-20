@@ -41,6 +41,7 @@ import {
   platforms,
   spacePlatforms,
   spaces,
+  storageDestinations,
   userPreferences,
   users,
 } from '../../../../db/schema'
@@ -259,6 +260,12 @@ export const POST: APIRoute = async ({ url, request, locals }) => {
   }
 
   // ── 10. backup_configurations ───────────────────────
+  // Per openspec/changes/system-r2-park, managed R2 is paused — the engine
+  // rejects runs with `storageType === 'r2_managed'`. Seed `google_drive`
+  // here (the only BYOS strategy with a shipped Connect flow today) so the
+  // happy-path spec can still run a backup. Step 10b seeds the paired
+  // storage_destinations row so the engine's `no_storage_destination` guard
+  // passes too.
   const [existingCfg] = await db
     .select({ id: backupConfigurations.id })
     .from(backupConfigurations)
@@ -274,11 +281,31 @@ export const POST: APIRoute = async ({ url, request, locals }) => {
         spaceId: space.id,
         frequency: 'monthly',
         mode: 'static',
-        storageType: 'r2_managed',
+        storageType: 'google_drive',
       })
       .returning({ id: backupConfigurations.id })
     if (!inserted) return json({ error: 'config_insert_failed' }, 500)
     configId = inserted.id
+  }
+
+  // ── 10b. storage_destinations (paired with the google_drive config) ──
+  const [existingDest] = await db
+    .select({ id: storageDestinations.id })
+    .from(storageDestinations)
+    .where(eq(storageDestinations.spaceId, space.id))
+    .limit(1)
+  if (!existingDest) {
+    await db.insert(storageDestinations).values({
+      spaceId: space.id,
+      type: 'google_drive',
+      // Placeholders mirror the e2e-stub-token shape used for connections —
+      // the happy-path spec stops at "run row appears," so token decrypt
+      // never fires.
+      oauthAccessTokenEnc: 'e2e-stub-access-token',
+      oauthRefreshTokenEnc: 'e2e-stub-refresh-token',
+      providerFolderId: 'e2e-stub-folder-id',
+      oauthAccountEmail: 'e2e@example.invalid',
+    })
   }
 
   // ── 11. backup_configuration_bases (the FK is at_bases.id UUID, NOT

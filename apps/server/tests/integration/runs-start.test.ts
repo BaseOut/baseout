@@ -19,6 +19,7 @@ import type {
   BackupRunRow,
   ConnectionRow,
   BackupConfigurationRow,
+  StorageDestinationRow,
 } from "../../src/db/schema";
 
 const RUN_ID = "11111111-1111-1111-1111-111111111111";
@@ -26,6 +27,7 @@ const CONNECTION_ID = "22222222-2222-2222-2222-222222222222";
 const ORG_ID = "33333333-3333-3333-3333-333333333333";
 const SPACE_ID = "44444444-4444-4444-4444-444444444444";
 const CONFIG_ID = "55555555-5555-5555-5555-555555555555";
+const DESTINATION_ID = "66666666-6666-6666-6666-666666666666";
 const ENCRYPTED_TOKEN_CIPHERTEXT = "abc123-base64-ciphertext";
 const NOW = new Date("2026-05-08T18:30:00.000Z");
 
@@ -71,8 +73,32 @@ function makeConfig(
   return {
     id: CONFIG_ID,
     spaceId: SPACE_ID,
+    frequency: "daily",
     mode: "static",
-    storageType: "r2_managed",
+    storageType: "google_drive",
+    autoAddFutureBases: false,
+    nextScheduledAt: null,
+    ...overrides,
+  };
+}
+
+function makeDestination(
+  overrides: Partial<StorageDestinationRow> = {},
+): StorageDestinationRow {
+  return {
+    id: DESTINATION_ID,
+    spaceId: SPACE_ID,
+    type: "google_drive",
+    oauthAccessTokenEnc: ENCRYPTED_TOKEN_CIPHERTEXT,
+    oauthRefreshTokenEnc: null,
+    oauthExpiresAt: null,
+    oauthScope: null,
+    oauthAccountEmail: null,
+    providerFolderId: null,
+    providerAccountId: null,
+    connectedByUserId: null,
+    connectedAt: null,
+    lastValidatedAt: null,
     ...overrides,
   };
 }
@@ -81,6 +107,7 @@ interface DepsBag {
   fetchRunById: ReturnType<typeof vi.fn>;
   fetchConnectionById: ReturnType<typeof vi.fn>;
   fetchConfigBySpace: ReturnType<typeof vi.fn>;
+  fetchStorageDestinationBySpace: ReturnType<typeof vi.fn>;
   fetchIncludedBases: ReturnType<typeof vi.fn>;
   updateRunStarted: ReturnType<typeof vi.fn>;
   updateRunTriggerIds: ReturnType<typeof vi.fn>;
@@ -92,6 +119,7 @@ function makeDeps(): DepsBag {
     fetchRunById: vi.fn(async () => makeRun()),
     fetchConnectionById: vi.fn(async () => makeConnection()),
     fetchConfigBySpace: vi.fn(async () => makeConfig()),
+    fetchStorageDestinationBySpace: vi.fn(async () => makeDestination()),
     fetchIncludedBases: vi.fn(async () => [
       { atBaseId: "appAAA111", name: "Tasks" },
       { atBaseId: "appBBB222", name: "Projects" },
@@ -281,10 +309,10 @@ describe("processRunStart — validation failures", () => {
     expect(result).toEqual({ ok: false, error: "config_not_found" });
   });
 
-  it("returns unsupported_storage_type when storageType is not 'r2_managed'", async () => {
+  it("returns managed_r2_paused when storageType is 'r2_managed' (per system-r2-park)", async () => {
     const deps = makeDeps();
     deps.fetchConfigBySpace = vi.fn(async () =>
-      makeConfig({ storageType: "byos" }),
+      makeConfig({ storageType: "r2_managed" }),
     );
 
     const result = await processRunStart(
@@ -292,7 +320,22 @@ describe("processRunStart — validation failures", () => {
       { ...deps, now: () => NOW },
     );
 
-    expect(result).toEqual({ ok: false, error: "unsupported_storage_type" });
+    expect(result).toEqual({ ok: false, error: "managed_r2_paused" });
+    expect(deps.fetchStorageDestinationBySpace).not.toHaveBeenCalled();
+    expect(deps.updateRunStarted).not.toHaveBeenCalled();
+  });
+
+  it("returns no_storage_destination when no BYOS row is connected for the Space", async () => {
+    const deps = makeDeps();
+    deps.fetchStorageDestinationBySpace = vi.fn(async () => null);
+
+    const result = await processRunStart(
+      { runId: RUN_ID },
+      { ...deps, now: () => NOW },
+    );
+
+    expect(result).toEqual({ ok: false, error: "no_storage_destination" });
+    expect(deps.updateRunStarted).not.toHaveBeenCalled();
   });
 
   it("returns no_bases_selected when fetchIncludedBases resolves to []", async () => {

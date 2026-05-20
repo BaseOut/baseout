@@ -1,8 +1,8 @@
-> **Depends on**: [`system-r2-stance`](../system-r2-stance/proposal.md) — The cleanup engine's `DELETE` path requires [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase 0 to land first (`StorageWriter.delete()` is the call site). Phase A (retention-policy schema + `backup_runs.deleted_at`) is independent.
+> **Depends on**: [`system-r2-park`](../system-r2-park/proposal.md) — Managed R2 is paused; every destination is BYOS. The cleanup engine no longer issues storage-side `DELETE` requests — it only sets `backup_runs.deleted_at` so the history widget hides expired rows. BYOS-destination retention is the customer's responsibility per [Features §6.6](../../../shared/Baseout_Features.md). Phase A (retention-policy schema + `backup_runs.deleted_at`) and the per-tier policy ladder (Phase B) are unchanged.
 
 ## Why
 
-The `server-schedule-and-cancel` change lights up the cron half of the lifecycle. The other half — **when to delete old backups** — has no implementation yet. R2 is the source of cost-per-GB for managed-storage Spaces; without an automated cleanup loop, every scheduled backup adds to the bill forever.
+The `server-schedule-and-cancel` change lights up the cron half of the lifecycle. The other half — **when to mark old backups as expired** — has no implementation yet. Without an automated retention loop, every scheduled backup's metadata row lives in the master DB forever and shows up in the history widget indefinitely. (Per [`system-r2-park`](../system-r2-park/proposal.md), the customer's BYOS destination handles the actual file-cleanup question on their side; Baseout's retention loop manages the metadata + the history-widget UX.)
 
 [PRD §5.6](../../../shared/Baseout_PRD.md) lists three retention requirements:
 
@@ -49,7 +49,7 @@ These describe the same thing at different fidelities. This change commits to **
   - `monthly_indefinite bool` (Three-tier — keep monthly snapshots forever)
   - `custom_rules jsonb` (Custom only — Business+ free-form rules)
   - `created_at`, `modified_at` timestamps
-- **New column on `backup_runs`**: `deleted_at timestamp with time zone NULL`. The cleanup engine sets this when it deletes the R2 object so the history widget can grey-out / hide expired rows. Rows are NOT hard-deleted — the metadata stays for audit; only the R2 blob is removed.
+- **New column on `backup_runs`**: `deleted_at timestamp with time zone NULL`. The cleanup engine sets this when a run reaches the end of its policy window so the history widget can grey-out / hide expired rows. Rows are NOT hard-deleted — the metadata stays for audit. Per [`system-r2-park`](../system-r2-park/proposal.md), no destination-side delete is issued (BYOS retention is the customer's responsibility per [Features §6.6](../../../shared/Baseout_Features.md)).
 - **Schema mirror** in [apps/server/src/db/schema/](../../../apps/server/src/db/schema/) following CLAUDE.md §2 (engine mirrors only what it reads — needs `backup_retention_policies` for the cleanup job and `backup_runs.deleted_at` to write).
 
 ### Phase B — Capability resolution
@@ -64,18 +64,18 @@ These describe the same thing at different fidelities. This change commits to **
 - **New task** `apps/workflows/trigger/tasks/cleanup-expired-snapshots.task.ts`:
   - Cron schedule: hourly (so the worst-case clock skew between policy edits and pruning is ≤ 1 hour).
   - Per pass: SELECT `backup_runs` WHERE `deleted_at IS NULL AND status IN ('succeeded', 'cancelled', 'trial_complete', 'trial_truncated', 'failed')` ORDER BY `space_id, started_at DESC`.
-  - Group rows by `space_id`. For each Space, load its `backup_retention_policies` row and decide which runs are KEEP vs DELETE per the policy shape.
-  - For each DELETE row: list R2 objects under `r2://baseout-backups/<spaceId>/<runId>/`, delete them, then UPDATE `backup_runs.deleted_at = now()`.
+  - Group rows by `space_id`. For each Space, load its `backup_retention_policies` row and decide which runs are KEEP vs EXPIRE per the policy shape.
+  - For each EXPIRE row: UPDATE `backup_runs.deleted_at = now()`. Per [`system-r2-park`](../system-r2-park/proposal.md), no destination-side `DELETE` request is issued (BYOS retention is the customer's responsibility).
   - Idempotent — if `deleted_at` is already set, skip.
-- **Pure function** in `apps/server/src/lib/retention/decide-deletions.ts`: `decideDeletions(runs[], policy, now): { keep: runId[], delete: runId[] }`. Dep-injected `now()` for tests. Handles all 5 policy tiers.
+- **Pure function** in `apps/server/src/lib/retention/decide-deletions.ts`: `decideDeletions(runs[], policy, now): { keep: runId[], expire: runId[] }`. Dep-injected `now()` for tests. Handles all 5 policy tiers. (The function name keeps the historical `decideDeletions` slug; the return-shape rename from `delete` to `expire` reflects that no destination-side delete happens per [`system-r2-park`](../system-r2-park/proposal.md).)
 - **Trigger.dev cron** configured in [trigger.config.ts](../../../apps/workflows/trigger.config.ts). Runs as `@trigger.dev/sdk schedules.task(...)` per Trigger.dev v3 conventions.
 
 ### Phase D — Manual-cleanup trigger + credit charge
 
-- **New engine route** `POST /api/internal/spaces/:spaceId/cleanup`. Body: `{ force?: boolean }` (force ignores the per-policy schedule). Auth: `INTERNAL_TOKEN`. Calls the same `decideDeletions` + R2-delete path as the scheduled cron.
-- **New apps/web route** `POST /api/spaces/:spaceId/cleanup`. IDOR-guarded. Returns the count of objects deleted + the credit charge applied (10 credits per [Features §5.2](../../../shared/Baseout_Features.md)).
+- **New engine route** `POST /api/internal/spaces/:spaceId/cleanup`. Body: `{ force?: boolean }` (force ignores the per-policy schedule). Auth: `INTERNAL_TOKEN`. Calls the same `decideDeletions` + metadata-update path as the scheduled cron (no destination-side `DELETE` per [`system-r2-park`](../system-r2-park/proposal.md)).
+- **New apps/web route** `POST /api/spaces/:spaceId/cleanup`. IDOR-guarded. Returns the count of runs expired + the credit charge applied (10 credits per [Features §5.2](../../../shared/Baseout_Features.md)).
 - **Credit charge**: routes through whatever credit-charge surface exists at the time. If `server-manual-quota-and-credits` hasn't shipped yet, this change blocks on it OR ships a temporary "no-charge" stub with a TODO referencing the credits change. The proposal records the dependency explicitly.
-- **UI**: a "Run cleanup now (10 credits)" button under the existing per-Space backup config card. Uses `setButtonLoading` per apps/web CLAUDE.md §4.5. Confirmation dialog shows "Will delete N expired snapshots; cost: 10 credits".
+- **UI**: a "Run cleanup now (10 credits)" button under the existing per-Space backup config card. Uses `setButtonLoading` per apps/web CLAUDE.md §4.5. Confirmation dialog shows "Will mark N snapshots as expired in your history; cost: 10 credits. The files themselves stay in your connected storage destination." (wording reflects [`system-r2-park`](../system-r2-park/proposal.md): no destination-side delete).
 
 ### Phase E — Retention configuration UI
 
@@ -98,11 +98,12 @@ These describe the same thing at different fidelities. This change commits to **
 
 | Deferred to | Item |
 |---|---|
+| Future change — R2 revival (per [`system-r2-park`](../system-r2-park/proposal.md)) | Managed-R2 `DELETE` path for snapshot cleanup. The pre-`system-r2-park` design had this engine issue R2 `DELETE` requests via `StorageWriter.delete()`; that path is parked. `writer.delete()` stays in the `StorageWriter` interface and is implemented by every BYOS strategy, but the cleanup engine doesn't call it. |
 | Future change `server-retention-custom-editor` | Rich GUI editor for Business/Enterprise Custom policy. First-pass MVP renders a `<textarea>` with JSON validation. |
-| Future change `server-cold-storage-tier` | Lifecycle rules that move snapshots older than X to a cheaper R2 / S3 storage class instead of deleting outright. Out of MVP scope per PRD. |
-| Future change `server-restore-from-soft-deleted` | Treat `deleted_at`-set rows as "soft-deleted" with a 7-day grace window before R2 objects are unrecoverable. Today: R2 delete is immediate. |
+| Future change `server-cold-storage-tier` | Lifecycle rules that move snapshots older than X to a cheaper storage class instead of expiring outright. Out of MVP scope per PRD. |
+| Future change `server-restore-from-expired` | Treat `deleted_at`-set rows as "expired with grace window" — re-show in history if the customer's destination still has the file. Today: `deleted_at` hides the row immediately. |
 | Future change | Schema-changelog retention (per Features §7.2). That table is `audit_history`, not `backup_runs`. Separate cleanup loop. |
-| Future change | BYOS destination cleanup. The R2 delete path here only operates on managed R2. BYOS-destination retention is the customer's responsibility per Features §6.6. |
+| Future change | Active deletion of BYOS-destination files. BYOS-destination retention is the customer's responsibility per Features §6.6. |
 | Bundled blockingly with `server-manual-quota-and-credits` | The 10-credit charge for the manual-cleanup trigger. Implementation depends on the credit-charge surface from that change. |
 
 ## Capabilities
@@ -110,7 +111,7 @@ These describe the same thing at different fidelities. This change commits to **
 ### New capabilities
 
 - `backup-retention-policy` — per-Space retention policy persistence + capability-resolved knobs. Owned by `apps/web` (resolver + PATCH + UI) and read by `apps/server` (cleanup job).
-- `backup-cleanup-engine` — automated R2 + metadata pruning per policy. Owned by `apps/server`. Both scheduled cron and on-demand manual trigger paths.
+- `backup-cleanup-engine` — automated metadata-expiration per policy (sets `backup_runs.deleted_at`). Owned by `apps/server`. Both scheduled cron and on-demand manual trigger paths. Per [`system-r2-park`](../system-r2-park/proposal.md), no destination-side file delete is issued — BYOS retention is the customer's responsibility.
 
 ### Modified capabilities
 
@@ -121,22 +122,22 @@ These describe the same thing at different fidelities. This change commits to **
 ## Impact
 
 - **Master DB**: one additive migration. New `backup_retention_policies` table; new nullable `backup_runs.deleted_at` column. Existing rows: `deleted_at = NULL` until the cleanup engine touches them.
-- **R2**: cleanup engine issues `DELETE` requests. R2 billing is per-operation; at MVP scale (hundreds of Spaces × hourly cron × ~10 expired runs per Space per hour worst case) = single-digit dollars/month in R2 ops. Worth noting only at scale.
+- **Destination storage**: per [`system-r2-park`](../system-r2-park/proposal.md), the cleanup engine does NOT issue destination-side `DELETE` requests. Customer-side storage growth is the customer's concern.
 - **Trigger.dev**: one new scheduled task. Hourly cron is well within Trigger.dev's scheduler limits.
-- **Cost surface**: R2 storage savings dominate the equation. At MVP scale, retention deletes are pure cost reduction.
-- **Observability**: cleanup task writes a structured `event: 'backup_cleanup_pass'` log per pass with `{ spacesProcessed, runsKept, runsDeleted, r2ObjectsDeleted, durationMs }`. Per-Space `event: 'backup_cleanup_space'` log when a Space has > 0 deletions.
-- **Security**: cleanup engine reads `backup_retention_policies` + writes R2 + writes `backup_runs.deleted_at`. No new auth surface (cron is internal). Manual-trigger route is INTERNAL_TOKEN-gated.
+- **Cost surface**: zero direct destination-cost savings (BYOS — customer pays). The metadata-expiration loop's value is UX-only: history widget stops showing indefinitely-old runs.
+- **Observability**: cleanup task writes a structured `event: 'backup_cleanup_pass'` log per pass with `{ spacesProcessed, runsKept, runsExpired, durationMs }`. Per-Space `event: 'backup_cleanup_space'` log when a Space has > 0 expirations.
+- **Security**: cleanup engine reads `backup_retention_policies` + writes `backup_runs.deleted_at`. No destination-side credentials touched. No new auth surface (cron is internal). Manual-trigger route is INTERNAL_TOKEN-gated.
 - **Cross-app contract** (new wire shapes):
-  - apps/web → engine: `POST /api/internal/spaces/:spaceId/cleanup` → `200 { deletedRunIds, deletedObjectCount, creditsCharged }` or `404 { error: 'space_not_found' }` or `402 { error: 'insufficient_credits' }`.
+  - apps/web → engine: `POST /api/internal/spaces/:spaceId/cleanup` → `200 { expiredRunIds, creditsCharged }` or `404 { error: 'space_not_found' }` or `402 { error: 'insufficient_credits' }`. (The pre-`system-r2-park` shape included `deletedObjectCount` — removed because no destination-side delete occurs.)
   - apps/web ← apps/web (PATCH retention-policy): `PATCH /api/spaces/:spaceId/retention-policy` → `200 { policy }` or `400 { error: 'knob_out_of_range', field: 'dailyWindowDays' }`.
 
 ## Reversibility
 
 - **Phase A** (schema): additive. Reverting means leaving the table empty / `deleted_at` NULL; cleanup engine without policies finds no Spaces to act on and no-ops.
 - **Phase B** (resolver): pure-function addition; reverting removes the resolver call from the PATCH/UI paths.
-- **Phase C** (cleanup engine): the Trigger.dev cron can be disabled via the project dashboard or by removing the schedule export. Already-deleted R2 objects cannot be recovered — this is forward-only at the data level (deliberately, per the soft-delete deferral above). If R2 versioning is enabled on the bucket, recovery is per-object via the R2 console; otherwise a follow-up `server-restore-from-soft-deleted` adds a grace window.
+- **Phase C** (cleanup engine): the Trigger.dev cron can be disabled via the project dashboard or by removing the schedule export. Setting `deleted_at` is reversible (just `UPDATE backup_runs SET deleted_at = NULL WHERE …`). Per [`system-r2-park`](../system-r2-park/proposal.md), the cleanup engine does NOT issue destination-side deletes — there is no irreversible-at-the-bytes step.
 - **Phase D** (manual trigger + credits): roll-forward; removing the button + route stops the charge. Credit charges already applied are not auto-refunded.
 - **Phase E** (UI): pure UI removal.
 - **Phase F** (docs): `git revert`.
 
-The R2 delete path is the only irreversible step. Tasks include a smoke checkpoint (Phase C.5) where a human watches the FIRST cron pass on a seeded dev DB to confirm the policy decision matches expectation before any prod deploy.
+This change is fully reversible end-to-end now that the destination-side delete is parked per [`system-r2-park`](../system-r2-park/proposal.md). Tasks include a smoke checkpoint (Phase C.5) where a human watches the FIRST cron pass on a seeded dev DB to confirm the policy decision matches expectation before any prod deploy — defense in depth even though `deleted_at` is reversible.

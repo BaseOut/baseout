@@ -297,13 +297,19 @@ export async function handleSeedWorkspaceRediscovery(
       .set({ autoAddFutureBases: autoAdd, frequency: 'monthly' })
       .where(eq(backupConfigurations.id, configId))
   } else {
+    // Per openspec/changes/system-r2-park, `r2_managed` is rejected by the
+    // engine. The workspace-rediscovery e2e only exercises the rediscovery
+    // path (not run-start), so the storage value isn't load-bearing for
+    // its assertions — flipping to `google_drive` here keeps the row valid
+    // under the new MVP allowlist without needing a paired
+    // storage_destinations seed.
     const [inserted] = await db
       .insert(backupConfigurations)
       .values({
         spaceId: space.id,
         frequency: 'monthly',
         mode: 'static',
-        storageType: 'r2_managed',
+        storageType: 'google_drive',
         autoAddFutureBases: autoAdd,
       })
       .returning({ id: backupConfigurations.id })

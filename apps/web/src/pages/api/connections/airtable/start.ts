@@ -54,6 +54,7 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
     AIRTABLE_OAUTH_CLIENT_SECRET?: string
     BASEOUT_ENCRYPTION_KEY?: string
     AIRTABLE_STUBS_ENABLED?: string
+    PUBLIC_AUTH_BASE_URL?: string
   }
 
   if (!workerEnv.BASEOUT_ENCRYPTION_KEY) {
@@ -73,7 +74,7 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
     )
   }
 
-  const redirectUri = getRedirectUri(url.origin)
+  const redirectUri = getRedirectUri(url.origin, workerEnv)
   const { authorizeUrl } = resolveAirtableUrls(workerEnv, url.origin)
   const { verifier, challenge } = await generatePkcePair()
   const state = generateState()

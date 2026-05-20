@@ -3,9 +3,10 @@
  *
  * Updates the backup_configurations row's `frequency` and / or `storageType`
  * for a Space. Validates the body against the org's tier capability per
- * Features §6.1 and the MVP storage rule (only `r2_managed` accepted).
+ * Features §6.1 and the BYOS-only rule from openspec/changes/system-r2-park
+ * (today only `google_drive` is accepted; managed R2 is paused).
  *
- * Body: `{ frequency?: Frequency; storageType?: 'r2_managed' }`. At least
+ * Body: `{ frequency?: Frequency; storageType?: 'google_drive' }`. At least
  * one field required. Unknown keys → 400 invalid_request.
  *
  * Same pattern as backup-runs.ts: a testable handlePatch inner function

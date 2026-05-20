@@ -137,7 +137,10 @@ export async function getIntegrationsState(
 
   const policy: BackupPolicy = {
     frequency: asFrequency(config?.frequency ?? null),
-    storageType: config?.storageType ?? 'r2_managed',
+    // Per openspec/changes/system-r2-park, managed R2 is paused. With no
+    // synthetic 'r2_managed' fallback the UI now forces the user to connect
+    // a BYOS destination (Google Drive ships first) before configuring.
+    storageType: config?.storageType ?? null,
     nextScheduledAt:
       config?.nextScheduledAt instanceof Date
         ? config.nextScheduledAt.toISOString()
@@ -145,10 +148,11 @@ export async function getIntegrationsState(
     autoAddFutureBases: config?.autoAddFutureBases ?? false,
   }
 
-  // Storage destination — one row per Space. For MVP only the google_drive
-  // arm is exposed in UI; other types fall back to the synthetic r2_managed
-  // default. The OAuth Connect flow upserts this row (lib/google-drive/
-  // persist.ts).
+  // Storage destination — one row per Space. Per openspec/changes/
+  // system-r2-park, managed R2 is paused; today only the google_drive arm is
+  // wired. With no row, the UI surfaces the Connect button via StoragePicker
+  // and the engine rejects backup runs with `no_storage_destination`. The
+  // OAuth Connect flow upserts this row (lib/google-drive/persist.ts).
   const [destination] = await db
     .select({
       type: storageDestinations.type,

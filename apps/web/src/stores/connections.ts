@@ -27,8 +27,13 @@ export interface BaseSummary {
 export interface BackupPolicy {
   /** Currently saved frequency (defaults to 'monthly' from the schema). */
   frequency: Frequency
-  /** Currently saved storage destination (defaults to 'r2_managed'). */
-  storageType: string
+  /**
+   * Currently saved storage destination, or null if none has been chosen.
+   * Per openspec/changes/system-r2-park, managed R2 is paused — the schema
+   * default `'r2_managed'` was dropped, so new backup_configurations rows
+   * carry null until the user connects a BYOS destination (Google Drive).
+   */
+  storageType: string | null
   /**
    * Engine-written timestamp of the next scheduled fire (ISO-8601) or
    * null when no alarm has been armed yet (pre-bootstrap or

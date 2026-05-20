@@ -15,9 +15,11 @@ import {
   backupConfigurations,
   backupRuns,
   connections,
+  storageDestinations,
   type BackupConfigurationRow,
   type BackupRunRow,
   type ConnectionRow,
+  type StorageDestinationRow,
 } from "../../db/schema";
 import { enqueueBackupBase } from "../trigger-client";
 import type { Env } from "../../env";
@@ -50,6 +52,17 @@ export function buildRunStartDeps(db: MasterDb, env: Env): ProcessRunStartDeps {
         .where(eq(backupConfigurations.spaceId, spaceId))
         .limit(1);
       return (rows[0] ?? null) as BackupConfigurationRow | null;
+    },
+    fetchStorageDestinationBySpace: async (spaceId) => {
+      // Per openspec/changes/system-r2-park: every Space must have a
+      // connected BYOS row before its first backup. apps/web writes the row
+      // during the OAuth Connect flow.
+      const rows = await db
+        .select()
+        .from(storageDestinations)
+        .where(eq(storageDestinations.spaceId, spaceId))
+        .limit(1);
+      return (rows[0] ?? null) as StorageDestinationRow | null;
     },
     fetchIncludedBases: async (configId) => {
       // backup_configuration_bases.at_base_id is a FK to at_bases.id (UUID),

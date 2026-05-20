@@ -21,13 +21,9 @@
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["ConnectionDO", "SpaceDO"] }
-  ],
-
-  // R2 buckets — Miniflare backs these with an in-process bucket so tests
-  // can drive R2 writes via env.BACKUPS_R2 without real Cloudflare creds.
-  // The bucket_name is opaque to Miniflare; we use the prod-shaped name so
-  // tests are explicit about what they're standing in for.
-  "r2_buckets": [
-    { "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-dev" }
   ]
+
+  // Managed R2 is paused per openspec/changes/system-r2-park. The Miniflare
+  // r2_buckets binding for tests was removed. Revive together with the
+  // production binding when R2 returns.
 }

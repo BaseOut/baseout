@@ -29,7 +29,7 @@ function makeRow(overrides: Partial<BackupRunRowLike> = {}): BackupRunRowLike {
     createdAt: new Date('2026-05-08T18:00:00.000Z'),
     connectionId: 'conn_1',
     connectionDisplayName: 'Main Airtable',
-    configStorageType: 'r2_managed',
+    configStorageType: 'google_drive',
     configMode: 'static',
     ...overrides,
   }
@@ -104,7 +104,7 @@ describe('listRecentRuns', () => {
       triggerRunIds: ['run_a', 'run_b'],
       createdAt: '2026-05-08T18:29:00.000Z',
       connection: { id: 'conn_1', displayName: 'Main Airtable' },
-      configuration: { storageType: 'r2_managed', mode: 'static' },
+      configuration: { storageType: 'google_drive', mode: 'static' },
       includedBases: TWO_BASES,
     })
   })

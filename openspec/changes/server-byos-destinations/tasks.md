@@ -1,20 +1,4 @@
-## Phase 0 — Re-introduce managed R2 binding (per [`system-r2-stance`](../system-r2-stance/proposal.md))
-
-### 0.1 — Wrangler config
-
-- [ ] 0.1.1 Re-add `BACKUPS_R2` binding to [apps/server/wrangler.jsonc.example](../../../apps/server/wrangler.jsonc.example) per `git show 8fc1f61^:apps/server/wrangler.jsonc.example`.
-- [ ] 0.1.2 Re-add the same binding to `apps/server/wrangler.test.jsonc` (Miniflare R2).
-- [ ] 0.1.3 Provision the production R2 bucket (`backups`); capture R2 credentials in Cloudflare Secrets per [CLAUDE.md §3.3](../../../CLAUDE.md).
-
-### 0.2 — Env typing
-
-- [ ] 0.2.1 Re-add `BACKUPS_R2: R2Bucket` to the `Env` interface in [apps/server/src/env.d.ts](../../../apps/server/src/env.d.ts).
-- [ ] 0.2.2 Regenerate `worker-configuration.d.ts` if wrangler types are regenerated from the binding.
-
-### 0.3 — Dev path selector
-
-- [ ] 0.3.1 Add `STORAGE_DEV_MODE` env var (default `local-fs`) so dev keeps writing to `apps/server/.backups/` without R2 credentials.
-- [ ] 0.3.2 Document the env var in [apps/server/CLAUDE.md](../../../apps/server/CLAUDE.md) under the Trigger.dev section.
+> Phase 0 (re-introduce managed R2 binding + env typing + STORAGE_DEV_MODE) was parked per [`system-r2-park`](../system-r2-park/proposal.md). The phase numbering below is left intact so cross-change task references (e.g. `B.2`, `C.1`, `D.1`) stay stable. The originally-Phase-0 tasks live in `system-r2-park` Phase 2 (code rollback) as deletions; revival is a `git revert` of that commit + a future `server-r2-revive` change.
 
 ## Phase A — Schema
 
@@ -39,11 +23,11 @@
 - [ ] B.1.1 New file `apps/server/src/lib/storage/storage-writer.ts` — interface + `makeStorageWriter` factory per design.md §Phase B.
 - [ ] B.1.2 TDD red: `make-storage-writer.test.ts` — every `type` value dispatches to the correct class; unknown `type` throws.
 
-### B.2 — R2 managed strategy (no behavior change, refactor only)
+### B.2 — Workflows handoff
 
-- [ ] B.2.1 New file `apps/server/src/lib/storage/strategies/r2-managed.ts` — reintroduces R2 (removed in commit `8fc1f61`) behind the `StorageWriter` interface. Re-add `env.BACKUPS_R2` binding to `apps/server/wrangler.jsonc.example`. Wraps `put`/`get`/`delete`. Implements the full interface.
-- [ ] B.2.2 TDD: `r2-managed.test.ts` — writeFile streams to R2 bucket via Miniflare; getDownloadUrl + delete also covered.
-- [ ] B.2.3 Workflows-side refactor of `backup-base.task.ts` to use `makeStorageWriter` is owned by [`workflows-byos-destinations`](../workflows-byos-destinations/tasks.md). Server side guarantees `makeStorageWriter` API stability.
+R2 managed strategy parked per [`system-r2-park`](../system-r2-park/proposal.md); the `makeStorageWriter` factory ships with BYOS strategies only.
+
+- [ ] B.2.1 Workflows-side refactor of `backup-base.task.ts` to use `makeStorageWriter` is owned by [`workflows-byos-destinations`](../workflows-byos-destinations/tasks.md). Server side guarantees `makeStorageWriter` API stability.
 
 ## Phase C — Per-provider strategies
 
@@ -109,12 +93,12 @@ Ship in this order: Google Drive → S3 → Dropbox → Box → OneDrive → Fra
 ### D.3 — StoragePicker UI
 
 - [ ] D.3.1 Update [apps/web/src/components/backups/StoragePicker.astro](../../../apps/web/src/components/backups/StoragePicker.astro) — enable tier-allowed destinations; lock the rest with tier-tooltip.
-- [ ] D.3.2 Each non-`r2_managed` option shows a "Connect <provider>" button if not yet connected.
+- [ ] D.3.2 Each option shows a "Connect <provider>" button if not yet connected. Per [`system-r2-park`](../system-r2-park/proposal.md), the `r2_managed` option (if still shown at all) is labelled "Paused" / "Coming soon" and is non-selectable.
 - [ ] D.3.3 After successful connect, the picker shows the connected account name + a "Disconnect" link.
 
 ### D.4 — Disconnect route
 
-- [ ] D.4.1 `DELETE /api/spaces/:id/storage-destination`. Removes the row; resets to `r2_managed` default.
+- [ ] D.4.1 `DELETE /api/spaces/:id/storage-destination`. Removes the row. Per [`system-r2-park`](../system-r2-park/proposal.md) there is no managed-R2 fallback — the next backup is rejected at `start.ts` until the user reconnects a destination.
 
 ## Phase E — Engine integration
 
@@ -127,8 +111,10 @@ Workflows-side wiring lives in [`workflows-byos-destinations`](../workflows-byos
 
 ## Phase F — Retention integration
 
-- [ ] F.1 Update `runCleanupPass` (from `server-retention-and-cleanup`) — for `r2_managed` destinations only, call `writer.delete(path)`. For BYOS destinations, skip the delete (customer-managed) but still set `backup_runs.deleted_at` so the history widget hides the row.
-- [ ] F.2 Tests for the BYOS-skip path.
+Per [`system-r2-park`](../system-r2-park/proposal.md), every destination is BYOS (customer-managed). The Baseout-side cleanup never calls `writer.delete()` on customer storage.
+
+- [ ] F.1 Update `runCleanupPass` (from `server-retention-and-cleanup`) — skip the `writer.delete()` call entirely; just set `backup_runs.deleted_at = now()` so the history widget can hide the row. BYOS retention is the customer's responsibility per Features §6.6.
+- [ ] F.2 Tests pin the "metadata-only deletion" path (no `writer.delete()` call observed in any strategy mock).
 
 ## Phase G — Documentation scope-lock
 

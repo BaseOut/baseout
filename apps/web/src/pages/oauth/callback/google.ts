@@ -35,6 +35,15 @@ function appendQuery(path: string, key: string, value: string): string {
   return `${path}${sep}${key}=${encodeURIComponent(value)}`
 }
 
+/** Trim a thrown Error message to a URL-safe short slug for the `detail` query
+ * param. Lets the user / future Claude diagnose Drive API failures without
+ * grepping wrangler logs. The error never carries tokens, just the http_NNN
+ * + endpoint shape from the client.ts wrappers. */
+function detailFor(err: unknown): string {
+  const raw = err instanceof Error ? err.message : 'unknown'
+  return raw.replaceAll(/\s+/g, '_').slice(0, 80)
+}
+
 function redirectWith(location: string, clearCookieValue: string): Response {
   return new Response(null, {
     status: 302,
@@ -129,9 +138,19 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
   let folder
   try {
     userinfo = await drive.getUserInfo()
+  } catch (err) {
+    return redirectWith(
+      appendQuery(failUrl('api_call_failed'), 'detail', `userinfo:${detailFor(err)}`),
+      clearCookie,
+    )
+  }
+  try {
     folder = await drive.createBaseoutFolder(handoff.spaceId)
-  } catch {
-    return redirectWith(failUrl('api_call_failed'), clearCookie)
+  } catch (err) {
+    return redirectWith(
+      appendQuery(failUrl('api_call_failed'), 'detail', `folder_create:${detailFor(err)}`),
+      clearCookie,
+    )
   }
 
   try {

@@ -238,7 +238,7 @@ const r1: BackupRunRowLike = {
   createdAt: new Date('2026-05-08T18:30:00.000Z'),
   connectionId: 'conn_1',
   connectionDisplayName: 'Main Airtable',
-  configStorageType: 'r2_managed',
+  configStorageType: 'google_drive',
   configMode: 'static',
 }
 
@@ -316,7 +316,7 @@ describe('handleGet', () => {
           triggerRunIds: ['run_a'],
           createdAt: '2026-05-08T18:30:00.000Z',
           connection: { id: 'conn_1', displayName: 'Main Airtable' },
-          configuration: { storageType: 'r2_managed', mode: 'static' },
+          configuration: { storageType: 'google_drive', mode: 'static' },
           includedBases: [{ id: 'b_1', name: 'CRM' }],
         },
       ],

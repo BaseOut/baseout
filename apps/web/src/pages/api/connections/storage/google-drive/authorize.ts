@@ -63,6 +63,7 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
     GOOGLE_OAUTH_CLIENT_ID?: string
     GOOGLE_OAUTH_CLIENT_SECRET?: string
     BASEOUT_ENCRYPTION_KEY?: string
+    PUBLIC_AUTH_BASE_URL?: string
   }
 
   if (!workerEnv.BASEOUT_ENCRYPTION_KEY) {
@@ -79,7 +80,7 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
     )
   }
 
-  const redirectUri = getRedirectUri(url.origin)
+  const redirectUri = getRedirectUri(url.origin, workerEnv)
   const { verifier, challenge } = await generatePkcePair()
   const state = generateState()
 

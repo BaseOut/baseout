@@ -16,13 +16,45 @@ export const GOOGLE_USERINFO_URL =
 export const GOOGLE_DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3'
 
 export const GOOGLE_DRIVE_SCOPES = [
+  // Standard OIDC trio: `openid` for an OIDC-compliant `sub`, `email` for
+  // the user's email (needed for storage_destinations.oauth_account_email),
+  // `profile` for display name + picture. Without `email`, the userinfo
+  // endpoint returns 200 but omits the email field and the callback bails
+  // with `userinfo:Google_userinfo_response_missing_sub_or_email`.
+  'openid',
+  'email',
   'profile',
   'https://www.googleapis.com/auth/drive.file',
   'https://www.googleapis.com/auth/drive.appdata',
 ] as const
 
-export function getRedirectUri(origin: string): string {
-  return `${origin.replace(/\/$/, '')}/oauth/callback/google`
+/**
+ * Build the redirect URI Google will send the user back to.
+ *
+ * Under `wrangler dev --remote`, the Worker runs on Cloudflare's edge so
+ * `request.url.origin` reflects the deployed dev hostname (e.g.
+ * `https://baseout-dev.openside.workers.dev`) — NOT the localhost URL the
+ * browser sees (`https://localhost:4331`). Without an override, Google
+ * receives the workers.dev URL, rejects with `redirect_uri_mismatch`, and
+ * if it didn't would land the browser on a different origin than the one
+ * holding the handoff cookie — breaking the flow either way.
+ *
+ * `env.PUBLIC_AUTH_BASE_URL` already carries the canonical browser-visible
+ * origin (used by Better Auth for magic-link URLs). Prefer it when set;
+ * fall back to the request origin (the production env declares
+ * PUBLIC_AUTH_BASE_URL too, so prod is always env-driven anyway — the
+ * fallback covers tests + any future caller that hasn't plumbed env yet).
+ */
+export interface PublicOriginEnv {
+  PUBLIC_AUTH_BASE_URL?: string
+}
+
+export function getRedirectUri(
+  origin: string,
+  env: PublicOriginEnv = {},
+): string {
+  const base = (env.PUBLIC_AUTH_BASE_URL ?? origin).replace(/\/$/, '')
+  return `${base}/oauth/callback/google`
 }
 
 export interface GoogleOAuthEnv {

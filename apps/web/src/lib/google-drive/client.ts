@@ -67,7 +67,11 @@ export function createGoogleDriveClient(
       }
       const json = (await res.json().catch(() => ({}))) as RawUserinfo
       if (!json.sub || !json.email) {
-        throw new Error('Google userinfo response missing sub or email')
+        // Surface which fields ARE present so the operator can tell whether
+        // the consent screen granted the right scopes. Email comes from the
+        // `email` OAuth scope; sub comes from `openid` (or `profile`).
+        const present = Object.keys(json).join(',') || 'empty'
+        throw new Error(`Google userinfo missing sub or email (got: ${present})`)
       }
       return {
         sub: json.sub,

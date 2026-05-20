@@ -9,10 +9,13 @@
  *   - `frequency` must be a known label AND allowed by the org's tier
  *     capability (Features §6.1). Otherwise → invalid_request /
  *     frequency_not_allowed.
- *   - `storageType` is restricted to `r2_managed` for MVP per Phase 10a
- *     scope. Other values → unsupported_storage_type even if syntactically
- *     correct. The StoragePicker UI prevents this in normal use; this
- *     check is defense-in-depth.
+ *   - `storageType` is restricted to BYOS values whose Connect flow has
+ *     shipped (today: `google_drive` only). Per openspec/changes/
+ *     system-r2-park, `r2_managed` is paused and rejected here; the
+ *     storage-strategies for the other BYOS providers land per their own
+ *     follow-up changes. Other values → unsupported_storage_type even if
+ *     syntactically correct. The StoragePicker UI prevents this in normal
+ *     use; this check is defense-in-depth.
  *
  * Mirrors the start.ts DI pattern: the route owns the DB upsert, this
  * helper validates + dispatches via a vi.fn-able dep.
@@ -32,8 +35,10 @@ const ALL_FREQUENCIES: ReadonlySet<Frequency> = new Set([
   'daily',
   'instant',
 ])
-// MVP: only r2_managed accepted. Add BYOS values when the BYOS picker ships.
-const ALLOWED_STORAGE_TYPES = new Set(['r2_managed'])
+// Per openspec/changes/system-r2-park, managed R2 is paused. Today the only
+// BYOS provider with a shipped Connect flow is Google Drive (commit cea7f08);
+// add other BYOS values as their Connect flows land.
+const ALLOWED_STORAGE_TYPES = new Set(['google_drive'])
 
 export interface PersistBackupConfigPolicyInput {
   spaceId: string

@@ -1,8 +1,8 @@
-> **Depends on**: [`system-r2-stance`](../system-r2-stance/proposal.md) — Phase B's R2-writing path requires [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase 0 to land first (R2 binding + `StorageWriter` interface). Phase A (schema + `attachment_dedup` table) is independent and can ship before that.
+> **Depends on**: [`system-r2-park`](../system-r2-park/proposal.md) — Managed R2 is paused. Phase B's destination-writing path now targets the BYOS `StorageWriter` from [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase B (interface) + Phase C (per-provider strategies). The "pipe to R2" framing is parked pending R2 revival; the dedup table (Phase A) is independent and ships first.
 
 ## Why
 
-The `server` engine emits `[N attachments]` as a placeholder string in every cell where an Airtable attachment field has values. See [apps/workflows/trigger/tasks/_lib/field-normalizer.ts](../../../apps/workflows/trigger/tasks/_lib/field-normalizer.ts). No actual file bytes are downloaded; no R2 object is written. The CSV ends up with a count where the data should be.
+The `server` engine emits `[N attachments]` as a placeholder string in every cell where an Airtable attachment field has values. See [apps/workflows/trigger/tasks/_lib/field-normalizer.ts](../../../apps/workflows/trigger/tasks/_lib/field-normalizer.ts). No actual file bytes are downloaded; no destination object is written. The CSV ends up with a count where the data should be.
 
 This is the most-flagged MVP gap. [PRD §2.9](../../../shared/Baseout_PRD.md) lists attachments as `Automatic (REST API)` for every tier from Starter up — a `Must-Have` per [PRD §7.3](../../../shared/Baseout_PRD.md). [PRD §2.8](../../../shared/Baseout_PRD.md) defines the exact contract:
 
@@ -12,7 +12,7 @@ This is the most-flagged MVP gap. [PRD §2.9](../../../shared/Baseout_PRD.md) li
 > - Airtable URL expiry (~1–2 hrs) handled by refresh process
 > - Attachment data → primary **storage** destination; relational data → **database** tier
 
-The composite-ID dedup is the load-bearing decision. Without it, every snapshot of a base with attachments re-downloads + re-uploads every file — at scale this is gigabytes of egress per scheduled run.
+The composite-ID dedup is the load-bearing decision. Without it, every snapshot of a base with attachments re-downloads + re-uploads every file — at scale this is gigabytes of egress per scheduled run. (Dedup matters even more now that managed R2 is paused per [`system-r2-park`](../system-r2-park/proposal.md): all writes go through external BYOS APIs whose rate limits are tighter than R2's would have been.)
 
 The active change `server-schedule-and-cancel` explicitly defers attachments to this change by name in its Out-of-Scope table.
 
@@ -23,7 +23,7 @@ The active change `server-schedule-and-cancel` explicitly defers attachments to 
 - **New table `attachment_dedup`** in master DB (or in the Space's client DB for dynamic-mode Spaces — see Open Question §1 below):
   - `composite_id text PRIMARY KEY` — `{base_id}_{table_id}_{record_id}_{field_id}_{attachment_id}`
   - `space_id uuid FK → spaces.id ON DELETE CASCADE`
-  - `r2_object_key text NOT NULL` — `<spaceId>/attachments/<composite_id_hash>/<filename>`
+  - `destination_key text NOT NULL` — provider-agnostic destination identifier (e.g. Google Drive file ID, Dropbox path, S3 object key, Box file ID). Spec-level rename from the pre-`system-r2-park` name `r2_object_key`; no migration needed because the column hasn't shipped yet.
   - `content_hash text` — sha256 of the file contents (computed on first download). Optional. Used to detect Airtable-side replacement of an attachment with the same composite ID.
   - `size_bytes bigint`
   - `mime_type text`
@@ -33,10 +33,10 @@ The active change `server-schedule-and-cancel` explicitly defers attachments to 
 
 ### Phase B — Engine attachment download path
 
-- **New module** `apps/workflows/trigger/tasks/_lib/attachment-downloader.ts`. Pure-ish; injectable HTTP client + R2 + dedup-table accessor.
+- **New module** `apps/workflows/trigger/tasks/_lib/attachment-downloader.ts`. Pure-ish; injectable HTTP client + `StorageWriter` + dedup-table accessor.
 - **Entry points**:
-  - `downloadAndStoreAttachment(rec): Promise<AttachmentResult>` — given an Airtable attachment object `{ id, url, filename, size, type }` plus the surrounding `{ baseId, tableId, recordId, fieldId }`, compute the composite ID; check the dedup table; if hit, return existing `r2_object_key`; if miss, GET the Airtable URL with streaming, pipe to R2, INSERT dedup row, return `r2_object_key`. Refresh the Airtable URL via the field metadata if expiry < 1 hour away.
-  - `serializeAttachmentForCsv(rec): string` — replaces the current placeholder with a stable reference. CSV format: `<r2_object_key>` (one per attachment, semicolon-joined within a cell if multiple). For dynamic mode (out of this change), record-level dedup table stores the references; for static mode, the CSV holds them directly.
+  - `downloadAndStoreAttachment(rec): Promise<AttachmentResult>` — given an Airtable attachment object `{ id, url, filename, size, type }` plus the surrounding `{ baseId, tableId, recordId, fieldId }`, compute the composite ID; check the dedup table via the engine-callback endpoint (B.2); if hit, return existing `destination_key`; if miss, GET the Airtable URL with streaming, pipe to the Space's `StorageWriter` (per [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase B), INSERT dedup row, return `destination_key`. Refresh the Airtable URL via the field metadata if expiry < 1 hour away.
+  - `serializeAttachmentForCsv(rec): string` — replaces the current placeholder with a stable reference. CSV format: `<destination_key>` (one per attachment, semicolon-joined within a cell if multiple). For dynamic mode (out of this change), record-level dedup table stores the references; for static mode, the CSV holds them directly.
 - **Wire into** [apps/workflows/trigger/tasks/_lib/field-normalizer.ts](../../../apps/workflows/trigger/tasks/_lib/field-normalizer.ts) — replace the `[N attachments]` placeholder branch with a call to `downloadAndStoreAttachment` per attachment.
 
 ### Phase C — Per-base attachment counter + observability
@@ -64,10 +64,11 @@ This phase is small but optional. If it adds review burden, defer to a follow-up
 
 | Deferred to | Item |
 |---|---|
+| Future change — R2 revival (per [`system-r2-park`](../system-r2-park/proposal.md)) | Per-base attachment-write to managed R2. Phase B's downloader now writes through the BYOS `StorageWriter` from [`server-byos-destinations`](../server-byos-destinations/proposal.md). A future `server-r2-revive` change would re-enable R2 as a strategy without changing the downloader. |
 | Future change `server-attachment-restore` | Restore-from-snapshot path for attachments. Today's restore engine doesn't exist; when it does, it'll need to map the composite ID back to an Airtable upload. Separate concern. |
 | Future change `server-attachment-dedup-by-content` | Dedup by `content_hash` instead of composite ID. Today: composite-ID dedup means the same file with different `attachment_id` is downloaded twice. Future optimization. |
 | Future change | Per-attachment retry policy with backoff. Today: a failed download fails the per-table page; the existing per-task retry handles the rest. |
-| Future change | CDN-style URL signing on R2 object keys for direct-access exposure to customers. Today: customers don't see R2 keys; the restore engine will need this when it lands. |
+| Future change | CDN-style URL signing on `destination_key` for direct-access exposure to customers. Today: customers don't see destination keys; the restore engine will need this when it lands. |
 | Bundled with `server-byos-destinations` | Proxy streaming for Box/Dropbox. The dedup table + downloader land here; the destination-strategy wrapper lands there. |
 | Bundled with `server-dynamic-mode` | Storing attachment metadata in a per-Space client DB (D1 / Postgres). Today: dedup table is in master DB across all Spaces. Dynamic-mode change relocates it. |
 | Bundled with `server-trial-quota-enforcement` | Trial-cap enforcement for the 100-attachment limit. Engine emits the count; quota enforcement is upstream of the per-attachment download. |
@@ -92,20 +93,21 @@ This phase is small but optional. If it adds review burden, defer to a follow-up
 ## Impact
 
 - **Master DB**: one additive migration. New `attachment_dedup` table.
-- **R2**: significant new write volume on first scheduled run per Space — every existing attachment gets downloaded. After that, dedup means only NEW attachments add R2 writes.
+- **Destination write volume**: significant new volume on first scheduled run per Space — every existing attachment gets downloaded and written to the Space's connected BYOS destination. After that, dedup means only NEW attachments add destination writes.
 - **Airtable API quota**: attachments are GET requests against Airtable's CDN URLs (not the metered REST API), so they don't consume the REST rate limit. Worth confirming in operational testing.
+- **BYOS provider rate limits**: per [`system-r2-park`](../system-r2-park/proposal.md), every write goes through an external provider whose API limits are tighter than managed R2's would have been (Google Drive: 1000 req/100s/user; Dropbox: 1000 req/min file-write; Box: 10 req/sec/user). Dedup reduces this dramatically after the first pass, but the first pass on a large base is bounded by the provider's quota.
 - **Trigger.dev task duration**: a base with thousands of attachments could blow past the 600s `maxDuration`. Mitigation: per-base task already streams page-by-page; attachment download happens within the same page loop. If a single page's attachments exceed budget, the task fails and the next scheduled run picks up via dedup (already-downloaded skips, only the failed remainder needs work). Watch in operational logs; if it's a recurring issue, follow up with `server-attachment-checkpointing`.
-- **Cost**: R2 storage is the dominant cost. Hard to predict at MVP scale until we see real customer bases. The Smart Rolling Cleanup change keeps it bounded.
-- **Security**: attachments are downloaded over HTTPS from Airtable's CDN. The Airtable URL is short-lived (~1–2hr expiry per PRD §2.8); the URL refresh path is unchanged from `runBackupBase`'s existing field-metadata refresh logic. Attachment bytes never touch disk on Baseout's side (streamed directly from Airtable to R2).
+- **Cost**: storage cost lands on the customer (BYOS) per [`system-r2-park`](../system-r2-park/proposal.md). Baseout-side cost is bandwidth + Trigger.dev compute only.
+- **Security**: attachments are downloaded over HTTPS from Airtable's CDN. The Airtable URL is short-lived (~1–2hr expiry per PRD §2.8); the URL refresh path is unchanged from `runBackupBase`'s existing field-metadata refresh logic. Attachment bytes are streamed directly from Airtable through the Trigger.dev runner to the customer's BYOS destination — they never persist on Baseout's disk.
 - **Cross-app contract**: no new wire shapes. Existing `/runs/start`, `/runs/progress`, `/runs/complete` payloads gain `attachmentsDownloaded` field (additive, optional).
 
 ## Reversibility
 
 - **Phase A** (schema): additive. Reverting means leaving the table empty.
-- **Phase B** (downloader): pure roll-forward. Reverting restores the `[N attachments]` placeholder; existing R2 attachment objects become orphaned (cleaned up eventually by the retention engine via `last_seen_at` aging).
+- **Phase B** (downloader): pure roll-forward. Reverting restores the `[N attachments]` placeholder; existing destination-side attachment objects become orphaned in the customer's BYOS store (Baseout no longer prunes them — BYOS retention is the customer's responsibility per Features §6.6).
 - **Phase C** (counts): pure observability addition.
 - **Phase D** (trial cap): blocking-dependent on `server-trial-quota-enforcement`; reversal removes the cap check.
 - **Phase E** (opt-out): pure feature flag — `skip_attachments=false` is the existing behavior.
 - **Phase F** (docs): `git revert`.
 
-The only irreversibility is in R2: once attachments are downloaded, they accumulate until retention prunes them. The forward path of "start downloading" is itself reversible (turn off the feature), but the data written can't be un-written. Tasks include an operational dry-run (Phase B.4) where the downloader logs `would-download` events without actually writing R2 in a feature-flag mode for the first prod day.
+The only irreversibility is in the customer's BYOS destination: once attachments are written, Baseout cannot un-write them (BYOS retention is the customer's responsibility per Features §6.6). The forward path of "start downloading" is itself reversible (turn off the feature), but the data written can't be un-written. Tasks include an operational dry-run (Phase B.4) where the downloader logs `would-download` events without actually writing to the destination in a feature-flag mode for the first prod day.

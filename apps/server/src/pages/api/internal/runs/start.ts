@@ -18,7 +18,8 @@
 //   connection_not_found        → 404
 //   invalid_connection          → 409
 //   config_not_found            → 404
-//   unsupported_storage_type    → 422
+//   managed_r2_paused           → 422 (per openspec/changes/system-r2-park)
+//   no_storage_destination      → 422
 //   no_bases_selected           → 422
 
 import type { AppLocals, Env } from "../../../../env";
@@ -48,7 +49,8 @@ function statusFor(result: ProcessRunStartResult): number {
     case "run_already_started":
     case "invalid_connection":
       return 409;
-    case "unsupported_storage_type":
+    case "managed_r2_paused":
+    case "no_storage_destination":
     case "no_bases_selected":
       return 422;
   }

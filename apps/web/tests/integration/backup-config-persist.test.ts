@@ -39,7 +39,10 @@ describe('persistBaseSelection (integration)', () => {
     expect(configRows).toHaveLength(1)
     expect(configRows[0].frequency).toBe('monthly')
     expect(configRows[0].mode).toBe('static')
-    expect(configRows[0].storageType).toBe('r2_managed')
+    // Per openspec/changes/system-r2-park the `r2_managed` default was
+    // dropped + the NOT NULL constraint removed; a freshly-created config
+    // carries null storageType until the user connects a BYOS destination.
+    expect(configRows[0].storageType).toBeNull()
 
     const baseRows = await db
       .select({ atBaseId: backupConfigurationBases.atBaseId, isIncluded: backupConfigurationBases.isIncluded })
