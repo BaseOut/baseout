@@ -135,6 +135,19 @@ describe('persistBackupConfigPolicy', () => {
     })
   })
 
+  it('accepts local_fs as a dev-only storageType (per system-local-fs-dev-writer)', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      { spaceId: SPACE_ID, body: { storageType: 'local_fs' }, tier: 'starter' },
+      d,
+    )
+    expect(result).toEqual({ ok: true })
+    expect(d.upsertConfig).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      storageType: 'local_fs',
+    })
+  })
+
   it('returns invalid_request when neither field is present (no-op rejected)', async () => {
     const d = deps()
     const result = await persistBackupConfigPolicy(

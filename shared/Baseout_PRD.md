@@ -555,7 +555,7 @@ Baseout must support being embedded as an **Airtable interface/extension**:
 | Box | ✅ V1 (existing; proxy stream required) |
 | OneDrive | ✅ V1 (existing) |
 | Amazon S3 | ✅ V1 (dev-complete; launching in V1) |
-| Cloudflare R2 | ✅ V1 (new — internal managed storage) |
+| Cloudflare R2 (Baseout-managed) | ⏸ V2 (paused per system-r2-park) |
 | Frame.io (Adobe) | ✅ V1 — Growth+ |
 
 ### 7.3 Baseout Inbound API ✅
@@ -1124,7 +1124,7 @@ All email templates built with inline HTML + text fallbacks and sent via **[Clou
 |---|---|---|
 | OAuth tokens (Airtable, storage destinations) | AES-256-GCM | Encrypted before writing to master DB; decrypted at runtime via Cloudflare Secrets key |
 | API keys (Inbound API, SQL REST) | AES-256-GCM | Same approach as OAuth tokens |
-| Backup files (R2 managed) | Cloudflare R2 server-side encryption | At-rest encryption, platform-managed |
+| Backup files (BYOS destinations) | BYOS-provider TLS in transit + provider-managed encryption at rest | Customer-owned storage (Google Drive, Dropbox, Box, OneDrive, S3, …); managed-R2 path paused per system-r2-park |
 | Customer databases (D1, Shared PG, Dedicated PG) | Provider-managed at-rest encryption | DigitalOcean, Neon, Supabase all encrypt at rest |
 | Passwords (once email+password auth is added) | bcrypt (via better-auth) | better-auth handles this natively |
 

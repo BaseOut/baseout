@@ -496,10 +496,10 @@ export const e2ePendingAirtableBases = baseout.table('e2e_pending_airtable_bases
 
 // ———————————————————————————————————————————————————————————————————————————
 // STORAGE DESTINATIONS
-// One row per Space — the backup engine writes here. Type CHECK constraint is
-// scoped to MVP values; per-provider follow-up changes (box, onedrive, s3,
-// frame_io) ALTER TABLE to widen the constraint when they ship. OAuth tokens
-// stored AES-256-GCM encrypted (_enc suffix) per PRD §20.2.
+// One row per Space — the backup engine writes here. Type CHECK constraint
+// widens per provider follow-up; future changes (onedrive, s3, frame_io)
+// ALTER TABLE to add their value. OAuth tokens stored AES-256-GCM encrypted
+// (_enc suffix) per PRD §20.2.
 // ———————————————————————————————————————————————————————————————————————————
 
 export const storageDestinations = baseout.table('storage_destinations', {
@@ -508,7 +508,9 @@ export const storageDestinations = baseout.table('storage_destinations', {
     .notNull()
     .references(() => spaces.id, { onDelete: 'cascade' }),
   type: text('type').notNull(),
-  // 'r2_managed' | 'google_drive' | 'dropbox' — enforced by CHECK constraint below
+  // 'r2_managed' | 'google_drive' | 'dropbox' | 'box' | 'local_fs' — enforced by CHECK constraint below
+  // 'local_fs' is a dev-runner-only destination auto-provisioned by the engine when a Space
+  // has no OAuth-connected BYOS row; see openspec/changes/system-local-fs-dev-writer.
   oauthAccessTokenEnc: text('oauth_access_token_enc'),
   oauthRefreshTokenEnc: text('oauth_refresh_token_enc'),
   oauthExpiresAt: timestamp('oauth_expires_at', { withTimezone: true }),
@@ -527,7 +529,7 @@ export const storageDestinations = baseout.table('storage_destinations', {
   index('storage_destinations_space_id_idx').on(table.spaceId),
   check(
     'storage_destinations_type_check',
-    sql`${table.type} IN ('r2_managed','google_drive','dropbox')`,
+    sql`${table.type} IN ('r2_managed','google_drive','dropbox','box','local_fs')`,
   ),
 ])
 
@@ -550,14 +552,14 @@ export const oauthStates = baseout.table('oauth_states', {
     .notNull()
     .references(() => users.id, { onDelete: 'cascade' }),
   provider: text('provider').notNull(),
-  // 'google_drive' | 'dropbox' — enforced by CHECK constraint below
+  // 'google_drive' | 'dropbox' | 'box' — enforced by CHECK constraint below
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   unique('oauth_states_state_unique').on(table.state),
   index('oauth_states_created_at_idx').on(table.createdAt),
   check(
     'oauth_states_provider_check',
-    sql`${table.provider} IN ('google_drive','dropbox')`,
+    sql`${table.provider} IN ('google_drive','dropbox','box')`,
   ),
 ])
 

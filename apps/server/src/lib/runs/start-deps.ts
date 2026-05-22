@@ -54,9 +54,33 @@ export function buildRunStartDeps(db: MasterDb, env: Env): ProcessRunStartDeps {
       return (rows[0] ?? null) as BackupConfigurationRow | null;
     },
     fetchStorageDestinationBySpace: async (spaceId) => {
-      // Per openspec/changes/system-r2-park: every Space must have a
-      // connected BYOS row before its first backup. apps/web writes the row
-      // during the OAuth Connect flow.
+      // Per openspec/changes/system-r2-park: every Space must resolve to a
+      // storage_destinations row before its first backup. The OAuth Connect
+      // flow writes BYOS rows; ensureLocalFsDestination (below) covers dev
+      // Spaces that haven't connected anything yet.
+      const rows = await db
+        .select()
+        .from(storageDestinations)
+        .where(eq(storageDestinations.spaceId, spaceId))
+        .limit(1);
+      return (rows[0] ?? null) as StorageDestinationRow | null;
+    },
+    ensureLocalFsDestination: async (spaceId) => {
+      // Idempotent — the unique constraint on storage_destinations.space_id
+      // means concurrent inserts settle to a single row. See openspec/
+      // changes/system-local-fs-dev-writer design.md "Auto-provisioning
+      // policy". `connected_by_user_id` is intentionally null: the row was
+      // engine-provisioned, not user-OAuth-connected.
+      await db
+        .insert(storageDestinations)
+        .values({
+          spaceId,
+          type: "local_fs",
+          connectedAt: new Date(),
+        })
+        .onConflictDoNothing({
+          target: storageDestinations.spaceId,
+        });
       const rows = await db
         .select()
         .from(storageDestinations)

@@ -29,6 +29,15 @@ describe("makeStorageWriter", () => {
     expect(() => makeStorageWriter(dest, env)).toThrow(/dropbox/);
   });
 
+  it("throws for 'local_fs' — workflows-runner-only", () => {
+    // local_fs is a Node-fs writer; the Worker can never instantiate one.
+    // The throw catches the misroute at construction time instead of
+    // failing on the first writeFile. See openspec/changes/
+    // system-local-fs-dev-writer for the architectural decision.
+    const dest: StorageDestination = { type: "local_fs" };
+    expect(() => makeStorageWriter(dest, env)).toThrow(/workflows-runner-only/);
+  });
+
   it("throws for an unknown destination type", () => {
     expect(() =>
       makeStorageWriter(

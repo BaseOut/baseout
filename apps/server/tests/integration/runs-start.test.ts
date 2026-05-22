@@ -108,6 +108,7 @@ interface DepsBag {
   fetchConnectionById: ReturnType<typeof vi.fn>;
   fetchConfigBySpace: ReturnType<typeof vi.fn>;
   fetchStorageDestinationBySpace: ReturnType<typeof vi.fn>;
+  ensureLocalFsDestination: ReturnType<typeof vi.fn>;
   fetchIncludedBases: ReturnType<typeof vi.fn>;
   updateRunStarted: ReturnType<typeof vi.fn>;
   updateRunTriggerIds: ReturnType<typeof vi.fn>;
@@ -120,6 +121,9 @@ function makeDeps(): DepsBag {
     fetchConnectionById: vi.fn(async () => makeConnection()),
     fetchConfigBySpace: vi.fn(async () => makeConfig()),
     fetchStorageDestinationBySpace: vi.fn(async () => makeDestination()),
+    ensureLocalFsDestination: vi.fn(async () =>
+      makeDestination({ type: "local_fs" }),
+    ),
     fetchIncludedBases: vi.fn(async () => [
       { atBaseId: "appAAA111", name: "Tasks" },
       { atBaseId: "appBBB222", name: "Projects" },
@@ -325,9 +329,43 @@ describe("processRunStart — validation failures", () => {
     expect(deps.updateRunStarted).not.toHaveBeenCalled();
   });
 
-  it("returns no_storage_destination when no BYOS row is connected for the Space", async () => {
+  it("auto-provisions a local_fs destination when no BYOS row is connected and proceeds (per system-local-fs-dev-writer)", async () => {
     const deps = makeDeps();
     deps.fetchStorageDestinationBySpace = vi.fn(async () => null);
+    deps.ensureLocalFsDestination = vi.fn(async () =>
+      makeDestination({ type: "local_fs" }),
+    );
+
+    const result = await processRunStart(
+      { runId: RUN_ID },
+      { ...deps, now: () => NOW },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(deps.ensureLocalFsDestination).toHaveBeenCalledWith(SPACE_ID);
+    expect(deps.updateRunStarted).toHaveBeenCalled();
+  });
+
+  it("does NOT call ensureLocalFsDestination when a BYOS row already exists (no stomping on Drive/Dropbox/Box)", async () => {
+    const deps = makeDeps();
+    // fetchStorageDestinationBySpace returns a real google_drive row.
+    deps.fetchStorageDestinationBySpace = vi.fn(async () =>
+      makeDestination({ type: "google_drive" }),
+    );
+
+    const result = await processRunStart(
+      { runId: RUN_ID },
+      { ...deps, now: () => NOW },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(deps.ensureLocalFsDestination).not.toHaveBeenCalled();
+  });
+
+  it("returns no_storage_destination only if ensureLocalFsDestination also resolves null (defensive)", async () => {
+    const deps = makeDeps();
+    deps.fetchStorageDestinationBySpace = vi.fn(async () => null);
+    deps.ensureLocalFsDestination = vi.fn(async () => null);
 
     const result = await processRunStart(
       { runId: RUN_ID },

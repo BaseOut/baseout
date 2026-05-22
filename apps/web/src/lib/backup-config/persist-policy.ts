@@ -35,10 +35,14 @@ const ALL_FREQUENCIES: ReadonlySet<Frequency> = new Set([
   'daily',
   'instant',
 ])
-// Per openspec/changes/system-r2-park, managed R2 is paused. Today the only
-// BYOS provider with a shipped Connect flow is Google Drive (commit cea7f08);
-// add other BYOS values as their Connect flows land.
-const ALLOWED_STORAGE_TYPES = new Set(['google_drive'])
+// Per openspec/changes/system-r2-park, managed R2 is paused. The BYOS
+// provider with a shipped Connect flow is Google Drive (commit cea7f08);
+// add other BYOS values as their Connect flows land. 'local_fs' is a
+// dev-only destination per openspec/changes/system-local-fs-dev-writer —
+// allowed here so the StoragePicker can offer it in non-production builds;
+// the engine handles auto-provisioning the matching storage_destinations
+// row on first kickoff.
+const ALLOWED_STORAGE_TYPES = new Set(['google_drive', 'local_fs'])
 
 export interface PersistBackupConfigPolicyInput {
   spaceId: string

@@ -11,6 +11,13 @@ AIRTABLE_OAUTH_CLIENT_SECRET=
 # Redirect URI on Worker side: <origin>/oauth/callback/google
 GOOGLE_OAUTH_CLIENT_ID=
 GOOGLE_OAUTH_CLIENT_SECRET=
+# Dropbox OAuth. App registered in the Dropbox App Console
+# (https://www.dropbox.com/developers/apps). App type MUST be "Full Dropbox"
+# (not "App Folder"); scopes MUST include files.content.write,
+# files.content.read, files.metadata.read, account_info.read. Redirect URI
+# on Worker side: <origin>/api/connections/storage/dropbox/callback.
+DROPBOX_OAUTH_CLIENT_ID=
+DROPBOX_OAUTH_CLIENT_SECRET=
 SERVICE_HMAC_TO_BACKUP=
 POSTHOG_PROJECT_KEY=
 DUB_CO_API_KEY=

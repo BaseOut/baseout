@@ -32,8 +32,16 @@ trigger/
       airtable-client.ts    Airtable Metadata + Records API client
       csv-stream.ts         Page → CSV transformer
       field-normalizer.ts   Airtable field value → CSV cell normaliser
-      local-fs-write.ts     Local-disk CSV writer (R2 replacement)
+      local-fs-write.ts     Legacy local-disk writer (retired by Phase W.2
+                            of shared-byos-drive-dropbox)
       r2-path.ts            Backup-tree path layout (legacy name)
+      storage-writers/      StorageWriter strategies (factory dispatch)
+        index.ts            makeStorageWriter() factory
+        types.ts            Workflows-side StorageWriter contract
+        google-drive.ts     Drive resumable-upload writer
+        dropbox.ts          Dropbox upload-session writer (8 MB chunks)
+        local-fs.ts         Local-disk writer (first-class factory member,
+                            per openspec/changes/system-local-fs-dev-writer)
 trigger.config.ts       Trigger.dev project config
 tests/                  Plain Vitest tests
 ```

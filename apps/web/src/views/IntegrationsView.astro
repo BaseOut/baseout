@@ -329,6 +329,7 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
                 selectedStorageType={state.policy.storageType}
                 googleDriveConnected={state.googleDriveConnected}
                 googleDriveAccountEmail={state.googleDriveAccountEmail}
+                localFsAvailable={import.meta.env.DEV}
               />
               <RunBackupButton
                 spaceId={Astro.locals.account.space.id}

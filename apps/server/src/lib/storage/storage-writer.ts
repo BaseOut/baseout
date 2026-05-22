@@ -5,7 +5,8 @@
 // value remains in the type union (the storage_destinations.type CHECK
 // constraint still permits it, so revival is a one-flag flip rather than a
 // migration) but the factory throws for it. Drive + Dropbox cases land in
-// Phase C of shared-byos-drive-dropbox; until then they also throw.
+// Phase C of shared-byos-drive-dropbox; Box lands via shared-byos-box. Until
+// each provider's strategy ships, the factory throws for it.
 //
 // Per design.md (shared-byos-drive-dropbox): the interface is full-shape
 // from day one so per-provider follow-ups don't reshape it. The factory is
@@ -14,7 +15,12 @@
 
 import type { Env } from "../../env";
 
-export type StorageDestinationType = "r2_managed" | "google_drive" | "dropbox";
+export type StorageDestinationType =
+  | "r2_managed"
+  | "google_drive"
+  | "dropbox"
+  | "box"
+  | "local_fs";
 
 /**
  * Resolved storage destination handed to the factory. Carries the decrypted
@@ -92,6 +98,18 @@ export function makeStorageWriter(
     case "dropbox":
       throw new Error(
         `StorageWriter for type '${dest.type}' lands in Phase C of shared-byos-drive-dropbox`,
+      );
+    case "box":
+      throw new Error(
+        "StorageWriter for type 'box' lands in Phase C.s of shared-byos-box",
+      );
+    case "local_fs":
+      // local_fs is a Node-fs writer (lives in apps/workflows). The Worker
+      // has no local filesystem, so instantiating one here is a misroute by
+      // construction — fail loudly at the factory rather than silently on
+      // the first writeFile. See openspec/changes/system-local-fs-dev-writer.
+      throw new Error(
+        "local_fs StorageWriter is workflows-runner-only (Node fs) — the Worker never instantiates one",
       );
     default:
       throw new Error(

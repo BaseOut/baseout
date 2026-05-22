@@ -1,12 +1,12 @@
 /**
- * Encrypted HttpOnly cookie carrying the Google Drive OAuth handoff payload.
+ * Encrypted HttpOnly cookie carrying the Dropbox OAuth handoff payload.
  *
  * Thin shim over lib/oauth/cookie (the provider-agnostic implementation
  * extracted per shared-byos-drive-dropbox design.md §C.3.0). Binds the
- * Google-specific cookie name + path and re-exports the shared seal /
- * open / read helpers. Call-site imports under
- * apps/web/src/pages/api/connections/storage/google-drive/ +
- * apps/web/src/pages/oauth/callback/google.ts stay unchanged.
+ * Dropbox-specific cookie name + path and re-exports the shared seal /
+ * open / read helpers. Both the authorize POST and the callback GET live
+ * under `/api/connections/storage/dropbox/`, so the cookie is scoped to
+ * that path.
  */
 
 import {
@@ -21,17 +21,12 @@ import {
 export { openHandoffPayload, sealHandoffPayload } from '../oauth/cookie'
 export type { CookieAttrs, OAuthHandoffPayload }
 
-export const GOOGLE_OAUTH_COOKIE = 'bo_oauth_google'
-/**
- * Scope cookie to `/` so the browser sends it back to the callback at
- * `/oauth/callback/google` (the registered redirect URI, which lives outside
- * the `/api/connections/...` prefix used by Airtable).
- */
-export const GOOGLE_OAUTH_COOKIE_PATH = '/'
+export const DROPBOX_OAUTH_COOKIE = 'bo_oauth_dropbox'
+export const DROPBOX_OAUTH_COOKIE_PATH = '/api/connections/storage/dropbox'
 
 const CONFIG: CookieConfig = {
-  name: GOOGLE_OAUTH_COOKIE,
-  path: GOOGLE_OAUTH_COOKIE_PATH,
+  name: DROPBOX_OAUTH_COOKIE,
+  path: DROPBOX_OAUTH_COOKIE_PATH,
 }
 
 export function buildSetCookie(value: string, attrs?: CookieAttrs): string {

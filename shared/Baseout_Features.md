@@ -504,7 +504,7 @@ All plans include Static backup. Dynamic database backup is available from Launc
 | **Box** | BYOS | OAuth | Yes | All |
 | **OneDrive** | BYOS | OAuth | No | All |
 | **Amazon S3** | BYOS | IAM / Access Key | No | Growth+ |
-| **Cloudflare R2** | Managed | Internal | No | All |
+| **Cloudflare R2 (Baseout-managed)** | Managed | Internal | No | ⏸ V2 (paused per system-r2-park) |
 | **Frame.io** | BYOS | OAuth | TBD | Growth+ |
 | **Custom / BYOS** | BYOS | Varies | Varies | Pro+ |
 

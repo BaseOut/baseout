@@ -1,23 +1,19 @@
 /**
- * Google Drive OAuth 2.0 + PKCE helpers.
+ * Dropbox OAuth 2.0 + PKCE helpers.
  *
  * Thin shim over lib/oauth/{pkce,exchange} (the provider-agnostic
  * implementations extracted per shared-byos-drive-dropbox design.md §C.3.0).
- * Binds the Google endpoint URLs, request-body client-auth mode, and the
- * `access_type=offline` + `prompt=consent` extras Google needs to mint a
+ * Binds the Dropbox endpoint URLs, request-body client-auth mode (same as
+ * Drive), and `token_access_type=offline` so the consent screen issues a
  * refresh token. Call sites under
- * apps/web/src/pages/api/connections/storage/google-drive/ +
- * apps/web/src/pages/oauth/callback/google.ts stay unchanged.
+ * apps/web/src/pages/api/connections/storage/dropbox/ stay unchanged.
  *
- * Google supports PKCE for confidential clients (web apps). For refresh
- * tokens we MUST pass `access_type=offline` AND `prompt=consent` on the
- * authorize URL — Google only re-issues a refresh_token if the user
- * explicitly re-consents.
- *
- * Reference: https://developers.google.com/identity/protocols/oauth2/web-server
+ * Dropbox docs:
+ *   - https://www.dropbox.com/developers/documentation/http/documentation#authorization
+ *   - https://developers.dropbox.com/oauth-guide
  */
 
-import { GOOGLE_AUTHORIZE_URL, GOOGLE_TOKEN_URL } from './config'
+import { DROPBOX_AUTHORIZE_URL, DROPBOX_TOKEN_URL } from './config'
 import {
   buildAuthorizeUrl as sharedBuildAuthorizeUrl,
   exchangeCodeForTokens as sharedExchangeCodeForTokens,
@@ -28,13 +24,11 @@ import {
 export { generatePkcePair, generateState, type PkcePair } from '../oauth/pkce'
 export type { TokenResponse }
 
-const GOOGLE_AUTHORIZE_EXTRA_PARAMS: Record<string, string> = {
-  // Required to get a refresh_token back. Without prompt=consent Google
-  // only returns refresh_token on the user's first consent — every later
-  // authorize call would silently omit it and break long-lived backups.
-  access_type: 'offline',
-  prompt: 'consent',
-  include_granted_scopes: 'true',
+const DROPBOX_AUTHORIZE_EXTRA_PARAMS: Record<string, string> = {
+  // Without `token_access_type=offline` Dropbox returns a short-lived access
+  // token only — refresh tokens require this opt-in (mirrors Google's
+  // `access_type=offline`).
+  token_access_type: 'offline',
 }
 
 export interface AuthorizeParams {
@@ -43,19 +37,19 @@ export interface AuthorizeParams {
   scopes: readonly string[]
   state: string
   challenge: string
-  /** Override for the authorize endpoint. Defaults to the real Google URL. */
+  /** Override for the authorize endpoint (testing). */
   authorizeUrl?: string
 }
 
 export function buildAuthorizeUrl(params: AuthorizeParams): string {
   return sharedBuildAuthorizeUrl({
-    authorizeUrl: params.authorizeUrl ?? GOOGLE_AUTHORIZE_URL,
+    authorizeUrl: params.authorizeUrl ?? DROPBOX_AUTHORIZE_URL,
     clientId: params.clientId,
     redirectUri: params.redirectUri,
     scopes: params.scopes,
     state: params.state,
     challenge: params.challenge,
-    extraParams: GOOGLE_AUTHORIZE_EXTRA_PARAMS,
+    extraParams: DROPBOX_AUTHORIZE_EXTRA_PARAMS,
   })
 }
 
@@ -65,6 +59,7 @@ export interface ExchangeCodeParams {
   clientId: string
   clientSecret: string
   redirectUri: string
+  /** Override for the token endpoint (testing). */
   tokenUrl?: string
 }
 
@@ -72,14 +67,14 @@ export function exchangeCodeForTokens(
   params: ExchangeCodeParams,
 ): Promise<TokenResponse> {
   return sharedExchangeCodeForTokens({
-    tokenUrl: params.tokenUrl ?? GOOGLE_TOKEN_URL,
+    tokenUrl: params.tokenUrl ?? DROPBOX_TOKEN_URL,
     authMode: 'request_body',
     code: params.code,
     verifier: params.verifier,
     clientId: params.clientId,
     clientSecret: params.clientSecret,
     redirectUri: params.redirectUri,
-    providerLabel: 'Google',
+    providerLabel: 'Dropbox',
   })
 }
 
@@ -94,11 +89,11 @@ export function refreshAccessToken(
   params: RefreshParams,
 ): Promise<TokenResponse> {
   return sharedRefreshAccessToken({
-    tokenUrl: params.tokenUrl ?? GOOGLE_TOKEN_URL,
+    tokenUrl: params.tokenUrl ?? DROPBOX_TOKEN_URL,
     authMode: 'request_body',
     refreshToken: params.refreshToken,
     clientId: params.clientId,
     clientSecret: params.clientSecret,
-    providerLabel: 'Google',
+    providerLabel: 'Dropbox',
   })
 }

@@ -1,0 +1,4 @@
+ALTER TABLE "baseout"."oauth_states" DROP CONSTRAINT "oauth_states_provider_check";--> statement-breakpoint
+ALTER TABLE "baseout"."storage_destinations" DROP CONSTRAINT "storage_destinations_type_check";--> statement-breakpoint
+ALTER TABLE "baseout"."oauth_states" ADD CONSTRAINT "oauth_states_provider_check" CHECK ("baseout"."oauth_states"."provider" IN ('google_drive','dropbox','box'));--> statement-breakpoint
+ALTER TABLE "baseout"."storage_destinations" ADD CONSTRAINT "storage_destinations_type_check" CHECK ("baseout"."storage_destinations"."type" IN ('r2_managed','google_drive','dropbox','box'));

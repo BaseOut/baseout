@@ -4,6 +4,8 @@
 > **Companion to:** [Baseout_PRD.md](Baseout_PRD.md) · [Baseout_Features.md](Baseout_Features.md) · [Baseout_Implementation_Plan.md](Baseout_Implementation_Plan.md) · [Baseout_Backlog.md](Baseout_Backlog.md)
 > **Not a replacement for:** [Baseout_Backlog.md](Baseout_Backlog.md) — parents here link back to their canonical entries there.
 
+> ⏸ **R2 deferral notice (system-r2-park, 2026-05-20):** Managed Cloudflare R2 is paused per [`openspec/changes/system-r2-park`](../openspec/changes/system-r2-park/proposal.md). Every R2-keyed item below — including (but not limited to) [P0.6.2] (R2 bucket provisioning), [P1D.1] and its sub-issues (R2 managed storage / `StorageR2` writer / R2 quota check / R2 round-trip integration test), [P1B.4.3] (`schema.json` → R2), [P1B.4.7] (per-Base orchestrator → R2), [P1B.5.5] (attachment → R2 upload), and any prod/staging R2 bucket provisioning step — is **deferred to a future `system-r2-revive` change**. BYOS destinations (Google Drive shipped in [`cea7f08`](../apps/web/src/lib/google-drive/oauth.ts); Dropbox next per [`shared-byos-drive-dropbox`](../openspec/changes/shared-byos-drive-dropbox/proposal.md)) are the only writeable storage path in V1. The `StorageDestination` interface (P1D.1.1–.2) stays in scope; only the R2 writer + R2-specific provisioning + R2 quota is parked.
+
 ---
 
 ## 0. Purpose + How to Read

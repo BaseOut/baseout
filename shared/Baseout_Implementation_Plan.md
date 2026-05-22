@@ -4,6 +4,8 @@
 **Status:** Draft
 **Source:** BaseOut_PRD_v2.md (V1.4) + Baseout_Features.md (V1.0)
 
+> ⏸ **R2 build steps paused (system-r2-park, 2026-05-20):** Every row in this plan that references managed Cloudflare R2 as a build step — staging R2 namespace provisioning (Phase 0), "CSV export to R2 (managed storage default)" (Phase 1 backup engine), the StoragePicker R2 default (Phase 1 web), the R2-managed-storage destination row, and the R2 usage summary widget — is **paused per [`openspec/changes/system-r2-park`](../openspec/changes/system-r2-park/proposal.md)**. BYOS-first replaces the R2 step: Google Drive shipped in [`cea7f08`](../apps/web/src/lib/google-drive/oauth.ts) and is the recommended V1 default; Dropbox and the remaining BYOS providers follow per [`shared-byos-drive-dropbox`](../openspec/changes/shared-byos-drive-dropbox/proposal.md). The `StorageDestination` / `StorageWriter` interface stays in scope.
+
 ---
 
 ## Overview

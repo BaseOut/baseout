@@ -19,11 +19,14 @@
 //        (5 tables / 1000 records). Add the column + the pre-enqueue
 //        check together when the cleanup phase mirrors orgs/spaces.
 //
-// Storage-destination validation (per openspec/changes/system-r2-park):
+// Storage-destination validation (per openspec/changes/system-r2-park,
+// extended by openspec/changes/system-local-fs-dev-writer):
 //   - storageType MUST NOT be 'r2_managed' — managed R2 is paused.
-//   - The Space MUST have a connected storage_destinations row. Without it
-//     the workflows runner has nothing to write to. The row's `type` value
-//     also drives the StorageWriter dispatch downstream.
+//   - The Space MUST resolve to a storage_destinations row before kickoff.
+//     If no row exists, the engine auto-provisions a 'local_fs' destination
+//     (idempotent INSERT … ON CONFLICT DO NOTHING) so dev smokes work
+//     end-to-end without an OAuth Connect step. The row's `type` value
+//     drives the StorageWriter dispatch downstream.
 
 import type {
   BackupConfigurationRow,
@@ -72,6 +75,16 @@ export interface ProcessRunStartDeps {
     spaceId: string,
   ) => Promise<BackupConfigurationRow | null>;
   fetchStorageDestinationBySpace: (
+    spaceId: string,
+  ) => Promise<StorageDestinationRow | null>;
+  /**
+   * Idempotent upsert that inserts a `local_fs` destination row when a
+   * Space has none, then re-fetches and returns it. Race-safe via the
+   * `storage_destinations.space_id` unique constraint — concurrent calls
+   * both attempt the insert; one wins; the other no-ops; both re-fetch
+   * the same row. See openspec/changes/system-local-fs-dev-writer.
+   */
+  ensureLocalFsDestination: (
     spaceId: string,
   ) => Promise<StorageDestinationRow | null>;
   fetchIncludedBases: (configId: string) => Promise<IncludedBase[]>;
@@ -134,11 +147,17 @@ export async function processRunStart(
     return { ok: false, error: "managed_r2_paused" };
   }
 
-  // 3b. With R2 paused, every Space MUST have a connected BYOS destination
-  //     row before its first backup. The downstream writer dispatch reads
-  //     the row to pick a strategy; missing means the user hasn't completed
-  //     the OAuth Connect flow yet.
-  const destination = await deps.fetchStorageDestinationBySpace(run.spaceId);
+  // 3b. Every Space must resolve to a storage_destinations row before
+  //     kickoff. With R2 paused, the row is normally written by the OAuth
+  //     Connect flow (Drive / Dropbox / Box). When none is present we
+  //     auto-provision a 'local_fs' destination so the workflows runner
+  //     writes CSVs under apps/workflows/.backups/ — restoring the
+  //     2e31a55 dev smoke loop. See openspec/changes/
+  //     system-local-fs-dev-writer.
+  let destination = await deps.fetchStorageDestinationBySpace(run.spaceId);
+  if (!destination) {
+    destination = await deps.ensureLocalFsDestination(run.spaceId);
+  }
   if (!destination) {
     return { ok: false, error: "no_storage_destination" };
   }

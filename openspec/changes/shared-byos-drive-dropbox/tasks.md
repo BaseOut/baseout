@@ -77,23 +77,24 @@ Pre-implementation gate (must complete before any Phase C task starts):
 
 ### C.3.0 — Extract shared lib/oauth/ helpers
 
-- [ ] C.3.0.1 Extract PKCE + sealed-cookie + token-exchange helpers from `apps/web/src/lib/airtable/{oauth.ts,cookie.ts}` into `apps/web/src/lib/oauth/{pkce.ts,cookie.ts,exchange.ts}`. Provider-agnostic shape.
-- [ ] C.3.0.2 Refactor Airtable + Google Drive to consume the new lib/oauth/ modules. Existing tests for Airtable + Drive callbacks stay green.
-- [ ] C.3.0.3 Three real call sites (Airtable, Drive, Dropbox) justify this extraction per [CLAUDE.md §3.2](../../../CLAUDE.md). Do not pre-extract for fewer call sites.
+- [x] C.3.0.1 Extracted PKCE + sealed-cookie + token-exchange helpers from `apps/web/src/lib/airtable/{oauth.ts,cookie.ts}` into `apps/web/src/lib/oauth/{pkce.ts,cookie.ts,exchange.ts}`. Provider-agnostic shape — `CookieConfig` parameterises name/path, `ClientAuthMode` toggles Basic-header vs request-body client-auth, `extraParams` carries provider-specific authorize-URL knobs (Google's `access_type=offline` etc.).
+- [x] C.3.0.2 Refactored Airtable + Google Drive `oauth.ts` + `cookie.ts` to thin shims that bind provider-specific config and delegate. Public API of each shim is identical so consumer files in `pages/api/connections/airtable/` and `pages/api/connections/storage/google-drive/` did not change. 6 test files / 59 tests across both providers stay green.
+- [x] C.3.0.3 Two existing call sites (Airtable + Drive) + the imminent Dropbox third site justify this extraction per [CLAUDE.md §3.2](../../../CLAUDE.md) — extracted now so Dropbox's `lib/dropbox/` shim is a 3rd thin shim instead of a 3rd copy of the core logic.
 
 ### C.3.1 — Web OAuth Connect
 
-- [ ] C.3.1.1 New env vars in `apps/web/.dev.vars.example`: `DROPBOX_OAUTH_CLIENT_ID`, `DROPBOX_OAUTH_CLIENT_SECRET`.
-- [ ] C.3.1.2 TDD red: authorize + callback tests for Dropbox, mirroring the Drive shape.
-- [ ] C.3.1.3 New `apps/web/src/lib/dropbox/{config,oauth,client,persist}.ts`. Use `token_access_type=offline` on the authorize URL so we get a refresh token. Client wraps `users/get_current_account` (for email display) + `files/create_folder_v2` (for `/Apps/Baseout/<spaceId>/`).
-- [ ] C.3.1.4 New routes `apps/web/src/pages/api/connections/storage/dropbox/{authorize,callback}.ts`. Callback redirects to `/integrations?connected=dropbox`.
-- [ ] C.3.1.5 Tests green.
+- [x] C.3.1.1 New env vars in `apps/web/.dev.vars.example`: `DROPBOX_OAUTH_CLIENT_ID`, `DROPBOX_OAUTH_CLIENT_SECRET` — both documented with required app type (Full Dropbox) + required scopes + registered redirect URI shape.
+- [x] C.3.1.2 + C.3.1.5 Wrote `apps/web/src/lib/dropbox/{cookie,oauth,client}.test.ts` covering: cookie seal/open + tamper + scoped path; PKCE generators + authorize URL shape with `token_access_type=offline`; token exchange/refresh with request-body client-auth; `users/get_current_account` quirk (no Content-Type header); `files/create_folder_v2` 409-path-conflict-folder / 409-path-conflict swallowing vs other 409s re-thrown. 3 files / 25 tests green.
+- [x] C.3.1.3 New `apps/web/src/lib/dropbox/{config,cookie,oauth,client,persist}.ts`. `oauth.ts` + `cookie.ts` are thin shims over the shared `lib/oauth/*` modules (extracted in C.3.0). `client.ts` wraps `users/get_current_account` (returns `{accountId, email, displayName}`) + `ensureBaseoutFolder(spaceId)` (idempotent — swallows 409 path/conflict/folder so repeat connects don't fail). `persist.ts` mirrors the Drive equivalent: AES-256-GCM-encrypts tokens, UPSERTs `storage_destinations` with `type='dropbox'` + `provider_folder_id=/Apps/Baseout/<spaceId>` + `provider_account_id=<dropbox account_id>`.
+- [x] C.3.1.4 New routes `apps/web/src/pages/api/connections/storage/dropbox/{authorize,callback}.ts`. Callback redirects to `/integrations?connected=dropbox` on success, `/integrations?error=<code>&detail=<slug>` on failure (state mismatch, token exchange failure, API call failure, persist failure). Same error-handling shape as the Drive callback.
 
-### C.3.2 — Server-side strategy
+### C.3.2 — Workflows-side strategy
 
-- [ ] C.3.2.1 TDD red: `apps/server/tests/integration/storage/dropbox.test.ts`. Cover the upload-session 3-call sequence (`start` → 0+ `append_v2` → `finish`), 429 with Retry-After honor, 409 path/conflict/folder on `create_folder_v2` is swallowed, 401 → refresh → retry.
-- [ ] C.3.2.2 New file `apps/server/src/lib/storage/strategies/dropbox.ts`. Implements `StorageWriter` with `proxyStreamMode = true`. Always uses upload-session (single code path, 8 MB chunks).
-- [ ] C.3.2.3 Add `case 'dropbox':` branch to `makeStorageWriter`.
+Per design.md, BYOS writers live in apps/workflows (Node Trigger.dev runner, pure HTTP), NOT apps/server (which only has the Worker-side R2 binding). C.3.2's "apps/server/src/lib/storage/strategies/dropbox.ts" path in the original tasks.md was an error — the strategy belongs in workflows alongside the Drive writer landed in Step 2.
+
+- [x] C.3.2.1 Wrote `apps/workflows/tests/storage-writers/dropbox.test.ts` — 14 tests covering small-body single-chunk path (start `close:true` + finish), large-body multi-chunk path (start `close:false` + N×append_v2 + finish with correct cursor offsets), 401 refresh-retry, 401 twice → typed auth_failed, 429 with `Retry-After` parsed to `retryAfterMs`, 5xx → transient, missing session_id / file id → unknown, init() proactive refresh, factory dispatch + missing-field validation, `proxyStreamMode === true` assertion.
+- [x] C.3.2.2 New file `apps/workflows/trigger/tasks/_lib/storage-writers/dropbox.ts`. Implements `StorageWriter` with `proxyStreamMode = true`. Always uses upload-session (single code path, 8 MB chunks; close-on-start optimization shaves a round-trip for sub-chunk bodies). Same refresh-on-401 + 5xx-classify pattern as the Drive writer.
+- [x] C.3.2.3 Added `case 'dropbox':` branch to `makeStorageWriter` factory in `apps/workflows/.../storage-writers/index.ts`. Rejects destinations missing `accessToken` or `providerFolderId` (which holds the `/Apps/Baseout/<spaceId>` path).
 
 ## Phase D — Capability resolver + StoragePicker UI (web side)
 
@@ -127,10 +128,10 @@ Pre-implementation gate (must complete before any Phase C task starts):
 
 ### W.1 — Workflows-side `StorageWriter` types + factory
 
-- [ ] W.1.1 New `apps/workflows/trigger/tasks/_lib/storage-writers/types.ts` with the `StorageWriter` interface that mirrors the server-side shape (same method signatures; `R2Bucket` reference replaced with a plain HTTP client). Shared error type `StorageWriteError` for typed surfaces.
-- [ ] W.1.2 New `apps/workflows/trigger/tasks/_lib/storage-writers/google-drive.ts` — pure-HTTP version of the strategy. Same resumable-upload logic; no Worker binding.
-- [ ] W.1.3 New `apps/workflows/trigger/tasks/_lib/storage-writers/dropbox.ts` — pure-HTTP, upload-session flow, `proxyStreamMode = true`.
-- [ ] W.1.4 New `apps/workflows/trigger/tasks/_lib/storage-writers/index.ts` exporting `makeStorageWriter(destination)` factory. R2 case routes through a TBD proxy upload route on the engine (not in this change — see [design.md "R2 lives in apps/server"](./design.md)); MVP smoke uses Drive or Dropbox so we don't hit that gap.
+- [x] W.1.1 New `apps/workflows/trigger/tasks/_lib/storage-writers/types.ts` declares `StorageWriter`, `StorageDestination`, `StorageDestinationType`, `RefreshClient`, `RefreshedCredentials`, `WriteResult`, `StorageWriteError`. Mirrors apps/server interface shape but takes `body: Uint8Array | string` instead of `ReadableStream` (CSVs are buffered today per design.md). Documented divergence at the top of the file.
+- [x] W.1.2 New `apps/workflows/trigger/tasks/_lib/storage-writers/google-drive.ts` — `createGoogleDriveWriter()` implements the resumable-upload flow (POST session start → PUT body), proactive token refresh on init when <5 min from expiry, on-401-then-refresh-then-retry once on writeFile, typed `StorageWriteError` with kind=auth_failed/rate_limited/transient/bad_request/not_found/unknown + retry-after parsing.
+- [ ] W.1.3 New `apps/workflows/trigger/tasks/_lib/storage-writers/dropbox.ts` — pure-HTTP, upload-session flow, `proxyStreamMode = true`. (Step 3 of the rolling Drive-foundations plan.)
+- [x] W.1.4 New `apps/workflows/trigger/tasks/_lib/storage-writers/index.ts` exporting `makeStorageWriter(destination, { refreshClient, fetchImpl? })` factory. `google_drive` case lands; `dropbox`/`box`/`r2_managed` cases throw with messages pointing at the change that delivers them. 16 unit tests in `apps/workflows/tests/storage-writers/google-drive.test.ts` cover Drive writer + factory dispatch (full suite: 53/53 green, typecheck clean).
 
 ### W.2 — `backup-base.task.ts` wiring
 

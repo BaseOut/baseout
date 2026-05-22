@@ -3,21 +3,30 @@
  * Wizard step 4 — Storage destination picker.
  *
  * Per openspec/changes/system-r2-park, managed R2 is paused. Google Drive
- * is the recommended (and today, only selectable) destination. Drive
- * requires an OAuth connection first — the row exposes a "Connect Google
- * Drive" link that goes through /api/connections/storage/google-drive/
- * authorize. Once connected, the radio is selectable and
- * `oauth_account_email` shows. R2 stays in the list as a "Paused" row so
- * existing customers see the reason; other rows remain disabled with a
- * "Coming soon" label.
+ * is the recommended user-facing destination. Drive requires an OAuth
+ * connection first — the row exposes a "Connect Google Drive" link that
+ * goes through /api/connections/storage/google-drive/authorize. Once
+ * connected, the radio is selectable and `oauth_account_email` shows.
+ *
+ * Per openspec/changes/system-local-fs-dev-writer, a "Local disk (dev
+ * only)" option appears when `localFsAvailable` is true (gated to
+ * non-production builds). Selecting it writes CSVs under
+ * apps/workflows/.backups/ via the workflows-side local_fs StorageWriter;
+ * the engine auto-provisions the matching storage_destinations row on
+ * first kickoff.
+ *
+ * R2 stays in the list as a "Paused" row so existing customers see the
+ * reason; other rows remain disabled with a "Coming soon" label.
  *
  * Props:
  *   spaceId                  — UUID of the active Space
  *   selectedStorageType      — currently saved value (null until the user
- *                              connects a BYOS destination, post-pause)
+ *                              picks something)
  *   googleDriveConnected     — true if storage_destinations has a google_drive
  *                              row for this Space (callback success)
  *   googleDriveAccountEmail  — `oauth_account_email` for display
+ *   localFsAvailable         — show + enable the Local disk option
+ *                              (non-production only)
  */
 
 interface Props {
@@ -25,6 +34,7 @@ interface Props {
   selectedStorageType?: string | null
   googleDriveConnected?: boolean
   googleDriveAccountEmail?: string | null
+  localFsAvailable?: boolean
 }
 
 const {
@@ -32,6 +42,7 @@ const {
   selectedStorageType = null,
   googleDriveConnected = false,
   googleDriveAccountEmail = null,
+  localFsAvailable = false,
 } = Astro.props as Props
 
 const ALL_OPTIONS: {
@@ -40,6 +51,7 @@ const ALL_OPTIONS: {
   helper: string
   enabled: boolean
   comingSoonLabel?: string
+  hidden?: boolean
 }[] = [
   {
     value: 'google_drive',
@@ -48,6 +60,13 @@ const ALL_OPTIONS: {
       ? `Connected as ${googleDriveAccountEmail ?? 'Google account'}.`
       : 'Recommended — connect a Google account so Baseout can write CSVs into a Baseout-<space> folder.',
     enabled: googleDriveConnected,
+  },
+  {
+    value: 'local_fs',
+    label: 'Local disk (dev only)',
+    helper: 'Writes CSVs to apps/workflows/.backups/ on the Trigger.dev runner. No OAuth required. Visible in non-production builds only.',
+    enabled: localFsAvailable,
+    hidden: !localFsAvailable,
   },
   {
     value: 'r2_managed',
@@ -101,7 +120,7 @@ const NAME = 'backup-storage'
 
   <fieldset class="mt-4 grid gap-3" data-storage-fieldset>
     <legend class="sr-only">Storage destination</legend>
-    {ALL_OPTIONS.map((opt) => {
+    {ALL_OPTIONS.filter((opt) => !opt.hidden).map((opt) => {
       const isGoogle = opt.value === 'google_drive'
       const showConnectAction = isGoogle && !googleDriveConnected
       const isComingSoon = !opt.enabled && !showConnectAction
