@@ -32,6 +32,10 @@ const TERMINAL_STATUSES = new Set([
   // 'cancelling' is intentionally NOT terminal — polling must continue to
   // observe the engine's flip from 'cancelling' → 'cancelled' after
   // Trigger.dev's runs.cancel acks.
+  // 'deleting' is also intentionally NOT terminal — polling must continue
+  // until the row hard-DELETEs server-side (or the operator manually
+  // reconciles a stuck 'deleting' row). Per
+  // openspec/changes/shared-backup-run-delete.
 ])
 
 export function isTerminalStatus(status: string): boolean {

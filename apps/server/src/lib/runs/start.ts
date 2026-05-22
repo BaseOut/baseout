@@ -61,6 +61,13 @@ export interface BackupBaseTaskPayload {
   baseName: string;
   /** ISO-8601 string. Trigger.dev JSON-serializes payloads. */
   runStartedAt: string;
+  /**
+   * Selects the StorageWriter on the workflows side (Phase A of
+   * openspec/changes/shared-backup-run-delete). Forwarded from
+   * backup_configurations.storage_type; the validation gate above guarantees
+   * this is 'r2_managed' in MVP. Future BYOS values will widen that gate.
+   */
+  storageType: string;
 }
 
 export interface ProcessRunStartDeps {
@@ -154,6 +161,7 @@ export async function processRunStart(
       spaceName: run.spaceId,
       baseName: base.name,
       runStartedAt: runStartedAtIso,
+      storageType: config.storageType,
     });
     triggerRunIds.push(handle.id);
   }

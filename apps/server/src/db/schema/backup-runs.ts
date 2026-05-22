@@ -34,11 +34,14 @@ export const backupRuns = baseout.table("backup_runs", {
   spaceId: text("space_id").notNull(),
   connectionId: text("connection_id").notNull(),
   status: text("status").notNull(),
-  // 'queued' | 'running' | 'succeeded' | 'failed' | 'trial_complete' | 'trial_truncated' | 'cancelling' | 'cancelled'
+  // 'queued' | 'running' | 'succeeded' | 'failed' | 'trial_complete' | 'trial_truncated' | 'cancelling' | 'cancelled' | 'deleting'
   // Canonical writer is apps/web per CLAUDE.md §2; apps/server flips the
   // status through the engine lifecycle. 'cancelling' is the intermediate
   // state the cancel route writes before Trigger.dev acks; 'cancelled' is
-  // terminal.
+  // terminal. 'deleting' is the intermediate state for user-initiated
+  // per-run delete (openspec/changes/shared-backup-run-delete) — the
+  // terminal action is a row hard-DELETE via /api/internal/runs/:runId/
+  // delete-complete, not a status flip.
   triggeredBy: text("triggered_by").notNull(),
   // 'manual' | 'scheduled' | 'webhook' | 'trial' (engine-defined free text).
   // The SpaceDO scheduler (Phase B of baseout-backup-schedule-and-cancel)

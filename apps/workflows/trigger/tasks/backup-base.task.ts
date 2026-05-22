@@ -30,6 +30,14 @@ export interface BackupBaseTaskPayload {
   baseName: string;
   /** ISO-8601 string — Trigger.dev JSON-serializes payloads so Date is unsafe across the wire. */
   runStartedAt: string;
+  /**
+   * Selects the StorageWriter (Phase A of openspec/changes/shared-backup-run-delete).
+   * Engine reads `storage_type` from backup_configurations and forwards it
+   * here. Defaults to 'r2_managed' (legacy) at the engine boundary if the
+   * column is null. Today every value resolves to LocalFsWriter; future BYOS
+   * providers register behind their own storage_type values.
+   */
+  storageType: string;
 }
 
 function trimSlash(s: string): string {
@@ -134,6 +142,7 @@ export const backupBaseTask = task({
         {
           ...payload,
           runStartedAt: new Date(payload.runStartedAt),
+          storageType: payload.storageType,
         },
         {
           engineUrl,

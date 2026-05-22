@@ -18,6 +18,8 @@ import { runsStartHandler } from "./pages/api/internal/runs/start";
 import { runsCompleteHandler } from "./pages/api/internal/runs/complete";
 import { runsProgressHandler } from "./pages/api/internal/runs/progress";
 import { runsCancelHandler } from "./pages/api/internal/runs/cancel";
+import { runsDeleteHandler } from "./pages/api/internal/runs/delete";
+import { runsDeleteCompleteHandler } from "./pages/api/internal/runs/delete-complete";
 import { spacesSetFrequencyHandler } from "./pages/api/internal/spaces/set-frequency";
 import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
 import { runOAuthRefreshTick } from "./lib/oauth-refresh";
@@ -30,6 +32,9 @@ const RUNS_START_RE = /^\/api\/internal\/runs\/([^/]+)\/start$/;
 const RUNS_COMPLETE_RE = /^\/api\/internal\/runs\/([^/]+)\/complete$/;
 const RUNS_PROGRESS_RE = /^\/api\/internal\/runs\/([^/]+)\/progress$/;
 const RUNS_CANCEL_RE = /^\/api\/internal\/runs\/([^/]+)\/cancel$/;
+const RUNS_DELETE_RE = /^\/api\/internal\/runs\/([^/]+)\/delete$/;
+const RUNS_DELETE_COMPLETE_RE =
+  /^\/api\/internal\/runs\/([^/]+)\/delete-complete$/;
 const SPACES_SET_FREQUENCY_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/set-frequency$/;
 const SPACES_RESCAN_BASES_RE =
@@ -151,6 +156,36 @@ export default {
           ctx,
           locals,
           cancel[1]!,
+        );
+      }
+
+      // Run-delete-complete BEFORE run-delete: both regexes start with
+      // /runs/<uuid>/, and `RUNS_DELETE_RE` would otherwise greedy-match
+      // "<uuid>/delete-complete" with the trailing "-complete" sliced off
+      // — well, no, $ anchors prevent that, but it costs nothing to check
+      // the longer route first.
+      const deleteComplete = RUNS_DELETE_COMPLETE_RE.exec(url.pathname);
+      if (deleteComplete) {
+        return await runsDeleteCompleteHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          deleteComplete[1]!,
+        );
+      }
+
+      // Run-delete: openspec/changes/shared-backup-run-delete. CAS-flips
+      // the row to 'deleting' and enqueues delete-run-files; the task's
+      // /delete-complete callback hard-DELETEs the row.
+      const del = RUNS_DELETE_RE.exec(url.pathname);
+      if (del) {
+        return await runsDeleteHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          del[1]!,
         );
       }
 

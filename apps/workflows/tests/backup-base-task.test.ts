@@ -109,6 +109,7 @@ const BASE_INPUT = {
   spaceName: "MySpace",
   baseName: "ProjectsDB",
   runStartedAt: new Date("2026-05-02T12:00:00Z"),
+  storageType: "r2_managed",
 };
 
 describe("runBackupBase", () => {

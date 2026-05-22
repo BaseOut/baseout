@@ -15,7 +15,12 @@
 
 import { configure, tasks } from "@trigger.dev/sdk";
 import type { Env } from "../env";
-import type { pingTask, backupBaseTask } from "@baseout/workflows";
+import type {
+  pingTask,
+  backupBaseTask,
+  deleteRunFilesTask,
+  DeleteRunFilesPayload,
+} from "@baseout/workflows";
 import type { BackupBaseTaskPayload } from "./runs/start";
 
 function configureFromEnv(env: Env): void {
@@ -49,6 +54,25 @@ export async function enqueueBackupBase(
   configureFromEnv(env);
   const handle = await tasks.trigger<typeof backupBaseTask>(
     "backup-base",
+    payload,
+  );
+  return { id: handle.id };
+}
+
+/**
+ * Enqueue the delete-run-files cleanup task (openspec/changes/shared-backup-run-delete
+ * Phase C.5). The route at /api/internal/runs/:runId/delete triggers this
+ * after CAS-flipping the row to 'deleting'. The task POSTs the result to
+ * /api/internal/runs/:runId/delete-complete; the engine hard-DELETEs the
+ * row on ok:true.
+ */
+export async function enqueueDeleteRunFiles(
+  env: Env,
+  payload: DeleteRunFilesPayload,
+): Promise<TriggerHandle> {
+  configureFromEnv(env);
+  const handle = await tasks.trigger<typeof deleteRunFilesTask>(
+    "delete-run-files",
     payload,
   );
   return { id: handle.id };

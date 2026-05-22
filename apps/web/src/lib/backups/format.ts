@@ -23,6 +23,8 @@ export function statusLabel(status: string): string {
       return 'Cancelling'
     case 'cancelled':
       return 'Cancelled'
+    case 'deleting':
+      return 'Deleting'
     default:
       return status
   }
@@ -42,6 +44,7 @@ export function statusBadgeClass(status: string): string {
     case 'trial_complete':
     case 'trial_truncated':
     case 'cancelling':
+    case 'deleting':
       return 'badge-warning'
     case 'cancelled':
       return 'badge-neutral'

@@ -43,6 +43,7 @@ describe('statusLabel', () => {
     ['trial_truncated', 'Trial — truncated'],
     ['cancelling', 'Cancelling'],
     ['cancelled', 'Cancelled'],
+    ['deleting', 'Deleting'],
   ])('%s → %s', (s, expected) => {
     expect(statusLabel(s)).toBe(expected)
   })
@@ -62,6 +63,7 @@ describe('statusBadgeClass', () => {
     ['trial_truncated', 'badge-warning'],
     ['cancelling', 'badge-warning'],
     ['cancelled', 'badge-neutral'],
+    ['deleting', 'badge-warning'],
   ])('%s → %s', (s, expected) => {
     expect(statusBadgeClass(s)).toBe(expected)
   })

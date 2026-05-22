@@ -33,6 +33,7 @@ import {
   statusLabel,
 } from '../../lib/backups/format'
 import { isCancellable } from '../../lib/backups/cancel-button'
+import { isDeletable } from '../../lib/backups/delete-button'
 import type { BackupRunSummary } from '../../lib/backup-runs/types'
 
 interface Props {
@@ -128,6 +129,16 @@ function destinationLabel(
                       aria-label={`Cancel backup run ${run.id}`}
                     >
                       Cancel
+                    </button>
+                  )}
+                  {isDeletable(run.status) && (
+                    <button
+                      type="button"
+                      class="btn btn-xs btn-outline btn-error ml-auto"
+                      data-delete-run={run.id}
+                      aria-label={`Delete backup run ${run.id}`}
+                    >
+                      Delete
                     </button>
                   )}
                 </div>
@@ -245,6 +256,10 @@ function destinationLabel(
     cancelButtonHtml,
     handleCancelClick,
   } from '../../lib/backups/cancel-button'
+  import {
+    deleteButtonHtml,
+    handleDeleteClick,
+  } from '../../lib/backups/delete-button'
   import type { BackupRunSummary } from '../../lib/backup-runs/types'
 
   function escapeHtml(s: string): string {
@@ -334,6 +349,7 @@ function destinationLabel(
         )}</span>
         ${trialBadgeHtml(run)}
         ${cancelButtonHtml(run)}
+        ${deleteButtonHtml(run)}
       </div>
 
       <div class="stats stats-horizontal shadow-sm bg-base-200">
@@ -502,6 +518,16 @@ function destinationLabel(
   // src/lib/backups/cancel-button.ts so it's unit-testable.
   document.addEventListener('click', (event) => {
     void handleCancelClick(event)
+  })
+
+  // Delegated delete-button click handler. Same lifecycle pattern as
+  // cancel — listens on document so re-renders don't need to re-bind, and
+  // closest() resolves to the runId on the data attribute. Logic lives in
+  // src/lib/backups/delete-button.ts; this listener fires alongside cancel
+  // and the handlers short-circuit on a mismatching target (cancel only
+  // handles data-cancel-run buttons; delete only handles data-delete-run).
+  document.addEventListener('click', (event) => {
+    void handleDeleteClick(event)
   })
 
   // Hydration + subscribe + polling + cleanup all live in widget-lifecycle.ts,

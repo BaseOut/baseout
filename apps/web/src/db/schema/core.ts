@@ -333,9 +333,12 @@ export const backupRuns = baseout.table('backup_runs', {
     .notNull()
     .references(() => connections.id, { onDelete: 'restrict' }),
   status: text('status').notNull().default('queued'),
-  // 'queued' | 'running' | 'succeeded' | 'failed' | 'trial_complete' | 'trial_truncated' | 'cancelling' | 'cancelled'
+  // 'queued' | 'running' | 'succeeded' | 'failed' | 'trial_complete' | 'trial_truncated' | 'cancelling' | 'cancelled' | 'deleting'
   // (Application-level constraint — column is plain text, no enum to migrate.
-  //  'cancelling' is an intermediate state; 'cancelled' is terminal.)
+  //  'cancelling' is an intermediate state; 'cancelled' is terminal.
+  //  'deleting' is the intermediate state for user-initiated per-run delete
+  //  (openspec/changes/shared-backup-run-delete); the terminal action is a
+  //  row hard-DELETE, not a status flip.)
   triggeredBy: text('triggered_by').notNull(),
   // free-text; engine-defined (e.g. 'manual', 'scheduled', 'webhook', 'trial')
   isTrial: boolean('is_trial').notNull().default(false),

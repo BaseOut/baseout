@@ -20,7 +20,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const BACKUP_ROOT = resolve(
+// Exported so LocalFsWriter (in storage-writers/local-fs.ts) can re-use the
+// same anchor for deletePrefix without re-computing the relative path —
+// re-computation from a deeper file landed one level off under Trigger.dev's
+// bundler. Source-of-truth here; consumers import.
+export const BACKUP_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../../../.backups",
 );

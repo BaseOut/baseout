@@ -12,12 +12,14 @@ import type {
   EngineWhoamiError,
   EngineStartRunError,
   EngineCancelRunError,
+  EngineDeleteRunError,
 } from '../../../../lib/backup-engine'
 
 export type EngineErrorCode =
   | EngineWhoamiError['code']
   | EngineStartRunError['code']
   | EngineCancelRunError['code']
+  | EngineDeleteRunError['code']
 
 export function mapEngineCodeToStatus(code: EngineErrorCode): number {
   switch (code) {
@@ -73,6 +75,14 @@ export function mapEngineCodeToStatus(code: EngineErrorCode): number {
     // cancel won the CAS). UI polls — chip will reflect the actual
     // terminal state on the next tick.
     case 'run_already_terminal':
+      return 409
+    // shared-backup-run-delete — deleteRun: row exists but isn't terminal
+    // (queued|running|cancelling). User must Cancel first.
+    case 'run_not_terminal':
+      return 409
+    // shared-backup-run-delete — deleteRun: row already 'deleting', either
+    // because of a double-click or because another delete won the CAS.
+    case 'delete_in_progress':
       return 409
   }
 }

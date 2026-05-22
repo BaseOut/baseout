@@ -129,6 +129,34 @@ export type EngineCancelRunResult =
   | EngineCancelRunSuccess
   | EngineCancelRunError;
 
+export interface EngineDeleteRunSuccess {
+  ok: true;
+  /** Trigger.dev run id for the enqueued delete-run-files task. */
+  triggerRunId: string;
+}
+
+/**
+ * Non-2xx outcomes from POST /api/internal/runs/:runId/delete. Mirrors
+ * `ProcessRunDeleteResult["error"]` in @baseout/server (see
+ * apps/server/src/lib/runs/delete.ts) plus the middleware's `unauthorized`
+ * and the client-only `engine_unreachable` / `engine_error`.
+ */
+export interface EngineDeleteRunError {
+  ok: false;
+  code:
+    | "unauthorized"
+    | "run_not_found"
+    | "run_not_terminal"
+    | "delete_in_progress"
+    | "engine_unreachable"
+    | "engine_error";
+  status: number;
+}
+
+export type EngineDeleteRunResult =
+  | EngineDeleteRunSuccess
+  | EngineDeleteRunError;
+
 export interface EngineSetSpaceFrequencySuccess {
   ok: true;
   /** Unix-ms the SpaceDO scheduled the next alarm for. */
@@ -203,6 +231,7 @@ export interface BackupEngineClient {
   whoami(connectionId: string): Promise<EngineWhoamiResult>;
   startRun(runId: string): Promise<EngineStartRunResult>;
   cancelRun(runId: string): Promise<EngineCancelRunResult>;
+  deleteRun(runId: string): Promise<EngineDeleteRunResult>;
   setSpaceFrequency(
     spaceId: string,
     frequency: string,
@@ -238,6 +267,14 @@ const KNOWN_CANCEL_RUN_ERROR_CODES: ReadonlySet<EngineCancelRunError["code"]> =
     "unauthorized",
     "run_not_found",
     "run_already_terminal",
+  ]);
+
+const KNOWN_DELETE_RUN_ERROR_CODES: ReadonlySet<EngineDeleteRunError["code"]> =
+  new Set([
+    "unauthorized",
+    "run_not_found",
+    "run_not_terminal",
+    "delete_in_progress",
   ]);
 
 const KNOWN_SET_FREQUENCY_ERROR_CODES: ReadonlySet<
@@ -434,6 +471,43 @@ export function createBackupEngine(
         out.upstreamStatus = body.upstream_status;
       }
       return out;
+    },
+
+    async deleteRun(runId) {
+      const path = `/api/internal/runs/${encodeURIComponent(runId)}/delete`;
+      let res: Response;
+      try {
+        res = await options.binding.fetch(`https://engine${path}`, {
+          method: "POST",
+          headers: {
+            "x-internal-token": options.internalToken,
+            accept: "application/json",
+          },
+        });
+      } catch {
+        return { ok: false, code: "engine_unreachable", status: 0 };
+      }
+
+      if (res.ok) {
+        const body = (await res.json()) as { ok: true; triggerRunId: string };
+        return { ok: true, triggerRunId: body.triggerRunId };
+      }
+
+      let body: Record<string, unknown> = {};
+      try {
+        body = (await res.json()) as Record<string, unknown>;
+      } catch {
+        // engine returned non-JSON (rare); fall through with empty body
+      }
+      const rawCode = typeof body.error === "string" ? body.error : undefined;
+      const code: EngineDeleteRunError["code"] =
+        rawCode &&
+        KNOWN_DELETE_RUN_ERROR_CODES.has(
+          rawCode as EngineDeleteRunError["code"],
+        )
+          ? (rawCode as EngineDeleteRunError["code"])
+          : "engine_error";
+      return { ok: false, code, status: res.status };
     },
 
     async cancelRun(runId) {

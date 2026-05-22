@@ -31,7 +31,7 @@ import {
 import { buildR2Key } from "./_lib/r2-path";
 import { pageToCsv } from "./_lib/csv-stream";
 import { normalizeFieldValue } from "./_lib/field-normalizer";
-import { writeCsvToLocalDisk } from "./_lib/local-fs-write";
+import { resolveStorageWriter } from "./_lib/storage-writers";
 
 export interface BackupBaseInput {
   runId: string;
@@ -43,6 +43,13 @@ export interface BackupBaseInput {
   spaceName: string;
   baseName: string;
   runStartedAt: Date;
+  /**
+   * Selects the StorageWriter via resolveStorageWriter (Phase A.1 of
+   * openspec/changes/shared-backup-run-delete). Today every value resolves
+   * to LocalFsWriter; future BYOS providers register behind their own
+   * storage_type values.
+   */
+  storageType: string;
 }
 
 interface AirtableClientShape {
@@ -162,6 +169,7 @@ export async function runBackupBase(
   let tablesProcessed = 0;
   let recordsProcessed = 0;
   let trialComplete = false;
+  const writer = resolveStorageWriter(input.storageType);
 
   try {
     // 2. Token.
@@ -238,7 +246,7 @@ export async function runBackupBase(
         tableName: table.name,
       });
 
-      await (deps.writeCsv ?? writeCsvToLocalDisk)(key, csv);
+      await (deps.writeCsv ?? ((k, c) => writer.writeCsv(k, c)))(key, csv);
 
       // Phase 10d: fire-and-forget progress event after the table CSV lands
       // on disk. Bumps backup_runs.{record_count,table_count} so the
