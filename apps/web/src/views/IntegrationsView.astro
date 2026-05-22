@@ -329,7 +329,15 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
                 selectedStorageType={state.policy.storageType}
                 googleDriveConnected={state.googleDriveConnected}
                 googleDriveAccountEmail={state.googleDriveAccountEmail}
-                localFsAvailable={import.meta.env.DEV}
+                localFsAvailable={
+                  // Runtime gate: import.meta.env.DEV is baked out at astro
+                  // build time (apps/web's dev script does `astro build &&
+                  // wrangler dev`), so it's always false here. Detect dev via
+                  // the request hostname instead — bulletproof and needs no
+                  // extra env var. Per openspec/changes/system-local-fs-dev-writer.
+                  Astro.url.hostname === 'localhost' ||
+                  Astro.url.hostname === '127.0.0.1'
+                }
               />
               <RunBackupButton
                 spaceId={Astro.locals.account.space.id}
