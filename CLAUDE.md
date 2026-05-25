@@ -187,6 +187,25 @@ Pick the prefix based on what the change actually touches:
 
 `pnpm openspec:changes <app>` lists every change whose prefix matches the app name (parent + follow-ups + task progress). `openspec list | grep '^shared-'` and `openspec list | grep '^system-'` cover the cross-cutting buckets.
 
+## 3.7 OAuth, Permissions, Routing — Consult the Runbook First
+
+[shared/internal/oauth-setup.md](shared/internal/oauth-setup.md) is the **single source of truth** for which OAuth redirect URIs are registered with each provider per environment, the gap checklist for missing URIs, the workarounds (stub mode, cross-env Connect), and the deploy commands. It exists because the cost of getting any of this wrong is a broken Reconnect flow that's invisible until a token expires.
+
+**Rules:**
+
+- **Read it BEFORE any change** that touches OAuth Connect flows, redirect URI construction (`getRedirectUri`, `PUBLIC_AUTH_BASE_URL`, the wrangler `--var` flag in `apps/web/package.json` `dev`), middleware auth, route protection in `apps/web/src/middleware.ts`, the `connections` table or `storage_destinations` table, or any new provider integration. The matrix in §3 tells you what's registered today; assuming is what broke last time.
+- **Update it in the SAME change** that:
+  - Registers a new redirect URI with a provider (update §3.1 / §3.2 status + §4 checklist).
+  - Stands up a new env (update §1 envs table + add a §3.N row per provider + add deploy command to §6).
+  - Adds a new OAuth provider (new §3.N subsection + extend §2 callback-path table + extend §4 gap checklist).
+  - Changes `PUBLIC_AUTH_BASE_URL` resolution, wrangler precedence assumptions, or stub-mode behavior (update §5).
+  - Modifies routing/middleware in a way that changes which paths are auth-gated (note in §8 failure-modes if it changes a known symptom).
+- **Cite §X** of the doc when surfacing OAuth-related decisions in PRs, openspec proposals, or change discussions, so future reviewers/Claude see the audit trail.
+- **Never assume** `.dev.vars` is the authoritative source for OAuth env vars — wrangler 4.x `--var` flag wins (see [§5.1](shared/internal/oauth-setup.md) + [§8](shared/internal/oauth-setup.md)).
+- **Never assume** a URI is registered without checking §3 — the cost of grep'ing the matrix is seconds; the cost of a wrong assumption is the breakage chain from `2026-05-25`.
+
+If a needed URI is missing per §3 and adding it is blocked (owner unreachable, no account access), use the workarounds in §5 — don't paper over with a `--var` swap that breaks the other provider.
+
 ---
 
 # 4. Frontend Standards (eventual `apps/web/`)

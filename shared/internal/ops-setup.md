@@ -6,6 +6,9 @@ DigitalOcean, GitHub repo settings, and Stripe.
 
 Owner: the engineer provisioning the environment.
 
+Related: [oauth-setup.md](./oauth-setup.md) — per-provider, per-env OAuth
+app registration matrix + workarounds when URIs are missing.
+
 ---
 
 ## 1. Cloudflare — Workers + Hyperdrive + Email
