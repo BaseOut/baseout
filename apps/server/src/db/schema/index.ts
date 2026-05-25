@@ -15,3 +15,4 @@ export * from "./platforms";
 export * from "./subscriptions";
 export * from "./subscription-items";
 export * from "./space-events";
+export * from "./storage-destinations";

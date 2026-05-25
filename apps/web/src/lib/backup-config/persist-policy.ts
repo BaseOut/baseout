@@ -32,8 +32,18 @@ const ALL_FREQUENCIES: ReadonlySet<Frequency> = new Set([
   'daily',
   'instant',
 ])
-// MVP: only r2_managed accepted. Add BYOS values when the BYOS picker ships.
-const ALLOWED_STORAGE_TYPES = new Set(['r2_managed'])
+// Accept list:
+//   - r2_managed: legacy default; workflows currently routes it to LocalFsWriter
+//     per `system-r2-park` (R2 binding removed).
+//   - local_fs: explicit dev-only writer (mirrors the workflows factory default).
+//   - google_drive: first BYOS cloud destination (openspec/changes/shared-byos-drive).
+// Subsequent BYOS providers (Dropbox, Box, OneDrive, S3, Frame.io) widen this
+// set when each lands.
+const ALLOWED_STORAGE_TYPES = new Set([
+  'r2_managed',
+  'local_fs',
+  'google_drive',
+])
 
 export interface PersistBackupConfigPolicyInput {
   spaceId: string

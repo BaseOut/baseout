@@ -64,6 +64,13 @@
       "when": 1778771240840,
       "tag": "0008_workspace_rediscovery",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1779489571759,
+      "tag": "0009_storage_destinations",
+      "breakpoints": true
     }
   ]
 }

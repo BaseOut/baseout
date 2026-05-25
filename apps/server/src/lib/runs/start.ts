@@ -64,11 +64,25 @@ export interface BackupBaseTaskPayload {
   /**
    * Selects the StorageWriter on the workflows side (Phase A of
    * openspec/changes/shared-backup-run-delete). Forwarded from
-   * backup_configurations.storage_type; the validation gate above guarantees
-   * this is 'r2_managed' in MVP. Future BYOS values will widen that gate.
+   * backup_configurations.storage_type. Today's accept-list is
+   * 'r2_managed' (legacy default that routes to LocalFsWriter),
+   * 'local_fs' (explicit), and 'google_drive' (shared-byos-drive).
+   * Future BYOS providers widen the validation gate in processRunStart.
    */
   storageType: string;
+  /**
+   * Space ID — workflows uses it to fetch decrypted storage credentials from
+   * the engine's `/api/internal/spaces/:spaceId/storage-destination` route.
+   * Required for BYOS destinations; ignored on local_fs.
+   */
+  spaceId: string;
 }
+
+const ACCEPTED_STORAGE_TYPES = new Set([
+  "r2_managed", // legacy default — workflows routes this to LocalFsWriter
+  "local_fs", // explicit dev-only writer
+  "google_drive", // shared-byos-drive
+]);
 
 export interface ProcessRunStartDeps {
   fetchRunById: (runId: string) => Promise<BackupRunRow | null>;
@@ -127,7 +141,7 @@ export async function processRunStart(
   //    storage/frequency picker yet.
   const config = await deps.fetchConfigBySpace(run.spaceId);
   if (!config) return { ok: false, error: "config_not_found" };
-  if (config.storageType !== "r2_managed") {
+  if (!ACCEPTED_STORAGE_TYPES.has(config.storageType)) {
     return { ok: false, error: "unsupported_storage_type" };
   }
 
@@ -162,6 +176,7 @@ export async function processRunStart(
       baseName: base.name,
       runStartedAt: runStartedAtIso,
       storageType: config.storageType,
+      spaceId: run.spaceId,
     });
     triggerRunIds.push(handle.id);
   }

@@ -17,6 +17,7 @@
 
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -483,4 +484,58 @@ export const spaceEvents = baseout.table('space_events', {
   index('space_events_space_id_active_idx')
     .on(table.spaceId)
     .where(sql`${table.dismissedAt} IS NULL`),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// STORAGE DESTINATIONS
+// Per-Space BYOS destination. One row per Space (UNIQUE on space_id);
+// re-connecting REPLACES the row (UPSERT keyed on space_id). Filed by
+// openspec/changes/shared-byos-drive — Google Drive is the first concrete
+// non-local-fs writer. CHECK on `type` widens additively as subsequent
+// providers (Dropbox, Box, OneDrive, S3, Frame.io) land in their own
+// changes.
+//
+// Token columns are AES-256-GCM ciphertext (PRD §20.2). Encryption key
+// (BASEOUT_ENCRYPTION_KEY) is shared between apps/web (writes on Connect)
+// and apps/server (reads + lazy refresh on backup-start). Workflows never
+// holds the key — it asks the engine's internal route for decrypted creds.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const storageDestinations = baseout.table('storage_destinations', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .unique()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  // 'local_fs' | 'google_drive' — enforced by CHECK below + widened
+  // additively when subsequent BYOS providers land.
+
+  // OAuth token storage (Drive only; local_fs leaves these null).
+  oauthAccessTokenEnc: text('oauth_access_token_enc'),
+  oauthRefreshTokenEnc: text('oauth_refresh_token_enc'),
+  oauthExpiresAt: timestamp('oauth_expires_at', { withTimezone: true }),
+  oauthScope: text('oauth_scope'),
+  oauthAccountEmail: text('oauth_account_email'),
+
+  // Provider-specific.
+  // For Google Drive: providerFolderId = Drive ID of the per-Space
+  // `Baseout-<spaceId>` folder (cached after first creation). providerAccountId
+  // = Drive user id for audit.
+  providerFolderId: text('provider_folder_id'),
+  providerAccountId: text('provider_account_id'),
+
+  // Audit.
+  connectedByUserId: text('connected_by_user_id')
+    .references(() => users.id),
+  connectedAt: timestamp('connected_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  lastValidatedAt: timestamp('last_validated_at', { withTimezone: true }),
+}, (table) => [
+  check(
+    'storage_destinations_type_check',
+    sql`${table.type} IN ('local_fs', 'google_drive')`,
+  ),
+  index('storage_destinations_type_idx').on(table.type),
 ])

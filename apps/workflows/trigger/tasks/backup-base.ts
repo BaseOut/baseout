@@ -31,7 +31,10 @@ import {
 import { buildR2Key } from "./_lib/r2-path";
 import { pageToCsv } from "./_lib/csv-stream";
 import { normalizeFieldValue } from "./_lib/field-normalizer";
-import { resolveStorageWriter } from "./_lib/storage-writers";
+import {
+  resolveStorageWriter,
+  type StorageWriterCreds,
+} from "./_lib/storage-writers";
 
 export interface BackupBaseInput {
   runId: string;
@@ -45,11 +48,18 @@ export interface BackupBaseInput {
   runStartedAt: Date;
   /**
    * Selects the StorageWriter via resolveStorageWriter (Phase A.1 of
-   * openspec/changes/shared-backup-run-delete). Today every value resolves
-   * to LocalFsWriter; future BYOS providers register behind their own
-   * storage_type values.
+   * openspec/changes/shared-backup-run-delete). When 'google_drive' (the
+   * first cloud destination — shared-byos-drive), the task fetches decrypted
+   * credentials from the engine before constructing the writer; unknown /
+   * missing values fall back to LocalFsWriter.
    */
   storageType: string;
+  /**
+   * Space ID — passed in the task payload so the workflows runner can fetch
+   * cloud-storage credentials from the engine's internal route. Required for
+   * BYOS destinations; ignored for `local_fs`.
+   */
+  spaceId: string;
 }
 
 interface AirtableClientShape {
@@ -74,6 +84,15 @@ export interface BackupBaseDeps {
   fetchImpl?: typeof fetch;
   airtableClient?: AirtableClientShape;
   sleepImpl?: (ms: number) => Promise<void>;
+  /**
+   * Optional override for the storage-credential fetcher. The production
+   * default reads from the engine's `/api/internal/spaces/:spaceId/storage-destination`
+   * route (gated by INTERNAL_TOKEN). Tests pass a fake that returns deterministic
+   * creds without touching the engine.
+   */
+  fetchStorageCreds?: (
+    spaceId: string,
+  ) => Promise<StorageWriterCreds | null>;
   /**
    * Fire-and-forget per-table progress callback (Phase 10d). Closure is owned
    * by the Trigger.dev wrapper, which captures runId + triggerRunId + atBaseId
@@ -169,7 +188,30 @@ export async function runBackupBase(
   let tablesProcessed = 0;
   let recordsProcessed = 0;
   let trialComplete = false;
-  const writer = resolveStorageWriter(input.storageType);
+  // Resolve cloud-storage credentials before constructing the writer. The
+  // engine internal route decrypts + lazy-refreshes the access token; we
+  // pass a refresh closure that re-hits the same route with `?refresh=1`
+  // for mid-upload 401 retries.
+  let storageCreds: StorageWriterCreds | null = null;
+  // Only providers that need decrypted credentials trigger the engine
+  // fetch. `local_fs` (and the legacy `r2_managed` default that maps to
+  // local_fs in the factory) don't.
+  if (input.storageType === "google_drive") {
+    const fetchCreds =
+      deps.fetchStorageCreds ??
+      ((spaceId: string) =>
+        defaultFetchStorageCreds(
+          fetchFn,
+          engineBase,
+          deps.internalToken,
+          spaceId,
+        ));
+    storageCreds = await fetchCreds(input.spaceId);
+  }
+  const writer = resolveStorageWriter(
+    input.storageType,
+    storageCreds ?? undefined,
+  );
 
   try {
     // 2. Token.
@@ -311,4 +353,76 @@ export async function runBackupBase(
       errorMessage,
     };
   }
+}
+
+interface StorageDestinationResponse {
+  type: string;
+  accessToken?: string;
+  expiresAt?: string;
+  providerFolderId?: string;
+}
+
+/**
+ * Production fetcher for storage credentials. POSTs to the engine's internal
+ * route with `x-internal-token` and shapes the response into the
+ * StorageWriterCreds discriminated union. Returns null for `local_fs` (the
+ * factory falls back to LocalFsWriter); throws on transport / engine errors
+ * so the task wrapper's outer try/catch fails the run cleanly.
+ *
+ * Exported only for the wrapper to use the same shape in tests; the
+ * production call site is via the optional dep `fetchStorageCreds` in
+ * BackupBaseDeps.
+ */
+export async function defaultFetchStorageCreds(
+  fetchFn: typeof fetch,
+  engineBase: string,
+  internalToken: string,
+  spaceId: string,
+): Promise<StorageWriterCreds | null> {
+  const url = `${engineBase}/api/internal/spaces/${encodeURIComponent(spaceId)}/storage-destination`;
+
+  async function read(refresh: boolean): Promise<StorageDestinationResponse> {
+    const target = refresh ? `${url}?refresh=1` : url;
+    const res = await fetchFn(target, {
+      method: "GET",
+      headers: { "x-internal-token": internalToken },
+    });
+    if (!res.ok) {
+      throw new Error(
+        `engine storage-destination fetch ${res.status}`,
+      );
+    }
+    return (await res.json()) as StorageDestinationResponse;
+  }
+
+  const initial = await read(false);
+  if (initial.type === "local_fs") return null;
+  if (
+    initial.type !== "google_drive" ||
+    !initial.accessToken ||
+    !initial.expiresAt ||
+    !initial.providerFolderId
+  ) {
+    throw new Error("engine storage-destination response is malformed");
+  }
+  return {
+    kind: "google_drive",
+    accessToken: initial.accessToken,
+    expiresAt: new Date(initial.expiresAt),
+    providerFolderId: initial.providerFolderId,
+    refresh: async () => {
+      const refreshed = await read(true);
+      if (
+        refreshed.type !== "google_drive" ||
+        !refreshed.accessToken ||
+        !refreshed.expiresAt
+      ) {
+        throw new Error("engine storage-destination refresh malformed");
+      }
+      return {
+        accessToken: refreshed.accessToken,
+        expiresAt: new Date(refreshed.expiresAt),
+      };
+    },
+  };
 }

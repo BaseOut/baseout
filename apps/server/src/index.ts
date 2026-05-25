@@ -22,6 +22,7 @@ import { runsDeleteHandler } from "./pages/api/internal/runs/delete";
 import { runsDeleteCompleteHandler } from "./pages/api/internal/runs/delete-complete";
 import { spacesSetFrequencyHandler } from "./pages/api/internal/spaces/set-frequency";
 import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
+import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
 import { runOAuthRefreshTick } from "./lib/oauth-refresh";
 
 const CONNECTIONS_WHOAMI_RE =
@@ -39,6 +40,8 @@ const SPACES_SET_FREQUENCY_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/set-frequency$/;
 const SPACES_RESCAN_BASES_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/rescan-bases$/;
+const SPACES_STORAGE_DESTINATION_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/storage-destination$/;
 
 // Re-export Durable Object classes so workerd can resolve their bindings.
 // Required even when Astro adapter wraps the entry — see CLAUDE.md §5.1.
@@ -216,6 +219,21 @@ export default {
           ctx,
           locals,
           rescanBases[1]!,
+        );
+      }
+
+      // Storage-destination credential read for the workflows runner
+      // (openspec/changes/shared-byos-drive Phase 3). Decrypts + lazy-refreshes
+      // Drive tokens; returns plaintext access token + Drive folder ID.
+      const storageDest =
+        SPACES_STORAGE_DESTINATION_RE.exec(url.pathname);
+      if (storageDest) {
+        return await spacesStorageDestinationHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          storageDest[1]!,
         );
       }
 

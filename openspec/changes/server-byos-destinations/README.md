@@ -7,3 +7,9 @@ Cross-app: `apps/web` owns the OAuth connect flow + secret persistence in `stora
 See [proposal.md](./proposal.md), [design.md](./design.md), and [tasks.md](./tasks.md).
 
 When tasks are complete, run `/opsx:apply` to drive implementation.
+
+## Status note (2026-05-22)
+
+The Google Drive portion is now superseded by [`shared-byos-drive`](../shared-byos-drive/) which ships Drive end-to-end (schema, web OAuth, engine internal credential endpoint, workflows GoogleDriveWriter, UI enablement). The umbrella here still covers Dropbox, Box, OneDrive, S3, Frame.io. R2 re-introduction (Phase 0 of this umbrella) remains paused per [`system-r2-park`](../../specs/) — see also the user-confirmed BYOS-only V1 stance.
+
+When subsequent providers are picked up they follow the same per-provider-change pattern (`shared-byos-dropbox`, `shared-byos-box`, …) rather than landing as one umbrella PR.

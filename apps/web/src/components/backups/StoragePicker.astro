@@ -2,10 +2,10 @@
 /**
  * Wizard step 4 — Storage destination picker.
  *
- * MVP: only Cloudflare R2 (managed) is selectable. Other rows are
- * visibly disabled with a "Coming soon" label so users can see the
- * roadmap without being able to pick them. The PATCH route also rejects
- * non-r2_managed values as defense-in-depth.
+ * `r2_managed` is the legacy default; `google_drive` is the first BYOS
+ * cloud destination (openspec/changes/shared-byos-drive). Other rows are
+ * visibly disabled with a "Coming soon" label. The PATCH route validates
+ * the value against the same accept list as defense-in-depth.
  *
  * Props:
  *   spaceId             — UUID of the active Space
@@ -34,8 +34,9 @@ const ALL_OPTIONS: {
   {
     value: 'google_drive',
     label: 'Google Drive',
-    helper: 'Coming soon — pick a folder in your Google Drive.',
-    enabled: false,
+    helper:
+      'Connect your Google account; backups land in a per-Space Baseout folder.',
+    enabled: true,
   },
   {
     value: 'dropbox',
@@ -116,6 +117,29 @@ const NAME = 'backup-storage'
     ))}
   </fieldset>
 
+  <form
+    method="POST"
+    action="/api/connections/storage/google-drive/authorize"
+    class:list={[
+      'mt-3 flex items-center justify-between gap-3 rounded-md border border-base-300 p-3',
+      selectedStorageType !== 'google_drive' && 'hidden',
+    ]}
+    data-storage-drive-connect
+    data-astro-reload
+  >
+    <span class="text-sm text-base-content/80">
+      Connect a Google account to use this destination. Re-clicking issues a
+      fresh consent and keeps the same per-Space folder.
+    </span>
+    <button
+      type="submit"
+      class="btn btn-sm btn-primary"
+      data-storage-drive-connect-btn
+    >
+      Connect Google Drive
+    </button>
+  </form>
+
   <p
     role="status"
     class="mt-3 hidden text-sm text-success"
@@ -130,6 +154,7 @@ const NAME = 'backup-storage'
 
 <script>
   import { saveBackupConfig } from '../../lib/backups/save-config'
+  import { setButtonLoading } from '../../lib/ui'
 
   const root = document.querySelector<HTMLElement>('[data-storage-picker]')
   if (root) {
@@ -142,6 +167,12 @@ const NAME = 'backup-storage'
     )
     const radios = root.querySelectorAll<HTMLInputElement>(
       '[data-storage-radio]',
+    )
+    const driveConnectForm = root.querySelector<HTMLFormElement>(
+      '[data-storage-drive-connect]',
+    )
+    const driveConnectBtn = root.querySelector<HTMLButtonElement>(
+      '[data-storage-drive-connect-btn]',
     )
 
     function showStatus(msg: string) {
@@ -161,10 +192,21 @@ const NAME = 'backup-storage'
       status.classList.add('hidden')
     }
 
+    function toggleDriveConnect(selectedValue: string) {
+      if (!driveConnectForm) return
+      const visible = selectedValue === 'google_drive'
+      driveConnectForm.classList.toggle('hidden', !visible)
+    }
+
     async function handleChange(value: string) {
+      toggleDriveConnect(value)
       const result = await saveBackupConfig({ spaceId, storageType: value })
       if (result.ok) {
-        showStatus('Storage destination saved.')
+        showStatus(
+          value === 'google_drive'
+            ? 'Storage destination saved. If this Space isn’t connected to Drive yet, click Connect Google Drive below.'
+            : 'Storage destination saved.',
+        )
       } else if (result.error === 'unsupported_storage_type') {
         showError('That storage destination is not yet supported.')
       } else {
@@ -177,6 +219,15 @@ const NAME = 'backup-storage'
         if (radio.checked) {
           void handleChange(radio.value)
         }
+      })
+    }
+
+    if (driveConnectForm && driveConnectBtn) {
+      driveConnectForm.addEventListener('submit', () => {
+        // Loading state covers the redirect latency to Google's consent
+        // screen. data-astro-reload on the form ensures Astro doesn't try
+        // to client-route the cross-origin response.
+        setButtonLoading(driveConnectBtn, true)
       })
     }
   }

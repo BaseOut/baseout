@@ -184,6 +184,7 @@ describe("processRunStart — happy path", () => {
       baseName: "Tasks",
       runStartedAt: NOW.toISOString(),
       storageType: "r2_managed",
+      spaceId: SPACE_ID,
     });
     expect(second?.[0]).toEqual({
       runId: RUN_ID,
@@ -196,6 +197,7 @@ describe("processRunStart — happy path", () => {
       baseName: "Projects",
       runStartedAt: NOW.toISOString(),
       storageType: "r2_managed",
+      spaceId: SPACE_ID,
     });
   });
 

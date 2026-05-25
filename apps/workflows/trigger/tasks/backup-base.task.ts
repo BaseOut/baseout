@@ -34,10 +34,19 @@ export interface BackupBaseTaskPayload {
    * Selects the StorageWriter (Phase A of openspec/changes/shared-backup-run-delete).
    * Engine reads `storage_type` from backup_configurations and forwards it
    * here. Defaults to 'r2_managed' (legacy) at the engine boundary if the
-   * column is null. Today every value resolves to LocalFsWriter; future BYOS
-   * providers register behind their own storage_type values.
+   * column is null. When 'google_drive' (openspec/changes/shared-byos-drive),
+   * the wrapper fetches decrypted creds from the engine before constructing
+   * the writer. Unknown / missing values fall back to LocalFsWriter.
    */
   storageType: string;
+  /**
+   * Space ID — used by the workflows runner to fetch storage credentials
+   * from the engine's `/api/internal/spaces/:spaceId/storage-destination`
+   * route. Required for BYOS destinations; ignored for `local_fs`. Tokens
+   * are NOT carried in the payload (Trigger.dev logs payloads in run
+   * history); creds are fetched fresh at task start.
+   */
+  spaceId: string;
 }
 
 function trimSlash(s: string): string {
