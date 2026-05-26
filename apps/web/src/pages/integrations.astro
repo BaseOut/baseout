@@ -22,27 +22,29 @@ const { account, db } = Astro.locals;
 const orgId = account?.organization?.id ?? null;
 const spaceId = account?.space?.id ?? null;
 
-const state: IntegrationsState =
-  orgId && spaceId
-    ? await getIntegrationsState(db, orgId, spaceId)
-    : {
-        connections: [],
-        bases: [],
-        tierBasesPerSpace: 5,
-        availableFrequencies: ['monthly'],
-        hasBackupConfig: false,
-        policy: {
-          frequency: 'monthly',
-          storageType: 'r2_managed',
-          nextScheduledAt: null,
-          autoAddFutureBases: false,
-        },
-        unreadEvents: [],
-      };
+const EMPTY_STATE: IntegrationsState = {
+  connections: [],
+  bases: [],
+  tierBasesPerSpace: 5,
+  availableFrequencies: ['monthly'],
+  hasBackupConfig: false,
+  policy: {
+    frequency: 'monthly',
+    storageType: 'r2_managed',
+    nextScheduledAt: null,
+    autoAddFutureBases: false,
+  },
+  unreadEvents: [],
+};
 
-const initialRuns: BackupRunSummary[] =
+// Run getIntegrationsState and listRecentRuns in parallel — they're
+// independent reads keyed off the same (orgId, spaceId) request scope.
+const [state, initialRuns]: [IntegrationsState, BackupRunSummary[]] = await Promise.all([
+  orgId && spaceId
+    ? getIntegrationsState(db, orgId, spaceId)
+    : Promise.resolve(EMPTY_STATE),
   spaceId && db
-    ? await listRecentRuns(spaceId, 10, {
+    ? listRecentRuns(spaceId, 10, {
         fetchRuns: async (sid, lim) => {
           const rows = await db
             .select({
@@ -99,7 +101,8 @@ const initialRuns: BackupRunSummary[] =
           return rows as IncludedBase[];
         },
       })
-    : [];
+    : Promise.resolve<BackupRunSummary[]>([]),
+]);
 
 const connectedParam = Astro.url.searchParams.get('connected');
 const errorParam = Astro.url.searchParams.get('error');

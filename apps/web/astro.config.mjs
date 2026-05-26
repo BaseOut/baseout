@@ -8,6 +8,10 @@ export default defineConfig({
     platformProxy: { enabled: true },
   }),
   server: { port: 4331 },
+  prefetch: {
+    prefetchAll: false,
+    defaultStrategy: 'hover',
+  },
   // Disabled because `wrangler dev --remote` dispatches requests through CF's
   // edge, so the worker sees a host that doesn't match the browser's Origin
   // header — Astro's check then 403s every form POST. The OAuth flow has its

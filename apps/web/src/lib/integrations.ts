@@ -49,46 +49,68 @@ export async function getIntegrationsState(
   organizationId: string,
   spaceId: string,
 ): Promise<IntegrationsState> {
-  const connectionRows = await db
-    .select({
-      id: connections.id,
-      status: connections.status,
-      displayName: connections.displayName,
-      platformConfig: connections.platformConfig,
-      createdAt: connections.createdAt,
-      platformSlug: platforms.slug,
-      platformName: platforms.name,
-    })
-    .from(connections)
-    .innerJoin(platforms, eq(platforms.id, connections.platformId))
-    .where(
-      and(
-        eq(connections.organizationId, organizationId),
-        eq(platforms.slug, 'airtable'),
+  // Stage A — five independent reads fire in parallel. postgres-js queues
+  // them on the per-request connection (max: 5), so we stay within budget.
+  const [connectionRows, baseRows, configRows, caps, eventRows] = await Promise.all([
+    db
+      .select({
+        id: connections.id,
+        status: connections.status,
+        displayName: connections.displayName,
+        platformConfig: connections.platformConfig,
+        createdAt: connections.createdAt,
+        platformSlug: platforms.slug,
+        platformName: platforms.name,
+      })
+      .from(connections)
+      .innerJoin(platforms, eq(platforms.id, connections.platformId))
+      .where(
+        and(
+          eq(connections.organizationId, organizationId),
+          eq(platforms.slug, 'airtable'),
+        ),
       ),
-    )
+    db
+      .select({
+        id: atBases.id,
+        atBaseId: atBases.atBaseId,
+        name: atBases.name,
+      })
+      .from(atBases)
+      .where(eq(atBases.spaceId, spaceId)),
+    db
+      .select({
+        id: backupConfigurations.id,
+        frequency: backupConfigurations.frequency,
+        storageType: backupConfigurations.storageType,
+        nextScheduledAt: backupConfigurations.nextScheduledAt,
+        autoAddFutureBases: backupConfigurations.autoAddFutureBases,
+      })
+      .from(backupConfigurations)
+      .where(eq(backupConfigurations.spaceId, spaceId))
+      .limit(1),
+    resolveCapabilities(db, organizationId, 'airtable'),
+    db
+      .select({
+        id: spaceEvents.id,
+        kind: spaceEvents.kind,
+        payload: spaceEvents.payload,
+        createdAt: spaceEvents.createdAt,
+      })
+      .from(spaceEvents)
+      .where(
+        and(
+          eq(spaceEvents.spaceId, spaceId),
+          isNull(spaceEvents.dismissedAt),
+        ),
+      )
+      .orderBy(desc(spaceEvents.createdAt))
+      .limit(10),
+  ])
 
-  const baseRows = await db
-    .select({
-      id: atBases.id,
-      atBaseId: atBases.atBaseId,
-      name: atBases.name,
-    })
-    .from(atBases)
-    .where(eq(atBases.spaceId, spaceId))
+  const [config] = configRows
 
-  const [config] = await db
-    .select({
-      id: backupConfigurations.id,
-      frequency: backupConfigurations.frequency,
-      storageType: backupConfigurations.storageType,
-      nextScheduledAt: backupConfigurations.nextScheduledAt,
-      autoAddFutureBases: backupConfigurations.autoAddFutureBases,
-    })
-    .from(backupConfigurations)
-    .where(eq(backupConfigurations.spaceId, spaceId))
-    .limit(1)
-
+  // Stage B — only fires when there's actually a config and bases to filter by.
   const includedSet = new Set<string>()
   if (config && baseRows.length > 0) {
     const includedRows = await db
@@ -113,8 +135,6 @@ export async function getIntegrationsState(
     name: r.name,
     isIncluded: includedSet.has(r.id),
   }))
-
-  const caps = await resolveCapabilities(db, organizationId, 'airtable')
 
   const connectionSummaries: ConnectionSummary[] = connectionRows.map((row) => {
     const cfg = (row.platformConfig as PlatformConfig | null) ?? {}
@@ -146,23 +166,6 @@ export async function getIntegrationsState(
 
   // Unread space_events for the banner. Workspace rediscovery is the only
   // writer today (kind = 'bases_discovered'); other kinds will be additive.
-  const eventRows = await db
-    .select({
-      id: spaceEvents.id,
-      kind: spaceEvents.kind,
-      payload: spaceEvents.payload,
-      createdAt: spaceEvents.createdAt,
-    })
-    .from(spaceEvents)
-    .where(
-      and(
-        eq(spaceEvents.spaceId, spaceId),
-        isNull(spaceEvents.dismissedAt),
-      ),
-    )
-    .orderBy(desc(spaceEvents.createdAt))
-    .limit(10)
-
   const unreadEvents: SpaceEventSummary[] = []
   for (const row of eventRows) {
     if (row.kind !== 'bases_discovered') continue
