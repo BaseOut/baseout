@@ -184,18 +184,34 @@ fails with `redirect_uri_mismatch`. For local Drive Connect, use
 ## 6. Deploy commands
 
 Reproduced here for convenience; canonical script defs live in
-[apps/web/package.json](../../apps/web/package.json).
+[apps/web/package.json](../../apps/web/package.json) and
+[apps/server/package.json](../../apps/server/package.json).
 
 | Command                                            | Deploys to                                     | Worker name        |
 |----------------------------------------------------|------------------------------------------------|--------------------|
-| `pnpm --filter @baseout/web deploy`                | `https://baseout-dev.openside.workers.dev`     | `baseout-dev`      |
-| `pnpm --filter @baseout/web deploy:staging`        | `https://baseout-staging.openside.workers.dev` | `baseout-staging`  |
-| `pnpm --filter @baseout/web deploy:production`     | `https://console.baseout.dev`                  | `baseout`          |
+| `pnpm --filter @baseout/web run deploy`            | `https://baseout-dev.openside.workers.dev`     | `baseout-dev`      |
+| `pnpm --filter @baseout/web run deploy:staging`    | `https://baseout-staging.openside.workers.dev` | `baseout-staging`  |
+| `pnpm --filter @baseout/web run deploy:production` | `https://console.baseout.dev`                  | `baseout`          |
+| `pnpm --filter @baseout/server deploy:dev`         | `https://baseout-server-dev.openside.workers.dev` | `baseout-server-dev` |
+
+> ⚠️ For the web scripts use `pnpm ... run deploy` (not `pnpm ... deploy`).
+> pnpm intercepts the bare `deploy` keyword as its own builtin and fails
+> with `ERR_PNPM_INVALID_DEPLOY_TARGET`. The `run` token is required to
+> invoke the npm script defined in package.json.
+
+**Secrets sync on deploy.** Each `deploy` / `deploy:dev` script chains
+`pnpm run secrets:sync(:dev)` after `wrangler deploy`, which runs
+`scripts/sync-secrets.mjs --env <env>` and bulk-writes every `.dev.vars`
+entry as a Worker secret (filtered against keys already declared as
+plaintext `vars` in `wrangler.jsonc`). This makes `apps/{web,server}/.dev.vars`
+the single source of truth for deployed secrets — manual
+`wrangler secret put` calls are no longer required and should not be used
+(they reintroduce drift, see [§8](#8-failure-modes-so-you-dont-re-learn-them)).
 
 Local `pnpm --filter @baseout/web dev` is **not** a deploy — it runs the
-local code in a Cloudflare edge sandbox accessed at `https://localhost:4331`.
-Your local changes never affect any of the deployed URLs above until you
-explicitly run a `deploy` command.
+local code in a Cloudflare edge sandbox accessed at `https://localhost:4331`
+or `https://baseout.local:4331`. Your local changes never affect any of the
+deployed URLs above until you explicitly run a `deploy` command.
 
 ---
 
