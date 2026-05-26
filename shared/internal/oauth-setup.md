@@ -32,12 +32,18 @@ local `dev` npm script for local — see [§5.1](#51-public_auth_base_url)).
 Every supported environment must have its callback URI registered with each
 OAuth provider the app uses. The path component is provider-specific:
 
-| Provider     | Callback path                              |
-|--------------|--------------------------------------------|
-| Airtable     | `/api/connections/airtable/callback`       |
-| Google Drive | `/oauth/callback/google`                   |
+| Provider     | Callback path on THIS branch (`autumn/backup-fix-local`) |
+|--------------|----------------------------------------------------------|
+| Airtable     | `/api/connections/airtable/callback`                     |
+| Google Drive | `/api/connections/storage/google-drive/callback`         |
 
 So the **required URI for env `X` on provider `P`** is `<X origin> + <P callback path>`.
+
+> ⚠️ **Branch-specific.** Other branches (e.g. `autumn/server-setup`) use a
+> different Google Drive callback path (`/oauth/callback/google`). Always match
+> the URI registered with the provider to the path your branch's handler
+> actually serves. If you cross-merge between branches, audit this table and
+> §3 before assuming any URI works.
 
 ---
 
@@ -57,13 +63,21 @@ As of 2026-05-25. **Update every row here when a URI is registered or removed.**
 
 ### 3.2 Google Drive OAuth app (`client_id=283412627943-orknp1mdb...`)
 
-| Required URI                                                          | Registered? | Owner of registration |
-|-----------------------------------------------------------------------|-------------|-----------------------|
-| `https://localhost:4331/oauth/callback/google`                        | ✅ done     | boss (Google Cloud Console for project `baseout-dev`) |
-| `https://baseout.local:4331/oauth/callback/google`                    | ❌ MISSING  | boss                  |
-| `https://baseout-dev.openside.workers.dev/oauth/callback/google`      | ❌ MISSING  | boss                  |
-| `https://baseout-staging.openside.workers.dev/oauth/callback/google`  | ❌ MISSING  | boss                  |
-| `https://console.baseout.dev/oauth/callback/google`                   | ✅ done     | boss                  |
+| Required URI (this branch)                                                                       | Registered? | Owner of registration |
+|--------------------------------------------------------------------------------------------------|-------------|-----------------------|
+| `https://localhost:4331/api/connections/storage/google-drive/callback`                           | ❌ MISSING  | boss (Google Cloud Console for project `baseout-dev`) |
+| `https://baseout.local:4331/api/connections/storage/google-drive/callback`                       | ❌ MISSING  | boss                  |
+| `https://baseout-dev.openside.workers.dev/api/connections/storage/google-drive/callback`         | ❌ MISSING  | boss                  |
+| `https://baseout-staging.openside.workers.dev/api/connections/storage/google-drive/callback`     | ❌ MISSING  | boss                  |
+| `https://console.baseout.dev/api/connections/storage/google-drive/callback`                      | ❌ MISSING  | boss                  |
+
+> ⚠️ Boss has `https://localhost:4331/oauth/callback/google` and
+> `https://console.baseout.dev/oauth/callback/google` registered today — but
+> those paths don't route to a handler on this branch (handler lives at
+> `/api/connections/storage/google-drive/callback`, per
+> [apps/web/src/pages/api/connections/storage/google-drive/callback.ts](../../apps/web/src/pages/api/connections/storage/google-drive/callback.ts)).
+> Drive Connect is currently broken on every env of this branch until §4.1 below
+> is actioned.
 
 ---
 
@@ -77,9 +91,12 @@ box and update [§3](#3-current-registration-status) when done.
 In the Cloud Console for project `baseout-dev` → OAuth 2.0 Client IDs → the
 "Web application" client → **Authorized redirect URIs**:
 
-- [ ] Add `https://baseout.local:4331/oauth/callback/google`
-- [ ] Add `https://baseout-dev.openside.workers.dev/oauth/callback/google`
-- [ ] Add `https://baseout-staging.openside.workers.dev/oauth/callback/google`
+- [ ] Add `https://localhost:4331/api/connections/storage/google-drive/callback`
+- [ ] Add `https://baseout.local:4331/api/connections/storage/google-drive/callback`
+- [ ] Add `https://baseout-dev.openside.workers.dev/api/connections/storage/google-drive/callback`
+- [ ] Add `https://baseout-staging.openside.workers.dev/api/connections/storage/google-drive/callback`
+- [ ] Add `https://console.baseout.dev/api/connections/storage/google-drive/callback`
+- [ ] (Optional cleanup) Remove `https://localhost:4331/oauth/callback/google` and `https://console.baseout.dev/oauth/callback/google` — these were registered for a different branch's callback path and don't route on this branch.
 
 ### 4.2 Airtable (account-owner action, `airtable.com/create/oauth`)
 
