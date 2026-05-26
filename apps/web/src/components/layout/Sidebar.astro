@@ -627,7 +627,24 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
     }
   }
 
+  function syncActiveNav(): void {
+    const path = window.location.pathname;
+    const sidebar = document.getElementById('layout-sidebar');
+    if (!sidebar) return;
+
+    for (const a of sidebar.querySelectorAll<HTMLAnchorElement>('a.menu-item[href]')) {
+      const href = a.getAttribute('href') ?? '';
+      if (!href || href === '#') continue;
+      const active = href === path || (href !== '/' && path.startsWith(href));
+      a.classList.toggle('active', active);
+      if (active) a.setAttribute('aria-current', 'page');
+      else a.removeAttribute('aria-current');
+    }
+  }
+
   function init() {
+    syncActiveNav();
+
     const logoutHandler = async (e: Event) => {
       e.preventDefault();
       await authClient.signOut();
