@@ -6,7 +6,7 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "node --env-file-if-exists=.env scripts/launch.mjs build local && wrangler dev --remote --local-protocol https --port 4331 --var PUBLIC_AUTH_BASE_URL:https://localhost:4331",
+    "dev": "node --env-file-if-exists=.env scripts/launch.mjs build local && wrangler dev --remote --local-protocol https --port 4331 --var PUBLIC_AUTH_BASE_URL:https://baseout.local:4331",
     "dev:e2e-local": "node --env-file-if-exists=.env scripts/launch.mjs build local && node --env-file-if-exists=.env scripts/launch-e2e.mjs",
     "build": "node --env-file-if-exists=.env scripts/launch.mjs build",
     "wrangler": "node --env-file-if-exists=.env scripts/launch.mjs build local && wrangler dev --remote --port 4331 --var PUBLIC_AUTH_BASE_URL:http://localhost:4331",
