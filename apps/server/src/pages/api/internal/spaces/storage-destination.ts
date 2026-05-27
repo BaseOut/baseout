@@ -1,27 +1,32 @@
 // GET /api/internal/spaces/:spaceId/storage-destination
 //
-// Filed by openspec/changes/shared-byos-drive Phase 3. The workflows
-// runner (Node, no master encryption key) calls this at backup-base task
-// start to fetch the decrypted access token for the Space's storage
-// destination. The engine:
+// Filed by openspec/changes/shared-byos-drive Phase 3; Box dispatch added by
+// the box-provider commit chain (3/3). The workflows runner (Node, no master
+// encryption key) calls this at backup-base task start to fetch the decrypted
+// access token for the Space's storage destination. The engine:
 //   1. SELECTs the storage_destinations row.
 //   2. Decrypts the access + refresh token columns.
-//   3. If `oauthExpiresAt - now < 5 min` OR `?refresh=1` query: calls
-//      refreshDriveAccessToken, re-encrypts the new access token, persists
-//      back. Updates last_validated_at.
+//   3. If `oauthExpiresAt - now < 5 min` OR `?refresh=1` query: calls the
+//      type-specific refresh helper, re-encrypts the new access token (and
+//      for Box, the new ROTATED refresh token too), persists back. Updates
+//      last_validated_at.
 //   4. Returns plaintext {type, accessToken, expiresAt, providerFolderId}.
 //      Refresh token NEVER returned — workflows re-hits this endpoint with
 //      ?refresh=1 on a mid-upload 401.
 //
 // Result-code mapping:
-//   row missing                        → 404 { error: 'not_found' }
-//   type='local_fs'                    → 200 { type: 'local_fs' }
-//   type='google_drive' fresh          → 200 { type, accessToken, expiresAt, providerFolderId }
-//   type='google_drive' near-expiry    → refresh, then 200
-//   type='google_drive' ?refresh=1     → force refresh, then 200
-//   refresh transient                  → 502 { error: 'refresh_transient', reason }
-//   refresh pending_reauth             → 409 { error: 'pending_reauth', reason }
-//   refresh invalid                    → 502 { error: 'refresh_invalid', reason }
+//   row missing                                → 404 { error: 'not_found' }
+//   type='local_fs'                            → 200 { type: 'local_fs' }
+//   type='google_drive'|'box' fresh            → 200 { type, accessToken, expiresAt, providerFolderId }
+//   type='google_drive'|'box' near-expiry      → refresh, then 200
+//   type='google_drive'|'box' ?refresh=1       → force refresh, then 200
+//   refresh transient                          → 502 { error: 'refresh_transient', reason }
+//   refresh pending_reauth                     → 409 { error: 'pending_reauth', reason }
+//   refresh invalid                            → 502 { error: 'refresh_invalid', reason }
+//
+// Box rotates refresh tokens on every refresh; this handler persists the new
+// `refresh_token` to `oauth_refresh_token_enc` on every successful refresh,
+// otherwise the next refresh fails with invalid_grant.
 //
 // Token gate is applied by middleware (path begins /api/internal/).
 
@@ -30,6 +35,7 @@ import type { AppLocals, Env } from "../../../../env";
 import { storageDestinations } from "../../../../db/schema";
 import { decryptToken, encryptToken } from "../../../../lib/crypto";
 import { refreshDriveAccessToken } from "../../../../lib/storage/refresh-drive";
+import { refreshBoxAccessToken } from "../../../../lib/storage/refresh-box";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -82,7 +88,9 @@ export async function spacesStorageDestinationHandler(
     return jsonResponse({ type: "local_fs" }, 200);
   }
 
-  // From here on, type === 'google_drive' (the CHECK constraint enforces it).
+  // From here on, type ∈ { 'google_drive', 'box' } (the CHECK constraint
+  // enforces the set). All OAuth-backed providers share the same row shape:
+  // we need access+refresh tokens encrypted and a provider folder id.
   if (
     !row.oauthAccessTokenEnc ||
     !row.oauthRefreshTokenEnc ||
@@ -101,95 +109,200 @@ export async function spacesStorageDestinationHandler(
   const nearExpiry = expiresAtMs - Date.now() < REFRESH_LEEWAY_MS;
   const shouldRefresh = forceRefresh || nearExpiry;
 
-  let accessTokenPlain: string;
-  let expiresAtIso: string;
+  if (row.type === "google_drive") {
+    let accessTokenPlain: string;
+    let expiresAtIso: string;
 
-  if (shouldRefresh) {
-    let refreshTokenPlain: string;
-    try {
-      refreshTokenPlain = await decryptToken(
-        refreshTokenEncrypted,
-        env.BASEOUT_ENCRYPTION_KEY,
-      );
-    } catch {
-      return jsonResponse({ error: "decrypt_failed" }, 500);
+    if (shouldRefresh) {
+      let refreshTokenPlain: string;
+      try {
+        refreshTokenPlain = await decryptToken(
+          refreshTokenEncrypted,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+      } catch {
+        return jsonResponse({ error: "decrypt_failed" }, 500);
+      }
+
+      const outcome = await refreshDriveAccessToken({
+        refreshToken: refreshTokenPlain,
+        clientId: env.GOOGLE_DRIVE_OAUTH_CLIENT_ID,
+        clientSecret: env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET,
+      });
+
+      if (outcome.kind === "transient") {
+        return jsonResponse(
+          { error: "refresh_transient", reason: outcome.reason },
+          502,
+        );
+      }
+      if (outcome.kind === "pending_reauth") {
+        return jsonResponse(
+          { error: "pending_reauth", reason: outcome.reason },
+          409,
+        );
+      }
+      if (outcome.kind === "invalid") {
+        return jsonResponse(
+          { error: "refresh_invalid", reason: outcome.reason },
+          502,
+        );
+      }
+
+      // outcome.kind === 'success'
+      const newExpiresAt = new Date(outcome.expiresAtMs);
+      let newAccessTokenEnc: string;
+      try {
+        newAccessTokenEnc = await encryptToken(
+          outcome.accessToken,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+      } catch {
+        return jsonResponse({ error: "encrypt_failed" }, 500);
+      }
+
+      await db
+        .update(storageDestinations)
+        .set({
+          oauthAccessTokenEnc: newAccessTokenEnc,
+          oauthExpiresAt: newExpiresAt,
+          oauthScope: outcome.scope ?? sql`${storageDestinations.oauthScope}`,
+          lastValidatedAt: new Date(),
+        })
+        .where(eq(storageDestinations.id, row.id));
+
+      accessTokenPlain = outcome.accessToken;
+      expiresAtIso = newExpiresAt.toISOString();
+    } else {
+      try {
+        accessTokenPlain = await decryptToken(
+          accessTokenEncrypted,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+      } catch {
+        return jsonResponse({ error: "decrypt_failed" }, 500);
+      }
+      expiresAtIso = expiresAt!.toISOString();
+
+      // Touch last_validated_at on every successful read so ops can spot
+      // long-idle destinations.
+      await db
+        .update(storageDestinations)
+        .set({ lastValidatedAt: new Date() })
+        .where(eq(storageDestinations.id, row.id));
     }
 
-    const outcome = await refreshDriveAccessToken({
-      refreshToken: refreshTokenPlain,
-      clientId: env.GOOGLE_DRIVE_OAUTH_CLIENT_ID,
-      clientSecret: env.GOOGLE_DRIVE_OAUTH_CLIENT_SECRET,
-    });
-
-    if (outcome.kind === "transient") {
-      return jsonResponse(
-        { error: "refresh_transient", reason: outcome.reason },
-        502,
-      );
-    }
-    if (outcome.kind === "pending_reauth") {
-      return jsonResponse(
-        { error: "pending_reauth", reason: outcome.reason },
-        409,
-      );
-    }
-    if (outcome.kind === "invalid") {
-      return jsonResponse(
-        { error: "refresh_invalid", reason: outcome.reason },
-        502,
-      );
-    }
-
-    // outcome.kind === 'success'
-    const newExpiresAt = new Date(outcome.expiresAtMs);
-    let newAccessTokenEnc: string;
-    try {
-      newAccessTokenEnc = await encryptToken(
-        outcome.accessToken,
-        env.BASEOUT_ENCRYPTION_KEY,
-      );
-    } catch {
-      return jsonResponse({ error: "encrypt_failed" }, 500);
-    }
-
-    await db
-      .update(storageDestinations)
-      .set({
-        oauthAccessTokenEnc: newAccessTokenEnc,
-        oauthExpiresAt: newExpiresAt,
-        oauthScope: outcome.scope ?? sql`${storageDestinations.oauthScope}`,
-        lastValidatedAt: new Date(),
-      })
-      .where(eq(storageDestinations.id, row.id));
-
-    accessTokenPlain = outcome.accessToken;
-    expiresAtIso = newExpiresAt.toISOString();
-  } else {
-    try {
-      accessTokenPlain = await decryptToken(
-        accessTokenEncrypted,
-        env.BASEOUT_ENCRYPTION_KEY,
-      );
-    } catch {
-      return jsonResponse({ error: "decrypt_failed" }, 500);
-    }
-    expiresAtIso = expiresAt!.toISOString();
-
-    // Touch last_validated_at on every successful read so ops can spot
-    // long-idle destinations.
-    await db
-      .update(storageDestinations)
-      .set({ lastValidatedAt: new Date() })
-      .where(eq(storageDestinations.id, row.id));
+    return jsonResponse(
+      {
+        type: "google_drive",
+        accessToken: accessTokenPlain,
+        expiresAt: expiresAtIso,
+        providerFolderId,
+      },
+      200,
+    );
   }
 
-  return jsonResponse(
-    {
-      type: "google_drive",
-      accessToken: accessTokenPlain,
-      expiresAt: expiresAtIso,
-      providerFolderId,
-    },
-    200,
-  );
+  if (row.type === "box") {
+    let accessTokenPlain: string;
+    let expiresAtIso: string;
+
+    if (shouldRefresh) {
+      let refreshTokenPlain: string;
+      try {
+        refreshTokenPlain = await decryptToken(
+          refreshTokenEncrypted,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+      } catch {
+        return jsonResponse({ error: "decrypt_failed" }, 500);
+      }
+
+      const outcome = await refreshBoxAccessToken({
+        refreshToken: refreshTokenPlain,
+        clientId: env.BOX_OAUTH_CLIENT_ID,
+        clientSecret: env.BOX_OAUTH_CLIENT_SECRET,
+      });
+
+      if (outcome.kind === "transient") {
+        return jsonResponse(
+          { error: "refresh_transient", reason: outcome.reason },
+          502,
+        );
+      }
+      if (outcome.kind === "pending_reauth") {
+        return jsonResponse(
+          { error: "pending_reauth", reason: outcome.reason },
+          409,
+        );
+      }
+      if (outcome.kind === "invalid") {
+        return jsonResponse(
+          { error: "refresh_invalid", reason: outcome.reason },
+          502,
+        );
+      }
+
+      // outcome.kind === 'success'. Box rotates the refresh token — encrypt
+      // and persist the NEW refresh_token alongside the new access_token, or
+      // the next refresh fails with invalid_grant.
+      const newExpiresAt = new Date(outcome.expiresAtMs);
+      let newAccessTokenEnc: string;
+      let newRefreshTokenEnc: string;
+      try {
+        newAccessTokenEnc = await encryptToken(
+          outcome.accessToken,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+        newRefreshTokenEnc = await encryptToken(
+          outcome.refreshToken,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+      } catch {
+        return jsonResponse({ error: "encrypt_failed" }, 500);
+      }
+
+      await db
+        .update(storageDestinations)
+        .set({
+          oauthAccessTokenEnc: newAccessTokenEnc,
+          oauthRefreshTokenEnc: newRefreshTokenEnc,
+          oauthExpiresAt: newExpiresAt,
+          oauthScope: outcome.scope ?? sql`${storageDestinations.oauthScope}`,
+          lastValidatedAt: new Date(),
+        })
+        .where(eq(storageDestinations.id, row.id));
+
+      accessTokenPlain = outcome.accessToken;
+      expiresAtIso = newExpiresAt.toISOString();
+    } else {
+      try {
+        accessTokenPlain = await decryptToken(
+          accessTokenEncrypted,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+      } catch {
+        return jsonResponse({ error: "decrypt_failed" }, 500);
+      }
+      expiresAtIso = expiresAt!.toISOString();
+
+      await db
+        .update(storageDestinations)
+        .set({ lastValidatedAt: new Date() })
+        .where(eq(storageDestinations.id, row.id));
+    }
+
+    return jsonResponse(
+      {
+        type: "box",
+        accessToken: accessTokenPlain,
+        expiresAt: expiresAtIso,
+        providerFolderId,
+      },
+      200,
+    );
+  }
+
+  // Unknown type (CHECK constraint should prevent this; defensive).
+  return jsonResponse({ error: "unsupported_type" }, 500);
 }

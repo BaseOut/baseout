@@ -196,7 +196,10 @@ export async function runBackupBase(
   // Only providers that need decrypted credentials trigger the engine
   // fetch. `local_fs` (and the legacy `r2_managed` default that maps to
   // local_fs in the factory) don't.
-  if (input.storageType === "google_drive") {
+  if (
+    input.storageType === "google_drive" ||
+    input.storageType === "box"
+  ) {
     const fetchCreds =
       deps.fetchStorageCreds ??
       ((spaceId: string) =>
@@ -398,31 +401,46 @@ export async function defaultFetchStorageCreds(
   const initial = await read(false);
   if (initial.type === "local_fs") return null;
   if (
-    initial.type !== "google_drive" ||
+    (initial.type !== "google_drive" && initial.type !== "box") ||
     !initial.accessToken ||
     !initial.expiresAt ||
     !initial.providerFolderId
   ) {
     throw new Error("engine storage-destination response is malformed");
   }
+  const initialType = initial.type;
+  const refresh = async () => {
+    const refreshed = await read(true);
+    // Engine never changes the provider mid-Space, so we pin to the type
+    // observed on the first read. A mid-stream type flip indicates a bug
+    // — treat as malformed.
+    if (
+      refreshed.type !== initialType ||
+      !refreshed.accessToken ||
+      !refreshed.expiresAt
+    ) {
+      throw new Error("engine storage-destination refresh malformed");
+    }
+    return {
+      accessToken: refreshed.accessToken,
+      expiresAt: new Date(refreshed.expiresAt),
+    };
+  };
+  if (initialType === "google_drive") {
+    return {
+      kind: "google_drive",
+      accessToken: initial.accessToken,
+      expiresAt: new Date(initial.expiresAt),
+      providerFolderId: initial.providerFolderId,
+      refresh,
+    };
+  }
+  // initialType === "box"
   return {
-    kind: "google_drive",
+    kind: "box",
     accessToken: initial.accessToken,
     expiresAt: new Date(initial.expiresAt),
     providerFolderId: initial.providerFolderId,
-    refresh: async () => {
-      const refreshed = await read(true);
-      if (
-        refreshed.type !== "google_drive" ||
-        !refreshed.accessToken ||
-        !refreshed.expiresAt
-      ) {
-        throw new Error("engine storage-destination refresh malformed");
-      }
-      return {
-        accessToken: refreshed.accessToken,
-        expiresAt: new Date(refreshed.expiresAt),
-      };
-    },
+    refresh,
   };
 }
