@@ -103,20 +103,28 @@ As of 2026-05-25. **Update every row here when a URI is registered or removed.**
 
 | Required URI (this branch)                                                                | Registered? | Owner of registration |
 |-------------------------------------------------------------------------------------------|-------------|-----------------------|
-| `https://localhost:4331/api/connections/storage/dropbox/callback`                         | ❌ MISSING  | autumn (Dropbox App Console) |
-| `https://baseout.local:4331/api/connections/storage/dropbox/callback`                     | ❌ MISSING  | autumn                |
-| `https://baseout-dev.openside.workers.dev/api/connections/storage/dropbox/callback`       | ❌ MISSING  | autumn                |
-| `https://baseout-staging.openside.workers.dev/api/connections/storage/dropbox/callback`   | ❌ MISSING  | autumn                |
-| `https://console.baseout.dev/api/connections/storage/dropbox/callback`                    | ❌ MISSING  | autumn                |
+| `https://localhost:4331/api/connections/storage/dropbox/callback`                         | ✅ done     | autumn (Dropbox App Console) |
+| `https://baseout.local:4331/api/connections/storage/dropbox/callback`                     | ✅ done     | autumn                |
+| `https://baseout-dev.openside.workers.dev/api/connections/storage/dropbox/callback`       | ✅ done     | autumn                |
+| `https://baseout-staging.openside.workers.dev/api/connections/storage/dropbox/callback`   | ✅ done     | autumn                |
+| `https://console.baseout.dev/api/connections/storage/dropbox/callback`                    | ✅ done     | autumn                |
 
-> Dropbox App config holds the **Permission type** (Full Dropbox vs App
-> folder — we want **Full Dropbox**, matching Box's "App Folder OFF" choice)
-> AND the **scope set** (Permissions tab). Enable: `files.content.write`,
+> Dropbox App is registered with the **App folder** permission type (the
+> app is sandboxed to its dedicated `/Apps/Baseout/` folder in each user's
+> Dropbox — we can only see and modify content we create there). From the
+> API's perspective the app folder IS the root: a `path: '/Baseout-<spaceId>'`
+> in our calls creates `/Apps/Baseout/Baseout-<spaceId>` from the user's view.
+> No code adjustment is required vs Full Dropbox — same call shapes, narrower
+> sandbox.
+>
+> Permissions-tab scopes are enabled: `files.content.write`,
 > `files.content.read`, `files.metadata.write`, `files.metadata.read`,
 > `account_info.read`. Scopes are NOT passed via the OAuth URL — they live
-> on the app. Dropbox refresh tokens are **stable** (no rotation, no expiry
-> by default) — like Google Drive, unlike Box; the engine route preserves
-> the stored `oauth_refresh_token_enc` on refresh rather than re-encrypting.
+> on the app.
+>
+> Dropbox refresh tokens are **stable** (no rotation, no expiry by default)
+> — like Google Drive, unlike Box; the engine route preserves the stored
+> `oauth_refresh_token_enc` on refresh rather than re-encrypting.
 > Implementation lives in `apps/server/src/lib/storage/refresh-dropbox.ts`
 > (forthcoming, Commit 3).
 
@@ -179,42 +187,42 @@ Redirect URIs**:
 The local and `baseout-dev` URIs are sufficient for Commit 2 + 3 smoke;
 staging + prod URIs can wait.
 
-### 4.4 Dropbox (autumn-owned, Dropbox App Console)
+### 4.4 Dropbox (autumn-owned, Dropbox App Console) — DONE
 
 In the Dropbox App Console (https://www.dropbox.com/developers/apps) for the
 Baseout app (App key `x17ycest5xs90ui`):
 
 **Settings tab → OAuth 2 → Redirect URIs:**
 
-- [ ] Add `https://localhost:4331/api/connections/storage/dropbox/callback`
-- [ ] Add `https://baseout.local:4331/api/connections/storage/dropbox/callback`
-- [ ] Add `https://baseout-dev.openside.workers.dev/api/connections/storage/dropbox/callback`
-- [ ] Add `https://baseout-staging.openside.workers.dev/api/connections/storage/dropbox/callback`
-- [ ] Add `https://console.baseout.dev/api/connections/storage/dropbox/callback`
+- [x] Add `https://localhost:4331/api/connections/storage/dropbox/callback`
+- [x] Add `https://baseout.local:4331/api/connections/storage/dropbox/callback`
+- [x] Add `https://baseout-dev.openside.workers.dev/api/connections/storage/dropbox/callback`
+- [x] Add `https://baseout-staging.openside.workers.dev/api/connections/storage/dropbox/callback`
+- [x] Add `https://console.baseout.dev/api/connections/storage/dropbox/callback`
 
 **Settings tab → Permission type:**
 
-- [ ] Confirm **"Full Dropbox"** is selected (we want Baseout-`<spaceId>` to
-      live at the user's root folder, matching Box + Drive's privacy model;
-      "App folder" would sandbox us to `/Apps/Baseout/` which doesn't fit
-      our multi-Space layout).
+- [x] **App folder** is selected. The Baseout app is sandboxed to
+      `/Apps/Baseout/` in each user's Dropbox — we can only see and modify
+      content we create there. Multi-Space layout still works: each Space
+      gets its own `Baseout-<spaceId>` subfolder under `/Apps/Baseout/`,
+      and our API calls treat the app folder as `/` (a `path:
+      '/Baseout-<spaceId>'` call creates `/Apps/Baseout/Baseout-<spaceId>`
+      from the user's view).
 
-**Permissions tab — enable the following scopes:**
+**Permissions tab — enabled scopes:**
 
-- [ ] `files.content.write` (upload + replace files)
-- [ ] `files.content.read` (read + download — useful for restore + verify)
-- [ ] `files.metadata.write` (create folders + delete folders)
-- [ ] `files.metadata.read` (list folders + file metadata)
-- [ ] `account_info.read` (used by /2/users/get_current_account on initial Connect to populate oauth_account_email)
+- [x] `files.content.write` (upload + replace files)
+- [x] `files.content.read` (read + download — useful for restore + verify)
+- [x] `files.metadata.write` (create folders + delete folders)
+- [x] `files.metadata.read` (list folders + file metadata)
+- [x] `account_info.read` (used by /2/users/get_current_account on initial Connect to populate oauth_account_email)
 
 > Dropbox scopes are committed against the app, not requested via the OAuth
 > URL — saving the Permissions tab applies to all subsequent OAuth flows.
-> If the app is in Development mode, only the developer account that owns
-> the app can OAuth — submit for Production review when ready for staging
-> + prod.
-
-The local and `baseout-dev` URIs are sufficient for Commit 2 + 3 smoke;
-staging + prod URIs can wait.
+> If the app is still in Development mode, only the developer account that
+> owns the app can OAuth — submit for Production review when ready for
+> staging + prod.
 
 ---
 

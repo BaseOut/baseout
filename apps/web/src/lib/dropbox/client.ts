@@ -2,9 +2,15 @@
  * Minimal Dropbox API v2 client.
  *
  * Two operations only: identify the connected user (for audit) and ensure
- * the per-Space `/Baseout-<spaceId>` folder exists at the user's root. Used
+ * the per-Space `/Baseout-<spaceId>` folder exists at the app's root. Used
  * by the OAuth callback to seed `storage_destinations.provider_folder_id`.
  * The writer in apps/workflows (commit 3/3) does the heavy CSV-upload work.
+ *
+ * The Baseout Dropbox app is registered with **App folder** permission, so
+ * Dropbox sandboxes us to `/Apps/Baseout/` per-user. From the API's
+ * perspective the app folder IS the root: a `path: '/Baseout-<spaceId>'`
+ * call creates `/Apps/Baseout/Baseout-<spaceId>` from the user's view.
+ * Same call shapes as Full-Dropbox mode — only the sandbox differs.
  *
  * Dropbox folder model differs from Box and Drive:
  *   - Paths are first-class identifiers. `providerFolderId` ends up being
