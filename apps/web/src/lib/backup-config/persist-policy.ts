@@ -38,13 +38,15 @@ const ALL_FREQUENCIES: ReadonlySet<Frequency> = new Set([
 //   - local_fs: explicit dev-only writer (mirrors the workflows factory default).
 //   - google_drive: first BYOS cloud destination (openspec/changes/shared-byos-drive).
 //   - box: second BYOS cloud destination (box-provider commit chain).
-// Subsequent BYOS providers (Dropbox, OneDrive, S3, Frame.io) widen this
-// set when each lands.
+//   - dropbox: third BYOS cloud destination (dropbox-provider commit chain).
+// Subsequent BYOS providers (OneDrive, S3, Frame.io) widen this set when
+// each lands.
 const ALLOWED_STORAGE_TYPES = new Set([
   'r2_managed',
   'local_fs',
   'google_drive',
   'box',
+  'dropbox',
 ])
 
 export interface PersistBackupConfigPolicyInput {

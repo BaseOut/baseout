@@ -151,11 +151,13 @@ describe('handlePatch', () => {
   })
 
   it('returns 422 when storageType is unsupported in MVP', async () => {
+    // 'onedrive' stands in as the canonical unsupported example now that
+    // 'dropbox' has joined the allow list with the dropbox-provider chain.
     const d = makeDeps()
     const res = await handlePatch({
       account: makeAccount(),
       spaceId: SPACE_ID,
-      body: { storageType: 'dropbox' },
+      body: { storageType: 'onedrive' },
       ...d,
     })
     expect(res.status).toBe(422)

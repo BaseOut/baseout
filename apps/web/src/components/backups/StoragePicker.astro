@@ -2,15 +2,16 @@
 /**
  * Wizard step 4 — Storage destination picker.
  *
- * `r2_managed` is the legacy default; `google_drive` and `box` are the
- * first two BYOS cloud destinations (openspec/changes/shared-byos-drive +
- * the box-provider commit chain). Other rows are visibly disabled with a
- * "Coming soon" label. The PATCH route validates the value against the
- * same accept list as defense-in-depth.
+ * `r2_managed` is the legacy default; `google_drive`, `box`, and `dropbox`
+ * are the shipped BYOS cloud destinations (openspec/changes/shared-byos-drive
+ * + box + dropbox provider commit chains). Other rows are visibly disabled
+ * with a "Coming soon" label. The PATCH route validates the value against
+ * the same accept list as defense-in-depth.
  *
- * Box visibility is env-gated: the radio only appears as enabled when
- * BOX_OAUTH_CLIENT_ID is configured. A half-configured deploy then keeps
- * the option as "Coming soon" rather than a connect button that 503s.
+ * Box and Dropbox visibility are env-gated: each radio only appears as
+ * enabled when its respective OAUTH_CLIENT_ID is configured. A half-
+ * configured deploy keeps the option as "Coming soon" rather than a
+ * connect button that 503s.
  *
  * Props:
  *   spaceId             — UUID of the active Space
@@ -26,8 +27,12 @@ interface Props {
 
 const { spaceId, selectedStorageType = 'r2_managed' } = Astro.props as Props
 
-const workerEnv = env as unknown as { BOX_OAUTH_CLIENT_ID?: string }
+const workerEnv = env as unknown as {
+  BOX_OAUTH_CLIENT_ID?: string
+  DROPBOX_OAUTH_CLIENT_ID?: string
+}
 const boxEnabled = Boolean(workerEnv.BOX_OAUTH_CLIENT_ID)
+const dropboxEnabled = Boolean(workerEnv.DROPBOX_OAUTH_CLIENT_ID)
 
 const ALL_OPTIONS: {
   value: string
@@ -51,8 +56,10 @@ const ALL_OPTIONS: {
   {
     value: 'dropbox',
     label: 'Dropbox',
-    helper: 'Coming soon — proxy-streamed to your Dropbox.',
-    enabled: false,
+    helper: dropboxEnabled
+      ? 'Connect your Dropbox account; backups land in a per-Space Baseout folder.'
+      : 'Coming soon — connect your Dropbox account.',
+    enabled: dropboxEnabled,
   },
   {
     value: 'box',
@@ -177,6 +184,31 @@ const NAME = 'backup-storage'
     </form>
   )}
 
+  {dropboxEnabled && (
+    <form
+      method="POST"
+      action="/api/connections/storage/dropbox/authorize"
+      class:list={[
+        'mt-3 flex items-center justify-between gap-3 rounded-md border border-base-300 p-3',
+        selectedStorageType !== 'dropbox' && 'hidden',
+      ]}
+      data-storage-dropbox-connect
+      data-astro-reload
+    >
+      <span class="text-sm text-base-content/80">
+        Connect a Dropbox account to use this destination. Re-clicking
+        issues a fresh consent and keeps the same per-Space folder.
+      </span>
+      <button
+        type="submit"
+        class="btn btn-sm btn-primary"
+        data-storage-dropbox-connect-btn
+      >
+        Connect Dropbox
+      </button>
+    </form>
+  )}
+
   <p
     role="status"
     class="mt-3 hidden text-sm text-success"
@@ -217,6 +249,12 @@ const NAME = 'backup-storage'
     const boxConnectBtn = root.querySelector<HTMLButtonElement>(
       '[data-storage-box-connect-btn]',
     )
+    const dropboxConnectForm = root.querySelector<HTMLFormElement>(
+      '[data-storage-dropbox-connect]',
+    )
+    const dropboxConnectBtn = root.querySelector<HTMLButtonElement>(
+      '[data-storage-dropbox-connect-btn]',
+    )
 
     function showStatus(msg: string) {
       if (!status || !error) return
@@ -247,9 +285,16 @@ const NAME = 'backup-storage'
       boxConnectForm.classList.toggle('hidden', !visible)
     }
 
+    function toggleDropboxConnect(selectedValue: string) {
+      if (!dropboxConnectForm) return
+      const visible = selectedValue === 'dropbox'
+      dropboxConnectForm.classList.toggle('hidden', !visible)
+    }
+
     async function handleChange(value: string) {
       toggleDriveConnect(value)
       toggleBoxConnect(value)
+      toggleDropboxConnect(value)
       const result = await saveBackupConfig({ spaceId, storageType: value })
       if (result.ok) {
         let msg: string
@@ -259,6 +304,9 @@ const NAME = 'backup-storage'
         } else if (value === 'box') {
           msg =
             'Storage destination saved. If this Space isn’t connected to Box yet, click Connect Box below.'
+        } else if (value === 'dropbox') {
+          msg =
+            'Storage destination saved. If this Space isn’t connected to Dropbox yet, click Connect Dropbox below.'
         } else {
           msg = 'Storage destination saved.'
         }
@@ -291,6 +339,13 @@ const NAME = 'backup-storage'
       boxConnectForm.addEventListener('submit', () => {
         // Loading state covers the redirect latency to Box's consent screen.
         setButtonLoading(boxConnectBtn, true)
+      })
+    }
+
+    if (dropboxConnectForm && dropboxConnectBtn) {
+      dropboxConnectForm.addEventListener('submit', () => {
+        // Loading state covers the redirect latency to Dropbox's consent screen.
+        setButtonLoading(dropboxConnectBtn, true)
       })
     }
   }
