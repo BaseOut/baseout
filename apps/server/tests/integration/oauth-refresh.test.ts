@@ -684,12 +684,19 @@ describe("runOAuthRefreshTick", () => {
     expect(claimSql).toMatch(/RETURNING\s+id,\s*modified_at/);
   });
 
-  it("apply-side UPDATEs pin WHERE to the claimed modified_at (race fix)", async () => {
+  it("apply-side UPDATEs pin WHERE to the claimed modified_at via date_trunc (race fix + precision fix)", async () => {
     // The CAS-on-modified_at clause stops a tick whose Airtable RPC took
     // >5min from clobbering a legitimate stale-reap claim by a later
     // tick. Without it, the delayed tick's `WHERE status='refreshing'`
     // matches both its own claim AND any subsequent re-claim, producing
     // silent corruption of the row that the new tick claimed.
+    //
+    // The date_trunc('milliseconds', ...) wrapper is mandatory: postgres-js
+    // serializes JS Date params via .toISOString() (millisecond precision),
+    // while postgres `now()` stores microsecond precision. An exact
+    // `modified_at = $1` comparison silently fails for every apply-side
+    // UPDATE — the symptom that broke prod on 2026-05-26 and forced
+    // customer-visible reconnects until 2026-05-27.
     const seed = await buildSeed("rt");
     const { db, calls } = makeFakeDb([
       { rows: [{ id: AIRTABLE_PLATFORM_ID }] },
@@ -721,6 +728,12 @@ describe("runOAuthRefreshTick", () => {
 
     const successSql = calls[3] ?? "";
     expect(successSql).toMatch(
+      /WHERE\s+id\s*=\s*\S+\s+AND\s+status\s*=\s*'refreshing'\s+AND\s+date_trunc\(\s*'milliseconds'\s*,\s*modified_at\s*\)\s*=/,
+    );
+    // Bare `modified_at = $param` is the BROKEN shape — it always fails
+    // due to microsecond/millisecond precision drift. Guard against
+    // accidental reversion.
+    expect(successSql).not.toMatch(
       /WHERE\s+id\s*=\s*\S+\s+AND\s+status\s*=\s*'refreshing'\s+AND\s+modified_at\s*=/,
     );
   });

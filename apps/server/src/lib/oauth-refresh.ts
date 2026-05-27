@@ -180,7 +180,16 @@ export async function runOAuthRefreshTick(
     // RETURNING modified_at gives us the timestamp postgres assigned at this
     // claim. applyOutcome uses it as a CAS guard on the write so a long-
     // running RPC (>5min) can't clobber a subsequent legitimate stale-reap
-    // tick.
+    // tick. The comparison is `date_trunc('milliseconds', modified_at) = $1`
+    // because postgres-js serializes JS `Date` values via `.toISOString()`
+    // (millisecond precision), while postgres `now()` writes microsecond
+    // precision into the column. An exact `modified_at = $1` would always
+    // return false for the parameter we round-tripped through the driver,
+    // silently failing every apply-side UPDATE to cas_lost — masking the
+    // refresh as successful at Airtable but never persisting the new tokens,
+    // and forcing a customer-visible reconnect after the next stale-reap
+    // tried the now-consumed refresh_token. This was the regression
+    // introduced and shipped on 2026-05-26 and reverted here.
     const claim = (await deps.db.execute(sql`
       UPDATE baseout.connections
       SET status = 'refreshing', modified_at = now()
@@ -211,7 +220,7 @@ export async function runOAuthRefreshTick(
       await deps.db.execute(sql`
         UPDATE baseout.connections
         SET status = 'active', modified_at = now()
-        WHERE id = ${row.id} AND status = 'refreshing' AND modified_at = ${claimedAt}
+        WHERE id = ${row.id} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
       `);
       outcomes.decrypt_failed += 1;
       log({
@@ -236,7 +245,7 @@ export async function runOAuthRefreshTick(
       await deps.db.execute(sql`
         UPDATE baseout.connections
         SET status = 'invalid', invalidated_at = now(), modified_at = now()
-        WHERE id = ${row.id} AND status = 'refreshing' AND modified_at = ${claimedAt}
+        WHERE id = ${row.id} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
       `);
       outcomes.decrypt_failed += 1;
       log({
@@ -277,7 +286,7 @@ export async function runOAuthRefreshTick(
       await deps.db.execute(sql`
         UPDATE baseout.connections
         SET status = 'active', modified_at = now()
-        WHERE id = ${row.id} AND status = 'refreshing' AND modified_at = ${claimedAt}
+        WHERE id = ${row.id} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
       `);
       outcomes.unexpected_error += 1;
       log({
@@ -305,12 +314,17 @@ async function applyOutcome(
     reason?: string,
   ) => void,
 ): Promise<void> {
-  // All four UPDATEs CAS-guard on `status = 'refreshing' AND modified_at =
-  // ${claimedAt}`. The modified_at pin ensures we only commit our outcome
-  // if the row still carries the exact timestamp postgres set at our claim
-  // — if another tick stale-reaped this row mid-RPC (a >5min refresh) or
-  // if apps/web's OAuth callback overwrote it, our UPDATE matches 0 rows
-  // and we record cas_lost.
+  // All four UPDATEs CAS-guard on `status = 'refreshing' AND
+  // date_trunc('milliseconds', modified_at) = ${claimedAt}`. The
+  // millisecond-truncation is mandatory: postgres-js serializes JS Date
+  // back to the wire at millisecond precision (via toISOString), while
+  // the stored value from `now()` carries microsecond precision — so an
+  // exact `modified_at = ${claimedAt}` never matches. With the trunc, we
+  // get the intended pin: only commit our outcome if the row still
+  // carries the timestamp postgres set at our claim. If another tick
+  // stale-reaped this row mid-RPC (a >5min refresh) or apps/web's OAuth
+  // callback overwrote it, our UPDATE matches 0 rows and we record
+  // cas_lost.
   switch (outcome.kind) {
     case "success": {
       const newAccessEnc = await encryptToken(outcome.accessToken, encryptionKey);
@@ -324,7 +338,7 @@ async function applyOutcome(
             scopes = ${outcome.scope},
             status = 'active',
             modified_at = now()
-        WHERE id = ${connectionId} AND status = 'refreshing' AND modified_at = ${claimedAt}
+        WHERE id = ${connectionId} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
         RETURNING id
       `)) as unknown as Array<{ id: string }>;
       if (update.length === 0) {
@@ -343,7 +357,7 @@ async function applyOutcome(
       await db.execute(sql`
         UPDATE baseout.connections
         SET status = 'pending_reauth', modified_at = now()
-        WHERE id = ${connectionId} AND status = 'refreshing' AND modified_at = ${claimedAt}
+        WHERE id = ${connectionId} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
       `);
       outcomes.pending_reauth += 1;
       log("pending_reauth", outcome.reason);
@@ -354,7 +368,7 @@ async function applyOutcome(
       await db.execute(sql`
         UPDATE baseout.connections
         SET status = 'active', modified_at = now()
-        WHERE id = ${connectionId} AND status = 'refreshing' AND modified_at = ${claimedAt}
+        WHERE id = ${connectionId} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
       `);
       outcomes.transient += 1;
       log("transient", outcome.reason);
@@ -364,7 +378,7 @@ async function applyOutcome(
       await db.execute(sql`
         UPDATE baseout.connections
         SET status = 'invalid', invalidated_at = now(), modified_at = now()
-        WHERE id = ${connectionId} AND status = 'refreshing' AND modified_at = ${claimedAt}
+        WHERE id = ${connectionId} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
       `);
       outcomes.invalid += 1;
       log("invalid", outcome.reason);
