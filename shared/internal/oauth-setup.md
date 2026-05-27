@@ -37,6 +37,7 @@ OAuth provider the app uses. The path component is provider-specific:
 | Airtable     | `/api/connections/airtable/callback`                     |
 | Google Drive | `/api/connections/storage/google-drive/callback`         |
 | Box          | `/api/connections/storage/box/callback`                  |
+| Dropbox      | `/api/connections/storage/dropbox/callback`              |
 
 So the **required URI for env `X` on provider `P`** is `<X origin> + <P callback path>`.
 
@@ -98,6 +99,27 @@ As of 2026-05-25. **Update every row here when a URI is registered or removed.**
 > next refresh fails with `invalid_grant`. Implementation lives in
 > `apps/server/src/lib/storage/refresh-box.ts` (forthcoming, Commit 3).
 
+### 3.4 Dropbox OAuth app (`client_id=x17ycest5xs90ui`)
+
+| Required URI (this branch)                                                                | Registered? | Owner of registration |
+|-------------------------------------------------------------------------------------------|-------------|-----------------------|
+| `https://localhost:4331/api/connections/storage/dropbox/callback`                         | ❌ MISSING  | autumn (Dropbox App Console) |
+| `https://baseout.local:4331/api/connections/storage/dropbox/callback`                     | ❌ MISSING  | autumn                |
+| `https://baseout-dev.openside.workers.dev/api/connections/storage/dropbox/callback`       | ❌ MISSING  | autumn                |
+| `https://baseout-staging.openside.workers.dev/api/connections/storage/dropbox/callback`   | ❌ MISSING  | autumn                |
+| `https://console.baseout.dev/api/connections/storage/dropbox/callback`                    | ❌ MISSING  | autumn                |
+
+> Dropbox App config holds the **Permission type** (Full Dropbox vs App
+> folder — we want **Full Dropbox**, matching Box's "App Folder OFF" choice)
+> AND the **scope set** (Permissions tab). Enable: `files.content.write`,
+> `files.content.read`, `files.metadata.write`, `files.metadata.read`,
+> `account_info.read`. Scopes are NOT passed via the OAuth URL — they live
+> on the app. Dropbox refresh tokens are **stable** (no rotation, no expiry
+> by default) — like Google Drive, unlike Box; the engine route preserves
+> the stored `oauth_refresh_token_enc` on refresh rather than re-encrypting.
+> Implementation lives in `apps/server/src/lib/storage/refresh-dropbox.ts`
+> (forthcoming, Commit 3).
+
 ---
 
 ## 4. Gap checklist
@@ -153,6 +175,43 @@ Redirect URIs**:
 - [ ] After saving in Box, click **Submit for review** if the app is in
       development mode and any non-dev env needs to use it. Until reviewed,
       OAuth only works for the developer account that owns the app.
+
+The local and `baseout-dev` URIs are sufficient for Commit 2 + 3 smoke;
+staging + prod URIs can wait.
+
+### 4.4 Dropbox (autumn-owned, Dropbox App Console)
+
+In the Dropbox App Console (https://www.dropbox.com/developers/apps) for the
+Baseout app (App key `x17ycest5xs90ui`):
+
+**Settings tab → OAuth 2 → Redirect URIs:**
+
+- [ ] Add `https://localhost:4331/api/connections/storage/dropbox/callback`
+- [ ] Add `https://baseout.local:4331/api/connections/storage/dropbox/callback`
+- [ ] Add `https://baseout-dev.openside.workers.dev/api/connections/storage/dropbox/callback`
+- [ ] Add `https://baseout-staging.openside.workers.dev/api/connections/storage/dropbox/callback`
+- [ ] Add `https://console.baseout.dev/api/connections/storage/dropbox/callback`
+
+**Settings tab → Permission type:**
+
+- [ ] Confirm **"Full Dropbox"** is selected (we want Baseout-`<spaceId>` to
+      live at the user's root folder, matching Box + Drive's privacy model;
+      "App folder" would sandbox us to `/Apps/Baseout/` which doesn't fit
+      our multi-Space layout).
+
+**Permissions tab — enable the following scopes:**
+
+- [ ] `files.content.write` (upload + replace files)
+- [ ] `files.content.read` (read + download — useful for restore + verify)
+- [ ] `files.metadata.write` (create folders + delete folders)
+- [ ] `files.metadata.read` (list folders + file metadata)
+- [ ] `account_info.read` (used by /2/users/get_current_account on initial Connect to populate oauth_account_email)
+
+> Dropbox scopes are committed against the app, not requested via the OAuth
+> URL — saving the Permissions tab applies to all subsequent OAuth flows.
+> If the app is in Development mode, only the developer account that owns
+> the app can OAuth — submit for Production review when ready for staging
+> + prod.
 
 The local and `baseout-dev` URIs are sufficient for Commit 2 + 3 smoke;
 staging + prod URIs can wait.

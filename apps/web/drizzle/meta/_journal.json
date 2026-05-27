@@ -78,6 +78,13 @@
       "when": 1779829964114,
       "tag": "0010_storage_destinations_box",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1779889898829,
+      "tag": "0011_storage_destinations_dropbox",
+      "breakpoints": true
     }
   ]
 }
