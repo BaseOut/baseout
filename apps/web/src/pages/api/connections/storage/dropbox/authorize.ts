@@ -52,6 +52,7 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
   const workerEnv = env as unknown as {
     DROPBOX_OAUTH_CLIENT_ID?: string
     DROPBOX_OAUTH_CLIENT_SECRET?: string
+    DROPBOX_REDIRECT_URI?: string
     BASEOUT_ENCRYPTION_KEY?: string
   }
 
@@ -72,7 +73,7 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
     )
   }
 
-  const redirectUri = getRedirectUri(url.origin)
+  const redirectUri = getRedirectUri(url.origin, workerEnv)
   const { verifier, challenge } = await generatePkcePair()
   const state = generateState()
 

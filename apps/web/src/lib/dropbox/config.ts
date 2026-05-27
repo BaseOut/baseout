@@ -30,13 +30,37 @@ export const DROPBOX_AUTHORIZE_URL = 'https://www.dropbox.com/oauth2/authorize'
 export const DROPBOX_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token'
 export const DROPBOX_API_BASE = 'https://api.dropboxapi.com/2'
 
-export function getRedirectUri(origin: string): string {
+/**
+ * Resolves the OAuth redirect URI for this request.
+ *
+ * Precedence:
+ *   1. `env.DROPBOX_REDIRECT_URI` — explicit override. Required when running
+ *      `wrangler dev --remote` because the worker code sees its hostname
+ *      as `baseout-dev.openside.workers.dev` (the preview-worker URL) even
+ *      though the browser address bar is `localhost:4331`. Pinning the
+ *      redirect URI to one of the Dropbox-registered hostnames keeps the
+ *      OAuth flow consistent — the SAME string must appear on the
+ *      authorize URL AND on the token-exchange call.
+ *   2. Derived from `origin` — the deployed path. Each deployed env's
+ *      hostname is registered in the Dropbox App Console, so `url.origin`
+ *      resolves to a valid registered URI in staging + prod.
+ */
+export function getRedirectUri(
+  origin: string,
+  env?: { DROPBOX_REDIRECT_URI?: string },
+): string {
+  if (env?.DROPBOX_REDIRECT_URI) return env.DROPBOX_REDIRECT_URI
   return `${origin.replace(/\/$/, '')}/api/connections/storage/dropbox/callback`
 }
 
 export interface DropboxOAuthEnv {
   DROPBOX_OAUTH_CLIENT_ID?: string
   DROPBOX_OAUTH_CLIENT_SECRET?: string
+  /**
+   * Optional explicit redirect-URI override. See `getRedirectUri` above.
+   * Recommended in local dev when using `wrangler dev --remote`.
+   */
+  DROPBOX_REDIRECT_URI?: string
 }
 
 export interface DropboxClientCredentials {
