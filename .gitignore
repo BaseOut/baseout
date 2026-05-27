@@ -24,6 +24,9 @@ packages/*/test-results/
 .env.staging
 .env.production
 
+# Personal working notes — never commit
+boss-todo.md
+
 # Logs
 *.log
 npm-debug.log*
