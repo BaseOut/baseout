@@ -508,7 +508,7 @@ export const storageDestinations = baseout.table('storage_destinations', {
     .unique()
     .references(() => spaces.id, { onDelete: 'cascade' }),
   type: text('type').notNull(),
-  // 'local_fs' | 'google_drive' — enforced by CHECK below + widened
+  // 'local_fs' | 'google_drive' | 'box' — enforced by CHECK below + widened
   // additively when subsequent BYOS providers land.
 
   // OAuth token storage (Drive only; local_fs leaves these null).
@@ -535,7 +535,7 @@ export const storageDestinations = baseout.table('storage_destinations', {
 }, (table) => [
   check(
     'storage_destinations_type_check',
-    sql`${table.type} IN ('local_fs', 'google_drive')`,
+    sql`${table.type} IN ('local_fs', 'google_drive', 'box')`,
   ),
   index('storage_destinations_type_idx').on(table.type),
 ])

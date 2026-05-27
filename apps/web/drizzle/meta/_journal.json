@@ -71,6 +71,13 @@
       "when": 1779489571759,
       "tag": "0009_storage_destinations",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779829964114,
+      "tag": "0010_storage_destinations_box",
+      "breakpoints": true
     }
   ]
 }

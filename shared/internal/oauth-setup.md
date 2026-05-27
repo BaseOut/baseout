@@ -36,6 +36,7 @@ OAuth provider the app uses. The path component is provider-specific:
 |--------------|----------------------------------------------------------|
 | Airtable     | `/api/connections/airtable/callback`                     |
 | Google Drive | `/api/connections/storage/google-drive/callback`         |
+| Box          | `/api/connections/storage/box/callback`                  |
 
 So the **required URI for env `X` on provider `P`** is `<X origin> + <P callback path>`.
 
@@ -79,6 +80,24 @@ As of 2026-05-25. **Update every row here when a URI is registered or removed.**
 > Drive Connect is currently broken on every env of this branch until §4.1 below
 > is actioned.
 
+### 3.3 Box OAuth app (`client_id=g80ko45r0dpseeih11z4aoi4a2s242jm`)
+
+| Required URI (this branch)                                                                | Registered? | Owner of registration |
+|-------------------------------------------------------------------------------------------|-------------|-----------------------|
+| `https://localhost:4331/api/connections/storage/box/callback`                             | ❌ MISSING  | autumn (Box Developer Console) |
+| `https://baseout.local:4331/api/connections/storage/box/callback`                         | ❌ MISSING  | autumn                |
+| `https://baseout-dev.openside.workers.dev/api/connections/storage/box/callback`           | ❌ MISSING  | autumn                |
+| `https://baseout-staging.openside.workers.dev/api/connections/storage/box/callback`       | ❌ MISSING  | autumn                |
+| `https://console.baseout.dev/api/connections/storage/box/callback`                        | ❌ MISSING  | autumn                |
+
+> Box App config also holds the scope set (not the OAuth flow). Confirm
+> `Write all files and folders stored in Box` is enabled (i.e. `root_readwrite`),
+> and that `App Folder` mode is OFF — we want user-folder access, not
+> app-folder isolation. Box rotates refresh tokens on every refresh; the
+> stored `refresh_token` MUST be replaced on each successful refresh or the
+> next refresh fails with `invalid_grant`. Implementation lives in
+> `apps/server/src/lib/storage/refresh-box.ts` (forthcoming, Commit 3).
+
 ---
 
 ## 4. Gap checklist
@@ -117,6 +136,26 @@ env's secrets.
 **Airtable does NOT expose a public API for managing OAuth integrations.**
 Only the OAuth flow endpoints (authorize / token / refresh) are public.
 Updating the registered URI list must happen via the Airtable web UI.
+
+### 4.3 Box (autumn-owned, Box Developer Console)
+
+In the Box Developer Console for the Baseout app (Client ID
+`g80ko45r0dpseeih11z4aoi4a2s242jm`) → **Configuration** tab → **OAuth 2.0
+Redirect URIs**:
+
+- [ ] Add `https://localhost:4331/api/connections/storage/box/callback`
+- [ ] Add `https://baseout.local:4331/api/connections/storage/box/callback`
+- [ ] Add `https://baseout-dev.openside.workers.dev/api/connections/storage/box/callback`
+- [ ] Add `https://baseout-staging.openside.workers.dev/api/connections/storage/box/callback`
+- [ ] Add `https://console.baseout.dev/api/connections/storage/box/callback`
+- [ ] Confirm Application Scopes include **Write all files and folders stored in Box** (`root_readwrite`)
+- [ ] Confirm **App Folder** mode is OFF (we need user-folder access, not app-folder isolation)
+- [ ] After saving in Box, click **Submit for review** if the app is in
+      development mode and any non-dev env needs to use it. Until reviewed,
+      OAuth only works for the developer account that owns the app.
+
+The local and `baseout-dev` URIs are sufficient for Commit 2 + 3 smoke;
+staging + prod URIs can wait.
 
 ---
 
