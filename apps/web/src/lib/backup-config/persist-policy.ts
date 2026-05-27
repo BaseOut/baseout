@@ -37,12 +37,14 @@ const ALL_FREQUENCIES: ReadonlySet<Frequency> = new Set([
 //     per `system-r2-park` (R2 binding removed).
 //   - local_fs: explicit dev-only writer (mirrors the workflows factory default).
 //   - google_drive: first BYOS cloud destination (openspec/changes/shared-byos-drive).
-// Subsequent BYOS providers (Dropbox, Box, OneDrive, S3, Frame.io) widen this
+//   - box: second BYOS cloud destination (box-provider commit chain).
+// Subsequent BYOS providers (Dropbox, OneDrive, S3, Frame.io) widen this
 // set when each lands.
 const ALLOWED_STORAGE_TYPES = new Set([
   'r2_managed',
   'local_fs',
   'google_drive',
+  'box',
 ])
 
 export interface PersistBackupConfigPolicyInput {
