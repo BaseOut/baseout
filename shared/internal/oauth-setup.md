@@ -103,11 +103,25 @@ As of 2026-05-25. **Update every row here when a URI is registered or removed.**
 
 | Required URI (this branch)                                                                | Registered? | Owner of registration |
 |-------------------------------------------------------------------------------------------|-------------|-----------------------|
-| `https://localhost:4331/api/connections/storage/dropbox/callback`                         | ✅ done     | autumn (Dropbox App Console) |
-| `https://baseout.local:4331/api/connections/storage/dropbox/callback`                     | ✅ done     | autumn                |
-| `https://baseout-dev.openside.workers.dev/api/connections/storage/dropbox/callback`       | ✅ done     | autumn                |
-| `https://baseout-staging.openside.workers.dev/api/connections/storage/dropbox/callback`   | ✅ done     | autumn                |
-| `https://console.baseout.dev/api/connections/storage/dropbox/callback`                    | ✅ done     | autumn                |
+| `https://localhost:4331/api/connections/storage/dropbox/callback`                         | ✅ done     | boss (Dropbox App Console) |
+| `https://baseout.local:4331/api/connections/storage/dropbox/callback`                     | ❌ MISSING  | boss                  |
+| `https://baseout-dev.openside.workers.dev/api/connections/storage/dropbox/callback`       | ❌ MISSING  | boss                  |
+| `https://baseout-staging.openside.workers.dev/api/connections/storage/dropbox/callback`   | ✅ done     | boss                  |
+| `https://baseout.dev/api/connections/storage/dropbox/callback`                            | ✅ done     | boss                  |
+
+> The `baseout-dev` URI is the one that actually blocks local-dev smoke
+> testing: the `wrangler dev --remote` script makes the local worker code
+> see `https://baseout-dev.openside.workers.dev` as `url.origin` (even
+> though the browser URL bar shows `localhost:4331`). The local + staging
+> + prod URIs registered today are insufficient to complete a Connect flow
+> end-to-end until that one's added. Same gotcha applies to any future
+> BYOS provider so long as the dev script keeps `--remote`. See
+> [boss-todo.md §2](../../boss-todo.md) (local-only, gitignored).
+>
+> NOTE: the prod row here uses `baseout.dev` per the actual deployed
+> wrangler.jsonc — the §1 Environments table claiming `console.baseout.dev`
+> is stale across this file and needs a separate sweep (Airtable §3.1 +
+> Drive §3.2 currently inherit the stale value).
 
 > Dropbox App is registered with the **App folder** permission type (the
 > app is sandboxed to its dedicated `/Apps/Baseout/` folder in each user's
@@ -187,18 +201,18 @@ Redirect URIs**:
 The local and `baseout-dev` URIs are sufficient for Commit 2 + 3 smoke;
 staging + prod URIs can wait.
 
-### 4.4 Dropbox (autumn-owned, Dropbox App Console) — DONE
+### 4.4 Dropbox (boss-owned, Dropbox App Console) — PARTIAL
 
 In the Dropbox App Console (https://www.dropbox.com/developers/apps) for the
 Baseout app (App key `x17ycest5xs90ui`):
 
 **Settings tab → OAuth 2 → Redirect URIs:**
 
-- [x] Add `https://localhost:4331/api/connections/storage/dropbox/callback`
-- [x] Add `https://baseout.local:4331/api/connections/storage/dropbox/callback`
-- [x] Add `https://baseout-dev.openside.workers.dev/api/connections/storage/dropbox/callback`
-- [x] Add `https://baseout-staging.openside.workers.dev/api/connections/storage/dropbox/callback`
-- [x] Add `https://console.baseout.dev/api/connections/storage/dropbox/callback`
+- [x] `https://localhost:4331/api/connections/storage/dropbox/callback`
+- [ ] `https://baseout.local:4331/api/connections/storage/dropbox/callback`  *(only needed if /etc/hosts maps baseout.local → 127.0.0.1 and you prefer that URL — optional)*
+- [ ] `https://baseout-dev.openside.workers.dev/api/connections/storage/dropbox/callback`  *(**REQUIRED for local-dev smoke** — see §3.4 note above. Boss to add when back.)*
+- [x] `https://baseout-staging.openside.workers.dev/api/connections/storage/dropbox/callback`
+- [x] `https://baseout.dev/api/connections/storage/dropbox/callback`
 
 **Settings tab → Permission type:**
 
