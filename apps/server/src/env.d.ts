@@ -36,6 +36,16 @@ export interface Env {
   BOX_OAUTH_CLIENT_ID: string;
   /** Box OAuth app client_secret (must match apps/web). */
   BOX_OAUTH_CLIENT_SECRET: string;
+  /**
+   * Dropbox OAuth app client_id (App key — must match apps/web). The engine
+   * refreshes Dropbox access tokens on behalf of the workflows runner. Unlike
+   * Box, Dropbox refresh tokens are STABLE (no rotation, no expiry by
+   * default) — like Drive — so the engine route preserves the stored
+   * encrypted refresh token on refresh.
+   */
+  DROPBOX_OAUTH_CLIENT_ID: string;
+  /** Dropbox OAuth app client_secret (App secret — must match apps/web). */
+  DROPBOX_OAUTH_CLIENT_SECRET: string;
   /** Trigger.dev v3 project-scoped secret key. */
   TRIGGER_SECRET_KEY: string;
   /** Trigger.dev project reference. */

@@ -46,6 +46,19 @@ function makeBoxCreds(): StorageWriterCreds {
   };
 }
 
+function makeDropboxCreds(): StorageWriterCreds {
+  return {
+    kind: "dropbox",
+    accessToken: "sl.at",
+    expiresAt: new Date(Date.now() + 60 * 60_000),
+    providerFolderId: "/Baseout-sp1",
+    refresh: vi.fn(async () => ({
+      accessToken: "sl.at_refreshed",
+      expiresAt: new Date(Date.now() + 60 * 60_000),
+    })),
+  };
+}
+
 describe("resolveStorageWriter", () => {
   it("returns LocalFsWriter for local_fs", () => {
     expect(resolveStorageWriter("local_fs")).toBeInstanceOf(LocalFsWriter);
@@ -61,6 +74,10 @@ describe("resolveStorageWriter", () => {
 
   it("returns LocalFsWriter when box is requested but no creds are passed", () => {
     expect(resolveStorageWriter("box")).toBeInstanceOf(LocalFsWriter);
+  });
+
+  it("returns LocalFsWriter when dropbox is requested but no creds are passed", () => {
+    expect(resolveStorageWriter("dropbox")).toBeInstanceOf(LocalFsWriter);
   });
 
   it("returns LocalFsWriter for an unknown storage type", () => {
@@ -83,15 +100,32 @@ describe("resolveStorageWriter", () => {
     expect(typeof writer.deletePrefix).toBe("function");
   });
 
-  it("falls back to LocalFsWriter on cross-kind creds (storage_type='box' but kind='google_drive')", () => {
-    // The user picked Box but the engine returned Drive-shaped creds — that's
-    // a bug in the upstream flow; the safe response is to write locally
-    // rather than send Box data to the wrong provider's API.
+  it("returns a Dropbox-shaped writer when storage_type='dropbox' AND creds.kind='dropbox' are present", () => {
+    const writer = resolveStorageWriter("dropbox", makeDropboxCreds());
+    expect(writer).not.toBeInstanceOf(LocalFsWriter);
+    expect(typeof writer.writeCsv).toBe("function");
+    expect(typeof writer.deletePrefix).toBe("function");
+  });
+
+  it("falls back to LocalFsWriter on cross-kind creds (storage_type='box' but kind='google_drive', etc.)", () => {
+    // The user picked one provider but the engine returned a different
+    // provider's creds — that's a bug in the upstream flow; the safe
+    // response is to write locally rather than send data to the wrong
+    // provider's API.
     expect(resolveStorageWriter("box", makeDriveCreds())).toBeInstanceOf(
       LocalFsWriter,
     );
     expect(
       resolveStorageWriter("google_drive", makeBoxCreds()),
+    ).toBeInstanceOf(LocalFsWriter);
+    expect(
+      resolveStorageWriter("dropbox", makeBoxCreds()),
+    ).toBeInstanceOf(LocalFsWriter);
+    expect(
+      resolveStorageWriter("dropbox", makeDriveCreds()),
+    ).toBeInstanceOf(LocalFsWriter);
+    expect(
+      resolveStorageWriter("box", makeDropboxCreds()),
     ).toBeInstanceOf(LocalFsWriter);
   });
 });

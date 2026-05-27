@@ -198,7 +198,8 @@ export async function runBackupBase(
   // local_fs in the factory) don't.
   if (
     input.storageType === "google_drive" ||
-    input.storageType === "box"
+    input.storageType === "box" ||
+    input.storageType === "dropbox"
   ) {
     const fetchCreds =
       deps.fetchStorageCreds ??
@@ -401,7 +402,9 @@ export async function defaultFetchStorageCreds(
   const initial = await read(false);
   if (initial.type === "local_fs") return null;
   if (
-    (initial.type !== "google_drive" && initial.type !== "box") ||
+    (initial.type !== "google_drive" &&
+      initial.type !== "box" &&
+      initial.type !== "dropbox") ||
     !initial.accessToken ||
     !initial.expiresAt ||
     !initial.providerFolderId
@@ -435,9 +438,18 @@ export async function defaultFetchStorageCreds(
       refresh,
     };
   }
-  // initialType === "box"
+  if (initialType === "box") {
+    return {
+      kind: "box",
+      accessToken: initial.accessToken,
+      expiresAt: new Date(initial.expiresAt),
+      providerFolderId: initial.providerFolderId,
+      refresh,
+    };
+  }
+  // initialType === "dropbox"
   return {
-    kind: "box",
+    kind: "dropbox",
     accessToken: initial.accessToken,
     expiresAt: new Date(initial.expiresAt),
     providerFolderId: initial.providerFolderId,

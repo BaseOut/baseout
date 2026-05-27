@@ -1,7 +1,8 @@
 // GET /api/internal/spaces/:spaceId/storage-destination
 //
 // Filed by openspec/changes/shared-byos-drive Phase 3; Box dispatch added by
-// the box-provider commit chain (3/3). The workflows runner (Node, no master
+// the box-provider commit chain (3/3); Dropbox dispatch added by the
+// dropbox-provider commit chain (3/3). The workflows runner (Node, no master
 // encryption key) calls this at backup-base task start to fetch the decrypted
 // access token for the Space's storage destination. The engine:
 //   1. SELECTs the storage_destinations row.
@@ -15,18 +16,21 @@
 //      ?refresh=1 on a mid-upload 401.
 //
 // Result-code mapping:
-//   row missing                                → 404 { error: 'not_found' }
-//   type='local_fs'                            → 200 { type: 'local_fs' }
-//   type='google_drive'|'box' fresh            → 200 { type, accessToken, expiresAt, providerFolderId }
-//   type='google_drive'|'box' near-expiry      → refresh, then 200
-//   type='google_drive'|'box' ?refresh=1       → force refresh, then 200
-//   refresh transient                          → 502 { error: 'refresh_transient', reason }
-//   refresh pending_reauth                     → 409 { error: 'pending_reauth', reason }
-//   refresh invalid                            → 502 { error: 'refresh_invalid', reason }
+//   row missing                                          → 404 { error: 'not_found' }
+//   type='local_fs'                                      → 200 { type: 'local_fs' }
+//   type='google_drive'|'box'|'dropbox' fresh            → 200 { type, accessToken, expiresAt, providerFolderId }
+//   type='google_drive'|'box'|'dropbox' near-expiry      → refresh, then 200
+//   type='google_drive'|'box'|'dropbox' ?refresh=1       → force refresh, then 200
+//   refresh transient                                    → 502 { error: 'refresh_transient', reason }
+//   refresh pending_reauth                               → 409 { error: 'pending_reauth', reason }
+//   refresh invalid                                      → 502 { error: 'refresh_invalid', reason }
 //
-// Box rotates refresh tokens on every refresh; this handler persists the new
-// `refresh_token` to `oauth_refresh_token_enc` on every successful refresh,
-// otherwise the next refresh fails with invalid_grant.
+// Refresh-token persistence by provider:
+//   - Drive + Dropbox: refresh response omits refresh_token (stable);
+//     handler preserves stored oauth_refresh_token_enc on refresh.
+//   - Box: refresh response carries a NEW refresh_token (rotation); handler
+//     re-encrypts and persists it on every successful refresh, otherwise
+//     the next refresh fails with invalid_grant.
 //
 // Token gate is applied by middleware (path begins /api/internal/).
 
@@ -36,6 +40,7 @@ import { storageDestinations } from "../../../../db/schema";
 import { decryptToken, encryptToken } from "../../../../lib/crypto";
 import { refreshDriveAccessToken } from "../../../../lib/storage/refresh-drive";
 import { refreshBoxAccessToken } from "../../../../lib/storage/refresh-box";
+import { refreshDropboxAccessToken } from "../../../../lib/storage/refresh-dropbox";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -295,6 +300,100 @@ export async function spacesStorageDestinationHandler(
     return jsonResponse(
       {
         type: "box",
+        accessToken: accessTokenPlain,
+        expiresAt: expiresAtIso,
+        providerFolderId,
+      },
+      200,
+    );
+  }
+
+  if (row.type === "dropbox") {
+    let accessTokenPlain: string;
+    let expiresAtIso: string;
+
+    if (shouldRefresh) {
+      let refreshTokenPlain: string;
+      try {
+        refreshTokenPlain = await decryptToken(
+          refreshTokenEncrypted,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+      } catch {
+        return jsonResponse({ error: "decrypt_failed" }, 500);
+      }
+
+      const outcome = await refreshDropboxAccessToken({
+        refreshToken: refreshTokenPlain,
+        clientId: env.DROPBOX_OAUTH_CLIENT_ID,
+        clientSecret: env.DROPBOX_OAUTH_CLIENT_SECRET,
+      });
+
+      if (outcome.kind === "transient") {
+        return jsonResponse(
+          { error: "refresh_transient", reason: outcome.reason },
+          502,
+        );
+      }
+      if (outcome.kind === "pending_reauth") {
+        return jsonResponse(
+          { error: "pending_reauth", reason: outcome.reason },
+          409,
+        );
+      }
+      if (outcome.kind === "invalid") {
+        return jsonResponse(
+          { error: "refresh_invalid", reason: outcome.reason },
+          502,
+        );
+      }
+
+      // outcome.kind === 'success'. Dropbox refresh tokens are stable; the
+      // refresh response omits refresh_token. Persist only the new access
+      // token + expiry; preserve the stored oauth_refresh_token_enc.
+      const newExpiresAt = new Date(outcome.expiresAtMs);
+      let newAccessTokenEnc: string;
+      try {
+        newAccessTokenEnc = await encryptToken(
+          outcome.accessToken,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+      } catch {
+        return jsonResponse({ error: "encrypt_failed" }, 500);
+      }
+
+      await db
+        .update(storageDestinations)
+        .set({
+          oauthAccessTokenEnc: newAccessTokenEnc,
+          oauthExpiresAt: newExpiresAt,
+          oauthScope: outcome.scope ?? sql`${storageDestinations.oauthScope}`,
+          lastValidatedAt: new Date(),
+        })
+        .where(eq(storageDestinations.id, row.id));
+
+      accessTokenPlain = outcome.accessToken;
+      expiresAtIso = newExpiresAt.toISOString();
+    } else {
+      try {
+        accessTokenPlain = await decryptToken(
+          accessTokenEncrypted,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+      } catch {
+        return jsonResponse({ error: "decrypt_failed" }, 500);
+      }
+      expiresAtIso = expiresAt!.toISOString();
+
+      await db
+        .update(storageDestinations)
+        .set({ lastValidatedAt: new Date() })
+        .where(eq(storageDestinations.id, row.id));
+    }
+
+    return jsonResponse(
+      {
+        type: "dropbox",
         accessToken: accessTokenPlain,
         expiresAt: expiresAtIso,
         providerFolderId,

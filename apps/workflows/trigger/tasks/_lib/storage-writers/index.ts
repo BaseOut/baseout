@@ -22,6 +22,7 @@ import {
   type DriveWriterCreds,
 } from "./google-drive";
 import { createBoxWriter, type BoxWriterCreds } from "./box";
+import { createDropboxWriter, type DropboxWriterCreds } from "./dropbox";
 
 /**
  * Union of credential shapes accepted by `resolveStorageWriter`. Each
@@ -30,10 +31,12 @@ import { createBoxWriter, type BoxWriterCreds } from "./box";
  */
 export type StorageWriterCreds =
   | ({ kind: "google_drive" } & DriveWriterCreds)
-  | ({ kind: "box" } & BoxWriterCreds);
+  | ({ kind: "box" } & BoxWriterCreds)
+  | ({ kind: "dropbox" } & DropboxWriterCreds);
 
 export type { DriveWriterCreds } from "./google-drive";
 export type { BoxWriterCreds } from "./box";
+export type { DropboxWriterCreds } from "./dropbox";
 
 export function resolveStorageWriter(
   storageType: string,
@@ -44,6 +47,9 @@ export function resolveStorageWriter(
   }
   if (storageType === "box" && creds?.kind === "box") {
     return createBoxWriter({ creds });
+  }
+  if (storageType === "dropbox" && creds?.kind === "dropbox") {
+    return createDropboxWriter({ creds });
   }
   // Defensive fallback: unknown type, missing creds, or local_fs all land here.
   // The `storageType` arg is intentionally inspected only for the cases the
