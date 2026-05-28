@@ -16,11 +16,11 @@
 //      ?refresh=1 on a mid-upload 401.
 //
 // Result-code mapping:
-//   row missing                                          → 404 { error: 'not_found' }
-//   type='local_fs'                                      → 200 { type: 'local_fs' }
-//   type='google_drive'|'box'|'dropbox' fresh            → 200 { type, accessToken, expiresAt, providerFolderId }
-//   type='google_drive'|'box'|'dropbox' near-expiry      → refresh, then 200
-//   type='google_drive'|'box'|'dropbox' ?refresh=1       → force refresh, then 200
+//   row missing                                                     → 404 { error: 'not_found' }
+//   type='local_fs'                                                 → 200 { type: 'local_fs' }
+//   type='google_drive'|'box'|'dropbox'|'onedrive' fresh            → 200 { type, accessToken, expiresAt, providerFolderId }
+//   type='google_drive'|'box'|'dropbox'|'onedrive' near-expiry      → refresh, then 200
+//   type='google_drive'|'box'|'dropbox'|'onedrive' ?refresh=1       → force refresh, then 200
 //   refresh transient                                    → 502 { error: 'refresh_transient', reason }
 //   refresh pending_reauth                               → 409 { error: 'pending_reauth', reason }
 //   refresh invalid                                      → 502 { error: 'refresh_invalid', reason }
@@ -28,9 +28,14 @@
 // Refresh-token persistence by provider:
 //   - Drive + Dropbox: refresh response omits refresh_token (stable);
 //     handler preserves stored oauth_refresh_token_enc on refresh.
-//   - Box: refresh response carries a NEW refresh_token (rotation); handler
-//     re-encrypts and persists it on every successful refresh, otherwise
-//     the next refresh fails with invalid_grant.
+//   - Box + OneDrive: refresh response carries a NEW refresh_token
+//     (rotation); handler re-encrypts and persists it on every successful
+//     refresh, otherwise the next refresh fails with invalid_grant /
+//     AADSTS50173 (Microsoft) respectively.
+//
+// OneDrive is also a PUBLIC-client OAuth app (Azure manifest
+// `allowPublicClient: true`) — the refresh helper posts ONLY
+// `client_id` + `refresh_token` + `scope`, no `client_secret`.
 //
 // Token gate is applied by middleware (path begins /api/internal/).
 
@@ -41,6 +46,7 @@ import { decryptToken, encryptToken } from "../../../../lib/crypto";
 import { refreshDriveAccessToken } from "../../../../lib/storage/refresh-drive";
 import { refreshBoxAccessToken } from "../../../../lib/storage/refresh-box";
 import { refreshDropboxAccessToken } from "../../../../lib/storage/refresh-dropbox";
+import { refreshOneDriveAccessToken } from "../../../../lib/storage/refresh-onedrive";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -93,9 +99,10 @@ export async function spacesStorageDestinationHandler(
     return jsonResponse({ type: "local_fs" }, 200);
   }
 
-  // From here on, type ∈ { 'google_drive', 'box' } (the CHECK constraint
-  // enforces the set). All OAuth-backed providers share the same row shape:
-  // we need access+refresh tokens encrypted and a provider folder id.
+  // From here on, type ∈ { 'google_drive', 'box', 'dropbox', 'onedrive' }
+  // (the CHECK constraint enforces the set). All OAuth-backed providers
+  // share the same row shape: we need access+refresh tokens encrypted and a
+  // provider folder id.
   if (
     !row.oauthAccessTokenEnc ||
     !row.oauthRefreshTokenEnc ||
@@ -394,6 +401,107 @@ export async function spacesStorageDestinationHandler(
     return jsonResponse(
       {
         type: "dropbox",
+        accessToken: accessTokenPlain,
+        expiresAt: expiresAtIso,
+        providerFolderId,
+      },
+      200,
+    );
+  }
+
+  if (row.type === "onedrive") {
+    let accessTokenPlain: string;
+    let expiresAtIso: string;
+
+    if (shouldRefresh) {
+      let refreshTokenPlain: string;
+      try {
+        refreshTokenPlain = await decryptToken(
+          refreshTokenEncrypted,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+      } catch {
+        return jsonResponse({ error: "decrypt_failed" }, 500);
+      }
+
+      // Public client — no client_secret is passed.
+      const outcome = await refreshOneDriveAccessToken({
+        refreshToken: refreshTokenPlain,
+        clientId: env.MICROSOFT_OAUTH_CLIENT_ID,
+      });
+
+      if (outcome.kind === "transient") {
+        return jsonResponse(
+          { error: "refresh_transient", reason: outcome.reason },
+          502,
+        );
+      }
+      if (outcome.kind === "pending_reauth") {
+        return jsonResponse(
+          { error: "pending_reauth", reason: outcome.reason },
+          409,
+        );
+      }
+      if (outcome.kind === "invalid") {
+        return jsonResponse(
+          { error: "refresh_invalid", reason: outcome.reason },
+          502,
+        );
+      }
+
+      // outcome.kind === 'success'. Microsoft rotates the refresh token —
+      // encrypt and persist the NEW refresh_token alongside the new
+      // access_token, or the next refresh fails with invalid_grant /
+      // AADSTS50173.
+      const newExpiresAt = new Date(outcome.expiresAtMs);
+      let newAccessTokenEnc: string;
+      let newRefreshTokenEnc: string;
+      try {
+        newAccessTokenEnc = await encryptToken(
+          outcome.accessToken,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+        newRefreshTokenEnc = await encryptToken(
+          outcome.refreshToken,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+      } catch {
+        return jsonResponse({ error: "encrypt_failed" }, 500);
+      }
+
+      await db
+        .update(storageDestinations)
+        .set({
+          oauthAccessTokenEnc: newAccessTokenEnc,
+          oauthRefreshTokenEnc: newRefreshTokenEnc,
+          oauthExpiresAt: newExpiresAt,
+          oauthScope: outcome.scope ?? sql`${storageDestinations.oauthScope}`,
+          lastValidatedAt: new Date(),
+        })
+        .where(eq(storageDestinations.id, row.id));
+
+      accessTokenPlain = outcome.accessToken;
+      expiresAtIso = newExpiresAt.toISOString();
+    } else {
+      try {
+        accessTokenPlain = await decryptToken(
+          accessTokenEncrypted,
+          env.BASEOUT_ENCRYPTION_KEY,
+        );
+      } catch {
+        return jsonResponse({ error: "decrypt_failed" }, 500);
+      }
+      expiresAtIso = expiresAt!.toISOString();
+
+      await db
+        .update(storageDestinations)
+        .set({ lastValidatedAt: new Date() })
+        .where(eq(storageDestinations.id, row.id));
+    }
+
+    return jsonResponse(
+      {
+        type: "onedrive",
         accessToken: accessTokenPlain,
         expiresAt: expiresAtIso,
         providerFolderId,

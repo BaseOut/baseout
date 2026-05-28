@@ -11,9 +11,9 @@
 // iteration without BYOS provisioning still writes (to local disk) rather
 // than failing the run.
 //
-// Until the remaining BYOS providers (Dropbox / OneDrive / S3 / Frame.io)
-// land, those `storage_type` values also route to LocalFsWriter — matching
-// what backup-base.ts has been doing since 8fc1f61.
+// Until the remaining BYOS providers (S3 / Frame.io) land, those
+// `storage_type` values also route to LocalFsWriter — matching what
+// backup-base.ts has been doing since 8fc1f61.
 
 import type { StorageWriter } from "../storage-writer";
 import { LocalFsWriter } from "./local-fs";
@@ -23,6 +23,7 @@ import {
 } from "./google-drive";
 import { createBoxWriter, type BoxWriterCreds } from "./box";
 import { createDropboxWriter, type DropboxWriterCreds } from "./dropbox";
+import { createOneDriveWriter, type OneDriveWriterCreds } from "./onedrive";
 
 /**
  * Union of credential shapes accepted by `resolveStorageWriter`. Each
@@ -32,11 +33,13 @@ import { createDropboxWriter, type DropboxWriterCreds } from "./dropbox";
 export type StorageWriterCreds =
   | ({ kind: "google_drive" } & DriveWriterCreds)
   | ({ kind: "box" } & BoxWriterCreds)
-  | ({ kind: "dropbox" } & DropboxWriterCreds);
+  | ({ kind: "dropbox" } & DropboxWriterCreds)
+  | ({ kind: "onedrive" } & OneDriveWriterCreds);
 
 export type { DriveWriterCreds } from "./google-drive";
 export type { BoxWriterCreds } from "./box";
 export type { DropboxWriterCreds } from "./dropbox";
+export type { OneDriveWriterCreds } from "./onedrive";
 
 export function resolveStorageWriter(
   storageType: string,
@@ -50,6 +53,9 @@ export function resolveStorageWriter(
   }
   if (storageType === "dropbox" && creds?.kind === "dropbox") {
     return createDropboxWriter({ creds });
+  }
+  if (storageType === "onedrive" && creds?.kind === "onedrive") {
+    return createOneDriveWriter({ creds });
   }
   // Defensive fallback: unknown type, missing creds, or local_fs all land here.
   // The `storageType` arg is intentionally inspected only for the cases the

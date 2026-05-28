@@ -199,7 +199,8 @@ export async function runBackupBase(
   if (
     input.storageType === "google_drive" ||
     input.storageType === "box" ||
-    input.storageType === "dropbox"
+    input.storageType === "dropbox" ||
+    input.storageType === "onedrive"
   ) {
     const fetchCreds =
       deps.fetchStorageCreds ??
@@ -404,7 +405,8 @@ export async function defaultFetchStorageCreds(
   if (
     (initial.type !== "google_drive" &&
       initial.type !== "box" &&
-      initial.type !== "dropbox") ||
+      initial.type !== "dropbox" &&
+      initial.type !== "onedrive") ||
     !initial.accessToken ||
     !initial.expiresAt ||
     !initial.providerFolderId
@@ -447,9 +449,18 @@ export async function defaultFetchStorageCreds(
       refresh,
     };
   }
-  // initialType === "dropbox"
+  if (initialType === "dropbox") {
+    return {
+      kind: "dropbox",
+      accessToken: initial.accessToken,
+      expiresAt: new Date(initial.expiresAt),
+      providerFolderId: initial.providerFolderId,
+      refresh,
+    };
+  }
+  // initialType === "onedrive"
   return {
-    kind: "dropbox",
+    kind: "onedrive",
     accessToken: initial.accessToken,
     expiresAt: new Date(initial.expiresAt),
     providerFolderId: initial.providerFolderId,

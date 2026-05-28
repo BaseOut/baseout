@@ -46,6 +46,17 @@ export interface Env {
   DROPBOX_OAUTH_CLIENT_ID: string;
   /** Dropbox OAuth app client_secret (App secret — must match apps/web). */
   DROPBOX_OAUTH_CLIENT_SECRET: string;
+  /**
+   * Microsoft OneDrive OAuth app client_id (must match apps/web). The engine
+   * refreshes OneDrive access tokens on behalf of the workflows runner. The
+   * Azure App is a PUBLIC client (`allowPublicClient: true`) — there is NO
+   * client secret, and the refresh call carries only `client_id` +
+   * `refresh_token` + `scope`. Microsoft ROTATES refresh tokens on every
+   * refresh (like Box, unlike Drive/Dropbox) — the engine route MUST
+   * re-encrypt and persist the new refresh_token on every successful refresh,
+   * or the next refresh fails with `invalid_grant` (AADSTS50173).
+   */
+  MICROSOFT_OAUTH_CLIENT_ID: string;
   /** Trigger.dev v3 project-scoped secret key. */
   TRIGGER_SECRET_KEY: string;
   /** Trigger.dev project reference. */
