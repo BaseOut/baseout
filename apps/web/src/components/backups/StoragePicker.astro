@@ -30,9 +30,11 @@ const { spaceId, selectedStorageType = 'r2_managed' } = Astro.props as Props
 const workerEnv = env as unknown as {
   BOX_OAUTH_CLIENT_ID?: string
   DROPBOX_OAUTH_CLIENT_ID?: string
+  MICROSOFT_OAUTH_CLIENT_ID?: string
 }
 const boxEnabled = Boolean(workerEnv.BOX_OAUTH_CLIENT_ID)
 const dropboxEnabled = Boolean(workerEnv.DROPBOX_OAUTH_CLIENT_ID)
+const oneDriveEnabled = Boolean(workerEnv.MICROSOFT_OAUTH_CLIENT_ID)
 
 const ALL_OPTIONS: {
   value: string
@@ -72,8 +74,10 @@ const ALL_OPTIONS: {
   {
     value: 'onedrive',
     label: 'OneDrive',
-    helper: 'Coming soon — pick a folder in your OneDrive.',
-    enabled: false,
+    helper: oneDriveEnabled
+      ? 'Connect your Microsoft account; backups land in a per-Space Baseout folder in your OneDrive.'
+      : 'Coming soon — connect your OneDrive.',
+    enabled: oneDriveEnabled,
   },
   {
     value: 's3',
@@ -209,6 +213,31 @@ const NAME = 'backup-storage'
     </form>
   )}
 
+  {oneDriveEnabled && (
+    <form
+      method="POST"
+      action="/api/connections/storage/onedrive/authorize"
+      class:list={[
+        'mt-3 flex items-center justify-between gap-3 rounded-md border border-base-300 p-3',
+        selectedStorageType !== 'onedrive' && 'hidden',
+      ]}
+      data-storage-onedrive-connect
+      data-astro-reload
+    >
+      <span class="text-sm text-base-content/80">
+        Connect a Microsoft account to use this destination. Re-clicking
+        issues a fresh consent and keeps the same per-Space folder.
+      </span>
+      <button
+        type="submit"
+        class="btn btn-sm btn-primary"
+        data-storage-onedrive-connect-btn
+      >
+        Connect OneDrive
+      </button>
+    </form>
+  )}
+
   <p
     role="status"
     class="mt-3 hidden text-sm text-success"
@@ -255,6 +284,12 @@ const NAME = 'backup-storage'
     const dropboxConnectBtn = root.querySelector<HTMLButtonElement>(
       '[data-storage-dropbox-connect-btn]',
     )
+    const oneDriveConnectForm = root.querySelector<HTMLFormElement>(
+      '[data-storage-onedrive-connect]',
+    )
+    const oneDriveConnectBtn = root.querySelector<HTMLButtonElement>(
+      '[data-storage-onedrive-connect-btn]',
+    )
 
     function showStatus(msg: string) {
       if (!status || !error) return
@@ -291,10 +326,17 @@ const NAME = 'backup-storage'
       dropboxConnectForm.classList.toggle('hidden', !visible)
     }
 
+    function toggleOneDriveConnect(selectedValue: string) {
+      if (!oneDriveConnectForm) return
+      const visible = selectedValue === 'onedrive'
+      oneDriveConnectForm.classList.toggle('hidden', !visible)
+    }
+
     async function handleChange(value: string) {
       toggleDriveConnect(value)
       toggleBoxConnect(value)
       toggleDropboxConnect(value)
+      toggleOneDriveConnect(value)
       const result = await saveBackupConfig({ spaceId, storageType: value })
       if (result.ok) {
         let msg: string
@@ -307,6 +349,9 @@ const NAME = 'backup-storage'
         } else if (value === 'dropbox') {
           msg =
             'Storage destination saved. If this Space isn’t connected to Dropbox yet, click Connect Dropbox below.'
+        } else if (value === 'onedrive') {
+          msg =
+            'Storage destination saved. If this Space isn’t connected to OneDrive yet, click Connect OneDrive below.'
         } else {
           msg = 'Storage destination saved.'
         }
@@ -346,6 +391,13 @@ const NAME = 'backup-storage'
       dropboxConnectForm.addEventListener('submit', () => {
         // Loading state covers the redirect latency to Dropbox's consent screen.
         setButtonLoading(dropboxConnectBtn, true)
+      })
+    }
+
+    if (oneDriveConnectForm && oneDriveConnectBtn) {
+      oneDriveConnectForm.addEventListener('submit', () => {
+        // Loading state covers the redirect latency to Microsoft's consent screen.
+        setButtonLoading(oneDriveConnectBtn, true)
       })
     }
   }
