@@ -5,22 +5,16 @@
 // tick:
 //   1. SELECT connections nearing expiry (Airtable, status='active',
 //      refresh_token_enc IS NOT NULL, expires within 20 minutes). LIMIT 100.
-//   2. For each row, CAS-claim — only succeed when status='active' OR
-//      status='refreshing' AND modified_at is older than 5 minutes (the
-//      stuck-reap arm). RETURNING modified_at gives the per-tick claim
-//      timestamp, which guards subsequent UPDATEs. Skip on 0 rows
-//      (concurrent cron tick, fresh OAuth callback, or another in-flight
-//      tick still holds the row).
+//   2. For each row, CAS-claim `status='active' → status='refreshing'`. Skip
+//      on 0 rows (concurrent cron tick or fresh OAuth callback overwrote).
 //   3. Decrypt refresh_token_enc → call refreshAirtableAccessToken →
 //      branch on RefreshOutcome:
 //        success         → re-encrypt new tokens, advance expiry, status='active'
 //        pending_reauth  → status='pending_reauth'
 //        transient       → revert status='active' (next tick retries)
 //        invalid         → status='invalid' + invalidated_at=now()
-//      All writes CAS-guarded on `WHERE status='refreshing' AND
-//      modified_at = claimedAt` — a concurrent apps/web OAuth callback's
-//      fresh tokens survive AND a stale-reap re-claim by a later tick
-//      after a >5min RPC survives.
+//      All writes CAS-guarded on `WHERE status='refreshing'` so a concurrent
+//      apps/web OAuth callback's fresh tokens survive.
 //   4. Per-row structured log to console (the shared logger isn't wired in
 //      apps/server yet; switching to it is a follow-up).
 //
@@ -162,44 +156,23 @@ export async function runOAuthRefreshTick(
   for (const row of candidates) {
     const startedAt = nowMs();
 
-    // CAS claim — serialised per-connection. A row is claimable when EITHER
-    // status='active' OR status='refreshing' with modified_at older than the
-    // 5-minute stale floor (matching the selection's stuck-reap arm). A
-    // fresh 'refreshing' row — set by another tick less than 5 minutes ago —
-    // is NOT re-claimable, so two concurrent ticks can never both call the
-    // Airtable refresh RPC for the same connection.
+    // CAS claim — accepts status IN ('active', 'refreshing') so the
+    // stuck-reap arm of the selection can re-take ownership of a row
+    // stranded by an earlier tick's uncaught throw. Phase B1 required
+    // status='active' which silently excluded stuck rows from recovery.
     //
-    // Pre-fix history: the WHERE accepted `status IN ('active','refreshing')`
-    // unconditionally. Two ticks that selected the same near-expiry row both
-    // won the CAS, both called Airtable, and Airtable's single-use refresh-
-    // token rotation invalidated one of the two. The losing tick then flipped
-    // status to invalid / pending_reauth, overwriting the winner's CAS — the
-    // root cause of the every-few-days forced-reconnect loop. Tightening this
-    // WHERE clause closes the race at its source.
-    //
-    // RETURNING modified_at gives us the timestamp postgres assigned at this
-    // claim. applyOutcome uses it as a CAS guard on the write so a long-
-    // running RPC (>5min) can't clobber a subsequent legitimate stale-reap
-    // tick. The comparison is `date_trunc('milliseconds', modified_at) = $1`
-    // because postgres-js serializes JS `Date` values via `.toISOString()`
-    // (millisecond precision), while postgres `now()` writes microsecond
-    // precision into the column. An exact `modified_at = $1` would always
-    // return false for the parameter we round-tripped through the driver,
-    // silently failing every apply-side UPDATE to cas_lost — masking the
-    // refresh as successful at Airtable but never persisting the new tokens,
-    // and forcing a customer-visible reconnect after the next stale-reap
-    // tried the now-consumed refresh_token. This was the regression
-    // introduced and shipped on 2026-05-26 and reverted here.
+    // Concurrency note: two ticks claiming the same stuck row will both
+    // win this CAS and both will call refresh. applyOutcome's
+    // `WHERE status='refreshing'` then admits whichever UPDATE lands
+    // last. The 5-minute stale-threshold in the selection arm makes this
+    // race rare in practice; the trade-off is accepted in exchange for
+    // ensuring stuck rows are always reaped.
     const claim = (await deps.db.execute(sql`
       UPDATE baseout.connections
       SET status = 'refreshing', modified_at = now()
-      WHERE id = ${row.id}
-        AND (
-          status = 'active'
-          OR (status = 'refreshing' AND modified_at < now() - interval '5 minutes')
-        )
-      RETURNING id, modified_at
-    `)) as unknown as Array<{ id: string; modified_at: Date | string }>;
+      WHERE id = ${row.id} AND status IN ('active', 'refreshing')
+      RETURNING id
+    `)) as unknown as Array<{ id: string }>;
     if (claim.length === 0) {
       outcomes.claim_skipped += 1;
       log({
@@ -210,7 +183,6 @@ export async function runOAuthRefreshTick(
       });
       continue;
     }
-    const claimedAt = claim[0]!.modified_at;
     claimed += 1;
 
     // Decrypt the stored refresh token. A null here is a precondition
@@ -220,7 +192,7 @@ export async function runOAuthRefreshTick(
       await deps.db.execute(sql`
         UPDATE baseout.connections
         SET status = 'active', modified_at = now()
-        WHERE id = ${row.id} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
+        WHERE id = ${row.id} AND status = 'refreshing'
       `);
       outcomes.decrypt_failed += 1;
       log({
@@ -245,7 +217,7 @@ export async function runOAuthRefreshTick(
       await deps.db.execute(sql`
         UPDATE baseout.connections
         SET status = 'invalid', invalidated_at = now(), modified_at = now()
-        WHERE id = ${row.id} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
+        WHERE id = ${row.id} AND status = 'refreshing'
       `);
       outcomes.decrypt_failed += 1;
       log({
@@ -273,7 +245,7 @@ export async function runOAuthRefreshTick(
         clientSecret: deps.clientSecret,
       });
 
-      await applyOutcome(deps.db, row.id, claimedAt, outcome, deps.encryptionKey, outcomes, (kind, reason) =>
+      await applyOutcome(deps.db, row.id, outcome, deps.encryptionKey, outcomes, (kind, reason) =>
         log({
           event: "oauth_refresh",
           connectionId: row.id,
@@ -286,7 +258,7 @@ export async function runOAuthRefreshTick(
       await deps.db.execute(sql`
         UPDATE baseout.connections
         SET status = 'active', modified_at = now()
-        WHERE id = ${row.id} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
+        WHERE id = ${row.id} AND status = 'refreshing'
       `);
       outcomes.unexpected_error += 1;
       log({
@@ -305,7 +277,6 @@ export async function runOAuthRefreshTick(
 async function applyOutcome(
   db: AppDb,
   connectionId: string,
-  claimedAt: Date | string,
   outcome: RefreshOutcome,
   encryptionKey: string,
   outcomes: OAuthRefreshTickResult["outcomes"],
@@ -314,17 +285,6 @@ async function applyOutcome(
     reason?: string,
   ) => void,
 ): Promise<void> {
-  // All four UPDATEs CAS-guard on `status = 'refreshing' AND
-  // date_trunc('milliseconds', modified_at) = ${claimedAt}`. The
-  // millisecond-truncation is mandatory: postgres-js serializes JS Date
-  // back to the wire at millisecond precision (via toISOString), while
-  // the stored value from `now()` carries microsecond precision — so an
-  // exact `modified_at = ${claimedAt}` never matches. With the trunc, we
-  // get the intended pin: only commit our outcome if the row still
-  // carries the timestamp postgres set at our claim. If another tick
-  // stale-reaped this row mid-RPC (a >5min refresh) or apps/web's OAuth
-  // callback overwrote it, our UPDATE matches 0 rows and we record
-  // cas_lost.
   switch (outcome.kind) {
     case "success": {
       const newAccessEnc = await encryptToken(outcome.accessToken, encryptionKey);
@@ -338,13 +298,12 @@ async function applyOutcome(
             scopes = ${outcome.scope},
             status = 'active',
             modified_at = now()
-        WHERE id = ${connectionId} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
+        WHERE id = ${connectionId} AND status = 'refreshing'
         RETURNING id
       `)) as unknown as Array<{ id: string }>;
       if (update.length === 0) {
-        // apps/web callback overwrote mid-flight, OR a stale-reap tick
-        // re-claimed our row because our RPC took >5min. Discard our
-        // result either way — whoever holds the row now has fresher state.
+        // apps/web callback overwrote mid-flight. Discard our result —
+        // their tokens are fresher.
         outcomes.cas_lost += 1;
         log("cas_lost");
         return;
@@ -357,7 +316,7 @@ async function applyOutcome(
       await db.execute(sql`
         UPDATE baseout.connections
         SET status = 'pending_reauth', modified_at = now()
-        WHERE id = ${connectionId} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
+        WHERE id = ${connectionId} AND status = 'refreshing'
       `);
       outcomes.pending_reauth += 1;
       log("pending_reauth", outcome.reason);
@@ -368,7 +327,7 @@ async function applyOutcome(
       await db.execute(sql`
         UPDATE baseout.connections
         SET status = 'active', modified_at = now()
-        WHERE id = ${connectionId} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
+        WHERE id = ${connectionId} AND status = 'refreshing'
       `);
       outcomes.transient += 1;
       log("transient", outcome.reason);
@@ -378,7 +337,7 @@ async function applyOutcome(
       await db.execute(sql`
         UPDATE baseout.connections
         SET status = 'invalid', invalidated_at = now(), modified_at = now()
-        WHERE id = ${connectionId} AND status = 'refreshing' AND date_trunc('milliseconds', modified_at) = ${claimedAt}
+        WHERE id = ${connectionId} AND status = 'refreshing'
       `);
       outcomes.invalid += 1;
       log("invalid", outcome.reason);

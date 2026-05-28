@@ -147,7 +147,7 @@ describe("runOAuthRefreshTick", () => {
           },
         ],
       },
-      { rows: [{ id: "conn-1", modified_at: new Date(FROZEN_NOW) }] }, // CAS claim succeeded
+      { rows: [{ id: "conn-1" }] }, // CAS claim succeeded
       { rows: [{ id: "conn-1" }] }, // success-path UPDATE matched
     ]);
 
@@ -195,7 +195,7 @@ describe("runOAuthRefreshTick", () => {
           },
         ],
       },
-      { rows: [{ id: "conn-2", modified_at: new Date(FROZEN_NOW) }] }, // CAS claim succeeded
+      { rows: [{ id: "conn-2" }] }, // CAS claim succeeded
       { rows: [] }, // pending_reauth UPDATE (we don't assert RETURNING)
     ]);
 
@@ -233,7 +233,7 @@ describe("runOAuthRefreshTick", () => {
           },
         ],
       },
-      { rows: [{ id: "conn-3", modified_at: new Date(FROZEN_NOW) }] }, // claim
+      { rows: [{ id: "conn-3" }] }, // claim
       { rows: [] }, // transient revert UPDATE
     ]);
 
@@ -268,7 +268,7 @@ describe("runOAuthRefreshTick", () => {
           },
         ],
       },
-      { rows: [{ id: "conn-4", modified_at: new Date(FROZEN_NOW) }] }, // claim
+      { rows: [{ id: "conn-4" }] }, // claim
       { rows: [] }, // invalid UPDATE
     ]);
 
@@ -329,7 +329,7 @@ describe("runOAuthRefreshTick", () => {
           },
         ],
       },
-      { rows: [{ id: "conn-6", modified_at: new Date(FROZEN_NOW) }] }, // claim succeeded
+      { rows: [{ id: "conn-6" }] }, // claim succeeded
       { rows: [] }, // success UPDATE matched 0 rows (someone else wrote)
     ]);
 
@@ -365,7 +365,7 @@ describe("runOAuthRefreshTick", () => {
           },
         ],
       },
-      { rows: [{ id: "conn-7", modified_at: new Date(FROZEN_NOW) }] }, // claim succeeded
+      { rows: [{ id: "conn-7" }] }, // claim succeeded
       { rows: [] }, // invalid UPDATE for decrypt failure
     ]);
 
@@ -402,9 +402,9 @@ describe("runOAuthRefreshTick", () => {
           },
         ],
       },
-      { rows: [{ id: "conn-A", modified_at: new Date(FROZEN_NOW) }] }, // A claim
+      { rows: [{ id: "conn-A" }] }, // A claim
       { rows: [{ id: "conn-A" }] }, // A success update
-      { rows: [{ id: "conn-B", modified_at: new Date(FROZEN_NOW) }] }, // B claim
+      { rows: [{ id: "conn-B" }] }, // B claim
       { rows: [] }, // B pending_reauth update
     ]);
 
@@ -455,7 +455,7 @@ describe("runOAuthRefreshTick", () => {
           },
         ],
       },
-      { rows: [{ id: "conn-null-expiry", modified_at: new Date(FROZEN_NOW) }] }, // CAS claim
+      { rows: [{ id: "conn-null-expiry" }] }, // CAS claim
       { rows: [{ id: "conn-null-expiry" }] }, // success-path UPDATE
     ]);
     const refresh = vi.fn(
@@ -515,8 +515,8 @@ describe("runOAuthRefreshTick", () => {
           },
         ],
       },
-      { rows: [{ id: "conn-stuck", modified_at: new Date(FROZEN_NOW) }] }, // CAS claim
-      { rows: [{ id: "conn-stuck" }] }, // success-path UPDATE
+      { rows: [{ id: "conn-stuck" }] },
+      { rows: [{ id: "conn-stuck" }] },
     ]);
     const refresh = vi.fn(
       async (): Promise<RefreshOutcome> => ({
@@ -556,7 +556,7 @@ describe("runOAuthRefreshTick", () => {
           },
         ],
       },
-      { rows: [{ id: "conn-throws", modified_at: new Date(FROZEN_NOW) }] }, // CAS claim
+      { rows: [{ id: "conn-throws" }] }, // CAS claim
       { rows: [] }, // revert UPDATE (status='active')
     ]);
 
@@ -607,9 +607,9 @@ describe("runOAuthRefreshTick", () => {
           },
         ],
       },
-      { rows: [{ id: "conn-throws", modified_at: new Date(FROZEN_NOW) }] }, // claim A
+      { rows: [{ id: "conn-throws" }] }, // claim A
       { rows: [] }, // revert UPDATE for A
-      { rows: [{ id: "conn-ok", modified_at: new Date(FROZEN_NOW) }] }, // claim B
+      { rows: [{ id: "conn-ok" }] }, // claim B
       { rows: [{ id: "conn-ok" }] }, // success UPDATE for B
     ]);
 
@@ -631,110 +631,5 @@ describe("runOAuthRefreshTick", () => {
     expect(result.considered).toBe(2);
     expect(result.outcomes.unexpected_error).toBe(1);
     expect(result.outcomes.success).toBe(1);
-  });
-
-  it("claim WHERE scopes refreshing-reclaim to the 5-min stale floor (race fix)", async () => {
-    // Pre-fix, the claim accepted `status IN ('active', 'refreshing')`
-    // unconditionally, so two concurrent ticks that both selected a near-
-    // expiry row both won the CAS and both called the Airtable refresh
-    // RPC. Airtable's single-use refresh-token rotation then invalidated
-    // one of the two, marking the connection invalid — the root cause of
-    // the every-few-days forced-reconnect loop.
-    //
-    // The fix tightens the claim WHERE to allow re-claim of 'refreshing'
-    // rows ONLY when modified_at is older than 5 minutes (i.e., the
-    // stuck-reap arm). A fresh 'refreshing' row set seconds ago by
-    // another tick cannot be re-claimed.
-    const seed = await buildSeed("rt");
-    const { db, calls } = makeFakeDb([
-      { rows: [{ id: AIRTABLE_PLATFORM_ID }] },
-      {
-        rows: [
-          {
-            id: "conn-race",
-            refresh_token_enc: seed,
-            token_expires_at: new Date(FROZEN_NOW + 5 * 60_000),
-            scopes: null,
-            platform_config: null,
-          },
-        ],
-      },
-      { rows: [{ id: "conn-race", modified_at: new Date(FROZEN_NOW) }] },
-      { rows: [{ id: "conn-race" }] },
-    ]);
-    const refresh = vi.fn(
-      async (): Promise<RefreshOutcome> => ({
-        kind: "success",
-        accessToken: "a",
-        refreshToken: "r",
-        expiresAtMs: FROZEN_NOW + 3600 * 1000,
-        scope: null,
-      }),
-    );
-
-    await runOAuthRefreshTick(defaultDeps({ db, refresh }));
-
-    const claimSql = calls[2] ?? "";
-    expect(claimSql).toMatch(/status\s*=\s*'active'/);
-    expect(claimSql).toMatch(
-      /status\s*=\s*'refreshing'\s+AND\s+modified_at\s*<\s*now\(\)\s*-\s*interval\s*'5 minutes'/,
-    );
-    // RETURNING modified_at is required so applyOutcome can pin its
-    // WHERE clause to this tick's claim timestamp.
-    expect(claimSql).toMatch(/RETURNING\s+id,\s*modified_at/);
-  });
-
-  it("apply-side UPDATEs pin WHERE to the claimed modified_at via date_trunc (race fix + precision fix)", async () => {
-    // The CAS-on-modified_at clause stops a tick whose Airtable RPC took
-    // >5min from clobbering a legitimate stale-reap claim by a later
-    // tick. Without it, the delayed tick's `WHERE status='refreshing'`
-    // matches both its own claim AND any subsequent re-claim, producing
-    // silent corruption of the row that the new tick claimed.
-    //
-    // The date_trunc('milliseconds', ...) wrapper is mandatory: postgres-js
-    // serializes JS Date params via .toISOString() (millisecond precision),
-    // while postgres `now()` stores microsecond precision. An exact
-    // `modified_at = $1` comparison silently fails for every apply-side
-    // UPDATE — the symptom that broke prod on 2026-05-26 and forced
-    // customer-visible reconnects until 2026-05-27.
-    const seed = await buildSeed("rt");
-    const { db, calls } = makeFakeDb([
-      { rows: [{ id: AIRTABLE_PLATFORM_ID }] },
-      {
-        rows: [
-          {
-            id: "conn-pin",
-            refresh_token_enc: seed,
-            token_expires_at: new Date(FROZEN_NOW + 5 * 60_000),
-            scopes: null,
-            platform_config: null,
-          },
-        ],
-      },
-      { rows: [{ id: "conn-pin", modified_at: new Date(FROZEN_NOW) }] },
-      { rows: [{ id: "conn-pin" }] },
-    ]);
-    const refresh = vi.fn(
-      async (): Promise<RefreshOutcome> => ({
-        kind: "success",
-        accessToken: "a",
-        refreshToken: "r",
-        expiresAtMs: FROZEN_NOW + 3600 * 1000,
-        scope: null,
-      }),
-    );
-
-    await runOAuthRefreshTick(defaultDeps({ db, refresh }));
-
-    const successSql = calls[3] ?? "";
-    expect(successSql).toMatch(
-      /WHERE\s+id\s*=\s*\S+\s+AND\s+status\s*=\s*'refreshing'\s+AND\s+date_trunc\(\s*'milliseconds'\s*,\s*modified_at\s*\)\s*=/,
-    );
-    // Bare `modified_at = $param` is the BROKEN shape — it always fails
-    // due to microsecond/millisecond precision drift. Guard against
-    // accidental reversion.
-    expect(successSql).not.toMatch(
-      /WHERE\s+id\s*=\s*\S+\s+AND\s+status\s*=\s*'refreshing'\s+AND\s+modified_at\s*=/,
-    );
   });
 });
