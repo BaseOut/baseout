@@ -3,6 +3,7 @@
 //   apps/web/drizzle/0009_storage_destinations.sql           — initial (local_fs + google_drive)
 //   apps/web/drizzle/0010_storage_destinations_box.sql       — adds 'box' to CHECK
 //   apps/web/drizzle/0011_storage_destinations_dropbox.sql   — adds 'dropbox' to CHECK
+//   apps/web/drizzle/0012_storage_destinations_onedrive.sql  — adds 'onedrive' to CHECK
 //
 // Filed by openspec/changes/shared-byos-drive. Per CLAUDE.md §2, master-DB
 // schema is owned by apps/web. This mirror exists only because the engine
@@ -33,8 +34,8 @@ export const storageDestinations = baseout.table("storage_destinations", {
   id: text("id").primaryKey().default(sql`gen_random_uuid()`),
   spaceId: text("space_id").notNull(),
   type: text("type").notNull(),
-  // 'local_fs' | 'google_drive' | 'box' | 'dropbox' — CHECK enforced
-  // canonically; widens additively when subsequent BYOS providers land.
+  // 'local_fs' | 'google_drive' | 'box' | 'dropbox' | 'onedrive' — CHECK
+  // enforced canonically; widens additively when subsequent BYOS providers land.
   oauthAccessTokenEnc: text("oauth_access_token_enc"),
   oauthRefreshTokenEnc: text("oauth_refresh_token_enc"),
   oauthExpiresAt: timestamp("oauth_expires_at", { withTimezone: true }),

@@ -82,6 +82,7 @@ const ACCEPTED_STORAGE_TYPES = new Set([
   "r2_managed", // legacy default — workflows routes this to LocalFsWriter
   "local_fs", // explicit dev-only writer
   "google_drive", // shared-byos-drive
+  "onedrive", // onedrive-provider (PKCE-only public client, Microsoft Graph)
 ]);
 
 export interface ProcessRunStartDeps {

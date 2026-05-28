@@ -39,14 +39,16 @@ const ALL_FREQUENCIES: ReadonlySet<Frequency> = new Set([
 //   - google_drive: first BYOS cloud destination (openspec/changes/shared-byos-drive).
 //   - box: second BYOS cloud destination (box-provider commit chain).
 //   - dropbox: third BYOS cloud destination (dropbox-provider commit chain).
-// Subsequent BYOS providers (OneDrive, S3, Frame.io) widen this set when
-// each lands.
+//   - onedrive: fourth BYOS cloud destination (onedrive-provider commit chain;
+//     PKCE-only public client, no client secret — see apps/web/src/lib/onedrive).
+// Subsequent BYOS providers (S3, Frame.io) widen this set when each lands.
 const ALLOWED_STORAGE_TYPES = new Set([
   'r2_managed',
   'local_fs',
   'google_drive',
   'box',
   'dropbox',
+  'onedrive',
 ])
 
 export interface PersistBackupConfigPolicyInput {
