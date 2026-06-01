@@ -164,6 +164,7 @@ export async function seedAuthedUser(opts?: {
     from: 'Baseout Test <test@example.invalid>',
     baseUrl,
     dev: false,
+    widenLocalDevOrigins: false,
   })
 
   await auth.api.signInMagicLink({

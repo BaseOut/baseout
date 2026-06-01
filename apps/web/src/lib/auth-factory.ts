@@ -13,10 +13,17 @@ export interface AuthFactoryEnv extends SendEmailEnv {
   // and skips Host-header inference. Required under `wrangler dev --remote`,
   // where the edge worker's Host header isn't a loopback address.
   baseUrl?: string
-  // True under astro dev / wrangler dev (Vite-baked from
-  // `import.meta.env.DEV` in middleware). Gates localhost CSRF origins so
-  // they never ship to the deployed worker.
+  // Inherited from SendEmailEnv. True ONLY under `astro dev` (Vite-baked
+  // `import.meta.env.DEV`). Gates sendEmail()'s console-log fallback — keep
+  // it OFF for `wrangler dev --remote` so magic-link emails actually leave
+  // via the EMAIL binding. Use `widenLocalDevOrigins` (below) to widen the
+  // CSRF list for local dev without re-enabling the console-log path.
   dev: boolean
+  // True under either local dev runtime (astro dev OR wrangler dev --remote).
+  // Independently gates DEV_TRUSTED_ORIGINS so localhost / 127.0.0.1 /
+  // baseout.local origins are accepted by the CSRF check in local dev,
+  // without flipping the `dev` email-mode flag. Production keeps both off.
+  widenLocalDevOrigins: boolean
 }
 
 // Hosts the per-request `baseURL` resolver accepts. Better Auth's
@@ -42,13 +49,27 @@ const AUTH_BASE_URL = {
 // the two is unreliable, so declare the CSRF list explicitly here. When
 // adding a new deployed origin, update both.
 const PROD_TRUSTED_ORIGINS = ['https://baseout.dev']
-const DEV_TRUSTED_ORIGINS = ['http://localhost:*', 'http://127.0.0.1:*']
+// Dev origins span http (port 4331 via plain `wrangler` script) and https
+// (port 4331 via the default `dev` script with `--local-protocol https`).
+// baseout.local:* is included because the dev script's --var pins
+// PUBLIC_AUTH_BASE_URL to https://baseout.local:4331 (per oauth-setup.md §3.1
+// and commit 67d6338) and we want the magic-link POST to be accepted whether
+// the developer is browsing at localhost or baseout.local. None of these
+// origins are routable in production — they only widen the CSRF gate when
+// `env.dev` is true.
+const DEV_TRUSTED_ORIGINS = [
+  'http://localhost:*',
+  'https://localhost:*',
+  'http://127.0.0.1:*',
+  'https://127.0.0.1:*',
+  'https://baseout.local:*',
+]
 
 export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
   return betterAuth({
     secret: env.secret,
     baseURL: env.baseUrl ?? AUTH_BASE_URL,
-    trustedOrigins: env.dev
+    trustedOrigins: env.widenLocalDevOrigins
       ? [...PROD_TRUSTED_ORIGINS, ...DEV_TRUSTED_ORIGINS]
       : PROD_TRUSTED_ORIGINS,
     database: drizzleAdapter(db, {

@@ -8,6 +8,7 @@ describe('createAuth', () => {
     email: undefined,
     from: undefined,
     dev: true,
+    widenLocalDevOrigins: true,
   })
   const baseURL = (auth.options as { baseURL: unknown }).baseURL as {
     allowedHosts: string[]
@@ -52,25 +53,30 @@ describe('createAuth', () => {
       email: undefined,
       from: undefined,
       dev: false,
+      widenLocalDevOrigins: false,
       baseUrl: 'https://baseout.dev',
     })
     expect((overrideAuth.options as { baseURL: unknown }).baseURL).toBe('https://baseout.dev')
   })
 
-  it('trusts baseout.dev plus localhost wildcards under dev: true', () => {
+  it('trusts baseout.dev plus localhost / 127.0.0.1 / baseout.local wildcards under widenLocalDevOrigins: true', () => {
     expect((auth.options as { trustedOrigins: unknown }).trustedOrigins).toEqual([
       'https://baseout.dev',
       'http://localhost:*',
+      'https://localhost:*',
       'http://127.0.0.1:*',
+      'https://127.0.0.1:*',
+      'https://baseout.local:*',
     ])
   })
 
-  it('trusts only baseout.dev under dev: false', () => {
+  it('trusts only baseout.dev under widenLocalDevOrigins: false', () => {
     const prodAuth = createAuth({} as never, {
       secret: 'test-secret',
       email: undefined,
       from: undefined,
       dev: false,
+      widenLocalDevOrigins: false,
     })
     expect((prodAuth.options as { trustedOrigins: unknown }).trustedOrigins).toEqual([
       'https://baseout.dev',

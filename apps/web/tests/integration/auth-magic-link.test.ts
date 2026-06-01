@@ -31,6 +31,7 @@ function buildAuth() {
     from: 'Baseout Test <test@example.invalid>',
     baseUrl: TEST_BASE_URL,
     dev: false,
+    widenLocalDevOrigins: false,
   })
   return { auth, email }
 }
