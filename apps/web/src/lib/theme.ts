@@ -97,20 +97,28 @@ export function wireThemeToggle(input: HTMLInputElement): void {
   input.checked = getInitialTheme() === 'dark';
 
   input.addEventListener('change', () => {
-    // Pin the parent daisyUI dropdown open across the swap. The dropdown's
-    // visibility is driven by `:focus-within` + the 200 ms `@keyframes dropdown`
-    // fade-in (see daisyUI v5 source). View transitions can perturb either of
-    // those, making the menu visibly close-and-reopen during the cross-fade.
-    // The `data-theme-swap-pin` attribute is paired with a CSS rule in
-    // global.css that force-locks the dropdown-content to its visible state.
+    // Two-layer guard against the dropdown wobbling during the swap:
+    //   1. `data-theme-swap-pin` on the parent .dropdown pins the LIVE DOM
+    //      open (paired CSS in global.css overrides daisyUI's hide rule).
+    //   2. `view-transition-name: theme-toggle-menu` on the .dropdown-content
+    //      lifts it out of the root cross-fade so the menu pixels don't blend
+    //      50/50 with the new-theme snapshot. Paired pseudo-rules in
+    //      global.css hold the old snapshot opaque and the new snapshot
+    //      hidden for the entire 220 ms; the live DOM (kept open by layer 1)
+    //      takes back over when the pseudo-elements tear down.
+    // Both must be set BEFORE applyTheme() — startViewTransition() captures
+    // the old snapshot synchronously and needs the name already in place.
     const dropdown = input.closest<HTMLElement>('.dropdown');
-    if (dropdown) {
-      dropdown.setAttribute('data-theme-swap-pin', '');
-      const unpin = () => {
-        dropdown.removeAttribute('data-theme-swap-pin');
-        document.removeEventListener(SWAP_END_EVENT, unpin);
+    const menu = dropdown?.querySelector<HTMLElement>(':scope > .dropdown-content') ?? null;
+    if (dropdown) dropdown.setAttribute('data-theme-swap-pin', '');
+    if (menu) menu.style.viewTransitionName = 'theme-toggle-menu';
+    if (dropdown || menu) {
+      const cleanup = () => {
+        dropdown?.removeAttribute('data-theme-swap-pin');
+        if (menu) menu.style.viewTransitionName = '';
+        document.removeEventListener(SWAP_END_EVENT, cleanup);
       };
-      document.addEventListener(SWAP_END_EVENT, unpin);
+      document.addEventListener(SWAP_END_EVENT, cleanup);
     }
     applyTheme(input.checked ? 'dark' : 'light');
   });

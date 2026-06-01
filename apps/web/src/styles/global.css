@@ -73,6 +73,29 @@ body {
   }
 }
 
+/* Lift the open daisyUI dropdown out of the root cross-fade. src/lib/theme.ts
+   tags its .dropdown-content with `view-transition-name: theme-toggle-menu`
+   for the duration of the swap, giving that element its own pseudo-element
+   pair instead of being captured into the root snapshot. Hold the old
+   snapshot fully opaque the entire transition and keep the new snapshot
+   hidden — the live DOM (already pinned open by :focus-within + the
+   data-theme-swap-pin override) takes back over the instant the pseudo-
+   elements tear down at transition-end. Net effect: the menu reads as
+   visually stable while the page cross-fades behind it. */
+::view-transition-old(theme-toggle-menu) {
+  animation: none;
+}
+::view-transition-new(theme-toggle-menu) {
+  animation: none;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(theme-toggle-menu),
+  ::view-transition-new(theme-toggle-menu) {
+    animation: none;
+  }
+}
+
 /* While the theme is mid-swap, kill every per-element transition so the
    page snaps to the new palette in one frame and the root cross-fade is the
    only thing animating. Without this, components with their own
