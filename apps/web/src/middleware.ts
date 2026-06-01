@@ -36,6 +36,19 @@ function isPublicRoute(pathname: string): boolean {
   ) {
     return true;
   }
+  // OAuth provider callbacks complete the round-trip via an encrypted
+  // handoff cookie (set by the matching /start route, which DOES require
+  // a session). They must not require a fresh better-auth session at
+  // callback time, because browsers may not send the SameSite=Lax session
+  // cookie on the cross-site navigation back from the OAuth provider.
+  // Identity is validated inside the callback handler by openHandoffPayload
+  // — the handoff cookie is signed/encrypted with BASEOUT_ENCRYPTION_KEY
+  // and the OAuth state param defends CSRF. Matches both
+  // /api/connections/<provider>/callback (Airtable) and
+  // /api/connections/storage/<provider>/callback (Drive/Box/Dropbox/OneDrive).
+  if (/^\/api\/connections\/[^/]+(?:\/[^/]+)?\/callback$/.test(pathname)) {
+    return true;
+  }
   return false;
 }
 
