@@ -11,7 +11,7 @@ import {
 
 const PUBLIC_PATHS = new Set(['/login', '/register']);
 
-function isPublicRoute(pathname: string): boolean {
+export function isPublicRoute(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
   if (pathname.startsWith('/api/auth/')) return true;
   // Dev-only: Airtable OAuth impersonation stubs are hit by our own server-side
