@@ -82,4 +82,26 @@ describe('createAuth', () => {
       'https://baseout.dev',
     ])
   })
+
+  // useSecureCookies override (2026-06-02 cookie-drop fix). Under
+  // widenLocalDevOrigins=true the dev script serves at
+  // https://baseout.local:4331 with wrangler's localhost-only self-signed
+  // cert — Chromium/Brave drop Secure cookies under that hostname mismatch.
+  // We flip useSecureCookies=false in local dev to drop the Secure attribute
+  // + `__Secure-` prefix; production keeps better-auth's default.
+
+  it('sets advanced.useSecureCookies=false under widenLocalDevOrigins: true', () => {
+    expect((auth.options as { advanced: { useSecureCookies: unknown } }).advanced.useSecureCookies).toBe(false)
+  })
+
+  it('leaves advanced.useSecureCookies undefined under widenLocalDevOrigins: false (better-auth default)', () => {
+    const prodAuth = createAuth({} as never, {
+      secret: 'test-secret',
+      email: undefined,
+      from: undefined,
+      dev: false,
+      widenLocalDevOrigins: false,
+    })
+    expect((prodAuth.options as { advanced: { useSecureCookies: unknown } }).advanced.useSecureCookies).toBeUndefined()
+  })
 })

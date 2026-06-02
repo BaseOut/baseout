@@ -29,6 +29,7 @@ import {
 import { resolveCapabilities } from '../../../../lib/capabilities/resolve'
 import type { Tier } from '../../../../lib/capabilities/tier-capabilities'
 import { createBackupEngine } from '../../../../lib/backup-engine'
+import { promoteSpaceIfSetupIncomplete } from '../../../../lib/spaces'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -65,6 +66,17 @@ export interface HandlePatchInput {
   onScheduledFrequencyChange:
     | ((spaceId: string, frequency: string) => Promise<void>)
     | null
+  /**
+   * Setup-complete promotion. Called after a successful upsert with the
+   * spaceId. Implementation flips spaces.status from 'setup_incomplete'
+   * to 'active' (idempotent — no-op if the row is already active). The
+   * dashboard reads spaces.status to decide whether to nag the user with
+   * "Connect your first base", so without this flip the prompt persists
+   * forever even after the user has finished setup. Errors here are
+   * swallowed (mirrors onScheduledFrequencyChange): the config is the
+   * load-bearing write, the status flip is presentation.
+   */
+  promoteSpaceIfReady: (spaceId: string) => Promise<void>
 }
 
 export async function handlePatch(input: HandlePatchInput): Promise<Response> {
@@ -112,6 +124,13 @@ export async function handlePatch(input: HandlePatchInput): Promise<Response> {
         // Schedule hand-off is best-effort. The config is already
         // persisted; the alarm can be re-armed by the bootstrap script.
       }
+    }
+    // Setup-complete promotion. Best-effort: the config save is the
+    // load-bearing write, the status flip is dashboard presentation.
+    try {
+      await input.promoteSpaceIfReady(input.spaceId)
+    } catch {
+      // Swallow — the flip can be re-attempted on the next save.
     }
     return jsonResponse({ ok: true }, 200)
   }
@@ -190,6 +209,7 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
     },
     upsertConfig: buildUpsert(db),
     onScheduledFrequencyChange: buildScheduledFrequencyHandoff(),
+    promoteSpaceIfReady: (spaceId) => promoteSpaceIfSetupIncomplete(db, spaceId),
   })
 }
 

@@ -123,6 +123,19 @@ export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
       database: {
         generateId: 'uuid',
       },
+      // Drop Secure + `__Secure-` cookie prefix in local dev only.
+      //
+      // Why: wrangler dev's auto-generated TLS cert is for `localhost`, but
+      // the dev script serves at `https://baseout.local:4331` (Airtable's
+      // only registered redirect URI). Chromium-family browsers (Brave, etc.)
+      // treat `localhost` as a Secure context even with a self-signed cert,
+      // but any other hostname with a cert error is NOT — so cookies with
+      // the Secure attribute set under `baseout.local` get dropped between
+      // page loads. better-auth defaults `Secure: true` + `__Secure-` prefix
+      // whenever baseURL starts with `https://`; this opt-out flips both off
+      // when widenLocalDevOrigins is true. Production envs keep the default
+      // (undefined → auto-derive from https baseURL → Secure cookies).
+      useSecureCookies: env.widenLocalDevOrigins ? false : undefined,
     },
   })
 }

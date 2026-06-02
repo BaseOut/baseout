@@ -104,6 +104,18 @@ const NAME = 'backup-storage'
     your-own-storage providers ship in a later phase.
   </p>
 
+  <div
+    role="alert"
+    class="alert alert-error mt-4 hidden"
+    data-storage-error-alert
+  >
+    <span class="text-sm">
+      <span class="font-semibold">Connection failed.</span>
+      <span data-storage-error-message></span>
+      <span class="block text-xs opacity-75 mt-0.5" data-storage-error-code></span>
+    </span>
+  </div>
+
   <fieldset class="mt-4 grid gap-3" data-storage-fieldset>
     <legend class="sr-only">Storage destination</legend>
     {ALL_OPTIONS.map((opt) => (
@@ -420,6 +432,42 @@ const NAME = 'backup-storage'
     ])
     if ((connected && STORAGE_PROVIDERS.has(connected)) || storageError) {
       root.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+
+    // Surface OAuth callback failures. Without this the callback can fail
+    // (cookie dropped during round-trip, state mismatch, token exchange
+    // refused, etc.) and the user sees no visible signal — they assume
+    // "connected" when nothing was persisted. The URL carries the reason
+    // as `?storage_error=<code>`; we map known codes to friendly text and
+    // always show the raw code so devs / support can match it to a log.
+    if (storageError) {
+      const ERROR_MESSAGES: Record<string, string> = {
+        missing_handoff:
+          'Your browser dropped the OAuth handoff cookie during the round-trip. Try again — if it keeps happening, allow cookies for this site.',
+        invalid_handoff:
+          'The OAuth handoff cookie could not be decrypted. Try again from the start.',
+        state_mismatch:
+          'The OAuth state parameter didn’t match what we sent — this can happen if you complete the flow in a different browser tab.',
+        user_mismatch:
+          'You signed in to a different account during the OAuth round-trip. Try again from the right account.',
+        missing_code:
+          'The provider didn’t return an authorization code. Try again.',
+        not_configured:
+          'This storage provider isn’t configured on the server yet.',
+        token_exchange_failed:
+          'The provider refused the token exchange. Try again; if it keeps happening, the OAuth app credentials may have rotated.',
+        persist_failed:
+          'We exchanged tokens with the provider but couldn’t save the connection. Try again.',
+      }
+      const alertEl = root.querySelector<HTMLElement>('[data-storage-error-alert]')
+      const msgEl = root.querySelector<HTMLElement>('[data-storage-error-message]')
+      const codeEl = root.querySelector<HTMLElement>('[data-storage-error-code]')
+      if (alertEl && msgEl && codeEl) {
+        msgEl.textContent =
+          ERROR_MESSAGES[storageError] ?? 'Something went wrong on the OAuth round-trip.'
+        codeEl.textContent = `error_code: ${storageError}`
+        alertEl.classList.remove('hidden')
+      }
     }
   }
 </script>

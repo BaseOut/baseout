@@ -32,6 +32,7 @@ import {
 import { exchangeCodeForTokens } from '../../../../../lib/onedrive/oauth'
 import { persistOneDriveDestination } from '../../../../../lib/onedrive/persist'
 import { sanitizeReturnTo } from '../../../../../lib/airtable/return-to'
+import { shouldSetSecureOAuthCookie } from '../../../../../lib/oauth/local-dev-secure'
 
 function appendQuery(path: string, key: string, value: string): string {
   const sep = path.includes('?') ? '&' : '?'
@@ -52,7 +53,7 @@ function redirectWith(
 }
 
 export const GET: APIRoute = async ({ locals, request, url }) => {
-  const isSecure = url.protocol === 'https:'
+  const isSecure = shouldSetSecureOAuthCookie(request)
   const clearCookie = buildClearCookie({ secure: isSecure })
 
   const workerEnv = env as unknown as {

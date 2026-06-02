@@ -44,6 +44,9 @@ function makeDeps(
     // the SpaceDO hand-off pass unchanged. Tests targeting the hand-off
     // override with vi.fn().
     onScheduledFrequencyChange: null,
+    // Setup promotion: defaults to a no-op vi.fn(). Tests asserting on it
+    // override; tests not asserting don't care.
+    promoteSpaceIfReady: vi.fn(async () => {}),
     ...overrides,
   }
 }
@@ -278,6 +281,55 @@ describe('handlePatch', () => {
       account: makeAccount(),
       spaceId: SPACE_ID,
       body: { frequency: 'daily' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+  })
+
+  // Setup-complete promotion ─────────────────────────────────────────────
+  //
+  // Saving the backup config is the canonical end-of-wizard signal: the user
+  // has chosen frequency + storage type, so the Space is "set up enough" to
+  // run a real backup. Promote spaces.status from 'setup_incomplete' to
+  // 'active' here so the dashboard stops nagging with "Connect your first
+  // base" once setup is done. Idempotent at the helper layer.
+
+  it('calls promoteSpaceIfReady with the spaceId after a successful upsert', async () => {
+    const promoteSpaceIfReady = vi.fn(async () => undefined)
+    const d = makeDeps({ promoteSpaceIfReady })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'monthly' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+    expect(promoteSpaceIfReady).toHaveBeenCalledWith(SPACE_ID)
+  })
+
+  it('does NOT call promoteSpaceIfReady when the upsert rejects with invalid_request', async () => {
+    const promoteSpaceIfReady = vi.fn(async () => undefined)
+    const d = makeDeps({ promoteSpaceIfReady })
+    // Body that the policy will reject (unknown key).
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { unknown_field: 'x' },
+      ...d,
+    })
+    expect(res.status).toBe(400)
+    expect(promoteSpaceIfReady).not.toHaveBeenCalled()
+  })
+
+  it('still returns 200 when promoteSpaceIfReady throws (best-effort, mirrors hand-off)', async () => {
+    const promoteSpaceIfReady = vi.fn(async () => {
+      throw new Error('db_unreachable')
+    })
+    const d = makeDeps({ promoteSpaceIfReady })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'monthly' },
       ...d,
     })
     expect(res.status).toBe(200)
