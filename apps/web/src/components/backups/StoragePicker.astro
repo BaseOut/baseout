@@ -150,6 +150,7 @@ const NAME = 'backup-storage'
     data-storage-drive-connect
     data-astro-reload
   >
+    <input type="hidden" name="returnTo" value={Astro.url.pathname} />
     <span class="text-sm text-base-content/80">
       Connect a Google account to use this destination. Re-clicking issues a
       fresh consent and keeps the same per-Space folder.
@@ -174,6 +175,7 @@ const NAME = 'backup-storage'
       data-storage-box-connect
       data-astro-reload
     >
+      <input type="hidden" name="returnTo" value={Astro.url.pathname} />
       <span class="text-sm text-base-content/80">
         Connect a Box account to use this destination. Re-clicking issues a
         fresh consent and keeps the same per-Space folder.
@@ -199,6 +201,7 @@ const NAME = 'backup-storage'
       data-storage-dropbox-connect
       data-astro-reload
     >
+      <input type="hidden" name="returnTo" value={Astro.url.pathname} />
       <span class="text-sm text-base-content/80">
         Connect a Dropbox account to use this destination. Re-clicking
         issues a fresh consent and keeps the same per-Space folder.
@@ -224,6 +227,7 @@ const NAME = 'backup-storage'
       data-storage-onedrive-connect
       data-astro-reload
     >
+      <input type="hidden" name="returnTo" value={Astro.url.pathname} />
       <span class="text-sm text-base-content/80">
         Connect a Microsoft account to use this destination. Re-clicking
         issues a fresh consent and keeps the same per-Space folder.
@@ -399,6 +403,23 @@ const NAME = 'backup-storage'
         // Loading state covers the redirect latency to Microsoft's consent screen.
         setButtonLoading(oneDriveConnectBtn, true)
       })
+    }
+
+    // After returning from a storage-provider OAuth round-trip the page
+    // SSRs from the top; scroll the user back to the storage section so
+    // they land where they left off. Airtable's connected=1 is excluded —
+    // it lives in a different card above.
+    const params = new URLSearchParams(window.location.search)
+    const connected = params.get('connected')
+    const storageError = params.get('storage_error')
+    const STORAGE_PROVIDERS = new Set([
+      'google_drive',
+      'dropbox',
+      'box',
+      'onedrive',
+    ])
+    if ((connected && STORAGE_PROVIDERS.has(connected)) || storageError) {
+      root.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }
 </script>

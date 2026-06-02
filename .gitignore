@@ -26,6 +26,7 @@ packages/*/test-results/
 
 # Personal working notes — never commit
 boss-todo.md
+admin_requests.md
 
 # Logs
 *.log
