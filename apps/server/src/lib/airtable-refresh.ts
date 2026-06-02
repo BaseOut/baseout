@@ -15,7 +15,18 @@
 //   200 with access_token        → 'success'
 //   400 + invalid_grant/revoked  → 'pending_reauth' (user must reconnect)
 //   429 / 5xx / network error    → 'transient' (next tick retries)
-//   anything else                → 'invalid' (page ops)
+//   anything else                → 'transient' (next tick retries)
+//
+// Hardening note (2026-06-02): the default-bucket previously mapped any
+// unrecognised 4xx (and 200-with-malformed-body) to 'invalid' — a TERMINAL
+// state that forces a user-visible reconnect. A single ambiguous Airtable
+// response — a CSRF-block, a new error code, a transient auth-edge hiccup,
+// an HTML error page during a deploy — was enough to kill an otherwise
+// healthy connection. This function now defaults to 'transient' for
+// anything that isn't a confirmed user-revocation, so the orchestrator
+// retries on the next */15 tick instead of pinning the row dead. 'invalid'
+// is still reachable from oauth-refresh.ts (e.g., decrypt failure), but
+// this function no longer emits it.
 
 export const AIRTABLE_TOKEN_URL = "https://airtable.com/oauth2/v1/token";
 
@@ -118,15 +129,17 @@ export async function refreshAirtableAccessToken(
   try {
     json = (await res.json()) as RawTokenResponse;
   } catch {
-    return { kind: "invalid", reason: `http_${res.status}_unparseable_body` };
+    return { kind: "transient", reason: `http_${res.status}_unparseable_body` };
   }
 
   if (res.ok && typeof json.access_token === "string") {
     if (typeof json.refresh_token !== "string" || json.refresh_token.length === 0) {
       // Airtable always rotates the refresh token on a successful refresh. A
-      // missing/empty value means the response is malformed — treat as invalid
-      // rather than overwriting the stored refresh token with null.
-      return { kind: "invalid", reason: "missing_refresh_token" };
+      // missing/empty value means the response is malformed — retry next tick
+      // rather than overwriting the stored refresh token with null. (Marking
+      // 'transient' both preserves the stored token AND avoids killing the
+      // connection on a transient Airtable hiccup.)
+      return { kind: "transient", reason: "missing_refresh_token" };
     }
     const expiresIn =
       typeof json.expires_in === "number" && Number.isFinite(json.expires_in)
@@ -141,11 +154,13 @@ export async function refreshAirtableAccessToken(
     };
   }
 
-  // 4xx — distinguish user-action errors (pending_reauth) from anything else.
+  // 4xx — distinguish confirmed user-action errors (pending_reauth) from
+  // anything else. Unrecognised codes default to 'transient' so a single
+  // ambiguous response can't kill an otherwise-healthy connection.
   const code = json.error ?? `http_${res.status}`;
   const desc = json.error_description ? `: ${json.error_description}` : "";
   if (PENDING_REAUTH_ERROR_CODES.has(code)) {
     return { kind: "pending_reauth", reason: `${code}${desc}` };
   }
-  return { kind: "invalid", reason: `${code}${desc}` };
+  return { kind: "transient", reason: `${code}${desc}` };
 }

@@ -76,27 +76,6 @@ describe("refreshAirtableAccessToken", () => {
     if (result.kind === "success") expect(result.scope).toBeNull();
   });
 
-  it("invalid — 200 with missing refresh_token must NOT overwrite stored value", async () => {
-    // Airtable always rotates on a successful refresh. A missing refresh_token
-    // is a malformed response, not a green light to wipe the DB column.
-    const fetchImpl = makeFetchMock(
-      new Response(
-        JSON.stringify({
-          access_token: "acc-new",
-          // no refresh_token
-          expires_in: 3600,
-        }),
-        { status: 200 },
-      ),
-    );
-
-    const result = await refreshAirtableAccessToken(
-      defaultInput({ fetchImpl }),
-    );
-
-    expect(result).toEqual({ kind: "invalid", reason: "missing_refresh_token" });
-  });
-
   it("pending_reauth — 400 invalid_grant means user revoked / removed integration", async () => {
     const fetchImpl = makeFetchMock(
       new Response(
@@ -175,7 +154,14 @@ describe("refreshAirtableAccessToken", () => {
     }
   });
 
-  it("invalid — 400 with an unknown error code goes to 'invalid'", async () => {
+  it("transient — 400 with an unknown error code is NOT terminal", async () => {
+    // Regression: 2026-06-02 13:15:54 UTC. A single tick that received a
+    // 4xx Airtable didn't gift-wrap as one of the documented
+    // PENDING_REAUTH_ERROR_CODES used to flip the connection to
+    // status='invalid' (terminal — manual reconnect required). The actual
+    // response could have been a CSRF-block, an unexpected error code, or
+    // a temporary auth-edge hiccup — none of which warrant marking the
+    // connection dead. Default to transient so the next tick retries.
     const fetchImpl = makeFetchMock(
       new Response(
         JSON.stringify({
@@ -190,13 +176,17 @@ describe("refreshAirtableAccessToken", () => {
       defaultInput({ fetchImpl }),
     );
 
-    expect(result.kind).toBe("invalid");
-    if (result.kind === "invalid") {
+    expect(result.kind).toBe("transient");
+    if (result.kind === "transient") {
       expect(result.reason).toContain("some_new_error_code_we_dont_know");
     }
   });
 
-  it("invalid — 200 with unparseable body", async () => {
+  it("transient — 200 with unparseable body is NOT terminal", async () => {
+    // Same rationale as the unknown-4xx case: a malformed 200 from Airtable
+    // (HTML error page, truncated body, etc.) is almost always an upstream
+    // hiccup. Marking the connection dead here forces a manual reconnect
+    // for a transient failure we can recover from on the next tick.
     const fetchImpl = makeFetchMock(
       new Response("not-json", { status: 200 }),
     );
@@ -206,8 +196,35 @@ describe("refreshAirtableAccessToken", () => {
     );
 
     expect(result).toEqual({
-      kind: "invalid",
+      kind: "transient",
       reason: "http_200_unparseable_body",
+    });
+  });
+
+  it("transient — 200 with missing refresh_token does NOT mark terminal", async () => {
+    // Airtable always rotates the refresh token on a successful refresh.
+    // A missing/empty `refresh_token` in the response is a malformed
+    // response. Don't overwrite the stored refresh token (the previous
+    // behaviour kept the existing column intact) but ALSO don't mark the
+    // connection dead — retry next tick.
+    const fetchImpl = makeFetchMock(
+      new Response(
+        JSON.stringify({
+          access_token: "acc-new",
+          // no refresh_token
+          expires_in: 3600,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await refreshAirtableAccessToken(
+      defaultInput({ fetchImpl }),
+    );
+
+    expect(result).toEqual({
+      kind: "transient",
+      reason: "missing_refresh_token",
     });
   });
 
