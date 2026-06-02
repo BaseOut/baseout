@@ -28,6 +28,7 @@ import {
   sealHandoffPayload,
 } from '../../../../../lib/onedrive/cookie'
 import { sanitizeReturnTo } from '../../../../../lib/airtable/return-to'
+import { shouldSetSecureOAuthCookie } from '../../../../../lib/oauth/local-dev-secure'
 
 function jsonError(message: string, status: number): Response {
   return new Response(JSON.stringify({ error: message }), {
@@ -55,6 +56,7 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
     MICROSOFT_OAUTH_CLIENT_ID?: string
     MICROSOFT_REDIRECT_URI?: string
     BASEOUT_ENCRYPTION_KEY?: string
+    PUBLIC_AUTH_BASE_URL?: string
   }
 
   if (!workerEnv.BASEOUT_ENCRYPTION_KEY) {
@@ -74,7 +76,13 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
     )
   }
 
-  const redirectUri = getRedirectUri(url.origin, workerEnv)
+  // See note in airtable/start.ts. url.origin resolves to the deployed worker
+  // under `wrangler dev --remote`; anchoring on PUBLIC_AUTH_BASE_URL keeps the
+  // OAuth provider's redirect on the browser-facing origin. The MICROSOFT_REDIRECT_URI
+  // override (used as a per-provider workaround when the registered set lags) still
+  // wins inside getRedirectUri().
+  const publicOrigin = workerEnv.PUBLIC_AUTH_BASE_URL ?? url.origin
+  const redirectUri = getRedirectUri(publicOrigin, workerEnv)
   const { verifier, challenge } = await generatePkcePair()
   const state = generateState()
 
@@ -97,7 +105,7 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
     challenge,
   })
 
-  const isSecure = url.protocol === 'https:'
+  const isSecure = shouldSetSecureOAuthCookie(request)
   return new Response(null, {
     status: 302,
     headers: {

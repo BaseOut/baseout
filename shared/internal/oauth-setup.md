@@ -335,9 +335,25 @@ App registrations → the Baseout app (Application ID
 ### 5.1 `PUBLIC_AUTH_BASE_URL`
 
 The redirect URI handed to each OAuth provider is computed as
-`PUBLIC_AUTH_BASE_URL + <provider callback path>` (see
-[apps/web/src/lib/airtable/config.ts](../../apps/web/src/lib/airtable/config.ts)
-`getRedirectUri`, and the parallel function in `google-drive/config.ts`).
+`PUBLIC_AUTH_BASE_URL + <provider callback path>`. Each provider's
+`start.ts` / `authorize.ts` handler reads
+`workerEnv.PUBLIC_AUTH_BASE_URL ?? url.origin` and passes that origin into
+`getRedirectUri()` (see
+[apps/web/src/pages/api/connections/airtable/start.ts](../../apps/web/src/pages/api/connections/airtable/start.ts)
+and the parallel `authorize.ts` in each storage provider's directory under
+[apps/web/src/pages/api/connections/storage/](../../apps/web/src/pages/api/connections/storage/)).
+
+The `PUBLIC_AUTH_BASE_URL ?? url.origin` preference matters because
+under `wrangler dev --remote` the worker code sees `url.origin` as the
+deployed preview-worker URL (e.g. `https://baseout-dev.openside.workers.dev`)
+even though the browser's URL bar is `https://baseout.local:4331`. If
+`redirectUri` is built from `url.origin`, the OAuth provider redirects the
+browser to the deployed worker, where the browser's session + handoff
+cookies (scoped to `baseout.local`) don't follow — the user lands at the
+deployed worker's `/login` instead of the expected
+`/integrations?connected=1`. Anchoring on `PUBLIC_AUTH_BASE_URL` keeps the
+callback on the origin the browser is actually using. Recorded in §8 below.
+
 `PUBLIC_AUTH_BASE_URL` is sourced from:
 
 - **Local dev:** the `--var PUBLIC_AUTH_BASE_URL:...` flag in
@@ -347,9 +363,20 @@ The redirect URI handed to each OAuth provider is computed as
 - **Deployed envs:** the `vars.PUBLIC_AUTH_BASE_URL` field of each
   `env.<env>.vars` block in [apps/web/wrangler.jsonc](../../apps/web/wrangler.jsonc).
 
+Per-provider overrides (`DROPBOX_REDIRECT_URI`, `MICROSOFT_REDIRECT_URI`)
+still win inside `getRedirectUri()` when set. They exist as escape hatches
+for providers whose OAuth app hasn't registered the
+`PUBLIC_AUTH_BASE_URL`-derived URI yet (e.g. OneDrive registers only
+`localhost:4331`, so `MICROSOFT_REDIRECT_URI=https://localhost:4331/...`
+keeps OneDrive's authorize call accepted by Microsoft — at the cost of a
+cross-origin mismatch with `baseout.local:4331` browsing sessions). Remove
+the override once the matching `baseout.local` / deployed URI is registered
+with the provider.
+
 When the URI for the chosen env isn't registered with a provider, the
 authorize call fails with `invalid client_id or mismatched redirect_uri`
-(Airtable) or `redirect_uri_mismatch` (Google).
+(Airtable), `redirect_uri_mismatch` (Google), or
+`invalid_request: ... redirect_uri ... is not valid` (Microsoft).
 
 ### 5.2 Use the deployed `baseout-dev` worker for real Airtable Connect
 
@@ -463,5 +490,7 @@ deployed URLs above until you explicitly run a `deploy` command.
 | Local `.dev.vars` change to `PUBLIC_AUTH_BASE_URL` has no effect | wrangler 4.x precedence: `--var` flag in `dev` script wins                                | [apps/web/package.json](../../apps/web/package.json) line 9 |
 | Magic-link sign-in at `https://localhost:4331` 403s with "Invalid origin" | Two-part bug closed 2026-06-01: (a) `pnpm dev` runs `astro build && wrangler dev --remote`, so Vite bakes `import.meta.env.DEV === false` and `createAuth` was always falling through to `PROD_TRUSTED_ORIGINS`. Pre-67d6338 it still worked because better-auth auto-trusts the `baseURL` host and `PUBLIC_AUTH_BASE_URL` was `https://localhost:4331`; once it flipped to `baseout.local:4331`, localhost lost auto-trust. (b) Even when the dev list was reached, it only listed `http://localhost:*` / `http://127.0.0.1:*` — but the dev script forces HTTPS via `--local-protocol https`. Fixed by (1) adding a separate `widenLocalDevOrigins` flag on `AuthFactoryEnv` (set from a `PUBLIC_AUTH_BASE_URL` host heuristic in middleware: `localhost` / `127.0.0.1` / `baseout.local` → true) — kept distinct from the `dev` flag because `dev` is overloaded to gate `sendEmail()`'s console-log fallback (see [apps/web/src/lib/email/send.ts](../../apps/web/src/lib/email/send.ts)) and flipping it under `wrangler dev --remote` would stop magic-link emails from actually sending and (2) widening `DEV_TRUSTED_ORIGINS` to include `https://localhost:*`, `https://127.0.0.1:*`, `https://baseout.local:*`. The magic-link **email URL** is still generated at `https://baseout.local:4331` (per the hardcoded baseURL, see [§5.1](#51-public_auth_base_url)) — clicking the link from `localhost` still requires `/etc/hosts` mapping. | [apps/web/src/middleware.ts](../../apps/web/src/middleware.ts) — `isDevAuthBaseUrl`; [apps/web/src/lib/auth-factory.ts](../../apps/web/src/lib/auth-factory.ts) — `DEV_TRUSTED_ORIGINS` |
 | Airtable Connect via baseout-dev works but local doesn't see the Connection | Stub mode is on locally — `AIRTABLE_STUBS_ENABLED=1` short-circuits the real DB read | [apps/web/.dev.vars](../../apps/web/.dev.vars) |
+| Logged out after every browser refresh at `https://baseout.local:4331` OR OAuth Connect appears to succeed but no row is saved | wrangler's auto-generated self-signed dev cert is for `localhost` only. The dev script serves at `https://baseout.local:4331` (per the Airtable URI requirement, [§3.1](#31-airtable-oauth-app-client_id1ae05093-12f2-48f0-b451-6d2ce3f2530a)) — Chromium-family browsers (incl. Brave) **special-case `localhost` as a Secure context even with a self-signed cert, but any other hostname is not**, so `Secure`-flagged cookies set under `baseout.local` get dropped between page loads AND during cross-site OAuth round-trips. Two cookie surfaces were affected: (1) better-auth's `__Secure-better-auth.session_token` → user logged out every refresh; (2) the per-provider OAuth handoff cookies (`bo_oauth_<provider>`) → callback hits `missing_handoff` and silently fails to persist the connection. Verified 2026-06-02: server-side signing + verification round-trip is healthy, the cookie just never comes back from the browser. Fixed by (a) `advanced.useSecureCookies: false` in better-auth when `widenLocalDevOrigins` is true (see [apps/web/src/lib/auth-factory.ts](../../apps/web/src/lib/auth-factory.ts)); (b) a shared `shouldSetSecureOAuthCookie(request)` helper in [apps/web/src/lib/oauth/local-dev-secure.ts](../../apps/web/src/lib/oauth/local-dev-secure.ts) used by every OAuth `authorize` / `start` / `callback` handler in place of the inline `url.protocol === 'https:'` check. Production hosts (anything not in `{localhost, 127.0.0.1, baseout.local}`) keep `Secure` cookies. Also added a visible alert in [StoragePicker.astro](../../apps/web/src/components/backups/StoragePicker.astro) for any `?storage_error=<code>` so a future failure isn't silent. | [apps/web/src/lib/auth-factory.ts](../../apps/web/src/lib/auth-factory.ts) `advanced.useSecureCookies`; [apps/web/src/lib/oauth/local-dev-secure.ts](../../apps/web/src/lib/oauth/local-dev-secure.ts) |
+| OAuth Connect button bounces the user to `/login` on the same origin after authorize | Under `wrangler dev --remote`, the worker code's `url.origin` resolves to the deployed preview URL (e.g. `https://baseout-dev.openside.workers.dev`) even when the browser is at `https://baseout.local:4331`. The pre-fix start/authorize handlers used `getRedirectUri(url.origin)`, so the OAuth provider redirected the user to the deployed worker URL — the browser's session + handoff cookies (scoped to `baseout.local`) didn't follow, and the deployed worker's middleware bounced to `/login`. The cookie problem masqueraded as a session-persistence bug. Fixed 2026-06-02 by changing every provider's `start.ts` / `authorize.ts` to prefer `workerEnv.PUBLIC_AUTH_BASE_URL ?? url.origin` before calling `getRedirectUri`. Per-provider `*_REDIRECT_URI` overrides still win inside `getRedirectUri()` (kept for providers like OneDrive whose Azure-registered set doesn't include `baseout.local` yet). | The 5 provider handlers under [apps/web/src/pages/api/connections/](../../apps/web/src/pages/api/connections/); §5.1 above |
 | OAuth provider callback (Airtable or any storage provider) returns `{"error":"Not authenticated"}` (HTTP 401) | Middleware is auth-gating the callback path. The OAuth callbacks (`/api/connections/airtable/callback` and `/api/connections/storage/<provider>/callback`) carry user identity via an **encrypted handoff cookie**, not via the better-auth session. They MUST be in `isPublicRoute` because browsers may not send the `SameSite=Lax` session cookie on the cross-site GET return from the OAuth provider (Brave's privacy shields are a known case of stricter-than-spec cross-site cookie behaviour — surfaced this 2026-06-01 after weeks of silent compounding with cron-side disconnects). Fixed in commit `4d2ddfc` by extending `isPublicRoute` with a `^\/api\/connections\/[^/]+(?:\/[^/]+)?\/callback$` regex. The `/start` route still requires a session (so attackers can't initiate Connect), the handoff cookie is signed with `BASEOUT_ENCRYPTION_KEY`, and the OAuth `state` param defends CSRF on the round-trip. Regression-tested in [apps/web/src/middleware.test.ts](../../apps/web/src/middleware.test.ts) — re-gating ANY of the five callback paths flips a pinned assertion. | [apps/web/src/middleware.ts](../../apps/web/src/middleware.ts) `isPublicRoute`; [apps/web/src/middleware.test.ts](../../apps/web/src/middleware.test.ts) for the contract |
 | OAuth refresh cron flips Airtable Connection to `invalid`        | Two non-equivalent causes — DIAGNOSE before reconnecting. (1) Encryption-key drift: cron's `BASEOUT_ENCRYPTION_KEY` doesn't match what apps/web used to encrypt the stored token → `outcome: 'decrypt_failed'` in worker logs. Fix: redeploy via the per-app `deploy` script (which now auto-syncs secrets from `.dev.vars`). (2) Genuine refresh refusal: Airtable rejected the refresh_token (revoked, expired, or rotated by a previous tick) → `outcome: 'invalid'` with reason `invalid_grant`, `pending_reauth`, etc. Fix: reconnect per [§5.2](#52-use-the-deployed-baseout-dev-worker-for-real-airtable-connect). The pre-2026-05-26 concurrent-refresh race (two cron ticks both consuming the same single-use refresh token) was closed by the modified_at CAS pin in `oauth-refresh.ts` — if reconnect loops resume despite a green cron log, suspect a regression on that CAS clause. | [apps/server/src/lib/oauth-refresh.ts](../../apps/server/src/lib/oauth-refresh.ts), `wrangler tail baseout-server-dev` for `oauth_refresh` outcome counts |

@@ -26,6 +26,7 @@ import {
   sealHandoffPayload,
 } from '../../../../../lib/box/cookie'
 import { sanitizeReturnTo } from '../../../../../lib/airtable/return-to'
+import { shouldSetSecureOAuthCookie } from '../../../../../lib/oauth/local-dev-secure'
 
 function jsonError(message: string, status: number): Response {
   return new Response(JSON.stringify({ error: message }), {
@@ -53,6 +54,7 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
     BOX_OAUTH_CLIENT_ID?: string
     BOX_OAUTH_CLIENT_SECRET?: string
     BASEOUT_ENCRYPTION_KEY?: string
+    PUBLIC_AUTH_BASE_URL?: string
   }
 
   if (!workerEnv.BASEOUT_ENCRYPTION_KEY) {
@@ -72,7 +74,11 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
     )
   }
 
-  const redirectUri = getRedirectUri(url.origin)
+  // See note in airtable/start.ts. url.origin resolves to the deployed worker
+  // under `wrangler dev --remote`; anchoring on PUBLIC_AUTH_BASE_URL keeps the
+  // OAuth provider's redirect on the browser-facing origin.
+  const publicOrigin = workerEnv.PUBLIC_AUTH_BASE_URL ?? url.origin
+  const redirectUri = getRedirectUri(publicOrigin)
   const { verifier, challenge } = await generatePkcePair()
   const state = generateState()
 
@@ -95,7 +101,7 @@ export const POST: APIRoute = async ({ locals, request, url }) => {
     challenge,
   })
 
-  const isSecure = url.protocol === 'https:'
+  const isSecure = shouldSetSecureOAuthCookie(request)
   return new Response(null, {
     status: 302,
     headers: {
