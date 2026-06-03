@@ -448,8 +448,21 @@ store — may prompt for sudo) and writes a cert for `baseout.local` to
 auto-detects that cert and passes `--https-cert-path`/`--https-key-path` to
 wrangler; with no cert it falls back to wrangler's self-signed cert (login
 still works — the session cookie is forced non-Secure in local dev, see §8 —
-but the browser shows a one-time warning). `/etc/hosts` must map
-`baseout.local → 127.0.0.1`.
+but the browser shows a one-time warning).
+
+**`/etc/hosts` mapping (required):** `baseout.local → 127.0.0.1`. `dev.mjs`
+preflights this — if `baseout.local` doesn't resolve to loopback it fails
+fast with the fix command rather than dead-ending. Add it once with:
+
+```
+pnpm --filter @baseout/web setup:hosts   # appends `127.0.0.1 baseout.local` (uses sudo)
+# or manually:  echo '127.0.0.1 baseout.local' | sudo tee -a /etc/hosts
+```
+
+`dev.mjs` then binds wrangler on `localhost` (wrangler prints that — there's
+no flag to make it serve a custom hostname; per the Cloudflare docs the
+`/etc/hosts` entry *is* the mechanism) and auto-opens `https://baseout.local:4331`
+once the proxy is up (`BASEOUT_DEV_NO_OPEN=1` to skip).
 
 ---
 

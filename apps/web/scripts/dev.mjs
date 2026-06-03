@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { connect } from 'node:net';
+import { lookup } from 'node:dns/promises';
 
 // Dev runner for apps/web.
 //
@@ -50,6 +51,36 @@ function waitForPort(port, host = '127.0.0.1', timeoutMs = 90_000) {
   });
 }
 
+// Fail fast (before the astro build) if baseout.local isn't mapped to a
+// loopback address. Everything keys off this hostname — without the
+// /etc/hosts entry the browser can't reach the dev server and the auto-open
+// below would dead-end. Resolution goes through the OS resolver, which
+// honours /etc/hosts.
+async function ensureHostsEntry() {
+  let address;
+  try {
+    ({ address } = await lookup('baseout.local'));
+  } catch {
+    address = null;
+  }
+  const isLoopback = address === '127.0.0.1' || address === '::1';
+  if (isLoopback) return;
+
+  console.error('');
+  console.error('  baseout.local does not resolve to a loopback address.');
+  console.error(
+    address
+      ? `  It currently resolves to ${address} — expected 127.0.0.1.`
+      : '  It is not in /etc/hosts.',
+  );
+  console.error('  https://baseout.local:4331 is the canonical dev URL — add the mapping:');
+  console.error('');
+  console.error('    pnpm --filter @baseout/web setup:hosts        # one-liner (uses sudo)');
+  console.error("    # or manually:  echo '127.0.0.1 baseout.local' | sudo tee -a /etc/hosts");
+  console.error('');
+  process.exit(1);
+}
+
 function run(cmd, args) {
   return new Promise((resolveProc, rejectProc) => {
     const child = spawn(cmd, args, { stdio: 'inherit', shell: true, cwd: ROOT });
@@ -59,6 +90,8 @@ function run(cmd, args) {
 }
 
 async function main() {
+  await ensureHostsEntry();
+
   // Reuse launch.mjs for env gating, wrangler.jsonc render, setup wizard,
   // migration-drift check, and the astro build.
   await run('node', ['--env-file-if-exists=.env', 'scripts/launch.mjs', 'build', 'local']);
