@@ -20,10 +20,6 @@
  * Fix: when the request host is a recognised local-dev hostname, force
  * `secure: false` on the handoff cookie. Production hosts (anything not in
  * the local-dev set) keep `secure: true` from the https:// protocol.
- *
- * The host list intentionally mirrors `isLocalDevAuthBaseUrl` in
- * `apps/web/src/middleware.ts`. Keep them in sync if a new local-dev
- * hostname is added.
  */
 
 const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', 'baseout.local'])

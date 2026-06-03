@@ -46,32 +46,15 @@ export function isPublicRoute(pathname: string): boolean {
   // and the OAuth state param defends CSRF. Matches both
   // /api/connections/<provider>/callback (Airtable) and
   // /api/connections/storage/<provider>/callback (Drive/Box/Dropbox/OneDrive).
+  // Pinned by src/middleware.test.ts — re-gating any of these reintroduces
+  // the 2026-06-01 "Not authenticated" 401 loop that took 6 days to find.
   if (/^\/api\/connections\/[^/]+(?:\/[^/]+)?\/callback$/.test(pathname)) {
     return true;
   }
   return false;
 }
 
-// `pnpm dev` runs `astro build && wrangler dev --remote`, so the bundle is
-// built in production mode and `import.meta.env.DEV` is baked to `false` —
-// the same value as a deployed Worker. To widen the CSRF gate for a local
-// wrangler-dev session without also flipping the email-mode flag (which
-// would log magic links to the terminal instead of sending them), detect
-// "local" via the PUBLIC_AUTH_BASE_URL host. Production envs point this at
-// `https://baseout.dev` etc., so the heuristic never fires there.
-function isLocalDevAuthBaseUrl(baseUrl: string | undefined): boolean {
-  if (!baseUrl) return false;
-  try {
-    const host = new URL(baseUrl).hostname;
-    return host === 'localhost' || host === '127.0.0.1' || host === 'baseout.local';
-  } catch {
-    return false;
-  }
-}
-
 function buildAuthEnv(): Parameters<typeof createAppAuth>[1] {
-  const baseUrl = (env as unknown as { PUBLIC_AUTH_BASE_URL?: string })
-    .PUBLIC_AUTH_BASE_URL;
   return {
     secret: (env as unknown as { BETTER_AUTH_SECRET?: string })
       .BETTER_AUTH_SECRET,
@@ -81,15 +64,12 @@ function buildAuthEnv(): Parameters<typeof createAppAuth>[1] {
     // Required under `wrangler dev --remote` where the worker's Host header
     // isn't a loopback address. Absent under `astro dev`, where auth-factory
     // falls back to Host-header detection.
-    baseUrl,
-    // Email-mode flag: true ONLY under `astro dev` (Vite-baked). Gates
-    // sendEmail()'s console-log fallback, so `wrangler dev --remote` and
-    // deployed workers always exercise the real EMAIL binding.
+    baseUrl: (env as unknown as { PUBLIC_AUTH_BASE_URL?: string })
+      .PUBLIC_AUTH_BASE_URL,
+    // Vite bakes import.meta.env.DEV into the bundle at build time:
+    // true under `npm run dev` (astro dev), false under `npm run wrangler`
+    // (astro build + wrangler dev --remote) and in deployed workers.
     dev: import.meta.env.DEV,
-    // CSRF-widening flag: true under either local dev runtime. Lets the
-    // local wrangler-dev session accept origin headers from localhost /
-    // 127.0.0.1 / baseout.local without affecting email-mode.
-    widenLocalDevOrigins: import.meta.env.DEV || isLocalDevAuthBaseUrl(baseUrl),
   };
 }
 
