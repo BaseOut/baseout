@@ -28,13 +28,20 @@ function useSecureCookies(auth: ReturnType<typeof build>) {
 }
 
 describe('createAuth — local-dev secure-cookie decision', () => {
+  it('disables secure cookies for baseURL https://baseout.local:4331', () => {
+    expect(useSecureCookies(build('https://baseout.local:4331'))).toBe(false)
+  })
+
+  // Regression guard: `localhost` / `127.0.0.1` used to be treated as
+  // local-dev hosts. They no longer are — the canonical local URL is
+  // baseout.local. Any session landing on those hostnames is a
+  // misconfiguration and must NOT get the dev cookie behaviour.
   it.each([
-    'https://baseout.local:4331',
     'http://localhost:4331',
     'https://localhost:4331',
     'http://127.0.0.1:4331',
-  ])('disables secure cookies for local-dev baseURL %s', (baseUrl) => {
-    expect(useSecureCookies(build(baseUrl))).toBe(false)
+  ])('does not disable secure cookies for unsupported localhost baseURL %s', (baseUrl) => {
+    expect(useSecureCookies(build(baseUrl))).toBeUndefined()
   })
 
   it.each([

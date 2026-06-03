@@ -10,7 +10,7 @@
     "setup:certs": "mkdir -p .certs && mkcert -install && mkcert -cert-file .certs/baseout.local.pem -key-file .certs/baseout.local-key.pem baseout.local localhost 127.0.0.1",
     "setup:hosts": "grep -q baseout.local /etc/hosts || echo '127.0.0.1 baseout.local' | sudo tee -a /etc/hosts",
     "build": "node --env-file-if-exists=.env scripts/launch.mjs build",
-    "wrangler": "node --env-file-if-exists=.env scripts/launch.mjs build local && wrangler dev --remote --port 4331 --var PUBLIC_AUTH_BASE_URL:http://localhost:4331",
+    "wrangler": "node --env-file-if-exists=.env scripts/launch.mjs build local && wrangler dev --remote --port 4331 --var PUBLIC_AUTH_BASE_URL:https://baseout.local:4331",
     "wrangler:baseout": "node --env-file-if-exists=.env scripts/launch.mjs build local && wrangler dev --remote --port 4331 --var PUBLIC_AUTH_BASE_URL:https://baseout.dev",
     "deploy": "node --env-file-if-exists=.env scripts/launch.mjs build && wrangler deploy --config dist/server/wrangler.json && pnpm run secrets:sync",
     "secrets:sync": "node scripts/sync-secrets.mjs --config dist/server/wrangler.json",

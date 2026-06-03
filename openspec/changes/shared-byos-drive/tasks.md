@@ -153,9 +153,11 @@ Depends on Phase 1. TDD red-then-green throughout.
 ## Preconditions (human, not code-side tasks)
 
 - [ ] PRE-1 Register Baseout app in Google Cloud Console:
-  - Authorized redirect URI prod: `https://<host>/api/connections/storage/google-drive/callback`
-  - Authorized redirect URI dev: `http://localhost:4321/api/connections/storage/google-drive/callback`
+  - Authorized redirect URI prod: `https://console.baseout.dev/api/connections/storage/google-drive/callback`
+  - Authorized redirect URI dev: `https://baseout.local:4331/api/connections/storage/google-drive/callback`
+  - Authorized redirect URI baseout-dev: `https://baseout-dev.openside.workers.dev/api/connections/storage/google-drive/callback`
   - Scopes: `https://www.googleapis.com/auth/drive.file`
+  - (See [shared/internal/oauth-setup.md §4.1](../../../shared/internal/oauth-setup.md) for the full URI list per env.)
 - [ ] PRE-2 Capture `GOOGLE_DRIVE_OAUTH_CLIENT_ID` + `GOOGLE_DRIVE_OAUTH_CLIENT_SECRET` and set on:
   - `apps/web/.dev.vars` locally; Cloudflare Secrets in staging/prod.
   - `apps/server/.dev.vars` locally; Cloudflare Secrets in staging/prod.

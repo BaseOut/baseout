@@ -9,23 +9,24 @@
  * handoff cookies (`bo_oauth_<provider>`) used by the Airtable +
  * storage-provider OAuth round-trips.
  *
- * Why: wrangler dev's TLS cert is auto-generated for `localhost` only.
- * The dev script serves at `https://baseout.local:4331` (because Airtable's
- * registered redirect URI is at that host) — Chromium-family browsers
- * special-case `localhost` as a Secure context even with a self-signed cert,
- * but a non-localhost hostname with the same self-signed cert is NOT trusted
- * for Secure-cookie storage. Cookies set with `Secure: true` from
- * `https://baseout.local:4331` get dropped by the browser between page
- * loads — the user returns from the OAuth provider's redirect with no
- * handoff cookie, the callback hits the `missing_handoff` branch, and the
- * connection is silently lost.
+ * Why: wrangler dev's TLS cert is the trusted cert that `pnpm setup:certs`
+ * provisions via mkcert. The dev script serves at `https://baseout.local:4331`
+ * (the canonical local URL — `localhost:4331` is intentionally unsupported,
+ * see shared/internal/oauth-setup.md §5.5). Chromium-family browsers do NOT
+ * special-case `baseout.local` as a Secure context the way they do
+ * `localhost`, so Secure cookies set under `baseout.local` get dropped by
+ * the browser between page loads — the user returns from the OAuth
+ * provider's redirect with no handoff cookie, the callback hits the
+ * `missing_handoff` branch, and the connection is silently lost.
  *
- * Fix: when the request host is a recognised local-dev hostname, force
- * `secure: false` on the handoff cookie. Production hosts (anything not in
- * the local-dev set) keep `secure: true` from the https:// protocol.
+ * Fix: when the request host is `baseout.local`, force `secure: false` on
+ * the handoff cookie. Every other host (deployed Workers, prod, and the
+ * unsupported `localhost`/`127.0.0.1` fallbacks) keeps `secure: true` from
+ * the https:// protocol — landing on those hostnames is a misconfiguration
+ * and should fail loudly via Secure-cookie drop, not be papered over here.
  */
 
-export const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', 'baseout.local'])
+export const LOCAL_DEV_HOSTS = new Set(['baseout.local'])
 
 /** True when `hostname` is a recognised local-dev host (no port). */
 export function isLocalDevHost(hostname: string): boolean {

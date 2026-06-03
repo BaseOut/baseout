@@ -58,7 +58,7 @@ The Google Drive OAuth Connect flow SHALL use OAuth 2.0 Authorization Code with 
 
 The authorize URL SHALL include `access_type=offline` and `prompt=consent` so that Google returns a refresh token on first consent.
 
-The redirect URI SHALL be `https://localhost:4331/oauth/callback/google` in dev and `https://console.baseout.dev/oauth/callback/google` in production. The path component is identical across environments.
+The redirect URI SHALL be `https://baseout.local:4331/api/connections/storage/google-drive/callback` in dev and `https://console.baseout.dev/api/connections/storage/google-drive/callback` in production. The path component is identical across environments.
 
 #### Scenario: Authorize redirects to Google consent
 

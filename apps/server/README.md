@@ -19,7 +19,7 @@ Or bring up both `apps/web` and `apps/server` in parallel:
 
 ```bash
 pnpm dev:all
-# → apps/web on https://localhost:4331
+# → apps/web on https://baseout.local:4331
 # → apps/server on http://localhost:8787
 ```
 

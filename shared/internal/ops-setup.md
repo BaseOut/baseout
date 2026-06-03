@@ -134,7 +134,7 @@ Workers always resolve the binding to the named sibling regardless. See
 
 **Verifying the binding is healthy end-to-end:**
 
-1. Open `https://localhost:4331/integrations` (apps/web dev server).
+1. Open `https://baseout.local:4331/integrations` (apps/web dev server).
 2. Click **Test connection** on the Airtable card.
 3. Expected: `Connected. Airtable user: …` (success), or
    `airtable_token_rejected` (token expired — reconnect Airtable to verify).
@@ -402,7 +402,7 @@ cd apps/server && npx trigger.dev@latest dev  # consumes dev-env queue
 Then in a browser, signed in with a real Airtable connection and at least one
 base ticked + saved:
 
-1. Open `https://localhost:4331/integrations`.
+1. Open `https://baseout.local:4331/integrations`.
 2. Click **Run backup now**. Confirmation toast: "Backup started…".
 3. Navigate to `/` (Home) or stay on `/integrations` — both render the
    BackupHistoryWidget.

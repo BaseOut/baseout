@@ -194,7 +194,7 @@ The token gate at [apps/server/src/middleware.ts](../../../apps/server/src/middl
    ```
    pnpm --filter @baseout/web dev      # apps/web on :4331 with --remote
    ```
-   Open `https://localhost:4331/integrations`, click **Test connection** → request flows through the service binding to the deployed `server-dev`.
+   Open `https://baseout.local:4331/integrations`, click **Test connection** → request flows through the service binding to the deployed `server-dev`.
 
 3. **Engine-side changes:** redeploy via `pnpm --filter @baseout/server deploy:dev` (~10 seconds). This is the only friction added by this change.
 

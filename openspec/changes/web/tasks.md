@@ -19,7 +19,7 @@
 - [ ] 1.10 `pnpm --filter @baseout/web build` exits 0
 - [ ] 1.11 `pnpm --filter @baseout/web exec astro check` reports 0 errors
 - [ ] 1.12 `grep -rn "backup-engine-client\|BACKUP_ENGINE" apps/web/src apps/web/tests` returns nothing
-- [ ] 1.13 `pnpm dev:web` boots wrangler dev on https://localhost:4331; `/login`, `/integrations`, `/backups` (placeholder), `/ops` all render
+- [ ] 1.13 `pnpm dev:web` boots wrangler dev on https://baseout.local:4331; `/login`, `/integrations`, `/backups` (placeholder), `/ops` all render
 
 ## 2. Implementation status (carried in from starter HEAD)
 

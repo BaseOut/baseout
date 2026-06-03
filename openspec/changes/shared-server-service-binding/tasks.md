@@ -49,7 +49,7 @@
 ## 8. End-to-end verification
 
 - [ ] 8.1 Stop both dev workers. Restart `pnpm --filter @baseout/web dev`.
-- [ ] 8.2 Open `https://localhost:4331/integrations`. The Airtable card should still render `Connected`. Click **Test connection**.
+- [ ] 8.2 Open `https://baseout.local:4331/integrations`. The Airtable card should still render `Connected`. Click **Test connection**.
 - [ ] 8.3 Expected outcomes:
   - **Success path:** spinner → "Connected. Airtable user: …" green status. Means the binding works end-to-end and the row's stored token is still valid.
   - **`airtable_token_rejected`:** "Airtable rejected the stored token. Reconnect Airtable." Means the binding works; the token expired (60-min Airtable TTL). Re-connect Airtable to verify the success path.

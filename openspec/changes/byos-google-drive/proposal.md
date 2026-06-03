@@ -6,7 +6,7 @@ Per [PRD §7.2](../../../shared/Baseout_PRD.md) and [Features §6.6](../../../sh
 
 > Google Drive — BYOS — OAuth — No proxy — All tiers.
 
-Google Drive is the **first BYOS destination to ship** because (a) it has the broadest user base, (b) it's the only destination that needs no proxy stream (Drive's resumable-upload API accepts piped streams directly from Worker memory), and (c) the boss has handed over Google Cloud Console OAuth credentials with the redirect URI `https://localhost:4331/oauth/callback/google` already registered in project `baseout-dev`.
+Google Drive is the **first BYOS destination to ship** because (a) it has the broadest user base, (b) it's the only destination that needs no proxy stream (Drive's resumable-upload API accepts piped streams directly from Worker memory), and (c) the boss has handed over Google Cloud Console OAuth credentials. The previously-registered `https://localhost:4331/oauth/callback/google` URI is stale on two axes (wrong callback path AND `localhost:4331` is unsupported per [shared/internal/oauth-setup.md §5.5](../../../shared/internal/oauth-setup.md)) — implementation here uses `https://baseout.local:4331/api/connections/storage/google-drive/callback` (dev) / `https://console.baseout.dev/api/connections/storage/google-drive/callback` (prod). Boss to register the new URIs per [oauth-setup.md §4.1](../../../shared/internal/oauth-setup.md).
 
 A complete Drive implementation exists on branch `autumn/backup-fix-local` (commits `52c1315` / `cea7f08` / `c8d3d1a`, ~50 files, tests green) — but that branch is being treated as untrusted because prior Drive work clobbered Airtable OAuth at least once. This change re-lands Drive on a clean branch (`autumn/byos-drive-clean`) from `main`, with hard-isolation constraints around Airtable code.
 
@@ -67,7 +67,7 @@ None at the spec level. The Airtable Connection capability is **explicitly out o
 5. **Tier gating:** Drive available to **every tier (Starter+)** per Features §6.6. No capability check needed.
 6. **Encryption:** all tokens AES-256-GCM via [apps/web/src/lib/crypto.ts](../../../apps/web/src/lib/crypto.ts) and `env.BASEOUT_ENCRYPTION_KEY` (already provisioned in `.dev.vars`). Per [PRD §20.2](../../../shared/Baseout_PRD.md).
 7. **OAuth scopes** are the three the boss has approved in the consent screen: `profile`, `https://www.googleapis.com/auth/drive.file`, `https://www.googleapis.com/auth/drive.appdata`. No other scopes may be requested without a new boss approval.
-8. **Redirect URI** is `https://localhost:4331/oauth/callback/google` (dev) — already registered in Google Cloud Console for project `baseout-dev`. Prod redirect URI is `https://console.baseout.dev/oauth/callback/google` (also registered).
+8. **Redirect URI** is `https://baseout.local:4331/api/connections/storage/google-drive/callback` (dev) and `https://console.baseout.dev/api/connections/storage/google-drive/callback` (prod). Both must be registered in Google Cloud Console for project `baseout-dev` per [oauth-setup.md §4.1](../../../shared/internal/oauth-setup.md). The stale `https://localhost:4331/oauth/callback/google` registration is unsupported (`localhost:4331` retired per §5.5) and should be removed by the boss once the new URIs are added.
 
 ## Impact
 

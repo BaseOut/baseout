@@ -23,15 +23,14 @@ export interface AuthFactoryEnv extends SendEmailEnv {
 // Hosts the per-request `baseURL` resolver accepts. Better Auth's
 // `matchesHostPattern` does an exact case-insensitive match unless the
 // pattern contains `*`, so the wildcard variants below cover any local
-// dev port (`npm run dev` → 4331, `wrangler dev` → 8787, etc.) and both
-// `localhost` and `127.0.0.1` Host headers without widening the
-// production surface — non-loopback hosts still hit `fallback`.
+// dev port. `localhost` / `127.0.0.1` are intentionally unlisted — the
+// canonical local URL is `https://baseout.local:4331` (see
+// shared/internal/oauth-setup.md §5.5); requests arriving with a
+// loopback Host header fall through to `fallback` and fail loudly.
 const AUTH_BASE_URL = {
   allowedHosts: [
-    'localhost',
-    'localhost:*',
-    '127.0.0.1',
-    '127.0.0.1:*',
+    'baseout.local',
+    'baseout.local:*',
     'baseout.dev',
   ],
   fallback: 'https://baseout.dev',
@@ -41,9 +40,10 @@ const AUTH_BASE_URL = {
 // governs Host-header → baseURL resolution; `trustedOrigins` governs the
 // Origin/Referer check on POSTs. Better Auth's auto-derivation between
 // the two is unreliable, so declare the CSRF list explicitly here. When
-// adding a new deployed origin, update both.
+// adding a new deployed origin, update both. `localhost` is intentionally
+// absent — see the comment on `allowedHosts` above.
 const PROD_TRUSTED_ORIGINS = ['https://baseout.dev']
-const DEV_TRUSTED_ORIGINS = ['http://localhost:*', 'http://127.0.0.1:*']
+const DEV_TRUSTED_ORIGINS = ['https://baseout.local:*']
 
 // Drop the `Secure` attribute + `__Secure-` cookie prefix in local dev only.
 //

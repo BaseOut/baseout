@@ -110,7 +110,7 @@ Both stay vendored for this change; promoting either is a future delta.
 ## Deployment
 
 - `wrangler.jsonc` is a template rendered at build by `scripts/launch.mjs` (writes `dist/server/wrangler.json`).
-- Three Worker envs: `baseout-dev` (host: `localhost:4331`), `baseout-staging`, `baseout` (prod, `baseout.dev`).
+- Three Worker envs: `baseout-dev` (host: `baseout.local:4331`), `baseout-staging`, `baseout` (prod, `baseout.dev`).
 - Hyperdrive ID is filled for dev (`localConnectionString` in `.dev.vars`); staging / prod need provisioning before `pnpm --filter @baseout/web run deploy:staging`.
 - KV namespace (`SESSIONS_KV`) and Email binding configured per-env via wrangler secrets.
 

@@ -6,8 +6,8 @@
 // Magic-link base URL: auth-factory.ts reads `env.PUBLIC_AUTH_BASE_URL` as
 // an explicit override and falls back to per-request Host-header detection
 // when absent. The `npm run dev` and `npm run wrangler` scripts pass the var
-// via `wrangler dev --var PUBLIC_AUTH_BASE_URL:http://localhost:4331`, so
-// the literal value below is what gets baked into the deployed dev worker.
+// via `wrangler dev --var PUBLIC_AUTH_BASE_URL:https://baseout.local:4331`,
+// so the literal value below is what gets baked into the deployed dev worker.
 // Top-level config = dev environment (worker `baseout-dev`).
 // `env.staging` and `env.production` override the dev-specific bits.
 //

@@ -156,13 +156,13 @@ No existing field is removed, renamed, or re-typed. Any existing Airtable code t
 
 **Why:** the [memory feedback-dont-break-airtable-auth](../../../../.claude/projects/-Users-autumnshakespeare-baseout/memory/feedback_dont_break_airtable_auth.md) calls out integrations-store changes as a regression vector. Additive-only avoids touching any Airtable code path.
 
-### D9 — Callback route at `/oauth/callback/google`, not under `/api/connections/storage/google-drive/`
+### D9 — Callback route lives under `/api/connections/storage/google-drive/callback`
 
-The redirect URI registered in Google Cloud Console is `https://localhost:4331/oauth/callback/google`. This change uses that path as-is.
+The redirect URI is `https://baseout.local:4331/api/connections/storage/google-drive/callback` (dev) / `https://console.baseout.dev/api/connections/storage/google-drive/callback` (prod). The earlier `https://localhost:4331/oauth/callback/google` registration is stale on two axes: the path doesn't route on this branch, and `localhost:4331` is unsupported per [oauth-setup.md §5.5](../../../shared/internal/oauth-setup.md). Boss to register the new URIs and remove the stale one per [oauth-setup.md §4.1](../../../shared/internal/oauth-setup.md).
 
-Other Drive routes (authorize / disconnect) live under `/api/connections/storage/google-drive/` for consistency with the existing Airtable `/api/connections/airtable/start|callback` layout.
+All Drive routes (authorize / callback / disconnect) live under `/api/connections/storage/google-drive/` for consistency with the existing Airtable `/api/connections/airtable/start|callback` layout and the parallel paths reserved for Box / Dropbox / OneDrive.
 
-**Why:** the boss already registered the redirect URI; changing the URI requires Google Cloud Console access. The `/oauth/callback/google` shape is also a clean cross-provider convention (future Drive → Dropbox would use `/oauth/callback/dropbox`).
+**Why:** keep one path shape across all OAuth providers — easier middleware regex, easier docs, no special-case for Drive.
 
 ### D10 — Drive writer uses resumable upload, **not** simple upload
 

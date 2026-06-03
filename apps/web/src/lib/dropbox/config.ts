@@ -37,7 +37,7 @@ export const DROPBOX_API_BASE = 'https://api.dropboxapi.com/2'
  *   1. `env.DROPBOX_REDIRECT_URI` — explicit override. Required when running
  *      `wrangler dev --remote` because the worker code sees its hostname
  *      as `baseout-dev.openside.workers.dev` (the preview-worker URL) even
- *      though the browser address bar is `localhost:4331`. Pinning the
+ *      though the browser address bar is `baseout.local:4331`. Pinning the
  *      redirect URI to one of the Dropbox-registered hostnames keeps the
  *      OAuth flow consistent — the SAME string must appear on the
  *      authorize URL AND on the token-exchange call.

@@ -17,8 +17,13 @@ const env = Object.fromEntries(
   readFileSync(new URL('../.env', import.meta.url), 'utf8')
     .split(/\r?\n/).filter(l => l && !l.startsWith('#'))
     .map(l => { const i = l.indexOf('='); return [l.slice(0, i), l.slice(i + 1)]; }));
+const devVars = Object.fromEntries(
+  readFileSync(new URL('../.dev.vars', import.meta.url), 'utf8')
+    .split(/\r?\n/).filter(l => l && !l.startsWith('#'))
+    .map(l => { const i = l.indexOf('='); return [l.slice(0, i), l.slice(i + 1).replace(/^"|"$/g, '')]; }));
 
 const BETTER_AUTH_DEFAULT_SECRET = 'better-auth-secret-12345678901234567890';
+const SECRET = devVars.BETTER_AUTH_SECRET || env.BETTER_AUTH_SECRET || BETTER_AUTH_DEFAULT_SECRET;
 const BASE = 'https://baseout.local:4331';
 
 const sql = postgres(env.DATABASE_URL, { ssl: 'require', max: 1 });
@@ -39,14 +44,14 @@ try {
   console.log(`Token prefix: ${String(session.token).slice(0, 12)}…  len ${session.token.length}\n`);
 
   // Better-auth's signCookieValue: value + '.' + base64urlnopad(HMAC-SHA256(value, secret))
-  const sig = createHmac('sha256', BETTER_AUTH_DEFAULT_SECRET)
+  const sig = createHmac('sha256', SECRET)
     .update(session.token)
     .digest('base64')
     .replace(/=+$/, '')
     .replace(/\+/g, '-')
     .replace(/\//g, '_');
   const cookieValue = `${session.token}.${sig}`;
-  const cookieHeader = `__Secure-better-auth.session_token=${cookieValue}`;
+  const cookieHeader = `better-auth.session_token=${cookieValue}`;
 
   console.log('Probing with autumn’s real session token (signed via default secret).');
 

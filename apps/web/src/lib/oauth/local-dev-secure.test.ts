@@ -7,12 +7,21 @@ function req(url: string): Request {
 
 describe('shouldSetSecureOAuthCookie', () => {
   it.each([
+    ['https://baseout.local:4331/api/connections/storage/dropbox/callback'],
+    ['https://baseout.local:4331/api/connections/storage/onedrive/authorize'],
+    ['https://baseout.local:4331/api/connections/airtable/start'],
+  ])('returns false for baseout.local %s (cookies must drop Secure)', (url) => {
+    expect(shouldSetSecureOAuthCookie(req(url))).toBe(false)
+  })
+
+  // Regression guard: `localhost` / `127.0.0.1` are no longer recognised as
+  // local-dev hosts. Landing on those is a misconfiguration; Secure stays
+  // on so the cookie drops loudly instead of silently working.
+  it.each([
     ['https://localhost:4331/api/connections/storage/onedrive/authorize'],
     ['https://127.0.0.1:4331/api/connections/airtable/start'],
-    ['https://baseout.local:4331/api/connections/storage/dropbox/callback'],
-    ['http://localhost:4331/api/connections/storage/google-drive/authorize'],
-  ])('returns false for local-dev host %s (cookies must drop Secure)', (url) => {
-    expect(shouldSetSecureOAuthCookie(req(url))).toBe(false)
+  ])('returns true for unsupported localhost host %s (Secure stays on; fail loud)', (url) => {
+    expect(shouldSetSecureOAuthCookie(req(url))).toBe(true)
   })
 
   it.each([
