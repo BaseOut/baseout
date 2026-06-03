@@ -129,15 +129,35 @@ done
 # workflows uses .env (Trigger.dev runner is Node, not workerd):
 cp apps/workflows/.env.example apps/workflows/.env 2>/dev/null || true
 
-# 7. Run a single app locally
-pnpm dev:web          # or dev:server, dev:admin, dev:api, dev:sql, dev:hooks, dev:workflows
+# 7. apps/web only — one-time local setup (canonical dev URL is
+#    https://baseout.local:4331, NOT localhost — see note below)
+pnpm --filter @baseout/web setup:hosts    # adds `127.0.0.1 baseout.local` to /etc/hosts (sudo)
+pnpm --filter @baseout/web setup:certs    # optional: locally-trusted cert, removes the https warning
 
-# 8. Run tests across the whole workspace
+# 8. Run a single app locally
+pnpm dev              # apps/web (alias for dev:web) — opens https://baseout.local:4331
+# or: pnpm dev:server, dev:admin, dev:api, dev:sql, dev:hooks, dev:workflows
+
+# 9. Run tests across the whole workspace
 pnpm test
 
-# 9. Typecheck everything
+# 10. Typecheck everything
 pnpm typecheck
 ```
+
+### apps/web local dev URL — use `https://baseout.local:4331`, not `localhost`
+
+`apps/web` serves at **`https://baseout.local:4331`** locally. This is the
+only origin where magic-link login and Airtable OAuth Connect both work:
+under `wrangler dev --remote` Better Auth can't infer the browser origin, so
+`PUBLIC_AUTH_BASE_URL` is pinned to `baseout.local` and Airtable's OAuth
+redirect URI is registered only for that host. **Logging in via `localhost`
+fails** ("Invalid origin", session cookie lands on the wrong host).
+
+`pnpm dev` (step 8) preflights the `/etc/hosts` mapping and fails fast with
+the fix if it's missing, then auto-opens `https://baseout.local:4331`.
+wrangler still prints its own `localhost:4331` bind line — ignore it.
+Full background: [shared/internal/oauth-setup.md §5.5](shared/internal/oauth-setup.md).
 
 ### Finding OpenSpec changes
 

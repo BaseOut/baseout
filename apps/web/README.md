@@ -16,34 +16,39 @@ cd openside-frontend-template
 npm install
 ```
 
-### 2. Run the dev server
+### 2. One-time local setup
+
+The canonical dev URL is **`https://baseout.local:4331`** — *not* `localhost`.
+Login and Airtable OAuth only work on that origin (see
+[shared/internal/oauth-setup.md §5.5](../../shared/internal/oauth-setup.md)).
 
 ```bash
-npm run dev
+pnpm --filter @baseout/web setup:hosts    # adds `127.0.0.1 baseout.local` to /etc/hosts (sudo)
+pnpm --filter @baseout/web setup:certs    # optional: locally-trusted cert (removes the https warning)
 ```
 
-On first run, the **setup wizard** launches automatically before starting the server. It will ask you for:
+### 3. Run the dev server
 
-- **Your name and email** — displayed in the dashboard UI
-- **Product name** — shown in the sidebar header (defaults to "My App")
-- **Sidebar navigation** — add top-level items and sub-items with labels and paths
-- **Bottom navigation** — use the defaults (Settings, Help Center) or define your own
+```bash
+pnpm dev          # from repo root or apps/web
+```
 
-The wizard generates an `app-config.json` file in the project root. This file is **gitignored** — each developer gets their own local config.
-
-### 3. Open the dashboard
-
-Once the server starts, visit [http://localhost:4331](http://localhost:4331).
+`pnpm dev` preflights the `/etc/hosts` mapping (fails fast with the fix if
+missing) and auto-opens `https://baseout.local:4331` once the server is up.
+wrangler prints its own `localhost:4331` bind line — **ignore it**; logging in
+via localhost fails with "Invalid origin". Set `BASEOUT_DEV_NO_OPEN=1` to skip
+the auto-open.
 
 ## Continued Use
 
-| Command             | Description                                              |
-| :------------------ | :------------------------------------------------------- |
-| `npm run dev`       | Start the dev server (skips setup if config exists)      |
-| `npm run build`     | Build for production to `./dist/`                        |
-| `npm run preview`   | Preview the production build locally                     |
-| `npm run setup`     | Re-run the setup wizard (resets your config)             |
-| `npm run astro ...` | Run Astro CLI commands directly (e.g. `astro check`)    |
+| Command               | Description                                                       |
+| :-------------------- | :---------------------------------------------------------------- |
+| `pnpm dev`            | Build + run the dev server at `https://baseout.local:4331`        |
+| `pnpm setup:hosts`    | Add the `baseout.local` → `127.0.0.1` mapping to `/etc/hosts`     |
+| `pnpm setup:certs`    | Generate a locally-trusted cert (mkcert) for `baseout.local`      |
+| `pnpm run build`      | Build for production to `./dist/`                                 |
+| `pnpm run typecheck`  | Run `astro check`                                                 |
+| `pnpm run deploy`     | Deploy the dev worker + sync secrets from `.dev.vars`             |
 
 ## Project Structure
 
