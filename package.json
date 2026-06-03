@@ -15,6 +15,7 @@
     "lint": "pnpm -r --parallel run lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml,astro}\"",
     "openspec:changes": "node scripts/openspec-changes.mjs",
+    "dev": "pnpm --filter @baseout/web dev",
     "dev:web": "pnpm --filter @baseout/web dev",
     "dev:server": "pnpm --filter @baseout/server dev",
     "dev:admin": "pnpm --filter @baseout/admin dev",

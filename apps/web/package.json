@@ -6,7 +6,8 @@
     "node": ">=22.12.0"
   },
   "scripts": {
-    "dev": "node --env-file-if-exists=.env scripts/launch.mjs build local && wrangler dev --remote --local-protocol https --port 4331 --var PUBLIC_AUTH_BASE_URL:https://baseout.local:4331",
+    "dev": "node --env-file-if-exists=.env scripts/dev.mjs",
+    "setup:certs": "mkdir -p .certs && mkcert -install && mkcert -cert-file .certs/baseout.local.pem -key-file .certs/baseout.local-key.pem baseout.local localhost 127.0.0.1",
     "build": "node --env-file-if-exists=.env scripts/launch.mjs build",
     "wrangler": "node --env-file-if-exists=.env scripts/launch.mjs build local && wrangler dev --remote --port 4331 --var PUBLIC_AUTH_BASE_URL:http://localhost:4331",
     "wrangler:baseout": "node --env-file-if-exists=.env scripts/launch.mjs build local && wrangler dev --remote --port 4331 --var PUBLIC_AUTH_BASE_URL:https://baseout.dev",
