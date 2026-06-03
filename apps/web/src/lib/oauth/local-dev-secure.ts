@@ -1,10 +1,13 @@
 /**
- * Shared `Secure` attribute decision for OAuth handoff cookies.
+ * Shared local-dev host set + `Secure` attribute decision for OAuth handoff
+ * cookies.
  *
- * Companion to the `advanced.useSecureCookies` flip in `auth-factory.ts` —
- * the better-auth knob covers the session/cookieCache cookies, this helper
- * covers our own encrypted handoff cookies (`bo_oauth_<provider>`) used by
- * the Airtable + storage-provider OAuth round-trips.
+ * Companion to the `advanced.useSecureCookies` decision in `auth-factory.ts`,
+ * which imports `isLocalDevHost` from here so both cookie surfaces use one
+ * host definition. The better-auth knob covers the session/cookieCache
+ * cookies; `shouldSetSecureOAuthCookie` below covers our own encrypted
+ * handoff cookies (`bo_oauth_<provider>`) used by the Airtable +
+ * storage-provider OAuth round-trips.
  *
  * Why: wrangler dev's TLS cert is auto-generated for `localhost` only.
  * The dev script serves at `https://baseout.local:4331` (because Airtable's
@@ -22,7 +25,12 @@
  * the local-dev set) keep `secure: true` from the https:// protocol.
  */
 
-const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', 'baseout.local'])
+export const LOCAL_DEV_HOSTS = new Set(['localhost', '127.0.0.1', 'baseout.local'])
+
+/** True when `hostname` is a recognised local-dev host (no port). */
+export function isLocalDevHost(hostname: string): boolean {
+  return LOCAL_DEV_HOSTS.has(hostname)
+}
 
 export function shouldSetSecureOAuthCookie(request: Request): boolean {
   let url: URL
@@ -34,6 +42,6 @@ export function shouldSetSecureOAuthCookie(request: Request): boolean {
     // malformed Request. The local-dev path always has a parseable URL.
     return true
   }
-  if (LOCAL_DEV_HOSTS.has(url.hostname)) return false
+  if (isLocalDevHost(url.hostname)) return false
   return url.protocol === 'https:'
 }

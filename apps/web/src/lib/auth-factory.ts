@@ -3,6 +3,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { magicLink } from 'better-auth/plugins'
 import { renderMagicLinkEmail } from './email/templates/magic-link'
 import { sendEmail, type SendEmailEnv } from './email/send'
+import { isLocalDevHost } from './oauth/local-dev-secure'
 
 type DrizzleDb = Parameters<typeof drizzleAdapter>[0]
 
@@ -43,6 +44,27 @@ const AUTH_BASE_URL = {
 // adding a new deployed origin, update both.
 const PROD_TRUSTED_ORIGINS = ['https://baseout.dev']
 const DEV_TRUSTED_ORIGINS = ['http://localhost:*', 'http://127.0.0.1:*']
+
+// Drop the `Secure` attribute + `__Secure-` cookie prefix in local dev only.
+//
+// better-auth defaults `Secure: true` + `__Secure-` whenever baseURL is
+// https://. The dev script serves at https://baseout.local:4331 with
+// wrangler's localhost-only self-signed cert; Chromium-family browsers treat
+// `localhost` as a secure context even with a bad cert but NOT other
+// hostnames, so Secure cookies set under `baseout.local` get dropped between
+// page loads and login silently fails on refresh. Deriving the decision from
+// the resolved baseURL hostname (the single runtime source, independent of
+// the Vite-baked `import.meta.env.DEV` flag) keeps this in lockstep with the
+// handoff-cookie helper in oauth/local-dev-secure.ts. Returns undefined for
+// deployed/prod hosts so better-auth keeps its Secure default there.
+function resolveUseSecureCookies(baseUrl: string | undefined): false | undefined {
+  if (!baseUrl) return undefined
+  try {
+    return isLocalDevHost(new URL(baseUrl).hostname) ? false : undefined
+  } catch {
+    return undefined
+  }
+}
 
 export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
   return betterAuth({
@@ -99,6 +121,7 @@ export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
       },
     },
     advanced: {
+      useSecureCookies: resolveUseSecureCookies(env.baseUrl),
       database: {
         generateId: 'uuid',
       },
