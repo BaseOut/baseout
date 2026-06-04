@@ -23,7 +23,6 @@ import { runsDeleteCompleteHandler } from "./pages/api/internal/runs/delete-comp
 import { spacesSetFrequencyHandler } from "./pages/api/internal/spaces/set-frequency";
 import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
 import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
-import { runOAuthRefreshTick } from "./lib/oauth-refresh";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
@@ -246,44 +245,10 @@ export default {
   },
 
   async scheduled(
-    event: ScheduledEvent,
-    env: Env,
-    ctx: ExecutionContext,
+    _event: ScheduledEvent,
+    _env: Env,
+    _ctx: ExecutionContext,
   ): Promise<void> {
-    // Only one cron is wired today: `*/15 * * * *` for OAuth token refresh.
-    // When additional crons activate (webhook renewal, trial-expiry, quota,
-    // smart-cleanup), branch on `event.cron` to dispatch to the right job.
-    if (event.cron !== "*/15 * * * *") {
-      // Unknown cron — fail loud once instead of silently dropping work.
-      console.error(`[scheduled] unknown cron: ${event.cron}`);
-      return;
-    }
-
-    const { db, sql: pgSql } = createMasterDb(env);
-    try {
-      const result = await runOAuthRefreshTick({
-        db,
-        encryptionKey: env.BASEOUT_ENCRYPTION_KEY,
-        clientId: env.AIRTABLE_OAUTH_CLIENT_ID,
-        clientSecret: env.AIRTABLE_OAUTH_CLIENT_SECRET,
-        log: (e) => {
-          // Structured stderr — no logger lib wired in apps/server yet.
-          // The per-row event is JSON so it tails cleanly with `wrangler tail`.
-          // eslint-disable-next-line no-console -- intentional structured log
-          console.log(JSON.stringify(e));
-        },
-      });
-      // eslint-disable-next-line no-console -- intentional structured log
-      console.log(
-        JSON.stringify({
-          event: "oauth_refresh_tick",
-          considered: result.considered,
-          claimed: result.claimed,
-          ...result.outcomes,
-        }),
-      );
-    } finally {
-      ctx.waitUntil(pgSql.end({ timeout: 5 }));
-    }
+    // TODO(phase-2): cron-trigger dispatch (webhook renewal, OAuth refresh, etc.)
   },
 };

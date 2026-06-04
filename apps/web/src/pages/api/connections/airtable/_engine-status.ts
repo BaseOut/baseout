@@ -1,8 +1,7 @@
 // Pure mapping from engine error codes (from BackupEngineClient's typed error
 // unions) to the HTTP status this route returns to the browser.
 // Underscore-prefixed: Astro file-based routing skips it. Lives here (not in
-// src/lib/) because it's the airtable-test route's mapping today; the
-// Phase 9 backup-runs route also imports it. If a third route ever needs
+// src/lib/) because backup-runs routes import it. If a third route ever needs
 // the same translation, lift this to src/lib/.
 //
 // 4xx = user can act (reconnect / fix input).

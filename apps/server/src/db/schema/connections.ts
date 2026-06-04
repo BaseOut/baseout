@@ -4,9 +4,8 @@
 // rows, and the master DB migrations are generated from apps/web/drizzle/.
 // This mirror declares the columns the engine reads (id, status, the _enc
 // tokens, expiry, scopes, platform_config, created_at — read by the
-// SpaceDO scheduler in Phase B for `ORDER BY created_at DESC` recency)
-// plus the columns the engine writes during the OAuth-refresh cron
-// (status, *_enc tokens, expiry, scopes, modified_at, invalidated_at).
+// SpaceDO scheduler in Phase B for `ORDER BY created_at DESC` recency).
+// modified_at / invalidated_at mirror apps/web columns for typed reads.
 // Columns the engine neither reads nor writes (display_name, scope,
 // space_id, max_concurrent_sessions, last_used_at, created_by_user_id)
 // are intentionally omitted — the omission documents intent, and adding
@@ -33,10 +32,7 @@ export const connections = baseout.table("connections", {
   platformConfig: jsonb("platform_config"),
   // airtable: { at_user_id, at_workspace_id, is_enterprise_scope }
   invalidatedAt: timestamp("invalidated_at", { withTimezone: true }),
-  // set when the OAuth-refresh cron transitions a row to status='invalid'
   modifiedAt: timestamp("modified_at", { withTimezone: true }).notNull(),
-  // updated by the cron on every status transition; canonical default lives
-  // in apps/web's migration.
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   // read by the SpaceDO scheduler (Phase B of
   // baseout-backup-schedule-and-cancel) to pick the most-recent active

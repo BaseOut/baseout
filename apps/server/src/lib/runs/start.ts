@@ -64,10 +64,12 @@ export interface BackupBaseTaskPayload {
   /**
    * Selects the StorageWriter on the workflows side (Phase A of
    * openspec/changes/shared-backup-run-delete). Forwarded from
-   * backup_configurations.storage_type. Today's accept-list is
-   * 'r2_managed' (legacy default that routes to LocalFsWriter),
-   * 'local_fs' (explicit), and 'google_drive' (shared-byos-drive).
-   * Future BYOS providers widen the validation gate in processRunStart.
+   * backup_configurations.storage_type. Accept-list (ACCEPTED_STORAGE_TYPES
+   * below): 'r2_managed' (legacy default → LocalFsWriter), 'local_fs'
+   * (explicit), and the BYOS cloud providers 'google_drive', 'box',
+   * 'dropbox', 'onedrive'. Must stay in sync with the workflows
+   * resolveStorageWriter factory + the apps/web persist-policy allow-list.
+   * Future BYOS providers (S3, Frame.io) widen the gate when each lands.
    */
   storageType: string;
   /**
@@ -82,6 +84,8 @@ const ACCEPTED_STORAGE_TYPES = new Set([
   "r2_managed", // legacy default — workflows routes this to LocalFsWriter
   "local_fs", // explicit dev-only writer
   "google_drive", // shared-byos-drive
+  "box", // box-provider (workflows BoxWriter + engine box credential route)
+  "dropbox", // dropbox-provider (workflows DropboxWriter + engine cred route)
   "onedrive", // onedrive-provider (PKCE-only public client, Microsoft Graph)
 ]);
 

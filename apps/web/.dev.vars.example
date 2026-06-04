@@ -1,5 +1,11 @@
 # Local development secrets for @baseout/web. Copy to .dev.vars and fill in.
 # .dev.vars is gitignored.
+#
+# Canonical browser origin is https://baseout.local:4331 (see
+# shared/internal/oauth-setup.md §5.5). Do NOT point OAuth redirect overrides
+# at https://localhost:4331 — session + handoff cookies are scoped to
+# baseout.local and Connect will bounce you to /login on localhost.
+# MICROSOFT_REDIRECT_URI=https://baseout.local:4331/api/connections/storage/onedrive/callback
 DATABASE_URL=postgres://localhost:5432/baseout_dev
 MASTER_ENCRYPTION_KEY=
 BETTER_AUTH_SECRET=

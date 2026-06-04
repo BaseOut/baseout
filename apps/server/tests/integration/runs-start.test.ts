@@ -285,7 +285,9 @@ describe("processRunStart — validation failures", () => {
     expect(result).toEqual({ ok: false, error: "config_not_found" });
   });
 
-  it("returns unsupported_storage_type when storageType is not 'r2_managed'", async () => {
+  it("returns unsupported_storage_type for a storageType outside the accept-list", async () => {
+    // 'byos' is a bogus value that never matches a writer — stands in for any
+    // storage_type the workflows StorageWriter factory can't resolve.
     const deps = makeDeps();
     deps.fetchConfigBySpace = vi.fn(async () =>
       makeConfig({ storageType: "byos" }),
@@ -298,6 +300,38 @@ describe("processRunStart — validation failures", () => {
 
     expect(result).toEqual({ ok: false, error: "unsupported_storage_type" });
   });
+
+  // Every BYOS provider the workflows StorageWriter factory + engine
+  // credential route support must clear the gate (apps/server/src/lib/runs/
+  // start.ts ACCEPTED_STORAGE_TYPES). Box + Dropbox regressed here: the
+  // factory/cred-route shipped them but the gate still rejected, so runs
+  // failed with unsupported_storage_type after a successful Connect.
+  it.each(["google_drive", "box", "dropbox", "onedrive"])(
+    "accepts storageType '%s' and forwards it into the per-base payload",
+    async (storageType) => {
+      const deps = makeDeps();
+      deps.fetchConfigBySpace = vi.fn(async () => makeConfig({ storageType }));
+      deps.fetchIncludedBases = vi.fn(async () => [
+        { atBaseId: "appAAA111", name: "Tasks" },
+      ]);
+      deps.enqueueBackupBase = vi.fn(async () => ({ id: "run_a" }));
+
+      const result = await processRunStart(
+        { runId: RUN_ID },
+        { ...deps, now: () => NOW },
+      );
+
+      expect(result).toEqual({
+        ok: true,
+        runId: RUN_ID,
+        triggerRunIds: ["run_a"],
+      });
+      expect(deps.enqueueBackupBase.mock.calls[0]?.[0]).toMatchObject({
+        storageType,
+        spaceId: SPACE_ID,
+      });
+    },
+  );
 
   it("returns no_bases_selected when fetchIncludedBases resolves to []", async () => {
     const deps = makeDeps();

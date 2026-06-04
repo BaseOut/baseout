@@ -46,6 +46,24 @@ export interface BackupPolicy {
 }
 
 /**
+ * The active Space's connected BYOS storage destination, if any. There is
+ * at most one per Space (`storage_destinations.space_id` is UNIQUE), so a
+ * non-null value means that provider is currently connected.
+ *
+ * Client-safe: carries only the provider type, the connected account email,
+ * and the connect timestamp — never the AES-256-GCM token ciphertext, which
+ * stays server-side (mirrors the ConnectionSummary contract above).
+ */
+export interface StorageDestinationSummary {
+  /** 'google_drive' | 'box' | 'dropbox' | 'onedrive' (or 'local_fs'). */
+  type: string
+  /** OAuth account email for the connected provider, when the provider returns one. */
+  accountEmail: string | null
+  /** ISO-8601 timestamp of when the destination was connected. */
+  connectedAt: string
+}
+
+/**
  * One unread row from `space_events` — surfaced inline in the
  * IntegrationsView banner. Currently only the `bases_discovered` kind
  * is produced; future kinds (token_expiry, schema_drift) will land as
@@ -74,6 +92,12 @@ export interface IntegrationsState {
   hasBackupConfig: boolean
   /** Current backup policy for the Space. Always present (defaults applied). */
   policy: BackupPolicy
+  /**
+   * The Space's connected BYOS storage destination, or null when none is
+   * connected. Drives the "Connected as <email> · Reconnect" vs bare
+   * "Connect X" rendering in the StoragePicker.
+   */
+  storageDestination: StorageDestinationSummary | null
   /**
    * Unread per-Space events to render as the inline banner on the
    * integrations page. Engine writes 'bases_discovered' rows during

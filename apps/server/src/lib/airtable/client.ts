@@ -18,7 +18,7 @@
 // Auth: bearer access token (already-decrypted; the caller is the route
 // handler, which holds the OAuth token in scope only for the duration of one
 // rediscovery call). No refresh logic here — token refresh is owned by
-// apps/server's scheduled cron (baseout-server-cron-oauth-refresh).
+// apps/web's OAuth callback is the canonical token writer.
 
 const AIRTABLE_BASE_URL = "https://api.airtable.com";
 

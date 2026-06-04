@@ -12,14 +12,10 @@ export interface Env {
   HYPERDRIVE?: Hyperdrive;
   /**
    * AES-256-GCM key (base64-encoded 32 bytes) — must match apps/web.
-   * The engine reads for decrypt and (Phase B1) writes during the OAuth-
-   * refresh cron's success path.
+   * The engine decrypts connection/storage tokens and re-encrypts on BYOS
+   * storage-destination refresh paths.
    */
   BASEOUT_ENCRYPTION_KEY: string;
-  /** Airtable OAuth app client_id (must match apps/web). Used by the OAuth-refresh cron. */
-  AIRTABLE_OAUTH_CLIENT_ID: string;
-  /** Airtable OAuth app client_secret (must match apps/web). Used by the OAuth-refresh cron. */
-  AIRTABLE_OAUTH_CLIENT_SECRET: string;
   /**
    * Google Drive OAuth app client_id (must match apps/web). The engine
    * refreshes Drive access tokens on behalf of the workflows runner — see

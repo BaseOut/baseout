@@ -4,7 +4,7 @@
 //   - decryptToken is fed ciphertext from an inline helper that mirrors
 //     apps/web's encryption byte-for-byte, asserting backward compatibility
 //     with the canonical writer.
-//   - encryptToken (added for the OAuth-refresh cron) is round-tripped
+//   - encryptToken (BYOS storage refresh + DO token cache) is round-tripped
 //     through decryptToken to assert the engine's own writer/reader are
 //     symmetric, and through the inline helper to assert format equivalence
 //     with apps/web.

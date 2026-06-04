@@ -39,13 +39,13 @@ describe('persistBackupConfigPolicy', () => {
   })
 
   it('rejects unsupported storageType with unsupported_storage_type', async () => {
-    // 'onedrive' is the next BYOS provider after Dropbox and is intentionally
+    // 's3' is the next BYOS provider on the roadmap and is intentionally
     // NOT yet in ALLOWED_STORAGE_TYPES — it stands in as the canonical
-    // unsupported example. (Previous canonical example 'dropbox' moved into
-    // the allow list when the dropbox-provider commit chain landed.)
+    // unsupported example. (Earlier stand-ins 'dropbox' then 'onedrive' each
+    // moved into the allow list as their provider commit chains landed.)
     const d = deps()
     const result = await persistBackupConfigPolicy(
-      { spaceId: SPACE_ID, body: { storageType: 'onedrive' }, tier: 'pro' },
+      { spaceId: SPACE_ID, body: { storageType: 's3' }, tier: 'pro' },
       d,
     )
     expect(result).toEqual({ ok: false, error: 'unsupported_storage_type' })

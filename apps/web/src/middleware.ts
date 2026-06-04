@@ -8,6 +8,7 @@ import {
   SESSION_CACHE,
   SESSION_TTL_MS,
 } from "./lib/session-cache";
+import { rewriteLocalhostTrapUrl } from "./lib/oauth/canonical-dev-origin";
 
 const PUBLIC_PATHS = new Set(['/login', '/register']);
 
@@ -87,6 +88,11 @@ function resolveDbUrl(): string {
 }
 
 export const onRequest = defineMiddleware(async (context, next) => {
+  const trapRewrite = rewriteLocalhostTrapUrl(new URL(context.url));
+  if (trapRewrite) {
+    return context.redirect(trapRewrite.href);
+  }
+
   const { db, sql } = createDb(resolveDbUrl());
   const auth = createAppAuth(db, buildAuthEnv());
   context.locals.db = db;

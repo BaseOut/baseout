@@ -15,6 +15,7 @@ import {
   connections,
   platforms,
   spaceEvents,
+  storageDestinations,
 } from '../db/schema'
 import { resolveCapabilities } from './capabilities/resolve'
 import type { Frequency } from './capabilities/tier-capabilities'
@@ -24,6 +25,7 @@ import type {
   ConnectionSummary,
   IntegrationsState,
   SpaceEventSummary,
+  StorageDestinationSummary,
 } from '../stores/connections'
 
 const VALID_FREQUENCIES: ReadonlySet<Frequency> = new Set([
@@ -49,9 +51,10 @@ export async function getIntegrationsState(
   organizationId: string,
   spaceId: string,
 ): Promise<IntegrationsState> {
-  // Stage A — five independent reads fire in parallel. postgres-js queues
-  // them on the per-request connection (max: 5), so we stay within budget.
-  const [connectionRows, baseRows, configRows, caps, eventRows] = await Promise.all([
+  // Stage A — six independent reads fire in parallel. postgres-js queues
+  // them on the per-request connection, so we stay within budget.
+  const [connectionRows, baseRows, configRows, caps, eventRows, destinationRows] =
+    await Promise.all([
     db
       .select({
         id: connections.id,
@@ -106,6 +109,16 @@ export async function getIntegrationsState(
       )
       .orderBy(desc(spaceEvents.createdAt))
       .limit(10),
+    // Client-safe columns only — never select the *_enc token ciphertext.
+    db
+      .select({
+        type: storageDestinations.type,
+        accountEmail: storageDestinations.oauthAccountEmail,
+        connectedAt: storageDestinations.connectedAt,
+      })
+      .from(storageDestinations)
+      .where(eq(storageDestinations.spaceId, spaceId))
+      .limit(1),
   ])
 
   const [config] = configRows
@@ -136,7 +149,21 @@ export async function getIntegrationsState(
     isIncluded: includedSet.has(r.id),
   }))
 
-  const connectionSummaries: ConnectionSummary[] = connectionRows.map((row) => {
+  // At most one Airtable connection per org — prefer active, then most recent.
+  const airtableRows =
+    connectionRows.length <= 1
+      ? connectionRows
+      : [
+          [...connectionRows].sort((a, b) => {
+            const rank = (s: string) =>
+              s === 'active' ? 0 : s === 'pending_reauth' ? 1 : s === 'invalid' ? 2 : 3
+            const d = rank(a.status) - rank(b.status)
+            if (d !== 0) return d
+            return b.createdAt.getTime() - a.createdAt.getTime()
+          })[0]!,
+        ]
+
+  const connectionSummaries: ConnectionSummary[] = airtableRows.map((row) => {
     const cfg = (row.platformConfig as PlatformConfig | null) ?? {}
     return {
       id: row.id,
@@ -153,6 +180,18 @@ export async function getIntegrationsState(
           : String(row.createdAt),
     }
   })
+
+  const [destination] = destinationRows
+  const storageDestination: StorageDestinationSummary | null = destination
+    ? {
+        type: destination.type,
+        accountEmail: destination.accountEmail ?? null,
+        connectedAt:
+          destination.connectedAt instanceof Date
+            ? destination.connectedAt.toISOString()
+            : String(destination.connectedAt),
+      }
+    : null
 
   const policy: BackupPolicy = {
     frequency: asFrequency(config?.frequency ?? null),
@@ -200,6 +239,7 @@ export async function getIntegrationsState(
     availableFrequencies: caps.capabilities.frequencies,
     hasBackupConfig: Boolean(config),
     policy,
+    storageDestination,
     unreadEvents,
   }
 }

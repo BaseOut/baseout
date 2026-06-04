@@ -16,6 +16,11 @@
  * Props:
  *   spaceId             — UUID of the active Space
  *   selectedStorageType — currently saved value (defaults to 'r2_managed')
+ *   connectedType       — provider type of the Space's persisted
+ *                         storage_destinations row, or null when none is
+ *                         connected. Drives the "Connected as <email> ·
+ *                         Reconnect" vs bare "Connect X" rendering.
+ *   connectedAccountEmail — OAuth account email of the connected provider.
  */
 
 import { env } from 'cloudflare:workers'
@@ -23,9 +28,16 @@ import { env } from 'cloudflare:workers'
 interface Props {
   spaceId: string
   selectedStorageType?: string
+  connectedType?: string | null
+  connectedAccountEmail?: string | null
 }
 
-const { spaceId, selectedStorageType = 'r2_managed' } = Astro.props as Props
+const {
+  spaceId,
+  selectedStorageType = 'r2_managed',
+  connectedType = null,
+  connectedAccountEmail = null,
+} = Astro.props as Props
 
 const workerEnv = env as unknown as {
   BOX_OAUTH_CLIENT_ID?: string
@@ -164,6 +176,11 @@ const NAME = 'backup-storage'
   >
     <input type="hidden" name="returnTo" value={Astro.url.pathname} />
     <span class="text-sm text-base-content/80">
+      {connectedType === 'google_drive' && (
+        <span class="block font-medium text-success">
+          ✓ Connected{connectedAccountEmail ? ` as ${connectedAccountEmail}` : ''}.
+        </span>
+      )}
       Connect a Google account to use this destination. Re-clicking issues a
       fresh consent and keeps the same per-Space folder.
     </span>
@@ -172,7 +189,7 @@ const NAME = 'backup-storage'
       class="btn btn-sm btn-primary"
       data-storage-drive-connect-btn
     >
-      Connect Google Drive
+      {connectedType === 'google_drive' ? 'Reconnect' : 'Connect Google Drive'}
     </button>
   </form>
 
@@ -189,6 +206,11 @@ const NAME = 'backup-storage'
     >
       <input type="hidden" name="returnTo" value={Astro.url.pathname} />
       <span class="text-sm text-base-content/80">
+        {connectedType === 'box' && (
+          <span class="block font-medium text-success">
+            ✓ Connected{connectedAccountEmail ? ` as ${connectedAccountEmail}` : ''}.
+          </span>
+        )}
         Connect a Box account to use this destination. Re-clicking issues a
         fresh consent and keeps the same per-Space folder.
       </span>
@@ -197,7 +219,7 @@ const NAME = 'backup-storage'
         class="btn btn-sm btn-primary"
         data-storage-box-connect-btn
       >
-        Connect Box
+        {connectedType === 'box' ? 'Reconnect' : 'Connect Box'}
       </button>
     </form>
   )}
@@ -215,6 +237,11 @@ const NAME = 'backup-storage'
     >
       <input type="hidden" name="returnTo" value={Astro.url.pathname} />
       <span class="text-sm text-base-content/80">
+        {connectedType === 'dropbox' && (
+          <span class="block font-medium text-success">
+            ✓ Connected{connectedAccountEmail ? ` as ${connectedAccountEmail}` : ''}.
+          </span>
+        )}
         Connect a Dropbox account to use this destination. Re-clicking
         issues a fresh consent and keeps the same per-Space folder.
       </span>
@@ -223,7 +250,7 @@ const NAME = 'backup-storage'
         class="btn btn-sm btn-primary"
         data-storage-dropbox-connect-btn
       >
-        Connect Dropbox
+        {connectedType === 'dropbox' ? 'Reconnect' : 'Connect Dropbox'}
       </button>
     </form>
   )}
@@ -241,6 +268,11 @@ const NAME = 'backup-storage'
     >
       <input type="hidden" name="returnTo" value={Astro.url.pathname} />
       <span class="text-sm text-base-content/80">
+        {connectedType === 'onedrive' && (
+          <span class="block font-medium text-success">
+            ✓ Connected{connectedAccountEmail ? ` as ${connectedAccountEmail}` : ''}.
+          </span>
+        )}
         Connect a Microsoft account to use this destination. Re-clicking
         issues a fresh consent and keeps the same per-Space folder.
       </span>
@@ -249,7 +281,7 @@ const NAME = 'backup-storage'
         class="btn btn-sm btn-primary"
         data-storage-onedrive-connect-btn
       >
-        Connect OneDrive
+        {connectedType === 'onedrive' ? 'Reconnect' : 'Connect OneDrive'}
       </button>
     </form>
   )}

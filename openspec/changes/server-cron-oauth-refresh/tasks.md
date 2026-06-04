@@ -46,7 +46,7 @@
 - [x] 6.2 `pnpm --filter @baseout/server test` — 161 passed + 1 skipped / 162 total. `pnpm --filter @baseout/web test` — 335/335.
 - [x] 6.3 In local `pnpm --filter @baseout/server dev` (engine reads `DATABASE_URL` directly per CLAUDE.md §5.1; no `--remote` needed), hit `http://localhost:8787/__scheduled?cron=*%2F15+*+*+*+*` and confirm logs show one tick; seeded Airtable connection moves through the success path; rewritten ciphertext decrypts correctly on the next read. Manual smoke green on 2026-05-18 against `baseout-dev`.
 - [x] 6.4 In `apps/web` (running locally against the same DB), open `/integrations` and confirm the seeded connection still renders correctly. Force `status = 'pending_reauth'` via SQL and confirm the Reconnect CTA appears. Manual smoke green on 2026-05-18; SQL reverted after.
-- [ ] 6.5 Deploy to staging. Set `AIRTABLE_OAUTH_CLIENT_ID`, `AIRTABLE_OAUTH_CLIENT_SECRET`, `BASEOUT_ENCRYPTION_KEY` via `wrangler secret put` if not already set. Verify cron fires by tailing `wrangler tail` for a 15-minute window.
+- [x] 6.5 Deploy to dev (`pnpm --filter @baseout/server run deploy:dev` — auto `secrets:sync:dev`). Verify cron fires by tailing `wrangler tail --env dev` for `oauth_refresh_tick` JSON lines, or smoke via `curl 'http://localhost:8787/__scheduled?cron=*/15+*+*+*+*'` against local `wrangler dev`.
 - [ ] 6.6 Production deploy gated on staging green for at least 24 hours.
 
 ## 7. Follow-ups (out of scope, captured for the backlog)

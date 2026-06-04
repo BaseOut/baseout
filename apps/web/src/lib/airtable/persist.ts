@@ -8,7 +8,7 @@
  * logic is integration-testable against a real DB without a browser round-trip.
  */
 
-import { and, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, ne, sql } from 'drizzle-orm'
 import type { AppDb } from '../../db'
 import {
   atBases,
@@ -69,6 +69,8 @@ export async function persistAirtableConnection(
 
   // One active connection per (org, platform). Soft behaviour: if an existing
   // connection exists, update it in place rather than creating a duplicate.
+  // One row per (org, platform). Reconnect updates the newest row in place —
+  // never INSERT a second row (saves Airtable OAuth slots and cron budget).
   const [existing] = await db
     .select({ id: connections.id })
     .from(connections)
@@ -78,6 +80,7 @@ export async function persistAirtableConnection(
         eq(connections.platformId, platform.id),
       ),
     )
+    .orderBy(desc(connections.modifiedAt))
     .limit(1)
 
   let connectionId: string
@@ -97,6 +100,21 @@ export async function persistAirtableConnection(
       })
       .where(eq(connections.id, existing.id))
     connectionId = existing.id
+    // Retire legacy duplicate rows for this org (dev DB drift / pre-upsert data).
+    await db
+      .update(connections)
+      .set({
+        status: 'invalid',
+        invalidatedAt: new Date(),
+        modifiedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(connections.organizationId, inputs.organizationId),
+          eq(connections.platformId, platform.id),
+          ne(connections.id, connectionId),
+        ),
+      )
   } else {
     const [inserted] = await db
       .insert(connections)

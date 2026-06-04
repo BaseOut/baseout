@@ -63,7 +63,7 @@ const statusBadge: StatusBadgeProps = airtable
 const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth' || airtable.status === 'invalid');
 ---
 
-<div class="space-y-8 animate-in fade-in duration-700">
+<div class="space-y-8">
 
   <header>
     <h1 class="text-2xl font-bold tracking-tight">Integrations</h1>
@@ -187,18 +187,10 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
             </div>
           </dl>
 
-          <!-- Test connection — calls @baseout/server's whoami probe via /api/connections/airtable/test. -->
-          <div class="flex items-center gap-3 mt-2" data-test-connection data-connection-id={airtable.id}>
-            <Button type="button" variant="ghost" data-test-connection-submit>
-              Test connection
-            </Button>
-            <p class="text-xs" data-test-connection-result role="status" aria-live="polite"></p>
-          </div>
-
           <!-- Always-visible Reconnect — manual fallback for stale tokens. The
                loud alert above already covers `pending_reauth`/`invalid`; this
-               button gives the user an escape hatch even when status='active'
-               (e.g., before the proactive cron has caught a near-expiry). Posts
+               button gives the user an escape hatch even when status='active'.
+               Posts
                to the same /api/connections/airtable/start endpoint as the
                first-time Connect form; persist.ts upserts on the existing row. -->
           {!needsReconnect && (
@@ -312,6 +304,8 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
               <StoragePicker
                 spaceId={Astro.locals.account.space.id}
                 selectedStorageType={state.policy.storageType}
+                connectedType={state.storageDestination?.type ?? null}
+                connectedAccountEmail={state.storageDestination?.accountEmail ?? null}
               />
               <RunBackupButton
                 spaceId={Astro.locals.account.space.id}
@@ -374,108 +368,6 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
       if (submit) setButtonLoading(submit, true);
     });
   });
-
-  // Test-connection button — POSTs to /api/connections/airtable/test, which
-  // calls the engine's whoami probe and surfaces the result inline.
-  const testRoot = document.querySelector<HTMLElement>('[data-test-connection]');
-  if (testRoot) {
-    const button = testRoot.querySelector<HTMLButtonElement>('[data-test-connection-submit]');
-    const result = testRoot.querySelector<HTMLElement>('[data-test-connection-result]');
-    const connectionId = testRoot.dataset.connectionId ?? '';
-
-    interface SuccessBody {
-      connectionId: string;
-      airtable: { id: string; scopes: string[]; email?: string };
-    }
-    interface ErrorBody {
-      error?: string;
-      connection_status?: string;
-      airtable_status?: number;
-      upstream_status?: number;
-    }
-
-    function showResult(text: string, kind: 'ok' | 'warn' | 'err'): void {
-      if (!result) return;
-      result.textContent = text;
-      result.className = `text-xs ${
-        kind === 'ok'
-          ? 'text-success'
-          : kind === 'warn'
-            ? 'text-warning'
-            : 'text-error'
-      }`;
-    }
-
-    function describeError(body: ErrorBody, status: number): string {
-      switch (body.error) {
-        case 'connection_not_found':
-          return 'This Airtable connection is not visible to your account.';
-        case 'connection_status':
-          return `Connection status is "${body.connection_status ?? 'unknown'}". Reconnect Airtable to refresh.`;
-        case 'airtable_token_rejected':
-          return 'Airtable rejected the stored token. Reconnect Airtable.';
-        case 'airtable_upstream':
-          return `Airtable returned ${body.airtable_status ?? 'an error'}. Try again in a moment.`;
-        case 'engine_unreachable':
-          return 'The backup engine is not running. Start `pnpm --filter @baseout/server dev`.';
-        case 'server_misconfigured':
-          return 'The backup engine URL/token is not configured. Contact support.';
-        case 'unauthorized':
-          return 'Service-to-service auth failed (web↔engine token mismatch). Contact support.';
-        case 'decrypt_failed':
-          return 'Stored credentials could not be decrypted. Reconnect Airtable.';
-        case 'engine_error':
-          return `Engine returned an unexpected error (HTTP ${body.upstream_status ?? status}). Try again.`;
-        default:
-          return `Test failed (HTTP ${status}). Please try again.`;
-      }
-    }
-
-    // Engine error codes that signal the user needs to re-OAuth. The route
-    // already flipped connections.status → 'pending_reauth' for these (or the
-    // status was already 'pending_reauth'/'invalid' and the route surfaced
-    // it via 'connection_status'); reload so the Reconnect Airtable button
-    // surfaces from the SSR `needsReconnect` predicate.
-    const NEEDS_RECONNECT = new Set([
-      'airtable_token_rejected',
-      'connection_status',
-      'decrypt_failed',
-    ]);
-
-    button?.addEventListener('click', async () => {
-      if (!button || !connectionId) return;
-      setButtonLoading(button, true);
-      showResult('Checking…', 'warn');
-      try {
-        const res = await fetch('/api/connections/airtable/test', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ connection_id: connectionId }),
-        });
-        if (res.ok) {
-          const body = (await res.json()) as SuccessBody;
-          const userBit = body.airtable.email ?? body.airtable.id;
-          showResult(
-            `Connected. Airtable user: ${userBit} · ${body.airtable.scopes.length} scopes.`,
-            'ok',
-          );
-        } else {
-          const body = (await res.json().catch(() => ({}))) as ErrorBody;
-          showResult(describeError(body, res.status), 'err');
-          if (body.error && NEEDS_RECONNECT.has(body.error)) {
-            // Brief delay so the user can read the message before the page
-            // reloads. After reload, IntegrationsView re-renders with the
-            // Reconnect Airtable button visible.
-            setTimeout(() => window.location.reload(), 1500);
-          }
-        }
-      } catch {
-        showResult('Network error. Please try again.', 'err');
-      } finally {
-        setButtonLoading(button, false);
-      }
-    });
-  }
 
   // Base-selection form
   const selectionForm = document.querySelector<HTMLFormElement>('form[data-base-selection-form]');

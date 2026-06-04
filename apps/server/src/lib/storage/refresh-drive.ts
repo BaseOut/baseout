@@ -2,7 +2,7 @@
 //
 // Used by the internal storage-destination endpoint (and any future
 // proactive-refresh cron) to swap a stored refresh token for a fresh access
-// token. Mirrors the shape of [../airtable-refresh.ts] so future
+// token. Outcome union mirrors other storage refresh helpers so future
 // consolidation under packages/shared is mechanical, with Google-specific
 // wire differences:
 //
