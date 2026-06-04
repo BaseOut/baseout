@@ -72,21 +72,30 @@ gap checklist in §4 lists the removals.
 
 | Required URI (this branch)                                                                       | Registered? | Owner of registration |
 |--------------------------------------------------------------------------------------------------|-------------|-----------------------|
-| `https://baseout.local:4331/api/connections/storage/google-drive/callback`                       | ❌ MISSING  | boss (Google Cloud Console for project `baseout-dev`) |
-| `https://baseout-dev.openside.workers.dev/api/connections/storage/google-drive/callback`         | ❌ MISSING  | boss                  |
+| `https://baseout-dev.openside.workers.dev/api/connections/storage/google-drive/callback`         | ❌ MISSING  | boss (Google Cloud Console for project `baseout-dev`) |
 | `https://baseout-staging.openside.workers.dev/api/connections/storage/google-drive/callback`     | ❌ MISSING  | boss                  |
 | `https://console.baseout.dev/api/connections/storage/google-drive/callback`                      | ❌ MISSING  | boss                  |
 
+> ⚠️ **There is intentionally no `baseout.local:4331` row.** Unlike Airtable
+> (§3.1), Google **cannot** register a `baseout.local` redirect URI: Google's
+> OAuth policy requires the host TLD to be on the
+> [public suffix list](https://publicsuffix.org/), and `.local` is not on it.
+> Attempting to add it is rejected, and at sign-in time a `baseout.local`
+> redirect URI returns `Error 400: invalid_request` / "doesn't comply with
+> Google's OAuth 2.0 policy" (NOT `redirect_uri_mismatch` — see §8). This is
+> why Google Drive Connect can only be exercised on a deployed env (§5.4),
+> and why only the three real-domain (public-suffix) URIs above are listed.
+> See https://developers.google.com/identity/protocols/oauth2/web-server#uri-validation.
+>
 > ⚠️ Boss has `https://localhost:4331/oauth/callback/google` and
-> `https://console.baseout.dev/oauth/callback/google` registered today — but
-> (a) those paths don't route to a handler on this branch (handler lives at
+> `https://console.baseout.dev/oauth/callback/google` registered today — both
+> should be **removed** as part of the §4.1 cleanup: those paths don't route
+> to a handler on this branch (handler lives at
 > `/api/connections/storage/google-drive/callback`, per
 > [apps/web/src/pages/api/connections/storage/google-drive/callback.ts](../../apps/web/src/pages/api/connections/storage/google-drive/callback.ts)),
-> and (b) `localhost:4331` is no longer a supported origin (§5.5). Both of
-> the registered URIs should be **removed** as part of the §4.1 cleanup
-> alongside adding the `baseout.local:4331` / deployed-env URIs. Drive
-> Connect is currently broken on every env of this branch until §4.1 is
-> actioned.
+> and `localhost:4331` is no longer a supported origin (§5.5). Drive Connect
+> is currently broken on every env of this branch until §4.1 registers the
+> three deployed-env URIs above.
 
 ### 3.3 Box OAuth app (`client_id=g80ko45r0dpseeih11z4aoi4a2s242jm`)
 
@@ -152,7 +161,7 @@ gap checklist in §4 lists the removals.
 
 | Required URI (this branch)                                                                  | Registered? | Owner of registration |
 |---------------------------------------------------------------------------------------------|-------------|-----------------------|
-| `https://baseout.local:4331/api/connections/storage/onedrive/callback`                      | ❓ unknown  | boss (Azure Portal — App registrations) |
+| `https://baseout.local:4331/api/connections/storage/onedrive/callback`                      | ❌ MISSING  | boss (Azure Portal). Confirmed missing 2026-06-04: `login.live.com` returned `invalid_request: redirect_uri ... is not valid` for `client_id=72f34ac4…`. |
 | `https://baseout-dev.openside.workers.dev/api/connections/storage/onedrive/callback`        | ❓ unknown  | boss                  |
 | `https://baseout-staging.openside.workers.dev/api/connections/storage/onedrive/callback`    | ❓ unknown  | boss                  |
 | `https://baseout.dev/api/connections/storage/onedrive/callback`                             | ❓ unknown  | boss                  |
@@ -201,11 +210,11 @@ box and update [§3](#3-current-registration-status) when done.
 In the Cloud Console for project `baseout-dev` → OAuth 2.0 Client IDs → the
 "Web application" client → **Authorized redirect URIs**:
 
-- [ ] Add `https://baseout.local:4331/api/connections/storage/google-drive/callback`
 - [ ] Add `https://baseout-dev.openside.workers.dev/api/connections/storage/google-drive/callback`
 - [ ] Add `https://baseout-staging.openside.workers.dev/api/connections/storage/google-drive/callback`
 - [ ] Add `https://console.baseout.dev/api/connections/storage/google-drive/callback`
-- [ ] Remove `https://localhost:4331/oauth/callback/google` and `https://console.baseout.dev/oauth/callback/google` — wrong callback path AND `localhost:4331` is no longer a supported origin (§5.5). Confirm the baseout.local + baseout-dev rows above are added BEFORE removing.
+- [ ] Remove `https://localhost:4331/oauth/callback/google` and `https://console.baseout.dev/oauth/callback/google` — wrong callback path AND `localhost:4331` is no longer a supported origin (§5.5). Confirm the three deployed-env rows above are added BEFORE removing.
+- [ ] **Do NOT add `https://baseout.local:4331/...`.** Google rejects it — `.local` isn't on the public suffix list, so it can't be registered and would fail at sign-in with `Error 400: invalid_request` regardless (§3.2, §8). Local Drive Connect is impossible by design; test on the deployed dev worker instead (§5.4).
 
 ### 4.2 Airtable (account-owner action, `airtable.com/create/oauth`)
 
@@ -290,7 +299,7 @@ App registrations → the Baseout app (Application ID
 
 **Authentication → Platform: Web → Redirect URIs:**
 
-- [ ] `https://baseout.local:4331/api/connections/storage/onedrive/callback` *(canonical local origin — §5.5)*
+- [ ] `https://baseout.local:4331/api/connections/storage/onedrive/callback` *(canonical local origin — §5.5; **CONFIRMED MISSING 2026-06-04** — local OneDrive Connect blocked until this is added: `login.live.com` → `invalid_request: redirect_uri ... is not valid`)*
 - [ ] `https://baseout-dev.openside.workers.dev/api/connections/storage/onedrive/callback` *(REQUIRED for local-dev smoke — `wrangler dev --remote` makes the worker's `url.origin` resolve to this host)*
 - [ ] `https://baseout-staging.openside.workers.dev/api/connections/storage/onedrive/callback`
 - [ ] `https://baseout.dev/api/connections/storage/onedrive/callback`
@@ -413,16 +422,26 @@ needing a registered redirect URI anywhere.
 Restart wrangler after toggling this. Mutually exclusive with [§5.2](#52)
 (stub mode short-circuits the real Airtable hops).
 
-### 5.4 Drive on baseout-dev
+### 5.4 Drive: deployed-only (never local)
 
-Currently blocked. The Google OAuth app has no registered URI for the
-`baseout-dev` worker — see [§4.1](#41-google-drive-boss-owned-google-cloud-console).
-Until the boss adds it, Drive Connect from `baseout-dev.openside.workers.dev`
-fails with `redirect_uri_mismatch`. Drive Connect from
-`https://baseout.local:4331/integrations` is also blocked until §4.1 adds
-the matching `baseout.local:4331/api/connections/storage/google-drive/callback`
-URI — the previously-registered `https://localhost:4331/oauth/callback/google`
-no longer applies (wrong path AND `localhost:4331` is unsupported, §5.5).
+**Google Drive Connect cannot run from local `https://baseout.local:4331`.**
+This is permanent, not a missing-registration gap: Google's OAuth policy
+forbids the `.local` TLD (it's not on the public suffix list, §3.2), so a
+`baseout.local` redirect URI is rejected at sign-in with `Error 400:
+invalid_request` / "doesn't comply with Google's OAuth 2.0 policy" (§8). It
+can't be registered to fix this — `.local` is simply not registerable. (This
+is the one provider where the §5.5 "baseout.local is where everything works"
+rule does not hold — Airtable and the other storage providers are fine on
+baseout.local.)
+
+**Test path (deployed dev worker):** register the three real-domain URIs in
+§3.2 — see [§4.1](#41-google-drive-boss-owned-google-cloud-console) — then
+deploy web (`pnpm --filter @baseout/web run deploy`) and Connect from
+`https://baseout-dev.openside.workers.dev/integrations`. The deployed worker
+sets `PUBLIC_AUTH_BASE_URL=https://baseout-dev.openside.workers.dev` (a
+public-suffix domain Google accepts), so it already builds the correct
+redirect URI — no code change needed. Until the boss registers the dev-worker
+URI, that env returns `redirect_uri_mismatch`; once registered it works.
 
 ### 5.5 Canonical local dev URL + trusted cert (mkcert)
 
@@ -446,6 +465,12 @@ end-to-end:
   header is the `*.workers.dev` edge host under `wrangler dev --remote`, so
   Better Auth **cannot** infer the browser origin per-request — a single
   pinned origin is unavoidable.
+
+> **Exception — Google Drive.** "Everything works end-to-end on baseout.local"
+> holds for login, Airtable, and the other storage providers, but **not**
+> Google Drive: Google's OAuth policy rejects the `.local` TLD outright (§3.2,
+> §8), so Drive Connect is the one flow that must be exercised on a deployed
+> env (§5.4), not locally.
 
 **One-time cert setup** (removes the browser warning that otherwise nudges
 you toward `localhost`, whose self-signed wrangler cert happens to be valid):
@@ -544,6 +569,7 @@ explicitly run a `deploy` command.
 |------------------------------------------------------------------|-------------------------------------------------------------------------------------------|---------------|
 | Airtable redirects to "invalid client_id or mismatched redirect_uri" | Current env's URI isn't in [§3.1](#31-airtable-oauth-app-client_id1ae05093-12f2-48f0-b451-6d2ce3f2530a) | URL bar — decode the `redirect_uri=...` query param, compare against §3.1 |
 | Google redirects to "Error 400: redirect_uri_mismatch"           | Current env's URI isn't in [§3.2](#32-google-drive-oauth-app-client_id28341262794) | URL bar — same drill |
+| Google "Access blocked: Authorization Error — Error 400: `invalid_request`" / "doesn't comply with Google's OAuth 2.0 policy" | **Different from `redirect_uri_mismatch`.** The `redirect_uri` host is `baseout.local` (or any non-public-suffix TLD). Google requires the host TLD be on the [public suffix list](https://publicsuffix.org/); `.local` is not, so Google rejects it outright. Caused by `PUBLIC_AUTH_BASE_URL=https://baseout.local:4331` in local dev (2026-06-03 migration, `60a9a01`/`c420667`). **Not fixable by registering a URI** — `.local` can't be registered (§3.2). | Decode the `redirect_uri=` in the URL bar; if the host is `baseout.local`, you're on the local origin — Drive Connect only runs on a deployed env ([§5.4](#54-drive-deployed-only-never-local)). |
 | Microsoft redirects to `AADSTS50011: redirect_uri ... does not match` | Current env's URI isn't in [§3.5](#35-microsoft-onedrive-oauth-app-client_id72f34ac4-a827-4a86-949e-57ccb7154f7f) — or `MICROSOFT_REDIRECT_URI` in `.dev.vars` points to a host the Azure App hasn't registered yet | URL bar — decode the `redirect_uri=...` query param, compare against §3.5 + `apps/web/.dev.vars` |
 | Microsoft `AADSTS70002` "must contain 'client_secret or client_assertion'" | App manifest has `allowPublicClient: false` — public-client mode disabled | [§4.5](#45-microsoft--onedrive-boss-owned-azure-portal--status-unknown) step "Allow public client flows = Yes" |
 | Microsoft `AADSTS50020` / `AADSTS500113` on outlook.com / hotmail sign-in | App is registered for work/school accounts only — personal MSA rejected | [§4.5](#45-microsoft--onedrive-boss-owned-azure-portal--status-unknown) Supported account types = "any directory + personal MS accounts" |
@@ -554,4 +580,6 @@ explicitly run a `deploy` command.
 | Logged out after every browser refresh at `https://baseout.local:4331` OR OAuth Connect appears to succeed but no row is saved | Without a locally-trusted cert (`pnpm setup:certs`, §5.5), wrangler's fallback self-signed cert is for `localhost` only — Chromium-family browsers (incl. Brave) **special-case `localhost` as a Secure context even with a self-signed cert, but any other hostname is not**, so `Secure`-flagged cookies set under `baseout.local` get dropped between page loads AND during cross-site OAuth round-trips. Two cookie surfaces were affected: (1) better-auth's `__Secure-better-auth.session_token` → user logged out every refresh; (2) the per-provider OAuth handoff cookies (`bo_oauth_<provider>`) → callback hits `missing_handoff` and silently fails to persist the connection. Verified 2026-06-02: server-side signing + verification round-trip is healthy, the cookie just never comes back from the browser. Fixed by (a) `advanced.useSecureCookies: false` in better-auth when the resolved `baseURL` hostname is the canonical local-dev host `baseout.local` — derived via the shared `isLocalDevHost` helper (commit `1634819`; later narrowed from `{localhost, 127.0.0.1, baseout.local}` to `{baseout.local}` on 2026-06-03 — see [apps/web/src/lib/auth-factory.ts](../../apps/web/src/lib/auth-factory.ts)). A locally-trusted mkcert cert (§5.5) additionally makes `baseout.local` a real Secure context, so this is belt-and-suspenders; (b) a shared `shouldSetSecureOAuthCookie(request)` helper in [apps/web/src/lib/oauth/local-dev-secure.ts](../../apps/web/src/lib/oauth/local-dev-secure.ts) used by every OAuth `authorize` / `start` / `callback` handler in place of the inline `url.protocol === 'https:'` check. Production hosts (anything that isn't `baseout.local`) keep `Secure` cookies. Also added a visible alert in [StoragePicker.astro](../../apps/web/src/components/backups/StoragePicker.astro) for any `?storage_error=<code>` so a future failure isn't silent. | [apps/web/src/lib/auth-factory.ts](../../apps/web/src/lib/auth-factory.ts) `advanced.useSecureCookies`; [apps/web/src/lib/oauth/local-dev-secure.ts](../../apps/web/src/lib/oauth/local-dev-secure.ts) |
 | OAuth Connect button bounces the user to `/login` on the same origin after authorize | Under `wrangler dev --remote`, the worker code's `url.origin` resolves to the deployed preview URL (e.g. `https://baseout-dev.openside.workers.dev`) even when the browser is at `https://baseout.local:4331`. The pre-fix start/authorize handlers used `getRedirectUri(url.origin)`, so the OAuth provider redirected the user to the deployed worker URL — the browser's session + handoff cookies (scoped to `baseout.local`) didn't follow, and the deployed worker's middleware bounced to `/login`. The cookie problem masqueraded as a session-persistence bug. Fixed 2026-06-02 by changing every provider's `start.ts` / `authorize.ts` to prefer `workerEnv.PUBLIC_AUTH_BASE_URL ?? url.origin` before calling `getRedirectUri`. Per-provider `*_REDIRECT_URI` overrides still win inside `getRedirectUri()` (kept for providers like OneDrive whose Azure-registered set doesn't include `baseout.local` yet). | The 5 provider handlers under [apps/web/src/pages/api/connections/](../../apps/web/src/pages/api/connections/); §5.1 above |
 | OAuth provider callback (Airtable or any storage provider) returns `{"error":"Not authenticated"}` (HTTP 401) | Middleware is auth-gating the callback path. The OAuth callbacks (`/api/connections/airtable/callback` and `/api/connections/storage/<provider>/callback`) carry user identity via an **encrypted handoff cookie**, not via the better-auth session. They MUST be in `isPublicRoute` because browsers may not send the `SameSite=Lax` session cookie on the cross-site GET return from the OAuth provider (Brave's privacy shields are a known case of stricter-than-spec cross-site cookie behaviour — surfaced this 2026-06-01 after weeks of silent compounding with cron-side disconnects). Fixed in commit `4d2ddfc` by extending `isPublicRoute` with a `^\/api\/connections\/[^/]+(?:\/[^/]+)?\/callback$` regex. The `/start` route still requires a session (so attackers can't initiate Connect), the handoff cookie is signed with `BASEOUT_ENCRYPTION_KEY`, and the OAuth `state` param defends CSRF on the round-trip. Regression-tested in [apps/web/src/middleware.test.ts](../../apps/web/src/middleware.test.ts) — re-gating ANY of the five callback paths flips a pinned assertion. | [apps/web/src/middleware.ts](../../apps/web/src/middleware.ts) `isPublicRoute`; [apps/web/src/middleware.test.ts](../../apps/web/src/middleware.test.ts) for the contract |
-| OAuth refresh cron flips Airtable Connection to `invalid`        | Two non-equivalent causes — DIAGNOSE before reconnecting. (1) Encryption-key drift: cron's `BASEOUT_ENCRYPTION_KEY` doesn't match what apps/web used to encrypt the stored token → `outcome: 'decrypt_failed'` in worker logs. Fix: redeploy via the per-app `deploy` script (which now auto-syncs secrets from `.dev.vars`). (2) Genuine refresh refusal: Airtable rejected the refresh_token (revoked, expired, or rotated by a previous tick) → `outcome: 'invalid'` with reason `invalid_grant`, `pending_reauth`, etc. Fix: reconnect per [§5.2](#52-use-the-deployed-baseout-dev-worker-for-real-airtable-connect). The pre-2026-05-26 concurrent-refresh race (two cron ticks both consuming the same single-use refresh token) was closed by the modified_at CAS pin in `oauth-refresh.ts` — if reconnect loops resume despite a green cron log, suspect a regression on that CAS clause. | [apps/server/src/lib/oauth-refresh.ts](../../apps/server/src/lib/oauth-refresh.ts), `wrangler tail baseout-server-dev` for `oauth_refresh` outcome counts |
+| OAuth refresh cron flips Airtable Connection to `invalid` / Reconnect | **Regression window:** proactive cron landed 2026-05-11 (`994f5c6`); race fixes on 2026-05-26 were **reverted** 2026-05-28 (`4b19a61`), re-exposing overlapping `*/15` ticks + refresh-token rotation without persist (`cas_lost`). **2026-06-04 hardening (deploy `baseout-server-dev`):** 14m active cooldown (> cron cadence), 10m lookahead, no live `refreshing` claims, id-only persist after CAS miss, `cas_lost` → `pending_reauth` (not stuck `refreshing`), self-heal `invalid`/`pending_reauth`, decrypt → `pending_reauth` (not terminal `invalid`). **Diagnose:** `wrangler tail --env dev` → `decrypt_failed` = encryption-key drift (redeploy web+server via `deploy` scripts — never hand `wrangler secret put`); `cas_lost` / `persist_failed_after_rotation` = race (should stop after hardening); `invalid_grant` = true revocation → one Reconnect. **Kill-switch:** `OAUTH_REFRESH_CRON_DISABLED=true` on the server Worker stops proactive refresh without a code deploy. | [apps/server/src/lib/oauth-refresh.ts](../../apps/server/src/lib/oauth-refresh.ts), [apps/server/src/index.ts](../../apps/server/src/index.ts) `scheduled` |
+| Airtable OAuth app still shows "connected" but Baseout `/integrations` shows Reconnect (`pending_reauth` or `invalid`) | **Timelines:** `*/15` = cron cadence only — not connection lifetime. Access tokens ~60m (sometimes ~15m from Airtable); cron refreshes inside a 10m lookahead. **Auto-recovery:** `pending_reauth` and `invalid` (after 1m) are retried by self-heal arms — if Airtable still accepts the stored refresh token, the row returns to `active` **without** staring at tail logs. **Manual Reconnect** only when self-heal logs `invalid_grant` or encryption keys are mismatched. **Do not** let `/api/connections/airtable/test` flip status on whoami 401. **Dev DB:** `node --env-file-if-exists=.env apps/web/scripts/diag-conns.mjs`. | [apps/server/src/lib/oauth-refresh.ts](../../apps/server/src/lib/oauth-refresh.ts), [apps/web/src/pages/api/connections/airtable/test.ts](../../apps/web/src/pages/api/connections/airtable/test.ts) |
+| Worried reconnect burns Airtable OAuth connection slots | **Baseout reconnect does not INSERT a new row** — [persist.ts](../../apps/web/src/lib/airtable/persist.ts) updates the existing `(organization_id, airtable)` connection in place (same `connections.id`). Reconnect only when the UI shows Reconnect; avoid repeated Connect clicks while debugging. **Airtable developer hub:** revoke duplicate "Baseout" authorizations for the same OAuth app if the hub lists multiples from earlier experiments. **Cron:** one refresh per `organization_id` per tick (deduped) so dev DB duplicate rows cannot double-call Airtable. | [apps/web/src/lib/airtable/persist.ts](../../apps/web/src/lib/airtable/persist.ts) |
