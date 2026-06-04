@@ -1,0 +1,16 @@
+---
+/**
+ * apps/design wrapper around `@web/layouts/AuthLayout.astro`. Same
+ * purpose as the SidebarLayout wrapper — pulls in the design.css
+ * @source extension so Tailwind picks up classes used by the wrapped
+ * AuthLayout and its children.
+ */
+import '../styles/design.css';
+import WebAuthLayout from '@web/layouts/AuthLayout.astro';
+
+const props = Astro.props as Record<string, unknown>;
+---
+
+<WebAuthLayout {...props}>
+  <slot />
+</WebAuthLayout>

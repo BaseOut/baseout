@@ -1,0 +1,18 @@
+---
+/**
+ * apps/design wrapper around `@web/layouts/SidebarLayout.astro`.
+ *
+ * The wrapper exists for one reason: import `../styles/design.css`
+ * (which carries the @source directives Tailwind needs to scan apps/web
+ * for class names) into the page's module graph. The wrapped layout
+ * does the real rendering.
+ */
+import '../styles/design.css';
+import WebSidebarLayout from '@web/layouts/SidebarLayout.astro';
+
+const props = Astro.props as Record<string, unknown>;
+---
+
+<WebSidebarLayout {...props}>
+  <slot />
+</WebSidebarLayout>

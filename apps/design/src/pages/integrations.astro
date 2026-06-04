@@ -1,0 +1,25 @@
+---
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import IntegrationsView from '@web/views/IntegrationsView.astro';
+import { getBreadcrumbs } from '@web/lib/config';
+import { FIXTURE_INTEGRATIONS_STATE, FIXTURE_INTEGRATIONS_STATE_EMPTY } from '../fixtures/integrations';
+import { FIXTURE_BACKUP_RUNS, FIXTURE_BACKUP_RUNS_EMPTY, FIXTURE_BACKUP_RUNS_FAILED } from '../fixtures/backup-runs';
+
+const breadcrumbs = getBreadcrumbs('/integrations');
+const fixture = Astro.url.searchParams.get('fixture');
+
+const state = fixture === 'empty' ? FIXTURE_INTEGRATIONS_STATE_EMPTY : FIXTURE_INTEGRATIONS_STATE;
+const initialRuns =
+  fixture === 'empty' ? FIXTURE_BACKUP_RUNS_EMPTY
+  : fixture === 'failed' ? FIXTURE_BACKUP_RUNS_FAILED
+  : FIXTURE_BACKUP_RUNS;
+---
+
+<SidebarLayout pageTitle="Integrations" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <IntegrationsView
+    state={state}
+    statusCode={null}
+    errorReason={null}
+    initialRuns={initialRuns}
+  />
+</SidebarLayout>

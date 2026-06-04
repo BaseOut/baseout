@@ -6,6 +6,13 @@
 /* Tailwind CSS + dark variant for Nexus themes */
 @import "@opensided/theme/styles/tailwind.css";
 
+/* Explicit content-scan for apps/web/src. No-op for apps/web's own build
+   (Tailwind v4 already auto-scans the project root) but load-bearing for
+   `apps/design`, which imports this stylesheet via Layout.astro from a
+   different project root and would otherwise miss every utility class
+   used inside apps/web's components/layouts/views. */
+@source "../**/*.{astro,ts,tsx,html,mdx}";
+
 /* Iconify (lucide icons) — enables `iconify lucide--*` class names. */
 @plugin "@iconify/tailwind4" {
     prefixes: lucide;

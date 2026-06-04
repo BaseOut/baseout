@@ -1,0 +1,22 @@
+/*
+ * Tailwind content-scan extension for apps/design.
+ *
+ * apps/design's pages are thin shells that delegate rendering to
+ * components/layouts/views imported from apps/web via the `@web/*` path
+ * alias. Tailwind v4's `@tailwindcss/vite` plugin auto-detects sources
+ * relative to the project root (apps/design), so by default it never
+ * sees the class names used inside apps/web/src/**. The @source
+ * directives below explicitly add those paths to Tailwind's scan set
+ * so every utility class used in shared components gets emitted into
+ * the CSS bundle the design app serves.
+ *
+ * `@reference "tailwindcss"` (no emitted output) makes Tailwind v4
+ * process this file as a Tailwind source — without it, @source is just
+ * an unrecognized rule.
+ *
+ * Keep this in sync with the layout file used in production. If a new
+ * file extension shows up under apps/web/src that uses Tailwind classes
+ * (e.g. .mdx, .svelte — neither is the case today), add it here.
+ */
+@reference "tailwindcss";
+@source "../../../web/src/**/*.{astro,ts,tsx,html,mdx}";

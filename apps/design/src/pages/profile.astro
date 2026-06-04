@@ -1,0 +1,103 @@
+---
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import Card from '@web/components/ui/Card.astro';
+import TextInput from '@web/components/ui/TextInput.astro';
+import Button from '@web/components/ui/Button.astro';
+import Avatar from '@web/components/ui/Avatar.astro';
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Profile' },
+];
+const user = Astro.locals.user;
+const memberSince = 'April 2026';
+const initials = user.name.split(' ').map((p) => p[0]).join('').toUpperCase().slice(0, 2);
+---
+
+<SidebarLayout pageTitle="Profile" breadcrumbs={breadcrumbs}>
+  <div class="space-y-8">
+    <Card variant="outlined">
+      <div class="flex items-center gap-3 mb-6">
+        <span class="material-symbols-outlined icon-xl text-primary">person</span>
+        <h3 class="text-lg font-bold">Profile Information</h3>
+      </div>
+
+      <div class="flex flex-col md:flex-row gap-8">
+        <div class="flex flex-col items-center md:items-start gap-3 md:min-w-48">
+          <Avatar
+            src={user.image ?? undefined}
+            initials={initials}
+            size="2xl"
+          />
+          <div class="text-center md:text-left">
+            <h4 id="profile-user-name" class="text-base font-semibold" data-user-name>{user.name}</h4>
+            <p class="text-sm text-base-content/60">{user.email}</p>
+            <p class="text-xs text-base-content/40 mt-1">Member since {memberSince}</p>
+          </div>
+        </div>
+
+        <div class="flex-1 max-w-md">
+          <form id="profile-form" class="space-y-5" novalidate>
+            <TextInput
+              type="text"
+              name="name"
+              label="Full Name"
+              icon="person"
+              placeholder="Your full name"
+              value={user.name}
+              autocomplete="name"
+              required
+            />
+
+            <TextInput
+              type="email"
+              name="email"
+              label="Email Address"
+              icon="mail"
+              value={user.email}
+              readonly
+              hint="Contact support to change your email address."
+            />
+
+            <div id="profile-error" class="fieldset-label text-error flex items-center gap-1 hidden" role="alert">
+              <span class="material-symbols-outlined icon-sm">error</span>
+              <span id="profile-error-text"></span>
+            </div>
+
+            <div id="profile-success" class="fieldset-label text-success flex items-center gap-1 hidden" role="status">
+              <span class="material-symbols-outlined icon-sm">check_circle</span>
+              <span id="profile-success-text"></span>
+            </div>
+
+            <Button variant="primary" type="submit">
+              <span class="material-symbols-outlined icon-lg">save</span>
+              Save Changes
+            </Button>
+          </form>
+        </div>
+      </div>
+    </Card>
+  </div>
+</SidebarLayout>
+
+<script>
+  function init() {
+    const form = document.getElementById('profile-form') as HTMLFormElement | null;
+    const ok = document.getElementById('profile-success') as HTMLElement | null;
+    const okText = document.getElementById('profile-success-text') as HTMLElement | null;
+    if (!form || !ok || !okText) return;
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const data = new FormData(form);
+      const name = ((data.get('name') as string) ?? '').trim();
+      if (!name) return;
+      ok.classList.remove('hidden');
+      okText.textContent = 'Profile updated (design preview — not persisted).';
+      document.querySelectorAll('[data-user-name]').forEach((el) => (el.textContent = name));
+    });
+  }
+
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
