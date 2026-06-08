@@ -23,6 +23,7 @@ import { runsDeleteCompleteHandler } from "./pages/api/internal/runs/delete-comp
 import { spacesSetFrequencyHandler } from "./pages/api/internal/spaces/set-frequency";
 import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
 import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
+import { runOAuthRefreshTick } from "./lib/oauth-refresh";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
@@ -245,10 +246,48 @@ export default {
   },
 
   async scheduled(
-    _event: ScheduledEvent,
-    _env: Env,
-    _ctx: ExecutionContext,
+    event: ScheduledEvent,
+    env: Env,
+    ctx: ExecutionContext,
   ): Promise<void> {
-    // TODO(phase-2): cron-trigger dispatch (webhook renewal, OAuth refresh, etc.)
+    if (event.cron !== "*/15 * * * *") {
+      // eslint-disable-next-line no-console -- intentional structured log
+      console.error(`[scheduled] unknown cron: ${event.cron}`);
+      return;
+    }
+
+    const cronDisabled =
+      (env as { OAUTH_REFRESH_CRON_DISABLED?: string })
+        .OAUTH_REFRESH_CRON_DISABLED === "true" ||
+      (env as { OAUTH_REFRESH_CRON_DISABLED?: string })
+        .OAUTH_REFRESH_CRON_DISABLED === "1";
+    if (cronDisabled) {
+      return;
+    }
+
+    const { db, sql: pgSql } = createMasterDb(env);
+    try {
+      const result = await runOAuthRefreshTick({
+        db,
+        encryptionKey: env.BASEOUT_ENCRYPTION_KEY,
+        clientId: env.AIRTABLE_OAUTH_CLIENT_ID,
+        clientSecret: env.AIRTABLE_OAUTH_CLIENT_SECRET,
+        log: (e) => {
+          // eslint-disable-next-line no-console -- intentional structured log
+          console.log(JSON.stringify(e));
+        },
+      });
+      // eslint-disable-next-line no-console -- intentional structured log
+      console.log(
+        JSON.stringify({
+          event: "oauth_refresh_tick",
+          considered: result.considered,
+          claimed: result.claimed,
+          ...result.outcomes,
+        }),
+      );
+    } finally {
+      ctx.waitUntil(pgSql.end({ timeout: 5 }));
+    }
   },
 };

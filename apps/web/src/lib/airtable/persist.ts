@@ -70,7 +70,7 @@ export async function persistAirtableConnection(
   // One active connection per (org, platform). Soft behaviour: if an existing
   // connection exists, update it in place rather than creating a duplicate.
   // One row per (org, platform). Reconnect updates the newest row in place —
-  // never INSERT a second row (saves Airtable OAuth slots and cron budget).
+  // never INSERT a second row (saves Airtable OAuth slots).
   const [existing] = await db
     .select({ id: connections.id })
     .from(connections)

@@ -47,16 +47,10 @@
     }
   ],
 
-  // Cron triggers — TODO(phase-2): one per background service.
-  // "triggers": {
-  //   "crons": [
-  //     "0 6 * * *",     // webhook renewal — daily at 06:00 UTC
-  //     "*/15 * * * *",  // OAuth token refresh — every 15 minutes
-  //     "0 * * * *",     // trial-expiry monitor — hourly
-  //     "0 * * * *",     // quota-usage monitor — hourly
-  //     "0 2 * * *"      // smart-cleanup scheduler — daily at 02:00 UTC
-  //   ]
-  // },
+  // Cron: proactive Airtable OAuth refresh (openspec server-cron-oauth-refresh).
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
 
   // Service bindings (incoming forwards from hooks + api)
   // are configured via the Cloudflare dashboard once those Workers exist.

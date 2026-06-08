@@ -3,8 +3,9 @@
  *
  * Per PRD §20.2: OAuth access + refresh tokens are encrypted before writing
  * to the master DB. apps/web is the canonical writer (OAuth callback);
- * apps/server decrypts for internal routes and re-encrypts on BYOS storage
- * refresh. Both must produce the same format and
+ * apps/server decrypts for internal routes, re-encrypts on BYOS storage
+ * refresh, and on the OAuth-refresh cron success path. Both must produce the
+ * same format and
  * use the same master key (env.BASEOUT_ENCRYPTION_KEY, base64-encoded 32
  * bytes).
  *
