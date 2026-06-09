@@ -72,7 +72,7 @@ Baseout is conceptually two Workers + one Trigger.dev task project + one shared 
 - If you find yourself adding a UI component, an `/ops` page, or a `better-auth` instance to the backend, you're proposing the wrong split — surface it before coding.
 - Master-DB schema migrations are owned by the frontend. The backend mirrors specific tables (e.g. `backup_runs`, `backup_configuration_bases`) with header comments naming the canonical migration source.
 - Workflows is Node-only: never import `cloudflare:workers`, never assume workerd globals. The Backend Worker bundle stays SDK-only — task references are `import type { … } from "@baseout/workflows"` so task bodies don't leak into the Worker bundle.
-- **`/ops` console placement**: staff-only `/ops/*` routes live inside `apps/web` (admin-gated by `users.user_role = 'admin'`), not in `apps/admin/`. `apps/admin/` exists as a deploy-target placeholder; promote staff console work into it only when `/ops` outgrows >5 distinct pages or needs a non-customer auth shape (e.g., Google Workspace SSO). See `openspec/changes/baseout-admin/proposal.md` §"Status note".
+- **`/ops` console placement**: staff-only `/ops/*` routes live inside `apps/web` (admin-gated by `users.role = 'super'`), and a standalone staff console now also exists at `apps/admin/`. The full `apps/admin` console (Google SSO, the rest of the surfaces, manual actions, audit trail) is still the deferred `admin` umbrella change; the runnable foundation slice (Astro SSR scaffold + staff gate + Organizations→Spaces tracker) shipped via `openspec/changes/admin-foundation/`. **Staff role is `users.role` with values `customer | super`** — NOT `user_role = 'admin'` (a column that does not exist). See the `apps/admin` runbook in §6A.
 
 ---
 
@@ -206,6 +206,55 @@ Pick the prefix based on what the change actually touches:
 - **Never assume** a URI is registered without checking §3 — the cost of grep'ing the matrix is seconds; the cost of a wrong assumption is the breakage chain from `2026-05-25`.
 
 If a needed URI is missing per §3 and adding it is blocked (owner unreachable, no account access), use the workarounds in §5 — don't paper over with a `--var` swap that breaks the other provider.
+
+## 3.8 Commit Message Format
+
+Every commit ends with a **Verification** section — a short, concrete account of how to demo, test, and confirm the change — placed just before the `Co-Authored-By` trailer. It exists so the next engineer and the reviewer can reproduce the result without reverse-engineering the diff. Pull it straight from the smoke command you surfaced for human approval (the human-tested local-commit loop), so it costs nothing extra.
+
+**Format:**
+
+```
+<type>(<scope>): <imperative subject, ≤72 chars>
+
+<body — what changed and WHY: the problem and the reasoning, not a file list>
+
+Verification:
+- Demo:    <one command + the observable result that proves it works>
+- Test:    <the automated test command(s) that cover this change>
+- Checks:  <typecheck / build / db:check result you actually ran>
+- Caveats: <env-gating, deployed-only, manual-only — or "n/a">
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+```
+
+**Rules:**
+
+- **Conventional-commit subject.** Keep the existing `feat` / `fix` / `docs` / `refactor` / `chore` / `test` / `revert` + `(scope)` prefix convention.
+- **`Demo` is mandatory for any behavior change.** Give the exact command and the observable outcome (e.g. "Backups → Run backup; row goes queued→running→succeeded"), not "test it manually."
+- **`Test` names the command, not the intent.** `pnpm --filter @baseout/workflows test backup-base`, not "added tests." If non-trivial logic shipped without a test, that's a §3.4 violation — write the test, don't paper over it here.
+- **`Checks` records what you actually ran** (`npm run typecheck && npm run build` green; `db:check` clean — per §3.4 / §7). Never claim green you didn't observe.
+- **`Caveats` flags anything blocking local verification** — deployed-only flows (Drive Connect, engine smoke via `--remote`), env-gated providers, missing redirect URIs — and cites the runbook (e.g. `oauth-setup.md §3.2`).
+- **Trivial commits may collapse to one line:** `Verification: doc-only, no runtime change.` (matches the existing "Doc-only; no code or secrets." convention). Applies to docs, comments, and config-only changes with no behavior impact.
+- **Don't `--no-verify`, don't fabricate a Demo.** If you couldn't verify (blocked on a deployed env, a missing URI), say so in `Caveats` and surface it for human testing rather than inventing a result.
+
+**Example (behavior change):**
+
+```
+feat(workflows): write backup CSVs to local disk per base
+
+R2 was removed for the MVP, so backup-base now streams each table to
+apps/server/.backups/<runId>/<base>/<table>.csv instead of an R2 bucket.
+
+Verification:
+- Demo:    `npx trigger.dev dev` + `pnpm --filter @baseout/server deploy:dev`,
+           then Backups → Run backup on baseout.local; .backups/<runId>/ fills
+           with one CSV per table.
+- Test:    `pnpm --filter @baseout/workflows test backup-base`
+- Checks:  `npm run typecheck && npm run build` green.
+- Caveats: engine runs --remote — deploy before smoking (apps/web remote mode).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+```
 
 ---
 
@@ -386,6 +435,34 @@ There is intentionally no `src/`, no UI, no DB layer here — the workflows app 
 
 ---
 
+# 6A. Staff Console Standards (`apps/admin/`) — run & demo
+
+`apps/admin/` is the internal staff console: an Astro SSR app on the `@astrojs/cloudflare` adapter, served at `baseout.local:4332` in dev. The runnable foundation (scaffold + staff gate + Organizations→Spaces tracker) shipped via `openspec/changes/admin-foundation/`; the broader console (Google SSO, more surfaces, manual admin actions, audit trail) remains the deferred `admin` umbrella change.
+
+**Auth model (interim).** Admin has **no login of its own** — it reuses `apps/web`'s better-auth session. Middleware reads the `better-auth.session_token` cookie, looks it up in the master-DB `sessions` table, and requires `users.role === 'super'`. Unauthenticated visitors get a "Sign in" page that routes to web's `/login?returnTo=<admin origin>` (web honors a validated `returnTo` and uses it as the magic-link `callbackURL`); signed-in non-staff get a "Staff only" 403. Real Google Workspace SSO is deferred to the `admin` umbrella change.
+
+**DB access.** `astro dev` runs SSR inside a **workerd** runner, so a direct postgres-js connection to a remote DB fails — admin reads the master DB through a **Hyperdrive** binding exactly as `apps/web` does. `scripts/dev.mjs` renders `wrangler.jsonc` from `wrangler.jsonc.example`, substituting `DATABASE_URL` into the Hyperdrive `localConnectionString`; `wrangler.jsonc` is gitignored.
+
+**Run & demo (fresh clone):**
+
+```bash
+pnpm install                                   # from repo root
+cp apps/admin/.env.example apps/admin/.env     # then paste DATABASE_URL from apps/web/.env
+pnpm --filter @baseout/web dev                 # terminal 1 — https://baseout.local:4331 (login lives here)
+pnpm --filter @baseout/admin dev               # terminal 2 — http://baseout.local:4332
+```
+
+1. Open `http://baseout.local:4332` → "Sign in" → land on web's login → magic-link in → you're routed back to admin.
+2. The gate requires `role = 'super'`. Grant yourself staff in dev:
+   ```bash
+   cd apps/web && node --env-file=.env -e 'const s=require("postgres")(process.env.DATABASE_URL,{prepare:false,connection:{search_path:"baseout,public"}});s`update baseout.users set role=${"super"} where email=${"you@example.com"}`.then(r=>console.log("promoted",r.count)).finally(()=>s.end())'
+   ```
+3. The tracker lists every Organization with its Spaces, status, platform, and tier.
+
+**Rules.** Mirror operational tables from `apps/web/src/db/schema/core.ts` (header-comment the canonical source); admin owns no migrations. Keep admin's auth isolated — it only *reads* the session table, never issues/mutates sessions, and runs no `better-auth` instance. Tests: plain Vitest (node) on the pure modules (gate decision, tracker grouping). Adding a cross-app touch (e.g. the web `returnTo`) makes the change `shared-*` — file it accordingly.
+
+---
+
 # 7. Development Checklist
 
 Before requesting review:
@@ -404,11 +481,13 @@ Before requesting review:
 - [ ] If touching mirrored DB schema, the canonical migration in the frontend is updated to match
 - [ ] If touching auth, secrets, or external integrations — security review points called out
 - [ ] If touching a Trigger.dev task body, change lives in `apps/workflows/`. If touching the enqueue path, change lives in `apps/server/`. Cross-app contract (payload shape, callback shape) updated on both sides if it shifts.
+- [ ] Commit message ends with a `Verification` section (Demo / Test / Checks / Caveats), per §3.8 — or the one-line trivial form for doc/config-only changes
 
 ---
 
 # 8. Asking, Confirming, Committing
 
+- Format every commit message per §3.8 — Conventional-commit subject, "why" body, and a closing `Verification` section (how to demo, test, and confirm the change).
 - Don't commit, push, or open a PR without explicit user approval. Approving a plan does not authorize individual git actions.
 - Create new commits rather than amending — when a pre-commit hook fails, the commit didn't happen, so `--amend` would modify the previous commit.
 - Stage specific files by name; avoid `git add -A` / `git add .` so secrets and large binaries don't slip in.

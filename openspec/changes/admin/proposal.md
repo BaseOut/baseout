@@ -11,6 +11,8 @@
 
 Until then, `apps/admin/` is a stub and its tasks are inert. Don't archive — the requirements still describe the eventual shape; only the timing slips.
 
+**Update (2026-06):** the placeholder is being replaced by a runnable tracer slice in the child change [`admin-foundation`](../admin-foundation/) — Phase 0 (Astro SSR scaffold) + a minimal Phase 1 (auth) + a single Phase 2 read-only surface (Organizations → Spaces tracker). That slice reuses the `apps/web` better-auth `role='super'` session as an **interim** gate because Google SSO can't run on `.local`; the Google Workspace SSO requirement below still stands and remains owned by this umbrella change. The remaining surfaces, manual admin actions, and audit trail also stay here.
+
 ## What Changes
 
 - Establish `admin` as a standalone Cloudflare Workers project at `apps/admin/`, deployed independently of every other Baseout repo.

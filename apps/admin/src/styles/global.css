@@ -1,0 +1,9 @@
+/* apps/admin styling — plain Tailwind v4 + daisyUI.
+ *
+ * NOTE: apps/web uses the vendored @opensided/theme brand themes; @baseout/ui
+ * is still an empty stub. For this tracer slice we use daisyUI's default theme
+ * directly (the sanctioned secondary theme per repo CLAUDE.md §4.2). Adopting
+ * @opensided/theme / @baseout/ui for brand-consistent admin styling is a
+ * follow-up in the `admin` umbrella change. */
+@import "tailwindcss";
+@plugin "daisyui";

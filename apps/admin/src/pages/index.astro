@@ -1,0 +1,135 @@
+---
+// Organizations → Spaces tracker (admin-foundation tracer surface).
+//
+// PRD §5.4 / §16.1: which provisioned databases (= Spaces in the V1 tier
+// model) belong to which Organizations. Read-only; gated to role='super' by
+// src/middleware.ts.
+import { eq } from 'drizzle-orm';
+import Layout from '../layouts/Layout.astro';
+import {
+  organizations,
+  spaces,
+  spacePlatforms,
+  platforms,
+  subscriptions,
+  subscriptionItems,
+} from '../db/schema';
+import { buildTracker, type SpaceRow, type TierRow } from '../lib/tracker';
+
+const { db, user } = Astro.locals;
+
+const orgRows = await db
+  .select({
+    id: organizations.id,
+    name: organizations.name,
+    slug: organizations.slug,
+    hasMigrated: organizations.hasMigrated,
+  })
+  .from(organizations);
+
+const spaceRows: SpaceRow[] = await db
+  .select({
+    id: spaces.id,
+    organizationId: spaces.organizationId,
+    name: spaces.name,
+    status: spaces.status,
+    platformName: platforms.name,
+  })
+  .from(spaces)
+  .leftJoin(spacePlatforms, eq(spacePlatforms.spaceId, spaces.id))
+  .leftJoin(platforms, eq(platforms.id, spacePlatforms.platformId));
+
+const tierRows: TierRow[] = await db
+  .select({
+    organizationId: subscriptions.organizationId,
+    tier: subscriptionItems.tier,
+  })
+  .from(subscriptionItems)
+  .innerJoin(subscriptions, eq(subscriptions.id, subscriptionItems.subscriptionId));
+
+const tracker = buildTracker(orgRows, spaceRows, tierRows);
+
+const statusColor: Record<string, string> = {
+  active: 'badge-success',
+  paused: 'badge-warning',
+  error: 'badge-error',
+  setup_incomplete: 'badge-ghost',
+};
+---
+
+<Layout title="Admin — Organizations">
+  <span slot="user">{user?.email}</span>
+
+  <div class="space-y-6">
+    <div class="flex items-baseline justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold">Organizations &amp; Spaces</h1>
+        <p class="text-sm text-base-content/60 mt-1">
+          Every Organization and its provisioned Spaces (PRD §5.4). {tracker.length} organizations.
+        </p>
+      </div>
+    </div>
+
+    {tracker.length === 0 ? (
+      <div class="alert alert-info">
+        <span>No organizations in the master DB yet.</span>
+      </div>
+    ) : (
+      <div class="space-y-4">
+        {tracker.map((org) => (
+          <div class="card bg-base-100 border border-base-300">
+            <div class="card-body gap-3">
+              <div class="flex items-center justify-between flex-wrap gap-2">
+                <div class="flex items-center gap-2">
+                  <h2 class="card-title">{org.name}</h2>
+                  <span class="font-mono text-xs text-base-content/50">{org.slug}</span>
+                  {!org.hasMigrated && (
+                    <span class="badge badge-warning badge-sm">migration pending</span>
+                  )}
+                </div>
+                <div class="flex gap-1">
+                  {org.tiers.length === 0 ? (
+                    <span class="badge badge-ghost badge-sm">no subscription</span>
+                  ) : (
+                    org.tiers.map((t) => <span class="badge badge-primary badge-sm">{t}</span>)
+                  )}
+                </div>
+              </div>
+
+              {org.spaces.length === 0 ? (
+                <p class="text-sm text-base-content/50">No spaces.</p>
+              ) : (
+                <div class="overflow-x-auto rounded-lg border border-base-300">
+                  <table class="table table-zebra table-sm">
+                    <thead>
+                      <tr>
+                        <th>Space</th>
+                        <th>Status</th>
+                        <th>Platform</th>
+                        <th>Space ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {org.spaces.map((s) => (
+                        <tr>
+                          <td>{s.name}</td>
+                          <td>
+                            <span class={`badge badge-sm ${statusColor[s.status] ?? 'badge-ghost'}`}>
+                              {s.status}
+                            </span>
+                          </td>
+                          <td>{s.platformName ?? '—'}</td>
+                          <td class="font-mono text-xs">{s.id.slice(0, 8)}…</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+</Layout>

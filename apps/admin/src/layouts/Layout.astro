@@ -1,0 +1,30 @@
+---
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+}
+const { title = 'Baseout Admin' } = Astro.props;
+---
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+  </head>
+  <body class="min-h-screen bg-base-200 text-base-content antialiased">
+    <header class="navbar bg-base-300 border-b border-base-100 px-6">
+      <div class="flex-1">
+        <span class="text-lg font-semibold">Baseout Admin</span>
+        <span class="badge badge-ghost badge-sm ml-3">staff</span>
+      </div>
+      <div class="flex-none text-sm text-base-content/60">
+        <slot name="user" />
+      </div>
+    </header>
+    <main class="p-6">
+      <slot />
+    </main>
+  </body>
+</html>

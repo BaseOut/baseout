@@ -43,7 +43,12 @@ const AUTH_BASE_URL = {
 // adding a new deployed origin, update both. `localhost` is intentionally
 // absent — see the comment on `allowedHosts` above.
 const PROD_TRUSTED_ORIGINS = ['https://baseout.dev']
-const DEV_TRUSTED_ORIGINS = ['https://baseout.local:*']
+// `http://baseout.local:*` covers the admin console (apps/admin) which runs
+// over http in local dev (its session cookie is non-Secure locally). Trusting
+// it lets a magic-link callbackURL round-trip staff back to the admin origin
+// after sign-in. Dev-only; the prod admin origin (admin.baseout.com) joins
+// PROD_TRUSTED_ORIGINS when that app is first deployed.
+const DEV_TRUSTED_ORIGINS = ['https://baseout.local:*', 'http://baseout.local:*']
 
 // Drop the `Secure` attribute + `__Secure-` cookie prefix in local dev only.
 //

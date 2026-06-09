@@ -1,0 +1,42 @@
+// Template for wrangler.jsonc — committed to git.
+//
+// scripts/dev.mjs renders this into wrangler.jsonc at dev time, substituting
+// the {{DATABASE_URL}} placeholder below with the value from .env.
+//
+// apps/admin runs via `astro dev`, which executes SSR inside a workerd runner
+// (@astrojs/cloudflare + @cloudflare/vite-plugin). A direct postgres-js TCP
+// connection to the remote DB does NOT work from workerd — so, exactly like
+// apps/web, the master DB is reached through a Hyperdrive binding whose
+// `localConnectionString` miniflare proxies to the real Postgres. The
+// middleware reads `env.HYPERDRIVE.connectionString`.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-admin",
+  // No `main` — the @astrojs/cloudflare adapter owns the worker entry.
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
+
+  // Master-DB access. `localConnectionString` is used for local dev only (the
+  // miniflare Hyperdrive proxy connects to it); a deployed Worker connects via
+  // the Hyperdrive `id`. The real id + the admin.baseout.com route are wired
+  // when this app is first deployed (out of scope for admin-foundation;
+  // tracked in the `admin` umbrella change).
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "ADMIN_HYPERDRIVE_ID_PLACEHOLDER",
+      "localConnectionString": "{{DATABASE_URL}}"
+    }
+  ],
+
+  // Routes — intentionally not bound yet. admin.baseout.com is wired at deploy
+  // time in the `admin` umbrella change.
+  // "routes": [
+  //   { "pattern": "admin.baseout.com/*", "zone_name": "baseout.com" }
+  // ],
+
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false }
+  }
+}

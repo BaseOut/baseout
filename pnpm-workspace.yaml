@@ -28,3 +28,9 @@ minimumReleaseAge: 10080
 # Future pin bumps should re-check whether the exclusion is still needed.
 minimumReleaseAgeExclude:
   - "@trigger.dev/*"
+  # - vscode-languageserver*: transitives of @astrojs/check (the Astro
+  #   typechecker, a build-time dev tool) whose registry metadata omits the
+  #   `time` field, so the age policy can't compute their age and hard-fails
+  #   the install. Excluded so apps/* can add @astrojs/check for `astro check`.
+  - "vscode-languageserver"
+  - "vscode-languageserver-types"
