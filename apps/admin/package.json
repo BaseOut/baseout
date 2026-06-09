@@ -6,7 +6,7 @@
   "description": "Internal Astro SSR admin app at admin.baseout.com (Google SSO). See openspec/changes/admin/proposal.md.",
   "scripts": {
     "dev": "wrangler dev",
-    "build": "astro build",
+    "build": "echo 'apps/admin is a placeholder Worker — no build step until Astro is scaffolded (see wrangler.jsonc)'",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."

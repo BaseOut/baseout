@@ -1,7 +1,10 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "baseout-admin",
-  "main": "./dist/_worker.js/index.js",
+  // Placeholder Worker entry (src/index.ts). apps/admin is a deploy-target
+  // placeholder per CLAUDE.md §2 — there is no Astro app yet, so there is no
+  // ./dist/_worker.js build output. Repoint `main` here when Astro is scaffolded.
+  "main": "./src/index.ts",
   "compatibility_date": "2025-01-01",
   "compatibility_flags": ["nodejs_compat"],
 
