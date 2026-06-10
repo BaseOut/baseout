@@ -567,6 +567,17 @@ export const attachmentDedup = baseout.table('attachment_dedup', {
   contentHash: text('content_hash'),
   sizeBytes: bigint('size_bytes', { mode: 'number' }),
   mimeType: text('mime_type'),
+  // Source filename from Airtable, retained for metadata. Nullable — legacy
+  // rows predate this column.
+  filename: text('filename'),
+  // 'ready' = bytes staged on local disk, not yet at the real destination;
+  // 'uploaded' = bytes are at the destination (managed R2 / BYOS). Defaults to
+  // 'uploaded' so every pre-existing row — all written straight to a real
+  // destination — stays truthful without a backfill.
+  uploadStatus: text('upload_status').notNull().default('uploaded'),
+  // Set to now() whenever the row is recorded/updated as 'uploaded'. Null while
+  // a row is still 'ready'.
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
   firstSeenAt: timestamp('first_seen_at', { withTimezone: true })
     .notNull()
     .defaultNow(),

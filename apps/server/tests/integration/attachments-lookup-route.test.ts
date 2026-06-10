@@ -105,6 +105,26 @@ describe("POST /api/internal/attachments/record — routing layer", () => {
     expect(res.status).toBe(400);
   });
 
+  it("returns 400 invalid_request when uploadStatus is not ready|uploaded", async () => {
+    const res = await SELF.fetch(
+      "http://test/api/internal/attachments/record",
+      authed("POST", {
+        spaceId: SPACE_ID,
+        entries: [
+          {
+            compositeId: "b1_t1_r1_f1_a1",
+            storageKey: "k1",
+            uploadStatus: "bogus",
+          },
+        ],
+      }),
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe(
+      "invalid_request",
+    );
+  });
+
   it("returns 200 {recorded:0} for an empty entries batch (no DB)", async () => {
     const res = await SELF.fetch(
       "http://test/api/internal/attachments/record",

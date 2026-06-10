@@ -6,9 +6,8 @@
 // Flow (Phase 7.2 of the Backups MVP plan):
 //   1. POST /api/internal/connections/:connectionId/lock — retry every 5s up
 //      to 60s; on persistent 409 → status='failed' / lock_unavailable.
-//   2. POST /api/internal/connections/:connectionId/token — engine lazy-
-//      refreshes from master DB when near expiry, returns plaintext token.
-//      The task's `encryptedToken` payload field is ignored at fetch time.
+//   2. POST /api/internal/connections/:connectionId/token { encryptedToken }
+//      → plaintext access token (ConnectionDO decrypt; cron keeps tokens fresh).
 //   3. Airtable getBaseSchema → list of tables.
 //   4. Trial gate on table count: if isTrial && tables>5, slice to 5 →
 //      status='trial_truncated' on success.
@@ -105,14 +104,6 @@ export interface BackupBaseDeps {
     spaceId: string,
   ) => Promise<StorageWriterCreds | null>;
   /**
-   * Optional override for the Airtable access-token fetcher. Production
-   * default POSTs to `/api/internal/connections/:connectionId/token`, which
-   * lazy-refreshes from master DB when near expiry.
-   */
-  fetchConnectionToken?: (
-    connectionId: string,
-  ) => Promise<{ accessToken: string; refresh: () => Promise<string> }>;
-  /**
    * Supplies managed-R2 credentials (openspec/changes/workflows-r2-writer).
    * Unlike the BYOS providers, R2 creds are app-level env — not per-Space
    * OAuth — so they bypass `fetchStorageCreds`/the engine route entirely. The
@@ -145,7 +136,7 @@ export interface BackupBaseDeps {
   attachmentLookup?: (
     spaceId: string,
     compositeIds: string[],
-  ) => Promise<Record<string, string>>;
+  ) => Promise<Record<string, { storageKey: string; uploadStatus: string }>>;
   attachmentRecord?: (
     spaceId: string,
     entries: AttachmentRecordEntry[],
@@ -315,29 +306,26 @@ export async function runBackupBase(
             }),
           lookup: deps.attachmentLookup,
           record: deps.attachmentRecord,
+          // local_fs stages bytes on the runner's disk ('ready'); R2/BYOS land
+          // at the real destination ('uploaded').
+          uploadStatus: input.storageType === "local_fs" ? "ready" : "uploaded",
           fetchImpl: fetchFn,
           refreshUrl: deps.refreshAttachmentUrl,
         })
       : null);
 
   try {
-    // 2. Token — engine reads master DB and lazy-refreshes when near expiry.
-    const fetchToken =
-      deps.fetchConnectionToken ??
-      ((connectionId: string) =>
-        defaultFetchConnectionToken(
-          fetchFn,
-          engineBase,
-          deps.internalToken,
-          connectionId,
-        ));
-    let accessToken: string;
-    try {
-      ({ accessToken } = await fetchToken(input.connectionId));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      return failed(`token_${msg}`, 0, 0);
+    // 2. Token.
+    const tokenRes = await postInternal(
+      fetchFn,
+      `${connBase}/token`,
+      deps.internalToken,
+      { encryptedToken: input.encryptedToken },
+    );
+    if (tokenRes.status !== 200) {
+      return failed(`token_${tokenRes.status}`, 0, 0);
     }
+    const { accessToken } = (await tokenRes.json()) as { accessToken: string };
 
     // 3. Schema.
     const client: AirtableClientShape =
@@ -490,64 +478,6 @@ export async function runBackupBase(
       errorMessage,
     };
   }
-}
-
-interface ConnectionTokenResponse {
-  accessToken?: string;
-  expiresAt?: string;
-  error?: string;
-  reason?: string;
-}
-
-/**
- * Production fetcher for the Airtable access token. POSTs to the engine's
- * internal /connections/:id/token route, which lazy-refreshes from master DB
- * when the access token is near expiry. Returns a reactive `refresh` closure
- * for mid-run 401 retries (mirrors BYOS storage credential fetch).
- */
-export async function defaultFetchConnectionToken(
-  fetchFn: typeof fetch,
-  engineBase: string,
-  internalToken: string,
-  connectionId: string,
-): Promise<{ accessToken: string; refresh: () => Promise<string> }> {
-  const url = `${engineBase}/api/internal/connections/${encodeURIComponent(connectionId)}/token`;
-
-  async function read(forceRefresh: boolean): Promise<ConnectionTokenResponse> {
-    const target = forceRefresh ? `${url}?refresh=1` : url;
-    const res = await fetchFn(target, {
-      method: "POST",
-      headers: {
-        "x-internal-token": internalToken,
-        "content-type": "application/json",
-      },
-      body: "{}",
-    });
-    const body = (await res.json()) as ConnectionTokenResponse;
-    if (!res.ok) {
-      throw new Error(
-        body.error
-          ? `${res.status}:${body.error}${body.reason ? `:${body.reason}` : ""}`
-          : `engine connection token fetch ${res.status}`,
-      );
-    }
-    return body;
-  }
-
-  const initial = await read(false);
-  if (!initial.accessToken) {
-    throw new Error("engine connection token response is malformed");
-  }
-  let accessToken = initial.accessToken;
-  const refresh = async () => {
-    const refreshed = await read(true);
-    if (!refreshed.accessToken) {
-      throw new Error("engine connection token refresh malformed");
-    }
-    accessToken = refreshed.accessToken;
-    return accessToken;
-  };
-  return { accessToken, refresh };
 }
 
 interface StorageDestinationResponse {

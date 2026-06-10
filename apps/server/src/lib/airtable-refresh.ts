@@ -108,12 +108,12 @@ export async function refreshAirtableAccessToken(
   }
 
   if (res.ok && typeof json.access_token === "string") {
-    if (
-      typeof json.refresh_token !== "string" ||
-      json.refresh_token.length === 0
-    ) {
-      return { kind: "invalid", reason: "missing_refresh_token" };
-    }
+    // Mirror apps/web's refreshAccessToken: Airtable usually rotates, but an
+    // omitted refresh_token must not fail the tick — keep the grant we sent.
+    const refreshToken =
+      typeof json.refresh_token === "string" && json.refresh_token.length > 0
+        ? json.refresh_token
+        : input.refreshToken;
     const expiresIn =
       typeof json.expires_in === "number" && Number.isFinite(json.expires_in)
         ? json.expires_in
@@ -121,7 +121,7 @@ export async function refreshAirtableAccessToken(
     return {
       kind: "success",
       accessToken: json.access_token,
-      refreshToken: json.refresh_token,
+      refreshToken,
       expiresAtMs: nowMs() + expiresIn * 1000,
       scope: json.scope ?? null,
     };

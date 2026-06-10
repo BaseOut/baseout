@@ -24,7 +24,7 @@ import {
   spaceEvents,
   spaces,
 } from "../../db/schema";
-import { resolveAirtableConnectionToken } from "../connections/resolve-airtable-token";
+import { decryptToken } from "../crypto";
 import { resolveCapabilities } from "../capabilities/resolve";
 import {
   createAirtableClient,
@@ -44,8 +44,6 @@ export interface BuildRediscoveryDepsInput {
   spaceId: string;
   triggeredBy: RediscoveryTrigger;
   encryptionKey: string;
-  airtableClientId: string;
-  airtableClientSecret: string;
 }
 
 export interface RediscoveryContext {
@@ -89,6 +87,7 @@ export async function buildRediscoveryDeps(
     .select({
       id: connections.id,
       status: connections.status,
+      accessTokenEnc: connections.accessTokenEnc,
     })
     .from(connections)
     .innerJoin(platforms, eq(platforms.id, connections.platformId))
@@ -104,18 +103,11 @@ export async function buildRediscoveryDeps(
     return { ok: false, error: "connection_not_found" };
   }
 
-  const tokenResult = await resolveAirtableConnectionToken(db, {
-    connectionId: connectionRow.id,
-    forceRefresh: false,
+  const accessToken = await decryptToken(
+    connectionRow.accessTokenEnc,
     encryptionKey,
-    clientId: input.airtableClientId,
-    clientSecret: input.airtableClientSecret,
-  });
-  if (!tokenResult.ok) {
-    return { ok: false, error: "connection_not_found" };
-  }
-
-  const airtable = createAirtableClient({ accessToken: tokenResult.accessToken });
+  );
+  const airtable = createAirtableClient({ accessToken });
 
   return {
     ok: true,

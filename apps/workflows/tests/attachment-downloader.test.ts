@@ -95,12 +95,35 @@ describe("attachment-downloader.processCell", () => {
       { key: expectedKey, size: 5, contentType: "image/png" },
     ]);
     expect(recorded).toHaveLength(1);
+    // Defaults to uploadStatus 'uploaded' when deps omit it, and stamps the
+    // source filename.
     expect(recorded[0]!.entries).toEqual([
       {
         compositeId: "appB_tblT_recR_fldF_attA",
         storageKey: expectedKey,
         sizeBytes: 5,
         mimeType: "image/png",
+        filename: "attA.png",
+        uploadStatus: "uploaded",
+      },
+    ]);
+  });
+
+  it("records uploadStatus 'ready' when deps.uploadStatus is 'ready'", async () => {
+    const { deps, recorded } = makeDeps({ uploadStatus: "ready" });
+    const downloader = createAttachmentDownloader(deps);
+
+    await downloader.processCell([ATT("attA")], CTX);
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]!.entries).toEqual([
+      {
+        compositeId: "appB_tblT_recR_fldF_attA",
+        storageKey: "space-1/att/appB_tblT_recR_fldF_attA/attA.png",
+        sizeBytes: 5,
+        mimeType: "image/png",
+        filename: "attA.png",
+        uploadStatus: "ready",
       },
     ]);
   });
@@ -109,7 +132,10 @@ describe("attachment-downloader.processCell", () => {
     const existingKey = "space-1/att/appB_tblT_recR_fldF_attA/old.png";
     const { deps, blobs, recorded } = makeDeps({
       lookup: vi.fn(async () => ({
-        appB_tblT_recR_fldF_attA: existingKey,
+        appB_tblT_recR_fldF_attA: {
+          storageKey: existingKey,
+          uploadStatus: "uploaded",
+        },
       })),
     });
     const downloader = createAttachmentDownloader(deps);
@@ -127,7 +153,10 @@ describe("attachment-downloader.processCell", () => {
     const hitKey = "space-1/att/appB_tblT_recR_fldF_attHit/h.png";
     const { deps, blobs } = makeDeps({
       lookup: vi.fn(async () => ({
-        appB_tblT_recR_fldF_attHit: hitKey,
+        appB_tblT_recR_fldF_attHit: {
+          storageKey: hitKey,
+          uploadStatus: "uploaded",
+        },
       })),
     });
     const downloader = createAttachmentDownloader(deps);

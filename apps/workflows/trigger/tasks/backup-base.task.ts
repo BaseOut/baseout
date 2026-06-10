@@ -123,7 +123,7 @@ async function attachmentLookup(
   internalToken: string,
   spaceId: string,
   compositeIds: string[],
-): Promise<Record<string, string>> {
+): Promise<Record<string, { storageKey: string; uploadStatus: string }>> {
   const url = `${trimSlash(engineUrl)}/api/internal/attachments/lookup`;
   const res = await fetch(url, {
     method: "POST",
@@ -136,7 +136,9 @@ async function attachmentLookup(
   if (!res.ok) {
     throw new Error(`attachments/lookup ${res.status}`);
   }
-  const json = (await res.json()) as { hits?: Record<string, string> };
+  const json = (await res.json()) as {
+    hits?: Record<string, { storageKey: string; uploadStatus: string }>;
+  };
   return json.hits ?? {};
 }
 

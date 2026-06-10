@@ -76,9 +76,7 @@ describe("refreshAirtableAccessToken", () => {
     if (result.kind === "success") expect(result.scope).toBeNull();
   });
 
-  it("invalid — 200 with missing refresh_token must NOT overwrite stored value", async () => {
-    // Airtable always rotates on a successful refresh. A missing refresh_token
-    // is a malformed response, not a green light to wipe the DB column.
+  it("success — 200 with missing refresh_token reuses the submitted grant", async () => {
     const fetchImpl = makeFetchMock(
       new Response(
         JSON.stringify({
@@ -91,10 +89,16 @@ describe("refreshAirtableAccessToken", () => {
     );
 
     const result = await refreshAirtableAccessToken(
-      defaultInput({ fetchImpl }),
+      defaultInput({ fetchImpl, refreshToken: "grant-keep-me" }),
     );
 
-    expect(result).toEqual({ kind: "invalid", reason: "missing_refresh_token" });
+    expect(result).toEqual({
+      kind: "success",
+      accessToken: "acc-new",
+      refreshToken: "grant-keep-me",
+      expiresAtMs: FROZEN_NOW + 3600 * 1000,
+      scope: null,
+    });
   });
 
   it("pending_reauth — 400 invalid_grant means user revoked / removed integration", async () => {

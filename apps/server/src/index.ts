@@ -14,7 +14,6 @@ import {
   connectionDOProxyHandler,
   type ConnectionDOProxyAction,
 } from "./pages/api/internal/connections/do-proxy";
-import { connectionTokenHandler } from "./pages/api/internal/connections/token";
 import { runsStartHandler } from "./pages/api/internal/runs/start";
 import { runsCompleteHandler } from "./pages/api/internal/runs/complete";
 import { runsProgressHandler } from "./pages/api/internal/runs/progress";
@@ -113,15 +112,6 @@ export default {
         }
         const proxy = CONNECTIONS_DO_PROXY_RE.exec(url.pathname);
         if (proxy) {
-          if (proxy[2] === "token") {
-            return await connectionTokenHandler(
-              request,
-              env,
-              ctx,
-              locals,
-              proxy[1]!,
-            );
-          }
           return await connectionDOProxyHandler(
             request,
             env,
@@ -278,15 +268,6 @@ export default {
     if (event.cron !== "*/15 * * * *") {
       // eslint-disable-next-line no-console -- intentional structured log
       console.error(`[scheduled] unknown cron: ${event.cron}`);
-      return;
-    }
-
-    const cronDisabled =
-      (env as { OAUTH_REFRESH_CRON_DISABLED?: string })
-        .OAUTH_REFRESH_CRON_DISABLED === "true" ||
-      (env as { OAUTH_REFRESH_CRON_DISABLED?: string })
-        .OAUTH_REFRESH_CRON_DISABLED === "1";
-    if (cronDisabled) {
       return;
     }
 

@@ -53,9 +53,10 @@ function makeFetchMock(): {
           status: 200,
         });
       }
-      if (url.includes("/token")) {
+      if (url.endsWith("/token")) {
+        const body = init?.body ? JSON.parse(String(init.body)) : {};
         return new Response(
-          JSON.stringify({ accessToken: "plaintext-cipher-A" }),
+          JSON.stringify({ accessToken: `plaintext-${body.encryptedToken}` }),
           { status: 200 },
         );
       }
@@ -169,9 +170,11 @@ describe("runBackupBase", () => {
 
     expect(calls.some((c) => c.url.endsWith("/lock"))).toBe(true);
     expect(calls.some((c) => c.url.endsWith("/unlock"))).toBe(true);
-    const tokenCall = calls.find((c) => c.url.includes("/token"));
+    const tokenCall = calls.find((c) => c.url.endsWith("/token"));
     expect(tokenCall).toBeDefined();
-    expect(tokenCall!.init.method).toBe("POST");
+    expect(JSON.parse(String(tokenCall!.init.body))).toEqual({
+      encryptedToken: "cipher-A",
+    });
   });
 
   it("r2_managed consults getR2Creds (app-level env), not the engine storage-destination route", async () => {

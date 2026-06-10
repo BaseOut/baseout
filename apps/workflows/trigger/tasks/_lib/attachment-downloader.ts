@@ -44,6 +44,13 @@ export interface AttachmentRecordEntry {
   sizeBytes?: number;
   mimeType?: string;
   contentHash?: string;
+  /** Source filename from Airtable, retained for metadata. */
+  filename?: string;
+  /**
+   * 'ready' = staged on local disk (local_fs) but not yet at a destination;
+   * 'uploaded' = at the real destination (managed R2 / BYOS).
+   */
+  uploadStatus?: "ready" | "uploaded";
 }
 
 export interface AttachmentDownloaderDeps {
@@ -51,11 +58,20 @@ export interface AttachmentDownloaderDeps {
   spaceId: string;
   /** Builds the destination-relative storage key for an attachment. */
   buildKey: (compositeId: string, filename: string) => string;
-  /** Engine callback — batch dedup read. Returns compositeId → storageKey. */
+  /**
+   * Upload status stamped on every record entry this run writes. Injected once
+   * per task run from the resolved storage destination: 'ready' for local_fs,
+   * 'uploaded' for managed R2 / BYOS. Defaults to 'uploaded' when omitted.
+   */
+  uploadStatus?: "ready" | "uploaded";
+  /**
+   * Engine callback — batch dedup read. Returns compositeId →
+   * { storageKey, uploadStatus }.
+   */
   lookup: (
     spaceId: string,
     compositeIds: string[],
-  ) => Promise<Record<string, string>>;
+  ) => Promise<Record<string, { storageKey: string; uploadStatus: string }>>;
   /** Engine callback — batch dedup upsert. */
   record: (
     spaceId: string,
@@ -140,10 +156,12 @@ export function createAttachmentDownloader(
       const keys: string[] = [];
       const toRecord: AttachmentRecordEntry[] = [];
 
+      const uploadStatus = deps.uploadStatus ?? "uploaded";
+
       for (const { attachment, compositeId } of composite) {
         const existing = hits[compositeId];
         if (existing) {
-          keys.push(existing);
+          keys.push(existing.storageKey);
           continue;
         }
         const storageKey = deps.buildKey(compositeId, attachment.filename);
@@ -156,6 +174,8 @@ export function createAttachmentDownloader(
           storageKey,
           sizeBytes: bytes.byteLength,
           mimeType,
+          filename: attachment.filename,
+          uploadStatus,
         });
       }
 

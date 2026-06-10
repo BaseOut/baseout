@@ -29,12 +29,16 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
+type UploadStatus = "ready" | "uploaded";
+
 interface RecordEntry {
   compositeId: string;
   storageKey: string;
   sizeBytes?: number;
   mimeType?: string;
   contentHash?: string;
+  filename?: string;
+  uploadStatus?: UploadStatus;
 }
 
 function isRecordEntry(v: unknown): v is RecordEntry {
@@ -51,6 +55,14 @@ function isRecordEntry(v: unknown): v is RecordEntry {
   }
   if (e.mimeType !== undefined && typeof e.mimeType !== "string") return false;
   if (e.contentHash !== undefined && typeof e.contentHash !== "string") {
+    return false;
+  }
+  if (e.filename !== undefined && typeof e.filename !== "string") return false;
+  if (
+    e.uploadStatus !== undefined &&
+    e.uploadStatus !== "ready" &&
+    e.uploadStatus !== "uploaded"
+  ) {
     return false;
   }
   return true;
@@ -92,6 +104,7 @@ export async function attachmentsLookupHandler(
     .select({
       compositeId: attachmentDedup.compositeId,
       storageKey: attachmentDedup.storageKey,
+      uploadStatus: attachmentDedup.uploadStatus,
     })
     .from(attachmentDedup)
     .where(
@@ -101,8 +114,16 @@ export async function attachmentsLookupHandler(
       ),
     );
 
-  const hits: Record<string, string> = {};
-  for (const r of rows) hits[r.compositeId] = r.storageKey;
+  // Hit value carries uploadStatus alongside storageKey so the workflows
+  // downloader (and a future standalone upload phase) can distinguish staged
+  // ('ready') from shipped ('uploaded') rows without a second query.
+  const hits: Record<string, { storageKey: string; uploadStatus: string }> = {};
+  for (const r of rows) {
+    hits[r.compositeId] = {
+      storageKey: r.storageKey,
+      uploadStatus: r.uploadStatus,
+    };
+  }
 
   if (rows.length > 0) {
     // Bump last_seen_at so retention treats these as still-live.
@@ -158,14 +179,21 @@ export async function attachmentsRecordHandler(
   await db
     .insert(attachmentDedup)
     .values(
-      entries.map((e) => ({
-        compositeId: e.compositeId,
-        spaceId,
-        storageKey: e.storageKey,
-        sizeBytes: e.sizeBytes ?? null,
-        mimeType: e.mimeType ?? null,
-        contentHash: e.contentHash ?? null,
-      })),
+      entries.map((e) => {
+        const uploadStatus = e.uploadStatus ?? "uploaded";
+        return {
+          compositeId: e.compositeId,
+          spaceId,
+          storageKey: e.storageKey,
+          sizeBytes: e.sizeBytes ?? null,
+          mimeType: e.mimeType ?? null,
+          contentHash: e.contentHash ?? null,
+          filename: e.filename ?? null,
+          uploadStatus,
+          // Stamp uploaded_at only once the bytes are at a real destination.
+          uploadedAt: uploadStatus === "uploaded" ? sql`now()` : null,
+        };
+      }),
     )
     .onConflictDoUpdate({
       target: attachmentDedup.compositeId,
@@ -174,6 +202,11 @@ export async function attachmentsRecordHandler(
         sizeBytes: sql`excluded.size_bytes`,
         mimeType: sql`excluded.mime_type`,
         contentHash: sql`excluded.content_hash`,
+        filename: sql`excluded.filename`,
+        uploadStatus: sql`excluded.upload_status`,
+        // Keep uploaded_at accurate: now() when the new status is 'uploaded',
+        // cleared back to NULL while a row is still 'ready'.
+        uploadedAt: sql`case when excluded.upload_status = 'uploaded' then now() else null end`,
         lastSeenAt: sql`now()`,
       },
     });

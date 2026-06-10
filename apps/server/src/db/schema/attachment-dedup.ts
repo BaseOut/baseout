@@ -1,6 +1,7 @@
 // MIRROR of apps/web/src/db/schema/core.ts:attachmentDedup (canonical writer).
-// Canonical migration:
+// Canonical migrations:
 //   apps/web/drizzle/0013_attachment_dedup.sql
+//   apps/web/drizzle/0014_attachment_upload_status.sql (filename + upload_status + uploaded_at)
 //
 // Filed by openspec/changes/server-attachments. Per CLAUDE.md §2, master-DB
 // schema is owned by apps/web. This mirror exists because the engine serves
@@ -23,6 +24,14 @@ export const attachmentDedup = baseout.table("attachment_dedup", {
   contentHash: text("content_hash"),
   sizeBytes: bigint("size_bytes", { mode: "number" }),
   mimeType: text("mime_type"),
+  // Source filename from Airtable. Nullable — legacy rows predate this column.
+  filename: text("filename"),
+  // 'ready' = bytes staged on local disk; 'uploaded' = bytes at the real
+  // destination (managed R2 / BYOS). Defaults to 'uploaded' so legacy rows
+  // stay truthful without a backfill.
+  uploadStatus: text("upload_status").notNull().default("uploaded"),
+  // Set to now() when recorded/updated as 'uploaded'; null while 'ready'.
+  uploadedAt: timestamp("uploaded_at", { withTimezone: true }),
   firstSeenAt: timestamp("first_seen_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

@@ -99,6 +99,13 @@
       "when": 1780949386878,
       "tag": "0013_attachment_dedup",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1781111350820,
+      "tag": "0014_attachment_upload_status",
+      "breakpoints": true
     }
   ]
 }

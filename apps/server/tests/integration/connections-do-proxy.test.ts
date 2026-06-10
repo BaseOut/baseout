@@ -5,8 +5,7 @@
 // in-workerd binding:
 //   POST /api/internal/connections/:connectionId/lock
 //   POST /api/internal/connections/:connectionId/unlock
-//   POST /api/internal/connections/:connectionId/token  → lazy refresh handler
-//      (no longer proxied to ConnectionDO — see connections/token.ts)
+//   POST /api/internal/connections/:connectionId/token
 //
 // `connectionId` is the master-DB connections.id (UUID). idFromName(...) hashes
 // it to a stable DO id, so the same Connection always lands in the same DO.
@@ -16,8 +15,10 @@
 
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
+import { encryptToken } from "../../src/lib/crypto";
 
 const TEST_TOKEN = "test-only-internal-token-min-32-chars-aaaa";
+const TEST_ENC_KEY = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
 
 function url(connectionId: string, action: "lock" | "unlock" | "token"): string {
   return `http://test/api/internal/connections/${connectionId}/${action}`;
@@ -65,6 +66,27 @@ describe("POST /api/internal/connections/:connectionId/lock + /unlock", () => {
     const b = `conn-B-${crypto.randomUUID()}`;
     expect((await post(a, "lock")).status).toBe(200);
     expect((await post(b, "lock")).status).toBe(200);
+  });
+});
+
+describe("POST /api/internal/connections/:connectionId/token", () => {
+  it("forwards encryptedToken through and returns the plaintext accessToken", async () => {
+    const conn = `conn-${crypto.randomUUID()}`;
+    const plaintext = "patAirtableXYZ";
+    const encryptedToken = await encryptToken(plaintext, TEST_ENC_KEY);
+
+    const res = await post(conn, "token", { encryptedToken });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { accessToken: string };
+    expect(body.accessToken).toBe(plaintext);
+  });
+
+  it("returns 400 for missing/empty encryptedToken (DO contract surfaces through)", async () => {
+    const conn = `conn-${crypto.randomUUID()}`;
+    const missing = await post(conn, "token", {});
+    expect(missing.status).toBe(400);
+    const empty = await post(conn, "token", { encryptedToken: "" });
+    expect(empty.status).toBe(400);
   });
 });
 

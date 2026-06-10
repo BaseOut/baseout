@@ -47,22 +47,12 @@ export async function spacesRescanBasesHandler(
   if (!UUID_RE.test(spaceId)) {
     return jsonResponse({ error: "invalid_request" }, 400);
   }
-  if (
-    !env.BASEOUT_ENCRYPTION_KEY ||
-    !env.AIRTABLE_OAUTH_CLIENT_ID ||
-    !env.AIRTABLE_OAUTH_CLIENT_SECRET
-  ) {
-    return jsonResponse({ error: "server_misconfigured" }, 500);
-  }
-
   const { db } = locals.getMasterDb();
   const deps = await buildRediscoveryDeps({
     db,
     spaceId,
     triggeredBy: "manual",
     encryptionKey: env.BASEOUT_ENCRYPTION_KEY,
-    airtableClientId: env.AIRTABLE_OAUTH_CLIENT_ID,
-    airtableClientSecret: env.AIRTABLE_OAUTH_CLIENT_SECRET,
   });
 
   if (!deps.ok) {
