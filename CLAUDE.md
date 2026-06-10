@@ -188,7 +188,7 @@ Pick the prefix based on what the change actually touches:
 
 `pnpm openspec:changes <app>` lists every change whose prefix matches the app name (parent + follow-ups + task progress). `openspec list | grep '^shared-'` and `openspec list | grep '^system-'` cover the cross-cutting buckets.
 
-## 3.7 OAuth, Permissions, Routing — Consult the Runbook First
+## 3.7 OAuth, R2, Permissions, Routing — Consult the Runbook First
 
 [shared/internal/oauth-setup.md](shared/internal/oauth-setup.md) is the **single source of truth** for which OAuth redirect URIs are registered with each provider per environment, the gap checklist for missing URIs, the workarounds (stub mode, cross-env Connect), and the deploy commands. It exists because the cost of getting any of this wrong is a broken Reconnect flow that's invisible until a token expires.
 
@@ -206,6 +206,8 @@ Pick the prefix based on what the change actually touches:
 - **Never assume** a URI is registered without checking §3 — the cost of grep'ing the matrix is seconds; the cost of a wrong assumption is the breakage chain from `2026-05-25`.
 
 If a needed URI is missing per §3 and adding it is blocked (owner unreachable, no account access), use the workarounds in §5 — don't paper over with a `--var` swap that breaks the other provider.
+
+**Same rule applies to managed Cloudflare R2.** [shared/internal/r2-setup.md](shared/internal/r2-setup.md) is the source-of-truth for per-env R2 bucket + cred status (the parallel runbook to `oauth-setup.md`). Read it before any change that touches R2 cred resolution (`R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` plumbing), bucket naming, `R2Writer` behavior (`apps/workflows/trigger/tasks/_lib/storage-writers/r2.ts`), or the per-Space `storage_type='r2_managed'` dispatch. Update it in the same change that rotates a token, provisions a new env, or changes the writer interface. **Never put R2 creds in any `.dev.vars` file** — the Workers don't reach R2; only the Trigger.dev Node runner does. The architecture rationale lives in [`openspec/changes/system-r2-revive/proposal.md`](openspec/changes/system-r2-revive/proposal.md); the implementation/launch plan in [`openspec/changes/system-r2-launch/`](openspec/changes/system-r2-launch/).
 
 ## 3.8 Commit Message Format
 
