@@ -3,8 +3,10 @@
  *
  * Single source of truth for the dark/light toggle. The inline FOUC script in
  * Layout.astro owns the very first paint; this module owns every subsequent
- * change. Wraps the mutation in document.startViewTransition() where supported
- * so the whole viewport cross-fades as one paint instead of trickling.
+ * change. The swap is a plain, instant [data-theme] attribute set — daisyUI's
+ * CSS variables repaint in one frame, so there is nothing to animate and
+ * nothing to fall out of sync. (Mirrors apps/web's sibling `okb` project,
+ * which is seamless precisely because it does no view-transition cross-fade.)
  */
 
 export type ThemeMode = 'dark' | 'light';
@@ -13,14 +15,11 @@ const STORAGE_KEY = 'theme';
 const DARK_THEME = 'baseout';
 const LIGHT_THEME = 'baseout-light';
 const CHANGE_EVENT = 'baseout:theme-change';
-const SWAP_END_EVENT = 'baseout:theme-swap-end';
 const WIRED_ATTR = 'data-theme-wired';
-const SWAP_CLASS = 'theme-swapping';
 
 declare global {
   interface DocumentEventMap {
     'baseout:theme-change': CustomEvent<{ mode: ThemeMode }>;
-    'baseout:theme-swap-end': CustomEvent<{ mode: ThemeMode }>;
   }
 }
 
@@ -39,49 +38,22 @@ export function getInitialTheme(): ThemeMode {
 }
 
 export interface ApplyThemeOptions {
-  /** Wrap the swap in document.startViewTransition() when available. Default: true. */
-  animate?: boolean;
   /** Persist the choice to localStorage. Default: true. */
   persist?: boolean;
 }
 
 /**
- * Apply `mode` to <html>'s [data-theme], optionally persisting and animating.
- * Dispatches `baseout:theme-change` on document so sibling toggles can re-reflect.
+ * Apply `mode` to <html>'s [data-theme], optionally persisting. Instant — the
+ * attribute set lets daisyUI swap every CSS variable in a single repaint.
+ * Dispatches `baseout:theme-change` on document so sibling toggles re-reflect.
  */
 export function applyTheme(mode: ThemeMode, options: ApplyThemeOptions = {}): void {
-  const { animate = true, persist = true } = options;
-  const root = document.documentElement;
-
-  // Suppressing per-element transitions during the swap is what makes the
-  // view-transition cross-fade smooth. Without this, every element with its
-  // own `transition-colors` keeps animating independently for 150–300 ms,
-  // out of sync with the 220 ms root cross-fade.
-  const swap = () => {
-    root.classList.add(SWAP_CLASS);
-    root.setAttribute('data-theme', mode === 'dark' ? DARK_THEME : LIGHT_THEME);
-    if (persist) {
-      try { localStorage.setItem(STORAGE_KEY, mode); } catch { /* private mode */ }
-    }
-    document.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: { mode } }));
-  };
-
-  const startViewTransition = (document as Document & {
-    startViewTransition?: (cb: () => void) => { finished: Promise<void> };
-  }).startViewTransition;
-
-  const finish = () => {
-    root.classList.remove(SWAP_CLASS);
-    document.dispatchEvent(new CustomEvent(SWAP_END_EVENT, { detail: { mode } }));
-  };
-
-  if (animate && typeof startViewTransition === 'function') {
-    const transition = startViewTransition.call(document, swap);
-    transition.finished.finally(finish);
-  } else {
-    swap();
-    requestAnimationFrame(() => requestAnimationFrame(finish));
+  const { persist = true } = options;
+  document.documentElement.setAttribute('data-theme', mode === 'dark' ? DARK_THEME : LIGHT_THEME);
+  if (persist) {
+    try { localStorage.setItem(STORAGE_KEY, mode); } catch { /* private mode */ }
   }
+  document.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: { mode } }));
 }
 
 /**
@@ -97,29 +69,6 @@ export function wireThemeToggle(input: HTMLInputElement): void {
   input.checked = getInitialTheme() === 'dark';
 
   input.addEventListener('change', () => {
-    // Two-layer guard against the dropdown wobbling during the swap:
-    //   1. `data-theme-swap-pin` on the parent .dropdown pins the LIVE DOM
-    //      open (paired CSS in global.css overrides daisyUI's hide rule).
-    //   2. `view-transition-name: theme-toggle-menu` on the .dropdown-content
-    //      lifts it out of the root cross-fade so the menu pixels don't blend
-    //      50/50 with the new-theme snapshot. Paired pseudo-rules in
-    //      global.css hold the old snapshot opaque and the new snapshot
-    //      hidden for the entire 220 ms; the live DOM (kept open by layer 1)
-    //      takes back over when the pseudo-elements tear down.
-    // Both must be set BEFORE applyTheme() — startViewTransition() captures
-    // the old snapshot synchronously and needs the name already in place.
-    const dropdown = input.closest<HTMLElement>('.dropdown');
-    const menu = dropdown?.querySelector<HTMLElement>(':scope > .dropdown-content') ?? null;
-    if (dropdown) dropdown.setAttribute('data-theme-swap-pin', '');
-    if (menu) menu.style.viewTransitionName = 'theme-toggle-menu';
-    if (dropdown || menu) {
-      const cleanup = () => {
-        dropdown?.removeAttribute('data-theme-swap-pin');
-        if (menu) menu.style.viewTransitionName = '';
-        document.removeEventListener(SWAP_END_EVENT, cleanup);
-      };
-      document.addEventListener(SWAP_END_EVENT, cleanup);
-    }
     applyTheme(input.checked ? 'dark' : 'light');
   });
 
