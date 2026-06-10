@@ -59,6 +59,22 @@ export class LocalFsWriter implements StorageWriter {
     return { path: abs, size: Buffer.byteLength(csv, "utf8") };
   }
 
+  async writeBlob(relativeKey: string, body: Uint8Array, _contentType: string) {
+    // Local disk has no notion of a content-type header; the byte stream is
+    // written verbatim. `_contentType` is accepted to satisfy the interface
+    // and so the BYOS/R2 writers (which DO need it) share one call shape.
+    if (relativeKey.includes("..")) {
+      throw new Error("invalid_path");
+    }
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const { dirname: pathDirname } = await import("node:path");
+    const root = this.rootDir ?? BACKUP_ROOT;
+    const abs = join(root, relativeKey);
+    await mkdir(pathDirname(abs), { recursive: true });
+    await writeFile(abs, body);
+    return { path: abs, size: body.byteLength };
+  }
+
   async deletePrefix(relativePrefix: string) {
     if (relativePrefix.includes("..")) {
       throw new Error("invalid_path");

@@ -43,10 +43,17 @@ const workerEnv = env as unknown as {
   BOX_OAUTH_CLIENT_ID?: string
   DROPBOX_OAUTH_CLIENT_ID?: string
   MICROSOFT_OAUTH_CLIENT_ID?: string
+  LOCAL_FS_PICKER_ENABLED?: string
 }
 const boxEnabled = Boolean(workerEnv.BOX_OAUTH_CLIENT_ID)
 const dropboxEnabled = Boolean(workerEnv.DROPBOX_OAUTH_CLIENT_ID)
 const oneDriveEnabled = Boolean(workerEnv.MICROSOFT_OAUTH_CLIENT_ID)
+// Dev-only escape hatch: show `local_fs` (writes to apps/workflows/.backups/
+// on disk) as a real picker option. Useful for verifying the backup flow +
+// attachments without provisioning a third-party destination. Gate ensures
+// staging/prod don't surface the option to customers — controlled by
+// LOCAL_FS_PICKER_ENABLED in apps/web/.dev.vars.
+const localFsEnabled = workerEnv.LOCAL_FS_PICKER_ENABLED === '1'
 
 const ALL_OPTIONS: {
   value: string
@@ -97,6 +104,20 @@ const ALL_OPTIONS: {
     helper: 'Growth+ — your own S3 bucket. Coming soon.',
     enabled: false,
   },
+  // Dev-only — see `localFsEnabled` above. The PATCH route already accepts
+  // 'local_fs' (apps/web/src/lib/backup-config/persist-policy.ts), so picking
+  // this radio writes through the same path as any BYOS option.
+  ...(localFsEnabled
+    ? [
+        {
+          value: 'local_fs',
+          label: 'Local disk (dev only)',
+          helper:
+            'Writes CSVs + attachments to apps/workflows/.backups/ on the Trigger.dev runner. Useful for verifying the backup flow without a third-party destination.',
+          enabled: true,
+        },
+      ]
+    : []),
 ]
 
 const NAME = 'backup-storage'

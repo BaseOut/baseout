@@ -64,8 +64,30 @@ describe("resolveStorageWriter", () => {
     expect(resolveStorageWriter("local_fs")).toBeInstanceOf(LocalFsWriter);
   });
 
-  it("returns LocalFsWriter for r2_managed (legacy default)", () => {
+  it("returns LocalFsWriter for r2_managed when no creds are passed (dev fallback)", () => {
+    // openspec/changes/workflows-r2-writer: R2 creds are app-level env. When
+    // the runner has no R2 provisioning (getR2Creds → null), r2_managed
+    // degrades to local disk rather than failing the run.
     expect(resolveStorageWriter("r2_managed")).toBeInstanceOf(LocalFsWriter);
+  });
+
+  it("returns an R2-shaped writer when storage_type='r2_managed' AND creds.kind='r2' are present", () => {
+    const writer = resolveStorageWriter("r2_managed", {
+      kind: "r2",
+      accountId: "acct123",
+      accessKeyId: "AKID",
+      secretAccessKey: "secret",
+      bucket: "baseout-backups",
+    });
+    expect(writer).not.toBeInstanceOf(LocalFsWriter);
+    expect(typeof writer.writeCsv).toBe("function");
+    expect(typeof writer.deletePrefix).toBe("function");
+  });
+
+  it("falls back to LocalFsWriter on cross-kind creds for r2_managed (kind='box')", () => {
+    expect(resolveStorageWriter("r2_managed", makeBoxCreds())).toBeInstanceOf(
+      LocalFsWriter,
+    );
   });
 
   it("returns LocalFsWriter when google_drive is requested but no creds are passed", () => {

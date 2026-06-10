@@ -16,6 +16,7 @@
  */
 
 import {
+  bigint,
   boolean,
   check,
   index,
@@ -538,4 +539,45 @@ export const storageDestinations = baseout.table('storage_destinations', {
     sql`${table.type} IN ('local_fs', 'google_drive', 'box', 'dropbox', 'onedrive')`,
   ),
   index('storage_destinations_type_idx').on(table.type),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// ATTACHMENT DEDUP
+// Filed by openspec/changes/server-attachments (Phase A). One row per unique
+// Airtable attachment seen across all backup runs of a Space. The composite
+// ID (PRD §2.8) lets a re-run skip re-downloading + re-uploading a file it has
+// already persisted — without it, every snapshot of an attachment-heavy base
+// re-streams gigabytes per scheduled run.
+//
+// `storage_key` is destination-agnostic: it holds an R2 S3 object key, a BYOS
+// relative path, or a local-disk relative path depending on the Space's
+// selected destination (the same string buildR2Key/the StorageWriter use).
+// ———————————————————————————————————————————————————————————————————————————
+
+export const attachmentDedup = baseout.table('attachment_dedup', {
+  // {base_id}_{table_id}_{record_id}_{field_id}_{attachment_id} per PRD §2.8.
+  compositeId: text('composite_id').primaryKey(),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  // Destination-relative key the attachment bytes were written to.
+  storageKey: text('storage_key').notNull(),
+  // sha256 of the file contents, computed on first download. Optional — used
+  // by a future content-hash dedup; composite-ID dedup is the load-bearing key.
+  contentHash: text('content_hash'),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }),
+  mimeType: text('mime_type'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  // Updated by every run that touches this attachment, so retention can prune
+  // attachments not seen for > the tier's retention window.
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+}, (table) => [
+  index('attachment_dedup_space_composite_idx').on(
+    table.spaceId,
+    table.compositeId,
+  ),
 ])

@@ -1,35 +1,84 @@
-# Local development secrets for @baseout/web. Copy to .dev.vars and fill in.
-# .dev.vars is gitignored.
+# Local-dev RUNTIME secrets for @baseout/web (the Cloudflare Worker reads these
+# via `wrangler dev`). Copy to .dev.vars and fill in. .dev.vars is gitignored —
+# never commit real values.
 #
-# Canonical browser origin is https://baseout.local:4331 (see
-# shared/internal/oauth-setup.md §5.5). Do NOT point OAuth redirect overrides
-# at https://localhost:4331 — session + handoff cookies are scoped to
-# baseout.local and Connect will bounce you to /login on localhost.
-# MICROSOFT_REDIRECT_URI=https://baseout.local:4331/api/connections/storage/onedrive/callback
-DATABASE_URL=postgres://localhost:5432/baseout_dev
-MASTER_ENCRYPTION_KEY=
-BETTER_AUTH_SECRET=
-STRIPE_SECRET_KEY=sk_test_
-STRIPE_WEBHOOK_SECRET=whsec_
-MAILGUN_API_KEY=
-AIRTABLE_OAUTH_CLIENT_SECRET=
-SERVICE_HMAC_TO_BACKUP=
-POSTHOG_PROJECT_KEY=
-DUB_CO_API_KEY=
+#   cp apps/web/.dev.vars.example apps/web/.dev.vars
+#
+# DB connection + Node-tooling vars (DATABASE_URL, FONTAWESOME_TOKEN, NPM_TOKEN)
+# live in .env, NOT here — see .env.example. PUBLIC_AUTH_BASE_URL is injected by
+# the dev script's `--var` flag (wrangler 4.x `--var` wins over .dev.vars), so do
+# NOT set it here. Do NOT wrap values in quotes — wrangler treats the quotes as
+# part of the value.
+#
+# Canonical browser origin is https://baseout.local:4331 (shared/internal/
+# oauth-setup.md §5). Don't point OAuth redirect overrides at localhost —
+# session + handoff cookies are scoped to baseout.local and Connect will bounce
+# to /login on localhost.
 
-# === Backup engine (@baseout/server) ===
-# apps/web reaches @baseout/server through a Cloudflare Worker service
-# binding (env.BACKUP_ENGINE) declared in wrangler.jsonc.example. There is
-# no URL to configure — Cloudflare resolves the binding to the deployed
-# Worker named `baseout-server-<env>` in the same account.
-#
-# Deploy precondition (one-time per developer):
-#   pnpm --filter @baseout/server deploy:dev
-# This lands `baseout-server-dev.openside.workers.dev`, which the dev
-# binding resolves to. See shared/internal/ops-setup.md for details +
-# how to redeploy when apps/server changes.
-#
-# Token: defense-in-depth header sent on every binding fetch — must equal
-# apps/server's INTERNAL_TOKEN (32+ random bytes, base64). Generate once:
-# `openssl rand -base64 32`. Mismatch = engine 401 → web 502.
-BACKUP_ENGINE_INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness
+# ─── Required for the dev server to boot ──────────────────────────────────────
+
+# Better Auth session-signing secret. Generate: `openssl rand -base64 32`
+BETTER_AUTH_SECRET=
+
+# AES-256-GCM master key for OAuth tokens + handoff cookies at rest.
+# Generate: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+# MUST decode to exactly 32 bytes, and MUST be byte-identical to apps/server's
+# BASEOUT_ENCRYPTION_KEY (the server's refresh cron decrypts what web encrypts).
+# A mismatch silently flips Airtable connections to status='invalid' and forces
+# customer reconnects — see shared/internal/oauth-setup.md §8.
+BASEOUT_ENCRYPTION_KEY=
+
+# Defense-in-depth token sent to @baseout/server on every service-binding fetch.
+# MUST equal apps/server's INTERNAL_TOKEN. Generate: `openssl rand -base64 32`
+# (There is no engine URL to set — env.BACKUP_ENGINE is a Worker service binding
+# declared in wrangler.jsonc.example; deploy the engine once with
+# `pnpm --filter @baseout/server deploy:dev` so the binding resolves.)
+BACKUP_ENGINE_INTERNAL_TOKEN=
+
+# "From" header for transactional mail (verified sender on the Cloudflare Email
+# Sending domain). Example: "Baseout <login@mail.baseout.dev>". In local dev,
+# magic links are logged to the console, so any placeholder works.
+EMAIL_FROM=
+
+# ─── Airtable OAuth (Connect flow) ────────────────────────────────────────────
+# Redirect-URI registration status per env: shared/internal/oauth-setup.md §3.1.
+AIRTABLE_OAUTH_CLIENT_ID=
+AIRTABLE_OAUTH_CLIENT_SECRET=
+
+# Dev-only: when "1", impersonate airtable.com via /api/stub/airtable/* so the
+# OAuth round-trip runs without real creds (oauth-setup.md §5.3). Never in prod.
+AIRTABLE_STUBS_ENABLED=
+
+# ─── BYOS storage-provider OAuth (Connect flows) ──────────────────────────────
+# Redirect-URI registration status per provider: shared/internal/oauth-setup.md §3.2.
+# Each provider is independent — leaving a pair blank only disables that provider.
+GOOGLE_DRIVE_OAUTH_CLIENT_ID=
+GOOGLE_DRIVE_OAUTH_CLIENT_SECRET=
+
+BOX_OAUTH_CLIENT_ID=
+BOX_OAUTH_CLIENT_SECRET=
+
+DROPBOX_OAUTH_CLIENT_ID=
+DROPBOX_OAUTH_CLIENT_SECRET=
+# Optional redirect-URI override; defaults to the baseout.local callback path.
+DROPBOX_REDIRECT_URI=
+
+MICROSOFT_OAUTH_CLIENT_ID=
+# Optional redirect-URI override; defaults to the baseout.local callback path.
+# Do NOT set this to a localhost URL (host-only cookie never follows → broken
+# Connect). See shared/internal/oauth-setup.md and the OneDrive failure note.
+MICROSOFT_REDIRECT_URI=
+
+# ─── Stripe trial (optional in dev) ───────────────────────────────────────────
+# Both keys set → onboarding runs the real $0-trial flow. Otherwise set
+# DEV_SKIP_STRIPE=1 to finish onboarding without Stripe.
+STRIPE_SECRET_KEY=sk_test_
+STRIPE_TRIAL_PRICE_ID=
+# Dev-only escape hatch — skip Stripe customer/subscription creation. Never in prod.
+DEV_SKIP_STRIPE=
+
+# ─── Dev/E2E only (optional) ──────────────────────────────────────────────────
+# E2E_TEST_MODE gates /api/internal/test/* for Playwright; E2E_TEST_TOKEN is the
+# bearer those routes check. Leave unset for normal dev. Never set in production.
+E2E_TEST_MODE=
+E2E_TEST_TOKEN=

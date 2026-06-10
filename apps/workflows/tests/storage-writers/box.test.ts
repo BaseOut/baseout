@@ -264,6 +264,67 @@ describe("createBoxWriter.writeCsv", () => {
   });
 });
 
+describe("createBoxWriter.writeBlob", () => {
+  it("resolves the folder path then uploads the blob bytes via multipart", async () => {
+    const { fetchImpl, calls } = makeFakeFetch([
+      // 1. list root for "run_a" — miss
+      () => json({ entries: [], total_count: 0 }),
+      // 2. create "run_a"
+      () => json({ type: "folder", id: "folder_run_a", name: "run_a" }),
+      // 3. upload — 201 with entries[0].id
+      () =>
+        json(
+          { entries: [{ type: "file", id: "file_42", name: "att.png" }] },
+          { status: 201 },
+        ),
+    ]);
+
+    const writer = createBoxWriter({ creds: makeCreds(), fetchImpl });
+    // 4 arbitrary bytes tagged as a PNG.
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const result = await writer.writeBlob("run_a/att.png", bytes, "image/png");
+
+    expect(result.path).toBe("box://folder_run_a/att.png");
+    expect(result.size).toBe(4);
+    expect(calls).toHaveLength(3);
+
+    // List #1 hits /folders/root_folder/items
+    expect(calls[0]!.url).toContain("/folders/root_folder/items");
+    // Create #1 is POST /folders with parent.id = root_folder
+    const createBody = JSON.parse(calls[1]!.init.body as string);
+    expect(createBody.name).toBe("run_a");
+    expect(createBody.parent).toEqual({ id: "root_folder" });
+    // Upload hits the upload subdomain at /files/content
+    expect(calls[2]!.url).toContain("upload.box.com");
+    expect(calls[2]!.url).toContain("/files/content");
+    expect(calls[2]!.init.method).toBe("POST");
+    // The upload body is FormData carrying the file part with the given type.
+    const form = calls[2]!.init.body as FormData;
+    expect(form).toBeInstanceOf(FormData);
+    const filePart = form.get("file");
+    expect(filePart).toBeInstanceOf(Blob);
+    expect((filePart as Blob).type).toBe("image/png");
+    expect((filePart as Blob).size).toBe(4);
+    // Authorization is set on every call.
+    for (const c of calls) {
+      const h = new Headers(c.init.headers);
+      expect(h.get("authorization")).toBe("Bearer at_initial");
+    }
+  });
+
+  it("rejects path-traversal in relativeKey", async () => {
+    const { fetchImpl } = makeFakeFetch([]);
+    const writer = createBoxWriter({ creds: makeCreds(), fetchImpl });
+    const bytes = new Uint8Array([1, 2, 3]);
+    await expect(
+      writer.writeBlob("../escape.png", bytes, "image/png"),
+    ).rejects.toThrow(/invalid_path/);
+    await expect(
+      writer.writeBlob("a/../b/c.png", bytes, "image/png"),
+    ).rejects.toThrow(/invalid_path/);
+  });
+});
+
 describe("createBoxWriter.deletePrefix", () => {
   it("happy path — walks segments, then DELETE /folders/:id?recursive=true", async () => {
     const { fetchImpl, calls } = makeFakeFetch([

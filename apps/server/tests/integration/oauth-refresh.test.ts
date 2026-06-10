@@ -190,4 +190,30 @@ describe("runOAuthRefreshTick (hardened)", () => {
     const result = await runOAuthRefreshTick(defaultDeps({ db, refresh }));
     expect(result.outcomes.persist_after_cas_miss).toBe(1);
   });
+
+  it("persist failure after rotation — pending_reauth not stale active", async () => {
+    const refreshEnc = await encryptToken("refresh-plain", ENC_KEY);
+    const row = { ...selectedRow, refresh_token_enc: refreshEnc };
+    const claimedAt = new Date("2026-01-01T00:00:00.000Z");
+    const persistFailures = Array.from({ length: 8 }, () => ({ rows: [] as unknown[] }));
+    const { db } = makeFakeDb([
+      { rows: [{ id: AIRTABLE_PLATFORM_ID }] },
+      { rows: [row] },
+      { rows: [{ id: CONN_ID, status: "active", modified_at: claimedAt }] },
+      ...persistFailures,
+      { rows: [] },
+    ]);
+    const refresh = vi.fn(
+      async (): Promise<RefreshOutcome> => ({
+        kind: "success",
+        accessToken: "new-access",
+        refreshToken: "new-refresh",
+        expiresAtMs: FROZEN_NOW + 3_600_000,
+        scope: null,
+      }),
+    );
+    const result = await runOAuthRefreshTick(defaultDeps({ db, refresh }));
+    expect(result.outcomes.cas_lost).toBe(1);
+    expect(refresh).toHaveBeenCalledOnce();
+  });
 });

@@ -31,6 +31,7 @@
 // a `..` segment in the relative key or prefix throws `invalid_path`.
 
 import type { StorageWriter } from "../storage-writer";
+import { toFetchBody } from "./fetch-body";
 
 const DROPBOX_API_BASE = "https://api.dropboxapi.com/2";
 const DROPBOX_CONTENT_BASE = "https://content.dropboxapi.com/2";
@@ -192,16 +193,15 @@ export function createDropboxWriter(
     return current;
   }
 
-  async function uploadCsv(
+  async function uploadBytes(
     parentFolderPath: string,
     fileName: string,
-    csv: string,
+    bytes: Uint8Array,
   ): Promise<{ path: string; size: number }> {
     if (fileName.includes("\\") || fileName.includes("/")) {
       throw new Error("invalid_path");
     }
     const path = `${parentFolderPath}/${fileName}`;
-    const bytes = new TextEncoder().encode(csv);
 
     // Dropbox-API-Arg is a header-encoded JSON value for content endpoints.
     // We use `mode: 'overwrite'` so re-running a backup over the same key
@@ -220,7 +220,7 @@ export function createDropboxWriter(
         "content-type": "application/octet-stream",
         "dropbox-api-arg": arg,
       },
-      body: bytes,
+      body: toFetchBody(bytes),
     });
 
     if (res.status !== 200) {
@@ -263,7 +263,25 @@ export function createDropboxWriter(
     async writeCsv(relativeKey, csv) {
       const { dirSegments, fileName } = splitSegments(relativeKey);
       const parentPath = await resolveFolderPath(dirSegments);
-      const { path, size } = await uploadCsv(parentPath, fileName, csv);
+      const { path, size } = await uploadBytes(
+        parentPath,
+        fileName,
+        new TextEncoder().encode(csv),
+      );
+      return {
+        path: `dropbox://${path}`,
+        size,
+      };
+    },
+
+    async writeBlob(relativeKey, body, _contentType) {
+      // The HTTP content-type for the upload stays application/octet-stream
+      // (a Dropbox content-endpoint requirement). Dropbox infers the stored
+      // file's type from its extension, so `contentType` is accepted but
+      // intentionally unused for the HTTP call.
+      const { dirSegments, fileName } = splitSegments(relativeKey);
+      const parentPath = await resolveFolderPath(dirSegments);
+      const { path, size } = await uploadBytes(parentPath, fileName, body);
       return {
         path: `dropbox://${path}`,
         size,

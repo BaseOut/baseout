@@ -37,6 +37,29 @@ describe("LocalFsWriter", () => {
     });
   });
 
+  describe("writeBlob", () => {
+    it("writes arbitrary bytes at the given relative key + creates parent dirs", async () => {
+      const writer = new LocalFsWriter({ rootDir });
+      const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+      const result = await writer.writeBlob(
+        "acme/Space/Base/2026-05-22T19-27-55Z/attachments/abc/logo.png",
+        bytes,
+        "image/png",
+      );
+
+      expect(result.size).toBe(bytes.byteLength);
+      const written = await readFile(result.path);
+      expect(new Uint8Array(written)).toEqual(bytes);
+    });
+
+    it("rejects relative keys containing `..`", async () => {
+      const writer = new LocalFsWriter({ rootDir });
+      await expect(
+        writer.writeBlob("../escape.png", new Uint8Array([1]), "image/png"),
+      ).rejects.toThrow("invalid_path");
+    });
+  });
+
   describe("deletePrefix", () => {
     it("removes a populated prefix recursively", async () => {
       const writer = new LocalFsWriter({ rootDir });

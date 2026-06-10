@@ -18,6 +18,7 @@ import type {
   AirtableSchema,
   AirtableRecordsPage,
 } from "../trigger/tasks/_lib/airtable-client";
+import type { AttachmentDownloader } from "../trigger/tasks/_lib/attachment-downloader";
 
 const ENGINE = "https://engine.example.com";
 const TOKEN = "internal-token";
@@ -52,10 +53,9 @@ function makeFetchMock(): {
           status: 200,
         });
       }
-      if (url.endsWith("/token")) {
-        const body = init?.body ? JSON.parse(String(init.body)) : {};
+      if (url.includes("/token")) {
         return new Response(
-          JSON.stringify({ accessToken: `plaintext-${body.encryptedToken}` }),
+          JSON.stringify({ accessToken: "plaintext-cipher-A" }),
           { status: 200 },
         );
       }
@@ -109,7 +109,11 @@ const BASE_INPUT = {
   spaceName: "MySpace",
   baseName: "ProjectsDB",
   runStartedAt: new Date("2026-05-02T12:00:00Z"),
-  storageType: "r2_managed",
+  // local_fs because most tests inject `deps.writeCsv` and don't care about the
+  // resolved writer. The r2_managed-without-creds case has its own test below
+  // that asserts the guard returns `failed`; tests that DO care about the r2
+  // path override `storageType` and pass `getR2Creds` explicitly.
+  storageType: "local_fs",
   spaceId: "space-1",
 };
 
@@ -165,11 +169,131 @@ describe("runBackupBase", () => {
 
     expect(calls.some((c) => c.url.endsWith("/lock"))).toBe(true);
     expect(calls.some((c) => c.url.endsWith("/unlock"))).toBe(true);
-    const tokenCall = calls.find((c) => c.url.endsWith("/token"));
+    const tokenCall = calls.find((c) => c.url.includes("/token"));
     expect(tokenCall).toBeDefined();
-    expect(JSON.parse(String(tokenCall!.init.body))).toEqual({
-      encryptedToken: "cipher-A",
+    expect(tokenCall!.init.method).toBe("POST");
+  });
+
+  it("r2_managed consults getR2Creds (app-level env), not the engine storage-destination route", async () => {
+    // openspec/changes/workflows-r2-writer: R2 creds come from getR2Creds,
+    // never from fetchStorageCreds / the per-Space OAuth route.
+    const { fetchMock } = makeFetchMock();
+    const { writeCsv } = makeWriteCsv();
+    const getR2Creds = vi.fn(() => ({
+      accountId: "acct123",
+      accessKeyId: "AKID",
+      secretAccessKey: "secret",
+      bucket: "baseout-backups",
+    }));
+    const fetchStorageCreds = vi.fn(async () => null);
+    const client = makeAirtableClient({
+      schema: {
+        tables: [
+          {
+            id: "tbl1",
+            name: "Tasks",
+            primaryFieldId: "fld1",
+            fields: [{ id: "fld1", name: "Name", type: "singleLineText" }],
+          },
+        ],
+      },
+      pages: [
+        {
+          records: [
+            { id: "rec1", createdTime: "2026-01-01", fields: { Name: "foo" } },
+          ],
+        },
+      ],
     });
+
+    const result = await runBackupBase(
+      { ...BASE_INPUT, storageType: "r2_managed", isTrial: false },
+      {
+        engineUrl: ENGINE,
+        internalToken: TOKEN,
+        fetchImpl: fetchMock,
+        airtableClient: client,
+        sleepImpl: async () => undefined,
+        writeCsv,
+        getR2Creds,
+        fetchStorageCreds,
+      },
+    );
+
+    expect(result.status).toBe("succeeded");
+    expect(getR2Creds).toHaveBeenCalledTimes(1);
+    expect(fetchStorageCreds).not.toHaveBeenCalled();
+  });
+
+  it("attachment field → downloader processes the cell, keys land in the CSV, count flows to result", async () => {
+    const { fetchMock } = makeFetchMock();
+    const { writeCsv, writes } = makeWriteCsv();
+    const processCell = vi.fn<AttachmentDownloader["processCell"]>(async () => ({
+      keys: ["acme/sp/base/attachments/cid1/a.png", "acme/sp/base/attachments/cid2/b.png"],
+      downloaded: 2,
+    }));
+    const client = makeAirtableClient({
+      schema: {
+        tables: [
+          {
+            id: "tbl1",
+            name: "Assets",
+            primaryFieldId: "fld1",
+            fields: [
+              { id: "fld1", name: "Name", type: "singleLineText" },
+              { id: "fld2", name: "Files", type: "multipleAttachments" },
+            ],
+          },
+        ],
+      },
+      pages: [
+        {
+          records: [
+            {
+              id: "rec1",
+              createdTime: "2026-01-01",
+              fields: {
+                Name: "row one",
+                Files: [
+                  { id: "att1", url: "https://dl/att1", filename: "a.png", type: "image/png" },
+                  { id: "att2", url: "https://dl/att2", filename: "b.png", type: "image/png" },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await runBackupBase(
+      { ...BASE_INPUT, storageType: "local_fs", isTrial: false },
+      {
+        engineUrl: ENGINE,
+        internalToken: TOKEN,
+        fetchImpl: fetchMock,
+        airtableClient: client,
+        sleepImpl: async () => undefined,
+        writeCsv,
+        attachmentDownloader: { processCell },
+      },
+    );
+
+    expect(result.status).toBe("succeeded");
+    expect(result.attachmentsProcessed).toBe(2);
+    // processCell got the right DownloadContext (composite-ID inputs).
+    expect(processCell).toHaveBeenCalledTimes(1);
+    expect(processCell.mock.calls[0]![1]).toEqual({
+      baseId: "appXYZ",
+      tableId: "tbl1",
+      recordId: "rec1",
+      fieldId: "fld2",
+    });
+    // The CSV cell holds the semicolon-joined storage keys, not "[N attachments]".
+    expect(writes).toHaveLength(1);
+    expect(writes[0]!.csv).toContain(
+      "acme/sp/base/attachments/cid1/a.png;acme/sp/base/attachments/cid2/b.png",
+    );
+    expect(writes[0]!.csv).not.toContain("attachments]");
   });
 
   it("trial mode with >5 tables → backs up first 5 only and returns trial_truncated", async () => {
@@ -344,6 +468,55 @@ describe("runBackupBase", () => {
       recordsAppended: 3,
       tableCompleted: true,
     });
+  });
+
+  // Regression: 2026-06-09 silent-hang root cause. Before this, the wrapper
+  // threw on r2_managed-without-creds BEFORE entering the try/catch that
+  // calls postCompletion, so engine-side `backup_runs` rows stayed
+  // status='running' forever. Pushing the guard into the pure function makes
+  // it a structured `failed` result instead — the wrapper's existing
+  // postCompletion runs unchanged and the engine row flips.
+  it("storageType='r2_managed' with no getR2Creds returns failed (does NOT throw, does NOT silently fall back to LocalFs)", async () => {
+    const { fetchMock } = makeFetchMock();
+    const { writeCsv } = makeWriteCsv();
+    const client = makeAirtableClient({
+      schema: {
+        tables: [
+          {
+            id: "tbl1",
+            name: "T1",
+            primaryFieldId: "fld1",
+            fields: [{ id: "fld1", name: "X", type: "singleLineText" }],
+          },
+        ],
+      },
+      pages: [
+        {
+          records: [
+            { id: "r1", createdTime: "2026-01-01", fields: { X: "a" } },
+          ],
+        },
+      ],
+    });
+
+    const result = await runBackupBase(
+      { ...BASE_INPUT, storageType: "r2_managed", isTrial: false },
+      {
+        engineUrl: ENGINE,
+        internalToken: TOKEN,
+        fetchImpl: fetchMock,
+        airtableClient: client,
+        sleepImpl: async () => undefined,
+        writeCsv,
+        // getR2Creds intentionally omitted — production wrapper builds these
+        // from process.env and the env vars aren't set in the dev runner.
+      },
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.errorMessage).toMatch(/r2/i);
+    expect(result.tablesProcessed).toBe(0);
+    expect(result.recordsProcessed).toBe(0);
   });
 
   it("swallows a thrown postProgress so the backup still completes", async () => {

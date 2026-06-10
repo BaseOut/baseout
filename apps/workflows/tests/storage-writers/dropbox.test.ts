@@ -248,6 +248,64 @@ describe("createDropboxWriter.writeCsv", () => {
   });
 });
 
+describe("createDropboxWriter.writeBlob", () => {
+  it("creates each ancestor folder under root, then uploads arbitrary bytes via /2/files/upload — size equals the byte length", async () => {
+    const { fetchImpl, calls } = makeFakeFetch([
+      // 1. create_folder_v2 for "/Baseout-sp1/run_a"
+      () => json({ metadata: { path_display: "/Baseout-sp1/run_a" } }),
+      // 2. create_folder_v2 for "/Baseout-sp1/run_a/base_x"
+      () =>
+        json({ metadata: { path_display: "/Baseout-sp1/run_a/base_x" } }),
+      // 3. upload at "/Baseout-sp1/run_a/base_x/photo.png"
+      () =>
+        json({
+          id: "id:file_blob",
+          name: "photo.png",
+          path_display: "/Baseout-sp1/run_a/base_x/photo.png",
+        }),
+    ]);
+
+    const writer = createDropboxWriter({ creds: makeCreds(), fetchImpl });
+    const body = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+    const result = await writer.writeBlob(
+      "run_a/base_x/photo.png",
+      body,
+      "image/png",
+    );
+
+    expect(result.path).toBe(
+      "dropbox:///Baseout-sp1/run_a/base_x/photo.png",
+    );
+    expect(result.size).toBe(body.byteLength);
+    expect(calls).toHaveLength(3);
+
+    // Verify the content upload POST occurred against the content subdomain
+    // with the octet-stream body + path encoded in the Dropbox-API-Arg header.
+    expect(calls[2]!.url).toContain("content.dropboxapi.com");
+    expect(calls[2]!.url).toContain("/files/upload");
+    expect(calls[2]!.init.method).toBe("POST");
+    const uploadHeaders = new Headers(calls[2]!.init.headers);
+    expect(uploadHeaders.get("content-type")).toBe(
+      "application/octet-stream",
+    );
+    const arg = JSON.parse(uploadHeaders.get("dropbox-api-arg") ?? "{}");
+    expect(arg.path).toBe("/Baseout-sp1/run_a/base_x/photo.png");
+    expect(arg.mode).toBe("overwrite");
+  });
+
+  it("rejects path-traversal in relativeKey", async () => {
+    const { fetchImpl } = makeFakeFetch([]);
+    const writer = createDropboxWriter({ creds: makeCreds(), fetchImpl });
+    const body = new Uint8Array([1, 2, 3]);
+    await expect(
+      writer.writeBlob("../escape.png", body, "image/png"),
+    ).rejects.toThrow(/invalid_path/);
+    await expect(
+      writer.writeBlob("a/../b/c.png", body, "image/png"),
+    ).rejects.toThrow(/invalid_path/);
+  });
+});
+
 describe("createDropboxWriter.deletePrefix", () => {
   it("happy path — single POST to /2/files/delete_v2 with the full path", async () => {
     const { fetchImpl, calls } = makeFakeFetch([

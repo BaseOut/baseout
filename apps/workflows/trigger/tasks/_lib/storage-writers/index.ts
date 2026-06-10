@@ -24,27 +24,37 @@ import {
 import { createBoxWriter, type BoxWriterCreds } from "./box";
 import { createDropboxWriter, type DropboxWriterCreds } from "./dropbox";
 import { createOneDriveWriter, type OneDriveWriterCreds } from "./onedrive";
+import { createR2Writer, type R2WriterCreds } from "./r2";
 
 /**
  * Union of credential shapes accepted by `resolveStorageWriter`. Each
  * registered BYOS provider adds its own variant; the factory dispatches on
  * `kind`.
+ *
+ * `r2` is the managed-R2 variant (openspec/changes/workflows-r2-writer). Its
+ * creds are app-level env (not per-Space OAuth) — the task wrapper builds them
+ * from process.env and passes `{ kind: 'r2', ... }`.
  */
 export type StorageWriterCreds =
   | ({ kind: "google_drive" } & DriveWriterCreds)
   | ({ kind: "box" } & BoxWriterCreds)
   | ({ kind: "dropbox" } & DropboxWriterCreds)
-  | ({ kind: "onedrive" } & OneDriveWriterCreds);
+  | ({ kind: "onedrive" } & OneDriveWriterCreds)
+  | ({ kind: "r2" } & R2WriterCreds);
 
 export type { DriveWriterCreds } from "./google-drive";
 export type { BoxWriterCreds } from "./box";
 export type { DropboxWriterCreds } from "./dropbox";
 export type { OneDriveWriterCreds } from "./onedrive";
+export type { R2WriterCreds } from "./r2";
 
 export function resolveStorageWriter(
   storageType: string,
   creds?: StorageWriterCreds,
 ): StorageWriter {
+  if (storageType === "r2_managed" && creds?.kind === "r2") {
+    return createR2Writer({ creds });
+  }
   if (storageType === "google_drive" && creds?.kind === "google_drive") {
     return createGoogleDriveWriter({ creds });
   }

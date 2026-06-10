@@ -28,6 +28,8 @@ The existing openspec change `server/specs/storage-destinations/spec.md` already
 
 ### Phase 0 — Re-introduce managed R2 binding
 
+> **⚠️ Superseded by [`system-r2-revive`](../system-r2-revive/proposal.md).** This phase assumed R2 returns as a Cloudflare Worker `BACKUPS_R2` binding. That is no longer correct: backups run on the Trigger.dev **Node runner**, which has no Workers bindings. R2 now lands as a Node-runner **S3-compatible-API** `StorageWriter` in [`workflows-r2-writer`](../workflows-r2-writer/proposal.md), with app-level env creds (not a binding, not per-Space OAuth). The Worker-binding instructions below are retained for history only — do not execute them.
+
 Required first because commit `8fc1f61` removed it. Without this phase, Phase B's `r2-managed.ts` strategy has nothing to wrap, and the downstream `server-attachments` Phase B and `server-retention-and-cleanup` cleanup paths are blocked.
 
 - Re-add `BACKUPS_R2` binding to [apps/server/wrangler.jsonc.example](../../../apps/server/wrangler.jsonc.example) and `apps/server/wrangler.test.jsonc`. The shape was last present at `git show 8fc1f61^:apps/server/wrangler.jsonc.example`.

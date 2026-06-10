@@ -23,6 +23,8 @@ const TEST_BINDINGS = {
   BASEOUT_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
   TRIGGER_SECRET_KEY: "tr_dev_test_unused",
   TRIGGER_PROJECT_REF: "proj_test_unused",
+  AIRTABLE_OAUTH_CLIENT_ID: "test-airtable-client-id",
+  AIRTABLE_OAUTH_CLIENT_SECRET: "test-airtable-client-secret",
 };
 
 export default defineConfig({

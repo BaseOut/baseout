@@ -18,6 +18,7 @@
 
 import { task } from "@trigger.dev/sdk";
 import { runBackupBase, type BackupBaseResult } from "./backup-base";
+import type { AttachmentRecordEntry } from "./_lib/attachment-downloader";
 
 export interface BackupBaseTaskPayload {
   runId: string;
@@ -51,6 +52,28 @@ export interface BackupBaseTaskPayload {
 
 function trimSlash(s: string): string {
   return s.endsWith("/") ? s.slice(0, -1) : s;
+}
+
+// Managed-R2 creds come from app-level env on the Trigger.dev runner
+// (openspec/changes/system-r2-revive) — NOT per-Space OAuth. Returns null
+// when any var is unset so the pure function degrades to LocalFsWriter in
+// dev; the hard guard below rejects an r2_managed run with missing creds.
+function buildR2Creds():
+  | {
+      accountId: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      bucket: string;
+    }
+  | null {
+  const accountId = process.env.R2_ACCOUNT_ID;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  const bucket = process.env.R2_BUCKET;
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
+    return null;
+  }
+  return { accountId, accessKeyId, secretAccessKey, bucket };
 }
 
 // Phase 10d: per-table progress callback. Fires after each successful CSV
@@ -87,6 +110,53 @@ async function postProgress(
   } catch {
     // Fire-and-forget. /complete writes the authoritative final totals;
     // any missed progress event self-heals at end-of-run.
+  }
+}
+
+// Attachment dedup engine callbacks (openspec/changes/workflows-attachments).
+// Unlike progress/completion these are NOT fire-and-forget: the lookup result
+// gates whether bytes are downloaded, and the record upsert is what makes the
+// NEXT run dedup. A non-200 throws so the per-table page fails and the task's
+// retry (or the next scheduled run, via the rows already recorded) re-attempts.
+async function attachmentLookup(
+  engineUrl: string,
+  internalToken: string,
+  spaceId: string,
+  compositeIds: string[],
+): Promise<Record<string, string>> {
+  const url = `${trimSlash(engineUrl)}/api/internal/attachments/lookup`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "x-internal-token": internalToken,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ spaceId, compositeIds }),
+  });
+  if (!res.ok) {
+    throw new Error(`attachments/lookup ${res.status}`);
+  }
+  const json = (await res.json()) as { hits?: Record<string, string> };
+  return json.hits ?? {};
+}
+
+async function attachmentRecord(
+  engineUrl: string,
+  internalToken: string,
+  spaceId: string,
+  entries: AttachmentRecordEntry[],
+): Promise<void> {
+  const url = `${trimSlash(engineUrl)}/api/internal/attachments/record`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "x-internal-token": internalToken,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ spaceId, entries }),
+  });
+  if (!res.ok) {
+    throw new Error(`attachments/record ${res.status}`);
   }
 }
 
@@ -138,6 +208,15 @@ export const backupBaseTask = task({
       throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
     }
 
+    // Managed R2 requires app-level S3-API creds in the runner env. The
+    // r2_managed-without-creds guard now lives inside runBackupBase
+    // (returns a structured `failed` result rather than throwing), so the
+    // outer try/catch + postCompletion sequence below handles it identically
+    // to any other startup failure. Removing the duplicate throw closes the
+    // 2026-06-09 silent-hang bug where a pre-try throw caused the engine's
+    // backup_runs row to stay status='running' forever.
+    const r2Creds = buildR2Creds();
+
     // Wrap runBackupBase in try/catch so an unexpected throw (Airtable 401,
     // network reset, R2 proxy failure, etc.) still surfaces to the master
     // DB row via postCompletion. Without this, a throw inside the task body
@@ -156,6 +235,11 @@ export const backupBaseTask = task({
         {
           engineUrl,
           internalToken,
+          getR2Creds: () => r2Creds,
+          attachmentLookup: (spaceId, compositeIds) =>
+            attachmentLookup(engineUrl, internalToken, spaceId, compositeIds),
+          attachmentRecord: (spaceId, entries) =>
+            attachmentRecord(engineUrl, internalToken, spaceId, entries),
           postProgress: (event) =>
             postProgress(
               engineUrl,

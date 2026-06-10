@@ -21,6 +21,7 @@
 // relative key or prefix throws `invalid_path`.
 
 import type { StorageWriter } from "../storage-writer";
+import { toFetchBody } from "./fetch-body";
 
 const GOOGLE_DRIVE_API_BASE = "https://www.googleapis.com";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
@@ -182,12 +183,13 @@ export function createGoogleDriveWriter(
     return parentId;
   }
 
-  async function uploadCsv(
+  async function uploadBytes(
     parentFolderId: string,
     fileName: string,
-    csv: string,
+    bytes: Uint8Array,
+    contentType: string,
   ): Promise<{ id: string; size: number }> {
-    // Resumable upload — single code path even for small CSVs. Two-step:
+    // Resumable upload — single code path even for small payloads. Two-step:
     //   1. POST /upload/drive/v3/files?uploadType=resumable with metadata in body.
     //      Response header Location is the session URL.
     //   2. PUT the bytes to the session URL.
@@ -197,12 +199,12 @@ export function createGoogleDriveWriter(
         method: "POST",
         headers: {
           "content-type": "application/json; charset=UTF-8",
-          "x-upload-content-type": "text/csv",
+          "x-upload-content-type": contentType,
         },
         body: JSON.stringify({
           name: fileName,
           parents: [parentFolderId],
-          mimeType: "text/csv",
+          mimeType: contentType,
         }),
       },
     );
@@ -217,14 +219,13 @@ export function createGoogleDriveWriter(
       throw new Error("drive upload init missing Location header");
     }
 
-    const bytes = new TextEncoder().encode(csv);
     // PUT to the session URL — the session URL itself encodes the upload_id
     // so we don't add x-internal-token or Authorization here. (Google's docs
     // explicitly note the session URL is pre-authorized.)
     const putRes = await fetchImpl(sessionUrl, {
       method: "PUT",
-      headers: { "content-type": "text/csv" },
-      body: bytes,
+      headers: { "content-type": contentType },
+      body: toFetchBody(bytes),
     });
     if (putRes.status !== 200 && putRes.status !== 201) {
       const body = await putRes.text().catch(() => "");
@@ -322,7 +323,22 @@ export function createGoogleDriveWriter(
     async writeCsv(relativeKey, csv) {
       const { dirSegments, fileName } = splitSegments(relativeKey);
       const parentId = await resolveFolderPath(dirSegments);
-      const { size } = await uploadCsv(parentId, fileName, csv);
+      const { size } = await uploadBytes(
+        parentId,
+        fileName,
+        new TextEncoder().encode(csv),
+        "text/csv",
+      );
+      return {
+        path: `drive://${parentId}/${fileName}`,
+        size,
+      };
+    },
+
+    async writeBlob(relativeKey, body, contentType) {
+      const { dirSegments, fileName } = splitSegments(relativeKey);
+      const parentId = await resolveFolderPath(dirSegments);
+      const { size } = await uploadBytes(parentId, fileName, body, contentType);
       return {
         path: `drive://${parentId}/${fileName}`,
         size,

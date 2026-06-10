@@ -43,6 +43,23 @@ BASEOUT_ENCRYPTION_KEY=replace-with-base64-of-32-random-bytes
 AIRTABLE_OAUTH_CLIENT_ID=
 AIRTABLE_OAUTH_CLIENT_SECRET=
 
+# === BYOS storage-provider OAuth credentials (token refresh — same as apps/web) ===
+# The engine refreshes stored BYOS tokens so the Trigger.dev workflows runner can
+# write backups. Use the SAME client IDs/secrets apps/web holds for each provider.
+# Box / Dropbox / Google Drive need both ID + secret; OneDrive (Microsoft) is
+# PKCE, so only the client ID is required engine-side.
+GOOGLE_DRIVE_OAUTH_CLIENT_ID=
+GOOGLE_DRIVE_OAUTH_CLIENT_SECRET=
+BOX_OAUTH_CLIENT_ID=
+BOX_OAUTH_CLIENT_SECRET=
+DROPBOX_OAUTH_CLIENT_ID=
+DROPBOX_OAUTH_CLIENT_SECRET=
+MICROSOFT_OAUTH_CLIENT_ID=
+
+# === Optional: OAuth-refresh cron kill-switch ===
+# Set to "1" to disable the proactive OAuth-refresh cron without redeploying.
+# OAUTH_REFRESH_CRON_DISABLED=
+
 # === Optional: local-dev TLS bypass ===
 # Set DRIZZLE_SSL=false ONLY if connecting to a local Postgres without TLS.
 # Leave unset / "require" for any DigitalOcean managed DB.

@@ -1,4 +1,6 @@
-> **Depends on**: [`system-r2-stance`](../system-r2-stance/proposal.md) — Phase B's R2-writing path requires [`server-byos-destinations`](../server-byos-destinations/proposal.md) Phase 0 to land first (R2 binding + `StorageWriter` interface). Phase A (schema + `attachment_dedup` table) is independent and can ship before that.
+> **Depends on**: [`system-r2-revive`](../system-r2-revive/proposal.md) (R2 lands as a Node-runner S3-API writer, not a Worker binding) and [`workflows-attachments`](../workflows-attachments/proposal.md) (the shared `writeBlob` interface method the downloader writes through — works for R2 **and** every BYOS provider). Phase A (schema + `attachment_dedup` table) and the lookup route are independent and can ship before the writer work. **Note:** the `r2_object_key` column is now the destination-agnostic `storage_key` — it holds an R2 object key or a BYOS relative path depending on the Space's destination.
+>
+> _Supersedes the prior `system-r2-stance` / `server-byos-destinations` Phase 0 dependency, which assumed a Worker `BACKUPS_R2` binding._
 
 ## Why
 

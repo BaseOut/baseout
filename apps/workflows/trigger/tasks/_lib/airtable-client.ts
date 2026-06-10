@@ -11,8 +11,8 @@
 //
 // Auth: bearer access token (already-decrypted; the caller is the task, which
 // holds the OAuth token in scope only for the duration of one base's backup).
-// No refresh logic here — token refresh is a separate change owned by
-// apps/server's scheduled cron.
+// Token refresh happens in apps/server at POST
+// /api/internal/connections/:id/token before this client is constructed.
 //
 // Test seam: `fetchImpl?` injection mirrors apps/web's backup-engine.ts.
 // Tests pass a vi.fn(); production uses global fetch.

@@ -2,6 +2,8 @@
 
 Pre-req: `server-attachments` Phase A (DB schema) + `server-byos-destinations` Phase B (storage writer) are green.
 
+> **Landed 2026-06-08 (branch `autumn/backup-fix-local`):** the downloader (`apps/workflows/trigger/tasks/_lib/attachment-downloader.ts`, composite-ID dedup via the engine `/lookup` + `/record` callbacks, writes through the shared `writeBlob` interface so attachments reach R2 **and** every BYOS provider) + `backup-base.ts` wiring (threads `DownloadContext`, emits semicolon-joined storage keys into the CSV cell, real `attachmentsProcessed` count) + `backup-base.task.ts` engine callbacks. Tests: `tests/attachment-downloader.test.ts` + a backup-base wiring case. **Deviations from the plan below:** `field-normalizer.ts` was left UNCHANGED — the attachment branch is handled in `backup-base.ts` (where the `DownloadContext` / field IDs live) and `normalizeFieldValue` keeps the `[N attachments]` placeholder as the no-downloader fallback (less churn, regression-safe). Content-hash dedup uses composite-ID (PRD §2.8); `contentHash` is recorded as optional. URL-refresh is wired as an optional dep (not yet supplied by the wrapper — Airtable URLs are fresh within a short run; follow-up).
+
 ## 1. Downloader helper
 
 - [ ] 1.1 New file `apps/workflows/trigger/tasks/_lib/attachment-downloader.ts`. Pure module + factory pattern. Inputs: storage writer, master-DB attachment-lookup callback, refresh-URL callback, `fetch` impl. Output: `download(url, ctx): Promise<{ key, sizeBytes, contentType }>`.

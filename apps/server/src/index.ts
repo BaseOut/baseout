@@ -14,6 +14,7 @@ import {
   connectionDOProxyHandler,
   type ConnectionDOProxyAction,
 } from "./pages/api/internal/connections/do-proxy";
+import { connectionTokenHandler } from "./pages/api/internal/connections/token";
 import { runsStartHandler } from "./pages/api/internal/runs/start";
 import { runsCompleteHandler } from "./pages/api/internal/runs/complete";
 import { runsProgressHandler } from "./pages/api/internal/runs/progress";
@@ -23,6 +24,10 @@ import { runsDeleteCompleteHandler } from "./pages/api/internal/runs/delete-comp
 import { spacesSetFrequencyHandler } from "./pages/api/internal/spaces/set-frequency";
 import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
 import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
+import {
+  attachmentsLookupHandler,
+  attachmentsRecordHandler,
+} from "./pages/api/internal/attachments/lookup";
 import { runOAuthRefreshTick } from "./lib/oauth-refresh";
 
 const CONNECTIONS_WHOAMI_RE =
@@ -108,6 +113,15 @@ export default {
         }
         const proxy = CONNECTIONS_DO_PROXY_RE.exec(url.pathname);
         if (proxy) {
+          if (proxy[2] === "token") {
+            return await connectionTokenHandler(
+              request,
+              env,
+              ctx,
+              locals,
+              proxy[1]!,
+            );
+          }
           return await connectionDOProxyHandler(
             request,
             env,
@@ -235,6 +249,17 @@ export default {
           locals,
           storageDest[1]!,
         );
+      }
+
+      // Attachment dedup (openspec/changes/server-attachments). The workflows
+      // downloader hits /lookup (batch read + last_seen bump) before
+      // downloading, and /record (batch upsert) after streaming a miss to the
+      // StorageWriter. Both method-check inside the handler.
+      if (url.pathname === "/api/internal/attachments/lookup") {
+        return await attachmentsLookupHandler(request, env, ctx, locals);
+      }
+      if (url.pathname === "/api/internal/attachments/record") {
+        return await attachmentsRecordHandler(request, env, ctx, locals);
       }
 
       return notFound();

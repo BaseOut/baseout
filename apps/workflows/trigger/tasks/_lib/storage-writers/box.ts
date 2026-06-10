@@ -218,28 +218,31 @@ export function createBoxWriter(opts: CreateBoxWriterOptions): StorageWriter {
   function buildUploadForm(
     parentFolderId: string | null,
     fileName: string,
-    csv: string,
+    body: Uint8Array,
+    contentType: string,
   ): FormData {
     const form = new FormData();
     const attrs: Record<string, unknown> = { name: fileName };
     if (parentFolderId !== null) attrs.parent = { id: parentFolderId };
     form.append("attributes", JSON.stringify(attrs));
-    // Box accepts a string Blob just as well as a binary one; the
-    // Content-Type tags it as text/csv. Building from the CSV string avoids
-    // the SharedArrayBuffer/BlobPart type-friction on Uint8Array.
-    const blob = new Blob([csv], { type: "text/csv" });
+    // The Content-Type tags the part (e.g. text/csv for CSVs, the attachment's
+    // own type for blobs). `body.slice()` makes a fresh copy so the BlobPart is
+    // a plain ArrayBuffer — sidesteps the SharedArrayBuffer/BlobPart type-
+    // friction on Uint8Array.
+    const blob = new Blob([body.slice()], { type: contentType });
     form.append("file", blob, fileName);
     return form;
   }
 
-  async function uploadCsv(
+  async function uploadBytes(
     parentFolderId: string,
     fileName: string,
-    csv: string,
+    body: Uint8Array,
+    contentType: string,
   ): Promise<{ id: string; size: number }> {
-    const size = new TextEncoder().encode(csv).byteLength;
+    const size = body.byteLength;
 
-    const form = buildUploadForm(parentFolderId, fileName, csv);
+    const form = buildUploadForm(parentFolderId, fileName, body, contentType);
     const res = await authedFetch(`${uploadBase}/files/content`, {
       method: "POST",
       body: form,
@@ -270,31 +273,32 @@ export function createBoxWriter(opts: CreateBoxWriterOptions): StorageWriter {
             `box upload 409 but no conflict id surfaced for ${fileName}`,
           );
         }
-        return uploadNewVersion(existing.id, fileName, csv);
+        return uploadNewVersion(existing.id, fileName, body, contentType);
       }
-      return uploadNewVersion(conflictId, fileName, csv);
+      return uploadNewVersion(conflictId, fileName, body, contentType);
     }
 
-    const body = await res.text().catch(() => "");
-    throw new Error(`box upload ${res.status}: ${body.slice(0, 200)}`);
+    const body_ = await res.text().catch(() => "");
+    throw new Error(`box upload ${res.status}: ${body_.slice(0, 200)}`);
   }
 
   async function uploadNewVersion(
     fileId: string,
     fileName: string,
-    csv: string,
+    body: Uint8Array,
+    contentType: string,
   ): Promise<{ id: string; size: number }> {
     // POST /files/:id/content creates a new version of an existing file.
     // No `parent` in `attributes` for the version endpoint — file id pins it.
-    const form = buildUploadForm(null, fileName, csv);
+    const form = buildUploadForm(null, fileName, body, contentType);
     const res = await authedFetch(`${uploadBase}/files/${fileId}/content`, {
       method: "POST",
       body: form,
     });
     if (res.status !== 200 && res.status !== 201) {
-      const body = await res.text().catch(() => "");
+      const errBody = await res.text().catch(() => "");
       throw new Error(
-        `box upload new-version ${res.status}: ${body.slice(0, 200)}`,
+        `box upload new-version ${res.status}: ${errBody.slice(0, 200)}`,
       );
     }
     const json = (await res.json()) as {
@@ -302,7 +306,7 @@ export function createBoxWriter(opts: CreateBoxWriterOptions): StorageWriter {
       id?: string;
     };
     const id = json.entries?.[0]?.id ?? json.id ?? fileId;
-    return { id, size: new TextEncoder().encode(csv).byteLength };
+    return { id, size: body.byteLength };
   }
 
   async function deleteFolderRecursive(folderId: string): Promise<number> {
@@ -326,10 +330,28 @@ export function createBoxWriter(opts: CreateBoxWriterOptions): StorageWriter {
         throw new Error("invalid_path");
       }
       const parentId = await resolveFolderPath(dirSegments);
-      const { size } = await uploadCsv(parentId, fileName, csv);
+      const { size } = await uploadBytes(
+        parentId,
+        fileName,
+        new TextEncoder().encode(csv),
+        "text/csv",
+      );
       return {
         path: `box://${parentId}/${fileName}`,
         size,
+      };
+    },
+
+    async writeBlob(relativeKey, body, contentType) {
+      const { dirSegments, fileName } = splitSegments(relativeKey);
+      if (fileName.includes("\\") || fileName.includes("/")) {
+        throw new Error("invalid_path");
+      }
+      const parentId = await resolveFolderPath(dirSegments);
+      await uploadBytes(parentId, fileName, body, contentType);
+      return {
+        path: `box://${parentId}/${fileName}`,
+        size: body.byteLength,
       };
     },
 

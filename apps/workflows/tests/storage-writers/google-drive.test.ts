@@ -215,6 +215,76 @@ describe("createGoogleDriveWriter.writeCsv", () => {
   });
 });
 
+describe("createGoogleDriveWriter.writeBlob", () => {
+  it("performs files.list (miss) → files.create for each missing sub-folder, then resumable upload, tagging the given contentType", async () => {
+    const { fetchImpl, calls } = makeFakeFetch([
+      // 1. files.list for first segment "run_a" under root_folder — miss
+      () => json({ files: [] }),
+      // 2. files.create for "run_a"
+      () => json({ id: "folder_run_a", name: "run_a" }),
+      // 3. files.list for second segment "base_x" — miss
+      () => json({ files: [] }),
+      // 4. files.create for "base_x"
+      () => json({ id: "folder_base_x", name: "base_x" }),
+      // 5. upload init — 200 with Location header
+      () =>
+        new Response("", {
+          status: 200,
+          headers: { location: "https://upload.test/session?id=xyz" },
+        }),
+      // 6. PUT bytes — 200
+      () => json({ id: "file_blob_id" }),
+    ]);
+
+    const writer = createGoogleDriveWriter({
+      creds: makeCreds(),
+      fetchImpl,
+    });
+    const body = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const result = await writer.writeBlob(
+      "run_a/base_x/logo.png",
+      body,
+      "image/png",
+    );
+
+    expect(result.size).toBe(body.byteLength);
+    expect(result.path).toMatch(/^drive:\/\/folder_base_x\/logo\.png$/);
+
+    // Listed-and-created twice (once per missing segment).
+    const listCalls = calls.filter((c) => c.url.includes("drive/v3/files?q="));
+    expect(listCalls.length).toBe(2);
+    // Upload init carried metadata + the supplied content-type.
+    const initCall = calls[4]!;
+    expect(initCall.url).toContain("uploadType=resumable");
+    expect(initCall.init.method).toBe("POST");
+    expect(
+      new Headers(initCall.init.headers).get("x-upload-content-type"),
+    ).toBe("image/png");
+    expect(JSON.parse(initCall.init.body as string)).toMatchObject({
+      name: "logo.png",
+      mimeType: "image/png",
+    });
+    // PUT to the session URL with the content-type.
+    const putCall = calls[5]!;
+    expect(putCall.url).toBe("https://upload.test/session?id=xyz");
+    expect(putCall.init.method).toBe("PUT");
+    expect(new Headers(putCall.init.headers).get("content-type")).toBe(
+      "image/png",
+    );
+  });
+
+  it("rejects relative keys containing `..`", async () => {
+    const { fetchImpl } = makeFakeFetch([]);
+    const writer = createGoogleDriveWriter({
+      creds: makeCreds(),
+      fetchImpl,
+    });
+    await expect(
+      writer.writeBlob("../escape.png", new Uint8Array([1, 2, 3]), "image/png"),
+    ).rejects.toThrow("invalid_path");
+  });
+});
+
 describe("createGoogleDriveWriter.deletePrefix", () => {
   it("walks the path, deletes the leaf folder recursively, returns deletedCount: 1", async () => {
     const { fetchImpl, calls } = makeFakeFetch([

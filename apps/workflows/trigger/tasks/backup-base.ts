@@ -6,9 +6,9 @@
 // Flow (Phase 7.2 of the Backups MVP plan):
 //   1. POST /api/internal/connections/:connectionId/lock — retry every 5s up
 //      to 60s; on persistent 409 → status='failed' / lock_unavailable.
-//   2. POST /api/internal/connections/:connectionId/token { encryptedToken }
-//      → plaintext access token (DO caches; this proxy hop is what makes the
-//      Node-side task able to reach the DO at all).
+//   2. POST /api/internal/connections/:connectionId/token — engine lazy-
+//      refreshes from master DB when near expiry, returns plaintext token.
+//      The task's `encryptedToken` payload field is ignored at fetch time.
 //   3. Airtable getBaseSchema → list of tables.
 //   4. Trial gate on table count: if isTrial && tables>5, slice to 5 →
 //      status='trial_truncated' on success.
@@ -28,13 +28,24 @@ import {
   type AirtableSchema,
   type AirtableRecordsPage,
 } from "./_lib/airtable-client";
-import { buildR2Key } from "./_lib/r2-path";
+import { buildR2Key, buildAttachmentKey } from "./_lib/r2-path";
 import { pageToCsv } from "./_lib/csv-stream";
 import { normalizeFieldValue } from "./_lib/field-normalizer";
 import {
   resolveStorageWriter,
   type StorageWriterCreds,
+  type R2WriterCreds,
 } from "./_lib/storage-writers";
+import {
+  createAttachmentDownloader,
+  type AirtableAttachment,
+  type AttachmentDownloader,
+  type AttachmentRecordEntry,
+} from "./_lib/attachment-downloader";
+
+// Airtable's field type for an attachments cell. Mirrors the constant in
+// field-normalizer.ts (kept local so the downloader branch is self-contained).
+const ATTACHMENTS_FIELD_TYPE = "multipleAttachments";
 
 export interface BackupBaseInput {
   runId: string;
@@ -94,6 +105,22 @@ export interface BackupBaseDeps {
     spaceId: string,
   ) => Promise<StorageWriterCreds | null>;
   /**
+   * Optional override for the Airtable access-token fetcher. Production
+   * default POSTs to `/api/internal/connections/:connectionId/token`, which
+   * lazy-refreshes from master DB when near expiry.
+   */
+  fetchConnectionToken?: (
+    connectionId: string,
+  ) => Promise<{ accessToken: string; refresh: () => Promise<string> }>;
+  /**
+   * Supplies managed-R2 credentials (openspec/changes/workflows-r2-writer).
+   * Unlike the BYOS providers, R2 creds are app-level env — not per-Space
+   * OAuth — so they bypass `fetchStorageCreds`/the engine route entirely. The
+   * Trigger.dev wrapper builds these from process.env; returning `null` (dev
+   * without R2 provisioned) degrades gracefully to LocalFsWriter.
+   */
+  getR2Creds?: () => R2WriterCreds | null;
+  /**
    * Fire-and-forget per-table progress callback (Phase 10d). Closure is owned
    * by the Trigger.dev wrapper, which captures runId + triggerRunId + atBaseId
    * and posts to /api/internal/runs/:runId/progress. Default no-op so existing
@@ -107,6 +134,34 @@ export interface BackupBaseDeps {
    * so tests inject a recording fake here.
    */
   writeCsv?: (relativeKey: string, csv: string) => Promise<unknown>;
+  /**
+   * Attachment dedup engine callbacks (openspec/changes/workflows-attachments).
+   * When BOTH are present, the per-record loop downloads Airtable attachments
+   * through the resolved StorageWriter (so they land at the Space's chosen
+   * destination — R2 or BYOS) and emits storage keys into the CSV cell. When
+   * absent (e.g. existing tests, or attachments disabled), the loop keeps the
+   * legacy `[N attachments]` placeholder from normalizeFieldValue.
+   */
+  attachmentLookup?: (
+    spaceId: string,
+    compositeIds: string[],
+  ) => Promise<Record<string, string>>;
+  attachmentRecord?: (
+    spaceId: string,
+    entries: AttachmentRecordEntry[],
+  ) => Promise<void>;
+  /** Optional Airtable CDN URL refresher for mid-run expiry; safety net. */
+  refreshAttachmentUrl?: (
+    attachment: AirtableAttachment,
+    ctx: { baseId: string; tableId: string; recordId: string; fieldId: string },
+  ) => Promise<string>;
+  /**
+   * Test seam: inject a prebuilt downloader instead of constructing one from
+   * the lookup/record callbacks. Production omits this — the wrapper supplies
+   * the callbacks and the downloader is built internally against the resolved
+   * StorageWriter.
+   */
+  attachmentDownloader?: AttachmentDownloader;
 }
 
 export type BackupBaseStatus =
@@ -119,7 +174,7 @@ export interface BackupBaseResult {
   status: BackupBaseStatus;
   tablesProcessed: number;
   recordsProcessed: number;
-  attachmentsProcessed: 0;
+  attachmentsProcessed: number;
   errorMessage?: string;
 }
 
@@ -161,6 +216,22 @@ export async function runBackupBase(
     input.connectionId,
   )}`;
 
+  // Fail fast: r2_managed requires app-level S3-API creds in the runner env.
+  // resolveStorageWriter would otherwise silently fall back to LocalFsWriter
+  // when creds are absent — masking an R2 backup as a local-disk write. By
+  // returning a structured `failed` result here (instead of throwing in the
+  // wrapper before its try/catch, as the previous design did), the wrapper's
+  // postCompletion fires and the engine flips the backup_runs row out of
+  // 'running' — preventing the silent-hang failure mode that surfaced on
+  // 2026-06-09 when a Space had Box connected but storage_type was still the
+  // legacy r2_managed default. The cached value is reused below to avoid
+  // calling deps.getR2Creds twice.
+  const r2CredsRaw =
+    input.storageType === "r2_managed" ? deps.getR2Creds?.() ?? null : null;
+  if (input.storageType === "r2_managed" && !r2CredsRaw) {
+    return failed("missing_r2_creds", 0, 0);
+  }
+
   // 1. Acquire lock with retry.
   const deadline = Date.now() + LOCK_MAX_TOTAL_MS;
   let locked = false;
@@ -194,8 +265,8 @@ export async function runBackupBase(
   // for mid-upload 401 retries.
   let storageCreds: StorageWriterCreds | null = null;
   // Only providers that need decrypted credentials trigger the engine
-  // fetch. `local_fs` (and the legacy `r2_managed` default that maps to
-  // local_fs in the factory) don't.
+  // fetch. `local_fs` doesn't. `r2_managed` uses app-level env creds via
+  // getR2Creds (not the engine route).
   if (
     input.storageType === "google_drive" ||
     input.storageType === "box" ||
@@ -212,24 +283,61 @@ export async function runBackupBase(
           spaceId,
         ));
     storageCreds = await fetchCreds(input.spaceId);
+  } else if (input.storageType === "r2_managed") {
+    // r2CredsRaw is guaranteed non-null here — the guard at the top of this
+    // function returns `failed` before reaching the lock-acquire step when
+    // creds are absent. Reuse the cached value rather than re-invoking the
+    // closure (the unit test pins one call only).
+    storageCreds = { kind: "r2", ...r2CredsRaw! };
   }
   const writer = resolveStorageWriter(
     input.storageType,
     storageCreds ?? undefined,
   );
 
+  let attachmentsProcessed = 0;
+  // Build the attachment downloader only when the engine dedup callbacks are
+  // wired. It writes through the SAME resolved `writer`, so attachments land
+  // at whatever destination the Space selected (R2 / BYOS / local-fs).
+  const attachmentDownloader =
+    deps.attachmentDownloader ??
+    (deps.attachmentLookup && deps.attachmentRecord
+      ? createAttachmentDownloader({
+          writer,
+          spaceId: input.spaceId,
+          buildKey: (compositeId, filename) =>
+            buildAttachmentKey({
+              orgSlug: input.orgSlug,
+              spaceName: input.spaceName,
+              baseName: input.baseName,
+              compositeId,
+              filename,
+            }),
+          lookup: deps.attachmentLookup,
+          record: deps.attachmentRecord,
+          fetchImpl: fetchFn,
+          refreshUrl: deps.refreshAttachmentUrl,
+        })
+      : null);
+
   try {
-    // 2. Token.
-    const tokenRes = await postInternal(
-      fetchFn,
-      `${connBase}/token`,
-      deps.internalToken,
-      { encryptedToken: input.encryptedToken },
-    );
-    if (tokenRes.status !== 200) {
-      return failed(`token_${tokenRes.status}`, 0, 0);
+    // 2. Token — engine reads master DB and lazy-refreshes when near expiry.
+    const fetchToken =
+      deps.fetchConnectionToken ??
+      ((connectionId: string) =>
+        defaultFetchConnectionToken(
+          fetchFn,
+          engineBase,
+          deps.internalToken,
+          connectionId,
+        ));
+    let accessToken: string;
+    try {
+      ({ accessToken } = await fetchToken(input.connectionId));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return failed(`token_${msg}`, 0, 0);
     }
-    const { accessToken } = (await tokenRes.json()) as { accessToken: string };
 
     // 3. Schema.
     const client: AirtableClientShape =
@@ -249,6 +357,10 @@ export async function runBackupBase(
       const fieldNames = table.fields.map((f) => f.name);
       const fieldTypes = new Map<string, string>(
         table.fields.map((f) => [f.name, f.type]),
+      );
+      // Field IDs are needed for the attachment composite ID (PRD §2.8).
+      const fieldIds = new Map<string, string>(
+        table.fields.map((f) => [f.name, f.id]),
       );
 
       const collected: AirtableRecordsPage["records"] = [];
@@ -273,16 +385,36 @@ export async function runBackupBase(
         if (!offset) break;
       }
 
-      const rows = collected.map((rec) => {
+      const rows: Record<string, unknown>[] = [];
+      for (const rec of collected) {
         const out: Record<string, unknown> = {};
         for (const name of fieldNames) {
-          out[name] = normalizeFieldValue(
-            rec.fields[name],
-            fieldTypes.get(name) ?? "",
-          );
+          const type = fieldTypes.get(name) ?? "";
+          const value = rec.fields[name];
+          if (
+            attachmentDownloader &&
+            type === ATTACHMENTS_FIELD_TYPE &&
+            Array.isArray(value)
+          ) {
+            // Download (or dedup-skip) each attachment; the cell holds the
+            // semicolon-joined storage keys instead of "[N attachments]".
+            const { keys, downloaded } = await attachmentDownloader.processCell(
+              value as AirtableAttachment[],
+              {
+                baseId: input.atBaseId,
+                tableId: table.id,
+                recordId: rec.id,
+                fieldId: fieldIds.get(name) ?? "",
+              },
+            );
+            out[name] = keys.join(";");
+            attachmentsProcessed += downloaded;
+          } else {
+            out[name] = normalizeFieldValue(value, type);
+          }
         }
-        return out;
-      });
+        rows.push(out);
+      }
 
       const csv = pageToCsv({ fields: fieldNames, rows });
       const key = buildR2Key({
@@ -326,7 +458,7 @@ export async function runBackupBase(
       status,
       tablesProcessed,
       recordsProcessed,
-      attachmentsProcessed: 0,
+      attachmentsProcessed,
     };
   } finally {
     if (locked) {
@@ -358,6 +490,64 @@ export async function runBackupBase(
       errorMessage,
     };
   }
+}
+
+interface ConnectionTokenResponse {
+  accessToken?: string;
+  expiresAt?: string;
+  error?: string;
+  reason?: string;
+}
+
+/**
+ * Production fetcher for the Airtable access token. POSTs to the engine's
+ * internal /connections/:id/token route, which lazy-refreshes from master DB
+ * when the access token is near expiry. Returns a reactive `refresh` closure
+ * for mid-run 401 retries (mirrors BYOS storage credential fetch).
+ */
+export async function defaultFetchConnectionToken(
+  fetchFn: typeof fetch,
+  engineBase: string,
+  internalToken: string,
+  connectionId: string,
+): Promise<{ accessToken: string; refresh: () => Promise<string> }> {
+  const url = `${engineBase}/api/internal/connections/${encodeURIComponent(connectionId)}/token`;
+
+  async function read(forceRefresh: boolean): Promise<ConnectionTokenResponse> {
+    const target = forceRefresh ? `${url}?refresh=1` : url;
+    const res = await fetchFn(target, {
+      method: "POST",
+      headers: {
+        "x-internal-token": internalToken,
+        "content-type": "application/json",
+      },
+      body: "{}",
+    });
+    const body = (await res.json()) as ConnectionTokenResponse;
+    if (!res.ok) {
+      throw new Error(
+        body.error
+          ? `${res.status}:${body.error}${body.reason ? `:${body.reason}` : ""}`
+          : `engine connection token fetch ${res.status}`,
+      );
+    }
+    return body;
+  }
+
+  const initial = await read(false);
+  if (!initial.accessToken) {
+    throw new Error("engine connection token response is malformed");
+  }
+  let accessToken = initial.accessToken;
+  const refresh = async () => {
+    const refreshed = await read(true);
+    if (!refreshed.accessToken) {
+      throw new Error("engine connection token refresh malformed");
+    }
+    accessToken = refreshed.accessToken;
+    return accessToken;
+  };
+  return { accessToken, refresh };
 }
 
 interface StorageDestinationResponse {

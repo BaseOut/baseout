@@ -21,6 +21,26 @@ export interface StorageWriter {
   ): Promise<{ path: string; size: number }>;
 
   /**
+   * Write arbitrary binary content at `relativeKey` under the writer's
+   * configured root, tagged with `contentType`. Used by the attachment
+   * downloader (openspec/changes/workflows-attachments) to persist Airtable
+   * attachment bytes to whichever destination the Space selected — so
+   * attachments flow to R2 and every BYOS provider through one interface.
+   *
+   * `body` is a fully-buffered `Uint8Array` (one attachment at a time): R2's
+   * SigV4 signing needs the payload hash, so a streaming body can't be signed
+   * without buffering anyway, and per-attachment buffering keeps the writers
+   * simple. Returns the destination path written and the byte size.
+   *
+   * Throws on path-traversal segments (`..`) or any underlying write error.
+   */
+  writeBlob(
+    relativeKey: string,
+    body: Uint8Array,
+    contentType: string,
+  ): Promise<{ path: string; size: number }>;
+
+  /**
    * Recursively delete everything under `relativePrefix` (a directory in
    * filesystem terms, a folder-or-prefix in BYOS-provider terms).
    *

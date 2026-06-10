@@ -20,6 +20,7 @@ function makeWriter(
 ): StorageWriter {
   return {
     writeCsv: vi.fn(async () => ({ path: "", size: 0 })),
+    writeBlob: vi.fn(async () => ({ path: "", size: 0 })),
     deletePrefix: vi.fn(perPrefix),
   };
 }

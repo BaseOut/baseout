@@ -34,6 +34,7 @@
 // (`/me/drive/items/<id>`), which works under the AppFolder sandbox.
 
 import type { StorageWriter } from "../storage-writer";
+import { toFetchBody } from "./fetch-body";
 
 const MICROSOFT_GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const REFRESH_LEEWAY_MS = 5 * 60_000;
@@ -218,15 +219,16 @@ export function createOneDriveWriter(
     return parentId;
   }
 
-  async function uploadCsv(
+  async function uploadBytes(
     parentFolderId: string,
     fileName: string,
-    csv: string,
+    bytes: Uint8Array,
+    contentType: string,
   ): Promise<{ id: string; size: number }> {
     assertSegmentSafe(fileName);
 
     // 1. Open an upload session. POST returns { uploadUrl, expirationDateTime }.
-    //    `conflictBehavior: 'replace'` lets a re-run overwrite the prior CSV.
+    //    `conflictBehavior: 'replace'` lets a re-run overwrite the prior file.
     const initRes = await authedFetch(
       `${graphBase}/me/drive/items/${encodeURIComponent(parentFolderId)}` +
         `:/${encodeURIComponent(fileName)}:/createUploadSession`,
@@ -253,15 +255,14 @@ export function createOneDriveWriter(
     }
 
     // 2. PUT the bytes to the session URL. Session URL is pre-authorized —
-    //    do NOT add Authorization header. Single PUT works for CSVs up to
+    //    do NOT add Authorization header. Single PUT works for payloads up to
     //    Microsoft's session-payload cap (which is comfortably > any in-
-    //    memory CSV we hand to writeCsv).
-    const bytes = new TextEncoder().encode(csv);
+    //    memory CSV or single attachment we hand to the writer).
     const total = bytes.byteLength;
     const putRes = await fetchImpl(uploadUrl, {
       method: "PUT",
       headers: {
-        "content-type": "text/csv",
+        "content-type": contentType,
         "content-length": String(total),
         // Graph requires Content-Range even for a single-chunk session PUT.
         // Empty payload edge case: `0-${total-1}/${total}` is illegal when
@@ -270,7 +271,7 @@ export function createOneDriveWriter(
         "content-range":
           total === 0 ? "bytes 0-0/0" : `bytes 0-${total - 1}/${total}`,
       },
-      body: bytes,
+      body: toFetchBody(bytes),
     });
     if (putRes.status !== 200 && putRes.status !== 201) {
       const body = await putRes.text().catch(() => "");
@@ -300,7 +301,22 @@ export function createOneDriveWriter(
     async writeCsv(relativeKey, csv) {
       const { dirSegments, fileName } = splitSegments(relativeKey);
       const parentId = await resolveFolderPath(dirSegments);
-      const { size } = await uploadCsv(parentId, fileName, csv);
+      const { size } = await uploadBytes(
+        parentId,
+        fileName,
+        new TextEncoder().encode(csv),
+        "text/csv",
+      );
+      return {
+        path: `onedrive://${parentId}/${fileName}`,
+        size,
+      };
+    },
+
+    async writeBlob(relativeKey, body, contentType) {
+      const { dirSegments, fileName } = splitSegments(relativeKey);
+      const parentId = await resolveFolderPath(dirSegments);
+      const { size } = await uploadBytes(parentId, fileName, body, contentType);
       return {
         path: `onedrive://${parentId}/${fileName}`,
         size,

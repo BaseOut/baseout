@@ -4,7 +4,7 @@
 //   - Never transition healthy rows to status='invalid' — use pending_reauth.
 //   - No status='refreshing' claims (avoids stuck rows + double-refresh races).
 //   - 14m modified_at cooldown on active rows (> */15 cron cadence).
-//   - 10m access-token lookahead; self-heal pending_reauth/invalid after 1m.
+//   - 10m access-token lookahead; self-heal pending_reauth after 1m (not invalid — retired dupes).
 //   - One row per organization_id per tick (deduped).
 //   - On success CAS miss after Airtable rotation: id-only token persist.
 
@@ -20,6 +20,8 @@ const SELECT_LIMIT = 100;
 const LOOKAHEAD_INTERVAL_SQL = "10 minutes";
 const ACTIVE_REFRESH_COOLDOWN_SQL = "14 minutes";
 const SELF_HEAL_COOLDOWN_SQL = "1 minute";
+const PERSIST_AFTER_ROTATION_ATTEMPTS = 4;
+const PERSIST_RETRY_DELAY_MS = 250;
 
 export interface OAuthRefreshTickDeps {
   db: AppDb;
@@ -120,7 +122,7 @@ export async function runOAuthRefreshTick(
           AND modified_at < now() - interval '${sql.raw(ACTIVE_REFRESH_COOLDOWN_SQL)}'
           AND (token_expires_at IS NULL
                OR token_expires_at < now() + interval '${sql.raw(LOOKAHEAD_INTERVAL_SQL)}'))
-        OR (status IN ('pending_reauth', 'invalid')
+        OR (status = 'pending_reauth'
           AND modified_at < now() - interval '${sql.raw(SELF_HEAL_COOLDOWN_SQL)}')
       )
     ORDER BY
@@ -134,8 +136,7 @@ export async function runOAuthRefreshTick(
 
   for (const row of candidates) {
     const startedAt = nowMs();
-    const isSelfHeal =
-      row.status === "pending_reauth" || row.status === "invalid";
+    const isSelfHeal = row.status === "pending_reauth";
 
     const claim = (await deps.db.execute(
       isSelfHeal
@@ -143,7 +144,7 @@ export async function runOAuthRefreshTick(
             UPDATE baseout.connections
             SET modified_at = now()
             WHERE id = ${row.id}
-              AND status IN ('pending_reauth', 'invalid')
+              AND status = 'pending_reauth'
               AND modified_at < now() - interval '${sql.raw(SELF_HEAL_COOLDOWN_SQL)}'
             RETURNING id, status, modified_at
           `
@@ -286,6 +287,61 @@ async function applyPendingReauth(
   void reason;
 }
 
+async function sleepMs(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function persistRotatedTokens(
+  db: AppDb,
+  connectionId: string,
+  priorStatus: string,
+  claimedAt: Date | string,
+  newAccessEnc: string,
+  newRefreshEnc: string,
+  expiresAt: string,
+  scope: string | null,
+): Promise<"success" | "persist_after_cas_miss" | "failed"> {
+  const casWhere = sql`
+    id = ${connectionId}
+    AND status = ${priorStatus}
+    AND date_trunc('milliseconds', modified_at) = ${claimedAt}
+  `;
+
+  for (let attempt = 0; attempt < PERSIST_AFTER_ROTATION_ATTEMPTS; attempt++) {
+    if (attempt > 0) await sleepMs(PERSIST_RETRY_DELAY_MS * attempt);
+
+    const update = (await db.execute(sql`
+      UPDATE baseout.connections
+      SET access_token_enc = ${newAccessEnc},
+          refresh_token_enc = ${newRefreshEnc},
+          token_expires_at = ${expiresAt},
+          scopes = ${scope},
+          status = 'active',
+          invalidated_at = NULL,
+          modified_at = now()
+      WHERE ${casWhere}
+      RETURNING id
+    `)) as unknown as Array<{ id: string }>;
+    if (update.length > 0) return "success";
+
+    const fallback = (await db.execute(sql`
+      UPDATE baseout.connections
+      SET access_token_enc = ${newAccessEnc},
+          refresh_token_enc = ${newRefreshEnc},
+          token_expires_at = ${expiresAt},
+          scopes = ${scope},
+          status = 'active',
+          invalidated_at = NULL,
+          modified_at = now()
+      WHERE id = ${connectionId}
+      RETURNING id
+    `)) as unknown as Array<{ id: string }>;
+    if (fallback.length > 0) return "persist_after_cas_miss";
+  }
+
+  return "failed";
+}
+
 async function applyOutcome(
   db: AppDb,
   connectionId: string,
@@ -307,42 +363,36 @@ async function applyOutcome(
       const newAccessEnc = await encryptToken(outcome.accessToken, encryptionKey);
       const newRefreshEnc = await encryptToken(outcome.refreshToken, encryptionKey);
       const expiresAt = new Date(outcome.expiresAtMs).toISOString();
-      const update = (await db.execute(sql`
-        UPDATE baseout.connections
-        SET access_token_enc = ${newAccessEnc},
-            refresh_token_enc = ${newRefreshEnc},
-            token_expires_at = ${expiresAt},
-            scopes = ${outcome.scope},
-            status = 'active',
-            invalidated_at = NULL,
-            modified_at = now()
-        WHERE ${casWhere}
-        RETURNING id
-      `)) as unknown as Array<{ id: string }>;
-      if (update.length > 0) {
+      const persisted = await persistRotatedTokens(
+        db,
+        connectionId,
+        priorStatus,
+        claimedAt,
+        newAccessEnc,
+        newRefreshEnc,
+        expiresAt,
+        outcome.scope,
+      );
+      if (persisted === "success") {
         outcomes.success += 1;
         log("success");
         return;
       }
-
-      // Airtable already rotated tokens — persist by id so the grant is not lost.
-      const fallback = (await db.execute(sql`
-        UPDATE baseout.connections
-        SET access_token_enc = ${newAccessEnc},
-            refresh_token_enc = ${newRefreshEnc},
-            token_expires_at = ${expiresAt},
-            scopes = ${outcome.scope},
-            status = 'active',
-            invalidated_at = NULL,
-            modified_at = now()
-        WHERE id = ${connectionId}
-        RETURNING id
-      `)) as unknown as Array<{ id: string }>;
-      if (fallback.length > 0) {
+      if (persisted === "persist_after_cas_miss") {
         outcomes.persist_after_cas_miss += 1;
         log("persist_after_cas_miss");
         return;
       }
+
+      // Airtable rotated the grant but DB never persisted — mark Reconnect now
+      // instead of leaving a stale active row that fails on the next tick.
+      await applyPendingReauth(
+        db,
+        connectionId,
+        priorStatus,
+        claimedAt,
+        "persist_failed_after_rotation",
+      );
       outcomes.cas_lost += 1;
       log("cas_lost", "persist_failed_after_rotation");
       return;
@@ -364,7 +414,7 @@ async function applyOutcome(
         connectionId,
         priorStatus,
         claimedAt,
-        priorStatus === "pending_reauth" || priorStatus === "invalid",
+        priorStatus === "pending_reauth",
       );
       outcomes.transient += 1;
       log("transient", outcome.reason);

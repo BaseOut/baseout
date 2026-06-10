@@ -14,7 +14,7 @@ Workflows-side counterpart to [`server-attachments`](../server-attachments/propo
 
 - Master DB schema additions (`attachments` table, dedup index, `attachment_count` column on `backup_run_bases`) — owned by `server-attachments`.
 - The `/runs/complete` route handler extension — owned by `server-attachments`.
-- Storage destination strategy itself (R2 vs Google Drive vs S3) — owned by `server-byos-destinations` + `workflows-byos-destinations`.
+- Storage destination strategy itself — R2 is owned by [`workflows-r2-writer`](../workflows-r2-writer/proposal.md) (Node-runner S3-API writer, per [`system-r2-revive`](../system-r2-revive/proposal.md)); the BYOS providers (Google Drive / Box / Dropbox / OneDrive) already exist under `apps/workflows/trigger/tasks/_lib/storage-writers/`. This change adds the shared `writeBlob` interface method + its implementation in all those writers, so attachments flow to whichever destination the Space selected.
 - Signed-URL refresh against Airtable when the CDN URL expires mid-download — implementation lives in the downloader, but the OAuth refresh path it reuses is `server-cron-oauth-refresh`.
 
 ## Cross-app contract

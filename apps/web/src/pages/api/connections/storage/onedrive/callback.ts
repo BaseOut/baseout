@@ -126,8 +126,15 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
       clientId: credentials.clientId,
       redirectUri: handoff.redirectUri,
     })
-  } catch {
-    return redirectWith(failUrl('token_exchange_failed'), clearCookie)
+  } catch (err) {
+    // TEMP DIAGNOSTIC (revert after capture): surface Microsoft's real error
+    // code/description into the redirect so we can read the AADSTS code from
+    // the URL bar. Normally this detail is intentionally NOT exposed.
+    const detail = err instanceof Error ? err.message : 'unknown'
+    return redirectWith(
+      failUrl('token_exchange_failed: ' + detail.slice(0, 240)),
+      clearCookie,
+    )
   }
 
   // Look up (or create) the per-Space folder + read account identity.
