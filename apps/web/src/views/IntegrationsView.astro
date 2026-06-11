@@ -187,30 +187,6 @@ const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth
             </div>
           </dl>
 
-          <!-- Always-visible Reconnect — manual fallback for stale tokens. The
-               loud alert above already covers `pending_reauth`/`invalid`; this
-               button gives the user an escape hatch even when status='active'.
-               Posts
-               to the same /api/connections/airtable/start endpoint as the
-               first-time Connect form; persist.ts upserts on the existing row. -->
-          {!needsReconnect && (
-            <form
-              method="POST"
-              action="/api/connections/airtable/start"
-              class="flex flex-wrap items-center gap-3"
-              data-airtable-connect
-              data-astro-reload
-            >
-              <input type="hidden" name="returnTo" value="/integrations" />
-              <Button type="submit" variant="ghost" data-connect-submit>
-                Reconnect Airtable
-              </Button>
-              <span class="text-xs text-base-content/60">
-                Refreshes tokens. Use if backups fail with an auth error.
-              </span>
-            </form>
-          )}
-
           {!needsReconnect && Astro.locals.account?.space?.id && (
             <div
               class="mt-4 flex flex-wrap items-center gap-3"

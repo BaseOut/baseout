@@ -27,7 +27,6 @@ import {
   attachmentsLookupHandler,
   attachmentsRecordHandler,
 } from "./pages/api/internal/attachments/lookup";
-import { runOAuthRefreshTick } from "./lib/oauth-refresh";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
@@ -261,39 +260,10 @@ export default {
   },
 
   async scheduled(
-    event: ScheduledEvent,
-    env: Env,
-    ctx: ExecutionContext,
+    _event: ScheduledEvent,
+    _env: Env,
+    _ctx: ExecutionContext,
   ): Promise<void> {
-    if (event.cron !== "*/15 * * * *") {
-      // eslint-disable-next-line no-console -- intentional structured log
-      console.error(`[scheduled] unknown cron: ${event.cron}`);
-      return;
-    }
-
-    const { db, sql: pgSql } = createMasterDb(env);
-    try {
-      const result = await runOAuthRefreshTick({
-        db,
-        encryptionKey: env.BASEOUT_ENCRYPTION_KEY,
-        clientId: env.AIRTABLE_OAUTH_CLIENT_ID,
-        clientSecret: env.AIRTABLE_OAUTH_CLIENT_SECRET,
-        log: (e) => {
-          // eslint-disable-next-line no-console -- intentional structured log
-          console.log(JSON.stringify(e));
-        },
-      });
-      // eslint-disable-next-line no-console -- intentional structured log
-      console.log(
-        JSON.stringify({
-          event: "oauth_refresh_tick",
-          considered: result.considered,
-          claimed: result.claimed,
-          ...result.outcomes,
-        }),
-      );
-    } finally {
-      ctx.waitUntil(pgSql.end({ timeout: 5 }));
-    }
+    // TODO(phase-2): dispatch background jobs by event.cron.
   },
 };

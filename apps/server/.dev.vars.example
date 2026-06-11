@@ -39,18 +39,14 @@ TRIGGER_PROJECT_REF=proj_xxxxxxxxxxxxxxxxxxxx
 # BACKUP_ENGINE_INTERNAL_TOKEN.
 INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness
 
-# === Master encryption key ===
+# === Master encryption key (decrypt-only at the engine) ===
 # AES-256-GCM key for the *_enc columns in baseout.connections (and other
 # encrypted-at-rest columns). Same value apps/web has in its
-# BASEOUT_ENCRYPTION_KEY var. apps/web's OAuth callback is the canonical
-# writer at initial connect; the OAuth-refresh cron is the second writer on
-# connections (openspec server-cron-oauth-refresh).
+# BASEOUT_ENCRYPTION_KEY var. The engine NEVER writes encrypted connection
+# tokens — apps/web's OAuth callback is the canonical writer. The engine only
+# decrypts what's already in the DB.
 # Generate: `openssl rand -base64 32`.
 BASEOUT_ENCRYPTION_KEY=replace-with-base64-of-32-random-bytes
-
-# === Airtable OAuth app credentials (cron — same as apps/web) ===
-AIRTABLE_OAUTH_CLIENT_ID=
-AIRTABLE_OAUTH_CLIENT_SECRET=
 
 # === BYOS storage-provider OAuth credentials (token refresh — same as apps/web) ===
 # The engine refreshes stored BYOS tokens so the Trigger.dev workflows runner can
@@ -64,10 +60,6 @@ BOX_OAUTH_CLIENT_SECRET=
 DROPBOX_OAUTH_CLIENT_ID=
 DROPBOX_OAUTH_CLIENT_SECRET=
 MICROSOFT_OAUTH_CLIENT_ID=
-
-# === Optional: OAuth-refresh cron kill-switch ===
-# Set to "1" to disable the proactive OAuth-refresh cron without redeploying.
-# OAUTH_REFRESH_CRON_DISABLED=
 
 # === Optional: local-dev TLS bypass ===
 # Set DRIZZLE_SSL=false ONLY if connecting to a local Postgres without TLS.

@@ -16,12 +16,6 @@ export interface Env {
    * storage-destination refresh paths.
    */
   BASEOUT_ENCRYPTION_KEY: string;
-  /** Airtable OAuth app client_id (must match apps/web). Used by the OAuth-refresh cron. */
-  AIRTABLE_OAUTH_CLIENT_ID: string;
-  /** Airtable OAuth app client_secret (must match apps/web). Used by the OAuth-refresh cron. */
-  AIRTABLE_OAUTH_CLIENT_SECRET: string;
-  /** Emergency kill-switch: set true to disable proactive OAuth refresh without redeploying code. */
-  OAUTH_REFRESH_CRON_DISABLED?: string;
   /**
    * Google Drive OAuth app client_id (must match apps/web). The engine
    * refreshes Drive access tokens on behalf of the workflows runner — see
