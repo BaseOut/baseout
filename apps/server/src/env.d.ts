@@ -17,6 +17,15 @@ export interface Env {
    */
   BASEOUT_ENCRYPTION_KEY: string;
   /**
+   * Feature flag for the new on-demand Airtable token refresh path. Default is
+   * off when unset so deployed behavior remains decrypt-only.
+   */
+  AIRTABLE_ON_DEMAND_REFRESH_ENABLED?: string;
+  /** Airtable OAuth app client_id (must match apps/web). Used only by on-demand refresh when enabled. */
+  AIRTABLE_OAUTH_CLIENT_ID?: string;
+  /** Airtable OAuth app client_secret (must match apps/web). Used only by on-demand refresh when enabled. */
+  AIRTABLE_OAUTH_CLIENT_SECRET?: string;
+  /**
    * Google Drive OAuth app client_id (must match apps/web). The engine
    * refreshes Drive access tokens on behalf of the workflows runner — see
    * /api/internal/spaces/:spaceId/storage-destination.

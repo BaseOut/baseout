@@ -94,4 +94,35 @@ describe("ConnectionDO /token", () => {
     const empty = await postToken(stub, "");
     expect(empty.status).toBe(400);
   });
+
+  it("can route /token through the on-demand resolver instead of decrypting the snapshot", async () => {
+    const stub = getStub(`resolver-${crypto.randomUUID()}`);
+    const decryptSpy = vi.fn(
+      async (cipher: string, _key: string) => `plain-${cipher}`,
+    );
+    const resolverSpy = vi.fn(async () => ({
+      ok: true as const,
+      accessToken: "fresh-from-db",
+      refreshed: true,
+    }));
+
+    await runInDurableObject(stub, async (instance) => {
+      instance.setDecryptImplForTests(decryptSpy);
+      instance.setResolveAirtableTokenImplForTests(resolverSpy);
+      instance.setOnDemandRefreshEnabledForTests(true);
+    });
+
+    const res = await stub.fetch("http://do/token", {
+      method: "POST",
+      body: JSON.stringify({
+        connectionId: "conn-1",
+        encryptedToken: "stale-cipher",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ accessToken: "fresh-from-db" });
+    expect(resolverSpy).toHaveBeenCalledWith({ connectionId: "conn-1" });
+    expect(decryptSpy).not.toHaveBeenCalled();
+  });
 });

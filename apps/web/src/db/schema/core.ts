@@ -232,11 +232,15 @@ export const connections = baseout.table('connections', {
   invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
   // set when dead-connection cadence completes and status moves to 'invalid'
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  oauthRefreshClaimId: text('oauth_refresh_claim_id'),
+  oauthRefreshClaimedAt: timestamp('oauth_refresh_claimed_at', { withTimezone: true }),
+  oauthRefreshLastError: text('oauth_refresh_last_error'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('connections_org_platform_idx').on(table.organizationId, table.platformId),
   index('connections_created_by_idx').on(table.createdByUserId),
+  index('connections_oauth_refresh_claim_idx').on(table.oauthRefreshClaimId),
 ])
 
 // ———————————————————————————————————————————————————————————————————————————
@@ -260,6 +264,37 @@ export const connectionSessions = baseout.table('connection_sessions', {
 }, (table) => [
   index('connection_sessions_connection_id_idx').on(table.connectionId),
   index('connection_sessions_expires_at_idx').on(table.expiresAt),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// CONNECTION STATUS AUDIT
+// DB-side audit trail for unexpected connection status flips. A Postgres
+// trigger populates this table so it catches old Workers, scripts, and direct
+// SQL as well as app code.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const connectionStatusAudit = baseout.table('connection_status_audit', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  connectionId: text('connection_id')
+    .notNull()
+    .references(() => connections.id, { onDelete: 'cascade' }),
+  organizationId: text('organization_id'),
+  platformId: text('platform_id'),
+  oldStatus: text('old_status'),
+  newStatus: text('new_status').notNull(),
+  oldInvalidatedAt: timestamp('old_invalidated_at', { withTimezone: true }),
+  newInvalidatedAt: timestamp('new_invalidated_at', { withTimezone: true }),
+  oldTokenExpiresAt: timestamp('old_token_expires_at', { withTimezone: true }),
+  newTokenExpiresAt: timestamp('new_token_expires_at', { withTimezone: true }),
+  oldModifiedAt: timestamp('old_modified_at', { withTimezone: true }),
+  newModifiedAt: timestamp('new_modified_at', { withTimezone: true }),
+  changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+  dbUser: text('db_user').notNull().default(sql`current_user`),
+  applicationName: text('application_name').default(sql`current_setting('application_name', true)`),
+  txid: bigint('txid', { mode: 'number' }).notNull().default(sql`txid_current()`),
+}, (table) => [
+  index('connection_status_audit_connection_idx').on(table.connectionId, table.changedAt),
+  index('connection_status_audit_changed_idx').on(table.changedAt),
 ])
 
 // ———————————————————————————————————————————————————————————————————————————

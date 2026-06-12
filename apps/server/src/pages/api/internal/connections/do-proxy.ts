@@ -28,7 +28,13 @@ export async function connectionDOProxyHandler(
   const stub = env.CONNECTION_DO.get(id);
 
   if (action === "token") {
-    const body = await request.text();
+    let body: string;
+    try {
+      const parsed = (await request.json()) as Record<string, unknown>;
+      body = JSON.stringify({ ...parsed, connectionId });
+    } catch {
+      body = JSON.stringify({ connectionId });
+    }
     return stub.fetch("http://do/token", {
       method: "POST",
       body,

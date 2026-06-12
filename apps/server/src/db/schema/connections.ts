@@ -32,6 +32,11 @@ export const connections = baseout.table("connections", {
   platformConfig: jsonb("platform_config"),
   // airtable: { at_user_id, at_workspace_id, is_enterprise_scope }
   invalidatedAt: timestamp("invalidated_at", { withTimezone: true }),
+  oauthRefreshClaimId: text("oauth_refresh_claim_id"),
+  oauthRefreshClaimedAt: timestamp("oauth_refresh_claimed_at", {
+    withTimezone: true,
+  }),
+  oauthRefreshLastError: text("oauth_refresh_last_error"),
   modifiedAt: timestamp("modified_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   // read by the SpaceDO scheduler (Phase B of

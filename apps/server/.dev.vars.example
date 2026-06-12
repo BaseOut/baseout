@@ -48,6 +48,13 @@ INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness
 # Generate: `openssl rand -base64 32`.
 BASEOUT_ENCRYPTION_KEY=replace-with-base64-of-32-random-bytes
 
+# === Optional: Airtable on-demand token refresh ===
+# Leave disabled until the feature-flagged resolver has passed the dev rollout.
+# When enabled, client ID/secret MUST match apps/web's Airtable OAuth app.
+# AIRTABLE_ON_DEMAND_REFRESH_ENABLED=0
+# AIRTABLE_OAUTH_CLIENT_ID=
+# AIRTABLE_OAUTH_CLIENT_SECRET=
+
 # === BYOS storage-provider OAuth credentials (token refresh — same as apps/web) ===
 # The engine refreshes stored BYOS tokens so the Trigger.dev workflows runner can
 # write backups. Use the SAME client IDs/secrets apps/web holds for each provider.
