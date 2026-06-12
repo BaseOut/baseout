@@ -1,0 +1,25 @@
+---
+// Harness route — account-level Destinations registry (skeleton).
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import DestinationsView from '@web/views/DestinationsView.astro';
+import { getBreadcrumbs } from '@web/lib/config';
+import { FIXTURE_DESTINATIONS, FIXTURE_DESTINATIONS_EMPTY, newDestination } from '../../fixtures/destinations';
+
+const breadcrumbs = getBreadcrumbs('/settings');
+const fixture = Astro.url.searchParams.get('fixture');
+const status = Astro.url.searchParams.get('status');
+const type = Astro.url.searchParams.get('type');
+const baseList = fixture === 'empty' ? FIXTURE_DESTINATIONS_EMPTY : FIXTURE_DESTINATIONS;
+// After "Save destination", the new one appears at the top of the registry, ready to connect.
+const justAdded = status === 'added' ? newDestination(type) : null;
+const destinations = justAdded ? [justAdded, ...baseList] : baseList;
+const notice = justAdded
+  ? (justAdded.status === 'connected'
+      ? `${justAdded.providerLabel} created and ready to use.`
+      : `${justAdded.providerLabel} created. Connect it to start backing up.`)
+  : null;
+---
+
+<SidebarLayout pageTitle="Destinations" breadcrumbs={breadcrumbs}>
+  <DestinationsView destinations={destinations} notice={notice} />
+</SidebarLayout>

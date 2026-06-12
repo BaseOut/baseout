@@ -1,0 +1,56 @@
+---
+// Harness route for the "Manage bases" full-width screen (version 1 / summary
+// layout drill-in). Reached from the configure summary's "Manage bases" link.
+import SidebarLayout from '../../../layouts/SidebarLayout.astro';
+import IntegrationsManageBasesView from '@web/views/IntegrationsManageBasesView.astro';
+import ScenarioSwitcher from '../../../components/ScenarioSwitcher.astro';
+import { INTEGRATION_PAGES, INTEGRATION_FLOW } from '../../../lib/integration-scenarios';
+import { getBreadcrumbs } from '@web/lib/config';
+import {
+  FIXTURE_INTEGRATIONS_STATE_SETUP_MANY,
+  FIXTURE_INTEGRATIONS_STATE_SETUP_FITS,
+  FIXTURE_INTEGRATIONS_STATE_CAPPED,
+} from '../../../fixtures/integrations';
+
+const breadcrumbs = getBreadcrumbs('/integrations');
+const fixture = Astro.url.searchParams.get('fixture');
+// 'fits' = fewer bases than the plan cap, so "Select all" reveals the auto-add toggle.
+const state =
+  fixture === 'capped' ? FIXTURE_INTEGRATIONS_STATE_CAPPED
+  : fixture === 'fits' ? FIXTURE_INTEGRATIONS_STATE_SETUP_FITS
+  : FIXTURE_INTEGRATIONS_STATE_SETUP_MANY;
+
+// Harness-only fixture pill — switch between over-cap and under-cap demo data so
+// the auto-add-future-bases behaviour (shown only when every base fits) is legible.
+const curFixtureKey = fixture === 'fits' ? 'fits' : 'many';
+const fixtureHref = (fx: string) => {
+  const p = new URLSearchParams(Astro.url.search);
+  p.set('fixture', fx);
+  return `/integrations/configure/bases?${p.toString()}`;
+};
+---
+
+<SidebarLayout pageTitle="Choose bases" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <div class="fixture-switch">
+    <span>Bases</span>
+    <a href={fixtureHref('many')} class={curFixtureKey === 'many' ? 'on' : ''}>Over limit · 50/10</a>
+    <a href={fixtureHref('fits')} class={curFixtureKey === 'fits' ? 'on' : ''}>Within limit · 8/10</a>
+  </div>
+
+  <IntegrationsManageBasesView state={state} />
+  <ScenarioSwitcher versions={[]} pages={INTEGRATION_PAGES} flow={INTEGRATION_FLOW} />
+</SidebarLayout>
+
+<style>
+  /* Mirrors the Layout pill on /integrations/configure — harness-only, never shipped. */
+  .fixture-switch {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 60;
+    display: inline-flex; align-items: center; gap: 3px; padding: 3px 5px;
+    border-radius: 999px; background: oklch(0.2 0.02 260 / 0.92); backdrop-filter: blur(6px);
+    font-size: 12px; color: #fff;
+  }
+  .fixture-switch span { opacity: 0.55; padding: 0 6px; font-weight: 600; }
+  .fixture-switch a { padding: 4px 11px; border-radius: 999px; color: #fff; text-decoration: none; opacity: 0.7; transition: all 0.12s ease; }
+  .fixture-switch a:hover { opacity: 1; }
+  .fixture-switch a.on { background: oklch(0.55 0.18 255); opacity: 1; font-weight: 600; }
+</style>

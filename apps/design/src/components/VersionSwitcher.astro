@@ -1,0 +1,31 @@
+---
+// Design-harness only (never shipped to prod). Floating pill bar to switch
+// between design versions of a screen via the ?v= query param, preserving any
+// other params (fixture/status). Reusable across screens.
+interface Version { key: string; label: string; }
+interface Props { current: string; versions: Version[]; }
+const { current, versions } = Astro.props;
+
+function hrefFor(key: string): string {
+  const u = new URL(Astro.url);
+  if (key === 'base') u.searchParams.delete('v');
+  else u.searchParams.set('v', key);
+  return u.pathname + (u.search ? u.search : '');
+}
+---
+<div class="vswitch" role="group" aria-label="Design version">
+  <span class="vswitch-label">Version</span>
+  {versions.map((v) => (
+    <a href={hrefFor(v.key)} class={`vswitch-pill ${v.key === current ? 'is-active' : ''}`}>{v.label}</a>
+  ))}
+</div>
+<style>
+  .vswitch{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:200;
+    display:flex;align-items:center;gap:4px;background:#0f172a;color:#fff;padding:6px 8px;
+    border-radius:999px;box-shadow:0 10px 34px rgba(2,6,23,.32);font-size:13px}
+  .vswitch-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;padding:0 8px}
+  .vswitch-pill{color:#cbd5e1;padding:5px 13px;border-radius:999px;text-decoration:none;transition:.12s;white-space:nowrap}
+  .vswitch-pill:hover{color:#fff;background:#1e293b}
+  .vswitch-pill.is-active{background:#3b82f6;color:#fff}
+  @media print{.vswitch{display:none}}
+</style>

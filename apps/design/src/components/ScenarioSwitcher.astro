@@ -1,0 +1,238 @@
+---
+/**
+ * Design-harness only. Prototype control panel with two clear modes:
+ *   • Flow    — before start: steps + "Start the flow". In flow: step indicator
+ *               + Back / Start over / Exit flow controls.
+ *   • Screens — a page index: each page (Overview / Configure / Loader) lists its
+ *               states; clicking navigates cross-route to that screen + state,
+ *               with a description (legend) for the active one.
+ * Plus a "View Old" compare, a 3-position dock, collapse — all persisted, and the
+ * active mode + flow session persisted across navigation.
+ */
+import type { ScreenPage, ScreenItem } from '../lib/integration-scenarios';
+interface Version { key: string; label: string; }
+interface FlowDef { blurb: string; steps: string[]; startHref: string; }
+interface Props { versions: Version[]; pages: ScreenPage[]; flow?: FlowDef; }
+const { versions, pages, flow } = Astro.props;
+
+const curPath = Astro.url.pathname;
+const curFixture = Astro.url.searchParams.get('fixture');
+const curStatus = Astro.url.searchParams.get('status');
+const curFirst = Astro.url.searchParams.get('first') === '1';
+const curStatic = Astro.url.searchParams.get('static') === '1';
+const curV = Astro.url.searchParams.get('v') ?? 'redesign';
+
+function screenHref(it: ScreenItem): string {
+  const u = new URL(it.path, Astro.url.origin);
+  if (it.fixture) u.searchParams.set('fixture', it.fixture);
+  if (it.status) u.searchParams.set('status', it.status);
+  if (it.reason) u.searchParams.set('reason', it.reason);
+  if (it.first) u.searchParams.set('first', '1');
+  if (it.static) u.searchParams.set('static', '1');
+  return u.pathname + (u.search ? u.search : '');
+}
+function screenActive(it: ScreenItem): boolean {
+  return curPath === it.path
+    && (it.fixture ?? null) === curFixture
+    && (it.status ?? null) === curStatus
+    && !!it.first === curFirst
+    && !!it.static === curStatic;
+}
+function versionHref(key: string): string {
+  const u = new URL(Astro.url);
+  u.searchParams.set('v', key);
+  return u.pathname + (u.search ? u.search : '');
+}
+const otherVersion = versions.find((v) => v.key !== curV) ?? versions[0];
+
+let activeItem: (ScreenItem & { page: string }) | null = null;
+for (const p of pages) for (const it of p.items) if (screenActive(it)) activeItem = { ...it, page: p.label };
+---
+<aside class="scsw dock-center" data-scsw aria-label="Prototype controls">
+  <div class="scsw-head">
+    <span class="scsw-dot" aria-hidden="true"></span>
+    <span class="scsw-title">Prototype</span>
+    <button type="button" class="scsw-icon" data-scsw-dock title="Move (left / center / right)" aria-label="Move panel">⇆</button>
+    <button type="button" class="scsw-icon scsw-chev" data-scsw-collapse title="Collapse" aria-label="Collapse panel">⌄</button>
+  </div>
+
+  <div class="scsw-body" data-scsw-body>
+    {flow && (
+      <div class="scsw-tabs" role="tablist">
+        <button type="button" class="scsw-tab" data-scsw-tab="flow">▶ Flow</button>
+        <button type="button" class="scsw-tab" data-scsw-tab="screens">▦ Screens</button>
+      </div>
+    )}
+
+    {flow && (
+      <div class="scsw-pane" data-scsw-pane="flow">
+        {/* Before starting */}
+        <div class="flow-start">
+          <p class="scsw-blurb">{flow.blurb}</p>
+          <ol class="scsw-steps">
+            {flow.steps.map((s, i) => (<li><span class="n">{i + 1}</span>{s}</li>))}
+          </ol>
+          <a href={flow.startHref} class="scsw-btn scsw-btn-primary" data-scsw-start>Start the flow →</a>
+        </div>
+        {/* While in flow */}
+        <div class="flow-controls">
+          <p class="flow-status">In the flow — <span data-scsw-step>step …</span></p>
+          <div class="flow-actions">
+            <button type="button" class="scsw-btn" data-scsw-back>◀ Back</button>
+            <button type="button" class="scsw-btn" data-scsw-restart>↻ Start over</button>
+            <button type="button" class="scsw-btn scsw-btn-exit" data-scsw-exit>✕ Exit flow</button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    <div class="scsw-pane" data-scsw-pane="screens">
+      {pages.map((p) => (
+        <div class="scsw-page">
+          <div class="scsw-page-label">{p.label}</div>
+          <div class="scsw-chips">
+            {p.items.map((it) => (
+              <a href={screenHref(it)} data-scsw-screen class={`scsw-chip ${screenActive(it) ? 'is-active' : ''}`}>{it.label}</a>
+            ))}
+          </div>
+        </div>
+      ))}
+      {activeItem && (
+        <div class="scsw-legend">
+          <span class="scsw-legend-title">{activeItem.page} · {activeItem.label}</span>
+          {activeItem.desc && <span class="scsw-legend-desc">{activeItem.desc}</span>}
+        </div>
+      )}
+    </div>
+
+    {otherVersion && (
+      <div class="scsw-foot">
+        <span class="scsw-foot-label">Compare</span>
+        <a href={versionHref(otherVersion.key)} class="scsw-peek">{otherVersion.key === 'base' ? '↩ View ' : '→ '}{otherVersion.label}</a>
+      </div>
+    )}
+  </div>
+</aside>
+
+<style>
+  .scsw { position: fixed; bottom: 16px; z-index: 200; background: #0f172a; color: #fff; border-radius: 14px; box-shadow: 0 12px 40px rgba(2, 6, 23, .38); font-size: 12.5px; width: min(94vw, 460px); }
+  .scsw.dock-center { left: 50%; transform: translateX(-50%); }
+  .scsw.dock-left { left: 16px; right: auto; transform: none; }
+  .scsw.dock-right { right: 16px; left: auto; transform: none; }
+
+  .scsw-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; }
+  .scsw-dot { width: 7px; height: 7px; border-radius: 999px; background: #3b82f6; flex: none; }
+  .scsw-title { font-weight: 600; color: #e2e8f0; }
+  .scsw-icon { color: #94a3b8; background: transparent; border: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 3px 5px; border-radius: 6px; }
+  .scsw-icon:first-of-type { margin-left: auto; }
+  .scsw-icon:hover { color: #fff; background: #1e293b; }
+  .scsw-chev { transition: transform .18s ease; }
+  .scsw:not(.is-collapsed) .scsw-chev { transform: rotate(180deg); }
+  .scsw.is-collapsed .scsw-body { display: none; }
+  .scsw:not(.is-collapsed) .scsw-head { border-bottom: 1px solid #1e293b; }
+
+  .scsw-tabs { display: flex; gap: 3px; padding: 9px 12px 0; }
+  .scsw-tab { flex: 1; padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; color: #94a3b8; background: transparent; border: none; cursor: pointer; transition: .12s; }
+  .scsw-tab:hover { color: #cbd5e1; }
+  .scsw-tab.is-active { background: #1e293b; color: #fff; }
+
+  .scsw-pane { display: none; padding: 11px 13px 13px; }
+  .scsw-pane.is-active { display: block; }
+
+  /* Flow pane: toggle between start + controls via .in-flow on root */
+  .scsw:not(.in-flow) .flow-controls { display: none; }
+  .scsw.in-flow .flow-start { display: none; }
+  .scsw-blurb { color: #cbd5e1; line-height: 1.5; margin: 0 0 9px; }
+  .scsw-steps { display: flex; flex-direction: column; gap: 5px; margin: 0 0 12px; padding: 0; list-style: none; }
+  .scsw-steps li { display: flex; align-items: center; gap: 8px; color: #cbd5e1; font-size: 12px; }
+  .scsw-steps .n { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 999px; background: #1e293b; color: #93c5fd; font-size: 10px; font-weight: 700; flex: none; }
+  .flow-status { color: #cbd5e1; margin: 0 0 10px; }
+  .flow-status [data-scsw-step] { color: #93c5fd; font-weight: 600; }
+  .flow-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .scsw-btn { display: inline-block; background: #1e293b; color: #e2e8f0; padding: 6px 12px; border-radius: 8px; font-weight: 600; font-size: 12px; text-decoration: none; border: none; cursor: pointer; transition: .12s; }
+  .scsw-btn:hover { background: #334155; }
+  .scsw-btn-primary { background: #3b82f6; color: #fff; }
+  .scsw-btn-primary:hover { background: #2563eb; }
+  .scsw-btn-exit { color: #fca5a5; }
+  .scsw-btn-exit:hover { background: #3a1d1d; color: #fecaca; }
+
+  /* Screens pane: pages */
+  .scsw-page { margin-bottom: 9px; }
+  .scsw-page-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #94a3b8; margin-bottom: 5px; }
+  .scsw-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .scsw-chip { color: #cbd5e1; padding: 4px 11px; border-radius: 999px; text-decoration: none; white-space: nowrap; transition: .12s; line-height: 1.2; }
+  .scsw-chip:hover { color: #fff; background: #1e293b; }
+  .scsw-chip.is-active { background: #3b82f6; color: #fff; }
+  .scsw-legend { margin-top: 9px; padding-top: 9px; border-top: 1px solid #1e293b; display: flex; flex-direction: column; gap: 3px; }
+  .scsw-legend-title { font-size: 11px; font-weight: 600; color: #e2e8f0; }
+  .scsw-legend-desc { font-size: 11px; line-height: 1.5; color: #94a3b8; }
+
+  .scsw-foot { display: flex; align-items: center; gap: 8px; margin-top: 11px; padding-top: 10px; border-top: 1px solid #1e293b; }
+  .scsw-foot-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #94a3b8; }
+  .scsw-peek { color: #e2e8f0; font-weight: 600; padding: 4px 11px; border-radius: 999px; border: 1px solid #334155; text-decoration: none; transition: .12s; }
+  .scsw-peek:hover { border-color: #475569; background: #1e293b; }
+
+  @media print { .scsw { display: none; } }
+</style>
+
+<script>
+  function initScsw() {
+    const root = document.querySelector<HTMLElement>('[data-scsw]');
+    if (!root) return;
+
+    // Dock (persists).
+    const docks = ['left', 'center', 'right'];
+    const applyDock = (d: string) => { root!.classList.remove('dock-left', 'dock-center', 'dock-right'); root!.classList.add('dock-' + (docks.includes(d) ? d : 'center')); };
+    applyDock(localStorage.getItem('scsw-dock') || 'center');
+    root.querySelector('[data-scsw-dock]')?.addEventListener('click', () => {
+      const next = docks[(docks.indexOf(localStorage.getItem('scsw-dock') || 'center') + 1) % docks.length];
+      applyDock(next); localStorage.setItem('scsw-dock', next);
+    });
+
+    // Collapse (persists).
+    if (localStorage.getItem('scsw-collapsed') === '1') root.classList.add('is-collapsed');
+    root.querySelector('[data-scsw-collapse]')?.addEventListener('click', () => {
+      root.classList.toggle('is-collapsed');
+      localStorage.setItem('scsw-collapsed', root.classList.contains('is-collapsed') ? '1' : '0');
+    });
+
+    // Tabs (persist).
+    const hasFlow = !!root.querySelector('[data-scsw-tab="flow"]');
+    function setTab(t: string) {
+      const tab = (!hasFlow || t === 'screens') ? 'screens' : 'flow';
+      root!.querySelectorAll<HTMLElement>('[data-scsw-tab]').forEach((b) => b.classList.toggle('is-active', b.dataset.scswTab === tab));
+      root!.querySelectorAll<HTMLElement>('[data-scsw-pane]').forEach((p) => p.classList.toggle('is-active', p.dataset.scswPane === tab));
+      localStorage.setItem('scsw-tab', tab);
+    }
+    setTab(localStorage.getItem('scsw-tab') || (hasFlow ? 'flow' : 'screens'));
+    root.querySelectorAll<HTMLElement>('[data-scsw-tab]').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.scswTab || 'screens')));
+
+    // Flow session (persists). The flow steps map to URLs.
+    const FLOW = [
+      { test: (p: string, s: URLSearchParams) => p === '/integrations' && s.get('fixture') === 'empty' && !s.get('status'), label: 'Connect', href: '/integrations?fixture=empty' },
+      { test: (p: string) => p === '/integrations/authorizing', label: 'Authorize', href: '/integrations/authorizing' },
+      { test: (p: string, s: URLSearchParams) => p === '/integrations/configure' && s.get('first') === '1', label: 'Set up', href: '/integrations/configure?first=1' },
+      { test: (p: string, s: URLSearchParams) => p === '/integrations' && s.get('status') === 'running', label: 'Running', href: '/integrations?status=running' },
+    ];
+    const inFlow = () => localStorage.getItem('scsw-in-flow') === '1';
+    const setInFlow = (on: boolean) => { localStorage.setItem('scsw-in-flow', on ? '1' : '0'); root!.classList.toggle('in-flow', on); };
+    setInFlow(inFlow());
+    // Current step indicator.
+    const sp = new URLSearchParams(window.location.search);
+    const stepIdx = FLOW.findIndex((f) => f.test(window.location.pathname, sp));
+    const stepEl = root.querySelector<HTMLElement>('[data-scsw-step]');
+    if (stepEl) stepEl.textContent = stepIdx >= 0 ? `step ${stepIdx + 1} of ${FLOW.length} · ${FLOW[stepIdx].label}` : 'off the path';
+
+    root.querySelector('[data-scsw-start]')?.addEventListener('click', () => { setInFlow(true); localStorage.setItem('scsw-tab', 'flow'); });
+    root.querySelector('[data-scsw-restart]')?.addEventListener('click', () => { setInFlow(true); window.location.href = FLOW[0].href; });
+    root.querySelector('[data-scsw-back]')?.addEventListener('click', () => {
+      if (stepIdx > 0) window.location.href = FLOW[stepIdx - 1].href; else window.history.back();
+    });
+    root.querySelector('[data-scsw-exit]')?.addEventListener('click', () => { setInFlow(false); setTab('screens'); });
+    root.querySelectorAll('[data-scsw-screen]').forEach((a) => a.addEventListener('click', () => { localStorage.setItem('scsw-tab', 'screens'); setInFlow(false); }));
+  }
+  initScsw();
+  // Astro does client-side swaps (ViewTransitions); re-init on each so the new panel wires up.
+  document.addEventListener('astro:after-swap', initScsw);
+</script>

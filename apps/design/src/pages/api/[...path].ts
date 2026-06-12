@@ -30,12 +30,26 @@ function redirect(to: string): Response {
   return new Response(null, { status: 302, headers: { Location: to } });
 }
 
+// Preserve the active design-version (?v=) across a simulated OAuth redirect,
+// read from the Referer of the page that submitted the connect form.
+function vQuery(request: Request): string {
+  try {
+    const v = new URL(request.headers.get('referer') ?? '').searchParams.get('v');
+    return v ? `v=${encodeURIComponent(v)}&` : '';
+  } catch {
+    return '';
+  }
+}
+
 function newRunId(): string {
   return `run_design_stub_${Math.floor(performance.now()).toString(36)}`;
 }
 
 const handler: APIRoute = async ({ params, request, url }) => {
-  const path = '/' + (params.path ?? '');
+  // `pages/api/[...path].ts` captures the segments AFTER `/api/`, so re-add the
+  // prefix the handlers below match against (without it, every bespoke route
+  // missed and fell through to `{ ok: true }`).
+  const path = '/api/' + (params.path ?? '');
   const method = request.method.toUpperCase();
 
   // GET /api/spaces — sidebar refresh
@@ -111,9 +125,18 @@ const handler: APIRoute = async ({ params, request, url }) => {
     return json({ ok: true });
   }
 
-  // Connections — Airtable OAuth start: fake the redirect to /integrations success
+  // Connections — Airtable OAuth start: simulate returning from auth and drop the
+  // first-time user straight into the SETUP flow (Configure, ?first=1). We don't
+  // show a "Connected" overview here — there's no valid config yet; the user
+  // configures, then "Save & run first backup" lands the connected+running final.
   if (path === '/api/connections/airtable/start' && method === 'POST') {
-    return redirect('/integrations?statusCode=connected');
+    return redirect(`/integrations/authorizing`);
+  }
+
+  // Connections — Airtable API-key connect: no OAuth redirect (the user pasted a
+  // token), so skip the Authorizing interstitial and go straight into setup.
+  if (path === '/api/connections/airtable/api-key' && method === 'POST') {
+    return redirect(`/integrations/configure?first=1`);
   }
 
   // Connections — Airtable whoami probe (Test connection button)
@@ -131,7 +154,7 @@ const handler: APIRoute = async ({ params, request, url }) => {
   // Connections — Storage (Google Drive / Dropbox / Box / OneDrive)
   if (/^\/api\/connections\/storage\/[^/]+\/(authorize|callback|disconnect)$/.test(path)) {
     if (path.endsWith('/authorize')) {
-      return redirect('/integrations?statusCode=connected');
+      return redirect(`/integrations?${vQuery(request)}status=connected`);
     }
     return json({ ok: true });
   }

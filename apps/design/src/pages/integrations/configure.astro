@@ -1,0 +1,76 @@
+---
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import IntegrationsConfigureView from '@web/views/IntegrationsConfigureView.astro';
+import IntegrationsConfigureTabs from '@web/views/IntegrationsConfigureView.tabs.astro';
+import ScenarioSwitcher from '../../components/ScenarioSwitcher.astro';
+import { INTEGRATION_PAGES, INTEGRATION_FLOW } from '../../lib/integration-scenarios';
+import { getBreadcrumbs } from '@web/lib/config';
+import {
+  FIXTURE_INTEGRATIONS_STATE,
+  FIXTURE_INTEGRATIONS_STATE_NOBASES,
+  FIXTURE_INTEGRATIONS_STATE_CAPPED,
+  FIXTURE_INTEGRATIONS_STATE_SETUP,
+  FIXTURE_INTEGRATIONS_STATE_SETUP_MANY,
+  FIXTURE_INTEGRATIONS_STATE_SETUP_FITS,
+} from '../../fixtures/integrations';
+import { FIXTURE_DESTINATIONS } from '../../fixtures/destinations';
+
+const breadcrumbs = getBreadcrumbs('/integrations');
+const fixture = Astro.url.searchParams.get('fixture');
+// Two configure layouts under evaluation: 'summary' (vertical flow + Manage drill-in) | 'tabs'.
+const layout = Astro.url.searchParams.get('layout') === 'tabs' ? 'tabs' : 'summary';
+
+const stateByFixture: Record<string, typeof FIXTURE_INTEGRATIONS_STATE> = {
+  nobases: FIXTURE_INTEGRATIONS_STATE_NOBASES,
+  capped: FIXTURE_INTEGRATIONS_STATE_CAPPED,
+  setup: FIXTURE_INTEGRATIONS_STATE_SETUP,
+  many: FIXTURE_INTEGRATIONS_STATE_SETUP_MANY,
+  fits: FIXTURE_INTEGRATIONS_STATE_SETUP_FITS,
+};
+// First-time setup (?first=1) lands on a realistic many-bases workspace so the
+// base picker has something to chew on; returning edit uses the base fixture.
+const isFirst = Astro.url.searchParams.get('first') === '1';
+const state =
+  (fixture && stateByFixture[fixture]) ||
+  (isFirst ? FIXTURE_INTEGRATIONS_STATE_SETUP_MANY : FIXTURE_INTEGRATIONS_STATE);
+
+// v1 destination demo: ?dest=linked shows the "returned from settings, now linked" state;
+// default empty so the first-run drill-out ("Set up a destination") is what you see.
+const linkedDestinations = Astro.url.searchParams.get('dest') === 'linked'
+  ? FIXTURE_DESTINATIONS.filter((d) => d.id === 'company-drive' || d.id === 'analytics-db')
+  : [];
+
+// Harness-only layout switch — preserves the current query params.
+const hrefFor = (l: string) => {
+  const p = new URLSearchParams(Astro.url.search);
+  p.set('layout', l);
+  return `/integrations/configure?${p.toString()}`;
+};
+---
+
+<SidebarLayout pageTitle="Configure Airtable backup" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <div class="layout-switch">
+    <span>Layout</span>
+    <a href={hrefFor('summary')} class={layout === 'summary' ? 'on' : ''}>Summary + Manage</a>
+    <a href={hrefFor('tabs')} class={layout === 'tabs' ? 'on' : ''}>Tabs</a>
+  </div>
+
+  {layout === 'tabs'
+    ? <IntegrationsConfigureTabs state={state} destinations={FIXTURE_DESTINATIONS} />
+    : <IntegrationsConfigureView state={state} linkedDestinations={linkedDestinations} />}
+
+  <ScenarioSwitcher versions={[]} pages={INTEGRATION_PAGES} flow={INTEGRATION_FLOW} />
+</SidebarLayout>
+
+<style>
+  .layout-switch {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 60;
+    display: inline-flex; align-items: center; gap: 3px; padding: 3px 5px;
+    border-radius: 999px; background: oklch(0.2 0.02 260 / 0.92); backdrop-filter: blur(6px);
+    font-size: 12px; color: #fff;
+  }
+  .layout-switch span { opacity: 0.55; padding: 0 6px; font-weight: 600; }
+  .layout-switch a { padding: 4px 11px; border-radius: 999px; color: #fff; text-decoration: none; opacity: 0.7; transition: all 0.12s ease; }
+  .layout-switch a:hover { opacity: 1; }
+  .layout-switch a.on { background: oklch(0.55 0.18 255); opacity: 1; font-weight: 600; }
+</style>

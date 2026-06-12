@@ -20,3 +20,6 @@
  */
 @reference "tailwindcss";
 @source "../../../web/src/**/*.{astro,ts,tsx,html,mdx}";
+/* Nav icons are declared in apps/web/app-config.json (outside src/). Scan it so
+   the `iconify lucide--*` classes used by the sidebar nav get emitted. */
+@source "../../../web/app-config.json";

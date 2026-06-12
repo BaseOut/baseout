@@ -1,0 +1,32 @@
+---
+// Harness-only interstitial: simulates returning from Airtable's OAuth consent.
+// The Connect button's stub redirects here; after a short "authorizing" beat we
+// hand off to the first-time setup flow (Configure, ?first=1).
+// ?static=1 holds the loader for preview (no auto-redirect) — used by the panel's
+// "Loader" page.
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import ScenarioSwitcher from '../../components/ScenarioSwitcher.astro';
+import { INTEGRATION_PAGES, INTEGRATION_FLOW } from '../../lib/integration-scenarios';
+import { getBreadcrumbs } from '@web/lib/config';
+const breadcrumbs = getBreadcrumbs('/integrations');
+const isStatic = Astro.url.searchParams.get('static') === '1';
+---
+
+<SidebarLayout pageTitle="Connecting Airtable" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <div class="min-h-[62vh] flex flex-col items-center justify-center text-center gap-5">
+    <img src="/airtable.svg" alt="" width="48" height="48" style="border-radius:12px" />
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <div>
+      <p class="text-lg font-semibold">Authorizing with Airtable…</p>
+      <p class="text-sm text-base-content/60 mt-1">Confirming read-only access, then we'll set up your backup.</p>
+    </div>
+  </div>
+  {!isStatic && (
+    <script is:inline>
+      setTimeout(function () {
+        window.location.href = '/integrations/configure?first=1';
+      }, 1700);
+    </script>
+  )}
+  <ScenarioSwitcher versions={[]} pages={INTEGRATION_PAGES} flow={INTEGRATION_FLOW} />
+</SidebarLayout>

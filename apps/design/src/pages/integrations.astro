@@ -1,25 +1,67 @@
 ---
 import SidebarLayout from '../layouts/SidebarLayout.astro';
-import IntegrationsView from '@web/views/IntegrationsView.astro';
+// The redesign was promoted into IntegrationsView.astro (production); the
+// pre-redesign screen lives on as IntegrationsView.legacy.astro for "Old".
+import IntegrationsViewRedesign from '@web/views/IntegrationsView.astro';
+import IntegrationsViewLegacy from '@web/views/IntegrationsView.legacy.astro';
+import ScenarioSwitcher from '../components/ScenarioSwitcher.astro';
+import { INTEGRATION_PAGES, INTEGRATION_FLOW } from '../lib/integration-scenarios';
 import { getBreadcrumbs } from '@web/lib/config';
-import { FIXTURE_INTEGRATIONS_STATE, FIXTURE_INTEGRATIONS_STATE_EMPTY } from '../fixtures/integrations';
+import {
+  FIXTURE_INTEGRATIONS_STATE,
+  FIXTURE_INTEGRATIONS_STATE_EMPTY,
+  FIXTURE_INTEGRATIONS_STATE_REAUTH,
+  FIXTURE_INTEGRATIONS_STATE_INVALID,
+  FIXTURE_INTEGRATIONS_STATE_REFRESHING,
+  FIXTURE_INTEGRATIONS_STATE_NOBASES,
+  FIXTURE_INTEGRATIONS_STATE_CAPPED,
+  FIXTURE_INTEGRATIONS_STATE_SETUP,
+} from '../fixtures/integrations';
 import { FIXTURE_BACKUP_RUNS, FIXTURE_BACKUP_RUNS_EMPTY, FIXTURE_BACKUP_RUNS_FAILED } from '../fixtures/backup-runs';
 
 const breadcrumbs = getBreadcrumbs('/integrations');
 const fixture = Astro.url.searchParams.get('fixture');
+const statusParam = Astro.url.searchParams.get('status');
 
-const state = fixture === 'empty' ? FIXTURE_INTEGRATIONS_STATE_EMPTY : FIXTURE_INTEGRATIONS_STATE;
+const stateByFixture: Record<string, typeof FIXTURE_INTEGRATIONS_STATE> = {
+  empty: FIXTURE_INTEGRATIONS_STATE_EMPTY,
+  reauth: FIXTURE_INTEGRATIONS_STATE_REAUTH,
+  invalid: FIXTURE_INTEGRATIONS_STATE_INVALID,
+  refreshing: FIXTURE_INTEGRATIONS_STATE_REFRESHING,
+  nobases: FIXTURE_INTEGRATIONS_STATE_NOBASES,
+  capped: FIXTURE_INTEGRATIONS_STATE_CAPPED,
+  setup: FIXTURE_INTEGRATIONS_STATE_SETUP,
+};
+const state = (fixture && stateByFixture[fixture]) || FIXTURE_INTEGRATIONS_STATE;
+
+// 'saved'/'running' = just-finished first-time setup: protected, but no prior succeeded run yet.
 const initialRuns =
-  fixture === 'empty' ? FIXTURE_BACKUP_RUNS_EMPTY
+  fixture === 'empty' || fixture === 'nobases' || fixture === 'setup' || fixture === 'firstbackup'
+    || statusParam === 'saved' || statusParam === 'running' ? FIXTURE_BACKUP_RUNS_EMPTY
   : fixture === 'failed' ? FIXTURE_BACKUP_RUNS_FAILED
   : FIXTURE_BACKUP_RUNS;
+
+// Preview the OAuth-return / save alerts (hardcoded null in prod shell): ?status=connected | error | saved
+const statusCode = statusParam === 'connected' ? 'connected' : statusParam === 'error' ? 'error' : statusParam === 'saved' ? 'saved' : statusParam === 'running' ? 'running' : null;
+const errorReason = statusCode === 'error' ? (Astro.url.searchParams.get('reason') ?? 'access_denied') : null;
+
+// Design-version switcher (?v=base|redesign). Harness-only; never shipped.
+// Redesign is the DEFAULT (the version we build); the client's current screen is opt-in via ?v=base ("View Old").
+const v = Astro.url.searchParams.get('v') ?? 'redesign';
 ---
 
 <SidebarLayout pageTitle="Integrations" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <IntegrationsView
-    state={state}
-    statusCode={null}
-    errorReason={null}
-    initialRuns={initialRuns}
+  {v === 'redesign' ? (
+    <IntegrationsViewRedesign state={state} statusCode={statusCode} errorReason={errorReason} initialRuns={initialRuns} />
+  ) : (
+    <IntegrationsViewLegacy state={state} statusCode={statusCode === 'connected' || statusCode === 'error' ? statusCode : null} errorReason={errorReason} initialRuns={initialRuns} />
+  )}
+  <ScenarioSwitcher
+    versions={[
+      { key: 'base', label: 'Old' },
+      { key: 'redesign', label: 'Redesign' },
+    ]}
+    pages={INTEGRATION_PAGES}
+    flow={INTEGRATION_FLOW}
   />
 </SidebarLayout>
