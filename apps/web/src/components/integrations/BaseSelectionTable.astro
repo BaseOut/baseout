@@ -1,0 +1,337 @@
+---
+/**
+ * BaseSelectionTable — the full-width, dense base picker built for scale.
+ *
+ * Shared by both configure layouts under evaluation:
+ *  - the "Manage bases" screen (summary + drill-in layout), and
+ *  - the "Bases" tab (tabbed layout).
+ *
+ * Handles hundreds of bases without pagination: search + sort + virtual-feeling
+ * scroll + cap-aware select-all + "show selected" + (only when all are selected)
+ * an auto-add-future-bases toggle. Columns are Tables and Fields — the only
+ * metrics Airtable's schema endpoint exposes; values here are illustrative
+ * placeholders (the engine supplies real figures). The field/table hierarchy
+ * can later nest under each row.
+ */
+import type { BaseSummary } from '../../stores/connections';
+
+interface Props {
+  bases: BaseSummary[];
+  cap: number | null;
+  spaceId?: string;
+  /** Render without the outer form (the host page owns the form/submit). */
+  embedded?: boolean;
+  /** Initial state of the auto-add-future-bases toggle (policy.autoAddFutureBases). */
+  autoAdd?: boolean;
+}
+const { bases, cap, spaceId = '', embedded = false, autoAdd = false } = Astro.props;
+
+const fmt = new Intl.NumberFormat('en-US');
+
+// Per-base metadata we can actually get from Airtable's schema endpoint
+// (GET /v0/meta/bases/{baseId}/tables): table count and total field count.
+// Record counts and "last changed" are NOT exposed by the API, so they're not
+// shown. Values here are illustrative placeholders (deterministic from name).
+function baseMeta(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  const tables = 3 + (Math.abs(h) % 18);
+  const fields = tables * (5 + (Math.abs(h * 13) % 11));
+  return { tables, fields };
+}
+const rows = bases.map((b) => ({ b, m: baseMeta(b.name) }));
+const includedCount = bases.filter((b) => b.isIncluded).length;
+const Tag = embedded ? 'div' : 'form';
+---
+
+<div class="bst" data-base-table data-cap={cap ?? ''}>
+  {/* Toolbar — search · workspace filter · sort · bulk actions */}
+  <div class="bst-toolbar">
+    <label class="bst-search">
+      <span class="iconify lucide--search"></span>
+      <input type="search" placeholder={`Search ${bases.length} bases`} autocomplete="off" data-bst-search />
+    </label>
+    <select class="bst-select" data-bst-sort aria-label="Sort bases">
+      <option value="name">Name (A–Z)</option>
+      <option value="tables">Most tables</option>
+      <option value="fields">Most fields</option>
+    </select>
+    <span class="bst-spacer"></span>
+    <button type="button" class="bst-action" data-bst-select-all>Select all</button>
+    <span class="text-base-content/25">·</span>
+    <button type="button" class="bst-action" data-bst-clear>Clear</button>
+  </div>
+
+  {/* Sub-bar — live count + cap + show-selected */}
+  <div class="bst-subbar">
+    <p class="bst-count">Selected <span data-bst-count>{includedCount}</span>{cap === null ? '' : ` of ${cap} (your plan's max)`}</p>
+    <label class="bst-filter">
+      <input type="checkbox" class="checkbox checkbox-xs" data-bst-show-selected />
+      <span>Show selected only</span>
+    </label>
+  </div>
+
+  <p class="bst-cap-note" data-bst-cap-note hidden>
+    <span class="iconify lucide--circle-alert"></span>
+    <span data-bst-cap-text></span>
+    <a href="/settings" class="bst-upgrade">Upgrade</a>
+  </p>
+
+  {/* Auto-add appears only when every base is selected — the intent is then
+      "back up everything", so future bases should be included too. Hidden on a
+      partial selection (and impossible to reach when bases exceed the plan cap). */}
+  <label class="bst-autoadd" data-bst-autoadd hidden>
+    <input type="checkbox" class="toggle toggle-sm toggle-primary" checked={autoAdd} data-bst-autoadd-check />
+    <span class="min-w-0">
+      <span class="block text-sm font-medium">Automatically back up new bases</span>
+      <span class="block text-xs text-base-content/55 mt-0.5">When you add a base in Airtable, include it in this backup (up to your plan limit).</span>
+    </span>
+  </label>
+
+  <Tag
+    {...(embedded ? {} : { method: 'POST', action: `/api/spaces/${spaceId}/backup-config/bases` })}
+    data-base-selection-form
+    class="bst-tablewrap"
+  >
+    <div class="bst-table" data-bst-list role="table">
+      <div class="bst-head" role="row">
+        <span class="c-check"></span>
+        <span class="c-name">Base</span>
+        <span class="c-num">Tables</span>
+        <span class="c-num">Fields</span>
+      </div>
+      {rows.map(({ b, m }) => (
+        <label
+          class="bst-row"
+          data-bst-row
+          data-name={b.name.toLowerCase()}
+          data-tables={m.tables}
+          data-fields={m.fields}
+          role="row"
+        >
+          <span class="c-check"><input type="checkbox" name="atBaseIds" value={b.id} checked={b.isIncluded} class="checkbox checkbox-sm" data-base-checkbox /></span>
+          <span class="c-name">{b.name}</span>
+          <span class="c-num">{m.tables}</span>
+          <span class="c-num">{fmt.format(m.fields)}</span>
+        </label>
+      ))}
+    </div>
+    <p class="bst-empty" data-bst-empty hidden>No bases match your filters.</p>
+  </Tag>
+
+  {/* Pagination — illustrative; paginates the current (searched/sorted/filtered) set. */}
+  <div class="bst-pager" data-bst-pager hidden>
+    <label class="bst-pagesize">
+      <span>Show</span>
+      <select class="bst-pagesize-select" data-bst-pagesize aria-label="Bases per page">
+        <option value="10">10</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+      </select>
+      <span>per page</span>
+    </label>
+    <div class="bst-pager-nav">
+      <button type="button" class="bst-page-btn" data-bst-prev><span class="iconify lucide--chevron-left"></span> Prev</button>
+      <span class="bst-page-info" data-bst-pageinfo></span>
+      <button type="button" class="bst-page-btn" data-bst-next>Next <span class="iconify lucide--chevron-right"></span></button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .bst { display: flex; flex-direction: column; }
+  .bst-toolbar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
+  .bst-search { display: flex; align-items: center; gap: .5rem; flex: 1; min-width: 14rem; padding: .45rem .7rem; border: 1px solid var(--color-base-300); border-radius: .55rem; background: var(--color-base-100); }
+  .bst-search:focus-within { border-color: oklch(from var(--color-primary) l c h / .5); }
+  .bst-search .iconify { font-size: 1rem; flex: none; color: oklch(from var(--color-base-content) l c h / .4); }
+  .bst-search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; font-size: .85rem; }
+  .bst-select { height: 2.1rem; padding: 0 .6rem; border: 1px solid var(--color-base-300); border-radius: .55rem; background: var(--color-base-100); font-size: .8rem; color: var(--color-base-content); }
+  .bst-spacer { flex: 1; }
+  .bst-action { font-size: .8rem; font-weight: 600; color: oklch(from var(--color-primary) l c h / .9); }
+  .bst-action:hover { text-decoration: underline; }
+
+  .bst-subbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: .7rem; }
+  .bst-count { font-size: .8rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .7); }
+  .bst-filter { display: inline-flex; align-items: center; gap: .4rem; font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .6); cursor: pointer; }
+
+  .bst-cap-note { display: flex; align-items: center; gap: .45rem; margin-top: .6rem; padding: .5rem .7rem; font-size: .78rem; border-radius: .5rem; color: oklch(from var(--color-base-content) l c h / .85); background: oklch(from var(--color-warning) l c h / .12); border: 1px solid oklch(from var(--color-warning) l c h / .3); }
+  .bst-cap-note .iconify { font-size: .95rem; flex: none; color: var(--color-warning); }
+  .bst-upgrade { font-weight: 700; text-decoration: underline; white-space: nowrap; margin-left: auto; }
+
+  .bst-autoadd { display: flex; align-items: center; gap: .8rem; margin-top: .6rem; padding: .7rem .85rem; border: 1px solid oklch(from var(--color-primary) l c h / .3); border-radius: .6rem; background: oklch(from var(--color-primary) l c h / .06); cursor: pointer; }
+  .bst-autoadd .toggle { flex: none; }
+
+  .bst-tablewrap { margin: 0; }
+  .bst-table { margin-top: .7rem; border: 1px solid var(--color-base-300); border-radius: .7rem; overflow: hidden; background: var(--color-base-100); }
+  .bst-head, .bst-row { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) 6rem 6rem; align-items: center; gap: .5rem; padding: .55rem .9rem; }
+  .bst-head { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .5); background: oklch(from var(--color-base-200) l c h / .5); border-bottom: 1px solid var(--color-base-300); }
+  .bst-row { border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .5); cursor: pointer; max-height: 3rem; }
+  .bst-row:last-child { border-bottom: 0; }
+  .bst-row:hover { background: oklch(from var(--color-base-200) l c h / .5); }
+  .bst-row.search-hidden, .bst-row.page-hidden { display: none; }
+  .c-name { font-weight: 600; font-size: .87rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .c-num { font-size: .8rem; text-align: right; color: oklch(from var(--color-base-content) l c h / .6); font-variant-numeric: tabular-nums; }
+  .bst-head .c-num { text-align: right; }
+  .bst-empty { padding: 2rem; text-align: center; font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .5); }
+
+  /* Pagination (illustrative) */
+  .bst-pager { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-top: .75rem; flex-wrap: wrap; }
+  .bst-pagesize { display: inline-flex; align-items: center; gap: .4rem; font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .bst-pagesize-select { height: 1.9rem; padding: 0 .45rem; border: 1px solid var(--color-base-300); border-radius: .45rem; background: var(--color-base-100); font-size: .78rem; color: var(--color-base-content); }
+  .bst-pager-nav { display: inline-flex; align-items: center; gap: .75rem; }
+  .bst-page-info { font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .6); font-variant-numeric: tabular-nums; }
+  .bst-page-btn { display: inline-flex; align-items: center; gap: .25rem; font-size: .8rem; font-weight: 600; padding: .35rem .7rem; border: 1px solid var(--color-base-300); border-radius: .5rem; background: var(--color-base-100); color: var(--color-base-content); cursor: pointer; }
+  .bst-page-btn:hover:not(:disabled) { background: oklch(from var(--color-base-200) l c h / .6); }
+  .bst-page-btn:disabled { opacity: .4; cursor: default; }
+  .bst-page-btn .iconify { font-size: .9rem; }
+
+  /* The scroll lives on a max-height list so hundreds of rows stay in one place. */
+  .bst-table { max-height: min(78vh, 46rem); overflow-y: auto; }
+  .bst-head { position: sticky; top: 0; z-index: 1; }
+</style>
+
+<script>
+  function wireBaseTables() {
+    document.querySelectorAll<HTMLElement>('[data-base-table]').forEach((root) => {
+      if (root.dataset.bstWired === '1') return;
+      root.dataset.bstWired = '1';
+
+      const capRaw = root.dataset.cap;
+      const cap = capRaw === '' || capRaw === undefined ? null : Number(capRaw);
+      const list = root.querySelector<HTMLElement>('[data-bst-list]');
+      const rows = Array.from(root.querySelectorAll<HTMLElement>('[data-bst-row]'));
+      const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('[data-base-checkbox]'));
+      const search = root.querySelector<HTMLInputElement>('[data-bst-search]');
+      // No querySelector<HTMLSelectElement> generic here: worker-configuration.d.ts
+      // declares an HTMLRewriter `Element` global that breaks the generic constraint.
+      const sortSel = root.querySelector('[data-bst-sort]') as HTMLSelectElement | null;
+      const countEl = root.querySelector<HTMLElement>('[data-bst-count]');
+      const capNote = root.querySelector<HTMLElement>('[data-bst-cap-note]');
+      const capText = root.querySelector<HTMLElement>('[data-bst-cap-text]');
+      const emptyEl = root.querySelector<HTMLElement>('[data-bst-empty]');
+      const autoAddRow = root.querySelector<HTMLElement>('[data-bst-autoadd]');
+      const autoAddCheck = root.querySelector<HTMLInputElement>('[data-bst-autoadd-check]');
+      const pager = root.querySelector<HTMLElement>('[data-bst-pager]');
+      const pagerPrev = root.querySelector<HTMLButtonElement>('[data-bst-prev]');
+      const pagerNext = root.querySelector<HTMLButtonElement>('[data-bst-next]');
+      const pagerInfo = root.querySelector<HTMLElement>('[data-bst-pageinfo]');
+      const pagerSize = root.querySelector('[data-bst-pagesize]') as HTMLSelectElement | null;
+      const total = boxes.length;
+      let pageSize = 10;
+      let page = 1;
+      let showSelected = false;
+
+      const checkedCount = () => boxes.filter((b) => b.checked).length;
+      const showCap = (msg: string) => { if (capNote && capText) { capText.textContent = msg; capNote.hidden = false; } };
+      const hideCap = () => { if (capNote) capNote.hidden = true; };
+
+      function refreshCount() {
+        const n = checkedCount();
+        if (countEl) countEl.textContent = String(n);
+        if (cap !== null && n >= cap) showCap(`Plan limit reached — backing up ${cap} of ${total} bases. Upgrade to add more.`);
+        else hideCap();
+        // Auto-add only makes sense as "back up everything", so show it only when
+        // every current base is selected; reset it when the selection drops below all.
+        if (autoAddRow) {
+          const allSelected = total > 0 && n === total;
+          autoAddRow.hidden = !allSelected;
+          if (!allSelected && autoAddCheck) autoAddCheck.checked = false;
+        }
+      }
+
+      // Rows passing the current search + show-selected filters (across all pages).
+      const candidates = () => rows.filter((r) =>
+        !r.classList.contains('search-hidden') &&
+        (!showSelected || !!r.querySelector<HTMLInputElement>('[data-base-checkbox]')?.checked));
+
+      // Paginate: reveal only the current page of the filtered set.
+      function applyView() {
+        const cands = candidates();
+        const pages = Math.max(1, Math.ceil(cands.length / pageSize));
+        page = Math.min(Math.max(1, page), pages);
+        const start = (page - 1) * pageSize;
+        rows.forEach((r) => r.classList.add('page-hidden'));
+        cands.slice(start, start + pageSize).forEach((r) => r.classList.remove('page-hidden'));
+        if (emptyEl) emptyEl.hidden = cands.length > 0;
+        if (pager) {
+          // Keep the pager (with its page-size dropdown) whenever the table is large
+          // enough to paginate; the nav buttons just disable at the ends / on one page.
+          pager.hidden = total <= 10;
+          if (pagerInfo) pagerInfo.textContent = `Page ${page} of ${pages} · ${cands.length} base${cands.length === 1 ? '' : 's'}`;
+          pagerPrev?.toggleAttribute('disabled', page <= 1);
+          pagerNext?.toggleAttribute('disabled', page >= pages);
+        }
+      }
+
+      // Hard cap on manual check.
+      boxes.forEach((b) => b.addEventListener('change', () => {
+        if (b.checked && cap !== null && checkedCount() > cap) {
+          b.checked = false;
+          showCap(`Your plan covers ${cap} bases. Upgrade to add more.`);
+        }
+        refreshCount();
+        if (showSelected) applyView();
+      }));
+
+      // Search by name.
+      function applySearch() {
+        const q = (search?.value || '').trim().toLowerCase();
+        rows.forEach((row) => row.classList.toggle('search-hidden', !!q && !(row.dataset.name || '').includes(q)));
+        page = 1;
+        applyView();
+      }
+      search?.addEventListener('input', applySearch);
+
+      // Sort — reorder rows in place, then re-page.
+      sortSel?.addEventListener('change', () => {
+        const by = sortSel.value;
+        const sorted = [...rows].sort((a, b) => {
+          if (by === 'tables') return Number(b.dataset.tables) - Number(a.dataset.tables);
+          if (by === 'fields') return Number(b.dataset.fields) - Number(a.dataset.fields);
+          return (a.dataset.name || '').localeCompare(b.dataset.name || '');
+        });
+        sorted.forEach((r) => list?.appendChild(r));
+        page = 1;
+        applyView();
+      });
+
+      // Select all (up to cap) / clear.
+      root.querySelector<HTMLButtonElement>('[data-bst-select-all]')?.addEventListener('click', () => {
+        let n = checkedCount();
+        for (const b of boxes) {
+          if (cap !== null && n >= cap) break;
+          if (!b.checked) { b.checked = true; n++; }
+        }
+        if (cap !== null && total > cap) showCap(`Selected ${cap} of ${total} (plan limit). Upgrade to add more.`);
+        refreshCount();
+        applyView();
+        // Notify external listeners (e.g. the tab's count badge) — programmatic
+        // checks don't fire native change events.
+        boxes[0]?.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      root.querySelector<HTMLButtonElement>('[data-bst-clear]')?.addEventListener('click', () => {
+        boxes.forEach((b) => (b.checked = false));
+        refreshCount();
+        applyView();
+        boxes[0]?.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+
+      // Show selected only.
+      root.querySelector<HTMLInputElement>('[data-bst-show-selected]')?.addEventListener('change', (e) => {
+        showSelected = (e.target as HTMLInputElement).checked;
+        page = 1;
+        applyView();
+      });
+
+      // Pager.
+      pagerPrev?.addEventListener('click', () => { page -= 1; applyView(); });
+      pagerNext?.addEventListener('click', () => { page += 1; applyView(); });
+      pagerSize?.addEventListener('change', () => { pageSize = Number(pagerSize.value) || 10; page = 1; applyView(); });
+
+      refreshCount();
+      applyView();
+    });
+  }
+  wireBaseTables();
+  document.addEventListener('astro:after-swap', wireBaseTables);
+</script>

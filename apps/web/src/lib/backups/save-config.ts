@@ -20,9 +20,10 @@ export type SaveConfigError =
 
 export interface SaveConfigInput {
   spaceId: string
-  /** Partial body — at least one of frequency or storageType must be set. */
+  /** Partial body — at least one field must be set. */
   frequency?: 'monthly' | 'weekly' | 'daily' | 'instant'
   storageType?: string
+  autoAddFutureBases?: boolean
 }
 
 export type SaveConfigResult =
@@ -54,6 +55,7 @@ export async function saveBackupConfig(
   const body: Record<string, unknown> = {}
   if (input.frequency !== undefined) body.frequency = input.frequency
   if (input.storageType !== undefined) body.storageType = input.storageType
+  if (input.autoAddFutureBases !== undefined) body.autoAddFutureBases = input.autoAddFutureBases
 
   let res: Response
   try {

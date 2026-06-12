@@ -1,0 +1,110 @@
+---
+/**
+ * IntegrationsManageBasesView — the dedicated, full-width base-management
+ * surface for the "summary + Manage" configure layout (version 1).
+ *
+ * The configure flow stays a light, reviewable vertical form; the heavy task
+ * (selecting from potentially hundreds of bases) gets its own room here, with
+ * the shared BaseSelectionTable. "Done" returns to the setup flow.
+ */
+import Button from '../components/ui/Button.astro';
+import BaseSelectionTable from '../components/integrations/BaseSelectionTable.astro';
+import type { IntegrationsState } from '../stores/connections';
+
+interface Props {
+  state: IntegrationsState;
+}
+const { state } = Astro.props;
+const bases = state.bases;
+const cap = state.tierBasesPerSpace;
+const spaceId = Astro.locals.account?.space?.id ?? '';
+const spaceName = Astro.locals.account?.space?.name ?? 'this Space';
+const isFirstSetup = Astro.url.searchParams.get('first') === '1';
+const backHref = `/integrations/configure${isFirstSetup ? '?first=1' : ''}`;
+---
+
+<div class="mx-auto max-w-5xl space-y-6">
+  <div>
+    <a href={backHref} class="back-link"><span class="iconify lucide--arrow-left"></span> Back to setup</a>
+    <div class="flex items-end justify-between gap-4 mt-3 flex-wrap">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight leading-tight">Choose bases to back up</h1>
+        <p class="text-sm text-base-content/60 mt-0.5">
+          Pick which of your Airtable bases <span class="font-medium text-base-content/80">{spaceName}</span> protects.
+          Search, sort, or select all up to your plan limit.
+        </p>
+      </div>
+      <div class="shrink-0 text-right">
+        <Button type="button" variant="primary" data-done data-space-id={spaceId} data-back={backHref}>Save &amp; done</Button>
+        <p class="text-xs text-error hidden mt-1.5" data-done-error role="alert" aria-live="polite"></p>
+      </div>
+    </div>
+  </div>
+
+  <BaseSelectionTable bases={bases} cap={cap} spaceId={spaceId} autoAdd={state.policy.autoAddFutureBases} />
+</div>
+
+<style>
+  .back-link { display: inline-flex; align-items: center; gap: .3rem; font-size: .8125rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .6); text-decoration: none; }
+  .back-link:hover { color: var(--color-base-content); }
+  .back-link .iconify { font-size: .95rem; }
+</style>
+
+<script>
+  import { setButtonLoading } from '../lib/ui';
+  import { saveBaseSelection, describeSaveSelectionError } from '../lib/backups/save-selection';
+  import { saveBackupConfig } from '../lib/backups/save-config';
+
+  // "Save & done" persists the checked bases (and the auto-add toggle when it
+  // is visible) before returning to the configure flow.
+  function wire() {
+    const doneBtn = document.querySelector<HTMLButtonElement>('[data-done]');
+    if (!doneBtn || doneBtn.dataset.mbWired === '1') return;
+    doneBtn.dataset.mbWired = '1';
+    const errorEl = document.querySelector<HTMLParagraphElement>('[data-done-error]');
+
+    doneBtn.addEventListener('click', async () => {
+      const spaceId = doneBtn.dataset.spaceId;
+      const back = doneBtn.dataset.back || '/integrations/configure';
+      if (!spaceId) { window.location.href = back; return; }
+
+      const checked = Array.from(
+        document.querySelectorAll<HTMLInputElement>('[data-base-checkbox]:checked'),
+      ).map((b) => b.value);
+      const autoAddRow = document.querySelector<HTMLElement>('[data-bst-autoadd]');
+      const autoAddCheck = document.querySelector<HTMLInputElement>('[data-bst-autoadd-check]');
+      const autoAdd = !autoAddRow?.hidden && !!autoAddCheck?.checked;
+
+      setButtonLoading(doneBtn, true);
+      try {
+        const saved = await saveBaseSelection(spaceId, checked);
+        if (!saved.ok) {
+          if (errorEl) {
+            errorEl.textContent = describeSaveSelectionError(saved.error);
+            errorEl.classList.remove('hidden');
+          }
+          return;
+        }
+        // Auto-add is part of the policy row; persist it alongside the
+        // selection. A failure here shouldn't strand the user — the selection
+        // is already saved — so surface it without blocking navigation.
+        const policy = await saveBackupConfig({ spaceId, autoAddFutureBases: autoAdd });
+        if (!policy.ok && errorEl) {
+          errorEl.textContent = 'Selection saved, but the auto-add setting could not be updated.';
+          errorEl.classList.remove('hidden');
+          return;
+        }
+        window.location.href = back;
+      } catch {
+        if (errorEl) {
+          errorEl.textContent = 'Could not save your selection. Please try again.';
+          errorEl.classList.remove('hidden');
+        }
+      } finally {
+        setButtonLoading(doneBtn, false);
+      }
+    });
+  }
+  wire();
+  document.addEventListener('astro:after-swap', wire);
+</script>

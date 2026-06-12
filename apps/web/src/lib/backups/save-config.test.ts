@@ -36,6 +36,16 @@ describe('saveBackupConfig', () => {
     expect(result).toEqual({ ok: true })
   })
 
+  it('includes autoAddFutureBases when set (even when false)', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse({ ok: true }))
+    await saveBackupConfig(
+      { spaceId: SPACE_ID, autoAddFutureBases: false },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    )
+    const init = fetchImpl.mock.calls[0]![1]
+    expect(JSON.parse(init?.body as string)).toEqual({ autoAddFutureBases: false })
+  })
+
   it('omits unset body fields', async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse({ ok: true }))
     await saveBackupConfig(

@@ -1,0 +1,25 @@
+---
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import IntegrationsConfigureView from '../../views/IntegrationsConfigureView.astro';
+import { getBreadcrumbs } from '../../lib/config';
+import { EMPTY_INTEGRATIONS_STATE, getIntegrationsState } from '../../lib/integrations';
+
+const breadcrumbs = getBreadcrumbs('/integrations');
+const { account, db } = Astro.locals;
+
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+
+const state =
+  orgId && spaceId
+    ? await getIntegrationsState(db, orgId, spaceId)
+    : EMPTY_INTEGRATIONS_STATE;
+
+// Configure only makes sense with a connection; send strays to the overview.
+const airtable = state.connections.find((c) => c.platformSlug === 'airtable');
+if (!airtable) return Astro.redirect('/integrations');
+---
+
+<SidebarLayout pageTitle="Configure backup" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <IntegrationsConfigureView state={state} />
+</SidebarLayout>

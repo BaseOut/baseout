@@ -35,6 +35,27 @@ const VALID_FREQUENCIES: ReadonlySet<Frequency> = new Set([
   'instant',
 ])
 
+/**
+ * Fallback state for pages rendered without an active org/Space (e.g. a user
+ * mid-onboarding). Shared by /integrations and the /integrations/configure
+ * routes so the empty shape stays in one place.
+ */
+export const EMPTY_INTEGRATIONS_STATE: IntegrationsState = {
+  connections: [],
+  bases: [],
+  tierBasesPerSpace: 5,
+  availableFrequencies: ['monthly'],
+  hasBackupConfig: false,
+  policy: {
+    frequency: 'monthly',
+    storageType: 'r2_managed',
+    nextScheduledAt: null,
+    autoAddFutureBases: false,
+  },
+  storageDestination: null,
+  unreadEvents: [],
+}
+
 function asFrequency(raw: string | null | undefined): Frequency {
   return raw && VALID_FREQUENCIES.has(raw as Frequency)
     ? (raw as Frequency)

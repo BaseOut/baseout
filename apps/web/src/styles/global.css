@@ -13,6 +13,12 @@
    used inside apps/web's components/layouts/views. */
 @source "../**/*.{astro,ts,tsx,html,mdx}";
 
+/* Nav icon classes (e.g. `lucide--archive`) live in app-config.json, which sits
+   outside src/ and isn't covered by the glob above. Scan it explicitly so those
+   icons get generated — otherwise unmatched `iconify lucide--*` classes render
+   as solid squares. */
+@source "../../app-config.json";
+
 /* Iconify (lucide icons) — enables `iconify lucide--*` class names. */
 @plugin "@iconify/tailwind4" {
     prefixes: lucide;

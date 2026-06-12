@@ -1,599 +1,294 @@
 ---
+/**
+ * Integrations overview — redesigned screen (web-integrations-redesign).
+ * Research-backed pattern (see openspec/changes/web-integrations-redesign/research-*):
+ *   - Overview = a provider CARD that flips empty → connected (status + quick actions).
+ *   - Heavy configuration lives on /integrations/configure, not inline, not a modal.
+ *   - Edit = that same route opened with sections in place — no wizard re-run.
+ *
+ * The pre-redesign screen is preserved as IntegrationsView.legacy.astro.
+ * API-key connect is rendered disabled until its backend route exists
+ * (follow-up in web-integrations-redesign tasks).
+ */
 import Card from '../components/ui/Card.astro';
 import Button from '../components/ui/Button.astro';
 import Badge from '../components/ui/Badge.astro';
-import FrequencyPicker from '../components/backups/FrequencyPicker.astro';
-import StoragePicker from '../components/backups/StoragePicker.astro';
-import RunBackupButton from '../components/backups/RunBackupButton.astro';
-import BackupHistoryWidget from '../components/backups/BackupHistoryWidget.astro';
 import { formatNextScheduledAt } from '../lib/backups/format';
 import type { BackupRunSummary } from '../lib/backup-runs/types';
 import type { IntegrationsState } from '../stores/connections';
 
 interface Props {
   state: IntegrationsState;
-  /** Query-string status passed through from Astro.url.searchParams. */
-  statusCode: 'connected' | 'error' | null;
+  statusCode: 'connected' | 'error' | 'saved' | 'running' | null;
   errorReason: string | null;
   initialRuns?: BackupRunSummary[];
 }
-
 const { state, statusCode, errorReason, initialRuns = [] } = Astro.props;
 
 const airtable = state.connections.find((c) => c.platformSlug === 'airtable') ?? null;
 const bases = state.bases;
-
-const comingSoon = [
-  { slug: 'notion',     name: 'Notion',     tagline: 'Back up pages, databases, and blocks.' },
-  { slug: 'hubspot',    name: 'HubSpot',    tagline: 'Back up contacts, companies, and deals.' },
-  { slug: 'salesforce', name: 'Salesforce', tagline: 'Back up objects, flows, and metadata.' },
-];
+const spaceId = Astro.locals.account?.space?.id ?? '';
+const includedCount = bases.filter((b) => b.isIncluded).length;
 
 const errorLabels: Record<string, string> = {
   access_denied: 'You declined to give Baseout access to your Airtable.',
   missing_code: 'Airtable did not return an authorization code.',
-  missing_handoff: 'Your session expired before Airtable returned. Please try again.',
-  invalid_handoff: 'We could not verify the sign-in handoff. Please try again.',
-  state_mismatch: 'Security check failed. Please start the connection over.',
-  user_mismatch: 'This connection does not belong to the signed-in user.',
   token_exchange_failed: 'Airtable rejected the connection. Please try again.',
   api_call_failed: 'We connected to Airtable but could not list your bases.',
-  persist_failed: 'The connection succeeded but we could not save it. Please try again.',
-  not_configured: 'Airtable integration is not configured on this environment.',
 };
-
 const errorMessage = errorReason ? (errorLabels[errorReason] ?? 'Connection failed. Please try again.') : null;
 
-// Maps connections.status (active|invalid|refreshing|pending_reauth) → Badge presentation.
-type StatusBadgeProps = {
-  variant: 'success' | 'warning' | 'error' | 'default';
-  label: string;
-  dot: boolean;
-};
-const statusBadgeMap: Record<string, StatusBadgeProps> = {
-  active:         { variant: 'success', label: 'Connected',         dot: true  },
-  refreshing:     { variant: 'warning', label: 'Refreshing tokens', dot: true  },
+const statusBadgeMap: Record<string, { variant: 'success' | 'warning' | 'error' | 'default'; label: string; dot: boolean }> = {
+  active: { variant: 'success', label: 'Connected', dot: true },
+  refreshing: { variant: 'warning', label: 'Refreshing', dot: true },
   pending_reauth: { variant: 'warning', label: 'Reconnect required', dot: false },
-  invalid:        { variant: 'error',   label: 'Disconnected',      dot: false },
+  invalid: { variant: 'error', label: 'Disconnected', dot: false },
 };
-const statusBadge: StatusBadgeProps = airtable
-  ? (statusBadgeMap[airtable.status] ?? { variant: 'default', label: airtable.status, dot: false })
-  : { variant: 'default', label: 'Not connected', dot: false };
-
+const statusBadge = airtable
+  ? (statusBadgeMap[airtable.status] ?? { variant: 'default' as const, label: airtable.status, dot: false })
+  : { variant: 'default' as const, label: 'Not connected', dot: false };
 const needsReconnect = airtable !== null && (airtable.status === 'pending_reauth' || airtable.status === 'invalid');
+const isProtected = airtable !== null && !needsReconnect && includedCount > 0;
+
+const storageLabel: Record<string, string> = {
+  r2_managed: 'Baseout managed storage', google_drive: 'Google Drive',
+  dropbox: 'Dropbox', box: 'Box', onedrive: 'OneDrive', local_fs: 'Local disk (dev)',
+};
+const lastSucceeded = initialRuns.find((r) => (r as { status?: string }).status === 'succeeded') ?? null;
+const configSummary = `${includedCount} base${includedCount === 1 ? '' : 's'} · ${state.policy.frequency} · ${storageLabel[state.policy.storageType] ?? state.policy.storageType}`;
 ---
 
-<div class="space-y-8">
-
+<div class="mx-auto max-w-4xl space-y-6">
   <header>
     <h1 class="text-2xl font-bold tracking-tight">Integrations</h1>
-    <p class="text-sm text-base-content/60 mt-1">
-      Connect a data platform to begin backing up your content.
-    </p>
+    <p class="text-sm text-base-content/60 mt-1">Connect a platform to back it up on a schedule, to storage you control.</p>
   </header>
 
-  {statusCode === 'connected' && (
-    <div role="status" class="alert alert-success">
-      <span>Airtable connected. {bases.length > 0 ? `We found ${bases.length} base${bases.length === 1 ? '' : 's'}.` : 'No bases were found in your Airtable account.'}</span>
-    </div>
-  )}
-
-  {statusCode === 'error' && errorMessage && (
-    <div role="alert" class="alert alert-error">
-      <span>{errorMessage}</span>
-    </div>
-  )}
-
-  {/* Workspace rediscovery banner — one card per unread space_events row. */}
-  {state.unreadEvents.length > 0 && Astro.locals.account?.space?.id && (
-    <div class="space-y-2" data-space-events-banner data-space-id={Astro.locals.account.space.id}>
-      {state.unreadEvents.map((event) => (
-        <div
-          role="status"
-          class="alert alert-info shadow-sm flex-col items-start sm:flex-row sm:items-center"
-          data-space-event-id={event.id}
-        >
-          <div class="flex-1">
-            <p class="font-medium">
-              {event.payload.discovered.length === 1
-                ? '1 new base discovered in your Airtable workspace.'
-                : `${event.payload.discovered.length} new bases discovered in your Airtable workspace.`}
-            </p>
-            <p class="text-xs opacity-80 mt-1">
-              {event.payload.autoAdded.length > 0 && (
-                <span>{event.payload.autoAdded.length} auto-added to your backups. </span>
-              )}
-              {event.payload.blockedByTier.length > 0 && (
-                <span>
-                  {event.payload.blockedByTier.length} not included — you're at your tier limit
-                  {event.payload.tierCap !== null ? ` of ${event.payload.tierCap}` : ''}. Upgrade to include them.
-                </span>
-              )}
-              {event.payload.autoAdded.length === 0 && event.payload.blockedByTier.length === 0 && (
-                <span>Turn on "Auto-add new bases" below to include future bases automatically.</span>
-              )}
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            data-space-event-dismiss
-            data-space-event-id={event.id}
-          >
-            Dismiss
-          </Button>
-        </div>
-      ))}
-    </div>
-  )}
-
-  <!-- Platform cards -->
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-    <!-- Airtable -->
-    <Card variant="outlined">
-      <div class="flex items-start justify-between gap-4">
-        <div>
-          <h2 class="text-lg font-semibold">Airtable</h2>
-          <p class="text-sm text-base-content/60 mt-1">
-            Back up schema, records, and attachments from your Airtable bases.
-          </p>
-        </div>
-        <Badge variant={statusBadge.variant} dot={statusBadge.dot}>{statusBadge.label}</Badge>
-      </div>
-
-      {airtable ? (
-        <div class="mt-6 space-y-4">
-          {needsReconnect && (
-            <div role="alert" class={`alert ${airtable.status === 'invalid' ? 'alert-error' : 'alert-warning'}`}>
-              <div class="flex-1">
-                <p class="font-medium">
-                  {airtable.status === 'invalid'
-                    ? 'This Airtable connection is no longer active.'
-                    : 'Airtable needs you to re-authorize Baseout.'}
-                </p>
-                <p class="text-xs opacity-80 mt-1">
-                  Reconnect to resume backups for this Space.
-                </p>
+  {!airtable ? (
+    /* ── EMPTY STATE — full-width provider card, two columns: connect · read-only scope ── */
+    <Card variant="outlined" class="provider-card p-0 overflow-hidden">
+      <div class="grid md:grid-cols-2">
+        {/* Left — connect */}
+        <div class="p-6 sm:p-8">
+          {/* A failed connect attempt is not a separate state — it returns here as inline retry feedback. */}
+          {statusCode === 'error' && errorMessage && (
+            <div class="connect-error" role="alert">
+              <span class="iconify lucide--circle-alert" aria-hidden="true"></span>
+              <span>{errorMessage} Please try connecting again.</span>
+            </div>
+          )}
+          <div class="flex items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+              <img src="/airtable.svg" alt="" width="40" height="40" class="provider-logo" />
+              <div>
+                <p class="font-semibold leading-tight">Airtable</p>
+                <p class="text-xs text-base-content/55 leading-tight mt-0.5">Backup integration</p>
               </div>
-              <form
-                method="POST"
-                action="/api/connections/airtable/start"
-                data-airtable-connect
-                data-astro-reload
-              >
+            </div>
+            <Badge variant="default">Not connected</Badge>
+          </div>
+
+          <h2 class="text-lg font-semibold mt-6">Connect to start backing up</h2>
+          <p class="text-sm text-base-content/60 mt-1.5">
+            Back up the bases you choose on a schedule you set, to storage you control.
+          </p>
+
+          {/* Labelled group: method choice + action read as one unit */}
+          <div class="connect-methods mt-6">
+            <span class="field-label">Connection method</span>
+            {/* API-key connect ships with its backend route (web-integrations-redesign
+                follow-up); until then the tab renders disabled so it's an honest
+                affordance, not a dead control. */}
+            <div role="tablist" aria-label="Connection method" class="flex gap-1 p-1 rounded-lg bg-base-200/70 mt-2">
+              <label class="method-tab flex-1"><input type="radio" name="connect-method" value="oauth" class="sr-only" checked /><span>OAuth</span></label>
+              <label class="method-tab method-tab-disabled flex-1" title="API-key connect is coming soon"><input type="radio" name="connect-method" value="apikey" class="sr-only" disabled /><span>API key — soon</span></label>
+            </div>
+
+            <div data-method="oauth" class="mt-4">
+              <form method="POST" action="/api/connections/airtable/start" data-airtable-connect data-astro-reload>
                 <input type="hidden" name="returnTo" value="/integrations" />
-                <Button type="submit" variant="primary" data-connect-submit>
-                  Reconnect Airtable
-                </Button>
+                <Button type="submit" variant="primary" class="w-full" data-connect-submit>Connect Airtable</Button>
               </form>
+              <p class="text-xs text-base-content/50 mt-2.5 text-center">You approve access on Airtable, then return here.</p>
             </div>
-          )}
-          <dl class="text-sm space-y-1">
-            <div class="flex gap-2">
-              <dt class="text-base-content/60 w-28">Airtable user</dt>
-              <dd class="font-mono text-xs">{airtable.airtableUserId ?? '—'}</dd>
-            </div>
-            {airtable.isEnterprise && (
-              <div class="flex gap-2">
-                <dt class="text-base-content/60 w-28">Plan</dt>
-                <dd><Badge variant="primary">Enterprise</Badge></dd>
-              </div>
-            )}
-            <div class="flex gap-2">
-              <dt class="text-base-content/60 w-28">Bases discovered</dt>
-              <dd class="font-semibold">{airtable.basesCount}</dd>
-            </div>
-          </dl>
+          </div>
+        </div>
 
-          {!needsReconnect && Astro.locals.account?.space?.id && (
-            <div
-              class="mt-4 flex flex-wrap items-center gap-3"
-              data-rescan-workspace
-              data-space-id={Astro.locals.account.space.id}
-            >
-              <Button type="button" variant="ghost" size="sm" data-rescan-submit>
-                Rescan workspace
-              </Button>
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  class="toggle toggle-sm"
-                  checked={state.policy.autoAddFutureBases}
-                  data-auto-add-toggle
-                  data-space-id={Astro.locals.account.space.id}
-                />
-                <span class="text-sm">Auto-add new bases</span>
-                <span
-                  class="loading loading-spinner loading-xs hidden"
-                  data-auto-add-spinner
-                  aria-hidden="true"
-                ></span>
-              </label>
-              <p
-                class="text-xs text-base-content/60"
-                data-rescan-result
-                role="status"
-                aria-live="polite"
-              ></p>
-            </div>
-          )}
-
-          {bases.length > 0 && (
-            <div>
-              <div class="flex items-baseline justify-between mt-4 mb-2 gap-3">
-                <h3 class="text-sm font-medium">Bases to back up</h3>
-                <p class="text-xs text-base-content/60">
-                  {state.tierBasesPerSpace === null
-                    ? `${bases.filter((b) => b.isIncluded).length} selected`
-                    : `${bases.filter((b) => b.isIncluded).length} of ${state.tierBasesPerSpace} allowed`}
+        {/* Right — read-only scope (trust-first; justifies the card's width) */}
+        <div class="scope-col p-6 sm:p-8 border-t md:border-t-0 md:border-l border-base-300/50">
+          <span class="field-label">What Baseout reads</span>
+          <ul class="scope-list mt-3">
+            <li><span class="iconify lucide--check" aria-hidden="true"></span><span><b>Bases</b><span class="scope-note">the workspaces you choose</span></span></li>
+            <li><span class="iconify lucide--check" aria-hidden="true"></span><span><b>Tables &amp; fields</b><span class="scope-note">structure and every value</span></span></li>
+            <li><span class="iconify lucide--check" aria-hidden="true"></span><span><b>Views</b><span class="scope-note">filters, sorts, grouping</span></span></li>
+            <li><span class="iconify lucide--check" aria-hidden="true"></span><span><b>Attachments</b><span class="scope-note">files attached to records</span></span></li>
+          </ul>
+          <p class="guarantee">
+            <span class="iconify lucide--shield-check" aria-hidden="true"></span>
+            Read-only. Baseout never writes to your Airtable, and you can disconnect any time.
+          </p>
+        </div>
+      </div>
+    </Card>
+  ) : (
+    /* ──  CONNECTED OVERVIEW — neutral card; status via badge only. Runs/history live on Backups.  ── */
+    <div class="space-y-5">
+      {/* Workspace rediscovery — dismissible banner per unread event (spec: New bases discovered). */}
+      {state.unreadEvents.length > 0 && spaceId && (
+        <div class="space-y-2.5" data-space-events-banner data-space-id={spaceId}>
+          {state.unreadEvents.map((event) => (
+            <div class="discovery-banner" role="status" data-space-event-id={event.id}>
+              <span class="iconify lucide--sparkles" aria-hidden="true"></span>
+              <div class="flex-1 min-w-0">
+                <p class="font-medium text-sm">{event.payload.discovered.length === 1 ? '1 new base discovered in your Airtable workspace.' : `${event.payload.discovered.length} new bases discovered in your Airtable workspace.`}</p>
+                <p class="text-xs text-base-content/60 mt-0.5">
+                  {event.payload.autoAdded.length > 0 && <span>{event.payload.autoAdded.length} auto-added to your backup. </span>}
+                  {event.payload.blockedByTier.length > 0 && <span>{event.payload.blockedByTier.length} not included — you're at your plan limit{event.payload.tierCap !== null ? ` of ${event.payload.tierCap}` : ''}. <a href="/settings" class="link link-hover font-medium">Upgrade</a> to include them.</span>}
+                  {event.payload.autoAdded.length === 0 && event.payload.blockedByTier.length === 0 && <span>Add them in <a href="/integrations/configure" class="link link-hover font-medium">Configure</a>, or turn on auto-add for future bases.</span>}
                 </p>
               </div>
-              <form
-                method="POST"
-                action={`/api/spaces/${Astro.locals.account?.space?.id}/backup-config/bases`}
-                data-base-selection-form
-                data-space-id={Astro.locals.account?.space?.id ?? ''}
-                data-tier-bases-per-space={state.tierBasesPerSpace ?? ''}
-              >
-                <ul class="divide-y divide-base-300/50 border border-base-300/50 rounded-box">
-                  {bases.map((b) => (
-                    <li class="px-3 py-2 flex items-center justify-between gap-3">
-                      <label class="flex items-center gap-3 flex-1 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          name="atBaseIds"
-                          value={b.id}
-                          checked={b.isIncluded}
-                          class="checkbox checkbox-sm"
-                          data-base-checkbox
-                        />
-                        <span class="truncate font-medium">{b.name}</span>
-                      </label>
-                      <span class="font-mono text-xs text-base-content/60">{b.atBaseId}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div class="flex items-center justify-between mt-3 gap-3">
-                  <p class="text-xs text-base-content/60" data-selection-error role="alert" hidden></p>
-                  <Button type="submit" variant="primary" data-base-selection-submit>
-                    Save selection
-                  </Button>
-                </div>
-              </form>
+              <button type="button" class="discovery-dismiss" data-space-event-dismiss data-space-event-id={event.id} aria-label="Dismiss"><span class="iconify lucide--x" aria-hidden="true"></span></button>
             </div>
-          )}
-
-          {Astro.locals.account?.space?.id && bases.length > 0 && (
-            <div class="grid gap-4 mt-6">
-              <FrequencyPicker
-                spaceId={Astro.locals.account.space.id}
-                selectedFrequency={state.policy.frequency}
-                availableFrequencies={state.availableFrequencies}
-              />
-              <p class="text-xs text-base-content/60" data-next-scheduled>
-                Next backup: <span class="font-medium text-base-content/80">
-                  {formatNextScheduledAt(state.policy.nextScheduledAt)}
-                </span>
-              </p>
-              <StoragePicker
-                spaceId={Astro.locals.account.space.id}
-                selectedStorageType={state.policy.storageType}
-                connectedType={state.storageDestination?.type ?? null}
-                connectedAccountEmail={state.storageDestination?.accountEmail ?? null}
-              />
-              <RunBackupButton
-                spaceId={Astro.locals.account.space.id}
-                connectionStatus={airtable?.status ?? null}
-              />
-            </div>
-          )}
+          ))}
         </div>
-      ) : (
-        <form
-          method="POST"
-          action="/api/connections/airtable/start"
-          class="mt-6"
-          data-airtable-connect
-          data-astro-reload
-        >
-          <input type="hidden" name="returnTo" value="/integrations" />
-          <Button type="submit" variant="primary" data-connect-submit>
-            Connect Airtable
-          </Button>
-          <p class="text-xs text-base-content/60 mt-3">
-            You'll be redirected to Airtable to approve access.
-          </p>
-        </form>
       )}
-    </Card>
-
-    <!-- Coming soon platforms -->
-    {comingSoon.map((p) => (
-      <Card variant="outlined" class="opacity-60">
-        <div class="flex items-start justify-between gap-4">
-          <div>
-            <h2 class="text-lg font-semibold">{p.name}</h2>
-            <p class="text-sm text-base-content/60 mt-1">{p.tagline}</p>
+      {/* Success / saved feedback is not a state: a brief confirmation above the status card. */}
+      {statusCode === 'connected' && (
+        <p class="connect-success" role="status">
+          <span class="iconify lucide--circle-check" aria-hidden="true"></span>
+          <span>Airtable connected{bases.length > 0 ? `. We found ${bases.length} base${bases.length === 1 ? '' : 's'}.` : '.'}</span>
+        </p>
+      )}
+      {statusCode === 'saved' && (
+        <p class="connect-success" role="status">
+          <span class="iconify lucide--circle-check" aria-hidden="true"></span>
+          <span>Backup configuration saved.</span>
+        </p>
+      )}
+      {statusCode === 'running' && (
+        <p class="connect-success" role="status">
+          <span class="iconify lucide--circle-check" aria-hidden="true"></span>
+          <span>Airtable connected. Your first backup is running — track progress on the Backups page.</span>
+        </p>
+      )}
+      <Card variant="outlined" class="provider-card">
+        <div class="flex flex-wrap items-start justify-between gap-4">
+        <div class="flex items-start gap-3 min-w-0">
+          <img src="/airtable.svg" alt="" width="40" height="40" class="provider-logo shrink-0 mt-0.5" />
+          <div class="min-w-0">
+            <div class="flex items-center gap-2">
+              <p class="font-semibold leading-tight">Airtable</p>
+              <Badge variant={statusBadge.variant} dot={statusBadge.dot}>{statusBadge.label}</Badge>
+            </div>
+            {isProtected ? (
+              <>
+                <p class="text-sm text-base-content/70 mt-1.5">Protected · {configSummary}</p>
+                <p class="text-xs text-base-content/55 mt-1">Next backup <span class="font-medium text-base-content/75">{formatNextScheduledAt(state.policy.nextScheduledAt)}</span>{lastSucceeded && <span> · Last run <span class="text-success font-medium">✓ succeeded</span></span>}</p>
+              </>
+            ) : needsReconnect ? (
+              <p class="text-sm text-base-content/70 mt-1.5">{airtable.status === 'invalid'
+                ? 'Disconnected. Backups will not run until you reconnect Airtable.'
+                : 'Backups are paused. Reconnect Airtable to resume protecting this Space.'}</p>
+            ) : (
+              <p class="text-sm text-base-content/70 mt-1.5">Connected. Finish setup to choose bases, a schedule and a destination.</p>
+            )}
           </div>
-          <Badge variant="default">Coming soon</Badge>
         </div>
+        <div class="flex items-center gap-2 shrink-0">
+          {needsReconnect ? (
+            <form method="POST" action="/api/connections/airtable/start" data-airtable-connect data-astro-reload><input type="hidden" name="returnTo" value="/integrations" /><Button type="submit" variant="primary" data-connect-submit>Reconnect</Button></form>
+          ) : (
+            /* The first backup runs at the end of setup; on-demand runs live on the Backups page. */
+            <Button href="/integrations/configure" variant={isProtected ? 'outline' : 'primary'}>{isProtected ? 'Configure' : 'Finish setup'}</Button>
+          )}
+        </div>
+      </div>
       </Card>
-    ))}
-
-  </div>
-
-  {Astro.locals.account?.space?.id && airtable !== null && (
-    <BackupHistoryWidget
-      spaceId={Astro.locals.account.space.id}
-      runs={initialRuns}
-    />
+    </div>
   )}
-
 </div>
+
+<style>
+  .provider-logo { border-radius: 9px; flex: none; }
+  /* Workspace-rediscovery banner */
+  .discovery-banner {
+    display: flex; align-items: flex-start; gap: .625rem;
+    background: var(--color-base-100); border: 1px solid var(--color-base-300);
+    border-radius: .625rem; padding: .75rem .875rem;
+  }
+  .discovery-banner > .iconify { color: var(--color-primary, oklch(.6 .15 250)); font-size: 1.05rem; flex: none; margin-top: .1rem; }
+  .discovery-dismiss { flex: none; line-height: 0; padding: 3px; border-radius: 6px; color: oklch(from var(--color-base-content, #000) l c h / .5); }
+  .discovery-dismiss:hover { color: var(--color-base-content); background: oklch(from var(--color-base-content, #000) l c h / .08); }
+  .discovery-dismiss .iconify { font-size: .95rem; }
+  /* Inline connect feedback (not separate states) */
+  .connect-error, .connect-success {
+    display: flex; align-items: flex-start; gap: .5rem; margin-bottom: 1.25rem;
+    padding: .625rem .75rem; border-radius: .5rem; font-size: .8125rem; line-height: 1.45;
+  }
+  .connect-error {
+    color: var(--color-error, oklch(.6 .2 25));
+    background: oklch(from var(--color-error, oklch(.6 .2 25)) l c h / .08);
+    border: 1px solid oklch(from var(--color-error, oklch(.6 .2 25)) l c h / .25);
+  }
+  .connect-success {
+    margin-bottom: 0;
+    color: var(--color-success, oklch(.6 .16 150));
+    background: oklch(from var(--color-success, oklch(.6 .16 150)) l c h / .08);
+    border: 1px solid oklch(from var(--color-success, oklch(.6 .16 150)) l c h / .22);
+  }
+  .connect-error .iconify, .connect-success .iconify { font-size: 1rem; flex: none; margin-top: .05rem; }
+  .field-label {
+    display: block; font-size: .6875rem; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase; color: oklch(from var(--color-base-content, #000) l c h / .5);
+  }
+  /* Right column — read-only access scope (trust-first) */
+  .scope-col { background: oklch(from var(--color-base-200, #f2f2f2) l c h / .35); }
+  .scope-list { display: flex; flex-direction: column; gap: .625rem; }
+  .scope-list li { display: flex; align-items: flex-start; gap: .5rem; font-size: .875rem; }
+  .scope-list .iconify { color: var(--color-success, oklch(.68 .16 150)); font-size: .95rem; margin-top: .1rem; flex: none; }
+  .scope-list b { font-weight: 600; }
+  .scope-list .scope-note { display: block; font-size: .75rem; color: oklch(from var(--color-base-content, #000) l c h / .55); margin-top: .05rem; }
+  .guarantee {
+    display: flex; align-items: flex-start; gap: .45rem; margin-top: 1.125rem; padding-top: .875rem;
+    border-top: 1px solid oklch(from var(--color-base-content, #000) l c h / .08);
+    font-size: .8125rem; line-height: 1.5; color: oklch(from var(--color-base-content, #000) l c h / .8);
+  }
+  .guarantee .iconify { color: var(--color-success, oklch(.68 .16 150)); font-size: 1rem; flex: none; margin-top: .05rem; }
+  /* Connect-method tabs — :has()-driven, no JS. */
+  .connect-methods .method-tab { cursor: pointer; }
+  .connect-methods .method-tab-disabled { cursor: not-allowed; }
+  .connect-methods .method-tab-disabled > span { opacity: .45; }
+  .connect-methods .method-tab > span {
+    display: block; padding: .35rem .9rem; border-radius: .5rem; text-align: center;
+    font-size: .8125rem; font-weight: 600; color: oklch(from var(--color-base-content, #000) l c h / .6);
+    transition: background .15s ease, color .15s ease;
+  }
+  .connect-methods .method-tab:has(input:checked) > span {
+    background: var(--color-base-100, #fff); color: var(--color-base-content, #000);
+    box-shadow: 0 1px 2px rgb(0 0 0 / .08);
+  }
+  .connect-methods:has(input[value="oauth"]:checked) [data-method="apikey"] { display: none; }
+  .connect-methods:has(input[value="apikey"]:checked) [data-method="oauth"] { display: none; }
+</style>
 
 <script>
   import { setButtonLoading } from '../lib/ui';
-
-  // Existing OAuth-start spinner
-  const oauthForms = document.querySelectorAll<HTMLFormElement>('form[data-airtable-connect]');
-  oauthForms.forEach((form) => {
-    const submit = form.querySelector<HTMLButtonElement>('[data-connect-submit]');
-    form.addEventListener('submit', () => {
-      if (submit) setButtonLoading(submit, true);
+  function wire() {
+    document.querySelectorAll<HTMLFormElement>('form[data-airtable-connect]').forEach((form) => {
+      const submit = form.querySelector<HTMLButtonElement>('[data-connect-submit]');
+      form.addEventListener('submit', () => { if (submit) setButtonLoading(submit, true); });
     });
-  });
-
-  // Base-selection form
-  const selectionForm = document.querySelector<HTMLFormElement>('form[data-base-selection-form]');
-  if (selectionForm) {
-    const submit = selectionForm.querySelector<HTMLButtonElement>('[data-base-selection-submit]');
-    const errorEl = selectionForm.querySelector<HTMLElement>('[data-selection-error]');
-    const tierCapRaw = selectionForm.dataset.tierBasesPerSpace;
-    const tierCap = tierCapRaw === '' || tierCapRaw === undefined ? null : Number(tierCapRaw);
-
-    function showError(msg: string | null) {
-      if (!errorEl) return;
-      if (msg) {
-        errorEl.textContent = msg;
-        errorEl.hidden = false;
-      } else {
-        errorEl.textContent = '';
-        errorEl.hidden = true;
-      }
-    }
-
-    // Live cap check on every change.
-    selectionForm.addEventListener('change', () => {
-      const checked = selectionForm.querySelectorAll<HTMLInputElement>('[data-base-checkbox]:checked').length;
-      if (tierCap !== null && checked > tierCap) {
-        showError(`Your tier allows ${tierCap} bases per space. Deselect ${checked - tierCap} to continue.`);
-      } else {
-        showError(null);
-      }
-    });
-
-    selectionForm.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const action = selectionForm.action;
-      const checked = Array.from(
-        selectionForm.querySelectorAll<HTMLInputElement>('[data-base-checkbox]:checked'),
-      ).map((el) => el.value);
-
-      if (tierCap !== null && checked.length > tierCap) {
-        showError(`Your tier allows ${tierCap} bases per space. Deselect ${checked.length - tierCap} to continue.`);
-        return;
-      }
-      showError(null);
-
-      if (submit) setButtonLoading(submit, true);
-      try {
-        const res = await fetch(action, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ atBaseIds: checked }),
-        });
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { error?: string };
-          showError(body.error === 'over_tier_limit' ? 'Selection exceeds your tier limit.' : 'Could not save selection.');
-          return;
-        }
-        window.location.reload();
-      } catch {
-        showError('Network error. Please try again.');
-      } finally {
-        if (submit) setButtonLoading(submit, false);
-      }
+    // Dismiss a workspace-rediscovery banner card (fire-and-forget; harness stub returns ok).
+    const spaceId = document.querySelector<HTMLElement>('[data-space-events-banner]')?.dataset.spaceId;
+    document.querySelectorAll<HTMLButtonElement>('[data-space-event-dismiss]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.spaceEventId;
+        const card = btn.closest<HTMLElement>('[data-space-event-id]');
+        if (spaceId && id) fetch(`/api/spaces/${spaceId}/space-events/${id}/dismiss`, { method: 'POST' }).catch(() => {});
+        card?.remove();
+      });
     });
   }
-
-  // Rescan-workspace button — POSTs to /api/spaces/:spaceId/rescan-bases,
-  // which proxies to the engine's manual rediscovery. The engine upserts
-  // at_bases and writes a space_events row; the inline result tells the
-  // user what changed and prompts a manual refresh to see the new bases
-  // in the list (no auto-reload — chosen so the user controls when their
-  // current selection / scroll position resets).
-  const rescanRoot = document.querySelector<HTMLElement>('[data-rescan-workspace]');
-  if (rescanRoot) {
-    const rescanBtn = rescanRoot.querySelector<HTMLButtonElement>('[data-rescan-submit]');
-    const rescanResult = rescanRoot.querySelector<HTMLElement>('[data-rescan-result]');
-    const rescanSpaceId = rescanRoot.dataset.spaceId ?? '';
-
-    interface RescanSuccess {
-      ok: true;
-      discovered: number;
-      autoAdded: number;
-      blockedByTier: number;
-    }
-    interface RescanError {
-      error?: string;
-    }
-
-    function showRescanResult(text: string, kind: 'ok' | 'warn' | 'err' | 'neutral'): void {
-      if (!rescanResult) return;
-      rescanResult.textContent = text;
-      const tone =
-        kind === 'ok'
-          ? 'text-success'
-          : kind === 'warn'
-            ? 'text-warning'
-            : kind === 'err'
-              ? 'text-error'
-              : 'text-base-content/60';
-      rescanResult.className = `text-xs ${tone}`;
-    }
-
-    function describeRescanError(body: RescanError, status: number): string {
-      switch (body.error) {
-        case 'connection_not_found':
-          return 'No active Airtable connection. Reconnect Airtable to rescan.';
-        case 'space_not_found':
-        case 'space_org_mismatch':
-          return 'This space is not visible to your account.';
-        case 'config_not_found':
-          return 'This space has no backup configuration yet.';
-        case 'airtable_error':
-          return 'Airtable did not respond as expected. Try again in a moment.';
-        case 'engine_unreachable':
-          return 'The backup engine is not running. Start `pnpm --filter @baseout/server dev`.';
-        case 'server_misconfigured':
-          return 'The backup engine binding or token is not configured. Contact support.';
-        case 'unauthorized':
-          return 'Service-to-service auth failed (web↔engine token mismatch). Contact support.';
-        case 'engine_error':
-          return `Engine returned an unexpected error (HTTP ${status}). Try again.`;
-        default:
-          return `Rescan failed (HTTP ${status}). Please try again.`;
-      }
-    }
-
-    function composeRescanSummary(body: RescanSuccess): { text: string; kind: 'ok' | 'warn' } {
-      const { discovered, autoAdded, blockedByTier } = body;
-      if (discovered === 0) {
-        return { text: 'No new bases found.', kind: 'ok' };
-      }
-      const noun = discovered === 1 ? 'base' : 'bases';
-      let text =
-        autoAdded > 0
-          ? `Found ${discovered} new ${noun}; auto-added ${autoAdded}. Reload the page to see them.`
-          : `Found ${discovered} new ${noun}. Reload the page to include them.`;
-      if (blockedByTier > 0) {
-        text += ` ${blockedByTier} blocked by tier.`;
-        return { text, kind: 'warn' };
-      }
-      return { text, kind: 'ok' };
-    }
-
-    rescanBtn?.addEventListener('click', async () => {
-      if (!rescanBtn || !rescanSpaceId) return;
-      setButtonLoading(rescanBtn, true);
-      showRescanResult('Scanning Airtable…', 'neutral');
-      try {
-        const res = await fetch(
-          `/api/spaces/${encodeURIComponent(rescanSpaceId)}/rescan-bases`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: '{}',
-          },
-        );
-        if (res.ok) {
-          const body = (await res.json()) as RescanSuccess;
-          const summary = composeRescanSummary(body);
-          showRescanResult(summary.text, summary.kind);
-          // Reload so the banner (driven by SSR-read space_events) appears
-          // and any auto-added bases land in the list. Brief delay lets the
-          // user read the inline summary before the page resets.
-          if (body.discovered > 0) {
-            setTimeout(() => window.location.reload(), 1200);
-          }
-        } else {
-          const body = (await res.json().catch(() => ({}))) as RescanError;
-          showRescanResult(describeRescanError(body, res.status), 'err');
-        }
-      } catch {
-        showRescanResult('Network error. Please try again.', 'err');
-      } finally {
-        setButtonLoading(rescanBtn, false);
-      }
-    });
-  }
-
-  // Auto-add toggle — PATCHes /api/spaces/:spaceId/backup-config with
-  // { autoAddFutureBases }. Persistence is checked on the next SSR read; if
-  // the PATCH fails, we revert the checkbox to its prior state so the UI
-  // doesn't lie about saved server state.
-  const autoAddToggle = document.querySelector<HTMLInputElement>(
-    '[data-auto-add-toggle]',
-  );
-  if (autoAddToggle) {
-    const toggleSpaceId = autoAddToggle.dataset.spaceId ?? '';
-    const autoAddSpinner = document.querySelector<HTMLElement>(
-      '[data-auto-add-spinner]',
-    );
-    autoAddToggle.addEventListener('change', async () => {
-      if (!toggleSpaceId) return;
-      const previous = !autoAddToggle.checked; // optimistic flip already happened
-      const desired = autoAddToggle.checked;
-      autoAddToggle.disabled = true;
-      autoAddToggle.setAttribute('aria-busy', 'true');
-      autoAddSpinner?.classList.remove('hidden');
-      try {
-        const res = await fetch(
-          `/api/spaces/${encodeURIComponent(toggleSpaceId)}/backup-config`,
-          {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ autoAddFutureBases: desired }),
-          },
-        );
-        if (!res.ok) {
-          autoAddToggle.checked = previous;
-        }
-      } catch {
-        autoAddToggle.checked = previous;
-      } finally {
-        autoAddToggle.disabled = false;
-        autoAddToggle.removeAttribute('aria-busy');
-        autoAddSpinner?.classList.add('hidden');
-      }
-    });
-  }
-
-  // Banner dismiss — one button per unread space_events row. POSTs to
-  // /api/spaces/:spaceId/space-events/:eventId/dismiss, then hides the
-  // card on success. The whole banner container disappears once the last
-  // card is gone.
-  const dismissButtons = document.querySelectorAll<HTMLButtonElement>(
-    '[data-space-event-dismiss]',
-  );
-  const bannerRoot = document.querySelector<HTMLElement>(
-    '[data-space-events-banner]',
-  );
-  const dismissSpaceId = bannerRoot?.dataset.spaceId ?? '';
-  dismissButtons.forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const eventId = btn.dataset.spaceEventId ?? '';
-      if (!eventId || !dismissSpaceId) return;
-      setButtonLoading(btn, true);
-      try {
-        const res = await fetch(
-          `/api/spaces/${encodeURIComponent(dismissSpaceId)}/space-events/${encodeURIComponent(eventId)}/dismiss`,
-          { method: 'POST' },
-        );
-        if (res.ok || res.status === 404) {
-          const card = btn.closest('[data-space-event-id]');
-          card?.remove();
-          if (bannerRoot && bannerRoot.querySelectorAll('[data-space-event-id]').length === 0) {
-            bannerRoot.remove();
-          }
-        }
-      } catch {
-        // leave card visible so the user can retry
-      } finally {
-        setButtonLoading(btn, false);
-      }
-    });
-  });
+  wire();
+  document.addEventListener('astro:after-swap', wire);
 </script>
