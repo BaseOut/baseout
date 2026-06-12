@@ -39,6 +39,7 @@
 - [x] Production routes: `/integrations/configure` (v1 Summary + Manage as the working default) and `/integrations/configure/bases`, auth-gated by middleware, redirect to `/integrations` when no connection exists
 - [x] Real persistence: schedule via `lib/backups/configure-save.ts` (PATCH backup-config + first-run POST backup-runs), base selection + auto-add via `lib/backups/save-selection.ts` + `saveBackupConfig` from the Manage screen; destination step embeds the working `StoragePicker`
 - [x] Honest gating for capabilities without a backend: API-key connect tab disabled ("soon"), layers informational (all three captured today), account-destinations preview kept harness-only (`linkedDestinations` prop)
+- [x] **First-run routing**: OAuth callback sends a first-time connect (no backup config for the Space) to `/integrations/configure?first=1` via `lib/airtable/success-redirect.ts`; returning users keep `returnTo?connected=1`. The design's `/integrations/authorizing` interstitial stays harness-only — in production the authorization completes before the callback redirects, so an animated wait would be fake (per the interstitial's own "Harness-only" header)
 - [ ] **API-key connect backend** — `/api/connections/airtable/api-key` route (encrypted PAT on `connections`), then enable the tab
 - [ ] **Backup layers backend** — per-config opt-in/out columns + engine/workflows threading, then enable the checkboxes
 - [ ] **Airtable disconnect** — `/api/connections/airtable/disconnect` route (the design's Disconnect affordance was held back until it exists)

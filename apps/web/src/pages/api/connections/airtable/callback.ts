@@ -3,8 +3,9 @@
  *
  * Consumes the encrypted handoff cookie, completes the OAuth token exchange,
  * calls Airtable's Meta API to populate whoami + bases, and persists the
- * connection + bases. Always redirects back to /integrations with a result
- * query param — never surfaces tokens or detailed errors to the browser.
+ * connection + bases. First-time connects land in /integrations/configure
+ * (?first=1); everything else redirects back to returnTo with a result query
+ * param — never surfaces tokens or detailed errors to the browser.
  */
 
 import type { APIRoute } from 'astro'
@@ -25,12 +26,13 @@ import {
 import { exchangeCodeForTokens } from '../../../../lib/airtable/oauth'
 import { persistAirtableConnection } from '../../../../lib/airtable/persist'
 import { sanitizeReturnTo } from '../../../../lib/airtable/return-to'
+import {
+  appendQuery,
+  resolveSuccessRedirect,
+} from '../../../../lib/airtable/success-redirect'
 import { shouldSetSecureOAuthCookie } from '../../../../lib/oauth/local-dev-secure'
-
-function appendQuery(path: string, key: string, value: string): string {
-  const sep = path.includes('?') ? '&' : '?'
-  return `${path}${sep}${key}=${encodeURIComponent(value)}`
-}
+import { backupConfigurations } from '../../../../db/schema'
+import { eq } from 'drizzle-orm'
 
 function redirectWith(
   location: string,
@@ -70,7 +72,6 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
   }
   const returnTo = sanitizeReturnTo(handoff?.returnTo) ?? '/'
   const failUrl = (code: string) => appendQuery(returnTo, 'error', code)
-  const successUrl = appendQuery(returnTo, 'connected', '1')
 
   const airtableError = url.searchParams.get('error')
   if (airtableError) {
@@ -152,5 +153,23 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
     return redirectWith(failUrl('persist_failed'), clearCookie)
   }
 
-  return redirectWith(successUrl, clearCookie)
+  // First-time connect (no backup configuration for this Space yet) lands in
+  // Configure setup; a failed lookup falls back to the returning-user
+  // redirect rather than failing a flow whose connection already persisted.
+  let hasBackupConfig = true
+  try {
+    const rows = await locals.db
+      .select({ id: backupConfigurations.id })
+      .from(backupConfigurations)
+      .where(eq(backupConfigurations.spaceId, handoff.spaceId))
+      .limit(1)
+    hasBackupConfig = rows.length > 0
+  } catch {
+    hasBackupConfig = true
+  }
+
+  return redirectWith(
+    resolveSuccessRedirect({ returnTo, hasBackupConfig }),
+    clearCookie,
+  )
 }
