@@ -1,0 +1,111 @@
+---
+/**
+ * Single backup-run detail (production). Renders the redesigned
+ * BackupRunDetailView from REAL run-level data — the backup engine records
+ * run-level totals only (no per-base / per-table split or failed-attachment
+ * list yet), so the view runs in `metricsPending` mode: real summary +
+ * destination + depth, with the per-base breakdown shown as pending.
+ * Backend follow-up: web-backups-redesign "To do" (real per-run/per-base
+ * detail endpoints).
+ */
+import { and, eq, sql } from 'drizzle-orm';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import BackupRunDetailView from '../../views/BackupRunDetailView.astro';
+import { getBreadcrumbs } from '../../lib/config';
+import {
+  backupConfigurationBases,
+  backupConfigurations,
+  backupRuns,
+  connections,
+} from '../../db/schema';
+
+const breadcrumbs = getBreadcrumbs('/backups');
+const { account, db } = Astro.locals;
+const spaceId = account?.space?.id ?? null;
+const id = Astro.url.searchParams.get('id');
+
+// No id, no Space, or no DB → back to the list.
+if (!id || !spaceId || !db) return Astro.redirect('/backups');
+
+const rows = await db
+  .select({
+    id: backupRuns.id,
+    status: backupRuns.status,
+    triggeredBy: backupRuns.triggeredBy,
+    recordCount: backupRuns.recordCount,
+    tableCount: backupRuns.tableCount,
+    attachmentCount: backupRuns.attachmentCount,
+    startedAt: backupRuns.startedAt,
+    completedAt: backupRuns.completedAt,
+    errorMessage: backupRuns.errorMessage,
+    connectionDisplayName: connections.displayName,
+    configStorageType: backupConfigurations.storageType,
+    configMode: backupConfigurations.mode,
+  })
+  .from(backupRuns)
+  .leftJoin(connections, eq(connections.id, backupRuns.connectionId))
+  .leftJoin(backupConfigurations, eq(backupConfigurations.spaceId, backupRuns.spaceId))
+  .where(and(eq(backupRuns.id, id), eq(backupRuns.spaceId, spaceId)))
+  .limit(1);
+
+const row = rows[0];
+if (!row) return Astro.redirect('/backups');
+
+// Count the bases currently in this Space's config (not a per-run snapshot —
+// the engine doesn't capture that today; labelled as pending in the view).
+const baseCountRows = await db
+  .select({ n: sql<number>`count(*)::int` })
+  .from(backupConfigurationBases)
+  .innerJoin(backupConfigurations, eq(backupConfigurations.id, backupConfigurationBases.backupConfigurationId))
+  .where(and(eq(backupConfigurations.spaceId, spaceId), eq(backupConfigurationBases.isIncluded, true)));
+const baseCount = baseCountRows[0]?.n ?? 0;
+
+// storage_type → human destination label + provider. (Features §6.2)
+const DEST: Record<string, { label: string; provider: string }> = {
+  r2_managed: { label: 'Managed storage · Cloudflare R2', provider: 'Cloudflare R2' },
+  google_drive: { label: 'Google Drive', provider: 'Google Drive' },
+  dropbox: { label: 'Dropbox', provider: 'Dropbox' },
+  box: { label: 'Box', provider: 'Box' },
+  onedrive: { label: 'OneDrive', provider: 'OneDrive' },
+  s3: { label: 'Amazon S3', provider: 'Amazon S3' },
+  frame_io: { label: 'Frame.io', provider: 'Frame.io' },
+  byos: { label: 'Your storage', provider: 'BYOS' },
+};
+const dest = DEST[row.configStorageType ?? 'r2_managed'] ?? DEST.r2_managed;
+
+const knownStatuses = ['succeeded', 'failed', 'running', 'cancelled', 'trial_succeeded'] as const;
+const status = (knownStatuses as readonly string[]).includes(row.status)
+  ? (row.status as (typeof knownStatuses)[number])
+  : 'cancelled';
+
+const run = {
+  id: row.id,
+  status,
+  triggeredBy: row.triggeredBy,
+  startedAt: row.startedAt ? new Date(row.startedAt).toISOString() : null,
+  completedAt: row.completedAt ? new Date(row.completedAt).toISOString() : null,
+  etaSeconds: null,
+  // Inferred from what the run actually wrote (no per-layer flags stored yet).
+  depth: {
+    schema: (row.tableCount ?? 0) > 0,
+    data: (row.recordCount ?? 0) > 0 || status === 'succeeded' || status === 'trial_succeeded',
+    attachments: (row.attachmentCount ?? 0) > 0,
+  },
+  destinationLabel: dest.label,
+  destProvider: dest.provider,
+  destIcon: null,
+  // Run-level totals are real; per-base breakdown is pending (metricsPending).
+  summary: {
+    bases: baseCount,
+    tables: row.tableCount ?? 0,
+    records: row.recordCount ?? 0,
+    attachments: row.attachmentCount ?? 0,
+  },
+  bases: [],
+  failedAttachments: [],
+};
+---
+
+<SidebarLayout pageTitle="Backup run" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <BackupRunDetailView run={run} metricsPending={true} />
+</SidebarLayout>

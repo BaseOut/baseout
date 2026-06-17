@@ -10,12 +10,25 @@
 import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
 import type { DestinationSummary } from '../stores/destinations';
+import type { DestinationProvider } from '../lib/provider-catalog';
 
 interface Props {
   destinations: DestinationSummary[];
   notice?: string | null;
+  /** Production: where "Add destination" goes (default = harness route). */
+  addHref?: string;
+  /** Production: override the per-row detail link (per-destination detail isn't
+   *  built yet); when set, every row links here. Default = harness detail route. */
+  rowHref?: string | null;
+  /** Catalog (availability resolved) for the "what you can add / coming soon"
+   *  affordance below the table; omitted hides the section. */
+  providers?: DestinationProvider[];
 }
-const { destinations, notice = null } = Astro.props;
+const { destinations, notice = null, addHref = '/settings/destinations/new', rowHref = null, providers = [] } = Astro.props;
+
+const tierLabel = (t?: string) => (t === 'growth' ? 'Growth+' : t === 'pro' ? 'Pro+' : null);
+const availableProviders = providers.filter((p) => p.availability === 'available');
+const comingSoonProviders = providers.filter((p) => p.availability === 'coming_soon');
 
 const kindMeta: Record<string, { icon: string; label: string }> = {
   file: { icon: 'lucide--hard-drive', label: 'File storage' },
@@ -41,7 +54,7 @@ const detailHref = (d: DestinationSummary) =>
       <h1 class="text-2xl font-bold tracking-tight">Destinations</h1>
       <p class="text-sm text-base-content/60 mt-1">Storage and databases your Spaces back up to. Set up once on your account, reuse across Spaces.</p>
     </div>
-    <Button href="/settings/destinations/new" variant="primary">Add destination</Button>
+    <Button href={addHref} variant="primary">Add destination</Button>
   </header>
 
   {notice && (
@@ -65,7 +78,7 @@ const detailHref = (d: DestinationSummary) =>
         <p class="text-sm font-medium">No destinations yet</p>
         <p class="text-xs text-base-content/55 mt-0.5">Add a file store (Google Drive, Dropbox, Box, S3) and optionally a database. You can reuse it across every Space.</p>
       </div>
-      <Button href="/settings/destinations/new" variant="primary" class="shrink-0">Add destination</Button>
+      <Button href={addHref} variant="primary" class="shrink-0">Add destination</Button>
     </div>
   ) : (
     <div class="dst-table" role="table">
@@ -73,7 +86,7 @@ const detailHref = (d: DestinationSummary) =>
         <span>Name</span><span>Type</span><span>Status</span><span>In use by</span><span class="dst-r">Last write</span>
       </div>
       {destinations.map((d) => (
-        <a href={detailHref(d)} class="dst-row" role="row">
+        <a href={rowHref ?? detailHref(d)} class="dst-row" role="row">
           <span class="dst-name">{d.name}<span class="dst-sub">{d.detail}</span></span>
           <span class="dst-type"><span class={`iconify ${kindMeta[d.kind].icon}`} aria-hidden="true"></span>{d.providerLabel}</span>
           <span><Badge variant={statusMeta[d.status].variant} dot={statusMeta[d.status].dot}>{statusMeta[d.status].label}</Badge></span>
@@ -82,6 +95,26 @@ const detailHref = (d: DestinationSummary) =>
         </a>
       ))}
     </div>
+  )}
+
+  {providers.length > 0 && (
+    <section class="dst-avail">
+      <h2 class="dst-avail-title">What you can connect</h2>
+      <div class="dst-avail-grid">
+        {availableProviders.map((p) => (
+          <div class="dst-prov">
+            <span class="dst-prov-name">{p.label}{p.managed && <span class="dst-prov-tag dst-prov-managed">Managed</span>}</span>
+            <Badge variant="success" dot>Available</Badge>
+          </div>
+        ))}
+        {comingSoonProviders.map((p) => (
+          <div class="dst-prov dst-prov-soon">
+            <span class="dst-prov-name">{p.label}{tierLabel(p.tier) && <span class="dst-prov-tag">{tierLabel(p.tier)}</span>}</span>
+            <Badge variant="default">Coming soon</Badge>
+          </div>
+        ))}
+      </div>
+    </section>
   )}
 </div>
 
@@ -109,4 +142,14 @@ const detailHref = (d: DestinationSummary) =>
   .dst-type .iconify { font-size: .95rem; flex: none; color: oklch(from var(--color-base-content) l c h / .5); }
   .dst-inuse { font-size: .8125rem; color: oklch(from var(--color-base-content) l c h / .7); }
   .dst-last { font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .55); font-variant-numeric: tabular-nums; }
+
+  .dst-avail { margin-top: 1.5rem; }
+  .dst-avail-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .5); margin-bottom: .7rem; }
+  .dst-avail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .5rem; }
+  .dst-prov { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .55rem .75rem; border: 1px solid var(--color-base-300); border-radius: .55rem; background: var(--color-base-100); }
+  .dst-prov-soon { opacity: .7; }
+  .dst-prov-name { display: inline-flex; align-items: center; gap: .4rem; font-size: .8125rem; font-weight: 600; min-width: 0; }
+  .dst-prov-tag { font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: oklch(from var(--color-base-content) l c h / .6); background: oklch(from var(--color-base-content) l c h / .08); padding: .05rem .35rem; border-radius: 999px; }
+  .dst-prov-managed { color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); }
+  .dst-prov :global(.badge) { white-space: nowrap; flex: none; }
 </style>

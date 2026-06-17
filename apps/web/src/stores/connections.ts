@@ -22,6 +22,8 @@ export interface BaseSummary {
   atBaseId: string
   name: string
   isIncluded: boolean
+  /** Discovered in Airtable since the Space's last backup (not yet in any config). */
+  isNew?: boolean
 }
 
 export interface BackupPolicy {

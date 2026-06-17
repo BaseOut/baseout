@@ -1,9 +1,11 @@
 ---
 // Harness route — a destination's own management/health page (status, reconnect, in-use-by).
-import SidebarLayout from '../../../layouts/SidebarLayout.astro';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
 import DestinationDetailView from '@web/views/DestinationDetailView.astro';
 import { getBreadcrumbs } from '@web/lib/config';
-import { findDestination, newDestination } from '../../../fixtures/destinations';
+import { findDestination, newDestination } from '../../fixtures/destinations';
+import ScenarioSwitcher from '../../components/ScenarioSwitcher.astro';
+import { DEMO_FLOWS } from '../../lib/demo-flows';
 
 const breadcrumbs = getBreadcrumbs('/settings');
 const id = Astro.url.searchParams.get('id');
@@ -14,4 +16,5 @@ const destination = isNew ? newDestination(Astro.url.searchParams.get('type')) :
 
 <SidebarLayout pageTitle={destination.name} breadcrumbs={breadcrumbs}>
   <DestinationDetailView destination={destination} reconnected={reconnected} />
+  <ScenarioSwitcher flows={DEMO_FLOWS} />
 </SidebarLayout>

@@ -1,52 +1,13 @@
 ---
 /**
- * Design-harness only. Prototype control panel with two clear modes:
- *   • Flow    — before start: steps + "Start the flow". In flow: step indicator
- *               + Back / Start over / Exit flow controls.
- *   • Screens — a page index: each page (Overview / Configure / Loader) lists its
- *               states; clicking navigates cross-route to that screen + state,
- *               with a description (legend) for the active one.
- * Plus a "View Old" compare, a 3-position dock, collapse — all persisted, and the
- * active mode + flow session persisted across navigation.
+ * Design-harness only. A demo-flow presenter: a list of named flows; click one to
+ * walk it step by step (Back / Next) with a caption (what to say) per screen.
+ * Flows are shared (demo-flows.ts) so a flow spans the whole app and the session
+ * persists across navigations. Dock (3 positions) + collapse, all persisted.
  */
-import type { ScreenPage, ScreenItem } from '../lib/integration-scenarios';
-interface Version { key: string; label: string; }
-interface FlowDef { blurb: string; steps: string[]; startHref: string; }
-interface Props { versions: Version[]; pages: ScreenPage[]; flow?: FlowDef; }
-const { versions, pages, flow } = Astro.props;
-
-const curPath = Astro.url.pathname;
-const curFixture = Astro.url.searchParams.get('fixture');
-const curStatus = Astro.url.searchParams.get('status');
-const curFirst = Astro.url.searchParams.get('first') === '1';
-const curStatic = Astro.url.searchParams.get('static') === '1';
-const curV = Astro.url.searchParams.get('v') ?? 'redesign';
-
-function screenHref(it: ScreenItem): string {
-  const u = new URL(it.path, Astro.url.origin);
-  if (it.fixture) u.searchParams.set('fixture', it.fixture);
-  if (it.status) u.searchParams.set('status', it.status);
-  if (it.reason) u.searchParams.set('reason', it.reason);
-  if (it.first) u.searchParams.set('first', '1');
-  if (it.static) u.searchParams.set('static', '1');
-  return u.pathname + (u.search ? u.search : '');
-}
-function screenActive(it: ScreenItem): boolean {
-  return curPath === it.path
-    && (it.fixture ?? null) === curFixture
-    && (it.status ?? null) === curStatus
-    && !!it.first === curFirst
-    && !!it.static === curStatic;
-}
-function versionHref(key: string): string {
-  const u = new URL(Astro.url);
-  u.searchParams.set('v', key);
-  return u.pathname + (u.search ? u.search : '');
-}
-const otherVersion = versions.find((v) => v.key !== curV) ?? versions[0];
-
-let activeItem: (ScreenItem & { page: string }) | null = null;
-for (const p of pages) for (const it of p.items) if (screenActive(it)) activeItem = { ...it, page: p.label };
+import type { DemoFlow } from '../lib/demo-flows';
+interface Props { flows: DemoFlow[]; }
+const { flows } = Astro.props;
 ---
 <aside class="scsw dock-center" data-scsw aria-label="Prototype controls">
   <div class="scsw-head">
@@ -57,61 +18,38 @@ for (const p of pages) for (const it of p.items) if (screenActive(it)) activeIte
   </div>
 
   <div class="scsw-body" data-scsw-body>
-    {flow && (
-      <div class="scsw-tabs" role="tablist">
-        <button type="button" class="scsw-tab" data-scsw-tab="flow">▶ Flow</button>
-        <button type="button" class="scsw-tab" data-scsw-tab="screens">▦ Screens</button>
+    <div class="scsw-pane">
+      {/* Flow picker — shown when no flow is running */}
+      <div class="flow-list">
+        <p class="scsw-blurb">Pick a flow to walk through, step by step.</p>
+        {flows.map((f) => (
+          <button type="button" class="flow-card" data-scsw-flow-start={f.key}>
+            <span class="flow-card-top">
+              <span class="flow-card-name">{f.name}</span>
+              <span class="flow-card-count">{f.steps.length} steps</span>
+            </span>
+            <span class="flow-card-blurb">{f.blurb}</span>
+          </button>
+        ))}
       </div>
-    )}
-
-    {flow && (
-      <div class="scsw-pane" data-scsw-pane="flow">
-        {/* Before starting */}
-        <div class="flow-start">
-          <p class="scsw-blurb">{flow.blurb}</p>
-          <ol class="scsw-steps">
-            {flow.steps.map((s, i) => (<li><span class="n">{i + 1}</span>{s}</li>))}
-          </ol>
-          <a href={flow.startHref} class="scsw-btn scsw-btn-primary" data-scsw-start>Start the flow →</a>
+      {/* Flow runner — shown while a flow is running (root.in-flow) */}
+      <div class="flow-run">
+        <div class="flow-run-head">
+          <span class="flow-run-name" data-scsw-flow-name>Flow</span>
+          <button type="button" class="flow-run-exit" data-scsw-exit aria-label="Exit flow">✕</button>
         </div>
-        {/* While in flow */}
-        <div class="flow-controls">
-          <p class="flow-status">In the flow — <span data-scsw-step>step …</span></p>
-          <div class="flow-actions">
-            <button type="button" class="scsw-btn" data-scsw-back>◀ Back</button>
-            <button type="button" class="scsw-btn" data-scsw-restart>↻ Start over</button>
-            <button type="button" class="scsw-btn scsw-btn-exit" data-scsw-exit>✕ Exit flow</button>
-          </div>
+        <div class="flow-progress" data-scsw-progress aria-hidden="true"></div>
+        <p class="flow-step" data-scsw-step>step …</p>
+        <p class="flow-caption" data-scsw-caption></p>
+        <div class="flow-nav">
+          <button type="button" class="scsw-btn" data-scsw-back>◀ Back</button>
+          <button type="button" class="scsw-btn scsw-btn-primary" data-scsw-next>Next →</button>
         </div>
       </div>
-    )}
-
-    <div class="scsw-pane" data-scsw-pane="screens">
-      {pages.map((p) => (
-        <div class="scsw-page">
-          <div class="scsw-page-label">{p.label}</div>
-          <div class="scsw-chips">
-            {p.items.map((it) => (
-              <a href={screenHref(it)} data-scsw-screen class={`scsw-chip ${screenActive(it) ? 'is-active' : ''}`}>{it.label}</a>
-            ))}
-          </div>
-        </div>
-      ))}
-      {activeItem && (
-        <div class="scsw-legend">
-          <span class="scsw-legend-title">{activeItem.page} · {activeItem.label}</span>
-          {activeItem.desc && <span class="scsw-legend-desc">{activeItem.desc}</span>}
-        </div>
-      )}
     </div>
-
-    {otherVersion && (
-      <div class="scsw-foot">
-        <span class="scsw-foot-label">Compare</span>
-        <a href={versionHref(otherVersion.key)} class="scsw-peek">{otherVersion.key === 'base' ? '↩ View ' : '→ '}{otherVersion.label}</a>
-      </div>
-    )}
   </div>
+
+  <script type="application/json" data-scsw-flows is:inline set:html={JSON.stringify(flows)} />
 </aside>
 
 <style>
@@ -131,47 +69,39 @@ for (const p of pages) for (const it of p.items) if (screenActive(it)) activeIte
   .scsw.is-collapsed .scsw-body { display: none; }
   .scsw:not(.is-collapsed) .scsw-head { border-bottom: 1px solid #1e293b; }
 
-  .scsw-tabs { display: flex; gap: 3px; padding: 9px 12px 0; }
-  .scsw-tab { flex: 1; padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; color: #94a3b8; background: transparent; border: none; cursor: pointer; transition: .12s; }
-  .scsw-tab:hover { color: #cbd5e1; }
-  .scsw-tab.is-active { background: #1e293b; color: #fff; }
+  .scsw-pane { padding: 11px 13px 13px; }
 
-  .scsw-pane { display: none; padding: 11px 13px 13px; }
-  .scsw-pane.is-active { display: block; }
+  /* Flow pane: toggle picker vs runner via .in-flow on root */
+  .scsw:not(.in-flow) .flow-run { display: none; }
+  .scsw.in-flow .flow-list { display: none; }
+  .scsw-blurb { color: #cbd5e1; line-height: 1.5; margin: 0 0 10px; }
 
-  /* Flow pane: toggle between start + controls via .in-flow on root */
-  .scsw:not(.in-flow) .flow-controls { display: none; }
-  .scsw.in-flow .flow-start { display: none; }
-  .scsw-blurb { color: #cbd5e1; line-height: 1.5; margin: 0 0 9px; }
-  .scsw-steps { display: flex; flex-direction: column; gap: 5px; margin: 0 0 12px; padding: 0; list-style: none; }
-  .scsw-steps li { display: flex; align-items: center; gap: 8px; color: #cbd5e1; font-size: 12px; }
-  .scsw-steps .n { display: inline-flex; align-items: center; justify-content: center; width: 17px; height: 17px; border-radius: 999px; background: #1e293b; color: #93c5fd; font-size: 10px; font-weight: 700; flex: none; }
-  .flow-status { color: #cbd5e1; margin: 0 0 10px; }
-  .flow-status [data-scsw-step] { color: #93c5fd; font-weight: 600; }
-  .flow-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .flow-list { display: flex; flex-direction: column; gap: 6px; }
+  .flow-card { display: flex; flex-direction: column; gap: 3px; text-align: left; background: #1e293b; border: 1px solid transparent; border-radius: 10px; padding: 9px 11px; cursor: pointer; transition: .12s; }
+  .flow-card:hover { background: #243349; border-color: #334155; }
+  .flow-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .flow-card-name { font-weight: 600; color: #fff; font-size: 12.5px; }
+  .flow-card-count { font-size: 10px; color: #93c5fd; flex: none; }
+  .flow-card-blurb { font-size: 11px; color: #94a3b8; line-height: 1.45; }
 
-  .scsw-btn { display: inline-block; background: #1e293b; color: #e2e8f0; padding: 6px 12px; border-radius: 8px; font-weight: 600; font-size: 12px; text-decoration: none; border: none; cursor: pointer; transition: .12s; }
+  .flow-run-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+  .flow-run-name { font-weight: 600; color: #fff; }
+  .flow-run-exit { margin-left: auto; color: #94a3b8; background: transparent; border: none; cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 6px; border-radius: 6px; }
+  .flow-run-exit:hover { color: #fecaca; background: #3a1d1d; }
+  .flow-progress { display: flex; gap: 4px; margin-bottom: 10px; }
+  .flow-progress span { height: 4px; flex: 1; border-radius: 999px; background: #1e293b; transition: background .15s; }
+  .flow-progress span.done { background: #2563eb; }
+  .flow-progress span.on { background: #3b82f6; }
+  .flow-step { color: #93c5fd; font-weight: 600; font-size: 11px; margin: 0 0 5px; }
+  .flow-caption { color: #cbd5e1; line-height: 1.5; margin: 0 0 12px; }
+  .flow-nav { display: flex; gap: 6px; }
+  .flow-nav .scsw-btn { flex: 1; text-align: center; }
+
+  .scsw-btn { display: inline-block; background: #1e293b; color: #e2e8f0; padding: 7px 12px; border-radius: 8px; font-weight: 600; font-size: 12px; text-decoration: none; border: none; cursor: pointer; transition: .12s; }
   .scsw-btn:hover { background: #334155; }
+  .scsw-btn[disabled] { opacity: .4; cursor: not-allowed; }
   .scsw-btn-primary { background: #3b82f6; color: #fff; }
   .scsw-btn-primary:hover { background: #2563eb; }
-  .scsw-btn-exit { color: #fca5a5; }
-  .scsw-btn-exit:hover { background: #3a1d1d; color: #fecaca; }
-
-  /* Screens pane: pages */
-  .scsw-page { margin-bottom: 9px; }
-  .scsw-page-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #94a3b8; margin-bottom: 5px; }
-  .scsw-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-  .scsw-chip { color: #cbd5e1; padding: 4px 11px; border-radius: 999px; text-decoration: none; white-space: nowrap; transition: .12s; line-height: 1.2; }
-  .scsw-chip:hover { color: #fff; background: #1e293b; }
-  .scsw-chip.is-active { background: #3b82f6; color: #fff; }
-  .scsw-legend { margin-top: 9px; padding-top: 9px; border-top: 1px solid #1e293b; display: flex; flex-direction: column; gap: 3px; }
-  .scsw-legend-title { font-size: 11px; font-weight: 600; color: #e2e8f0; }
-  .scsw-legend-desc { font-size: 11px; line-height: 1.5; color: #94a3b8; }
-
-  .scsw-foot { display: flex; align-items: center; gap: 8px; margin-top: 11px; padding-top: 10px; border-top: 1px solid #1e293b; }
-  .scsw-foot-label { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: #94a3b8; }
-  .scsw-peek { color: #e2e8f0; font-weight: 600; padding: 4px 11px; border-radius: 999px; border: 1px solid #334155; text-decoration: none; transition: .12s; }
-  .scsw-peek:hover { border-color: #475569; background: #1e293b; }
 
   @media print { .scsw { display: none; } }
 </style>
@@ -197,40 +127,82 @@ for (const p of pages) for (const it of p.items) if (screenActive(it)) activeIte
       localStorage.setItem('scsw-collapsed', root.classList.contains('is-collapsed') ? '1' : '0');
     });
 
-    // Tabs (persist).
-    const hasFlow = !!root.querySelector('[data-scsw-tab="flow"]');
-    function setTab(t: string) {
-      const tab = (!hasFlow || t === 'screens') ? 'screens' : 'flow';
-      root!.querySelectorAll<HTMLElement>('[data-scsw-tab]').forEach((b) => b.classList.toggle('is-active', b.dataset.scswTab === tab));
-      root!.querySelectorAll<HTMLElement>('[data-scsw-pane]').forEach((p) => p.classList.toggle('is-active', p.dataset.scswPane === tab));
-      localStorage.setItem('scsw-tab', tab);
-    }
-    setTab(localStorage.getItem('scsw-tab') || (hasFlow ? 'flow' : 'screens'));
-    root.querySelectorAll<HTMLElement>('[data-scsw-tab]').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.scswTab || 'screens')));
+    // ---- Flows: a named flow is a list of { label, href, caption }. ----
+    const flowsEl = root.querySelector<HTMLElement>('[data-scsw-flows]');
+    let flows: Array<{ key: string; name: string; steps: Array<{ label: string; href: string; caption: string }> }> = [];
+    try { flows = JSON.parse(flowsEl?.textContent || '[]'); } catch { flows = []; }
+    const flowByKey: Record<string, (typeof flows)[number]> = {};
+    flows.forEach((f) => { flowByKey[f.key] = f; });
 
-    // Flow session (persists). The flow steps map to URLs.
-    const FLOW = [
-      { test: (p: string, s: URLSearchParams) => p === '/integrations' && s.get('fixture') === 'empty' && !s.get('status'), label: 'Connect', href: '/integrations?fixture=empty' },
-      { test: (p: string) => p === '/integrations/authorizing', label: 'Authorize', href: '/integrations/authorizing' },
-      { test: (p: string, s: URLSearchParams) => p === '/integrations/configure' && s.get('first') === '1', label: 'Set up', href: '/integrations/configure?first=1' },
-      { test: (p: string, s: URLSearchParams) => p === '/integrations' && s.get('status') === 'running', label: 'Running', href: '/integrations?status=running' },
-    ];
     const inFlow = () => localStorage.getItem('scsw-in-flow') === '1';
     const setInFlow = (on: boolean) => { localStorage.setItem('scsw-in-flow', on ? '1' : '0'); root!.classList.toggle('in-flow', on); };
-    setInFlow(inFlow());
-    // Current step indicator.
-    const sp = new URLSearchParams(window.location.search);
-    const stepIdx = FLOW.findIndex((f) => f.test(window.location.pathname, sp));
-    const stepEl = root.querySelector<HTMLElement>('[data-scsw-step]');
-    if (stepEl) stepEl.textContent = stepIdx >= 0 ? `step ${stepIdx + 1} of ${FLOW.length} · ${FLOW[stepIdx].label}` : 'off the path';
 
-    root.querySelector('[data-scsw-start]')?.addEventListener('click', () => { setInFlow(true); localStorage.setItem('scsw-tab', 'flow'); });
-    root.querySelector('[data-scsw-restart]')?.addEventListener('click', () => { setInFlow(true); window.location.href = FLOW[0].href; });
+    // Compare a step href to the current URL, ignoring param order and the `v` switch.
+    const IGNORE = ['v', 'src', 'dest', 'bases']; // panel-irrelevant params (design switch + wizard hand-off)
+    const paramsKey = (sp: URLSearchParams) =>
+      [...sp.entries()].filter(([k]) => !IGNORE.includes(k)).sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, val]) => k + '=' + val).join('&');
+    function matchStep(steps: Array<{ href: string }>): number {
+      const here = paramsKey(new URLSearchParams(window.location.search));
+      return steps.findIndex((s) => {
+        const u = new URL(s.href, window.location.origin);
+        return u.pathname === window.location.pathname && paramsKey(u.searchParams) === here;
+      });
+    }
+
+    function gotoStep(i: number) {
+      const f = flowByKey[localStorage.getItem('scsw-flow') || ''];
+      if (!f) return;
+      const idx = Math.max(0, Math.min(f.steps.length - 1, i));
+      localStorage.setItem('scsw-step', String(idx));
+      window.location.href = f.steps[idx].href;
+    }
+    function startFlow(key: string) {
+      const f = flowByKey[key];
+      if (!f) return;
+      localStorage.setItem('scsw-flow', key);
+      localStorage.setItem('scsw-step', '0');
+      setInFlow(true);
+      window.location.href = f.steps[0].href;
+    }
+    function exitFlow() { setInFlow(false); }
+
+    function renderRun() {
+      const f = flowByKey[localStorage.getItem('scsw-flow') || ''];
+      const on = !!f && inFlow();
+      setInFlow(on);
+      if (!on) return;
+      let idx = matchStep(f.steps);
+      if (idx < 0) idx = Math.min(f.steps.length - 1, Math.max(0, parseInt(localStorage.getItem('scsw-step') || '0', 10)));
+      else localStorage.setItem('scsw-step', String(idx));
+      root!.dataset.scswIdx = String(idx);
+      const set = (sel: string, txt: string) => { const el = root!.querySelector<HTMLElement>(sel); if (el) el.textContent = txt; };
+      set('[data-scsw-flow-name]', f.name);
+      set('[data-scsw-step]', `Step ${idx + 1} of ${f.steps.length} · ${f.steps[idx].label}`);
+      set('[data-scsw-caption]', f.steps[idx].caption || '');
+      const prog = root!.querySelector<HTMLElement>('[data-scsw-progress]');
+      if (prog) prog.innerHTML = f.steps.map((_, i) => `<span class="${i === idx ? 'on' : i < idx ? 'done' : ''}"></span>`).join('');
+      const back = root!.querySelector<HTMLButtonElement>('[data-scsw-back]');
+      if (back) back.disabled = idx === 0;
+      const next = root!.querySelector<HTMLElement>('[data-scsw-next]');
+      if (next) next.textContent = idx === f.steps.length - 1 ? 'Finish ✓' : 'Next →';
+    }
+
+    root.querySelectorAll<HTMLElement>('[data-scsw-flow-start]').forEach((b) =>
+      b.addEventListener('click', () => startFlow(b.dataset.scswFlowStart || '')));
     root.querySelector('[data-scsw-back]')?.addEventListener('click', () => {
-      if (stepIdx > 0) window.location.href = FLOW[stepIdx - 1].href; else window.history.back();
+      const idx = parseInt(root!.dataset.scswIdx || '0', 10);
+      if (idx > 0) gotoStep(idx - 1);
     });
-    root.querySelector('[data-scsw-exit]')?.addEventListener('click', () => { setInFlow(false); setTab('screens'); });
-    root.querySelectorAll('[data-scsw-screen]').forEach((a) => a.addEventListener('click', () => { localStorage.setItem('scsw-tab', 'screens'); setInFlow(false); }));
+    root.querySelector('[data-scsw-next]')?.addEventListener('click', () => {
+      const f = flowByKey[localStorage.getItem('scsw-flow') || ''];
+      if (!f) return;
+      const idx = parseInt(root!.dataset.scswIdx || '0', 10);
+      if (idx >= f.steps.length - 1) exitFlow();
+      else gotoStep(idx + 1);
+    });
+    root.querySelector('[data-scsw-exit]')?.addEventListener('click', exitFlow);
+
+    renderRun();
   }
   initScsw();
   // Astro does client-side swaps (ViewTransitions); re-init on each so the new panel wires up.

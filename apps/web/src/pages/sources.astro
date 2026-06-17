@@ -1,0 +1,37 @@
+---
+/**
+ * Account-level Sources registry (production, honest-pending).
+ *
+ * The design assumes account-level Airtable Sources (an account has several; a
+ * Space uses one). baseout's backend connects Airtable PER-SPACE today — the
+ * account-level Source model + persistence is a backend follow-up (shared-sources
+ * "Engineer (monorepo): real auth / persistence, link source ↔ Space"). Until
+ * then this maps the current Space's Airtable connection into the registry shape,
+ * with a notice, and points connect / manage at the working /integrations flow.
+ */
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import SourcesView from '../views/SourcesView.astro';
+import { getBreadcrumbs } from '../lib/config';
+import { EMPTY_INTEGRATIONS_STATE, getIntegrationsState } from '../lib/integrations';
+import { toSourceSummary } from '../lib/registry-mappers';
+import type { SourceSummary } from '../stores/sources';
+
+const breadcrumbs = getBreadcrumbs('/sources');
+const { account, db } = Astro.locals;
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+const spaceName = account?.space?.name ?? 'this Space';
+
+const state =
+  orgId && spaceId && db ? await getIntegrationsState(db, orgId, spaceId) : EMPTY_INTEGRATIONS_STATE;
+
+const source = toSourceSummary(state, spaceId ?? 'space', spaceName);
+const sources: SourceSummary[] = source ? [source] : [];
+
+const notice =
+  'Account-level Sources (one account, reused across Spaces) are on the roadmap. Today Airtable connects per Space — shown here and connected/managed on Integrations.';
+---
+
+<SidebarLayout pageTitle="Sources" breadcrumbs={breadcrumbs}>
+  <SourcesView sources={sources} notice={notice} addHref="/integrations" rowHref="/integrations" />
+</SidebarLayout>

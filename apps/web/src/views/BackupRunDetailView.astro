@@ -1,0 +1,390 @@
+---
+/**
+ * BackupRunDetailView — the full audit detail of a single backup run.
+ *
+ * Overall status / timing (or ETA + remaining if in progress), the three
+ * captured layers (Schema / Data / Attachments), then a per-base breakdown
+ * (status · timing · records & attachments incl. remaining · tables · fields ·
+ * output folder or DB · failed attachments). Each base drills into its tables.
+ *
+ * All figures come from the engine as it writes (per-base / per-table counts,
+ * remaining vs total for an in-flight run, the list of attachments that failed).
+ * Model is richer than BackupRunSummary — the engineer wires the real per-run
+ * detail endpoint; here it is a harness fixture.
+ */
+interface FailedAttachment {
+  base: string;
+  table: string;
+  file: string;
+  reason: string;
+}
+interface BaseRun {
+  id: string;
+  name: string;
+  status: 'ok' | 'failed' | 'running' | 'pending';
+  startedAt: string | null;
+  completedAt: string | null;
+  /** Where this base's output landed. */
+  destKind: 'file' | 'database';
+  folder: string | null; // static destinations — human path shown to the user
+  folderUrl: string | null; // deep link into the user's storage (provider returns the folder id on write)
+  dbRef: string | null; // dynamic destinations
+  tables: number;
+  fields: number;
+  records: number;
+  recordsRemaining: number | null; // set while running
+  attachments: number;
+  attachmentsRemaining: number | null;
+  failed: number; // failed attachment count
+  error: string | null;
+}
+interface RunDetail {
+  id: string;
+  status: 'succeeded' | 'failed' | 'running' | 'cancelled' | 'trial_succeeded';
+  triggeredBy: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  etaSeconds: number | null; // estimated time remaining while running
+  depth: { schema: boolean; data: boolean; attachments: boolean };
+  destinationLabel: string;
+  destProvider: string; // e.g. "Google Drive" — named in the folder-link tooltip
+  destIcon: string | null; // brand mark for the destination provider (falls back to a folder icon)
+  bases: BaseRun[];
+  failedAttachments: FailedAttachment[];
+  /**
+   * Real run-level totals (production). The harness sums `bases[]`, but the
+   * backup engine records only run-level totals today — no per-base split — so
+   * production passes them here and sets `metricsPending`. Optional: when
+   * absent the view sums `bases[]` exactly as before (harness behavior).
+   */
+  summary?: { bases?: number; tables: number; records: number; attachments: number };
+}
+interface Props {
+  run: RunDetail;
+  /**
+   * Production (apps/web): the engine doesn't capture per-base / per-table
+   * detail yet (web-backups-redesign "To do"). When true the view shows a
+   * "pending" note, renders run-level totals from `run.summary`, blanks the
+   * per-base metric cells, and hides the not-yet-wired run actions. Default
+   * false = full harness behavior.
+   */
+  metricsPending?: boolean;
+}
+const { run, metricsPending = false } = Astro.props;
+
+const nf = new Intl.NumberFormat('en-US');
+const running = run.status === 'running';
+const failed = run.status === 'failed';
+
+const totalRecords = run.summary ? run.summary.records : run.bases.reduce((s, b) => s + b.records, 0);
+const totalAttachments = run.summary ? run.summary.attachments : run.bases.reduce((s, b) => s + b.attachments, 0);
+const totalTables = run.summary ? run.summary.tables : run.bases.reduce((s, b) => s + b.tables, 0);
+
+function durationStr(start: string | null, end: string | null): string {
+  if (!start || !end) return '—';
+  const sec = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000);
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s ? `${m}m ${s}s` : `${m}m`;
+}
+function etaStr(sec: number | null): string {
+  if (sec == null) return '';
+  if (sec < 60) return `~${sec}s left`;
+  return `~${Math.round(sec / 60)}m left`;
+}
+function absTime(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+const runStatusMeta: Record<string, { label: string; cls: string }> = {
+  succeeded: { label: 'Succeeded', cls: 'is-ok' },
+  trial_succeeded: { label: 'Trial run', cls: 'is-ok' },
+  running: { label: 'Running', cls: 'is-run' },
+  failed: { label: 'Failed', cls: 'is-fail' },
+  cancelled: { label: 'Cancelled', cls: 'is-muted' },
+};
+const rsm = runStatusMeta[run.status] ?? runStatusMeta.cancelled;
+// Carry the run's state + destination into the per-base drill-down so the deeper page matches.
+const drillState = run.status === 'running' ? 'running' : run.status === 'failed' ? 'failed' : 'done';
+const drillDest = run.destProvider === 'Amazon S3' ? 's3' : run.destProvider === 'Postgres' ? 'db' : 'drive';
+
+const baseStatusMeta: Record<string, { label: string; cls: string }> = {
+  ok: { label: 'Backed up', cls: 'is-ok' },
+  running: { label: 'Running', cls: 'is-run' },
+  failed: { label: 'Failed', cls: 'is-fail' },
+  pending: { label: 'Pending', cls: 'is-muted' },
+};
+
+const depthChips = [
+  { label: 'Schema', on: run.depth.schema },
+  { label: 'Data', on: run.depth.data },
+  { label: 'Attachments', on: run.depth.attachments },
+];
+---
+
+<div class="mx-auto max-w-[1200px]" data-run-detail>
+  <a href="/backups" class="rd-back"><span class="iconify lucide--arrow-left"></span> Backups</a>
+
+  {/* Header */}
+  <header class="rd-head">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2.5 flex-wrap">
+        <h1 class="text-2xl font-bold tracking-tight">Backup run</h1>
+        <span class={`rd-badge ${rsm.cls}`}>{running && <span class="rd-spin"></span>}{rsm.label}</span>
+      </div>
+      <p class="text-sm text-base-content/60 mt-1">
+        {run.triggeredBy.startsWith('schedule') ? 'Scheduled' : run.triggeredBy.startsWith('onboarding') ? 'Trial' : run.triggeredBy.startsWith('webhook') ? 'Webhook' : 'Manual'} ·
+        started {absTime(run.startedAt)}
+        {running
+          ? <> · <span class="text-warning font-medium">{etaStr(run.etaSeconds)}</span></>
+          : <> · {run.status === 'failed' ? 'stopped' : 'finished'}{' '}{absTime(run.completedAt)} · {durationStr(run.startedAt, run.completedAt)}</>}
+      </p>
+    </div>
+    {/* Action buttons are presentational stubs (web-backups-redesign "To do");
+        hidden in production until wired to real endpoints. */}
+    {!metricsPending && (
+      <div class="flex items-center gap-2 shrink-0">
+        {running
+          ? <button type="button" class="btn btn-sm btn-outline btn-error">Cancel run</button>
+          : <>
+              <button type="button" class="btn btn-sm btn-ghost">Delete</button>
+              <a href="/integrations?status=running" class="btn btn-sm btn-primary">Run again</a>
+            </>}
+      </div>
+    )}
+  </header>
+
+  {/* Failed-attachments banner */}
+  {run.failedAttachments.length > 0 && (
+    <div class="rd-warn" role="status">
+      <span class="iconify lucide--triangle-alert"></span>
+      <span class="flex-1 min-w-0"><b>{run.failedAttachments.length} attachment{run.failedAttachments.length === 1 ? '' : 's'}</b> couldn't be backed up. The rest of the run completed.</span>
+      <button type="button" class="btn btn-sm btn-warning" data-open-failed>Review</button>
+    </div>
+  )}
+
+  {/* Per-base detail pending — the engine records run-level totals only today. */}
+  {metricsPending && (
+    <div class="rd-warn" role="status" style="background: oklch(from var(--color-info) l c h / .1); border-color: oklch(from var(--color-info) l c h / .3);">
+      <span class="iconify lucide--info"></span>
+      <span class="flex-1 min-w-0">Showing run-level totals. Per-base and per-table breakdown isn't captured by the backup engine yet.</span>
+    </div>
+  )}
+
+  {/* Summary */}
+  <section class="rd-summary">
+    <div class="rd-stats">
+      <div class="rd-stat"><span class="rd-stat-k">Bases</span><span class="rd-stat-v">{run.summary?.bases ?? run.bases.length}</span></div>
+      <div class="rd-stat"><span class="rd-stat-k">Tables</span><span class="rd-stat-v">{nf.format(totalTables)}</span></div>
+      <div class="rd-stat"><span class="rd-stat-k">Records</span><span class="rd-stat-v">{nf.format(totalRecords)}</span></div>
+      <div class="rd-stat"><span class="rd-stat-k">Attachments</span><span class="rd-stat-v">{nf.format(totalAttachments)}</span></div>
+    </div>
+    <div class="rd-meta">
+      <div class="rd-meta-row">
+        <span class="rd-meta-k">Captured</span>
+        <span class="rd-depth">{depthChips.map((d) => (<span class={`rd-depth-chip ${d.on ? 'on' : 'off'}`}>{d.on && <span class="iconify lucide--check"></span>}{d.label}</span>))}</span>
+      </div>
+      <div class="rd-meta-row"><span class="rd-meta-k">Destination</span><span class="rd-meta-v">{run.destinationLabel}</span></div>
+    </div>
+  </section>
+
+  {/* Per-base breakdown */}
+  <section class="rd-panel">
+    <div class="rd-panel-head"><h2>Bases in this run</h2></div>
+    <div class="rd-tablewrap">
+      <table class="rd-table">
+        <thead>
+          <tr>
+            <th>Base</th><th>Status</th><th>Time</th>
+            <th class="num">Records</th><th class="num">Attachments</th>
+            <th class="num">Tables</th><th class="num">Fields</th>
+            <th>Output</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {metricsPending && run.bases.length === 0 && (
+            <tr>
+              <td colspan="9" class="rd-dim" style="text-align: center; padding: 1.5rem .7rem;">
+                Per-base breakdown isn't captured by the backup engine yet.
+              </td>
+            </tr>
+          )}
+          {run.bases.map((b) => {
+            const bsm = baseStatusMeta[b.status] ?? baseStatusMeta.pending;
+            const isRunning = b.status === 'running';
+            return (
+              <tr>
+                <td class="strong"><a href={`/backups/run/base?run=${run.id}&base=${b.id}&state=${drillState}&dest=${drillDest}`} class="rd-row-link">{b.name}</a></td>
+                <td><span class={`rd-pill ${bsm.cls}`}>{isRunning && <span class="rd-spin sm"></span>}{bsm.label}</span></td>
+                <td class="rd-dim">{isRunning ? 'running…' : b.status === 'failed' ? '—' : durationStr(b.startedAt, b.completedAt)}</td>
+                <td class="num">{isRunning && b.recordsRemaining != null
+                  ? <span>{nf.format(b.records)} <span class="rd-rem">/ {nf.format(b.records + b.recordsRemaining)}</span></span>
+                  : b.status === 'failed' ? '—' : nf.format(b.records)}</td>
+                <td class="num">{isRunning && b.attachmentsRemaining != null
+                  ? <span>{nf.format(b.attachments)} <span class="rd-rem">/ {nf.format(b.attachments + b.attachmentsRemaining)}</span></span>
+                  : b.status === 'failed' ? '—' : nf.format(b.attachments)}
+                  {b.failed > 0 && <button type="button" class="rd-failed" data-open-failed>{b.failed} failed</button>}
+                </td>
+                <td class="num">{b.status === 'failed' ? '—' : nf.format(b.tables)}</td>
+                <td class="num">{b.status === 'failed' ? '—' : nf.format(b.fields)}</td>
+                <td>{b.status === 'failed'
+                  ? <span class="rd-dim">—</span>
+                  : b.destKind === 'file'
+                    ? <a href={b.folderUrl ?? '#'} target="_blank" rel="noreferrer" title={`Open ${b.name} in ${run.destProvider} (opens in a new tab)`} class="rd-row-link rd-folder">{run.destIcon ? <img src={run.destIcon} alt="" width="15" height="15" class="rd-dest-ic" /> : <span class="iconify lucide--folder"></span>}{b.folder}<span class="iconify lucide--external-link rd-ext"></span></a>
+                    : <span class="rd-db" title="Backed up as rows in your database"><span class="iconify lucide--database"></span>{b.dbRef}</span>}</td>
+                <td class="num"><a href={`/backups/run/base?run=${run.id}&base=${b.id}&state=${drillState}&dest=${drillDest}`} class="rd-row-link">View tables →</a></td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+    {failed && run.bases.some((b) => b.error) && (
+      <div class="rd-error">
+        <span class="iconify lucide--circle-alert"></span>
+        <span class="min-w-0"><b>Error.</b> {run.bases.find((b) => b.error)?.error}</span>
+      </div>
+    )}
+  </section>
+
+  <p class="rd-foot">Run ID <code>{run.id}</code> · counts are recorded by the backup engine as it writes each base.</p>
+
+  {/* Failed-attachments slide-over */}
+  <div class="rd-drawer" data-failed-drawer hidden>
+    <div class="rd-drawer-backdrop" data-close-failed></div>
+    <aside class="rd-drawer-panel" role="dialog" aria-label="Failed attachments">
+      <header class="rd-drawer-head">
+        <div><h3>Failed attachments</h3><p>{run.failedAttachments.length} file{run.failedAttachments.length === 1 ? '' : 's'} couldn't be backed up.</p></div>
+        <button type="button" class="rd-drawer-x" data-close-failed aria-label="Close"><span class="iconify lucide--x"></span></button>
+      </header>
+      <div class="rd-drawer-body">
+        <ul class="rd-fail-list">
+          {run.failedAttachments.map((f) => (
+            <li class="rd-fail">
+              <span class="rd-fail-ic"><span class="iconify lucide--file-x"></span></span>
+              <div class="min-w-0 flex-1">
+                <p class="rd-fail-name">{f.file}</p>
+                <p class="rd-fail-loc">{f.base} · {f.table}</p>
+                <p class="rd-fail-reason">{f.reason}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <footer class="rd-drawer-foot">
+        <button type="button" class="btn btn-sm btn-ghost" data-close-failed>Close</button>
+        <button type="button" class="btn btn-sm btn-primary">Retry failed</button>
+      </footer>
+    </aside>
+  </div>
+</div>
+
+<style>
+  [data-run-detail] { display: flex; flex-direction: column; gap: 1.1rem; }
+  .rd-back { display: inline-flex; align-items: center; gap: .3rem; font-size: .8125rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .6); text-decoration: none; width: fit-content; }
+  .rd-back:hover { color: var(--color-base-content); }
+  .rd-back .iconify { font-size: .95rem; }
+  .rd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+  .rd-badge { display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem; font-weight: 700; padding: .2rem .6rem; border-radius: 999px; }
+  .rd-badge.is-ok { color: var(--color-success); background: oklch(from var(--color-success) l c h / .15); }
+  .rd-badge.is-fail { color: var(--color-error); background: oklch(from var(--color-error) l c h / .15); }
+  .rd-badge.is-run { color: var(--color-warning); background: oklch(from var(--color-warning) l c h / .15); }
+  .rd-badge.is-muted { color: oklch(from var(--color-base-content) l c h / .55); background: oklch(from var(--color-base-content) l c h / .1); }
+  .rd-spin { width: .7rem; height: .7rem; border-radius: 999px; border: 2px solid oklch(from var(--color-warning) l c h / .3); border-top-color: var(--color-warning); animation: rd-spin .7s linear infinite; }
+  .rd-spin.sm { width: .6rem; height: .6rem; border-width: 1.5px; }
+  @keyframes rd-spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .rd-spin { animation: none; } }
+
+  .rd-warn { display: flex; align-items: center; gap: .7rem; padding: .75rem 1rem; border-radius: .7rem; font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .9); background: oklch(from var(--color-warning) l c h / .12); border: 1px solid oklch(from var(--color-warning) l c h / .3); }
+  .rd-warn > .iconify { font-size: 1.1rem; flex: none; color: var(--color-warning); }
+
+  /* Summary */
+  .rd-summary { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
+  @media (max-width: 760px) { .rd-summary { grid-template-columns: 1fr; } }
+  .rd-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem; }
+  .rd-stat { display: flex; flex-direction: column; gap: .15rem; }
+  .rd-stat-k { font-size: .68rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .5); }
+  .rd-stat-v { font-size: 1.55rem; font-weight: 740; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .rd-meta { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
+  .rd-meta-row { display: flex; flex-direction: column; gap: .3rem; }
+  .rd-meta-k { font-size: .68rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .5); }
+  .rd-meta-v { font-size: .85rem; font-weight: 550; }
+  .rd-depth { display: flex; gap: .4rem; flex-wrap: wrap; }
+  .rd-depth-chip { display: inline-flex; align-items: center; gap: .25rem; font-size: .72rem; font-weight: 600; padding: .15rem .5rem; border-radius: 999px; }
+  .rd-depth-chip.on { color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); }
+  .rd-depth-chip.off { color: oklch(from var(--color-base-content) l c h / .4); background: oklch(from var(--color-base-content) l c h / .07); }
+  .rd-depth-chip .iconify { font-size: .8rem; }
+
+  /* Panel + table */
+  .rd-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem 1.25rem; }
+  .rd-panel-head h2 { font-size: .95rem; font-weight: 650; margin-bottom: 1rem; }
+  .rd-tablewrap { overflow-x: auto; }
+  .rd-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  .rd-table th { text-align: left; font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .45); padding: 0 .65rem .6rem; border-bottom: 1px solid var(--color-base-300); white-space: nowrap; }
+  .rd-table td { padding: .65rem .65rem; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .5); white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .8); vertical-align: middle; }
+  .rd-table tbody tr:last-child td { border-bottom: 0; }
+  .rd-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .rd-table td.strong { font-weight: 600; }
+  .rd-row-link { color: var(--color-primary); font-weight: 600; text-decoration: none; }
+  .rd-row-link:hover { text-decoration: underline; }
+  .rd-folder { display: inline-flex; align-items: center; gap: .3rem; }
+  .rd-folder .iconify, .rd-db .iconify { font-size: .9rem; }
+  .rd-dest-ic { width: 15px; height: 15px; object-fit: contain; flex: none; }
+  .rd-ext { font-size: .78rem !important; opacity: 0; transition: opacity .12s ease; color: oklch(from var(--color-primary) l c h / .8); }
+  .rd-folder:hover .rd-ext { opacity: 1; }
+  .rd-db { display: inline-flex; align-items: center; gap: .3rem; color: oklch(from var(--color-base-content) l c h / .7); }
+  .rd-dim { color: oklch(from var(--color-base-content) l c h / .5); }
+  .rd-rem { color: oklch(from var(--color-base-content) l c h / .45); }
+  .rd-pill { display: inline-flex; align-items: center; gap: .3rem; font-size: .66rem; font-weight: 650; padding: .15rem .5rem; border-radius: 999px; }
+  .rd-pill.is-ok { color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); }
+  .rd-pill.is-fail { color: var(--color-error); background: oklch(from var(--color-error) l c h / .14); }
+  .rd-pill.is-run { color: var(--color-warning); background: oklch(from var(--color-warning) l c h / .14); }
+  .rd-pill.is-muted { color: oklch(from var(--color-base-content) l c h / .55); background: oklch(from var(--color-base-content) l c h / .08); }
+  .rd-failed { margin-left: .4rem; font-size: .68rem; font-weight: 650; color: var(--color-error); background: oklch(from var(--color-error) l c h / .12); border: none; border-radius: .4rem; padding: .1rem .4rem; cursor: pointer; }
+  .rd-failed:hover { background: oklch(from var(--color-error) l c h / .2); }
+  .rd-error { display: flex; align-items: center; gap: .55rem; margin-top: 1rem; padding: .7rem .85rem; font-size: .82rem; border-radius: .6rem; color: oklch(from var(--color-base-content) l c h / .9); background: oklch(from var(--color-error) l c h / .1); border: 1px solid oklch(from var(--color-error) l c h / .25); }
+  .rd-error .iconify { color: var(--color-error); flex: none; }
+
+  .rd-foot { font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .45); }
+  .rd-foot code { font-size: 11px; padding: .05rem .3rem; border-radius: 4px; background: oklch(from var(--color-base-content) l c h / .07); }
+
+  /* Slide-over */
+  .rd-drawer { position: fixed; inset: 0; z-index: 300; }
+  .rd-drawer[hidden] { display: none; }
+  .rd-drawer-backdrop { position: absolute; inset: 0; background: rgb(2 6 23 / .55); opacity: 0; transition: opacity .2s ease; }
+  .rd-drawer.is-open .rd-drawer-backdrop { opacity: 1; }
+  .rd-drawer-panel { position: absolute; top: 0; right: 0; height: 100%; width: min(92vw, 28rem); background: var(--color-base-100); border-left: 1px solid var(--color-base-300); box-shadow: -16px 0 50px oklch(from var(--color-base-content) l c h / .12); display: flex; flex-direction: column; transform: translateX(100%); transition: transform .24s cubic-bezier(.22,1,.36,1); }
+  .rd-drawer.is-open .rd-drawer-panel { transform: translateX(0); }
+  .rd-drawer-head { display: flex; align-items: flex-start; gap: 1rem; padding: 1.1rem 1.2rem; border-bottom: 1px solid var(--color-base-300); }
+  .rd-drawer-head h3 { font-size: 1rem; font-weight: 650; }
+  .rd-drawer-head p { font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .6); margin-top: .15rem; }
+  .rd-drawer-x { margin-left: auto; color: oklch(from var(--color-base-content) l c h / .5); background: none; border: none; cursor: pointer; font-size: 1.1rem; padding: .2rem; flex: none; }
+  .rd-drawer-x:hover { color: var(--color-base-content); }
+  .rd-drawer-body { flex: 1; overflow-y: auto; padding: .9rem 1.2rem; }
+  .rd-drawer-foot { display: flex; justify-content: flex-end; gap: .5rem; padding: .9rem 1.2rem; border-top: 1px solid var(--color-base-300); }
+  .rd-fail-list { display: flex; flex-direction: column; gap: .2rem; }
+  .rd-fail { display: flex; gap: .7rem; padding: .7rem 0; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .6); }
+  .rd-fail:last-child { border-bottom: 0; }
+  .rd-fail-ic { width: 1.9rem; height: 1.9rem; border-radius: .45rem; display: grid; place-items: center; flex: none; background: oklch(from var(--color-error) l c h / .12); color: var(--color-error); }
+  .rd-fail-name { font-size: .82rem; font-weight: 600; overflow-wrap: anywhere; }
+  .rd-fail-loc { font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .55); margin-top: .05rem; }
+  .rd-fail-reason { font-size: .74rem; color: var(--color-error); margin-top: .15rem; }
+</style>
+
+<script>
+  function wireRunDetail() {
+    const root = document.querySelector<HTMLElement>('[data-run-detail]');
+    if (!root) return;
+    const drawer = root.querySelector<HTMLElement>('[data-failed-drawer]');
+    const open = () => { if (!drawer) return; drawer.hidden = false; requestAnimationFrame(() => drawer.classList.add('is-open')); };
+    const close = () => { if (!drawer) return; drawer.classList.remove('is-open'); window.setTimeout(() => { drawer.hidden = true; }, 220); };
+    root.querySelectorAll('[data-open-failed]').forEach((b) => b.addEventListener('click', open));
+    root.querySelectorAll('[data-close-failed]').forEach((b) => b.addEventListener('click', close));
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && drawer && !drawer.hidden) close(); });
+  }
+  wireRunDetail();
+  document.addEventListener('astro:after-swap', wireRunDetail);
+</script>

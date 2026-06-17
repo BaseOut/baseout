@@ -1,0 +1,46 @@
+---
+/**
+ * Account-level Destinations registry (production, honest-pending).
+ *
+ * The design assumes account-level, reusable Destinations (Airbyte model). In
+ * baseout's backend a destination is PER-SPACE (storage_destinations.space_id is
+ * UNIQUE) — the account-level model is a backend follow-up (web-nav-ia-restructure
+ * / shared-destinations "Engineer"). Until then this renders the current Space's
+ * destination mapped into the registry shape, with a notice, and points add /
+ * manage at the working per-Space Configure flow.
+ */
+import { env } from 'cloudflare:workers';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import DestinationsView from '../views/DestinationsView.astro';
+import { getBreadcrumbs } from '../lib/config';
+import { EMPTY_INTEGRATIONS_STATE, getIntegrationsState } from '../lib/integrations';
+import { toDestinationSummaries } from '../lib/registry-mappers';
+import { getDestinationProviders, type DestinationEnv } from '../lib/provider-catalog';
+
+const breadcrumbs = getBreadcrumbs('/destinations');
+const { account, db } = Astro.locals;
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+const spaceName = account?.space?.name ?? 'this Space';
+
+const state =
+  orgId && spaceId && db ? await getIntegrationsState(db, orgId, spaceId) : EMPTY_INTEGRATIONS_STATE;
+
+const destinations = toDestinationSummaries(state, spaceId ?? 'space', spaceName);
+// Availability resolves the env-gated BYOS providers (Box/Dropbox/OneDrive
+// become available only when their OAuth client id is configured).
+const providers = getDestinationProviders(env as unknown as DestinationEnv);
+
+const notice =
+  'Account-level Destinations (reused across Spaces) are on the roadmap. Today each Space has one destination — shown here and managed in Configure.';
+---
+
+<SidebarLayout pageTitle="Destinations" breadcrumbs={breadcrumbs}>
+  <DestinationsView
+    destinations={destinations}
+    notice={notice}
+    addHref="/integrations/configure"
+    rowHref="/integrations/configure"
+    providers={providers}
+  />
+</SidebarLayout>

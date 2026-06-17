@@ -1,0 +1,462 @@
+---
+// /handoff — the single front door for design → engineering handoff.
+//
+// A live traceability index rendered straight from FLOW_REGISTRY: every flow /
+// state, its build status, the OpenSpec scenarios it realizes (the contract), the
+// apps/web files it exercises (the porting targets), and a link to walk it. It can
+// never go stale relative to the panel because both read the same registry.
+//
+// Internal/meta page on purpose: standalone chrome, not the product shell.
+import { FLOW_REGISTRY, type FlowStatus, type RegistryFlow } from '../lib/flow-registry';
+
+// Group by feature, preserving first-seen order.
+const groups: { feature: string; flows: RegistryFlow[] }[] = [];
+for (const flow of FLOW_REGISTRY) {
+  let g = groups.find((x) => x.feature === flow.feature);
+  if (!g) {
+    g = { feature: flow.feature, flows: [] };
+    groups.push(g);
+  }
+  g.flows.push(flow);
+}
+
+const count = (s: FlowStatus) => FLOW_REGISTRY.filter((f) => f.status === s).length;
+const totals = { built: count('built'), planned: count('planned'), discussion: count('discussion') };
+
+const STATUS_LABEL: Record<FlowStatus, string> = {
+  built: 'Built',
+  planned: 'Planned',
+  discussion: 'Up for discussion',
+};
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flow handoff index · Baseout</title>
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="head">
+        <p class="eyebrow">Baseout · design → engineering</p>
+        <h1>Flow handoff index</h1>
+        <p class="lede">
+          Every flow and state in one place. Each row ties the four handoff layers together so nothing drifts:
+          the <strong>spec</strong> (the contract), the <strong>harness URL</strong> (the clickable proof), the
+          <strong>code</strong> (the porting target), and a <strong>status</strong> (what is on screen today). States are
+          data, not duplicated screens: a new variant is a new row in
+          <code>flow-registry.ts</code>, never a new page.
+        </p>
+
+        <div class="legend">
+          <span class="pill built"><i></i>{totals.built} built</span>
+          <span class="pill planned"><i></i>{totals.planned} planned</span>
+          <span class="pill discussion"><i></i>{totals.discussion} up for discussion</span>
+        </div>
+
+        <ul class="howto">
+          <li><strong>Built</strong> — clickable in the harness now; the linked steps render.</li>
+          <li><strong>Planned</strong> — agreed and not on screen yet; the spec column captures the intent.</li>
+          <li><strong>Up for discussion</strong> — direction set, design still open. Your feedback shapes it before we build.</li>
+          <li>The <strong>spec</strong> column is a reference at any status, not a status of its own.</li>
+          <li>Naming: a flow's <code>id</code> is the same in the panel, the spec tag, and this index, so the layers line up.</li>
+        </ul>
+      </header>
+
+      {
+        groups.map((group) => (
+          <section class="group">
+            <h2>{group.feature}</h2>
+            <div class="rows">
+              {group.flows.map((flow) => (
+                <article class={`row ${flow.status}`} id={flow.id}>
+                  <div class="row-head">
+                    <div class="row-title">
+                      <span class={`status ${flow.status}`}>{STATUS_LABEL[flow.status]}</span>
+                      <h3>{flow.name}</h3>
+                      <code class="id">{flow.id}</code>
+                    </div>
+                    {flow.steps[0]?.href && (
+                      <a class="play" href={flow.steps[0].href}>
+                        Open flow →
+                      </a>
+                    )}
+                  </div>
+
+                  <p class="blurb">{flow.blurb}</p>
+                  {flow.note && <p class="note">{flow.note}</p>}
+
+                  <div class="cols">
+                    <div class="col">
+                      <h4>Steps</h4>
+                      <ol class="steps">
+                        {flow.steps.map((step) => (
+                          <li>
+                            {step.href ? (
+                              <a href={step.href}>{step.label}</a>
+                            ) : (
+                              <span class="muted">{step.label}</span>
+                            )}
+                            <span class="cap">{step.caption}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+
+                    <div class="col">
+                      <h4>Spec scenarios</h4>
+                      <ul class="refs">
+                        {flow.specs.map((s) => (
+                          <li>
+                            <code>{s.change}</code> <span class="sep">›</span> {s.scenario}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div class="col">
+                      <h4>Code (apps/web)</h4>
+                      <ul class="refs">
+                        {flow.code.map((c) => (
+                          <li>
+                            <code>{c.replace('apps/web/src/', '')}</code>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
+        ))
+      }
+
+      <footer class="foot">
+        <p>
+          Source of truth: <code>apps/design/src/lib/flow-registry.ts</code>. The floating panel plays the curated
+          subset; this index lists everything. Specs live in <code>openspec/changes/</code>.
+        </p>
+      </footer>
+    </main>
+
+    <style>
+      :root {
+        --bg: oklch(0.985 0.004 255);
+        --panel: oklch(1 0 0);
+        --ink: oklch(0.27 0.02 260);
+        --ink-soft: oklch(0.52 0.02 260);
+        --ink-faint: oklch(0.62 0.015 260);
+        --line: oklch(0.92 0.006 260);
+        --line-soft: oklch(0.95 0.005 260);
+        --accent: oklch(0.55 0.16 260);
+        --ok: oklch(0.62 0.15 150);
+        --warn: oklch(0.72 0.15 75);
+        --prop: oklch(0.6 0.04 260);
+        --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          15px/1.55 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 56px 32px 96px;
+      }
+      .eyebrow {
+        margin: 0 0 10px;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        font-weight: 600;
+      }
+      h1 {
+        margin: 0 0 14px;
+        font-size: 30px;
+        font-weight: 680;
+        letter-spacing: -0.02em;
+      }
+      .lede {
+        margin: 0 0 22px;
+        max-width: 70ch;
+        color: var(--ink-soft);
+        font-size: 15px;
+      }
+      .lede strong {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      code {
+        font-family: var(--mono);
+        font-size: 0.86em;
+        background: oklch(0.95 0.006 260);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 1px 5px;
+        color: var(--ink);
+      }
+      .legend {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 13px;
+        font-weight: 560;
+        padding: 5px 11px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel);
+      }
+      .pill i {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        display: inline-block;
+      }
+      .pill.built i {
+        background: var(--ok);
+      }
+      .pill.planned i {
+        background: var(--warn);
+      }
+      .pill.discussion i {
+        background: var(--prop);
+      }
+      .howto {
+        margin: 0 0 8px;
+        padding: 16px 18px;
+        list-style: none;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        display: grid;
+        gap: 7px;
+      }
+      .howto li {
+        font-size: 13.5px;
+        color: var(--ink-soft);
+      }
+      .howto strong {
+        color: var(--ink);
+      }
+
+      .group {
+        margin-top: 44px;
+      }
+      .group > h2 {
+        margin: 0 0 16px;
+        font-size: 13px;
+        font-weight: 680;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        padding-bottom: 9px;
+        border-bottom: 1px solid var(--line);
+      }
+      .rows {
+        display: grid;
+        gap: 14px;
+      }
+      .row {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 18px 20px 20px;
+      }
+      .row-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .row-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .row-title h3 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 640;
+        letter-spacing: -0.01em;
+      }
+      .id {
+        font-size: 12px;
+        color: var(--ink-faint);
+        background: transparent;
+        border: none;
+        padding: 0;
+      }
+      .status {
+        font-size: 11px;
+        font-weight: 640;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        padding: 3px 8px;
+        border-radius: 6px;
+        white-space: nowrap;
+      }
+      .status.built {
+        color: oklch(0.4 0.13 150);
+        background: oklch(0.95 0.05 150);
+      }
+      .status.planned {
+        color: oklch(0.46 0.12 70);
+        background: oklch(0.95 0.07 80);
+      }
+      .status.discussion {
+        color: oklch(0.45 0.03 260);
+        background: oklch(0.95 0.01 260);
+      }
+      .play {
+        flex: none;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--accent);
+        text-decoration: none;
+        white-space: nowrap;
+        padding-top: 3px;
+      }
+      .play:hover {
+        text-decoration: underline;
+      }
+      .blurb {
+        margin: 10px 0 0;
+        color: var(--ink-soft);
+        font-size: 14px;
+        max-width: 78ch;
+      }
+      .note {
+        margin: 8px 0 0;
+        font-size: 13px;
+        color: var(--ink-faint);
+        font-style: italic;
+        max-width: 78ch;
+      }
+      .cols {
+        margin-top: 16px;
+        display: grid;
+        grid-template-columns: 1.4fr 1fr 1fr;
+        gap: 22px;
+      }
+      @media (max-width: 760px) {
+        .cols {
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+      }
+      .col h4 {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 660;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+      .steps {
+        margin: 0;
+        padding-left: 18px;
+        display: grid;
+        gap: 9px;
+      }
+      .steps li {
+        font-size: 13.5px;
+      }
+      .steps a {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 560;
+      }
+      .steps a:hover {
+        text-decoration: underline;
+      }
+      .steps .muted {
+        color: var(--ink-faint);
+        font-weight: 560;
+      }
+      .steps .cap {
+        display: block;
+        color: var(--ink-soft);
+        font-size: 12.5px;
+        margin-top: 2px;
+        line-height: 1.5;
+      }
+      .refs {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 7px;
+      }
+      .refs li {
+        font-size: 13px;
+        color: var(--ink-soft);
+        line-height: 1.45;
+      }
+      .refs code {
+        font-size: 12px;
+      }
+      .sep {
+        color: var(--ink-faint);
+      }
+
+      .foot {
+        margin-top: 48px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+      }
+      .foot p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--ink-faint);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: oklch(0.18 0.01 260);
+          --panel: oklch(0.22 0.012 260);
+          --ink: oklch(0.93 0.01 260);
+          --ink-soft: oklch(0.74 0.012 260);
+          --ink-faint: oklch(0.6 0.012 260);
+          --line: oklch(0.3 0.012 260);
+          --accent: oklch(0.72 0.13 255);
+        }
+        code {
+          background: oklch(0.26 0.012 260);
+        }
+        .status.built {
+          color: oklch(0.85 0.13 150);
+          background: oklch(0.3 0.06 150);
+        }
+        .status.planned {
+          color: oklch(0.85 0.12 85);
+          background: oklch(0.32 0.06 80);
+        }
+        .status.discussion {
+          color: oklch(0.82 0.02 260);
+          background: oklch(0.3 0.012 260);
+        }
+      }
+    </style>
+  </body>
+</html>

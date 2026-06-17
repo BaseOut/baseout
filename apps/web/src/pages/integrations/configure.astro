@@ -1,25 +1,44 @@
 ---
 import SidebarLayout from '../../layouts/SidebarLayout.astro';
-import IntegrationsConfigureView from '../../views/IntegrationsConfigureView.astro';
+// Configure = the redesigned setup wizard (space-setup-wizard). The previous
+// vertical Configure survives as IntegrationsConfigureView(.tabs) for rollback.
+import IntegrationsSetupWizard from '../../views/IntegrationsSetupWizard.astro';
 import { getBreadcrumbs } from '../../lib/config';
 import { EMPTY_INTEGRATIONS_STATE, getIntegrationsState } from '../../lib/integrations';
+import { toSourceSummary, toDestinationSummaries } from '../../lib/registry-mappers';
 
 const breadcrumbs = getBreadcrumbs('/integrations');
 const { account, db } = Astro.locals;
 
 const orgId = account?.organization?.id ?? null;
 const spaceId = account?.space?.id ?? null;
+const spaceName = account?.space?.name ?? 'this Space';
 
 const state =
-  orgId && spaceId
+  orgId && spaceId && db
     ? await getIntegrationsState(db, orgId, spaceId)
     : EMPTY_INTEGRATIONS_STATE;
 
-// Configure only makes sense with a connection; send strays to the overview.
 const airtable = state.connections.find((c) => c.platformSlug === 'airtable');
-if (!airtable) return Astro.redirect('/integrations');
+const isFirst = Astro.url.searchParams.get('first') === '1';
+const mode: 'setup' | 'edit' = isFirst ? 'setup' : 'edit';
+
+// The wizard's Source step is where first connect happens, so setup mode
+// (?first=1) must be reachable WITHOUT a connection. Only send the
+// no-connection EDIT case back to the overview.
+if (!airtable && !isFirst) return Astro.redirect('/integrations');
+
+const source = toSourceSummary(state, spaceId ?? 'space', spaceName);
+const sources = source ? [source] : [];
+const destinations = toDestinationSummaries(state, spaceId ?? 'space', spaceName);
 ---
 
 <SidebarLayout pageTitle="Configure backup" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <IntegrationsConfigureView state={state} />
+  <IntegrationsSetupWizard
+    state={state}
+    sources={sources}
+    destinations={destinations}
+    mode={mode}
+    realSpaceId={spaceId}
+  />
 </SidebarLayout>

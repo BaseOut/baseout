@@ -55,3 +55,18 @@ The system SHALL let a Space's backup setup use the account destinations, by eit
 #### Scenario: Add a destination from setup
 - **WHEN** no suitable destination exists during setup
 - **THEN** the user can add a new destination, which is created at the account level and becomes available to link
+
+### Requirement: Show provider availability and honest connection status
+The system SHALL present, across the account Destinations surfaces, which providers can be connected now versus those that are coming soon (including tier-gated providers), and SHALL derive each existing destination's status from real signals rather than assuming it is connected. Provider availability SHALL come from a single shared catalog so the account registry and the per-Space storage picker never disagree.
+
+#### Scenario: Available vs coming-soon in the add flow
+- **WHEN** the user opens the Add destination flow
+- **THEN** providers that can be connected now are selectable, and providers that are not yet available — an env-gated bring-your-own-storage provider that is not configured, or a tier-gated provider — are shown disabled with a "Coming soon" label and, where applicable, the tier required (e.g. "Growth+")
+
+#### Scenario: Coming-soon providers visible on the registry
+- **WHEN** the user views account Destinations
+- **THEN** the surface indicates the additional providers that are available to add or coming soon, so the user can see what they can connect next
+
+#### Scenario: Honest connection status
+- **WHEN** a destination is shown in the registry
+- **THEN** its status reflects real signals — a managed destination (Baseout R2 / local disk) is Connected, a bring-your-own destination with an authorized account is Connected, and an unauthorized destination is "Needs connection" — rather than a hardcoded value

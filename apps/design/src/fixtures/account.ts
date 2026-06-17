@@ -6,7 +6,7 @@ import type {
 
 const PRIMARY_SPACE: FixtureSpace = {
   id: 'space_design_primary',
-  name: 'Demo Space',
+  name: 'Core CRM',
   status: 'active',
 };
 

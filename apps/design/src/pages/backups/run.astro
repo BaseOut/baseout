@@ -1,0 +1,119 @@
+---
+// Single backup-run detail (BackupRunDetailView). Harness fixture — the engineer
+// wires the real per-run detail endpoint. ?state=done|running|failed (default done).
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import BackupRunDetailView from '@web/views/BackupRunDetailView.astro';
+import DestSwitcher from '../../components/DestSwitcher.astro';
+import { getBreadcrumbs } from '@web/lib/config';
+
+const breadcrumbs = getBreadcrumbs('/backups');
+const state = (Astro.url.searchParams.get('state') ?? 'done').toLowerCase();
+const runId = Astro.url.searchParams.get('id') ?? 'run_2026_06_15_daily';
+// Destination demo: ?dest=drive (default, static/Drive) · s3 (static/S3) · db (dynamic/Postgres).
+const dest = (Astro.url.searchParams.get('dest') ?? 'drive').toLowerCase();
+
+const NOW = Date.now();
+const ago = (min: number) => new Date(NOW - min * 60000).toISOString();
+
+type BaseDef = { id: string; name: string; tables: number; fields: number; records: number; attachments: number };
+// Per-base sums match the run totals: 14 tables · 12,407 records · 218 attachments.
+const BASES: BaseDef[] = [
+  { id: 'b-mktg', name: 'Marketing Calendar', tables: 3, fields: 84, records: 4012, attachments: 84 },
+  { id: 'b-sales', name: 'Sales CRM', tables: 4, fields: 132, records: 3850, attachments: 52 },
+  { id: 'b-cs', name: 'Customer Success', tables: 2, fields: 76, records: 2104, attachments: 38 },
+  { id: 'b-prod', name: 'Product Roadmap', tables: 2, fields: 58, records: 1203, attachments: 24 },
+  { id: 'b-eng', name: 'Engineering Bugs', tables: 2, fields: 94, records: 642, attachments: 12 },
+  { id: 'b-hr', name: 'HR Directory', tables: 1, fields: 41, records: 596, attachments: 8 },
+];
+
+// Destination presets. STATIC writes files into storage you own (Drive / S3 / R2):
+// the Output is a browsable folder you open in the provider. DYNAMIC mirrors rows
+// into a database you own (Postgres): the Output is a DB reference you query, not a
+// folder. A Space picks one (or fans out to both); here ?dest swaps the whole run.
+const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/(^_|_$)/g, '');
+const DEST_PRESETS = {
+  drive: {
+    label: 'Company Drive · Google Drive (static)', provider: 'Google Drive', icon: '/brands/google-drive.svg' as string | null, kind: 'file' as const,
+    folder: (b: BaseDef): string | null => `/Baseout/Core CRM/${b.name}`,
+    folderUrl: (b: BaseDef): string | null => `https://drive.google.com/drive/folders/baseout-coreCRM-${b.id}`,
+    dbRef: (_b: BaseDef): string | null => null,
+  },
+  s3: {
+    label: 'Backups Bucket · Amazon S3 (static)', provider: 'Amazon S3', icon: '/brands/aws.svg' as string | null, kind: 'file' as const,
+    folder: (b: BaseDef): string | null => `s3://baseout-backups/Core CRM/${b.name}`,
+    folderUrl: (b: BaseDef): string | null => `https://s3.console.aws.amazon.com/s3/buckets/baseout-backups?prefix=Core+CRM/${b.id}/`,
+    dbRef: (_b: BaseDef): string | null => null,
+  },
+  db: {
+    label: 'Analytics Warehouse · Postgres (dynamic)', provider: 'Postgres', icon: null as string | null, kind: 'database' as const,
+    folder: (_b: BaseDef): string | null => null,
+    folderUrl: (_b: BaseDef): string | null => null,
+    dbRef: (b: BaseDef): string | null => `core_crm_warehouse · public.${slug(b.name)}`,
+  },
+};
+const D = DEST_PRESETS[dest as keyof typeof DEST_PRESETS] ?? DEST_PRESETS.drive;
+const destFields = (b: BaseDef) => ({ destKind: D.kind, folder: D.folder(b), folderUrl: D.folderUrl(b), dbRef: D.dbRef(b) });
+
+const okBase = (b: BaseDef, i: number) => ({
+  id: b.id,
+  name: b.name,
+  status: 'ok' as const,
+  startedAt: ago(20 - i * 2),
+  completedAt: ago(18 - i * 2),
+  ...destFields(b),
+  tables: b.tables,
+  fields: b.fields,
+  records: b.records,
+  recordsRemaining: null,
+  attachments: b.attachments,
+  attachmentsRemaining: null,
+  failed: 0,
+  error: null,
+});
+
+const basesDone = BASES.map((b, i) => (i === 4 ? { ...okBase(b, i), failed: 2 } : okBase(b, i)));
+
+const basesRunning = BASES.map((b, i) => {
+  if (i < 4) return okBase(b, i);
+  if (i === 4)
+    return {
+      id: b.id, name: b.name, status: 'running' as const, startedAt: ago(1), completedAt: null,
+      ...destFields(b),
+      tables: b.tables, fields: b.fields, records: 410, recordsRemaining: 232, attachments: 7, attachmentsRemaining: 5, failed: 0, error: null,
+    };
+  return {
+    id: b.id, name: b.name, status: 'pending' as const, startedAt: null, completedAt: null,
+    ...destFields(b),
+    tables: b.tables, fields: b.fields, records: 0, recordsRemaining: null, attachments: 0, attachmentsRemaining: null, failed: 0, error: null,
+  };
+});
+
+const basesFailed = BASES.map((b, i) =>
+  i === 3
+    ? {
+        id: b.id, name: b.name, status: 'failed' as const, startedAt: ago(7), completedAt: ago(6),
+        destKind: D.kind, folder: null, folderUrl: null, dbRef: null,
+        tables: b.tables, fields: b.fields, records: 0, recordsRemaining: null, attachments: 0, attachmentsRemaining: null, failed: 0,
+        error: 'Airtable returned 429 (rate-limited) for base appProductRoadmap. Retried 3× with exponential backoff, then stopped the run.',
+      }
+    : okBase(b, i),
+);
+
+const run =
+  state === 'running'
+    ? { id: runId, status: 'running' as const, triggeredBy: 'schedule_daily', startedAt: ago(3), completedAt: null, etaSeconds: 150, depth: { schema: true, data: true, attachments: true }, destinationLabel: D.label, destProvider: D.provider, destIcon: D.icon, bases: basesRunning, failedAttachments: [] }
+    : state === 'failed'
+      ? { id: runId, status: 'failed' as const, triggeredBy: 'schedule_daily', startedAt: ago(8), completedAt: ago(6), etaSeconds: null, depth: { schema: true, data: true, attachments: true }, destinationLabel: D.label, destProvider: D.provider, destIcon: D.icon, bases: basesFailed, failedAttachments: [] }
+      : {
+          id: runId, status: 'succeeded' as const, triggeredBy: 'schedule_daily', startedAt: ago(20), completedAt: ago(13), etaSeconds: null, depth: { schema: true, data: true, attachments: true }, destinationLabel: D.label, destProvider: D.provider, destIcon: D.icon, bases: basesDone,
+          failedAttachments: [
+            { base: 'Engineering Bugs', table: 'Tickets', file: 'crash-log-2026-06-15.zip', reason: 'File exceeds the 1 GB attachment limit' },
+            { base: 'Engineering Bugs', table: 'Releases', file: 'demo-build.mp4', reason: 'Airtable returned 410 — file expired before fetch' },
+          ],
+        };
+---
+
+<SidebarLayout pageTitle="Backup run" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <BackupRunDetailView run={run} />
+  <DestSwitcher />
+</SidebarLayout>

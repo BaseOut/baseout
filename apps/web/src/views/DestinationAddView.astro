@@ -8,29 +8,26 @@
  * reusable account object, then linkable to Spaces.
  */
 import Button from '../components/ui/Button.astro';
+import { getDestinationProviders, type DestinationProvider } from '../lib/provider-catalog';
 
 interface Props {
   /** provider slug picked in step 1; null shows the type picker */
   selectedType?: string | null;
+  /** provider catalog with availability resolved; defaults to env-less (BYOS coming-soon) */
+  providers?: DestinationProvider[];
 }
-const { selectedType = null } = Astro.props;
+const { selectedType = null, providers = getDestinationProviders() } = Astro.props;
 
-interface TypeDef { id: string; label: string; icon: string; kind: 'file' | 'database'; note: string; field: 'folder' | 'connection'; managed?: boolean; }
-const fileTypes: TypeDef[] = [
-  { id: 'r2', label: 'Baseout R2', icon: 'lucide--box', kind: 'file', note: 'Managed storage, zero setup', field: 'folder', managed: true },
-  { id: 'google_drive', label: 'Google Drive', icon: 'lucide--hard-drive', kind: 'file', note: 'Your own Drive', field: 'folder' },
-  { id: 'dropbox', label: 'Dropbox', icon: 'lucide--hard-drive', kind: 'file', note: 'Your own Dropbox', field: 'folder' },
-  { id: 'box', label: 'Box', icon: 'lucide--hard-drive', kind: 'file', note: 'Your own Box', field: 'folder' },
-  { id: 's3', label: 'Amazon S3', icon: 'lucide--cloud', kind: 'file', note: 'Your own S3 bucket', field: 'folder' },
-];
-const dbTypes: TypeDef[] = [
-  { id: 'postgres', label: 'Postgres', icon: 'lucide--database', kind: 'database', note: 'Self-hosted or cloud', field: 'connection' },
-  { id: 'neon', label: 'Neon', icon: 'lucide--database', kind: 'database', note: 'Serverless Postgres', field: 'connection' },
-  { id: 'supabase', label: 'Supabase', icon: 'lucide--database', kind: 'database', note: 'Postgres + APIs', field: 'connection' },
-  { id: 'byodb', label: 'Other database', icon: 'lucide--database', kind: 'database', note: 'Connection string', field: 'connection' },
-];
-const all = [...fileTypes, ...dbTypes];
-const sel = all.find((t) => t.id === selectedType) ?? null;
+const fileTypes = providers.filter((p) => p.kind === 'file');
+const dbTypes = providers.filter((p) => p.kind === 'database');
+// Only an available provider can advance to the connect step.
+const sel = providers.find((p) => p.slug === selectedType && p.availability === 'available') ?? null;
+
+const tierLabel = (t?: string) => (t === 'growth' ? 'Growth+' : t === 'pro' ? 'Pro+' : null);
+const iconFor = (p: DestinationProvider) =>
+  p.managed ? 'lucide--box' : p.slug === 's3' ? 'lucide--cloud' : p.kind === 'database' ? 'lucide--database' : 'lucide--hard-drive';
+const selIcon = sel ? iconFor(sel) : 'lucide--hard-drive';
+const selField: 'folder' | 'connection' = sel?.kind === 'database' ? 'connection' : 'folder';
 ---
 
 <div class="mx-auto max-w-3xl space-y-6">
@@ -47,10 +44,17 @@ const sel = all.find((t) => t.id === selectedType) ?? null;
         <h2 class="add-section-title">File storage <span class="add-req">required for every backup</span></h2>
         <div class="add-grid">
           {fileTypes.map((t) => (
-            <a href={`/settings/destinations/new?type=${t.id}`} class="add-card">
-              <span class="add-ic"><span class={`iconify ${t.icon}`} aria-hidden="true"></span></span>
-              <span class="min-w-0"><span class="add-name">{t.label}{t.managed && <span class="add-tag">Managed</span>}</span><span class="add-note">{t.note}</span></span>
-            </a>
+            t.availability === 'available' ? (
+              <a href={`/settings/destinations/new?type=${t.slug}`} class="add-card">
+                <span class="add-ic"><span class={`iconify ${iconFor(t)}`} aria-hidden="true"></span></span>
+                <span class="min-w-0"><span class="add-name">{t.label}{t.managed && <span class="add-tag">Managed</span>}</span><span class="add-note">{t.note}</span></span>
+              </a>
+            ) : (
+              <div class="add-card add-card-soon" aria-disabled="true" title="Coming soon">
+                <span class="add-ic"><span class={`iconify ${iconFor(t)}`} aria-hidden="true"></span></span>
+                <span class="min-w-0"><span class="add-name">{t.label}<span class="add-soon">{tierLabel(t.tier) ? `${tierLabel(t.tier)} · Coming soon` : 'Coming soon'}</span></span><span class="add-note">{t.note}</span></span>
+              </div>
+            )
           ))}
         </div>
       </section>
@@ -62,10 +66,17 @@ const sel = all.find((t) => t.id === selectedType) ?? null;
         </div>
         <div class="add-grid">
           {dbTypes.map((t) => (
-            <a href={`/settings/destinations/new?type=${t.id}`} class="add-card">
-              <span class="add-ic add-ic-db"><span class={`iconify ${t.icon}`} aria-hidden="true"></span></span>
-              <span class="min-w-0"><span class="add-name">{t.label}</span><span class="add-note">{t.note}</span></span>
-            </a>
+            t.availability === 'available' ? (
+              <a href={`/settings/destinations/new?type=${t.slug}`} class="add-card">
+                <span class="add-ic add-ic-db"><span class={`iconify ${iconFor(t)}`} aria-hidden="true"></span></span>
+                <span class="min-w-0"><span class="add-name">{t.label}</span><span class="add-note">{t.note}</span></span>
+              </a>
+            ) : (
+              <div class="add-card add-card-soon" aria-disabled="true" title="Coming soon">
+                <span class="add-ic add-ic-db"><span class={`iconify ${iconFor(t)}`} aria-hidden="true"></span></span>
+                <span class="min-w-0"><span class="add-name">{t.label}<span class="add-soon">{tierLabel(t.tier) ? `${tierLabel(t.tier)} · Coming soon` : 'Coming soon'}</span></span><span class="add-note">{t.note}</span></span>
+              </div>
+            )
           ))}
         </div>
       </section>
@@ -73,7 +84,7 @@ const sel = all.find((t) => t.id === selectedType) ?? null;
   ) : (
     <>
       <header class="flex items-center gap-3">
-        <span class="add-ic add-ic-lg"><span class={`iconify ${sel.icon}`} aria-hidden="true"></span></span>
+        <span class="add-ic add-ic-lg"><span class={`iconify ${selIcon}`} aria-hidden="true"></span></span>
         <div>
           <h1 class="text-xl font-bold tracking-tight leading-tight">Connect {sel.label}</h1>
           <p class="text-sm text-base-content/55 leading-tight mt-0.5">{sel.kind === 'database' ? 'Database destination' : 'File storage destination'}</p>
@@ -89,7 +100,7 @@ const sel = all.find((t) => t.id === selectedType) ?? null;
 
         {sel.managed ? (
           <p class="add-managed"><span class="iconify lucide--shield-check" aria-hidden="true"></span> Managed by Baseout — no account to connect or folder to choose.</p>
-        ) : sel.field === 'folder' ? (
+        ) : selField === 'folder' ? (
           <label class="add-field">
             <span class="add-label">Folder</span>
             <input type="text" name="folder" placeholder="/Baseout" class="input input-bordered w-full font-mono text-sm" />
@@ -105,7 +116,7 @@ const sel = all.find((t) => t.id === selectedType) ?? null;
 
         <div class="add-actions">
           <a href="/settings/destinations/new" class="btn btn-ghost btn-sm">Back</a>
-          <Button href={`/settings/destinations?status=added&type=${sel.id}`} variant="primary">Save destination</Button>
+          <Button href={`/settings/destinations?status=added&type=${sel.slug}`} variant="primary">Save destination</Button>
         </div>
       </form>
     </>
@@ -134,6 +145,9 @@ const sel = all.find((t) => t.id === selectedType) ?? null;
   .add-ic-lg .iconify { font-size: 1.35rem; }
   .add-name { display: flex; align-items: center; gap: .4rem; font-size: .875rem; font-weight: 600; }
   .add-tag { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); padding: .05rem .35rem; border-radius: 999px; }
+  .add-card-soon { opacity: .6; cursor: not-allowed; }
+  .add-card-soon:hover { border-color: var(--color-base-300); background: var(--color-base-100); }
+  .add-soon { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: oklch(from var(--color-base-content) l c h / .6); background: oklch(from var(--color-base-content) l c h / .08); padding: .05rem .4rem; border-radius: 999px; white-space: nowrap; }
   .add-note { display: block; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); margin-top: .05rem; }
 
   .add-form { display: flex; flex-direction: column; gap: 1.1rem; max-width: 30rem; }

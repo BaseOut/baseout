@@ -1,28 +1,77 @@
 ---
+// `/` is the Space's Home / dashboard (SpaceHomeView). Single-Space-first: Home is
+// scoped to the active Space and absorbs the old Overview (the pipeline is a section).
+// ?fixture=empty|trial → not set up (shows the diagram). ?broken=src|dest → paused.
 import SidebarLayout from '../layouts/SidebarLayout.astro';
-import DashboardView from '@web/views/DashboardView.astro';
+import SpaceHomeView from '@web/views/SpaceHomeView.astro';
 import { getBreadcrumbs } from '@web/lib/config';
-import { FIXTURE_INTEGRATIONS_STATE, FIXTURE_INTEGRATIONS_STATE_EMPTY } from '../fixtures/integrations';
-import { FIXTURE_BACKUP_RUNS, FIXTURE_BACKUP_RUNS_EMPTY, FIXTURE_BACKUP_RUNS_FAILED } from '../fixtures/backup-runs';
+import { FIXTURE_INTEGRATIONS_STATE, FIXTURE_INTEGRATIONS_STATE_SETUP_MANY } from '../fixtures/integrations';
+import { FIXTURE_BACKUP_RUNS } from '../fixtures/backup-runs';
+import { findSource } from '../fixtures/sources';
+import { FIXTURE_DESTINATIONS } from '../fixtures/destinations';
 
 const breadcrumbs = getBreadcrumbs('/');
 const fixture = Astro.url.searchParams.get('fixture');
+const broken = (Astro.url.searchParams.get('broken') ?? '').toLowerCase();
+const unconfigured = fixture === 'empty' || fixture === 'trial';
 
-const integrations = fixture === 'empty' ? FIXTURE_INTEGRATIONS_STATE_EMPTY : FIXTURE_INTEGRATIONS_STATE;
-const initialRuns =
-  fixture === 'empty' ? FIXTURE_BACKUP_RUNS_EMPTY
-  : fixture === 'failed' ? FIXTURE_BACKUP_RUNS_FAILED
-  : FIXTURE_BACKUP_RUNS;
+// Configured Space with 6 bases by default; empty/trial → nothing set up yet.
+const state = unconfigured
+  ? { ...FIXTURE_INTEGRATIONS_STATE, bases: FIXTURE_INTEGRATIONS_STATE.bases.map((b) => ({ ...b, isIncluded: false })) }
+  : {
+      ...FIXTURE_INTEGRATIONS_STATE,
+      policy: { ...FIXTURE_INTEGRATIONS_STATE.policy, nextScheduledAt: new Date(Date.now() + 6 * 3600 * 1000).toISOString() },
+      bases: FIXTURE_INTEGRATIONS_STATE_SETUP_MANY.bases.slice(0, 12).map((b, i) => ({ ...b, isIncluded: i < 6 })),
+    };
 
-const account = Astro.locals.account;
+const source = unconfigured
+  ? null
+  : broken === 'src' ? { ...findSource('src-ops'), status: 'reconnect' as const } : findSource('src-ops');
+const destinations = unconfigured
+  ? []
+  : FIXTURE_DESTINATIONS.filter((d) => d.id === 'company-drive').map((d) => (broken === 'dest' ? { ...d, status: 'reconnect' as const } : d));
+
+// Re-anchor the fixture run timeline to "now" so relative times read naturally.
+const OFFSET = Date.now() - new Date('2026-06-04T09:00:00.000Z').getTime();
+const shift = (iso: string | null) => (iso ? new Date(new Date(iso).getTime() + OFFSET).toISOString() : iso);
+const includedForRuns = state.bases.filter((b) => b.isIncluded).map((b) => ({ id: b.id, name: b.name }));
+const runs = unconfigured
+  ? []
+  : FIXTURE_BACKUP_RUNS.map((r) => ({
+      ...r,
+      includedBases: includedForRuns,
+      createdAt: shift(r.createdAt)!,
+      startedAt: shift(r.startedAt),
+      completedAt: shift(r.completedAt),
+    }));
+
+// Per-base figures for the Schema section. Records (sum 12,407) + attachments
+// (sum 218) match the last run's totals; fields come from the Airtable schema.
+const PER_BASE: { status: 'ok' | 'failed' | 'pending'; fields: number; records: number; attachments: number }[] = [
+  { status: 'ok', fields: 84, records: 4012, attachments: 84 },
+  { status: 'ok', fields: 132, records: 3850, attachments: 52 },
+  { status: 'ok', fields: 76, records: 2104, attachments: 38 },
+  { status: 'ok', fields: 58, records: 1203, attachments: 24 },
+  { status: 'ok', fields: 94, records: 642, attachments: 12 },
+  { status: 'ok', fields: 41, records: 596, attachments: 8 },
+];
+const baseMetrics = unconfigured
+  ? []
+  : state.bases
+      .filter((b) => b.isIncluded)
+      .map((b, i) => ({ id: b.id, name: b.name, ...(PER_BASE[i] ?? { status: 'ok' as const, fields: 0, records: 0, attachments: 0 }) }));
+
+// Usage vs plan limits — PLACEHOLDER metering (credit-based model unconfirmed with the client).
+const usage = unconfigured
+  ? []
+  : [
+      { label: 'Bases', used: 6, limit: 25, unit: '' },
+      { label: 'Backups this month', used: 28, limit: 30, unit: '' },
+      { label: 'Records backed up', used: 86420, limit: 100000, unit: '' },
+      { label: 'Storage', used: 18, limit: 25, unit: ' GB' },
+    ];
 ---
 
-<SidebarLayout pageTitle="Dashboard" breadcrumbs={breadcrumbs}>
-  <DashboardView
-    account={account}
-    integrations={integrations}
-    showSuccessModal={false}
-    errorReason={null}
-    initialRuns={initialRuns}
-  />
+<SidebarLayout pageTitle="Home" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <SpaceHomeView state={state} source={source} destinations={destinations} runs={runs} baseMetrics={baseMetrics} usage={usage} />
 </SidebarLayout>

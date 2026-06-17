@@ -24,6 +24,7 @@
  */
 
 import { env } from 'cloudflare:workers'
+import { getDestinationProviders } from '../../lib/provider-catalog'
 
 interface Props {
   spaceId: string
@@ -45,9 +46,14 @@ const workerEnv = env as unknown as {
   MICROSOFT_OAUTH_CLIENT_ID?: string
   LOCAL_FS_PICKER_ENABLED?: string
 }
-const boxEnabled = Boolean(workerEnv.BOX_OAUTH_CLIENT_ID)
-const dropboxEnabled = Boolean(workerEnv.DROPBOX_OAUTH_CLIENT_ID)
-const oneDriveEnabled = Boolean(workerEnv.MICROSOFT_OAUTH_CLIENT_ID)
+// Provider availability is owned by the shared catalog (provider-catalog.ts) so
+// this per-Space picker and the account-level Destinations registry can't drift.
+// The catalog's env-gating mirrors the same OAUTH_CLIENT_ID checks used here.
+const catalogAvail = new Map(getDestinationProviders(workerEnv).map((p) => [p.slug, p.availability]))
+const isAvail = (slug: string) => catalogAvail.get(slug) === 'available'
+const boxEnabled = isAvail('box')
+const dropboxEnabled = isAvail('dropbox')
+const oneDriveEnabled = isAvail('onedrive')
 // Dev-only escape hatch: show `local_fs` (writes to apps/workflows/.backups/
 // on disk) as a real picker option. Useful for verifying the backup flow +
 // attachments without provisioning a third-party destination. Gate ensures
@@ -65,14 +71,14 @@ const ALL_OPTIONS: {
     value: 'r2_managed',
     label: 'Cloudflare R2 (managed by Baseout)',
     helper: 'Default — encrypted at rest, no setup required.',
-    enabled: true,
+    enabled: isAvail('r2_managed'),
   },
   {
     value: 'google_drive',
     label: 'Google Drive',
     helper:
       'Connect your Google account; backups land in a per-Space Baseout folder.',
-    enabled: true,
+    enabled: isAvail('google_drive'),
   },
   {
     value: 'dropbox',
@@ -102,7 +108,7 @@ const ALL_OPTIONS: {
     value: 's3',
     label: 'Amazon S3',
     helper: 'Growth+ — your own S3 bucket. Coming soon.',
-    enabled: false,
+    enabled: isAvail('s3'),
   },
   // Dev-only — see `localFsEnabled` above. The PATCH route already accepts
   // 'local_fs' (apps/web/src/lib/backup-config/persist-policy.ts), so picking

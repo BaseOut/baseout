@@ -1,5 +1,13 @@
 # 08 — Backups (`/backups`)
 
+> **Superseded (2026-06-16).** The accordion `BackupHistoryWidget` model
+> below has been replaced by a three-level drill-down — a run-history
+> **table** (`/backups`) → a per-run **detail page** (`/backups/run`) → a
+> per-base **table-level page** (`/backups/run/base`). The authoritative
+> spec is `openspec/changes/backups-redesign/`. This doc is kept for the
+> original intent, the data-model notes, and the "what's load-bearing"
+> list; treat the accordion/polling sections as historical.
+
 The page where users see what's happened, what's happening, and
 fire off a one-off run. The Backup History Widget is the heart of
 this page (and also appears on Dashboard and Integrations).

@@ -1,0 +1,16 @@
+---
+// Harness route — add an Airtable source (OAuth or personal access token → Test & create).
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import SourceAddView from '@web/views/SourceAddView.astro';
+import ScenarioSwitcher from '../../components/ScenarioSwitcher.astro';
+import { DEMO_FLOWS } from '../../lib/demo-flows';
+import { getBreadcrumbs } from '@web/lib/config';
+
+const breadcrumbs = getBreadcrumbs('/settings');
+const method = Astro.url.searchParams.get('method');
+---
+
+<SidebarLayout pageTitle="Add source" breadcrumbs={breadcrumbs}>
+  <SourceAddView method={method} />
+  <ScenarioSwitcher flows={DEMO_FLOWS} />
+</SidebarLayout>

@@ -1,0 +1,20 @@
+---
+// Harness route — a source's own management/health page (identity, status, reconnect, Spaces-using-it table).
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import SourceDetailView from '@web/views/SourceDetailView.astro';
+import { getBreadcrumbs } from '@web/lib/config';
+import { findSource, newSource } from '../../fixtures/sources';
+import ScenarioSwitcher from '../../components/ScenarioSwitcher.astro';
+import { DEMO_FLOWS } from '../../lib/demo-flows';
+
+const breadcrumbs = getBreadcrumbs('/settings');
+const id = Astro.url.searchParams.get('id');
+const isNew = Astro.url.searchParams.get('new') === '1';
+const reconnected = Astro.url.searchParams.get('reconnected') === '1';
+const source = isNew ? newSource(Astro.url.searchParams.get('method')) : findSource(id);
+---
+
+<SidebarLayout pageTitle={source.name} breadcrumbs={breadcrumbs}>
+  <SourceDetailView source={source} reconnected={reconnected} />
+  <ScenarioSwitcher flows={DEMO_FLOWS} />
+</SidebarLayout>

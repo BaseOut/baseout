@@ -2,7 +2,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import Card from '../components/ui/Card.astro';
-import BackupHistoryWidget from '../components/backups/BackupHistoryWidget.astro';
+import BackupsListView from '../views/BackupsListView.astro';
 import RunBackupButton from '../components/backups/RunBackupButton.astro';
 import { getBreadcrumbs } from '../lib/config';
 import { getIntegrationsState } from '../lib/integrations';
@@ -94,14 +94,22 @@ const spaceName = account?.space?.name ?? null;
 ---
 
 <SidebarLayout pageTitle="Backups" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <div class="space-y-8">
-    <header>
-      <h1 class="text-2xl font-bold tracking-tight">Backups</h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        {spaceName
-          ? `Backup runs for ${spaceName}.`
-          : 'Backup runs for your Space.'}
-      </p>
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <header class="flex flex-wrap items-start justify-between gap-4">
+      <div class="min-w-0">
+        <h1 class="text-2xl font-bold tracking-tight">Backups</h1>
+        <p class="text-sm text-base-content/60 mt-1">
+          {spaceName
+            ? `Every backup run for ${spaceName}. Open any run for its full detail.`
+            : 'Every backup run for this Space. Open any run for its full detail.'}
+        </p>
+      </div>
+      {spaceId && hasAirtableConnection && (
+        <RunBackupButton
+          spaceId={spaceId}
+          connectionStatus={airtable?.status ?? null}
+        />
+      )}
     </header>
 
     {!spaceId || !hasAirtableConnection ? (
@@ -113,13 +121,7 @@ const spaceName = account?.space?.name ?? null;
         </p>
       </Card>
     ) : (
-      <>
-        <RunBackupButton
-          spaceId={spaceId}
-          connectionStatus={airtable?.status ?? null}
-        />
-        <BackupHistoryWidget spaceId={spaceId} runs={initialRuns} />
-      </>
+      <BackupsListView runs={initialRuns} embedded={true} />
     )}
   </div>
 </SidebarLayout>

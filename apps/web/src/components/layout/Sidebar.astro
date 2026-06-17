@@ -224,8 +224,16 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
       {navItems.map((item) => {
         /* Section title */
         if (item.isTitle) {
+          /* The Space-scope group header carries the active Space name, so switching Space
+             visibly re-scopes this group (the Account group stays put). */
+          const showSpace = item.label === 'Space' && currentSpace;
           return (
-            <p class="menu-label px-2.5 pt-3 pb-1.5 first:pt-0 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">{item.label}</p>
+            <p class="menu-label px-2.5 pt-3 pb-1.5 first:pt-0 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
+              {item.label}
+              {showSpace && (
+                <span class="font-normal normal-case tracking-normal text-base-content/70">{' · '}<span data-space-scope-name>{currentSpace}</span></span>
+              )}
+            </p>
           );
         }
 
@@ -589,6 +597,9 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
     const pillName = pill.querySelector<HTMLElement>('[data-space-pill-name]');
     const pillBadge = pill.querySelector<HTMLElement>('[data-space-pill-initials]');
     if (pillName && pillName.textContent !== active.name) pillName.textContent = active.name;
+    // Keep the "Space · <name>" group header in sync with the active Space.
+    const scopeName = document.querySelector<HTMLElement>('[data-space-scope-name]');
+    if (scopeName && scopeName.textContent !== active.name) scopeName.textContent = active.name;
     if (pillBadge) {
       const initials = initialsOf(active.name);
       const color = colorOf(active.name);

@@ -47,7 +47,6 @@ const {
   navItems      = ctx.navItems,
   footerNavItems = ctx.footerNavItems,
   user          = ctx.user,
-  organization  = ctx.organization,
 
   pageTitle,
   breadcrumbs,
@@ -75,7 +74,7 @@ const resolvedTitle = title ?? (pageTitle ? `${pageTitle} | ${brandName}` : bran
         navItems={navItems}
         footerNavItems={footerNavItems}
         user={user}
-        organization={organization}
+        organization={null}
         currentPath={currentPath}
       />
     </div>

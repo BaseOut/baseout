@@ -6,7 +6,7 @@
 // "Loader" page.
 import SidebarLayout from '../../layouts/SidebarLayout.astro';
 import ScenarioSwitcher from '../../components/ScenarioSwitcher.astro';
-import { INTEGRATION_PAGES, INTEGRATION_FLOW } from '../../lib/integration-scenarios';
+import { DEMO_FLOWS } from '../../lib/demo-flows';
 import { getBreadcrumbs } from '@web/lib/config';
 const breadcrumbs = getBreadcrumbs('/integrations');
 const isStatic = Astro.url.searchParams.get('static') === '1';
@@ -28,5 +28,5 @@ const isStatic = Astro.url.searchParams.get('static') === '1';
       }, 1700);
     </script>
   )}
-  <ScenarioSwitcher versions={[]} pages={INTEGRATION_PAGES} flow={INTEGRATION_FLOW} />
+  <ScenarioSwitcher flows={DEMO_FLOWS} />
 </SidebarLayout>

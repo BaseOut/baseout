@@ -1,0 +1,415 @@
+---
+/**
+ * SpaceHomeView — a Space's Home / dashboard (absorbs the old Overview).
+ *
+ * Goal: a feeling of CONTROL at a glance — "my backups work, everything is
+ * cleanly connected." Trust-signals-first, top to bottom:
+ *   header (Protected) → reassurance strip → KPIs → pipeline-as-status →
+ *   recent backups. Alerts surface only when something is wrong.
+ *
+ * Visual prototype: numbers come from the Space's state + run history (the
+ * engine counts records/tables/attachments as it writes them). No fabricated
+ * metrics (no uptime, no pre-backup record counts).
+ */
+import Badge from '../components/ui/Badge.astro';
+import Button from '../components/ui/Button.astro';
+import SpacePipelineHero from '../components/integrations/SpacePipelineHero.astro';
+import { formatNextScheduledAt } from '../lib/backups/format';
+import type { IntegrationsState } from '../stores/connections';
+import type { SourceSummary } from '../stores/sources';
+import type { DestinationSummary } from '../stores/destinations';
+import type { BackupRunSummary } from '../lib/backup-runs/types';
+
+/** Per-base figures: fields from Airtable's schema, records/attachments counted by the engine. */
+interface BaseMetric {
+  id: string;
+  name: string;
+  status: 'ok' | 'failed' | 'pending';
+  fields: number;
+  records: number;
+  attachments: number;
+}
+/** A usage meter vs the plan limit (limit null = unlimited / no cap). */
+interface UsageItem {
+  label: string;
+  used: number;
+  limit: number | null;
+  unit: string;
+}
+
+interface Props {
+  state: IntegrationsState;
+  source?: SourceSummary | null;
+  destinations?: DestinationSummary[];
+  runs?: BackupRunSummary[];
+  statusCode?: 'saved' | 'running' | null;
+  baseMetrics?: BaseMetric[];
+  usage?: UsageItem[];
+}
+const { state, source = null, destinations = [], runs = [], statusCode = null, baseMetrics = [], usage = [] } = Astro.props;
+
+const spaceName = Astro.locals.account?.space?.name ?? 'this Space';
+const includedCount = state.bases.filter((b) => b.isIncluded).length;
+const fileDest = destinations.find((d) => d.kind === 'file') ?? null;
+const dbDest = destinations.find((d) => d.kind === 'database') ?? null;
+
+const sourceBroken = source?.status === 'reconnect';
+const brokenDest = destinations.find((d) => d.status === 'reconnect') ?? null;
+const isConfigured = !!source && includedCount > 0 && !!fileDest;
+const paused = sourceBroken || !!brokenDest;
+const pipeOk = !paused;
+
+// Terminal runs, most recent first. The Schema section shows up to 5 bases, so
+// the history preview mirrors it with 5 runs (full log lives on /backups).
+const terminal = runs
+  .filter((r) => ['succeeded', 'failed', 'cancelled', 'trial_succeeded'].includes(r.status))
+  .sort((a, b) => new Date(b.completedAt ?? b.createdAt).getTime() - new Date(a.completedAt ?? a.createdAt).getTime());
+const lastSuccess = runs.find((r) => r.status === 'succeeded' || r.status === 'trial_succeeded') ?? null;
+const succeeded = runs.filter((r) => r.status === 'succeeded');
+// Δ records vs the previous backup — a drop can flag a mass deletion (anomaly).
+const recordDelta = succeeded.length >= 2 ? (succeeded[0].recordCount ?? 0) - (succeeded[1].recordCount ?? 0) : null;
+const recent = terminal.slice(0, 5);
+
+const nf = new Intl.NumberFormat('en-US');
+const nextLabel = formatNextScheduledAt(state.policy.nextScheduledAt);
+const frequency = state.policy.frequency;
+
+function since(iso: string | null): string {
+  if (!iso) return '—';
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.round(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  return `${d}d ago`;
+}
+
+const includedNames = state.bases.filter((b) => b.isIncluded).slice(0, 3).map((b) => b.name);
+const folder = fileDest ? `/Baseout/${spaceName}` : '';
+
+// Schema section: top bases by attachment volume (most attachments = most to verify).
+const topBases = [...baseMetrics].sort((a, b) => b.attachments - a.attachments).slice(0, 5);
+---
+
+<div class="mx-auto max-w-[1500px]" data-space-home>
+  {/* Header */}
+  <header class="hm-head mb-6">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2">
+        <h1 class="text-2xl font-bold tracking-tight truncate">{spaceName}</h1>
+        {isConfigured && (
+          <Badge variant={paused ? 'warning' : 'success'} dot>{paused ? 'Backups paused' : 'Protected'}</Badge>
+        )}
+      </div>
+      <p class="text-sm text-base-content/60 mt-1">
+        {isConfigured ? 'Backing up Airtable to storage you control, on a schedule.' : 'Set up what this Space backs up, and where.'}
+      </p>
+    </div>
+    {isConfigured && (
+      <div class="flex items-center gap-2 shrink-0">
+        <Button href="/integrations/configure" variant="outline" size="sm">Configure</Button>
+      </div>
+    )}
+  </header>
+
+  {isConfigured ? (
+    <div class="hm-grid">
+      {/* Alert band — only when something needs attention */}
+      {paused && (
+        <div class="hm-alert col-12" role="status">
+          <span class="iconify lucide--triangle-alert"></span>
+          <span class="flex-1 min-w-0">
+            Backups are paused. {sourceBroken
+              ? <>Source <b>{source!.name}</b> lost Airtable access.</>
+              : <>Destination <b>{brokenDest!.name}</b> lost access.</>}
+          </span>
+          <button type="button" class="btn btn-sm btn-primary shrink-0">Reconnect</button>
+        </div>
+      )}
+
+      {/* Reassurance strip — the "you're in control" anchor + primary action */}
+      {!paused && (
+        <section class="hm-hero col-12">
+          <span class="hm-hero-ic"><span class="iconify lucide--shield-check"></span></span>
+          <div class="hm-hero-main min-w-0">
+            <p class="hm-hero-title">Everything's backed up</p>
+            <p class="hm-hero-sub">
+              Last backup {since(lastSuccess?.completedAt ?? null)} · next backup {nextLabel} · <span class="capitalize">{frequency}</span>
+            </p>
+          </div>
+          <a href="/integrations?status=running" class="btn btn-primary btn-sm hm-hero-action">Run backup now</a>
+        </section>
+      )}
+
+      {/* Pipeline-as-status — a primary element, right under the status strip */}
+      <section class="hm-panel hm-panel--pipe col-8">
+        <div class="hm-panel-head"><h2>Backup pipeline</h2><a href="/integrations/configure" class="hm-panel-link">Configure</a></div>
+        <div class="ov-pipe">
+          <div class="ov-node">
+            <span class="ov-node-cap">Source</span>
+            <span class="ov-node-main"><img src="/airtable.svg" alt="" width="18" height="18" class="ov-mark" />{source!.name}</span>
+            <span class="ov-node-sub">{source!.account}{sourceBroken && <span class="ov-warn"> · reconnect</span>}</span>
+          </div>
+          <span class={`ov-link ${pipeOk ? 'is-ok' : 'is-warn'}`} aria-hidden="true">
+            <span class="ov-link-badge"><span class={`iconify ${pipeOk ? 'lucide--check' : 'lucide--triangle-alert'}`}></span></span>
+          </span>
+          <div class="ov-node">
+            <span class="ov-node-cap">Backs up</span>
+            <span class="ov-node-main">{includedCount} base{includedCount === 1 ? '' : 's'}</span>
+            <span class="ov-node-sub">{includedNames.join(', ')}{includedCount > 3 ? ` +${includedCount - 3}` : ''}</span>
+          </div>
+          <span class={`ov-link ${pipeOk ? 'is-ok' : 'is-warn'}`} aria-hidden="true">
+            <span class="ov-link-badge"><span class={`iconify ${pipeOk ? 'lucide--check' : 'lucide--triangle-alert'}`}></span></span>
+          </span>
+          <div class="ov-node">
+            <span class="ov-node-cap">Destination</span>
+            <span class="ov-node-main"><span class="iconify lucide--hard-drive ov-mark-ic"></span>{fileDest!.name}</span>
+            <span class="ov-node-sub">{folder}{dbDest && <span> · + {dbDest.name}</span>}</span>
+          </div>
+        </div>
+      </section>
+
+      {/* Usage (4) — sits beside the pipeline */}
+      {usage.length > 0 && (
+        <section class="hm-panel col-4">
+          <div class="hm-panel-head"><h2>Usage this month</h2><a href="/settings/billing" class="btn btn-primary btn-sm">Upgrade</a></div>
+          <div class="hm-usage">
+            {usage.map((u) => {
+              const pct = u.limit ? Math.min(100, Math.round((u.used / u.limit) * 100)) : null;
+              const hot = pct !== null && pct >= 80;
+              return (
+                <div class="hm-usage-item">
+                  <div class="hm-usage-row">
+                    <span class="hm-usage-label">{u.label}</span>
+                    <span class="hm-usage-val">{nf.format(u.used)}{u.unit}{u.limit !== null ? ` of ${nf.format(u.limit)}${u.unit}` : ''}</span>
+                  </div>
+                  {u.limit !== null && (
+                    <div class="hm-usage-track"><span class={`hm-usage-fill ${hot ? 'is-hot' : ''}`} style={`width: ${pct}%`}></span></div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* KPI cards (3 cols each) with sparklines */}
+      <div class="hm-kpi-card col-3">
+        <div class="hm-kpi-top"><span class="hm-cell-k">Bases protected</span><span class="hm-cell-ic is-primary"><span class="iconify lucide--database"></span></span></div>
+        <span class="hm-cell-v">{nf.format(includedCount)}</span>
+        <span class="hm-cell-sub">in this Space</span>
+      </div>
+      <div class="hm-kpi-card col-3">
+        <div class="hm-kpi-top"><span class="hm-cell-k">Records backed up</span><span class="hm-cell-ic is-primary"><span class="iconify lucide--rows-3"></span></span></div>
+        <span class="hm-cell-v">{lastSuccess ? nf.format(lastSuccess.recordCount ?? 0) : '—'}</span>
+        {recordDelta !== null ? (
+          <span class={`hm-cell-sub hm-delta ${recordDelta >= 0 ? 'is-up' : 'is-down'}`}><span class={`iconify ${recordDelta >= 0 ? 'lucide--arrow-up' : 'lucide--arrow-down'}`}></span>{nf.format(Math.abs(recordDelta))} vs yesterday</span>
+        ) : (
+          <span class="hm-cell-sub">last backup</span>
+        )}
+      </div>
+      <div class="hm-kpi-card col-3">
+        <div class="hm-kpi-top"><span class="hm-cell-k">Attachments</span><span class="hm-cell-ic is-primary"><span class="iconify lucide--paperclip"></span></span></div>
+        <span class="hm-cell-v">{lastSuccess ? nf.format(lastSuccess.attachmentCount ?? 0) : '—'}</span>
+        <span class="hm-cell-sub">last backup</span>
+      </div>
+      <div class="hm-kpi-card col-3">
+        <div class="hm-kpi-top"><span class="hm-cell-k">Backups run</span><span class="hm-cell-ic is-primary"><span class="iconify lucide--history"></span></span></div>
+        <span class="hm-cell-v">{nf.format(succeeded.length)}</span>
+        <span class="hm-cell-sub">all time</span>
+      </div>
+
+      {/* Schema — top bases by attachment volume */}
+      {topBases.length > 0 && (
+        <section class="hm-panel col-6">
+          <div class="hm-panel-head"><h2>Schema</h2><a href="/schema" class="hm-panel-link">View schema →</a></div>
+          <div class="hm-tablewrap">
+            <table class="hm-table">
+              <thead>
+                <tr><th>Base</th><th>Status</th><th class="num">Fields</th><th class="num">Records</th><th class="num">Attachments</th><th></th></tr>
+              </thead>
+              <tbody>
+                {topBases.map((b) => (
+                  <tr>
+                    <td class="strong">{b.name}</td>
+                    <td><span class={`hm-pill ${b.status === 'ok' ? 'is-ok' : b.status === 'failed' ? 'is-fail' : 'is-muted'}`}>{b.status === 'ok' ? 'Backed up' : b.status === 'failed' ? 'Failed' : 'Pending'}</span></td>
+                    <td class="num">{nf.format(b.fields)}</td>
+                    <td class="num">{nf.format(b.records)}</td>
+                    <td class="num">{nf.format(b.attachments)}</td>
+                    <td class="num"><a href="/schema" class="hm-row-link">Schema</a></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* Backup history — recent runs (full history on Backups) */}
+      <section class="hm-panel col-6">
+        <div class="hm-panel-head"><h2>Backup history</h2><a href="/backups" class="hm-panel-link">View all →</a></div>
+        <div class="hm-tablewrap">
+          <table class="hm-table">
+            <thead>
+              <tr><th>Status</th><th>Date</th><th class="num">Bases</th><th class="num">Records</th><th class="num">Attachments</th><th></th></tr>
+            </thead>
+            <tbody>
+              {recent.map((r) => {
+                const ok = r.status === 'succeeded' || r.status === 'trial_succeeded';
+                const failed = r.status === 'failed';
+                return (
+                  <tr>
+                    <td><span class={`hm-pill ${ok ? 'is-ok' : failed ? 'is-fail' : 'is-muted'}`}>{ok ? 'Succeeded' : failed ? 'Failed' : 'Cancelled'}</span></td>
+                    <td>{since(r.completedAt)}</td>
+                    <td class="num">{r.includedBases.length}</td>
+                    <td class="num">{ok ? nf.format(r.recordCount ?? 0) : '—'}</td>
+                    <td class="num">{ok ? nf.format(r.attachmentCount ?? 0) : '—'}</td>
+                    <td class="num"><a href={`/backups/run?id=${r.id}`} class="hm-row-link">Details</a></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <p class="hm-foot col-12">Records, tables and attachments are counted by the backup engine as it writes them. Usage limits are illustrative pending the final billing model.</p>
+    </div>
+  ) : (
+    /* Not set up — the product model, drawn */
+    <SpacePipelineHero spaceName={spaceName} />
+  )}
+</div>
+
+<style>
+  .hm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+  /* Bento grid — full-bleed, mixed widget sizes */
+  .hm-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 1rem; align-items: stretch; }
+  .hm-grid > .col-12 { grid-column: span 12; }
+  .hm-grid > .col-8 { grid-column: span 8; }
+  .hm-grid > .col-6 { grid-column: span 6; }
+  .hm-grid > .col-4 { grid-column: span 4; }
+  .hm-grid > .col-3 { grid-column: span 3; }
+  @media (max-width: 1024px) {
+    .hm-grid > .col-8, .hm-grid > .col-6, .hm-grid > .col-4 { grid-column: span 12; }
+    .hm-grid > .col-3 { grid-column: span 6; }
+  }
+  @media (max-width: 560px) { .hm-grid > .col-3 { grid-column: span 12; } }
+
+  /* KPI cards (bento) with sparklines */
+  .hm-kpi-card { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1rem 1.1rem 1.05rem; display: flex; flex-direction: column; gap: .12rem; min-width: 0; }
+  .hm-kpi-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .05rem; }
+  .hm-kpi-card .hm-cell-ic { font-size: 1.2rem; }
+  .hm-kpi-card .hm-cell-v { font-size: 1.7rem; }
+  .hm-foot { font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .45); margin-top: .15rem; }
+
+  /* Reassurance strip */
+  .hm-hero { display: flex; align-items: center; gap: 1rem; padding: 1.1rem 1.25rem; border-radius: .85rem; border: 1px solid oklch(from var(--color-success) l c h / .3); background: oklch(from var(--color-success) l c h / .07); }
+  .hm-hero-ic { width: 2.8rem; height: 2.8rem; border-radius: .7rem; display: grid; place-items: center; flex: none; background: oklch(from var(--color-success) l c h / .15); }
+  .hm-hero-ic .iconify { font-size: 1.5rem; color: var(--color-success); }
+  .hm-hero-main { flex: 1; }
+  .hm-hero-title { font-size: 1.05rem; font-weight: 680; letter-spacing: -.01em; }
+  .hm-hero-sub { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .65); margin-top: .1rem; }
+  .hm-hero-meta { display: flex; gap: 1.75rem; flex: none; padding-left: 1.25rem; border-left: 1px solid oklch(from var(--color-success) l c h / .2); }
+  @media (max-width: 720px) { .hm-hero-meta { display: none; } }
+  .hm-meta-k { display: block; font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .45); }
+  .hm-meta-v { display: inline-flex; align-items: center; gap: .3rem; font-size: .82rem; font-weight: 640; margin-top: .15rem; white-space: nowrap; }
+  .hm-ok { color: var(--color-success); font-size: .9rem; }
+
+  /* Main metrics strip */
+  .hm-strip { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); overflow: hidden; }
+  @media (max-width: 860px) { .hm-strip { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px) { .hm-strip { grid-template-columns: 1fr; } }
+  .hm-cell { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1.1rem 1.25rem; min-width: 0; }
+  .hm-cell + .hm-cell { border-left: 1px dashed oklch(from var(--color-base-300) l c h / .9); }
+  .hm-cell-text { min-width: 0; display: flex; flex-direction: column; gap: .12rem; }
+  .hm-cell-k { font-size: .8rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .55); }
+  .hm-cell-v { font-size: 1.55rem; font-weight: 760; letter-spacing: -.02em; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .hm-cell-v.is-ok { color: var(--color-success); }
+  .hm-cell-v.is-warn { color: var(--color-warning); }
+  .hm-cell-sub { font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .5); display: inline-flex; align-items: center; gap: .25rem; min-width: 0; }
+  .hm-delta.is-up { color: var(--color-success); font-weight: 600; }
+  .hm-delta.is-down { color: var(--color-warning); font-weight: 600; }
+  .hm-delta .iconify { font-size: .78rem; }
+  .hm-cell-ic { font-size: 1.85rem; flex: none; display: grid; place-items: center; }
+  .hm-cell-ic.is-ok { color: var(--color-success); }
+  .hm-cell-ic.is-primary { color: var(--color-primary); }
+  .hm-cell-ic.is-warn { color: var(--color-warning); }
+
+  /* Alert band */
+  .hm-alert { display: flex; align-items: center; gap: .7rem; padding: .8rem 1rem; border-radius: .7rem; color: oklch(from var(--color-base-content) l c h / .9); background: oklch(from var(--color-warning) l c h / .12); border: 1px solid oklch(from var(--color-warning) l c h / .3); font-size: .85rem; }
+  .hm-alert > .iconify { font-size: 1.1rem; flex: none; color: var(--color-warning); }
+
+  /* Panels */
+  .hm-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem; }
+  .hm-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .hm-panel-head h2 { font-size: .95rem; font-weight: 650; }
+  .hm-panel-link { font-size: .8rem; font-weight: 600; color: var(--color-primary); cursor: pointer; }
+  .hm-panel-link:hover { text-decoration: underline; }
+  /* Pipeline panel reads as a primary element — more breathing room */
+  .hm-panel--pipe { padding: 1.3rem 1.4rem 1.6rem; display: flex; flex-direction: column; }
+  .hm-panel--pipe .hm-panel-head { margin-bottom: 1.25rem; }
+  .hm-panel--pipe .ov-pipe { flex: 1; align-content: center; }
+  .hm-hero-action { flex: none; white-space: nowrap; }
+
+  /* Pipeline (lifted from the Overview the user liked) */
+  .ov-pipe { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: .5rem; }
+  .ov-node { display: flex; flex-direction: column; gap: .35rem; padding: 1.4rem 1.15rem; border: 1px solid var(--color-base-300); border-radius: .7rem; background: oklch(from var(--color-base-200) l c h / .35); min-width: 0; }
+  .ov-node-cap { font-size: .65rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .45); }
+  .ov-node-main { display: flex; align-items: center; gap: .4rem; font-size: .95rem; font-weight: 650; min-width: 0; }
+  .ov-node-main .ov-mark { border-radius: 4px; flex: none; }
+  .ov-mark-ic { font-size: 1rem; color: oklch(from var(--color-base-content) l c h / .6); flex: none; }
+  .ov-node-sub { font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .55); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ov-warn { color: var(--color-warning); font-weight: 600; }
+  .ov-link { align-self: center; position: relative; display: grid; place-items: center; width: 2rem; height: 1.8rem; flex: none; }
+  .ov-link::before { content: ''; position: absolute; left: -.4rem; right: -.4rem; top: 50%; height: 2px; transform: translateY(-50%); border-radius: 2px; }
+  .ov-link.is-ok::before { background: oklch(from var(--color-success) l c h / .5); }
+  .ov-link.is-warn::before { background: oklch(from var(--color-warning) l c h / .55); }
+  .ov-link-badge { position: relative; z-index: 1; width: 1.55rem; height: 1.55rem; border-radius: 999px; display: grid; place-items: center; color: #fff; box-shadow: 0 0 0 3px var(--color-base-100); }
+  .ov-link.is-ok .ov-link-badge { background: var(--color-success); }
+  .ov-link.is-warn .ov-link-badge { background: var(--color-warning); }
+  .ov-link-badge .iconify { font-size: .95rem; }
+  @media (max-width: 640px) { .ov-pipe { grid-template-columns: 1fr; justify-items: stretch; } .ov-link { width: 100%; height: 1.4rem; transform: rotate(90deg); } }
+
+  /* Recent backups */
+  .hm-runs { display: flex; flex-direction: column; }
+  .hm-run { display: flex; align-items: center; gap: .8rem; padding: .7rem .15rem; }
+  .hm-run + .hm-run { border-top: 1px solid oklch(from var(--color-base-300) l c h / .6); }
+  .hm-run-dot { width: 1.6rem; height: 1.6rem; border-radius: 999px; display: grid; place-items: center; flex: none; }
+  .hm-run-dot .iconify { font-size: .9rem; }
+  .hm-run-dot.is-ok { background: oklch(from var(--color-success) l c h / .15); color: var(--color-success); }
+  .hm-run-dot.is-fail { background: oklch(from var(--color-error) l c h / .15); color: var(--color-error); }
+  .hm-run-dot.is-muted { background: oklch(from var(--color-base-content) l c h / .08); color: oklch(from var(--color-base-content) l c h / .5); }
+  .hm-run-main { flex: 1; display: flex; flex-direction: column; }
+  .hm-run-title { font-size: .85rem; font-weight: 600; }
+  .hm-run-sub { font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); }
+  .hm-run-meta { font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .6); text-align: right; flex: none; font-variant-numeric: tabular-nums; }
+  .hm-fail-text { color: var(--color-warning); }
+
+  /* Tables (Schema, Backup history) */
+  .hm-tablewrap { overflow-x: auto; }
+  .hm-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  .hm-table th { text-align: left; font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .45); padding: 0 .65rem .6rem; border-bottom: 1px solid var(--color-base-300); white-space: nowrap; }
+  .hm-table td { padding: .62rem .65rem; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .5); white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .75); }
+  .hm-table tbody tr:last-child td { border-bottom: 0; }
+  .hm-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .hm-table td.strong { font-weight: 600; color: var(--color-base-content); }
+  .hm-row-link { color: var(--color-primary); font-weight: 600; }
+  .hm-row-link:hover { text-decoration: underline; }
+  .hm-pill { display: inline-flex; align-items: center; font-size: .66rem; font-weight: 650; padding: .15rem .5rem; border-radius: 999px; }
+  .hm-pill.is-ok { color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); }
+  .hm-pill.is-fail { color: var(--color-error); background: oklch(from var(--color-error) l c h / .14); }
+  .hm-pill.is-muted { color: oklch(from var(--color-base-content) l c h / .55); background: oklch(from var(--color-base-content) l c h / .08); }
+
+  /* Usage bars */
+  .hm-usage { display: grid; gap: 1rem; }
+  .hm-usage-row { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; margin-bottom: .4rem; }
+  .hm-usage-label { font-size: .82rem; font-weight: 550; }
+  .hm-usage-val { font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .6); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .hm-usage-track { height: .5rem; border-radius: 999px; background: oklch(from var(--color-base-content) l c h / .08); overflow: hidden; }
+  .hm-usage-fill { display: block; height: 100%; border-radius: 999px; background: var(--color-primary); }
+  .hm-usage-fill.is-hot { background: var(--color-warning); }
+</style>

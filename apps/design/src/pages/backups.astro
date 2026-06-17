@@ -1,44 +1,23 @@
 ---
+// Backups list — the redesigned run-history table (rows drill into /backups/run).
+// Replaces the old RunBackupButton card + accordion BackupHistoryWidget.
+// ?fixture=empty (no runs) · ?fixture=failed (one failed run).
 import SidebarLayout from '../layouts/SidebarLayout.astro';
-import Card from '@web/components/ui/Card.astro';
-import BackupHistoryWidget from '@web/components/backups/BackupHistoryWidget.astro';
-import RunBackupButton from '@web/components/backups/RunBackupButton.astro';
+import BackupsListView from '@web/views/BackupsListView.astro';
 import { getBreadcrumbs } from '@web/lib/config';
-import { FIXTURE_INTEGRATIONS_STATE } from '../fixtures/integrations';
 import { FIXTURE_BACKUP_RUNS, FIXTURE_BACKUP_RUNS_EMPTY, FIXTURE_BACKUP_RUNS_FAILED } from '../fixtures/backup-runs';
 
 const breadcrumbs = getBreadcrumbs('/backups');
 const fixture = Astro.url.searchParams.get('fixture');
+const base =
+  fixture === 'empty' ? FIXTURE_BACKUP_RUNS_EMPTY : fixture === 'failed' ? FIXTURE_BACKUP_RUNS_FAILED : FIXTURE_BACKUP_RUNS;
 
-const initialRuns =
-  fixture === 'empty' ? FIXTURE_BACKUP_RUNS_EMPTY
-  : fixture === 'failed' ? FIXTURE_BACKUP_RUNS_FAILED
-  : FIXTURE_BACKUP_RUNS;
-
-const airtable = FIXTURE_INTEGRATIONS_STATE.connections.find((c) => c.platformSlug === 'airtable') ?? null;
-const spaceId = Astro.locals.account?.space?.id ?? null;
+// Re-anchor the fixture timeline to "now" so relative times read naturally.
+const OFFSET = Date.now() - new Date('2026-06-04T09:00:00.000Z').getTime();
+const shift = (iso: string | null) => (iso ? new Date(new Date(iso).getTime() + OFFSET).toISOString() : iso);
+const runs = base.map((r) => ({ ...r, createdAt: shift(r.createdAt)!, startedAt: shift(r.startedAt), completedAt: shift(r.completedAt) }));
 ---
 
 <SidebarLayout pageTitle="Backups" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <div class="space-y-8">
-    <header>
-      <h1 class="text-2xl font-bold tracking-tight">Backups</h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        Run, monitor, and audit backups across your bases.
-      </p>
-    </header>
-
-    {spaceId && (
-      <Card variant="outlined">
-        <RunBackupButton
-          spaceId={spaceId}
-          connectionStatus={airtable?.status ?? null}
-        />
-      </Card>
-    )}
-
-    {spaceId && (
-      <BackupHistoryWidget spaceId={spaceId} runs={initialRuns} />
-    )}
-  </div>
+  <BackupsListView runs={runs} />
 </SidebarLayout>
