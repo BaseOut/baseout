@@ -125,21 +125,28 @@ const depthChips = [
 ---
 
 <div class="mx-auto max-w-[1200px]" data-run-detail>
-  <a href="/backups" class="rd-back"><span class="iconify lucide--arrow-left"></span> Backups</a>
+  <div class="rd-nav">
+    <a href="/backups" class="rd-iconbtn" aria-label="Back to Backups"><span class="iconify lucide--arrow-left" aria-hidden="true"></span></a>
+    <nav class="rd-crumbs" aria-label="Breadcrumb">
+      <a href="/backups">Backups</a>
+      <span class="rd-crumb-sep" aria-hidden="true">/</span>
+      <span class="rd-crumb-cur" aria-current="page">Backup run</span>
+    </nav>
+  </div>
 
   {/* Header */}
   <header class="rd-head">
     <div class="min-w-0">
       <div class="flex items-center gap-2.5 flex-wrap">
-        <h1 class="text-2xl font-bold tracking-tight">Backup run</h1>
+        <h1 class="text-title">Backup run</h1>
         <span class={`rd-badge ${rsm.cls}`}>{running && <span class="rd-spin"></span>}{rsm.label}</span>
       </div>
       <p class="text-sm text-base-content/60 mt-1">
         {run.triggeredBy.startsWith('schedule') ? 'Scheduled' : run.triggeredBy.startsWith('onboarding') ? 'Trial' : run.triggeredBy.startsWith('webhook') ? 'Webhook' : 'Manual'} ·
-        started {absTime(run.startedAt)}
+        started <span class="mono-data">{absTime(run.startedAt)}</span>
         {running
-          ? <> · <span class="text-warning font-medium">{etaStr(run.etaSeconds)}</span></>
-          : <> · {run.status === 'failed' ? 'stopped' : 'finished'}{' '}{absTime(run.completedAt)} · {durationStr(run.startedAt, run.completedAt)}</>}
+          ? <> · <span class="text-warning font-medium mono-data">{etaStr(run.etaSeconds)}</span></>
+          : <> · {run.status === 'failed' ? 'stopped' : 'finished'}{' '}<span class="mono-data">{absTime(run.completedAt)}</span> · <span class="mono-data">{durationStr(run.startedAt, run.completedAt)}</span></>}
       </p>
     </div>
     {/* Action buttons are presentational stubs (web-backups-redesign "To do");
@@ -150,7 +157,7 @@ const depthChips = [
           ? <button type="button" class="btn btn-sm btn-outline btn-error">Cancel run</button>
           : <>
               <button type="button" class="btn btn-sm btn-ghost">Delete</button>
-              <a href="/integrations?status=running" class="btn btn-sm btn-primary">Run again</a>
+              <a href="/?status=running" class="btn btn-sm btn-primary">Run again</a>
             </>}
       </div>
     )}
@@ -200,7 +207,7 @@ const depthChips = [
             <th>Base</th><th>Status</th><th>Time</th>
             <th class="num">Records</th><th class="num">Attachments</th>
             <th class="num">Tables</th><th class="num">Fields</th>
-            <th>Output</th><th></th>
+            <th>Destination</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -218,7 +225,7 @@ const depthChips = [
               <tr>
                 <td class="strong"><a href={`/backups/run/base?run=${run.id}&base=${b.id}&state=${drillState}&dest=${drillDest}`} class="rd-row-link">{b.name}</a></td>
                 <td><span class={`rd-pill ${bsm.cls}`}>{isRunning && <span class="rd-spin sm"></span>}{bsm.label}</span></td>
-                <td class="rd-dim">{isRunning ? 'running…' : b.status === 'failed' ? '—' : durationStr(b.startedAt, b.completedAt)}</td>
+                <td class="rd-dim mono-data">{isRunning ? 'running…' : b.status === 'failed' ? '—' : durationStr(b.startedAt, b.completedAt)}</td>
                 <td class="num">{isRunning && b.recordsRemaining != null
                   ? <span>{nf.format(b.records)} <span class="rd-rem">/ {nf.format(b.records + b.recordsRemaining)}</span></span>
                   : b.status === 'failed' ? '—' : nf.format(b.records)}</td>
@@ -232,8 +239,8 @@ const depthChips = [
                 <td>{b.status === 'failed'
                   ? <span class="rd-dim">—</span>
                   : b.destKind === 'file'
-                    ? <a href={b.folderUrl ?? '#'} target="_blank" rel="noreferrer" title={`Open ${b.name} in ${run.destProvider} (opens in a new tab)`} class="rd-row-link rd-folder">{run.destIcon ? <img src={run.destIcon} alt="" width="15" height="15" class="rd-dest-ic" /> : <span class="iconify lucide--folder"></span>}{b.folder}<span class="iconify lucide--external-link rd-ext"></span></a>
-                    : <span class="rd-db" title="Backed up as rows in your database"><span class="iconify lucide--database"></span>{b.dbRef}</span>}</td>
+                    ? <a href={b.folderUrl ?? '#'} target="_blank" rel="noreferrer" title={`Open ${b.name} in ${run.destProvider} (opens in a new tab)`} class="rd-row-link rd-folder mono-data">{run.destIcon ? <img src={run.destIcon} alt="" width="15" height="15" class="rd-dest-ic" /> : <span class="iconify lucide--folder"></span>}{b.folder}<span class="iconify lucide--external-link rd-ext"></span></a>
+                    : <span class="rd-db mono-data" title="Backed up as rows in your database"><span class="iconify lucide--database"></span>{b.dbRef}</span>}</td>
                 <td class="num"><a href={`/backups/run/base?run=${run.id}&base=${b.id}&state=${drillState}&dest=${drillDest}`} class="rd-row-link">View tables →</a></td>
               </tr>
             );
@@ -249,7 +256,7 @@ const depthChips = [
     )}
   </section>
 
-  <p class="rd-foot">Run ID <code>{run.id}</code> · counts are recorded by the backup engine as it writes each base.</p>
+  <p class="rd-foot">Run ID <code class="mono-data">{run.id}</code> · counts are recorded by the backup engine as it writes each base.</p>
 
   {/* Failed-attachments slide-over */}
   <div class="rd-drawer" data-failed-drawer hidden>
@@ -283,16 +290,22 @@ const depthChips = [
 
 <style>
   [data-run-detail] { display: flex; flex-direction: column; gap: 1.1rem; }
-  .rd-back { display: inline-flex; align-items: center; gap: .3rem; font-size: .8125rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .6); text-decoration: none; width: fit-content; }
-  .rd-back:hover { color: var(--color-base-content); }
-  .rd-back .iconify { font-size: .95rem; }
+  .rd-nav { display: flex; align-items: center; gap: .6rem; }
+  .rd-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border-radius: .45rem; border: 1px solid var(--color-base-300); color: oklch(from var(--color-base-content) l c h / .7); flex: none; transition: background .12s ease, color .12s ease; }
+  .rd-iconbtn:hover { background: var(--color-base-200); color: var(--color-base-content); }
+  .rd-iconbtn .iconify { font-size: 1rem; }
+  .rd-crumbs { display: flex; align-items: center; gap: .4rem; font-size: .8125rem; flex-wrap: wrap; }
+  .rd-crumbs a { display: inline-flex; align-items: center; min-height: 1.5rem; color: oklch(from var(--color-base-content) l c h / .6); font-weight: 500; text-decoration: none; }
+  .rd-crumbs a:hover { color: var(--color-base-content); text-decoration: underline; }
+  .rd-crumb-sep { color: oklch(from var(--color-base-content) l c h / .35); }
+  .rd-crumb-cur { color: oklch(from var(--color-base-content) l c h / .85); font-weight: 600; }
   .rd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 
-  .rd-badge { display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem; font-weight: 700; padding: .2rem .6rem; border-radius: 999px; }
+  .rd-badge { display: inline-flex; align-items: center; gap: .35rem; font-size: .75rem; font-weight: 700; padding: .2rem .6rem; border-radius: 999px; }
   .rd-badge.is-ok { color: var(--color-success); background: oklch(from var(--color-success) l c h / .15); }
   .rd-badge.is-fail { color: var(--color-error); background: oklch(from var(--color-error) l c h / .15); }
   .rd-badge.is-run { color: var(--color-warning); background: oklch(from var(--color-warning) l c h / .15); }
-  .rd-badge.is-muted { color: oklch(from var(--color-base-content) l c h / .55); background: oklch(from var(--color-base-content) l c h / .1); }
+  .rd-badge.is-muted { color: oklch(from var(--color-base-content) l c h / .64); background: oklch(from var(--color-base-content) l c h / .1); }
   .rd-spin { width: .7rem; height: .7rem; border-radius: 999px; border: 2px solid oklch(from var(--color-warning) l c h / .3); border-top-color: var(--color-warning); animation: rd-spin .7s linear infinite; }
   .rd-spin.sm { width: .6rem; height: .6rem; border-width: 1.5px; }
   @keyframes rd-spin { to { transform: rotate(360deg); } }
@@ -304,18 +317,18 @@ const depthChips = [
   /* Summary */
   .rd-summary { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
   @media (max-width: 760px) { .rd-summary { grid-template-columns: 1fr; } }
-  .rd-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem; }
+  .rd-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .75rem; align-content: center; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem; }
   .rd-stat { display: flex; flex-direction: column; gap: .15rem; }
-  .rd-stat-k { font-size: .68rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .5); }
+  .rd-stat-k { font-size: .75rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .66); }
   .rd-stat-v { font-size: 1.55rem; font-weight: 740; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .rd-meta { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
   .rd-meta-row { display: flex; flex-direction: column; gap: .3rem; }
-  .rd-meta-k { font-size: .68rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .5); }
+  .rd-meta-k { font-size: .75rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .66); }
   .rd-meta-v { font-size: .85rem; font-weight: 550; }
   .rd-depth { display: flex; gap: .4rem; flex-wrap: wrap; }
-  .rd-depth-chip { display: inline-flex; align-items: center; gap: .25rem; font-size: .72rem; font-weight: 600; padding: .15rem .5rem; border-radius: 999px; }
+  .rd-depth-chip { display: inline-flex; align-items: center; gap: .25rem; font-size: .75rem; font-weight: 600; padding: .15rem .5rem; border-radius: 999px; }
   .rd-depth-chip.on { color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); }
-  .rd-depth-chip.off { color: oklch(from var(--color-base-content) l c h / .4); background: oklch(from var(--color-base-content) l c h / .07); }
+  .rd-depth-chip.off { color: oklch(from var(--color-base-content) l c h / .66); background: oklch(from var(--color-base-content) l c h / .07); }
   .rd-depth-chip .iconify { font-size: .8rem; }
 
   /* Panel + table */
@@ -323,12 +336,12 @@ const depthChips = [
   .rd-panel-head h2 { font-size: .95rem; font-weight: 650; margin-bottom: 1rem; }
   .rd-tablewrap { overflow-x: auto; }
   .rd-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-  .rd-table th { text-align: left; font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .45); padding: 0 .65rem .6rem; border-bottom: 1px solid var(--color-base-300); white-space: nowrap; }
+  .rd-table th { text-align: left; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .66); padding: 0 .65rem .6rem; border-bottom: 1px solid var(--color-base-300); white-space: nowrap; }
   .rd-table td { padding: .65rem .65rem; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .5); white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .8); vertical-align: middle; }
   .rd-table tbody tr:last-child td { border-bottom: 0; }
   .rd-table .num { text-align: right; font-variant-numeric: tabular-nums; }
   .rd-table td.strong { font-weight: 600; }
-  .rd-row-link { color: var(--color-primary); font-weight: 600; text-decoration: none; }
+  .rd-row-link { color: var(--color-primary); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; min-height: 1.5rem; }
   .rd-row-link:hover { text-decoration: underline; }
   .rd-folder { display: inline-flex; align-items: center; gap: .3rem; }
   .rd-folder .iconify, .rd-db .iconify { font-size: .9rem; }
@@ -336,20 +349,20 @@ const depthChips = [
   .rd-ext { font-size: .78rem !important; opacity: 0; transition: opacity .12s ease; color: oklch(from var(--color-primary) l c h / .8); }
   .rd-folder:hover .rd-ext { opacity: 1; }
   .rd-db { display: inline-flex; align-items: center; gap: .3rem; color: oklch(from var(--color-base-content) l c h / .7); }
-  .rd-dim { color: oklch(from var(--color-base-content) l c h / .5); }
-  .rd-rem { color: oklch(from var(--color-base-content) l c h / .45); }
-  .rd-pill { display: inline-flex; align-items: center; gap: .3rem; font-size: .66rem; font-weight: 650; padding: .15rem .5rem; border-radius: 999px; }
+  .rd-dim { color: oklch(from var(--color-base-content) l c h / .66); }
+  .rd-rem { color: oklch(from var(--color-base-content) l c h / .66); }
+  .rd-pill { display: inline-flex; align-items: center; gap: .3rem; font-size: .75rem; font-weight: 650; padding: .15rem .5rem; border-radius: 999px; }
   .rd-pill.is-ok { color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); }
   .rd-pill.is-fail { color: var(--color-error); background: oklch(from var(--color-error) l c h / .14); }
   .rd-pill.is-run { color: var(--color-warning); background: oklch(from var(--color-warning) l c h / .14); }
-  .rd-pill.is-muted { color: oklch(from var(--color-base-content) l c h / .55); background: oklch(from var(--color-base-content) l c h / .08); }
-  .rd-failed { margin-left: .4rem; font-size: .68rem; font-weight: 650; color: var(--color-error); background: oklch(from var(--color-error) l c h / .12); border: none; border-radius: .4rem; padding: .1rem .4rem; cursor: pointer; }
+  .rd-pill.is-muted { color: oklch(from var(--color-base-content) l c h / .64); background: oklch(from var(--color-base-content) l c h / .08); }
+  .rd-failed { margin-left: .4rem; font-size: .75rem; font-weight: 650; color: var(--color-error); background: oklch(from var(--color-error) l c h / .12); border: none; border-radius: .4rem; padding: .1rem .4rem; cursor: pointer; }
   .rd-failed:hover { background: oklch(from var(--color-error) l c h / .2); }
   .rd-error { display: flex; align-items: center; gap: .55rem; margin-top: 1rem; padding: .7rem .85rem; font-size: .82rem; border-radius: .6rem; color: oklch(from var(--color-base-content) l c h / .9); background: oklch(from var(--color-error) l c h / .1); border: 1px solid oklch(from var(--color-error) l c h / .25); }
   .rd-error .iconify { color: var(--color-error); flex: none; }
 
-  .rd-foot { font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .45); }
-  .rd-foot code { font-size: 11px; padding: .05rem .3rem; border-radius: 4px; background: oklch(from var(--color-base-content) l c h / .07); }
+  .rd-foot { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); }
+  .rd-foot code { font-size: 0.75rem; padding: .05rem .3rem; border-radius: 4px; background: oklch(from var(--color-base-content) l c h / .07); }
 
   /* Slide-over */
   .rd-drawer { position: fixed; inset: 0; z-index: 300; }
@@ -370,8 +383,21 @@ const depthChips = [
   .rd-fail:last-child { border-bottom: 0; }
   .rd-fail-ic { width: 1.9rem; height: 1.9rem; border-radius: .45rem; display: grid; place-items: center; flex: none; background: oklch(from var(--color-error) l c h / .12); color: var(--color-error); }
   .rd-fail-name { font-size: .82rem; font-weight: 600; overflow-wrap: anywhere; }
-  .rd-fail-loc { font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .55); margin-top: .05rem; }
-  .rd-fail-reason { font-size: .74rem; color: var(--color-error); margin-top: .15rem; }
+  .rd-fail-loc { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); margin-top: .05rem; }
+  .rd-fail-reason { font-size: .75rem; color: var(--color-error); margin-top: .15rem; }
+
+  /* Light-theme contrast: the semantic status colors are tuned for accents/icons and for
+     the dark theme; as SMALL TEXT on white they fail WCAG AA. Darken them on light only
+     (dark keeps the brighter token). Icon/background graphics keep the bright token. */
+  :global([data-theme="baseout-light"]) .rd-badge.is-ok,
+  :global([data-theme="baseout-light"]) .rd-depth-chip.on,
+  :global([data-theme="baseout-light"]) .rd-pill.is-ok { color: oklch(from var(--color-success) calc(l - 0.16) c h); }
+  :global([data-theme="baseout-light"]) .rd-badge.is-run,
+  :global([data-theme="baseout-light"]) .rd-pill.is-run { color: oklch(from var(--color-warning) calc(l - 0.06) c h); }
+  :global([data-theme="baseout-light"]) .rd-badge.is-fail,
+  :global([data-theme="baseout-light"]) .rd-pill.is-fail,
+  :global([data-theme="baseout-light"]) .rd-failed,
+  :global([data-theme="baseout-light"]) .rd-fail-reason { color: oklch(from var(--color-error) calc(l - 0.06) c h); }
 </style>
 
 <script>

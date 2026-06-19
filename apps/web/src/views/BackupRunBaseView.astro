@@ -103,22 +103,31 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
 ---
 
 <div class="mx-auto max-w-[1200px]" data-base-detail>
-  <a href={backHref} class="rb-back"><span class="iconify lucide--arrow-left"></span> Backup run</a>
+  <div class="rb-nav">
+    <a href={backHref} class="rb-iconbtn" aria-label="Back to backup run"><span class="iconify lucide--arrow-left" aria-hidden="true"></span></a>
+    <nav class="rb-crumbs" aria-label="Breadcrumb">
+      <a href="/backups">Backups</a>
+      <span class="rb-crumb-sep" aria-hidden="true">/</span>
+      <a href={backHref}>Backup run</a>
+      <span class="rb-crumb-sep" aria-hidden="true">/</span>
+      <span class="rb-crumb-cur" aria-current="page">{base.name}</span>
+    </nav>
+  </div>
 
   {/* Header */}
   <header class="rb-head">
     <div class="min-w-0">
       <div class="flex items-center gap-2.5 flex-wrap">
-        <h1 class="text-2xl font-bold tracking-tight">{base.name}</h1>
+        <h1 class="text-title">{base.name}</h1>
         <span class={`rb-badge ${bsm.cls}`}>{running && <span class="rb-spin"></span>}{bsm.label}</span>
       </div>
       <p class="text-sm text-base-content/60 mt-1">
         Base in this run ·
         {running
-          ? <> started {absTime(base.startedAt)} · <span class="text-warning font-medium">in progress</span></>
+          ? <> started <span class="mono-data">{absTime(base.startedAt)}</span> · <span class="text-warning font-medium">in progress</span></>
           : failed
-            ? <> attempted {absTime(base.startedAt)} · stopped before completing</>
-            : <> backed up {absTime(base.completedAt)} · {durationStr(base.startedAt, base.completedAt)}</>}
+            ? <> attempted <span class="mono-data">{absTime(base.startedAt)}</span> · stopped before completing</>
+            : <> backed up <span class="mono-data">{absTime(base.completedAt)}</span> · <span class="mono-data">{durationStr(base.startedAt, base.completedAt)}</span></>}
       </p>
     </div>
     <div class="flex items-center gap-2 shrink-0">
@@ -150,12 +159,12 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
         <span class="rb-depth">{depthChips.map((d) => (<span class={`rb-depth-chip ${d.on ? 'on' : 'off'}`}>{d.on && <span class="iconify lucide--check"></span>}{d.label}</span>))}</span>
       </div>
       <div class="rb-meta-row">
-        <span class="rb-meta-k">Output</span>
+        <span class="rb-meta-k">Destination</span>
         {failed
           ? <span class="rb-meta-v rb-dim">— nothing written</span>
           : base.destKind === 'file'
-            ? <a href={base.folderUrl ?? '#'} target="_blank" rel="noreferrer" title={`Open ${base.name} in ${base.destProvider} (opens in a new tab)`} class="rb-row-link rb-folder">{base.destIcon ? <img src={base.destIcon} alt="" width="16" height="16" class="rb-dest-ic" /> : <span class="iconify lucide--folder"></span>}{base.folder}<span class="iconify lucide--external-link rb-ext"></span></a>
-            : <span class="rb-db" title="Backed up as rows in your database"><span class="iconify lucide--database"></span>{base.dbRef}</span>}
+            ? <a href={base.folderUrl ?? '#'} target="_blank" rel="noreferrer" title={`Open ${base.name} in ${base.destProvider} (opens in a new tab)`} class="rb-row-link rb-folder mono-data">{base.destIcon ? <img src={base.destIcon} alt="" width="16" height="16" class="rb-dest-ic" /> : <span class="iconify lucide--folder"></span>}{base.folder}<span class="iconify lucide--external-link rb-ext"></span></a>
+            : <span class="rb-db mono-data" title="Backed up as rows in your database"><span class="iconify lucide--database"></span>{base.dbRef}</span>}
       </div>
     </div>
   </section>
@@ -208,7 +217,7 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
     )}
   </section>
 
-  <p class="rb-foot">Base <code>{base.atBaseId}</code> · part of run <code>{base.runId}</code> · table, field and view counts come from Airtable metadata; record &amp; attachment counts from the backup engine.</p>
+  <p class="rb-foot">Base <code class="mono-data">{base.atBaseId}</code> · part of run <code class="mono-data">{base.runId}</code> · table, field and view counts come from Airtable metadata; record &amp; attachment counts from the backup engine.</p>
 
   {/* Failed-attachments slide-over */}
   <div class="rb-drawer" data-failed-drawer hidden>
@@ -242,16 +251,22 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
 
 <style>
   [data-base-detail] { display: flex; flex-direction: column; gap: 1.1rem; }
-  .rb-back { display: inline-flex; align-items: center; gap: .3rem; font-size: .8125rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .6); text-decoration: none; width: fit-content; }
-  .rb-back:hover { color: var(--color-base-content); }
-  .rb-back .iconify { font-size: .95rem; }
+  .rb-nav { display: flex; align-items: center; gap: .6rem; }
+  .rb-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border-radius: .45rem; border: 1px solid var(--color-base-300); color: oklch(from var(--color-base-content) l c h / .7); flex: none; transition: background .12s ease, color .12s ease; }
+  .rb-iconbtn:hover { background: var(--color-base-200); color: var(--color-base-content); }
+  .rb-iconbtn .iconify { font-size: 1rem; }
+  .rb-crumbs { display: flex; align-items: center; gap: .4rem; font-size: .8125rem; flex-wrap: wrap; }
+  .rb-crumbs a { display: inline-flex; align-items: center; min-height: 1.5rem; color: oklch(from var(--color-base-content) l c h / .6); font-weight: 500; text-decoration: none; }
+  .rb-crumbs a:hover { color: var(--color-base-content); text-decoration: underline; }
+  .rb-crumb-sep { color: oklch(from var(--color-base-content) l c h / .35); }
+  .rb-crumb-cur { color: oklch(from var(--color-base-content) l c h / .85); font-weight: 600; }
   .rb-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 
-  .rb-badge { display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem; font-weight: 700; padding: .2rem .6rem; border-radius: 999px; }
+  .rb-badge { display: inline-flex; align-items: center; gap: .35rem; font-size: .75rem; font-weight: 700; padding: .2rem .6rem; border-radius: 999px; }
   .rb-badge.is-ok { color: var(--color-success); background: oklch(from var(--color-success) l c h / .15); }
   .rb-badge.is-fail { color: var(--color-error); background: oklch(from var(--color-error) l c h / .15); }
   .rb-badge.is-run { color: var(--color-warning); background: oklch(from var(--color-warning) l c h / .15); }
-  .rb-badge.is-muted { color: oklch(from var(--color-base-content) l c h / .55); background: oklch(from var(--color-base-content) l c h / .1); }
+  .rb-badge.is-muted { color: oklch(from var(--color-base-content) l c h / .64); background: oklch(from var(--color-base-content) l c h / .1); }
   .rb-spin { width: .7rem; height: .7rem; border-radius: 999px; border: 2px solid oklch(from var(--color-warning) l c h / .3); border-top-color: var(--color-warning); animation: rb-spin .7s linear infinite; }
   .rb-spin.sm { width: .6rem; height: .6rem; border-width: 1.5px; }
   @keyframes rb-spin { to { transform: rotate(360deg); } }
@@ -263,36 +278,36 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
   /* Summary */
   .rb-summary { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
   @media (max-width: 760px) { .rb-summary { grid-template-columns: 1fr; } }
-  .rb-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: .75rem; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem; }
+  .rb-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: .75rem; align-content: center; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem; }
   @media (max-width: 560px) { .rb-stats { grid-template-columns: repeat(3, 1fr); row-gap: 1rem; } }
   .rb-stat { display: flex; flex-direction: column; gap: .15rem; }
-  .rb-stat-k { font-size: .68rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .5); }
+  .rb-stat-k { font-size: .75rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .66); }
   .rb-stat-v { font-size: 1.5rem; font-weight: 740; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .rb-meta { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: .75rem; }
   .rb-meta-row { display: flex; flex-direction: column; gap: .3rem; }
-  .rb-meta-k { font-size: .68rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .5); }
+  .rb-meta-k { font-size: .75rem; font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .66); }
   .rb-meta-v { font-size: .85rem; font-weight: 550; }
   .rb-depth { display: flex; gap: .4rem; flex-wrap: wrap; }
-  .rb-depth-chip { display: inline-flex; align-items: center; gap: .25rem; font-size: .72rem; font-weight: 600; padding: .15rem .5rem; border-radius: 999px; }
+  .rb-depth-chip { display: inline-flex; align-items: center; gap: .25rem; font-size: .75rem; font-weight: 600; padding: .15rem .5rem; border-radius: 999px; }
   .rb-depth-chip.on { color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); }
-  .rb-depth-chip.off { color: oklch(from var(--color-base-content) l c h / .4); background: oklch(from var(--color-base-content) l c h / .07); }
+  .rb-depth-chip.off { color: oklch(from var(--color-base-content) l c h / .66); background: oklch(from var(--color-base-content) l c h / .07); }
   .rb-depth-chip .iconify { font-size: .8rem; }
 
   /* Panel + table */
   .rb-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem 1.25rem; }
   .rb-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
   .rb-panel-head h2 { font-size: .95rem; font-weight: 650; }
-  .rb-hint { font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .45); }
+  .rb-hint { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .66); }
   .rb-tablewrap { overflow-x: auto; }
   .rb-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-  .rb-table th { text-align: left; font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .45); padding: 0 .65rem .6rem; border-bottom: 1px solid var(--color-base-300); white-space: nowrap; }
+  .rb-table th { text-align: left; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .66); padding: 0 .65rem .6rem; border-bottom: 1px solid var(--color-base-300); white-space: nowrap; }
   .rb-table td { padding: .65rem .65rem; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .5); white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .8); vertical-align: middle; }
   .rb-table tbody tr:last-child td { border-bottom: 0; }
   .rb-table .num { text-align: right; font-variant-numeric: tabular-nums; }
   .rb-table td.strong { font-weight: 600; }
   .rb-tname { display: inline-flex; align-items: center; gap: .45rem; }
   .rb-tname .iconify { font-size: .95rem; color: oklch(from var(--color-base-content) l c h / .45); }
-  .rb-row-link { color: var(--color-primary); font-weight: 600; text-decoration: none; }
+  .rb-row-link { color: var(--color-primary); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; min-height: 1.5rem; }
   .rb-row-link:hover { text-decoration: underline; }
   .rb-folder { display: inline-flex; align-items: center; gap: .3rem; }
   .rb-folder .iconify, .rb-db .iconify { font-size: .9rem; }
@@ -300,20 +315,20 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
   .rb-ext { font-size: .82rem !important; opacity: .55; transition: opacity .12s ease; color: oklch(from var(--color-primary) l c h / .85); }
   .rb-folder:hover .rb-ext { opacity: 1; }
   .rb-db { display: inline-flex; align-items: center; gap: .3rem; color: oklch(from var(--color-base-content) l c h / .7); }
-  .rb-dim { color: oklch(from var(--color-base-content) l c h / .5); }
-  .rb-rem { color: oklch(from var(--color-base-content) l c h / .45); }
-  .rb-pill { display: inline-flex; align-items: center; gap: .3rem; font-size: .66rem; font-weight: 650; padding: .15rem .5rem; border-radius: 999px; }
+  .rb-dim { color: oklch(from var(--color-base-content) l c h / .66); }
+  .rb-rem { color: oklch(from var(--color-base-content) l c h / .66); }
+  .rb-pill { display: inline-flex; align-items: center; gap: .3rem; font-size: .75rem; font-weight: 650; padding: .15rem .5rem; border-radius: 999px; }
   .rb-pill.is-ok { color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); }
   .rb-pill.is-fail { color: var(--color-error); background: oklch(from var(--color-error) l c h / .14); }
   .rb-pill.is-run { color: var(--color-warning); background: oklch(from var(--color-warning) l c h / .14); }
-  .rb-pill.is-muted { color: oklch(from var(--color-base-content) l c h / .55); background: oklch(from var(--color-base-content) l c h / .08); }
-  .rb-failed { margin-left: .4rem; font-size: .68rem; font-weight: 650; color: var(--color-error); background: oklch(from var(--color-error) l c h / .12); border: none; border-radius: .4rem; padding: .1rem .4rem; cursor: pointer; }
+  .rb-pill.is-muted { color: oklch(from var(--color-base-content) l c h / .64); background: oklch(from var(--color-base-content) l c h / .08); }
+  .rb-failed { margin-left: .4rem; font-size: .75rem; font-weight: 650; color: var(--color-error); background: oklch(from var(--color-error) l c h / .12); border: none; border-radius: .4rem; padding: .1rem .4rem; cursor: pointer; }
   .rb-failed:hover { background: oklch(from var(--color-error) l c h / .2); }
   .rb-error { display: flex; align-items: center; gap: .55rem; margin-top: 1rem; padding: .7rem .85rem; font-size: .82rem; border-radius: .6rem; color: oklch(from var(--color-base-content) l c h / .9); background: oklch(from var(--color-error) l c h / .1); border: 1px solid oklch(from var(--color-error) l c h / .25); }
   .rb-error .iconify { color: var(--color-error); flex: none; }
 
-  .rb-foot { font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .45); }
-  .rb-foot code { font-size: 11px; padding: .05rem .3rem; border-radius: 4px; background: oklch(from var(--color-base-content) l c h / .07); }
+  .rb-foot { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); }
+  .rb-foot code { font-size: 0.75rem; padding: .05rem .3rem; border-radius: 4px; background: oklch(from var(--color-base-content) l c h / .07); }
 
   /* Slide-over */
   .rb-drawer { position: fixed; inset: 0; z-index: 300; }
@@ -334,8 +349,21 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
   .rb-fail:last-child { border-bottom: 0; }
   .rb-fail-ic { width: 1.9rem; height: 1.9rem; border-radius: .45rem; display: grid; place-items: center; flex: none; background: oklch(from var(--color-error) l c h / .12); color: var(--color-error); }
   .rb-fail-name { font-size: .82rem; font-weight: 600; overflow-wrap: anywhere; }
-  .rb-fail-loc { font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .55); margin-top: .05rem; }
-  .rb-fail-reason { font-size: .74rem; color: var(--color-error); margin-top: .15rem; }
+  .rb-fail-loc { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); margin-top: .05rem; }
+  .rb-fail-reason { font-size: .75rem; color: var(--color-error); margin-top: .15rem; }
+
+  /* Light-theme contrast: the semantic status colors are tuned for accents/icons and for
+     the dark theme; as SMALL TEXT on white they fail WCAG AA. Darken them on light only
+     (dark keeps the brighter token). Icon/background graphics keep the bright token. */
+  :global([data-theme="baseout-light"]) .rb-badge.is-ok,
+  :global([data-theme="baseout-light"]) .rb-depth-chip.on,
+  :global([data-theme="baseout-light"]) .rb-pill.is-ok { color: oklch(from var(--color-success) calc(l - 0.16) c h); }
+  :global([data-theme="baseout-light"]) .rb-badge.is-run,
+  :global([data-theme="baseout-light"]) .rb-pill.is-run { color: oklch(from var(--color-warning) calc(l - 0.06) c h); }
+  :global([data-theme="baseout-light"]) .rb-badge.is-fail,
+  :global([data-theme="baseout-light"]) .rb-pill.is-fail,
+  :global([data-theme="baseout-light"]) .rb-failed,
+  :global([data-theme="baseout-light"]) .rb-fail-reason { color: oklch(from var(--color-error) calc(l - 0.06) c h); }
 </style>
 
 <script>

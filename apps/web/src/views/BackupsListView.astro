@@ -3,16 +3,25 @@
  * BackupsListView — the Backups page: an auditable table of every run for this
  * Space, each row drilling into the run detail. Replaces the old accordion
  * history widget (which expanded inline and polled). Run a one-off from the header.
+ *
+ * Primitives (search input, faceted filters, page select, buttons, status badges,
+ * table) come from the catalog (daisyUI / styleguide). The toolbar/pager layout,
+ * the clickable rows, and the empty / no-match states are the bespoke composition.
+ *
+ * Filters follow the faceted-filter pattern (shadcn DataTableFacetedFilter; see
+ * Deel / Profound on Mobbin): each facet is a dropdown of checkboxes with a
+ * selected-count badge on its trigger. Status & trigger are multi-select; date is
+ * a single mutually-exclusive range (radios).
  */
 import type { BackupRunSummary } from '../lib/backup-runs/types';
 
 interface Props {
   runs?: BackupRunSummary[];
   /**
-   * Production embed (apps/web). When true the host page owns the header +
-   * the real Run-backup control, and every row drills by run id (the harness
-   * `?state=running|failed` preview links are dropped). Default false keeps the
-   * design-harness behavior byte-identical.
+   * Production embed (apps/web). When true the host page (backups.astro) owns the
+   * header + the real Run-backup control, so the view's own header is dropped, and
+   * every row drills by run id (the harness `?state=running|failed` preview links
+   * are skipped). Default false keeps the design-harness behavior byte-identical.
    */
   embedded?: boolean;
 }
@@ -38,16 +47,20 @@ function durationStr(start: string | null, end: string | null): string {
   return ss ? `${mm}m ${ss}s` : `${mm}m`;
 }
 
-const statusMeta: Record<string, { label: string; cls: string }> = {
-  succeeded: { label: 'Succeeded', cls: 'is-ok' },
-  trial_succeeded: { label: 'Trial run', cls: 'is-ok' },
-  running: { label: 'Running', cls: 'is-run' },
-  queued: { label: 'Queued', cls: 'is-muted' },
-  failed: { label: 'Failed', cls: 'is-fail' },
-  cancelled: { label: 'Cancelled', cls: 'is-muted' },
+// Status → catalog badge (soft tint + colored text for state; neutral = ghost).
+const statusMeta: Record<string, { label: string; badge: string }> = {
+  succeeded: { label: 'Succeeded', badge: 'badge-soft badge-success' },
+  trial_succeeded: { label: 'Trial run', badge: 'badge-soft badge-success' },
+  running: { label: 'Running', badge: 'badge-soft badge-warning' },
+  queued: { label: 'Queued', badge: 'badge-ghost' },
+  failed: { label: 'Failed', badge: 'badge-soft badge-error' },
+  cancelled: { label: 'Cancelled', badge: 'badge-ghost' },
 };
 const triggerLabel = (t: string) =>
   t.startsWith('schedule') ? 'Scheduled' : t.startsWith('webhook') ? 'Webhook' : t.startsWith('onboarding') ? 'Trial' : 'Manual';
+// Normalised key for the trigger filter (data-trigger on each row).
+const triggerKey = (t: string) =>
+  t.startsWith('schedule') ? 'scheduled' : t.startsWith('webhook') ? 'webhook' : t.startsWith('onboarding') ? 'trial' : 'manual';
 
 const isOk = (s: string) => s === 'succeeded' || s === 'trial_succeeded';
 const detailHref = (r: BackupRunSummary) =>
@@ -58,28 +71,94 @@ const detailHref = (r: BackupRunSummary) =>
       : r.status === 'failed'
         ? '/backups/run?state=failed'
         : `/backups/run?id=${r.id}`;
+
+// Faceted filter options (value, label). Status & trigger are multi-select
+// (checkboxes); date is single-select (radios, mutually-exclusive ranges).
+const statusOpts: [string, string][] = [['succeeded', 'Succeeded'], ['failed', 'Failed'], ['running', 'Running'], ['queued', 'Queued'], ['cancelled', 'Cancelled']];
+const triggerOpts: [string, string][] = [['scheduled', 'Scheduled'], ['manual', 'Manual'], ['webhook', 'Webhook'], ['trial', 'Trial']];
+const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']];
 ---
 
 <div class="mx-auto max-w-[1200px] bl">
   {!embedded && (
     <header class="bl-head">
       <div class="min-w-0">
-        <h1 class="text-2xl font-bold tracking-tight">Backups</h1>
+        <h1 class="text-title">Backups</h1>
         <p class="text-sm text-base-content/60 mt-1">Every backup run for this Space. Open any run for its full per-base detail.</p>
       </div>
-      <a href="/backups/run?state=running" class="btn btn-primary btn-sm shrink-0">Run backup now</a>
+      <a href="/backups/run?state=running" class="btn btn-primary shrink-0"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</a>
     </header>
   )}
 
   {runs.length > 0 ? (
-    <section class="bl-panel">
-      <div class="bl-panel-head"><h2>Backup history</h2><span class="bl-count">{runs.length} run{runs.length === 1 ? '' : 's'}</span></div>
+    <section class="bl-panel" data-bl-list>
+      <div class="bl-panel-head"><h2>Backup history</h2></div>
+
+      {/* Toolbar — search + faceted filters. Filtering/search/paging is done
+          client-side over the loaded runs for the prototype; the real app pushes
+          these to the runs query (?status=&trigger=&since=&q=&page=). */}
+      <div class="bl-toolbar">
+        <label class="input input-sm grow min-w-[12rem]">
+          <span class="iconify lucide--search size-4 opacity-50" aria-hidden="true"></span>
+          <input type="search" data-bl-search class="grow" placeholder="Search by Run ID or error…" aria-label="Search runs" />
+        </label>
+
+        <div class="dropdown" data-bl-facet="status">
+          <div tabindex="0" role="button" class="btn btn-sm btn-neutral gap-1.5 bl-facet-btn" data-bl-facet-trigger aria-label="Filter by status">
+            Status
+            <span class="badge badge-xs badge-primary" data-bl-facet-count hidden></span>
+            <span class="iconify lucide--chevron-down size-3 opacity-50" aria-hidden="true"></span>
+          </div>
+          <div tabindex="0" class="dropdown-content bl-facet-menu">
+            {statusOpts.map(([v, label]) => (
+              <label class="bl-facet-opt">
+                <input type="checkbox" class="checkbox checkbox-primary checkbox-xs" value={v} /> {label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div class="dropdown" data-bl-facet="trigger">
+          <div tabindex="0" role="button" class="btn btn-sm btn-neutral gap-1.5 bl-facet-btn" data-bl-facet-trigger aria-label="Filter by trigger">
+            Trigger
+            <span class="badge badge-xs badge-primary" data-bl-facet-count hidden></span>
+            <span class="iconify lucide--chevron-down size-3 opacity-50" aria-hidden="true"></span>
+          </div>
+          <div tabindex="0" class="dropdown-content bl-facet-menu">
+            {triggerOpts.map(([v, label]) => (
+              <label class="bl-facet-opt">
+                <input type="checkbox" class="checkbox checkbox-primary checkbox-xs" value={v} /> {label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div class="dropdown" data-bl-facet="date">
+          <div tabindex="0" role="button" class="btn btn-sm btn-neutral gap-1.5 bl-facet-btn" data-bl-facet-trigger aria-label="Filter by date">
+            Date
+            <span class="badge badge-xs badge-primary" data-bl-facet-count hidden></span>
+            <span class="iconify lucide--chevron-down size-3 opacity-50" aria-hidden="true"></span>
+          </div>
+          <div tabindex="0" class="dropdown-content bl-facet-menu">
+            {dateOpts.map(([v, label]) => (
+              <label class="bl-facet-opt">
+                <input type="radio" name="bl-date" class="radio radio-primary radio-xs" value={v} checked={v === ''} /> {label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-bl-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+      </div>
+
       <div class="bl-tablewrap">
-        <table class="bl-table">
+        <table class="table text-sm">
           <thead>
-            <tr>
+            <tr class="text-xs uppercase tracking-wider text-base-content/60">
               <th>Status</th><th>When</th><th>Trigger</th>
-              <th class="num">Bases</th><th class="num">Records</th><th class="num">Attachments</th><th class="num">Duration</th><th></th>
+              <th class="text-right">Bases</th><th class="text-right">Records</th><th class="text-right">Attachments</th><th class="text-right">Duration</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -88,20 +167,49 @@ const detailHref = (r: BackupRunSummary) =>
               const ok = isOk(r.status);
               const active = r.status === 'running' || r.status === 'queued';
               return (
-                <tr class="bl-row" onclick={`window.location='${detailHref(r)}'`}>
-                  <td><span class={`bl-pill ${sm.cls}`}>{r.status === 'running' && <span class="bl-spin"></span>}{sm.label}</span></td>
-                  <td>{active ? <span class="bl-dim">{r.status === 'running' ? 'in progress' : 'queued'}</span> : since(r.completedAt)}</td>
-                  <td class="bl-dim">{triggerLabel(r.triggeredBy)}</td>
-                  <td class="num">{r.includedBases.length}</td>
-                  <td class="num">{ok ? nf.format(r.recordCount ?? 0) : '—'}</td>
-                  <td class="num">{ok ? nf.format(r.attachmentCount ?? 0) : '—'}</td>
-                  <td class="num bl-dim">{active ? '—' : durationStr(r.startedAt, r.completedAt)}</td>
-                  <td class="num"><a href={detailHref(r)} class="bl-link" onclick="event.stopPropagation()">Details →</a></td>
+                <tr
+                  class="bl-row"
+                  data-status={r.status}
+                  data-trigger={triggerKey(r.triggeredBy)}
+                  data-date={r.completedAt ?? r.createdAt}
+                  data-search={`${r.id} ${(r.errorMessage ?? '').toLowerCase()}`}
+                  onclick={`window.location='${detailHref(r)}'`}
+                >
+                  <td><span class={`badge ${sm.badge}`}>{r.status === 'running' && <span class="loading loading-spinner loading-xs"></span>}{sm.label}</span></td>
+                  <td>{active ? <span class="text-base-content/64">{r.status === 'running' ? 'in progress' : 'queued'}</span> : since(r.completedAt)}</td>
+                  <td class="text-base-content/64">{triggerLabel(r.triggeredBy)}</td>
+                  <td class="text-right tabular-nums">{r.includedBases.length}</td>
+                  <td class="text-right tabular-nums">{ok ? nf.format(r.recordCount ?? 0) : '—'}</td>
+                  <td class="text-right tabular-nums">{ok ? nf.format(r.attachmentCount ?? 0) : '—'}</td>
+                  <td class="text-right tabular-nums text-base-content/64 mono-data">{active ? '—' : durationStr(r.startedAt, r.completedAt)}</td>
+                  <td class="text-right"><a href={detailHref(r)} class="btn btn-ghost btn-sm text-primary" onclick="event.stopPropagation()">Details →</a></td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* No rows match the active filters (distinct from the no-runs-at-all empty state) */}
+      <div class="bl-nomatch" data-bl-nomatch hidden>
+        <span class="bl-nomatch-ic"><span class="iconify lucide--search-x" aria-hidden="true"></span></span>
+        <p class="bl-nomatch-title">No runs match these filters</p>
+        <button type="button" class="btn btn-sm btn-ghost" data-bl-clear>Clear filters</button>
+      </div>
+
+      <div class="bl-pager" data-bl-pager>
+        <label class="inline-flex items-center gap-2 text-xs font-medium text-base-content/64">Rows
+          <select class="select select-sm" data-bl-pagesize aria-label="Rows per page">
+            <option value="10">10</option>
+            <option value="20" selected>20</option>
+            <option value="50">50</option>
+          </select>
+        </label>
+        <div class="ml-auto text-sm text-base-content/70"><span class="mono-data" data-bl-range>1–20</span> of <span class="mono-data" data-bl-total>0</span></div>
+        <div class="bl-pagebtns">
+          <button type="button" class="btn btn-sm btn-square btn-ghost" data-bl-prev aria-label="Previous page"><span class="iconify lucide--chevron-left size-4" aria-hidden="true"></span></button>
+          <button type="button" class="btn btn-sm btn-square btn-ghost" data-bl-next aria-label="Next page"><span class="iconify lucide--chevron-right size-4" aria-hidden="true"></span></button>
+        </div>
       </div>
     </section>
   ) : (
@@ -109,39 +217,147 @@ const detailHref = (r: BackupRunSummary) =>
       <span class="bl-empty-ic"><span class="iconify lucide--archive"></span></span>
       <p class="bl-empty-title">No backups yet</p>
       <p class="bl-empty-sub">Run your first backup, or wait for the next scheduled one. Each run lands here with full audit detail.</p>
-      {!embedded && <a href="/backups/run?state=running" class="btn btn-primary btn-sm">Run backup now</a>}
+      <a href="/backups/run?state=running" class="btn btn-primary btn-lg"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</a>
     </section>
   )}
 </div>
 
+<script>
+  // Client-side faceted filter / search / pagination over the loaded run rows. In
+  // production these become server query params; here the full list is rendered
+  // and we show/hide. Status & trigger are multi-select; date is a single range.
+  function initBackupsList() {
+    const root = document.querySelector<HTMLElement>('[data-bl-list]');
+    if (!root) return;
+    const rows = Array.from(root.querySelectorAll<HTMLTableRowElement>('.bl-row'));
+    const searchEl = root.querySelector<HTMLInputElement>('[data-bl-search]')!;
+    const facets = Array.from(root.querySelectorAll<HTMLElement>('[data-bl-facet]'));
+    const pageSizeEl = root.querySelector<HTMLSelectElement>('[data-bl-pagesize]')!;
+    const clearEls = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-bl-clear]'));
+    const rangeEl = root.querySelector<HTMLElement>('[data-bl-range]')!;
+    const totalEl = root.querySelector<HTMLElement>('[data-bl-total]')!;
+    const prevBtn = root.querySelector<HTMLButtonElement>('[data-bl-prev]')!;
+    const nextBtn = root.querySelector<HTMLButtonElement>('[data-bl-next]')!;
+    const pager = root.querySelector<HTMLElement>('[data-bl-pager]')!;
+    const noMatch = root.querySelector<HTMLElement>('[data-bl-nomatch]')!;
+    const tableWrap = root.querySelector<HTMLElement>('.bl-tablewrap')!;
+    const DAY = 86_400_000;
+    let page = 1;
+
+    const facetValues = (key: string): string[] => {
+      const f = facets.find((el) => el.dataset.blFacet === key);
+      if (!f) return [];
+      return Array.from(f.querySelectorAll<HTMLInputElement>('input:checked'))
+        .map((i) => i.value)
+        .filter((v) => v !== '');
+    };
+
+    type Filters = { status: string[]; trigger: string[]; date: string; q: string };
+    const getFilters = (): Filters => ({
+      status: facetValues('status'),
+      trigger: facetValues('trigger'),
+      date: facetValues('date')[0] || '',
+      q: (searchEl.value || '').trim().toLowerCase(),
+    });
+    const anyFilter = (f: Filters) => !!(f.status.length || f.trigger.length || f.date || f.q);
+    const matches = (row: HTMLElement, f: Filters) => {
+      if (f.status.length && !f.status.includes(row.dataset.status as string)) return false;
+      if (f.trigger.length && !f.trigger.includes(row.dataset.trigger as string)) return false;
+      if (f.date) {
+        const age = (Date.now() - new Date(row.dataset.date as string).getTime()) / DAY;
+        if (age > Number(f.date)) return false;
+      }
+      if (f.q && !(row.dataset.search || '').includes(f.q)) return false;
+      return true;
+    };
+
+    // Reflect each facet's selection count on its trigger (badge + active style).
+    const syncFacets = (f: Filters) => {
+      facets.forEach((el) => {
+        const key = el.dataset.blFacet as string;
+        const n = key === 'date' ? (f.date ? 1 : 0) : (((f as Record<string, string[] | string>)[key] as string[]) || []).length;
+        const badge = el.querySelector<HTMLElement>('[data-bl-facet-count]')!;
+        const trigger = el.querySelector<HTMLElement>('[data-bl-facet-trigger]')!;
+        badge.textContent = String(n);
+        badge.hidden = n === 0;
+        trigger.classList.toggle('bl-facet-on', n > 0);
+      });
+    };
+
+    const render = () => {
+      const f = getFilters();
+      const matched = rows.filter((r) => matches(r, f));
+      const size = Number(pageSizeEl.value);
+      const pages = Math.max(1, Math.ceil(matched.length / size));
+      if (page > pages) page = pages;
+      const start = (page - 1) * size;
+      const end = start + size;
+      rows.forEach((r) => (r.style.display = 'none'));
+      matched.slice(start, end).forEach((r) => (r.style.display = ''));
+
+      const empty = matched.length === 0;
+      totalEl.textContent = String(matched.length);
+      rangeEl.textContent = empty ? '0' : `${start + 1}–${Math.min(end, matched.length)}`;
+      prevBtn.disabled = page <= 1;
+      nextBtn.disabled = page >= pages;
+      noMatch.hidden = !empty;
+      tableWrap.style.display = empty ? 'none' : '';
+      pager.style.display = empty ? 'none' : '';
+      syncFacets(f);
+      clearEls.forEach((el) => (el.hidden = !anyFilter(f)));
+    };
+
+    searchEl.addEventListener('input', () => { page = 1; render(); });
+    facets.forEach((el) => el.addEventListener('change', () => { page = 1; render(); }));
+    pageSizeEl.addEventListener('change', () => { page = 1; render(); });
+    clearEls.forEach((el) => el.addEventListener('click', () => {
+      searchEl.value = '';
+      facets.forEach((fc) => fc.querySelectorAll<HTMLInputElement>('input').forEach((i) => {
+        if (i.type === 'checkbox') i.checked = false;
+        else if (i.type === 'radio') i.checked = i.value === '';
+      }));
+      page = 1;
+      render();
+    }));
+    prevBtn.addEventListener('click', () => { if (page > 1) { page--; render(); } });
+    nextBtn.addEventListener('click', () => { page++; render(); });
+    render();
+  }
+  initBackupsList();
+  document.addEventListener('astro:page-load', initBackupsList);
+</script>
+
 <style>
+  /* Composition + layout only. The controls, badges and table inside are daisyUI
+     primitives (see /styleguide); the facet dropdowns are daisyUI `dropdown`. */
   .bl { display: flex; flex-direction: column; gap: 1.25rem; }
   .bl-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 
   .bl-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem 1.25rem; }
   .bl-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
   .bl-panel-head h2 { font-size: .95rem; font-weight: 650; }
-  .bl-count { font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .5); }
+
+  .bl-toolbar { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; margin-bottom: 1rem; }
+
+  /* Faceted filter dropdown — daisyUI `dropdown` opens the menu on focus. */
+  .bl-facet-btn.bl-facet-on { background: color-mix(in oklch, var(--color-primary) 14%, transparent); border-color: color-mix(in oklch, var(--color-primary) 30%, transparent); color: var(--color-primary); }
+  .bl-facet-menu { z-index: 20; margin-top: .4rem; width: 13rem; border: 1px solid var(--color-base-300); border-radius: .7rem; background: var(--color-base-100); padding: .35rem; box-shadow: 0 10px 28px oklch(0 0 0 / .14); }
+  .bl-facet-opt { display: flex; align-items: center; gap: .6rem; padding: .4rem .5rem; border-radius: .45rem; font-size: .82rem; cursor: pointer; user-select: none; }
+  .bl-facet-opt:hover { background: oklch(from var(--color-base-200) l c h / .6); }
 
   .bl-tablewrap { overflow-x: auto; }
-  .bl-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-  .bl-table th { text-align: left; font-size: .66rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .45); padding: 0 .7rem .6rem; border-bottom: 1px solid var(--color-base-300); white-space: nowrap; }
-  .bl-table td { padding: .7rem .7rem; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .5); white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .8); }
-  .bl-table tbody tr:last-child td { border-bottom: 0; }
-  .bl-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .bl-row { cursor: pointer; transition: background .12s ease; }
+  .bl-tablewrap :is(th, td) { white-space: nowrap; }
+  .bl-row { cursor: pointer; }
   .bl-row:hover { background: oklch(from var(--color-base-200) l c h / .5); }
-  .bl-dim { color: oklch(from var(--color-base-content) l c h / .55); }
-  .bl-link { color: var(--color-primary); font-weight: 600; text-decoration: none; }
-  .bl-link:hover { text-decoration: underline; }
-  .bl-pill { display: inline-flex; align-items: center; gap: .3rem; font-size: .66rem; font-weight: 650; padding: .15rem .55rem; border-radius: 999px; }
-  .bl-pill.is-ok { color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); }
-  .bl-pill.is-fail { color: var(--color-error); background: oklch(from var(--color-error) l c h / .14); }
-  .bl-pill.is-run { color: var(--color-warning); background: oklch(from var(--color-warning) l c h / .14); }
-  .bl-pill.is-muted { color: oklch(from var(--color-base-content) l c h / .55); background: oklch(from var(--color-base-content) l c h / .08); }
-  .bl-spin { width: .6rem; height: .6rem; border-radius: 999px; border: 1.5px solid oklch(from var(--color-warning) l c h / .3); border-top-color: var(--color-warning); animation: bl-spin .7s linear infinite; }
-  @keyframes bl-spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .bl-spin { animation: none; } }
+
+  .bl-pager { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--color-base-300); }
+  .bl-pagebtns { display: inline-flex; gap: .35rem; }
+
+  /* No-match state (distinct from the no-runs-at-all empty) */
+  .bl-nomatch { display: flex; flex-direction: column; align-items: center; text-align: center; gap: .55rem; padding: 2.5rem 1rem; }
+  .bl-nomatch-ic { width: 2.5rem; height: 2.5rem; border-radius: .7rem; display: grid; place-items: center; background: var(--color-base-200); }
+  .bl-nomatch-ic .iconify { font-size: 1.2rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .bl-nomatch-title { font-size: .9rem; font-weight: 600; }
 
   .bl-empty { border: 1px dashed var(--color-base-300); border-radius: .85rem; background: oklch(from var(--color-base-200) l c h / .3); padding: 3rem 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; }
   .bl-empty-ic { width: 3rem; height: 3rem; border-radius: .8rem; display: grid; place-items: center; background: var(--color-base-100); border: 1px solid var(--color-base-300); margin-bottom: .3rem; }
