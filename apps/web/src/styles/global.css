@@ -19,6 +19,12 @@
    as solid squares. */
 @source "../../app-config.json";
 
+/* Icon classes built dynamically from a prop — e.g. `<TextInput icon="id-card" />`
+   renders `lucide--${icon}` — are invisible to the static scanner, so their masks
+   never generate and they render as solid squares. Safelist every icon passed as a
+   prop here. (Add new prop-icon names to this list.) */
+@source inline("lucide--mail lucide--user lucide--id-card lucide--building-2 lucide--megaphone");
+
 /* Iconify (lucide icons) — enables `iconify lucide--*` class names. */
 @plugin "@iconify/tailwind4" {
     prefixes: lucide;
@@ -51,9 +57,16 @@
 /* ── Body Background (uses Nexus --root-bg token) ───────── */
 body {
   background: var(--root-bg, var(--color-base-200));
+  /* Base weight bumped 400 → 500: Urbanist 400 reads thin at small sizes.
+     Prominent text carries explicit weights (≥600), so only thin
+     secondary/small text lifts. (Baseout DESIGN typography pass.) */
+  font-weight: 500;
 }
 
-/* ── Material Symbols ───────────────────────────────────── */
+/* ── Material Symbols (legacy icon set — being migrated to Iconify Lucide) ──
+   Still used by ~9 surfaces (auth pages, a few ui/ components). Kept until the
+   Material-Symbols→Lucide markup migration completes; new work uses `iconify
+   lucide--*` + the standalone `.icon-*` utilities below. */
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   vertical-align: middle;
@@ -70,6 +83,46 @@ body {
 .material-symbols-outlined.icon-filled {
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
+
+/* ── Our small-button scale: btn-sm uses 14px text (not daisyUI's 12px) ──
+   Deliberate scale choice (not a hack): the app's base text is 14px, so a 12px
+   button label reads small next to content. Our sm keeps daisyUI's compact 32px
+   HEIGHT but lifts the font to 14px, so dense buttons (toolbars, filter chips,
+   table row actions) match the app. All three of our button sizes (sm/md/lg) thus
+   read at ≥14px. Plain (unlayered) rule so it wins over daisyUI's layered btn-sm.
+   Documented in the size system (/styleguide → Button). */
+.btn-sm { --fontsize: 0.875rem; }
+
+/* ── Machine-data type (narrow "Mono Boundary") ──────────
+   JetBrains Mono for machine-generated tokens only: IDs, durations,
+   timestamps, technical references (folders, db refs, hex). Human-read
+   counts stay in the sans font with tabular-nums. */
+.mono-data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* ── Type scale (Baseout DESIGN) ─────────────────────────
+   Named roles from the design system. Display/Headline are for
+   brand/marketing surfaces; Title/Subtitle/Label are the in-app set. */
+.text-display  { font-size: 64px; font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; }
+.text-headline { font-size: 48px; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; }
+.text-title    { font-size: 32px; font-weight: 600; line-height: 1.25; letter-spacing: -0.02em; }
+.text-subtitle { font-size: 22px; font-weight: 600; line-height: 1.4; }
+.text-label    { font-size: 14px; font-weight: 500; line-height: 1.4; letter-spacing: 0.05em; text-transform: uppercase; }
+
+/* ── Icon sizing (standalone, for Iconify Lucide spans `iconify lucide--*`) ──
+   Sized via font-size since the Iconify mask is 1em. Coexists with the
+   Material-Symbols-scoped rules above during the icon migration; the scoped
+   rule wins for material-symbols spans, this covers lucide spans + /styleguide. */
+.icon-xs  { font-size: 12px; }
+.icon-sm  { font-size: 14px; }
+.icon-md  { font-size: 16px; }
+.icon-lg  { font-size: 18px; }
+.icon-xl  { font-size: 20px; }
+.icon-2xl { font-size: 24px; }
+.icon-3xl { font-size: 28px; }
 
 /* ── Theme swap ─────────────────────────────────────────── */
 /* The dark/light swap is an instant [data-theme] attribute set in
