@@ -2,17 +2,26 @@
 /**
  * apps/design wrapper around `@web/layouts/SidebarLayout.astro`.
  *
- * The wrapper exists for one reason: import `../styles/design.css`
- * (which carries the @source directives Tailwind needs to scan apps/web
- * for class names) into the page's module graph. The wrapped layout
- * does the real rendering.
+ * The wrapper exists for two reasons:
+ *  1. import `../styles/design.css` (which carries the @source directives
+ *     Tailwind needs to scan apps/web for class names) into the module graph.
+ *  2. append HARNESS-ONLY "Handoff" + "Storybook" links to the sidebar footer
+ *     so the design→engineering flow index (/handoff) and the component
+ *     catalog (/styleguide) are one click away. These are design tools, NOT
+ *     product routes, so they live here and never touch `app-config.json`.
  */
 import '../styles/design.css';
 import WebSidebarLayout from '@web/layouts/SidebarLayout.astro';
+import { getFooterNavItems } from '@web/lib/config';
 
 const props = Astro.props as Record<string, unknown>;
+const footerNavItems = [
+  ...getFooterNavItems(),
+  { label: 'Handoff', href: '/handoff', icon: 'iconify lucide--workflow' },
+  { label: 'Storybook', href: '/styleguide', icon: 'iconify lucide--book-open' },
+];
 ---
 
-<WebSidebarLayout {...props}>
+<WebSidebarLayout {...props} footerNavItems={footerNavItems}>
   <slot />
 </WebSidebarLayout>
