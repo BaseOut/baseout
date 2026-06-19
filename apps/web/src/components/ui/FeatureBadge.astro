@@ -28,10 +28,6 @@ const classes = cn(
 ---
 
 <div class={classes}>
-  <span
-    class:list={['feature-badge-icon material-symbols-outlined', iconFilled && 'icon-filled']}
-  >
-    {icon}
-  </span>
+  <span class:list={['feature-badge-icon', 'iconify', `lucide--${icon}`]} aria-hidden="true"></span>
   <span class="feature-badge-label">{label}</span>
 </div>

@@ -101,14 +101,14 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
 <label
   for="layout-sidebar-hover-trigger"
   title="Toggle sidebar"
-  class="absolute top-[18px] left-[242px] group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:left-[52px] z-[100] flex size-7 cursor-pointer items-center justify-center rounded-full border border-base-content/15 bg-base-100 text-base-content/50 hover:text-base-content hover:border-base-content/30 transition-all duration-300 max-lg:hidden"
+  class="absolute top-[18px] left-[242px] group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:left-[52px] z-[100] flex size-7 cursor-pointer items-center justify-center rounded-full border border-base-content/15 bg-base-100 text-base-content/65 hover:text-base-content hover:border-base-content/30 transition-all duration-300 max-lg:hidden"
 >
   <i class="iconify lucide--panel-left-close size-3.5 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden"></i>
   <i class="iconify lucide--panel-left-open size-3.5 hidden group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:block"></i>
 </label>
 
 {organization && (
-  <p class="px-5 -mt-2 mb-2 text-[11px] font-medium uppercase tracking-wider text-base-content/50 truncate group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
+  <p class="px-5 -mt-2 mb-2 text-[11px] font-medium uppercase tracking-wider text-base-content/65 truncate group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
     {organization.name}
   </p>
 )}
@@ -133,7 +133,7 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
             {spaceInitials}
           </span>
           <span data-space-pill-name class="min-w-0 grow truncate text-sm font-medium">{currentSpace}</span>
-          <i class="iconify lucide--chevrons-up-down text-base-content/40 size-3.5 shrink-0"></i>
+          <i class="iconify lucide--chevrons-up-down text-base-content/65 size-3.5 shrink-0"></i>
         </div>
         <ul
           role="menu"
@@ -168,7 +168,7 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
             <button
               type="button"
               data-create-space
-              class="flex items-center gap-2 text-base-content/50 hover:text-base-content"
+              class="flex items-center gap-2 text-base-content/65 hover:text-base-content"
             >
               <i class="iconify lucide--plus size-3.5"></i>
               <span>Create New Space</span>
@@ -241,7 +241,7 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
         if (item.isDisabled) {
           return (
             <span
-              class="menu-item sidebar-tip pointer-events-none text-base-content/40 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0"
+              class="menu-item sidebar-tip pointer-events-none text-base-content/65 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0"
               aria-disabled="true"
               data-tip={item.label}
             >
@@ -250,8 +250,8 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
               <span class="group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
                 {renderBadges(item).map(b => (
                   b.isNew
-                    ? <div class="border-base-300 bg-base-200 text-base-content/40 rounded-box border px-1.5 text-[12px]">{b.text}</div>
-                    : <div class="bg-base-200 text-base-content/40 rounded-box px-1.5 text-[12px]">{b.text}</div>
+                    ? <div class="border-base-300 bg-base-200 text-base-content/65 rounded-box border px-1.5 text-[12px]">{b.text}</div>
+                    : <div class="bg-base-200 text-base-content/65 rounded-box px-1.5 text-[12px]">{b.text}</div>
                 ))}
               </span>
             </span>
@@ -293,7 +293,7 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
                     return (
                       <a
                         href={child.href ?? '#'}
-                        class={`menu-item ${childActive ? 'active' : ''} ${child.isDimmed ? 'opacity-30 text-base-content/50' : ''}`}
+                        class={`menu-item ${childActive ? 'active' : ''} ${child.isDimmed ? 'opacity-30 text-base-content/65' : ''}`}
                         aria-current={childActive ? 'page' : undefined}
                         data-astro-prefetch={child.href?.startsWith('/') ? 'viewport' : undefined}
                       >
@@ -317,7 +317,7 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
         return (
           <a
             href={item.href ?? '#'}
-            class={`menu-item sidebar-tip ${active ? 'active' : ''} ${item.isDimmed ? 'opacity-30 text-base-content/50' : ''} group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0`}
+            class={`menu-item sidebar-tip ${active ? 'active' : ''} ${item.isDimmed ? 'opacity-30 text-base-content/65' : ''} group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0`}
             aria-current={active ? 'page' : undefined}
             data-astro-prefetch={item.href?.startsWith('/') ? 'viewport' : undefined}
             data-tip={item.label}
@@ -362,7 +362,7 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
   )}
 
   {version && (
-    <p class="px-5 pb-1.5 text-[11px] font-medium text-base-content/40 tracking-wider group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">{version}</p>
+    <p class="px-5 pb-1.5 text-[11px] font-medium text-base-content/65 tracking-wider group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">{version}</p>
   )}
 
   <hr class="border-base-300 my-2 border-dashed" />

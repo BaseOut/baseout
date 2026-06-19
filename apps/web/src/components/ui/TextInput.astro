@@ -85,11 +85,11 @@ const inputAttrs = {
   {(icon || iconRight) ? (
     <label class={inputClasses}>
       {icon && (
-        <span class="material-symbols-outlined icon-md opacity-50" aria-hidden="true">{icon}</span>
+        <span class={`iconify lucide--${icon} icon-md opacity-50`} aria-hidden="true"></span>
       )}
       <input class="grow" {...inputAttrs} />
       {iconRight && (
-        <span class="material-symbols-outlined icon-md opacity-50 cursor-pointer" aria-hidden="true">{iconRight}</span>
+        <span class={`iconify lucide--${iconRight} icon-md opacity-50 cursor-pointer`} aria-hidden="true"></span>
       )}
     </label>
   ) : (
@@ -98,7 +98,7 @@ const inputAttrs = {
 
   {error && (
     <p id={`${elId}-error`} class="fieldset-label text-error flex items-center gap-1" role="alert">
-      <span class="material-symbols-outlined icon-sm">error</span>
+      <span class="iconify lucide--circle-alert icon-sm" aria-hidden="true"></span>
       {error}
     </p>
   )}

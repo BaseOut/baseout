@@ -21,7 +21,7 @@ const { notificationCount = 0 } = Astro.props;
       aria-label="Toggle sidebar"
       for="layout-sidebar-toggle-trigger"
     >
-      <span class="material-symbols-outlined icon-xl">menu</span>
+      <span class="iconify lucide--menu icon-xl" aria-hidden="true"></span>
     </label>
   </div>
 
@@ -31,7 +31,7 @@ const { notificationCount = 0 } = Astro.props;
       class="btn btn-circle btn-ghost btn-sm relative"
       aria-label={`Notifications${notificationCount > 0 ? ` (${notificationCount})` : ''}`}
     >
-      <span class="material-symbols-outlined icon-lg">notifications</span>
+      <span class="iconify lucide--bell icon-lg" aria-hidden="true"></span>
       {notificationCount > 0 && (
         <div class="status status-error status-sm absolute end-1 top-1"></div>
       )}
