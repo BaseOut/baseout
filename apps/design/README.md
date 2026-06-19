@@ -206,6 +206,16 @@ SSR pages. Hit ⌘R to do it deliberately.
 A few contracts to be aware of when extending or maintaining the
 design app:
 
+- **Two component catalogs, split by altitude.** This app's `/styleguide`
+  (the designer's "Storybook" — Foundations / Primitives / Patterns, the
+  design-system source of truth) is the **page-and-system-level** catalog.
+  Its companion is **Storybook in `apps/web`** (`pnpm --filter @baseout/web
+  storybook`), the **component-level** catalog that renders each
+  `ui/*.astro` in isolation across its prop matrix via Astro's Container API.
+  Rules (daisyUI-first; every component has a story; the coverage test) live
+  in `apps/web/.claude/CLAUDE.md` §2.5. Behavior (modals opening, theme
+  toggle, form flows) is exercised *here* — Storybook renders structure only.
+
 - **Type compatibility.** `IntegrationsState`, `BackupRunSummary`, and
   the fixture-shaped `AccountContext` are typed against the real
   apps/web definitions. If apps/web reshapes any of these,
