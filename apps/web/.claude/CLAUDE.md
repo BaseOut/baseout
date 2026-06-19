@@ -170,6 +170,35 @@ When building UI/UX components and pages in this Astro project, follow these sta
 - Reuse existing UI components from `src/components/ui/` before creating new ones
 - Use design tokens from @opensided/theme instead of hardcoded values
 
+### 2.5 Component Catalogs — daisyUI-first, and keep them in lockstep
+
+The UI has **two catalogs**, and every UI change references them:
+
+- **Storybook** (`pnpm --filter @baseout/web storybook`, :6006) — the component-level
+  catalog. Each `src/components/ui/*.astro` is rendered in isolation across its
+  prop/variant matrix via Astro's Container API (`.storybook/render-astro.ts`).
+- **`/styleguide`** in `apps/design` (the designer's "Storybook") — the design-system
+  source of truth: Foundations (tokens), Primitives, Patterns, with the "when to use"
+  rules and provenance tags (daisyUI / daisyUI+custom / Custom).
+
+**Rules (enforced — a coverage test in `src/components/ui/stories-coverage.test.ts`
+fails CI if a tracked `ui/*.astro` has no sibling `*.stories.ts`):**
+
+- **Every component in `src/components/ui/` MUST have a matching `*.stories.ts`.**
+  Adding a ui component without a story is incomplete work.
+- **Before changing any ui component, open its Storybook story AND the daisyUI docs.**
+  Confirm the variant/size matrix still renders and any new variant uses
+  daisyUI / `@opensided/theme` classes (the §1 priority order) — never hand-rolled
+  CSS where a daisyUI utility exists. **Prefer a daisyUI primitive over a custom one.**
+- **New variant/size/state ⇒ add (or extend) the story in the same change.**
+- **Storybook reviews structure + styling only — NOT client behavior.** The Container
+  API does not run `.astro` `<script>` blocks (e.g. `Modal`'s auto-open); use a Storybook
+  `play` function, and validate real behavior in `apps/design` (a live Astro server).
+- **Genuinely-custom components** with no daisyUI equivalent (e.g. `SocialButton`,
+  `FeatureBadge`) are the documented exception — still catalogue them, but they may
+  carry their own CSS. If a *new* component needs custom CSS, that's a signal to
+  re-check the §1 priority order first.
+
 ### 3. Mobile-First Approach
 - Design and build for mobile devices first
 - Use responsive classes and mobile breakpoints from daisyUI/theme

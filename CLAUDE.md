@@ -292,6 +292,7 @@ For all cross-component reactive state in the Astro app, use [`nanostores`](http
 - Single-responsibility components (DRY).
 - Reuse from `src/components/ui/` before creating new ones.
 - Use design tokens from `@opensided/theme` instead of hardcoded values.
+- **Catalogs are daisyUI-first and authoritative.** Every `ui/*.astro` has a Storybook story (`pnpm --filter @baseout/web storybook`); the designer's `/styleguide` in `apps/design` is the design-system source of truth. Reference both on every UI change, prefer a daisyUI primitive over custom, and add/extend the story in the same change — a coverage test enforces it. See `apps/web/.claude/CLAUDE.md` §2.5.
 - Cross-check UI work against PRD §6 (UX & design direction) and Features §1 (naming).
 
 ## 4.3 Mobile-First

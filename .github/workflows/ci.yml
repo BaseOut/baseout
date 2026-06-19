@@ -45,6 +45,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Build Storybook (apps/web)
+        run: pnpm --filter @baseout/web build-storybook
+
   # Cloudflare Workers Builds (Deploy from GitHub) handles deployment after merge.
   # Each Cloudflare Workers project is configured in the dashboard with a root
   # directory (e.g., apps/web) and watch paths so only the affected app deploys
