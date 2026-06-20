@@ -1,8 +1,6 @@
 ---
 import SidebarLayout from '../../layouts/SidebarLayout.astro';
 import IntegrationsSetupWizard from '@web/views/IntegrationsSetupWizard.astro';
-import ScenarioSwitcher from '../../components/ScenarioSwitcher.astro';
-import { DEMO_FLOWS } from '../../lib/demo-flows';
 import { getBreadcrumbs } from '@web/lib/config';
 import { FIXTURE_INTEGRATIONS_STATE_SETUP_MANY } from '../../fixtures/integrations';
 import { FIXTURE_SOURCES } from '../../fixtures/sources';
@@ -54,5 +52,4 @@ const state = isFirst
 
 <SidebarLayout pageTitle={isFirst ? 'Set up backup' : 'Configure backup'} breadcrumbs={breadcrumbs} spaceScoped={true}>
   <IntegrationsSetupWizard state={state} sources={sources} destinations={destinations} mode={mode} />
-  <ScenarioSwitcher flows={DEMO_FLOWS} />
 </SidebarLayout>

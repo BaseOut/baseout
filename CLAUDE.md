@@ -279,20 +279,21 @@ For all cross-component reactive state in the Astro app, use [`nanostores`](http
 
 ## 4.2 Theme & Design System
 
-**Priority order:**
+**Priority order (Storybook first, daisyUI second — no custom components):**
 
-- **Primary:** `@opensided/theme` — first choice for all styling.
-- **Secondary:** `daisyUI` — for components not covered by `@opensided/theme`.
-- **Fallback:** Custom CSS only when neither covers the requirement.
+- **First:** a **Storybook-cataloged** component under `src/components/ui/*.astro` or `src/components/patterns/*.astro` (every tracked component has a story). Reuse it; extend its story for any new prop/variant/state.
+- **Second:** **daisyUI** markup directly (via `@opensided/theme`) when no Storybook component covers the need; document the pattern in the `apps/design` `/styleguide`.
+- **Never hand-roll a custom Astro wrapper or scoped CSS** where a Storybook component or daisyUI primitive exists. If neither covers the requirement, STOP and surface it for a decision.
 - Don't mix theme approaches within a single component.
 
 **Rules:**
 
 - Follow Astro component best practices: separate markup, styles, scripts.
 - Single-responsibility components (DRY).
-- Reuse from `src/components/ui/` before creating new ones.
+- Reuse from `src/components/ui/` and `src/components/patterns/` before writing markup.
 - Use design tokens from `@opensided/theme` instead of hardcoded values.
-- **Catalogs are daisyUI-first and authoritative.** Every `ui/*.astro` has a Storybook story (`pnpm --filter @baseout/web storybook`); the designer's `/styleguide` in `apps/design` is the design-system source of truth. Reference both on every UI change, prefer a daisyUI primitive over custom, and add/extend the story in the same change — a coverage test enforces it. See `apps/web/.claude/CLAUDE.md` §2.5.
+- **Catalogs are daisyUI-first and authoritative.** Every tracked `ui/*.astro` and `patterns/*.astro` has a Storybook story (`pnpm --filter @baseout/web storybook`); the designer's `/styleguide` in `apps/design` is the design-system source of truth. Reference both on every UI change, prefer a daisyUI primitive over custom, and add/extend the story in the same change — a coverage test enforces it. See `apps/web/.claude/CLAUDE.md` §2.5.
+- **Component intake order:** Storybook first, daisyUI second only. Reuse an existing Storybook component before writing markup. If no wrapper exists, use daisyUI markup directly and document/update the matching `apps/design` `/styleguide` entry. Promote inline daisyUI into a new Storybook component when a second real call site exists or a product-specific API is clearly useful.
 - Cross-check UI work against PRD §6 (UX & design direction) and Features §1 (naming).
 
 ## 4.3 Mobile-First

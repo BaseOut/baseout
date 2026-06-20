@@ -14,6 +14,10 @@
  * Tables, fields, views and record counts come straight from Airtable metadata +
  * the backup engine; nothing here is synthesized. Harness feeds a fixture.
  */
+import Badge from '../components/ui/Badge.astro';
+import Button from '../components/ui/Button.astro';
+import Alert from '../components/ui/Alert.astro';
+
 interface FailedAttachment {
   table: string;
   file: string;
@@ -77,19 +81,20 @@ function absTime(iso: string | null): string {
   return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-const baseStatusMeta: Record<string, { label: string; cls: string }> = {
-  ok: { label: 'Backed up', cls: 'is-ok' },
-  running: { label: 'Running', cls: 'is-run' },
-  failed: { label: 'Failed', cls: 'is-fail' },
-  pending: { label: 'Pending', cls: 'is-muted' },
+type StatusVariant = 'success' | 'warning' | 'error' | 'default';
+const baseStatusMeta: Record<string, { label: string; variant: StatusVariant }> = {
+  ok: { label: 'Backed up', variant: 'success' },
+  running: { label: 'Running', variant: 'warning' },
+  failed: { label: 'Failed', variant: 'error' },
+  pending: { label: 'Pending', variant: 'default' },
 };
 const bsm = baseStatusMeta[base.status] ?? baseStatusMeta.pending;
 
-const tableStatusMeta: Record<string, { label: string; cls: string }> = {
-  ok: { label: 'Backed up', cls: 'is-ok' },
-  running: { label: 'Running', cls: 'is-run' },
-  failed: { label: 'Failed', cls: 'is-fail' },
-  pending: { label: 'Pending', cls: 'is-muted' },
+const tableStatusMeta: Record<string, { label: string; variant: StatusVariant }> = {
+  ok: { label: 'Backed up', variant: 'success' },
+  running: { label: 'Running', variant: 'warning' },
+  failed: { label: 'Failed', variant: 'error' },
+  pending: { label: 'Pending', variant: 'default' },
 };
 
 const depthChips = [
@@ -104,7 +109,7 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
 
 <div class="mx-auto max-w-[1200px]" data-base-detail>
   <div class="rb-nav">
-    <a href={backHref} class="rb-iconbtn" aria-label="Back to backup run"><span class="iconify lucide--arrow-left" aria-hidden="true"></span></a>
+    <a href={backHref} class="rb-back-link" aria-label="Back to backup run"><span class="iconify lucide--arrow-left" aria-hidden="true"></span></a>
     <nav class="rb-crumbs" aria-label="Breadcrumb">
       <a href="/backups">Backups</a>
       <span class="rb-crumb-sep" aria-hidden="true">/</span>
@@ -119,7 +124,7 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
     <div class="min-w-0">
       <div class="flex items-center gap-2.5 flex-wrap">
         <h1 class="text-title">{base.name}</h1>
-        <span class={`rb-badge ${bsm.cls}`}>{running && <span class="rb-spin"></span>}{bsm.label}</span>
+        <Badge variant={bsm.variant}>{running && <span class="loading loading-spinner loading-xs"></span>}{bsm.label}</Badge>
       </div>
       <p class="text-sm text-base-content/60 mt-1">
         Base in this run ·
@@ -131,17 +136,18 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
       </p>
     </div>
     <div class="flex items-center gap-2 shrink-0">
-      <a href={airtableHref} target="_blank" rel="noreferrer" class="btn btn-sm btn-ghost gap-1.5"><span class="iconify lucide--external-link"></span>Open in Airtable</a>
+      <Button href={airtableHref} variant="ghost" size="sm" class="gap-1.5" target="_blank" rel="noreferrer"><span class="iconify lucide--external-link"></span>Open in Airtable</Button>
     </div>
   </header>
 
   {/* Failed-attachments banner */}
   {base.failedAttachments.length > 0 && (
-    <div class="rb-warn" role="status">
-      <span class="iconify lucide--triangle-alert"></span>
-      <span class="flex-1 min-w-0"><b>{base.failedAttachments.length} attachment{base.failedAttachments.length === 1 ? '' : 's'}</b> in this base couldn't be backed up. Every table below was otherwise captured.</span>
-      <button type="button" class="btn btn-sm btn-warning" data-open-failed>Review</button>
-    </div>
+    <Alert variant="warning">
+      <span class="flex flex-1 flex-wrap items-center gap-2 min-w-0">
+        <span class="flex-1 min-w-0"><b>{base.failedAttachments.length} attachment{base.failedAttachments.length === 1 ? '' : 's'}</b> in this base couldn't be backed up. Every table below was otherwise captured.</span>
+        <Button type="button" variant="warning" size="sm" data-open-failed>Review</Button>
+      </span>
+    </Alert>
   )}
 
   {/* Summary */}
@@ -175,8 +181,8 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
       <h2>Tables in this base</h2>
       <span class="rb-hint">Counts recorded as the engine wrote each table</span>
     </div>
-    <div class="rb-tablewrap">
-      <table class="rb-table">
+    <div class="rb-gridwrap">
+      <table>
         <thead>
           <tr>
             <th>Table</th><th>Status</th>
@@ -191,8 +197,8 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
             const skipped = t.status === 'failed' || t.status === 'pending';
             return (
               <tr>
-                <td class="strong"><span class="rb-tname"><span class="iconify lucide--table-2"></span>{t.name}</span></td>
-                <td><span class={`rb-pill ${tsm.cls}`}>{isRunning && <span class="rb-spin sm"></span>}{tsm.label}</span></td>
+                <td class="strong"><span class="rb-tname"><span class="iconify lucide--layout-grid"></span>{t.name}</span></td>
+                <td><Badge variant={tsm.variant}>{isRunning && <span class="loading loading-spinner loading-xs"></span>}{tsm.label}</Badge></td>
                 <td class="num">{nf.format(t.fields)}</td>
                 <td class="num">{isRunning && t.recordsRemaining != null
                   ? <span>{nf.format(t.records)} <span class="rb-rem">/ {nf.format(t.records + t.recordsRemaining)}</span></span>
@@ -210,10 +216,9 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
       </table>
     </div>
     {failed && base.error && (
-      <div class="rb-error">
-        <span class="iconify lucide--circle-alert"></span>
-        <span class="min-w-0"><b>Error.</b> {base.error}</span>
-      </div>
+      <Alert variant="error" class="mt-4">
+        <b>Error.</b> {base.error}
+      </Alert>
     )}
   </section>
 
@@ -242,8 +247,8 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
         </ul>
       </div>
       <footer class="rb-drawer-foot">
-        <button type="button" class="btn btn-sm btn-ghost" data-close-failed>Close</button>
-        <button type="button" class="btn btn-sm btn-primary">Retry failed</button>
+        <Button type="button" variant="ghost" size="sm" data-close-failed>Close</Button>
+        <Button type="button" variant="primary" size="sm">Retry failed</Button>
       </footer>
     </aside>
   </div>
@@ -252,28 +257,15 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
 <style>
   [data-base-detail] { display: flex; flex-direction: column; gap: 1.1rem; }
   .rb-nav { display: flex; align-items: center; gap: .6rem; }
-  .rb-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border-radius: .45rem; border: 1px solid var(--color-base-300); color: oklch(from var(--color-base-content) l c h / .7); flex: none; transition: background .12s ease, color .12s ease; }
-  .rb-iconbtn:hover { background: var(--color-base-200); color: var(--color-base-content); }
-  .rb-iconbtn .iconify { font-size: 1rem; }
+  .rb-back-link { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; border-radius: .45rem; border: 1px solid var(--color-base-300); color: oklch(from var(--color-base-content) l c h / .7); flex: none; transition: background .12s ease, color .12s ease; }
+  .rb-back-link:hover { background: var(--color-base-200); color: var(--color-base-content); }
+  .rb-back-link .iconify { font-size: 1rem; }
   .rb-crumbs { display: flex; align-items: center; gap: .4rem; font-size: .8125rem; flex-wrap: wrap; }
   .rb-crumbs a { display: inline-flex; align-items: center; min-height: 1.5rem; color: oklch(from var(--color-base-content) l c h / .6); font-weight: 500; text-decoration: none; }
   .rb-crumbs a:hover { color: var(--color-base-content); text-decoration: underline; }
   .rb-crumb-sep { color: oklch(from var(--color-base-content) l c h / .35); }
   .rb-crumb-cur { color: oklch(from var(--color-base-content) l c h / .85); font-weight: 600; }
   .rb-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
-
-  .rb-badge { display: inline-flex; align-items: center; gap: .35rem; font-size: .75rem; font-weight: 700; padding: .2rem .6rem; border-radius: 999px; }
-  .rb-badge.is-ok { color: var(--color-success); background: oklch(from var(--color-success) l c h / .15); }
-  .rb-badge.is-fail { color: var(--color-error); background: oklch(from var(--color-error) l c h / .15); }
-  .rb-badge.is-run { color: var(--color-warning); background: oklch(from var(--color-warning) l c h / .15); }
-  .rb-badge.is-muted { color: oklch(from var(--color-base-content) l c h / .64); background: oklch(from var(--color-base-content) l c h / .1); }
-  .rb-spin { width: .7rem; height: .7rem; border-radius: 999px; border: 2px solid oklch(from var(--color-warning) l c h / .3); border-top-color: var(--color-warning); animation: rb-spin .7s linear infinite; }
-  .rb-spin.sm { width: .6rem; height: .6rem; border-width: 1.5px; }
-  @keyframes rb-spin { to { transform: rotate(360deg); } }
-  @media (prefers-reduced-motion: reduce) { .rb-spin { animation: none; } }
-
-  .rb-warn { display: flex; align-items: center; gap: .7rem; padding: .75rem 1rem; border-radius: .7rem; font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .9); background: oklch(from var(--color-warning) l c h / .12); border: 1px solid oklch(from var(--color-warning) l c h / .3); }
-  .rb-warn > .iconify { font-size: 1.1rem; flex: none; color: var(--color-warning); }
 
   /* Summary */
   .rb-summary { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; }
@@ -298,13 +290,13 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
   .rb-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
   .rb-panel-head h2 { font-size: .95rem; font-weight: 650; }
   .rb-hint { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .66); }
-  .rb-tablewrap { overflow-x: auto; }
-  .rb-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-  .rb-table th { text-align: left; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .66); padding: 0 .65rem .6rem; border-bottom: 1px solid var(--color-base-300); white-space: nowrap; }
-  .rb-table td { padding: .65rem .65rem; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .5); white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .8); vertical-align: middle; }
-  .rb-table tbody tr:last-child td { border-bottom: 0; }
-  .rb-table .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .rb-table td.strong { font-weight: 600; }
+  .rb-gridwrap { overflow-x: auto; }
+  .rb-gridwrap table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  .rb-gridwrap th { text-align: left; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .66); padding: 0 .65rem .6rem; border-bottom: 1px solid var(--color-base-300); white-space: nowrap; }
+  .rb-gridwrap td { padding: .65rem .65rem; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .5); white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .8); vertical-align: middle; }
+  .rb-gridwrap tbody tr:last-child td { border-bottom: 0; }
+  .rb-gridwrap .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .rb-gridwrap td.strong { font-weight: 600; }
   .rb-tname { display: inline-flex; align-items: center; gap: .45rem; }
   .rb-tname .iconify { font-size: .95rem; color: oklch(from var(--color-base-content) l c h / .45); }
   .rb-row-link { color: var(--color-primary); font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; min-height: 1.5rem; }
@@ -317,15 +309,8 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
   .rb-db { display: inline-flex; align-items: center; gap: .3rem; color: oklch(from var(--color-base-content) l c h / .7); }
   .rb-dim { color: oklch(from var(--color-base-content) l c h / .66); }
   .rb-rem { color: oklch(from var(--color-base-content) l c h / .66); }
-  .rb-pill { display: inline-flex; align-items: center; gap: .3rem; font-size: .75rem; font-weight: 650; padding: .15rem .5rem; border-radius: 999px; }
-  .rb-pill.is-ok { color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); }
-  .rb-pill.is-fail { color: var(--color-error); background: oklch(from var(--color-error) l c h / .14); }
-  .rb-pill.is-run { color: var(--color-warning); background: oklch(from var(--color-warning) l c h / .14); }
-  .rb-pill.is-muted { color: oklch(from var(--color-base-content) l c h / .64); background: oklch(from var(--color-base-content) l c h / .08); }
   .rb-failed { margin-left: .4rem; font-size: .75rem; font-weight: 650; color: var(--color-error); background: oklch(from var(--color-error) l c h / .12); border: none; border-radius: .4rem; padding: .1rem .4rem; cursor: pointer; }
   .rb-failed:hover { background: oklch(from var(--color-error) l c h / .2); }
-  .rb-error { display: flex; align-items: center; gap: .55rem; margin-top: 1rem; padding: .7rem .85rem; font-size: .82rem; border-radius: .6rem; color: oklch(from var(--color-base-content) l c h / .9); background: oklch(from var(--color-error) l c h / .1); border: 1px solid oklch(from var(--color-error) l c h / .25); }
-  .rb-error .iconify { color: var(--color-error); flex: none; }
 
   .rb-foot { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); }
   .rb-foot code { font-size: 0.75rem; padding: .05rem .3rem; border-radius: 4px; background: oklch(from var(--color-base-content) l c h / .07); }
@@ -355,13 +340,7 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
   /* Light-theme contrast: the semantic status colors are tuned for accents/icons and for
      the dark theme; as SMALL TEXT on white they fail WCAG AA. Darken them on light only
      (dark keeps the brighter token). Icon/background graphics keep the bright token. */
-  :global([data-theme="baseout-light"]) .rb-badge.is-ok,
-  :global([data-theme="baseout-light"]) .rb-depth-chip.on,
-  :global([data-theme="baseout-light"]) .rb-pill.is-ok { color: oklch(from var(--color-success) calc(l - 0.16) c h); }
-  :global([data-theme="baseout-light"]) .rb-badge.is-run,
-  :global([data-theme="baseout-light"]) .rb-pill.is-run { color: oklch(from var(--color-warning) calc(l - 0.06) c h); }
-  :global([data-theme="baseout-light"]) .rb-badge.is-fail,
-  :global([data-theme="baseout-light"]) .rb-pill.is-fail,
+  :global([data-theme="baseout-light"]) .rb-depth-chip.on { color: oklch(from var(--color-success) calc(l - 0.16) c h); }
   :global([data-theme="baseout-light"]) .rb-failed,
   :global([data-theme="baseout-light"]) .rb-fail-reason { color: oklch(from var(--color-error) calc(l - 0.06) c h); }
 </style>

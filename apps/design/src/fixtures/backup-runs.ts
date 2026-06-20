@@ -29,7 +29,7 @@ function isoDaysAgo(d: number): string {
   return isoMinutesAgo(d * 24 * 60);
 }
 
-export const FIXTURE_BACKUP_RUNS: BackupRunSummary[] = [
+const BASE_RUNS: BackupRunSummary[] = [
   {
     id: 'run_design_queued',
     status: 'queued',
@@ -168,6 +168,50 @@ export const FIXTURE_BACKUP_RUNS: BackupRunSummary[] = [
     includedBases: INCLUDED_BASES,
   },
 ];
+
+// Generated run history so the Backups list has enough rows to demo search /
+// status·trigger·date filtering / pagination. Deterministic (index-driven, no
+// Date.now/Math.random) — dates are anchored to the same fixed base and the
+// harness re-anchors them to "now" on render.
+const FAIL_REASONS = [
+  'Airtable returned 429 (rate-limited) for `appMarketing00001`. Retried 3x with exponential backoff.',
+  'OAuth token for the destination expired mid-run. Reconnect the destination to resume.',
+  'Network timeout reading `appSalesCRM00001` after 30s. The base may have been temporarily unavailable.',
+  'Destination storage quota exceeded while writing attachments. Free space or upgrade the plan.',
+];
+
+const HISTORY_RUNS: BackupRunSummary[] = Array.from({ length: 42 }, (_, i) => {
+  const dayAgo = 7 + i * 2; // spans ~7-89 days back, continuing after the hand-written runs
+  const startMin = dayAgo * 24 * 60;
+  const durMin = 6 + (i % 4); // 6-9 min
+  const isFailed = i % 11 === 5;
+  const isCancelled = !isFailed && i % 19 === 3;
+  const isManual = !isFailed && !isCancelled && i % 6 === 2;
+  const status = isFailed ? 'failed' : isCancelled ? 'cancelled' : 'succeeded';
+  const ok = status === 'succeeded';
+  const records = ok ? 11_900 + ((i * 137) % 900) : isCancelled ? 1_500 + ((i * 53) % 1500) : 0;
+  const attachments = ok ? 180 + ((i * 7) % 60) : isCancelled ? 20 + (i % 40) : 0;
+  const seq = String(i + 1).padStart(3, '0');
+  return {
+    id: `run_design_h${seq}`,
+    status,
+    isTrial: false,
+    triggeredBy: isManual ? 'user_manual' : 'schedule_daily',
+    recordCount: records,
+    tableCount: ok ? 14 : isCancelled ? 4 : 0,
+    attachmentCount: attachments,
+    startedAt: isoMinutesAgo(startMin),
+    completedAt: isoMinutesAgo(startMin - durMin),
+    errorMessage: isFailed ? FAIL_REASONS[i % FAIL_REASONS.length] : null,
+    triggerRunIds: [`run_trigger_design_h${seq}`],
+    createdAt: isoMinutesAgo(startMin),
+    connection: CONNECTION,
+    configuration: CONFIGURATION,
+    includedBases: INCLUDED_BASES,
+  };
+});
+
+export const FIXTURE_BACKUP_RUNS: BackupRunSummary[] = [...BASE_RUNS, ...HISTORY_RUNS];
 
 export const FIXTURE_BACKUP_RUNS_EMPTY: BackupRunSummary[] = [];
 

@@ -1,0 +1,188 @@
+{
+  "patterns/AppShellHeader.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-app-shell",
+    "designHarnessPath": "pages/index.astro",
+    "rationale": "Application top bar built from daisyUI navigation and action primitives; Storybook documents structure, apps/design validates behavior."
+  },
+  "patterns/AppShellSidebar.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-app-shell",
+    "designHarnessPath": "pages/index.astro",
+    "rationale": "Application sidebar shell with product navigation state; Storybook documents structure, apps/design validates behavior."
+  },
+  "patterns/BackupHistoryWidget.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-audit-table",
+    "designHarnessPath": "pages/backups.astro",
+    "rationale": "Backup history accordion composed from daisyUI badge, stats, alert, and button primitives."
+  },
+  "patterns/BackupPipeline.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-pipeline",
+    "designHarnessPath": "pages/index.astro",
+    "rationale": "Product-specific Source to Bases to Destination pipeline, backed by Badge primitives."
+  },
+  "patterns/BaseSelectionTable.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-table-toolbar",
+    "designHarnessPath": "pages/integrations/configure/bases.astro",
+    "rationale": "Large Airtable base selection table composed from daisyUI checkbox, input, and pagination controls."
+  },
+  "patterns/DefinitionList.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-entity-detail",
+    "designHarnessPath": "pages/sources/detail.astro",
+    "rationale": "Entity detail pages repeat the same term/value metadata layout."
+  },
+  "patterns/EntityDetailHeader.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-entity-detail",
+    "designHarnessPath": "pages/sources/detail.astro",
+    "rationale": "Product detail header composing PageHeader, Badge, and action controls."
+  },
+  "patterns/FrequencyPicker.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-setup-stepper",
+    "designHarnessPath": "pages/welcome.astro",
+    "rationale": "Backup frequency selection built from daisyUI radio controls."
+  },
+  "patterns/MetaBlock.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-audit-table",
+    "designHarnessPath": "pages/backups/run.astro",
+    "rationale": "Backup run KPI/meta blocks with mono tabular numbers."
+  },
+  "patterns/RegistryTable.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-table-toolbar",
+    "designHarnessPath": "pages/sources.astro",
+    "rationale": "Dense registry row/grid composition for Sources and Destinations lists."
+  },
+  "patterns/RunBackupButton.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-status-rail",
+    "designHarnessPath": "pages/index.astro",
+    "rationale": "Manual backup CTA built from daisyUI Button plus loading and error states."
+  },
+  "patterns/SelectableConnectorRow.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-setup-stepper",
+    "designHarnessPath": "pages/integrations/configure.astro",
+    "rationale": "Selectable provider rows with status badges and radio/checkbox controls."
+  },
+  "patterns/SpacePipelineHero.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-pipeline",
+    "designHarnessPath": "pages/index.astro",
+    "rationale": "Unconfigured Space pipeline hero composing Button and brand marks."
+  },
+  "patterns/StoragePicker.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-setup-stepper",
+    "designHarnessPath": "pages/integrations/configure.astro",
+    "rationale": "Storage destination selection built from daisyUI radio, alert, and button controls."
+  },
+  "patterns/WizardStepper.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-setup-stepper",
+    "designHarnessPath": "pages/welcome.astro",
+    "rationale": "Setup flow stepper chrome for gated wizard surfaces."
+  },
+  "ui/Alert.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "alert",
+    "rationale": "Reusable inline notice primitive backed by daisyUI soft alert classes."
+  },
+  "ui/Avatar.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "avatar",
+    "rationale": "Reusable identity primitive backed by daisyUI avatar classes."
+  },
+  "ui/BackLink.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "back-link",
+    "rationale": "Reusable back navigation affordance for detail and setup pages."
+  },
+  "ui/Badge.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "badge",
+    "rationale": "Reusable status/count primitive backed by daisyUI badge classes."
+  },
+  "ui/Breadcrumbs.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "breadcrumbs",
+    "rationale": "Reusable drill-down navigation primitive backed by daisyUI breadcrumbs."
+  },
+  "ui/Button.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "button",
+    "rationale": "Primary action primitive backed by daisyUI button classes."
+  },
+  "ui/Card.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "card",
+    "rationale": "Reusable surface primitive backed by daisyUI card styling."
+  },
+  "ui/Checkbox.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "checkbox-toggle",
+    "rationale": "Reusable boolean input primitive backed by daisyUI checkbox styling."
+  },
+  "ui/CreateSpaceModal.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "create-space-modal",
+    "designHarnessPath": "pages/index.astro",
+    "rationale": "Behavior-bearing modal composed from daisyUI dialog, Button, and TextInput; Storybook documents structure and apps/design validates behavior."
+  },
+  "ui/Divider.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "divider",
+    "rationale": "Reusable separator primitive backed by daisyUI divider classes."
+  },
+  "ui/EmptyState.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "empty-state",
+    "rationale": "Reusable empty/no-match state primitive for registries and setup screens."
+  },
+  "ui/Modal.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "modal",
+    "rationale": "Reusable dialog primitive backed by daisyUI modal/dialog markup."
+  },
+  "ui/PageHeader.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "page-header",
+    "rationale": "Reusable page title, metadata, and action cluster primitive."
+  },
+  "ui/ProgressBar.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "progress",
+    "rationale": "Reusable progress/quota primitive backed by daisyUI progress classes."
+  },
+  "ui/SectionPanel.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "section-panel",
+    "rationale": "Reusable section surface for repeated bordered panels."
+  },
+  "ui/Select.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "select",
+    "rationale": "Reusable select primitive backed by daisyUI select classes."
+  },
+  "ui/Tabs.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "tabs",
+    "rationale": "Reusable in-page tab primitive backed by daisyUI tabs."
+  },
+  "ui/TextInput.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "input",
+    "rationale": "Reusable text field primitive backed by daisyUI input/fieldset patterns."
+  },
+  "ui/Toggle.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "checkbox-toggle",
+    "rationale": "Reusable boolean switch primitive backed by daisyUI toggle styling."
+  }
+}

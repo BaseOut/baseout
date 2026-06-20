@@ -60,7 +60,7 @@ export const SB_ENTRIES: SBEntry[] = [
 <li><strong>Props</strong> — every option the component accepts (its API).</li>
 <li><strong>Examples</strong> — the live component above its exact copy-paste markup. What you see is what ships.</li>
 </ul>
-<p><strong>Building a new screen (person or agent):</strong> compose from Primitives, follow each entry’s “When to use” default, and pull color / spacing / radius from Foundations. The non-negotiables: one primary button per surface · <code>btn-sm</code> is the in-app default · status is a soft badge · numbers are <code>font-mono</code> + tabular · 12px is the smallest text. If something isn’t a primitive here, it’s a Pattern — keep it bespoke.</p>
+<p><strong>Building a new screen (person or agent):</strong> compose from Primitives, follow each entry’s “When to use” default, and pull color / spacing / radius from Foundations. The non-negotiables: one primary button per surface · <strong>md <code>btn</code> is the default size (~90%)</strong>, sm only for dense clusters · every badge is <strong>soft + semantic</strong> (status, plus Required = error / Recommended = primary / Managed = success) — <strong>never <code>badge-outline</code></strong>, and a standalone status badge gets a leading dot · any user hint is a <strong>soft <code>alert</code> with a leading icon</strong>, not a bare tinted line · a Clear/reset is a <strong>red ghost + ×</strong> shown only when there’s something to clear · real third-party services use their <strong>real logo</strong> · a concept uses <strong>one icon everywhere</strong> · linked-and-healthy connectors are a <strong>green line + check</strong> (the Home pipeline language) · numbers are <code>font-mono</code> + tabular · 12px is the smallest text. If something isn’t a primitive here, it’s a Pattern — keep it bespoke.</p>
 <p><strong>Tags:</strong> each component is tagged by provenance — <strong>daisyUI</strong> (a standard component, used as-is), <strong>daisyUI + custom</strong> (daisyUI primitives composed into our own layout / logic), <strong>Custom</strong> (fully ours, no daisyUI core).</p>`,
     showCode: false,
     examples: [],
@@ -477,17 +477,17 @@ export const SB_ENTRIES: SBEntry[] = [
       {
         title: 'Choosing a size',
         default: 'Default · btn (40px / 14px)',
-        note: 'daisyUI ships 5 sizes; we standardise on 3, and lift our sm text to 14px so all three read at the app’s body size. <strong>Default (md, 40px) is the workhorse</strong> — reach for it for any prominent or standalone action. Drop to small (same 14px text, compact 32px height) only inside dense clusters of controls; go large only for a hero.',
+        note: 'daisyUI ships 5 sizes; we standardise on 3 and use daisyUI’s native scale as-is. <strong>Default (md, 40px / 14px) is the size for ~90% of the interface</strong> — every prominent or standalone action: page-header CTAs, empty-state buttons, form submits, modal AND drawer actions, wizard nav. Reach for small ONLY inside genuinely dense clusters (a toolbar, a row of filter chips, table row actions); large is the rare hero. When unsure, use md.',
         rows: [
           {
             token: 'Default · btn (40px / 14px)',
-            use: 'The workhorse — page-header CTAs (Run backup now), form submits, modal actions, the main action of a section.',
-            why: 'Its 14px label matches the app’s body text and gives a primary action the presence it needs.',
+            use: 'The default for ~90% of buttons — page-header CTAs (Run backup now), empty-state actions (Connect Airtable), form submits, modal + drawer footers, wizard Next / Save. Whenever you want a 14px label, this is it.',
+            why: 'Its 14px label matches the app’s body text and gives an action the presence it needs. Small reads as a secondary, dense-context control — wrong for a standalone action.',
           },
           {
-            token: 'Small · btn-sm (32px / 14px)',
-            use: 'Dense clusters only — toolbars, filter chips, table row actions, tight inline groups.',
-            why: 'A compact 32px height for control-packed areas; our sm keeps the 14px text (we lift daisyUI’s 12px) so dense labels stay readable.',
+            token: 'Small · btn-sm (32px / 12px)',
+            use: 'Dense clusters ONLY — a toolbar, filter chips, table row actions, an icon-only close (×) in a header, tight inline groups.',
+            why: 'daisyUI’s native compact size (32px / 12px) for control-packed areas, the Linear / Vercel density default. Don’t reach for it just to make a button smaller — a standalone action wants md. (We do not restyle sm’s font — overriding daisyUI’s .btn-sm doesn’t survive the Tailwind v4 / Lightning CSS build.)',
           },
           {
             token: 'Large · btn-lg (48px / 18px)',
@@ -502,6 +502,7 @@ export const SB_ENTRIES: SBEntry[] = [
       'Give primary and secondary actions a leading icon that names the action — it makes the button self-explanatory (play = Run, plus = New, settings = Configure).',
       'Pair an icon with a label; give icon-only buttons an aria-label.',
       'Show a loading spinner and disable the button during async work.',
+      'Use btn btn-outline plus a FontAwesome brand icon for third-party auth buttons — no custom provider CSS.',
     ],
     usageDont: [
       "Don't stack two primary buttons competing for attention.",
@@ -585,8 +586,13 @@ export const SB_ENTRIES: SBEntry[] = [
           },
           {
             token: 'With dot · + leading dot',
-            use: 'When the badge stands alone, away from a column header or other context.',
-            why: 'The dot reinforces the state at a glance where a label alone might be missed.',
+            use: 'When the badge stands alone in a row (a source/destination option, not under a column header).',
+            why: 'The dot reinforces the state at a glance where a label alone might be missed. Compose it as a small bg-current span inside the badge.',
+          },
+          {
+            token: 'Meta tag · soft, by meaning',
+            use: 'Required = badge-soft badge-error (you must), Recommended = badge-soft badge-primary, Managed = badge-soft badge-success.',
+            why: 'Sibling meta tags must all be badges (don’t mix a plain-text label with a badge); colour carries the meaning, red flags necessity.',
           },
           {
             token: 'Solid · badge-{state}',
@@ -598,11 +604,14 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
     usageDo: [
       'Use badge-soft + a status color for state (Backed up, Failed, Paused).',
-      'Add a leading dot when the badge stands alone without nearby context.',
+      'Add a leading dot when the badge stands alone in a row without nearby context.',
+      'Make sibling meta tags all badges by meaning (Required = error, Recommended = primary, Managed = success).',
+      'Use Badge for tier, capability, and plan labels — never hand-roll feature pill CSS.',
     ],
     usageDont: [
       "Don't use a solid status-colored fill for state — soft tint + colored text reads calmer.",
-      "Don't roll a custom pill when badge covers it.",
+      "Don't use badge-outline — we standardise on the soft style everywhere.",
+      "Don't roll a custom pill, or mix a plain-text label with a badge for sibling tags.",
     ],
     examples: [
       {
@@ -786,7 +795,7 @@ export const SB_ENTRIES: SBEntry[] = [
     summary: 'Two boolean controls — choose by whether the change is immediate.',
     description:
       'A <code>checkbox</code> selects items in a set or opts into something that applies on submit. A <code>toggle</code> flips a setting that takes effect the instant you flip it. Both use the primary color when on.',
-    reference: 'components/ui/Checkbox.astro · Toggle.astro',
+    reference: 'components/ui/Checkbox.astro · components/ui/Toggle.astro',
     props: [
       { name: 'label', type: 'string', default: '—', description: 'Both — the control’s label.' },
       { name: 'checked', type: 'boolean', default: 'false', description: 'Both — on / off state.' },
@@ -804,7 +813,7 @@ export const SB_ENTRIES: SBEntry[] = [
         ],
       },
     ],
-    usageDo: ['Use a toggle only when the effect is immediate.', 'Label the state so on/off is unambiguous.'],
+    usageDo: ['Use a toggle only when the effect is immediate.', 'Label the state so on/off is unambiguous.', 'When an option can’t be chosen (at a selection cap, plan-gated), make the item itself read inactive — reduced opacity (~0.4) + cursor-not-allowed + the control disabled — not just a banner. A long list hides the banner; the disabled item carries the reason in place.'],
     usageDont: ["Don't use a toggle for something that only applies after a Save."],
     examples: [
       {
@@ -1019,6 +1028,58 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
+    id: 'avatar',
+    group: 'Primitives',
+    name: 'Avatar',
+    summary: 'daisyUI avatar — user and organization identity at small sizes.',
+    reference: 'components/ui/Avatar.astro',
+    props: [
+      { name: 'src', type: 'string', description: 'Optional image URL.' },
+      { name: 'name', type: 'string', description: 'Fallback name used for initials.' },
+      { name: 'size', type: "'sm' | 'md' | 'lg'", default: "'md'", description: 'Display size.' },
+    ],
+    usageDo: ['Use for people, Organizations, and Spaces when an identity marker helps scanning.', 'Prefer initials over decorative icons when no image is available.'],
+    usageDont: ['Do not use Avatar as generic decoration.', 'Do not hand-roll initials chips in views.'],
+    examples: [
+      {
+        html: `
+<div class="flex items-center gap-3">
+  <div class="avatar placeholder"><div class="w-8 rounded-full bg-base-300 text-base-content"><span>RS</span></div></div>
+  <div class="avatar placeholder"><div class="w-10 rounded-full bg-primary text-primary-content"><span>BO</span></div></div>
+  <div class="avatar placeholder"><div class="w-12 rounded-full bg-base-200 text-base-content"><span>DS</span></div></div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'divider',
+    group: 'Primitives',
+    name: 'Divider',
+    summary: 'daisyUI divider — separates groups when spacing alone is not enough.',
+    reference: 'components/ui/Divider.astro',
+    guides: [
+      {
+        title: 'When to use',
+        default: 'subtle',
+        rows: [
+          { token: 'subtle', use: 'Split dense forms, settings groups, or modal sections.', why: 'Adds structure without visual noise.' },
+          { token: 'labeled', use: 'Auth or onboarding alternatives like “or continue with”.', why: 'Text labels explain the separation.' },
+        ],
+      },
+    ],
+    examples: [
+      {
+        html: `
+<div class="space-y-3">
+  <p class="text-sm text-base-content/70">Primary section</p>
+  <div class="divider my-1"></div>
+  <p class="text-sm text-base-content/70">Secondary section</p>
+</div>`,
+      },
+      { label: 'Labeled', html: `<div class="divider">or</div>` },
+    ],
+  },
+  {
     id: 'progress',
     group: 'Primitives',
     name: 'Progress',
@@ -1048,10 +1109,121 @@ export const SB_ENTRIES: SBEntry[] = [
   },
 
   {
+    id: 'page-header',
+    group: 'Primitives',
+    name: 'Page header',
+    summary: 'Standard page title, description, metadata, and action cluster.',
+    reference: 'components/ui/PageHeader.astro',
+    props: [
+      { name: 'title', type: 'string', default: 'required', description: 'Primary page or detail title.' },
+      { name: 'description', type: 'string', default: '—', description: 'Short supporting copy below the title.' },
+      { name: 'eyebrow', type: 'string', default: '—', description: 'Optional context label above the title.' },
+      { name: 'backHref', type: 'string', default: '—', description: 'Renders the shared BackLink above the heading.' },
+      { name: 'slot:meta', type: 'slot', default: '—', description: 'Badges and compact metadata under the description.' },
+      { name: 'slot:actions', type: 'slot', default: '—', description: 'Right-aligned page actions.' },
+    ],
+    usageDo: ['Use for list, detail, and setup pages before hand-rolling title/action rows.', 'Keep one primary action in the actions slot.'],
+    usageDont: ["Don't duplicate page title/action clusters directly in views.", "Don't put large content blocks in the meta slot."],
+    examples: [
+      {
+        html: `
+<header class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+  <div>
+    <p class="text-xs font-semibold uppercase tracking-[0.18em] text-base-content/50">Space</p>
+    <h1 class="text-2xl font-bold tracking-tight text-base-content">Backups</h1>
+    <p class="mt-1 max-w-2xl text-sm text-base-content/60">Review run history, failures, and captured data depth.</p>
+  </div>
+  <a href="/backups/run" class="btn btn-primary">Run backup now</a>
+</header>`,
+      },
+    ],
+  },
+  {
+    id: 'empty-state',
+    group: 'Primitives',
+    name: 'Empty state',
+    summary: 'Dashed placeholder surface for no-data and no-match states.',
+    reference: 'components/ui/EmptyState.astro',
+    props: [
+      { name: 'icon', type: 'string', default: "'lucide--inbox'", description: 'Iconify class for the empty-state symbol.' },
+      { name: 'title', type: 'string', default: 'required', description: 'Short state headline.' },
+      { name: 'description', type: 'string', default: '—', description: 'Supporting copy.' },
+      { name: 'actionHref/actionLabel', type: 'string', default: '—', description: 'Optional primary CTA.' },
+      { name: 'compact', type: 'boolean', default: 'false', description: 'Tighter padding for embedded no-match states.' },
+    ],
+    usageDo: ['Use for first-run empty registries, empty backup lists, and no-match filter states.', 'Keep the CTA aligned to the next useful action.'],
+    usageDont: ["Don't use an empty state for errors — use Alert.", "Don't hide setup blockers in empty-state copy."],
+    examples: [
+      {
+        html: `
+<section class="rounded-box border border-dashed border-base-300 bg-base-100 p-10 text-center">
+  <span class="iconify lucide--database mx-auto size-10 text-base-content/35"></span>
+  <h2 class="mt-4 text-lg font-semibold text-base-content">No backups yet</h2>
+  <p class="mx-auto mt-2 max-w-xl text-sm text-base-content/60">Run your first backup to start building an audit trail for this Space.</p>
+  <a href="/backups/run" class="btn btn-primary mt-5">Run backup now</a>
+</section>`,
+      },
+    ],
+  },
+  {
+    id: 'section-panel',
+    group: 'Primitives',
+    name: 'Section panel',
+    summary: 'Bordered content panel for grouped app sections.',
+    reference: 'components/ui/SectionPanel.astro',
+    props: [
+      { name: 'title', type: 'string', default: '—', description: 'Optional section heading.' },
+      { name: 'description', type: 'string', default: '—', description: 'Optional section copy.' },
+      { name: 'variant', type: "'default' | 'tonal'", default: "'default'", description: 'Surface treatment.' },
+      { name: 'slot:actions', type: 'slot', default: '—', description: 'Small header actions.' },
+    ],
+    usageDo: ['Use for repeated bordered panels before writing view-local card CSS.', 'Keep panel nesting shallow.'],
+    usageDont: ["Don't wrap every small item in a panel.", "Don't use this for identity cards that need the Card primitive API."],
+    examples: [
+      {
+        html: `
+<section class="rounded-box border border-base-300 bg-base-100 p-5">
+  <div class="mb-4 flex items-start justify-between gap-3">
+    <div>
+      <h2 class="text-lg font-semibold text-base-content">Backup health</h2>
+      <p class="mt-1 text-sm text-base-content/60">A grouped surface for related product information.</p>
+    </div>
+    <button class="btn btn-ghost btn-sm">View all</button>
+  </div>
+  <p class="text-sm text-base-content/70">Last successful backup completed 2 hours ago.</p>
+</section>`,
+      },
+    ],
+  },
+  {
+    id: 'back-link',
+    group: 'Primitives',
+    name: 'Back link',
+    summary: 'Standard low-emphasis return link for detail and setup pages.',
+    reference: 'components/ui/BackLink.astro',
+    props: [
+      { name: 'href', type: 'string', default: 'required', description: 'Destination URL.' },
+      { name: 'label', type: 'string', default: "'Back'", description: 'Visible link label.' },
+    ],
+    usageDo: ['Use above detail headers and setup forms.', 'Keep the label specific: Back to sources, Back to backups.'],
+    usageDont: ["Don't use a primary button for back navigation.", "Don't repeat custom arrow-link CSS in views."],
+    examples: [
+      {
+        html: `
+<a href="/sources" class="inline-flex items-center gap-2 text-sm font-medium text-base-content/65 hover:text-primary">
+  <span class="iconify lucide--arrow-left size-4"></span>
+  <span>Back to sources</span>
+</a>`,
+      },
+    ],
+  },
+
+  {
     id: 'alert',
     group: 'Primitives',
     name: 'Alert',
     summary: 'daisyUI alert — an inline banner for a state the user should notice.',
+    reference: 'components/ui/Alert.astro',
     description:
       'A banner tied to a state: icon + message, optionally an action. Use the <strong>soft</strong> style to match our calm surfaces (<code>alert alert-soft alert-{color}</code>). Colour by meaning. This replaces our hand-rolled banners (failed-attachments, the “extra credits” warning).',
     guides: [
@@ -1066,8 +1238,8 @@ export const SB_ENTRIES: SBEntry[] = [
         ],
       },
     ],
-    usageDo: ['Use the soft style for calm, on-brand banners.', 'Give an error alert a recovery action (Reconnect, Retry).'],
-    usageDont: ["Don't stack multiple alerts — collapse to the most important.", "Don't use an alert for a transient confirmation — that's a Toast."],
+    usageDo: ['Use the soft style for calm, on-brand banners.', 'Give an error alert a recovery action (Reconnect, Retry).', 'Make every user hint / heads-up an alert with a leading icon — a gating hint is a persistent alert-warning + lucide--circle-alert; a non-gating tip may add a × to dismiss.'],
+    usageDont: ["Don't stack multiple alerts — collapse to the most important.", "Don't use an alert for a transient confirmation — that's a Toast.", "Don't render a hint as a bare tinted <p> — it must be an alert with an icon."],
     examples: [
       {
         label: 'Soft, by meaning',
@@ -1087,6 +1259,17 @@ export const SB_ENTRIES: SBEntry[] = [
     <span class="iconify lucide--info size-4"></span>
     <span>Schema, data and attachments were captured.</span>
   </div>
+</div>`,
+      },
+      {
+        label: 'Dismissible — a read-once confirmation',
+        html: `
+<div role="alert" class="alert alert-soft alert-success">
+  <span class="iconify lucide--circle-check size-4"></span>
+  <span class="flex-1">Your Space is protected. The first backup is running.</span>
+  <button class="btn btn-ghost btn-sm btn-square" aria-label="Dismiss" onclick="this.closest('.alert').remove()">
+    <span class="iconify lucide--x size-4"></span>
+  </button>
 </div>`,
       },
     ],
@@ -1181,18 +1364,23 @@ export const SB_ENTRIES: SBEntry[] = [
     id: 'toast',
     group: 'Primitives',
     name: 'Toast',
-    summary: 'daisyUI toast — a transient confirmation pinned to a corner.',
+    summary: 'daisyUI toast — a transient confirmation pinned to the top-right.',
     description:
-      'A positioning wrapper (<code>toast toast-end toast-bottom</code>) that pins one or more <a href="#alert">alerts</a> to a screen corner, for brief confirmations (saved, copied, backup started). Auto-dismiss after a few seconds and never steal focus. (Preview shows the message it carries.)',
-    usageDo: ['Auto-dismiss in 3–5s.', 'Use aria-live so screen readers announce it.'],
-    usageDont: ["Don't put a critical, must-act message in a toast — use an inline Alert."],
+      'A positioning wrapper (<code>toast toast-top toast-end</code>) that pins one or more <a href="#alert">alerts</a> to a screen corner for brief confirmations (connected, saved, copied, backup started). <strong>Our default corner is top-right</strong> (<code>toast-top toast-end</code>) so it never collides with the bottom drawer / footer actions. Auto-dismiss after a few seconds and never steal focus. Live: the <a href="/integrations/configure">setup wizard</a> fires one on connect / save.',
+    usageDo: ['Pin to the top-right (toast-top toast-end).', 'Auto-dismiss in 3–5s.', 'Use aria-live so screen readers announce it.'],
+    usageDont: ["Don't put a critical, must-act message in a toast — use an inline Alert.", "Don't pin it bottom-center where it overlaps footer / drawer actions."],
     examples: [
       {
-        label: 'A confirmation message',
+        label: 'Click to show — top-right toast',
         html: `
-<div class="alert alert-success w-fit shadow-lg">
-  <span class="iconify lucide--check size-4"></span>
-  <span>Backup started.</span>
+<button class="btn btn-primary" onclick="(function(){var t=document.getElementById('sb_toast_demo');t.hidden=false;clearTimeout(t._t);t._t=setTimeout(function(){t.hidden=true;},2600);})()">
+  <span class="iconify lucide--bell size-4"></span>Show toast
+</button>
+<div id="sb_toast_demo" class="toast toast-top toast-end z-[600]" hidden>
+  <div role="status" aria-live="polite" class="alert alert-success shadow-lg">
+    <span class="iconify lucide--circle-check size-4"></span>
+    <span>Airtable connected.</span>
+  </div>
 </div>`,
       },
     ],
@@ -1257,25 +1445,49 @@ export const SB_ENTRIES: SBEntry[] = [
     id: 'drawer',
     group: 'Primitives',
     name: 'Drawer',
-    summary: 'daisyUI drawer — an off-canvas side panel for slide-overs.',
+    summary: 'daisyUI drawer — a slide-over side panel pattern for focused side tasks.',
     description:
-      'A CSS-driven off-canvas panel (<code>drawer</code> + a <code>drawer-toggle</code> checkbox + <code>drawer-side</code>); <code>drawer-end</code> slides from the right. Use for slide-overs like the failed-attachments review. We have a bespoke slide-over today; moving it onto this is <strong>planned for later</strong>. (Preview shows the panel content.) Live: <a href="/backups/run?state=failed">failed run</a>.',
-    usageDo: ['Use drawer-end for a right-side review panel.', 'Include a drawer-overlay so clicking outside closes it.'],
-    usageDont: ["Don't put a primary, always-needed action only inside a drawer."],
+      'A right-side (or left) slide-over for a focused side task: connecting a source/destination, reviewing failed attachments, reauthorizing a broken connection. Use daisyUI’s <code>drawer drawer-end</code> + <code>drawer-toggle</code> checkbox + <code>drawer-side</code> + <code>drawer-overlay</code> until a second real reusable call site justifies a wrapper. Live: the <a href="/integrations/configure">setup wizard</a> (Connect Airtable / Add a destination).',
+    props: [
+      { name: 'id', type: 'string', default: 'required', description: 'Unique id; the matching checkbox that open/close triggers toggle.' },
+      { name: 'title', type: 'string', default: 'required', description: 'Heading shown in the panel header.' },
+      { name: 'subtitle', type: 'string', default: '—', description: 'Optional supporting line under the title.' },
+      { name: 'side', type: "'end' | 'start'", default: "'end'", description: 'Which edge it slides from (end = right).' },
+      { name: 'width', type: 'string', default: "'w-[min(92vw,28rem)]'", description: 'Tailwind width class for the panel.' },
+      { name: 'slot:footer', type: 'slot', default: '—', description: 'Footer actions (right-aligned); omit for a footerless panel.' },
+    ],
+    usageDo: [
+      'Drive open/close by toggling the panel’s checkbox (or a <label for={id}>).',
+      'Put the primary action in the footer; give the panel a clear title.',
+      'Keep the × and a Cancel that close natively (label for the id).',
+    ],
+    usageDont: [
+      "Don't put a primary, always-needed action ONLY inside a drawer.",
+      "Don't reach for a drawer when a Modal (a short confirm) or inline disclosure fits better.",
+    ],
     examples: [
       {
-        label: 'Side panel (content)',
+        label: 'Click to open — a real drawer',
         html: `
-<div class="w-72 rounded-box border border-base-300 bg-base-100 p-4">
-  <div class="flex items-center justify-between">
-    <h3 class="font-semibold">Failed attachments</h3>
-    <button class="btn btn-ghost btn-xs btn-square" aria-label="Close"><span class="iconify lucide--x size-4"></span></button>
+<div class="drawer drawer-end">
+  <input id="sb_drawer_demo" type="checkbox" class="drawer-toggle" />
+  <div class="drawer-content">
+    <label for="sb_drawer_demo" class="btn btn-primary"><span class="iconify lucide--panel-right-open size-4"></span>Open drawer</label>
   </div>
-  <p class="mt-1 text-sm text-base-content/70">3 files could not be backed up.</p>
-  <ul class="mt-3 flex flex-col gap-2 text-sm">
-    <li class="flex items-center justify-between"><span class="mono-data">logo.png</span><button class="btn btn-neutral btn-xs">Retry</button></li>
-    <li class="flex items-center justify-between"><span class="mono-data">deck.pdf</span><button class="btn btn-neutral btn-xs">Retry</button></li>
-  </ul>
+  <div class="drawer-side z-[500]">
+    <label for="sb_drawer_demo" aria-label="Close" class="drawer-overlay"></label>
+    <aside class="flex h-dvh w-[min(92vw,24rem)] flex-col border-l border-base-300 bg-base-100">
+      <header class="flex items-start gap-4 border-b border-base-300 p-5">
+        <div class="min-w-0"><h3 class="font-semibold">Add a destination</h3><p class="mt-0.5 text-sm text-base-content/60">Pick where backups go.</p></div>
+        <label for="sb_drawer_demo" class="btn btn-sm btn-ghost btn-square ml-auto" aria-label="Close"><span class="iconify lucide--x size-4"></span></label>
+      </header>
+      <div class="flex-1 overflow-y-auto p-5 text-sm text-base-content/70">The panel body — compose catalog inputs, selects and buttons here.</div>
+      <footer class="flex justify-end gap-2 border-t border-base-300 p-4">
+        <label for="sb_drawer_demo" class="btn btn-ghost">Cancel</label>
+        <button class="btn btn-primary"><span class="iconify lucide--check size-4"></span>Save destination</button>
+      </footer>
+    </aside>
+  </div>
 </div>`,
       },
     ],
@@ -1285,6 +1497,26 @@ export const SB_ENTRIES: SBEntry[] = [
   // Product-specific compositions that STAY bespoke. They are documented (not
   // standardized to a primitive) so future work reuses the primitives inside
   // them without trying to flatten the composition itself into daisyUI.
+  {
+    id: 'create-space-modal',
+    group: 'Patterns',
+    name: 'CreateSpaceModal',
+    summary: 'Product pattern for creating a Space from the shell.',
+    reference: 'components/ui/CreateSpaceModal.astro',
+    description:
+      'A behavior-bearing modal pattern built from daisyUI dialog, Button, and TextInput. Storybook documents structure; apps/design validates real interaction.',
+    usageDo: ['Use the shared modal for Space creation from the sidebar or setup flows.', 'Keep validation and loading behavior aligned with the real app flow.'],
+    usageDont: ['Do not create page-specific Space creation dialogs.', 'Do not use for unrelated forms.'],
+    examples: [
+      {
+        html: `
+<button class="btn btn-primary btn-sm">Create Space</button>
+<div class="mt-3 rounded-box border border-base-300 bg-base-100 p-4 text-sm text-base-content/70">
+  Modal pattern: title, Space name field, Cancel, Create.
+</div>`,
+      },
+    ],
+  },
   {
     id: 'pattern-status-rail',
     group: 'Patterns',
@@ -1311,13 +1543,45 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
+    id: 'pattern-app-shell',
+    group: 'Patterns',
+    name: 'Application shell',
+    summary: 'The authenticated app frame: sidebar, header, navigation, and current-space chrome.',
+    reference: 'components/patterns/AppShellHeader.astro · components/patterns/AppShellSidebar.astro',
+    showCode: false,
+    description:
+      'The app shell is a product composition, not a primitive: it owns current Organization / Space context, navigation affordances, account actions, and responsive drawer behavior. Reuse Button, Avatar, Badge, and Drawer markup inside it, but keep the shell itself cataloged as a pattern. Live: <a href="/">Home</a>.',
+    usageDo: ['Keep navigation labels aligned to the canonical product naming dictionary.', 'Reuse catalog primitives for user identity, actions, and status indicators.'],
+    usageDont: ["Don't clone shell navigation inside individual views.", "Don't turn the whole shell into a generic ui primitive."],
+    examples: [
+      {
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100 p-4">
+  <div class="flex items-center justify-between gap-4">
+    <div>
+      <div class="text-sm font-semibold">Baseout</div>
+      <div class="text-xs text-base-content/55">Acme Ops / Production Space</div>
+    </div>
+    <span class="badge badge-soft badge-success badge-sm">Active</span>
+  </div>
+  <div class="mt-4 grid gap-2 text-sm text-base-content/70 sm:grid-cols-4">
+    <span class="rounded-box bg-base-200 px-3 py-2">Home</span>
+    <span class="rounded-box bg-base-200 px-3 py-2">Sources</span>
+    <span class="rounded-box bg-base-200 px-3 py-2">Destinations</span>
+    <span class="rounded-box bg-base-200 px-3 py-2">Backups</span>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
     id: 'pattern-pipeline',
     group: 'Patterns',
     name: 'Backup pipeline',
     summary: 'The vertical Source → bases → Destination flow — bespoke.',
     description:
       'The pipeline diagram on Home shows the connection as Source → bases → Destination with per-node status chips. It is a product concept, not a generic component — keep it custom (<code>.hm-pipe</code>), and use this catalog’s badge for the per-node status. Live: <a href="/">Home</a> · broken state <a href="/?broken=src">?broken=src</a>.',
-    reference: 'views/SpaceHomeView.astro (.hm-pipe)',
+    reference: 'components/patterns/BackupPipeline.astro · components/patterns/SpacePipelineHero.astro · views/SpaceHomeView.astro',
     showCode: false,
     usageDo: ['Use a soft status badge for each node’s state.', 'Keep the layout custom — it encodes our data model.'],
     usageDont: ["Don't replace it with a generic stepper — the semantics differ."],
@@ -1347,7 +1611,7 @@ export const SB_ENTRIES: SBEntry[] = [
     summary: 'The Backups drill-down tables (run → base → tables) — bespoke layout on the table primitive.',
     description:
       'The audit trail composes the <a href="#table">table</a> primitive with per-row status, counts, captured-depth chips and a destination link into a layout specific to backup auditing. The table styling is standard; the columns and drill-down are ours. Live: <a href="/backups">Backups</a>.',
-    reference: 'views/BackupRunDetailView.astro · BackupRunBaseView.astro',
+    reference: 'components/patterns/MetaBlock.astro · views/BackupRunDetailView.astro · views/BackupRunBaseView.astro',
     showCode: false,
     usageDo: ['Build on the table primitive; keep numbers font-mono + tabular.', 'Use soft badges for per-row status.'],
     usageDont: ["Don't invent a non-table layout for tabular audit data."],
@@ -1381,13 +1645,41 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
+    id: 'pattern-entity-detail',
+    group: 'Patterns',
+    name: 'Entity detail',
+    summary: 'Shared title, status, metadata, and action structure for source/destination detail pages.',
+    reference: 'components/patterns/EntityDetailHeader.astro · components/patterns/DefinitionList.astro · views/SourceDetailView.astro · views/DestinationDetailView.astro',
+    showCode: false,
+    description:
+      'Source and Destination detail pages share the same composition: a BackLink, title, soft status badge, one primary recovery action, secondary edit action, and definition-list metadata panels. The structure is a product pattern because each entity still owns its domain fields.',
+    usageDo: ['Use soft Badge status metadata and one primary recovery action.', 'Use DefinitionList for term/value metadata blocks.'],
+    usageDont: ["Don't rebuild detail headers per entity.", "Don't use raw paragraphs for term/value metadata when DefinitionList fits."],
+    examples: [
+      {
+        html: `
+<div class="space-y-4 rounded-box border border-base-300 bg-base-100 p-4">
+  <a href="/sources" class="inline-flex items-center gap-2 text-sm font-medium text-base-content/65"><span class="iconify lucide--arrow-left size-4"></span>Back to sources</a>
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h2 class="text-2xl font-bold tracking-tight">Airtable production</h2>
+      <p class="mt-1 text-sm text-base-content/60">Airtable · OAuth · ops@example.com</p>
+      <span class="badge badge-soft badge-warning mt-3"><span class="size-1.5 rounded-full bg-current"></span>Reconnect required</span>
+    </div>
+    <button class="btn btn-primary">Reconnect</button>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
     id: 'pattern-setup-stepper',
     group: 'Patterns',
     name: 'Setup stepper',
     summary: 'The Space-setup wizard stepper — bespoke, gated for first-run.',
     description:
       'The multi-step Space setup (Source → Destination → Bases → Depth → Schedule) is a gated linear flow for onboarding, with a free-jump edit mode afterwards. It is a product flow, not a primitive — keep it custom, and use this catalog’s inputs, selects and buttons for the controls inside each step. Live: <a href="/welcome">Welcome</a>.',
-    reference: 'views/IntegrationsSetupWizard.astro',
+    reference: 'components/patterns/WizardStepper.astro · components/patterns/SelectableConnectorRow.astro · views/IntegrationsSetupWizard.astro',
     showCode: false,
     usageDo: ['Use catalog primitives for the controls in each step.', 'Gate the stepper for first-run; allow free-jump editing after.'],
     usageDont: ["Don't reuse the gated stepper for routine edits — that’s the free-jump mode."],
@@ -1413,7 +1705,7 @@ export const SB_ENTRIES: SBEntry[] = [
     summary: 'Search, filters and a pager wrapped around a data table — the run-history pattern.',
     description:
       'When a table grows, wrap it in a toolbar (search + filters) above and a pager below. Search is an <a href="#input">Input</a>; each filter is a <strong>faceted dropdown</strong> — a daisyUI <code>dropdown</code> of <a href="#checkbox-toggle">checkboxes</a> with a selected-count badge on its trigger (the shadcn <em>DataTableFacetedFilter</em> pattern; cf. Deel / Profound). Multi-select where it helps (status, trigger), a single range for date; a red Clear with an × resets everything. The pager is a <a href="#select">Select</a> + prev/next <a href="#button">Buttons</a>. Filter client-side in the prototype; the real app pushes it to the query. Live: <a href="/backups">Backups</a>.',
-    reference: 'views/BackupsListView.astro',
+    reference: 'components/patterns/RegistryTable.astro · views/BackupsListView.astro',
     showCode: false,
     usageDo: [
       'Search by stable identifiers (run id, error message) for support triage.',

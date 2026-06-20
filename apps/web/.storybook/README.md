@@ -9,11 +9,11 @@ pnpm --filter @baseout/web storybook        # dev server → http://localhost:60
 pnpm --filter @baseout/web build-storybook   # static build → dist/storybook (CI runs this)
 ```
 
-## How it works (Astro has no Storybook renderer)
+## How it works
 
-Our components are pure `.astro` (no React/Vue island), and Storybook has no Astro
-renderer. So we use the **`@storybook/html-vite`** renderer and render each component
-to an HTML string via **Astro's Container API**:
+Our components are pure `.astro` (no React/Vue island). This repo currently uses
+the **`@storybook/html-vite`** renderer and renders each component to an HTML
+string via **Astro's Container API**:
 
 - `.storybook/render-astro.ts` — `renderAstro(Component, { props, slots })` wraps
   `experimental_AstroContainer`. `slots` is a default-slot HTML string or a
@@ -67,3 +67,11 @@ Don't file "behavior X doesn't work in Storybook" — it's by design.
 Both pull `global.css` / `@opensided/theme` from `apps/web`, so a token change shows
 in both. **Governance + the rules** (every component needs a story; daisyUI-first;
 the coverage test) live in `apps/web/.claude/CLAUDE.md` §2.5.
+
+## Renderer migration note
+
+`@storybook-astro/framework` now exists and also uses Astro's Container API. Keep
+this repo on the current `@storybook/html-vite` setup until a dedicated spike
+proves the framework can render every existing story without loading the
+Cloudflare adapter or requiring wrangler remote auth. The current decision record
+lives in `astro-framework-spike.md`.

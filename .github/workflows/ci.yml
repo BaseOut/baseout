@@ -45,6 +45,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Web unit tests
+        run: pnpm --filter @baseout/web test:unit
+
       - name: Build Storybook (apps/web)
         run: pnpm --filter @baseout/web build-storybook
 

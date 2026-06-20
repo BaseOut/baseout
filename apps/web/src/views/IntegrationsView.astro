@@ -13,6 +13,7 @@
 import Card from '../components/ui/Card.astro';
 import Button from '../components/ui/Button.astro';
 import Badge from '../components/ui/Badge.astro';
+import Alert from '../components/ui/Alert.astro';
 import { formatNextScheduledAt } from '../lib/backups/format';
 import type { BackupRunSummary } from '../lib/backup-runs/types';
 import type { IntegrationsState } from '../stores/connections';
@@ -66,16 +67,13 @@ const configSummary = `${includedCount} base${includedCount === 1 ? '' : 's'} ·
 
   {!airtable ? (
     /* ── EMPTY STATE — full-width provider card, two columns: connect · read-only scope ── */
-    <Card variant="outlined" class="provider-card p-0 overflow-hidden">
+    <Card variant="outlined" class="p-0 overflow-hidden">
       <div class="grid md:grid-cols-2">
         {/* Left — connect */}
         <div class="p-6 sm:p-8">
           {/* A failed connect attempt is not a separate state — it returns here as inline retry feedback. */}
           {statusCode === 'error' && errorMessage && (
-            <div class="connect-error" role="alert">
-              <span class="iconify lucide--circle-alert" aria-hidden="true"></span>
-              <span>{errorMessage} Please try connecting again.</span>
-            </div>
+            <Alert variant="error" class="mb-5">{errorMessage} Please try connecting again.</Alert>
           )}
           <div class="flex items-center justify-between gap-3">
             <div class="flex items-center gap-3">
@@ -171,7 +169,7 @@ const configSummary = `${includedCount} base${includedCount === 1 ? '' : 's'} ·
           <span>Airtable connected. Your first backup is running — track progress on the Backups page.</span>
         </p>
       )}
-      <Card variant="outlined" class="provider-card">
+      <Card variant="outlined">
         <div class="flex flex-wrap items-start justify-between gap-4">
         <div class="flex items-start gap-3 min-w-0">
           <img src="/airtable.svg" alt="" width="40" height="40" class="provider-logo shrink-0 mt-0.5" />

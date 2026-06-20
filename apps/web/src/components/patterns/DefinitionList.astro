@@ -1,0 +1,21 @@
+---
+interface DefinitionItem {
+  term: string;
+  description: string;
+}
+
+interface Props {
+  items: DefinitionItem[];
+}
+
+const { items } = Astro.props;
+---
+
+<dl class="flex flex-col gap-2">
+  {items.map((item) => (
+    <div class="grid gap-1 text-sm sm:grid-cols-[9rem_1fr] sm:gap-4">
+      <dt class="text-base-content/55">{item.term}</dt>
+      <dd class="text-base-content/85">{item.description}</dd>
+    </div>
+  ))}
+</dl>

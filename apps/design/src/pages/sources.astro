@@ -4,8 +4,6 @@ import SidebarLayout from '../layouts/SidebarLayout.astro';
 import SourcesView from '@web/views/SourcesView.astro';
 import { getBreadcrumbs } from '@web/lib/config';
 import { FIXTURE_SOURCES, FIXTURE_SOURCES_EMPTY, newSource } from '../fixtures/sources';
-import ScenarioSwitcher from '../components/ScenarioSwitcher.astro';
-import { DEMO_FLOWS } from '../lib/demo-flows';
 
 const breadcrumbs = getBreadcrumbs('/settings');
 const fixture = Astro.url.searchParams.get('fixture');
@@ -20,5 +18,4 @@ const notice = justAdded ? 'Airtable source created. Connect it to use in your S
 
 <SidebarLayout pageTitle="Sources" breadcrumbs={breadcrumbs}>
   <SourcesView sources={sources} notice={notice} />
-  <ScenarioSwitcher flows={DEMO_FLOWS} />
 </SidebarLayout>

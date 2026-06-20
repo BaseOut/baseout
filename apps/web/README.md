@@ -80,7 +80,7 @@ scripts/
 
 The template ships with these ready-to-use components in `src/components/ui/`:
 
-Button, Card, Badge, Avatar, TextInput, Checkbox, Toggle, Modal, Tabs, Breadcrumbs, ProgressBar, Divider, SocialButton, FeatureBadge
+Button, Card, Badge, Avatar, TextInput, Checkbox, Toggle, Modal, Tabs, Breadcrumbs, ProgressBar, Divider
 
 ## Pages
 

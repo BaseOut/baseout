@@ -4,9 +4,6 @@ import SidebarLayout from '../layouts/SidebarLayout.astro';
 import DestinationsView from '@web/views/DestinationsView.astro';
 import { getBreadcrumbs } from '@web/lib/config';
 import { FIXTURE_DESTINATIONS, FIXTURE_DESTINATIONS_EMPTY, newDestination } from '../fixtures/destinations';
-import { getDestinationProviders } from '@web/lib/provider-catalog';
-import ScenarioSwitcher from '../components/ScenarioSwitcher.astro';
-import { DEMO_FLOWS } from '../lib/demo-flows';
 
 const breadcrumbs = getBreadcrumbs('/settings');
 const fixture = Astro.url.searchParams.get('fixture');
@@ -24,6 +21,5 @@ const notice = justAdded
 ---
 
 <SidebarLayout pageTitle="Destinations" breadcrumbs={breadcrumbs}>
-  <DestinationsView destinations={destinations} notice={notice} providers={getDestinationProviders()} />
-  <ScenarioSwitcher flows={DEMO_FLOWS} />
+  <DestinationsView destinations={destinations} notice={notice} />
 </SidebarLayout>

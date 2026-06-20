@@ -3,18 +3,11 @@
 import SidebarLayout from '../../layouts/SidebarLayout.astro';
 import DestinationAddView from '@web/views/DestinationAddView.astro';
 import { getBreadcrumbs } from '@web/lib/config';
-import { getDestinationProviders } from '@web/lib/provider-catalog';
 
 const breadcrumbs = getBreadcrumbs('/settings');
 const selectedType = Astro.url.searchParams.get('type');
-// Default mirrors a deploy with only Drive + managed R2 wired (BYOS coming-soon).
-// ?avail=all flips every provider to available, to exercise the connectable state.
-const allAvailable = Astro.url.searchParams.get('avail') === 'all';
-const providers = allAvailable
-  ? getDestinationProviders().map((p) => ({ ...p, availability: 'available' as const }))
-  : getDestinationProviders();
 ---
 
 <SidebarLayout pageTitle="Add destination" breadcrumbs={breadcrumbs}>
-  <DestinationAddView selectedType={selectedType} providers={providers} />
+  <DestinationAddView selectedType={selectedType} />
 </SidebarLayout>

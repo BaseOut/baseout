@@ -1,0 +1,36 @@
+---
+interface MetaItem {
+  label: string;
+  value: string;
+  tone?: 'default' | 'success' | 'warning' | 'error';
+}
+
+interface Props {
+  items: MetaItem[];
+  columns?: 2 | 3 | 4;
+}
+
+const { items, columns = 3 } = Astro.props;
+
+const toneMap: Record<NonNullable<MetaItem['tone']>, string> = {
+  default: 'text-base-content',
+  success: 'text-success',
+  warning: 'text-warning',
+  error: 'text-error',
+};
+
+const columnsMap: Record<NonNullable<Props['columns']>, string> = {
+  2: 'sm:grid-cols-2',
+  3: 'sm:grid-cols-3',
+  4: 'sm:grid-cols-4',
+};
+---
+
+<div class={`grid gap-3 ${columnsMap[columns]}`}>
+  {items.map((item) => (
+    <div class="rounded-box border border-base-300 bg-base-100 p-4">
+      <div class="text-xs font-semibold uppercase tracking-wider text-base-content/50">{item.label}</div>
+      <div class={`mt-1 font-mono text-xl font-semibold tabular-nums ${toneMap[item.tone ?? 'default']}`}>{item.value}</div>
+    </div>
+  ))}
+</div>

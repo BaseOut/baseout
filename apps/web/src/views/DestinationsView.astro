@@ -1,27 +1,20 @@
 ---
 /**
  * DestinationsView — account-level Destinations registry (skeleton).
- *
- * Lives in account settings, not inside a Space: destinations are created once and
- * reused. List is a dense status table (utility-admin density), with an "in use by N
- * Spaces" column as the reuse indicator. A broken destination surfaces loudly at the
- * top with "affects N Spaces". Reach a destination's own management via its row.
  */
 import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
+import Alert from '../components/ui/Alert.astro';
+import EmptyState from '../components/ui/EmptyState.astro';
+import PageHeader from '../components/ui/PageHeader.astro';
 import type { DestinationSummary } from '../stores/destinations';
 import type { DestinationProvider } from '../lib/provider-catalog';
 
 interface Props {
   destinations: DestinationSummary[];
   notice?: string | null;
-  /** Production: where "Add destination" goes (default = harness route). */
   addHref?: string;
-  /** Production: override the per-row detail link (per-destination detail isn't
-   *  built yet); when set, every row links here. Default = harness detail route. */
   rowHref?: string | null;
-  /** Catalog (availability resolved) for the "what you can add / coming soon"
-   *  affordance below the table; omitted hides the section. */
   providers?: DestinationProvider[];
 }
 const { destinations, notice = null, addHref = '/settings/destinations/new', rowHref = null, providers = [] } = Astro.props;
@@ -46,70 +39,63 @@ const detailHref = (d: DestinationSummary) =>
   d.status === 'needs_connection'
     ? `/settings/destinations/detail?id=${d.id}&new=1&type=${d.provider}`
     : `/settings/destinations/detail?id=${d.id}`;
+
+const registryColumns = 'minmax(0,1.5fr) minmax(0,1fr) 9.5rem 6rem 6rem';
 ---
 
 <div class="mx-auto max-w-5xl space-y-6">
-  <header class="flex items-end justify-between gap-4 flex-wrap">
-    <div>
-      <h1 class="text-2xl font-bold tracking-tight">Destinations</h1>
-      <p class="text-sm text-base-content/60 mt-1">Storage and databases your Spaces back up to. Set up once on your account, reuse across Spaces.</p>
-    </div>
-    <Button href={addHref} variant="primary">Add destination</Button>
-  </header>
+  <PageHeader title="Destinations" description="Storage and databases your Spaces back up to. Set up once on your account, reuse across Spaces.">
+    <Button slot="actions" href={addHref} variant="primary">Add destination</Button>
+  </PageHeader>
 
   {notice && (
-    <p class="dst-ok" role="status"><span class="iconify lucide--circle-check" aria-hidden="true"></span><span>{notice}</span></p>
+    <Alert variant="success">{notice}</Alert>
   )}
 
   {needsAttention.length > 0 && (
-    <div class="dst-alert" role="status">
-      <span class="iconify lucide--triangle-alert" aria-hidden="true"></span>
-      <span>
-        <b>{needsAttention.length} destination{needsAttention.length === 1 ? '' : 's'} need{needsAttention.length === 1 ? 's' : ''} reconnecting.</b>
-        {' '}Backups to {needsAttention.length === 1 ? 'it are' : 'them are'} paused, affecting {affectedSpaces.length} Space{affectedSpaces.length === 1 ? '' : 's'}.
-      </span>
-    </div>
+    <Alert variant="warning" title={`${needsAttention.length} destination${needsAttention.length === 1 ? '' : 's'} need${needsAttention.length === 1 ? 's' : ''} reconnecting.`}>
+      Backups to {needsAttention.length === 1 ? 'it are' : 'them are'} paused, affecting {affectedSpaces.length} Space{affectedSpaces.length === 1 ? '' : 's'}.
+    </Alert>
   )}
 
   {destinations.length === 0 ? (
-    <div class="dst-empty">
-      <span class="iconify lucide--hard-drive dst-empty-ic" aria-hidden="true"></span>
-      <div class="min-w-0 flex-1">
-        <p class="text-sm font-medium">No destinations yet</p>
-        <p class="text-xs text-base-content/55 mt-0.5">Add a file store (Google Drive, Dropbox, Box, S3) and optionally a database. You can reuse it across every Space.</p>
-      </div>
-      <Button href={addHref} variant="primary" class="shrink-0">Add destination</Button>
-    </div>
+    <EmptyState
+      icon="lucide--hard-drive"
+      title="No destinations yet"
+      description="Add a file store (Google Drive, Dropbox, Box, S3) and optionally a database. You can reuse it across every Space."
+      actionHref={addHref}
+      actionLabel="Add destination"
+    />
   ) : (
-    <div class="dst-table" role="table">
-      <div class="dst-head" role="row">
-        <span>Name</span><span>Type</span><span>Status</span><span>In use by</span><span class="dst-r">Last write</span>
+    <div class="overflow-hidden rounded-box border border-base-300 bg-base-100" role="table">
+      <div class="grid items-center gap-3 border-b border-base-300 bg-base-200/50 px-4 py-3 text-xs font-bold uppercase tracking-wider text-base-content/55" style={`grid-template-columns: ${registryColumns};`} role="row">
+        <span>Name</span><span>Type</span><span>Status</span><span>In use by</span><span class="text-right">Last write</span>
       </div>
       {destinations.map((d) => (
-        <a href={rowHref ?? detailHref(d)} class="dst-row" role="row">
-          <span class="dst-name">{d.name}<span class="dst-sub">{d.detail}</span></span>
-          <span class="dst-type"><span class={`iconify ${kindMeta[d.kind].icon}`} aria-hidden="true"></span>{d.providerLabel}</span>
+        <a href={rowHref ?? detailHref(d)} class="grid items-center gap-3 border-b border-base-300/50 px-4 py-3 text-sm text-base-content no-underline transition-colors last:border-b-0 hover:bg-base-200/50" style={`grid-template-columns: ${registryColumns};`} role="row">
+          <span class="min-w-0 font-semibold">{d.name}<span class="block truncate text-xs font-normal text-base-content/50">{d.detail}</span></span>
+          <span class="inline-flex min-w-0 items-center gap-1.5 text-base-content/75"><span class={`iconify ${kindMeta[d.kind].icon} text-base opacity-50`} aria-hidden="true"></span>{d.providerLabel}</span>
           <span><Badge variant={statusMeta[d.status].variant} dot={statusMeta[d.status].dot}>{statusMeta[d.status].label}</Badge></span>
-          <span class="dst-inuse">{d.inUseBy.length} Space{d.inUseBy.length === 1 ? '' : 's'}</span>
-          <span class="dst-last dst-r">{d.lastWrite ?? '—'}</span>
+          <span class="text-base-content/70">{d.inUseBy.length} Space{d.inUseBy.length === 1 ? '' : 's'}</span>
+          <span class="text-right font-mono tabular-nums text-base-content/55">{d.lastWrite ?? '—'}</span>
         </a>
       ))}
     </div>
   )}
 
   {providers.length > 0 && (
-    <section class="dst-avail">
-      <h2 class="dst-avail-title">What you can connect</h2>
-      <div class="dst-avail-grid">
+    <section class="mt-6">
+      <h2 class="mb-3 text-xs font-bold uppercase tracking-wider text-base-content/50">What you can connect</h2>
+      <div class="grid gap-2 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]">
         {availableProviders.map((p) => (
-          <div class="dst-prov">
-            <span class="dst-prov-name">{p.label}{p.managed && <span class="dst-prov-tag dst-prov-managed">Managed</span>}</span>
+          <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5">
+            <span class="inline-flex min-w-0 items-center gap-1.5 text-sm font-semibold">{p.label}{p.managed && <span class="rounded-full bg-success/15 px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-success">Managed</span>}</span>
             <Badge variant="success" dot>Available</Badge>
           </div>
         ))}
         {comingSoonProviders.map((p) => (
-          <div class="dst-prov dst-prov-soon">
-            <span class="dst-prov-name">{p.label}{tierLabel(p.tier) && <span class="dst-prov-tag">{tierLabel(p.tier)}</span>}</span>
+          <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5 opacity-70">
+            <span class="inline-flex min-w-0 items-center gap-1.5 text-sm font-semibold">{p.label}{tierLabel(p.tier) && <span class="rounded-full bg-base-content/10 px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-base-content/60">{tierLabel(p.tier)}</span>}</span>
             <Badge variant="default">Coming soon</Badge>
           </div>
         ))}
@@ -117,39 +103,3 @@ const detailHref = (d: DestinationSummary) =>
     </section>
   )}
 </div>
-
-<style>
-  .dst-ok, .dst-alert { display: flex; align-items: flex-start; gap: .5rem; padding: .625rem .8rem; border-radius: .55rem; font-size: .8125rem; line-height: 1.45; }
-  .dst-ok { color: var(--color-success, oklch(.6 .16 150)); background: oklch(from var(--color-success, oklch(.6 .16 150)) l c h / .08); border: 1px solid oklch(from var(--color-success, oklch(.6 .16 150)) l c h / .22); }
-  .dst-alert { color: oklch(from var(--color-base-content) l c h / .9); background: oklch(from var(--color-warning) l c h / .12); border: 1px solid oklch(from var(--color-warning) l c h / .3); }
-  .dst-ok .iconify, .dst-alert .iconify { font-size: 1rem; flex: none; margin-top: .05rem; }
-  .dst-alert .iconify { color: var(--color-warning); }
-
-  .dst-empty { display: flex; align-items: center; gap: .9rem; padding: 1.1rem; border: 1px dashed var(--color-base-300); border-radius: .7rem; background: oklch(from var(--color-base-200) l c h / .3); }
-  .dst-empty-ic { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .35); flex: none; }
-
-  .dst-table { border: 1px solid var(--color-base-300); border-radius: .7rem; overflow: hidden; background: var(--color-base-100); }
-  .dst-head, .dst-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) 9.5rem 6rem 6rem; align-items: center; gap: .75rem; padding: .7rem .9rem; }
-  .dst-row :global(.badge) { white-space: nowrap; }
-  .dst-head { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .5); background: oklch(from var(--color-base-200) l c h / .5); border-bottom: 1px solid var(--color-base-300); }
-  .dst-row { border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .5); text-decoration: none; color: inherit; transition: background .12s ease; }
-  .dst-row:last-child { border-bottom: 0; }
-  .dst-row:hover { background: oklch(from var(--color-base-200) l c h / .5); }
-  .dst-r { text-align: right; }
-  .dst-name { display: flex; flex-direction: column; gap: .1rem; font-weight: 600; font-size: .875rem; min-width: 0; }
-  .dst-sub { font-weight: 400; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dst-type { display: inline-flex; align-items: center; gap: .4rem; font-size: .8125rem; color: oklch(from var(--color-base-content) l c h / .75); min-width: 0; }
-  .dst-type .iconify { font-size: .95rem; flex: none; color: oklch(from var(--color-base-content) l c h / .5); }
-  .dst-inuse { font-size: .8125rem; color: oklch(from var(--color-base-content) l c h / .7); }
-  .dst-last { font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .55); font-variant-numeric: tabular-nums; }
-
-  .dst-avail { margin-top: 1.5rem; }
-  .dst-avail-title { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .5); margin-bottom: .7rem; }
-  .dst-avail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .5rem; }
-  .dst-prov { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .55rem .75rem; border: 1px solid var(--color-base-300); border-radius: .55rem; background: var(--color-base-100); }
-  .dst-prov-soon { opacity: .7; }
-  .dst-prov-name { display: inline-flex; align-items: center; gap: .4rem; font-size: .8125rem; font-weight: 600; min-width: 0; }
-  .dst-prov-tag { font-size: .6rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: oklch(from var(--color-base-content) l c h / .6); background: oklch(from var(--color-base-content) l c h / .08); padding: .05rem .35rem; border-radius: 999px; }
-  .dst-prov-managed { color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); }
-  .dst-prov :global(.badge) { white-space: nowrap; flex: none; }
-</style>

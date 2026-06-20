@@ -1,0 +1,5 @@
+{
+  "src/views/BackupsListView.astro": [
+    "daisyUI `table` primitive on the backup-history table: no Storybook table component exists, and the `.table` class supplies the cell padding the dense run table needs. Per CLAUDE.md §4.2 this is sanctioned daisyUI-direct-in-view (the audit's escape hatch), not a custom component."
+  ]
+}

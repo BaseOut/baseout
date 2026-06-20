@@ -49,8 +49,8 @@
 
 /* ── Project-Specific Component Styles ──────────────────── */
 @import "./components/overrides.css";
-@import "./components/social-button.css";
-@import "./components/feature-badge.css";
+@import "./components/space-pipeline-hero.css";
+@import "./components/base-selection.css";
 @import "./components/auth.css";
 @import "./components/brand-logo.css";
 

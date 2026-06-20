@@ -4,8 +4,6 @@ import SidebarLayout from '../../layouts/SidebarLayout.astro';
 import SourceDetailView from '@web/views/SourceDetailView.astro';
 import { getBreadcrumbs } from '@web/lib/config';
 import { findSource, newSource } from '../../fixtures/sources';
-import ScenarioSwitcher from '../../components/ScenarioSwitcher.astro';
-import { DEMO_FLOWS } from '../../lib/demo-flows';
 
 const breadcrumbs = getBreadcrumbs('/settings');
 const id = Astro.url.searchParams.get('id');
@@ -16,5 +14,4 @@ const source = isNew ? newSource(Astro.url.searchParams.get('method')) : findSou
 
 <SidebarLayout pageTitle={source.name} breadcrumbs={breadcrumbs}>
   <SourceDetailView source={source} reconnected={reconnected} />
-  <ScenarioSwitcher flows={DEMO_FLOWS} />
 </SidebarLayout>

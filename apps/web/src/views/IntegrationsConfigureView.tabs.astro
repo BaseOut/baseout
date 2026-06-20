@@ -14,7 +14,10 @@
  * full-width BaseSelectionTable. Other panels mirror the vertical view (A/B;
  * the winning layout keeps one copy).
  */
-import BaseSelectionTable from '../components/integrations/BaseSelectionTable.astro';
+import BaseSelectionTable from '../components/patterns/BaseSelectionTable.astro';
+import BackLink from '../components/ui/BackLink.astro';
+import Button from '../components/ui/Button.astro';
+import Badge from '../components/ui/Badge.astro';
 import { formatNextScheduledAt } from '../lib/backups/format';
 import type { IntegrationsState } from '../stores/connections';
 import type { DestinationSummary } from '../stores/destinations';
@@ -46,7 +49,7 @@ const STEPS = [
 <div class="mx-auto max-w-5xl space-y-6">
   {/* Back + header */}
   <div>
-    <a href="/integrations" class="back-link"><span class="iconify lucide--arrow-left"></span> Integrations</a>
+    <BackLink href="/integrations" label="Integrations" />
     <div class="flex items-center gap-3 mt-3">
       <img src="/airtable.svg" alt="" width="36" height="36" class="config-logo" />
       <div>
@@ -69,8 +72,8 @@ const STEPS = [
           ))}
         </ol>
         <div class="bar-actions">
-          <button type="button" class="btn btn-ghost btn-sm" data-step-back hidden><span class="iconify lucide--arrow-left"></span> Back</button>
-          <button type="button" class="btn btn-primary btn-sm" data-step-next data-target="/integrations?status=running">Next</button>
+          <Button type="button" variant="ghost" size="sm" data-step-back hidden><span class="iconify lucide--arrow-left"></span> Back</Button>
+          <Button type="button" variant="primary" size="sm" data-step-next data-target="/integrations?status=running">Next</Button>
         </div>
       </div>
     ) : (
@@ -79,13 +82,13 @@ const STEPS = [
           {STEPS.map((s, i) => (
             <label class="tab-opt">
               <input type="radio" name="cfg-tab" value={s.key} checked={i === 0} />
-              <span>{s.label}{s.key === 'bases' ? <span class="tab-badge" data-bases-badge>{includedCount}</span> : null}</span>
+              <span>{s.label}{s.key === 'bases' ? <span class="tab-count" data-bases-badge>{includedCount}</span> : null}</span>
             </label>
           ))}
         </div>
         <div class="bar-actions">
-          <a href="/integrations" class="btn btn-ghost btn-sm">Cancel</a>
-          <button type="button" class="btn btn-primary btn-sm" data-save-config data-target="/integrations?status=saved">Save changes</button>
+          <Button href="/integrations" variant="ghost" size="sm">Cancel</Button>
+          <Button type="button" variant="primary" size="sm" data-save-config data-target="/integrations?status=saved">Save changes</Button>
         </div>
       </div>
     )}
@@ -116,7 +119,7 @@ const STEPS = [
               <input type="checkbox" class="checkbox checkbox-sm" checked disabled />
               <span class="min-w-0"><span class="block font-medium">Schema</span><span class="block text-xs text-base-content/50 mt-0.5">Tables, fields, views and relationships. Always captured.</span></span>
             </label>
-            <span class="badge badge-sm badge-ghost shrink-0">Always on</span>
+            <Badge variant="default" size="sm" class="shrink-0">Always on</Badge>
           </li>
           <li class="px-3.5 py-3 flex items-center justify-between gap-3">
             <label class="flex items-center gap-3 flex-1 min-w-0 cursor-pointer">
@@ -129,7 +132,7 @@ const STEPS = [
               <input type="checkbox" class="checkbox checkbox-sm" />
               <span class="min-w-0"><span class="block font-medium">Attachments</span><span class="block text-xs text-base-content/50 mt-0.5">Files attached to records, stored as binaries.</span></span>
             </label>
-            <span class="badge badge-sm badge-warning badge-outline shrink-0">Billed on storage</span>
+            <Badge variant="warning" size="sm" outline class="shrink-0">Billed on storage</Badge>
           </li>
         </ul>
         <p class="text-xs text-base-content/50 mt-2.5">Airtable's API can't export automations, interfaces, forms or views — those aren't backed up.</p>
@@ -152,7 +155,7 @@ const STEPS = [
                   <input type="radio" name="frequency" value={f.value} checked={state.policy.frequency === f.value} disabled={!allowed} class="radio radio-sm radio-primary" />
                   <span class="min-w-0"><span class="block font-medium">{f.label}</span><span class="block text-xs text-base-content/50 mt-0.5">{f.helper}</span></span>
                 </label>
-                {!allowed && <a href="/settings/billing" class="badge badge-sm badge-warning badge-outline shrink-0 no-underline">Upgrade</a>}
+                {!allowed && <Button href="/settings/billing" variant="warning" size="sm" outline class="shrink-0">Upgrade</Button>}
               </li>
             );
           })}
@@ -242,7 +245,7 @@ const STEPS = [
   .tab-opt input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
   .tab-opt span { display: inline-flex; align-items: center; gap: .4rem; padding: .45rem .85rem; font-size: .82rem; font-weight: 600; border-radius: .5rem; white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .6); }
   .tab-opt input:checked + span { background: var(--color-base-100); color: var(--color-base-content); box-shadow: inset 0 0 0 1px var(--color-base-300); }
-  .tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.15rem; height: 1.15rem; padding: 0 .3rem; border-radius: 999px; font-size: .68rem; font-weight: 700; color: oklch(from var(--color-primary) l c h / .95); background: oklch(from var(--color-primary) l c h / .14); }
+  .tab-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.15rem; height: 1.15rem; padding: 0 .3rem; border-radius: 999px; font-size: .68rem; font-weight: 700; color: oklch(from var(--color-primary) l c h / .95); background: oklch(from var(--color-primary) l c h / .14); }
 
   /* Stepper (first-run) */
   .stepper { display: flex; align-items: center; gap: 0; margin: 0; padding: 0; list-style: none; flex-wrap: wrap; }

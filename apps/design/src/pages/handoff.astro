@@ -28,6 +28,14 @@ const STATUS_LABEL: Record<FlowStatus, string> = {
   planned: 'Planned',
   discussion: 'Up for discussion',
 };
+
+// Only surface status buckets that actually have flows (no empty "0 planned" noise).
+const STATUS_ORDER: FlowStatus[] = ['built', 'planned', 'discussion'];
+const presentStatuses = STATUS_ORDER.filter((s) => totals[s] > 0);
+const totalFlows = FLOW_REGISTRY.length;
+
+// Slug a feature name into a stable anchor id for the jump-nav.
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 ---
 
 <html lang="en">
@@ -48,25 +56,36 @@ const STATUS_LABEL: Record<FlowStatus, string> = {
           data, not duplicated screens: a new variant is a new row in
           <code>flow-registry.ts</code>, never a new page.
         </p>
+        <p class="lede">
+          The Space&rsquo;s single landing is <strong>Home</strong> (<code>/</code>): the backup pipeline is a status
+          section on it, and every Space-level state opens there. The old standalone Overview folded in.
+        </p>
 
         <div class="legend">
-          <span class="pill built"><i></i>{totals.built} built</span>
-          <span class="pill planned"><i></i>{totals.planned} planned</span>
-          <span class="pill discussion"><i></i>{totals.discussion} up for discussion</span>
+          {presentStatuses.map((s) => (
+            <span class={`pill ${s}`}><i></i>{totals[s]} {STATUS_LABEL[s].toLowerCase()}</span>
+          ))}
+          <span class="count">{totalFlows} flows · {groups.length} areas</span>
         </div>
 
+        <nav class="jump" aria-label="Jump to area">
+          {groups.map((group) => (
+            <a href={`#${slug(group.feature)}`}>{group.feature} <span class="n">{group.flows.length}</span></a>
+          ))}
+        </nav>
+
         <ul class="howto">
-          <li><strong>Built</strong> — clickable in the harness now; the linked steps render.</li>
-          <li><strong>Planned</strong> — agreed and not on screen yet; the spec column captures the intent.</li>
-          <li><strong>Up for discussion</strong> — direction set, design still open. Your feedback shapes it before we build.</li>
+          {presentStatuses.includes('built') && <li><strong>Built</strong> — clickable in the harness now; the linked steps render.</li>}
+          {presentStatuses.includes('planned') && <li><strong>Planned</strong> — agreed and not on screen yet; the spec column captures the intent.</li>}
+          {presentStatuses.includes('discussion') && <li><strong>Up for discussion</strong> — direction set, design still open. Your feedback shapes it before we build.</li>}
           <li>The <strong>spec</strong> column is a reference at any status, not a status of its own.</li>
-          <li>Naming: a flow's <code>id</code> is the same in the panel, the spec tag, and this index, so the layers line up.</li>
+          <li>Naming: a flow&rsquo;s <code>id</code> is the same in the panel, the spec tag, and this index, so the layers line up.</li>
         </ul>
       </header>
 
       {
         groups.map((group) => (
-          <section class="group">
+          <section class="group" id={slug(group.feature)}>
             <h2>{group.feature}</h2>
             <div class="rows">
               {group.flows.map((flow) => (
@@ -211,9 +230,49 @@ const STATUS_LABEL: Record<FlowStatus, string> = {
       }
       .legend {
         display: flex;
+        align-items: center;
         gap: 10px;
         flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+      .legend .count {
+        font-size: 12.5px;
+        color: var(--ink-faint);
+      }
+      .jump {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
         margin-bottom: 18px;
+      }
+      .jump a {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+        font-weight: 560;
+        color: var(--ink-soft);
+        text-decoration: none;
+        padding: 4px 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel);
+        transition: border-color 0.12s ease, color 0.12s ease;
+      }
+      .jump a:hover {
+        color: var(--accent);
+        border-color: color-mix(in oklch, var(--accent) 45%, var(--line));
+      }
+      .jump .n {
+        font-size: 11px;
+        color: var(--ink-faint);
+        background: oklch(0.95 0.006 260);
+        border-radius: 999px;
+        padding: 0 6px;
+        line-height: 16px;
+      }
+      .group {
+        scroll-margin-top: 18px;
       }
       .pill {
         display: inline-flex;
@@ -443,6 +502,9 @@ const STATUS_LABEL: Record<FlowStatus, string> = {
         }
         code {
           background: oklch(0.26 0.012 260);
+        }
+        .jump .n {
+          background: oklch(0.3 0.012 260);
         }
         .status.built {
           color: oklch(0.85 0.13 150);

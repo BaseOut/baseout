@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/html-vite';
 import CreateSpaceModal from './CreateSpaceModal.astro';
 import { renderAstro } from '../../../.storybook/render-astro';
+import { createSpaceModalFixture } from '../../../../design/src/fixtures/component-catalog';
 
 // CreateSpaceModal composes Modal and takes no props — it renders a `dialog.modal`.
 // The Container API does NOT run Modal's client `<script>` that calls showModal(),
@@ -10,8 +11,11 @@ interface CreateSpaceModalArgs {
 }
 
 const meta: Meta<CreateSpaceModalArgs> = {
-  title: 'UI/CreateSpaceModal',
-  loaders: [async () => ({ html: await renderAstro(CreateSpaceModal) })],
+  title: 'Patterns/CreateSpaceModal',
+  loaders: [async () => {
+    void createSpaceModalFixture;
+    return { html: await renderAstro(CreateSpaceModal) };
+  }],
   render: (_args, { loaded }) => loaded.html,
   args: {},
   argTypes: {},

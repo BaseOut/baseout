@@ -5,10 +5,10 @@
  * The wrapper exists for two reasons:
  *  1. import `../styles/design.css` (which carries the @source directives
  *     Tailwind needs to scan apps/web for class names) into the module graph.
- *  2. append HARNESS-ONLY "Handoff" + "Storybook" links to the sidebar footer
- *     so the design→engineering flow index (/handoff) and the component
- *     catalog (/styleguide) are one click away. These are design tools, NOT
- *     product routes, so they live here and never touch `app-config.json`.
+ *  2. append a HARNESS-ONLY "Handoff" link to the sidebar footer so the
+ *     design→engineering flow index (/handoff) is one click away. This is a
+ *     design tool, NOT a product route, so it lives here and never touches
+ *     `app-config.json`.
  */
 import '../styles/design.css';
 import WebSidebarLayout from '@web/layouts/SidebarLayout.astro';

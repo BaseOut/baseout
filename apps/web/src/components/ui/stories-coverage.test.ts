@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
@@ -14,10 +13,17 @@ import { join } from 'node:path';
  */
 const uiDir = fileURLToPath(new URL('.', import.meta.url));
 
-const tracked = execSync("git ls-files '*.astro'", { cwd: uiDir, encoding: 'utf8' })
-  .split('\n')
-  .map((s) => s.trim())
-  .filter((s) => s.length > 0 && !s.includes('/')); // direct children of ui/ only
+const tracked = readdirSync(uiDir)
+  .filter((name) => name.endsWith('.astro'))
+  .sort();
+
+const requiredStorybookPrimitives = [
+  'Alert.astro',
+  'BackLink.astro',
+  'EmptyState.astro',
+  'PageHeader.astro',
+  'SectionPanel.astro',
+];
 
 describe('ui/ component story coverage (CLAUDE.md §2.5)', () => {
   it('finds tracked ui components', () => {
@@ -30,5 +36,10 @@ describe('ui/ component story coverage (CLAUDE.md §2.5)', () => {
       existsSync(story),
       `Missing Storybook story for ${astro}. Every ui/ component needs a *.stories.ts (CLAUDE.md §2.5).`,
     ).toBe(true);
+  });
+
+  it.each(requiredStorybookPrimitives)('%s exists and has a sibling .stories.ts', (astro) => {
+    expect(existsSync(join(uiDir, astro)), `${astro} should exist as a Storybook-backed primitive`).toBe(true);
+    expect(existsSync(join(uiDir, astro.replace(/\.astro$/, '.stories.ts'))), `${astro} needs a Storybook story`).toBe(true);
   });
 });

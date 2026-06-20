@@ -1,0 +1,37 @@
+---
+import { cn } from '../../lib/ui';
+import BackLink from './BackLink.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  eyebrow?: string;
+  backHref?: string;
+  backLabel?: string;
+  class?: string;
+}
+
+const {
+  title,
+  description,
+  eyebrow,
+  backHref,
+  backLabel,
+  class: className = '',
+} = Astro.props;
+---
+
+<header class={cn('flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between', className)}>
+  <div class="min-w-0">
+    {backHref && <BackLink href={backHref} label={backLabel} class="mb-3" />}
+    {eyebrow && <p class="text-xs font-semibold uppercase tracking-[0.18em] text-base-content/50">{eyebrow}</p>}
+    <h1 class="text-2xl font-bold tracking-tight text-base-content">{title}</h1>
+    {description && <p class="mt-1 max-w-2xl text-sm text-base-content/60">{description}</p>}
+    {Astro.slots.has('meta') && <div class="mt-3 flex flex-wrap items-center gap-2"><slot name="meta" /></div>}
+  </div>
+  {Astro.slots.has('actions') && (
+    <div class="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+      <slot name="actions" />
+    </div>
+  )}
+</header>

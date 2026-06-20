@@ -7,8 +7,11 @@
  * linked Spaces; Remove is guarded while any Space depends on it. Editing happens here
  * with sections in place (no setup wizard re-run).
  */
-import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
+import Alert from '../components/ui/Alert.astro';
+import SectionPanel from '../components/ui/SectionPanel.astro';
+import DefinitionList from '../components/patterns/DefinitionList.astro';
+import EntityDetailHeader from '../components/patterns/EntityDetailHeader.astro';
 import type { DestinationSummary } from '../stores/destinations';
 
 interface Props {
@@ -28,59 +31,49 @@ const statusBadge =
   : status === 'connecting' ? { variant: 'warning' as const, label: 'Connecting', dot: true }
   : status === 'needs_connection' ? { variant: 'warning' as const, label: 'Needs connection', dot: false }
   : { variant: 'warning' as const, label: 'Reconnect required', dot: false };
+const connectionItems = [
+  { term: 'Type', description: `${kindLabel} · ${d.providerLabel}` },
+  { term: 'Writes to', description: d.detail },
+  { term: 'Per-Space subfolder', description: 'Each Space writes to its own subfolder under this destination.' },
+];
 ---
 
 <div class="mx-auto max-w-3xl space-y-6">
-  <a href="/settings/destinations" class="back-link"><span class="iconify lucide--arrow-left" aria-hidden="true"></span> Destinations</a>
-
   {reconnected && (
-    <p class="dst-ok" role="status"><span class="iconify lucide--circle-check" aria-hidden="true"></span><span>{d.status === 'needs_connection' ? 'Connected. Link this destination to a Space to start backing up to it.' : 'Reconnected. Backups to this destination will resume on their next scheduled run.'}</span></p>
+    <Alert variant="success">{d.status === 'needs_connection' ? 'Connected. Link this destination to a Space to start backing up to it.' : 'Reconnected. Backups to this destination will resume on their next scheduled run.'}</Alert>
   )}
 
-  <header class="flex flex-wrap items-start justify-between gap-4">
-    <div class="min-w-0">
-      <div class="flex items-center gap-2">
-        <h1 class="text-2xl font-bold tracking-tight leading-tight">{d.name}</h1>
-        <Badge variant={statusBadge.variant} dot={statusBadge.dot}>{statusBadge.label}</Badge>
-      </div>
-      <p class="text-sm text-base-content/60 mt-1.5">{kindLabel} · {d.providerLabel} · {d.detail} · added {d.addedAt}</p>
-    </div>
-    <div class="flex items-center gap-2 shrink-0">
-      {needsReconnect && (
-        <Button href={`/settings/destinations/detail?id=${d.id}&reconnected=1`} variant="primary">Reconnect</Button>
-      )}
-      {needsConnect && (
-        <Button href={`/settings/destinations/detail?id=${d.id}&new=1&type=${d.provider}&reconnected=1`} variant="primary">Connect</Button>
-      )}
-      <Button href={`/settings/destinations/new?type=${d.provider}`} variant="outline">Edit</Button>
-    </div>
-  </header>
+  <EntityDetailHeader
+    title={d.name}
+    description={`${kindLabel} · ${d.providerLabel} · ${d.detail} · added ${d.addedAt}`}
+    backHref="/settings/destinations"
+    backLabel="Back to destinations"
+    statusLabel={statusBadge.label}
+    statusVariant={statusBadge.variant}
+    statusDot={statusBadge.dot}
+  >
+    {needsReconnect && (
+      <Button slot="actions" href={`/settings/destinations/detail?id=${d.id}&reconnected=1`} variant="primary">Reconnect</Button>
+    )}
+    {needsConnect && (
+      <Button slot="actions" href={`/settings/destinations/detail?id=${d.id}&new=1&type=${d.provider}&reconnected=1`} variant="primary">Connect</Button>
+    )}
+    <Button slot="actions" href={`/settings/destinations/new?type=${d.provider}`} variant="secondary">Edit</Button>
+  </EntityDetailHeader>
 
   {needsReconnect && (
-    <div class="dst-alert" role="status">
-      <span class="iconify lucide--triangle-alert" aria-hidden="true"></span>
-      <span>This destination lost access. Backups to it are paused for {inUseCount === 1 ? 'the Space' : `all ${inUseCount} Spaces`} below. Reconnect once to restore {inUseCount === 1 ? 'it' : 'them all'}.</span>
-    </div>
+    <Alert variant="warning">This destination lost access. Backups to it are paused for {inUseCount === 1 ? 'the Space' : `all ${inUseCount} Spaces`} below. Reconnect once to restore {inUseCount === 1 ? 'it' : 'them all'}.</Alert>
   )}
 
   {needsConnect && (
-    <div class="dst-alert" role="status">
-      <span class="iconify lucide--triangle-alert" aria-hidden="true"></span>
-      <span>This destination isn’t connected yet. Connect it, then link it to a Space to start backing up.</span>
-    </div>
+    <Alert variant="warning">This destination isn’t connected yet. Connect it, then link it to a Space to start backing up.</Alert>
   )}
 
-  <section class="dst-card">
-    <h2 class="dst-card-title">Connection</h2>
-    <dl class="dst-dl">
-      <div><dt>Type</dt><dd>{kindLabel} · {d.providerLabel}</dd></div>
-      <div><dt>Writes to</dt><dd>{d.detail}</dd></div>
-      <div><dt>Per-Space subfolder</dt><dd>Each Space writes to its own subfolder under this destination.</dd></div>
-    </dl>
-  </section>
+  <SectionPanel title="Connection">
+    <DefinitionList items={connectionItems} />
+  </SectionPanel>
 
-  <section class="dst-card">
-    <h2 class="dst-card-title">In use by <span class="dst-count">{inUseCount} Space{inUseCount === 1 ? '' : 's'}</span></h2>
+  <SectionPanel title={`In use by ${inUseCount} Space${inUseCount === 1 ? '' : 's'}`}>
     {inUseCount > 0 ? (
       <ul class="dst-chips">
         {d.inUseBy.map((s) => (<li class="dst-chip"><span class="iconify lucide--folder" aria-hidden="true"></span>{s}</li>))}
@@ -89,12 +82,11 @@ const statusBadge =
       <p class="text-sm text-base-content/55">No Spaces use this destination yet.</p>
     )}
     <p class="dst-note">{status === 'reconnect' ? 'Reconnecting restores backups for every Space listed here.' : 'Changing this connection affects every Space listed here.'}</p>
-  </section>
+  </SectionPanel>
 
-  <section class="dst-card dst-danger">
+  <SectionPanel title="Remove destination" class="dst-danger">
     <div class="flex items-start justify-between gap-4 flex-wrap">
       <div class="min-w-0">
-        <h2 class="dst-card-title">Remove destination</h2>
         <p class="text-sm text-base-content/60 mt-1">
           {inUseCount > 0
             ? `Remove is disabled while ${inUseCount} Space${inUseCount === 1 ? '' : 's'} use this destination. Unlink ${inUseCount === 1 ? 'it' : 'them'} first.`
@@ -102,33 +94,15 @@ const statusBadge =
         </p>
       </div>
       {inUseCount > 0 ? (
-        <button type="button" class="btn btn-sm btn-outline btn-error shrink-0" disabled>Remove</button>
+        <Button type="button" variant="outline" size="sm" class="shrink-0 border-error text-error" disabled>Remove</Button>
       ) : (
-        <button type="button" class="btn btn-sm btn-outline btn-error shrink-0">Remove</button>
+        <Button type="button" variant="outline" size="sm" class="shrink-0 border-error text-error">Remove</Button>
       )}
     </div>
-  </section>
+  </SectionPanel>
 </div>
 
 <style>
-  .back-link { display: inline-flex; align-items: center; gap: .3rem; font-size: .8125rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .6); text-decoration: none; }
-  .back-link:hover { color: var(--color-base-content); }
-  .back-link .iconify { font-size: .95rem; }
-
-  .dst-ok, .dst-alert { display: flex; align-items: flex-start; gap: .5rem; padding: .625rem .8rem; border-radius: .55rem; font-size: .8125rem; line-height: 1.45; }
-  .dst-ok { color: var(--color-success, oklch(.6 .16 150)); background: oklch(from var(--color-success, oklch(.6 .16 150)) l c h / .08); border: 1px solid oklch(from var(--color-success, oklch(.6 .16 150)) l c h / .22); }
-  .dst-alert { color: oklch(from var(--color-base-content) l c h / .9); background: oklch(from var(--color-warning) l c h / .12); border: 1px solid oklch(from var(--color-warning) l c h / .3); }
-  .dst-ok .iconify { font-size: 1rem; flex: none; margin-top: .05rem; }
-  .dst-alert .iconify { font-size: 1rem; flex: none; margin-top: .05rem; color: var(--color-warning); }
-
-  .dst-card { border: 1px solid var(--color-base-300); border-radius: .7rem; padding: 1.1rem 1.2rem; background: var(--color-base-100); }
-  .dst-card-title { font-size: .9rem; font-weight: 700; display: flex; align-items: center; gap: .5rem; }
-  .dst-count { font-size: .72rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .55); background: oklch(from var(--color-base-200) l c h / .7); padding: .05rem .4rem; border-radius: 999px; }
-  .dst-dl { margin-top: .8rem; display: flex; flex-direction: column; gap: .55rem; }
-  .dst-dl > div { display: grid; grid-template-columns: 9rem 1fr; gap: 1rem; font-size: .8125rem; }
-  .dst-dl dt { color: oklch(from var(--color-base-content) l c h / .5); }
-  .dst-dl dd { color: oklch(from var(--color-base-content) l c h / .85); }
-
   .dst-chips { margin-top: .75rem; display: flex; flex-wrap: wrap; gap: .4rem; }
   .dst-chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem; padding: .3rem .6rem; border: 1px solid var(--color-base-300); border-radius: 999px; background: oklch(from var(--color-base-200) l c h / .4); }
   .dst-chip .iconify { font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .5); }

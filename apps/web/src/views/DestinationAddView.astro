@@ -1,26 +1,20 @@
 ---
 /**
  * DestinationAddView — add an account-level destination (skeleton).
- *
- * Step 1: pick a type. File storage is the required everyday store; a database is an
- * optional, encouraged extra (soft upsell, never a blocker). Step 2 (when ?type is set):
- * authenticate + point it somewhere, then Save & Test. The created destination becomes a
- * reusable account object, then linkable to Spaces.
  */
+import BackLink from '../components/ui/BackLink.astro';
 import Button from '../components/ui/Button.astro';
+import TextInput from '../components/ui/TextInput.astro';
 import { getDestinationProviders, type DestinationProvider } from '../lib/provider-catalog';
 
 interface Props {
-  /** provider slug picked in step 1; null shows the type picker */
   selectedType?: string | null;
-  /** provider catalog with availability resolved; defaults to env-less (BYOS coming-soon) */
   providers?: DestinationProvider[];
 }
 const { selectedType = null, providers = getDestinationProviders() } = Astro.props;
 
 const fileTypes = providers.filter((p) => p.kind === 'file');
 const dbTypes = providers.filter((p) => p.kind === 'database');
-// Only an available provider can advance to the connect step.
 const sel = providers.find((p) => p.slug === selectedType && p.availability === 'available') ?? null;
 
 const tierLabel = (t?: string) => (t === 'growth' ? 'Growth+' : t === 'pro' ? 'Pro+' : null);
@@ -31,7 +25,7 @@ const selField: 'folder' | 'connection' = sel?.kind === 'database' ? 'connection
 ---
 
 <div class="mx-auto max-w-3xl space-y-6">
-  <a href="/settings/destinations" class="back-link"><span class="iconify lucide--arrow-left" aria-hidden="true"></span> Destinations</a>
+  <BackLink href="/settings/destinations" label="Destinations" />
 
   {!sel ? (
     <>
@@ -41,18 +35,18 @@ const selField: 'folder' | 'connection' = sel?.kind === 'database' ? 'connection
       </header>
 
       <section>
-        <h2 class="add-section-title">File storage <span class="add-req">required for every backup</span></h2>
-        <div class="add-grid">
+        <h2 class="mb-3 flex items-center gap-2 text-base font-bold">File storage <span class="text-[0.7rem] font-semibold uppercase tracking-wide text-base-content/45">required for every backup</span></h2>
+        <div class="grid gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
           {fileTypes.map((t) => (
             t.availability === 'available' ? (
-              <a href={`/settings/destinations/new?type=${t.slug}`} class="add-card">
-                <span class="add-ic"><span class={`iconify ${iconFor(t)}`} aria-hidden="true"></span></span>
-                <span class="min-w-0"><span class="add-name">{t.label}{t.managed && <span class="add-tag">Managed</span>}</span><span class="add-note">{t.note}</span></span>
+              <a href={`/settings/destinations/new?type=${t.slug}`} class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 no-underline text-inherit transition-colors hover:border-primary/50 hover:bg-primary/5">
+                <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-base-200/80"><span class={`iconify ${iconFor(t)} text-lg text-base-content/70`} aria-hidden="true"></span></span>
+                <span class="min-w-0"><span class="flex items-center gap-1.5 text-sm font-semibold">{t.label}{t.managed && <span class="rounded-full bg-success/15 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-success">Managed</span>}</span><span class="block text-xs text-base-content/50">{t.note}</span></span>
               </a>
             ) : (
-              <div class="add-card add-card-soon" aria-disabled="true" title="Coming soon">
-                <span class="add-ic"><span class={`iconify ${iconFor(t)}`} aria-hidden="true"></span></span>
-                <span class="min-w-0"><span class="add-name">{t.label}<span class="add-soon">{tierLabel(t.tier) ? `${tierLabel(t.tier)} · Coming soon` : 'Coming soon'}</span></span><span class="add-note">{t.note}</span></span>
+              <div class="flex cursor-not-allowed items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 opacity-60" aria-disabled="true" title="Coming soon">
+                <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-base-200/80"><span class={`iconify ${iconFor(t)} text-lg text-base-content/70`} aria-hidden="true"></span></span>
+                <span class="min-w-0"><span class="flex items-center gap-1.5 text-sm font-semibold">{t.label}<span class="rounded-full bg-base-content/10 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-base-content/60">{tierLabel(t.tier) ? `${tierLabel(t.tier)} · Coming soon` : 'Coming soon'}</span></span><span class="block text-xs text-base-content/50">{t.note}</span></span>
               </div>
             )
           ))}
@@ -60,21 +54,21 @@ const selField: 'folder' | 'connection' = sel?.kind === 'database' ? 'connection
       </section>
 
       <section>
-        <div class="add-db-head">
-          <h2 class="add-section-title">Database <span class="add-rec">Recommended</span></h2>
-          <p class="add-db-blurb">Add a database to query your backup with SQL and power live dashboards. Optional — your file backup runs without it.</p>
+        <div class="mb-3">
+          <h2 class="flex items-center gap-2 text-base font-bold">Database <span class="rounded-full bg-primary/15 px-2 py-0.5 text-[0.68rem] font-bold uppercase tracking-wide text-primary">Recommended</span></h2>
+          <p class="mt-1 max-w-prose text-sm text-base-content/60">Add a database to query your backup with SQL and power live dashboards. Optional — your file backup runs without it.</p>
         </div>
-        <div class="add-grid">
+        <div class="grid gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
           {dbTypes.map((t) => (
             t.availability === 'available' ? (
-              <a href={`/settings/destinations/new?type=${t.slug}`} class="add-card">
-                <span class="add-ic add-ic-db"><span class={`iconify ${iconFor(t)}`} aria-hidden="true"></span></span>
-                <span class="min-w-0"><span class="add-name">{t.label}</span><span class="add-note">{t.note}</span></span>
+              <a href={`/settings/destinations/new?type=${t.slug}`} class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 no-underline text-inherit transition-colors hover:border-primary/50 hover:bg-primary/5">
+                <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10"><span class={`iconify ${iconFor(t)} text-lg text-primary`} aria-hidden="true"></span></span>
+                <span class="min-w-0"><span class="text-sm font-semibold">{t.label}</span><span class="block text-xs text-base-content/50">{t.note}</span></span>
               </a>
             ) : (
-              <div class="add-card add-card-soon" aria-disabled="true" title="Coming soon">
-                <span class="add-ic add-ic-db"><span class={`iconify ${iconFor(t)}`} aria-hidden="true"></span></span>
-                <span class="min-w-0"><span class="add-name">{t.label}<span class="add-soon">{tierLabel(t.tier) ? `${tierLabel(t.tier)} · Coming soon` : 'Coming soon'}</span></span><span class="add-note">{t.note}</span></span>
+              <div class="flex cursor-not-allowed items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 opacity-60" aria-disabled="true" title="Coming soon">
+                <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10"><span class={`iconify ${iconFor(t)} text-lg text-primary`} aria-hidden="true"></span></span>
+                <span class="min-w-0"><span class="flex items-center gap-1.5 text-sm font-semibold">{t.label}<span class="rounded-full bg-base-content/10 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-base-content/60">{tierLabel(t.tier) ? `${tierLabel(t.tier)} · Coming soon` : 'Coming soon'}</span></span><span class="block text-xs text-base-content/50">{t.note}</span></span>
               </div>
             )
           ))}
@@ -84,77 +78,29 @@ const selField: 'folder' | 'connection' = sel?.kind === 'database' ? 'connection
   ) : (
     <>
       <header class="flex items-center gap-3">
-        <span class="add-ic add-ic-lg"><span class={`iconify ${selIcon}`} aria-hidden="true"></span></span>
+        <span class="grid size-11 shrink-0 place-items-center rounded-lg bg-base-200/80"><span class={`iconify ${selIcon} text-xl text-base-content/70`} aria-hidden="true"></span></span>
         <div>
           <h1 class="text-xl font-bold tracking-tight leading-tight">Connect {sel.label}</h1>
           <p class="text-sm text-base-content/55 leading-tight mt-0.5">{sel.kind === 'database' ? 'Database destination' : 'File storage destination'}</p>
         </div>
       </header>
 
-      <form method="POST" action="/api/destinations" class="add-form" data-astro-reload>
-        <label class="add-field">
-          <span class="add-label">Name</span>
-          <input type="text" name="name" placeholder={`${sel.label} backup`} class="input input-bordered w-full" />
-          <span class="add-hint">A label you'll recognise when linking it to Spaces.</span>
-        </label>
+      <form method="POST" action="/api/destinations" class="flex max-w-lg flex-col gap-4" data-astro-reload>
+        <TextInput label="Name" type="text" name="name" placeholder={`${sel.label} backup`} hint="A label you'll recognise when linking it to Spaces." />
 
         {sel.managed ? (
-          <p class="add-managed"><span class="iconify lucide--shield-check" aria-hidden="true"></span> Managed by Baseout — no account to connect or folder to choose.</p>
+          <p class="flex items-center gap-2 rounded-lg border border-success/20 bg-success/10 px-3 py-2.5 text-sm text-base-content/75"><span class="iconify lucide--shield-check text-success" aria-hidden="true"></span> Managed by Baseout — no account to connect or folder to choose.</p>
         ) : selField === 'folder' ? (
-          <label class="add-field">
-            <span class="add-label">Folder</span>
-            <input type="text" name="folder" placeholder="/Baseout" class="input input-bordered w-full font-mono text-sm" />
-            <span class="add-hint">Each Space writes to its own subfolder. You’ll authorize the account after saving.</span>
-          </label>
+          <TextInput label="Folder" type="text" name="folder" placeholder="/Baseout" class="font-mono text-sm" hint="Each Space writes to its own subfolder. You'll authorize the account after saving." />
         ) : (
-          <label class="add-field">
-            <span class="add-label">Connection string</span>
-            <input type="password" name="connection" placeholder="postgres://user:••••@host:5432/db" autocomplete="off" class="input input-bordered w-full font-mono text-sm" />
-            <span class="add-hint">Stored encrypted. Baseout writes one schema per Space.</span>
-          </label>
+          <TextInput label="Connection string" type="password" name="connection" placeholder="postgres://user:••••@host:5432/db" autocomplete="off" class="font-mono text-sm" hint="Stored encrypted. Baseout writes one schema per Space." />
         )}
 
-        <div class="add-actions">
-          <a href="/settings/destinations/new" class="btn btn-ghost btn-sm">Back</a>
+        <div class="mt-1 flex items-center justify-end gap-2">
+          <Button href="/settings/destinations/new" variant="ghost" size="sm">Back</Button>
           <Button href={`/settings/destinations?status=added&type=${sel.slug}`} variant="primary">Save destination</Button>
         </div>
       </form>
     </>
   )}
 </div>
-
-<style>
-  .back-link { display: inline-flex; align-items: center; gap: .3rem; font-size: .8125rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .6); text-decoration: none; }
-  .back-link:hover { color: var(--color-base-content); }
-  .back-link .iconify { font-size: .95rem; }
-
-  .add-section-title { font-size: .95rem; font-weight: 700; display: flex; align-items: center; gap: .55rem; margin-bottom: .8rem; }
-  .add-req { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: oklch(from var(--color-base-content) l c h / .45); }
-  .add-rec { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--color-primary); background: oklch(from var(--color-primary) l c h / .12); padding: .1rem .45rem; border-radius: 999px; }
-  .add-db-head { margin-bottom: .8rem; }
-  .add-db-blurb { font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .6); margin-top: .15rem; max-width: 46ch; }
-
-  .add-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: .6rem; }
-  .add-card { display: flex; align-items: center; gap: .7rem; padding: .7rem .8rem; border: 1px solid var(--color-base-300); border-radius: .65rem; background: var(--color-base-100); text-decoration: none; color: inherit; transition: border-color .12s ease, background .12s ease; }
-  .add-card:hover { border-color: oklch(from var(--color-primary) l c h / .5); background: oklch(from var(--color-primary) l c h / .04); }
-  .add-ic { width: 2.1rem; height: 2.1rem; border-radius: .55rem; display: grid; place-items: center; background: oklch(from var(--color-base-200) l c h / .8); flex: none; }
-  .add-ic .iconify { font-size: 1.1rem; color: oklch(from var(--color-base-content) l c h / .7); }
-  .add-ic-db { background: oklch(from var(--color-primary) l c h / .1); }
-  .add-ic-db .iconify { color: var(--color-primary); }
-  .add-ic-lg { width: 2.6rem; height: 2.6rem; }
-  .add-ic-lg .iconify { font-size: 1.35rem; }
-  .add-name { display: flex; align-items: center; gap: .4rem; font-size: .875rem; font-weight: 600; }
-  .add-tag { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: var(--color-success); background: oklch(from var(--color-success) l c h / .14); padding: .05rem .35rem; border-radius: 999px; }
-  .add-card-soon { opacity: .6; cursor: not-allowed; }
-  .add-card-soon:hover { border-color: var(--color-base-300); background: var(--color-base-100); }
-  .add-soon { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: oklch(from var(--color-base-content) l c h / .6); background: oklch(from var(--color-base-content) l c h / .08); padding: .05rem .4rem; border-radius: 999px; white-space: nowrap; }
-  .add-note { display: block; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); margin-top: .05rem; }
-
-  .add-form { display: flex; flex-direction: column; gap: 1.1rem; max-width: 30rem; }
-  .add-field { display: flex; flex-direction: column; gap: .35rem; }
-  .add-label { font-size: .8125rem; font-weight: 600; }
-  .add-hint { font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); }
-  .add-managed { display: flex; align-items: center; gap: .45rem; font-size: .8125rem; color: oklch(from var(--color-base-content) l c h / .75); padding: .7rem .8rem; border-radius: .55rem; background: oklch(from var(--color-success) l c h / .08); border: 1px solid oklch(from var(--color-success) l c h / .2); }
-  .add-managed .iconify { color: var(--color-success); flex: none; }
-  .add-actions { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; margin-top: .3rem; }
-</style>

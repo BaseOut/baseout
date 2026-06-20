@@ -5,8 +5,6 @@
 // ?static=1 holds the loader for preview (no auto-redirect) — used by the panel's
 // "Loader" page.
 import SidebarLayout from '../../layouts/SidebarLayout.astro';
-import ScenarioSwitcher from '../../components/ScenarioSwitcher.astro';
-import { DEMO_FLOWS } from '../../lib/demo-flows';
 import { getBreadcrumbs } from '@web/lib/config';
 const breadcrumbs = getBreadcrumbs('/integrations');
 const isStatic = Astro.url.searchParams.get('static') === '1';
@@ -28,5 +26,4 @@ const isStatic = Astro.url.searchParams.get('static') === '1';
       }, 1700);
     </script>
   )}
-  <ScenarioSwitcher flows={DEMO_FLOWS} />
 </SidebarLayout>

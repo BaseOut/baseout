@@ -1,7 +1,14 @@
 ---
 // `/` is the Space's Home / dashboard (SpaceHomeView). Single-Space-first: Home is
 // scoped to the active Space and absorbs the old Overview (the pipeline is a section).
-// ?fixture=empty|trial → not set up (shows the diagram). ?broken=src|dest → paused.
+//
+// States, all on Home (the old /integrations Overview is gone):
+//   ?fixture=empty|trial → not set up yet (the SpacePipelineHero setup diagram)
+//   ?broken=src|dest|both → a connection lost access → "Backups paused" + Reconnect
+//   ?status=running       → the wizard just finished first-time setup: configured,
+//                           first backup running, no completed history yet
+//   ?status=saved         → an edit was saved on an already-running Space
+//   (default)             → a fully-configured, healthy Space
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import SpaceHomeView from '@web/views/SpaceHomeView.astro';
 import { getBreadcrumbs } from '@web/lib/config';
@@ -13,29 +20,53 @@ import { FIXTURE_DESTINATIONS } from '../fixtures/destinations';
 const breadcrumbs = getBreadcrumbs('/');
 const fixture = Astro.url.searchParams.get('fixture');
 const broken = (Astro.url.searchParams.get('broken') ?? '').toLowerCase();
+const statusParam = Astro.url.searchParams.get('status');
 const unconfigured = fixture === 'empty' || fixture === 'trial';
 
-// Configured Space with 6 bases by default; empty/trial → nothing set up yet.
+// First-run vs edit-saved confirmations (mirror what the wizard redirects to).
+const firstRun = statusParam === 'running';
+const justSaved = statusParam === 'saved';
+const statusCode = firstRun ? 'running' : justSaved ? 'saved' : null;
+
+// The wizard passes the just-created names + base count so the running Home reflects
+// what was set up (the harness has no real persistence).
+const wzSrc = Astro.url.searchParams.get('src');
+const wzDest = Astro.url.searchParams.get('dest');
+const wzBases = Number.parseInt(Astro.url.searchParams.get('bases') ?? '', 10);
+const includedN = firstRun && Number.isFinite(wzBases) ? Math.max(1, Math.min(12, wzBases)) : 6;
+
+// Configured Space with `includedN` bases by default; empty/trial → nothing set up yet.
 const state = unconfigured
   ? { ...FIXTURE_INTEGRATIONS_STATE, bases: FIXTURE_INTEGRATIONS_STATE.bases.map((b) => ({ ...b, isIncluded: false })) }
   : {
       ...FIXTURE_INTEGRATIONS_STATE,
       policy: { ...FIXTURE_INTEGRATIONS_STATE.policy, nextScheduledAt: new Date(Date.now() + 6 * 3600 * 1000).toISOString() },
-      bases: FIXTURE_INTEGRATIONS_STATE_SETUP_MANY.bases.slice(0, 12).map((b, i) => ({ ...b, isIncluded: i < 6 })),
+      bases: FIXTURE_INTEGRATIONS_STATE_SETUP_MANY.bases.slice(0, 12).map((b, i) => ({ ...b, isIncluded: i < includedN })),
     };
 
+const baseSource = findSource('src-ops');
 const source = unconfigured
   ? null
-  : broken === 'src' ? { ...findSource('src-ops'), status: 'reconnect' as const } : findSource('src-ops');
+  : broken === 'src' || broken === 'both'
+    ? { ...baseSource, status: 'reconnect' as const }
+    : firstRun && wzSrc ? { ...baseSource, name: wzSrc, status: 'connected' as const } : baseSource;
+
+const baseDest = FIXTURE_DESTINATIONS.find((d) => d.id === 'company-drive')!;
 const destinations = unconfigured
   ? []
-  : FIXTURE_DESTINATIONS.filter((d) => d.id === 'company-drive').map((d) => (broken === 'dest' ? { ...d, status: 'reconnect' as const } : d));
+  : [
+      broken === 'dest' || broken === 'both'
+        ? { ...baseDest, status: 'reconnect' as const }
+        : firstRun && wzDest ? { ...baseDest, name: wzDest } : baseDest,
+    ];
 
 // Re-anchor the fixture run timeline to "now" so relative times read naturally.
 const OFFSET = Date.now() - new Date('2026-06-04T09:00:00.000Z').getTime();
 const shift = (iso: string | null) => (iso ? new Date(new Date(iso).getTime() + OFFSET).toISOString() : iso);
 const includedForRuns = state.bases.filter((b) => b.isIncluded).map((b) => ({ id: b.id, name: b.name }));
-const runs = unconfigured
+
+// On a first run there is no completed history yet — the running run lives on /backups.
+const runs = unconfigured || firstRun
   ? []
   : FIXTURE_BACKUP_RUNS.map((r) => ({
       ...r,
@@ -57,21 +88,25 @@ const PER_BASE: { status: 'ok' | 'failed' | 'pending'; fields: number; records: 
 ];
 const baseMetrics = unconfigured
   ? []
-  : state.bases
-      .filter((b) => b.isIncluded)
-      .map((b, i) => ({ id: b.id, name: b.name, ...(PER_BASE[i] ?? { status: 'ok' as const, fields: 0, records: 0, attachments: 0 }) }));
+  : firstRun
+    ? state.bases
+        .filter((b) => b.isIncluded)
+        .map((b) => ({ id: b.id, name: b.name, status: 'pending' as const, fields: 0, records: 0, attachments: 0 }))
+    : state.bases
+        .filter((b) => b.isIncluded)
+        .map((b, i) => ({ id: b.id, name: b.name, ...(PER_BASE[i] ?? { status: 'ok' as const, fields: 0, records: 0, attachments: 0 }) }));
 
 // Usage vs plan limits — PLACEHOLDER metering (credit-based model unconfirmed with the client).
 const usage = unconfigured
   ? []
   : [
-      { label: 'Bases', used: 6, limit: 25, unit: '' },
-      { label: 'Backups this month', used: 28, limit: 30, unit: '' },
-      { label: 'Records backed up', used: 86420, limit: 100000, unit: '' },
-      { label: 'Storage', used: 18, limit: 25, unit: ' GB' },
+      { label: 'Bases', used: includedN, limit: 25, unit: '' },
+      { label: 'Backups this month', used: firstRun ? 1 : 28, limit: 30, unit: '' },
+      { label: 'Records backed up', used: firstRun ? 0 : 86420, limit: 100000, unit: '' },
+      { label: 'Storage', used: firstRun ? 0 : 18, limit: 25, unit: ' GB' },
     ];
 ---
 
 <SidebarLayout pageTitle="Home" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <SpaceHomeView state={state} source={source} destinations={destinations} runs={runs} baseMetrics={baseMetrics} usage={usage} />
+  <SpaceHomeView state={state} source={source} destinations={destinations} runs={runs} statusCode={statusCode} baseMetrics={baseMetrics} usage={usage} />
 </SidebarLayout>

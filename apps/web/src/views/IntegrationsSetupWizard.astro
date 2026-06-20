@@ -15,7 +15,11 @@
  * the Source resets the base selection; reconnect happens in-context; no draft of
  * an abandoned wizard. Destination = 1 file (required) + 1 optional database.
  */
-import BaseSelectionTable from '../components/integrations/BaseSelectionTable.astro';
+import BaseSelectionTable from '../components/patterns/BaseSelectionTable.astro';
+import BackLink from '../components/ui/BackLink.astro';
+import Button from '../components/ui/Button.astro';
+import Badge from '../components/ui/Badge.astro';
+import TextInput from '../components/ui/TextInput.astro';
 import { formatNextScheduledAt } from '../lib/backups/format';
 import type { IntegrationsState } from '../stores/connections';
 import type { SourceSummary } from '../stores/sources';
@@ -74,7 +78,7 @@ const FREQS = [
 <div class="mx-auto max-w-5xl space-y-6" data-wizard data-mode={mode} data-space-id={realSpaceId ?? undefined}>
   {/* Header */}
   <div>
-    <a href="/integrations" class="back-link"><span class="iconify lucide--arrow-left"></span> Overview</a>
+    <BackLink href="/integrations" label="Overview" />
     <h1 class="text-2xl font-bold tracking-tight leading-tight mt-3">{isEdit ? "Edit this Space's backup" : "Set up this Space's backup"}</h1>
     <p class="text-sm text-base-content/60 mt-0.5">{isEdit ? 'Change the source, bases, destination or schedule — jump between tabs in any order' : 'Pick a source, the bases to protect, and where they go'} — for <span class="font-medium text-base-content/80">{spaceName}</span>.</p>
   </div>
@@ -101,13 +105,13 @@ const FREQS = [
       <div class="bar-actions">
         {isEdit ? (
           <>
-            <a href="/integrations" class="btn btn-ghost btn-sm">Cancel</a>
-            <button type="button" class="btn btn-primary btn-sm" data-save-edit>Save changes</button>
+            <Button href="/integrations" variant="ghost" size="sm">Cancel</Button>
+            <Button type="button" variant="primary" size="sm" data-save-edit>Save changes</Button>
           </>
         ) : (
           <>
-            <button type="button" class="btn btn-ghost btn-sm" data-step-back hidden><span class="iconify lucide--arrow-left"></span> Back</button>
-            <button type="button" class="btn btn-primary btn-sm" data-step-next>Next</button>
+            <Button type="button" variant="ghost" size="sm" data-step-back hidden><span class="iconify lucide--arrow-left"></span> Back</Button>
+            <Button type="button" variant="primary" size="sm" data-step-next>Next</Button>
           </>
         )}
       </div>
@@ -126,7 +130,7 @@ const FREQS = [
             <p class="picker-empty-title">No Airtable source yet</p>
             <p class="picker-empty-sub">Baseout reads your bases read-only. Connect an account to continue.</p>
           </div>
-          <button type="button" class="btn btn-primary btn-sm shrink-0" data-open-drawer="source">Connect Airtable</button>
+          <Button type="button" variant="primary" size="sm" class="shrink-0" data-open-drawer="source">Connect Airtable</Button>
         </div>
 
         <fieldset class="opt-options" data-picker-list>
@@ -158,8 +162,8 @@ const FREQS = [
             <p class="switch-confirm-sub">Bases belong to a source. Your <span data-switch-count>0</span> selected base<span data-switch-plural></span> will be cleared so you don't back up the wrong ones.</p>
           </div>
           <div class="switch-confirm-actions">
-            <button type="button" class="btn btn-ghost btn-xs" data-switch-cancel>Keep current</button>
-            <button type="button" class="btn btn-warning btn-xs" data-switch-go>Switch &amp; clear</button>
+            <Button type="button" variant="ghost" size="sm" data-switch-cancel>Keep current</Button>
+            <Button type="button" variant="warning" size="sm" data-switch-go>Switch &amp; clear</Button>
           </div>
         </div>
       </section>
@@ -185,7 +189,7 @@ const FREQS = [
             <p class="picker-empty-title">No destination yet</p>
             <p class="picker-empty-sub">Pick storage you control — Google Drive, S3, Dropbox, or managed Baseout R2.</p>
           </div>
-          <button type="button" class="btn btn-primary btn-sm shrink-0" data-open-drawer="dest">Add a destination</button>
+          <Button type="button" variant="primary" size="sm" class="shrink-0" data-open-drawer="dest">Add a destination</Button>
         </div>
 
         <div class="dest-groups" data-picker-list>
@@ -256,7 +260,7 @@ const FREQS = [
               <input type="checkbox" class="checkbox checkbox-sm" checked disabled />
               <span class="min-w-0"><span class="opt-row-name">Schema</span><span class="opt-row-sub">Tables, fields, views and relationships. Always captured.</span></span>
             </label>
-            <span class="badge badge-sm badge-ghost shrink-0">Always on</span>
+            <Badge variant="default" size="sm" class="shrink-0">Always on</Badge>
           </li>
           <li class="opt-row">
             <label class="opt-check">
@@ -269,7 +273,7 @@ const FREQS = [
               <input type="checkbox" class="checkbox checkbox-sm" />
               <span class="min-w-0"><span class="opt-row-name">Attachments</span><span class="opt-row-sub">Files attached to records, stored as binaries.</span></span>
             </label>
-            <span class="badge badge-sm badge-warning badge-outline shrink-0">Billed on storage</span>
+            <Badge variant="warning" size="sm" outline class="shrink-0">Billed on storage</Badge>
           </li>
         </ul>
         <p class="text-xs text-base-content/50 mt-2.5">Airtable's API can't export automations, interfaces, forms or views — those aren't backed up.</p>
@@ -284,7 +288,7 @@ const FREQS = [
                   <input type="radio" name="wz-frequency" value={f.value} checked={state.policy.frequency === f.value} disabled={!allowed} class="radio radio-sm radio-primary" data-frequency />
                   <span class="min-w-0"><span class="opt-row-name">{f.label}</span><span class="opt-row-sub">{f.helper}</span></span>
                 </label>
-                {!allowed && <a href="/settings/billing" class="badge badge-sm badge-warning badge-outline shrink-0 no-underline">Upgrade</a>}
+                {!allowed && <Button href="/settings/billing" variant="warning" size="sm" outline class="shrink-0">Upgrade</Button>}
               </li>
             );
           })}
@@ -303,7 +307,7 @@ const FREQS = [
           <span class="review-link" aria-hidden="true"></span>
           <div class="review-node">
             <span class="review-node-k">Backs up</span>
-            <span class="review-node-v"><span class="iconify lucide--table review-mark-ic"></span><span data-review-bases>—</span></span>
+            <span class="review-node-v"><span class="iconify lucide--layout-grid review-mark-ic"></span><span data-review-bases>—</span></span>
           </div>
           <span class="review-link" aria-hidden="true"></span>
           <div class="review-node">
@@ -333,11 +337,7 @@ const FREQS = [
         <button type="button" class="drawer-x" data-drawer-close aria-label="Close"><span class="iconify lucide--x"></span></button>
       </header>
       <div class="drawer-body">
-        <label class="add-field">
-          <span class="add-label">Name</span>
-          <input type="text" data-src-name placeholder="e.g. Ops Airtable" class="input input-bordered w-full" />
-          <span class="add-hint">A label to tell this connection apart from other Airtable accounts.</span>
-        </label>
+        <TextInput label="Name" type="text" data-src-name placeholder="e.g. Ops Airtable" hint="A label to tell this connection apart from other Airtable accounts." />
         <div class="connect" data-src-connect>
           <span class="add-label">Connection method</span>
           <div role="tablist" class="method-tabs">
@@ -348,15 +348,13 @@ const FREQS = [
             <p class="add-hint">You approve read-only access on Airtable in a popup, then return here — the wizard stays open.</p>
           </div>
           <div data-src-method="pat" class="mt-4">
-            <label class="block"><span class="add-label">Personal access token</span>
-              <input type="password" data-src-token placeholder="pat••••••••••••••" autocomplete="off" class="input input-bordered w-full font-mono text-sm mt-1.5" /></label>
-            <p class="add-hint mt-2">A read-only token with <code>data.records:read</code> and <code>schema.bases:read</code> scopes.</p>
+            <TextInput label="Personal access token" type="password" data-src-token placeholder="pat••••••••••••••" autocomplete="off" class="font-mono text-sm" hint="A read-only token with data.records:read and schema.bases:read scopes." />
           </div>
         </div>
       </div>
       <footer class="drawer-foot">
-        <button type="button" class="btn btn-ghost btn-sm" data-drawer-close>Cancel</button>
-        <button type="button" class="btn btn-primary btn-sm" data-src-create>Test &amp; create</button>
+        <Button type="button" variant="ghost" size="sm" data-drawer-close>Cancel</Button>
+        <Button type="button" variant="primary" size="sm" data-src-create>Test &amp; create</Button>
       </footer>
     </aside>
   </div>
@@ -387,27 +385,20 @@ const FREQS = [
         </div>
         {/* configure (after type pick) */}
         <div data-dest-config hidden>
-          <button type="button" class="back-link mb-3" data-dest-back><span class="iconify lucide--arrow-left"></span> Pick a different type</button>
-          <label class="add-field">
-            <span class="add-label">Name</span>
-            <input type="text" data-dest-name placeholder="Backup storage" class="input input-bordered w-full" />
-          </label>
-          <div data-dest-field-folder class="add-field mt-3">
-            <span class="add-label">Folder</span>
-            <input type="text" data-dest-folder-input placeholder="/Baseout" class="input input-bordered w-full font-mono text-sm" />
-            <span class="add-hint">You authorize the account in a popup after saving. Each Space writes to its own subfolder.</span>
+          <Button type="button" variant="ghost" size="sm" class="mb-3" data-dest-back><span class="iconify lucide--arrow-left"></span> Pick a different type</Button>
+          <TextInput label="Name" type="text" data-dest-name placeholder="Backup storage" />
+          <div data-dest-field-folder class="mt-3">
+            <TextInput label="Folder" type="text" data-dest-folder-input placeholder="/Baseout" class="font-mono text-sm" hint="You authorize the account in a popup after saving. Each Space writes to its own subfolder." />
           </div>
-          <div data-dest-field-conn class="add-field mt-3" hidden>
-            <span class="add-label">Connection string</span>
-            <input type="password" data-dest-conn-input placeholder="postgres://user:••••@host:5432/db" autocomplete="off" class="input input-bordered w-full font-mono text-sm" />
-            <span class="add-hint">Stored encrypted. Baseout writes one schema per Space.</span>
+          <div data-dest-field-conn class="mt-3" hidden>
+            <TextInput label="Connection string" type="password" data-dest-conn-input placeholder="postgres://user:••••@host:5432/db" autocomplete="off" class="font-mono text-sm" hint="Stored encrypted. Baseout writes one schema per Space." />
           </div>
           <p data-dest-field-managed class="add-managed mt-3" hidden><span class="iconify lucide--shield-check"></span> Managed by Baseout — no account to connect or folder to choose.</p>
         </div>
       </div>
       <footer class="drawer-foot">
-        <button type="button" class="btn btn-ghost btn-sm" data-drawer-close>Cancel</button>
-        <button type="button" class="btn btn-primary btn-sm" data-dest-create hidden>Save destination</button>
+        <Button type="button" variant="ghost" size="sm" data-drawer-close>Cancel</Button>
+        <Button type="button" variant="primary" size="sm" data-dest-create hidden>Save destination</Button>
       </footer>
     </aside>
   </div>
@@ -421,22 +412,21 @@ const FREQS = [
         <button type="button" class="drawer-x" data-drawer-close aria-label="Close"><span class="iconify lucide--x"></span></button>
       </header>
       <div class="drawer-body">
-        <div class="reconnect-card">
-          <span class="reconnect-ic"><span class="iconify lucide--triangle-alert"></span></span>
+        <div class="reconnect-panel">
+          <span class="reconnect-ic"><span class="iconify lucide--wifi-off"></span></span>
           <div class="min-w-0"><p class="reconnect-name" data-reconnect-name>—</p><p class="reconnect-meta">Lost access · backups paused</p></div>
         </div>
         <div data-reconnect-oauth class="mt-4">
           <p class="add-hint">You reauthorize read-only access in a popup, then return here — the wizard stays open.</p>
         </div>
-        <label data-reconnect-secret-field class="add-field mt-4" hidden>
-          <span class="add-label" data-reconnect-secret-label>Personal access token</span>
-          <input type="password" data-reconnect-secret placeholder="••••••••••••••" autocomplete="off" class="input input-bordered w-full font-mono text-sm" />
-          <span class="add-hint">Stored encrypted. Re-enter to restore access.</span>
-        </label>
+        <div data-reconnect-secret-field hidden>
+          <span data-reconnect-secret-label class="sr-only">Personal access token</span>
+          <TextInput label="Personal access token" type="password" data-reconnect-secret placeholder="••••••••••••••" autocomplete="off" class="font-mono text-sm mt-4" hint="Stored encrypted. Re-enter to restore access." />
+        </div>
       </div>
       <footer class="drawer-foot">
-        <button type="button" class="btn btn-ghost btn-sm" data-drawer-close>Cancel</button>
-        <button type="button" class="btn btn-primary btn-sm" data-reconnect-confirm><span class="iconify lucide--rotate-cw"></span> Reconnect</button>
+        <Button type="button" variant="ghost" size="sm" data-drawer-close>Cancel</Button>
+        <Button type="button" variant="primary" size="sm" data-reconnect-confirm><span class="iconify lucide--rotate-cw"></span> Reconnect</Button>
       </footer>
     </aside>
   </div>
@@ -594,7 +584,7 @@ const FREQS = [
   .opt-reconnect { flex: none; display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; font-weight: 650; color: var(--color-warning); background: oklch(from var(--color-warning) l c h / .12); border: 1px solid oklch(from var(--color-warning) l c h / .3); border-radius: .45rem; padding: .25rem .55rem; cursor: pointer; transition: background .12s ease; }
   .opt-reconnect:hover { background: oklch(from var(--color-warning) l c h / .22); }
   .opt-reconnect .iconify { font-size: .85rem; }
-  .reconnect-card { display: flex; align-items: center; gap: .7rem; padding: .8rem .9rem; border: 1px solid oklch(from var(--color-warning) l c h / .3); border-radius: .6rem; background: oklch(from var(--color-warning) l c h / .08); }
+  .reconnect-panel { display: flex; align-items: center; gap: .7rem; padding: .8rem .9rem; border: 1px solid oklch(from var(--color-warning) l c h / .3); border-radius: .6rem; background: oklch(from var(--color-warning) l c h / .08); }
   .reconnect-ic { width: 2.2rem; height: 2.2rem; border-radius: .5rem; display: grid; place-items: center; background: oklch(from var(--color-warning) l c h / .15); flex: none; }
   .reconnect-ic .iconify { font-size: 1.1rem; color: var(--color-warning); }
   .reconnect-name { font-size: .9rem; font-weight: 650; }

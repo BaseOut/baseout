@@ -14,6 +14,10 @@
  * a single mutually-exclusive range (radios).
  */
 import type { BackupRunSummary } from '../lib/backup-runs/types';
+import Button from '../components/ui/Button.astro';
+import Badge from '../components/ui/Badge.astro';
+import TextInput from '../components/ui/TextInput.astro';
+import Select from '../components/ui/Select.astro';
 
 interface Props {
   runs?: BackupRunSummary[];
@@ -47,14 +51,14 @@ function durationStr(start: string | null, end: string | null): string {
   return ss ? `${mm}m ${ss}s` : `${mm}m`;
 }
 
-// Status → catalog badge (soft tint + colored text for state; neutral = ghost).
-const statusMeta: Record<string, { label: string; badge: string }> = {
-  succeeded: { label: 'Succeeded', badge: 'badge-soft badge-success' },
-  trial_succeeded: { label: 'Trial run', badge: 'badge-soft badge-success' },
-  running: { label: 'Running', badge: 'badge-soft badge-warning' },
-  queued: { label: 'Queued', badge: 'badge-ghost' },
-  failed: { label: 'Failed', badge: 'badge-soft badge-error' },
-  cancelled: { label: 'Cancelled', badge: 'badge-ghost' },
+// Status → catalog badge variants.
+const statusMeta: Record<string, { label: string; variant: 'success' | 'warning' | 'error' | 'default' }> = {
+  succeeded: { label: 'Succeeded', variant: 'success' },
+  trial_succeeded: { label: 'Trial run', variant: 'success' },
+  running: { label: 'Running', variant: 'warning' },
+  queued: { label: 'Queued', variant: 'default' },
+  failed: { label: 'Failed', variant: 'error' },
+  cancelled: { label: 'Cancelled', variant: 'default' },
 };
 const triggerLabel = (t: string) =>
   t.startsWith('schedule') ? 'Scheduled' : t.startsWith('webhook') ? 'Webhook' : t.startsWith('onboarding') ? 'Trial' : 'Manual';
@@ -86,7 +90,7 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
         <h1 class="text-title">Backups</h1>
         <p class="text-sm text-base-content/60 mt-1">Every backup run for this Space. Open any run for its full per-base detail.</p>
       </div>
-      <a href="/backups/run?state=running" class="btn btn-primary shrink-0"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</a>
+      <Button href="/backups/run?state=running" variant="primary" class="shrink-0"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</Button>
     </header>
   )}
 
@@ -98,18 +102,15 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
           client-side over the loaded runs for the prototype; the real app pushes
           these to the runs query (?status=&trigger=&since=&q=&page=). */}
       <div class="bl-toolbar">
-        <label class="input input-sm grow min-w-[12rem]">
-          <span class="iconify lucide--search size-4 opacity-50" aria-hidden="true"></span>
-          <input type="search" data-bl-search class="grow" placeholder="Search by Run ID or error…" aria-label="Search runs" />
-        </label>
+        <TextInput type="search" data-bl-search placeholder="Search by Run ID or error…" icon="search" size="sm" class="grow min-w-[12rem]" aria-label="Search runs" />
 
-        <div class="dropdown" data-bl-facet="status">
-          <div tabindex="0" role="button" class="btn btn-sm btn-neutral gap-1.5 bl-facet-btn" data-bl-facet-trigger aria-label="Filter by status">
+        <div class="bl-facet-popover" data-bl-facet="status">
+          <div tabindex="0" role="button" class="bl-facet-trigger" data-bl-facet-trigger aria-label="Filter by status">
             Status
-            <span class="badge badge-xs badge-primary" data-bl-facet-count hidden></span>
+            <span class="bl-facet-count" data-bl-facet-count hidden></span>
             <span class="iconify lucide--chevron-down size-3 opacity-50" aria-hidden="true"></span>
           </div>
-          <div tabindex="0" class="dropdown-content bl-facet-menu">
+          <div tabindex="0" class="bl-facet-menu">
             {statusOpts.map(([v, label]) => (
               <label class="bl-facet-opt">
                 <input type="checkbox" class="checkbox checkbox-primary checkbox-xs" value={v} /> {label}
@@ -118,13 +119,13 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
           </div>
         </div>
 
-        <div class="dropdown" data-bl-facet="trigger">
-          <div tabindex="0" role="button" class="btn btn-sm btn-neutral gap-1.5 bl-facet-btn" data-bl-facet-trigger aria-label="Filter by trigger">
+        <div class="bl-facet-popover" data-bl-facet="trigger">
+          <div tabindex="0" role="button" class="bl-facet-trigger" data-bl-facet-trigger aria-label="Filter by trigger">
             Trigger
-            <span class="badge badge-xs badge-primary" data-bl-facet-count hidden></span>
+            <span class="bl-facet-count" data-bl-facet-count hidden></span>
             <span class="iconify lucide--chevron-down size-3 opacity-50" aria-hidden="true"></span>
           </div>
-          <div tabindex="0" class="dropdown-content bl-facet-menu">
+          <div tabindex="0" class="bl-facet-menu">
             {triggerOpts.map(([v, label]) => (
               <label class="bl-facet-opt">
                 <input type="checkbox" class="checkbox checkbox-primary checkbox-xs" value={v} /> {label}
@@ -133,13 +134,13 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
           </div>
         </div>
 
-        <div class="dropdown" data-bl-facet="date">
-          <div tabindex="0" role="button" class="btn btn-sm btn-neutral gap-1.5 bl-facet-btn" data-bl-facet-trigger aria-label="Filter by date">
+        <div class="bl-facet-popover" data-bl-facet="date">
+          <div tabindex="0" role="button" class="bl-facet-trigger" data-bl-facet-trigger aria-label="Filter by date">
             Date
-            <span class="badge badge-xs badge-primary" data-bl-facet-count hidden></span>
+            <span class="bl-facet-count" data-bl-facet-count hidden></span>
             <span class="iconify lucide--chevron-down size-3 opacity-50" aria-hidden="true"></span>
           </div>
-          <div tabindex="0" class="dropdown-content bl-facet-menu">
+          <div tabindex="0" class="bl-facet-menu">
             {dateOpts.map(([v, label]) => (
               <label class="bl-facet-opt">
                 <input type="radio" name="bl-date" class="radio radio-primary radio-xs" value={v} checked={v === ''} /> {label}
@@ -148,12 +149,12 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
           </div>
         </div>
 
-        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-bl-clear hidden>
+        <Button type="button" variant="danger-ghost" size="sm" class="gap-1" data-bl-clear hidden>
           <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
-        </button>
+        </Button>
       </div>
 
-      <div class="bl-tablewrap">
+      <div class="bl-gridwrap">
         <table class="table text-sm">
           <thead>
             <tr class="text-xs uppercase tracking-wider text-base-content/60">
@@ -175,14 +176,14 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
                   data-search={`${r.id} ${(r.errorMessage ?? '').toLowerCase()}`}
                   onclick={`window.location='${detailHref(r)}'`}
                 >
-                  <td><span class={`badge ${sm.badge}`}>{r.status === 'running' && <span class="loading loading-spinner loading-xs"></span>}{sm.label}</span></td>
+                  <td><Badge variant={sm.variant}>{r.status === 'running' && <span class="loading loading-spinner loading-xs"></span>}{sm.label}</Badge></td>
                   <td>{active ? <span class="text-base-content/64">{r.status === 'running' ? 'in progress' : 'queued'}</span> : since(r.completedAt)}</td>
                   <td class="text-base-content/64">{triggerLabel(r.triggeredBy)}</td>
                   <td class="text-right tabular-nums">{r.includedBases.length}</td>
                   <td class="text-right tabular-nums">{ok ? nf.format(r.recordCount ?? 0) : '—'}</td>
                   <td class="text-right tabular-nums">{ok ? nf.format(r.attachmentCount ?? 0) : '—'}</td>
                   <td class="text-right tabular-nums text-base-content/64 mono-data">{active ? '—' : durationStr(r.startedAt, r.completedAt)}</td>
-                  <td class="text-right"><a href={detailHref(r)} class="btn btn-ghost btn-sm text-primary" onclick="event.stopPropagation()">Details →</a></td>
+                  <td class="text-right"><Button href={detailHref(r)} variant="ghost" size="sm" class="text-primary" onclick="event.stopPropagation()">Details →</Button></td>
                 </tr>
               );
             })}
@@ -194,21 +195,23 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
       <div class="bl-nomatch" data-bl-nomatch hidden>
         <span class="bl-nomatch-ic"><span class="iconify lucide--search-x" aria-hidden="true"></span></span>
         <p class="bl-nomatch-title">No runs match these filters</p>
-        <button type="button" class="btn btn-sm btn-ghost" data-bl-clear>Clear filters</button>
+        <Button type="button" variant="ghost" size="sm" data-bl-clear>Clear filters</Button>
       </div>
 
       <div class="bl-pager" data-bl-pager>
-        <label class="inline-flex items-center gap-2 text-xs font-medium text-base-content/64">Rows
-          <select class="select select-sm" data-bl-pagesize aria-label="Rows per page">
-            <option value="10">10</option>
-            <option value="20" selected>20</option>
-            <option value="50">50</option>
-          </select>
-        </label>
+        <div data-bl-pagesize-wrap>
+          <Select
+            label="Rows"
+            size="sm"
+            class="inline-flex w-auto min-w-0"
+            options={[{ value: '10', label: '10' }, { value: '20', label: '20' }, { value: '50', label: '50' }]}
+            value="20"
+          />
+        </div>
         <div class="ml-auto text-sm text-base-content/70"><span class="mono-data" data-bl-range>1–20</span> of <span class="mono-data" data-bl-total>0</span></div>
-        <div class="bl-pagebtns">
-          <button type="button" class="btn btn-sm btn-square btn-ghost" data-bl-prev aria-label="Previous page"><span class="iconify lucide--chevron-left size-4" aria-hidden="true"></span></button>
-          <button type="button" class="btn btn-sm btn-square btn-ghost" data-bl-next aria-label="Next page"><span class="iconify lucide--chevron-right size-4" aria-hidden="true"></span></button>
+        <div class="bl-pager-nav">
+          <Button type="button" variant="ghost" size="sm" icon data-bl-prev aria-label="Previous page"><span class="iconify lucide--chevron-left size-4" aria-hidden="true"></span></Button>
+          <Button type="button" variant="ghost" size="sm" icon data-bl-next aria-label="Next page"><span class="iconify lucide--chevron-right size-4" aria-hidden="true"></span></Button>
         </div>
       </div>
     </section>
@@ -217,7 +220,7 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
       <span class="bl-empty-ic"><span class="iconify lucide--archive"></span></span>
       <p class="bl-empty-title">No backups yet</p>
       <p class="bl-empty-sub">Run your first backup, or wait for the next scheduled one. Each run lands here with full audit detail.</p>
-      <a href="/backups/run?state=running" class="btn btn-primary btn-lg"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</a>
+      <Button href="/backups/run?state=running" variant="primary" size="lg"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</Button>
     </section>
   )}
 </div>
@@ -232,7 +235,9 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
     const rows = Array.from(root.querySelectorAll<HTMLTableRowElement>('.bl-row'));
     const searchEl = root.querySelector<HTMLInputElement>('[data-bl-search]')!;
     const facets = Array.from(root.querySelectorAll<HTMLElement>('[data-bl-facet]'));
-    const pageSizeEl = root.querySelector<HTMLSelectElement>('[data-bl-pagesize]')!;
+    // Avoid querySelector<HTMLSelectElement>: worker-configuration.d.ts declares
+    // an HTMLRewriter `Element` global that breaks the generic constraint.
+    const pageSizeEl = root.querySelector('[data-bl-pagesize-wrap] select') as unknown as HTMLSelectElement;
     const clearEls = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-bl-clear]'));
     const rangeEl = root.querySelector<HTMLElement>('[data-bl-range]')!;
     const totalEl = root.querySelector<HTMLElement>('[data-bl-total]')!;
@@ -240,7 +245,7 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
     const nextBtn = root.querySelector<HTMLButtonElement>('[data-bl-next]')!;
     const pager = root.querySelector<HTMLElement>('[data-bl-pager]')!;
     const noMatch = root.querySelector<HTMLElement>('[data-bl-nomatch]')!;
-    const tableWrap = root.querySelector<HTMLElement>('.bl-tablewrap')!;
+    const tableWrap = root.querySelector<HTMLElement>('.bl-gridwrap')!;
     const DAY = 86_400_000;
     let page = 1;
 
@@ -339,19 +344,27 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
 
   .bl-toolbar { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; margin-bottom: 1rem; }
 
-  /* Faceted filter dropdown — daisyUI `dropdown` opens the menu on focus. */
-  .bl-facet-btn.bl-facet-on { background: color-mix(in oklch, var(--color-primary) 14%, transparent); border-color: color-mix(in oklch, var(--color-primary) 30%, transparent); color: var(--color-primary); }
-  .bl-facet-menu { z-index: 20; margin-top: .4rem; width: 13rem; border: 1px solid var(--color-base-300); border-radius: .7rem; background: var(--color-base-100); padding: .35rem; box-shadow: 0 10px 28px oklch(0 0 0 / .14); }
+  /* Faceted filter popover — opens menu on focus within. */
+  .bl-facet-popover { position: relative; display: inline-block; }
+  .bl-facet-trigger {
+    display: inline-flex; align-items: center; gap: .375rem; min-height: 2rem; padding: 0 .75rem;
+    border-radius: var(--radius-field, .5rem); border: 1px solid var(--color-base-300);
+    background: var(--color-neutral, var(--color-base-200)); font-size: .875rem; font-weight: 500; cursor: pointer;
+  }
+  .bl-facet-trigger.bl-facet-on { background: color-mix(in oklch, var(--color-primary) 14%, transparent); border-color: color-mix(in oklch, var(--color-primary) 30%, transparent); color: var(--color-primary); }
+  .bl-facet-popover:not(:focus-within) .bl-facet-menu { display: none; }
+  .bl-facet-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.1rem; height: 1.1rem; padding: 0 .25rem; border-radius: 999px; font-size: .68rem; font-weight: 700; color: var(--color-primary-content, #fff); background: var(--color-primary); }
+  .bl-facet-menu { z-index: 20; position: absolute; left: 0; margin-top: .4rem; width: 13rem; border: 1px solid var(--color-base-300); border-radius: .7rem; background: var(--color-base-100); padding: .35rem; box-shadow: 0 10px 28px oklch(0 0 0 / .14); }
   .bl-facet-opt { display: flex; align-items: center; gap: .6rem; padding: .4rem .5rem; border-radius: .45rem; font-size: .82rem; cursor: pointer; user-select: none; }
   .bl-facet-opt:hover { background: oklch(from var(--color-base-200) l c h / .6); }
 
-  .bl-tablewrap { overflow-x: auto; }
-  .bl-tablewrap :is(th, td) { white-space: nowrap; }
+  .bl-gridwrap { overflow-x: auto; }
+  .bl-gridwrap :is(th, td) { white-space: nowrap; }
   .bl-row { cursor: pointer; }
   .bl-row:hover { background: oklch(from var(--color-base-200) l c h / .5); }
 
   .bl-pager { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--color-base-300); }
-  .bl-pagebtns { display: inline-flex; gap: .35rem; }
+  .bl-pager-nav { display: inline-flex; gap: .35rem; }
 
   /* No-match state (distinct from the no-runs-at-all empty) */
   .bl-nomatch { display: flex; flex-direction: column; align-items: center; text-align: center; gap: .55rem; padding: 2.5rem 1rem; }

@@ -115,7 +115,7 @@ For all cross-component reactive state in the Astro app, use [`nanostores`](http
 - In non-Astro islands (React/Vue/Solid/etc.), use the matching `@nanostores/<framework>` hook (e.g. `useStore($account)`). In vanilla `<script>` blocks, import the atom directly and use `.subscribe()` / `.get()` / `.set()`.
 - Keep stores small and serializable. Derive composite values via `computed`.
 - Never store secrets, auth tokens, or sensitive PII in a client-side store. Server-only state stays server-only.
-- Reset stores on logout. The logout handler must clear every user-scoped store (see [src/components/layout/Sidebar.astro](../src/components/layout/Sidebar.astro)'s logout handler for the pattern).
+- Reset stores on logout. The logout handler must clear every user-scoped store (see [src/components/patterns/AppShellSidebar.astro](../src/components/patterns/AppShellSidebar.astro)'s logout handler for the pattern).
 
 ## 5. Commit Hygiene: No Stray Console Logs
 
@@ -191,13 +191,18 @@ fails CI if a tracked `ui/*.astro` has no sibling `*.stories.ts`):**
   daisyUI / `@opensided/theme` classes (the §1 priority order) — never hand-rolled
   CSS where a daisyUI utility exists. **Prefer a daisyUI primitive over a custom one.**
 - **New variant/size/state ⇒ add (or extend) the story in the same change.**
+- **Component intake order is mandatory: Storybook first, daisyUI second only.**
+  1. If an existing `src/components/ui/*.astro` or `src/components/patterns/*.astro` component covers the need, use it
+     and update its story for any new prop, variant, or state.
+  2. If no Storybook component exists, use daisyUI markup directly and update the
+     `apps/design` `/styleguide` entry that documents the pattern.
+  3. Promote inline daisyUI markup into a new Storybook component (`ui/` or `patterns/`)
+     when a second real call site exists or a product-specific API is clearly useful.
+  4. Do not ship custom Astro wrappers, scoped `<style>` blocks, or bespoke CSS files
+     for UI that Storybook or daisyUI already covers.
 - **Storybook reviews structure + styling only — NOT client behavior.** The Container
   API does not run `.astro` `<script>` blocks (e.g. `Modal`'s auto-open); use a Storybook
   `play` function, and validate real behavior in `apps/design` (a live Astro server).
-- **Genuinely-custom components** with no daisyUI equivalent (e.g. `SocialButton`,
-  `FeatureBadge`) are the documented exception — still catalogue them, but they may
-  carry their own CSS. If a *new* component needs custom CSS, that's a signal to
-  re-check the §1 priority order first.
 
 ### 3. Mobile-First Approach
 - Design and build for mobile devices first

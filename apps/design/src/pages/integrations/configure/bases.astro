@@ -3,8 +3,6 @@
 // layout drill-in). Reached from the configure summary's "Manage bases" link.
 import SidebarLayout from '../../../layouts/SidebarLayout.astro';
 import IntegrationsManageBasesView from '@web/views/IntegrationsManageBasesView.astro';
-import ScenarioSwitcher from '../../../components/ScenarioSwitcher.astro';
-import { DEMO_FLOWS } from '../../../lib/demo-flows';
 import { getBreadcrumbs } from '@web/lib/config';
 import {
   FIXTURE_INTEGRATIONS_STATE_SETUP_MANY,
@@ -38,7 +36,6 @@ const fixtureHref = (fx: string) => {
   </div>
 
   <IntegrationsManageBasesView state={state} />
-  <ScenarioSwitcher flows={DEMO_FLOWS} />
 </SidebarLayout>
 
 <style>

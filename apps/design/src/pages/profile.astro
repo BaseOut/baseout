@@ -18,7 +18,7 @@ const initials = user.name.split(' ').map((p) => p[0]).join('').toUpperCase().sl
   <div class="space-y-8">
     <Card variant="outlined">
       <div class="flex items-center gap-3 mb-6">
-        <span class="material-symbols-outlined icon-xl text-primary">person</span>
+        <span class="iconify lucide--user icon-xl text-primary" aria-hidden="true"></span>
         <h3 class="text-lg font-bold">Profile Information</h3>
       </div>
 
@@ -42,7 +42,7 @@ const initials = user.name.split(' ').map((p) => p[0]).join('').toUpperCase().sl
               type="text"
               name="name"
               label="Full Name"
-              icon="person"
+              icon="user"
               placeholder="Your full name"
               value={user.name}
               autocomplete="name"
@@ -60,17 +60,17 @@ const initials = user.name.split(' ').map((p) => p[0]).join('').toUpperCase().sl
             />
 
             <div id="profile-error" class="fieldset-label text-error flex items-center gap-1 hidden" role="alert">
-              <span class="material-symbols-outlined icon-sm">error</span>
+              <span class="iconify lucide--circle-alert icon-sm" aria-hidden="true"></span>
               <span id="profile-error-text"></span>
             </div>
 
             <div id="profile-success" class="fieldset-label text-success flex items-center gap-1 hidden" role="status">
-              <span class="material-symbols-outlined icon-sm">check_circle</span>
+              <span class="iconify lucide--circle-check icon-sm" aria-hidden="true"></span>
               <span id="profile-success-text"></span>
             </div>
 
             <Button variant="primary" type="submit">
-              <span class="material-symbols-outlined icon-lg">save</span>
+              <span class="iconify lucide--save icon-lg" aria-hidden="true"></span>
               Save Changes
             </Button>
           </form>

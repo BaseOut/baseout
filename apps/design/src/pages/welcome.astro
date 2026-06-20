@@ -29,7 +29,7 @@ const referralOptions = [
           type="text"
           name="firstName"
           label="First Name"
-          icon="person"
+          icon="user"
           placeholder="Ada"
           autocomplete="given-name"
           required
@@ -48,7 +48,7 @@ const referralOptions = [
         type="text"
         name="jobTitle"
         label="Job Title"
-        icon="badge"
+        icon="id-card"
         placeholder="Founder"
         autocomplete="organization-title"
         required
@@ -58,7 +58,7 @@ const referralOptions = [
         type="text"
         name="orgName"
         label="Organization Name"
-        icon="business"
+        icon="building-2"
         placeholder="Acme Corp"
         autocomplete="organization"
         required
@@ -67,7 +67,7 @@ const referralOptions = [
       <Select
         name="referralSource"
         label="How did you hear about us?"
-        icon="campaign"
+        icon="megaphone"
         placeholder="Select one (optional)"
         options={referralOptions}
       />
@@ -80,13 +80,13 @@ const referralOptions = [
       <Checkbox name="termsAccepted" label="I agree to the terms and privacy policy" />
 
       <div id="welcome-error" class="fieldset-label text-error flex items-center gap-1 hidden" role="alert">
-        <span class="material-symbols-outlined icon-sm">error</span>
+        <span class="iconify lucide--circle-alert icon-sm" aria-hidden="true"></span>
         <span id="welcome-error-text"></span>
       </div>
 
       <Button variant="primary" type="submit" class="w-full mt-1">
         Continue
-        <span class="material-symbols-outlined icon-lg ml-1">arrow_forward</span>
+        <span class="iconify lucide--arrow-right icon-lg ml-1" aria-hidden="true"></span>
       </Button>
     </form>
   </div>

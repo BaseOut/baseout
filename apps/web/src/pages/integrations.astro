@@ -106,8 +106,6 @@ const ovStatus: 'saved' | 'running' | null =
 // Map the per-Space backend state into the Overview's account-level shapes.
 const source = toSourceSummary(state, spaceId ?? 'space', spaceName);
 const destinations = toDestinationSummaries(state, spaceId ?? 'space', spaceName);
-const airtableStatus =
-  state.connections.find((c) => c.platformSlug === 'airtable')?.status ?? null;
 
 // Real "last run" label for the Overview (the view falls back to a placeholder).
 function relTime(iso: string | null): string {
@@ -162,7 +160,5 @@ const connectError = errorParam
     statusCode={ovStatus}
     linkToRegistry={true}
     lastRunLabel={lastRunLabel}
-    runSpaceId={spaceId}
-    connectionStatus={airtableStatus}
   />
 </SidebarLayout>

@@ -16,7 +16,7 @@ import { experimental_AstroContainer as AstroContainer } from 'astro/container';
 type AstroComponent = any;
 
 export interface RenderAstroOptions {
-  props?: Record<string, unknown>;
+  props?: object;
   /** Default-slot HTML string, or a named-slot map. */
   slots?: string | Record<string, string>;
 }

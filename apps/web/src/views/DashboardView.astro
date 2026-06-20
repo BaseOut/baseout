@@ -1,7 +1,8 @@
 ---
 import Card from '../components/ui/Card.astro';
 import Button from '../components/ui/Button.astro';
-import BackupHistoryWidget from '../components/backups/BackupHistoryWidget.astro';
+import Alert from '../components/ui/Alert.astro';
+import BackupHistoryWidget from '../components/patterns/BackupHistoryWidget.astro';
 import ConnectAirtableModal from './ConnectAirtableModal.astro';
 import { buildDashboardModel } from '../lib/dashboard';
 import type { AccountContext } from '../lib/account';
@@ -73,9 +74,7 @@ const errorMessage = errorReason
   </header>
 
   {errorMessage && (
-    <div role="alert" class="alert alert-error">
-      <span>{errorMessage}</span>
-    </div>
+    <Alert variant="error">{errorMessage}</Alert>
   )}
 
   <!-- Org / Space / Next-step cards -->
