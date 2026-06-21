@@ -1,3 +1,5 @@
+> ⚠️ **Superseded in part by [`system-per-space-db`](../system-per-space-db/proposal.md) (2026-06-20).** The `attachment_dedup` table moves out of the master DB into the per-Space DB as `bo_at_attachments` (dedup scoped within the Space; populated regardless of `records_enabled`). `storage_key` semantics are unchanged. Treat `system-per-space-db` as authoritative for attachment-metadata storage.
+>
 > **Depends on**: [`system-r2-revive`](../system-r2-revive/proposal.md) (R2 lands as a Node-runner S3-API writer, not a Worker binding) and [`workflows-attachments`](../workflows-attachments/proposal.md) (the shared `writeBlob` interface method the downloader writes through — works for R2 **and** every BYOS provider). Phase A (schema + `attachment_dedup` table) and the lookup route are independent and can ship before the writer work. **Note:** the `r2_object_key` column is now the destination-agnostic `storage_key` — it holds an R2 object key or a BYOS relative path depending on the Space's destination.
 >
 > _Supersedes the prior `system-r2-stance` / `server-byos-destinations` Phase 0 dependency, which assumed a Worker `BACKUPS_R2` binding._

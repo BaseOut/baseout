@@ -1,3 +1,5 @@
+> ⚠️ **Superseded by [`system-per-space-db`](../../../system-per-space-db/specs/per-space-db/spec.md) (2026-06-20).** "schema_diffs in the client DB" and "health_scores in the client DB" are realized concretely as per-Space `bo_at_schema_updates` (modifications) + lifecycle columns on `bo_at_bases`/`bo_at_tables`/`bo_at_fields`, and `bo_at_health_scores` / `bo_at_health_issues`. `health_score_rules` stays in the master DB. The natural-language changelog read endpoint is unchanged. Treat `system-per-space-db` as authoritative for storage; this spec remains valid for the diff / notification / health-scoring *behavior*.
+
 ## ADDED Requirements
 
 ### Requirement: Compute schema diff per run

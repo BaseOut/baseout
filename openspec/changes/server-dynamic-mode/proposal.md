@@ -1,3 +1,5 @@
+> ⚠️ **Superseded in part by [`system-per-space-db`](../system-per-space-db/proposal.md) (2026-06-20).** The `space_databases.tier` enum is replaced by `backend` (`d1` | `managed_pg` | `byodb`) × `records_enabled`; the one-physical-table-per-Airtable-table record model (decision B1) is replaced by a generic `bo_at_*` schema (`bo_at_records` + `bo_at_record_field_data`) with generated per-table views; per-base run state moves to the per-Space `bo_at_base_runs`. Treat `system-per-space-db` as authoritative for the per-Space data model.
+
 ## Why
 
 [PRD §5.1](../../../shared/Baseout_PRD.md) defines three backup modes:
