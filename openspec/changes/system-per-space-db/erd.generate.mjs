@@ -370,23 +370,29 @@ function erd() {
   }
 
   // Column 1: run/schema lineage
+  placePS('meta', 'bo_at_meta', [
+    'id (singleton)', 'schema_version', 'space_id  (→core)',
+    'backend', 'platform', 'last_migrated_at',
+  ], 1);
   placePS('base_runs', 'bo_at_base_runs', [
     'id  (PK)', 'backup_run_id  (→core)', 'base_id', 'status',
     'curr_step', 'schema_version_id', 'counts',
   ], 1);
   placePS('bases', 'bo_at_bases', [
-    'base_id  (PK)', 'name', 'status', 'first_seen_run',
-    'first_unseen_run', 'last_seen_run',
+    'base_id  (PK)', 'name', 'description', 'status', 'first_seen_run',
+    'first_unseen_run', 'last_seen_run', '+ doc: ai/overview/override',
   ], 1);
   placePS('tables', 'bo_at_tables', [
-    'table_id  (PK)', 'base_id', 'name', 'primary_field_id', '+ lifecycle',
+    'table_id  (PK)', 'base_id', 'name', 'primary_field_id',
+    '+ lifecycle', '+ doc: ai/overview/override',
   ], 1);
   placePS('fields', 'bo_at_fields', [
     'field_id  (PK)', 'table_id', 'name', 'type', 'options',
-    'is_primary', '+ lifecycle',
+    'is_primary', '+ lifecycle', '+ doc: ai/overview/override',
   ], 1);
   placePS('views', 'bo_at_views', [
-    'view_id  (PK)', 'table_id', 'name', 'type', '+ lifecycle',
+    'view_id  (PK)', 'table_id', 'name', 'type',
+    '+ lifecycle', '+ doc: ai/overview/override',
   ], 1);
   placePS('schema_versions', 'bo_at_schema_versions', [
     'id  (PK)', 'base_id', 'schema_hash', 'schema_json', 'first_seen_run',
@@ -395,15 +401,10 @@ function erd() {
     'id  (PK)', 'run_id', 'entity_type', 'entity_id', 'change_type',
     'before_value', 'after_value', 'breaks_data',
   ], 1);
-  placePS('documentation', 'bo_at_documentation', [
-    'id  (PK)', 'target_type', 'target_id', 'description',
-    'source', 'updated_at',
-  ], 1);
-
   // Column 2: records / data / derived
   placePS('records', 'bo_at_records', [
-    'record_id  (PK)', 'table_id', 'created_time',
-    'modified_time', 'status', 'lifecycle',
+    'record_id  (PK)', 'table_id', 'created_time', 'modified_time',
+    'status', 'lifecycle', '+ doc: ai/overview/override',
   ], 2);
   placePS('record_field_data', 'bo_at_record_field_data', [
     '(record_id, field_id)  PK', 'table_id', 'value (JSON text)',

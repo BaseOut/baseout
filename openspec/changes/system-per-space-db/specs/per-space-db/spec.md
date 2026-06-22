@@ -14,6 +14,20 @@ Each Space SHALL have its own dedicated database. The backend SHALL be one of `d
 - **WHEN** a Space's per-Space DB is provisioned
 - **THEN** `space_databases.backend` is one of `d1 | managed_pg | byodb` and `space_databases.records_enabled` is set independently
 
+### Requirement: Per-Space schema versioning and lazy migration
+
+Each per-Space database SHALL carry a single-row `bo_at_meta` table recording `schema_version` (the `bo_at_*` schema version the database is migrated to) plus self-describing fields (`space_id`, `backend`, `platform`). When the engine opens a per-Space database it SHALL compare `schema_version` to the code's target version and apply any pending migrations in order before proceeding, updating `schema_version` on completion. There SHALL be no central migration runner iterating all per-Space databases.
+
+#### Scenario: Database behind the current schema version
+
+- **WHEN** the engine opens a per-Space DB whose `bo_at_meta.schema_version` is older than the code's target
+- **THEN** the pending migrations are applied in order, `schema_version` and `last_migrated_at` are updated, and the operation proceeds
+
+#### Scenario: Untouched databases are not eagerly migrated
+
+- **WHEN** a new schema version ships but a Space has no activity
+- **THEN** its per-Space DB stays on its prior version until next access; no central job touches it
+
 ### Requirement: Storage posture and residency
 
 The system SHALL treat data residency as a posture derived from `backend`: `managed` (`d1` or `managed_pg`) or `sovereign` (`byodb`, where schema and records reside only in the customer's database, never on Baseout infrastructure). Sovereign posture SHALL require `records_enabled = true` (a dynamic database is mandatory for sovereign).
@@ -63,6 +77,15 @@ For each run, the engine SHALL upsert the current relational schema into `bo_at_
 
 - **WHEN** a run fails to fully enumerate a base's tables
 - **THEN** the affected entities are set to `status = unknown`, not `removed`, and no removal appears in the changelog
+
+### Requirement: View capture (Airtable Enterprise only)
+
+The system SHALL capture Airtable views into `bo_at_views` only for Spaces whose Airtable plan is Enterprise (the plan at which view metadata is available). For non-Enterprise Airtable customers, `bo_at_views` SHALL remain empty and the rest of the schema model SHALL function without it.
+
+#### Scenario: Non-Enterprise Airtable customer
+
+- **WHEN** a Space's Airtable plan is not Enterprise
+- **THEN** views are not captured, `bo_at_views` stays empty, and schema/diagram/changelog still render from bases/tables/fields
 
 ### Requirement: Hash-deduplicated schema versions
 
@@ -137,14 +160,19 @@ Restore SHALL read per-run full CSV snapshots from the Space's file destination 
 - **WHEN** `bo_at_record_updates` has been pruned but the chosen run's CSV snapshot is still within retention
 - **THEN** Restore reconstructs the data from the CSV snapshot, unaffected by the pruning
 
-### Requirement: Schema documentation
+### Requirement: Schema documentation (inline annotations)
 
-The per-Space `bo_at_documentation` SHALL store one description per target (`base`/`table`/`field`, keyed by Airtable id) with a `source` of `imported`, `ai`, or `manual`. Re-import SHALL NOT overwrite a `manual` or `ai` description. AI generation for sovereign Spaces SHALL use field names/types only (never cell values). The standalone Data Dictionary surface and export are out of scope (V2).
+Documentation SHALL be stored as columns on the entity tables (`bo_at_bases`, `bo_at_tables`, `bo_at_fields`, `bo_at_views`, `bo_at_records`), not a separate table: `ai_description` (AI-generated), `ai_overview` (AI-generated longer summary), and `description_override` (manual). Airtable's own description is already captured as the `description` column (and in `bo_at_schema_versions`) and SHALL NOT be duplicated. The effective description SHALL resolve `description_override ?? ai_description ?? description`. Re-import SHALL write only the `description` column, so AI and manual values are never clobbered. AI generation for sovereign Spaces SHALL use field names/types only (never cell values). The standalone Data Dictionary surface and export are out of scope (V2).
 
-#### Scenario: Re-import preserves a manual edit
+#### Scenario: Re-import preserves AI and manual values
 
-- **WHEN** a field has a `manual` description and a later run re-imports Airtable's description
-- **THEN** the manual description is preserved and not overwritten
+- **WHEN** a field has a `description_override` (or `ai_description`) and a later run re-imports Airtable's description
+- **THEN** only the `description` column is updated; `description_override` and `ai_description` are untouched
+
+#### Scenario: Effective description precedence
+
+- **WHEN** a field has both an `ai_description` and a `description_override`
+- **THEN** the effective description used by the UI is the `description_override`
 
 ### Requirement: Health results in the per-Space DB
 

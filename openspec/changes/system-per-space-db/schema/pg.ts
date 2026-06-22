@@ -28,6 +28,32 @@ const lifecycle = {
   lastSeenRun: uuid('last_seen_run'),
 }
 
+// Documentation/annotation columns (inline; no separate table).
+// The imported Airtable description is already captured as the `description`
+// column (and in schema_versions JSON), so it is NOT duplicated here.
+// Effective description = description_override ?? ai_description ?? description.
+// Re-import only ever writes `description`, so ai/manual values are never clobbered.
+const annotation = {
+  aiDescription: text('ai_description'),
+  aiOverview: text('ai_overview'),
+  descriptionOverride: text('description_override'),
+}
+
+// Single-row, self-describing meta table. `schema_version` drives lazy
+// on-access migration: when the engine opens this DB it compares this value to
+// the code's target version and runs pending migrations before proceeding.
+// (D1 could use PRAGMA user_version; this table is used on all backends for
+// uniform code and Postgres parity.) Keyed 'singleton' — exactly one row.
+export const meta = pgTable('bo_at_meta', {
+  id: text('id').primaryKey().default('singleton'),
+  schemaVersion: integer('schema_version').notNull(),
+  spaceId: uuid('space_id').notNull(),                // → master spaces.id (self-identification)
+  backend: text('backend').notNull(),                 // d1 | managed_pg | byodb
+  platform: text('platform').notNull().default('airtable'),
+  provisionedAt: timestamp('provisioned_at', { withTimezone: true }),
+  lastMigratedAt: timestamp('last_migrated_at', { withTimezone: true }),
+})
+
 // Per-base execution record — the run↔base entry point. One row per (run, base).
 export const baseRuns = pgTable('bo_at_base_runs', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -53,7 +79,8 @@ export const baseRuns = pgTable('bo_at_base_runs', {
 export const bases = pgTable('bo_at_bases', {
   baseId: text('base_id').primaryKey(),
   name: text('name').notNull(),
-  description: text('description'),
+  description: text('description'),                    // Airtable's imported description
+  ...annotation,
   ...lifecycle,
 })
 
@@ -64,7 +91,8 @@ export const tables = pgTable('bo_at_tables', {
   primaryFieldId: text('primary_field_id'),
   fieldCount: integer('field_count'),
   recordCount: integer('record_count'),
-  description: text('description'),
+  description: text('description'),                    // Airtable's imported description
+  ...annotation,
   ...lifecycle,
 }, (t) => ({ byBase: index('bo_at_tables_base_idx').on(t.baseId) }))
 
@@ -76,7 +104,8 @@ export const fields = pgTable('bo_at_fields', {
   type: text('type').notNull(),
   options: jsonb('options'),                          // type-specific config (choices, linked table, …)
   isPrimary: boolean('is_primary').notNull().default(false),
-  description: text('description'),
+  description: text('description'),                    // Airtable's imported description
+  ...annotation,
   ...lifecycle,
 }, (t) => ({ byTable: index('bo_at_fields_table_idx').on(t.tableId) }))
 
@@ -86,6 +115,7 @@ export const views = pgTable('bo_at_views', {
   baseId: text('base_id').notNull(),
   name: text('name').notNull(),
   type: text('type'),
+  ...annotation,
   ...lifecycle,
 }, (t) => ({ byTable: index('bo_at_views_table_idx').on(t.tableId) }))
 
@@ -132,6 +162,7 @@ export const records = pgTable('bo_at_records', {
   firstSeenRun: uuid('first_seen_run'),
   firstUnseenRun: uuid('first_unseen_run'),
   lastSeenRun: uuid('last_seen_run'),
+  ...annotation,                                       // records have no Airtable description; ai/override only
 }, (t) => ({ byTable: index('bo_at_records_table_idx').on(t.tableId) }))
 
 // Sparse-until-first-value: row created on first population, persists after,
@@ -183,19 +214,10 @@ export const attachments = pgTable('bo_at_attachments', {
   byHash: index('bo_at_attachments_hash_idx').on(t.contentHash),
 }))
 
-// ---- Documentation (descriptions; Data Dictionary surface is V2) ----
-
-export const documentation = pgTable('bo_at_documentation', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  targetType: text('target_type').notNull(),          // base|table|field
-  targetId: text('target_id').notNull(),
-  description: text('description'),
-  source: text('source').notNull(),                   // imported|ai|manual (don't clobber manual/ai on reimport)
-  editedByUserId: uuid('edited_by_user_id'),          // → master users.id
-  updatedAt: timestamp('updated_at', { withTimezone: true }),
-}, (t) => ({
-  uniqTarget: uniqueIndex('bo_at_documentation_target_uq').on(t.targetType, t.targetId),
-}))
+// Documentation lives inline as `ai_description` / `ai_overview` /
+// `description_override` columns on bo_at_bases/tables/fields/records (the
+// `annotation` set above) — no separate bo_at_documentation table. The Data
+// Dictionary surface/export remains V2.
 
 // ---- Health (rules live in the master DB) ----
 

@@ -2,7 +2,7 @@
 
 - [ ] 1.1 Author the per-Space DB schema, Postgres dialect, in `packages/db-schema/src/space/pg.ts` (from `schema/pg.ts` reference here). All `bo_at_*` tables.
 - [ ] 1.2 Author the SQLite/D1 mirror in `packages/db-schema/src/space/sqlite.ts` (from `schema/sqlite.ts`). Keep in lockstep with pg.ts (a test asserts table/column parity).
-- [ ] 1.3 Barrel + a `space-schema-version` constant for the lazy on-DB migration check (PRAGMA user_version on D1 / a `bo_at_meta` row on PG).
+- [x] 1.3 `bo_at_meta` single-row table (schema_version + self-describing space_id/backend/platform) authored in pg.ts/sqlite.ts. Still TODO: a `SPACE_SCHEMA_VERSION` code constant + the lazy on-access migration runner that compares them.
 - [ ] 1.4 Master DB deltas: refactor `space_databases` (`tier` → `backend` + `records_enabled`, generic `pg_locator`, migration-state columns); add `health_score_rules`; remove `attachment_dedup`; slim `at_bases` to identity (`base_id`, `space_id`, `name`, `is_selected`); drop planned `backup_run_bases`; remove schema-change rows from `audit_history` scope.
 - [ ] 1.5 drizzle-kit generate for the master deltas; the per-Space schema gets its own drizzle config (separate `out`) per PRD §21.1 ("separate configs per env: master DB, client DBs").
 
@@ -44,10 +44,13 @@
 - [ ] 7.3 Update `server/schema-diff` (realize `schema_diffs`/`health_scores` as concrete `bo_at_*`; rules stay master).
 - [ ] 7.4 Update `server-attachments` (`attachment_dedup` → `bo_at_attachments`).
 
-## 8. Confirm the applied defaults (flagged in design.md)
+## 8. Open-item decisions
 
-- [ ] 8.1 `bo_at_documentation` shape (single description + source + don't-clobber); Data Dictionary = V2.
-- [ ] 8.2 `bo_at_views` included (or drop).
-- [ ] 8.3 Health: scores append / issues replace.
-- [ ] 8.4 `managed_pg` = schema-per-Space (vs db-per-Space).
+Resolved 2026-06-22:
+- [x] 8.1 Documentation = inline `ai_description` / `ai_overview` / `description_override` columns on bases/tables/fields/records (imported stays as `description`); no `bo_at_documentation` table. Data Dictionary = V2.
+- [x] 8.2 `bo_at_views` included, capture gated to Airtable Enterprise customers.
+- [x] 8.4 `managed_pg` = schema-per-Space (multiple Spaces' schemas per database).
+
+Still open:
+- [ ] 8.3 Health tables + rule taxonomy — deferred; current draft stands (scores append / issues replace; rules in core `health_score_rules`).
 </content>
