@@ -11,22 +11,31 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./space": {
+      "types": "./src/space/index.ts",
+      "import": "./src/space/index.ts",
+      "default": "./src/space/index.ts"
     }
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
     "dev": "tsup src/index.ts --format esm --dts --watch",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "db:generate:space-pg": "drizzle-kit generate --config=drizzle.space-pg.config.ts",
+    "db:generate:space-sqlite": "drizzle-kit generate --config=drizzle.space-sqlite.config.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
     "drizzle-kit": "^0.31.10",
-    "tsup": "^8.3.0"
+    "tsup": "^8.3.0",
+    "vitest": "^4.1.5"
   }
 }

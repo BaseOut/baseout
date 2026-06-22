@@ -627,3 +627,101 @@ export const attachmentDedup = baseout.table('attachment_dedup', {
     table.compositeId,
   ),
 ])
+
+// ———————————————————————————————————————————————————————————————————————————
+// SPACE DATABASES
+// Filed by openspec/changes/system-per-space-db. One row per Space — the
+// control-plane pointer to that Space's dedicated per-Space database.
+//
+// `backend` selects where the per-Space DB lives; `records_enabled` is an
+// independent toggle for whether the record tables are populated (the per-Space
+// DB always exists for schema / attachments / diffs / docs). Residency posture
+// is DERIVED, not stored: `managed` (d1 | managed_pg) vs `sovereign` (byodb —
+// schema + records live only in the customer's DB). Sovereign requires
+// records_enabled = true (enforced by CHECK + app-level validation).
+//
+// The per-Space schema itself (bo_at_* tables) lives in @baseout/db-schema/space,
+// NOT in this master-DB file. Cross-DB references are plain columns, never FKs.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const spaceDatabases = baseout.table('space_databases', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .unique()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  // 'd1' | 'managed_pg' | 'byodb' — enforced by CHECK below.
+  backend: text('backend').notNull(),
+  // Whether the record tables (bo_at_records / bo_at_record_field_data) are
+  // populated. The per-Space DB exists regardless.
+  recordsEnabled: boolean('records_enabled').notNull().default(false),
+  // Provisioning lifecycle.
+  status: text('status').notNull().default('pending'),
+  // 'pending' | 'provisioning' | 'active' | 'migrating' | 'error'
+  // Backend locators — exactly one is set, per `backend`:
+  //   d1         → d1_database_id (Cloudflare D1 database UUID)
+  //   managed_pg → pg_locator (generic locator, e.g. the schema-per-Space name
+  //                on the shared cluster)
+  //   byodb      → byodb_connection_string_enc (AES-256-GCM-encrypted customer PG DSN)
+  d1DatabaseId: text('d1_database_id'),
+  pgLocator: text('pg_locator'),
+  byodbConnectionStringEnc: text('byodb_connection_string_enc'),
+  // SPACE_SCHEMA_VERSION applied to the per-Space DB; drives the lazy on-access
+  // migration check. Null until first provision completes.
+  schemaVersion: integer('schema_version'),
+  lastSchemaSyncAt: timestamp('last_schema_sync_at', { withTimezone: true }),
+  lastRecordsSyncAt: timestamp('last_records_sync_at', { withTimezone: true }),
+  provisionedByUserId: text('provisioned_by_user_id').references(() => users.id),
+  provisionedAt: timestamp('provisioned_at', { withTimezone: true }),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check(
+    'space_databases_backend_check',
+    sql`${table.backend} IN ('d1', 'managed_pg', 'byodb')`,
+  ),
+  check(
+    'space_databases_status_check',
+    sql`${table.status} IN ('pending', 'provisioning', 'active', 'migrating', 'error')`,
+  ),
+  // Sovereign (byodb) requires a dynamic DB — records must be enabled.
+  check(
+    'space_databases_sovereign_requires_records',
+    sql`${table.backend} <> 'byodb' OR ${table.recordsEnabled} = true`,
+  ),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// HEALTH SCORE RULES
+// Filed by openspec/changes/system-per-space-db. Org-scoped, configurable rules
+// the engine evaluates per run to compute a Base's health score. The computed
+// RESULTS live per-Space (bo_at_health_scores / bo_at_health_issues in
+// @baseout/db-schema/space); only the rules are master-DB control-plane state.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const healthScoreRules = baseout.table('health_score_rules', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: text('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  // Stable rule identifier, unique per Org (e.g. 'missing_primary_field').
+  code: text('code').notNull(),
+  name: text('name').notNull(),
+  description: text('description'),
+  category: text('category'),                              // grouping for the score breakdown
+  severity: text('severity').notNull().default('medium'),  // 'high' | 'medium' | 'low'
+  // Contribution to the 0–100 score; larger deduction when the rule fires.
+  weight: integer('weight').notNull().default(0),
+  enabled: boolean('enabled').notNull().default(true),
+  config: jsonb('config'),                                 // rule-specific thresholds / params
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check(
+    'health_score_rules_severity_check',
+    sql`${table.severity} IN ('high', 'medium', 'low')`,
+  ),
+  unique('health_score_rules_org_code_unique').on(table.organizationId, table.code),
+  index('health_score_rules_organization_id_idx').on(table.organizationId),
+])
