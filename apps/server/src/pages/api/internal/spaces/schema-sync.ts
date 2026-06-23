@@ -10,14 +10,13 @@
 // Token gate is applied by middleware (path begins /api/internal/).
 
 import type { AppLocals, Env } from "../../../../env";
-import { resolveDbUrl } from "../../../../db/worker";
 import { diffSchema, type CapturedBase } from "../../../../lib/per-space/schema-diff";
 import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import {
   applySchemaDiff,
-  createSpacePgDb,
   ensureBaseRun,
   readSchemaWorkingSet,
+  withSpaceSchema,
 } from "../../../../lib/per-space/space-db-pg";
 
 const UUID_RE =
@@ -32,8 +31,8 @@ function jsonResponse(body: unknown, status: number): Response {
 
 export async function spacesSchemaSyncHandler(
   request: Request,
-  env: Env,
-  ctx: ExecutionContext,
+  _env: Env,
+  _ctx: ExecutionContext,
   locals: AppLocals,
   spaceId: string,
 ): Promise<Response> {
@@ -62,12 +61,14 @@ export async function spacesSchemaSyncHandler(
     return jsonResponse({ error: "backend_not_implemented" }, 501);
   }
 
-  const { db: spaceDb, sql } = createSpacePgDb(resolveDbUrl(env), space.pgLocator);
   try {
-    const baseRunId = await ensureBaseRun(spaceDb, backupRunId, captured.baseId);
-    const prior = await readSchemaWorkingSet(spaceDb, captured.baseId);
-    const result = diffSchema({ captured, prior, runId: baseRunId, confident });
-    await applySchemaDiff(spaceDb, { baseId: captured.baseId, baseRunId, result, schemaJson: captured });
+    const { baseRunId, result } = await withSpaceSchema(masterDb, space.pgLocator, async (tx) => {
+      const baseRunId = await ensureBaseRun(tx, backupRunId, captured.baseId);
+      const prior = await readSchemaWorkingSet(tx, captured.baseId);
+      const result = diffSchema({ captured, prior, runId: baseRunId, confident });
+      await applySchemaDiff(tx, { baseId: captured.baseId, baseRunId, result, schemaJson: captured });
+      return { baseRunId, result };
+    });
     return jsonResponse(
       {
         ok: true,
@@ -79,7 +80,10 @@ export async function spacesSchemaSyncHandler(
       },
       200,
     );
-  } finally {
-    ctx.waitUntil(sql.end({ timeout: 5 }));
+  } catch (err) {
+    return jsonResponse(
+      { error: "sync_failed", message: err instanceof Error ? err.message : String(err) },
+      500,
+    );
   }
 }
