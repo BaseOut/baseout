@@ -22,6 +22,8 @@ import { runsDeleteHandler } from "./pages/api/internal/runs/delete";
 import { runsDeleteCompleteHandler } from "./pages/api/internal/runs/delete-complete";
 import { spacesSetFrequencyHandler } from "./pages/api/internal/spaces/set-frequency";
 import { spacesProvisionDatabaseHandler } from "./pages/api/internal/spaces/provision-database";
+import { spacesSchemaSyncHandler } from "./pages/api/internal/spaces/schema-sync";
+import { spacesRecordsSyncHandler } from "./pages/api/internal/spaces/records-sync";
 import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
 import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
 import {
@@ -44,6 +46,10 @@ const SPACES_SET_FREQUENCY_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/set-frequency$/;
 const SPACES_PROVISION_DATABASE_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/provision-database$/;
+const SPACES_SCHEMA_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/schema-sync$/;
+const SPACES_RECORDS_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/records-sync$/;
 const SPACES_RESCAN_BASES_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/rescan-bases$/;
 const SPACES_STORAGE_DESTINATION_RE =
@@ -226,6 +232,18 @@ export default {
           locals,
           provisionDb[1]!,
         );
+      }
+
+      // Per-Space DB write path (openspec/changes/system-per-space-db §3).
+      // The workflows backup writer POSTs captured schema + records here; the
+      // engine diffs vs the per-Space DB and writes the bo_at_* tables.
+      const schemaSync = SPACES_SCHEMA_SYNC_RE.exec(url.pathname);
+      if (schemaSync) {
+        return await spacesSchemaSyncHandler(request, env, ctx, locals, schemaSync[1]!);
+      }
+      const recordsSync = SPACES_RECORDS_SYNC_RE.exec(url.pathname);
+      if (recordsSync) {
+        return await spacesRecordsSyncHandler(request, env, ctx, locals, recordsSync[1]!);
       }
 
       // Workspace rediscovery — manual rescan. apps/web's POST

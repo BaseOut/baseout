@@ -18,7 +18,7 @@ import type { Env } from "../env";
 
 export type AppDb = PostgresJsDatabase<typeof schema>;
 
-function resolveDbUrl(env: Env): string {
+export function resolveDbUrl(env: Env): string {
   const hyperdriveUrl = env.HYPERDRIVE?.connectionString;
   if (hyperdriveUrl) return hyperdriveUrl;
   if (env.DATABASE_URL) return env.DATABASE_URL;
