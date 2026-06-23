@@ -28,13 +28,26 @@ export interface AirtableField {
   id: string;
   name: string;
   type: string;
+  /** Type-specific config (choices, linked table, precision, …). Present in the
+   * Metadata API response; captured into bo_at_fields.options. */
+  options?: unknown;
+  description?: string;
+}
+
+export interface AirtableView {
+  id: string;
+  name: string;
+  type?: string;
 }
 
 export interface AirtableTable {
   id: string;
   name: string;
   primaryFieldId: string;
+  description?: string;
   fields: AirtableField[];
+  /** The Metadata API returns a table's views by default. */
+  views?: AirtableView[];
 }
 
 export interface AirtableSchema {

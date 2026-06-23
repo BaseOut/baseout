@@ -36,10 +36,12 @@ const SCHEMA: AirtableSchema = {
       id: "tbl1",
       name: "Tasks",
       primaryFieldId: "f1",
+      description: "All tasks",
       fields: [
         { id: "f1", name: "Name", type: "singleLineText" },
-        { id: "f2", name: "Amount", type: "number" },
+        { id: "f2", name: "Amount", type: "number", options: { precision: 2 }, description: "USD" },
       ],
+      views: [{ id: "viw1", name: "Grid", type: "grid" }],
     },
   ],
 };
@@ -107,6 +109,12 @@ describe("runBackupBase — per-Space schema sync", () => {
       ["f1", "Name", true],
       ["f2", "Amount", false],
     ]);
+    // views / options / descriptions are now captured
+    expect(t.description).toBe("All tasks");
+    expect(t.views).toEqual([{ viewId: "viw1", name: "Grid", type: "grid" }]);
+    const amt = t.fields.find((f) => f.fieldId === "f2")!;
+    expect(amt.options).toEqual({ precision: 2 });
+    expect(amt.description).toBe("USD");
   });
 });
 

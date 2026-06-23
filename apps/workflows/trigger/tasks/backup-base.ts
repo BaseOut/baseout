@@ -414,15 +414,20 @@ export async function runBackupBase(
           primaryFieldId: t.primaryFieldId,
           fieldCount: t.fields.length,
           recordCount: null,
-          description: null,
+          description: t.description ?? null,
           fields: t.fields.map((f) => ({
             fieldId: f.id,
             name: f.name,
             type: f.type,
+            options: f.options ?? null,
             isPrimary: f.id === t.primaryFieldId,
-            description: null,
+            description: f.description ?? null,
           })),
-          views: [],
+          views: (t.views ?? []).map((v) => ({
+            viewId: v.id,
+            name: v.name,
+            type: v.type ?? null,
+          })),
         })),
       };
       const sync = await deps.syncSchema(captured, true);
