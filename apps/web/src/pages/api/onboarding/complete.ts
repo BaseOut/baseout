@@ -7,6 +7,7 @@ import {
   provisionOnboarding,
   validateOnboardingInput,
 } from '../../../lib/onboarding/complete'
+import { createBackupEngine } from '../../../lib/backup-engine'
 import {
   createStripeClient,
   ensureStripeTrialSubscription,
@@ -89,6 +90,23 @@ export const POST: APIRoute = async ({ request, locals }) => {
       }
     }
     throw err
+  }
+
+  // Provision the first Space's per-Space DB (engine owns the lifecycle).
+  // Best-effort + idempotent, mirroring POST /api/spaces: a provisioning hiccup
+  // must not block onboarding (the space_databases row records status='error'
+  // for retry). records_enabled=false — the DB always exists for schema;
+  // record tables turn on with dynamic mode.
+  if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+    const engine = createBackupEngine({
+      binding: env.BACKUP_ENGINE,
+      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    })
+    await engine.provisionDatabase(snapshot.spaceId, {
+      backend: 'managed_pg',
+      recordsEnabled: false,
+      provisionedByUserId: locals.user.id,
+    })
   }
 
   if (stripeResolution.kind === 'configured') {
