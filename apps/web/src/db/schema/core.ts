@@ -577,56 +577,10 @@ export const storageDestinations = baseout.table('storage_destinations', {
 ])
 
 // ———————————————————————————————————————————————————————————————————————————
-// ATTACHMENT DEDUP
-// Filed by openspec/changes/server-attachments (Phase A). One row per unique
-// Airtable attachment seen across all backup runs of a Space. The composite
-// ID (PRD §2.8) lets a re-run skip re-downloading + re-uploading a file it has
-// already persisted — without it, every snapshot of an attachment-heavy base
-// re-streams gigabytes per scheduled run.
-//
-// `storage_key` is destination-agnostic: it holds an R2 S3 object key, a BYOS
-// relative path, or a local-disk relative path depending on the Space's
-// selected destination (the same string buildR2Key/the StorageWriter use).
+// ATTACHMENT DEDUP — REMOVED. Attachment metadata moved to the per-Space
+// bo_at_attachments table (openspec/changes/system-per-space-db §3.4); dedup is
+// now scoped within each Space's DB. See @baseout/db-schema/space.
 // ———————————————————————————————————————————————————————————————————————————
-
-export const attachmentDedup = baseout.table('attachment_dedup', {
-  // {base_id}_{table_id}_{record_id}_{field_id}_{attachment_id} per PRD §2.8.
-  compositeId: text('composite_id').primaryKey(),
-  spaceId: text('space_id')
-    .notNull()
-    .references(() => spaces.id, { onDelete: 'cascade' }),
-  // Destination-relative key the attachment bytes were written to.
-  storageKey: text('storage_key').notNull(),
-  // sha256 of the file contents, computed on first download. Optional — used
-  // by a future content-hash dedup; composite-ID dedup is the load-bearing key.
-  contentHash: text('content_hash'),
-  sizeBytes: bigint('size_bytes', { mode: 'number' }),
-  mimeType: text('mime_type'),
-  // Source filename from Airtable, retained for metadata. Nullable — legacy
-  // rows predate this column.
-  filename: text('filename'),
-  // 'ready' = bytes staged on local disk, not yet at the real destination;
-  // 'uploaded' = bytes are at the destination (managed R2 / BYOS). Defaults to
-  // 'uploaded' so every pre-existing row — all written straight to a real
-  // destination — stays truthful without a backfill.
-  uploadStatus: text('upload_status').notNull().default('uploaded'),
-  // Set to now() whenever the row is recorded/updated as 'uploaded'. Null while
-  // a row is still 'ready'.
-  uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
-  firstSeenAt: timestamp('first_seen_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  // Updated by every run that touches this attachment, so retention can prune
-  // attachments not seen for > the tier's retention window.
-  lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-}, (table) => [
-  index('attachment_dedup_space_composite_idx').on(
-    table.spaceId,
-    table.compositeId,
-  ),
-])
 
 // ———————————————————————————————————————————————————————————————————————————
 // SPACE DATABASES

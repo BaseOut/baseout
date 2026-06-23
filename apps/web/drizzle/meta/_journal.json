@@ -127,6 +127,13 @@
       "when": 1782153375087,
       "tag": "0017_young_valeria_richards",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1782251623519,
+      "tag": "0018_pretty_betty_ross",
+      "breakpoints": true
     }
   ]
 }
