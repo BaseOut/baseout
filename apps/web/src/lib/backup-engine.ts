@@ -217,6 +217,46 @@ export type EngineRescanBasesResult =
   | EngineRescanBasesSuccess
   | EngineRescanBasesError;
 
+export interface EngineProvisionDatabaseSuccess {
+  ok: true;
+  /** 'active' = provisioned now; 'already_active' = idempotent no-op. */
+  status: "active" | "already_active";
+  backend: string;
+  /** Backend locator (managed_pg schema name); null on an already_active short-circuit. */
+  locator: string | null;
+}
+
+/**
+ * Non-2xx outcomes from POST /api/internal/spaces/:spaceId/provision-database.
+ * Mirrors `ProvisionResult["code"]` in @baseout/server plus the middleware's
+ * `unauthorized` and the client-only `engine_unreachable` / `engine_error`.
+ */
+export interface EngineProvisionDatabaseError {
+  ok: false;
+  code:
+    | "unauthorized"
+    | "invalid_request"
+    | "invalid_backend"
+    | "sovereign_requires_records"
+    | "backend_not_implemented"
+    | "provision_failed"
+    | "engine_unreachable"
+    | "engine_error";
+  status: number;
+  message?: string;
+}
+
+export type EngineProvisionDatabaseResult =
+  | EngineProvisionDatabaseSuccess
+  | EngineProvisionDatabaseError;
+
+export interface ProvisionDatabaseOptions {
+  /** 'd1' | 'managed_pg' | 'byodb'. Defaults to managed_pg engine-side. */
+  backend?: string;
+  recordsEnabled?: boolean;
+  provisionedByUserId?: string | null;
+}
+
 export interface BackupEngineOptions {
   /**
    * Service binding to the @baseout/server Worker. Provided by Cloudflare
@@ -237,6 +277,10 @@ export interface BackupEngineClient {
     frequency: string,
   ): Promise<EngineSetSpaceFrequencyResult>;
   rescanBases(spaceId: string): Promise<EngineRescanBasesResult>;
+  provisionDatabase(
+    spaceId: string,
+    opts?: ProvisionDatabaseOptions,
+  ): Promise<EngineProvisionDatabaseResult>;
 }
 
 const KNOWN_ERROR_CODES: ReadonlySet<EngineWhoamiError["code"]> = new Set([
@@ -295,6 +339,17 @@ const KNOWN_RESCAN_BASES_ERROR_CODES: ReadonlySet<
   "config_not_found",
   "connection_not_found",
   "airtable_error",
+]);
+
+const KNOWN_PROVISION_DATABASE_ERROR_CODES: ReadonlySet<
+  EngineProvisionDatabaseError["code"]
+> = new Set([
+  "unauthorized",
+  "invalid_request",
+  "invalid_backend",
+  "sovereign_requires_records",
+  "backend_not_implemented",
+  "provision_failed",
 ]);
 
 export function createBackupEngine(
@@ -382,6 +437,58 @@ export function createBackupEngine(
           ? (rawCode as EngineStartRunError["code"])
           : "engine_error";
       return { ok: false, code, status: res.status };
+    },
+
+    async provisionDatabase(spaceId, opts) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/provision-database`;
+      let res: Response;
+      try {
+        res = await options.binding.fetch(`https://engine${path}`, {
+          method: "POST",
+          headers: {
+            "x-internal-token": options.internalToken,
+            "content-type": "application/json",
+            accept: "application/json",
+          },
+          body: JSON.stringify({
+            backend: opts?.backend,
+            recordsEnabled: opts?.recordsEnabled ?? false,
+            provisionedByUserId: opts?.provisionedByUserId ?? null,
+          }),
+        });
+      } catch {
+        return { ok: false, code: "engine_unreachable", status: 0 };
+      }
+
+      if (res.ok) {
+        const body = (await res.json()) as Omit<
+          EngineProvisionDatabaseSuccess,
+          "ok"
+        >;
+        return { ok: true, ...body };
+      }
+
+      let body: Record<string, unknown> = {};
+      try {
+        body = (await res.json()) as Record<string, unknown>;
+      } catch {
+        // engine returned non-JSON (rare); fall through with empty body
+      }
+      const rawCode = typeof body.error === "string" ? body.error : undefined;
+      const code: EngineProvisionDatabaseError["code"] =
+        rawCode &&
+        KNOWN_PROVISION_DATABASE_ERROR_CODES.has(
+          rawCode as EngineProvisionDatabaseError["code"],
+        )
+          ? (rawCode as EngineProvisionDatabaseError["code"])
+          : "engine_error";
+      const out: EngineProvisionDatabaseError = {
+        ok: false,
+        code,
+        status: res.status,
+      };
+      if (typeof body.message === "string") out.message = body.message;
+      return out;
     },
 
     async setSpaceFrequency(spaceId, frequency) {

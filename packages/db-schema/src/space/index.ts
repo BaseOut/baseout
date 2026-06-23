@@ -15,6 +15,10 @@
 export * as spacePg from './pg'
 export * as spaceSqlite from './sqlite'
 
+// Executable DDL for provisioning (no drizzle weight). Engine imports the lean
+// '@baseout/db-schema/space/pg-ddl' subpath directly; re-exported here too.
+export { SPACE_PG_DDL, spacePgDdlStatements } from './pg-ddl'
+
 // Bumped whenever the per-Space schema changes. Provisioning records this on the
 // per-Space DB (PRAGMA user_version on D1 / a meta row on PG) and the lazy
 // on-access migration check compares against it to apply pending migrations.

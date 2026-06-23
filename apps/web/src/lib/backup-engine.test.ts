@@ -495,3 +495,86 @@ describe('createBackupEngine.deleteRun', () => {
     )
   })
 })
+
+describe('createBackupEngine.provisionDatabase', () => {
+  const SPACE_ID = '11111111-2222-3333-4444-555555555555'
+
+  it('POSTs the canonical provision-database path with backend + records body', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, status: 'active', backend: 'managed_pg', locator: 'bo_space_x' }),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await engine.provisionDatabase(SPACE_ID, {
+      backend: 'managed_pg',
+      recordsEnabled: false,
+      provisionedByUserId: 'usr_1',
+    })
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(
+      `/api/internal/spaces/${SPACE_ID}/provision-database`,
+    )
+    const init = captured![1] as RequestInit
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>)['x-internal-token']).toBe(TOKEN)
+    expect(JSON.parse(init.body as string)).toEqual({
+      backend: 'managed_pg',
+      recordsEnabled: false,
+      provisionedByUserId: 'usr_1',
+    })
+  })
+
+  it('returns ok with status + backend + locator on 200', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, status: 'active', backend: 'managed_pg', locator: 'bo_space_x' }),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.provisionDatabase(SPACE_ID, { backend: 'managed_pg' })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.status).toBe('active')
+      expect(result.backend).toBe('managed_pg')
+      expect(result.locator).toBe('bo_space_x')
+    }
+  })
+
+  it('maps 400 sovereign_requires_records (with message)', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse(
+        { ok: false, error: 'sovereign_requires_records', message: 'byodb needs records' },
+        400,
+      ),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.provisionDatabase(SPACE_ID, { backend: 'byodb' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('sovereign_requires_records')
+      expect(result.status).toBe(400)
+      expect(result.message).toBe('byodb needs records')
+    }
+  })
+
+  it('maps 501 backend_not_implemented', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: false, error: 'backend_not_implemented' }, 501),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.provisionDatabase(SPACE_ID, { backend: 'd1', recordsEnabled: true })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('backend_not_implemented')
+  })
+
+  it('returns engine_unreachable when the binding throws', async () => {
+    const binding = fetcherStub(() => {
+      throw new Error('socket hang up')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.provisionDatabase(SPACE_ID, { backend: 'managed_pg' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_unreachable')
+      expect(result.status).toBe(0)
+    }
+  })
+})

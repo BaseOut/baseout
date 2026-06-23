@@ -1,9 +1,11 @@
 import type { APIRoute } from 'astro'
+import { env } from 'cloudflare:workers'
 import {
   createSpaceForOrg,
   listSpacesForOrg,
   SpaceError,
 } from '../../../lib/spaces'
+import { createBackupEngine } from '../../../lib/backup-engine'
 import {
   extractSessionTokenCookie,
   invalidateSessionCache,
@@ -56,7 +58,28 @@ export const POST: APIRoute = async ({ request, locals }) => {
       name: typeof body.name === 'string' ? body.name : '',
     })
     invalidateSessionCache(sessionToken)
-    return jsonResponse({ ok: true, space: created }, 200)
+
+    // Provision the Space's dedicated per-Space DB. The engine owns the
+    // per-Space DB lifecycle (web never connects to it), so this goes over the
+    // service binding. Best-effort: the Space row is already committed; a
+    // provisioning failure is recorded on space_databases (status='error') for
+    // retry, not fatal to Space creation. records_enabled=false — the DB always
+    // exists for schema/attachments; the record tables turn on with dynamic mode.
+    let provisioning = 'skipped'
+    if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+      const engine = createBackupEngine({
+        binding: env.BACKUP_ENGINE,
+        internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+      })
+      const result = await engine.provisionDatabase(created.id, {
+        backend: 'managed_pg',
+        recordsEnabled: false,
+        provisionedByUserId: locals.user.id,
+      })
+      provisioning = result.ok ? result.status : result.code
+    }
+
+    return jsonResponse({ ok: true, space: created, provisioning }, 200)
   } catch (err) {
     if (err instanceof SpaceError && err.detail.kind === 'invalid') {
       return jsonResponse(

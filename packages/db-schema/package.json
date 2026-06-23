@@ -16,6 +16,11 @@
       "types": "./src/space/index.ts",
       "import": "./src/space/index.ts",
       "default": "./src/space/index.ts"
+    },
+    "./space/pg-ddl": {
+      "types": "./src/space/pg-ddl.ts",
+      "import": "./src/space/pg-ddl.ts",
+      "default": "./src/space/pg-ddl.ts"
     }
   },
   "scripts": {

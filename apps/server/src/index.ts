@@ -21,6 +21,7 @@ import { runsCancelHandler } from "./pages/api/internal/runs/cancel";
 import { runsDeleteHandler } from "./pages/api/internal/runs/delete";
 import { runsDeleteCompleteHandler } from "./pages/api/internal/runs/delete-complete";
 import { spacesSetFrequencyHandler } from "./pages/api/internal/spaces/set-frequency";
+import { spacesProvisionDatabaseHandler } from "./pages/api/internal/spaces/provision-database";
 import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
 import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
 import {
@@ -41,6 +42,8 @@ const RUNS_DELETE_COMPLETE_RE =
   /^\/api\/internal\/runs\/([^/]+)\/delete-complete$/;
 const SPACES_SET_FREQUENCY_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/set-frequency$/;
+const SPACES_PROVISION_DATABASE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/provision-database$/;
 const SPACES_RESCAN_BASES_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/rescan-bases$/;
 const SPACES_STORAGE_DESTINATION_RE =
@@ -207,6 +210,21 @@ export default {
           ctx,
           locals,
           setFreq[1]!,
+        );
+      }
+
+      // Per-Space DB provisioning (openspec/changes/system-per-space-db §2).
+      // apps/web's POST /api/spaces calls this after creating a Space; the
+      // engine creates the per-Space DB + applies the bo_at_* schema. Method
+      // check inside the handler.
+      const provisionDb = SPACES_PROVISION_DATABASE_RE.exec(url.pathname);
+      if (provisionDb) {
+        return await spacesProvisionDatabaseHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          provisionDb[1]!,
         );
       }
 
