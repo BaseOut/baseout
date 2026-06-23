@@ -1,23 +1,24 @@
 // POST /api/internal/attachments/lookup   — dedup read
 // POST /api/internal/attachments/record   — dedup upsert
 //
-// Filed by openspec/changes/server-attachments. The workflows attachment
-// downloader (Node-only, no master-DB access) hits these to implement
-// composite-ID dedup (PRD §2.8):
-//   1. lookup: given a batch of composite IDs for a Space, return the ones
-//      already persisted + their storage keys, and bump their last_seen_at so
-//      retention doesn't prune attachments still in use. Misses are downloaded.
-//   2. record: after the downloader streams a miss to the StorageWriter, it
-//      upserts the row (idempotent on composite_id; re-records refresh
-//      last_seen_at + storage_key).
+// Filed by openspec/changes/server-attachments; cut over to the per-Space DB by
+// system-per-space-db §3.4. Attachment dedup metadata now lives in the per-Space
+// `bo_at_attachments` (keyed by composite_id; PRD §2.8), NOT the master
+// `attachment_dedup`. The workflows downloader (Node-only) hits these to:
+//   1. lookup: which composite IDs are already persisted (+ storage key + status).
+//   2. record: upsert rows after streaming a miss to the StorageWriter.
 //
-// `storage_key` is destination-agnostic (R2 object key | BYOS relative path |
-// local-disk relative path). The token gate is applied by middleware (path
-// begins /api/internal/).
+// Both resolve the Space's per-Space DB and run inside a transaction-scoped
+// search_path (managed_pg). A Space whose per-Space DB isn't provisioned/active
+// → 409; a non-managed_pg backend → 501. The downloader degrades gracefully on
+// both (no-dedup; bytes still land at the destination). `storage_key` is
+// destination-agnostic. Token gate is applied by middleware.
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { inArray, sql } from "drizzle-orm";
+import { spacePg } from "@baseout/db-schema/space";
 import type { AppLocals, Env } from "../../../../env";
-import { attachmentDedup } from "../../../../db/schema";
+import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
+import { withSpaceSchema } from "../../../../lib/per-space/space-db-pg";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -33,6 +34,9 @@ type UploadStatus = "ready" | "uploaded";
 
 interface RecordEntry {
   compositeId: string;
+  tableId: string;
+  fieldId: string;
+  recordId: string;
   storageKey: string;
   sizeBytes?: number;
   mimeType?: string;
@@ -44,28 +48,33 @@ interface RecordEntry {
 function isRecordEntry(v: unknown): v is RecordEntry {
   if (typeof v !== "object" || v === null) return false;
   const e = v as Record<string, unknown>;
-  if (typeof e.compositeId !== "string" || e.compositeId.length === 0) {
-    return false;
+  for (const k of ["compositeId", "tableId", "fieldId", "recordId", "storageKey"]) {
+    if (typeof e[k] !== "string" || (e[k] as string).length === 0) return false;
   }
-  if (typeof e.storageKey !== "string" || e.storageKey.length === 0) {
-    return false;
-  }
-  if (e.sizeBytes !== undefined && typeof e.sizeBytes !== "number") {
-    return false;
-  }
+  if (e.sizeBytes !== undefined && typeof e.sizeBytes !== "number") return false;
   if (e.mimeType !== undefined && typeof e.mimeType !== "string") return false;
-  if (e.contentHash !== undefined && typeof e.contentHash !== "string") {
-    return false;
-  }
+  if (e.contentHash !== undefined && typeof e.contentHash !== "string") return false;
   if (e.filename !== undefined && typeof e.filename !== "string") return false;
-  if (
-    e.uploadStatus !== undefined &&
-    e.uploadStatus !== "ready" &&
-    e.uploadStatus !== "uploaded"
-  ) {
+  if (e.uploadStatus !== undefined && e.uploadStatus !== "ready" && e.uploadStatus !== "uploaded") {
     return false;
   }
   return true;
+}
+
+/** Resolve the Space's per-Space DB or a 409/501 response. */
+async function resolveOrError(
+  locals: AppLocals,
+  spaceId: string,
+): Promise<{ pgLocator: string } | { res: Response }> {
+  const { db } = locals.getMasterDb();
+  const space = await resolveSpaceDb(db, spaceId);
+  if (!space || space.status !== "active") {
+    return { res: jsonResponse({ error: "space_db_not_ready" }, 409) };
+  }
+  if (space.backend !== "managed_pg" || !space.pgLocator) {
+    return { res: jsonResponse({ error: "backend_not_implemented" }, 501) };
+  }
+  return { pgLocator: space.pgLocator };
 }
 
 export async function attachmentsLookupHandler(
@@ -99,47 +108,23 @@ export async function attachmentsLookupHandler(
     return jsonResponse({ hits: {} }, 200);
   }
 
+  const resolved = await resolveOrError(locals, spaceId);
+  if ("res" in resolved) return resolved.res;
   const { db } = locals.getMasterDb();
-  const rows = await db
-    .select({
-      compositeId: attachmentDedup.compositeId,
-      storageKey: attachmentDedup.storageKey,
-      uploadStatus: attachmentDedup.uploadStatus,
-    })
-    .from(attachmentDedup)
-    .where(
-      and(
-        eq(attachmentDedup.spaceId, spaceId),
-        inArray(attachmentDedup.compositeId, compositeIds as string[]),
-      ),
-    );
 
-  // Hit value carries uploadStatus alongside storageKey so the workflows
-  // downloader (and a future standalone upload phase) can distinguish staged
-  // ('ready') from shipped ('uploaded') rows without a second query.
-  const hits: Record<string, { storageKey: string; uploadStatus: string }> = {};
-  for (const r of rows) {
-    hits[r.compositeId] = {
-      storageKey: r.storageKey,
-      uploadStatus: r.uploadStatus,
-    };
-  }
-
-  if (rows.length > 0) {
-    // Bump last_seen_at so retention treats these as still-live.
-    await db
-      .update(attachmentDedup)
-      .set({ lastSeenAt: sql`now()` })
-      .where(
-        and(
-          eq(attachmentDedup.spaceId, spaceId),
-          inArray(
-            attachmentDedup.compositeId,
-            rows.map((r) => r.compositeId),
-          ),
-        ),
-      );
-  }
+  const hits = await withSpaceSchema(db, resolved.pgLocator, async (tx) => {
+    const rows = await tx
+      .select({
+        compositeId: spacePg.attachments.compositeId,
+        storageKey: spacePg.attachments.storageKey,
+        uploadStatus: spacePg.attachments.uploadStatus,
+      })
+      .from(spacePg.attachments)
+      .where(inArray(spacePg.attachments.compositeId, compositeIds as string[]));
+    const h: Record<string, { storageKey: string; uploadStatus: string }> = {};
+    for (const r of rows) h[r.compositeId] = { storageKey: r.storageKey, uploadStatus: r.uploadStatus };
+    return h;
+  });
 
   return jsonResponse({ hits }, 200);
 }
@@ -175,41 +160,44 @@ export async function attachmentsRecordHandler(
     return jsonResponse({ recorded: 0 }, 200);
   }
 
+  const resolved = await resolveOrError(locals, spaceId);
+  if ("res" in resolved) return resolved.res;
   const { db } = locals.getMasterDb();
-  await db
-    .insert(attachmentDedup)
-    .values(
-      entries.map((e) => {
-        const uploadStatus = e.uploadStatus ?? "uploaded";
-        return {
-          compositeId: e.compositeId,
-          spaceId,
-          storageKey: e.storageKey,
-          sizeBytes: e.sizeBytes ?? null,
-          mimeType: e.mimeType ?? null,
-          contentHash: e.contentHash ?? null,
-          filename: e.filename ?? null,
-          uploadStatus,
-          // Stamp uploaded_at only once the bytes are at a real destination.
-          uploadedAt: uploadStatus === "uploaded" ? sql`now()` : null,
-        };
-      }),
-    )
-    .onConflictDoUpdate({
-      target: attachmentDedup.compositeId,
-      set: {
-        storageKey: sql`excluded.storage_key`,
-        sizeBytes: sql`excluded.size_bytes`,
-        mimeType: sql`excluded.mime_type`,
-        contentHash: sql`excluded.content_hash`,
-        filename: sql`excluded.filename`,
-        uploadStatus: sql`excluded.upload_status`,
-        // Keep uploaded_at accurate: now() when the new status is 'uploaded',
-        // cleared back to NULL while a row is still 'ready'.
-        uploadedAt: sql`case when excluded.upload_status = 'uploaded' then now() else null end`,
-        lastSeenAt: sql`now()`,
-      },
-    });
+
+  await withSpaceSchema(db, resolved.pgLocator, async (tx) => {
+    await tx
+      .insert(spacePg.attachments)
+      .values(
+        entries.map((e) => {
+          const uploadStatus = e.uploadStatus ?? "uploaded";
+          return {
+            compositeId: e.compositeId,
+            tableId: e.tableId,
+            fieldId: e.fieldId,
+            recordId: e.recordId,
+            storageKey: e.storageKey,
+            contentHash: e.contentHash ?? null,
+            filename: e.filename ?? null,
+            sizeBytes: e.sizeBytes ?? null,
+            mimeType: e.mimeType ?? null,
+            uploadStatus,
+            uploadedAt: uploadStatus === "uploaded" ? sql`now()` : null,
+          };
+        }),
+      )
+      .onConflictDoUpdate({
+        target: spacePg.attachments.compositeId,
+        set: {
+          storageKey: sql`excluded.storage_key`,
+          contentHash: sql`excluded.content_hash`,
+          filename: sql`excluded.filename`,
+          sizeBytes: sql`excluded.size_bytes`,
+          mimeType: sql`excluded.mime_type`,
+          uploadStatus: sql`excluded.upload_status`,
+          uploadedAt: sql`case when excluded.upload_status = 'uploaded' then now() else null end`,
+        },
+      });
+  });
 
   return jsonResponse({ recorded: entries.length }, 200);
 }

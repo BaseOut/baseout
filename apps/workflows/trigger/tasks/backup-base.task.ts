@@ -138,6 +138,10 @@ async function attachmentLookup(
     },
     body: JSON.stringify({ spaceId, compositeIds }),
   });
+  // 409/501 = per-Space DB not provisioned / not managed_pg → degrade to
+  // no-dedup (every attachment treated as a miss; still written to the
+  // destination). Other non-2xx is a real error → throw so the task retries.
+  if (res.status === 409 || res.status === 501) return {};
   if (!res.ok) {
     throw new Error(`attachments/lookup ${res.status}`);
   }
@@ -162,6 +166,10 @@ async function attachmentRecord(
     },
     body: JSON.stringify({ spaceId, entries }),
   });
+  // 409/501 = per-Space DB not ready → the bytes are already at the destination;
+  // we just skip recording dedup metadata (next run re-downloads). Other non-2xx
+  // throws so the task retries.
+  if (res.status === 409 || res.status === 501) return;
   if (!res.ok) {
     throw new Error(`attachments/record ${res.status}`);
   }

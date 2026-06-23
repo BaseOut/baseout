@@ -100,6 +100,9 @@ describe("attachment-downloader.processCell", () => {
     expect(recorded[0]!.entries).toEqual([
       {
         compositeId: "appB_tblT_recR_fldF_attA",
+        tableId: "tblT",
+        fieldId: "fldF",
+        recordId: "recR",
         storageKey: expectedKey,
         sizeBytes: 5,
         mimeType: "image/png",
@@ -119,6 +122,9 @@ describe("attachment-downloader.processCell", () => {
     expect(recorded[0]!.entries).toEqual([
       {
         compositeId: "appB_tblT_recR_fldF_attA",
+        tableId: "tblT",
+        fieldId: "fldF",
+        recordId: "recR",
         storageKey: "space-1/att/appB_tblT_recR_fldF_attA/attA.png",
         sizeBytes: 5,
         mimeType: "image/png",

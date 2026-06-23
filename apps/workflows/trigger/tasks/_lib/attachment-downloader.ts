@@ -40,6 +40,10 @@ export interface DownloadContext {
 
 export interface AttachmentRecordEntry {
   compositeId: string;
+  /** Airtable ids the per-Space bo_at_attachments row needs (NOT NULL there). */
+  tableId: string;
+  fieldId: string;
+  recordId: string;
   storageKey: string;
   sizeBytes?: number;
   mimeType?: string;
@@ -171,6 +175,9 @@ export function createAttachmentDownloader(
         keys.push(storageKey);
         toRecord.push({
           compositeId,
+          tableId: ctx.tableId,
+          fieldId: ctx.fieldId,
+          recordId: ctx.recordId,
           storageKey,
           sizeBytes: bytes.byteLength,
           mimeType,
