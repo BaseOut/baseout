@@ -17,7 +17,12 @@
 // for missed completions.
 
 import { task } from "@trigger.dev/sdk";
-import { runBackupBase, type BackupBaseResult } from "./backup-base";
+import {
+  runBackupBase,
+  type BackupBaseResult,
+  type CapturedBaseWire,
+  type CapturedRecordWire,
+} from "./backup-base";
 import type { AttachmentRecordEntry } from "./_lib/attachment-downloader";
 
 export interface BackupBaseTaskPayload {
@@ -162,6 +167,48 @@ async function attachmentRecord(
   }
 }
 
+// Per-Space DB sync (openspec/changes/system-per-space-db §3, Option B). NOT
+// fire-and-forget — these are the per-Space write path. A 409 (space DB not yet
+// provisioned/active) or 501 (backend not managed_pg) returns null/void so the
+// run still produces its CSV snapshot; any other non-2xx throws so the task
+// retries.
+async function syncSchema(
+  engineUrl: string,
+  internalToken: string,
+  spaceId: string,
+  backupRunId: string,
+  captured: CapturedBaseWire,
+  confident: boolean,
+): Promise<{ recordsEnabled: boolean; baseRunId: string } | null> {
+  const url = `${trimSlash(engineUrl)}/api/internal/spaces/${encodeURIComponent(spaceId)}/schema-sync`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-internal-token": internalToken, "content-type": "application/json" },
+    body: JSON.stringify({ backupRunId, captured, confident }),
+  });
+  if (res.status === 409 || res.status === 501) return null;
+  if (!res.ok) throw new Error(`schema-sync ${res.status}`);
+  const json = (await res.json()) as { recordsEnabled: boolean; baseRunId: string };
+  return { recordsEnabled: json.recordsEnabled, baseRunId: json.baseRunId };
+}
+
+async function syncRecords(
+  engineUrl: string,
+  internalToken: string,
+  spaceId: string,
+  backupRunId: string,
+  args: { baseId: string; tableId: string; records: CapturedRecordWire[]; confident: boolean },
+): Promise<void> {
+  const url = `${trimSlash(engineUrl)}/api/internal/spaces/${encodeURIComponent(spaceId)}/records-sync`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-internal-token": internalToken, "content-type": "application/json" },
+    body: JSON.stringify({ backupRunId, ...args }),
+  });
+  if (res.status === 409 || res.status === 501) return;
+  if (!res.ok) throw new Error(`records-sync ${res.status}`);
+}
+
 async function postCompletion(
   engineUrl: string,
   internalToken: string,
@@ -251,6 +298,23 @@ export const backupBaseTask = task({
               payload.atBaseId,
               event.recordsAppended,
               event.tableCompleted,
+            ),
+          syncSchema: (captured, confident) =>
+            syncSchema(
+              engineUrl,
+              internalToken,
+              payload.spaceId,
+              payload.runId,
+              captured,
+              confident,
+            ),
+          syncRecords: (args) =>
+            syncRecords(
+              engineUrl,
+              internalToken,
+              payload.spaceId,
+              payload.runId,
+              args,
             ),
         },
       );

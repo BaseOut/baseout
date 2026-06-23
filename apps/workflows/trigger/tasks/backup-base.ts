@@ -88,6 +88,45 @@ export interface BackupBaseProgressEvent {
   tableCompleted: boolean;
 }
 
+// ── Per-Space DB sync wire shapes (openspec/changes/system-per-space-db §3) ──
+// The POST body shapes for the engine's /schema-sync + /records-sync routes
+// (Option B — engine-brokered writes). Kept in lockstep with the engine's
+// CapturedBase / CapturedRecord (apps/server/src/lib/per-space/*-diff.ts); the
+// routes validate the shape. Views/options/descriptions are not captured yet —
+// the airtable-client schema type doesn't parse them (follow-up).
+
+export interface CapturedFieldWire {
+  fieldId: string;
+  name: string;
+  type: string;
+  options?: unknown;
+  isPrimary?: boolean;
+  description?: string | null;
+}
+export interface CapturedTableWire {
+  tableId: string;
+  name: string;
+  primaryFieldId?: string | null;
+  fieldCount?: number | null;
+  recordCount?: number | null;
+  description?: string | null;
+  fields: CapturedFieldWire[];
+  views: { viewId: string; name: string; type?: string | null }[];
+}
+export interface CapturedBaseWire {
+  baseId: string;
+  name: string;
+  description?: string | null;
+  tables: CapturedTableWire[];
+}
+export interface CapturedRecordWire {
+  recordId: string;
+  createdTime?: string | null;
+  modifiedTime?: string | null;
+  /** fieldId → raw Airtable value. Only populated fields (Airtable omits empties). */
+  cells: Record<string, unknown>;
+}
+
 export interface BackupBaseDeps {
   engineUrl: string;
   internalToken: string;
@@ -153,6 +192,24 @@ export interface BackupBaseDeps {
    * StorageWriter.
    */
   attachmentDownloader?: AttachmentDownloader;
+  /**
+   * Per-Space DB sync (openspec/changes/system-per-space-db §3, Option B —
+   * engine-brokered). When present, the writer POSTs the captured base schema
+   * to /schema-sync (returns whether records are enabled + the per-Space
+   * base-run id), then POSTs each table's records to /records-sync when records
+   * are enabled. Absent in existing tests / static-only setups → the writer
+   * skips per-Space sync and only writes CSV snapshots (unchanged behavior).
+   */
+  syncSchema?: (
+    captured: CapturedBaseWire,
+    confident: boolean,
+  ) => Promise<{ recordsEnabled: boolean; baseRunId: string } | null>;
+  syncRecords?: (args: {
+    baseId: string;
+    tableId: string;
+    records: CapturedRecordWire[];
+    confident: boolean;
+  }) => Promise<void>;
 }
 
 export type BackupBaseStatus =
@@ -340,6 +397,41 @@ export async function runBackupBase(
       ? schema.tables.slice(0, TRIAL_TABLE_CAP)
       : schema.tables;
 
+    // 4b. Per-Space DB schema sync (engine-brokered). Send the FULL base schema
+    // — getBaseSchema enumerates every table, so this is a confident capture —
+    // and learn whether the Space stores records, so we know to follow up with
+    // /records-sync per table. Skipped when the dep is absent (static-only).
+    let recordsEnabled = false;
+    let perSpaceBaseRunId: string | null = null;
+    if (deps.syncSchema) {
+      const captured: CapturedBaseWire = {
+        baseId: input.atBaseId,
+        name: input.baseName,
+        description: null,
+        tables: schema.tables.map((t) => ({
+          tableId: t.id,
+          name: t.name,
+          primaryFieldId: t.primaryFieldId,
+          fieldCount: t.fields.length,
+          recordCount: null,
+          description: null,
+          fields: t.fields.map((f) => ({
+            fieldId: f.id,
+            name: f.name,
+            type: f.type,
+            isPrimary: f.id === t.primaryFieldId,
+            description: null,
+          })),
+          views: [],
+        })),
+      };
+      const sync = await deps.syncSchema(captured, true);
+      if (sync) {
+        recordsEnabled = sync.recordsEnabled;
+        perSpaceBaseRunId = sync.baseRunId;
+      }
+    }
+
     // 5. Per table.
     for (const table of tables) {
       const fieldNames = table.fields.map((f) => f.name);
@@ -353,6 +445,10 @@ export async function runBackupBase(
 
       const collected: AirtableRecordsPage["records"] = [];
       let offset: string | undefined = undefined;
+      // True when the trial cap truncated THIS table's records → the per-Space
+      // record sync for this table is a partial capture (confident=false), so
+      // absent records must NOT be marked deleted.
+      let cappedHere = false;
       for (;;) {
         const page = await client.listRecords(input.atBaseId, table.id, {
           offset,
@@ -367,6 +463,7 @@ export async function runBackupBase(
           const room = TRIAL_RECORD_CAP - recordsProcessed;
           collected.length = room;
           trialComplete = true;
+          cappedHere = true;
           break;
         }
         offset = page.offset;
@@ -429,6 +526,32 @@ export async function runBackupBase(
         } catch {
           // swallow — /complete is authoritative and will overwrite final totals
         }
+      }
+
+      // Per-Space DB record sync (engine-brokered EAV). Only when the Space
+      // stores records and the schema sync established a base-run. Sends raw
+      // Airtable cell values keyed by fieldId — the engine diffs vs the current
+      // bo_at_record_field_data and writes cells + the superseded-value log.
+      if (recordsEnabled && deps.syncRecords && perSpaceBaseRunId) {
+        const records: CapturedRecordWire[] = collected.map((rec) => {
+          const cells: Record<string, unknown> = {};
+          for (const [name, val] of Object.entries(rec.fields)) {
+            const fid = fieldIds.get(name);
+            if (fid) cells[fid] = val;
+          }
+          return {
+            recordId: rec.id,
+            createdTime: rec.createdTime,
+            modifiedTime: null,
+            cells,
+          };
+        });
+        await deps.syncRecords({
+          baseId: input.atBaseId,
+          tableId: table.id,
+          records,
+          confident: !cappedHere,
+        });
       }
 
       tablesProcessed += 1;
