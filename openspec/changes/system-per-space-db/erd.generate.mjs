@@ -298,7 +298,7 @@ function erd() {
   const PS_X = 560;
   const PS_W = 880; // wider — holds two columns of tables
   const REGION_Y = 110;
-  const REGION_H = 1760;
+  const REGION_H = 2720;
 
   // Core region background
   els.push(...rect({
@@ -370,23 +370,29 @@ function erd() {
   }
 
   // Column 1: run/schema lineage
+  placePS('meta', 'bo_at_meta', [
+    'id (singleton)', 'schema_version', 'space_id  (→core)',
+    'backend', 'platform', 'last_migrated_at',
+  ], 1);
   placePS('base_runs', 'bo_at_base_runs', [
     'id  (PK)', 'backup_run_id  (→core)', 'base_id', 'status',
     'curr_step', 'schema_version_id', 'counts',
   ], 1);
   placePS('bases', 'bo_at_bases', [
-    'base_id  (PK)', 'name', 'status', 'first_seen_run',
-    'first_unseen_run', 'last_seen_run',
+    'base_id  (PK)', 'name', 'description', 'status', 'first_seen_run',
+    'first_unseen_run', 'last_seen_run', '+ doc: ai/overview/override',
   ], 1);
   placePS('tables', 'bo_at_tables', [
-    'table_id  (PK)', 'base_id', 'name', 'primary_field_id', '+ lifecycle',
+    'table_id  (PK)', 'base_id', 'name', 'primary_field_id',
+    '+ lifecycle', '+ doc: ai/overview/override',
   ], 1);
   placePS('fields', 'bo_at_fields', [
     'field_id  (PK)', 'table_id', 'name', 'type', 'options',
-    'is_primary', '+ lifecycle',
+    'is_primary', '+ lifecycle', '+ doc: ai/overview/override',
   ], 1);
   placePS('views', 'bo_at_views', [
-    'view_id  (PK)', 'table_id', 'name', 'type', '+ lifecycle',
+    'view_id  (PK)', 'table_id', 'name', 'type',
+    '+ lifecycle', '+ doc: ai/overview/override',
   ], 1);
   placePS('schema_versions', 'bo_at_schema_versions', [
     'id  (PK)', 'base_id', 'schema_hash', 'schema_json', 'first_seen_run',
@@ -395,15 +401,10 @@ function erd() {
     'id  (PK)', 'run_id', 'entity_type', 'entity_id', 'change_type',
     'before_value', 'after_value', 'breaks_data',
   ], 1);
-  placePS('documentation', 'bo_at_documentation', [
-    'id  (PK)', 'target_type', 'target_id', 'description',
-    'source', 'updated_at',
-  ], 1);
-
   // Column 2: records / data / derived
   placePS('records', 'bo_at_records', [
-    'record_id  (PK)', 'table_id', 'created_time',
-    'modified_time', 'status', 'lifecycle',
+    'record_id  (PK)', 'table_id', 'created_time', 'modified_time',
+    'status', 'lifecycle', '+ doc: ai/overview/override',
   ], 2);
   placePS('record_field_data', 'bo_at_record_field_data', [
     '(record_id, field_id)  PK', 'table_id', 'value (JSON text)',
@@ -429,6 +430,18 @@ function erd() {
   ], 2);
   placePS('interfaces', 'bo_at_interfaces', [
     'id  (PK)', 'base_id', 'name', 'type', 'definition', 'status',
+  ], 2);
+  placePS('documents', 'bo_at_documents', [
+    'id  (PK)', 'title', 'body (Plate)', 'excerpt', 'created_by_user_id',
+  ], 2);
+  placePS('document_tags', 'bo_at_document_tags', [
+    'id  (PK)', 'document_id', 'target_type', 'target_id  (entity)', 'added_via',
+  ], 2);
+  placePS('document_links', 'bo_at_document_links', [
+    'id  (PK)', 'document_id', 'name', 'url',
+  ], 2);
+  placePS('document_diagrams', 'bo_at_document_diagrams', [
+    'id  (PK)', 'document_id', 'name', 'state (React Flow)',
   ], 2);
 
   // ---- relationships ----
@@ -460,6 +473,9 @@ function erd() {
 
   // health derived
   link('health_issues', { side: 'top' }, 'health_scores', { side: 'bottom' });
+
+  // documents (tags/links/diagrams reference documents by document_id)
+  link('document_tags', { side: 'top' }, 'documents', { side: 'bottom' });
 
   // --- cross-DB (dashed, UUID references) ---
   link('base_runs', { side: 'left', offsetPct: 0.7 }, 'backup_runs', { side: 'right', offsetPct: 0.5 }, { dashed: true, label: 'backup_run_id' });

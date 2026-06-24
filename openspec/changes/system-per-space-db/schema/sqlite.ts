@@ -24,6 +24,29 @@ const lifecycle = {
   lastSeenRun: text('last_seen_run'),
 }
 
+// Documentation/annotation columns (inline; no separate table). Imported
+// Airtable description stays as `description`; effective resolves
+// description_override ?? ai_description ?? description. See pg.ts.
+const annotation = {
+  aiDescription: text('ai_description'),
+  aiOverview: text('ai_overview'),
+  descriptionOverride: text('description_override'),
+}
+
+// Single-row, self-describing meta table. `schema_version` drives lazy
+// on-access migration across thousands of per-Space DBs. Keyed 'singleton'.
+// (SQLite/D1 also has PRAGMA user_version, but this table is used on all
+// backends for uniform code with the Postgres backends.)
+export const meta = sqliteTable('bo_at_meta', {
+  id: text('id').primaryKey().default('singleton'),
+  schemaVersion: integer('schema_version').notNull(),
+  spaceId: text('space_id').notNull(),                // → master spaces.id
+  backend: text('backend').notNull(),                 // d1 | managed_pg | byodb
+  platform: text('platform').notNull().default('airtable'),
+  provisionedAt: text('provisioned_at'),
+  lastMigratedAt: text('last_migrated_at'),
+})
+
 export const baseRuns = sqliteTable('bo_at_base_runs', {
   id: text('id').primaryKey(),
   backupRunId: text('backup_run_id').notNull(),
@@ -46,7 +69,8 @@ export const baseRuns = sqliteTable('bo_at_base_runs', {
 export const bases = sqliteTable('bo_at_bases', {
   baseId: text('base_id').primaryKey(),
   name: text('name').notNull(),
-  description: text('description'),
+  description: text('description'),                    // Airtable's imported description
+  ...annotation,
   ...lifecycle,
 })
 
@@ -57,7 +81,8 @@ export const tables = sqliteTable('bo_at_tables', {
   primaryFieldId: text('primary_field_id'),
   fieldCount: integer('field_count'),
   recordCount: integer('record_count'),
-  description: text('description'),
+  description: text('description'),                    // Airtable's imported description
+  ...annotation,
   ...lifecycle,
 }, (t) => ({ byBase: index('bo_at_tables_base_idx').on(t.baseId) }))
 
@@ -69,7 +94,8 @@ export const fields = sqliteTable('bo_at_fields', {
   type: text('type').notNull(),
   options: text('options', { mode: 'json' }),
   isPrimary: integer('is_primary', { mode: 'boolean' }).notNull().default(false),
-  description: text('description'),
+  description: text('description'),                    // Airtable's imported description
+  ...annotation,
   ...lifecycle,
 }, (t) => ({ byTable: index('bo_at_fields_table_idx').on(t.tableId) }))
 
@@ -79,6 +105,7 @@ export const views = sqliteTable('bo_at_views', {
   baseId: text('base_id').notNull(),
   name: text('name').notNull(),
   type: text('type'),
+  ...annotation,
   ...lifecycle,
 }, (t) => ({ byTable: index('bo_at_views_table_idx').on(t.tableId) }))
 
@@ -119,6 +146,7 @@ export const records = sqliteTable('bo_at_records', {
   firstSeenRun: text('first_seen_run'),
   firstUnseenRun: text('first_unseen_run'),
   lastSeenRun: text('last_seen_run'),
+  ...annotation,                                       // records have no Airtable description; ai/override only
 }, (t) => ({ byTable: index('bo_at_records_table_idx').on(t.tableId) }))
 
 export const recordFieldData = sqliteTable('bo_at_record_field_data', {
@@ -164,17 +192,8 @@ export const attachments = sqliteTable('bo_at_attachments', {
   byHash: index('bo_at_attachments_hash_idx').on(t.contentHash),
 }))
 
-export const documentation = sqliteTable('bo_at_documentation', {
-  id: text('id').primaryKey(),
-  targetType: text('target_type').notNull(),
-  targetId: text('target_id').notNull(),
-  description: text('description'),
-  source: text('source').notNull(),
-  editedByUserId: text('edited_by_user_id'),
-  updatedAt: text('updated_at'),
-}, (t) => ({
-  uniqTarget: uniqueIndex('bo_at_documentation_target_uq').on(t.targetType, t.targetId),
-}))
+// Documentation lives inline (ai_description / ai_overview / description_override
+// on bases/tables/fields/records) — no separate bo_at_documentation table.
 
 export const healthScores = sqliteTable('bo_at_health_scores', {
   id: text('id').primaryKey(),
@@ -224,3 +243,45 @@ export const interfaces = sqliteTable('bo_at_interfaces', {
   firstSeenAt: text('first_seen_at'),
   lastSeenAt: text('last_seen_at'),
 }, (t) => ({ byBase: index('bo_at_interfaces_base_idx').on(t.baseId) }))
+
+// ---- Documentation feature: user-authored docs about the schema ----
+// Mirror of pg.ts. A document tags any number of entities; tags surface on the
+// Browse detail panel. See pg.ts for semantics.
+
+export const documents = sqliteTable('bo_at_documents', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  body: text('body', { mode: 'json' }),               // Plate document model
+  excerpt: text('excerpt'),
+  createdByUserId: text('created_by_user_id'),
+  createdAt: text('created_at'),
+  updatedAt: text('updated_at'),
+})
+
+export const documentTags = sqliteTable('bo_at_document_tags', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull(),
+  targetType: text('target_type').notNull(),          // base|table|field|view
+  targetId: text('target_id').notNull(),
+  addedVia: text('added_via'),                        // inline|manual
+}, (t) => ({
+  byDocument: index('bo_at_document_tags_doc_idx').on(t.documentId),
+  byTarget: index('bo_at_document_tags_target_idx').on(t.targetType, t.targetId),
+  uniq: uniqueIndex('bo_at_document_tags_uq').on(t.documentId, t.targetType, t.targetId),
+}))
+
+export const documentLinks = sqliteTable('bo_at_document_links', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull(),
+  name: text('name'),
+  url: text('url').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (t) => ({ byDocument: index('bo_at_document_links_doc_idx').on(t.documentId) }))
+
+export const documentDiagrams = sqliteTable('bo_at_document_diagrams', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull(),
+  name: text('name'),
+  state: text('state', { mode: 'json' }).notNull(),   // serialized React Flow state
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (t) => ({ byDocument: index('bo_at_document_diagrams_doc_idx').on(t.documentId) }))

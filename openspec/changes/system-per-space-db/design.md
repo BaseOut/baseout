@@ -47,14 +47,15 @@ Stakeholders: `server` (writes the per-Space DB + brokers reads + provisions/mig
 
 11. **Restore reads per-run CSV snapshots** in the file destination (every run writes them — "dynamic alongside static"). Per-run point-in-time granularity (user picks from run history). Decoupled from the prunable record log. No shadow R2 copy (would violate BYOS no-disk + sovereign governance); a managed safety copy = adding R2-managed as an additional file destination. Large tables chunk into multi-part CSVs.
 
-## Open items — resolved with recommended defaults (confirm)
+## Open items
 
-These were not finalized in the design session; this change applies the recommended default and flags each:
+**Resolved 2026-06-22:**
+- **Documentation — inline columns, no separate table.** Airtable's imported description is already captured as the `description` column (and in `bo_at_schema_versions`), so it is not stored twice. Instead `bo_at_bases`/`bo_at_tables`/`bo_at_fields`/`bo_at_records` carry `ai_description`, `ai_overview`, and `description_override`. Effective description = `description_override ?? ai_description ?? description`; provenance is implicit in which column is set; re-import touches only `description` (so AI/manual are never clobbered). Auto-derived structural facts computed on read. Data Dictionary surface/export = **V2**.
+- **`bo_at_views`**: **included**, but capture is **gated to Airtable Enterprise customers** (the plan at which view metadata is available); empty otherwise.
+- **`managed_pg`**: **schema-per-Space** on a shared cluster (allows multiple Spaces' schemas in one database; cheaper at scale). `space_databases` stores a generic locator (database + schema name).
 
-- **`bo_at_documentation`**: single `description` per target + `source` tag (`imported`|`ai`|`manual`) + don't-clobber-manual-on-reimport; keyed by Airtable id. Auto-derived structural facts ("referenced by N lookups") computed on read, not stored. Data Dictionary surface/export = **V2**.
-- **`bo_at_views`**: **included** (cheap, part of Airtable schema). Drop if not needed by Visualize/Health.
-- **Health**: `bo_at_health_scores` appended per run (trend); `bo_at_health_issues` replaced per run (only current actionable). Rules in core `health_score_rules`.
-- **`managed_pg`**: **schema-per-Space** on a shared cluster (cheaper at scale) rather than a separate PG database per Space. `space_databases` stores a generic locator.
+**Still open:**
+- **Health tables** (`bo_at_health_scores` / `bo_at_health_issues`) and the health rule taxonomy — **deferred**; focusing on documentation first. Current draft (scores append per run, issues replace per run, rules in core `health_score_rules`) stands until revisited.
 
 ## Supersedes / reconciles
 

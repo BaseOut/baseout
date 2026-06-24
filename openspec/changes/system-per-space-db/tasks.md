@@ -5,13 +5,22 @@
 > (deploy dev engine + `trigger.dev dev` → run a backup → `bo_at_*` populate) is
 > the outstanding gate. Backend-first = `managed_pg`; d1/byodb, the read path
 > (§4), restore (§5), and migration/prune (§6.1/§6.3) are deferred as planned.
+>
+> **Post-merge (2026-06-24).** Merged origin's design refinement (569bf75 +
+> 7dfa15b): the per-Space schema grew 16 → **20 tables** (adds the Docs-feature
+> tables `documents`/`document_tags`/`document_links`/`document_diagrams` +
+> `bo_at_meta`; drops `bo_at_documentation` for inline `ai_*` columns — §8.1).
+> The IMPLEMENTATION still reflects the 16-table design — **re-porting
+> `packages/db-schema/src/space/{pg,sqlite}.ts` + regenerating migrations is the
+> next follow-up.** It does not break the engine apply path (which never
+> touched `bo_at_documentation`).
 
 ## 1. Schema authoring
 
-- [x] 1.1 Author the per-Space DB schema, Postgres dialect, in `packages/db-schema/src/space/pg.ts` (from `schema/pg.ts` reference here). All `bo_at_*` tables.
-- [x] 1.2 Author the SQLite/D1 mirror in `packages/db-schema/src/space/sqlite.ts` (from `schema/sqlite.ts`). Keep in lockstep with pg.ts (a test asserts table/column parity).
-- [x] 1.3 Barrel + a `space-schema-version` constant for the lazy on-DB migration check (PRAGMA user_version on D1 / a `bo_at_meta` row on PG). _(Constant `SPACE_SCHEMA_VERSION` shipped; the on-DB version row / PRAGMA mechanism is part of the deferred lazy-migration in §2.2.)_
-- [~] 1.4 Master DB deltas: refactor `space_databases` (`tier` → `backend` + `records_enabled`, generic `pg_locator`, migration-state columns); add `health_score_rules`; remove `attachment_dedup`; slim `at_bases` to identity; drop planned `backup_run_bases`; remove schema-change rows from `audit_history` scope. _(DONE: `space_databases` + `health_score_rules` created (migration 0017, applied). DEFERRED: `attachment_dedup` removal → §3.4 cutover; `at_bases` slim → standalone follow-up (destructive, breaks rediscovery write path). N/A: `backup_run_bases` never existed; `audit_history` not in this repo.)_
+- [~] 1.1 Author the per-Space DB schema, Postgres dialect, in `packages/db-schema/src/space/pg.ts`. _(SHIPPED 2545a05: 16 `bo_at_*` tables. DESIGN DRIFT (origin, 2026-06-22): the design is now **20** tables — adds the Docs-feature tables `documents`/`document_tags`/`document_links`/`document_diagrams` + `bo_at_meta`, and drops `bo_at_documentation` in favour of inline `ai_description`/`ai_overview`/`description_override` columns (§8.1). **Re-port pending** — see the Post-merge note above. Docs *feature* UI specced in `ui-only/overview/schema/05-docs-tab.md`; only storage lands here.)_
+- [~] 1.2 SQLite/D1 mirror + a dialect parity test. _(SHIPPED 2545a05; re-sync with the 20-table design when 1.1 re-ports.)_
+- [~] 1.3 `bo_at_meta` (schema_version + self-describing space_id/backend/platform), a `SPACE_SCHEMA_VERSION` constant, and the lazy on-access migration runner. _(SHIPPED: `SPACE_SCHEMA_VERSION` constant. PENDING: the `bo_at_meta` table (in the refined reference, not yet in the impl) + the lazy runner — see §2.2.)_
+- [~] 1.4 Master DB deltas: refactor `space_databases` (`tier` → `backend` + `records_enabled`, `pg_locator`, migration-state); add `health_score_rules`; remove `attachment_dedup`; slim `at_bases`; drop planned `backup_run_bases`; remove schema-change rows from `audit_history` scope. _(DONE: `space_databases` + `health_score_rules` (migration 0017). DONE: `attachment_dedup` removed (§3.4 cutover, migration 0018). DEFERRED: `at_bases` slim → standalone follow-up (destructive, breaks rediscovery write path). N/A: `backup_run_bases` never existed; `audit_history` not in this repo.)_
 - [x] 1.5 drizzle-kit generate for the master deltas; the per-Space schema gets its own drizzle config (separate `out`) per PRD §21.1. _(Two per-Space configs: `drizzle.space-{pg,sqlite}.config.ts` → `migrations/space-{pg,sqlite}`.)_
 
 ## 2. Provisioning
@@ -52,9 +61,12 @@
 - [x] 7.3 `server/schema-diff` banner (realize `schema_diffs`/`health_scores` as concrete `bo_at_*`; rules stay master).
 - [x] 7.4 `server-attachments` banner (`attachment_dedup` → `bo_at_attachments`).
 
-## 8. Confirm the applied defaults (flagged in design.md) — proceeded on recommended defaults
+## 8. Open-item decisions
 
-- [x] 8.1 `bo_at_documentation` shape (single description + source + don't-clobber); Data Dictionary = V2.
-- [x] 8.2 `bo_at_views` included.
-- [x] 8.3 Health: scores append / issues replace.
-- [x] 8.4 `managed_pg` = schema-per-Space (vs db-per-Space).
+Resolved 2026-06-22 (authoritative design):
+- [x] 8.1 Documentation = inline `ai_description` / `ai_overview` / `description_override` columns on bases/tables/fields/records (imported stays as `description`); no `bo_at_documentation` table. Data Dictionary = V2. _(IMPL DRIFT: the shipped schema still has `bo_at_documentation` and no inline columns — re-port per §1.1.)_
+- [x] 8.2 `bo_at_views` included, capture gated to Airtable Enterprise customers. _(IMPL: `bo_at_views` shipped; the Enterprise capture-gate is not yet enforced.)_
+- [x] 8.4 `managed_pg` = schema-per-Space (multiple Spaces' schemas per database). _(IMPL: matches.)_
+
+Still open:
+- [ ] 8.3 Health tables + rule taxonomy — deferred; current draft stands (scores append / issues replace; rules in core `health_score_rules`).
