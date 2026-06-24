@@ -10,16 +10,17 @@
 > 7dfa15b): the per-Space schema grew 16 → **20 tables** (adds the Docs-feature
 > tables `documents`/`document_tags`/`document_links`/`document_diagrams` +
 > `bo_at_meta`; drops `bo_at_documentation` for inline `ai_*` columns — §8.1).
-> The IMPLEMENTATION still reflects the 16-table design — **re-porting
-> `packages/db-schema/src/space/{pg,sqlite}.ts` + regenerating migrations is the
-> next follow-up.** It does not break the engine apply path (which never
-> touched `bo_at_documentation`).
+> **Re-port DONE (1e21300):** `packages/db-schema/src/space/{pg,sqlite}.ts`
+> re-ported to the 20-table design, per-Space migrations + `pg-ddl.ts`
+> regenerated, `SPACE_SCHEMA_VERSION` → 2; the 20-table DDL was applied to a
+> throwaway dev-PG schema and verified. The engine apply path was unaffected
+> (it never touched `bo_at_documentation`).
 
 ## 1. Schema authoring
 
-- [~] 1.1 Author the per-Space DB schema, Postgres dialect, in `packages/db-schema/src/space/pg.ts`. _(SHIPPED 2545a05: 16 `bo_at_*` tables. DESIGN DRIFT (origin, 2026-06-22): the design is now **20** tables — adds the Docs-feature tables `documents`/`document_tags`/`document_links`/`document_diagrams` + `bo_at_meta`, and drops `bo_at_documentation` in favour of inline `ai_description`/`ai_overview`/`description_override` columns (§8.1). **Re-port pending** — see the Post-merge note above. Docs *feature* UI specced in `ui-only/overview/schema/05-docs-tab.md`; only storage lands here.)_
-- [~] 1.2 SQLite/D1 mirror + a dialect parity test. _(SHIPPED 2545a05; re-sync with the 20-table design when 1.1 re-ports.)_
-- [~] 1.3 `bo_at_meta` (schema_version + self-describing space_id/backend/platform), a `SPACE_SCHEMA_VERSION` constant, and the lazy on-access migration runner. _(SHIPPED: `SPACE_SCHEMA_VERSION` constant. PENDING: the `bo_at_meta` table (in the refined reference, not yet in the impl) + the lazy runner — see §2.2.)_
+- [x] 1.1 Author the per-Space DB schema, Postgres dialect, in `packages/db-schema/src/space/pg.ts`. _(SHIPPED: 20 `bo_at_*` tables — re-ported to the refined design (1e21300): Docs-feature tables `documents`/`document_tags`/`document_links`/`document_diagrams` + `bo_at_meta`; inline `ai_description`/`ai_overview`/`description_override` columns; no `bo_at_documentation`. Docs *feature* UI specced in `ui-only/overview/schema/05-docs-tab.md`; only storage lands here.)_
+- [x] 1.2 SQLite/D1 mirror + a dialect parity test. _(SHIPPED; in lockstep with pg.ts at 20 tables (1e21300).)_
+- [~] 1.3 `bo_at_meta` (schema_version + self-describing space_id/backend/platform), a `SPACE_SCHEMA_VERSION` constant, and the lazy on-access migration runner. _(SHIPPED: `bo_at_meta` table + `SPACE_SCHEMA_VERSION` (= 2). PENDING: the lazy on-access migration runner that compares them — see §2.2.)_
 - [~] 1.4 Master DB deltas: refactor `space_databases` (`tier` → `backend` + `records_enabled`, `pg_locator`, migration-state); add `health_score_rules`; remove `attachment_dedup`; slim `at_bases`; drop planned `backup_run_bases`; remove schema-change rows from `audit_history` scope. _(DONE: `space_databases` + `health_score_rules` (migration 0017). DONE: `attachment_dedup` removed (§3.4 cutover, migration 0018). DEFERRED: `at_bases` slim → standalone follow-up (destructive, breaks rediscovery write path). N/A: `backup_run_bases` never existed; `audit_history` not in this repo.)_
 - [x] 1.5 drizzle-kit generate for the master deltas; the per-Space schema gets its own drizzle config (separate `out`) per PRD §21.1. _(Two per-Space configs: `drizzle.space-{pg,sqlite}.config.ts` → `migrations/space-{pg,sqlite}`.)_
 
@@ -64,7 +65,7 @@
 ## 8. Open-item decisions
 
 Resolved 2026-06-22 (authoritative design):
-- [x] 8.1 Documentation = inline `ai_description` / `ai_overview` / `description_override` columns on bases/tables/fields/records (imported stays as `description`); no `bo_at_documentation` table. Data Dictionary = V2. _(IMPL DRIFT: the shipped schema still has `bo_at_documentation` and no inline columns — re-port per §1.1.)_
+- [x] 8.1 Documentation = inline `ai_description` / `ai_overview` / `description_override` columns on bases/tables/fields/records (imported stays as `description`); no `bo_at_documentation` table. Data Dictionary = V2. _(IMPL: matches — inline columns shipped, `bo_at_documentation` gone (1e21300).)_
 - [x] 8.2 `bo_at_views` included, capture gated to Airtable Enterprise customers. _(IMPL: `bo_at_views` shipped; the Enterprise capture-gate is not yet enforced.)_
 - [x] 8.4 `managed_pg` = schema-per-Space (multiple Spaces' schemas per database). _(IMPL: matches.)_
 
