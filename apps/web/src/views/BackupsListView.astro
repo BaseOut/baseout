@@ -14,6 +14,15 @@
  * a single mutually-exclusive range (radios).
  */
 import type { BackupRunSummary } from '../lib/backup-runs/types';
+import {
+  durationStr,
+  isActiveStatus,
+  isOkStatus,
+  sinceLabel,
+  statusMetaFor,
+  triggerKey,
+  triggerLabel,
+} from '../lib/backups/list-row';
 import Button from '../components/ui/Button.astro';
 import Badge from '../components/ui/Badge.astro';
 import TextInput from '../components/ui/TextInput.astro';
@@ -32,41 +41,9 @@ interface Props {
 const { runs = [], embedded = false } = Astro.props;
 const nf = new Intl.NumberFormat('en-US');
 
-function since(iso: string | null): string {
-  if (!iso) return '—';
-  const ms = Date.now() - new Date(iso).getTime();
-  const m = Math.round(ms / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.round(h / 24)}d ago`;
-}
-function durationStr(start: string | null, end: string | null): string {
-  if (!start || !end) return '—';
-  const sec = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000);
-  if (sec < 60) return `${sec}s`;
-  const mm = Math.floor(sec / 60);
-  const ss = sec % 60;
-  return ss ? `${mm}m ${ss}s` : `${mm}m`;
-}
-
-// Status → catalog badge variants.
-const statusMeta: Record<string, { label: string; variant: 'success' | 'warning' | 'error' | 'default' }> = {
-  succeeded: { label: 'Succeeded', variant: 'success' },
-  trial_succeeded: { label: 'Trial run', variant: 'success' },
-  running: { label: 'Running', variant: 'warning' },
-  queued: { label: 'Queued', variant: 'default' },
-  failed: { label: 'Failed', variant: 'error' },
-  cancelled: { label: 'Cancelled', variant: 'default' },
-};
-const triggerLabel = (t: string) =>
-  t.startsWith('schedule') ? 'Scheduled' : t.startsWith('webhook') ? 'Webhook' : t.startsWith('onboarding') ? 'Trial' : 'Manual';
-// Normalised key for the trigger filter (data-trigger on each row).
-const triggerKey = (t: string) =>
-  t.startsWith('schedule') ? 'scheduled' : t.startsWith('webhook') ? 'webhook' : t.startsWith('onboarding') ? 'trial' : 'manual';
-
-const isOk = (s: string) => s === 'succeeded' || s === 'trial_succeeded';
+// Status badge meta, ok/active predicates, and trigger + time formatting live
+// in lib/backups/list-row.ts so these SSR rows and the live-poll re-render
+// (widget-lifecycle → backupRowHtml) share one taxonomy and can't drift.
 const detailHref = (r: BackupRunSummary) =>
   embedded
     ? `/backups/run?id=${r.id}`
@@ -164,12 +141,13 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
           </thead>
           <tbody>
             {runs.map((r) => {
-              const sm = statusMeta[r.status] ?? statusMeta.cancelled;
-              const ok = isOk(r.status);
-              const active = r.status === 'running' || r.status === 'queued';
+              const sm = statusMetaFor(r.status);
+              const ok = isOkStatus(r.status);
+              const active = isActiveStatus(r.status);
               return (
                 <tr
                   class="bl-row"
+                  data-run-id={r.id}
                   data-status={r.status}
                   data-trigger={triggerKey(r.triggeredBy)}
                   data-date={r.completedAt ?? r.createdAt}
@@ -177,7 +155,7 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
                   onclick={`window.location='${detailHref(r)}'`}
                 >
                   <td><Badge variant={sm.variant}>{r.status === 'running' && <span class="loading loading-spinner loading-xs"></span>}{sm.label}</Badge></td>
-                  <td>{active ? <span class="text-base-content/64">{r.status === 'running' ? 'in progress' : 'queued'}</span> : since(r.completedAt)}</td>
+                  <td>{active ? <span class="text-base-content/64">{r.status === 'running' ? 'in progress' : 'queued'}</span> : sinceLabel(r.completedAt)}</td>
                   <td class="text-base-content/64">{triggerLabel(r.triggeredBy)}</td>
                   <td class="text-right tabular-nums">{r.includedBases.length}</td>
                   <td class="text-right tabular-nums">{ok ? nf.format(r.recordCount ?? 0) : '—'}</td>
@@ -226,13 +204,21 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
 </div>
 
 <script>
+  import { registerBackupHistoryLifecycle, makeFetchRuns } from '../lib/backups/widget-lifecycle';
+  import { backupRowHtml } from '../lib/backups/list-row';
+  import type { BackupRunSummary } from '../lib/backup-runs/types';
+
+  // Re-applies the active filter/search/page pass over whatever rows are in the
+  // DOM. Set by initBackupsList; called by the live-poll re-render below after
+  // it rebuilds the <tbody>.
+  let reflow = (): void => {};
+
   // Client-side faceted filter / search / pagination over the loaded run rows. In
   // production these become server query params; here the full list is rendered
   // and we show/hide. Status & trigger are multi-select; date is a single range.
   function initBackupsList() {
     const root = document.querySelector<HTMLElement>('[data-bl-list]');
-    if (!root) return;
-    const rows = Array.from(root.querySelectorAll<HTMLTableRowElement>('.bl-row'));
+    if (!root) { reflow = () => {}; return; }
     const searchEl = root.querySelector<HTMLInputElement>('[data-bl-search]')!;
     const facets = Array.from(root.querySelectorAll<HTMLElement>('[data-bl-facet]'));
     // Avoid querySelector<HTMLSelectElement>: worker-configuration.d.ts declares
@@ -290,6 +276,8 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
     };
 
     const render = () => {
+      // Re-query each pass so rows rebuilt by the live-poll re-render are seen.
+      const rows = Array.from(root.querySelectorAll<HTMLTableRowElement>('.bl-row'));
       const f = getFilters();
       const matched = rows.filter((r) => matches(r, f));
       const size = Number(pageSizeEl.value);
@@ -326,10 +314,33 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
     }));
     prevBtn.addEventListener('click', () => { if (page > 1) { page--; render(); } });
     nextBtn.addEventListener('click', () => { page++; render(); });
+    reflow = render;
     render();
   }
   initBackupsList();
   document.addEventListener('astro:page-load', initBackupsList);
+
+  // Live progress: subscribe to the polled run store and re-render the table
+  // body in place so a run's status flips (running → succeeded / failed) and
+  // new runs appear without a full page reload. The hydration tag and the
+  // [data-backup-history] root (with data-space-id) live on the host page
+  // (backups.astro); in the design harness they're absent, so this no-ops.
+  registerBackupHistoryLifecycle({
+    render(runs: readonly BackupRunSummary[]) {
+      const tbody = document.querySelector<HTMLElement>('[data-bl-list] tbody');
+      if (!tbody) {
+        // Empty-state DOM has no table. Once the first run exists the panel
+        // structure must change (empty → table), which SSR owns — re-render
+        // via a one-time soft reload. Only the first-ever run for a Space hits
+        // this; subsequent updates are live (a tbody is always present).
+        if (runs.length > 0) window.location.reload();
+        return;
+      }
+      tbody.innerHTML = runs.map(backupRowHtml).join('');
+      reflow();
+    },
+    fetchRuns: makeFetchRuns(25),
+  });
 </script>
 
 <style>

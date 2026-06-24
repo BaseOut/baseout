@@ -42,19 +42,30 @@ export interface SetupHandles {
 }
 
 /**
- * Default fetcher used in production. Returns the existing store state on a
- * non-200 so the poll loop doesn't clobber the rendered rows with empty data
- * on a transient 5xx (the next tick retries).
+ * Build a fetcher for `/api/spaces/:spaceId/backup-runs?limit=N`. Returns the
+ * existing store state on a non-200 so the poll loop doesn't clobber the
+ * rendered rows with empty data on a transient 5xx (the next tick retries).
+ *
+ * `limit` is a parameter because consumers display different windows: the
+ * dashboard widget shows the last 10, the Backups audit table the last 25.
+ * Keeping one fetcher means both share the non-200 fallback semantics.
  */
-async function defaultFetchRuns(spaceId: string): Promise<BackupRunSummary[]> {
-  const res = await fetch(
-    `/api/spaces/${encodeURIComponent(spaceId)}/backup-runs?limit=10`,
-    { headers: { accept: 'application/json' } },
-  )
-  if (!res.ok) return $backupRuns.get()
-  const body = (await res.json()) as { runs: BackupRunSummary[] }
-  return body.runs
+export function makeFetchRuns(
+  limit: number,
+): (spaceId: string) => Promise<BackupRunSummary[]> {
+  return async (spaceId: string) => {
+    const res = await fetch(
+      `/api/spaces/${encodeURIComponent(spaceId)}/backup-runs?limit=${limit}`,
+      { headers: { accept: 'application/json' } },
+    )
+    if (!res.ok) return $backupRuns.get()
+    const body = (await res.json()) as { runs: BackupRunSummary[] }
+    return body.runs
+  }
 }
+
+/** Default fetcher used by the dashboard widget (the last 10 runs). */
+const defaultFetchRuns = makeFetchRuns(10)
 
 export function setupBackupHistory(
   opts: SetupOptions,

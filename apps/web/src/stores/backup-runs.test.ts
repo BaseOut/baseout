@@ -114,6 +114,34 @@ describe('polling', () => {
     expect(fetchFn).toHaveBeenCalledTimes(2)
   })
 
+  it('paints a terminal failure on the next tick BEFORE stopping (no reload needed)', async () => {
+    // Regression lock for "must full-refresh to see a run failed". The loop
+    // must deliver the failed state to the store on the tick it observes it —
+    // setRuns runs before the allTerminal check in tick() — so the UI surfaces
+    // the failure live, then the loop self-suspends.
+    let call = 0
+    const fetchFn = vi.fn(async () => {
+      call++
+      if (call === 1) return [makeRun({ id: 'r_f', status: 'running' })]
+      return [makeRun({ id: 'r_f', status: 'failed', errorMessage: 'boom' })]
+    })
+    startPolling(SPACE_ID, fetchFn)
+
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect($backupRuns.get()[0]?.status).toBe('running')
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+
+    // Second tick observes the failure and paints it (incl. errorMessage)…
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect($backupRuns.get()[0]?.status).toBe('failed')
+    expect($backupRuns.get()[0]?.errorMessage).toBe('boom')
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+
+    // …then stops: failed is terminal, so no further fetches.
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
   it('stops polling when first poll already returns terminal runs', async () => {
     const fetchFn = vi.fn(async () => [makeRun({ status: 'succeeded' })])
     startPolling(SPACE_ID, fetchFn)

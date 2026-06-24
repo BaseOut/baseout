@@ -121,7 +121,18 @@ const spaceName = account?.space?.name ?? null;
         </p>
       </Card>
     ) : (
-      <BackupsListView runs={initialRuns} embedded={true} />
+      <div data-backup-history data-space-id={spaceId}>
+        <BackupsListView runs={initialRuns} embedded={true} />
+        {/* Hydrates the $backupRuns store for the live-poll loop wired in
+            BackupsListView. Same JSON-script pattern as BackupHistoryWidget;
+            `<` is escaped so run data can't break out of the script tag. */}
+        <script
+          type="application/json"
+          data-backup-history-state
+          is:inline
+          set:html={JSON.stringify(initialRuns).replace(/</g, '\\u003c')}
+        />
+      </div>
     )}
   </div>
 </SidebarLayout>
