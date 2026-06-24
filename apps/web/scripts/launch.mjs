@@ -35,7 +35,19 @@ function renderWranglerConfig() {
     return 'DATABASE_URL is not set. Copy .env.example to .env and fill in a real Postgres URL.';
   }
   const template = readFileSync(WRANGLER_TEMPLATE_PATH, 'utf8');
-  const rendered = template.replaceAll('{{DATABASE_URL}}', dbUrl);
+  let rendered = template.replaceAll('{{DATABASE_URL}}', dbUrl);
+
+  // LOCAL_BACKUP_MODE: fully-local backup loop (see shared/internal/ops-setup.md).
+  // The committed template pins the BACKUP_ENGINE service binding to the
+  // DEPLOYED baseout-server-dev via `"remote": true`. When the flag is set we
+  // strip that key so the binding resolves to a LOCAL `wrangler dev` engine via
+  // the dev registry instead (dev.mjs also drops `--remote`). This only rewrites
+  // the gitignored wrangler.jsonc — the committed .example stays `remote: true`,
+  // so prod/normal-dev behaviour is unchanged. Unset the var to revert.
+  if (process.env.LOCAL_BACKUP_MODE === '1') {
+    rendered = rendered.replace(/,?\s*"remote":\s*true/, '');
+  }
+
   writeFileSync(WRANGLER_PATH, rendered);
   return null;
 }

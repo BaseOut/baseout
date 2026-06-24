@@ -96,9 +96,17 @@ async function main() {
   // migration-drift check, and the astro build.
   await run('node', ['--env-file-if-exists=.env', 'scripts/launch.mjs', 'build', 'local']);
 
+  // LOCAL_BACKUP_MODE: run web against a LOCAL engine instead of the deployed
+  // baseout-server-dev. We drop `--remote` so the BACKUP_ENGINE service binding
+  // resolves to a sibling `wrangler dev` process via the dev registry (launch.mjs
+  // also strips `"remote": true` from the rendered wrangler.jsonc). Everything
+  // else — baseout.local origin, https cert, PUBLIC_AUTH_BASE_URL — is unchanged,
+  // so magic-link login + Airtable OAuth keep working. Unset the var to revert.
+  const localBackupMode = process.env.LOCAL_BACKUP_MODE === '1';
+
   const wranglerArgs = [
     'dev',
-    '--remote',
+    ...(localBackupMode ? [] : ['--remote']),
     '--local-protocol',
     'https',
     '--port',
@@ -106,6 +114,16 @@ async function main() {
     '--var',
     'PUBLIC_AUTH_BASE_URL:https://baseout.local:4331',
   ];
+
+  if (localBackupMode) {
+    console.log('');
+    console.log('  ⚑ LOCAL_BACKUP_MODE — web binds to a LOCAL engine (no --remote).');
+    console.log('    Start the other two halves of the loop in their own terminals:');
+    console.log('      pnpm --filter @baseout/server dev        # engine on :8787');
+    console.log('      pnpm --filter @baseout/workflows dev      # trigger.dev runner');
+    console.log('    Runner env must point BACKUP_ENGINE_URL at http://localhost:8787');
+    console.log('    with a matching INTERNAL_TOKEN (apps/workflows/.env). See ops-setup.md.');
+  }
 
   const hasTrustedCert = existsSync(CERT) && existsSync(KEY);
   if (hasTrustedCert) {

@@ -427,3 +427,61 @@ operational). To enable:
 
 After that, clicking Run backup now from `baseout-dev.openside.workers.dev`
 runs end-to-end with no developer machine involved.
+
+### 7.4 Fully-local backup loop (`LOCAL_BACKUP_MODE`)
+
+The §7.2 click-through still depends on the **deployed** `baseout-server-dev`
+engine and on the Trigger.dev runner finding `BACKUP_ENGINE_URL`/`INTERNAL_TOKEN`
+in the dashboard — two drift-prone wires whose silent breakage is the recurring
+"backups stopped working" failure. `LOCAL_BACKUP_MODE` removes both: web →
+engine → runner → disk all run locally, with config sourced from local files.
+
+This is a **dev-only, easy-to-strip** toggle. It is a single env var read in two
+dev scripts; the committed `wrangler.jsonc.example` stays `remote: true`, so prod
+and normal `--remote` dev are byte-identical. Unset the var to revert. There is
+no new deployed surface and no secret rotation.
+
+**Why it works with no second database:** managed-Postgres per-Space "databases"
+are *schemas* on the master connection (`CREATE SCHEMA bo_space_<uuid>`; queries
+run under `SET LOCAL search_path`). Local mode points everything at one local
+Postgres, so `schema-sync`/`records-sync` resolve exactly as they do in prod.
+
+**One-time local setup:**
+
+```sh
+# apps/workflows/.env  — point the Node runner at the LOCAL engine (loopback):
+#   BACKUP_ENGINE_URL=http://localhost:8787
+#   INTERNAL_TOKEN=<same value as apps/server/.dev.vars INTERNAL_TOKEN>
+#   R2_* left blank → backups write to apps/workflows/.backups/ via LocalFsWriter
+# apps/web/.dev.vars + apps/server/.dev.vars must share BASEOUT_ENCRYPTION_KEY
+#   (same as today) so the runner can decrypt the Airtable OAuth token.
+```
+
+**Run (one command, or three terminals):**
+
+```bash
+# All-in-one (mirrors dev:all, with the flag exported):
+pnpm dev:local-backup
+
+# …or terminal-by-terminal:
+pnpm --filter @baseout/server dev                  # engine on :8787 (no deploy needed)
+pnpm --filter @baseout/workflows dev               # trigger dev → reaches localhost:8787
+LOCAL_BACKUP_MODE=1 pnpm --filter @baseout/web dev  # web drops --remote; binds local engine
+```
+
+**Verify:** open `https://baseout.local:4331`, sign in (the magic link prints to
+the web terminal in dev), then Run backup on a **real Airtable** connection. The
+run row goes `queued → running → succeeded`; CSVs fill `apps/workflows/.backups/…`;
+the engine terminal logs `schema-sync`/`records-sync` 200s (not 409/501);
+`bo_space_<uuid>.*` tables populate in the local Postgres.
+
+**Caveats:**
+
+- **Airtable OAuth works at `baseout.local`; Google Drive / BYOS does NOT** (their
+  redirect URIs aren't registered for `.local` — see `oauth-setup.md`). This loop
+  exercises the engine → per-Space → local-disk path, not BYOS destinations.
+- The `INTERNAL_TOKEN` travels over loopback `http://localhost:8787` in cleartext —
+  use a throwaway local value, **never** the deployed token.
+- If the web↔engine service binding shows `not connected`, the two `wrangler dev`
+  sessions aren't sharing the dev registry — fall back to a single session:
+  `wrangler dev -c apps/web/wrangler.jsonc -c apps/server/wrangler.jsonc`.

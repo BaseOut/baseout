@@ -46,9 +46,9 @@ The Worker enqueues via `tasks.trigger<typeof X>("X-id", payload)`. Type definit
 
 Node only. The tasks read configuration from `process.env`:
 
-- `BACKUP_ENGINE_URL` — the apps/server hostname (e.g. `https://baseout-server.openside.workers.dev`)
-- `INTERNAL_TOKEN` — service-token; byte-equal to apps/server's value
-- `AIRTABLE_*`, R2 / BYOS provider secrets — set in Trigger.dev's environment variables UI per env
+- `BACKUP_ENGINE_URL` — the apps/server hostname. Deployed: `https://baseout-server.openside.workers.dev`. For the fully-local `LOCAL_BACKUP_MODE` loop, point at the local engine over loopback: `http://localhost:8787` (see `shared/internal/ops-setup.md` §7.4).
+- `INTERNAL_TOKEN` — service-token; byte-equal to apps/server's value (a throwaway local value in `LOCAL_BACKUP_MODE`, never the deployed token)
+- `AIRTABLE_*`, R2 / BYOS provider secrets — set in Trigger.dev's environment variables UI per env (R2 left blank locally → backups write to `apps/workflows/.backups/`)
 
 ## Why this is its own app
 

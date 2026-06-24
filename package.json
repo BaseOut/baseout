@@ -25,7 +25,8 @@
     "dev:workflows": "pnpm --filter @baseout/workflows dev",
     "dev:design": "pnpm --filter @baseout/design dev",
     "design": "pnpm --filter @baseout/design dev",
-    "dev:all": "pnpm --filter @baseout/web --filter @baseout/server --filter @baseout/workflows --parallel run dev"
+    "dev:all": "pnpm --filter @baseout/web --filter @baseout/server --filter @baseout/workflows --parallel run dev",
+    "dev:local-backup": "LOCAL_BACKUP_MODE=1 pnpm --filter @baseout/web --filter @baseout/server --filter @baseout/workflows --parallel run dev"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
