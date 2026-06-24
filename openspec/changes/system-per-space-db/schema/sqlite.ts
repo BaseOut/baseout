@@ -243,3 +243,45 @@ export const interfaces = sqliteTable('bo_at_interfaces', {
   firstSeenAt: text('first_seen_at'),
   lastSeenAt: text('last_seen_at'),
 }, (t) => ({ byBase: index('bo_at_interfaces_base_idx').on(t.baseId) }))
+
+// ---- Documentation feature: user-authored docs about the schema ----
+// Mirror of pg.ts. A document tags any number of entities; tags surface on the
+// Browse detail panel. See pg.ts for semantics.
+
+export const documents = sqliteTable('bo_at_documents', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  body: text('body', { mode: 'json' }),               // Plate document model
+  excerpt: text('excerpt'),
+  createdByUserId: text('created_by_user_id'),
+  createdAt: text('created_at'),
+  updatedAt: text('updated_at'),
+})
+
+export const documentTags = sqliteTable('bo_at_document_tags', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull(),
+  targetType: text('target_type').notNull(),          // base|table|field|view
+  targetId: text('target_id').notNull(),
+  addedVia: text('added_via'),                        // inline|manual
+}, (t) => ({
+  byDocument: index('bo_at_document_tags_doc_idx').on(t.documentId),
+  byTarget: index('bo_at_document_tags_target_idx').on(t.targetType, t.targetId),
+  uniq: uniqueIndex('bo_at_document_tags_uq').on(t.documentId, t.targetType, t.targetId),
+}))
+
+export const documentLinks = sqliteTable('bo_at_document_links', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull(),
+  name: text('name'),
+  url: text('url').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (t) => ({ byDocument: index('bo_at_document_links_doc_idx').on(t.documentId) }))
+
+export const documentDiagrams = sqliteTable('bo_at_document_diagrams', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull(),
+  name: text('name'),
+  state: text('state', { mode: 'json' }).notNull(),   // serialized React Flow state
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (t) => ({ byDocument: index('bo_at_document_diagrams_doc_idx').on(t.documentId) }))

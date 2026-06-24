@@ -174,6 +174,25 @@ Documentation SHALL be stored as columns on the entity tables (`bo_at_bases`, `b
 - **WHEN** a field has both an `ai_description` and a `description_override`
 - **THEN** the effective description used by the UI is the `description_override`
 
+### Requirement: Schema documents
+
+The per-Space DB SHALL store user-authored documents about the schema, distinct from the inline entity descriptions: `bo_at_documents` (title, a Plate document `body`, a derived `excerpt`), `bo_at_document_tags` (associations to bases/tables/fields/views by Airtable id, with `added_via` ∈ `inline`/`manual`), `bo_at_document_links` (named external URLs), and `bo_at_document_diagrams` (named, serialized React Flow mini-diagram state). A document MAY tag any number of entities — added inline in the editor or explicitly — and the association SHALL surface on the tagged entity's detail view and be removable from either side.
+
+#### Scenario: Tagging surfaces on the entity
+
+- **WHEN** a document tags a field, inline or via the tags panel
+- **THEN** a `bo_at_document_tags` row is written and the document appears in that field's Documentation section on the Browse tab
+
+#### Scenario: Multiple saved diagrams per document
+
+- **WHEN** an author saves a scoped mini-diagram in a document
+- **THEN** its serialized state is stored as a `bo_at_document_diagrams` row, and a document may hold several such diagrams
+
+#### Scenario: Tagged entity removed from the schema
+
+- **WHEN** an entity tagged by a document is later removed from Airtable
+- **THEN** the tag is retained and flagged; the reference is not silently dropped
+
 ### Requirement: Health results in the per-Space DB
 
 Engine-computed health SHALL be stored per-Space: `bo_at_health_scores` (appended per run: 0–100 `score`, `band` Green ≥90 / Yellow 60–89 / Red <60, category breakdown) and `bo_at_health_issues` (replaced per run). The configurable rules SHALL remain in the master-DB `health_score_rules` (Org-scoped).

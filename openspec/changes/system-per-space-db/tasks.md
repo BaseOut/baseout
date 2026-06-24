@@ -1,6 +1,6 @@
 ## 1. Schema authoring
 
-- [ ] 1.1 Author the per-Space DB schema, Postgres dialect, in `packages/db-schema/src/space/pg.ts` (from `schema/pg.ts` reference here). All `bo_at_*` tables.
+- [ ] 1.1 Author the per-Space DB schema, Postgres dialect, in `packages/db-schema/src/space/pg.ts` (from `schema/pg.ts` reference here). All `bo_at_*` tables (20: schema/records/health/inbound + the Docs feature tables `documents`/`document_tags`/`document_links`/`document_diagrams`). The Docs *feature* UI (Plate editor, @-tagging, React Flow mini-diagrams) is specced in `ui-only/overview/schema/05-docs-tab.md`; only its storage lands here.
 - [ ] 1.2 Author the SQLite/D1 mirror in `packages/db-schema/src/space/sqlite.ts` (from `schema/sqlite.ts`). Keep in lockstep with pg.ts (a test asserts table/column parity).
 - [x] 1.3 `bo_at_meta` single-row table (schema_version + self-describing space_id/backend/platform) authored in pg.ts/sqlite.ts. Still TODO: a `SPACE_SCHEMA_VERSION` code constant + the lazy on-access migration runner that compares them.
 - [ ] 1.4 Master DB deltas: refactor `space_databases` (`tier` → `backend` + `records_enabled`, generic `pg_locator`, migration-state columns); add `health_score_rules`; remove `attachment_dedup`; slim `at_bases` to identity (`base_id`, `space_id`, `name`, `is_selected`); drop planned `backup_run_bases`; remove schema-change rows from `audit_history` scope.

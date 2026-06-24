@@ -298,7 +298,7 @@ function erd() {
   const PS_X = 560;
   const PS_W = 880; // wider — holds two columns of tables
   const REGION_Y = 110;
-  const REGION_H = 1760;
+  const REGION_H = 2720;
 
   // Core region background
   els.push(...rect({
@@ -431,6 +431,18 @@ function erd() {
   placePS('interfaces', 'bo_at_interfaces', [
     'id  (PK)', 'base_id', 'name', 'type', 'definition', 'status',
   ], 2);
+  placePS('documents', 'bo_at_documents', [
+    'id  (PK)', 'title', 'body (Plate)', 'excerpt', 'created_by_user_id',
+  ], 2);
+  placePS('document_tags', 'bo_at_document_tags', [
+    'id  (PK)', 'document_id', 'target_type', 'target_id  (entity)', 'added_via',
+  ], 2);
+  placePS('document_links', 'bo_at_document_links', [
+    'id  (PK)', 'document_id', 'name', 'url',
+  ], 2);
+  placePS('document_diagrams', 'bo_at_document_diagrams', [
+    'id  (PK)', 'document_id', 'name', 'state (React Flow)',
+  ], 2);
 
   // ---- relationships ----
   function link(fromKey, fromSide, toKey, toSide, { dashed = false, label = null, stroke } = {}) {
@@ -461,6 +473,9 @@ function erd() {
 
   // health derived
   link('health_issues', { side: 'top' }, 'health_scores', { side: 'bottom' });
+
+  // documents (tags/links/diagrams reference documents by document_id)
+  link('document_tags', { side: 'top' }, 'documents', { side: 'bottom' });
 
   // --- cross-DB (dashed, UUID references) ---
   link('base_runs', { side: 'left', offsetPct: 0.7 }, 'backup_runs', { side: 'right', offsetPct: 0.5 }, { dashed: true, label: 'backup_run_id' });

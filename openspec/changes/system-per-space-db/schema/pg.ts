@@ -272,3 +272,47 @@ export const interfaces = pgTable('bo_at_interfaces', {
   firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
 }, (t) => ({ byBase: index('bo_at_interfaces_base_idx').on(t.baseId) }))
+
+// ---- Documentation feature: user-authored docs about the schema ----
+// Distinct from the inline ai_description/description_override annotations.
+// A document tags any number of entities; those tags surface (clickable) on
+// each entity's detail panel in the Browse tab. Within-DB references are kept
+// as plain columns + indexes, matching the rest of this schema.
+
+export const documents = pgTable('bo_at_documents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  title: text('title').notNull(),
+  body: jsonb('body'),                                // Plate (platejs.org) document model, incl. inline entity-tag nodes
+  excerpt: text('excerpt'),                           // derived plain-text snippet for list/search
+  createdByUserId: uuid('created_by_user_id'),        // → master users.id
+  createdAt: timestamp('created_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+})
+
+export const documentTags = pgTable('bo_at_document_tags', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  documentId: uuid('document_id').notNull(),          // → bo_at_documents.id
+  targetType: text('target_type').notNull(),          // base|table|field|view
+  targetId: text('target_id').notNull(),              // Airtable entity id
+  addedVia: text('added_via'),                        // inline|manual
+}, (t) => ({
+  byDocument: index('bo_at_document_tags_doc_idx').on(t.documentId),
+  byTarget: index('bo_at_document_tags_target_idx').on(t.targetType, t.targetId),
+  uniq: uniqueIndex('bo_at_document_tags_uq').on(t.documentId, t.targetType, t.targetId),
+}))
+
+export const documentLinks = pgTable('bo_at_document_links', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  documentId: uuid('document_id').notNull(),
+  name: text('name'),
+  url: text('url').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (t) => ({ byDocument: index('bo_at_document_links_doc_idx').on(t.documentId) }))
+
+export const documentDiagrams = pgTable('bo_at_document_diagrams', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  documentId: uuid('document_id').notNull(),
+  name: text('name'),
+  state: jsonb('state').notNull(),                    // serialized React Flow state (nodes / positions / visible fields)
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (t) => ({ byDocument: index('bo_at_document_diagrams_doc_idx').on(t.documentId) }))
