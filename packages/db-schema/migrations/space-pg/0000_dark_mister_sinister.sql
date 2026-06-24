@@ -47,19 +47,46 @@ CREATE TABLE "bo_at_bases" (
 	"base_id" text PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"description" text,
+	"ai_description" text,
+	"ai_overview" text,
+	"description_override" text,
 	"status" text DEFAULT 'active' NOT NULL,
 	"first_seen_run" uuid,
 	"first_unseen_run" uuid,
 	"last_seen_run" uuid
 );
 --> statement-breakpoint
-CREATE TABLE "bo_at_documentation" (
+CREATE TABLE "bo_at_document_diagrams" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"document_id" uuid NOT NULL,
+	"name" text,
+	"state" jsonb NOT NULL,
+	"sort_order" integer DEFAULT 0 NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_document_links" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"document_id" uuid NOT NULL,
+	"name" text,
+	"url" text NOT NULL,
+	"sort_order" integer DEFAULT 0 NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_document_tags" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"document_id" uuid NOT NULL,
 	"target_type" text NOT NULL,
 	"target_id" text NOT NULL,
-	"description" text,
-	"source" text NOT NULL,
-	"edited_by_user_id" uuid,
+	"added_via" text
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_documents" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"title" text NOT NULL,
+	"body" jsonb,
+	"excerpt" text,
+	"created_by_user_id" uuid,
+	"created_at" timestamp with time zone,
 	"updated_at" timestamp with time zone
 );
 --> statement-breakpoint
@@ -72,6 +99,9 @@ CREATE TABLE "bo_at_fields" (
 	"options" jsonb,
 	"is_primary" boolean DEFAULT false NOT NULL,
 	"description" text,
+	"ai_description" text,
+	"ai_overview" text,
+	"description_override" text,
 	"status" text DEFAULT 'active' NOT NULL,
 	"first_seen_run" uuid,
 	"first_unseen_run" uuid,
@@ -114,6 +144,16 @@ CREATE TABLE "bo_at_interfaces" (
 	"last_seen_at" timestamp with time zone
 );
 --> statement-breakpoint
+CREATE TABLE "bo_at_meta" (
+	"id" text PRIMARY KEY DEFAULT 'singleton' NOT NULL,
+	"schema_version" integer NOT NULL,
+	"space_id" uuid NOT NULL,
+	"backend" text NOT NULL,
+	"platform" text DEFAULT 'airtable' NOT NULL,
+	"provisioned_at" timestamp with time zone,
+	"last_migrated_at" timestamp with time zone
+);
+--> statement-breakpoint
 CREATE TABLE "bo_at_record_field_data" (
 	"record_id" text NOT NULL,
 	"field_id" text NOT NULL,
@@ -142,7 +182,10 @@ CREATE TABLE "bo_at_records" (
 	"status" text DEFAULT 'active' NOT NULL,
 	"first_seen_run" uuid,
 	"first_unseen_run" uuid,
-	"last_seen_run" uuid
+	"last_seen_run" uuid,
+	"ai_description" text,
+	"ai_overview" text,
+	"description_override" text
 );
 --> statement-breakpoint
 CREATE TABLE "bo_at_schema_updates" (
@@ -175,6 +218,9 @@ CREATE TABLE "bo_at_tables" (
 	"field_count" integer,
 	"record_count" integer,
 	"description" text,
+	"ai_description" text,
+	"ai_overview" text,
+	"description_override" text,
 	"status" text DEFAULT 'active' NOT NULL,
 	"first_seen_run" uuid,
 	"first_unseen_run" uuid,
@@ -187,6 +233,9 @@ CREATE TABLE "bo_at_views" (
 	"base_id" text NOT NULL,
 	"name" text NOT NULL,
 	"type" text,
+	"ai_description" text,
+	"ai_overview" text,
+	"description_override" text,
 	"status" text DEFAULT 'active' NOT NULL,
 	"first_seen_run" uuid,
 	"first_unseen_run" uuid,
@@ -198,7 +247,11 @@ CREATE INDEX "bo_at_attachments_hash_idx" ON "bo_at_attachments" USING btree ("c
 CREATE INDEX "bo_at_automations_base_idx" ON "bo_at_automations" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_base_runs_backup_run_idx" ON "bo_at_base_runs" USING btree ("backup_run_id");--> statement-breakpoint
 CREATE INDEX "bo_at_base_runs_base_idx" ON "bo_at_base_runs" USING btree ("base_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "bo_at_documentation_target_uq" ON "bo_at_documentation" USING btree ("target_type","target_id");--> statement-breakpoint
+CREATE INDEX "bo_at_document_diagrams_doc_idx" ON "bo_at_document_diagrams" USING btree ("document_id");--> statement-breakpoint
+CREATE INDEX "bo_at_document_links_doc_idx" ON "bo_at_document_links" USING btree ("document_id");--> statement-breakpoint
+CREATE INDEX "bo_at_document_tags_doc_idx" ON "bo_at_document_tags" USING btree ("document_id");--> statement-breakpoint
+CREATE INDEX "bo_at_document_tags_target_idx" ON "bo_at_document_tags" USING btree ("target_type","target_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_document_tags_uq" ON "bo_at_document_tags" USING btree ("document_id","target_type","target_id");--> statement-breakpoint
 CREATE INDEX "bo_at_fields_table_idx" ON "bo_at_fields" USING btree ("table_id");--> statement-breakpoint
 CREATE INDEX "bo_at_health_issues_base_idx" ON "bo_at_health_issues" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_health_scores_base_idx" ON "bo_at_health_scores" USING btree ("base_id");--> statement-breakpoint

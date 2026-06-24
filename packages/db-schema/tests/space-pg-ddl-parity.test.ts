@@ -29,8 +29,8 @@ describe("per-Space PG DDL ↔ migration parity", () => {
     expect(fromModule).toEqual(fromMigration);
   });
 
-  it("covers all 16 bo_at_ tables", () => {
+  it("covers all 20 bo_at_ tables", () => {
     const creates = (SPACE_PG_DDL.match(/CREATE TABLE/g) ?? []).length;
-    expect(creates).toBe(16);
+    expect(creates).toBe(20);
   });
 });

@@ -20,6 +20,8 @@ export * as spaceSqlite from './sqlite'
 export { SPACE_PG_DDL, spacePgDdlStatements } from './pg-ddl'
 
 // Bumped whenever the per-Space schema changes. Provisioning records this on the
-// per-Space DB (PRAGMA user_version on D1 / a meta row on PG) and the lazy
-// on-access migration check compares against it to apply pending migrations.
-export const SPACE_SCHEMA_VERSION = 1
+// per-Space DB (the bo_at_meta.schema_version row) and the lazy on-access
+// migration check compares against it to apply pending migrations.
+// v2: refined 20-table design — inline ai_* annotation columns (no
+// bo_at_documentation), bo_at_meta, and the Docs-feature tables.
+export const SPACE_SCHEMA_VERSION = 2

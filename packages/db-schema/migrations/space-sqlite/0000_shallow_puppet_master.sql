@@ -52,23 +52,54 @@ CREATE TABLE `bo_at_bases` (
 	`base_id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
 	`description` text,
+	`ai_description` text,
+	`ai_overview` text,
+	`description_override` text,
 	`status` text DEFAULT 'active' NOT NULL,
 	`first_seen_run` text,
 	`first_unseen_run` text,
 	`last_seen_run` text
 );
 --> statement-breakpoint
-CREATE TABLE `bo_at_documentation` (
+CREATE TABLE `bo_at_document_diagrams` (
 	`id` text PRIMARY KEY NOT NULL,
+	`document_id` text NOT NULL,
+	`name` text,
+	`state` text NOT NULL,
+	`sort_order` integer DEFAULT 0 NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_document_diagrams_doc_idx` ON `bo_at_document_diagrams` (`document_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_document_links` (
+	`id` text PRIMARY KEY NOT NULL,
+	`document_id` text NOT NULL,
+	`name` text,
+	`url` text NOT NULL,
+	`sort_order` integer DEFAULT 0 NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_document_links_doc_idx` ON `bo_at_document_links` (`document_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_document_tags` (
+	`id` text PRIMARY KEY NOT NULL,
+	`document_id` text NOT NULL,
 	`target_type` text NOT NULL,
 	`target_id` text NOT NULL,
-	`description` text,
-	`source` text NOT NULL,
-	`edited_by_user_id` text,
+	`added_via` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_document_tags_doc_idx` ON `bo_at_document_tags` (`document_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_document_tags_target_idx` ON `bo_at_document_tags` (`target_type`,`target_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_document_tags_uq` ON `bo_at_document_tags` (`document_id`,`target_type`,`target_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_documents` (
+	`id` text PRIMARY KEY NOT NULL,
+	`title` text NOT NULL,
+	`body` text,
+	`excerpt` text,
+	`created_by_user_id` text,
+	`created_at` text,
 	`updated_at` text
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX `bo_at_documentation_target_uq` ON `bo_at_documentation` (`target_type`,`target_id`);--> statement-breakpoint
 CREATE TABLE `bo_at_fields` (
 	`field_id` text PRIMARY KEY NOT NULL,
 	`table_id` text NOT NULL,
@@ -78,6 +109,9 @@ CREATE TABLE `bo_at_fields` (
 	`options` text,
 	`is_primary` integer DEFAULT false NOT NULL,
 	`description` text,
+	`ai_description` text,
+	`ai_overview` text,
+	`description_override` text,
 	`status` text DEFAULT 'active' NOT NULL,
 	`first_seen_run` text,
 	`first_unseen_run` text,
@@ -124,6 +158,16 @@ CREATE TABLE `bo_at_interfaces` (
 );
 --> statement-breakpoint
 CREATE INDEX `bo_at_interfaces_base_idx` ON `bo_at_interfaces` (`base_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_meta` (
+	`id` text PRIMARY KEY DEFAULT 'singleton' NOT NULL,
+	`schema_version` integer NOT NULL,
+	`space_id` text NOT NULL,
+	`backend` text NOT NULL,
+	`platform` text DEFAULT 'airtable' NOT NULL,
+	`provisioned_at` text,
+	`last_migrated_at` text
+);
+--> statement-breakpoint
 CREATE TABLE `bo_at_record_field_data` (
 	`record_id` text NOT NULL,
 	`field_id` text NOT NULL,
@@ -155,7 +199,10 @@ CREATE TABLE `bo_at_records` (
 	`status` text DEFAULT 'active' NOT NULL,
 	`first_seen_run` text,
 	`first_unseen_run` text,
-	`last_seen_run` text
+	`last_seen_run` text,
+	`ai_description` text,
+	`ai_overview` text,
+	`description_override` text
 );
 --> statement-breakpoint
 CREATE INDEX `bo_at_records_table_idx` ON `bo_at_records` (`table_id`);--> statement-breakpoint
@@ -192,6 +239,9 @@ CREATE TABLE `bo_at_tables` (
 	`field_count` integer,
 	`record_count` integer,
 	`description` text,
+	`ai_description` text,
+	`ai_overview` text,
+	`description_override` text,
 	`status` text DEFAULT 'active' NOT NULL,
 	`first_seen_run` text,
 	`first_unseen_run` text,
@@ -205,6 +255,9 @@ CREATE TABLE `bo_at_views` (
 	`base_id` text NOT NULL,
 	`name` text NOT NULL,
 	`type` text,
+	`ai_description` text,
+	`ai_overview` text,
+	`description_override` text,
 	`status` text DEFAULT 'active' NOT NULL,
 	`first_seen_run` text,
 	`first_unseen_run` text,
