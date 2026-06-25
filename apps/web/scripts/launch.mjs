@@ -37,14 +37,16 @@ function renderWranglerConfig() {
   const template = readFileSync(WRANGLER_TEMPLATE_PATH, 'utf8');
   let rendered = template.replaceAll('{{DATABASE_URL}}', dbUrl);
 
-  // LOCAL_BACKUP_MODE: fully-local backup loop (see shared/internal/ops-setup.md).
-  // The committed template pins the BACKUP_ENGINE service binding to the
-  // DEPLOYED baseout-server-dev via `"remote": true`. When the flag is set we
-  // strip that key so the binding resolves to a LOCAL `wrangler dev` engine via
-  // the dev registry instead (dev.mjs also drops `--remote`). This only rewrites
-  // the gitignored wrangler.jsonc — the committed .example stays `remote: true`,
-  // so prod/normal-dev behaviour is unchanged. Unset the var to revert.
-  if (process.env.LOCAL_BACKUP_MODE === '1') {
+  // Local backup loop (default for `pnpm dev`). Strip `"remote": true` from the
+  // BACKUP_ENGINE binding so apps/web talks to a LOCAL `wrangler dev` engine via
+  // the dev registry (dev.mjs also drops `--remote`). This is gated on
+  // BACKUP_LOCAL_ENGINE, which ONLY scripts/dev.mjs sets — so the `wrangler` npm
+  // scripts (which call launch.mjs directly and want `--remote`) and CI/`deploy`
+  // builds NEVER strip: the deployed binding is preserved and the local env can't
+  // leak into a build. The committed .example always keeps `remote: true`; only
+  // this gitignored render changes. To remove the local-dev feature entirely,
+  // delete this block (and the BACKUP_LOCAL_ENGINE line in dev.mjs).
+  if (process.env.BACKUP_LOCAL_ENGINE === '1') {
     rendered = rendered.replace(/,?\s*"remote":\s*true/, '');
   }
 

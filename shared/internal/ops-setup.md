@@ -428,18 +428,24 @@ operational). To enable:
 After that, clicking Run backup now from `baseout-dev.openside.workers.dev`
 runs end-to-end with no developer machine involved.
 
-### 7.4 Fully-local backup loop (`LOCAL_BACKUP_MODE`)
+### 7.4 Fully-local backup loop (the default for `pnpm dev`)
 
-The §7.2 click-through still depends on the **deployed** `baseout-server-dev`
-engine and on the Trigger.dev runner finding `BACKUP_ENGINE_URL`/`INTERNAL_TOKEN`
-in the dashboard — two drift-prone wires whose silent breakage is the recurring
-"backups stopped working" failure. `LOCAL_BACKUP_MODE` removes both: web →
-engine → runner → disk all run locally, with config sourced from local files.
+The §7.2 click-through depended on the **deployed** `baseout-server-dev` engine
+and on the Trigger.dev runner finding `BACKUP_ENGINE_URL`/`INTERNAL_TOKEN` in the
+dashboard — two drift-prone wires whose silent breakage is the recurring "backups
+stopped working" failure. The local loop removes both: web → engine → runner →
+disk all run locally, with config sourced from local files. **This is now the
+default** — `pnpm dev` (repo root) brings the whole loop up.
 
-This is a **dev-only, easy-to-strip** toggle. It is a single env var read in two
-dev scripts; the committed `wrangler.jsonc.example` stays `remote: true`, so prod
-and normal `--remote` dev are byte-identical. Unset the var to revert. There is
-no new deployed surface and no secret rotation.
+**It cannot leak to a deploy.** The local wiring is gated to the dev runner: it
+only applies when `scripts/launch.mjs` is invoked as `… build local` (the `local`
+arg is passed only by `scripts/dev.mjs`). CI and `deploy` run `launch.mjs build`
+(no `local`), so the rendered `wrangler.jsonc` keeps `remote: true`; the committed
+`wrangler.jsonc.example` is never edited. Opt a single dev session back onto the
+deployed engine with `BACKUP_REMOTE=1` (e.g. `pnpm dev:remote`, or the `wrangler`
+scripts, used for deployed-only flows like Drive Connect). To remove the feature
+entirely, delete the fenced block in `launch.mjs` + the `--remote` branch in
+`dev.mjs`.
 
 **Why it works with no second database:** managed-Postgres per-Space "databases"
 are *schemas* on the master connection (`CREATE SCHEMA bo_space_<uuid>`; queries
@@ -457,16 +463,12 @@ Postgres, so `schema-sync`/`records-sync` resolve exactly as they do in prod.
 #   (same as today) so the runner can decrypt the Airtable OAuth token.
 ```
 
-**Run (one command, or three terminals):**
+**Run:**
 
 ```bash
-# All-in-one (mirrors dev:all, with the flag exported):
-pnpm dev:local-backup
-
-# …or terminal-by-terminal:
-pnpm --filter @baseout/server dev                  # engine on :8787 (no deploy needed)
-pnpm --filter @baseout/workflows dev               # trigger dev → reaches localhost:8787
-LOCAL_BACKUP_MODE=1 pnpm --filter @baseout/web dev  # web drops --remote; binds local engine
+pnpm dev          # repo root — starts web (local) + engine :8787 + trigger dev
+# or per-terminal: pnpm dev:web / pnpm dev:server / pnpm dev:workflows
+# deployed engine instead: pnpm dev:remote   (web only, --remote)
 ```
 
 **Verify:** open `https://baseout.local:4331`, sign in (the magic link prints to

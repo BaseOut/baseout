@@ -92,21 +92,27 @@ function run(cmd, args) {
 async function main() {
   await ensureHostsEntry();
 
+  // Local backup loop is the DEFAULT for `pnpm dev`: bind apps/web to a LOCAL
+  // engine by dropping `--remote`, so the BACKUP_ENGINE service binding resolves
+  // to a sibling `wrangler dev` engine via the dev registry. Set BACKUP_REMOTE=1
+  // to use the deployed baseout-server-dev instead — `pnpm dev:remote` and the
+  // `wrangler` scripts do this for deployed-only flows like Drive Connect. The
+  // baseout.local origin, https cert, and PUBLIC_AUTH_BASE_URL are unchanged either
+  // way, so magic-link login + Airtable OAuth keep working.
+  const useRemoteEngine = process.env.BACKUP_REMOTE === '1';
+
+  // Signal launch.mjs (below) to strip `"remote": true` from the rendered
+  // wrangler.jsonc so it matches our --remote choice. ONLY dev.mjs sets this, so
+  // the `wrangler` npm scripts and CI/deploy builds never strip (deploy-safe).
+  process.env.BACKUP_LOCAL_ENGINE = useRemoteEngine ? '0' : '1';
+
   // Reuse launch.mjs for env gating, wrangler.jsonc render, setup wizard,
   // migration-drift check, and the astro build.
   await run('node', ['--env-file-if-exists=.env', 'scripts/launch.mjs', 'build', 'local']);
 
-  // LOCAL_BACKUP_MODE: run web against a LOCAL engine instead of the deployed
-  // baseout-server-dev. We drop `--remote` so the BACKUP_ENGINE service binding
-  // resolves to a sibling `wrangler dev` process via the dev registry (launch.mjs
-  // also strips `"remote": true` from the rendered wrangler.jsonc). Everything
-  // else — baseout.local origin, https cert, PUBLIC_AUTH_BASE_URL — is unchanged,
-  // so magic-link login + Airtable OAuth keep working. Unset the var to revert.
-  const localBackupMode = process.env.LOCAL_BACKUP_MODE === '1';
-
   const wranglerArgs = [
     'dev',
-    ...(localBackupMode ? [] : ['--remote']),
+    ...(useRemoteEngine ? ['--remote'] : []),
     '--local-protocol',
     'https',
     '--port',
@@ -115,14 +121,13 @@ async function main() {
     'PUBLIC_AUTH_BASE_URL:https://baseout.local:4331',
   ];
 
-  if (localBackupMode) {
+  if (!useRemoteEngine) {
     console.log('');
-    console.log('  ⚑ LOCAL_BACKUP_MODE — web binds to a LOCAL engine (no --remote).');
-    console.log('    Start the other two halves of the loop in their own terminals:');
-    console.log('      pnpm --filter @baseout/server dev        # engine on :8787');
-    console.log('      pnpm --filter @baseout/workflows dev      # trigger.dev runner');
-    console.log('    Runner env must point BACKUP_ENGINE_URL at http://localhost:8787');
-    console.log('    with a matching INTERNAL_TOKEN (apps/workflows/.env). See ops-setup.md.');
+    console.log('  ⚑ Local backup loop — web binds to a LOCAL engine (no --remote).');
+    console.log('    `pnpm dev` (repo root) also starts the engine + trigger.dev runner.');
+    console.log('    Runner env must point BACKUP_ENGINE_URL at http://localhost:8787 with a');
+    console.log('    matching INTERNAL_TOKEN (apps/workflows/.env). See ops-setup.md §7.4.');
+    console.log('    Deployed engine instead: BACKUP_REMOTE=1 pnpm --filter @baseout/web dev');
   }
 
   const hasTrustedCert = existsSync(CERT) && existsSync(KEY);
