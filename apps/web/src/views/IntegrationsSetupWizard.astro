@@ -372,6 +372,7 @@ const FREQS = [
         <div data-dest-pick>
           <p class="add-label mb-2">File storage <span class="add-req">required</span></p>
           <div class="dtype-grid">
+            <button type="button" class="dtype" data-dtype="local_fs" data-kind="file" data-label="Local disk (dev)" data-managed="1"><span class="dtype-ic"><span class="iconify lucide--hard-drive"></span></span><span class="min-w-0"><span class="dtype-name">Local disk <span class="add-tag">Dev</span></span><span class="dtype-note">No setup · writes to disk</span></span></button>
             <button type="button" class="dtype" data-dtype="r2" data-kind="file" data-label="Baseout R2" data-managed="1"><span class="dtype-ic"><span class="iconify lucide--box"></span></span><span class="min-w-0"><span class="dtype-name">Baseout R2 <span class="add-tag">Managed</span></span><span class="dtype-note">Zero setup</span></span></button>
             <button type="button" class="dtype" data-dtype="google_drive" data-kind="file" data-label="Google Drive"><span class="dtype-ic"><span class="iconify lucide--hard-drive"></span></span><span class="min-w-0"><span class="dtype-name">Google Drive</span><span class="dtype-note">Your own Drive</span></span></button>
             <button type="button" class="dtype" data-dtype="dropbox" data-kind="file" data-label="Dropbox"><span class="dtype-ic"><span class="iconify lucide--hard-drive"></span></span><span class="min-w-0"><span class="dtype-name">Dropbox</span><span class="dtype-note">Your own Dropbox</span></span></button>
@@ -611,6 +612,7 @@ const FREQS = [
   import { saveBaseSelection } from '../lib/backups/save-selection';
   import { saveConfigureForm } from '../lib/backups/configure-save';
   import { saveBackupConfig } from '../lib/backups/save-config';
+  import { connectLocalFs } from '../lib/backups/connect-local-fs';
 
   function wizard() {
     const root = document.querySelector<HTMLElement>('[data-wizard]');
@@ -897,7 +899,12 @@ const FREQS = [
         // storage + database connect is a backend follow-up (gated "soon").
         if (!pendingDest.managed) { toast('Connecting external storage here is coming soon — managed storage works now.'); return; }
         setButtonLoading(destCreateBtn, true);
-        saveBackupConfig({ spaceId: prodSpaceId!, storageType: 'r2_managed' }).then((res) => {
+        // local_fs is managed too, but needs its storage_destinations row created
+        // (connectLocalFs); R2 just sets storageType on the config.
+        const saveManaged = pendingDest.type === 'local_fs'
+          ? connectLocalFs()
+          : saveBackupConfig({ spaceId: prodSpaceId!, storageType: 'r2_managed' });
+        saveManaged.then((res) => {
           setButtonLoading(destCreateBtn, false);
           if (!res.ok) { toast('Could not save the destination. Please try again.'); return; }
           injectDestOption('file', name, pendingDest!.label, 'managed');
