@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { describeDestination } from './destination'
+import { describeDestination, isLocalDestination } from './destination'
 import type { StorageDestinationSummary } from '../../stores/connections'
 
 const dest = (over: Partial<StorageDestinationSummary> = {}): StorageDestinationSummary => ({
@@ -56,5 +56,19 @@ describe('describeDestination', () => {
 
   it('falls back to the raw storageType for an unknown provider', () => {
     expect(describeDestination('s3', null)).toEqual({ label: 's3', needsSetup: true })
+  })
+})
+
+describe('isLocalDestination', () => {
+  it.each([
+    ['local_fs', true],
+    ['r2_managed', true],
+    [null, true],
+    [undefined, true],
+    ['google_drive', false],
+    ['box', false],
+    ['s3', false],
+  ] as const)('isLocalDestination(%s) → %s', (storageType, expected) => {
+    expect(isLocalDestination(storageType)).toBe(expected)
   })
 })

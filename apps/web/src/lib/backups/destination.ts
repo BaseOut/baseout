@@ -28,16 +28,29 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 const DEV_LOCAL_LABEL = 'Dev backups (local disk)'
 
+/**
+ * True when backups go to the dev local-disk writer. `local_fs` is the explicit
+ * dev destination; `r2_managed` is parked and routes there too; a Space with no
+ * config yet defaults to local. These need no setup and have no cloud account.
+ */
+export function isLocalDestination(
+  storageType: string | null | undefined,
+): boolean {
+  return !storageType || storageType === 'local_fs' || storageType === 'r2_managed'
+}
+
 export function describeDestination(
   storageType: string | null | undefined,
   destination: StorageDestinationSummary | null,
 ): DestinationDisplay {
-  if (!storageType || storageType === 'local_fs' || storageType === 'r2_managed') {
+  if (isLocalDestination(storageType)) {
     return { label: DEV_LOCAL_LABEL, needsSetup: false }
   }
 
-  const provider = PROVIDER_LABELS[storageType] ?? storageType
-  const connected = destination?.type === storageType
+  // isLocalDestination returned false, so storageType is a non-empty cloud slug.
+  const cloudType = storageType as string
+  const provider = PROVIDER_LABELS[cloudType] ?? cloudType
+  const connected = destination?.type === cloudType
   if (!connected) {
     return { label: provider, needsSetup: true }
   }

@@ -2,11 +2,12 @@
 import { and, desc, eq } from 'drizzle-orm';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import Card from '../components/ui/Card.astro';
+import Button from '../components/ui/Button.astro';
 import BackupsListView from '../views/BackupsListView.astro';
 import RunBackupButton from '../components/patterns/RunBackupButton.astro';
 import { getBreadcrumbs } from '../lib/config';
 import { getIntegrationsState } from '../lib/integrations';
-import { describeDestination } from '../lib/backups/destination';
+import { describeDestination, isLocalDestination } from '../lib/backups/destination';
 import { listRecentRuns } from '../lib/backup-runs/list';
 import type { BackupRunRowLike, IncludedBase } from '../lib/backup-runs/list';
 import type { BackupRunSummary } from '../lib/backup-runs/types';
@@ -97,13 +98,14 @@ const spaceName = account?.space?.name ?? null;
 // indicator: shows the destination + a link to change it, or a setup prompt
 // when a chosen cloud provider isn't connected. The full picker lives in the
 // wizard at /integrations/configure.
+const storageType = integrations?.policy?.storageType ?? null;
 const destination =
   spaceId && hasAirtableConnection
-    ? describeDestination(
-        integrations?.policy?.storageType ?? null,
-        integrations?.storageDestination ?? null,
-      )
+    ? describeDestination(storageType, integrations?.storageDestination ?? null)
     : null;
+// When already on dev local-disk there's nothing to switch to; otherwise offer
+// a one-click switch so a Space stuck on an unconnected cloud provider can run.
+const onLocal = isLocalDestination(storageType);
 const CONFIGURE_HREF = '/integrations/configure';
 ---
 
@@ -118,21 +120,27 @@ const CONFIGURE_HREF = '/integrations/configure';
             : 'Every backup run for this Space. Open any run for its full detail.'}
         </p>
         {destination && (
-          <p class="text-sm mt-2">
+          <div class="text-sm mt-2 flex items-center gap-2 flex-wrap">
             {destination.needsSetup ? (
-              <span class="inline-flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center gap-1.5">
                 <span class="iconify lucide--triangle-alert size-4 text-warning" aria-hidden="true"></span>
                 <span class="text-base-content/70">{destination.label} isn't connected yet.</span>
-                <a href={CONFIGURE_HREF} class="link link-primary">Set up destination</a>
               </span>
             ) : (
-              <span class="inline-flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center gap-1.5">
                 <span class="iconify lucide--hard-drive size-4 text-base-content/50" aria-hidden="true"></span>
                 <span class="text-base-content/70">Backing up to <span class="font-medium text-base-content">{destination.label}</span></span>
-                <a href={CONFIGURE_HREF} class="link link-primary">Change destination</a>
               </span>
             )}
-          </p>
+            {!onLocal && (
+              <Button type="button" variant="tonal" size="sm" data-use-local-dest data-space-id={spaceId}>
+                Use dev local disk
+              </Button>
+            )}
+            <a href={CONFIGURE_HREF} class="link link-primary">
+              {destination.needsSetup ? 'Set up a cloud destination' : 'Change destination'}
+            </a>
+          </div>
         )}
       </div>
       {spaceId && hasAirtableConnection && (
@@ -167,3 +175,25 @@ const CONFIGURE_HREF = '/integrations/configure';
     )}
   </div>
 </SidebarLayout>
+
+<script>
+  import { saveBackupConfig } from '../lib/backups/save-config';
+  import { setButtonLoading } from '../lib/ui';
+
+  // One-click switch to the dev local-disk destination so backups can run
+  // without a cloud connection. Delegated on document so it survives Astro
+  // ClientRouter navigations (the button is server-rendered per page).
+  document.addEventListener('click', async (event) => {
+    const btn = (event.target as HTMLElement | null)?.closest('[data-use-local-dest]');
+    if (!(btn instanceof HTMLButtonElement)) return;
+    const spaceId = btn.dataset.spaceId;
+    if (!spaceId) return;
+    setButtonLoading(btn, true);
+    try {
+      const res = await saveBackupConfig({ spaceId, storageType: 'local_fs' });
+      if (res.ok) window.location.reload();
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  });
+</script>
