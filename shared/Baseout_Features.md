@@ -88,6 +88,17 @@
 | **Credit** | The unit of measure for transfer and activity consumption. Credits are consumed by backup runs, restores, API calls, and other billable operations. Storage is billed separately in dollars. | Token, Unit | Credits reset monthly on the billing date. No rollover. |
 | **Overage** | Credit or storage usage that exceeds the tier's included allocation. Credits overage is billed per-credit at the plan's overage rate. Storage overage is billed per GB. | Excess, Surplus, Extra Usage | Customers can configure auto-overage or hard cap. |
 
+### Schema Documentation Terms
+
+| Canonical Term | Definition | Aliases to Avoid | Notes |
+|---|---|---|---|
+| **Document** | A user-authored piece of rich-text documentation about a Space's schema, stored in the per-Space DB (`bo_at_documents`). Has a title, a rich-text body, optional Tags, external Links, and mini-Diagrams. Distinct from an entity's inline description/AI annotation. | Doc, Note, Article, Wiki Page | Part of the Schema capability. Authored manually (Launch+) or AI-assisted (Pro+). Not an Airtable artifact. |
+| **Docs tab** | The Schema-page tab listing a Space's Documents and hosting the Document editor. | Documentation tab, Wiki | Sibling to the Browse, Visualize, Changelog, and Health tabs on the Schema page. |
+| **Browse tab** | The Schema-page tab for browsing schema entities (Bases, Tables, Fields, Views); each entity's detail panel shows a Documentation section listing the Documents that Tag it. | Explore tab, Entities tab | Read-oriented counterpart to the Docs tab. |
+| **Tag** | An association between a Document and a schema entity (Base/Table/Field/View), added inline in the editor or explicitly. Surfaces on the entity's detail panel and is removable from either side. | Link, Reference, Mention, Label | Stored in `bo_at_document_tags`. A removed entity keeps its Tag, shown flagged — never silently dropped. |
+| **External Link** | A named external URL attached to a Document. | Hyperlink, Bookmark, Reference | Stored in `bo_at_document_links`. Distinct from a Tag (which points at an internal schema entity). |
+| **Mini-Diagram** | A named, user-saved schema mini-diagram embedded in a Document (a scoped node graph). A Document may hold several. | Chart, ERD, Graph | Stored in `bo_at_document_diagrams` as serialized React Flow state. Distinct from the full auto-generated schema Visualization. |
+
 ### Infrastructure Terms
 
 | Canonical Term | Definition | Aliases to Avoid | Notes |

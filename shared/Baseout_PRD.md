@@ -273,9 +273,11 @@ For plans that include a hosted database, Baseout exposes a **SQL REST API** (vi
 - **V1:** Basic usage metrics from backup metadata — record count trends, storage growth, table size over time, backup run history
 - **V2:** Richer reporting — AI-assisted analysis, cross-base comparisons, anomaly detection
 
-### 3.7 Data Dictionary / Documentation 🚫 V2
+### 3.7 Schema Documentation & Data Dictionary
 
-Auto-generated data dictionaries and documentation exports (Markdown, PDF, Confluence, Notion) are deferred to V2.
+**User-authored Schema Docs — ✅ V1.** Customers can write rich-text Documents about their Airtable schema, Tag them to Bases/Tables/Fields/Views (tags surface on each entity's detail panel in the Schema → Browse tab), attach external Links, and save mini-Diagrams. Gated by tier per Features §7: manual authoring on Launch+, AI-assisted generation on Pro+. The rich-text editor and diagram canvas are sanctioned third-party React islands (Plate + React Flow), hydrated client-side only — daisyUI provides no rich-text editor or node graph, so they are a documented carve-out from the Storybook/daisyUI component governance (see the `apps/web` component-governance rule). Storage is the per-Space `bo_at_documents` / `bo_at_document_tags` / `bo_at_document_links` / `bo_at_document_diagrams` tables.
+
+**Auto-generated data dictionaries & documentation exports — 🚫 V2.** Auto-generating a data dictionary from the schema, and exporting documentation (Markdown, PDF, Confluence, Notion), remain deferred to V2.
 
 ### 3.8 Migration & Cloning 🚫 V2
 

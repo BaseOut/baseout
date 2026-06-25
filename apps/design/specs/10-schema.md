@@ -1,8 +1,8 @@
 # 10 — Schema (`/schema`)
 
-The schema visualization, history, and health page. Currently a
-placeholder. This is the page that delivers the "Data Intelligence"
-half of the product positioning.
+The schema visualization, browsing, documentation, history, and
+health page. Currently a placeholder. This is the page that delivers
+the "Data Intelligence" half of the product positioning.
 
 **Source:**
 - Today: `apps/design/src/pages/schema.astro` (`PlaceholderView`)
@@ -47,8 +47,15 @@ Three layered goals:
 Tabs at the top:
 
 - **Visualize** (default)
+- **Browse** — entity browser + per-entity documentation
+- **Docs** — user-authored schema documents
 - **Changelog**
 - **Health**
+
+> **Browse + Docs are the Schema Docs feature (V1).** Their full UI
+> spec lives in `10a-schema-docs.md` — design that alongside this page.
+> Summary below; the dedicated spec is authoritative for the editor,
+> tag-picker, links, and mini-diagram surfaces.
 
 ### Tab 1 — Visualize
 
@@ -66,7 +73,36 @@ own "Field overview" extension, Lucidchart's ER diagrams. Avoid
 "network graph" aesthetics (force-directed, edges-everywhere) —
 this is structural, not topological.
 
-### Tab 2 — Changelog
+### Tab 2 — Browse
+
+An entity browser for the captured schema — the read-oriented home of
+per-entity documentation.
+
+- A list/tree of schema entities: Bases → Tables → Fields → Views.
+- Click an entity → a detail panel (reuse the `EntityDetailHeader`
+  pattern + a `DefinitionList` of its facts: type, options, counts,
+  imported + effective description).
+- The detail panel has a **Documentation** section listing every
+  Document that Tags this entity, each as a clickable `Badge` linking
+  to the Doc. A Tag whose entity was later removed from Airtable is
+  shown with a warning `Badge` ("removed from Airtable") — retained,
+  never silently dropped.
+- Tags are removable from here (as well as from the Doc).
+
+### Tab 3 — Docs
+
+User-authored Documents about the schema (distinct from inline
+descriptions). See `05-docs-tab.md` for the authoritative UI.
+
+- A list of Documents (title + derived excerpt + tag count).
+- A Document editor: rich-text body (Plate), inline `@`-tags to
+  entities, named external Links, and saved mini-Diagrams (React Flow).
+- Tier-gated: manual authoring on Launch+; a disabled "Generate with
+  AI — Soon" affordance on Pro+. Below Launch → upsell empty state.
+- The editor and diagram canvas are React islands (`client:visible`) —
+  the sanctioned carve-out from the daisyUI-first governance.
+
+### Tab 4 — Changelog
 
 A time-ordered feed:
 
@@ -86,7 +122,7 @@ Filter by base, by change-type, by date range.
 This is generated automatically from backup-snapshot diffs — there's
 no manual annotation involved. Per Features §1 ("Changelog").
 
-### Tab 3 — Health
+### Tab 5 — Health
 
 A per-Base composite grade and a breakdown of the issues:
 
@@ -153,8 +189,11 @@ If you have limited time on this page:
 
 ## V2 / out of scope here
 
-- Data Dictionary / Documentation (Features §3.7 — V2)
-- AI-generated schema documentation (Capability 6 — V2)
+- **Auto-generated** data dictionary + documentation **exports**
+  (Markdown, PDF, Confluence, Notion) — V2 (PRD §3.7). Note:
+  *user-authored* Schema Docs (the Browse + Docs tabs above) are V1.
+- AI generation of Document content — gated "soon" (the manual editor
+  ships in V1; AI authoring is a Pro+ follow-up, `server-schema-ai-docs`).
 - Schema diffing UI between snapshots ("show me what changed
   between yesterday's snapshot and today's") — could land in V1
   Changelog tab; defer to engineering on scope.
@@ -167,6 +206,10 @@ If you have limited time on this page:
 
 - `Card`, `Tabs`, `Badge`, `Button`, `Avatar` (for users
   referenced in changelog rows)
+- Browse/Docs: `EntityDetailHeader` + `DefinitionList` (entity detail
+  panel), `EmptyState` (upsell + empty Docs), `Modal` + `TextInput`
+  (new Document); the Plate editor + React Flow canvas are `.tsx`
+  islands under `apps/web/src/components/islands/` (governance carve-out)
 - The status-dot / health-badge color palette already established
   on `/integrations` and `/backups`
 - Material Symbols + Lucide icons; Airtable field-type icons need
