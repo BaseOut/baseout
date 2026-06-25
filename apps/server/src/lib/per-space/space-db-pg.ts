@@ -111,6 +111,33 @@ export async function readSchemaWorkingSet(
   };
 }
 
+/**
+ * Read every captured schema entity across all bases — powers the Browse tab's
+ * entity tree (Schema Docs, openspec/changes/shared-schema-docs §4). Flat lists;
+ * the web view groups bases → tables → fields/views. Read-only broker; the
+ * browser never connects to the per-Space DB.
+ */
+export async function readAllEntities(tx: SpaceTx): Promise<{
+  bases: { baseId: string; name: string; description: string | null; status: string }[];
+  tables: { tableId: string; baseId: string; name: string; recordCount: number | null; fieldCount: number | null; description: string | null; status: string }[];
+  fields: { fieldId: string; tableId: string; baseId: string; name: string; type: string; isPrimary: boolean; description: string | null; status: string }[];
+  views: { viewId: string; tableId: string; baseId: string; name: string; type: string | null; status: string }[];
+}> {
+  const bases = await tx
+    .select({ baseId: spacePg.bases.baseId, name: spacePg.bases.name, description: spacePg.bases.description, status: spacePg.bases.status })
+    .from(spacePg.bases);
+  const tables = await tx
+    .select({ tableId: spacePg.tables.tableId, baseId: spacePg.tables.baseId, name: spacePg.tables.name, recordCount: spacePg.tables.recordCount, fieldCount: spacePg.tables.fieldCount, description: spacePg.tables.description, status: spacePg.tables.status })
+    .from(spacePg.tables);
+  const fields = await tx
+    .select({ fieldId: spacePg.fields.fieldId, tableId: spacePg.fields.tableId, baseId: spacePg.fields.baseId, name: spacePg.fields.name, type: spacePg.fields.type, isPrimary: spacePg.fields.isPrimary, description: spacePg.fields.description, status: spacePg.fields.status })
+    .from(spacePg.fields);
+  const views = await tx
+    .select({ viewId: spacePg.views.viewId, tableId: spacePg.views.tableId, baseId: spacePg.views.baseId, name: spacePg.views.name, type: spacePg.views.type, status: spacePg.views.status })
+    .from(spacePg.views);
+  return { bases, tables, fields, views };
+}
+
 async function applyLifecycleOp(
   tx: SpaceTx,
   runId: string,

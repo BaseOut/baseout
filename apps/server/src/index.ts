@@ -26,6 +26,10 @@ import { spacesSchemaSyncHandler } from "./pages/api/internal/spaces/schema-sync
 import { spacesRecordsSyncHandler } from "./pages/api/internal/spaces/records-sync";
 import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
 import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
+import { spacesDocumentsHandler } from "./pages/api/internal/spaces/documents";
+import { spacesDocumentHandler } from "./pages/api/internal/spaces/document";
+import { spacesDocsByEntityHandler } from "./pages/api/internal/spaces/docs-by-entity";
+import { spacesSchemaReadHandler } from "./pages/api/internal/spaces/schema-read";
 import {
   attachmentsLookupHandler,
   attachmentsRecordHandler,
@@ -54,6 +58,15 @@ const SPACES_RESCAN_BASES_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/rescan-bases$/;
 const SPACES_STORAGE_DESTINATION_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/storage-destination$/;
+// Schema Docs broker (openspec/changes/shared-schema-docs §2).
+const SPACES_DOCUMENTS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/documents$/;
+const SPACES_DOCUMENT_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/documents\/([^/]+)$/;
+const SPACES_DOCS_BY_ENTITY_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/docs-by-entity$/;
+const SPACES_SCHEMA_READ_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/schema$/;
 
 // Re-export Durable Object classes so workerd can resolve their bindings.
 // Required even when Astro adapter wraps the entry — see CLAUDE.md §5.1.
@@ -274,6 +287,26 @@ export default {
           locals,
           storageDest[1]!,
         );
+      }
+
+      // Schema Docs broker (openspec/changes/shared-schema-docs §2). apps/web's
+      // authenticated /api/spaces/:spaceId/{documents,docs-by-entity} routes
+      // proxy here; the browser never touches the per-Space DB.
+      const docItem = SPACES_DOCUMENT_RE.exec(url.pathname);
+      if (docItem) {
+        return await spacesDocumentHandler(request, env, ctx, locals, docItem[1]!, docItem[2]!);
+      }
+      const docCollection = SPACES_DOCUMENTS_RE.exec(url.pathname);
+      if (docCollection) {
+        return await spacesDocumentsHandler(request, env, ctx, locals, docCollection[1]!);
+      }
+      const docsByEntity = SPACES_DOCS_BY_ENTITY_RE.exec(url.pathname);
+      if (docsByEntity) {
+        return await spacesDocsByEntityHandler(request, env, ctx, locals, docsByEntity[1]!);
+      }
+      const schemaRead = SPACES_SCHEMA_READ_RE.exec(url.pathname);
+      if (schemaRead) {
+        return await spacesSchemaReadHandler(request, env, ctx, locals, schemaRead[1]!);
       }
 
       // Attachment dedup (openspec/changes/server-attachments). The workflows
