@@ -133,7 +133,7 @@ const CONFIGURE_HREF = '/integrations/configure';
               </span>
             )}
             {!onLocal && (
-              <Button type="button" variant="tonal" size="sm" data-use-local-dest data-space-id={spaceId}>
+              <Button type="button" variant="tonal" size="sm" data-use-local-dest>
                 Use dev local disk
               </Button>
             )}
@@ -177,20 +177,18 @@ const CONFIGURE_HREF = '/integrations/configure';
 </SidebarLayout>
 
 <script>
-  import { saveBackupConfig } from '../lib/backups/save-config';
+  import { connectLocalFs } from '../lib/backups/connect-local-fs';
   import { setButtonLoading } from '../lib/ui';
 
-  // One-click switch to the dev local-disk destination so backups can run
-  // without a cloud connection. Delegated on document so it survives Astro
-  // ClientRouter navigations (the button is server-rendered per page).
+  // One-click connect to the dev local-disk destination so backups can run
+  // without a cloud connection. Connects for the active Space (no body) and
+  // reloads. Delegated on document so it survives Astro ClientRouter navigations.
   document.addEventListener('click', async (event) => {
     const btn = (event.target as HTMLElement | null)?.closest('[data-use-local-dest]');
     if (!(btn instanceof HTMLButtonElement)) return;
-    const spaceId = btn.dataset.spaceId;
-    if (!spaceId) return;
     setButtonLoading(btn, true);
     try {
-      const res = await saveBackupConfig({ spaceId, storageType: 'local_fs' });
+      const res = await connectLocalFs();
       if (res.ok) window.location.reload();
     } finally {
       setButtonLoading(btn, false);

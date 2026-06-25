@@ -62,6 +62,14 @@ export function isManagedDestination(slug: string): boolean {
  */
 const DESTINATION_CATALOG: readonly DestinationProvider[] = [
   {
+    slug: 'local_fs',
+    label: 'Local disk (dev)',
+    kind: 'file',
+    note: 'Development — backups write to the local disk. No account, no setup.',
+    availability: 'available',
+    managed: true,
+  },
+  {
     slug: 'r2_managed',
     label: 'Cloudflare R2',
     kind: 'file',

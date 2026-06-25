@@ -83,6 +83,7 @@ const registryColumns = 'minmax(0,1.5fr) minmax(0,1fr) 9.5rem 6rem 6rem';
     </div>
   )}
 
+  {/* connect-local-dest handler lives at the foot of the file */}
   {providers.length > 0 && (
     <section class="mt-6">
       <h2 class="mb-3 text-xs font-bold uppercase tracking-wider text-base-content/50">What you can connect</h2>
@@ -90,7 +91,11 @@ const registryColumns = 'minmax(0,1.5fr) minmax(0,1fr) 9.5rem 6rem 6rem';
         {availableProviders.map((p) => (
           <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5">
             <span class="inline-flex min-w-0 items-center gap-1.5 text-sm font-semibold">{p.label}{p.managed && <span class="rounded-full bg-success/15 px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-success">Managed</span>}</span>
-            <Badge variant="success" dot>Available</Badge>
+            {p.slug === 'local_fs' ? (
+              <Button type="button" variant="tonal" size="sm" data-connect-local-dest>Connect</Button>
+            ) : (
+              <Badge variant="success" dot>Available</Badge>
+            )}
           </div>
         ))}
         {comingSoonProviders.map((p) => (
@@ -103,3 +108,22 @@ const registryColumns = 'minmax(0,1.5fr) minmax(0,1fr) 9.5rem 6rem 6rem';
     </section>
   )}
 </div>
+
+<script>
+  import { connectLocalFs } from '../lib/backups/connect-local-fs';
+  import { setButtonLoading } from '../lib/ui';
+
+  // Connect the dev local-disk destination (managed, no OAuth) for the active
+  // Space, then reload so it shows in the registry. Delegated for ClientRouter.
+  document.addEventListener('click', async (event) => {
+    const btn = (event.target as HTMLElement | null)?.closest('[data-connect-local-dest]');
+    if (!(btn instanceof HTMLButtonElement)) return;
+    setButtonLoading(btn, true);
+    try {
+      const res = await connectLocalFs();
+      if (res.ok) window.location.reload();
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  });
+</script>
