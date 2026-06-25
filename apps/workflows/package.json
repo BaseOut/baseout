@@ -11,8 +11,8 @@
     "./tasks/backup-base.task": "./trigger/tasks/backup-base.task.ts"
   },
   "scripts": {
-    "dev": "trigger dev",
-    "deploy": "trigger deploy",
+    "dev": "npx trigger.dev@4.4.6 dev",
+    "deploy": "npx trigger.dev@4.4.6 deploy",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."

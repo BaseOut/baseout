@@ -15,7 +15,7 @@
     "lint": "pnpm -r --parallel run lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yaml,yml,astro}\"",
     "openspec:changes": "node scripts/openspec-changes.mjs",
-    "dev": "pnpm --filter @baseout/web --filter @baseout/server --filter @baseout/workflows --parallel run dev",
+    "dev": "pnpm --filter @baseout/web --filter @baseout/server --filter @baseout/workflows --parallel --no-bail run dev",
     "dev:web": "pnpm --filter @baseout/web dev",
     "dev:remote": "BACKUP_REMOTE=1 pnpm --filter @baseout/web dev",
     "dev:server": "pnpm --filter @baseout/server dev",
