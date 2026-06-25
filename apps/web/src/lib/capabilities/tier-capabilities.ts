@@ -23,20 +23,30 @@ export type Tier =
  */
 export type Frequency = 'monthly' | 'weekly' | 'daily' | 'instant'
 
+/**
+ * Schema Docs entitlement (Features §7 "Schema Documentation"):
+ *   'none'      — no authoring (Trial/Starter)
+ *   'manual'    — manual authoring (Launch, Growth)
+ *   'manual_ai' — manual + AI-assisted generation (Pro+; AI itself is gated "soon")
+ */
+export type SchemaDocsLevel = 'none' | 'manual' | 'manual_ai'
+
 export interface TierCapabilitySet {
   /** Maximum Bases that can be selected for backup in a single Space. null = unlimited (Enterprise). */
   basesPerSpace: number | null
   /** Backup frequencies the user can select. Per Features §6.1. */
   frequencies: Frequency[]
+  /** Schema Docs authoring level. Per Features §7 (Schema Documentation). */
+  schemaDocs: SchemaDocsLevel
 }
 
 export const TIER_CAPABILITIES: Record<Tier, TierCapabilitySet> = {
-  starter:    { basesPerSpace: 5,    frequencies: ['monthly'] },
-  launch:     { basesPerSpace: 10,   frequencies: ['monthly', 'weekly'] },
-  growth:     { basesPerSpace: 15,   frequencies: ['monthly', 'weekly'] },
-  pro:        { basesPerSpace: 25,   frequencies: ['monthly', 'weekly', 'daily'] },
-  business:   { basesPerSpace: 50,   frequencies: ['monthly', 'weekly', 'daily', 'instant'] },
-  enterprise: { basesPerSpace: null, frequencies: ['monthly', 'weekly', 'daily', 'instant'] },
+  starter:    { basesPerSpace: 5,    frequencies: ['monthly'], schemaDocs: 'none' },
+  launch:     { basesPerSpace: 10,   frequencies: ['monthly', 'weekly'], schemaDocs: 'manual' },
+  growth:     { basesPerSpace: 15,   frequencies: ['monthly', 'weekly'], schemaDocs: 'manual' },
+  pro:        { basesPerSpace: 25,   frequencies: ['monthly', 'weekly', 'daily'], schemaDocs: 'manual_ai' },
+  business:   { basesPerSpace: 50,   frequencies: ['monthly', 'weekly', 'daily', 'instant'], schemaDocs: 'manual_ai' },
+  enterprise: { basesPerSpace: null, frequencies: ['monthly', 'weekly', 'daily', 'instant'], schemaDocs: 'manual_ai' },
 }
 
 /**

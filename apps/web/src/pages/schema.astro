@@ -1,11 +1,81 @@
 ---
+import { env } from 'cloudflare:workers';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
-import PlaceholderView from '../views/PlaceholderView.astro';
+import SchemaView from '../views/SchemaView.astro';
+import EmptyState from '../components/ui/EmptyState.astro';
 import { getBreadcrumbs } from '../lib/config';
+import {
+  createBackupEngine,
+  type SchemaDocSummary,
+  type SchemaEntityBase,
+  type SchemaEntityField,
+  type SchemaEntityTable,
+  type SchemaEntityView,
+} from '../lib/backup-engine';
+import { resolveSchemaDocsLevel } from '../lib/schema-docs/proxy';
+import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities';
 
 const breadcrumbs = getBreadcrumbs('/schema');
+const { account, db } = Astro.locals;
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+
+// Tier gate (Features §7) — resolve the Schema Docs entitlement.
+let level: SchemaDocsLevel = 'none';
+if (db && orgId) level = await resolveSchemaDocsLevel(db, orgId);
+
+let docs: SchemaDocSummary[] = [];
+let schema: {
+  bases: SchemaEntityBase[];
+  tables: SchemaEntityTable[];
+  fields: SchemaEntityField[];
+  views: SchemaEntityView[];
+} = { bases: [], tables: [], fields: [], views: [] };
+let viewState: 'ok' | 'not_ready' | 'unconfigured' | 'error' = 'ok';
+
+if (level !== 'none' && spaceId) {
+  if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+    const engine = createBackupEngine({
+      binding: env.BACKUP_ENGINE,
+      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    });
+    const [docsRes, schemaRes] = await Promise.all([
+      engine.listDocuments(spaceId),
+      engine.getSchema(spaceId),
+    ]);
+    if (docsRes.ok) docs = docsRes.documents;
+    if (schemaRes.ok) {
+      schema = {
+        bases: schemaRes.bases,
+        tables: schemaRes.tables,
+        fields: schemaRes.fields,
+        views: schemaRes.views,
+      };
+    }
+    if (!docsRes.ok && docsRes.code === 'space_db_not_ready') viewState = 'not_ready';
+    else if (!docsRes.ok && !schemaRes.ok) viewState = 'error';
+  } else {
+    viewState = 'unconfigured';
+  }
+}
 ---
 
 <SidebarLayout pageTitle="Schema" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <PlaceholderView label="Schema" />
+  {level === 'none' ? (
+    <EmptyState
+      icon="lucide--book-text"
+      title="Schema Docs is a Launch-plan feature"
+      description="Upgrade to Launch or above to browse and document your schema."
+      actionHref="/settings"
+      actionLabel="View plans"
+    />
+  ) : !spaceId ? (
+    <EmptyState
+      icon="lucide--folder"
+      title="No active Space"
+      description="Select a Space to view its schema."
+    />
+  ) : (
+    <SchemaView spaceId={spaceId} level={level} docs={docs} schema={schema} state={viewState} />
+  )}
 </SidebarLayout>

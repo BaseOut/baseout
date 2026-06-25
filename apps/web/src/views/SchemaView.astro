@@ -1,0 +1,213 @@
+---
+/**
+ * SchemaView — the Browse + Docs tabs of the Schema page (Schema Docs feature,
+ * openspec/changes/shared-schema-docs §4–§5).
+ *
+ * - Browse tab: SSR entity tree + a detail panel that loads a tagged entity's
+ *   documents on click (vanilla script → /api/spaces/:id/docs-by-entity).
+ * - Docs tab: the DocsTab React island (Plate body + tags + links + React Flow
+ *   diagrams + CRUD), hydrated client:visible — so the heavy editor bundle
+ *   loads only when the Docs tab is opened (the panel starts CSS-hidden).
+ *
+ * Tabs use daisyUI's native radio `tabs`+`tab-content` (CSS-only switching);
+ * the header-only `ui/Tabs.astro` primitive carries no content panels, so this
+ * is the sanctioned daisyUI-direct second tier (governance §4.2).
+ */
+import Card from '../components/ui/Card.astro'
+import Badge from '../components/ui/Badge.astro'
+import EmptyState from '../components/ui/EmptyState.astro'
+import PageHeader from '../components/ui/PageHeader.astro'
+import DocsTab, { type DocsTabEntity } from '../components/islands/DocsTab'
+import type {
+  SchemaDocSummary,
+  SchemaEntityBase,
+  SchemaEntityField,
+  SchemaEntityTable,
+  SchemaEntityView,
+} from '../lib/backup-engine'
+import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities'
+
+interface Props {
+  spaceId: string
+  level: SchemaDocsLevel
+  docs: SchemaDocSummary[]
+  schema: {
+    bases: SchemaEntityBase[]
+    tables: SchemaEntityTable[]
+    fields: SchemaEntityField[]
+    views: SchemaEntityView[]
+  }
+  state: 'ok' | 'not_ready' | 'unconfigured' | 'error'
+}
+
+const { spaceId, level, docs, schema, state } = Astro.props
+
+const tables = (baseId: string) => schema.tables.filter((t) => t.baseId === baseId)
+const fields = (tableId: string) => schema.fields.filter((f) => f.tableId === tableId)
+const views = (tableId: string) => schema.views.filter((v) => v.tableId === tableId)
+
+const hasSchema = schema.bases.length > 0
+const aiEnabled = level === 'manual_ai'
+
+// Flatten the entity tree for the Docs-tab tag picker.
+const entities: DocsTabEntity[] = [
+  ...schema.bases.map((b) => ({ type: 'base' as const, id: b.baseId, label: b.name })),
+  ...schema.tables.map((t) => ({ type: 'table' as const, id: t.tableId, label: t.name })),
+  ...schema.fields.map((f) => ({ type: 'field' as const, id: f.fieldId, label: f.name })),
+  ...schema.views.map((v) => ({ type: 'view' as const, id: v.viewId, label: v.name })),
+]
+---
+
+<section data-schema-docs data-space-id={spaceId}>
+  <PageHeader
+    title="Schema"
+    description="Browse your Airtable schema and document it for your team."
+  />
+
+  <div role="tablist" class="tabs tabs-border mt-6">
+    <input type="radio" name="schema_tabs" class="tab" aria-label="Browse" checked />
+    <div class="tab-content border-base-300 pt-6">
+      {!hasSchema ? (
+        <EmptyState
+          icon="lucide--table-2"
+          title={state === 'not_ready' ? 'Schema not captured yet' : 'No schema to browse'}
+          description={
+            state === 'not_ready'
+              ? 'Your schema appears here after the first backup run completes.'
+              : state === 'unconfigured'
+                ? 'The backup engine is not configured in this environment.'
+                : 'Run a backup to capture this Space’s Airtable schema.'
+          }
+        />
+      ) : (
+        <div class="grid gap-6 lg:grid-cols-[minmax(0,22rem)_1fr]">
+          <Card variant="outlined" class="max-h-[70vh] overflow-auto p-4">
+            <ul class="space-y-3 text-sm">
+              {schema.bases.map((bse) => (
+                <li>
+                  <button
+                    type="button"
+                    class="entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left font-semibold hover:bg-base-200"
+                    data-target-type="base"
+                    data-target-id={bse.baseId}
+                    data-name={bse.name}
+                  >
+                    <span class="iconify lucide--database size-4 text-base-content/50" aria-hidden="true"></span>
+                    {bse.name}
+                    {bse.status === 'removed' && <Badge variant="warning" size="sm">removed</Badge>}
+                  </button>
+                  <ul class="ml-4 mt-1 space-y-1 border-l border-base-300 pl-3">
+                    {tables(bse.baseId).map((table) => (
+                      <li>
+                        <button
+                          type="button"
+                          class="entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-base-200"
+                          data-target-type="table"
+                          data-target-id={table.tableId}
+                          data-name={table.name}
+                        >
+                          <span class="iconify lucide--table size-4 text-base-content/40" aria-hidden="true"></span>
+                          {table.name}
+                        </button>
+                        <ul class="ml-4 mt-1 space-y-0.5 text-base-content/70">
+                          {fields(table.tableId).map((field) => (
+                            <li>
+                              <button
+                                type="button"
+                                class="entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-base-200"
+                                data-target-type="field"
+                                data-target-id={field.fieldId}
+                                data-name={field.name}
+                              >
+                                <span class="iconify lucide--columns-3 size-3.5 text-base-content/30" aria-hidden="true"></span>
+                                {field.name}
+                                <span class="text-xs text-base-content/40">{field.type}</span>
+                              </button>
+                            </li>
+                          ))}
+                          {views(table.tableId).map((view) => (
+                            <li>
+                              <button
+                                type="button"
+                                class="entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-base-200"
+                                data-target-type="view"
+                                data-target-id={view.viewId}
+                                data-name={view.name}
+                              >
+                                <span class="iconify lucide--eye size-3.5 text-base-content/30" aria-hidden="true"></span>
+                                {view.name}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </Card>
+
+          <Card variant="outlined" class="min-h-[16rem]">
+            <div id="entity-detail" class="text-sm text-base-content/60">
+              Select an entity to see its documentation.
+            </div>
+          </Card>
+        </div>
+      )}
+    </div>
+
+    <input type="radio" name="schema_tabs" class="tab" aria-label="Docs" />
+    <div class="tab-content border-base-300 pt-6">
+      <DocsTab
+        client:visible
+        spaceId={spaceId}
+        initialDocs={docs}
+        aiEnabled={aiEnabled}
+        entities={entities}
+      />
+    </div>
+  </div>
+</section>
+
+<script>
+  // Browse tab: load the documents that tag a clicked entity. The Docs tab is
+  // a React island (DocsTab) and owns its own behavior.
+  const root = document.querySelector<HTMLElement>('[data-schema-docs]')
+  if (root) {
+    const spaceId = root.dataset.spaceId!
+    const base = `/api/spaces/${spaceId}`
+    const esc = (s: string) =>
+      s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)
+    const detail = document.getElementById('entity-detail')
+
+    document.querySelectorAll<HTMLElement>('.entity-link').forEach((el) =>
+      el.addEventListener('click', async () => {
+        if (!detail) return
+        const type = el.dataset.targetType!
+        const id = el.dataset.targetId!
+        const name = el.dataset.name ?? id
+        detail.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
+        const res = await fetch(
+          `${base}/docs-by-entity?targetType=${encodeURIComponent(type)}&targetId=${encodeURIComponent(id)}`,
+        )
+        if (!res.ok) {
+          detail.innerHTML = '<span class="text-error">Could not load documentation.</span>'
+          return
+        }
+        const data = (await res.json()) as { entityRemoved: boolean; documents: any[] }
+        const head = `<div class="mb-3 flex items-center gap-2"><span class="font-semibold text-base-content">${esc(name)}</span><span class="badge badge-ghost">${esc(type)}</span>${data.entityRemoved ? '<span class="badge badge-warning">removed from Airtable</span>' : ''}</div>`
+        const docsHtml =
+          data.documents.length === 0
+            ? '<p class="text-base-content/50">No documents tag this entity yet.</p>'
+            : `<ul class="space-y-2">${data.documents
+                .map(
+                  (d) =>
+                    `<li class="rounded border border-base-300/60 p-3"><span class="font-medium">${esc(d.title)}</span>${d.excerpt ? `<span class="mt-1 block text-sm text-base-content/60">${esc(d.excerpt)}</span>` : ''}</li>`,
+                )
+                .join('')}</ul>`
+        detail.innerHTML = head + docsHtml
+      }),
+    )
+  }
+</script>

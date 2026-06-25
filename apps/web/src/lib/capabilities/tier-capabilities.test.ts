@@ -15,6 +15,15 @@ describe('TIER_CAPABILITIES', () => {
     expect(TIER_CAPABILITIES.enterprise.basesPerSpace).toBeNull()
   })
 
+  it('declares schemaDocs for every tier per Features §7', () => {
+    expect(TIER_CAPABILITIES.starter.schemaDocs).toBe('none')
+    expect(TIER_CAPABILITIES.launch.schemaDocs).toBe('manual')
+    expect(TIER_CAPABILITIES.growth.schemaDocs).toBe('manual')
+    expect(TIER_CAPABILITIES.pro.schemaDocs).toBe('manual_ai')
+    expect(TIER_CAPABILITIES.business.schemaDocs).toBe('manual_ai')
+    expect(TIER_CAPABILITIES.enterprise.schemaDocs).toBe('manual_ai')
+  })
+
   it('declares frequencies for every tier per Features §6.1', () => {
     expect(TIER_CAPABILITIES.starter.frequencies).toEqual(['monthly'])
     expect(TIER_CAPABILITIES.launch.frequencies).toEqual(['monthly', 'weekly'])

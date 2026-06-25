@@ -257,6 +257,159 @@ export interface ProvisionDatabaseOptions {
   provisionedByUserId?: string | null;
 }
 
+// ───────────────────────── Schema Docs (shared-schema-docs §3) ─────────────────────────
+
+/** Non-2xx outcomes shared by every Schema Docs broker route. */
+export interface SchemaDocsError {
+  ok: false;
+  code:
+    | "unauthorized"
+    | "invalid_request"
+    | "space_db_not_ready"
+    | "backend_not_implemented"
+    | "document_not_found"
+    | "engine_unreachable"
+    | "engine_error";
+  status: number;
+  message?: string;
+}
+
+export interface SchemaDocSummary {
+  id: string;
+  title: string;
+  excerpt: string | null;
+  createdByUserId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  tagCount: number;
+}
+export interface SchemaDocTag {
+  id: string;
+  documentId: string;
+  targetType: string;
+  targetId: string;
+  addedVia: string | null;
+  /** Read-time flag: the tagged entity is absent or removed from Airtable. */
+  entityRemoved: boolean;
+}
+export interface SchemaDocLink {
+  id: string;
+  documentId: string;
+  name: string | null;
+  url: string;
+  sortOrder: number;
+}
+export interface SchemaDocDiagram {
+  id: string;
+  documentId: string;
+  name: string | null;
+  state: unknown;
+  sortOrder: number;
+}
+export interface SchemaDoc {
+  id: string;
+  title: string;
+  body: unknown;
+  excerpt: string | null;
+  createdByUserId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  tags: SchemaDocTag[];
+  links: SchemaDocLink[];
+  diagrams: SchemaDocDiagram[];
+}
+/** A doc that tags a given entity — the Browse-tab detail surfacing. */
+export interface SchemaDocEntityRef {
+  documentId: string;
+  addedVia: string | null;
+  title: string;
+  excerpt: string | null;
+}
+
+export type SchemaDocTargetType = "base" | "table" | "field" | "view";
+export interface SchemaDocTagInput {
+  targetType: SchemaDocTargetType;
+  targetId: string;
+  addedVia?: "inline" | "manual" | null;
+}
+export interface SchemaDocLinkInput {
+  name?: string | null;
+  url: string;
+  sortOrder?: number;
+}
+export interface SchemaDocDiagramInput {
+  name?: string | null;
+  state: unknown;
+  sortOrder?: number;
+}
+export interface CreateDocumentInput {
+  title: string;
+  body?: unknown;
+  createdByUserId?: string | null;
+  tags?: SchemaDocTagInput[];
+  links?: SchemaDocLinkInput[];
+  diagrams?: SchemaDocDiagramInput[];
+}
+export interface UpdateDocumentInput {
+  title?: string;
+  body?: unknown;
+  tags?: SchemaDocTagInput[];
+  links?: SchemaDocLinkInput[];
+  diagrams?: SchemaDocDiagramInput[];
+}
+
+export type ListDocumentsResult = { ok: true; documents: SchemaDocSummary[] } | SchemaDocsError;
+export type GetDocumentResult = { ok: true; document: SchemaDoc } | SchemaDocsError;
+export type CreateDocumentResult = { ok: true; document: SchemaDoc } | SchemaDocsError;
+export type UpdateDocumentResult = { ok: true; document: SchemaDoc } | SchemaDocsError;
+export type DeleteDocumentResult = { ok: true } | SchemaDocsError;
+export type DocsByEntityResult =
+  | { ok: true; entityRemoved: boolean; documents: SchemaDocEntityRef[] }
+  | SchemaDocsError;
+
+export interface SchemaEntityBase {
+  baseId: string;
+  name: string;
+  description: string | null;
+  status: string;
+}
+export interface SchemaEntityTable {
+  tableId: string;
+  baseId: string;
+  name: string;
+  recordCount: number | null;
+  fieldCount: number | null;
+  description: string | null;
+  status: string;
+}
+export interface SchemaEntityField {
+  fieldId: string;
+  tableId: string;
+  baseId: string;
+  name: string;
+  type: string;
+  isPrimary: boolean;
+  description: string | null;
+  status: string;
+}
+export interface SchemaEntityView {
+  viewId: string;
+  tableId: string;
+  baseId: string;
+  name: string;
+  type: string | null;
+  status: string;
+}
+export type GetSchemaResult =
+  | {
+      ok: true;
+      bases: SchemaEntityBase[];
+      tables: SchemaEntityTable[];
+      fields: SchemaEntityField[];
+      views: SchemaEntityView[];
+    }
+  | SchemaDocsError;
+
 export interface BackupEngineOptions {
   /**
    * Service binding to the @baseout/server Worker. Provided by Cloudflare
@@ -281,6 +434,74 @@ export interface BackupEngineClient {
     spaceId: string,
     opts?: ProvisionDatabaseOptions,
   ): Promise<EngineProvisionDatabaseResult>;
+  listDocuments(spaceId: string): Promise<ListDocumentsResult>;
+  getDocument(spaceId: string, documentId: string): Promise<GetDocumentResult>;
+  createDocument(spaceId: string, input: CreateDocumentInput): Promise<CreateDocumentResult>;
+  updateDocument(
+    spaceId: string,
+    documentId: string,
+    patch: UpdateDocumentInput,
+  ): Promise<UpdateDocumentResult>;
+  deleteDocument(spaceId: string, documentId: string): Promise<DeleteDocumentResult>;
+  docsByEntity(
+    spaceId: string,
+    targetType: SchemaDocTargetType,
+    targetId: string,
+  ): Promise<DocsByEntityResult>;
+  getSchema(spaceId: string): Promise<GetSchemaResult>;
+}
+
+const KNOWN_SCHEMA_DOCS_ERROR_CODES: ReadonlySet<SchemaDocsError["code"]> = new Set([
+  "unauthorized",
+  "invalid_request",
+  "space_db_not_ready",
+  "backend_not_implemented",
+  "document_not_found",
+]);
+
+/**
+ * Shared fetch + JSON + error-mapping for the Schema Docs broker routes. On a
+ * non-2xx, maps the engine's `error` string to a known code (else
+ * `engine_error`); on a transport throw, `engine_unreachable`. Returns the
+ * parsed success body for the caller to shape.
+ */
+async function schemaDocsRequest(
+  options: BackupEngineOptions,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<{ ok: true; body: Record<string, unknown> } | SchemaDocsError> {
+  let res: Response;
+  try {
+    res = await options.binding.fetch(`https://engine${path}`, {
+      method,
+      headers: {
+        "x-internal-token": options.internalToken,
+        accept: "application/json",
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch {
+    return { ok: false, code: "engine_unreachable", status: 0 };
+  }
+
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = (await res.json()) as Record<string, unknown>;
+  } catch {
+    // engine returned non-JSON (rare); fall through with empty body
+  }
+  if (res.ok) return { ok: true, body: parsed };
+
+  const rawCode = typeof parsed.error === "string" ? parsed.error : undefined;
+  const code: SchemaDocsError["code"] =
+    rawCode && KNOWN_SCHEMA_DOCS_ERROR_CODES.has(rawCode as SchemaDocsError["code"])
+      ? (rawCode as SchemaDocsError["code"])
+      : "engine_error";
+  const out: SchemaDocsError = { ok: false, code, status: res.status };
+  if (typeof parsed.message === "string") out.message = parsed.message;
+  return out;
 }
 
 const KNOWN_ERROR_CODES: ReadonlySet<EngineWhoamiError["code"]> = new Set([
@@ -658,6 +879,67 @@ export function createBackupEngine(
           ? (rawCode as EngineCancelRunError["code"])
           : "engine_error";
       return { ok: false, code, status: res.status };
+    },
+
+    async listDocuments(spaceId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/documents`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return { ok: true, documents: (res.body.documents ?? []) as SchemaDocSummary[] };
+    },
+
+    async getDocument(spaceId, documentId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/documents/${encodeURIComponent(documentId)}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return { ok: true, document: res.body.document as SchemaDoc };
+    },
+
+    async createDocument(spaceId, input) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/documents`;
+      const res = await schemaDocsRequest(options, "POST", path, input);
+      if (!res.ok) return res;
+      return { ok: true, document: res.body.document as SchemaDoc };
+    },
+
+    async updateDocument(spaceId, documentId, patch) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/documents/${encodeURIComponent(documentId)}`;
+      const res = await schemaDocsRequest(options, "PATCH", path, patch);
+      if (!res.ok) return res;
+      return { ok: true, document: res.body.document as SchemaDoc };
+    },
+
+    async deleteDocument(spaceId, documentId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/documents/${encodeURIComponent(documentId)}`;
+      const res = await schemaDocsRequest(options, "DELETE", path);
+      if (!res.ok) return res;
+      return { ok: true };
+    },
+
+    async docsByEntity(spaceId, targetType, targetId) {
+      const path =
+        `/api/internal/spaces/${encodeURIComponent(spaceId)}/docs-by-entity` +
+        `?targetType=${encodeURIComponent(targetType)}&targetId=${encodeURIComponent(targetId)}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        entityRemoved: Boolean(res.body.entityRemoved),
+        documents: (res.body.documents ?? []) as SchemaDocEntityRef[],
+      };
+    },
+
+    async getSchema(spaceId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/schema`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        bases: (res.body.bases ?? []) as SchemaEntityBase[],
+        tables: (res.body.tables ?? []) as SchemaEntityTable[],
+        fields: (res.body.fields ?? []) as SchemaEntityField[],
+        views: (res.body.views ?? []) as SchemaEntityView[],
+      };
     },
   };
 }
