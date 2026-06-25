@@ -33,9 +33,14 @@ async function ensureBackupConfiguration(
     .limit(1)
   if (existing) return existing.id
 
+  // Default new configs to the dev local-disk destination. R2 is parked and
+  // BYOS providers require an explicit connect, so local_fs is the only
+  // zero-setup destination — backups work immediately, and the user can switch
+  // from the Backups page. (The schema default is the legacy r2_managed, which
+  // also routes to the local-disk writer; this makes the intent explicit.)
   const [inserted] = await db
     .insert(backupConfigurations)
-    .values({ spaceId })
+    .values({ spaceId, storageType: 'local_fs' })
     .returning({ id: backupConfigurations.id })
   return inserted.id
 }

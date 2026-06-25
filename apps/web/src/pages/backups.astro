@@ -6,6 +6,7 @@ import BackupsListView from '../views/BackupsListView.astro';
 import RunBackupButton from '../components/patterns/RunBackupButton.astro';
 import { getBreadcrumbs } from '../lib/config';
 import { getIntegrationsState } from '../lib/integrations';
+import { describeDestination } from '../lib/backups/destination';
 import { listRecentRuns } from '../lib/backup-runs/list';
 import type { BackupRunRowLike, IncludedBase } from '../lib/backup-runs/list';
 import type { BackupRunSummary } from '../lib/backup-runs/types';
@@ -91,6 +92,19 @@ const initialRuns: BackupRunSummary[] =
     : [];
 
 const spaceName = account?.space?.name ?? null;
+
+// Where backups currently go (defaults to dev local-disk). Drives the header
+// indicator: shows the destination + a link to change it, or a setup prompt
+// when a chosen cloud provider isn't connected. The full picker lives in the
+// wizard at /integrations/configure.
+const destination =
+  spaceId && hasAirtableConnection
+    ? describeDestination(
+        integrations?.policy?.storageType ?? null,
+        integrations?.storageDestination ?? null,
+      )
+    : null;
+const CONFIGURE_HREF = '/integrations/configure';
 ---
 
 <SidebarLayout pageTitle="Backups" breadcrumbs={breadcrumbs} spaceScoped={true}>
@@ -103,6 +117,23 @@ const spaceName = account?.space?.name ?? null;
             ? `Every backup run for ${spaceName}. Open any run for its full detail.`
             : 'Every backup run for this Space. Open any run for its full detail.'}
         </p>
+        {destination && (
+          <p class="text-sm mt-2">
+            {destination.needsSetup ? (
+              <span class="inline-flex items-center gap-1.5 flex-wrap">
+                <span class="iconify lucide--triangle-alert size-4 text-warning" aria-hidden="true"></span>
+                <span class="text-base-content/70">{destination.label} isn't connected yet.</span>
+                <a href={CONFIGURE_HREF} class="link link-primary">Set up destination</a>
+              </span>
+            ) : (
+              <span class="inline-flex items-center gap-1.5 flex-wrap">
+                <span class="iconify lucide--hard-drive size-4 text-base-content/50" aria-hidden="true"></span>
+                <span class="text-base-content/70">Backing up to <span class="font-medium text-base-content">{destination.label}</span></span>
+                <a href={CONFIGURE_HREF} class="link link-primary">Change destination</a>
+              </span>
+            )}
+          </p>
+        )}
       </div>
       {spaceId && hasAirtableConnection && (
         <RunBackupButton
