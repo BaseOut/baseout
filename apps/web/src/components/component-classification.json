@@ -41,12 +41,6 @@
     "designHarnessPath": "pages/sources/detail.astro",
     "rationale": "Product detail header composing PageHeader, Badge, and action controls."
   },
-  "patterns/FrequencyPicker.astro": {
-    "classification": "storybook-pattern",
-    "styleguideId": "pattern-setup-stepper",
-    "designHarnessPath": "pages/welcome.astro",
-    "rationale": "Backup frequency selection built from daisyUI radio controls."
-  },
   "patterns/MetaBlock.astro": {
     "classification": "storybook-pattern",
     "styleguideId": "pattern-audit-table",
@@ -76,12 +70,6 @@
     "styleguideId": "pattern-pipeline",
     "designHarnessPath": "pages/index.astro",
     "rationale": "Unconfigured Space pipeline hero composing Button and brand marks."
-  },
-  "patterns/StoragePicker.astro": {
-    "classification": "storybook-pattern",
-    "styleguideId": "pattern-setup-stepper",
-    "designHarnessPath": "pages/integrations/configure.astro",
-    "rationale": "Storage destination selection built from daisyUI radio, alert, and button controls."
   },
   "patterns/WizardStepper.astro": {
     "classification": "storybook-pattern",
