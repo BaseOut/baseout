@@ -1,0 +1,17 @@
+---
+/**
+ * Add an account-level Airtable source. Honest-pending: Airtable connects
+ * per-Space today, so "add" authorizes Airtable for the active Space. The
+ * account-level multi-source model is a backend follow-up (shared-sources).
+ */
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import SourceAddView from '../../views/SourceAddView.astro';
+import { getBreadcrumbs } from '../../lib/config';
+
+const breadcrumbs = getBreadcrumbs('/sources');
+const method = Astro.url.searchParams.get('method');
+---
+
+<SidebarLayout pageTitle="Add source" breadcrumbs={breadcrumbs}>
+  <SourceAddView method={method} />
+</SidebarLayout>

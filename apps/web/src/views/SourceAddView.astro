@@ -39,21 +39,22 @@ const comingSoonPlatforms = SOURCE_PLATFORMS.filter((p) => p.availability === 'c
       </div>
 
       <div data-method="oauth" class="mt-4">
-        <Button type="button" variant="outline" class="w-full justify-start gap-2" data-fake-auth>
-          <span class="iconify lucide--plug" aria-hidden="true"></span> Authorize Airtable
-        </Button>
-        <p class="mt-2 text-xs text-base-content/50">You approve read-only access on Airtable, then return here.</p>
-        <div class="mt-4 flex items-center justify-end gap-2">
-          <Button href="/sources/new" variant="ghost" size="sm">Cancel</Button>
-          <Button href="/sources?status=added&method=oauth" variant="primary">Test &amp; create</Button>
-        </div>
+        <form method="POST" action="/api/connections/airtable/start" data-airtable-connect data-astro-reload>
+          <input type="hidden" name="returnTo" value="/sources" />
+          <p class="text-xs text-base-content/50">You approve read-only access on Airtable, then return here.</p>
+          <div class="mt-4 flex items-center justify-end gap-2">
+            <Button href="/sources" variant="ghost" size="sm">Cancel</Button>
+            <Button type="submit" variant="primary" data-airtable-connect-btn><span class="iconify lucide--plug" aria-hidden="true"></span> Authorize Airtable</Button>
+          </div>
+        </form>
       </div>
 
       <div data-method="pat" class="mt-4">
-        <TextInput label="Personal access token" type="password" name="token" placeholder="pat••••••••••••••" autocomplete="off" class="font-mono text-sm" hint="Create a read-only token in Airtable's builder hub with the data.records:read and schema.bases:read scopes." />
+        <TextInput label="Personal access token" type="password" name="token" placeholder="pat••••••••••••••" autocomplete="off" class="font-mono text-sm" hint="Create a read-only token in Airtable's builder hub with the data.records:read and schema.bases:read scopes." disabled />
+        <p class="mt-2 text-xs text-warning">Personal access tokens aren't supported yet — use OAuth above for now.</p>
         <div class="mt-4 flex items-center justify-end gap-2">
-          <Button href="/sources/new" variant="ghost" size="sm">Cancel</Button>
-          <Button href="/sources?status=added&method=pat" variant="primary">Test &amp; create</Button>
+          <Button href="/sources" variant="ghost" size="sm">Cancel</Button>
+          <Button type="button" variant="primary" disabled>Coming soon</Button>
         </div>
       </div>
     </div>
@@ -80,3 +81,15 @@ const comingSoonPlatforms = SOURCE_PLATFORMS.filter((p) => p.availability === 'c
   [data-connect]:has(input[value="oauth"]:checked) [data-method="pat"] { display: none; }
   [data-connect]:has(input[value="pat"]:checked) [data-method="oauth"] { display: none; }
 </style>
+
+<script>
+  import { setButtonLoading } from '../lib/ui';
+
+  // Spinner while the browser redirects to Airtable's consent screen.
+  document.addEventListener('submit', (event) => {
+    const form = (event.target as HTMLElement | null)?.closest('[data-airtable-connect]');
+    if (!(form instanceof HTMLFormElement)) return;
+    const btn = form.querySelector('[data-airtable-connect-btn]');
+    if (btn instanceof HTMLButtonElement) setButtonLoading(btn, true);
+  });
+</script>

@@ -25,6 +25,10 @@ const status = reconnected ? 'connected' : d.status;
 const needsReconnect = status === 'reconnect';
 const needsConnect = status === 'needs_connection';
 const inUseCount = d.inUseBy.length;
+// BYOS providers have OAuth authorize + disconnect routes; managed (local_fs /
+// r2_managed) don't. Honest-pending: a destination is per-Space today, so
+// "disconnect" removes it from this Space (the account-level shared model is later).
+const isByos = d.provider !== 'local_fs' && d.provider !== 'r2_managed';
 const kindLabel = d.kind === 'database' ? 'Database' : 'File storage';
 const statusBadge =
   status === 'connected' ? { variant: 'success' as const, label: 'Connected', dot: true }
@@ -46,19 +50,19 @@ const connectionItems = [
   <EntityDetailHeader
     title={d.name}
     description={`${kindLabel} · ${d.providerLabel} · ${d.detail} · added ${d.addedAt}`}
-    backHref="/settings/destinations"
+    backHref="/destinations"
     backLabel="Back to destinations"
     statusLabel={statusBadge.label}
     statusVariant={statusBadge.variant}
     statusDot={statusBadge.dot}
   >
-    {needsReconnect && (
-      <Button slot="actions" href={`/settings/destinations/detail?id=${d.id}&reconnected=1`} variant="primary">Reconnect</Button>
+    {isByos && (needsReconnect || needsConnect) && (
+      <form slot="actions" method="POST" action={`/api/connections/storage/${d.provider}/authorize`} data-astro-reload>
+        <input type="hidden" name="returnTo" value={`/destinations/detail?id=${d.id}`} />
+        <Button type="submit" variant="primary">{needsConnect ? 'Connect' : 'Reconnect'}</Button>
+      </form>
     )}
-    {needsConnect && (
-      <Button slot="actions" href={`/settings/destinations/detail?id=${d.id}&new=1&type=${d.provider}&reconnected=1`} variant="primary">Connect</Button>
-    )}
-    <Button slot="actions" href={`/settings/destinations/new?type=${d.provider}`} variant="secondary">Edit</Button>
+    <Button slot="actions" href={`/destinations/new?type=${d.provider}`} variant="secondary">Edit</Button>
   </EntityDetailHeader>
 
   {needsReconnect && (
@@ -84,23 +88,51 @@ const connectionItems = [
     <p class="dst-note">{status === 'reconnect' ? 'Reconnecting restores backups for every Space listed here.' : 'Changing this connection affects every Space listed here.'}</p>
   </SectionPanel>
 
-  <SectionPanel title="Remove destination" class="dst-danger">
+  <SectionPanel title="Disconnect destination" class="dst-danger">
     <div class="flex items-start justify-between gap-4 flex-wrap">
       <div class="min-w-0">
         <p class="text-sm text-base-content/60 mt-1">
-          {inUseCount > 0
-            ? `Remove is disabled while ${inUseCount} Space${inUseCount === 1 ? '' : 's'} use this destination. Unlink ${inUseCount === 1 ? 'it' : 'them'} first.`
-            : 'No Spaces use this destination, so it can be removed.'}
+          {isByos
+            ? 'Disconnect this destination from the Space. Files already in your account are kept; future backups fall back to local disk until you connect another destination.'
+            : 'Managed destinations are switched by connecting a different destination, not disconnected here.'}
         </p>
+        <p class="text-sm text-error hidden mt-2" data-disconnect-error role="alert"></p>
       </div>
-      {inUseCount > 0 ? (
-        <Button type="button" variant="outline" size="sm" class="shrink-0 border-error text-error" disabled>Remove</Button>
-      ) : (
-        <Button type="button" variant="outline" size="sm" class="shrink-0 border-error text-error">Remove</Button>
-      )}
+      <Button type="button" variant="outline" size="sm" class="shrink-0 border-error text-error" disabled={!isByos} data-disconnect data-provider={d.provider}>Disconnect</Button>
     </div>
   </SectionPanel>
 </div>
+
+<script>
+  import { setButtonLoading } from '../lib/ui';
+
+  // Per-Space disconnect (BYOS only): removes the storage_destinations row for the
+  // active Space + flips storageType back to local_fs, then returns to the registry.
+  document.addEventListener('click', async (event) => {
+    const btn = (event.target as HTMLElement | null)?.closest('[data-disconnect]');
+    if (!(btn instanceof HTMLButtonElement)) return;
+    const provider = btn.dataset.provider;
+    if (!provider) return;
+    const errEl = document.querySelector<HTMLElement>('[data-disconnect-error]');
+    setButtonLoading(btn, true);
+    try {
+      const res = await fetch(`/api/connections/storage/${provider}/disconnect`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+      });
+      if (res.ok) {
+        window.location.href = '/destinations';
+        return;
+      }
+      if (errEl) {
+        errEl.textContent = 'Could not disconnect. Please try again.';
+        errEl.classList.remove('hidden');
+      }
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  });
+</script>
 
 <style>
   .dst-chips { margin-top: .75rem; display: flex; flex-wrap: wrap; gap: .4rem; }

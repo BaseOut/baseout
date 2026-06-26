@@ -1,0 +1,22 @@
+---
+/**
+ * Add an account-level destination. Honest-pending: a destination is per-Space
+ * today, so "add" connects a destination for the active Space. Connecting itself
+ * goes through the existing per-provider OAuth routes (BYOS) or the managed
+ * local-fs connect.
+ */
+import { env } from 'cloudflare:workers';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import DestinationAddView from '../../views/DestinationAddView.astro';
+import { getBreadcrumbs } from '../../lib/config';
+import { getDestinationProviders, type DestinationEnv } from '../../lib/provider-catalog';
+
+const spaceId = Astro.locals.account?.space?.id ?? null;
+const selectedType = Astro.url.searchParams.get('type');
+const providers = getDestinationProviders(env as unknown as DestinationEnv);
+const breadcrumbs = getBreadcrumbs('/destinations');
+---
+
+<SidebarLayout pageTitle="Add destination" breadcrumbs={breadcrumbs}>
+  <DestinationAddView selectedType={selectedType} providers={providers} spaceId={spaceId} />
+</SidebarLayout>

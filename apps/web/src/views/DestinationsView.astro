@@ -17,7 +17,7 @@ interface Props {
   rowHref?: string | null;
   providers?: DestinationProvider[];
 }
-const { destinations, notice = null, addHref = '/settings/destinations/new', rowHref = null, providers = [] } = Astro.props;
+const { destinations, notice = null, addHref = '/destinations/new', rowHref = null, providers = [] } = Astro.props;
 
 const tierLabel = (t?: string) => (t === 'growth' ? 'Growth+' : t === 'pro' ? 'Pro+' : null);
 const availableProviders = providers.filter((p) => p.availability === 'available');
@@ -37,8 +37,8 @@ const needsAttention = destinations.filter((d) => d.status === 'reconnect');
 const affectedSpaces = [...new Set(needsAttention.flatMap((d) => d.inUseBy))];
 const detailHref = (d: DestinationSummary) =>
   d.status === 'needs_connection'
-    ? `/settings/destinations/detail?id=${d.id}&new=1&type=${d.provider}`
-    : `/settings/destinations/detail?id=${d.id}`;
+    ? `/destinations/detail?id=${d.id}&new=1&type=${d.provider}`
+    : `/destinations/detail?id=${d.id}`;
 
 const registryColumns = 'minmax(0,1.5fr) minmax(0,1fr) 9.5rem 6rem 6rem';
 ---

@@ -4,14 +4,15 @@
  */
 import BackLink from '../components/ui/BackLink.astro';
 import Button from '../components/ui/Button.astro';
-import TextInput from '../components/ui/TextInput.astro';
 import { getDestinationProviders, type DestinationProvider } from '../lib/provider-catalog';
 
 interface Props {
   selectedType?: string | null;
   providers?: DestinationProvider[];
+  /** Active Space id — needed to connect a managed (no-OAuth) destination. */
+  spaceId?: string | null;
 }
-const { selectedType = null, providers = getDestinationProviders() } = Astro.props;
+const { selectedType = null, providers = getDestinationProviders(), spaceId = null } = Astro.props;
 
 const fileTypes = providers.filter((p) => p.kind === 'file');
 const dbTypes = providers.filter((p) => p.kind === 'database');
@@ -21,11 +22,10 @@ const tierLabel = (t?: string) => (t === 'growth' ? 'Growth+' : t === 'pro' ? 'P
 const iconFor = (p: DestinationProvider) =>
   p.managed ? 'lucide--box' : p.slug === 's3' ? 'lucide--cloud' : p.kind === 'database' ? 'lucide--database' : 'lucide--hard-drive';
 const selIcon = sel ? iconFor(sel) : 'lucide--hard-drive';
-const selField: 'folder' | 'connection' = sel?.kind === 'database' ? 'connection' : 'folder';
 ---
 
 <div class="mx-auto max-w-3xl space-y-6">
-  <BackLink href="/settings/destinations" label="Destinations" />
+  <BackLink href="/destinations" label="Destinations" />
 
   {!sel ? (
     <>
@@ -39,7 +39,7 @@ const selField: 'folder' | 'connection' = sel?.kind === 'database' ? 'connection
         <div class="grid gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
           {fileTypes.map((t) => (
             t.availability === 'available' ? (
-              <a href={`/settings/destinations/new?type=${t.slug}`} class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 no-underline text-inherit transition-colors hover:border-primary/50 hover:bg-primary/5">
+              <a href={`/destinations/new?type=${t.slug}`} class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 no-underline text-inherit transition-colors hover:border-primary/50 hover:bg-primary/5">
                 <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-base-200/80"><span class={`iconify ${iconFor(t)} text-lg text-base-content/70`} aria-hidden="true"></span></span>
                 <span class="min-w-0"><span class="flex items-center gap-1.5 text-sm font-semibold">{t.label}{t.managed && <span class="rounded-full bg-success/15 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-success">Managed</span>}</span><span class="block text-xs text-base-content/50">{t.note}</span></span>
               </a>
@@ -61,7 +61,7 @@ const selField: 'folder' | 'connection' = sel?.kind === 'database' ? 'connection
         <div class="grid gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
           {dbTypes.map((t) => (
             t.availability === 'available' ? (
-              <a href={`/settings/destinations/new?type=${t.slug}`} class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 no-underline text-inherit transition-colors hover:border-primary/50 hover:bg-primary/5">
+              <a href={`/destinations/new?type=${t.slug}`} class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 no-underline text-inherit transition-colors hover:border-primary/50 hover:bg-primary/5">
                 <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10"><span class={`iconify ${iconFor(t)} text-lg text-primary`} aria-hidden="true"></span></span>
                 <span class="min-w-0"><span class="text-sm font-semibold">{t.label}</span><span class="block text-xs text-base-content/50">{t.note}</span></span>
               </a>
@@ -85,22 +85,77 @@ const selField: 'folder' | 'connection' = sel?.kind === 'database' ? 'connection
         </div>
       </header>
 
-      <form method="POST" action="/api/destinations" class="flex max-w-lg flex-col gap-4" data-astro-reload>
-        <TextInput label="Name" type="text" name="name" placeholder={`${sel.label} backup`} hint="A label you'll recognise when linking it to Spaces." />
-
-        {sel.managed ? (
+      {sel.managed ? (
+        /* Managed (local_fs / r2_managed) — no OAuth; connect for the active Space. */
+        <div class="flex max-w-lg flex-col gap-4">
           <p class="flex items-center gap-2 rounded-lg border border-success/20 bg-success/10 px-3 py-2.5 text-sm text-base-content/75"><span class="iconify lucide--shield-check text-success" aria-hidden="true"></span> Managed by Baseout — no account to connect or folder to choose.</p>
-        ) : selField === 'folder' ? (
-          <TextInput label="Folder" type="text" name="folder" placeholder="/Baseout" class="font-mono text-sm" hint="Each Space writes to its own subfolder. You'll authorize the account after saving." />
-        ) : (
-          <TextInput label="Connection string" type="password" name="connection" placeholder="postgres://user:••••@host:5432/db" autocomplete="off" class="font-mono text-sm" hint="Stored encrypted. Baseout writes one schema per Space." />
-        )}
-
-        <div class="mt-1 flex items-center justify-end gap-2">
-          <Button href="/settings/destinations/new" variant="ghost" size="sm">Back</Button>
-          <Button href={`/settings/destinations?status=added&type=${sel.slug}`} variant="primary">Save destination</Button>
+          <p class="text-sm text-error hidden" data-managed-error role="alert"></p>
+          <div class="mt-1 flex items-center justify-end gap-2">
+            <Button href="/destinations/new" variant="ghost" size="sm">Back</Button>
+            <Button type="button" variant="primary" data-managed-connect data-slug={sel.slug} data-space-id={spaceId ?? ''}>Use {sel.label}</Button>
+          </div>
         </div>
-      </form>
+      ) : sel.kind === 'file' ? (
+        /* BYOS file storage — real OAuth: POST → provider authorize → consent → callback → returnTo. */
+        <form method="POST" action={`/api/connections/storage/${sel.slug}/authorize`} class="flex max-w-lg flex-col gap-4" data-byos-connect data-astro-reload>
+          <input type="hidden" name="returnTo" value="/destinations" />
+          <p class="text-sm text-base-content/70">You'll authorize {sel.label} in a popup. Each Space writes to its own <span class="font-mono">/Baseout/&lt;Space&gt;</span> subfolder.</p>
+          <div class="mt-1 flex items-center justify-end gap-2">
+            <Button href="/destinations/new" variant="ghost" size="sm">Back</Button>
+            <Button type="submit" variant="primary" data-byos-connect-btn>Connect {sel.label}</Button>
+          </div>
+        </form>
+      ) : (
+        /* Database destinations aren't available yet. */
+        <div class="flex max-w-lg flex-col gap-4">
+          <p class="text-sm text-base-content/70">Database destinations are coming soon.</p>
+          <div class="mt-1 flex items-center justify-end gap-2">
+            <Button href="/destinations/new" variant="ghost" size="sm">Back</Button>
+          </div>
+        </div>
+      )}
     </>
   )}
 </div>
+
+<script>
+  import { connectLocalFs } from '../lib/backups/connect-local-fs';
+  import { saveBackupConfig } from '../lib/backups/save-config';
+  import { setButtonLoading } from '../lib/ui';
+
+  // Managed destinations (local_fs / r2_managed): no OAuth — connect for the active
+  // Space via fetch, then return to the registry. local_fs creates the destination
+  // row (connectLocalFs); r2_managed just sets the config's storageType.
+  document.addEventListener('click', async (event) => {
+    const btn = (event.target as HTMLElement | null)?.closest('[data-managed-connect]');
+    if (!(btn instanceof HTMLButtonElement)) return;
+    const slug = btn.dataset.slug;
+    if (!slug) return;
+    const errEl = document.querySelector<HTMLElement>('[data-managed-error]');
+    setButtonLoading(btn, true);
+    try {
+      const res =
+        slug === 'local_fs'
+          ? await connectLocalFs()
+          : await saveBackupConfig({ spaceId: btn.dataset.spaceId ?? '', storageType: slug });
+      if (res.ok) {
+        window.location.href = '/destinations';
+        return;
+      }
+      if (errEl) {
+        errEl.textContent = 'Could not connect that destination. Please try again.';
+        errEl.classList.remove('hidden');
+      }
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  });
+
+  // BYOS connect: show a spinner while the browser redirects to the provider's consent screen.
+  document.addEventListener('submit', (event) => {
+    const form = (event.target as HTMLElement | null)?.closest('[data-byos-connect]');
+    if (!(form instanceof HTMLFormElement)) return;
+    const btn = form.querySelector('[data-byos-connect-btn]');
+    if (btn instanceof HTMLButtonElement) setButtonLoading(btn, true);
+  });
+</script>

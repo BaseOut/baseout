@@ -1,0 +1,31 @@
+---
+/**
+ * Destination detail / management. Honest-pending: shows the active Space's
+ * storage destination mapped into the registry shape (one per Space today).
+ * Reconnect/Remove route through the existing per-provider OAuth + disconnect.
+ */
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import DestinationDetailView from '../../views/DestinationDetailView.astro';
+import { getBreadcrumbs } from '../../lib/config';
+import { EMPTY_INTEGRATIONS_STATE, getIntegrationsState } from '../../lib/integrations';
+import { toDestinationSummaries } from '../../lib/registry-mappers';
+
+const { account, db } = Astro.locals;
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+const spaceName = account?.space?.name ?? 'this Space';
+
+const state =
+  orgId && spaceId && db ? await getIntegrationsState(db, orgId, spaceId) : EMPTY_INTEGRATIONS_STATE;
+const destination = toDestinationSummaries(state, spaceId ?? 'space', spaceName)[0] ?? null;
+
+// No destination connected for this Space → nothing to manage; offer to add one.
+if (!destination) return Astro.redirect('/destinations');
+
+const reconnected = Astro.url.searchParams.get('reconnected') === '1';
+const breadcrumbs = getBreadcrumbs('/destinations');
+---
+
+<SidebarLayout pageTitle={destination.name} breadcrumbs={breadcrumbs}>
+  <DestinationDetailView destination={destination} reconnected={reconnected} />
+</SidebarLayout>

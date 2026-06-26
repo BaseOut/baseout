@@ -59,8 +59,12 @@ const connectionItems = [
     statusVariant={statusBadge.variant}
     statusDot={statusBadge.dot}
   >
-    {needsReconnect && (<Button slot="actions" href={`/sources/detail?id=${s.id}&reconnected=1`} variant="primary">Reconnect</Button>)}
-    {needsConnect && (<Button slot="actions" href={`/sources/detail?id=${s.id}&new=1&method=${s.auth}&reconnected=1`} variant="primary">Connect</Button>)}
+    {(needsReconnect || needsConnect) && (
+      <form slot="actions" method="POST" action="/api/connections/airtable/start" data-astro-reload>
+        <input type="hidden" name="returnTo" value={`/sources/detail?id=${s.id}`} />
+        <Button type="submit" variant="primary">{needsConnect ? 'Connect' : 'Reconnect'}</Button>
+      </form>
+    )}
     <Button slot="actions" href={`/sources/new?method=${s.auth}`} variant="secondary">Edit</Button>
   </EntityDetailHeader>
 

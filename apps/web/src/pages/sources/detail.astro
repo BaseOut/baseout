@@ -1,0 +1,31 @@
+---
+/**
+ * Source detail / management. Honest-pending: shows the active Space's Airtable
+ * connection mapped into the registry shape (the registry has one source today).
+ * Reconnect/Edit route through the working Airtable OAuth flow.
+ */
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import SourceDetailView from '../../views/SourceDetailView.astro';
+import { getBreadcrumbs } from '../../lib/config';
+import { EMPTY_INTEGRATIONS_STATE, getIntegrationsState } from '../../lib/integrations';
+import { toSourceSummary } from '../../lib/registry-mappers';
+
+const { account, db } = Astro.locals;
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+const spaceName = account?.space?.name ?? 'this Space';
+
+const state =
+  orgId && spaceId && db ? await getIntegrationsState(db, orgId, spaceId) : EMPTY_INTEGRATIONS_STATE;
+const source = toSourceSummary(state, spaceId ?? 'space', spaceName);
+
+// No source for this Space → nothing to manage; send back to the registry.
+if (!source) return Astro.redirect('/sources');
+
+const reconnected = Astro.url.searchParams.get('reconnected') === '1';
+const breadcrumbs = getBreadcrumbs('/sources');
+---
+
+<SidebarLayout pageTitle={source.name} breadcrumbs={breadcrumbs}>
+  <SourceDetailView source={source} reconnected={reconnected} />
+</SidebarLayout>
