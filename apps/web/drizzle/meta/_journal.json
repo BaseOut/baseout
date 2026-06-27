@@ -134,6 +134,13 @@
       "when": 1782251623519,
       "tag": "0018_pretty_betty_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1782518928502,
+      "tag": "0019_shallow_mattie_franklin",
+      "breakpoints": true
     }
   ]
 }

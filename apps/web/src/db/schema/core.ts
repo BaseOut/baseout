@@ -647,6 +647,50 @@ export const spaceDatabases = baseout.table('space_databases', {
 ])
 
 // ———————————————————————————————————————————————————————————————————————————
+// RESTORE RUNS
+// One row per restore run. Mirrors the backup_runs lifecycle (queued → running →
+// succeeded | failed | cancelling | cancelled). Canonical owner; apps/server
+// mirrors this in apps/server/src/db/schema/restore-runs.ts.
+// Migrations: apps/web/drizzle/0019_restore_runs.sql
+// ———————————————————————————————————————————————————————————————————————————
+
+export const restoreRuns = baseout.table('restore_runs', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  connectionId: text('connection_id')
+    .notNull()
+    .references(() => connections.id, { onDelete: 'restrict' }),
+  sourceRunId: text('source_run_id')
+    .notNull()
+    .references(() => backupRuns.id, { onDelete: 'restrict' }),
+  status: text('status').notNull(),
+  // 'queued' | 'running' | 'cancelling' | 'cancelled' | 'succeeded' | 'failed'
+  scope: text('scope').notNull(),
+  // 'base' | 'table' | 'point_in_time'
+  scopeTarget: jsonb('scope_target').notNull(),
+  // { baseId, tableId?, runId? }
+  tablesRestored: integer('tables_restored').notNull().default(0),
+  recordsRestored: integer('records_restored').notNull().default(0),
+  attachmentsRestored: integer('attachments_restored').notNull().default(0),
+  triggerRunIds: text('trigger_run_ids').array().notNull().default(sql`'{}'`),
+  // Postgres text[] — one entry per Trigger.dev run ID fanned out during start.
+  triggeredBy: text('triggered_by').notNull(),
+  // 'user_manual' | 'admin_override'
+  isTrial: boolean('is_trial').notNull().default(false),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_restore_runs_space_status').on(table.spaceId, table.status),
+  index('idx_restore_runs_source').on(table.sourceRunId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
 // HEALTH SCORE RULES
 // Filed by openspec/changes/system-per-space-db. Org-scoped, configurable rules
 // the engine evaluates per run to compute a Base's health score. The computed

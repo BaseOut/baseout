@@ -17,3 +17,4 @@ export * from "./subscription-items";
 export * from "./space-events";
 export * from "./storage-destinations";
 export * from "./space-databases";
+export * from "./restore-runs";

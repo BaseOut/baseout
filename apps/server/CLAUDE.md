@@ -79,3 +79,25 @@ client.defineJob({
 ```
 
 Use SDK (`@trigger.dev/sdk`), check `result.ok` before accessing `result.output`
+
+## Restore lifecycle mirrors backup lifecycle file-for-file
+
+The restore data plane (`server-restore`) is built as a deliberate mirror of the
+backup-run lifecycle so reviewers can navigate by analogy and bug-fix patterns
+transfer. Read either side to infer the other:
+
+| Backup (`src/lib/runs/`)        | Restore (`src/lib/restores/`)          |
+| ------------------------------- | -------------------------------------- |
+| `start.ts` `processRunStart`    | `start.ts` `processRestoreStart`       |
+| `progress.ts`                   | `progress.ts` `processRestoreProgress` |
+| `complete.ts`                   | `complete.ts` `processRestoreComplete` |
+| `cancel.ts` `processRunCancel`  | `cancel.ts` `processRestoreCancel`     |
+| `enqueueBackupBase`             | `enqueueRestoreBase` (trigger-client)  |
+| `backup_runs` table             | `restore_runs` table                   |
+
+Routes live under `pages/api/internal/restores/{start,progress,complete,cancel}.ts`,
+registered in `index.ts` by `RESTORES_*_RE`. The restore task READS the source
+snapshot from the same storage path the backup task WROTE it, so
+`RestoreBaseTaskPayload` carries `baseName` + `sourceRunStartedAt` (the source
+`backup_runs.started_at` — the path `<datetime>` segment), not the restore's own
+start time. Restore-base task body itself lives in `apps/workflows` (`workflows-restore`).

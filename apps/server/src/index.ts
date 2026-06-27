@@ -15,9 +15,13 @@ import {
   type ConnectionDOProxyAction,
 } from "./pages/api/internal/connections/do-proxy";
 import { runsStartHandler } from "./pages/api/internal/runs/start";
+import { restoresStartHandler } from "./pages/api/internal/restores/start";
+import { restoresProgressHandler } from "./pages/api/internal/restores/progress";
+import { restoresCompleteHandler } from "./pages/api/internal/restores/complete";
 import { runsCompleteHandler } from "./pages/api/internal/runs/complete";
 import { runsProgressHandler } from "./pages/api/internal/runs/progress";
 import { runsCancelHandler } from "./pages/api/internal/runs/cancel";
+import { restoresCancelHandler } from "./pages/api/internal/restores/cancel";
 import { runsDeleteHandler } from "./pages/api/internal/runs/delete";
 import { runsDeleteCompleteHandler } from "./pages/api/internal/runs/delete-complete";
 import { spacesSetFrequencyHandler } from "./pages/api/internal/spaces/set-frequency";
@@ -40,6 +44,10 @@ const CONNECTIONS_WHOAMI_RE =
 const CONNECTIONS_DO_PROXY_RE =
   /^\/api\/internal\/connections\/([^/]+)\/(lock|unlock|token)$/;
 const RUNS_START_RE = /^\/api\/internal\/runs\/([^/]+)\/start$/;
+const RESTORES_START_RE = /^\/api\/internal\/restores\/([^/]+)\/start$/;
+const RESTORES_PROGRESS_RE = /^\/api\/internal\/restores\/([^/]+)\/progress$/;
+const RESTORES_COMPLETE_RE = /^\/api\/internal\/restores\/([^/]+)\/complete$/;
+const RESTORES_CANCEL_RE = /^\/api\/internal\/restores\/([^/]+)\/cancel$/;
 const RUNS_COMPLETE_RE = /^\/api\/internal\/runs\/([^/]+)\/complete$/;
 const RUNS_PROGRESS_RE = /^\/api\/internal\/runs\/([^/]+)\/progress$/;
 const RUNS_CANCEL_RE = /^\/api\/internal\/runs\/([^/]+)\/cancel$/;
@@ -148,6 +156,58 @@ export default {
       const start = RUNS_START_RE.exec(url.pathname);
       if (start) {
         return await runsStartHandler(request, env, ctx, locals, start[1]!);
+      }
+
+      // Restore-start (server-restore Phase B.4): same method-check-inside-
+      // handler pattern as run-start.
+      const restoreStart = RESTORES_START_RE.exec(url.pathname);
+      if (restoreStart) {
+        return await restoresStartHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          restoreStart[1]!,
+        );
+      }
+
+      // Restore-progress (server-restore Phase C.2): per-table advisory counter
+      // bump from the restore-base task.
+      const restoreProgress = RESTORES_PROGRESS_RE.exec(url.pathname);
+      if (restoreProgress) {
+        return await restoresProgressHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          restoreProgress[1]!,
+        );
+      }
+
+      // Restore-complete (server-restore Phase C.4): per-base completion +
+      // terminal-transition when all trigger_run_ids have reported in.
+      const restoreComplete = RESTORES_COMPLETE_RE.exec(url.pathname);
+      if (restoreComplete) {
+        return await restoresCompleteHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          restoreComplete[1]!,
+        );
+      }
+
+      // Restore-cancel (server-restore Phase D.2): mirrors run-cancel; uses
+      // cancelled_at instead of completed_at.
+      const restoreCancel = RESTORES_CANCEL_RE.exec(url.pathname);
+      if (restoreCancel) {
+        return await restoresCancelHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          restoreCancel[1]!,
+        );
       }
 
       // Run-complete: same method-check-inside-handler pattern.
