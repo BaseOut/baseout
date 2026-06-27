@@ -20,9 +20,10 @@
 
 import { eq, sql } from "drizzle-orm";
 import type { AppLocals, Env } from "../../../../env";
-import { backupRuns } from "../../../../db/schema";
+import { backupRuns, backupRunBases, backupRunTables } from "../../../../db/schema";
 import {
   processRunComplete,
+  type PerTableDetail,
   type ProcessRunCompleteInput,
   type ProcessRunCompleteResult,
 } from "../../../../lib/runs/complete";
@@ -65,6 +66,23 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
+function parseTableDetail(item: unknown): PerTableDetail | null {
+  if (typeof item !== "object" || item === null) return null;
+  const t = item as Record<string, unknown>;
+  if (!isNonEmptyString(t.tableId)) return null;
+  if (!isNonEmptyString(t.tableName)) return null;
+  if (!isNonNegativeInt(t.recordCount)) return null;
+  if (!isNonNegativeInt(t.fieldCount)) return null;
+  if (!isNonNegativeInt(t.attachmentCount)) return null;
+  return {
+    tableId: t.tableId,
+    tableName: t.tableName,
+    recordCount: t.recordCount,
+    fieldCount: t.fieldCount,
+    attachmentCount: t.attachmentCount,
+  };
+}
+
 function parseBody(raw: unknown): ProcessRunCompleteInput | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
@@ -79,6 +97,24 @@ function parseBody(raw: unknown): ProcessRunCompleteInput | null {
   if (r.errorMessage !== undefined && typeof r.errorMessage !== "string") {
     return null;
   }
+
+  // Optional per-table snapshot fields (server-run-detail, additive).
+  // baseName must be a non-empty string when present.
+  if (r.baseName !== undefined && !isNonEmptyString(r.baseName)) return null;
+
+  // tables must be an array of valid PerTableDetail objects when present.
+  let tables: PerTableDetail[] | undefined;
+  if (r.tables !== undefined) {
+    if (!Array.isArray(r.tables)) return null;
+    const parsed: PerTableDetail[] = [];
+    for (const item of r.tables) {
+      const detail = parseTableDetail(item);
+      if (!detail) return null;
+      parsed.push(detail);
+    }
+    tables = parsed;
+  }
+
   return {
     runId: "", // overwritten by caller from URL
     triggerRunId: r.triggerRunId,
@@ -90,6 +126,8 @@ function parseBody(raw: unknown): ProcessRunCompleteInput | null {
     ...(typeof r.errorMessage === "string"
       ? { errorMessage: r.errorMessage }
       : {}),
+    ...(isNonEmptyString(r.baseName) ? { baseName: r.baseName } : {}),
+    ...(tables !== undefined ? { tables } : {}),
   };
 }
 
@@ -180,6 +218,41 @@ export async function runsCompleteHandler(
           modifiedAt: final.completedAt,
         })
         .where(eq(backupRuns.id, final.runId));
+    },
+    // Per-table snapshot deps (server-run-detail, additive). Only wired when
+    // the caller included tables[] in the body; processRunComplete skips these
+    // when input.tables is undefined, so legacy completions are unaffected.
+    insertRunBaseSnapshot: async (snap) => {
+      const rows = await db
+        .insert(backupRunBases)
+        .values({
+          runId: snap.runId,
+          atBaseId: snap.atBaseId,
+          baseName: snap.baseName,
+          status: snap.status,
+          tablesCount: snap.tablesCount,
+          recordsCount: snap.recordsCount,
+          attachmentsCount: snap.attachmentsCount,
+          completedAt: snap.completedAt,
+          errorMessage: snap.errorMessage ?? undefined,
+        })
+        .returning({ id: backupRunBases.id });
+      const row = rows[0];
+      if (!row) throw new Error("insertRunBaseSnapshot: no row returned");
+      return { id: row.id };
+    },
+    insertRunTableSnapshots: async (snap) => {
+      if (snap.tables.length === 0) return;
+      await db.insert(backupRunTables).values(
+        snap.tables.map((t) => ({
+          runBaseId: snap.runBaseId,
+          tableId: t.tableId,
+          tableName: t.tableName,
+          recordCount: t.recordCount,
+          fieldCount: t.fieldCount,
+          attachmentCount: t.attachmentCount,
+        })),
+      );
     },
   });
 

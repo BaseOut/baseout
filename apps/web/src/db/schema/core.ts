@@ -691,6 +691,59 @@ export const restoreRuns = baseout.table('restore_runs', {
 ])
 
 // ———————————————————————————————————————————————————————————————————————————
+// BACKUP RUN BASES
+// Per-base snapshot written by the Trigger.dev backup-base task on completion
+// (via the optional tables[] payload on POST /api/internal/runs/:runId/complete).
+// When present, provides the per-base breakdown for the run-detail UI.
+// Absent for legacy completions that predate the workflows-run-detail change.
+// Canonical owner; apps/server mirrors this in backup-run-bases.ts.
+// Migration: apps/web/drizzle/0020_backup_run_bases_and_tables.sql
+// ———————————————————————————————————————————————————————————————————————————
+
+export const backupRunBases = baseout.table('backup_run_bases', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  runId: text('run_id')
+    .notNull()
+    .references(() => backupRuns.id, { onDelete: 'cascade' }),
+  atBaseId: text('at_base_id').notNull(),
+  baseName: text('base_name').notNull(),
+  status: text('status').notNull(),
+  // 'succeeded' | 'failed' | 'trial_complete' | 'trial_truncated'
+  tablesCount: integer('tables_count').notNull().default(0),
+  recordsCount: integer('records_count').notNull().default(0),
+  attachmentsCount: integer('attachments_count').notNull().default(0),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('backup_run_bases_run_id_idx').on(table.runId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// BACKUP RUN TABLES
+// Per-table snapshot written alongside backup_run_bases rows. One row per table
+// within a base's backup snapshot. Absent for legacy completions.
+// Canonical owner; apps/server mirrors this in backup-run-tables.ts.
+// Migration: apps/web/drizzle/0020_backup_run_bases_and_tables.sql
+// ———————————————————————————————————————————————————————————————————————————
+
+export const backupRunTables = baseout.table('backup_run_tables', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  runBaseId: text('run_base_id')
+    .notNull()
+    .references(() => backupRunBases.id, { onDelete: 'cascade' }),
+  tableId: text('table_id').notNull(),
+  tableName: text('table_name').notNull(),
+  recordCount: integer('record_count').notNull().default(0),
+  fieldCount: integer('field_count').notNull().default(0),
+  attachmentCount: integer('attachment_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('backup_run_tables_run_base_id_idx').on(table.runBaseId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
 // HEALTH SCORE RULES
 // Filed by openspec/changes/system-per-space-db. Org-scoped, configurable rules
 // the engine evaluates per run to compute a Base's health score. The computed

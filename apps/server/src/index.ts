@@ -24,6 +24,7 @@ import { runsCancelHandler } from "./pages/api/internal/runs/cancel";
 import { restoresCancelHandler } from "./pages/api/internal/restores/cancel";
 import { runsDeleteHandler } from "./pages/api/internal/runs/delete";
 import { runsDeleteCompleteHandler } from "./pages/api/internal/runs/delete-complete";
+import { runsDetailHandler } from "./pages/api/internal/runs/detail";
 import { spacesSetFrequencyHandler } from "./pages/api/internal/spaces/set-frequency";
 import { spacesProvisionDatabaseHandler } from "./pages/api/internal/spaces/provision-database";
 import { spacesSchemaSyncHandler } from "./pages/api/internal/spaces/schema-sync";
@@ -54,6 +55,7 @@ const RUNS_CANCEL_RE = /^\/api\/internal\/runs\/([^/]+)\/cancel$/;
 const RUNS_DELETE_RE = /^\/api\/internal\/runs\/([^/]+)\/delete$/;
 const RUNS_DELETE_COMPLETE_RE =
   /^\/api\/internal\/runs\/([^/]+)\/delete-complete$/;
+const RUNS_DETAIL_RE = /^\/api\/internal\/runs\/([^/]+)\/detail$/;
 const SPACES_SET_FREQUENCY_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/set-frequency$/;
 const SPACES_PROVISION_DATABASE_RE =
@@ -261,6 +263,15 @@ export default {
           locals,
           deleteComplete[1]!,
         );
+      }
+
+      // Run-detail (server-run-detail): per-base/per-table snapshot read.
+      // Returns { bases: [...] } assembled from backup_run_bases +
+      // backup_run_tables for the given runId. GET-only; method-check inside
+      // the handler returns 405 for non-GET.
+      const detail = RUNS_DETAIL_RE.exec(url.pathname);
+      if (detail) {
+        return await runsDetailHandler(request, env, ctx, locals, detail[1]!);
       }
 
       // Run-delete: openspec/changes/shared-backup-run-delete. CAS-flips

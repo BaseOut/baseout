@@ -302,3 +302,167 @@ describe("processRunComplete — validation failures", () => {
     expect(deps.finalizeRun).not.toHaveBeenCalled();
   });
 });
+
+// ————————————————————————————————————————————————————————————————————————
+// Per-table snapshot (server-run-detail): optional tables[] payload
+// ————————————————————————————————————————————————————————————————————————
+
+interface SnapshotDepsBag extends DepsBag {
+  insertRunBaseSnapshot: ReturnType<typeof vi.fn>;
+  insertRunTableSnapshots: ReturnType<typeof vi.fn>;
+}
+
+function makeSnapshotDeps(): SnapshotDepsBag {
+  return {
+    ...makeDeps(),
+    insertRunBaseSnapshot: vi.fn(async () => ({ id: "brb_111" })),
+    insertRunTableSnapshots: vi.fn(async () => {}),
+  };
+}
+
+const SAMPLE_TABLES = [
+  { tableId: "tblA", tableName: "Contacts", recordCount: 80, fieldCount: 5, attachmentCount: 0 },
+  { tableId: "tblB", tableName: "Projects", recordCount: 12, fieldCount: 3, attachmentCount: 2 },
+];
+
+describe("processRunComplete — per-table snapshot (additive)", () => {
+  it("calls insertRunBaseSnapshot + insertRunTableSnapshots when tables[] is present", async () => {
+    const deps = makeSnapshotDeps();
+
+    const result = await processRunComplete(
+      {
+        runId: RUN_ID,
+        triggerRunId: TRIGGER_RUN_ID_A,
+        atBaseId: AT_BASE_ID,
+        baseName: "My Base",
+        status: "succeeded",
+        tablesProcessed: 2,
+        recordsProcessed: 92,
+        attachmentsProcessed: 2,
+        tables: SAMPLE_TABLES,
+      },
+      { ...deps, now: () => NOW },
+    );
+
+    expect(result).toEqual({ ok: true, kind: "finalized", finalStatus: "succeeded" });
+
+    expect(deps.insertRunBaseSnapshot).toHaveBeenCalledTimes(1);
+    expect(deps.insertRunBaseSnapshot).toHaveBeenCalledWith({
+      runId: RUN_ID,
+      atBaseId: AT_BASE_ID,
+      baseName: "My Base",
+      status: "succeeded",
+      tablesCount: 2,
+      recordsCount: 92,
+      attachmentsCount: 2,
+      completedAt: NOW,
+      errorMessage: null,
+    });
+
+    expect(deps.insertRunTableSnapshots).toHaveBeenCalledTimes(1);
+    expect(deps.insertRunTableSnapshots).toHaveBeenCalledWith({
+      runBaseId: "brb_111",
+      tables: SAMPLE_TABLES,
+    });
+  });
+
+  it("does NOT call snapshot deps when tables[] is absent (existing behavior unchanged)", async () => {
+    const deps = makeSnapshotDeps();
+
+    const result = await processRunComplete(
+      {
+        runId: RUN_ID,
+        triggerRunId: TRIGGER_RUN_ID_A,
+        atBaseId: AT_BASE_ID,
+        status: "succeeded",
+        tablesProcessed: 3,
+        recordsProcessed: 42,
+        attachmentsProcessed: 0,
+        // no tables, no baseName
+      },
+      { ...deps, now: () => NOW },
+    );
+
+    expect(result).toEqual({ ok: true, kind: "finalized", finalStatus: "succeeded" });
+    expect(deps.insertRunBaseSnapshot).not.toHaveBeenCalled();
+    expect(deps.insertRunTableSnapshots).not.toHaveBeenCalled();
+  });
+
+  it("does NOT call snapshot deps on noop replay (triggerRunId already processed)", async () => {
+    const deps = makeSnapshotDeps();
+    deps.applyPerBaseCompletion = vi.fn(async () => null);
+
+    const result = await processRunComplete(
+      {
+        runId: RUN_ID,
+        triggerRunId: TRIGGER_RUN_ID_A,
+        atBaseId: AT_BASE_ID,
+        baseName: "My Base",
+        status: "succeeded",
+        tablesProcessed: 2,
+        recordsProcessed: 92,
+        attachmentsProcessed: 2,
+        tables: SAMPLE_TABLES,
+      },
+      { ...deps, now: () => NOW },
+    );
+
+    expect(result).toEqual({ ok: true, kind: "noop" });
+    expect(deps.insertRunBaseSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("still calls snapshot deps on 'partial' (other bases still outstanding)", async () => {
+    const deps = makeSnapshotDeps();
+    deps.applyPerBaseCompletion = vi.fn(async () => ({
+      remainingCount: 1,
+      hasFailure: false,
+    }));
+
+    const result = await processRunComplete(
+      {
+        runId: RUN_ID,
+        triggerRunId: TRIGGER_RUN_ID_A,
+        atBaseId: AT_BASE_ID,
+        baseName: "My Base",
+        status: "succeeded",
+        tablesProcessed: 2,
+        recordsProcessed: 92,
+        attachmentsProcessed: 2,
+        tables: SAMPLE_TABLES,
+      },
+      { ...deps, now: () => NOW },
+    );
+
+    expect(result).toEqual({ ok: true, kind: "partial", remainingCount: 1 });
+    expect(deps.insertRunBaseSnapshot).toHaveBeenCalledTimes(1);
+    expect(deps.insertRunTableSnapshots).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes errorMessage to insertRunBaseSnapshot when status is 'failed'", async () => {
+    const deps = makeSnapshotDeps();
+    deps.applyPerBaseCompletion = vi.fn(async () => ({
+      remainingCount: 0,
+      hasFailure: true,
+    }));
+
+    await processRunComplete(
+      {
+        runId: RUN_ID,
+        triggerRunId: TRIGGER_RUN_ID_A,
+        atBaseId: AT_BASE_ID,
+        baseName: "My Base",
+        status: "failed",
+        tablesProcessed: 0,
+        recordsProcessed: 0,
+        attachmentsProcessed: 0,
+        errorMessage: "lock_unavailable",
+        tables: [],
+      },
+      { ...deps, now: () => NOW },
+    );
+
+    expect(deps.insertRunBaseSnapshot).toHaveBeenCalledWith(
+      expect.objectContaining({ errorMessage: "lock_unavailable" }),
+    );
+  });
+});

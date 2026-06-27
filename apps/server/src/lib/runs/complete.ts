@@ -51,15 +51,32 @@ export type FinalRunStatus =
   | "trial_complete"
   | "trial_truncated";
 
+export interface PerTableDetail {
+  tableId: string;
+  tableName: string;
+  recordCount: number;
+  fieldCount: number;
+  attachmentCount: number;
+}
+
 export interface ProcessRunCompleteInput {
   runId: string;
   triggerRunId: string;
   atBaseId: string;
+  /** Display name of the base — required when tables[] is present. */
+  baseName?: string;
   status: BackupBaseStatus;
   tablesProcessed: number;
   recordsProcessed: number;
   attachmentsProcessed: number;
   errorMessage?: string;
+  /**
+   * Per-table breakdown from the Trigger.dev backup-base task. When present,
+   * processRunComplete writes one backup_run_bases row + its backup_run_tables
+   * rows via the injected snapshot deps. When absent the handler behaves
+   * identically to before this change (additive, optional — per server-run-detail).
+   */
+  tables?: PerTableDetail[];
 }
 
 export interface ApplyPerBaseCompletionInput {
@@ -70,6 +87,23 @@ export interface ApplyPerBaseCompletionInput {
   attachmentsProcessed: number;
   /** Non-null only when input.status === 'failed'. Sticky write — the SQL UPDATE keeps the FIRST non-null error_message. */
   failureMessage: string | null;
+}
+
+export interface InsertRunBaseSnapshotInput {
+  runId: string;
+  atBaseId: string;
+  baseName: string;
+  status: BackupBaseStatus;
+  tablesCount: number;
+  recordsCount: number;
+  attachmentsCount: number;
+  completedAt: Date;
+  errorMessage: string | null;
+}
+
+export interface InsertRunTableSnapshotsInput {
+  runBaseId: string;
+  tables: PerTableDetail[];
 }
 
 export interface ProcessRunCompleteDeps {
@@ -89,6 +123,21 @@ export interface ProcessRunCompleteDeps {
     finalStatus: FinalRunStatus;
     completedAt: Date;
   }) => Promise<void>;
+  /**
+   * Inserts one backup_run_bases row. Returns the new row's id so the
+   * table-level inserts can reference it. Optional — only called when
+   * input.tables is present (server-run-detail, additive).
+   */
+  insertRunBaseSnapshot?: (
+    input: InsertRunBaseSnapshotInput,
+  ) => Promise<{ id: string }>;
+  /**
+   * Inserts backup_run_tables rows for the given base snapshot. Optional —
+   * only called when input.tables is present (server-run-detail, additive).
+   */
+  insertRunTableSnapshots?: (
+    input: InsertRunTableSnapshotsInput,
+  ) => Promise<void>;
   /** Test seam — defaults to () => new Date() in production. */
   now?: () => Date;
 }
@@ -128,6 +177,36 @@ export async function processRunComplete(
   //    callback. Trigger.dev v3 may retry on transient transport errors;
   //    return 200-shape so the runner doesn't keep retrying.
   if (applied === null) return { ok: true, kind: "noop" };
+
+  // 3b. Per-table snapshot (server-run-detail). Write one backup_run_bases
+  //     row + its backup_run_tables rows when the caller supplies tables[].
+  //     This is ADDITIVE: when tables is absent the block is skipped and
+  //     behaviour is identical to before this change.
+  if (
+    input.tables !== undefined &&
+    input.baseName !== undefined &&
+    deps.insertRunBaseSnapshot &&
+    deps.insertRunTableSnapshots
+  ) {
+    const snapshotBase = await deps.insertRunBaseSnapshot({
+      runId: input.runId,
+      atBaseId: input.atBaseId,
+      baseName: input.baseName,
+      status: input.status,
+      tablesCount: input.tablesProcessed,
+      recordsCount: input.recordsProcessed,
+      attachmentsCount: input.attachmentsProcessed,
+      completedAt: now(),
+      errorMessage:
+        input.status === "failed"
+          ? (input.errorMessage ?? "unknown_failure")
+          : null,
+    });
+    await deps.insertRunTableSnapshots({
+      runBaseId: snapshotBase.id,
+      tables: input.tables,
+    });
+  }
 
   // 4. Other bases are still outstanding; don't finalize yet.
   if (applied.remainingCount > 0) {
