@@ -40,49 +40,49 @@ Depends on Phase A only for the cancel button being useful on `triggered_by='sch
 
 ### B.1 — Master DB migration
 
-- [ ] B.1.1 Generate `apps/web/drizzle/0007_backup_schedule_and_cancel.sql` with `ALTER TABLE backup_configurations ADD COLUMN next_scheduled_at timestamp with time zone`. Use `pnpm --filter @baseout/web db:generate` so Drizzle authors the SQL.
-- [ ] B.1.2 Apply via `pnpm --filter @baseout/web db:migrate` against the dev DB. Verify the column landed via `psql $DATABASE_URL -c "\d baseout.backup_configurations"`.
-- [ ] B.1.3 Update [apps/web/src/db/schema/core.ts](../../../apps/web/src/db/schema/core.ts) `backup_configurations` table definition with the new column (`nextScheduledAt: timestamp(...).nullable()`).
-- [ ] B.1.4 Mirror in [apps/server/src/db/schema/backup-configurations.ts](../../../apps/server/src/db/schema/backup-configurations.ts). Header comment names the canonical migration.
+- [x] B.1.1 Generate `apps/web/drizzle/0007_backup_schedule_and_cancel.sql` with `ALTER TABLE backup_configurations ADD COLUMN next_scheduled_at timestamp with time zone`. Use `pnpm --filter @baseout/web db:generate` so Drizzle authors the SQL.
+- [x] B.1.2 Apply via `pnpm --filter @baseout/web db:migrate` against the dev DB. Verify the column landed via `psql $DATABASE_URL -c "\d baseout.backup_configurations"`.
+- [x] B.1.3 Update [apps/web/src/db/schema/core.ts](../../../apps/web/src/db/schema/core.ts) `backup_configurations` table definition with the new column (`nextScheduledAt: timestamp(...).nullable()`).
+- [x] B.1.4 Mirror in [apps/server/src/db/schema/backup-configurations.ts](../../../apps/server/src/db/schema/backup-configurations.ts). Header comment names the canonical migration.
 
 ### B.2 — Frequency → next-fire pure function
 
-- [ ] B.2.1 TDD red: `apps/server/tests/integration/scheduling/next-fire.test.ts` (new). Cases: monthly mid-month → next 1st 00:00 UTC; monthly on the 1st (after 00:00) → next month's 1st; weekly any day → next Monday 00:00 UTC; weekly on Monday after 00:00 → next Monday; daily mid-day → tomorrow 00:00 UTC; daily at 00:00 sharp → tomorrow; instant throws.
-- [ ] B.2.2 Implement `apps/server/src/lib/scheduling/next-fire.ts` — `computeNextFire(frequency, now: Date): number | null`. Pure. Watch green.
+- [x] B.2.1 TDD red: `apps/server/tests/integration/scheduling/next-fire.test.ts` (new). Cases: monthly mid-month → next 1st 00:00 UTC; monthly on the 1st (after 00:00) → next month's 1st; weekly any day → next Monday 00:00 UTC; weekly on Monday after 00:00 → next Monday; daily mid-day → tomorrow 00:00 UTC; daily at 00:00 sharp → tomorrow; instant throws.
+- [x] B.2.2 Implement `apps/server/src/lib/scheduling/next-fire.ts` — `computeNextFire(frequency, now: Date): number | null`. Pure. Watch green.
 
 ### B.3 — SpaceDO implementation
 
-- [ ] B.3.1 TDD red: `apps/server/tests/integration/space-do.test.ts` (new). Uses `runInDurableObject` from `cloudflare:test`. Cases:
+- [x] B.3.1 TDD red: `apps/server/tests/integration/space-do.test.ts` (new). Uses `runInDurableObject` from `cloudflare:test`. Cases:
   - `POST /set-frequency monthly` → `state.storage.getAlarm()` returns the expected next-fire timestamp.
   - `alarm()` → calls `INSERT` on a passed-in fake DB AND calls `fetch` on a passed-in fake engine binding with the right path/body.
   - `alarm()` re-schedules itself for the next fire.
   - `alarm()` on a Space with `frequency='instant'` → no-op (out of scope this change).
-- [ ] B.3.2 Replace the SpaceDO stub at [apps/server/src/durable-objects/SpaceDO.ts](../../../apps/server/src/durable-objects/SpaceDO.ts):
+- [x] B.3.2 Replace the SpaceDO stub at [apps/server/src/durable-objects/SpaceDO.ts](../../../apps/server/src/durable-objects/SpaceDO.ts):
   - `fetch(req)`: routes `POST /set-frequency` to a method that reads the body, validates frequency, computes next-fire via the Phase B.2 pure function, calls `state.storage.setAlarm(nextFireMs)`, returns `{ ok: true, nextFireMs }`.
   - `alarm()`: SELECT the Space's config, INSERT a `backup_runs` row, call the engine's `/runs/start`, compute + set the next alarm.
-- [ ] B.3.3 Header comment rewritten to reflect that scheduled-dispatch is now live; WebSocket fan-out + state-machine remain deferred.
+- [x] B.3.3 Header comment rewritten to reflect that scheduled-dispatch is now live; WebSocket fan-out + state-machine remain deferred.
 
 ### B.4 — Wire the config PATCH into SpaceDO
 
-- [ ] B.4.1 Extend [apps/web/src/pages/api/spaces/[spaceId]/backup-config.ts](../../../apps/web/src/pages/api/spaces/[spaceId]/backup-config.ts) (Phase 10a) — after the existing UPSERT, if `frequency` changed, post to the engine's new internal endpoint that proxies through to SpaceDO. (We need a Worker-side proxy because apps/web can't reach SPACE_DO directly across the service binding; the engine forwards.)
-- [ ] B.4.2 New engine route: `POST /api/internal/spaces/:spaceId/set-frequency` in `apps/server`. Validates UUID + frequency. Looks up the SpaceDO by `idFromName(spaceId)` and calls its `/set-frequency` method via `env.SPACE_DO.get(id).fetch(...)`. Writes `backup_configurations.next_scheduled_at` AFTER the DO confirms.
-- [ ] B.4.3 Tests for the new engine proxy route (mirroring `connections/do-proxy.ts` pattern). 401 / 400 / 200.
+- [x] B.4.1 Extend [apps/web/src/pages/api/spaces/[spaceId]/backup-config.ts](../../../apps/web/src/pages/api/spaces/[spaceId]/backup-config.ts) (Phase 10a) — after the existing UPSERT, if `frequency` changed, post to the engine's new internal endpoint that proxies through to SpaceDO. (We need a Worker-side proxy because apps/web can't reach SPACE_DO directly across the service binding; the engine forwards.)
+- [x] B.4.2 New engine route: `POST /api/internal/spaces/:spaceId/set-frequency` in `apps/server`. Validates UUID + frequency. Looks up the SpaceDO by `idFromName(spaceId)` and calls its `/set-frequency` method via `env.SPACE_DO.get(id).fetch(...)`. Writes `backup_configurations.next_scheduled_at` AFTER the DO confirms.
+- [x] B.4.3 Tests for the new engine proxy route (mirroring `connections/do-proxy.ts` pattern). 401 / 400 / 200.
 
 ### B.5 — IntegrationsView surface
 
-- [ ] B.5.1 Extend [apps/web/src/views/IntegrationsView.astro](../../../apps/web/src/views/IntegrationsView.astro) to read `next_scheduled_at` from the config-load query and render "Next backup: <formatted date>" under each connected Space card. Handles null with "Not yet scheduled."
-- [ ] B.5.2 Format helper in [apps/web/src/lib/backups/format.ts](../../../apps/web/src/lib/backups/format.ts): `formatNextScheduledAt(d: string | null): string`. Local-tz-aware via `Intl.DateTimeFormat`.
-- [ ] B.5.3 Vitest test for the format helper.
+- [x] B.5.1 Render "Next backup: <formatted date>" from `next_scheduled_at`, with "Not yet scheduled" for null. (Re-homed by the design→web redesign: `IntegrationsView.astro` was retired; the surface now lives in [apps/web/src/views/SpaceHomeView.astro](../../../apps/web/src/views/SpaceHomeView.astro), fed by `getIntegrationsState().policy.nextScheduledAt` via [apps/web/src/pages/index.astro](../../../apps/web/src/pages/index.astro).)
+- [x] B.5.2 Format helper in [apps/web/src/lib/backups/format.ts](../../../apps/web/src/lib/backups/format.ts): `formatNextScheduledAt(d: string | null): string`. Local-tz-aware via `Intl.DateTimeFormat`.
+- [x] B.5.3 Vitest test for the format helper.
 
 ### B.6 — Bootstrap existing Spaces
 
-- [ ] B.6.1 New script `apps/server/scripts/bootstrap-space-do-alarms.mjs`. Iterates every `backup_configurations` row, calls the new `/api/internal/spaces/:spaceId/set-frequency` route for each. Idempotent — re-running just re-computes alarms. Skips Spaces with `frequency='instant'` (out of scope).
-- [ ] B.6.2 Add npm script in [apps/server/package.json](../../../apps/server/package.json): `"bootstrap:space-do-alarms": "node --env-file-if-exists=.env scripts/bootstrap-space-do-alarms.mjs"`.
+- [x] B.6.1 New script `apps/server/scripts/bootstrap-space-do-alarms.mjs`. Iterates every `backup_configurations` row, calls the new `/api/internal/spaces/:spaceId/set-frequency` route for each. Idempotent — re-running just re-computes alarms. Skips Spaces with `frequency='instant'` (out of scope).
+- [x] B.6.2 Add npm script in [apps/server/package.json](../../../apps/server/package.json): `"bootstrap:space-do-alarms": "node --env-file-if-exists=.env scripts/bootstrap-space-do-alarms.mjs"`.
 
 ### B.7 — Phase B verification
 
 - [x] B.7.1 `pnpm --filter @baseout/server typecheck && pnpm --filter @baseout/server test` — all green. (Unblocked by [server-spacedo-alarm-test-isolation-fix](../server-spacedo-alarm-test-isolation-fix/) — three alarm-storage tests were red from `6d887a6` until that change collapsed them to a single-block `runInDurableObject` pattern + bumped `FIXED_NOW` past the 2026-05-13 wall-clock boundary.)
-- [ ] B.7.2 `pnpm --filter @baseout/web typecheck && pnpm --filter @baseout/web test:unit` — all green.
+- [x] B.7.2 `pnpm --filter @baseout/web typecheck && pnpm --filter @baseout/web test:unit` — all green.
 - [ ] B.7.3 Human checkpoint smoke:
   - PATCH a Space's `backup-config` to set frequency to `daily`. Wait one tick (the bootstrap script writes `next_scheduled_at` for tomorrow 00:00 UTC).
   - Manually fire the SpaceDO alarm via `wrangler durable-objects` (or hit a debug endpoint). Watch a new `triggered_by='scheduled'` row appear in `backup_runs`.
