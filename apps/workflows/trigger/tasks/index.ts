@@ -7,3 +7,5 @@ export type { pingTask } from "./_ping";
 export type { backupBaseTask, BackupBaseTaskPayload } from "./backup-base.task";
 export type { BackupBaseResult, BackupBaseInput } from "./backup-base";
 export type { deleteRunFilesTask, DeleteRunFilesPayload } from "./delete-run-files.task";
+export type { restoreBaseTask, RestoreBaseTaskPayload } from "./restore-base.task";
+export type { RestoreBaseResult, RestoreBaseInput } from "./restore-base";
