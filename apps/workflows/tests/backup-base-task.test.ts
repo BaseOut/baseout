@@ -155,7 +155,7 @@ describe("runBackupBase", () => {
       },
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       status: "succeeded",
       tablesProcessed: 1,
       recordsProcessed: 2,
@@ -566,5 +566,227 @@ describe("runBackupBase", () => {
     expect(result.status).toBe("succeeded");
     expect(result.tablesProcessed).toBe(1);
     expect(postProgress).toHaveBeenCalledTimes(1);
+  });
+
+  // workflows-run-detail: per-table detail accumulation.
+  // These tests assert that runBackupBase returns tableDetail in the result so
+  // the wrapper can forward it to POST /api/internal/runs/:runId/complete, which
+  // the server-run-detail handler then persists into backup_run_bases /
+  // backup_run_tables.
+
+  it("returns tableDetail with one entry per table including recordCount, fieldCount, attachmentCount=0 when no attachments", async () => {
+    const { fetchMock } = makeFetchMock();
+    const { writeCsv } = makeWriteCsv();
+    const client = makeAirtableClient({
+      schema: {
+        tables: [
+          {
+            id: "tbl1",
+            name: "Contacts",
+            primaryFieldId: "fld1",
+            fields: [
+              { id: "fld1", name: "Name", type: "singleLineText" },
+              { id: "fld2", name: "Email", type: "email" },
+              { id: "fld3", name: "Phone", type: "phoneNumber" },
+            ],
+          },
+          {
+            id: "tbl2",
+            name: "Tasks",
+            primaryFieldId: "fld10",
+            fields: [
+              { id: "fld10", name: "Title", type: "singleLineText" },
+              { id: "fld11", name: "Done", type: "checkbox" },
+            ],
+          },
+        ],
+      },
+      pages: [
+        // tbl1: 3 records
+        {
+          records: [
+            { id: "r1", createdTime: "2026-01-01", fields: { Name: "Alice", Email: "a@x.com", Phone: "1" } },
+            { id: "r2", createdTime: "2026-01-01", fields: { Name: "Bob", Email: "b@x.com", Phone: "2" } },
+            { id: "r3", createdTime: "2026-01-01", fields: { Name: "Carol", Email: "c@x.com", Phone: "3" } },
+          ],
+        },
+        // tbl2: 1 record
+        {
+          records: [
+            { id: "r4", createdTime: "2026-01-01", fields: { Title: "Fix bug", Done: true } },
+          ],
+        },
+      ],
+    });
+
+    const result = await runBackupBase(
+      { ...BASE_INPUT, isTrial: false },
+      {
+        engineUrl: ENGINE,
+        internalToken: TOKEN,
+        fetchImpl: fetchMock,
+        airtableClient: client,
+        sleepImpl: async () => undefined,
+        writeCsv,
+      },
+    );
+
+    expect(result.status).toBe("succeeded");
+    expect(result.tablesProcessed).toBe(2);
+    expect(result.recordsProcessed).toBe(4);
+
+    // tableDetail must be present and have one entry per table.
+    expect(result.tableDetail).toBeDefined();
+    expect(result.tableDetail).toHaveLength(2);
+
+    expect(result.tableDetail![0]).toEqual({
+      tableId: "tbl1",
+      tableName: "Contacts",
+      recordCount: 3,
+      fieldCount: 3,
+      attachmentCount: 0,
+    });
+    expect(result.tableDetail![1]).toEqual({
+      tableId: "tbl2",
+      tableName: "Tasks",
+      recordCount: 1,
+      fieldCount: 2,
+      attachmentCount: 0,
+    });
+  });
+
+  it("tableDetail attachmentCount reflects attachments downloaded for that table", async () => {
+    const { fetchMock } = makeFetchMock();
+    const { writeCsv } = makeWriteCsv();
+    // Two tables: tbl1 has 2 attachment downloads, tbl2 has 1.
+    const processCell = vi
+      .fn<AttachmentDownloader["processCell"]>()
+      .mockResolvedValueOnce({ keys: ["k1", "k2"], downloaded: 2 }) // tbl1
+      .mockResolvedValueOnce({ keys: ["k3"], downloaded: 1 });        // tbl2
+
+    const client = makeAirtableClient({
+      schema: {
+        tables: [
+          {
+            id: "tbl1",
+            name: "Assets",
+            primaryFieldId: "fld1",
+            fields: [
+              { id: "fld1", name: "Name", type: "singleLineText" },
+              { id: "fld2", name: "Files", type: "multipleAttachments" },
+            ],
+          },
+          {
+            id: "tbl2",
+            name: "Docs",
+            primaryFieldId: "fld10",
+            fields: [
+              { id: "fld10", name: "Title", type: "singleLineText" },
+              { id: "fld11", name: "Attachments", type: "multipleAttachments" },
+            ],
+          },
+        ],
+      },
+      pages: [
+        {
+          records: [
+            {
+              id: "r1",
+              createdTime: "2026-01-01",
+              fields: {
+                Name: "row1",
+                Files: [
+                  { id: "att1", url: "https://dl/att1", filename: "a.png", type: "image/png" },
+                  { id: "att2", url: "https://dl/att2", filename: "b.png", type: "image/png" },
+                ],
+              },
+            },
+          ],
+        },
+        {
+          records: [
+            {
+              id: "r2",
+              createdTime: "2026-01-01",
+              fields: {
+                Title: "doc1",
+                Attachments: [
+                  { id: "att3", url: "https://dl/att3", filename: "c.pdf", type: "application/pdf" },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const result = await runBackupBase(
+      { ...BASE_INPUT, storageType: "local_fs", isTrial: false },
+      {
+        engineUrl: ENGINE,
+        internalToken: TOKEN,
+        fetchImpl: fetchMock,
+        airtableClient: client,
+        sleepImpl: async () => undefined,
+        writeCsv,
+        attachmentDownloader: { processCell },
+      },
+    );
+
+    expect(result.status).toBe("succeeded");
+    expect(result.attachmentsProcessed).toBe(3);
+
+    expect(result.tableDetail).toBeDefined();
+    expect(result.tableDetail).toHaveLength(2);
+    expect(result.tableDetail![0]).toEqual({
+      tableId: "tbl1",
+      tableName: "Assets",
+      recordCount: 1,
+      fieldCount: 2,
+      attachmentCount: 2,
+    });
+    expect(result.tableDetail![1]).toEqual({
+      tableId: "tbl2",
+      tableName: "Docs",
+      recordCount: 1,
+      fieldCount: 2,
+      attachmentCount: 1,
+    });
+  });
+
+  it("tableDetail is absent (undefined) on failed results", async () => {
+    // r2_managed without creds returns a structured `failed` — tableDetail
+    // should not be present since no tables were processed.
+    const { fetchMock } = makeFetchMock();
+    const { writeCsv } = makeWriteCsv();
+    const client = makeAirtableClient({
+      schema: {
+        tables: [
+          {
+            id: "tbl1",
+            name: "T1",
+            primaryFieldId: "fld1",
+            fields: [{ id: "fld1", name: "X", type: "singleLineText" }],
+          },
+        ],
+      },
+      pages: [{ records: [] }],
+    });
+
+    const result = await runBackupBase(
+      { ...BASE_INPUT, storageType: "r2_managed", isTrial: false },
+      {
+        engineUrl: ENGINE,
+        internalToken: TOKEN,
+        fetchImpl: fetchMock,
+        airtableClient: client,
+        sleepImpl: async () => undefined,
+        writeCsv,
+        // getR2Creds intentionally omitted → failed result
+      },
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.tableDetail).toBeUndefined();
   });
 });

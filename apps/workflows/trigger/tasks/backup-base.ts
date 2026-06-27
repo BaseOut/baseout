@@ -218,12 +218,24 @@ export type BackupBaseStatus =
   | "trial_complete"
   | "failed";
 
+export interface BackupTableDetail {
+  tableId: string;
+  tableName: string;
+  recordCount: number;
+  fieldCount: number;
+  attachmentCount: number;
+}
+
 export interface BackupBaseResult {
   status: BackupBaseStatus;
   tablesProcessed: number;
   recordsProcessed: number;
   attachmentsProcessed: number;
   errorMessage?: string;
+  /** Per-table breakdown accumulated during the table loop. Present on
+   * succeeded / trial_truncated / trial_complete; absent on early-exit
+   * failed paths (lock_unavailable, missing_r2_creds, etc.). */
+  tableDetail?: BackupTableDetail[];
 }
 
 const TRIAL_TABLE_CAP = 5;
@@ -307,6 +319,7 @@ export async function runBackupBase(
   let tablesProcessed = 0;
   let recordsProcessed = 0;
   let trialComplete = false;
+  const tableDetail: BackupTableDetail[] = [];
   // Resolve cloud-storage credentials before constructing the writer. The
   // engine internal route decrypts + lazy-refreshes the access token; we
   // pass a refresh closure that re-hits the same route with `?refresh=1`
@@ -559,6 +572,18 @@ export async function runBackupBase(
         });
       }
 
+      // Accumulate per-table detail for the completion POST
+      // (workflows-run-detail). attachmentCount is the delta of
+      // attachmentsProcessed for this table's pass only. The snapshot is
+      // appended here so trial-truncated runs still capture all processed tables.
+      tableDetail.push({
+        tableId: table.id,
+        tableName: table.name,
+        recordCount: collected.length,
+        fieldCount: table.fields.length,
+        attachmentCount: attachmentsProcessed - (tableDetail.reduce((s, t) => s + t.attachmentCount, 0)),
+      });
+
       tablesProcessed += 1;
       recordsProcessed += collected.length;
 
@@ -575,6 +600,7 @@ export async function runBackupBase(
       tablesProcessed,
       recordsProcessed,
       attachmentsProcessed,
+      tableDetail,
     };
   } finally {
     if (locked) {

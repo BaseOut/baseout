@@ -20,6 +20,7 @@ import { task } from "@trigger.dev/sdk";
 import {
   runBackupBase,
   type BackupBaseResult,
+  type BackupTableDetail,
   type CapturedBaseWire,
   type CapturedRecordWire,
 } from "./backup-base";
@@ -223,12 +224,13 @@ async function postCompletion(
   runId: string,
   triggerRunId: string,
   atBaseId: string,
+  baseName: string,
   result: BackupBaseResult,
 ): Promise<void> {
   const url = `${trimSlash(engineUrl)}/api/internal/runs/${encodeURIComponent(
     runId,
   )}/complete`;
-  const body = {
+  const body: Record<string, unknown> = {
     triggerRunId,
     atBaseId,
     status: result.status,
@@ -237,6 +239,21 @@ async function postCompletion(
     attachmentsProcessed: result.attachmentsProcessed,
     ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
   };
+  // workflows-run-detail: include per-table detail when the pure function
+  // accumulated it (succeeded / trial_* paths). The server handler treats
+  // these fields as optional — absent on early-exit failed paths (e.g.
+  // lock_unavailable) — so we spread conditionally to preserve additive
+  // contract.
+  if (result.tableDetail) {
+    body.baseName = baseName;
+    body.tables = result.tableDetail.map((t: BackupTableDetail) => ({
+      tableId: t.tableId,
+      tableName: t.tableName,
+      recordCount: t.recordCount,
+      fieldCount: t.fieldCount,
+      attachmentCount: t.attachmentCount,
+    }));
+  }
   try {
     await fetch(url, {
       method: "POST",
@@ -343,6 +360,7 @@ export const backupBaseTask = task({
       payload.runId,
       ctx.run.id,
       payload.atBaseId,
+      payload.baseName,
       result,
     );
 
