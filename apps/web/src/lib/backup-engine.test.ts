@@ -589,6 +589,120 @@ describe('createBackupEngine.startRestore', () => {
   })
 })
 
+const DETAIL_RUN_ID = 'cccccccc-dddd-eeee-ffff-000000000000'
+
+describe('createBackupEngine.getRunDetail', () => {
+  it('calls binding.fetch with method GET and the canonical /api/internal/runs/:id/detail path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ bases: [] }, 200),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await engine.getRunDetail(DETAIL_RUN_ID)
+    expect(binding.fetch).toHaveBeenCalledOnce()
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(`/api/internal/runs/${DETAIL_RUN_ID}/detail`)
+    expect(url.origin).toBe(PLACEHOLDER_BASE)
+    const init = captured![1] as RequestInit
+    expect(init.method).toBe('GET')
+    const headers = init.headers as Record<string, string>
+    expect(headers['x-internal-token']).toBe(TOKEN)
+    expect(headers.accept).toBe('application/json')
+  })
+
+  it('returns ok:true with non-empty bases[] on 200', async () => {
+    const bases = [
+      {
+        atBaseId: 'appABC123456789',
+        baseName: 'Sales CRM',
+        status: 'ok',
+        tablesCount: 4,
+        recordsCount: 3850,
+        attachmentsCount: 52,
+        startedAt: '2026-06-15T10:00:00.000Z',
+        completedAt: '2026-06-15T10:02:30.000Z',
+        errorMessage: null,
+        tables: [
+          { tableId: 'tblA', tableName: 'Accounts', recordCount: 1120, fieldCount: 38, attachmentCount: 18 },
+        ],
+      },
+    ]
+    const binding = fetcherStub(() => jsonResponse({ bases }, 200))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.getRunDetail(DETAIL_RUN_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.bases).toHaveLength(1)
+      expect(result.bases[0]!.atBaseId).toBe('appABC123456789')
+      expect(result.bases[0]!.baseName).toBe('Sales CRM')
+      expect(result.bases[0]!.tablesCount).toBe(4)
+      expect(result.bases[0]!.tables).toHaveLength(1)
+      expect(result.bases[0]!.tables[0]!.tableId).toBe('tblA')
+    }
+  })
+
+  it('returns ok:true with empty bases[] for a legacy run', async () => {
+    const binding = fetcherStub(() => jsonResponse({ bases: [] }, 200))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.getRunDetail(DETAIL_RUN_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.bases).toEqual([])
+    }
+  })
+
+  it('maps fetch failure (engine unreachable) to engine_unreachable status:0', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.getRunDetail(DETAIL_RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_unreachable')
+      expect(result.status).toBe(0)
+    }
+  })
+
+  it('maps 404 run_not_found', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'run_not_found' }, 404),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.getRunDetail(DETAIL_RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('run_not_found')
+      expect(result.status).toBe(404)
+    }
+  })
+
+  it('maps unknown error codes to engine_error', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'something_unknown' }, 418),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.getRunDetail(DETAIL_RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_error')
+      expect(result.status).toBe(418)
+    }
+  })
+
+  it('passes the run_id through encodeURIComponent on the path', async () => {
+    const binding = fetcherStub(() => jsonResponse({ bases: [] }, 200))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const dirty = 'cccccccc-dddd-eeee-ffff-000000000000/escape#x'
+    await engine.getRunDetail(dirty)
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(
+      `/api/internal/runs/${encodeURIComponent(dirty)}/detail`,
+    )
+  })
+})
+
 describe('createBackupEngine.provisionDatabase', () => {
   const SPACE_ID = '11111111-2222-3333-4444-555555555555'
 

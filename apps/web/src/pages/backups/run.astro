@@ -1,17 +1,19 @@
 ---
 /**
  * Single backup-run detail (production). Renders the redesigned
- * BackupRunDetailView from REAL run-level data — the backup engine records
- * run-level totals only (no per-base / per-table split or failed-attachment
- * list yet), so the view runs in `metricsPending` mode: real summary +
- * destination + depth, with the per-base breakdown shown as pending.
- * Backend follow-up: web-backups-redesign "To do" (real per-run/per-base
- * detail endpoints).
+ * BackupRunDetailView from REAL run-level data. Fetches per-base / per-table
+ * detail from the engine's GET /api/internal/runs/:runId/detail endpoint
+ * (server-run-detail, commit 050c396). When the engine is unavailable or the
+ * run is a legacy run with no per-base snapshot, falls through to
+ * metricsPending mode: real run-level totals, placeholder per-base table.
  */
+import { env } from 'cloudflare:workers';
 import { and, eq, sql } from 'drizzle-orm';
 import SidebarLayout from '../../layouts/SidebarLayout.astro';
 import BackupRunDetailView from '../../views/BackupRunDetailView.astro';
 import { getBreadcrumbs } from '../../lib/config';
+import { createBackupEngine } from '../../lib/backup-engine';
+import type { EngineRunDetailBase } from '../../lib/backup-engine';
 import {
   backupConfigurationBases,
   backupConfigurations,
@@ -51,8 +53,8 @@ const rows = await db
 const row = rows[0];
 if (!row) return Astro.redirect('/backups');
 
-// Count the bases currently in this Space's config (not a per-run snapshot —
-// the engine doesn't capture that today; labelled as pending in the view).
+// Count the bases currently in this Space's config — used as the summary.bases
+// figure when per-base detail is unavailable (metricsPending fallback).
 const baseCountRows = await db
   .select({ n: sql<number>`count(*)::int` })
   .from(backupConfigurationBases)
@@ -78,6 +80,62 @@ const status = (knownStatuses as readonly string[]).includes(row.status)
   ? (row.status as (typeof knownStatuses)[number])
   : 'cancelled';
 
+// Run-level depth — inferred from run-level totals (no per-layer flags stored).
+const depth = {
+  schema: (row.tableCount ?? 0) > 0,
+  data: (row.recordCount ?? 0) > 0 || status === 'succeeded' || status === 'trial_succeeded',
+  attachments: (row.attachmentCount ?? 0) > 0,
+};
+
+// Fetch per-base / per-table detail from the engine (best-effort).
+// On unavailable engine or legacy run (empty bases[]), fall through to
+// metricsPending mode which shows run-level totals + the placeholder table.
+type BaseRunStatus = 'ok' | 'failed' | 'running' | 'pending';
+const KNOWN_BASE_STATUSES: ReadonlySet<BaseRunStatus> = new Set(['ok', 'failed', 'running', 'pending']);
+
+function mapEngineBase(b: EngineRunDetailBase) {
+  const baseStatus: BaseRunStatus =
+    KNOWN_BASE_STATUSES.has(b.status as BaseRunStatus)
+      ? (b.status as BaseRunStatus)
+      : 'pending';
+  return {
+    id: b.atBaseId,
+    name: b.baseName,
+    status: baseStatus,
+    startedAt: b.startedAt,
+    completedAt: b.completedAt,
+    // Snapshot gaps: destination details are not captured per-base by the engine.
+    // Default destKind based on storageType (file-based vs DB), folder/url/dbRef to null.
+    destKind: (row.configStorageType === 'managed_pg' ? 'database' : 'file') as 'file' | 'database',
+    folder: null as string | null,
+    folderUrl: null as string | null,
+    dbRef: null as string | null,
+    tables: b.tablesCount,
+    fields: b.tables.reduce((s, t) => s + t.fieldCount, 0),
+    records: b.recordsCount,
+    recordsRemaining: null as number | null,
+    attachments: b.attachmentsCount,
+    attachmentsRemaining: null as number | null,
+    failed: 0,
+    error: b.errorMessage,
+  };
+}
+
+let engineBases: ReturnType<typeof mapEngineBase>[] = [];
+
+if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+  const engine = createBackupEngine({
+    binding: env.BACKUP_ENGINE,
+    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+  });
+  const detailRes = await engine.getRunDetail(row.id);
+  if (detailRes.ok && detailRes.bases.length > 0) {
+    engineBases = detailRes.bases.map(mapEngineBase);
+  }
+}
+
+const metricsPending = engineBases.length === 0;
+
 const run = {
   id: row.id,
   status,
@@ -85,27 +143,23 @@ const run = {
   startedAt: row.startedAt ? new Date(row.startedAt).toISOString() : null,
   completedAt: row.completedAt ? new Date(row.completedAt).toISOString() : null,
   etaSeconds: null,
-  // Inferred from what the run actually wrote (no per-layer flags stored yet).
-  depth: {
-    schema: (row.tableCount ?? 0) > 0,
-    data: (row.recordCount ?? 0) > 0 || status === 'succeeded' || status === 'trial_succeeded',
-    attachments: (row.attachmentCount ?? 0) > 0,
-  },
+  depth,
   destinationLabel: dest.label,
   destProvider: dest.provider,
   destIcon: null,
-  // Run-level totals are real; per-base breakdown is pending (metricsPending).
+  // Run-level totals from the DB row are always shown in the summary stats.
+  // When metricsPending=false, the view sums bases[] instead — they match.
   summary: {
-    bases: baseCount,
+    bases: metricsPending ? baseCount : engineBases.length,
     tables: row.tableCount ?? 0,
     records: row.recordCount ?? 0,
     attachments: row.attachmentCount ?? 0,
   },
-  bases: [],
+  bases: engineBases,
   failedAttachments: [],
 };
 ---
 
 <SidebarLayout pageTitle="Backup run" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <BackupRunDetailView run={run} spaceId={spaceId} metricsPending={true} />
+  <BackupRunDetailView run={run} spaceId={spaceId} metricsPending={metricsPending} />
 </SidebarLayout>

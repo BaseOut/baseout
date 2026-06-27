@@ -439,6 +439,48 @@ export type GetSchemaResult =
     }
   | SchemaDocsError;
 
+// ───────────────────────── Run Detail (web-run-detail) ─────────────────────────
+
+export interface EngineRunDetailTable {
+  tableId: string;
+  tableName: string;
+  recordCount: number;
+  fieldCount: number;
+  attachmentCount: number;
+}
+
+export interface EngineRunDetailBase {
+  atBaseId: string;
+  baseName: string;
+  status: string;
+  tablesCount: number;
+  recordsCount: number;
+  attachmentsCount: number;
+  startedAt: string | null;
+  completedAt: string | null;
+  errorMessage: string | null;
+  tables: EngineRunDetailTable[];
+}
+
+export interface EngineRunDetailSuccess {
+  ok: true;
+  bases: EngineRunDetailBase[];
+}
+
+export interface EngineRunDetailError {
+  ok: false;
+  code:
+    | "unauthorized"
+    | "run_not_found"
+    | "engine_unreachable"
+    | "engine_error";
+  status: number;
+}
+
+export type EngineRunDetailResult =
+  | EngineRunDetailSuccess
+  | EngineRunDetailError;
+
 export interface BackupEngineOptions {
   /**
    * Service binding to the @baseout/server Worker. Provided by Cloudflare
@@ -479,6 +521,7 @@ export interface BackupEngineClient {
     targetId: string,
   ): Promise<DocsByEntityResult>;
   getSchema(spaceId: string): Promise<GetSchemaResult>;
+  getRunDetail(runId: string): Promise<EngineRunDetailResult>;
 }
 
 const KNOWN_SCHEMA_DOCS_ERROR_CODES: ReadonlySet<SchemaDocsError["code"]> = new Set([
@@ -611,6 +654,9 @@ const KNOWN_PROVISION_DATABASE_ERROR_CODES: ReadonlySet<
   "backend_not_implemented",
   "provision_failed",
 ]);
+
+const KNOWN_RUN_DETAIL_ERROR_CODES: ReadonlySet<EngineRunDetailError["code"]> =
+  new Set(["unauthorized", "run_not_found"]);
 
 export function createBackupEngine(
   options: BackupEngineOptions,
@@ -1016,6 +1062,44 @@ export function createBackupEngine(
         fields: (res.body.fields ?? []) as SchemaEntityField[],
         views: (res.body.views ?? []) as SchemaEntityView[],
       };
+    },
+
+    async getRunDetail(runId) {
+      const path = `/api/internal/runs/${encodeURIComponent(runId)}/detail`;
+      let res: Response;
+      try {
+        res = await options.binding.fetch(`https://engine${path}`, {
+          method: "GET",
+          headers: {
+            "x-internal-token": options.internalToken,
+            accept: "application/json",
+          },
+        });
+      } catch {
+        return { ok: false, code: "engine_unreachable", status: 0 };
+      }
+
+      if (res.ok) {
+        const body = (await res.json()) as { bases?: unknown };
+        return {
+          ok: true,
+          bases: (body.bases ?? []) as EngineRunDetailBase[],
+        };
+      }
+
+      let body: Record<string, unknown> = {};
+      try {
+        body = (await res.json()) as Record<string, unknown>;
+      } catch {
+        // engine returned non-JSON (rare); fall through with empty body
+      }
+      const rawCode = typeof body.error === "string" ? body.error : undefined;
+      const code: EngineRunDetailError["code"] =
+        rawCode &&
+        KNOWN_RUN_DETAIL_ERROR_CODES.has(rawCode as EngineRunDetailError["code"])
+          ? (rawCode as EngineRunDetailError["code"])
+          : "engine_error";
+      return { ok: false, code, status: res.status };
     },
   };
 }
