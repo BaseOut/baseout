@@ -496,6 +496,99 @@ describe('createBackupEngine.deleteRun', () => {
   })
 })
 
+const RESTORE_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+
+describe('createBackupEngine.startRestore', () => {
+  it('calls binding.fetch with method POST and the canonical /api/internal/restores/:id/start path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, restoreId: RESTORE_ID, triggerRunId: 'run_r1' }, 202),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await engine.startRestore(RESTORE_ID)
+    expect(binding.fetch).toHaveBeenCalledOnce()
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(`/api/internal/restores/${RESTORE_ID}/start`)
+    expect(url.origin).toBe(PLACEHOLDER_BASE)
+    const init = captured![1] as RequestInit
+    expect(init.method).toBe('POST')
+    const headers = init.headers as Record<string, string>
+    expect(headers['x-internal-token']).toBe(TOKEN)
+    expect(headers.accept).toBe('application/json')
+  })
+
+  it('returns ok:true with restoreId + triggerRunId on 202', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, restoreId: RESTORE_ID, triggerRunId: 'run_r1' }, 202),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.startRestore(RESTORE_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.restoreId).toBe(RESTORE_ID)
+      expect(result.triggerRunId).toBe('run_r1')
+    }
+  })
+
+  it.each([
+    ['restore_not_found', 404],
+    ['restore_already_started', 409],
+    ['source_run_not_restorable', 422],
+    ['unauthorized', 401],
+  ] as const)('maps %s with status %i', async (code, status) => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: code }, status),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.startRestore(RESTORE_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe(code)
+      expect(result.status).toBe(status)
+    }
+  })
+
+  it('maps unknown error codes to engine_error', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'something_new' }, 418),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.startRestore(RESTORE_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_error')
+      expect(result.status).toBe(418)
+    }
+  })
+
+  it('maps fetch failure (engine unreachable) to engine_unreachable status:0', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.startRestore(RESTORE_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_unreachable')
+      expect(result.status).toBe(0)
+    }
+  })
+
+  it('passes the restore_id through encodeURIComponent on the path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, restoreId: RESTORE_ID, triggerRunId: 'run_r1' }, 202),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const dirty = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/escape#x'
+    await engine.startRestore(dirty)
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(
+      `/api/internal/restores/${encodeURIComponent(dirty)}/start`,
+    )
+  })
+})
+
 describe('createBackupEngine.provisionDatabase', () => {
   const SPACE_ID = '11111111-2222-3333-4444-555555555555'
 

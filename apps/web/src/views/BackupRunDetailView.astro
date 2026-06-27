@@ -169,6 +169,13 @@ const depthChips = [
       {running && (
         <Button type="button" variant="outline" size="sm" class="border-error text-error" data-open-cancel>Cancel run</Button>
       )}
+      {/* Restore — shown for succeeded/trial_succeeded runs (web-restore). */}
+      {(run.status === 'succeeded' || run.status === 'trial_succeeded') && (
+        <Button href={`/restore?run=${run.id}`} variant="primary" size="sm">
+          <span class="iconify lucide--rotate-ccw size-4" aria-hidden="true"></span>
+          Restore
+        </Button>
+      )}
       {/* Delete / Run again remain presentational stubs (web-backups-redesign
           "To do") — hidden in production until wired to real endpoints. */}
       {!metricsPending && !running && (

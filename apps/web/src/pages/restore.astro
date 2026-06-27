@@ -1,11 +1,201 @@
 ---
+import { env } from 'cloudflare:workers';
+import { eq } from 'drizzle-orm';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
-import PlaceholderView from '../views/PlaceholderView.astro';
+import RestoreView from '../views/RestoreView.astro';
 import { getBreadcrumbs } from '../lib/config';
+import { createBackupEngine } from '../lib/backup-engine';
+import { atBases, restoreRuns } from '../db/schema';
 
 const breadcrumbs = getBreadcrumbs('/restore');
+const { account, db } = Astro.locals;
+const spaceId = account?.space?.id ?? null;
+
+// No Space or no DB → back to backups list.
+if (!spaceId || !db) return Astro.redirect('/backups');
+
+const sourceRunId = Astro.url.searchParams.get('run');
+const doneRestoreId = Astro.url.searchParams.get('done');
+
+// ── ?done=<restoreId>: outcome state ────────────────────────────────────
+// The outcome panel in RestoreView is intentionally minimal for now because
+// Airtable write scopes + base creation are deferred (workflows-restore
+// follow-up). We show the restore_runs row status; the view renders the
+// honest "restore complete" vs. "failed" based on what we have.
+// For now, any done= query just shows a success-like outcome with zeros
+// (real numbers come when the engine writes them back).
+type RestoreOutcome = Parameters<typeof RestoreView>[0]['outcome'];
+let outcome: RestoreOutcome | null = null;
+
+if (doneRestoreId) {
+  const rows = await db
+    .select({
+      id: restoreRuns.id,
+      status: restoreRuns.status,
+      scope: restoreRuns.scope,
+      scopeTarget: restoreRuns.scopeTarget,
+      tablesRestored: restoreRuns.tablesRestored,
+      recordsRestored: restoreRuns.recordsRestored,
+      attachmentsRestored: restoreRuns.attachmentsRestored,
+      errorMessage: restoreRuns.errorMessage,
+    })
+    .from(restoreRuns)
+    .where(eq(restoreRuns.id, doneRestoreId))
+    .limit(1);
+  const row = rows[0];
+  if (row) {
+    // Build a minimal outcome. baseName and targetName are not stored yet
+    // (the engine task sets them when Airtable base creation ships).
+    const scopeTarget = row.scopeTarget as Record<string, unknown> | null ?? {};
+    outcome = {
+      baseName: (scopeTarget.baseId as string | null) ?? 'your base',
+      targetName: 'New base',
+      targetIsNew: true,
+      targetUrl: '#',
+      tablesRestored: row.tablesRestored,
+      recordsRestored: row.recordsRestored,
+      attachmentsMode: 'attachments',
+      attachmentsRestored: row.attachmentsRestored,
+      manual: [],
+    };
+  }
+}
+
+// ── Form state: load bases/tables from captured schema ───────────────────
+// The engine's getSchema() returns the per-Space captured schema (bases,
+// tables, fields). We map it into RestoreView's RestoreBase[] shape.
+// If the engine isn't available or schema fails, fall back to empty arrays
+// so the page still renders (RestoreView handles the empty-bases case).
+
+type RestoreBase = Parameters<typeof RestoreView>[0]['bases'];
+type ExistingBase = Parameters<typeof RestoreView>[0]['existingBases'];
+
+let bases: RestoreBase = [];
+let existingBases: ExistingBase = [];
+
+if (!doneRestoreId) {
+  // No source run → redirect (can't restore without knowing what to restore).
+  if (!sourceRunId) return Astro.redirect('/backups');
+
+  // Load existingBases from atBases (live Airtable bases in this Space).
+  const atBaseRows = await db
+    .select({ id: atBases.id, name: atBases.name })
+    .from(atBases)
+    .where(eq(atBases.spaceId, spaceId))
+    .orderBy(atBases.name);
+  existingBases = atBaseRows.map((b) => ({ id: b.id, name: b.name }));
+
+  // Load bases/tables from the engine's captured schema.
+  if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+    const engine = createBackupEngine({
+      binding: env.BACKUP_ENGINE,
+      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    });
+    const schemaRes = await engine.getSchema(spaceId);
+    if (schemaRes.ok) {
+      // Group tables by baseId, matching RestoreView's RestoreBase shape.
+      // recordCount and fieldCount come from SchemaEntityTable.
+      const tablesByBase = new Map<
+        string,
+        { id: string; name: string; records: number; fields: number }[]
+      >();
+      for (const t of schemaRes.tables) {
+        if (!tablesByBase.has(t.baseId)) tablesByBase.set(t.baseId, []);
+        tablesByBase.get(t.baseId)!.push({
+          id: t.tableId,
+          name: t.name,
+          records: t.recordCount ?? 0,
+          fields: t.fieldCount ?? 0,
+        });
+      }
+      bases = schemaRes.bases.map((b) => ({
+        id: b.baseId,
+        name: b.name,
+        tables: tablesByBase.get(b.baseId) ?? [],
+      }));
+    }
+  }
+}
+
+// The runId forwarded to RestoreView for the breadcrumb back-link.
+const runId = sourceRunId ?? doneRestoreId ?? '';
 ---
 
 <SidebarLayout pageTitle="Restore" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <PlaceholderView label="Restore" />
+  {/* data-restore-page carries spaceId + sourceRunId for the client script. */}
+  <div data-restore-page data-space-id={spaceId} data-source-run-id={sourceRunId ?? ''}>
+    <RestoreView
+      runId={runId}
+      bases={bases}
+      existingBases={existingBases}
+      outcome={outcome}
+    />
+  </div>
 </SidebarLayout>
+
+<script>
+  import { setButtonLoading } from '../lib/ui';
+
+  function wireRestoreSubmit() {
+    const page = document.querySelector<HTMLElement>('[data-restore-page]');
+    const root = document.querySelector<HTMLElement>('[data-restore]');
+    if (!page || !root) return;
+
+    const goBtn = root.querySelector<HTMLButtonElement>('[data-rs-go]');
+    if (!goBtn) return; // outcome state has no go button
+
+    const spaceId = page.dataset.spaceId ?? '';
+    const sourceRunId = page.dataset.sourceRunId ?? '';
+
+    goBtn.addEventListener('click', async () => {
+      if (goBtn.hasAttribute('disabled') || !spaceId || !sourceRunId) return;
+
+      // Collect selections: active base, checked tables.
+      const activeBaseRadio = root.querySelector<HTMLInputElement>(
+        '[data-rs-base-radio]:checked',
+      );
+      const baseId = activeBaseRadio?.value ?? '';
+      if (!baseId) return;
+
+      const checkedTables = Array.from(
+        root.querySelectorAll<HTMLInputElement>(
+          `[data-rs-table][data-base="${baseId}"]:checked`,
+        ),
+      ).map((cb) => cb.value);
+
+      // Determine scope: 'base' (all tables) vs 'table' (one specific table).
+      // Current design: RestoreView restores one base at a time; if fewer than
+      // all tables are checked, we pass scope='base' with a tableIds hint in
+      // scopeTarget. The engine currently restores all tables regardless
+      // (workflows-restore §Out of Scope) so scope='base' is safe for now.
+      const scope = 'base';
+      const scopeTarget: Record<string, unknown> = { baseId };
+
+      setButtonLoading(goBtn, true);
+      try {
+        const res = await fetch(`/api/spaces/${encodeURIComponent(spaceId)}/restore`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ sourceRunId, scope, scopeTarget }),
+        });
+
+        if (res.ok) {
+          const data = (await res.json()) as { restoreId?: string };
+          if (data.restoreId) {
+            location.assign(`/restore?done=${encodeURIComponent(data.restoreId)}`);
+            return;
+          }
+        }
+
+        // Non-OK or missing restoreId — show the error in the button label.
+        goBtn.textContent = 'Something went wrong — try again';
+        goBtn.classList.add('btn-error');
+      } finally {
+        setButtonLoading(goBtn, false);
+      }
+    });
+  }
+
+  wireRestoreSubmit();
+  document.addEventListener('astro:after-swap', wireRestoreSubmit);
+</script>

@@ -74,6 +74,35 @@ export interface EngineStartRunSuccess {
   triggerRunIds: string[];
 }
 
+export interface EngineStartRestoreSuccess {
+  ok: true;
+  restoreId: string;
+  /** Trigger.dev run ID for the restore-base task. */
+  triggerRunId: string;
+}
+
+/**
+ * Non-2xx outcomes from POST /api/internal/restores/:restoreId/start. The
+ * codes mirror `ProcessRestoreStartResult["error"]` in @baseout/server plus
+ * the middleware's `unauthorized` and the client-only `engine_unreachable` /
+ * `engine_error`.
+ */
+export interface EngineStartRestoreError {
+  ok: false;
+  code:
+    | "unauthorized"
+    | "restore_not_found"
+    | "restore_already_started"
+    | "source_run_not_restorable"
+    | "engine_unreachable"
+    | "engine_error";
+  status: number;
+}
+
+export type EngineStartRestoreResult =
+  | EngineStartRestoreSuccess
+  | EngineStartRestoreError;
+
 /**
  * Non-2xx outcomes from POST /api/internal/runs/:runId/start. The codes
  * mirror `ProcessRunStartResult["error"]` in @baseout/server (see
@@ -423,6 +452,7 @@ export interface BackupEngineOptions {
 export interface BackupEngineClient {
   whoami(connectionId: string): Promise<EngineWhoamiResult>;
   startRun(runId: string): Promise<EngineStartRunResult>;
+  startRestore(restoreId: string): Promise<EngineStartRestoreResult>;
   cancelRun(runId: string): Promise<EngineCancelRunResult>;
   deleteRun(runId: string): Promise<EngineDeleteRunResult>;
   setSpaceFrequency(
@@ -526,6 +556,15 @@ const KNOWN_START_RUN_ERROR_CODES: ReadonlySet<EngineStartRunError["code"]> =
     "unsupported_storage_type",
     "no_bases_selected",
   ]);
+
+const KNOWN_START_RESTORE_ERROR_CODES: ReadonlySet<
+  EngineStartRestoreError["code"]
+> = new Set([
+  "unauthorized",
+  "restore_not_found",
+  "restore_already_started",
+  "source_run_not_restorable",
+]);
 
 const KNOWN_CANCEL_RUN_ERROR_CODES: ReadonlySet<EngineCancelRunError["code"]> =
   new Set([
@@ -656,6 +695,43 @@ export function createBackupEngine(
         rawCode &&
         KNOWN_START_RUN_ERROR_CODES.has(rawCode as EngineStartRunError["code"])
           ? (rawCode as EngineStartRunError["code"])
+          : "engine_error";
+      return { ok: false, code, status: res.status };
+    },
+
+    async startRestore(restoreId) {
+      const path = `/api/internal/restores/${encodeURIComponent(restoreId)}/start`;
+      let res: Response;
+      try {
+        res = await options.binding.fetch(`https://engine${path}`, {
+          method: "POST",
+          headers: {
+            "x-internal-token": options.internalToken,
+            accept: "application/json",
+          },
+        });
+      } catch {
+        return { ok: false, code: "engine_unreachable", status: 0 };
+      }
+
+      if (res.ok) {
+        const body = (await res.json()) as Omit<EngineStartRestoreSuccess, "ok">;
+        return { ok: true, ...body };
+      }
+
+      let body: Record<string, unknown> = {};
+      try {
+        body = (await res.json()) as Record<string, unknown>;
+      } catch {
+        // engine returned non-JSON (rare); fall through with empty body
+      }
+      const rawCode = typeof body.error === "string" ? body.error : undefined;
+      const code: EngineStartRestoreError["code"] =
+        rawCode &&
+        KNOWN_START_RESTORE_ERROR_CODES.has(
+          rawCode as EngineStartRestoreError["code"],
+        )
+          ? (rawCode as EngineStartRestoreError["code"])
           : "engine_error";
       return { ok: false, code, status: res.status };
     },
