@@ -21,7 +21,7 @@ describe('saveConfigureForm', () => {
       spaceId: SPACE_ID,
       frequency: 'weekly',
     })
-    expect(result).toEqual({ ok: true, redirect: '/integrations?status=saved' })
+    expect(result).toEqual({ ok: true, redirect: '/?status=saved' })
   })
 
   it('skips the PATCH when no frequency is provided', async () => {
@@ -31,7 +31,7 @@ describe('saveConfigureForm', () => {
       { saveConfigImpl, runBackupImpl: okRun },
     )
     expect(saveConfigImpl).not.toHaveBeenCalled()
-    expect(result).toEqual({ ok: true, redirect: '/integrations?status=saved' })
+    expect(result).toEqual({ ok: true, redirect: '/?status=saved' })
   })
 
   it('runs the first backup and redirects to ?status=running on first setup', async () => {
@@ -45,7 +45,7 @@ describe('saveConfigureForm', () => {
     expect(runBackupImpl).toHaveBeenCalledWith(SPACE_ID)
     expect(result).toEqual({
       ok: true,
-      redirect: '/integrations?status=running',
+      redirect: '/?status=running',
     })
   })
 

@@ -5,5 +5,14 @@
   "src/views/SchemaView.astro": [
     "daisyUI `tabs`+`tab-content` for the Browse/Docs tab panels: the `ui/Tabs.astro` primitive renders header inputs only (no content panels), so CSS-only radio tabs are the sanctioned daisyUI-direct second tier (CLAUDE.md §4.2). The Docs panel hosts the DocsTab React island (shared-schema-docs §5).",
     "`badge`/`loading` chips built as innerHTML in the Browse-tab client script for dynamically-rendered tagged-document chips (incl. the removed-entity warning) and the entity-detail load spinner."
+  ],
+  "src/views/RestoreView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the restore flow uses btn/alert/badge/table/select/input/checkbox/radio/stats/breadcrumbs primitives directly. The per-base picker, staged steps, and outcome panel are a bespoke Pattern composition mirroring the backup-audit tables — not covered by a single Storybook component."
+  ],
+  "src/views/IntegrationsSetupWizard.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the Options step's cleanup-schedule block uses a soft-info `alert` and a `select` cutoff control directly — a small informational retention ladder, not a reusable Storybook component."
+  ],
+  "src/views/SpaceHomeView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the two-region Home (primary + sticky status rail) uses alert/btn/badge and a daisyUI `table` for the backup-history + schema previews directly. The status rail, vertical pipeline, and KPI strip are a bespoke dashboard composition — not a single Storybook component."
   ]
 }

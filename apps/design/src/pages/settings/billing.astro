@@ -1,0 +1,14 @@
+---
+// Temporary Billing & Plans placeholder — landing target for the Health tab's
+// "Configure rules (Pro+)" action so the navigation works. The real plan/rule-config
+// UI is wired by the engineer; here it just needs to resolve to a page (not a 404).
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import PlaceholderView from '@web/views/PlaceholderView.astro';
+import { getBreadcrumbs } from '@web/lib/config';
+
+const breadcrumbs = getBreadcrumbs('/settings/billing');
+---
+
+<SidebarLayout pageTitle="Billing & Plans" breadcrumbs={breadcrumbs}>
+  <PlaceholderView label="Billing & Plans" />
+</SidebarLayout>

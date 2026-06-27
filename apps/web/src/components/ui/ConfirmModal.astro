@@ -1,0 +1,67 @@
+---
+/**
+ * ConfirmModal — a reusable "are you sure?" confirmation dialog.
+ *
+ * Catalog primitive built on the catalog Modal (daisyUI `dialog.modal`). For any
+ * action that should pause and ask first: destructive ones (cancel a run, remove a
+ * destination) and costly ones (run off-schedule = extra credits). The trigger opens
+ * it via `document.getElementById(id).showModal()`.
+ *
+ * Body goes in the default slot (a message + an optional soft Alert for the
+ * consequence). The footer is Cancel + a confirm action: pass `confirmHref` for a
+ * navigation (the prototype pattern), or a `confirm` named slot for a custom control
+ * (a real submit/JS button in production). `confirmClass` picks the emphasis —
+ * `btn-primary` (default), `btn-neutral`, or `btn-outline btn-error` / `btn-error`
+ * for destructive.
+ *
+ * See /styleguide → Confirm modal.
+ */
+import Modal from './Modal.astro';
+
+interface Props {
+  /** Dialog id the trigger calls showModal() on. */
+  id: string;
+  title: string;
+  /** Confirm-button label. */
+  confirmLabel?: string;
+  /** Where confirm navigates (prototype). Omit and use the `confirm` slot for custom. */
+  confirmHref?: string;
+  /** Confirm-button emphasis. Destructive → 'btn-outline btn-error'. */
+  confirmClass?: string;
+  /** Lucide class on the confirm button, e.g. 'lucide--x'. */
+  confirmIcon?: string;
+  cancelLabel?: string;
+}
+const {
+  id,
+  title,
+  confirmLabel = 'Confirm',
+  confirmHref,
+  confirmClass = 'btn-primary',
+  confirmIcon,
+  cancelLabel = 'Cancel',
+} = Astro.props;
+const hasCustomConfirm = Astro.slots.has('confirm');
+---
+
+<Modal id={id} size="sm" title={title}>
+  <slot />
+  <div class="modal-action">
+    <form method="dialog" class="flex gap-2">
+      <button type="submit" class="btn btn-ghost">{cancelLabel}</button>
+      {hasCustomConfirm ? (
+        <slot name="confirm" />
+      ) : confirmHref ? (
+        <a href={confirmHref} class={`btn ${confirmClass}`}>
+          {confirmIcon && <span class={`iconify ${confirmIcon} size-4`} aria-hidden="true"></span>}
+          {confirmLabel}
+        </a>
+      ) : (
+        <button type="submit" class={`btn ${confirmClass}`}>
+          {confirmIcon && <span class={`iconify ${confirmIcon} size-4`} aria-hidden="true"></span>}
+          {confirmLabel}
+        </button>
+      )}
+    </form>
+  </div>
+</Modal>

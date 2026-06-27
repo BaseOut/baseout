@@ -1,0 +1,693 @@
+---
+---
+<div class="sr">
+<div class="wrap">
+
+  <h1>Schema section — Dan's feedback &amp; what we changed</h1>
+  <div class="sub">Video: <b>“Introduction and Search Bar Improvements.mp4”</b></div>
+  <div class="meta">
+    <span>⏱ <b>17:21</b></span>
+    <span>🎙 transcript: <b>local Whisper (large-v3-turbo, offline)</b></span>
+    <span>🖼 <b>64 frames</b> mapped to screens</span>
+    <span>📅 processed <b>2026-06-25</b></span>
+  </div>
+
+  <p class="lead">Dan walks through the <b>Schema</b> section we built (Browse · Visualize · Changelog · Docs · Health) and talks through his edits. His own words at the start: <i>«this is looking really good… take the transcript from this video and use it to generate the updates that are needed.»</i> So this video is effectively a task log. Below, each item: what Dan said (with a timecode to re-listen), what he wants, where it stands today in the code, the case for and against, how competitors handle it <b>from our research</b>, and how we approached it.</p>
+
+  <div class="note">
+    <b>How to use this.</b> First — an overview table (every item, timecode, status, priority). Then — detailed cards, grouped by tab. The monospace timecode = the minute in the video where Dan says it. At the end — a prioritized plan and open questions for Dan.
+  </div>
+
+  <div class="legend">
+    <span class="pill s-have">✅ have / covered</span>
+    <span class="pill s-part">🟡 partial</span>
+    <span class="pill s-new">🔴 new / missing</span>
+    <span class="pill s-star">⭐ praise (leave as-is)</span>
+    <span class="pill p0">P0</span><span class="pill p1">P1</span><span class="pill p2">P2</span>
+    <span class="pill eff">S / M / L — effort estimate</span>
+    <span class="pill done">✓ Done (shipped in code)</span>
+  </div>
+
+  <div class="note" style="background:var(--green-bg);border-color:#cde9d6;color:#14532d" id="build-status">
+    <b>✓ Implementation status</b> (updated as work proceeds). Done and verified in code (both themes):
+    <a href="#A1">A1 — search inside a facet</a> · <a href="#A2">A2 — descriptions in 3 tabs</a> · <a href="#A8">A8 — structural breadcrumbs</a> · <a href="#A3">A3 — field search</a> · <a href="#A4">A4 — config by field type</a> · <a href="#A6">A6 — cardinality + backlink</a> · <a href="#C5">C5 — Config changed type</a> · <a href="#D6">D6 — document deletion</a> · <a href="#D1">D1 — collapsing the Docs list</a> · <a href="#A7">A7 — expanding the panel</a> · <a href="#B2">B2 — relationship types + colors (Visualize)</a> · <a href="#C3">C3 — Changelog location → panel</a> · <a href="#A10">A10 — Visualize = the full Browse panel</a> · <a href="#B1">B1 — base groups in Visualize</a> · <a href="#C4">C4 — entity history in the panel</a> · <a href="#D4">D4 — “Add to doc” + bottom drawer</a> · <a href="#D2">D2 — multiple diagrams</a>.
+    <b>All edits implemented and verified</b> (17 items — A5's draft → Publish → Reset lifecycle is now built too, after Dan's clarification, with the real write-back faked client-side). Each card has a green “Done — where to find it” block linking to the file and how to check it. The only thing not built is <b>Health</b> (deferred by Dan); A5's <b>real PATCH to Airtable</b> (backend write-back + permissions) stays a V2 task.
+  </div>
+
+  <!-- ============ SUMMARY ============ -->
+  <h2 id="summary">Overview table</h2>
+  <table class="sum">
+    <thead><tr><th>#</th><th>Timecode</th><th>Screen</th><th>What Dan wants</th><th>Status</th><th>Prior.</th></tr></thead>
+    <tbody>
+      <tr><td class="id">A1</td><td class="tc">00:22</td><td>Browse</td><td>Search bar <b>inside the facet dropdown</b> (Bases / Field types…) when there are many options</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">A2</td><td class="tc">00:35</td><td>Panel</td><td>Descriptions in 3 tabs: Airtable · Extended · AI</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">A3</td><td class="tc">01:17</td><td>Panel</td><td>Search fields inside a table</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">A4</td><td class="tc">01:31</td><td>Panel</td><td>Config by field type (formula/options/references/lookup)</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">A5</td><td class="tc">03:21</td><td>Panel</td><td>Push <b>in the Airtable tab</b>: draft → Publish → Reset</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p2">P2</span></td></tr>
+      <tr><td class="id">A6</td><td class="tc">04:47</td><td>Panel</td><td>Relationships: backlink field + cardinality</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">A7</td><td class="tc">05:56</td><td>Cross</td><td>Expand the panel to full screen; sidebars expand/collapse</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">A8</td><td class="tc">06:39·08:44</td><td>Panel</td><td>Breadcrumbs: structural Base›Table›Type, reversed, clickable</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">A10</td><td class="tc">07:55</td><td>Cross</td><td>Visualize panel = <b>the same (full) panel</b> as in Browse (reuse)</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">B1</td><td class="tc">09:25</td><td>Visualize</td><td>Group/outline the tables of a single base</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">B2</td><td class="tc">09:59</td><td>Visualize</td><td>4 relationship types + dropdown; lookup/rollup = 2 lines</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">C3</td><td class="tc">11:27</td><td>Changelog</td><td>Location in an entry clickable → opens the panel</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">C4</td><td class="tc">11:50</td><td>Panel</td><td>In the entity panel — a Changelog section for that entity</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">C5</td><td class="tc">12:41</td><td>Changelog</td><td>“Config changed” type + before↔after</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">D1</td><td class="tc">13:49·16:20</td><td>Docs</td><td>Collapse the left list — more room to write</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">D2</td><td class="tc">14:12</td><td>Docs</td><td>Multiple diagrams in a document</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">D4</td><td class="tc">14:53</td><td>Visualize→Docs</td><td>“Add to doc”: diagram snapshot into a document (modal, save/delete)</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">D6</td><td class="tc">16:50</td><td>Docs</td><td>Document deletion with confirmation</td><td><span class="pill done">✓ Done</span></td><td><span class="pill p0">P0</span></td></tr>
+    </tbody>
+  </table>
+  <p class="sub" style="margin-top:10px">Separately — praise (⭐ A9 07:22, C1 11:09, D3 14:30) and housekeeping notes (C2 “I may remove the Changelog [location]”, C6 “Health — later”). Details at the end.</p>
+
+  <!-- ============ BROWSE / PANEL ============ -->
+  <h2 id="browse">A · Browse + entity panel</h2>
+
+  <div class="card anchor" id="A1">
+    <div class="top">
+      <span class="num">A1</span>
+      <div class="ttl"><h3>Search bar inside the facet dropdown — “and the same everywhere”</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-part">🟡 partial</span><span class="pill p1">P1</span><span class="pill eff">S</span></div>
+      </div>
+      <span class="tc-big">00:22–00:31</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">00:22</span>«I already mentioned adding a search bar <b>in here</b> to be able to filter this. <b>Same with all of these.</b>»</blockquote>
+      <div class="now" style="margin-top:8px"><b>Dan's clarification (screenshot 2026-06-25):</b> “in here” = <b>inside the facet dropdown itself</b> (Bases, Field types…), not a global search above the table. When there are many bases / fields / options, a search bar is needed in the popover to filter the options. “Same with all of these” = in <b>every</b> such dropdown.</div>
+    </div>
+    <div class="now"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</span>
+      Global typeahead (<code>EntitySearch</code>) and facets exist. But <b>inside the facet popover</b> (<code>FacetFilter</code>) there are only “Show all / Hide all” + a list of options (radio/toggles) — <b>there is no search field</b>. <span class="ev">FacetFilter.astro:53–71 (Show all/Hide all + options, no input) · SchemaBrowse.astro:108–114</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul>
+        <li>DataGrip — two-level search + <b>abbreviation match</b> (<code>fa</code>→<code>film_actor</code>) + Cmd-K “Go to DB object”.</li>
+        <li>dbt docs — fuzzy, exclusion with <code>-</code>, boolean OR, quoted phrases.</li>
+        <li>⚠️ DBeaver — “search only hits expanded nodes” — our research flags this as a <b>trap to avoid</b>.</li>
+      </ul>
+    </div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Add an <code>input input-sm</code> at the top of the <code>FacetFilter</code> popover that filters options in place (shown when there are more than ~8 options). Because <code>FacetFilter</code> is <b>one shared component</b>, this change automatically covers <b>all</b> facets (Bases, Field types, Type…) = Dan's “same with all of these”. Not to be confused with A3 (searching <i>fields within a table</i>) — these are different places.
+      <div class="obt">Data: <b>obtainable</b> (facet options are already in the component). Cheap, with impact at scale.</div></div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>The facet popover (<code>FacetFilter</code>) now has a search when there are <b>&gt;8</b> options — it filters options in place. One shared component → it works for <b>all</b> facets (Browse + Visualize). <b>How to check:</b> <code>/schema</code> → Browse → the <b>Field types</b> facet (16 types) → search at the top of the popover. <b>Code:</b> <code>FacetFilter.astro</code> (<code>data-facet-search</code> + handler).</div>
+  </div>
+
+  <div class="card anchor" id="A2">
+    <div class="top">
+      <span class="num">A2</span>
+      <div class="ttl"><h3>Entity descriptions — in 3 tabs (saving space)</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-part">🟡 partial</span><span class="pill p0">P0</span><span class="pill eff">S–M</span></div>
+      </div>
+      <span class="tc-big">00:35–01:16</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">00:38</span>«I wonder if these descriptions are maybe three tabs… Airtable… and then your description, although I'd call it <b>extended description</b>… and then <b>AI generated</b>. So maybe three tabs you could just tab between that will save some space. And these could get pretty long, so you can maybe stretch it down.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      The three sources already exist, but they are <b>stacked vertically</b>, not in tabs: Airtable / AI / Your. <span class="ev">EntityPanel.astro:204–218</span></div>
+    <div class="pro" style="background:var(--blue-bg);border-color:#d8e2fb"><div class="lab" style="color:#1e40af">✓ Decision locked (2026-06-25)</div>
+      We are going with <b>clean 3 tabs</b> [Airtable · Extended description · AI generated], exactly as Dan asked — saving space is the priority. Showing one source per tab (rather than all side by side) is a <b>deliberate</b> choice: comparing them visually is not critical, and for pasting from AI it is enough to switch the tab. Details at the implementation stage.</div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul><li><b>There is no direct analogue:</b> splitting the description into “source-of-record · AI · yours” is recorded in our research as <b>our own design</b>, not borrowed. So this is our differentiator — the “tabs vs stacked” decision is ours to make.</li></ul>
+    </div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Build 3 <code>daisyUI tabs</code> [Airtable · Extended description · AI generated], default Extended; rename the source; for long text — scroll/resize of the container. This is pure frontend.
+      <div class="obt">Data: <b>obtainable</b> — the Airtable description from the meta-API; “extended” and AI are ours.</div></div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>Descriptions in the entity panel are now <b>3 tabs</b> (Airtable · Extended · AI generated, default Extended), as Dan asked. <b>How to check:</b> <code>/schema</code> → Browse → click a field → panel on the right, the <b>Descriptions</b> section. <b>Code:</b> <code>apps/web/src/components/schema/EntityPanel.astro</code> → <code>renderDescriptions</code>.</div>
+  </div>
+
+  <div class="card anchor" id="A3">
+    <div class="top">
+      <span class="num">A3</span>
+      <div class="ttl"><h3>Search fields inside a table</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-new">🔴 missing</span><span class="pill p1">P1</span><span class="pill eff">S</span></div>
+      </div>
+      <span class="tc-big">01:17–01:31</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">01:17</span>«Some tables have tons of fields. So it would be good to have a search bar in here, for the fields.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      Global search exists, but there is <b>no scoped search across the fields of a single table</b> — neither in the panel's Fields section nor in the Visualize side panel. <span class="ev">EntityPanel.astro:260–264 · SchemaCanvas.tsx:765–810</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul><li>DataGrip — type-to-highlight within an object. Metaphor/DataHub — field-scoped operators <code>fieldPaths:</code>. (Avoid the DBeaver trap — A1.)</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Add a small <code>input input-sm</code> above the Fields list in the panel (and in the Visualize side panel) — a filter-in-place by name/type. Cheap.
+      <div class="obt">Data: <b>obtainable</b> (the fields are already in the model).</div></div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>A <b>“Filter fields…”</b> input above the field list in the panel (appears with >7 fields), filtering in place. <b>How to check:</b> open the Deals table → panel → the <b>Fields</b> section. <b>Code:</b> <code>EntityPanel.astro</code> (children render + <code>data-ep-filter</code> handler).</div>
+  </div>
+
+  <div class="card anchor" id="A4">
+    <div class="top">
+      <span class="num">A4</span>
+      <div class="ttl"><h3>A config block depending on field type</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-part">🟡 partial</span><span class="pill p0">P0</span><span class="pill eff">M</span></div>
+      </div>
+      <span class="tc-big">01:31–03:19</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">01:39</span>«A formula field might have configuration information — display the formula as <b>inline code</b>… a single select field — display the <b>select options</b>… for a formula, also show <b>what fields are referenced</b>… if it's a <b>lookup</b>, there's a reference field from the same table and the lookup field from another table — we'd want the <b>table and the field</b>… we can get all that from the information that we have.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      Single-select options <b>are already rendered</b> (ghost badges). Formulas (text), “referenced fields”, structured lookup (table+field) — <b>missing</b>; there is only a general <code>derivedFrom</code> line “Computed from X”. <span class="ev">EntityPanel.astro:265–267,273–274</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul>
+        <li>Stripe API reference — enum fields get a <b>“Possible values”</b> block (= our list of options).</li>
+        <li>dbt docs — explicit <b>“Depends on / Referenced by”</b> sections (= our referenced fields).</li>
+        <li>ChartDB / React Flow schema node — a field row = name + type (+ PK/nullable indicators).</li>
+      </ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Add a conditional “Configuration” block to the panel by type: <b>Formula</b> → the formula text as inline code + a list of referenced fields (clickable); <b>Single/Multi-select</b> → options (already there); <b>Lookup/Rollup</b> → the pair “reference field (this table)” + “looked-up field (other table · field)”.
+      <div class="obt">Data: <b>obtainable</b> — Dan says directly “we can get all that”; the Airtable meta-API returns formula, options, linked/lookup references.</div></div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>A <b>CONFIGURATION</b> block appeared in the field panel: <b>Formula</b> — inline-code text + <b>References</b> (clickable fields); <b>Lookup</b> — “Looks up &lt;field&gt; in &lt;table&gt; via &lt;link&gt;”. <b>How to check:</b> Deals → the <b>Weighted Value</b> field (formula) or <b>Company Industry</b> (lookup). <b>Code:</b> <code>EntityPanel.astro</code> → <code>renderConfig</code>; the model — <code>schemaEntities.ts</code> / <code>SchemaCanvas.tsx</code> (formula / referencedFieldIds / lookup*).</div>
+  </div>
+
+  <div class="card anchor" id="A5">
+    <div class="top">
+      <span class="num">A5</span>
+      <div class="ttl"><h3>Push to Airtable: draft → Publish → Reset</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill p2">real write-back = V2 (backend)</span><span class="pill eff">L</span></div>
+      </div>
+      <span class="tc-big">03:21–04:46</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said (re-read in full)</div>
+      <blockquote><span class="t">03:21</span>«For this push to airtable… we'll have our internal description (the three). And then I'd want, for the <b>airtable to make this editable</b>, in <b>draft mode</b> where they can make changes. And maybe they'll just <b>copy from the AI description and paste it into there</b>.»</blockquote>
+      <blockquote><span class="t">04:02</span>«We'd need a <b>publish button</b>… the draft will automatically save it, so we don't need a save button… so it <b>pushes it back to airtable</b>… and a <b>reset button</b> that resets it back to what is <b>saved in airtable</b>.»</blockquote>
+      <div class="now" style="margin-top:8px"><b>Clarification (screenshot 2026-06-25):</b> we move the Push button <b>into the “Airtable” tab</b> (into the Airtable working field/area), rather than leaving it separate at the bottom. So the editable <b>draft becomes the Airtable description itself</b>: Dan edits it in the Airtable tab, seeding it by copying from AI / Extended, <b>Publish</b> writes to Airtable, <b>Reset</b> returns to the live Airtable value.</div>
+    </div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>Built as Dan specified. Descriptions are <b>2 source tabs — Airtable (Public) · Internal</b>; the <b>Airtable</b> copy is the editable draft and the only one that syncs. Editing it flags a <b>Draft</b> badge (“Not yet published to Airtable”); <b>Publish to Airtable</b> runs a guarded confirm (with a stale-warning if the live value drifted) → Publishing… → <b>Synced</b>; <b>Discard</b> is the Reset (rolls back to the live Airtable value). AI is a <b>Generate</b> action that seeds the Airtable copy when it's blank. <b>How to check:</b> <code>/schema</code> → Browse → a field with an out-of-sync description (e.g. Deals → Stage) → the <b>Airtable</b> tab. <b>Code:</b> <code>EntityPanel.astro → renderDescriptions</code>. The <b>real PATCH to Airtable</b> (write-back + permissions) is faked client-side here and remains a <b>V2 backend</b> task.</div>
+    <div class="flow">
+      <span class="fbox alt">AI / Extended</span><span class="farr">— copy →</span>
+      <span class="fbox">“Airtable” tab: draft (auto-save)</span>
+    </div>
+    <div class="flow">
+      <span class="fbox">Airtable draft</span><span class="farr">→</span>
+      <span class="fbox ok">Publish → writes to Airtable</span>
+      <span class="farr">／</span><span class="fbox warn">Reset → roll back to live Airtable</span>
+    </div>
+    <div class="grid2">
+      <div class="pro"><div class="lab">For</div>Turns our “Coming soon” into a full lifecycle spec. This is our <b>differentiator</b> (two-way sync with Airtable), and it logically lives right in the Airtable tab.</div>
+      <div class="con"><div class="lab">Against / risk</div><b>Write-back to Airtable is a consequential action.</b> It needs a backend (PATCH of the field description) + permissions + a confirmation/diff preview before Publish. We draw the UI now, the real push comes later.</div>
+    </div>
+    <div class="pro" style="margin-top:14px"><div class="lab">✓ Dan answered — A5 resolved (2026-06-26)</div>
+      <ul style="margin:4px 0 0;padding-left:18px">
+        <li><b>Airtable and Internal are separate fields.</b> The <b>Airtable</b> description is the only one that syncs (user-facing); <b>Internal</b> is Baseout-only, can be more technical, and <b>never</b> syncs.</li>
+        <li><b>Publish overwrites the entire</b> Airtable field description with our saved version — shown behind a confirm (plus a stale-warning when the live value drifted); once in sync the Draft badge + Publish button disappear.</li>
+        <li><b>AI is informational:</b> it can <b>auto-fill the Airtable description when it's blank</b>; once there's text the user edits it manually (no auto-overwrite). AI fills the Airtable copy, not Internal.</li>
+        <li><b>Field-level for now;</b> a base-level bulk “update all descriptions at once” is explicitly deferred.</li>
+      </ul></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul><li><b>No data in our research</b> — no competitor with write-back is documented. This is our own V2 pattern (read-only in V1). We move without a reference — build in safety (confirmation, diff, undo).</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      <b>First settle the questions above</b> (especially Extended vs the Airtable draft). Then: Publish/Reset in the Airtable tab, a draft badge + auto-save indicator, “Use AI / Use Extended” for seeding, a “locally changed vs published” state. The real push to Airtable is a separate V2 backend task.
+      <div class="obt warnc">Data: reading is <b>obtainable</b>; <b>writing</b> to Airtable needs a backend + permissions (not frontend).</div></div>
+  </div>
+
+  <div class="card anchor" id="A6">
+    <div class="top">
+      <span class="num">A6</span>
+      <div class="ttl"><h3>Relationships: backlink field + cardinality</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-part">🟡 partial</span><span class="pill p0">P0</span><span class="pill eff">M</span></div>
+      </div>
+      <span class="tc-big">04:47–05:55</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">04:59</span>«In addition to the table, I'd like to see the <b>field that is the backlink</b>… there really isn't a concept of link-to / linked-from, it's both ways… what we do know is if it allows for <b>multiple links or a single link</b> — so display like multiple, or one-to-one / one-to-many, or maybe <b>'1+'</b> to show it could be more than one.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      We show only the <b>table</b> + the word “links to / linked from”. The backlink field name is <b>computed but not displayed</b>; cardinality is <b>missing entirely</b>. <span class="ev">EntityPanel.astro:275–283 · schemaEntities.ts:202–215</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul>
+        <li><b>Hasura</b> — the naming “object vs array relationship” = Airtable single-vs-multiple (via <code>prefersSingleRecordLink</code>) — this drives our terminology.</li>
+        <li>dbt — “Depends on / Referenced by” sections; Metabase — a “Connections” section with clickable links.</li>
+        <li>⚠️ <b>Our research rejects crow's-foot notation</b> as semantically incorrect for the two-way / many-to-many relationships of Airtable — let's not pull it in.</li>
+      </ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Add to the relationship row: the <b>backlink field name</b> + a <b>cardinality badge</b> (single → 1:1, multiple → 1:many / “1+”). The semantics — Hasura (object/array), <b>not</b> crow's-foot.
+      <div class="obt">Data: <b>obtainable</b> — the meta-API gives the inverse field id + <code>prefersSingleRecordLink</code>.</div></div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>The relationship row now shows <b>cardinality</b> (1:1 / 1:many, Hasura semantics, not crow's-foot) + a <b>Backlink</b> sub-section (the inverse field in the other table, clickable). <b>How to check:</b> Deals → <b>Company</b> (1:1, backlink “Deals”) or Companies → <b>Deals</b> (1:many, backlink “Company”). <b>Code:</b> <code>EntityPanel.astro</code> (relationships branch) + <code>allowsMultiple</code>/<code>inverseFieldId</code> in the model and fixture.</div>
+  </div>
+
+  <div class="card anchor" id="A7">
+    <div class="top">
+      <span class="num">A7</span>
+      <div class="ttl"><h3>Expand the panel to full screen; all sidebars expand/collapse</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-new">🔴 missing</span><span class="pill p1">P1</span><span class="pill eff">M</span><span class="pill p2">cross-cutting</span></div>
+      </div>
+      <span class="tc-big">05:56–06:34</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">05:56</span>«If there's a way to expand this to full screen, or at least to the menu area… there will be times where there's a lot of data to review… maybe we make <b>all sidebars expandable and collapsible</b>.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      The panel is a fixed width <code>min(94vw,460px)</code>, with only Back/Close — there is <b>no expand button</b>. The Visualize side panel is also a fixed 360px. <span class="ev">EntityPanel.astro:30–38,62–68 · SchemaCanvas.tsx:716–738</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul><li>Craft — a whiteboard block “→ fullscreen”; Azimutt — collapse entities to a header; Castor — a persistent right rail. (The “expand to review large data” theme is a standard.)</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Add an expand button to <code>EntityPanel</code> (content width / fullscreen) and lift it into a <b>system pattern</b> “expandable/collapsible side region” — the same mechanism for Docs (D1/D5). One wrapper component.</div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>An expand button (maximize/minimize) in the panel header expands it <b>460 → 900px</b> for reviewing large data; clicking again contracts it. <b>How to check:</b> open any entity panel → the ↗ button in the header (next to ✕). <b>Code:</b> <code>EntityPanel.astro</code> (<code>data-ep-expand</code> + <code>.ep-wide</code>). Together with D1 (Docs), this is the system expand pattern.</div>
+  </div>
+
+  <div class="card anchor" id="A8">
+    <div class="top">
+      <span class="num">A8</span>
+      <div class="ttl"><h3>Breadcrumbs: structural Base › Table › Type, reversed, clickable</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-part">🟡 partial</span><span class="pill p0">P0</span><span class="pill eff">M</span></div>
+      </div>
+      <span class="tc-big">06:39–07:21 · 08:44–09:24</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said (emphasized the reversal twice)</div>
+      <blockquote><span class="t">06:39</span>«A breadcrumb like this usually means base / table / field, but this is more like your <b>history</b>… it feels like it should be base / table / field. I don't know if there's a better way.»</blockquote>
+      <blockquote><span class="t">09:00</span>«I'd <b>reverse it</b> where it was <b>base, table, then type</b>… the <b>opposite direction</b>… and these should be <b>clickable</b> so I could click and it would go to this page. Everything is <b>navigational</b> between fields and bases.»</blockquote>
+      <blockquote><span class="t">09:22</span>«So yeah, <b>reverse that</b>.» <span class="sub">— a brief, repeated emphasis on the reversal.</span></blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      The main breadcrumb = a <b>navigation history stack</b> (push/pop, Miller-style trimming), not a structural path — which is exactly why it confuses. The segments are clickable. Separately, the title's meta line already has a static path, but it <b>leads with the type</b>: <code>Single Line Text · Operations ▸ Tickets ▸ Subject</code>. <span class="ev">EntityPanel.astro:157,236–239,290–306</span></div>
+    <div class="flow">
+      <span class="sub">now:</span><span class="fbox warn">Single Line Text · Operations ▸ Tickets ▸ Subject</span>
+      <span class="farr">→ reverse →</span>
+      <span class="sub">target:</span><span class="fbox ok">Operations ▸ Tickets ▸ Subject</span><span class="sub">(base leads; type is a trailing detail, each segment clickable)</span>
+    </div>
+    <div class="grid2">
+      <div class="pro"><div class="lab">For</div>A structural, reversed, clickable path = the familiar mental model; “everything navigational” aligns with C3/C4 (we link entities from everywhere).</div>
+      <div class="con"><div class="lab">Against / risk</div>We lose the convenience of “back through history”, which Dan also praised (“I like that you can click back”). Decision: the structural path is primary; keep history as a separate “back” arrow.</div>
+    </div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Make the main breadcrumb structural: <b>Base › Table › Type</b> (reversed from the current order), each segment a navigational link (<code>schema:openEntity</code>). Demote the history stack to a separate “back”.</div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>The panel breadcrumbs = a structural <b>Base ▸ Table ▸ Field</b> (base leads), ancestors clickable (navigation), the type a detail under the name; history stays on the “back” button. <b>How to check:</b> open any field in the panel → the breadcrumbs at the top (e.g. <code>Sales CRM › Companies › Name</code>). <b>Code:</b> <code>EntityPanel.astro</code> → <code>structuralPath</code> / <code>renderCrumbs</code>.</div>
+  </div>
+
+  <div class="card anchor" id="A10">
+    <div class="top">
+      <span class="num">A10</span>
+      <div class="ttl"><h3>Standardize the panel: Visualize = the same panel as in Browse</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-part">🟡 consistency</span><span class="pill p1">P1</span><span class="pill eff">M</span></div>
+      </div>
+      <span class="tc-big">07:55–08:43</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">07:55</span>«I'd rework this to just be the <b>same sidebar</b> you'd see here… <b>standardize this</b>… cause then that will take care of <b>everything in there</b>… make this be the <b>table view that matches the table view here</b>… and it would just <b>show all the fields</b>.»</blockquote>
+      <div class="now" style="margin-top:8px"><b>Resolving the ambiguity (the screenshot = the Visualize side panel):</b> this is <b>option (b), not (a)</b>. Dan doesn't just want to repaint the lightweight Visualize panel — he wants it to become <b>the same (full) panel as in Browse</b> — one component, the same information. The key: “that will take care of <b>everything in there</b>” + “show <b>all the fields</b>”. So clicking a table/field in Visualize opens the same panel with all sections (descriptions, fields, relationships, breadcrumbs), not a trimmed list.</div>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      <b>Two different panels.</b> The Browse <code>EntityPanel</code> is full (3-source descriptions, Fields, Relationships, breadcrumbs). The Visualize side panel (in the screenshot) is <b>lighter</b>: a records·fields counter, Gen description + View in Health buttons, and <b>only a field list</b> (no description tabs / relationships / breadcrumbs). Hence the inconsistency. <span class="ev">EntityPanel.astro · SchemaCanvas.tsx:716–810</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitors / principle</div>
+      <ul><li>This is our own <b>design-system-first</b> principle (one component — many contexts). No specific competitor is needed — it's system hygiene.</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Reuse <b>the <code>EntityPanel</code> itself</b> in Visualize (one component → both contexts), rather than keeping a separate light panel. A shared fields-view (the A3 search + the A4 config) lives <b>inside</b> it. This closes A3 + A4 + A10 together.
+      <div class="obt">A small ambiguity: “table view that matches” could be read narrowly as “just a field list” — but “everything in there” leans toward the <b>full panel</b>. If needed, we can confirm with Dan in a single sentence.</div></div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>Clicking a node in Visualize opens <b>the same full EntityPanel</b> (description tabs / fields / relationships / breadcrumbs), not the lightweight SidePanel — the panel is standardized everywhere. It works for all bases (the index already contains them, verified). <b>How to check:</b> Visualize → click any table → the right panel = as in Browse. <b>Code:</b> <code>SchemaCanvas.tsx</code> (<code>onNodeClick</code> → <code>schema:openEntity</code>; the old SidePanel removed).</div>
+  </div>
+
+  <!-- ============ VISUALIZE ============ -->
+  <h2 id="visualize">B · Visualize (ER diagram)</h2>
+
+  <div class="card anchor" id="B1">
+    <div class="top">
+      <span class="num">B1</span>
+      <div class="ttl"><h3>Group/outline the tables of a single base</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-new">🔴 missing</span><span class="pill p1">P1</span><span class="pill eff">M–L</span></div>
+      </div>
+      <span class="tc-big">09:25–09:59</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">09:36</span>«It'd be nice if we could <b>outline the base</b> so that all of the tables in the base are kind of grouped.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      A base is only a facet filter and a label in the dropdown; the nodes are <b>not outlined</b> by base; dagre lays everything out together. <span class="ev">SchemaCanvas.tsx:281–344,375–384</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul>
+        <li><b>dbdiagram.io “Table Groups”</b> — collapse/expand, colors, notes (our research: “a pattern worth adopting for chunking large bases”).</li>
+        <li>Azimutt — named layouts, organization by “folders”.</li>
+        <li>⚠️ A technical note from our research: <b>dagre can't do sub-flow/group layouts</b> — for groups, <code>elkjs</code> is needed.</li>
+      </ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Group a base's tables via React Flow parent/group nodes (an outlined container frame). If a group <b>auto-layout</b> is needed — plan a dagre→<code>elkjs</code> migration (this is a separate technical estimate).
+      <div class="obt">Data: <b>obtainable</b> (a table's membership in a base is known).</div></div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>Behind each base in Visualize there's a <b>dashed container group with the base label</b> (an overlay over the dagre layout, without changing the layout); it appears only on multi-base. <b>How to check:</b> Visualize → the <b>“Sales CRM” / “Marketing” / “Operations”</b> containers. <b>Code:</b> <code>SchemaCanvas.tsx</code> (<code>BaseGroupNode</code> + bbox computation in <code>layout</code>). <i>Caveat: dagre doesn't cluster by base — when tables interleave, the frames may partially overlap; perfect clusters would need elkjs (as our research noted).</i></div>
+  </div>
+
+  <div class="card anchor" id="B2">
+    <div class="top">
+      <span class="num">B2</span>
+      <div class="ttl"><h3>Four relationship types + a dropdown; lookup/rollup = two lines</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-new">🔴 missing</span><span class="pill p0">P0</span><span class="pill eff">L</span></div>
+      </div>
+      <span class="tc-big">09:59–11:08</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">10:05</span>«Multiple types of relationships: <b>linked records</b> (between tables); <b>formula</b> (points to referenced fields, same table); <b>lookup</b> — that would have <b>two lines</b>: one to the field it references and another to the field in the other table; <b>rollup</b> the same. So lookup, rollup, linked record, formula — the four… those could be <b>dropdown options</b>.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      Only linked-record edges, in <b>one neutral style</b>; formula/lookup/rollup as edges are <b>not modeled</b> (though a code comment does promise colors by type). <span class="ev">SchemaCanvas.tsx:303–329</span></div>
+    <div class="flow">
+      <span class="fbox">Field</span><span class="farr">— linked →</span><span class="fbox">Table</span>
+      &nbsp;&nbsp;<span class="fbox">Formula</span><span class="farr">— ref →</span><span class="fbox">Field (same table)</span>
+    </div>
+    <div class="flow">
+      <span class="fbox warn">Lookup / Rollup</span><span class="farr">— ref →</span><span class="fbox">Field (this table)</span><span class="farr">+ — looks up →</span><span class="fbox">Field (other table)</span><span class="sub">= 2 lines</span>
+    </div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research) — a precise hit</div>
+      <ul>
+        <li><b>The Airtable “Base Schema” extension</b> — colored edges by type, hover activation: <b>Linked = solid gray · Formula = dashed blue · Rollup = dashed violet · Lookup = dashed orange · Count = dashed red</b>. Our research calls this “relationship color language” the strongest reference to follow.</li>
+        <li>React Flow schema node — <b>field-to-field</b> edges via per-field handles (<code>sourceHandle/targetHandle</code>) — exactly the mechanism for the “two lines” of lookup/rollup.</li>
+        <li>ChartDB — cardinality markers via SVG marker defs.</li>
+      </ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Model the 4 types; lookup/rollup — two edges (field→source-field + source→other-table-field) via per-field handles; color coding by type (a map from the Base Schema extension); a dropdown filter “show type(s)”. This is the largest Visualize task, but the pattern is already described in our research.
+      <div class="obt">Data: <b>obtainable</b> — formula refs and lookup/rollup source+target in the meta-API.</div></div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>4 relationship types with <b>color coding</b> (linked=neutral solid · lookup=orange · rollup=violet · formula=blue, dashed) + a <b>“Relationships”</b> dropdown with the types (dots + toggles) for filtering. lookup/rollup → a cross-table line to the source table; formula → lines to fields of the same table. <b>How to check:</b> Visualize → the <b>Relationships</b> dropdown (hide Formula → the blue lines disappear, 26→24). <b>Code:</b> <code>SchemaCanvas.tsx</code> (<code>RELATION</code>/<code>relKind</code>, edge building, the FacetDropdown Relationships).</div>
+  </div>
+
+  <!-- ============ CHANGELOG ============ -->
+  <h2 id="changelog">C · Changelog</h2>
+
+  <div class="card anchor" id="C3">
+    <div class="top">
+      <span class="num">C3</span>
+      <div class="ttl"><h3>Location in an entry — clickable → opens the entity panel</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-part">🟡 partial</span><span class="pill p0">P0</span><span class="pill eff">S</span></div>
+      </div>
+      <span class="tc-big">11:27–11:49</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">11:27</span>«Make this location be clickable. I should be able to click on these and it brings the sidebar up of that field, like what we have in the browse. So these should all be <b>hyperlinkable</b>.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      The change row is clickable, but it opens an <b>internal Changelog detail panel</b>, not the shared <code>EntityPanel</code>; the location is plain text. <span class="ev">SchemaChangelog.astro:126–143,426–432</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul><li>A direct competitor (changelog entry → entity detail) is <b>not in our research</b>; the closest is Metabase, where the FK “Connections” are clickable links. This is our connective tissue between the tabs.</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Make the location segments link to <code>schema:openEntity</code> (the same panel as in Browse). Cheap — the event already exists.</div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>An entry's location is now clickable (↗ on hover) → it opens <b>the same Browse panel</b> for the entity (<code>stopPropagation</code>, so as not to open the internal detail). It is active only where the entity exists in the schema (new/deleted ones are <b>not linked</b> — honestly). <b>How to check:</b> Changelog → click the location of <b>Probability / Stage / Weighted Value</b>. <b>Code:</b> <code>SchemaChangelog.astro</code> (<code>data-cl-entity</code> + handler) + <code>entityId</code> in the fixture.</div>
+  </div>
+
+  <div class="card anchor" id="C4">
+    <div class="top">
+      <span class="num">C4</span>
+      <div class="ttl"><h3>In the entity panel — a “Changelog for this entity” section</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-new">🔴 missing</span><span class="pill p1">P1</span><span class="pill eff">M</span></div>
+      </div>
+      <span class="tc-big">11:50–12:33</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">12:03</span>«In that field view we should have a section that shows the change log for that item. Whether it's a base or a field, the change log shows up in this area… click the field and see the full change log for that field.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      In <code>EntityPanel</code> there is <b>no</b> history section; Changelog is a separate component and isn't imported into the panel. <span class="ev">EntityPanel.astro (no changelog section)</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul><li>AWS Glue — a color reserved for “change-state” (our research: “a ready-made design for Changelog”). Rewind/Keepit — version/snapshot comparison (at the entity level).</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Add a “Changelog” section to the panel = a feed filtered to this entity (from the same engine). A two-way link Changelog↔Panel (with C3).</div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>A <b>Changelog</b> section appeared in the entity panel = a change feed filtered to this entity (a type badge + before/after); it is omitted if there are no changes. Together with C3 — a two-way link. <b>How to check:</b> the <b>Stage / Probability / Weighted Value</b> panel → the Changelog section. <b>Code:</b> <code>EntityPanel.astro</code> (<code>renderChangelogSection</code> + the <code>changelog</code> prop) — <code>SchemaView</code> passes it.</div>
+  </div>
+
+  <div class="card anchor" id="C5">
+    <div class="top">
+      <span class="num">C5</span>
+      <div class="ttl"><h3>“Config changed” type + before ↔ after</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-part">🟡 partial</span><span class="pill p0">P0</span><span class="pill eff">M</span></div>
+      </div>
+      <span class="tc-big">12:41–13:39</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">12:48</span>«Removed, renamed, type change… and there might be <b>config changes</b> — «config changed» might be one more change type — you added a new dropdown option to a single select, or modified the formula… here's your list <b>before</b>, or if single-select, maybe just shows the new one added.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      Filter types: added / removed / renamed / typed / view — “config-changed” is <b>missing</b>. But before→after already exists in the internal detail panel. <span class="ev">SchemaChangelog.astro:51,418–446</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul><li>AWS Glue — a color for change-state. Rewind — side-by-side compare; Keepit — Snapshot Compare; Druva — Creation/Modification/Deletion types. (Our research describes the entry structure as our own engine feed.)</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Add a <b>Config changed</b> type (a new select option, a modified formula) to <code>TYPE_OPTS</code> + a before↔after list (for select — highlight the addition). The before/after scaffold already exists.
+      <div class="obt">Data: <b>obtainable</b> — a diff of the meta snapshots between backups.</div></div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>A new <b>Config changed</b> type (a blue badge + a sliders icon) in the filter and the feed, with <b>before → after</b>. <b>How to check:</b> Changelog → the <b>Config changed</b> filter (2 entries: a Stage option; the Weighted Value formula). <b>Code:</b> <code>SchemaChangelog.astro</code> (the type union + <code>TYPE</code> + <code>TYPE_OPTS</code>) + 2 entries in the changelog fixture.</div>
+  </div>
+
+  <!-- ============ DOCS ============ -->
+  <h2 id="docs">D · Docs</h2>
+
+  <div class="card anchor" id="D1">
+    <div class="top">
+      <span class="num">D1</span>
+      <div class="ttl"><h3>Collapse the left list — more room to write</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-new">🔴 missing</span><span class="pill p1">P1</span><span class="pill eff">S–M</span><span class="pill p2">= A7</span></div>
+      </div>
+      <span class="tc-big">13:49–14:24 · 16:20–16:33</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said (twice)</div>
+      <blockquote><span class="t">13:53</span>«I'd like the ability to take out this area to give more room to write when editing. But I love how this works.»</blockquote>
+      <blockquote><span class="t">16:27</span>«Maybe there's a button to expand out so this document list shrinks. That's my only concern there, otherwise I'm loving this.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      A two-pane grid fixed at <code>minmax(320,360) | 1fr</code>; <b>no</b> list collapse (only stacking below 900px). <span class="ev">SchemaDocs.astro:184–185</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul><li>Craft / Notion — a clean writing mode (a centered column, a ToC rail, a minimap). Castor — a persistent right rail. Plate — edit↔read via <code>useReadOnly()</code>.</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      A button to collapse the left list (distraction-free writing). <b>The same system pattern</b> as A7 — build once, apply in the panel and in Docs.</div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>A collapse button (panel-left) in the document bar hides the left list → more room to write; clicking again brings it back. <b>How to check:</b> Docs → open a document → the button on the left in the bar. <b>Code:</b> <code>SchemaDocs.astro</code> (<code>data-dc-listtoggle</code> + <code>.dc-list-collapsed</code>). <i>A7 (expanding the EntityPanel itself) — still remaining.</i></div>
+  </div>
+
+  <div class="card anchor" id="D2">
+    <div class="top">
+      <span class="num">D2</span>
+      <div class="ttl"><h3>Multiple diagrams in a document</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-have">✅ model ready</span><span class="pill p1">P1</span><span class="pill eff">S</span></div>
+      </div>
+      <span class="tc-big">14:12–14:30</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">14:25</span>«We do want <b>multiple diagrams</b> — the ability to add more than one diagram… they might want multiple diagrams here.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      The model is already an array: <code>diagrams: SchemaDocDiagram[]</code>, and they all mount. What's missing is only the <b>“add/remove diagram” UI</b> (they are currently seeded from the fixture). <span class="ev">schemaEntities.ts:82 · SchemaDocs.astro:146–160</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul><li>dbt Explorer and Eraser — “multiple diagrams per page”. Fibery — a Mermaid block renders a diagram right in the page (“the most precise reference”).</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Storage ✅. Add a “+ Diagram” button (and delete-diagram) — it dovetails naturally with D4 (“Add to doc”).</div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>“Multiple diagrams” is covered: <b>the document model holds an array of diagrams</b> (already ready) + <b>the add mechanism = D4</b> (“Add to doc” from Visualize places a diagram into the chosen document). <b>How to check:</b> the D4 flow. <b>Code:</b> <code>schemaEntities.ts</code> (<code>diagrams[]</code>) + D4.</div>
+  </div>
+
+  <div class="card anchor" id="D4">
+    <div class="top">
+      <span class="num">D4</span>
+      <div class="ttl"><h3>“Add to doc”: a diagram snapshot from Visualize into a document</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-new">🔴 missing</span><span class="pill p1">P1</span><span class="pill eff">L</span></div>
+      </div>
+      <span class="tc-big">14:53–16:33</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">14:53</span>«From the visualize, a button <b>«add to doc»</b> → a dropdown of existing docs with an option to create new. If new, it comes here already with whatever's in the visualize… take a <b>snapshot</b> of it and put it in a doc… maybe it opens in a <b>modal</b> to edit that version… need the ability to <b>save it back</b>… and to <b>delete</b> it from the doc.»</blockquote>
+      <div class="pro" style="margin-top:8px;background:var(--blue-bg);border-color:#d8e2fb"><div class="lab" style="color:#1e40af">⚠️ UX decision (concern 2026-06-25): NOT a navigation to the Visualize tab</div>
+        The current “Open in Visualize” <b>navigates</b> to the Visualize tab (<code>href="/schema"</code>) — the user <b>loses context</b>, jumping back and forth. Instead, we open <b>both the viewing and the editing</b> of a diagram from a doc <b>in an overlay over the doc</b>, <b>without changing the tab</b>. Recommendation: a <b>tall bottom fly-out / sheet (~85vh)</b> that slides up from the bottom (the doc visible above, the full width for a wide ER diagram) <b>+ a fullscreen button</b> for deep editing; closing → returns to the same place in the doc. This aligns with Dan's “opens in a modal” (drawer and modal here are the same in-place overlay).</div>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      <b>Missing.</b> Diagrams are seeded from the fixture; in Docs there is only a <b>static link “Open in Visualize” (<code>href="/schema"</code> — exactly the navigation that loses context)</b>; in Visualize there is Export (PNG/PDF/JSON/CSV, not yet functional), but no “Add to doc”. <span class="ev">SchemaDocs.astro:152 · SchemaCanvas.tsx:544–558</span></div>
+    <div class="flow">
+      <span class="fbox">Visualize</span><span class="farr">→</span>
+      <span class="fbox alt">“Add to doc”</span><span class="farr">→</span>
+      <span class="fbox">dropdown: existing / new</span><span class="farr">→</span>
+      <span class="fbox">snapshot (toObject)</span><span class="farr">→</span>
+      <span class="fbox alt">overlay over the doc (fly-out / modal)</span><span class="farr">→</span>
+      <span class="fbox ok">Save back</span><span class="farr">／</span><span class="fbox warn">Delete from doc</span>
+    </div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitor patterns (our research)</div>
+      <ul>
+        <li><b>Whimsical / Eraser</b> — a saved diagram block: <b>view-only in the doc, edit in the source</b>, expand-to-fullscreen.</li>
+        <li>Fibery — a saved mini-diagram in the page; Craft — whiteboard→fullscreen.</li>
+        <li><b>React Flow <code>toObject()</code></b> (nodes/edges/viewport) — exactly the “snapshot &amp; restore” mechanism for a saved view.</li>
+      </ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      An “Add to doc” button in Visualize → a dropdown of existing docs (plus a “New document” option) → a snapshot via <code>toObject()</code> → a diagram instance in the doc = a <b>view-only block</b>; “Expand/Edit” opens an <b>in-place overlay</b> (bottom fly-out + fullscreen, <b>without a route change</b>) → save back / delete. We replace the current navigational “Open in Visualize” with this same overlay. It dovetails with D2.
+      <div class="obt">Data: <b>obtainable</b> — these are our own diagrams (nothing external).</div></div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>An <b>“Add to doc”</b> button on the Visualize toolbar → a <b>bottom fly-out drawer</b> (a new <code>Drawer side="bottom"</code> variant, registered in the storybook) → choose a document (existing + “New document”) → Add → a confirmation “✓ Diagram added to …” + close. <b>In-place, without switching tabs</b> (my UX decision + Dan's “opens in a modal”). <b>How to check:</b> Visualize → <b>“+ Add to doc”</b>. <b>Code:</b> <code>SchemaView.astro</code> (Drawer + script) · <code>SchemaCanvas.tsx</code> (the button) · <code>Drawer.astro</code> (the bottom variant).</div>
+  </div>
+
+  <div class="card anchor" id="D6">
+    <div class="top">
+      <span class="num">D6</span>
+      <div class="ttl"><h3>Document deletion with confirmation</h3>
+        <div class="tags"><span class="pill done">✓ Done</span><span class="pill s-new">🔴 missing</span><span class="pill p0">P0</span><span class="pill eff">S</span></div>
+      </div>
+      <span class="tc-big">16:50–17:17</span>
+    </div>
+    <div class="block"><div class="lab">What Dan said</div>
+      <blockquote><span class="t">16:50</span>«We probably need a <b>delete</b> option as well to delete documents, with a <b>confirmation</b> as well.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Where it stands today</div>
+      There is “New”, but <b>no deletion</b> at all. <span class="ev">SchemaDocs.astro:75,83,387–398</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Competitors / principle</div>
+      <ul><li>A standard destructive pattern (our <code>interface-rules</code>: confirmation for irreversible actions). No separate competitor is needed.</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">How we approached it</span>
+      Delete-doc + a <code>daisyUI modal</code> confirmation (a red button, the doc name in the text). Quick.</div>
+    <div class="donebox"><span class="done-h">✓ Done — where to find it</span>A red trash button in the document bar → a <b>daisyUI modal</b> with the name → Delete removes it, the counter updates, the next one opens (or an empty state). <b>How to check:</b> Docs → open a document → the trash on the right in the bar. <b>Code:</b> <code>SchemaDocs.astro</code> (<code>data-dc-delete</code> + the modal + <code>deleteCurrent</code>).</div>
+  </div>
+
+  <!-- ============ PRAISE / NOTES ============ -->
+  <h2 id="praise">⭐ Praise &amp; housekeeping notes (what NOT to touch / parked)</h2>
+  <div class="card">
+    <div class="block" style="margin-top:0"><div class="lab">Praise — left as is</div>
+      <blockquote><span class="t">07:22 · A9</span>«I do like this view.» / «Oh that's awesome. Well done. That's cool. That's great.» — a positive reaction (likely on opening Visualize/relationships).</blockquote>
+      <blockquote><span class="t">11:09 · C1</span>«How you did this is fine — if it's added, there isn't a before and after, so that makes sense.» — confirmed the current “added without diff” logic.</blockquote>
+      <blockquote><span class="t">14:30 · D3</span>«I love the open and visualize… perfect. Brings those up. That's awesome.» — the doc→visualize behavior approved.</blockquote>
+      <blockquote><span class="t">16:34</span>«Otherwise I'm loving this. This is going to be amazing. This is a really useful tool. That is looking great.» — an overall assessment of the section.</blockquote>
+    </div>
+    <div class="block"><div class="lab">Housekeeping notes</div>
+      <ul style="margin:4px 0 0;padding-left:18px;font-size:13.5px">
+        <li><b>C2 (11:21):</b> «I might remove [the changelog location] in the product» — Dan is <b>not sure himself</b>, so we keep it for now. Not a priority.</li>
+        <li><b>C6 (13:48):</b> «Health will revisit» — Dan <b>deliberately deferred the Health tab</b>. We don't touch it this round.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============ PLAN ============ -->
+  <h2 id="plan">Prioritized plan</h2>
+  <div class="card">
+    <div class="block" style="margin-top:0"><div class="lab">P0 — the core of the round (high value, data obtainable now)</div>
+      <ul class="plan">
+        <li><span class="pill p0">P0</span><span><b>A2</b> Descriptions in 3 tabs + renaming Extended <span class="pill eff">S–M</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>A4</b> Config by field type (formula/references/lookup) <span class="pill eff">M</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>A6</b> Relationships: backlink field + cardinality (Hasura semantics) <span class="pill eff">M</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>A8</b> Structural, reversed, clickable breadcrumbs <span class="pill eff">M</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>B2</b> 4 relationship types + colors + dropdown; lookup/rollup = 2 lines <span class="pill eff">L</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>C3</b> Changelog location → opens the panel <span class="pill eff">S</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>C5</b> “Config changed” type + before↔after <span class="pill eff">M</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>D6</b> Document deletion + confirmation <span class="pill eff">S</span></span></li>
+      </ul>
+    </div>
+    <div class="block"><div class="lab">P1 — strong reinforcement</div>
+      <ul class="plan">
+        <li><span class="pill p1">P1</span><span><b>A1</b> Search bar inside the <code>FacetFilter</code> popover (one component → all facets) <span class="pill eff">S</span></span></li>
+        <li><span class="pill p1">P1</span><span><b>A10</b> Reuse the <b>full</b> <code>EntityPanel</code> in Visualize (+ inside, a shared fields-view with the A3 search / A4 config) <span class="pill eff">M</span></span></li>
+        <li><span class="pill p1">P1</span><span><b>A7 + D1</b> A system expand/collapse pattern (panel + Docs in one solution) <span class="pill eff">M</span></span></li>
+        <li><span class="pill p1">P1</span><span><b>C4</b> A Changelog section in the entity panel <span class="pill eff">M</span></span></li>
+        <li><span class="pill p1">P1</span><span><b>B1</b> Grouping a base's tables (estimate dagre→elkjs) <span class="pill eff">M–L</span></span></li>
+        <li><span class="pill p1">P1</span><span><b>D4 + D2</b> “Add to doc” snapshot + multiple diagrams (add UI) <span class="pill eff">L</span></span></li>
+      </ul>
+    </div>
+    <div class="block"><div class="lab">P2 / backend / parked</div>
+      <ul class="plan">
+        <li><span class="pill p2">P2</span><span><b>A5</b> Push to Airtable (draft/Publish/Reset) — UI now, <b>write-back needs a backend</b> <span class="pill eff">L</span></span></li>
+        <li><span class="pill p2">P2</span><span>Global search polish — abbreviation-match (DataGrip), a Cmd-K palette <span class="pill eff">S</span></span></li>
+        <li><span class="pill p2">P2</span><span><b>C2</b> the fate of the Changelog location — Dan's decision · <b>Health</b> — deferred by Dan</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============ OPEN Q ============ -->
+  <h2 id="open">Open questions for Dan</h2>
+  <div class="card">
+    <ul style="margin:0;padding-left:18px;font-size:14px">
+      <li><b>A5 (please clarify!):</b> Is “Extended/Your” the same as the published Airtable draft, or different fields? · Does Publish overwrite the entire description? Do we show before→after? · “Use AI/Extended” buttons or manual copying? · only fields or also tables/bases? · the scope of the backend write-back for V2 (details in the A5 card).</li>
+      <li><b>A8:</b> we make the structural path primary — do we keep navigation history as a separate “back” arrow?</li>
+      <li><b>B1:</b> base grouping — do we need a group <b>auto-layout</b> (then we plan a dagre→elkjs migration), or is a static outline frame enough?</li>
+      <li><b>D4:</b> “edit version in modal” — is the diagram in the doc an <b>independent snapshot</b> (Whimsical-style: view-only in the doc, edit separately), or always a live copy of the schema?</li>
+    </ul>
+  </div>
+
+  <div class="foot">
+    Generated from a local transcript (Whisper large-v3-turbo, offline — Dan's video never left the machine) + 64 frames. The code state was checked against <code>apps/web/src/components/schema/</code>. Competitor patterns are only from our internal research (<code>overview/schema/research*.html</code>, memory research notes); where there is no competitor, it is explicitly marked “no data in our research”. Timecodes are for re-listening to the video.
+  </div>
+
+</div>
+</div>
+
+<style>
+  .sr{
+    --bg:#fbfaf8; --card:#ffffff; --ink:#1c2024; --muted:#5b6470; --faint:#8a929c;
+    --line:#e6e3dd; --line2:#efece6;
+    --blue:#2563eb; --blue-bg:#eef3ff;
+    --green:#15803d; --green-bg:#e9f6ee;
+    --amber:#b45309; --amber-bg:#fdf3e3;
+    --red:#b42318; --red-bg:#fdecea;
+    --violet:#6d28d9; --violet-bg:#f1ecfd;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+    background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;
+  }
+  .sr *{box-sizing:border-box}
+  .wrap{max-width:1000px;margin:0 auto;padding:40px 24px 96px}
+  h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+  h2{font-size:21px;margin:48px 0 14px;letter-spacing:-.01em;padding-bottom:8px;border-bottom:2px solid var(--line)}
+  h3{font-size:16px;margin:0}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:.86em;background:#f1efe9;padding:1.5px 5px;border-radius:5px;color:#3b4148}
+  .sub{color:var(--muted);font-size:14px}
+  .lead{color:var(--muted);font-size:15px;max-width:72ch}
+
+  /* meta strip */
+  .meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin:18px 0 8px;font-size:13px;color:var(--muted)}
+  .meta b{color:var(--ink);font-weight:600}
+  .note{background:var(--blue-bg);border:1px solid #d8e2fb;border-radius:10px;padding:12px 16px;margin:18px 0;font-size:14px;color:#1e3a8a}
+
+  /* legend */
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+    padding:3px 9px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
+  .s-have{background:var(--green-bg);color:var(--green);border-color:#cde9d6}
+  .s-part{background:var(--amber-bg);color:var(--amber);border-color:#f3e0bd}
+  .s-new{background:var(--red-bg);color:var(--red);border-color:#f5d2cd}
+  .s-star{background:var(--violet-bg);color:var(--violet);border-color:#e2d6fb}
+  .p0{background:#fbe9e7;color:#b42318;border-color:#f3cdc7}
+  .p1{background:#fef3e2;color:#b45309;border-color:#f4e2bf}
+  .p2{background:#eef1f4;color:#5b6470;border-color:#dde2e8}
+  .eff{background:#f4f2ec;color:#6b7280;border-color:#e4e0d8}
+  .pill.done{background:#138a4f;color:#fff;border-color:#0f7544}
+
+  /* summary table */
+  table.sum{width:100%;border-collapse:collapse;margin:10px 0 0;font-size:13.5px}
+  table.sum th,table.sum td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line2);vertical-align:top}
+  table.sum th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700;border-bottom:1px solid var(--line)}
+  table.sum tr:hover td{background:#faf8f3}
+  table.sum td.id{font-family:var(--mono);font-weight:600;color:var(--muted);white-space:nowrap}
+  table.sum td.tc{font-family:var(--mono);color:var(--blue);white-space:nowrap}
+
+  /* cards */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:16px 0;
+    box-shadow:0 1px 2px rgba(28,32,36,.03)}
+  .card .top{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .card .num{font-family:var(--mono);font-weight:700;color:var(--faint);font-size:13px;margin-top:3px}
+  .card .ttl{flex:1;min-width:240px}
+  .card .ttl h3{font-size:16.5px;letter-spacing:-.01em}
+  .card .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
+  .tc-big{font-family:var(--mono);font-size:12.5px;color:var(--blue);background:var(--blue-bg);
+    border:1px solid #d8e2fb;border-radius:7px;padding:2px 8px;white-space:nowrap;align-self:flex-start;margin-top:1px}
+  .block{margin-top:14px}
+  .block .lab{font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:700;color:var(--faint);margin-bottom:3px}
+  blockquote{margin:6px 0 0;padding:8px 14px;border-left:3px solid var(--line);background:#faf8f3;
+    border-radius:0 8px 8px 0;font-style:italic;color:#3b4148;font-size:14px}
+  blockquote .t{font-style:normal;font-family:var(--mono);font-size:11.5px;color:var(--faint);display:block;margin-bottom:2px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+  @media(max-width:680px){.grid2{grid-template-columns:1fr}}
+  .pro,.con{border-radius:10px;padding:10px 13px;font-size:13.5px}
+  .pro{background:var(--green-bg);border:1px solid #cde9d6}
+  .con{background:var(--amber-bg);border:1px solid #f3e0bd}
+  .pro .lab,.con .lab{color:inherit;opacity:.85}
+  .now{background:#f7f6f2;border:1px solid var(--line2);border-radius:10px;padding:10px 13px;font-size:13.5px}
+  .comp{font-size:13.5px}
+  .comp ul{margin:4px 0 0;padding-left:18px}
+  .comp li{margin:3px 0}
+  .act{background:#f3f7ff;border:1px solid #dde7fb;border-radius:10px;padding:11px 14px;font-size:13.5px;margin-top:14px}
+  .act .lab{color:#1e40af}
+  .donebox{background:var(--green-bg);border:1px solid #cde9d6;border-radius:10px;padding:11px 14px;font-size:13.5px;margin-top:12px;color:#14532d}
+  .donebox .done-h{display:block;font-weight:700;color:var(--green);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em;font-size:11px}
+  .donebox code{background:#d7ecde}
+  .obt{font-size:12.5px;color:var(--muted);margin-top:7px}
+  .obt b{color:var(--green)}
+  .obt.warnc b{color:var(--amber)}
+  .ev{font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+
+  /* flow diagram (pure CSS, offline-safe) */
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 2px;font-size:12.5px}
+  .fbox{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 11px;font-weight:600}
+  .fbox.alt{background:var(--blue-bg);border-color:#d8e2fb;color:#1e40af}
+  .fbox.ok{background:var(--green-bg);border-color:#cde9d6;color:var(--green)}
+  .fbox.warn{background:var(--amber-bg);border-color:#f3e0bd;color:var(--amber)}
+  .farr{color:var(--faint);font-weight:700}
+
+  ul.plan{list-style:none;padding:0;margin:8px 0 0}
+  ul.plan li{padding:8px 0;border-bottom:1px solid var(--line2);display:flex;gap:10px;align-items:baseline}
+  ul.plan li .pill{flex-shrink:0}
+  .foot{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:12.5px}
+  .anchor{scroll-margin-top:16px}
+</style>

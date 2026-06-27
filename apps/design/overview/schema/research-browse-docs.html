@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Schema Browse &amp; Docs — research &amp; build decisions · Baseout</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --panel: #ffffff; --ink: #1c2230; --soft: #5a6373; --faint: #8b93a3;
+    --line: #e6e9ef; --line2: #eef1f5;
+    --accent: #3257d6; --accent-bg: #eef2fe;
+    --ok: #1f9d5b; --ok-bg: #e9f7ef;
+    --warn: #b9770b; --warn-bg: #fbf3e2;
+    --err: #c23b3b; --err-bg: #fbecec;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d; --panel: #1b1f27; --ink: #e7eaf0; --soft: #aab2c0; --faint: #79818f;
+      --line: #2a2f39; --line2: #232830;
+      --accent: #7d9bff; --accent-bg: #1e2435;
+      --ok: #57c98a; --ok-bg: #16261d;
+      --warn: #e0ab53; --warn-bg: #2a2316;
+      --err: #e87b7b; --err-bg: #2a1a1a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 56px 28px 120px; }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 700; margin: 0 0 8px; }
+  h1 { font-size: 30px; line-height: 1.2; letter-spacing: -.02em; margin: 0 0 12px; }
+  .lede { color: var(--soft); font-size: 16px; max-width: 72ch; margin: 0 0 8px; }
+  .meta { color: var(--faint); font-size: 13px; margin: 6px 0 0; }
+  h2 { font-size: 20px; letter-spacing: -.01em; margin: 52px 0 6px; padding-top: 14px; border-top: 1px solid var(--line); }
+  h2 .num { color: var(--faint); font-variant-numeric: tabular-nums; margin-right: 10px; font-weight: 600; }
+  h3 { font-size: 16px; margin: 26px 0 8px; }
+  h4.sub { font-size: 13.5px; margin: 18px 0 4px; color: var(--soft); text-transform: uppercase; letter-spacing: .04em; }
+  p { margin: 10px 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: var(--mono); font-size: .86em; background: var(--line2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+  strong { font-weight: 650; }
+  ul, ol { margin: 10px 0; padding-left: 22px; }
+  li { margin: 5px 0; }
+
+  /* TOC */
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 8px; }
+  .toc a { font-size: 12.5px; font-weight: 560; color: var(--soft); border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; background: var(--panel); }
+  .toc a:hover { color: var(--accent); border-color: var(--accent); text-decoration: none; }
+
+  /* callouts */
+  .box { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+  .box.tldr { background: var(--accent-bg); border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+  .box.adopt { background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 30%, var(--line)); }
+  .box.avoid { background: var(--err-bg); border-color: color-mix(in srgb, var(--err) 30%, var(--line)); }
+  .box.decide { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
+  .box h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; }
+  .box.adopt h4 { color: var(--ok); } .box.avoid h4 { color: var(--err); } .box.decide h4 { color: var(--warn); } .box.tldr h4 { color: var(--accent); }
+  .box ul { margin-bottom: 0; }
+
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 2px 7px; border-radius: 5px; vertical-align: middle; }
+  .tag.ok { background: var(--ok-bg); color: var(--ok); }
+  .tag.warn { background: var(--warn-bg); color: var(--warn); }
+  .tag.err { background: var(--err-bg); color: var(--err); }
+  .tag.acc { background: var(--accent-bg); color: var(--accent); }
+
+  /* tables */
+  .tbl { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; }
+  .tbl th, .tbl td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .tbl th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; background: var(--line2); }
+  .tbl tr:last-child td { border-bottom: 0; }
+  .tbl .y { color: var(--ok); font-weight: 600; }
+  .tbl .n { color: var(--err); font-weight: 600; }
+  .tbl .m { color: var(--warn); font-weight: 600; }
+  .tbl code { font-size: 12px; }
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+  .tbl-wrap .tbl { margin: 0; }
+  .tbl-wrap .tbl th:first-child, .tbl-wrap .tbl td:first-child { padding-left: 16px; }
+
+  /* competitor cards */
+  .comp { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 16px 18px; margin: 14px 0; }
+  .comp-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .comp-head h3 { margin: 0; font-size: 16px; }
+  .comp-head .tech { font-size: 12px; color: var(--faint); font-family: var(--mono); }
+  .comp-grid { display: grid; grid-template-columns: 104px 1fr; gap: 4px 14px; margin-top: 10px; font-size: 13.5px; }
+  .comp-grid dt { color: var(--faint); font-weight: 650; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; padding-top: 2px; }
+  .comp-grid dd { margin: 0; color: var(--soft); }
+  .comp-grid dd strong { color: var(--ink); }
+  .steal { margin-top: 10px; font-size: 13px; padding: 8px 11px; border-radius: 8px; background: var(--ok-bg); color: var(--ink); border: 1px solid color-mix(in srgb, var(--ok) 22%, var(--line)); }
+  .steal b { color: var(--ok); }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .two { grid-template-columns: 1fr; } .comp-grid { grid-template-columns: 1fr; gap: 2px; } .comp-grid dt { padding-top: 8px; } }
+
+  /* mobbin reference list */
+  .refs { list-style: none; padding: 0; margin: 14px 0; counter-reset: r; }
+  .refs li { margin: 0; border-bottom: 1px solid var(--line2); padding: 9px 2px 9px 34px; position: relative; font-size: 13.5px; color: var(--soft); }
+  .refs li::before { counter-increment: r; content: counter(r); position: absolute; left: 0; top: 9px; width: 22px; height: 22px; border-radius: 6px; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+  .refs li b { color: var(--ink); }
+  .refs li:last-child { border-bottom: 0; }
+
+  .foot { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--faint); font-size: 13px; }
+  .src { font-size: 13px; color: var(--soft); }
+  .src code { font-size: 12px; }
+  .src li { margin: 3px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">Baseout · Schema · Browse &amp; Docs tabs</p>
+  <h1>Schema Browse &amp; Docs — research &amp; build decisions</h1>
+  <p class="lede">
+    Grounding the two new Schema tabs in evidence: what <strong>Browse</strong> (a searchable explorer of every
+    base/table/field) and <strong>Docs</strong> (long-form documentation that tags real entities) actually are,
+    the problems they solve, how the best schema-catalog and document tools build them, and the patterns we should
+    adopt, avoid, and decide on before building. This is the reference to lean on — now and when questions come up later.
+  </p>
+  <p class="meta">Companion to the client briefs <code>overview/schema/04-browse-tab.md</code> and <code>05-docs-tab.md</code> (and the page README). Compiled 2026-06-24 from three parallel research passes — schema-catalog teardown, drill-in-panel &amp; doc-editor teardown, and a Mobbin visual sweep — plus first-party verification of the Airtable metadata API and the Plate / React Flow APIs.</p>
+
+  <nav class="toc">
+    <a href="#tldr">TL;DR</a>
+    <a href="#what">1 · What we're building</a>
+    <a href="#boundary">2 · The Airtable data boundary</a>
+    <a href="#browse-teardown">3 · Browse: teardown</a>
+    <a href="#browse-design">4 · Browse: the design</a>
+    <a href="#panel">5 · The stacking panel</a>
+    <a href="#docs-teardown">6 · Docs: teardown</a>
+    <a href="#docs-design">7 · Docs: the design</a>
+    <a href="#plate">8 · The editor decision</a>
+    <a href="#mobbin">9 · Mobbin reference board</a>
+    <a href="#patterns">10 · Adopt / avoid</a>
+    <a href="#build">11 · Build plan</a>
+    <a href="#open">12 · Open decisions</a>
+    <a href="#sources">Sources</a>
+  </nav>
+
+  <!-- TLDR -->
+  <div class="box tldr" id="tldr">
+    <h4>TL;DR</h4>
+    <ul style="margin-bottom:0">
+      <li><strong>Browse = a data catalog over one Space's Airtable schema.</strong> The two proven shapes for it are <strong>dbt docs'</strong> Project↔Database sidebar toggle (= our <strong>Tree ↔ Flat-index</strong> toggle) and <strong>Stripe's API reference</strong> field row (<code>name (type · nullable · linked)</code> → description). Build both verbatim.</li>
+      <li><strong>The detail panel is a real push/pop stack</strong> modelled on iOS <code>UINavigationController</code>: slide-in-from-right on drill, breadcrumb in the header, back pops one, and the <strong>Miller-columns rule</strong> — drilling a different branch truncates the stack past the branch point. Keep it ≤ <strong>~35–40% of the viewport</strong> (Jira's "35%+12px" is the cautionary upper bound). The list stays live on the left (Notion side-peek), zero context loss.</li>
+      <li><strong>Docs = Notion/Coda-style entity @-mentions over the schema.</strong> Typing <code>@</code> inserts a live, identity-referencing <strong>entity-tag chip</strong> (not a text snapshot) that opens the <em>same</em> shared detail panel; tagging is <strong>bidirectional</strong> — each tagged entity lists the docs that reference it. Embedded <strong>mini ER-diagrams</strong> are saved React-Flow views (the exact Fibery-Mermaid-in-a-doc pattern).</li>
+      <li><strong>Production editor = Plate</strong> (first-class mention combobox, custom inline-void node, edit-vs-read rendering, slash menu). For this dependency-free mirror we ship a <strong>high-fidelity editor shell</strong> that nails the same UX and is annotated with the Plate target. See §8.</li>
+      <li><strong>Three things share one build:</strong> the entity <strong>detail panel</strong> (Browse + Docs), the entity <strong>search/typeahead</strong> (Browse search + Docs <code>@</code> + Visualize add-entity), and the entity <strong>tag chip</strong> (the identity used everywhere). Build each once.</li>
+      <li><strong>Anti-fabrication is the hard constraint.</strong> Airtable's meta API gives base/table/field names, types, descriptions and link targets — and <em>nothing</em> about record counts, value statistics, workspace grouping, or usage/popularity. Every column and panel section is scoped to that boundary (§2).</li>
+    </ul>
+  </div>
+
+  <!-- 1 WHAT -->
+  <h2 id="what"><span class="num">1</span>What we're building, and the problem it solves</h2>
+  <p>
+    The Schema section is where Baseout stops being "just a backup tool." Five tabs, one job — understand the
+    Space's Airtable structure — asked five ways: <strong>Browse</strong> (find &amp; inspect), <strong>Visualize</strong>
+    (the diagram), <strong>Changelog</strong> (what changed), <strong>Health</strong> (what's wrong), <strong>Docs</strong>
+    (write it down). This report covers the two new ones. New tab order: <strong>Browse · Visualize · Changelog · Health · Docs</strong>.
+  </p>
+
+  <div class="two">
+    <div class="comp">
+      <div class="comp-head"><h3>Browse</h3><span class="tag acc">find &amp; inspect</span></div>
+      <p style="font-size:13.5px;color:var(--soft);margin:6px 0 0">
+        <strong>The job:</strong> "Let me find and inspect any base, table, or field fast, and see everything attached to it."
+        A power user who knows roughly what they want shouldn't have to pan a diagram. They want a searchable, navigable
+        list and a detail panel.
+      </p>
+      <p style="font-size:13.5px;color:var(--soft);margin:8px 0 0">
+        <strong>The shape:</strong> a browse area (Tree <em>or</em> Flat index) + one global search + faceted filters,
+        and a right-side <strong>stacking detail panel</strong> that drills base → table → field → linked table without
+        losing your place.
+      </p>
+    </div>
+    <div class="comp">
+      <div class="comp-head"><h3>Docs</h3><span class="tag acc">write it down</span></div>
+      <p style="font-size:13.5px;color:var(--soft);margin:6px 0 0">
+        <strong>The job:</strong> "Let me write up how this part of the schema works — referencing the actual tables and
+        fields, with a diagram and some links — and have those references stay live and clickable."
+      </p>
+      <p style="font-size:13.5px;color:var(--soft);margin:8px 0 0">
+        <strong>The shape:</strong> a documents list + a document view (rich editor, inline <code>@</code>-entity tags, a
+        tags panel, external links, saved mini-diagrams) + a clean reading mode. A document <em>tags</em> entities; those
+        tags surface back on each entity in Browse.
+      </p>
+    </div>
+  </div>
+
+  <p>
+    <strong>Descriptions vs documents — the distinction the UI must hold.</strong> A <em>description</em> (Browse) is one
+    short field <em>on</em> an entity (Airtable's, AI-generated, or yours). A <em>document</em> (Docs) is a page you
+    write that can span many entities, with diagrams and links. Don't conflate them: a description is a field; a document
+    is a page. The connective tissue between all three tabs is the <strong>entity tag</strong> — the same identity used by
+    Browse rows, Docs chips, and Visualize nodes.
+  </p>
+
+  <!-- 2 BOUNDARY -->
+  <h2 id="boundary"><span class="num">2</span>The Airtable data boundary <span class="tag err">load-bearing</span></h2>
+  <p>
+    Verified directly against Airtable's developer docs. This governs every column and panel section we can honestly draw.
+    Browse and Docs read the same schema the engine captures during a backup, so what the metadata API does and does not
+    return is the boundary on what's real.
+  </p>
+  <div class="tbl-wrap">
+  <table class="tbl">
+    <thead><tr><th>Source</th><th>What it gives us (real)</th><th>What it does NOT give (do not fabricate)</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>GET /meta/bases</code></td>
+        <td><strong>Per base:</strong> <code>id</code>, <code>name</code>, <code>permissionLevel</code>.</td>
+        <td class="n">No workspace / <code>workspaceId</code> grouping. No table counts.</td>
+      </tr>
+      <tr>
+        <td><code>GET /meta/bases/{id}/tables</code></td>
+        <td><strong>Per table:</strong> <code>id</code>, <code>name</code>, <code>description?</code>, <code>primaryFieldId</code>, <code>fields[]</code>, <code>views[]</code>. <strong>Per field:</strong> <code>id</code>, <code>name</code>, <code>type</code>, <code>description?</code>, <code>options</code> (e.g. link's <code>linkedTableId</code> / <code>inverseLinkFieldId</code> / <code>prefersSingleRecordLink</code>).</td>
+        <td class="n">No record/row counts. No per-field value statistics (distinct %, null %, min/max). No usage / popularity / "who queried it."</td>
+      </tr>
+      <tr>
+        <td><strong>Backup snapshot</strong> (our engine)</td>
+        <td>Record counts, change history, health score — <strong>computed at backup time</strong>, labelled "as of last backup."</td>
+        <td class="m">Drifts between runs. Never present as live; always stamp the freshness.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="box avoid">
+    <h4>Do-not-fabricate flags</h4>
+    <ul>
+      <li><strong>Record counts</strong> only exist from backup data → label "as of last backup," never a live count.</li>
+      <li><strong>Column profiling</strong> (distinct/null/min/max) is impossible from metadata → no stats panel. (Atlan/Castor have it because they sit on the warehouse; we don't.)</li>
+      <li><strong>Workspace grouping</strong> isn't returned → the "Workspace" column stays a placeholder; don't group by it.</li>
+      <li><strong>Popularity / usage / "referenced by"</strong> from query logs → we have none. Our <em>only</em> honest "references" signals are schema-internal: <strong>linked-record relationships</strong> (<code>multipleRecordLinks</code> + computed-field <code>options</code>) and <strong>doc tags</strong> (which we author). Both are real; use those.</li>
+    </ul>
+  </div>
+  <p>
+    One upside of the boundary: <strong>the full Base → Table → Field tree arrives in one call per base</strong>, so Tree and
+    Flat are both built client-side with no extra fetching, and the "linked" relationship is fully resolvable
+    (<code>linkedTableId</code> → click straight to the target table, with real data).
+  </p>
+
+  <!-- 3 BROWSE TEARDOWN -->
+  <h2 id="browse-teardown"><span class="num">3</span>Browse: how the best schema explorers do it</h2>
+  <p>Eleven schema-catalog / data-dictionary tools, teardown. The two most directly stealable are <strong>dbt docs</strong> (the Tree/Flat toggle and peek-on-select) and <strong>Stripe's API reference</strong> (the field-row format).</p>
+
+  <div class="comp">
+    <div class="comp-head"><h3>dbt docs / dbt Catalog</h3><span class="tech">closest analog</span></div>
+    <div class="comp-grid">
+      <dt>Tree / flat</dt><dd><strong>The toggle to copy:</strong> a left-sidebar <strong>Project ↔ Database</strong> switch — Project = logical folder tree, Database = warehouse hierarchy. dbt Catalog expands to Resources / File-Tree / Database tabs and renders a selected type as a <strong>sortable table</strong> in the main pane. This is exactly Tree↔Flat, proven.</dd>
+      <dt>Search</dt><dd>Searches name, description, column names, SQL, tags with relevance scoring; results filterable by resource type; fuzzy/partial, <code>-</code>exclude, boolean <code>OR</code>, quoted phrase; filters panel appears <em>after</em> searching.</dd>
+      <dt>Detail</dt><dd><strong>Peek on select, full page on commit:</strong> selecting a node opens a side panel (summary); double-click / search-click opens the full page. Tabs General / Code / Columns; status bar (last run, rows, size); explicit <strong>"Depends on / Referenced by"</strong> sections; per-column inline ✅ test status.</dd>
+    </div>
+    <div class="steal"><b>Steal:</b> the Project/Database (= Tree/Flat) toggle top-left; peek-on-select; the Referenced-by / Depends-on labelled sections; the status bar (rows/size/last-run) as trust signals. <b>Avoid:</b> the classic one-giant-scrolling-page — dbt itself moved to tabs.</div>
+  </div>
+
+  <div class="comp">
+    <div class="comp-head"><h3>Stripe API reference</h3><span class="tech">the canonical field row</span></div>
+    <div class="comp-grid">
+      <dt>Layout</dt><dd>Three-pane: left resource nav, middle flat attribute list, right sticky JSON example. Nesting by indentation + dot-path, not a tree.</dd>
+      <dt>Field row</dt><dd>mono <code>name</code> → muted <code>(type, nullable, expandable)</code> → plain-English description. Modifiers <strong>stack</strong>. Enums get a "Possible values" block. Nested objects expand inline behind "Show child attributes."</dd>
+    </div>
+    <div class="steal"><b>Steal:</b> the <code>name (type · nullable · linked)</code> + description row — maps 1:1 onto an Airtable field. Pair the detail with a live example. <b>Avoid:</b> no search inside a long attribute list (fine for read-once docs, risky for a repeat-use tool) — add filter-as-you-type over the field list.</div>
+  </div>
+
+  <div class="comp">
+    <div class="comp-head"><h3>DataGrip · DBeaver · TablePlus</h3><span class="tech">the search gold standard</span></div>
+    <div class="comp-grid">
+      <dt>Search</dt><dd><strong>DataGrip two-tier:</strong> (a) speed-search type-to-highlight with <strong>abbreviation matching</strong> (<code>fa</code>→<code>film_actor</code>); (b) a command-palette "Go to DB object" (Ctrl+N) across the whole catalog, expandable to include columns/indexes. Active-filter indicators (green dot, DBeaver's <code>(…)</code>).</dd>
+      <dt>Icons</dt><dd>DataGrip stacks <strong>overlay modifiers</strong> on a base glyph (gold key = PK, blue key = FK, NOT-NULL dot). DBeaver shows type label inline.</dd>
+      <dt>Detail</dt><dd>DBeaver's tab set — Properties / Columns / Keys / Foreign Keys / Indexes / DDL — is the cleanest canonical table-detail IA.</dd>
+    </div>
+    <div class="steal"><b>Steal:</b> two-tier search (filter-the-tree + Cmd/K go-to-object, abbreviation-aware); active-filter indicators so users never think data is missing. <b>Avoid:</b> DBeaver's "filter only applies to expanded nodes" — the classic "I searched and it wasn't there" trap. Make search hit the <em>whole</em> schema.</div>
+  </div>
+
+  <div class="comp">
+    <div class="comp-head"><h3>Notion database side-peek</h3><span class="tech">the panel reference</span></div>
+    <div class="comp-grid">
+      <dt>Detail</dt><dd><strong>List stays live on the left, page opens on the right</strong> — zero context loss. Modes Side / Center / Full. Layout: title → stacked property name/value list (each with a muted type icon) → body. Controls clustered top-left (expand-to-full, close).</dd>
+      <dt>Linked drill</dt><dd>Relation value → opens the linked page (itself a peek). True peek-within-peek stacking is <em>undocumented</em>; observed behaviour is replace-content + breadcrumb back.</dd>
+    </div>
+    <div class="steal"><b>Steal:</b> list-left / detail-right zero-context-loss; properties as a stacked name/value list with type icons; controls top-left. <b>Adapt:</b> we're read-only post-backup → drop the edit affordances; one default panel mode, not three.</div>
+  </div>
+
+  <p><strong>Also surveyed</strong> (full notes in the source agents): <strong>Atlan</strong> (Cmd/K, live count-grouped-by-type, three-dot column show/hide, type-specific stat blocks — but a steep many-tabs learning curve to avoid); <strong>Secoda</strong> ("/" palette with Recent/Popular default, column-header → sort/add-filter, nested search, Source-path scoping); <strong>Select Star</strong> (three-zone table page, popularity-ranked default, A→Z / Z→A / <strong>Ordinal</strong> sort, join-indicator icon); <strong>Castor</strong> (persistent right rail that survives tab switches, a <strong>documentation-completion %</strong> with itemised breakdown, source-logo provenance); <strong>Metaphor / DataHub</strong> (field-scoped search operators <code>name:</code> / <code>fieldPaths:</code> / quoted / <code>-</code>negation); <strong>Hasura</strong> (object-vs-array relationship naming = Airtable single-vs-multiple links); <strong>AWS Glue</strong> (colour reserved for change-state — a finished design for our Changelog); <strong>Retool</strong> (schema-on-demand toggle, one box matching tables + columns, a visible Refresh + staleness signal).</p>
+
+  <!-- 4 BROWSE DESIGN -->
+  <h2 id="browse-design"><span class="num">4</span>Browse: the design we'll build</h2>
+  <div class="box adopt">
+    <h4>The 7 load-bearing decisions</h4>
+    <ol style="margin-bottom:0">
+      <li><strong>Tree ↔ Flat toggle, top-left</strong> (dbt). Tree = Base ▸ Table ▸ Field; Flat = a real sortable data table of every entity (Name / Type / Parent / Linked / Health), default sorted <strong>health ascending</strong> (worst-first — trust-signals-first, our stance, adapting Select Star's popularity-first).</li>
+      <li><strong>Two-tier search</strong> (DataGrip): a filter-as-you-type that narrows the visible Tree/Flat in place, plus a Cmd/K palette that jumps to any base/table/field (incl. field names) — abbreviation-aware. This palette is the <em>same</em> entity-typeahead reused by Docs <code>@</code> and Visualize add-entity.</li>
+      <li><strong>Stripe field row:</strong> icon + <code>name</code> + muted <code>(type · linked?)</code> + description, split into real columns in Flat. Right-align counts; offer A→Z / Z→A / <strong>Ordinal</strong> (source order) sort.</li>
+      <li><strong>One Lucide icon per Airtable field type</strong> (our Lucide-only rule — NOT Airtable's proprietary glyphs; the vendored field-icon set is the documented exception, used where recognisability wins). Mapping table below.</li>
+      <li><strong>Faceted filter bar</strong> reusing our shipped <code>FacetFilter</code> pattern, with facets we can actually back: base · entity type · field type · health · missing description · has AI description · linked. Show "Showing 142 of 1,310" + a Clear, so a filtered list never reads as missing data (DataGrip/DBeaver active-filter indicator).</li>
+      <li><strong>Notion side-peek detail panel</strong>: list live on left, panel right, zero context loss, read-only. Sections per §5.</li>
+      <li><strong>Schema staleness up front</strong> (Retool): "Schema as of {last backup}" near the toggle; any count labelled the same way.</li>
+    </ol>
+  </div>
+
+  <h4 class="sub">Airtable field type → Lucide icon (proposed)</h4>
+  <div class="tbl-wrap">
+  <table class="tbl">
+    <thead><tr><th>Field type(s)</th><th>Lucide</th><th>Field type(s)</th><th>Lucide</th></tr></thead>
+    <tbody>
+      <tr><td><code>singleLineText</code> / <code>multilineText</code> / <code>richText</code></td><td>text / align-left</td><td><code>multipleRecordLinks</code> <span class="tag acc">link</span></td><td>link-2</td></tr>
+      <tr><td><code>number</code> / <code>autoNumber</code></td><td>hash</td><td><code>multipleLookupValues</code></td><td>search</td></tr>
+      <tr><td><code>currency</code></td><td>dollar-sign</td><td><code>rollup</code></td><td>sigma</td></tr>
+      <tr><td><code>percent</code> / <code>duration</code></td><td>percent / timer</td><td><code>count</code></td><td>list-plus</td></tr>
+      <tr><td><code>date</code> / <code>dateTime</code></td><td>calendar</td><td><code>formula</code></td><td>function-square</td></tr>
+      <tr><td><code>checkbox</code></td><td>check-square</td><td><code>singleCollaborator</code> / <code>multipleCollaborators</code></td><td>user / users</td></tr>
+      <tr><td><code>singleSelect</code></td><td>circle-dot</td><td><code>createdTime</code> / <code>lastModifiedTime</code> / <code>createdBy</code> / <code>lastModifiedBy</code></td><td>clock</td></tr>
+      <tr><td><code>multipleSelects</code></td><td>tags</td><td><code>multipleAttachments</code></td><td>paperclip</td></tr>
+      <tr><td><code>email</code> / <code>url</code> / <code>phoneNumber</code></td><td>at-sign / link / phone</td><td><code>aiText</code> <span class="tag acc">AI</span></td><td>sparkles</td></tr>
+      <tr><td><code>rating</code></td><td>star</td><td><code>barcode</code> / <code>button</code> / <code>externalSyncSource</code></td><td>scan-line / square-mouse-pointer / refresh-cw</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="meta">Note: the repo already vendors Airtable's own 31-SVG field-icon set (<code>field-icons/</code>, mirrored in <code>airtableFieldIcons.ts</code>) and the Visualize tab uses it. Browse reuses that same set for instant recognisability; the Lucide mapping above is the fallback / chrome-consistent option if we standardise on Lucide-only for field rows. <strong>Build decision: reuse the vendored set</strong> (already shipped on Visualize/Changelog) for visual consistency across the section.</p>
+
+  <!-- 5 PANEL -->
+  <h2 id="panel"><span class="num">5</span>The stacking detail panel <span class="tag acc">shared component</span></h2>
+  <p>Used by both Browse (row click) and Docs (tag click, in reading mode). Build it once. The model is iOS <code>UINavigationController</code>, not modal-on-modal.</p>
+  <div class="box adopt">
+    <h4>Panel contract</h4>
+    <ul>
+      <li><strong>Anchor + size:</strong> right-anchored overlay, width ≈ <strong>30–40% of viewport</strong>, min ~420px, with collapse/close. The browse list stays interactive on the left (Notion). Jira's resizable "35%+12px" default — and the user complaints when it balloons to ⅔ — is the cautionary upper bound.</li>
+      <li><strong>A real stack of sheets:</strong> clicking a child / related entity <strong>pushes</strong> a sheet that slides in from the right (~150–200ms ease-out); back / <kbd>Esc</kbd> / <kbd>←</kbd> <strong>pops</strong> one. Never a second floating modal over the panel.</li>
+      <li><strong>Breadcrumb trail in the header</strong> reflects the stack (Base › Customers › Status); click a crumb to pop to that depth; collapse the middle with "…" so the header never overflows on deep stacks.</li>
+      <li><strong>Miller-columns truncation rule:</strong> if you're at base→table→fieldA and drill a <em>different</em> related table, sheets past the branch point are discarded — one coherent path, no orphaned crumbs.</li>
+      <li><strong>Reading-mode reuse:</strong> the same component opens read-only when a Docs entity-chip is clicked.</li>
+    </ul>
+  </div>
+  <h4 class="sub">Panel sections (per the brief, scoped to real data)</h4>
+  <ol>
+    <li><strong>Context + type</strong> — name, type badge, breadcrumb of where it lives, key stats (field/record counts "as of last backup", health dot). For fields: the field-type icon + the type.</li>
+    <li><strong>Descriptions</strong> — Airtable's (read-only, what's live now) · AI description (Generate / Regenerate, Pro+, 10 credits) · Yours (editable) + <strong>Copy AI → Yours</strong> · <strong>Push to Airtable</strong> shown <em>disabled / "Coming soon"</em> (V2 write-back). This block matches the Visualize side-panel exactly.</li>
+    <li><strong>Children</strong> — base → tables; table → fields; field → options (select choices). Each clickable → pushes its sheet.</li>
+    <li><strong>Relationships</strong> — field → its linked/lookup/rollup target; table → tables linked via fields. Clickable. Single-vs-multiple naming from <code>prefersSingleRecordLink</code> (Hasura's object-vs-array idea).</li>
+    <li><strong>Documentation</strong> — the docs (from the Docs tab) that tag this entity, clickable to open. The reverse side of Docs tagging; "No documents reference this yet" otherwise. <span class="tag ok">honest references</span></li>
+  </ol>
+
+  <!-- 6 DOCS TEARDOWN -->
+  <h2 id="docs-teardown"><span class="num">6</span>Docs: how the best entity-mention editors do it</h2>
+  <p>The contract every good mention system satisfies — Notion, Coda, GitHub, Linear, Craft — has four parts. Our entity tag must meet all four.</p>
+  <div class="box adopt">
+    <h4>The entity-tag contract</h4>
+    <ol style="margin-bottom:0">
+      <li><strong>Identity, not snapshot</strong> — store the entity id, render its live current name. Rename the table → every chip updates (Notion).</li>
+      <li><strong>Clickable</strong> — opens the target (Coda: "click a chip to learn more about that object") → our shared detail panel in reading mode.</li>
+      <li><strong>Hover preview</strong> — a lightweight hovercard with type + status (GitHub hovercards; Craft's preview card right in the <code>@</code> dropdown) so you confirm without committing.</li>
+      <li><strong>Bidirectional</strong> — referencing an entity creates a reverse "referenced by" backlink on it (Notion, GitHub). This is the high-value bit; it powers Browse's Documentation section.</li>
+    </ol>
+  </div>
+
+  <div class="two">
+    <div class="comp">
+      <div class="comp-head"><h3>Notion / Coda</h3><span class="tech">@-mentions + backlinks</span></div>
+      <p style="font-size:13px;color:var(--soft);margin:6px 0 0"><code>@</code> + title → live dropdown → inline chip with the page's icon + title; rename keeps every mention in sync; automatic backlinks ("Linked to this page", click jumps to the exact spot). Coda's chip → "learn more about that object" is precisely our click-to-detail.</p>
+    </div>
+    <div class="comp">
+      <div class="comp-head"><h3>GitHub</h3><span class="tech">references + hovercards</span></div>
+      <p style="font-size:13px;color:var(--soft);margin:6px 0 0"><code>#</code> autocompletes; references auto-create a reverse backlink; <strong>hovering shows a hovercard</strong> with status/title — the cheap preview to steal.</p>
+    </div>
+  </div>
+
+  <div class="comp">
+    <div class="comp-head"><h3>Embedded mini-diagrams</h3><span class="tech">dbt · Fibery · Whimsical · Eraser</span></div>
+    <div class="comp-grid">
+      <dt>dbt Explorer</dt><dd>Lineage embedded in each doc page; a mini-map (bottom-right) expands to the model's immediate parents/children, colour-coded by type. <strong>The strongest analog: a scoped diagram (just this entity's neighbours) living inline, expandable.</strong></dd>
+      <dt>Fibery</dt><dd>A Mermaid block renders an actual node-and-arrow diagram inside the page — <strong>the single most on-point reference</strong> for our saved mini-ER-diagram.</dd>
+      <dt>Whimsical / Eraser</dt><dd>Embed = small saved preview inline → expand/fullscreen to inspect → <strong>view-only in the doc, edit in the source</strong>. Eraser/dbt go further: live-updating, multiple per page.</dd>
+    </div>
+    <div class="steal"><b>Steal:</b> a saved diagram block that renders read-only in the doc with an Expand-to-fullscreen affordance that opens the full Visualize canvas (Craft's whiteboard-block → fullscreen). Multiple named diagrams per doc; each an independently saved React-Flow view.</div>
+  </div>
+
+  <!-- 7 DOCS DESIGN -->
+  <h2 id="docs-design"><span class="num">7</span>Docs: the design we'll build</h2>
+  <ul>
+    <li><strong>List view</strong> (PandaDoc / ClickUp): Title · last edited · tag count · excerpt · a row of linked-entity chips; search/filter (reuse <code>FacetFilter</code>); a <strong>New document</strong> button. Empty state: "No documents yet — document how a base or workflow is structured." (quiet, no hero illustration).</li>
+    <li><strong>Document view</strong>: editor (main) + a tags panel (rail) + Links &amp; Diagrams. A header "Link entity" affordance (ClickUp) in addition to inline <code>@</code>.</li>
+    <li><strong>Inline <code>@</code>-tagging</strong>: typing <code>@</code> opens the shared entity-typeahead, grouped by kind (Bases / Tables / Fields) with a Craft-style preview (type · parent · health) so the author picks the right one. Selecting inserts a tag chip. In reading mode the chip → the shared detail panel.</li>
+    <li><strong>Tags panel</strong>: every tagged entity listed, add/remove here too (not only inline) — the explicit association list that populates Browse's Documentation section. Soft semantic badges per our interface rules.</li>
+    <li><strong>Links</strong>: named external references (name + URL), visually distinct from entity chips so "internal entity" ≠ "external URL."</li>
+    <li><strong>Diagrams</strong>: one or more saved React-Flow mini-views (scoped tables, saved <code>toObject()</code> blob = nodes/edges/viewport). Read = static, pannable, Expand-to-fullscreen; edit = the canvas. Multiple per doc.</li>
+    <li><strong>Reading mode</strong> (Craft / Notion): clean centred column, author + last-updated byline, an auto Table-of-Contents rail mirroring headings, a right minimap for long docs; tags clickable → panel; diagrams read-only/expandable.</li>
+    <li><strong>Removed-entity state:</strong> a tag whose entity is gone from Airtable stays, flagged "no longer in schema" — never silently dropped.</li>
+  </ul>
+
+  <!-- 8 PLATE -->
+  <h2 id="plate"><span class="num">8</span>The editor decision <span class="tag warn">dependency fork</span></h2>
+  <p>
+    The brief names <a href="https://platejs.org/">Plate</a> because the editor must render <strong>custom inline nodes</strong>
+    (the entity tags), which a plain textarea can't. Plate covers every requirement first-class — verified from its docs:
+  </p>
+  <ul>
+    <li><strong>Mention combobox:</strong> <code>MentionPlugin</code> + <code>MentionInputPlugin</code> with <code>trigger: '@'</code>, <code>triggerPreviousCharPattern</code>, and a selection handler that inserts the node and moves the cursor.</li>
+    <li><strong>Custom entity-tag node:</strong> an inline <strong>void</strong> element <code>{ isElement, isInline, isVoid }</code> carrying <code>{ entityId, entityKind, value }</code>, declared via <code>withTriggerCombobox</code> + <code>@platejs/combobox</code>. The chip is a <code>contentEditable=false</code> span; <code>useReadOnly()</code> / <code>useSelected()</code> switch its rendering between edit and reading mode.</li>
+    <li><strong>Slash menu</strong> (<code>SlashPlugin</code>) to insert blocks — including an <strong>ER-diagram void block</strong> (Plate's editable-void pattern hosts a live React Flow canvas inside <code>contentEditable=false</code>).</li>
+    <li><strong>Markdown round-trip:</strong> mentions serialise to <code>[Customers](mention:tbl_123)</code> (entity id as the URL), so docs persist cleanly.</li>
+  </ul>
+  <div class="box decide">
+    <h4>Decision — mirror vs production</h4>
+    <p style="margin:0 0 8px">
+      Plate is a heavy dependency, and this <code>ui-only</code> repo must boot locally with zero backend and is sensitive
+      to the registry <code>minimumReleaseAge</code> gate. Adding it here is a real engineering choice that belongs to the
+      monorepo, not the design mirror.
+    </p>
+    <p style="margin:0">
+      <strong>Plan:</strong> ship a <strong>high-fidelity, dependency-free editor shell</strong> for the mirror —
+      a <code>contenteditable</code> surface wired to the same entity-typeahead, real inserted tag chips, the tags
+      panel, links, and an embedded React-Flow mini-diagram (reusing the existing <code>SchemaCanvas</code>) — so the
+      <em>entire UX</em> (the <code>@</code> flow, chips, reading mode, diagrams) is reviewable now. The editor core is
+      annotated with the <strong>Plate target</strong> and the concrete plugin map above, so the monorepo swap is a
+      contained, well-specified change. This is honest to "no fabricated dependency" and keeps the mirror runnable.
+    </p>
+  </div>
+
+  <!-- 9 MOBBIN -->
+  <h2 id="mobbin"><span class="num">9</span>Mobbin reference board</h2>
+  <p>Real-app screens to look at while building — the visual ground truth behind the decisions above. Ranked.</p>
+  <ol class="refs">
+    <li><b>Fibery — Mermaid diagram block inline</b> · the exact saved-mini-diagram-in-a-doc pattern · <a href="https://mobbin.com/screens/3e809c06-128a-4b1a-af72-0e00024e2b1d">screen</a></li>
+    <li><b>Stripe — Schema docs tree</b> · Table▸Field tree: right-aligned type, PK/FK tags, hover definitions · <a href="https://mobbin.com/screens/486c0eb5-831d-4e7f-a748-4ac79983b624">screen</a></li>
+    <li><b>Mixpanel — Lexicon / Events</b> · the flat catalog index: name/type/description/usage/status + header facets · <a href="https://mobbin.com/screens/a5b0c21b-f7e3-4fdb-bf97-22fcb90c5302">screen</a></li>
+    <li><b>Zoho CRM — detail panel with breadcrumb</b> · the literal stacking panel whose header breadcrumb grows as you drill · <a href="https://mobbin.com/screens/e2d3cd50-453d-4967-b55c-c4d4fa025ece">screen</a></li>
+    <li><b>Craft — @-mention picker w/ preview card</b> · confirm the right field/table before insert · <a href="https://mobbin.com/screens/5ee61237-ac30-4453-988e-17b9bf5ee300">screen</a></li>
+    <li><b>Braintrust — row status menu</b> · Verified / Deprecated / Incomplete / Needs Review — vocabulary for health dots · <a href="https://mobbin.com/screens/f341b9fd-59b4-4e1d-aaf3-3a8397bc6fe1">screen</a></li>
+    <li><b>Amplitude — B2B faceted filter rail</b> · type/status/space checkbox facets at the right register, Clear-All · <a href="https://mobbin.com/screens/434f775e-27d8-4654-99e0-018be6387552">screen</a></li>
+    <li><b>Craft — doc with left ToC reading view</b> · clean reading mode, heading-mirrored ToC rail · <a href="https://mobbin.com/screens/0c69f22d-db5f-4deb-b0ba-db971f58260b">screen</a></li>
+    <li><b>PandaDoc — Documents list</b> · Smart Views + Folders + Tags IA · <a href="https://mobbin.com/screens/48cc7028-bab5-4d91-9154-97b63fe12ef3">screen</a></li>
+    <li><b>Linear — issue: breadcrumb + Properties rail + sub-issues</b> · the density target itself · <a href="https://mobbin.com/screens/a9e8ca62-7809-4deb-a861-9524482dbb54">screen</a></li>
+  </ol>
+  <p class="meta">Honorable mentions: Snowflake Databases tree (breadcrumb-mirrors-tree) · Dovetail References/Search-block inserter (live-query embeds) · Qatalog slash menu (mention+embed+link insert set) · Pinterest zero-results filter-removal chips (Browse empty state) · Navattic / Maze drawers (prev/next sibling chevrons in the panel header).</p>
+
+  <!-- 10 PATTERNS -->
+  <h2 id="patterns"><span class="num">10</span>Adopt / avoid, consolidated</h2>
+  <div class="two">
+    <div class="box adopt">
+      <h4>Adopt</h4>
+      <ul style="margin-bottom:0">
+        <li>Tree↔Flat toggle (dbt); Flat = real sortable table, health-ascending default.</li>
+        <li>Two-tier search: filter-in-place + Cmd/K go-to-entity (abbreviation-aware).</li>
+        <li>Stripe field row; Ordinal sort option; right-aligned counts.</li>
+        <li>Reuse our shipped <code>FacetFilter</code>; "Showing N of M" + Clear.</li>
+        <li>Notion side-peek (list-left/detail-right) + iOS push/pop stack + breadcrumb + Miller truncation.</li>
+        <li>Entity-tag four-part contract (identity / clickable / hover / bidirectional).</li>
+        <li>Fibery/dbt scoped inline mini-diagram, expandable to the full canvas.</li>
+        <li>Castor documentation-completion % (we have the inputs); staleness stamp (Retool).</li>
+      </ul>
+    </div>
+    <div class="box avoid">
+      <h4>Avoid</h4>
+      <ul style="margin-bottom:0">
+        <li>Stats / profiling panels — impossible from Airtable metadata.</li>
+        <li>Live record counts or workspace grouping — fabrication.</li>
+        <li>Modal-on-modal; a panel wider than ~½ the viewport (Jira's complaint).</li>
+        <li>Search that only hits expanded nodes (DBeaver trap) or silently hides no-permission items (Glue) — "empty" must differ from "hidden".</li>
+        <li>Atlan's many-tab overload for a focused base→table→field tool.</li>
+        <li>A consumer/publishing tone in Docs — keep it utility-admin dense (no decorative blocks, no exclamation marks).</li>
+        <li>Adding Plate to this mirror repo (belongs in the monorepo).</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 11 BUILD -->
+  <h2 id="build"><span class="num">11</span>Build plan</h2>
+  <p>Order follows the brief's own "design first" — the shared pieces, then Browse, then Docs composes on them.</p>
+  <ol>
+    <li><strong>Shared entity model + typeahead</strong> — flatten the fixture schema into a single entity index (base/table/field) with kind, parent, type, health, description-state. One <code>EntitySearch</code> typeahead (Browse filter + Cmd/K + Docs <code>@</code> + Visualize add-entity).</li>
+    <li><strong>Shared stacking detail panel</strong> (<code>EntityPanel</code>) — the push/pop stack, breadcrumb, 5 sections, read-only + reading mode. New storybook entry + catalog component.</li>
+    <li><strong>Browse tab</strong> — Tree + Flat (reuse <code>Table</code> + toolbar pattern), <code>FacetFilter</code> bar, staleness stamp, wired to the panel.</li>
+    <li><strong>Docs tab</strong> — list view; document view (editor shell + <code>@</code> + tags panel + links + mini-diagram via <code>SchemaCanvas</code>); reading mode. Plate annotated as the production target.</li>
+    <li><strong>Harness + handoff</strong> — extend the <code>schema.astro</code> fixture with descriptions, doc fixtures (tags + a saved diagram + links), wire the 5-tab bar (Browse default), update <code>flow-registry.ts</code> + storybook (entity panel, typeahead, tree row, tag chip).</li>
+  </ol>
+
+  <!-- 12 OPEN -->
+  <h2 id="open"><span class="num">12</span>Open decisions for the client</h2>
+  <ol>
+    <li><strong>Field-row iconography:</strong> reuse the vendored Airtable field-icon set (recommended — already on Visualize/Changelog, max recognisability) vs. standardise on the Lucide mapping (§4) for strict single-icon-set purity. <span class="tag acc">recommend: vendored set</span></li>
+    <li><strong>Health vocabulary</strong> on rows: a simple green/amber/red dot vs. Braintrust-style named states (Verified / Incomplete / Deprecated / Needs review). <span class="tag acc">recommend: dot now, named states later</span></li>
+    <li><strong>Docs gating tier</strong> — brief says "likely Pro+; confirm with the capability matrix."</li>
+    <li><strong>Diagram edit depth in Docs</strong> — saved view-only (Whimsical model, simpler) vs. fully editable inline (Confluence model). <span class="tag acc">recommend: view-only + "open in Visualize" to edit</span></li>
+    <li><strong>Plate now or later</strong> — confirm the mirror-shell approach (§8) is acceptable for review, with Plate landing in the monorepo.</li>
+  </ol>
+
+  <!-- SOURCES -->
+  <h2 id="sources">Sources</h2>
+  <div class="src">
+    <p><strong>Airtable API (the data boundary):</strong></p>
+    <ul>
+      <li><a href="https://airtable.com/developers/web/api/list-bases">List bases</a> · <a href="https://airtable.com/developers/web/api/get-base-schema">Get base schema</a> · <a href="https://airtable.com/developers/web/api/field-model">Field model</a></li>
+    </ul>
+    <p><strong>Browse — schema catalogs:</strong></p>
+    <ul>
+      <li>dbt: <a href="https://docs.getdbt.com/docs/explore/explore-projects">Explore projects</a> · <a href="https://docs.getdbt.com/docs/build/view-documentation">View documentation</a></li>
+      <li>Stripe: <a href="https://docs.stripe.com/api/charges/object">API reference (charge object)</a></li>
+      <li>DataGrip: <a href="https://www.jetbrains.com/datagrip/features/navigation.html">Navigation</a> · DBeaver: <a href="https://dbeaver.com/docs/dbeaver/Filter-Database-Objects/">Filter objects</a></li>
+      <li>Atlan: <a href="https://docs.atlan.com/product/capabilities/discovery/how-tos/search-and-discover-assets">Search &amp; discover</a> · Secoda: <a href="https://docs.secoda.co/features/filters">Filters</a> · Select Star: <a href="https://docs.selectstar.com/features/table-page">Table page</a> · Castor: <a href="https://docs.coalesce.io/docs/catalog/assets/tables">Catalog tables</a> · DataHub: <a href="https://docs.datahub.com/docs/how/search">Search</a> · Hasura: <a href="https://hasura.io/docs/2.0/schema/postgres/table-relationships/index/">Relationships</a> · Glue: <a href="https://docs.aws.amazon.com/glue/latest/webapi/API_SearchTables.html">SearchTables</a> · Retool: <a href="https://docs.retool.com/queries/guides/sql/database-schema">Schema browser</a> · Notion: <a href="https://www.notion.com/help/intro-to-databases">Databases</a></li>
+    </ul>
+    <p><strong>Panel + Docs editor:</strong></p>
+    <ul>
+      <li>iOS: <a href="https://developer.apple.com/documentation/uikit/uinavigationcontroller">UINavigationController</a> · <a href="https://en.wikipedia.org/wiki/Miller_columns">Miller columns</a> · Jira: <a href="https://developer.atlassian.com/cloud/jira/platform/new-issue-view-ui-locations/">issue-view UI locations</a> · Linear: <a href="https://linear.app/docs/peek">Peek</a> · Stripe Apps: <a href="https://docs.stripe.com/stripe-apps/design">ContextView/FocusView</a></li>
+      <li>Plate: <a href="https://platejs.org/docs/mention">Mention</a> · <a href="https://platejs.org/docs/combobox">Combobox</a> · <a href="https://platejs.org/docs/slash-command">Slash command</a> · <a href="https://platejs.org/docs/examples/editable-voids">Editable voids</a></li>
+      <li>Mentions/backlinks: <a href="https://www.notion.com/help/create-links-and-backlinks">Notion</a> · <a href="https://coda.io/resources/guides/navigating-coda-docs">Coda</a> · <a href="https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/autolinked-references-and-urls">GitHub</a></li>
+      <li>Diagrams: <a href="https://docs.getdbt.com/docs/explore/explore-projects">dbt Explorer lineage</a> · <a href="https://help.whimsical.com/integrations/notion">Whimsical-in-Notion</a> · <a href="https://www.notion.com/integrations/eraser">Eraser-in-Notion</a> · React Flow: <a href="https://reactflow.dev/examples/interaction/save-and-restore">save &amp; restore</a></li>
+    </ul>
+    <p><strong>Mobbin:</strong> visual references inline in §9 (each links to the exact screen).</p>
+  </div>
+
+  <p class="foot">
+    Baseout · Schema section · Browse &amp; Docs research · compiled 2026-06-24 · companion to
+    <code>overview/schema/research.html</code> (Visualize) and the per-tab briefs. Every concrete data claim is bounded by §2.
+  </p>
+
+</div>
+</body>
+</html>

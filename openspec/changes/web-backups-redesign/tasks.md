@@ -16,3 +16,17 @@
 - [ ] Wire the action buttons (Run now, Cancel, Delete, Run again, Retry failed) to real endpoints
 - [ ] Remove the orphaned `BackupHistoryWidget.astro` + `RunBackupButton.astro` once nothing references them
 - [ ] Engineer: real per-run and per-base detail endpoints behind the `RunDetail` / `BaseRun` / per-table models
+
+## Reconciled against monorepo apps/web (2026-06-26)
+Audited during the ui-only → apps/web promotion pass. The read/audit frontend is already present and green here:
+- Present + wired: `BackupsListView`, `BackupRunDetailView` (renders in `metricsPending` mode — real run-level
+  totals, per-base shown pending), `BackupRunBaseView` (the view), `pages/backups.astro`, `pages/backups/run.astro`.
+  `BackupRunDetailView` already carries the base drill-down links.
+- **`pages/backups/run/base.astro` deliberately NOT added this pass.** In production `run.astro` passes `bases: []`
+  + `metricsPending`, so the run page renders no base links → the base route is unreachable, and `BackupRunBaseView`
+  has no pending mode (requires a full `base.tables[]`). Building it now would mean an all-zeros view or fabricated
+  data. It unblocks together with the Engineer per-base detail endpoint (the "To do" above) — not pre-empted.
+- List filters/search/pagination: out of scope ("not required for this change").
+- Orphan cleanup of `BackupHistoryWidget` (only used by the now-orphaned `DashboardView`) is the deferred
+  "separate pass" (cascades into stories/classification/`widget-lifecycle.test.ts`/cancel+delete-button libs);
+  `RunBackupButton` is still actively used by `backups.astro`, so it stays.

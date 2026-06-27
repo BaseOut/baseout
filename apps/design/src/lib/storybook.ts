@@ -910,6 +910,57 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
+    id: 'confirm-modal',
+    group: 'Primitives',
+    name: 'Confirm modal',
+    summary: 'A reusable "are you sure?" dialog built on the catalog Modal.',
+    description:
+      'ConfirmModal turns the Modal into a ready confirmation: a message + an optional soft Alert for the consequence, then Cancel + a confirm action. Use it for anything that should pause and ask — destructive (cancel a run, disconnect a destination) or costly (run off-schedule = extra credits). Body goes in the default slot; <code>confirmHref</code> navigates (the prototype pattern) or a <code>confirm</code> named slot supplies a custom control. <code>confirmClass</code> sets the emphasis — <code>btn-outline btn-error</code> for destructive, <code>btn-neutral</code> for a calm/reversible one. Don\'t rebuild a confirm inline — reuse this. (Click to open the real dialog.)',
+    reference: 'components/ui/ConfirmModal.astro',
+    props: [
+      { name: 'id', type: 'string', default: 'required', description: 'Dialog id; the trigger calls id.showModal().' },
+      { name: 'title', type: 'string', default: 'required', description: 'The question, e.g. "Cancel this backup run?".' },
+      { name: 'confirmLabel', type: 'string', default: "'Confirm'", description: 'Confirm-button label.' },
+      { name: 'confirmHref', type: 'string', default: '—', description: 'Where confirm navigates (prototype). Omit and use the confirm slot for a custom control.' },
+      { name: 'confirmClass', type: 'string', default: "'btn-primary'", description: "Confirm emphasis — 'btn-neutral' / 'btn-outline btn-error' (destructive)." },
+      { name: 'confirmIcon', type: 'string', default: '—', description: "Lucide class on the confirm button, e.g. 'lucide--x'." },
+      { name: 'cancelLabel', type: 'string', default: "'Cancel'", description: 'Dismiss-button label.' },
+    ],
+    usageDo: ['Reuse it for every confirm — destructive or costly.', 'State the consequence in a soft Alert (kept data, irreversibility, credits).'],
+    usageDont: ["Don't rebuild a confirm dialog inline.", "Don't use a red/destructive confirm for a reversible action — Pause is info, not error."],
+    examples: [
+      {
+        label: 'Destructive confirm — click to open',
+        html: `
+<button class="btn btn-sm btn-outline btn-error" onclick="document.getElementById('sb_confirm_demo').showModal()">
+  Cancel run…
+</button>
+<dialog id="sb_confirm_demo" class="modal">
+  <div class="modal-box max-w-sm">
+    <div class="flex items-center justify-between gap-4 pb-4 border-b border-base-300/20">
+      <h2 class="font-headline font-semibold text-lg">Cancel this backup run?</h2>
+      <form method="dialog"><button class="btn btn-sm btn-circle btn-ghost" aria-label="Close"><span class="iconify lucide--x icon-lg"></span></button></form>
+    </div>
+    <div class="py-4">
+      <p class="text-sm text-base-content/70">The run stops where it is. Everything captured so far is kept.</p>
+      <div role="alert" class="alert alert-soft alert-warning mt-3">
+        <span class="iconify lucide--triangle-alert size-4"></span>
+        <span>A cancelled run <strong>can’t be resumed</strong> — start a new one with Run backup now.</span>
+      </div>
+      <div class="modal-action">
+        <form method="dialog" class="flex gap-2">
+          <button class="btn btn-ghost">Keep running</button>
+          <button class="btn btn-outline btn-error"><span class="iconify lucide--x size-4"></span>Cancel run</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>`,
+      },
+    ],
+  },
+  {
     id: 'tabs',
     group: 'Primitives',
     name: 'Tabs',

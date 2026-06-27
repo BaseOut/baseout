@@ -55,7 +55,7 @@ const detailHref = (r: BackupRunSummary) =>
 
 // Faceted filter options (value, label). Status & trigger are multi-select
 // (checkboxes); date is single-select (radios, mutually-exclusive ranges).
-const statusOpts: [string, string][] = [['succeeded', 'Succeeded'], ['failed', 'Failed'], ['running', 'Running'], ['queued', 'Queued'], ['cancelled', 'Cancelled']];
+const statusOpts: [string, string][] = [['succeeded', 'Succeeded'], ['failed', 'Failed'], ['running', 'Running'], ['paused', 'Paused'], ['queued', 'Queued'], ['cancelled', 'Cancelled']];
 const triggerOpts: [string, string][] = [['scheduled', 'Scheduled'], ['manual', 'Manual'], ['webhook', 'Webhook'], ['trial', 'Trial']];
 const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']];
 ---

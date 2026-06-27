@@ -3,7 +3,7 @@
  *
  *   1. PATCH the backup-config policy (frequency) via saveBackupConfig.
  *   2. On first-time setup, POST a first backup run via runBackup.
- *   3. Tell the caller where to navigate (/integrations?status=…).
+ *   3. Tell the caller where to navigate (/?status=…) — Space Home.
  *
  * Pure async function with injected deps (save-config / run-backup
  * helpers), so the decision logic is testable without a DOM or network.
@@ -74,8 +74,8 @@ export async function saveConfigureForm(
       // the user can fix it (e.g. pick a base) and hit Save again.
       return { ok: false, message: describeRunBackupError(run.error) }
     }
-    return { ok: true, redirect: '/integrations?status=running' }
+    return { ok: true, redirect: '/?status=running' }
   }
 
-  return { ok: true, redirect: '/integrations?status=saved' }
+  return { ok: true, redirect: '/?status=saved' }
 }

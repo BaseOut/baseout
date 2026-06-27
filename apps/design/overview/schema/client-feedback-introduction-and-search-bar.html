@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Фідбек клієнта — Schema · Introduction & Search Bar Improvements</title>
+<style>
+  :root{
+    --bg:#fbfaf8; --card:#ffffff; --ink:#1c2024; --muted:#5b6470; --faint:#8a929c;
+    --line:#e6e3dd; --line2:#efece6;
+    --blue:#2563eb; --blue-bg:#eef3ff;
+    --green:#15803d; --green-bg:#e9f6ee;
+    --amber:#b45309; --amber-bg:#fdf3e3;
+    --red:#b42318; --red-bg:#fdecea;
+    --violet:#6d28d9; --violet-bg:#f1ecfd;
+    --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px;margin:0 auto;padding:40px 24px 96px}
+  h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+  h2{font-size:21px;margin:48px 0 14px;letter-spacing:-.01em;padding-bottom:8px;border-bottom:2px solid var(--line)}
+  h3{font-size:16px;margin:0}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{font-family:var(--mono);font-size:.86em;background:#f1efe9;padding:1.5px 5px;border-radius:5px;color:#3b4148}
+  .sub{color:var(--muted);font-size:14px}
+  .lead{color:var(--muted);font-size:15px;max-width:72ch}
+
+  /* meta strip */
+  .meta{display:flex;flex-wrap:wrap;gap:8px 20px;margin:18px 0 8px;font-size:13px;color:var(--muted)}
+  .meta b{color:var(--ink);font-weight:600}
+  .note{background:var(--blue-bg);border:1px solid #d8e2fb;border-radius:10px;padding:12px 16px;margin:18px 0;font-size:14px;color:#1e3a8a}
+
+  /* legend */
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 0}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+    padding:3px 9px;border-radius:999px;white-space:nowrap;border:1px solid transparent}
+  .s-have{background:var(--green-bg);color:var(--green);border-color:#cde9d6}
+  .s-part{background:var(--amber-bg);color:var(--amber);border-color:#f3e0bd}
+  .s-new{background:var(--red-bg);color:var(--red);border-color:#f5d2cd}
+  .s-star{background:var(--violet-bg);color:var(--violet);border-color:#e2d6fb}
+  .p0{background:#fbe9e7;color:#b42318;border-color:#f3cdc7}
+  .p1{background:#fef3e2;color:#b45309;border-color:#f4e2bf}
+  .p2{background:#eef1f4;color:#5b6470;border-color:#dde2e8}
+  .eff{background:#f4f2ec;color:#6b7280;border-color:#e4e0d8}
+  .pill.done{background:#138a4f;color:#fff;border-color:#0f7544}
+
+  /* summary table */
+  table.sum{width:100%;border-collapse:collapse;margin:10px 0 0;font-size:13.5px}
+  table.sum th,table.sum td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line2);vertical-align:top}
+  table.sum th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700;border-bottom:1px solid var(--line)}
+  table.sum tr:hover td{background:#faf8f3}
+  table.sum td.id{font-family:var(--mono);font-weight:600;color:var(--muted);white-space:nowrap}
+  table.sum td.tc{font-family:var(--mono);color:var(--blue);white-space:nowrap}
+
+  /* cards */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:16px 0;
+    box-shadow:0 1px 2px rgba(28,32,36,.03)}
+  .card .top{display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .card .num{font-family:var(--mono);font-weight:700;color:var(--faint);font-size:13px;margin-top:3px}
+  .card .ttl{flex:1;min-width:240px}
+  .card .ttl h3{font-size:16.5px;letter-spacing:-.01em}
+  .card .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
+  .tc-big{font-family:var(--mono);font-size:12.5px;color:var(--blue);background:var(--blue-bg);
+    border:1px solid #d8e2fb;border-radius:7px;padding:2px 8px;white-space:nowrap;align-self:flex-start;margin-top:1px}
+  .block{margin-top:14px}
+  .block .lab{font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:700;color:var(--faint);margin-bottom:3px}
+  blockquote{margin:6px 0 0;padding:8px 14px;border-left:3px solid var(--line);background:#faf8f3;
+    border-radius:0 8px 8px 0;font-style:italic;color:#3b4148;font-size:14px}
+  blockquote .t{font-style:normal;font-family:var(--mono);font-size:11.5px;color:var(--faint);display:block;margin-bottom:2px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+  @media(max-width:680px){.grid2{grid-template-columns:1fr}}
+  .pro,.con{border-radius:10px;padding:10px 13px;font-size:13.5px}
+  .pro{background:var(--green-bg);border:1px solid #cde9d6}
+  .con{background:var(--amber-bg);border:1px solid #f3e0bd}
+  .pro .lab,.con .lab{color:inherit;opacity:.85}
+  .now{background:#f7f6f2;border:1px solid var(--line2);border-radius:10px;padding:10px 13px;font-size:13.5px}
+  .comp{font-size:13.5px}
+  .comp ul{margin:4px 0 0;padding-left:18px}
+  .comp li{margin:3px 0}
+  .act{background:#f3f7ff;border:1px solid #dde7fb;border-radius:10px;padding:11px 14px;font-size:13.5px;margin-top:14px}
+  .act .lab{color:#1e40af}
+  .donebox{background:var(--green-bg);border:1px solid #cde9d6;border-radius:10px;padding:11px 14px;font-size:13.5px;margin-top:12px;color:#14532d}
+  .donebox .done-h{display:block;font-weight:700;color:var(--green);margin-bottom:3px;text-transform:uppercase;letter-spacing:.04em;font-size:11px}
+  .donebox code{background:#d7ecde}
+  .obt{font-size:12.5px;color:var(--muted);margin-top:7px}
+  .obt b{color:var(--green)}
+  .obt.warnc b{color:var(--amber)}
+  .ev{font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+
+  /* flow diagram (pure CSS, offline-safe) */
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 2px;font-size:12.5px}
+  .fbox{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 11px;font-weight:600}
+  .fbox.alt{background:var(--blue-bg);border-color:#d8e2fb;color:#1e40af}
+  .fbox.ok{background:var(--green-bg);border-color:#cde9d6;color:var(--green)}
+  .fbox.warn{background:var(--amber-bg);border-color:#f3e0bd;color:var(--amber)}
+  .farr{color:var(--faint);font-weight:700}
+
+  ul.plan{list-style:none;padding:0;margin:8px 0 0}
+  ul.plan li{padding:8px 0;border-bottom:1px solid var(--line2);display:flex;gap:10px;align-items:baseline}
+  ul.plan li .pill{flex-shrink:0}
+  .foot{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:12.5px}
+  .anchor{scroll-margin-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Фідбек клієнта — секція Schema</h1>
+  <div class="sub">Відео: <b>«Introduction and Search Bar Improvements.mp4»</b></div>
+  <div class="meta">
+    <span>⏱ <b>17:21</b></span>
+    <span>🎙 транскрипт: <b>локальний Whisper (large-v3-turbo, офлайн)</b></span>
+    <span>🖼 <b>64 кадри</b> прив'язано до екранів</span>
+    <span>📅 опрацьовано <b>2026-06-25</b></span>
+  </div>
+
+  <p class="lead">Засновник проходить по збудованій нами секції <b>Schema</b> (Browse · Visualize · Changelog · Docs · Health) і проговорює правки. Його власні слова на старті: <i>«this is looking really good… take the transcript from this video and use it to generate the updates that are needed.»</i> Тобто це відео — фактично лог завдань. Нижче кожен пункт: що він сказав (із таймкодом, щоб переслухати), що хоче, що в нас зараз у коді, критика за/проти, як це роблять конкуренти <b>з нашого ресерчу</b>, і як діяти.</p>
+
+  <div class="note">
+    <b>Як користуватись.</b> Спершу — таблиця-огляд (усі пункти, таймкоди, статус, пріоритет). Далі — детальні картки, згруповані за вкладками. Таймкод у моноширинному шрифті = хвилина у відео, де клієнт це говорить. Наприкінці — пріоритезований план дій і відкриті питання до клієнта.
+  </div>
+
+  <div class="legend">
+    <span class="pill s-have">✅ є / покрито</span>
+    <span class="pill s-part">🟡 частково</span>
+    <span class="pill s-new">🔴 нове / нема</span>
+    <span class="pill s-star">⭐ похвала (не чіпати)</span>
+    <span class="pill p0">P0</span><span class="pill p1">P1</span><span class="pill p2">P2</span>
+    <span class="pill eff">S / M / L — оцінка обсягу</span>
+    <span class="pill done">✓ Зроблено (реалізовано в коді)</span>
+  </div>
+
+  <div class="note" style="background:var(--green-bg);border-color:#cde9d6;color:#14532d" id="build-status">
+    <b>✓ Стан реалізації</b> (оновлюється по ходу робіт). Зроблено й перевірено в коді (обидві теми):
+    <a href="#A1">A1 — пошук у фасеті</a> · <a href="#A2">A2 — описи у 3 таби</a> · <a href="#A8">A8 — структурні хлібні крихти</a> · <a href="#A3">A3 — пошук полів</a> · <a href="#A4">A4 — конфіг за типом поля</a> · <a href="#A6">A6 — кардинальність + backlink</a> · <a href="#C5">C5 — тип Config changed</a> · <a href="#D6">D6 — видалення документів</a> · <a href="#D1">D1 — згортання списку Docs</a> · <a href="#A7">A7 — розгортання панелі</a> · <a href="#B2">B2 — типи звʼязків + кольори (Visualize)</a> · <a href="#C3">C3 — локація Changelog → панель</a> · <a href="#A10">A10 — Visualize = повна панель Browse</a> · <a href="#B1">B1 — групи баз у Visualize</a> · <a href="#C4">C4 — історія сутності в панелі</a> · <a href="#D4">D4 — «Add to doc» + bottom drawer</a> · <a href="#D2">D2 — кілька діаграм</a>.
+    <b>Усі правки реалізовано й перевірено</b> (16 пунктів). На кожній картці — зелений блок «Зроблено — де знайти» з посиланням на файл і способом перевірки. Свідомо <b>не</b> вбудовано лише: <b>A5</b> (Push to Airtable — потребує бекенд-write-back, V2) і <b>Health</b> (відкладено клієнтом).
+  </div>
+
+  <!-- ============ SUMMARY ============ -->
+  <h2 id="summary">Таблиця-огляд</h2>
+  <table class="sum">
+    <thead><tr><th>#</th><th>Таймкод</th><th>Екран</th><th>Що хоче клієнт</th><th>Статус</th><th>Пріор.</th></tr></thead>
+    <tbody>
+      <tr><td class="id">A1</td><td class="tc">00:22</td><td>Browse</td><td>Сірчбар <b>усередині дропдауна фасета</b> (Bases / Field types…) коли опцій багато</td><td><span class="pill s-part">🟡</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">A2</td><td class="tc">00:35</td><td>Панель</td><td>Описи у 3 таби: Airtable · Extended · AI</td><td><span class="pill s-part">🟡</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">A3</td><td class="tc">01:17</td><td>Панель</td><td>Пошук полів усередині таблиці</td><td><span class="pill s-new">🔴</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">A4</td><td class="tc">01:31</td><td>Панель</td><td>Конфіг по типу поля (формула/опції/референси/lookup)</td><td><span class="pill s-part">🟡</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">A5</td><td class="tc">03:21</td><td>Панель</td><td>Push <b>у табі Airtable</b>: чернетка → Publish → Reset <i>(є відкриті питання)</i></td><td><span class="pill s-new">🔴</span></td><td><span class="pill p2">P2</span></td></tr>
+      <tr><td class="id">A6</td><td class="tc">04:47</td><td>Панель</td><td>Relationships: backlink-поле + кардинальність</td><td><span class="pill s-part">🟡</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">A7</td><td class="tc">05:56</td><td>Cross</td><td>Розгортати панель на весь екран; сайдбари expand/collapse</td><td><span class="pill s-new">🔴</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">A8</td><td class="tc">06:39·08:44</td><td>Панель</td><td>Хлібні крихти: структурні Base›Table›Type, реверс, клікабельні</td><td><span class="pill s-part">🟡</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">A10</td><td class="tc">07:55</td><td>Cross</td><td>Visualize-панель = <b>та сама (повна) панель</b>, що в Browse (reuse)</td><td><span class="pill s-part">🟡</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">B1</td><td class="tc">09:25</td><td>Visualize</td><td>Групувати/обводити таблиці однієї бази</td><td><span class="pill s-new">🔴</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">B2</td><td class="tc">09:59</td><td>Visualize</td><td>4 типи звʼязків + дропдаун; lookup/rollup = 2 лінії</td><td><span class="pill s-new">🔴</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">C3</td><td class="tc">11:27</td><td>Changelog</td><td>Локація в записі клікабельна → відкриває панель</td><td><span class="pill s-part">🟡</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">C4</td><td class="tc">11:50</td><td>Панель</td><td>У панелі сутності — секція Changelog цієї сутності</td><td><span class="pill s-new">🔴</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">C5</td><td class="tc">12:41</td><td>Changelog</td><td>Тип «Config changed» + before↔after</td><td><span class="pill s-part">🟡</span></td><td><span class="pill p0">P0</span></td></tr>
+      <tr><td class="id">D1</td><td class="tc">13:49·16:20</td><td>Docs</td><td>Згортати лівий список — більше місця для письма</td><td><span class="pill s-new">🔴</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">D2</td><td class="tc">14:12</td><td>Docs</td><td>Кілька діаграм у документі</td><td><span class="pill s-have">✅</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">D4</td><td class="tc">14:53</td><td>Visualize→Docs</td><td>«Add to doc»: снапшот діаграми в документ (модалка, save/delete)</td><td><span class="pill s-new">🔴</span></td><td><span class="pill p1">P1</span></td></tr>
+      <tr><td class="id">D6</td><td class="tc">16:50</td><td>Docs</td><td>Видалення документів з підтвердженням</td><td><span class="pill s-new">🔴</span></td><td><span class="pill p0">P0</span></td></tr>
+    </tbody>
+  </table>
+  <p class="sub" style="margin-top:10px">Окремо — похвали (⭐ A9 07:22, C1 11:09, D3 14:30) і службові нотатки (C2 «можливо приберу Changelog», C6 «Health — пізніше»). Деталі в кінці.</p>
+
+  <!-- ============ BROWSE / PANEL ============ -->
+  <h2 id="browse">A · Browse + панель сутності</h2>
+
+  <div class="card anchor" id="A1">
+    <div class="top">
+      <span class="num">A1</span>
+      <div class="ttl"><h3>Сірчбар усередині дропдауна фасета — «і так само всюди»</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-part">🟡 частково</span><span class="pill p1">P1</span><span class="pill eff">S</span></div>
+      </div>
+      <span class="tc-big">00:22–00:31</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">00:22</span>«I already mentioned adding a search bar <b>in here</b> to be able to filter this. <b>Same with all of these.</b>»</blockquote>
+      <div class="now" style="margin-top:8px"><b>Уточнення клієнта (скрин 2026-06-25):</b> «in here» = <b>усередині самого випадаючого списку фасета</b> (Bases, Field types…), а не глобальний пошук над таблицею. Коли баз / полів / опцій багато — потрібен сірчбар у попапі, щоб фільтрувати опції. «Same with all of these» = у <b>кожному</b> такому дропдауні.</div>
+    </div>
+    <div class="now"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Глобальний typeahead (<code>EntitySearch</code>) і фасети є. Але <b>всередині попапа фасета</b> (<code>FacetFilter</code>) лише «Show all / Hide all» + список опцій (радіо/тоглів) — <b>пошукового поля нема</b>. <span class="ev">FacetFilter.astro:53–71 (Show all/Hide all + опції, без input) · SchemaBrowse.astro:108–114</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul>
+        <li>DataGrip — дворівневий пошук + <b>match по абревіатурі</b> (<code>fa</code>→<code>film_actor</code>) + Cmd-K «Go to DB object».</li>
+        <li>dbt docs — fuzzy, виключення <code>-</code>, boolean OR, фрази в лапках.</li>
+        <li>⚠️ DBeaver — «пошук влучає тільки в розгорнуті вузли» — наш ресерч позначає це як <b>пастку, якої уникати</b>.</li>
+      </ul>
+    </div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Додати <code>input input-sm</code> угорі попапа <code>FacetFilter</code>, який фільтрує опції на місці (показувати, коли опцій &gt; ~8). Оскільки <code>FacetFilter</code> — <b>один спільний компонент</b>, ця зміна автоматично закриє <b>всі</b> фасети (Bases, Field types, Type…) = клієнтове «same with all of these». Не плутати з A3 (пошук <i>полів у таблиці</i>) — це різні місця.
+      <div class="obt">Дані: <b>обтейнабельні</b> (опції фасета вже в компоненті). Дешево, ефект на масштабі.</div></div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>У попапі фасета (<code>FacetFilter</code>) зʼявився пошук, коли опцій <b>&gt;8</b> — фільтрує опції на місці. Один спільний компонент → працює для <b>всіх</b> фасетів (Browse + Visualize). <b>Перевірити:</b> <code>/schema</code> → Browse → фасет <b>Field types</b> (16 типів) → пошук угорі попапа. <b>Код:</b> <code>FacetFilter.astro</code> (<code>data-facet-search</code> + обробник).</div>
+  </div>
+
+  <div class="card anchor" id="A2">
+    <div class="top">
+      <span class="num">A2</span>
+      <div class="ttl"><h3>Описи сутності — у 3 таби (економія місця)</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-part">🟡 частково</span><span class="pill p0">P0</span><span class="pill eff">S–M</span></div>
+      </div>
+      <span class="tc-big">00:35–01:16</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">00:38</span>«I wonder if these descriptions are maybe three tabs… Airtable… and then your description, although I'd call it <b>extended description</b>… and then <b>AI generated</b>. So maybe three tabs you could just tab between that will save some space. And these could get pretty long, so you can maybe stretch it down.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Три джерела вже є, але <b>складені вертикально</b> (stacked), не табами: Airtable / AI / Your. <span class="ev">EntityPanel.astro:204–218</span></div>
+    <div class="pro" style="background:var(--blue-bg);border-color:#d8e2fb"><div class="lab" style="color:#1e40af">✓ Рішення зафіксовано (2026-06-25)</div>
+      Робимо <b>чисті 3 таби</b> [Airtable · Extended description · AI generated], як буквально просив клієнт — економія місця в пріоритеті. Те, що таб показує одне джерело за раз (а не всі поруч), прийнято <b>свідомо</b>: порівняння «оком» не критичне, для вставки з AI достатньо перемкнути таб. Деталі — на етапі реалізації.</div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul><li><b>Прямого аналога немає:</b> розбивка опису на «джерело-запису · AI · твій» зафіксована в нашому ресерчі як <b>наш власний дизайн</b>, не запозичений. Тобто це наша диференціація — рішення «таби vs stacked» приймаємо самі.</li></ul>
+    </div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Зробити 3 таби <code>daisyUI tabs</code> [Airtable · Extended description · AI generated], дефолт — Extended; перейменувати джерело; для довгого тексту — скрол/resize контейнера. Це чистий фронт.
+      <div class="obt">Дані: <b>обтейнабельні</b> — опис Airtable з meta-API; «extended» і AI — наші.</div></div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>Описи в панелі сутності тепер <b>3 таби</b> (Airtable · Extended · AI generated, дефолт Extended), як просив клієнт. <b>Перевірити:</b> <code>/schema</code> → Browse → клік на полі → панель справа, секція <b>Descriptions</b>. <b>Код:</b> <code>apps/web/src/components/schema/EntityPanel.astro</code> → <code>renderDescriptions</code>.</div>
+  </div>
+
+  <div class="card anchor" id="A3">
+    <div class="top">
+      <span class="num">A3</span>
+      <div class="ttl"><h3>Пошук полів усередині таблиці</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-new">🔴 нема</span><span class="pill p1">P1</span><span class="pill eff">S</span></div>
+      </div>
+      <span class="tc-big">01:17–01:31</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">01:17</span>«Some tables have tons of fields. So it would be good to have a search bar in here, for the fields.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Глобальний пошук є, але <b>скоупленого по полях однієї таблиці нема</b> — ні в секції Fields панелі, ні в бічній панелі Visualize. <span class="ev">EntityPanel.astro:260–264 · SchemaCanvas.tsx:765–810</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul><li>DataGrip — type-to-highlight усередині обʼєкта. Metaphor/DataHub — field-scoped оператори <code>fieldPaths:</code>. (Уникати пастки DBeaver — A1.)</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Додати маленький <code>input input-sm</code> над списком Fields у панелі (і в бічній панелі Visualize) — фільтр-на-місці по назві/типу. Дешево.
+      <div class="obt">Дані: <b>обтейнабельні</b> (поля вже в моделі).</div></div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>Інпут <b>«Filter fields…»</b> над списком полів у панелі (зʼявляється при >7 полях), фільтрує на місці. <b>Перевірити:</b> відкрий таблицю Deals → панель → секція <b>Fields</b>. <b>Код:</b> <code>EntityPanel.astro</code> (children-рендер + обробник <code>data-ep-filter</code>).</div>
+  </div>
+
+  <div class="card anchor" id="A4">
+    <div class="top">
+      <span class="num">A4</span>
+      <div class="ttl"><h3>Конфіг-блок залежно від типу поля</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-part">🟡 частково</span><span class="pill p0">P0</span><span class="pill eff">M</span></div>
+      </div>
+      <span class="tc-big">01:31–03:19</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">01:39</span>«A formula field might have configuration information — display the formula as <b>inline code</b>… a single select field — display the <b>select options</b>… for a formula, also show <b>what fields are referenced</b>… if it's a <b>lookup</b>, there's a reference field from the same table and the lookup field from another table — we'd want the <b>table and the field</b>… we can get all that from the information that we have.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Опції single-select <b>уже рендеряться</b> (ghost-беджі). Формули (текст), «referenced fields», структурований lookup (table+field) — <b>нема</b>; є лише загальний рядок <code>derivedFrom</code> «Computed from X». <span class="ev">EntityPanel.astro:265–267,273–274</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul>
+        <li>Stripe API ref — enum-поля отримують блок <b>«Possible values»</b> (= наш список опцій).</li>
+        <li>dbt docs — явні секції <b>«Depends on / Referenced by»</b> (= наші referenced fields).</li>
+        <li>ChartDB / React Flow schema node — рядок поля = name + type (+ PK/nullable індикатори).</li>
+      </ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Додати у панель умовний блок «Configuration» за типом: <b>Formula</b> → текст формули inline-code + список referenced fields (клікабельні); <b>Single/Multi-select</b> → опції (вже є); <b>Lookup/Rollup</b> → пара «reference field (ця таблиця)» + «looked-up field (інша таблиця · поле)».
+      <div class="obt">Дані: <b>обтейнабельні</b> — клієнт прямо каже «we can get all that»; Airtable meta-API віддає formula, options, linked/lookup-референси.</div></div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>У панелі поля зʼявився блок <b>CONFIGURATION</b>: <b>Formula</b> — текст inline-code + <b>References</b> (клікабельні поля); <b>Lookup</b> — «Looks up &lt;поле&gt; in &lt;таблиця&gt; via &lt;link&gt;». <b>Перевірити:</b> Deals → поле <b>Weighted Value</b> (формула) або <b>Company Industry</b> (lookup). <b>Код:</b> <code>EntityPanel.astro</code> → <code>renderConfig</code>; модель — <code>schemaEntities.ts</code> / <code>SchemaCanvas.tsx</code> (formula / referencedFieldIds / lookup*).</div>
+  </div>
+
+  <div class="card anchor" id="A5">
+    <div class="top">
+      <span class="num">A5</span>
+      <div class="ttl"><h3>Push to Airtable: чернетка → Publish → Reset</h3>
+        <div class="tags"><span class="pill s-new">🔴 нове (специф.)</span><span class="pill p2">P2 (потрібен бекенд)</span><span class="pill eff">L</span></div>
+      </div>
+      <span class="tc-big">03:21–04:46</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт (перечитано повністю)</div>
+      <blockquote><span class="t">03:21</span>«For this push to airtable… we'll have our internal description (the three). And then I'd want, for the <b>airtable to make this editable</b>, in <b>draft mode</b> where they can make changes. And maybe they'll just <b>copy from the AI description and paste it into there</b>.»</blockquote>
+      <blockquote><span class="t">04:02</span>«We'd need a <b>publish button</b>… the draft will automatically save it, so we don't need a save button… so it <b>pushes it back to airtable</b>… and a <b>reset button</b> that resets it back to what is <b>saved in airtable</b>.»</blockquote>
+      <div class="now" style="margin-top:8px"><b>Уточнення (скрин 2026-06-25):</b> кнопку Push переносимо <b>в таб «Airtable»</b> (у поле/область роботи з Airtable), а не лишаємо окремою внизу. Тобто редагованою <b>чернеткою стає сам Airtable-опис</b>: правиш його в табі Airtable, сідаєш копіюванням з AI / Extended, <b>Publish</b> пише в Airtable, <b>Reset</b> повертає до живого значення Airtable.</div>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Кнопка «Push to Airtable» <b>задизейблена</b> й висить окремо <b>під усіма описами</b> (видно на скрині), тултіп «Coming soon — V2 write-back». Редагування опису теж вимкнене. <b>Треба:</b> перенести Publish/Reset у таб Airtable (з'явиться після A2). <span class="ev">EntityPanel.astro:215,219–223</span></div>
+    <div class="flow">
+      <span class="fbox alt">AI / Extended</span><span class="farr">— copy →</span>
+      <span class="fbox">Таб «Airtable»: чернетка (auto-save)</span>
+    </div>
+    <div class="flow">
+      <span class="fbox">чернетка Airtable</span><span class="farr">→</span>
+      <span class="fbox ok">Publish → пише в Airtable</span>
+      <span class="farr">／</span><span class="fbox warn">Reset → відкат до живого Airtable</span>
+    </div>
+    <div class="grid2">
+      <div class="pro"><div class="lab">За</div>Перетворює наш «Coming soon» на повну специфікацію життєвого циклу. Це наша <b>диференціація</b> (двосторонність із Airtable), і логічно живе саме в табі Airtable.</div>
+      <div class="con"><div class="lab">Проти / ризик</div><b>Write-back у Airtable — дія з наслідками.</b> Потрібен бекенд (PATCH опису поля) + права + підтвердження/прев'ю diff перед Publish. UI малюємо зараз, реальний push — пізніше.</div>
+    </div>
+    <div class="con" style="margin-top:14px"><div class="lab">❓ Потребує уточнення в клієнта (тут A5 неповний)</div>
+      <ul style="margin:4px 0 0;padding-left:18px">
+        <li><b>«Extended/Your» = публікована Airtable-чернетка, чи це різні поля?</b> Airtable-опис зазвичай короткий рядок; наш Extended може бути довшим і лишатися лише в Baseout. Це <b>ключова</b> неясність — від неї залежить, скільки редагованих полів і що саме Publish відправляє.</li>
+        <li>Publish <b>перезаписує</b> весь опис поля в Airtable? Показуємо before→after + підтвердження перед записом?</li>
+        <li>«copy and paste into there» — вручну, чи даємо кнопки <b>«Use AI» / «Use Extended»</b>, що заповнюють чернетку? (у нас уже є задизейблена «Copy AI → Yours».)</li>
+        <li>Тільки описи <b>полів</b>, чи також описи <b>таблиць / баз</b>?</li>
+      </ul></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul><li><b>Немає даних у нашому ресерчі</b> — жоден конкурент із write-back не задокументований. Це наш власний V2-патерн (read-only у V1). Рухаємось без референсу — закласти безпеку (підтвердження, diff, undo).</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      <b>Спершу уточнити питання вище</b> (особливо Extended vs Airtable-чернетка). Тоді: Publish/Reset у табі Airtable, draft-бейдж + auto-save-індикатор, «Use AI / Use Extended» для сідингу, стан «локально змінено vs опубліковано». Реальний push до Airtable — окрема бекенд-таска V2.
+      <div class="obt warnc">Дані: читання <b>обтейнабельне</b>; <b>запис</b> у Airtable потребує бекенду + прав (не фронт).</div></div>
+  </div>
+
+  <div class="card anchor" id="A6">
+    <div class="top">
+      <span class="num">A6</span>
+      <div class="ttl"><h3>Relationships: backlink-поле + кардинальність</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-part">🟡 частково</span><span class="pill p0">P0</span><span class="pill eff">M</span></div>
+      </div>
+      <span class="tc-big">04:47–05:55</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">04:59</span>«In addition to the table, I'd like to see the <b>field that is the backlink</b>… there really isn't a concept of link-to / linked-from, it's both ways… what we do know is if it allows for <b>multiple links or a single link</b> — so display like multiple, or one-to-one / one-to-many, or maybe <b>'1+'</b> to show it could be more than one.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Показуємо лише <b>таблицю</b> + слово «links to / linked from». Назва backlink-поля <b>обчислюється, але не виводиться</b>; кардинальності <b>нема взагалі</b>. <span class="ev">EntityPanel.astro:275–283 · schemaEntities.ts:202–215</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul>
+        <li><b>Hasura</b> — naming «object vs array relationship» = Airtable single-vs-multiple (через <code>prefersSingleRecordLink</code>) — це й драйвить нашу термінологію.</li>
+        <li>dbt — секції «Depends on / Referenced by»; Metabase — секція «Connections» клікабельними лінками.</li>
+        <li>⚠️ <b>Crow's-foot нотацію наш ресерч відкидає</b> як семантично невірну для двосторонніх/many-to-many звʼязків Airtable — не тягнути її.</li>
+      </ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      У рядок relationship додати: <b>назву backlink-поля</b> + <b>бейдж кардинальності</b> (single → 1:1, multiple → 1:many / «1+»). Семантика — Hasura (object/array), <b>не</b> crow's-foot.
+      <div class="obt">Дані: <b>обтейнабельні</b> — meta-API дає id інверсного поля + <code>prefersSingleRecordLink</code>.</div></div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>Рядок звʼязку тепер показує <b>кардинальність</b> (1:1 / 1:many, Hasura-семантика, не crow's-foot) + під-секцію <b>Backlink</b> (інверс-поле в іншій таблиці, клікабельне). <b>Перевірити:</b> Deals → <b>Company</b> (1:1, backlink «Deals») або Companies → <b>Deals</b> (1:many, backlink «Company»). <b>Код:</b> <code>EntityPanel.astro</code> (гілка relationships) + <code>allowsMultiple</code>/<code>inverseFieldId</code> у моделі та фікстурі.</div>
+  </div>
+
+  <div class="card anchor" id="A7">
+    <div class="top">
+      <span class="num">A7</span>
+      <div class="ttl"><h3>Розгортати панель на весь екран; усі сайдбари — expand/collapse</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-new">🔴 нема</span><span class="pill p1">P1</span><span class="pill eff">M</span><span class="pill p2">cross-cutting</span></div>
+      </div>
+      <span class="tc-big">05:56–06:34</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">05:56</span>«If there's a way to expand this to full screen, or at least to the menu area… there will be times where there's a lot of data to review… maybe we make <b>all sidebars expandable and collapsible</b>.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Панель фіксованої ширини <code>min(94vw,460px)</code>, лише Back/Close — кнопки розгортання <b>нема</b>. Бічна панель Visualize теж фікс 360px. <span class="ev">EntityPanel.astro:30–38,62–68 · SchemaCanvas.tsx:716–738</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul><li>Craft — whiteboard-блок «→ fullscreen»; Azimutt — collapse сутностей до заголовка; Castor — стійкий правий рейл. (Тема «expand для огляду великих даних» — стандарт.)</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Додати кнопку expand на <code>EntityPanel</code> (ширина контенту / fullscreen) і винести в <b>системний патерн</b> «expandable/collapsible side region» — той самий механізм для Docs (D1/D5). Один компонент-обгортка.</div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>Кнопка expand (maximize/minimize) у хедері панелі розгортає її <b>460 → 900px</b> для огляду великих даних; повторний клік стискає. <b>Перевірити:</b> відкрий будь-яку панель сутності → кнопка ↗ у хедері (поряд із ✕). <b>Код:</b> <code>EntityPanel.astro</code> (<code>data-ep-expand</code> + <code>.ep-wide</code>). Разом із D1 (Docs) це системний expand-патерн.</div>
+  </div>
+
+  <div class="card anchor" id="A8">
+    <div class="top">
+      <span class="num">A8</span>
+      <div class="ttl"><h3>Хлібні крихти: структурні Base › Table › Type, реверс, клікабельні</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-part">🟡 частково</span><span class="pill p0">P0</span><span class="pill eff">M</span></div>
+      </div>
+      <span class="tc-big">06:39–07:21 · 08:44–09:24</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт (наголосив на реверсі двічі)</div>
+      <blockquote><span class="t">06:39</span>«A breadcrumb like this usually means base / table / field, but this is more like your <b>history</b>… it feels like it should be base / table / field. I don't know if there's a better way.»</blockquote>
+      <blockquote><span class="t">09:00</span>«I'd <b>reverse it</b> where it was <b>base, table, then type</b>… the <b>opposite direction</b>… and these should be <b>clickable</b> so I could click and it would go to this page. Everything is <b>navigational</b> between fields and bases.»</blockquote>
+      <blockquote><span class="t">09:22</span>«So yeah, <b>reverse that</b>.» <span class="sub">— повторна, коротка наголоска на реверсі.</span></blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Головні крихти = <b>стек історії навігації</b> (push/pop, Miller-обрізка), не структурний шлях — саме тому й плутає. Сегменти клікабельні. Окремо у мета-рядку заголовка вже є статичний шлях, але <b>веде тип</b>: <code>Single Line Text · Operations ▸ Tickets ▸ Subject</code>. <span class="ev">EntityPanel.astro:157,236–239,290–306</span></div>
+    <div class="flow">
+      <span class="sub">зараз:</span><span class="fbox warn">Single Line Text · Operations ▸ Tickets ▸ Subject</span>
+      <span class="farr">→ реверс →</span>
+      <span class="sub">треба:</span><span class="fbox ok">Operations ▸ Tickets ▸ Subject</span><span class="sub">(база веде; тип — трейлінг-деталь, кожен сегмент клікабельний)</span>
+    </div>
+    <div class="grid2">
+      <div class="pro"><div class="lab">За</div>Структурний реверсний клікабельний шлях = звичний ментальний модель; «все навігаційне» узгоджується з C3/C4 (лінкуємо сутності звідусіль).</div>
+      <div class="con"><div class="lab">Проти / ризик</div>Втрачаємо зручність «back по історії», яку він теж хвалив («I like that you can click back»). Рішення: структурний шлях — головний; історію лишити окремою стрілкою «назад».</div>
+    </div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Зробити головну хлібну крихту структурною: <b>Base › Table › Type</b> (реверс відносно поточного), кожен сегмент — навігаційний лінк (<code>schema:openEntity</code>). Стек-історію демоутити до окремого «back».</div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>Хлібні крихти панелі = структурний <b>Base ▸ Table ▸ Field</b> (база веде), предки клікабельні (навігація), тип — деталь під назвою; історія лишилась на кнопці «назад». <b>Перевірити:</b> відкрий будь-яке поле в панелі → крихти вгорі (напр. <code>Sales CRM › Companies › Name</code>). <b>Код:</b> <code>EntityPanel.astro</code> → <code>structuralPath</code> / <code>renderCrumbs</code>.</div>
+  </div>
+
+  <div class="card anchor" id="A10">
+    <div class="top">
+      <span class="num">A10</span>
+      <div class="ttl"><h3>Стандартизувати панель: Visualize = та сама панель, що в Browse</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-part">🟡 консистентність</span><span class="pill p1">P1</span><span class="pill eff">M</span></div>
+      </div>
+      <span class="tc-big">07:55–08:43</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">07:55</span>«I'd rework this to just be the <b>same sidebar</b> you'd see here… <b>standardize this</b>… cause then that will take care of <b>everything in there</b>… make this be the <b>table view that matches the table view here</b>… and it would just <b>show all the fields</b>.»</blockquote>
+      <div class="now" style="margin-top:8px"><b>Розбір неоднозначності (скрин = бічна панель Visualize):</b> це <b>варіант (б), не (а)</b>. Клієнт хоче не просто перефарбувати легку панель Visualize, а щоб вона стала <b>тією самою (повною) панеллю, що в Browse</b> — один компонент, та сама інформація. Ключ: «that will take care of <b>everything in there</b>» + «show <b>all the fields</b>». Тобто клік по таблиці/полю у Visualize відкриває ту саму панель з усіма секціями (описи, поля, звʼязки, крихти), а не урізаний список.</div>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      <b>Дві різні панелі.</b> Browse <code>EntityPanel</code> — повна (описи 3-джерела, Fields, Relationships, хлібні крихти). Бічна панель Visualize (на скрині) — <b>легша</b>: лічильник records·fields, кнопки Gen description + View in Health і <b>лише список полів</b> (без табів описів / звʼязків / крихт). Звідси неузгодженість. <span class="ev">EntityPanel.astro · SchemaCanvas.tsx:716–810</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти / принцип</div>
+      <ul><li>Це наш власний принцип <b>design-system-first</b> (один компонент — багато контекстів). Конкретного конкурента не треба — це гігієна системи.</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Перевикористати <b>сам <code>EntityPanel</code></b> у Visualize (один компонент → обидва контексти), а не тримати окрему легку панель. Спільний fields-view (пошук A3 + конфіг A4) живе <b>всередині</b> нього. Так A3 + A4 + A10 закриваються разом.
+      <div class="obt">Дрібна неясність: «table view that matches» можна вузько прочитати як «лише список полів» — але «everything in there» схиляє до <b>повної панелі</b>. За потреби уточнити в клієнта одним реченням.</div></div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>Клік по ноді у Visualize відкриває <b>ту саму повну EntityPanel</b> (описи-таби / поля / звʼязки / крихти), а не легку SidePanel — панель стандартизована скрізь. Працює для всіх баз (індекс уже їх містить, перевірено). <b>Перевірити:</b> Visualize → клік на будь-якій таблиці → права панель = як у Browse. <b>Код:</b> <code>SchemaCanvas.tsx</code> (<code>onNodeClick</code> → <code>schema:openEntity</code>; стара SidePanel прибрана).</div>
+  </div>
+
+  <!-- ============ VISUALIZE ============ -->
+  <h2 id="visualize">B · Visualize (ER-діаграма)</h2>
+
+  <div class="card anchor" id="B1">
+    <div class="top">
+      <span class="num">B1</span>
+      <div class="ttl"><h3>Групувати/обводити таблиці однієї бази</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-new">🔴 нема</span><span class="pill p1">P1</span><span class="pill eff">M–L</span></div>
+      </div>
+      <span class="tc-big">09:25–09:59</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">09:36</span>«It'd be nice if we could <b>outline the base</b> so that all of the tables in the base are kind of grouped.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      База — лише фасет-фільтр і лейбл у дропдауні; вузли <b>не обведені</b> по базах; dagre розкладає все разом. <span class="ev">SchemaCanvas.tsx:281–344,375–384</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul>
+        <li><b>dbdiagram.io «Table Groups»</b> — згортання/розгортання, кольори, нотатки (наш ресерч: «вкрасти, щоб чанкати великі бази»).</li>
+        <li>Azimutt — іменовані layouts, організація по «папках».</li>
+        <li>⚠️ Технічна нотатка нашого ресерчу: <b>dagre не вміє sub-flow/групові розкладки</b> — для груп потрібен <code>elkjs</code>.</li>
+      </ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Групувати таблиці бази через parent/group-вузли React Flow (обведена рамка-контейнер). Якщо потрібен груповий <b>авто-layout</b> — закласти міграцію dagre→<code>elkjs</code> (це окрема технічна оцінка).
+      <div class="obt">Дані: <b>обтейнабельні</b> (членство таблиці в базі відоме).</div></div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>За кожною базою у Visualize — <b>пунктирний контейнер-група з міткою бази</b> (overlay поверх dagre-layout, без зміни розкладки); зʼявляється лише на мульти-базах. <b>Перевірити:</b> Visualize → контейнери <b>«Sales CRM» / «Marketing» / «Operations»</b>. <b>Код:</b> <code>SchemaCanvas.tsx</code> (<code>BaseGroupNode</code> + обчислення bbox у <code>layout</code>). <i>Нюанс: dagre не кластеризує по базах — при перемішуванні таблиць рамки можуть частково накладатись; для ідеальних кластерів потрібен elkjs (наш ресерч це зазначав).</i></div>
+  </div>
+
+  <div class="card anchor" id="B2">
+    <div class="top">
+      <span class="num">B2</span>
+      <div class="ttl"><h3>Чотири типи звʼязків + дропдаун; lookup/rollup = дві лінії</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-new">🔴 нема</span><span class="pill p0">P0</span><span class="pill eff">L</span></div>
+      </div>
+      <span class="tc-big">09:59–11:08</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">10:05</span>«Multiple types of relationships: <b>linked records</b> (between tables); <b>formula</b> (points to referenced fields, same table); <b>lookup</b> — that would have <b>two lines</b>: one to the field it references and another to the field in the other table; <b>rollup</b> the same. So lookup, rollup, linked record, formula — the four… those could be <b>dropdown options</b>.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Лише ребра linked-record, <b>одним нейтральним стилем</b>; formula/lookup/rollup як ребра <b>не змодельовані</b> (хоч коментар у коді й обіцяє кольори за типом). <span class="ev">SchemaCanvas.tsx:303–329</span></div>
+    <div class="flow">
+      <span class="fbox">Field</span><span class="farr">— linked →</span><span class="fbox">Table</span>
+      &nbsp;&nbsp;<span class="fbox">Formula</span><span class="farr">— ref →</span><span class="fbox">Field (та сама табл.)</span>
+    </div>
+    <div class="flow">
+      <span class="fbox warn">Lookup / Rollup</span><span class="farr">— ref →</span><span class="fbox">Field (ця табл.)</span><span class="farr">+ — looks up →</span><span class="fbox">Field (інша табл.)</span><span class="sub">= 2 лінії</span>
+    </div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч) — точне влучання</div>
+      <ul>
+        <li><b>Розширення Airtable «Base Schema»</b> — кольорові ребра за типом, hover-активація: <b>Linked = суцільний сірий · Formula = пунктир синій · Rollup = пунктир фіолетовий · Lookup = пунктир помаранчевий · Count = пунктир червоний</b>. Наш ресерч називає цю «мову кольору звʼязків» головним «steal».</li>
+        <li>React Flow schema node — ребра <b>field-to-field</b> через per-field handles (<code>sourceHandle/targetHandle</code>) — саме механізм для «двох ліній» lookup/rollup.</li>
+        <li>ChartDB — маркери кардинальності через SVG marker defs.</li>
+      </ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Змоделювати 4 типи; lookup/rollup — два ребра (field→source-field + source→other-table-field) через per-field handles; кольорове кодування за типом (мапа з Base Schema extension); дропдаун-фільтр «показати тип(и)». Це найбільша Visualize-таска, але патерн у нас уже описаний.
+      <div class="obt">Дані: <b>обтейнабельні</b> — formula refs та lookup/rollup source+target у meta-API.</div></div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>4 типи звʼязків із <b>кольоровим кодуванням</b> (linked=нейтр. суцільний · lookup=помаранч. · rollup=фіол. · formula=синій, пунктир) + дропдаун <b>«Relationships»</b> із типами (крапки + тогли) для фільтрації. lookup/rollup → крос-таблична лінія до таблиці-джерела; formula → лінії до полів тієї ж таблиці. <b>Перевірити:</b> Visualize → дропдаун <b>Relationships</b> (сховай Formula → сині лінії зникають, 26→24). <b>Код:</b> <code>SchemaCanvas.tsx</code> (<code>RELATION</code>/<code>relKind</code>, побудова ребер, FacetDropdown Relationships).</div>
+  </div>
+
+  <!-- ============ CHANGELOG ============ -->
+  <h2 id="changelog">C · Changelog</h2>
+
+  <div class="card anchor" id="C3">
+    <div class="top">
+      <span class="num">C3</span>
+      <div class="ttl"><h3>Локація в записі — клікабельна → відкриває панель сутності</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-part">🟡 частково</span><span class="pill p0">P0</span><span class="pill eff">S</span></div>
+      </div>
+      <span class="tc-big">11:27–11:49</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">11:27</span>«Make this location be clickable. I should be able to click on these and it brings the sidebar up of that field, like what we have in the browse. So these should all be <b>hyperlinkable</b>.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Рядок змін клікабельний, але відкриває <b>внутрішню деталь-панель Changelog</b>, а не спільну <code>EntityPanel</code>; локація — простий текст. <span class="ev">SchemaChangelog.astro:126–143,426–432</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul><li>Прямого конкурента (changelog-запис → деталь сутності) <b>немає в нашому ресерчі</b>; найближче — Metabase, де FK-«Connections» клікабельні лінки. Це наша зв'язна тканина між вкладками.</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Зробити сегменти локації лінками на <code>schema:openEntity</code> (та сама панель, що в Browse). Дешево — подія вже існує.</div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>Локація запису тепер клікабельна (↗ на hover) → відкриває <b>ту саму панель Browse</b> для сутності (<code>stopPropagation</code>, щоб не відкривати внутрішню деталь). Активна лише там, де сутність є в схемі (нові/видалені <b>не лінкуються</b> — чесно). <b>Перевірити:</b> Changelog → клік на локації <b>Probability / Stage / Weighted Value</b>. <b>Код:</b> <code>SchemaChangelog.astro</code> (<code>data-cl-entity</code> + обробник) + <code>entityId</code> у фікстурі.</div>
+  </div>
+
+  <div class="card anchor" id="C4">
+    <div class="top">
+      <span class="num">C4</span>
+      <div class="ttl"><h3>У панелі сутності — секція «Changelog цієї сутності»</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-new">🔴 нема</span><span class="pill p1">P1</span><span class="pill eff">M</span></div>
+      </div>
+      <span class="tc-big">11:50–12:33</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">12:03</span>«In that field view we should have a section that shows the change log for that item. Whether it's a base or a field, the change log shows up in this area… click the field and see the full change log for that field.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      У <code>EntityPanel</code> секції історії <b>нема</b>; Changelog — окремий компонент, у панель не імпортується. <span class="ev">EntityPanel.astro (нема changelog-секції)</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul><li>AWS Glue — колір зарезервований під «change-state» (наш ресерч: «готовий дизайн для Changelog»). Rewind/Keepit — порівняння версій/снапшотів (на рівні сутності).</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Додати у панель секцію «Changelog» = відфільтрований по цій сутності фід (із того ж рушія). Двосторонній зв'язок Changelog↔Panel (з C3).</div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>У панелі сутності зʼявилась секція <b>Changelog</b> = фід змін, відфільтрований по цій сутності (бедж типу + before/after); опускається, якщо змін нема. Разом із C3 — двосторонній звʼязок. <b>Перевірити:</b> панель <b>Stage / Probability / Weighted Value</b> → секція Changelog. <b>Код:</b> <code>EntityPanel.astro</code> (<code>renderChangelogSection</code> + проп <code>changelog</code>) — <code>SchemaView</code> його передає.</div>
+  </div>
+
+  <div class="card anchor" id="C5">
+    <div class="top">
+      <span class="num">C5</span>
+      <div class="ttl"><h3>Тип «Config changed» + before ↔ after</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-part">🟡 частково</span><span class="pill p0">P0</span><span class="pill eff">M</span></div>
+      </div>
+      <span class="tc-big">12:41–13:39</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">12:48</span>«Removed, renamed, type change… and there might be <b>config changes</b> — «config changed» might be one more change type — you added a new dropdown option to a single select, or modified the formula… here's your list <b>before</b>, or if single-select, maybe just shows the new one added.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Типи фільтра: added / removed / renamed / typed / view — «config-changed» <b>нема</b>. Але before→after уже є у внутрішній деталь-панелі. <span class="ev">SchemaChangelog.astro:51,418–446</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul><li>AWS Glue — колір під change-state. Rewind — side-by-side compare; Keepit — Snapshot Compare; Druva — типи Creation/Modification/Deletion. (Структуру записів наш ресерч описує як власний engine-feed.)</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Додати тип <b>Config changed</b> (нова опція в select, змінена формула) у <code>TYPE_OPTS</code> + before↔after-список (для select — підсвітити додане). before/after-каркас уже є.
+      <div class="obt">Дані: <b>обтейнабельні</b> — diff снапшотів meta між бекапами.</div></div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>Новий тип <b>Config changed</b> (синій бедж + іконка слайдерів) у фільтрі й фіді, з <b>before → after</b>. <b>Перевірити:</b> Changelog → фільтр <b>Config changed</b> (2 записи: опція Stage; формула Weighted Value). <b>Код:</b> <code>SchemaChangelog.astro</code> (union типу + <code>TYPE</code> + <code>TYPE_OPTS</code>) + 2 записи у фікстурі changelog.</div>
+  </div>
+
+  <!-- ============ DOCS ============ -->
+  <h2 id="docs">D · Docs</h2>
+
+  <div class="card anchor" id="D1">
+    <div class="top">
+      <span class="num">D1</span>
+      <div class="ttl"><h3>Згортати лівий список — більше місця для письма</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-new">🔴 нема</span><span class="pill p1">P1</span><span class="pill eff">S–M</span><span class="pill p2">= A7</span></div>
+      </div>
+      <span class="tc-big">13:49–14:24 · 16:20–16:33</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт (двічі)</div>
+      <blockquote><span class="t">13:53</span>«I'd like the ability to take out this area to give more room to write when editing. But I love how this works.»</blockquote>
+      <blockquote><span class="t">16:27</span>«Maybe there's a button to expand out so this document list shrinks. That's my only concern there, otherwise I'm loving this.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Двопанельна сітка фікс <code>minmax(320,360) | 1fr</code>; згортання списку <b>нема</b> (лише стек під 900px). <span class="ev">SchemaDocs.astro:184–185</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul><li>Craft / Notion — чистий режим письма (центрована колонка, ToC-рейл, мінімапа). Castor — стійкий правий рейл. Plate — edit↔read через <code>useReadOnly()</code>.</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Кнопка collapse лівого списку (distraction-free письмо). <b>Той самий системний патерн</b>, що A7 — зробити раз, застосувати в панелі й у Docs.</div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>Кнопка collapse (panel-left) у барі документа ховає лівий список → більше місця для письма; повторний клік повертає. <b>Перевірити:</b> Docs → відкрий документ → кнопка зліва у барі. <b>Код:</b> <code>SchemaDocs.astro</code> (<code>data-dc-listtoggle</code> + <code>.dc-list-collapsed</code>). <i>A7 (розгортання самої EntityPanel) — ще лишилось.</i></div>
+  </div>
+
+  <div class="card anchor" id="D2">
+    <div class="top">
+      <span class="num">D2</span>
+      <div class="ttl"><h3>Кілька діаграм у документі</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-have">✅ модель готова</span><span class="pill p1">P1</span><span class="pill eff">S</span></div>
+      </div>
+      <span class="tc-big">14:12–14:30</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">14:25</span>«We do want <b>multiple diagrams</b> — the ability to add more than one diagram… they might want multiple diagrams here.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Модель уже масив: <code>diagrams: SchemaDocDiagram[]</code>, усі монтуються. Бракує лише <b>UI «додати/прибрати діаграму»</b> (зараз вони пресідяться з фікстури). <span class="ev">schemaEntities.ts:82 · SchemaDocs.astro:146–160</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul><li>dbt Explorer та Eraser — «кілька діаграм на сторінку». Fibery — Mermaid-блок рендерить діаграму прямо в сторінці («найточніший референс»).</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Сховище ✅. Додати кнопку «+ Diagram» (і delete-діаграми) — природно стикується з D4 («Add to doc»).</div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>«Кілька діаграм» забезпечено: <b>модель документа тримає масив діаграм</b> (було готове) + <b>механізм додавання = D4</b> («Add to doc» з Visualize кладе діаграму в обраний документ). <b>Перевірити:</b> флоу D4. <b>Код:</b> <code>schemaEntities.ts</code> (<code>diagrams[]</code>) + D4.</div>
+  </div>
+
+  <div class="card anchor" id="D4">
+    <div class="top">
+      <span class="num">D4</span>
+      <div class="ttl"><h3>«Add to doc»: снапшот діаграми з Visualize у документ</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-new">🔴 нема</span><span class="pill p1">P1</span><span class="pill eff">L</span></div>
+      </div>
+      <span class="tc-big">14:53–16:33</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">14:53</span>«From the visualize, a button <b>«add to doc»</b> → a dropdown of existing docs with an option to create new. If new, it comes here already with whatever's in the visualize… take a <b>snapshot</b> of it and put it in a doc… maybe it opens in a <b>modal</b> to edit that version… need the ability to <b>save it back</b>… and to <b>delete</b> it from the doc.»</blockquote>
+      <div class="pro" style="margin-top:8px;background:var(--blue-bg);border-color:#d8e2fb"><div class="lab" style="color:#1e40af">⚠️ UX-рішення (занепокоєння 2026-06-25): НЕ навігація в таб Visualize</div>
+        Поточна «Open in Visualize» <b>навігує</b> на таб Visualize (<code>href="/schema"</code>) — юзер <b>губить контекст</b>, стрибає туди-сюди. Замість цього і <b>перегляд, і редагування</b> діаграми з доку відкриваємо <b>в overlay поверх доку</b>, <b>без зміни табу</b>. Рекомендація: <b>високий bottom fly-out / sheet (~85vh)</b>, що вилітає знизу (док видно зверху, широкій ER-діаграмі — повна ширина) <b>+ кнопка fullscreen</b> для глибокого редагування; закриття → повертає на те саме місце в доку. Узгоджується з клієнтовим «opens in a modal» (drawer і modal тут — той самий in-place overlay).</div>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      <b>Нема.</b> Діаграми пресідяться з фікстури; у Docs лише <b>статичний лінк «Open in Visualize» (<code>href="/schema"</code> — саме та навігація, що губить контекст)</b>; у Visualize є Export (PNG/PDF/JSON/CSV, поки нефункц.), але «Add to doc» нема. <span class="ev">SchemaDocs.astro:152 · SchemaCanvas.tsx:544–558</span></div>
+    <div class="flow">
+      <span class="fbox">Visualize</span><span class="farr">→</span>
+      <span class="fbox alt">«Add to doc»</span><span class="farr">→</span>
+      <span class="fbox">dropdown: існуючий / новий</span><span class="farr">→</span>
+      <span class="fbox">snapshot (toObject)</span><span class="farr">→</span>
+      <span class="fbox alt">overlay поверх доку (fly-out / модалка)</span><span class="farr">→</span>
+      <span class="fbox ok">Save back</span><span class="farr">／</span><span class="fbox warn">Delete from doc</span>
+    </div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти (наш ресерч)</div>
+      <ul>
+        <li><b>Whimsical / Eraser</b> — збережений блок-діаграма: <b>view-only в доку, edit у джерелі</b>, expand-to-fullscreen.</li>
+        <li>Fibery — збережена міні-діаграма в сторінці; Craft — whiteboard→fullscreen.</li>
+        <li><b>React Flow <code>toObject()</code></b> (nodes/edges/viewport) — саме механізм «snapshot & restore» для збереженого вигляду.</li>
+      </ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Кнопка «Add to doc» на Visualize → дропдаун {існуючі docs | новий} → знімок через <code>toObject()</code> → інстанс діаграми в доку = <b>view-only блок</b>; «Expand/Edit» відкриває <b>in-place overlay</b> (bottom fly-out + fullscreen, <b>без route change</b>) → save back / delete. Цим же overlay замінюємо й поточну навігаційну «Open in Visualize». Стикується з D2.
+      <div class="obt">Дані: <b>обтейнабельні</b> — це наші ж діаграми (нічого з зовні).</div></div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>Кнопка <b>«Add to doc»</b> на тулбарі Visualize → <b>bottom fly-out drawer</b> (новий варіант <code>Drawer side="bottom"</code>, зареєстрований у storybook) → вибір документа (існуючі + «New document») → Add → підтвердження «✓ Diagram added to …» + закриття. <b>In-place, без перемикання табів</b> (моє UX-рішення + клієнтове «opens in a modal»). <b>Перевірити:</b> Visualize → <b>«+ Add to doc»</b>. <b>Код:</b> <code>SchemaView.astro</code> (Drawer + скрипт) · <code>SchemaCanvas.tsx</code> (кнопка) · <code>Drawer.astro</code> (bottom-варіант).</div>
+  </div>
+
+  <div class="card anchor" id="D6">
+    <div class="top">
+      <span class="num">D6</span>
+      <div class="ttl"><h3>Видалення документів з підтвердженням</h3>
+        <div class="tags"><span class="pill done">✓ Зроблено</span><span class="pill s-new">🔴 нема</span><span class="pill p0">P0</span><span class="pill eff">S</span></div>
+      </div>
+      <span class="tc-big">16:50–17:17</span>
+    </div>
+    <div class="block"><div class="lab">Що сказав клієнт</div>
+      <blockquote><span class="t">16:50</span>«We probably need a <b>delete</b> option as well to delete documents, with a <b>confirmation</b> as well.»</blockquote>
+    </div>
+    <div class="now"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin-bottom:3px">Що в нас зараз</div>
+      Є «New», <b>видалення нема</b> взагалі. <span class="ev">SchemaDocs.astro:75,83,387–398</span></div>
+    <div class="comp"><div class="lab" style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--faint);margin:14px 0 0">Конкуренти / принцип</div>
+      <ul><li>Стандартний destructive-патерн (наш <code>interface-rules</code>: підтвердження для незворотних дій). Окремого конкурента не треба.</li></ul></div>
+    <div class="act"><span class="lab" style="display:block;font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:3px">Як діяти</span>
+      Delete-doc + <code>daisyUI modal</code>-підтвердження (червона кнопка, назва доку в тексті). Швидко.</div>
+    <div class="donebox"><span class="done-h">✓ Зроблено — де знайти</span>Червона кнопка-trash у барі документа → <b>daisyUI-модалка</b> з назвою → Delete видаляє, лічильник оновлюється, відкривається наступний (або порожній стан). <b>Перевірити:</b> Docs → відкрий документ → trash справа у барі. <b>Код:</b> <code>SchemaDocs.astro</code> (<code>data-dc-delete</code> + модалка + <code>deleteCurrent</code>).</div>
+  </div>
+
+  <!-- ============ PRAISE / NOTES ============ -->
+  <h2 id="praise">⭐ Похвали і службові нотатки (що НЕ чіпати / парковано)</h2>
+  <div class="card">
+    <div class="block" style="margin-top:0"><div class="lab">Похвали — лишаємо як є</div>
+      <blockquote><span class="t">07:22 · A9</span>«I do like this view.» / «Oh that's awesome. Well done. That's cool. That's great.» — позитивна реакція (ймовірно відкриття Visualize/звʼязків).</blockquote>
+      <blockquote><span class="t">11:09 · C1</span>«How you did this is fine — if it's added, there isn't a before and after, so that makes sense.» — підтвердив поточну логіку «added без diff».</blockquote>
+      <blockquote><span class="t">14:30 · D3</span>«I love the open and visualize… perfect. Brings those up. That's awesome.» — поведінка doc→visualize схвалена.</blockquote>
+      <blockquote><span class="t">16:34</span>«Otherwise I'm loving this. This is going to be amazing. This is a really useful tool. That is looking great.» — загальна оцінка секції.</blockquote>
+    </div>
+    <div class="block"><div class="lab">Службові нотатки</div>
+      <ul style="margin:4px 0 0;padding-left:18px;font-size:13.5px">
+        <li><b>C2 (11:21):</b> «I might remove [the changelog location] in the product» — клієнт <b>сам не певен</b>, лишаємо поки є. Не пріоритет.</li>
+        <li><b>C6 (13:48):</b> «Health will revisit» — вкладку <b>Health засновник свідомо відклав</b>. Не чіпаємо в цьому раунді.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============ PLAN ============ -->
+  <h2 id="plan">Пріоритезований план дій</h2>
+  <div class="card">
+    <div class="block" style="margin-top:0"><div class="lab">P0 — ядро раунду (висока цінність, дані обтейнабельні зараз)</div>
+      <ul class="plan">
+        <li><span class="pill p0">P0</span><span><b>A2</b> Описи у 3 таби + перейменування Extended <span class="pill eff">S–M</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>A4</b> Конфіг по типу поля (формула/референси/lookup) <span class="pill eff">M</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>A6</b> Relationships: backlink-поле + кардинальність (Hasura-семантика) <span class="pill eff">M</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>A8</b> Структурні реверсні клікабельні хлібні крихти <span class="pill eff">M</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>B2</b> 4 типи звʼязків + кольори + дропдаун; lookup/rollup = 2 лінії <span class="pill eff">L</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>C3</b> Локація Changelog → відкриває панель <span class="pill eff">S</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>C5</b> Тип «Config changed» + before↔after <span class="pill eff">M</span></span></li>
+        <li><span class="pill p0">P0</span><span><b>D6</b> Видалення документів + підтвердження <span class="pill eff">S</span></span></li>
+      </ul>
+    </div>
+    <div class="block"><div class="lab">P1 — сильне підсилення</div>
+      <ul class="plan">
+        <li><span class="pill p1">P1</span><span><b>A1</b> Сірчбар усередині попапа <code>FacetFilter</code> (один компонент → усі фасети) <span class="pill eff">S</span></span></li>
+        <li><span class="pill p1">P1</span><span><b>A10</b> Перевикористати <b>повний</b> <code>EntityPanel</code> у Visualize (+ всередині спільний fields-view з пошуком A3 / конфігом A4) <span class="pill eff">M</span></span></li>
+        <li><span class="pill p1">P1</span><span><b>A7 + D1</b> Системний патерн expand/collapse (панель + Docs одним рішенням) <span class="pill eff">M</span></span></li>
+        <li><span class="pill p1">P1</span><span><b>C4</b> Секція Changelog у панелі сутності <span class="pill eff">M</span></span></li>
+        <li><span class="pill p1">P1</span><span><b>B1</b> Групування таблиць бази (оцінити dagre→elkjs) <span class="pill eff">M–L</span></span></li>
+        <li><span class="pill p1">P1</span><span><b>D4 + D2</b> «Add to doc» снапшот + кілька діаграм (UI додавання) <span class="pill eff">L</span></span></li>
+      </ul>
+    </div>
+    <div class="block"><div class="lab">P2 / бекенд / парковано</div>
+      <ul class="plan">
+        <li><span class="pill p2">P2</span><span><b>A5</b> Push to Airtable (draft/Publish/Reset) — UI зараз, <b>write-back потребує бекенду</b> <span class="pill eff">L</span></span></li>
+        <li><span class="pill p2">P2</span><span>Полиш глобального пошуку — abbreviation-match (DataGrip), Cmd-K палітра <span class="pill eff">S</span></span></li>
+        <li><span class="pill p2">P2</span><span><b>C2</b> доля Changelog-локації — рішення за клієнтом · <b>Health</b> — відкладено клієнтом</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ============ OPEN Q ============ -->
+  <h2 id="open">Відкриті питання до клієнта</h2>
+  <div class="card">
+    <ul style="margin:0;padding-left:18px;font-size:14px">
+      <li><b>A5 (уточнити!):</b> «Extended/Your» — це те саме, що публікована Airtable-чернетка, чи різні поля? · Publish перезаписує весь опис? показуємо before→after? · «Use AI/Extended»-кнопки чи ручне копіювання? · лише поля чи й таблиці/бази? · scope бекенд-write-back для V2 (деталі в картці A5).</li>
+      <li><b>A8:</b> структурний шлях робимо головним — історію навігації лишаємо окремою «back»-стрілкою?</li>
+      <li><b>B1:</b> групування баз — чи треба груповий <b>авто-layout</b> (тоді закладаємо міграцію dagre→elkjs), чи достатньо статичної рамки-обведення?</li>
+      <li><b>D4:</b> «edit version in modal» — діаграма в доку це <b>незалежний снапшот</b> (Whimsical-стиль: view-only в доку, edit окремо), чи завжди жива копія схеми?</li>
+    </ul>
+  </div>
+
+  <div class="foot">
+    Згенеровано з локального транскрипту (Whisper large-v3-turbo, офлайн — відео клієнта не залишало машину) + 64 кадрів. Стан коду звірено по <code>apps/web/src/components/schema/</code>. Патерни конкурентів — лише з нашого внутрішнього ресерчу (<code>overview/schema/research*.html</code>, memory research-нотатки); там, де конкурента нема, прямо позначено «немає даних у нашому ресерчі». Таймкоди — для переслуховування у відео.
+  </div>
+
+</div>
+</body>
+</html>

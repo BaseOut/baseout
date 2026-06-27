@@ -17,11 +17,6 @@
         "icon": "iconify lucide--layout-dashboard"
       },
       {
-        "label": "Overview",
-        "href": "/integrations",
-        "icon": "iconify lucide--shield-check"
-      },
-      {
         "label": "Backups",
         "href": "/backups",
         "icon": "iconify lucide--archive"

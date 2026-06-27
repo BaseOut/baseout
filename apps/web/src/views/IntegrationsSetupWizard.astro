@@ -73,12 +73,26 @@ const FREQS = [
   { value: 'daily', label: 'Daily', helper: 'One scheduled backup per day' },
   { value: 'instant', label: 'Instant', helper: 'Webhook-driven — captures changes as they happen' },
 ];
+
+// Cleanup schedule = tiered rolling retention, keyed to the backup frequency (On2Air
+// model). Older versions are progressively thinned (daily→weekly→monthly) so storage
+// stays bounded; whatever is older than the max-retention cutoff is removed.
+// (Informational in the wizard; the cutoff persistence is an engine/retention concern.)
+const CLEANUP_TIERS: Record<string, string[]> = {
+  monthly: ['Monthly versions kept'],
+  weekly: ['3 months of weekly backups', 'then monthly'],
+  daily: ['30 days of daily backups', 'then 2 months of weekly', 'then monthly'],
+  instant: ['3 days of continuous backups', 'then 27 days of daily', 'then 2 months of weekly', 'then monthly'],
+};
+const freqLabel = (v: string) => FREQS.find((f) => f.value === v)?.label ?? 'Monthly';
+const initialFreq = state.policy.frequency;
+const initialTiers = CLEANUP_TIERS[initialFreq] ?? CLEANUP_TIERS.monthly;
 ---
 
 <div class="mx-auto max-w-5xl space-y-6" data-wizard data-mode={mode} data-space-id={realSpaceId ?? undefined}>
   {/* Header */}
   <div>
-    <BackLink href="/integrations" label="Overview" />
+    <BackLink href="/" label="Home" />
     <h1 class="text-2xl font-bold tracking-tight leading-tight mt-3">{isEdit ? "Edit this Space's backup" : "Set up this Space's backup"}</h1>
     <p class="text-sm text-base-content/60 mt-0.5">{isEdit ? 'Change the source, bases, destination or schedule — jump between tabs in any order' : 'Pick a source, the bases to protect, and where they go'} — for <span class="font-medium text-base-content/80">{spaceName}</span>.</p>
   </div>
@@ -105,7 +119,7 @@ const FREQS = [
       <div class="bar-actions">
         {isEdit ? (
           <>
-            <Button href="/integrations" variant="ghost" size="sm">Cancel</Button>
+            <Button href="/" variant="ghost" size="sm">Cancel</Button>
             <Button type="button" variant="primary" size="sm" data-save-edit>Save changes</Button>
           </>
         ) : (
@@ -294,6 +308,30 @@ const FREQS = [
           })}
         </ul>
         <p class="text-xs text-base-content/60 mt-2.5">Next backup: <span class="font-medium text-base-content/80">{formatNextScheduledAt(state.policy.nextScheduledAt)}</span></p>
+
+        {/* Cleanup schedule — tiered retention keyed to the frequency above (informational). */}
+        <h3 class="opt-subhead mt-5">Cleanup schedule</h3>
+        <div role="alert" class="alert alert-soft alert-info">
+          <span class="iconify lucide--info size-4" aria-hidden="true"></span>
+          <span>Older backup versions are thinned automatically so storage stays in check — recent backups are kept in full; as they age we keep them less often.</span>
+        </div>
+        <div class="cleanup mt-3" data-cleanup data-tiers={JSON.stringify(CLEANUP_TIERS)}>
+          <p class="cleanup-lead">With <span class="font-semibold text-base-content" data-cleanup-freq>{freqLabel(initialFreq)}</span> backups we keep:</p>
+          <ol class="cleanup-ladder" data-cleanup-ladder>
+            {initialTiers.map((t, i) => (
+              <li class="cleanup-tier"><span class="cleanup-tier-n">{i + 1}</span>{t}</li>
+            ))}
+          </ol>
+          <label class="cleanup-cutoff">
+            <span class="cleanup-cutoff-k">Then remove anything older than</span>
+            <select class="select select-sm w-auto" data-cleanup-cutoff aria-label="Maximum retention">
+              <option value="1">1 year</option>
+              <option value="2">2 years</option>
+              <option value="5" selected>5 years</option>
+              <option value="0">never (keep forever)</option>
+            </select>
+          </label>
+        </div>
       </section>
 
       {/* STEP 5 — REVIEW */}
@@ -526,6 +564,15 @@ const FREQS = [
   .opt-row-name { display: block; font-weight: 500; font-size: .875rem; }
   .opt-row-sub { display: block; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); margin-top: .05rem; }
 
+  /* Cleanup schedule — the retention ladder for the selected frequency */
+  .cleanup { border: 1px solid var(--color-base-300); border-radius: .7rem; background: var(--color-base-100); padding: .9rem 1rem 1rem; }
+  .cleanup-lead { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .7); }
+  .cleanup-ladder { display: flex; flex-direction: column; gap: .3rem; margin-top: .6rem; }
+  .cleanup-tier { display: flex; align-items: center; gap: .55rem; font-size: .85rem; font-weight: 500; }
+  .cleanup-tier-n { width: 1.4rem; height: 1.4rem; border-radius: 999px; display: grid; place-items: center; flex: none; font-size: .72rem; font-weight: 700; background: oklch(from var(--color-primary) l c h / .14); color: var(--color-primary); }
+  .cleanup-cutoff { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-top: .85rem; padding-top: .75rem; border-top: 1px solid oklch(from var(--color-base-300) l c h / .6); }
+  .cleanup-cutoff-k { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .7); }
+
   /* Review step */
   .review-pipe { display: flex; align-items: stretch; gap: .35rem; }
   .review-node { flex: 1; border: 1px solid var(--color-base-300); border-radius: .65rem; padding: .8rem .9rem; background: var(--color-base-100); min-width: 0; }
@@ -657,9 +704,9 @@ const FREQS = [
       if (runFirst) {
         const nm = (sel: string) => $<HTMLInputElement>(sel)?.closest('.opt-opt')?.querySelector('.opt-name')?.childNodes[0]?.textContent?.trim();
         const params = new URLSearchParams({ status: 'running', src: nm('[data-source-radio]:checked') || 'Airtable', dest: nm('[data-dest-file-radio]:checked') || 'storage', bases: String(atBaseIds.length) });
-        setTimeout(() => { window.location.href = `/integrations?${params.toString()}`; }, 1100);
+        setTimeout(() => { window.location.href = `/?${params.toString()}`; }, 1100);
       } else {
-        setTimeout(() => { window.location.href = '/integrations?status=saved'; }, 800);
+        setTimeout(() => { window.location.href = '/?status=saved'; }, 800);
       }
     }
 
@@ -766,12 +813,27 @@ const FREQS = [
       commit(true, nextBtn);
     });
 
+    // Cleanup schedule — rebuild the retention ladder for the chosen frequency.
+    const cleanup = $<HTMLElement>('[data-cleanup]');
+    const cleanupTiers: Record<string, string[]> = cleanup ? JSON.parse(cleanup.dataset.tiers || '{}') : {};
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+    function updateCleanup(freq: string) {
+      const ladder = $<HTMLElement>('[data-cleanup-ladder]');
+      const freqEl = $<HTMLElement>('[data-cleanup-freq]');
+      const tiers = cleanupTiers[freq] ?? cleanupTiers.monthly ?? [];
+      if (freqEl) freqEl.textContent = cap(freq);
+      if (ladder) ladder.innerHTML = tiers
+        .map((t, i) => `<li class="cleanup-tier"><span class="cleanup-tier-n">${i + 1}</span>${t}</li>`)
+        .join('');
+    }
+
     // Re-evaluate gates as selections change.
     root.addEventListener('change', (e) => {
       const t = e.target as HTMLElement;
       if (t?.matches?.('[data-source-radio]')) { onSourceChange(t as HTMLInputElement); return; }
       if (t?.matches?.('[data-base-checkbox]')) { hideBasesResetNote(); render(); return; }
       if (t?.matches?.('[data-dest-file-radio], [data-dest-db-radio]')) render();
+      if (t?.matches?.('[data-frequency]')) updateCleanup((t as HTMLInputElement).value);
     });
 
     // Edit mode: free tabs (jump anywhere) + Save changes.

@@ -1,0 +1,70 @@
+---
+/**
+ * RunBackupNowModal — the credits-warning confirm for an on-demand backup.
+ *
+ * Client Q4: a top-level "Run Backup Now" fires an immediate backup instead of
+ * waiting for the schedule, and it MUST warn that extra credits will be used and
+ * have the user confirm before kicking off. The trigger button(s) open this modal
+ * via `document.getElementById(id).showModal()`; only "Run anyway" proceeds.
+ *
+ * "Run anyway" performs a REAL on-demand run via the same path as RunBackupButton
+ * (POST /api/spaces/:spaceId/backup-runs), then navigates to the running state.
+ * Built on the catalog ConfirmModal + a soft-warning Alert (see /styleguide).
+ */
+import ConfirmModal from '../ui/ConfirmModal.astro';
+
+interface Props {
+  /** Unique dialog id the triggers call showModal() on. */
+  id?: string;
+  /** Space to back up — "Run anyway" POSTs a real on-demand run for it. */
+  spaceId: string;
+  /** Where to navigate once the run has started (the running state for this surface). */
+  redirectTo?: string;
+}
+const { id = 'run-backup-now-modal', spaceId, redirectTo = '/?status=running' } = Astro.props;
+---
+
+<ConfirmModal id={id} title="Run a backup now?" cancelLabel="Cancel">
+  <p class="text-sm text-base-content/70">
+    This starts a backup immediately instead of waiting for the next scheduled run.
+  </p>
+  <div role="alert" class="alert alert-soft alert-warning mt-3">
+    <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+    <span>Off-schedule runs use <strong>additional credits</strong>.</span>
+  </div>
+  <p class="text-sm text-error mt-2 hidden" data-run-now-error role="alert"></p>
+  <button slot="confirm" type="button" class="btn btn-primary" data-run-now-confirm data-space-id={spaceId} data-redirect={redirectTo}>
+    <span class="iconify lucide--play size-4" aria-hidden="true"></span>Run anyway
+  </button>
+</ConfirmModal>
+
+<script>
+  import { setButtonLoading } from '../../lib/ui';
+  import { runBackup, describeRunBackupError } from '../../lib/backups/run-backup';
+
+  function wireRunNow() {
+    const btn = document.querySelector<HTMLButtonElement>('[data-run-now-confirm]');
+    if (!btn) return;
+    const sid = btn.dataset.spaceId;
+    const redirect = btn.dataset.redirect || '/?status=running';
+    const err = document.querySelector<HTMLElement>('[data-run-now-error]');
+    btn.addEventListener('click', async () => {
+      if (!sid) return;
+      err?.classList.add('hidden');
+      setButtonLoading(btn, true);
+      try {
+        const result = await runBackup(sid);
+        if (result.ok) { window.location.assign(redirect); return; }
+        if (err) {
+          err.textContent = describeRunBackupError(result.error);
+          err.classList.remove('hidden');
+        }
+      } finally {
+        setButtonLoading(btn, false);
+      }
+    });
+  }
+
+  wireRunNow();
+  document.addEventListener('astro:after-swap', wireRunNow);
+</script>

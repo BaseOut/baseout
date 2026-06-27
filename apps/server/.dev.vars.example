@@ -48,10 +48,12 @@ INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness
 # Generate: `openssl rand -base64 32`.
 BASEOUT_ENCRYPTION_KEY=replace-with-base64-of-32-random-bytes
 
-# === Optional: Airtable on-demand token refresh ===
-# Leave disabled until the feature-flagged resolver has passed the dev rollout.
-# When enabled, client ID/secret MUST match apps/web's Airtable OAuth app.
-# AIRTABLE_ON_DEMAND_REFRESH_ENABLED=0
+# === Airtable on-demand token refresh (self-heal expired tokens) ===
+# ConnectionDO lazy-refreshes an expired Airtable access token on /token using
+# the stored refresh token — so backups don't 401 on a stale token and you never
+# need to reconnect. Keep enabled for the local backup loop. Requires the
+# AIRTABLE_OAUTH_CLIENT_ID/SECRET below to match apps/web's Airtable OAuth app.
+AIRTABLE_ON_DEMAND_REFRESH_ENABLED=1
 # AIRTABLE_OAUTH_CLIENT_ID=
 # AIRTABLE_OAUTH_CLIENT_SECRET=
 

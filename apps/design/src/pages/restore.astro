@@ -1,11 +1,76 @@
 ---
+// Restore from a backup (RestoreView). Harness fixture — the engineer wires the real
+// restore endpoint. Bases + their tables mirror the backup run/base fixtures so the
+// drill-down stays consistent. Query: ?run=<id> (default run_2026_06_15_daily).
 import SidebarLayout from '../layouts/SidebarLayout.astro';
-import PlaceholderView from '@web/views/PlaceholderView.astro';
+import RestoreView from '@web/views/RestoreView.astro';
 import { getBreadcrumbs } from '@web/lib/config';
 
-const breadcrumbs = getBreadcrumbs('/restore');
+const breadcrumbs = getBreadcrumbs('/backups');
+const runId = Astro.url.searchParams.get('run') ?? 'run_2026_06_15_daily';
+// ?done=1 → the RESULT state (what was recreated + what to finish by hand).
+// ?att=attachments|links → how attachments were restored (carried from the form).
+const done = Astro.url.searchParams.has('done');
+const attMode = (Astro.url.searchParams.get('att') === 'links' ? 'links' : 'attachments') as 'attachments' | 'links';
+
+// Bases captured in the backup, each with its tables (counts mirror the run fixtures).
+const bases = [
+  {
+    id: 'b-mktg', name: 'Marketing Calendar',
+    tables: [
+      { id: 't-campaigns', name: 'Campaigns', records: 1840, fields: 32 },
+      { id: 't-content', name: 'Content Calendar', records: 1520, fields: 28 },
+      { id: 't-channels', name: 'Channels', records: 652, fields: 24 },
+    ],
+  },
+  {
+    id: 'b-sales', name: 'Sales CRM',
+    tables: [
+      { id: 't-accounts', name: 'Accounts', records: 1120, fields: 38 },
+      { id: 't-contacts', name: 'Contacts', records: 1480, fields: 34 },
+      { id: 't-opps', name: 'Opportunities', records: 980, fields: 36 },
+      { id: 't-activities', name: 'Activities', records: 270, fields: 24 },
+    ],
+  },
+  {
+    id: 'b-cs', name: 'Customer Success',
+    tables: [
+      { id: 't-customers', name: 'Customers', records: 1290, fields: 42 },
+      { id: 't-health', name: 'Health Scores', records: 814, fields: 34 },
+    ],
+  },
+];
+
+// The user's live Airtable bases they could restore INTO.
+const existingBases = [
+  { id: 'app-sales', name: 'Sales CRM' },
+  { id: 'app-mktg', name: 'Marketing Calendar' },
+  { id: 'app-ops', name: 'Ops Workspace' },
+];
+
+// Restore RESULT fixture — records all in; the structure Airtable's API can't rebuild
+// is itemised (Formula fields, fields returned as text, dropped relationships). Counts
+// mirror the Sales CRM base above (4 tables · 3,850 records).
+const outcome = done
+  ? {
+      baseName: 'Sales CRM',
+      targetName: 'Restored — Sales CRM',
+      targetIsNew: true,
+      targetUrl: 'https://airtable.com/appRestoredSalesCRM',
+      tablesRestored: 4,
+      recordsRestored: 3850,
+      attachmentsMode: attMode,
+      attachmentsRestored: 52,
+      manual: [
+        { table: 'Opportunities', field: 'Forecast', kind: 'formula' as const, detail: 'Rebuild the formula — the API can’t create Formula fields.' },
+        { table: 'Opportunities', field: 'Stage', kind: 'text' as const, detail: 'Restored as text — convert back to Single select.' },
+        { table: 'Accounts', field: 'Primary contact', kind: 'link' as const, detail: 'Re-link to the Contacts table (linked records dropped).' },
+        { table: 'Activities', field: 'Logged at', kind: 'text' as const, detail: 'Restored as text — convert back to Date.' },
+      ],
+    }
+  : null;
 ---
 
 <SidebarLayout pageTitle="Restore" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <PlaceholderView label="Restore" />
+  <RestoreView runId={runId} bases={bases} existingBases={existingBases} outcome={outcome} />
 </SidebarLayout>

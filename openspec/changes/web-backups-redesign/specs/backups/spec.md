@@ -27,6 +27,11 @@ The system SHALL present a Space's Backups page as a table of every backup run, 
 - **WHEN** the user wants a one-off backup
 - **THEN** a "Run backup now" action in the header starts a run (the action moved off a separate card)
 
+#### Scenario: The list scales to filter, search, and paginate
+- **WHEN** a Space has accumulated many runs over time
+- **THEN** the list offers a search (by Run ID or error message, for support-ticket triage), filters by status / trigger / date range, and pagination with a rows-per-page control, and shows a distinct "no runs match" state when filters exclude everything (separate from the never-run-a-backup empty state)
+- **AND** it does NOT filter by base, because the included-bases list reflects the Space's current configuration, not a per-run snapshot
+
 ### Requirement: A backup run has a dedicated detail page
 The system SHALL present a single backup run on its own page — overall status and timing, the layers it captured, where it wrote, and a per-base breakdown — instead of expanding inline in the list.
 
@@ -87,3 +92,25 @@ Because the UI is accountable to users auditing their backups, the system SHALL 
 #### Scenario: Counts trace to a source
 - **WHEN** the run or base detail shows a number
 - **THEN** it is a count the system can actually obtain (Airtable metadata for structure, the engine for record/attachment volumes), and the page makes that provenance clear in its footnote
+
+### Requirement: The destination is shown as where the data actually landed
+The system SHALL show, per base, the destination the backup wrote to, labelled "Destination", and SHALL reflect whether that destination is static (files) or dynamic (a database). For a static destination it SHALL be a link the user can open in their own storage; for a dynamic destination it SHALL be the database reference the user can query.
+
+#### Scenario: A static destination is a browsable folder
+- **WHEN** a base was backed up to a static (file) destination such as Google Drive, Dropbox, or S3
+- **THEN** the Destination shows the destination's brand mark and the folder path as a link that opens that folder in the user's storage in a new tab
+
+#### Scenario: A dynamic destination is a database reference
+- **WHEN** a base was backed up to a dynamic (database) destination such as Postgres
+- **THEN** the Destination shows a database reference (for example a `schema.table` name) rather than a folder link, because a database is queried, not browsed
+
+#### Scenario: A failed base wrote nothing
+- **WHEN** a base failed in the run
+- **THEN** the Destination reads as empty (nothing written) rather than a stale link
+
+### Requirement: The drill-down is navigable both ways
+Because the audit trail is several levels deep, the system SHALL let the user see where they are and move back up at every level.
+
+#### Scenario: Breadcrumb shows the path
+- **WHEN** the user is on a run or a base detail
+- **THEN** a breadcrumb shows the trail (Backups → Backup run → base), with the higher levels as links and the current level marked, plus a back control that moves up one level

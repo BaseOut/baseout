@@ -1,10 +1,11 @@
 ---
 import { and, desc, eq } from 'drizzle-orm';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
-import DashboardView from '../views/DashboardView.astro';
+import SpaceHomeView from '../views/SpaceHomeView.astro';
 import { getBreadcrumbs } from '../lib/config';
 import { getIntegrationsState } from '../lib/integrations';
 import { listRecentRuns } from '../lib/backup-runs/list';
+import { toSourceSummary, toDestinationSummaries } from '../lib/registry-mappers';
 import type { BackupRunRowLike, IncludedBase } from '../lib/backup-runs/list';
 import type { BackupRunSummary } from '../lib/backup-runs/types';
 import type { IntegrationsState } from '../stores/connections';
@@ -101,17 +102,27 @@ const initialRuns: BackupRunSummary[] =
       })
     : [];
 
-const showSuccessModal = Astro.url.searchParams.get('connected') === '1';
-const errorReason = Astro.url.searchParams.get('error');
+// Space Home (folds in the old Overview). Map the per-Space state into the
+// account-level source/destination shapes the view renders; ?status=running|saved
+// carries the post-Configure confirmation. baseMetrics/usage are gated until the
+// engine + billing feed them (the view hides those sections when empty).
+const spaceName = account?.space?.name ?? 'this Space';
+const source = toSourceSummary(integrations, spaceId ?? 'space', spaceName);
+const destinations = toDestinationSummaries(integrations, spaceId ?? 'space', spaceName);
+const statusParam = Astro.url.searchParams.get('status');
+const statusCode: 'saved' | 'running' | null =
+  statusParam === 'running' ? 'running' : statusParam === 'saved' ? 'saved' : null;
 ---
 
-<SidebarLayout pageTitle="Dashboard Overview" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <DashboardView
-    account={account}
-    integrations={integrations}
-    showSuccessModal={showSuccessModal}
-    errorReason={errorReason}
-    initialRuns={initialRuns}
+<SidebarLayout pageTitle="Home" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <SpaceHomeView
+    state={integrations}
+    source={source}
+    destinations={destinations}
+    runs={initialRuns}
+    statusCode={statusCode}
+    baseMetrics={[]}
+    usage={[]}
   />
 </SidebarLayout>
 

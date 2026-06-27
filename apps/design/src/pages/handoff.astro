@@ -8,6 +8,7 @@
 //
 // Internal/meta page on purpose: standalone chrome, not the product shell.
 import { FLOW_REGISTRY, type FlowStatus, type RegistryFlow } from '../lib/flow-registry';
+import SchemaReviewReport from '../components/SchemaReviewReport.astro';
 
 // Group by feature, preserving first-seen order.
 const groups: { feature: string; flows: RegistryFlow[] }[] = [];
@@ -45,7 +46,12 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
     <title>Flow handoff index · Baseout</title>
   </head>
   <body>
-    <main class="wrap">
+    {/* Two sections: the live flow index, and Dan's Schema-section feedback walkthrough. */}
+    <nav class="ho-tabs" role="tablist" aria-label="Handoff sections">
+      <button type="button" class="ho-tab ho-tab-active" data-ho-tab="flows" role="tab">Flow index</button>
+      <button type="button" class="ho-tab" data-ho-tab="schema" role="tab">Schema feedback</button>
+    </nav>
+    <main class="wrap ho-panel" data-ho-panel="flows">
       <header class="head">
         <p class="eyebrow">Baseout · design → engineering</p>
         <h1>Flow handoff index</h1>
@@ -160,7 +166,44 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
       </footer>
     </main>
 
+    <div class="ho-panel" data-ho-panel="schema" hidden>
+      <SchemaReviewReport />
+    </div>
+
     <style>
+      /* Section tabs (Flow index · Schema feedback). Visibility is driven by a tiny inline
+         script toggling the [hidden] attribute — Astro's scoper drops `:checked ~` combinators. */
+      .ho-tabs {
+        display: flex;
+        gap: 4px;
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 18px 32px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .ho-tab {
+        cursor: pointer;
+        font: inherit;
+        font-size: 13.5px;
+        font-weight: 580;
+        color: var(--ink-soft);
+        background: none;
+        border: 1px solid transparent;
+        border-bottom: none;
+        padding: 9px 16px;
+        border-radius: 9px 9px 0 0;
+        margin-bottom: -1px;
+        transition: color 0.12s ease, background 0.12s ease;
+      }
+      .ho-tab:hover { color: var(--accent); }
+      .ho-tab-active {
+        color: var(--accent);
+        background: var(--panel);
+        border-color: var(--line);
+        border-bottom-color: var(--panel);
+      }
+      /* Trim the flow index's top padding now that the tab bar sits above it. */
+      .ho-panel[data-ho-panel='flows'] { padding-top: 36px; }
       :root {
         --bg: oklch(0.985 0.004 255);
         --panel: oklch(1 0 0);
@@ -520,5 +563,19 @@ const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
         }
       }
     </style>
+
+    <script is:inline>
+      (function () {
+        var tabs = Array.prototype.slice.call(document.querySelectorAll('.ho-tab'));
+        var panels = Array.prototype.slice.call(document.querySelectorAll('.ho-panel'));
+        tabs.forEach(function (t) {
+          t.addEventListener('click', function () {
+            var key = t.getAttribute('data-ho-tab');
+            tabs.forEach(function (x) { x.classList.toggle('ho-tab-active', x === t); });
+            panels.forEach(function (p) { p.hidden = p.getAttribute('data-ho-panel') !== key; });
+          });
+        });
+      })();
+    </script>
   </body>
 </html>

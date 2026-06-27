@@ -34,6 +34,7 @@ const STATUS_META: Record<string, StatusMeta> = {
   running: { label: 'Running', variant: 'warning' },
   queued: { label: 'Queued', variant: 'default' },
   failed: { label: 'Failed', variant: 'error' },
+  paused: { label: 'Paused', variant: 'warning' },
   cancelled: { label: 'Cancelled', variant: 'default' },
 }
 

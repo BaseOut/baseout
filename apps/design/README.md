@@ -124,8 +124,8 @@ production via the normal `apps/web` PR flow:**
 | Where                                | What lives there                                         |
 | ------------------------------------ | -------------------------------------------------------- |
 | `apps/web/src/components/ui/`        | Buttons, cards, inputs, badges, modals, tabs, avatars    |
-| `apps/web/src/components/patterns/`    | App shell, backup widgets, setup pickers, integration tables |
-| `apps/web/src/components/ui/`        | Storybook primitives (Button, Badge, Modal, …)               |
+| `apps/web/src/components/layout/`    | Sidebar, header                                          |
+| `apps/web/src/components/backups/`   | Backup history widget, run button, frequency / storage pickers |
 | `apps/web/src/layouts/`              | Page-level shells (Sidebar layout, Auth layout, base Layout) |
 | `apps/web/src/views/`                | Dashboard, Integrations, Placeholder, NotFound, ConnectAirtableModal — the "page bodies" |
 | `apps/web/src/styles/`               | Global CSS, theme overrides, per-component CSS           |

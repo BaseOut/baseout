@@ -23,6 +23,17 @@ a whole, so the screens have context.
 
 ---
 
+## Page build briefs
+
+Deeper, page-specific briefs (overview + per-tab docs + wireframes)
+live in subfolders here:
+
+| Folder | What |
+|---|---|
+| [schema/](schema/) | **Schema page** designer brief — overview + one doc per tab (Visualize / Changelog / Health) and a wireframe `.excalidraw` for each. Start at [schema/README.md](schema/README.md). |
+
+---
+
 ## How to view
 
 **Easiest:** open <https://excalidraw.com> in a browser and drag

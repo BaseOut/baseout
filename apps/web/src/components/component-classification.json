@@ -172,5 +172,14 @@
     "classification": "ui-primitive-storybook",
     "styleguideId": "checkbox-toggle",
     "rationale": "Reusable boolean switch primitive backed by daisyUI toggle styling."
+  },
+  "ui/ConfirmModal.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "confirm-modal",
+    "rationale": "Reusable confirmation-dialog primitive built on the Modal primitive (daisyUI dialog) — Cancel + a confirm action with an optional consequence Alert."
+  },
+  "backups/RunBackupNowModal.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Thin product configuration of the ConfirmModal primitive — the credits-warning confirm for an on-demand backup. Documented via the confirm-modal styleguide entry; not a standalone pattern."
   }
 }
