@@ -15,6 +15,7 @@
 import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
 import Alert from '../components/ui/Alert.astro';
+import ConfirmModal from '../components/ui/ConfirmModal.astro';
 
 interface FailedAttachment {
   base: string;
@@ -66,6 +67,13 @@ interface RunDetail {
 interface Props {
   run: RunDetail;
   /**
+   * Active Space UUID — required to wire the Cancel button to the cancel
+   * route (`/api/spaces/:spaceId/backup-runs/:runId/cancel`). Optional so the
+   * apps/design harness can render the view without a live backend; when
+   * absent the Cancel button's confirm is a no-op.
+   */
+  spaceId?: string;
+  /**
    * Production (apps/web): the engine doesn't capture per-base / per-table
    * detail yet (web-backups-redesign "To do"). When true the view shows a
    * "pending" note, renders run-level totals from `run.summary`, blanks the
@@ -74,7 +82,7 @@ interface Props {
    */
   metricsPending?: boolean;
 }
-const { run, metricsPending = false } = Astro.props;
+const { run, spaceId, metricsPending = false } = Astro.props;
 
 const nf = new Intl.NumberFormat('en-US');
 const running = run.status === 'running';
@@ -129,7 +137,7 @@ const depthChips = [
 ];
 ---
 
-<div class="mx-auto max-w-[1200px]" data-run-detail>
+<div class="mx-auto max-w-[1200px]" data-run-detail data-run-id={run.id} data-space-id={spaceId}>
   <div class="rd-nav">
     <a href="/backups" class="rd-back-link" aria-label="Back to Backups"><span class="iconify lucide--arrow-left" aria-hidden="true"></span></a>
     <nav class="rd-crumbs" aria-label="Breadcrumb">
@@ -154,18 +162,22 @@ const depthChips = [
           : <> · {run.status === 'failed' ? 'stopped' : 'finished'}{' '}<span class="mono-data">{absTime(run.completedAt)}</span> · <span class="mono-data">{durationStr(run.startedAt, run.completedAt)}</span></>}
       </p>
     </div>
-    {/* Action buttons are presentational stubs (web-backups-redesign "To do");
-        hidden in production until wired to real endpoints. */}
-    {!metricsPending && (
-      <div class="flex items-center gap-2 shrink-0">
-        {running
-          ? <Button type="button" variant="outline" size="sm" class="border-error text-error">Cancel run</Button>
-          : <>
-              <Button type="button" variant="ghost" size="sm">Delete</Button>
-              <Button href="/?status=running" variant="primary" size="sm">Run again</Button>
-            </>}
-      </div>
-    )}
+    <div class="flex items-center gap-2 shrink-0">
+      {/* Cancel is wired to the real cancel route (server-schedule-and-cancel
+          Phase A); shown whenever the run is still in flight, including in
+          production where metricsPending hides the other (still-stubbed) actions. */}
+      {running && (
+        <Button type="button" variant="outline" size="sm" class="border-error text-error" data-open-cancel>Cancel run</Button>
+      )}
+      {/* Delete / Run again remain presentational stubs (web-backups-redesign
+          "To do") — hidden in production until wired to real endpoints. */}
+      {!metricsPending && !running && (
+        <>
+          <Button type="button" variant="ghost" size="sm">Delete</Button>
+          <Button href="/?status=running" variant="primary" size="sm">Run again</Button>
+        </>
+      )}
+    </div>
   </header>
 
   {/* Failed-attachments banner */}
@@ -290,6 +302,18 @@ const depthChips = [
       </footer>
     </aside>
   </div>
+
+  {/* Cancel-run confirmation — the trigger is the "Cancel run" header button. */}
+  <ConfirmModal id="cancel-run-modal" title="Cancel this backup run?" cancelLabel="Keep running">
+    <p class="text-sm text-base-content/70">
+      This stops the run and asks the backup engine to abort any tables still in
+      flight. Tables already written to your destination are kept.
+    </p>
+    <Button slot="confirm" type="button" variant="outline" class="border-error text-error" data-confirm-cancel>
+      <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+      Cancel run
+    </Button>
+  </ConfirmModal>
 </div>
 
 <style>
@@ -379,6 +403,8 @@ const depthChips = [
 </style>
 
 <script>
+  import { postCancelRun } from '../lib/backups/cancel-button';
+
   function wireRunDetail() {
     const root = document.querySelector<HTMLElement>('[data-run-detail]');
     if (!root) return;
@@ -388,6 +414,21 @@ const depthChips = [
     root.querySelectorAll('[data-open-failed]').forEach((b) => b.addEventListener('click', open));
     root.querySelectorAll('[data-close-failed]').forEach((b) => b.addEventListener('click', close));
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && drawer && !drawer.hidden) close(); });
+
+    // Cancel-run flow: header button opens the confirm modal; confirming POSTs
+    // the cancel route and reloads so the status badge reflects the flip.
+    const cancelModal = root.querySelector<HTMLDialogElement>('#cancel-run-modal');
+    const cancelTrigger = root.querySelector<HTMLButtonElement>('[data-open-cancel]');
+    const confirmBtn = cancelModal?.querySelector<HTMLButtonElement>('[data-confirm-cancel]') ?? null;
+    cancelTrigger?.addEventListener('click', () => cancelModal?.showModal());
+    confirmBtn?.addEventListener('click', async () => {
+      const spaceId = root.dataset.spaceId;
+      const runId = root.dataset.runId;
+      if (!spaceId || !runId) { cancelModal?.close(); return; }
+      await postCancelRun(spaceId, runId, confirmBtn);
+      cancelModal?.close();
+      window.location.reload();
+    });
   }
   wireRunDetail();
   document.addEventListener('astro:after-swap', wireRunDetail);

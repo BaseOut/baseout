@@ -5,6 +5,7 @@ import {
   cancelButtonHtml,
   handleCancelClick,
   isCancellable,
+  postCancelRun,
 } from './cancel-button'
 
 const SPACE_ID = '11111111-1111-1111-1111-111111111111'
@@ -185,5 +186,76 @@ describe('handleCancelClick', () => {
 
     expect(handled).toBe(true)
     expect(fetchImpl).not.toHaveBeenCalled()
+  })
+})
+
+describe('postCancelRun', () => {
+  let btn: HTMLButtonElement
+
+  beforeEach(() => {
+    document.body.innerHTML = '<button type="button">Cancel run</button>'
+    btn = document.querySelector('button')!
+  })
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('POSTs to the canonical /api/spaces/:sid/backup-runs/:rid/cancel path', async () => {
+    const fetchImpl: typeof fetch = vi.fn(
+      async () => new Response('{}', { status: 200 }),
+    ) as unknown as typeof fetch
+
+    await postCancelRun(SPACE_ID, RUN_ID, btn, { fetchImpl })
+
+    const mock = fetchImpl as unknown as ReturnType<typeof vi.fn>
+    expect(mock).toHaveBeenCalledOnce()
+    const call = mock.mock.calls[0] as [string, RequestInit]
+    expect(call[0]).toBe(`/api/spaces/${SPACE_ID}/backup-runs/${RUN_ID}/cancel`)
+    expect(call[1].method).toBe('POST')
+  })
+
+  it('URL-encodes the space and run ids', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }))
+
+    await postCancelRun('sp ace/1', 'run #2', btn, { fetchImpl })
+
+    const call = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect(call[0]).toBe(
+      '/api/spaces/sp%20ace%2F1/backup-runs/run%20%232/cancel',
+    )
+  })
+
+  it('toggles aria-busy + disabled while in flight, clears in finally', async () => {
+    let resolveFetch!: (res: Response) => void
+    const fetchImpl = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve
+        }),
+    )
+
+    const pending = postCancelRun(SPACE_ID, RUN_ID, btn, { fetchImpl })
+    await Promise.resolve()
+    expect(btn.disabled).toBe(true)
+    expect(btn.getAttribute('aria-busy')).toBe('true')
+
+    resolveFetch(new Response('{}', { status: 200 }))
+    await pending
+    expect(btn.disabled).toBe(false)
+    expect(btn.getAttribute('aria-busy')).toBe('false')
+  })
+
+  it('clears the loading state even when fetch throws', async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError('network')
+    })
+
+    await expect(
+      postCancelRun(SPACE_ID, RUN_ID, btn, { fetchImpl }),
+    ).resolves.toBeUndefined()
+
+    expect(btn.disabled).toBe(false)
+    expect(btn.getAttribute('aria-busy')).toBe('false')
   })
 })

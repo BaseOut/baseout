@@ -56,6 +56,41 @@ export interface CancelClickDeps {
 }
 
 /**
+ * POST the cancel to the canonical run-cancel route, toggling the button's
+ * loading state for the duration. Shared by the BackupHistoryWidget's inline
+ * cancel (`handleCancelClick`) and the BackupRunDetailView's confirm-modal
+ * cancel — both POST the same route; only how they resolve `spaceId`/`runId`
+ * and whether they confirm first differs.
+ *
+ * Transport errors are swallowed (polling / a page refresh catches up if the
+ * cancel did land server-side). Loading is cleared in a `finally` so a network
+ * drop never leaves the button stuck.
+ */
+export async function postCancelRun(
+  spaceId: string,
+  runId: string,
+  btn: HTMLButtonElement,
+  deps: CancelClickDeps = {},
+): Promise<void> {
+  const fetchFn = deps.fetchImpl ?? fetch
+  setButtonLoading(btn, true)
+  try {
+    await fetchFn(
+      `/api/spaces/${encodeURIComponent(spaceId)}/backup-runs/${encodeURIComponent(runId)}/cancel`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+      },
+    )
+  } catch {
+    // Transient network errors are swallowed; polling / refresh will catch up
+    // if the cancel did land server-side.
+  } finally {
+    setButtonLoading(btn, false)
+  }
+}
+
+/**
  * Document-level click delegate. Returns true when the event was handled
  * (a Cancel button was clicked), false otherwise — caller decides whether
  * to short-circuit propagation. The implementation calls
@@ -82,21 +117,6 @@ export async function handleCancelClick(
   const spaceId = root?.dataset.spaceId
   if (!spaceId) return true
 
-  const fetchFn = deps.fetchImpl ?? fetch
-  setButtonLoading(btn, true)
-  try {
-    await fetchFn(
-      `/api/spaces/${encodeURIComponent(spaceId)}/backup-runs/${encodeURIComponent(runId)}/cancel`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-      },
-    )
-  } catch {
-    // Transient network errors are swallowed; polling will catch up if
-    // the cancel did land server-side. No toast infra wired in MVP.
-  } finally {
-    setButtonLoading(btn, false)
-  }
+  await postCancelRun(spaceId, runId, btn, deps)
   return true
 }
