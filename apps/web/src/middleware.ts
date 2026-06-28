@@ -9,6 +9,7 @@ import {
   SESSION_TTL_MS,
 } from "./lib/session-cache";
 import { rewriteLocalhostTrapUrl } from "./lib/oauth/canonical-dev-origin";
+import { isLocalDevHost } from "./lib/oauth/local-dev-secure";
 
 const PUBLIC_PATHS = new Set(['/login', '/register']);
 
@@ -52,25 +53,49 @@ export function isPublicRoute(pathname: string): boolean {
   if (/^\/api\/connections\/[^/]+(?:\/[^/]+)?\/callback$/.test(pathname)) {
     return true;
   }
+  // Dev-only DB connection diagnostic. Public so it's reachable without a
+  // session while debugging local DB/auth wiring; the handler itself returns
+  // 404 on any non-local host (see src/pages/api/diag/db.ts), so it exposes
+  // nothing from a deployed Worker.
+  if (pathname.startsWith('/api/diag/')) {
+    return true;
+  }
   return false;
 }
 
+// True when the resolved auth base URL is a local-dev host (baseout.local).
+// Mirrors auth-factory's Secure-cookie decision: the runtime baseURL hostname
+// is the single reliable dev signal, independent of the baked import.meta.env.DEV.
+function authBaseUrlIsLocalDev(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  try {
+    return isLocalDevHost(new URL(baseUrl).hostname);
+  } catch {
+    return false;
+  }
+}
+
 function buildAuthEnv(): Parameters<typeof createAppAuth>[1] {
+  // Explicit magic-link base URL from wrangler `vars.PUBLIC_AUTH_BASE_URL`.
+  // Required under `wrangler dev` where the worker's Host header isn't a
+  // loopback address. Absent under `astro dev`, where auth-factory falls
+  // back to Host-header detection.
+  const baseUrl = (env as unknown as { PUBLIC_AUTH_BASE_URL?: string })
+    .PUBLIC_AUTH_BASE_URL;
   return {
     secret: (env as unknown as { BETTER_AUTH_SECRET?: string })
       .BETTER_AUTH_SECRET,
     email: env.EMAIL,
     from: env.EMAIL_FROM,
-    // Explicit magic-link base URL from wrangler `vars.PUBLIC_AUTH_BASE_URL`.
-    // Required under `wrangler dev --remote` where the worker's Host header
-    // isn't a loopback address. Absent under `astro dev`, where auth-factory
-    // falls back to Host-header detection.
-    baseUrl: (env as unknown as { PUBLIC_AUTH_BASE_URL?: string })
-      .PUBLIC_AUTH_BASE_URL,
-    // Vite bakes import.meta.env.DEV into the bundle at build time:
-    // true under `npm run dev` (astro dev), false under `npm run wrangler`
-    // (astro build + wrangler dev --remote) and in deployed workers.
-    dev: import.meta.env.DEV,
+    baseUrl,
+    // Vite bakes import.meta.env.DEV FALSE under the dev flow (astro build +
+    // wrangler dev), so it can't gate dev-ness on its own — the dev
+    // trustedOrigins (http/https://baseout.local:*) would be dropped and
+    // magic-link login 403s with "Invalid origin: http://baseout.local:4331".
+    // Also derive dev from the runtime baseURL host (baseout.local), matching
+    // auth-factory's Secure-cookie logic. Deployed hosts (baseout.dev) stay
+    // dev=false, so prod trustedOrigins are unaffected.
+    dev: import.meta.env.DEV || authBaseUrlIsLocalDev(baseUrl),
   };
 }
 

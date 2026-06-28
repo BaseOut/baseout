@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { connect } from 'node:net';
@@ -89,8 +89,34 @@ function run(cmd, args) {
   });
 }
 
+// The Hyperdrive local connection string is kept in exactly one place —
+// apps/web/.dev.vars — under the key wrangler expects:
+//   CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<BINDING>   (binding: HYPERDRIVE)
+// which overrides `localConnectionString` in wrangler.jsonc, so the real URL
+// never renders into the (gitignored) config — it stays on its placeholder.
+// But wrangler reads that var from its own PROCESS env (the docs set it via
+// `export …`); .dev.vars only feeds the *worker's* bindings. So lift the key
+// from .dev.vars into process.env here, before spawning wrangler. Under
+// `--remote` / deploy the deployed Hyperdrive `id` is used, so this is a no-op.
+const HYPERDRIVE_LOCAL_ENV = 'CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE';
+function exportHyperdriveLocalConnString() {
+  if (process.env[HYPERDRIVE_LOCAL_ENV]) return; // a real shell env var wins
+  const devVarsPath = resolve(ROOT, '.dev.vars');
+  if (!existsSync(devVarsPath)) return;
+  const match = readFileSync(devVarsPath, 'utf8').match(
+    new RegExp('^\\s*' + HYPERDRIVE_LOCAL_ENV + '\\s*=\\s*(.*)$', 'm'),
+  );
+  if (!match) return;
+  const value = match[1].trim().replace(/^["']|["']$/g, '');
+  if (value) process.env[HYPERDRIVE_LOCAL_ENV] = value;
+}
+
 async function main() {
   await ensureHostsEntry();
+
+  // Source the Hyperdrive local connection string from .dev.vars (single home
+  // for DATABASE_URL) and export it for the wrangler dev spawn below.
+  exportHyperdriveLocalConnString();
 
   // Local backup loop is the DEFAULT for `pnpm dev`: bind apps/web to a LOCAL
   // engine by dropping `--remote`, so the BACKUP_ENGINE service binding resolves
