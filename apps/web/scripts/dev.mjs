@@ -92,14 +92,18 @@ function run(cmd, args) {
 async function main() {
   await ensureHostsEntry();
 
-  // Local backup loop is the DEFAULT for `pnpm dev`: bind apps/web to a LOCAL
-  // engine by dropping `--remote`, so the BACKUP_ENGINE service binding resolves
-  // to a sibling `wrangler dev` engine via the dev registry. Set BACKUP_REMOTE=1
-  // to use the deployed baseout-server-dev instead — `pnpm dev:remote` and the
-  // `wrangler` scripts do this for deployed-only flows like Drive Connect. The
-  // baseout.local origin, https cert, and PUBLIC_AUTH_BASE_URL are unchanged either
-  // way, so magic-link login + Airtable OAuth keep working.
-  const useRemoteEngine = process.env.BACKUP_REMOTE === '1';
+  // `pnpm dev` runs `wrangler dev --remote` by DEFAULT. The worker runs on
+  // Cloudflare's edge, where the `send_email` binding delivers REAL magic-link
+  // emails — local Miniflare (no --remote) cannot send email at all, so login
+  // silently breaks there. The `--var` below pins PUBLIC_AUTH_BASE_URL to
+  // https://baseout.local:4331, so the emailed link and post-login redirect
+  // target your local dev server. This is the login flow that worked before
+  // `1df335f` flipped the default to a local engine.
+  //
+  // Opt into the fully-local backup loop (faster; binds to a sibling local
+  // engine via the dev registry) with BACKUP_LOCAL=1 — but note that mode
+  // CANNOT deliver login emails.
+  const useRemoteEngine = process.env.BACKUP_LOCAL !== '1';
 
   // Signal launch.mjs (below) to strip `"remote": true` from the rendered
   // wrangler.jsonc so it matches our --remote choice. ONLY dev.mjs sets this, so
@@ -121,13 +125,19 @@ async function main() {
     'PUBLIC_AUTH_BASE_URL:https://baseout.local:4331',
   ];
 
-  if (!useRemoteEngine) {
+  if (useRemoteEngine) {
     console.log('');
-    console.log('  ⚑ Local backup loop — web binds to a LOCAL engine (no --remote).');
+    console.log('  ⚑ --remote: worker runs on Cloudflare\'s edge, so magic-link LOGIN EMAILS');
+    console.log('    are delivered for real, with links to https://baseout.local:4331.');
+    console.log('    Fully-local backup loop (no login email): BACKUP_LOCAL=1 pnpm --filter @baseout/web dev');
+  } else {
+    console.log('');
+    console.log('  ⚑ Local backup loop (BACKUP_LOCAL=1) — web binds to a LOCAL engine (no --remote).');
+    console.log('    ⚠ magic-link LOGIN EMAIL is NOT delivered in this mode — Miniflare cannot send.');
+    console.log('    For login, use the default `pnpm dev` (--remote). This mode is for backups:');
     console.log('    `pnpm dev` (repo root) also starts the engine + trigger.dev runner.');
     console.log('    Runner env must point BACKUP_ENGINE_URL at http://localhost:8787 with a');
     console.log('    matching INTERNAL_TOKEN (apps/workflows/.env). See ops-setup.md §7.4.');
-    console.log('    Deployed engine instead: BACKUP_REMOTE=1 pnpm --filter @baseout/web dev');
   }
 
   const hasTrustedCert = existsSync(CERT) && existsSync(KEY);
