@@ -21,6 +21,11 @@
       "types": "./src/space/pg-ddl.ts",
       "import": "./src/space/pg-ddl.ts",
       "default": "./src/space/pg-ddl.ts"
+    },
+    "./space/pg-ddl-upgrade": {
+      "types": "./src/space/pg-ddl-upgrade.ts",
+      "import": "./src/space/pg-ddl-upgrade.ts",
+      "default": "./src/space/pg-ddl-upgrade.ts"
     }
   },
   "scripts": {

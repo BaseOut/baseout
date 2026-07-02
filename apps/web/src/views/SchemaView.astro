@@ -26,6 +26,8 @@ import type {
   SchemaEntityView,
 } from '../lib/backup-engine'
 import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities'
+import { countDeleted, isRemoved, removalNote } from '../lib/schema-docs/deleted-filter'
+import { triggerLabel, type FvSchema } from '../lib/schema-docs/field-visibility'
 
 interface Props {
   spaceId: string
@@ -48,6 +50,29 @@ const views = (tableId: string) => schema.views.filter((v) => v.tableId === tabl
 
 const hasSchema = schema.bases.length > 0
 const aiEnabled = level === 'manual_ai'
+
+// Health tab scores live bases only (web-health-tab); removed bases have no
+// current grade. The grade + breakdown + issues are fetched per base client-side.
+const healthBases = schema.bases.filter((b) => !isRemoved(b.status))
+
+// Browse hides deleted (status='removed') entities by default; this count drives
+// the discoverable "Include deleted (N)" toggle (web-deleted-items-filter).
+const deletedCount = countDeleted(schema)
+
+// Reusable Fields visibility filter (web-field-visibility-filter): the selection
+// model runs client-side, so serialize a trimmed schema for it.
+const fvSchema: FvSchema = {
+  bases: schema.bases.map((b) => ({ baseId: b.baseId, name: b.name })),
+  tables: schema.tables.map((t) => ({ tableId: t.tableId, baseId: t.baseId, name: t.name })),
+  fields: schema.fields.map((f) => ({
+    fieldId: f.fieldId,
+    tableId: f.tableId,
+    baseId: f.baseId,
+    name: f.name,
+    type: f.type,
+  })),
+}
+const totalFields = schema.fields.length
 
 // Flatten the entity tree for the Docs-tab tag picker.
 const entities: DocsTabEntity[] = [
@@ -81,40 +106,105 @@ const entities: DocsTabEntity[] = [
         />
       ) : (
         <div class="grid gap-6 lg:grid-cols-[minmax(0,22rem)_1fr]">
-          <Card variant="outlined" class="max-h-[70vh] overflow-auto p-4">
-            <ul class="space-y-3 text-sm">
+          <div>
+            <div class="mb-3 flex flex-wrap items-center gap-3">
+              {totalFields > 0 && (
+                <div class="dropdown">
+                  <div tabindex="0" role="button" class="btn btn-outline btn-sm gap-1">
+                    <span class="iconify lucide--list-filter size-4" aria-hidden="true"></span>
+                    <span id="fv-trigger-label">{triggerLabel(totalFields, totalFields)}</span>
+                  </div>
+                  <div tabindex="0" class="dropdown-content z-10 mt-2 w-80 rounded-box border border-base-300 bg-base-100 p-3 shadow-lg">
+                    <input
+                      type="search"
+                      id="fv-search"
+                      class="input input-sm input-bordered mb-2 w-full"
+                      placeholder="Search fields…"
+                      aria-label="Search fields"
+                    />
+                    <label class="mb-2 flex cursor-pointer items-center gap-2 border-b border-base-300/60 pb-2 text-sm font-medium">
+                      <input type="checkbox" class="checkbox checkbox-xs fv-global" checked />
+                      <span>All fields</span>
+                      <span class="ml-auto text-xs text-base-content/40"><span id="fv-global-count">{totalFields}</span>/{totalFields}</span>
+                    </label>
+                    <div id="fv-tree" class="max-h-72 space-y-1 overflow-auto">
+                      {schema.bases.map((b) => (
+                        <div class="fv-base-group" data-base-id={b.baseId}>
+                          <label class="flex cursor-pointer items-center gap-2 py-0.5 text-sm font-semibold">
+                            <input type="checkbox" class="checkbox checkbox-xs fv-base" data-base-id={b.baseId} checked />
+                            <span class="truncate">{b.name}</span>
+                            <span class="fv-base-count ml-auto shrink-0 text-xs text-base-content/40" data-base-id={b.baseId}></span>
+                          </label>
+                          <div class="ml-4 space-y-0.5">
+                            {tables(b.baseId).map((t) => (
+                              <div class="fv-table-group" data-table-id={t.tableId}>
+                                <label class="flex cursor-pointer items-center gap-2 py-0.5 text-sm">
+                                  <input type="checkbox" class="checkbox checkbox-xs fv-table" data-table-id={t.tableId} checked />
+                                  <span class="truncate">{t.name}</span>
+                                  <span class="fv-table-count ml-auto shrink-0 text-xs text-base-content/40" data-table-id={t.tableId}></span>
+                                </label>
+                                <div class="ml-4">
+                                  {fields(t.tableId).map((f) => (
+                                    <label class="fv-field-row flex cursor-pointer items-center gap-2 py-0.5 text-xs" data-field-id={f.fieldId}>
+                                      <input type="checkbox" class="checkbox checkbox-xs fv-field" data-field-id={f.fieldId} checked />
+                                      <span class="truncate">{f.name}</span>
+                                      <span class="ml-auto shrink-0 text-base-content/40">{f.type}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {deletedCount > 0 && (
+                <label class="flex w-fit cursor-pointer items-center gap-2 text-sm">
+                  <input type="checkbox" id="include-deleted-toggle" class="toggle toggle-sm" />
+                  <span>Include deleted <span class="text-base-content/50">({deletedCount})</span></span>
+                </label>
+              )}
+            </div>
+            <Card variant="outlined" class="max-h-[70vh] overflow-auto p-4">
+            <ul id="schema-tree" class="space-y-3 text-sm">
               {schema.bases.map((bse) => (
-                <li>
+                <li data-removed={isRemoved(bse.status) ? '' : undefined} hidden={isRemoved(bse.status)}>
                   <button
                     type="button"
-                    class="entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left font-semibold hover:bg-base-200"
+                    class:list={['entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left font-semibold hover:bg-base-200', { 'opacity-50': isRemoved(bse.status) }]}
                     data-target-type="base"
                     data-target-id={bse.baseId}
                     data-name={bse.name}
                   >
                     <span class="iconify lucide--database size-4 text-base-content/50" aria-hidden="true"></span>
                     {bse.name}
-                    {bse.status === 'removed' && <Badge variant="warning" size="sm">removed</Badge>}
+                    {isRemoved(bse.status) && <Badge variant="warning" size="sm">deleted</Badge>}
+                    {isRemoved(bse.status) && <span class="text-xs italic text-base-content/40">{removalNote()}</span>}
                   </button>
                   <ul class="ml-4 mt-1 space-y-1 border-l border-base-300 pl-3">
                     {tables(bse.baseId).map((table) => (
-                      <li>
+                      <li data-removed={isRemoved(table.status) ? '' : undefined} hidden={isRemoved(table.status)}>
                         <button
                           type="button"
-                          class="entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-base-200"
+                          class:list={['entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-base-200', { 'opacity-50': isRemoved(table.status) }]}
                           data-target-type="table"
                           data-target-id={table.tableId}
                           data-name={table.name}
                         >
                           <span class="iconify lucide--table size-4 text-base-content/40" aria-hidden="true"></span>
                           {table.name}
+                          {isRemoved(table.status) && <Badge variant="warning" size="sm">deleted</Badge>}
+                          {isRemoved(table.status) && <span class="text-xs italic text-base-content/40">{removalNote()}</span>}
                         </button>
                         <ul class="ml-4 mt-1 space-y-0.5 text-base-content/70">
                           {fields(table.tableId).map((field) => (
-                            <li>
+                            <li data-removed={isRemoved(field.status) ? '' : undefined} hidden={isRemoved(field.status)} data-field-id={field.fieldId}>
                               <button
                                 type="button"
-                                class="entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-base-200"
+                                class:list={['entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-base-200', { 'opacity-50': isRemoved(field.status) }]}
                                 data-target-type="field"
                                 data-target-id={field.fieldId}
                                 data-name={field.name}
@@ -122,20 +212,24 @@ const entities: DocsTabEntity[] = [
                                 <span class="iconify lucide--columns-3 size-3.5 text-base-content/30" aria-hidden="true"></span>
                                 {field.name}
                                 <span class="text-xs text-base-content/40">{field.type}</span>
+                                {isRemoved(field.status) && <Badge variant="warning" size="sm">deleted</Badge>}
+                                {isRemoved(field.status) && <span class="text-xs italic text-base-content/40">{removalNote()}</span>}
                               </button>
                             </li>
                           ))}
                           {views(table.tableId).map((view) => (
-                            <li>
+                            <li data-removed={isRemoved(view.status) ? '' : undefined} hidden={isRemoved(view.status)}>
                               <button
                                 type="button"
-                                class="entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-base-200"
+                                class:list={['entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-base-200', { 'opacity-50': isRemoved(view.status) }]}
                                 data-target-type="view"
                                 data-target-id={view.viewId}
                                 data-name={view.name}
                               >
                                 <span class="iconify lucide--eye size-3.5 text-base-content/30" aria-hidden="true"></span>
                                 {view.name}
+                                {isRemoved(view.status) && <Badge variant="warning" size="sm">deleted</Badge>}
+                                {isRemoved(view.status) && <span class="text-xs italic text-base-content/40">{removalNote()}</span>}
                               </button>
                             </li>
                           ))}
@@ -147,12 +241,113 @@ const entities: DocsTabEntity[] = [
               ))}
             </ul>
           </Card>
+          </div>
 
           <Card variant="outlined" class="min-h-[16rem]">
             <div id="entity-detail" class="text-sm text-base-content/60">
               Select an entity to see its documentation.
             </div>
           </Card>
+        </div>
+      )}
+    </div>
+
+    <input type="radio" name="schema_tabs" class="tab" aria-label="Relationships" />
+    <div class="tab-content border-base-300 pt-6">
+      {!hasSchema ? (
+        <EmptyState
+          icon="lucide--share-2"
+          title="No schema to relate"
+          description="Relationships appear once a backup has captured this Space’s schema."
+        />
+      ) : (
+        <div data-relationships-tab class="space-y-4">
+          <div class="flex flex-wrap items-center gap-4">
+            {healthBases.length > 1 && (
+              <div class="flex items-center gap-2">
+                <label class="text-sm font-medium" for="rel-base-select">Base</label>
+                <select id="rel-base-select" class="select select-bordered select-sm w-64">
+                  {healthBases.map((b) => (
+                    <option value={b.baseId}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {healthBases.length === 1 && (
+              <input type="hidden" id="rel-base-select" value={healthBases[0].baseId} />
+            )}
+            <label class="flex cursor-pointer items-center gap-2 text-sm">
+              <input type="checkbox" id="rel-include-removed" class="toggle toggle-sm" />
+              <span>Include removed / dismissed</span>
+            </label>
+            <input
+              type="search"
+              id="rel-search"
+              class="input input-sm input-bordered w-48"
+              placeholder="Filter relationships…"
+              aria-label="Filter relationships"
+            />
+            <button type="button" id="rel-new" class="btn btn-outline btn-sm gap-1">
+              <span class="iconify lucide--plus size-4" aria-hidden="true"></span> New synced view
+            </button>
+          </div>
+          <form id="rel-create-form" class="hidden flex-wrap items-end gap-2 rounded-box border border-base-300 p-3">
+            <div class="flex flex-col gap-1">
+              <span class="text-xs text-base-content/50">Source table</span>
+              <select id="rel-create-source" class="select select-bordered select-sm w-52"></select>
+            </div>
+            <span class="pb-2 text-base-content/40">→</span>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs text-base-content/50">Destination table</span>
+              <select id="rel-create-dest" class="select select-bordered select-sm w-52"></select>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Create</button>
+            <button type="button" id="rel-create-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+            <span id="rel-create-status" class="text-xs text-base-content/50" role="status" aria-live="polite"></span>
+          </form>
+          <div id="rel-content" class="min-h-[12rem] text-sm text-base-content/60">
+            <span class="loading loading-spinner loading-sm"></span>
+          </div>
+        </div>
+      )}
+    </div>
+
+    <input type="radio" name="schema_tabs" class="tab" aria-label="Health" />
+    <div class="tab-content border-base-300 pt-6">
+      {!hasSchema ? (
+        <EmptyState
+          icon="lucide--heart-pulse"
+          title="No schema to score"
+          description="Health scores appear once a backup has captured this Space’s schema."
+        />
+      ) : (
+        <div data-health-tab class="space-y-4">
+          {healthBases.length > 1 && (
+            <div class="flex flex-wrap items-center gap-3">
+              <label class="text-sm font-medium" for="health-base-select">Base</label>
+              <select id="health-base-select" class="select select-bordered select-sm w-64">
+                {healthBases.map((b) => (
+                  <option value={b.baseId}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {healthBases.length === 1 && (
+            <input type="hidden" id="health-base-select" value={healthBases[0].baseId} />
+          )}
+          {aiEnabled && (
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" id="health-rerun" class="btn btn-primary btn-sm">Re-run scoring</button>
+              <button type="button" id="health-configure" class="btn btn-ghost btn-sm gap-1">
+                <span class="iconify lucide--sliders-horizontal size-4" aria-hidden="true"></span> Configure metrics
+              </button>
+              <span id="health-rerun-status" class="text-xs text-base-content/50" role="status" aria-live="polite"></span>
+            </div>
+          )}
+          <div id="health-config-panel" class="hidden"></div>
+          <div id="health-content" class="min-h-[12rem] text-sm text-base-content/60">
+            <span class="loading loading-spinner loading-sm"></span>
+          </div>
         </div>
       )}
     </div>
@@ -167,7 +362,80 @@ const entities: DocsTabEntity[] = [
         entities={entities}
       />
     </div>
+
+    <input type="radio" name="schema_tabs" class="tab" aria-label="Chat" />
+    <div class="tab-content border-base-300 pt-6">
+      {!aiEnabled ? (
+        <EmptyState
+          icon="lucide--sparkles"
+          title="Chat is a Pro feature"
+          description="Upgrade to Pro to ask AI about your schema — scoped to the bases, tables and fields you choose."
+        >
+          <a href="/settings/billing" class="btn btn-primary btn-sm">Upgrade to Pro</a>
+        </EmptyState>
+      ) : !hasSchema ? (
+        <EmptyState
+          icon="lucide--sparkles"
+          title="No schema to chat about"
+          description="Chat becomes available once a backup has captured this Space’s schema."
+        />
+      ) : (
+        <div data-chat-tab class="grid gap-4 lg:grid-cols-[15rem_1fr]" style="min-height: 28rem;">
+          <aside class="flex flex-col gap-2">
+            <button type="button" id="chat-new" class="btn btn-sm btn-outline gap-1">
+              <span class="iconify lucide--plus size-4" aria-hidden="true"></span> New chat
+            </button>
+            <ul id="chat-threads" class="menu menu-sm w-full rounded-box border border-base-300 p-1 text-sm">
+              <li class="px-2 py-1 text-base-content/40">Loading…</li>
+            </ul>
+          </aside>
+          <section class="flex flex-col rounded-box border border-base-300">
+            <div class="flex flex-wrap items-center gap-2 border-b border-base-300/60 px-3 py-2 text-xs">
+              <span class="text-base-content/50">Context</span>
+              <select id="chat-scope" class="select select-bordered select-xs w-44" disabled aria-label="Chat context scope">
+                <option value="">Whole Space</option>
+                {healthBases.map((b) => (
+                  <option value={b.baseId}>{b.name}</option>
+                ))}
+              </select>
+              <span class="ml-auto flex gap-1">
+                <button type="button" id="chat-rename" class="btn btn-ghost btn-xs" disabled>Rename</button>
+                <button type="button" id="chat-archive" class="btn btn-ghost btn-xs" disabled>Archive</button>
+              </span>
+            </div>
+            <div id="chat-conversation" class="flex-1 space-y-3 overflow-auto p-3 text-sm">
+              <p class="text-base-content/50">Start a new chat or pick one on the left.</p>
+            </div>
+            <form id="chat-form" class="flex items-end gap-2 border-t border-base-300/60 p-2">
+              <textarea
+                id="chat-input"
+                rows="2"
+                class="textarea textarea-bordered textarea-sm flex-1 resize-none"
+                placeholder="Ask about your schema…"
+                disabled
+              ></textarea>
+              <button type="submit" id="chat-send" class="btn btn-primary btn-sm" disabled>Send</button>
+            </form>
+          </section>
+        </div>
+      )}
+    </div>
   </div>
+
+  {/* Shared entity-detail modal — opened from any tab (Relationships click-through,
+      future Chat refs) via an `open-entity-detail` CustomEvent. Reuses the
+      docs-by-entity endpoint the Browse panel uses. */}
+  <dialog id="entity-modal" class="modal">
+    <div class="modal-box">
+      <form method="dialog">
+        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" aria-label="Close">✕</button>
+      </form>
+      <div id="entity-modal-body" class="text-sm">
+        <span class="loading loading-spinner loading-sm"></span>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
 </section>
 
 <script>
@@ -209,5 +477,939 @@ const entities: DocsTabEntity[] = [
         detail.innerHTML = head + docsHtml
       }),
     )
+
+    // "Include deleted" toggle: reveal/hide removed entities (rendered hidden by
+    // default). Pure client interaction, no refetch — getSchema already returned
+    // their status (web-deleted-items-filter).
+    const includeDeleted = document.getElementById('include-deleted-toggle') as HTMLInputElement | null
+    if (includeDeleted) {
+      includeDeleted.addEventListener('change', () => {
+        document.querySelectorAll<HTMLElement>('[data-removed]').forEach((el) => {
+          el.hidden = !includeDeleted.checked
+        })
+      })
+    }
+  }
+</script>
+
+<script is:inline type="application/json" id="fv-schema-data" set:html={JSON.stringify(fvSchema).replace(/</g, '\\u003c')}></script>
+
+<script>
+  // Reusable Fields visibility filter (web-field-visibility-filter). The pure
+  // selection model lives in lib/schema-docs/field-visibility; this wires it to
+  // the Browse Fields dropdown + tree. Field rows hide via the `hidden` *class*,
+  // independent of the deleted filter's `hidden` *attribute*, so they compose.
+  import {
+    fieldIdsOfBase,
+    fieldIdsOfTable,
+    groupState,
+    matchesQuery,
+    setFieldsVisible,
+    triggerLabel,
+    visibleCount,
+    type FvSchema,
+    type TriState,
+  } from '../lib/schema-docs/field-visibility'
+
+  const dataEl = document.getElementById('fv-schema-data')
+  const fvTree = document.getElementById('fv-tree')
+  if (dataEl && fvTree) {
+    const schema = JSON.parse(dataEl.textContent || '{"bases":[],"tables":[],"fields":[]}') as FvSchema
+    const allFieldIds = schema.fields.map((f) => f.fieldId)
+    let visible = new Set<string>(allFieldIds)
+
+    const query = () => (document.getElementById('fv-search') as HTMLInputElement | null)?.value ?? ''
+    // Bulk controls act on the matched fields when a search is active.
+    const scopeIds = (ids: string[]) => {
+      if (query().trim() === '') return ids
+      const matched = matchesQuery(schema, query()).fieldIds
+      return ids.filter((id) => matched.has(id))
+    }
+
+    const setTri = (cb: HTMLInputElement, state: TriState) => {
+      cb.indeterminate = state === 'indeterminate'
+      cb.checked = state === 'checked'
+    }
+
+    const applyTree = () => {
+      document.querySelectorAll<HTMLElement>('#schema-tree li[data-field-id]').forEach((li) => {
+        li.classList.toggle('hidden', !visible.has(li.dataset.fieldId!))
+      })
+    }
+
+    const refreshMenu = () => {
+      fvTree.querySelectorAll<HTMLInputElement>('.fv-field').forEach((cb) => {
+        cb.checked = visible.has(cb.dataset.fieldId!)
+      })
+      fvTree.querySelectorAll<HTMLInputElement>('.fv-table').forEach((cb) => {
+        const ids = fieldIdsOfTable(schema, cb.dataset.tableId!)
+        setTri(cb, groupState(ids, visible))
+        const c = fvTree.querySelector(`.fv-table-count[data-table-id="${cb.dataset.tableId}"]`)
+        if (c) c.textContent = `${visibleCount(ids, visible)}/${ids.length}`
+      })
+      fvTree.querySelectorAll<HTMLInputElement>('.fv-base').forEach((cb) => {
+        const ids = fieldIdsOfBase(schema, cb.dataset.baseId!)
+        setTri(cb, groupState(ids, visible))
+        const c = fvTree.querySelector(`.fv-base-count[data-base-id="${cb.dataset.baseId}"]`)
+        if (c) c.textContent = `${visibleCount(ids, visible)}/${ids.length}`
+      })
+      const global = document.querySelector<HTMLInputElement>('.fv-global')
+      if (global) setTri(global, groupState(allFieldIds, visible))
+      const gc = document.getElementById('fv-global-count')
+      if (gc) gc.textContent = String(visibleCount(allFieldIds, visible))
+      const label = document.getElementById('fv-trigger-label')
+      if (label) label.textContent = triggerLabel(visibleCount(allFieldIds, visible), allFieldIds.length)
+    }
+
+    const applyMenuSearch = () => {
+      const m = matchesQuery(schema, query())
+      fvTree.querySelectorAll<HTMLElement>('.fv-field-row').forEach((row) => {
+        row.classList.toggle('hidden', !m.fieldIds.has(row.dataset.fieldId!))
+      })
+      fvTree.querySelectorAll<HTMLElement>('.fv-table-group').forEach((g) => {
+        g.classList.toggle('hidden', !m.tableIds.has(g.dataset.tableId!))
+      })
+      fvTree.querySelectorAll<HTMLElement>('.fv-base-group').forEach((g) => {
+        g.classList.toggle('hidden', !m.baseIds.has(g.dataset.baseId!))
+      })
+    }
+
+    const sync = () => {
+      applyTree()
+      refreshMenu()
+    }
+
+    fvTree.addEventListener('change', (e) => {
+      const cb = e.target as HTMLInputElement
+      if (cb.classList.contains('fv-field')) {
+        visible = setFieldsVisible(visible, [cb.dataset.fieldId!], cb.checked)
+      } else if (cb.classList.contains('fv-table')) {
+        visible = setFieldsVisible(visible, scopeIds(fieldIdsOfTable(schema, cb.dataset.tableId!)), cb.checked)
+      } else if (cb.classList.contains('fv-base')) {
+        visible = setFieldsVisible(visible, scopeIds(fieldIdsOfBase(schema, cb.dataset.baseId!)), cb.checked)
+      } else {
+        return
+      }
+      sync()
+    })
+
+    const globalCb = document.querySelector<HTMLInputElement>('.fv-global')
+    globalCb?.addEventListener('change', () => {
+      visible = setFieldsVisible(visible, scopeIds(allFieldIds), globalCb.checked)
+      sync()
+    })
+
+    document.getElementById('fv-search')?.addEventListener('input', applyMenuSearch)
+
+    sync()
+  }
+</script>
+
+<script>
+  // Health tab (web-health-tab): lazy-load a base's grade + per-metric breakdown
+  // + issues from the engine when the tab is first opened (one round-trip), and
+  // refetch on base change. Read-only here; the Pro+ prompt editor is deferred.
+  const healthTab = document.querySelector<HTMLElement>('[data-health-tab]')
+  const healthRoot = document.querySelector<HTMLElement>('[data-schema-docs]')
+  if (healthTab && healthRoot) {
+    const spaceId = healthRoot.dataset.spaceId!
+    const select = document.getElementById('health-base-select') as
+      | HTMLSelectElement
+      | HTMLInputElement
+      | null
+    const content = document.getElementById('health-content')
+    const esc = (s: string) =>
+      String(s).replace(
+        /[&<>"]/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
+      )
+
+    type Grade = { score: number; band: string } | null
+    type Metric = {
+      ruleId: string
+      name: string
+      weight: number
+      severity: string | null
+      entityTier: string | null
+      score: number
+      lastGeneratedAt: string | null
+    }
+    type Issue = {
+      ruleId: string
+      severity: string
+      tableId: string | null
+      fieldId: string | null
+      message: string
+      airtableDeeplink: string | null
+    }
+
+    const scoreColor = (n: number) =>
+      n >= 90 ? 'text-success' : n >= 60 ? 'text-warning' : 'text-error'
+    const sevBadge = (sev: string | null) => {
+      const v =
+        sev === 'critical' ? 'badge-error' : sev === 'warning' ? 'badge-warning' : 'badge-ghost'
+      return `<span class="badge badge-sm ${v}">${esc(sev ?? 'info')}</span>`
+    }
+
+    const renderOverview = (data: { grade: Grade; metrics: Metric[]; issues: Issue[] }) => {
+      const { grade, metrics, issues } = data
+      if (!grade && metrics.length === 0) {
+        return '<p class="text-base-content/50">This base has not been scored yet. Health runs after a schema backup completes.</p>'
+      }
+      const gradeCard = grade
+        ? `<div class="stats border border-base-300 bg-base-100"><div class="stat"><div class="stat-title">Health</div><div class="stat-value ${scoreColor(grade.score)}">${grade.score}</div><div class="stat-desc">${esc(grade.band)}</div></div></div>`
+        : ''
+      const metricRows = metrics
+        .map(
+          (m) =>
+            `<tr><td><span class="font-medium">${esc(m.name)}</span> ${sevBadge(m.severity)}</td><td class="text-base-content/60">${esc(m.entityTier ?? '—')}</td><td class="text-base-content/60">${m.weight}</td><td class="text-right font-medium ${scoreColor(m.score)}">${m.score}</td></tr>`,
+        )
+        .join('')
+      const metricsTable =
+        metrics.length === 0
+          ? ''
+          : `<div><h3 class="mb-2 text-sm font-semibold text-base-content">Metrics</h3><table class="table table-sm"><thead><tr><th>Metric</th><th>Scope</th><th>Weight</th><th class="text-right">Score</th></tr></thead><tbody>${metricRows}</tbody></table></div>`
+      const issuesList =
+        issues.length === 0
+          ? '<p class="text-base-content/50">No issues found.</p>'
+          : `<ul class="space-y-2">${issues
+              .map(
+                (i) =>
+                  `<li class="flex items-start gap-2 rounded border border-base-300/60 p-3">${sevBadge(i.severity)}<span class="flex-1">${esc(i.message)}</span>${i.airtableDeeplink ? `<a href="${esc(i.airtableDeeplink)}" target="_blank" rel="noopener" class="link link-primary shrink-0 text-xs">Open in Airtable</a>` : ''}</li>`,
+              )
+              .join('')}</ul>`
+      return `<div class="space-y-6">${gradeCard}${metricsTable}<div><h3 class="mb-2 text-sm font-semibold text-base-content">Issues</h3>${issuesList}</div></div>`
+    }
+
+    const render = async () => {
+      if (!content || !select) return
+      const baseId = select.value
+      if (!baseId) {
+        content.innerHTML = '<p class="text-base-content/50">No base to score.</p>'
+        return
+      }
+      content.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
+      let res: Response
+      try {
+        res = await fetch(`/api/spaces/${spaceId}/health-overview?baseId=${encodeURIComponent(baseId)}`)
+      } catch {
+        content.innerHTML = '<span class="text-error">Could not load health scores.</span>'
+        return
+      }
+      if (res.status === 403) {
+        content.innerHTML =
+          '<p class="text-base-content/60">Health scoring is available on the Launch plan and above.</p>'
+        return
+      }
+      if (!res.ok) {
+        content.innerHTML = '<span class="text-error">Could not load health scores.</span>'
+        return
+      }
+      const data = (await res.json()) as { grade: Grade; metrics: Metric[]; issues: Issue[] }
+      content.innerHTML = renderOverview(data)
+    }
+
+    // ── Pro+ editor: re-run scoring + configure metrics (web-health-tab §editor) ──
+    type CfgMetric = {
+      ruleId: string
+      name: string
+      severity: string
+      weight: number
+      entityTier: string | null
+      enabled: boolean
+      effectivePrompt: string
+      promptSource: string
+      systemDefault: string
+      hasSpacePrompt: boolean
+      scored: boolean
+      isStale: boolean
+    }
+    const rerunBtn = document.getElementById('health-rerun') as HTMLButtonElement | null
+    const configureBtn = document.getElementById('health-configure') as HTMLButtonElement | null
+    const configPanel = document.getElementById('health-config-panel')
+    const rerunStatus = document.getElementById('health-rerun-status')
+
+    const pollAfterRerun = () => {
+      let n = 0
+      const t = setInterval(async () => {
+        n += 1
+        await render()
+        if (n >= 12) clearInterval(t) // ~36s window for the async score to land
+      }, 3000)
+    }
+
+    rerunBtn?.addEventListener('click', async () => {
+      if (!select) return
+      const baseId = select.value
+      rerunBtn.disabled = true
+      if (rerunStatus) rerunStatus.textContent = 'Starting…'
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/health-rerun`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ baseId }),
+        })
+        if (!res.ok) {
+          if (rerunStatus)
+            rerunStatus.textContent = res.status === 403 ? 'Pro plan required.' : 'Could not start scoring.'
+          return
+        }
+        const data = (await res.json()) as { enqueued: boolean; metricCount?: number }
+        if (rerunStatus)
+          rerunStatus.textContent = data.enqueued
+            ? `Scoring ${data.metricCount ?? 0} metric(s)… results appear shortly.`
+            : 'No metrics enabled to score.'
+        if (data.enqueued) pollAfterRerun()
+      } finally {
+        rerunBtn.disabled = false
+      }
+    })
+
+    const cfgSourceBadge = (src: string) =>
+      src === 'system'
+        ? '<span class="badge badge-sm badge-ghost">default</span>'
+        : `<span class="badge badge-sm badge-info">${esc(src)}</span>`
+
+    const cfgRow = (m: CfgMetric) =>
+      `<div class="rounded border border-base-300/60 p-3 space-y-2" data-cfg-rule="${esc(m.ruleId)}">
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="flex cursor-pointer items-center gap-2 text-sm font-medium">
+            <input type="checkbox" class="toggle toggle-xs" data-cfg-enable ${m.enabled ? 'checked' : ''} />
+            ${esc(m.name)}
+          </label>
+          ${cfgSourceBadge(m.promptSource)}
+          ${m.isStale ? '<span class="badge badge-sm badge-warning">stale — re-run</span>' : m.scored ? '<span class="badge badge-sm badge-success">scored</span>' : ''}
+          <span class="ml-auto text-xs text-base-content/40">${esc(m.entityTier ?? '')} · w${m.weight}</span>
+        </div>
+        <textarea class="textarea textarea-bordered textarea-sm w-full" rows="2" data-cfg-prompt>${esc(m.effectivePrompt)}</textarea>
+        <div class="flex gap-2">
+          <button type="button" class="btn btn-xs btn-primary" data-cfg-save>Save prompt</button>
+          ${m.hasSpacePrompt ? '<button type="button" class="btn btn-xs btn-ghost" data-cfg-reset>Reset to default</button>' : ''}
+        </div>
+      </div>`
+
+    const renderConfig = (metrics: CfgMetric[]) => {
+      if (!configPanel) return
+      configPanel.innerHTML =
+        metrics.length === 0
+          ? '<p class="text-base-content/50">No metrics configured for this organization.</p>'
+          : `<div class="space-y-2 rounded-box border border-base-300 p-3"><p class="text-xs text-base-content/50">Edit a metric's prompt or disable it, then re-run scoring. Edits apply Space-wide.</p>${metrics.map(cfgRow).join('')}</div>`
+    }
+
+    let configLoaded = false
+    const loadConfig = async () => {
+      if (!configPanel || !select) return
+      configPanel.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
+      const res = await fetch(`/api/spaces/${spaceId}/health-config?baseId=${encodeURIComponent(select.value)}`)
+      if (!res.ok) {
+        configPanel.innerHTML =
+          res.status === 403
+            ? '<p class="text-base-content/60">Metric configuration is available on the Pro plan.</p>'
+            : '<span class="text-error">Could not load metric configuration.</span>'
+        return
+      }
+      const data = (await res.json()) as { metrics: CfgMetric[] }
+      renderConfig(data.metrics)
+    }
+
+    configureBtn?.addEventListener('click', () => {
+      if (!configPanel) return
+      const nowHidden = configPanel.classList.toggle('hidden')
+      if (!nowHidden && !configLoaded) {
+        configLoaded = true
+        loadConfig()
+      }
+    })
+
+    // Save / reset prompt + enable toggle (delegated).
+    configPanel?.addEventListener('click', async (e) => {
+      const row = (e.target as HTMLElement).closest<HTMLElement>('[data-cfg-rule]')
+      if (!row) return
+      const ruleId = row.dataset.cfgRule!
+      const save = (e.target as HTMLElement).closest('[data-cfg-save]')
+      const reset = (e.target as HTMLElement).closest('[data-cfg-reset]')
+      if (!save && !reset) return
+      const prompt = reset ? null : (row.querySelector('[data-cfg-prompt]') as HTMLTextAreaElement)?.value ?? ''
+      if (!reset && (prompt as string).trim() === '') return
+      const res = await fetch(`/api/spaces/${spaceId}/health-prompt`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ruleId, level: 'space', prompt }),
+      })
+      if (res.ok) loadConfig()
+    })
+
+    configPanel?.addEventListener('change', async (e) => {
+      const cb = e.target as HTMLInputElement
+      if (!cb.matches('[data-cfg-enable]')) return
+      const row = cb.closest<HTMLElement>('[data-cfg-rule]')
+      if (!row || !select) return
+      await fetch(`/api/spaces/${spaceId}/health-enable`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ baseId: select.value, ruleId: row.dataset.cfgRule, enabled: cb.checked }),
+      })
+    })
+
+    let loaded = false
+    const radios = document.querySelectorAll<HTMLInputElement>('input[name="schema_tabs"]')
+    const healthRadio = Array.from(radios).find((r) => r.getAttribute('aria-label') === 'Health')
+    healthRadio?.addEventListener('change', () => {
+      if (healthRadio.checked && !loaded) {
+        loaded = true
+        render()
+      }
+    })
+    select?.addEventListener('change', () => {
+      configLoaded = false
+      if (configPanel && !configPanel.classList.contains('hidden')) {
+        configLoaded = true
+        loadConfig()
+      }
+      render()
+    })
+  }
+</script>
+
+<script>
+  // Relationships tab (web-relationships-tab): lazy-load a base's relationships
+  // (API-derived, grouped by type, + synced-view candidates) when first opened;
+  // refetch on base change / include-removed toggle. Inferred synced views get
+  // Confirm / Dismiss actions. Click-through to the entity sidebar + a full
+  // faceted filter bar are follow-ups.
+  const relTab = document.querySelector<HTMLElement>('[data-relationships-tab]')
+  const relRoot = document.querySelector<HTMLElement>('[data-schema-docs]')
+  if (relTab && relRoot) {
+    const spaceId = relRoot.dataset.spaceId!
+    const select = document.getElementById('rel-base-select') as
+      | HTMLSelectElement
+      | HTMLInputElement
+      | null
+    const includeRemoved = document.getElementById('rel-include-removed') as HTMLInputElement | null
+    const content = document.getElementById('rel-content')
+    const esc = (s: string) =>
+      String(s).replace(
+        /[&<>"]/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
+      )
+
+    type Ref = { tableId?: string; fieldId?: string; name: string; removed: boolean }
+    type Derived = {
+      id: string
+      type: 'linkedRecords' | 'formulas' | 'rollups' | 'lookups' | 'lastModified'
+      label: string
+      refs: Ref[]
+      hasRemovedHistory: boolean
+      valid: boolean
+    }
+    type Synced = {
+      id: string
+      sourceTableId: string
+      sourceTableName: string
+      destTableId: string
+      destTableName: string
+      status: string
+      origin: string
+      inferred: boolean
+      matchScore: number | null
+    }
+
+    const TYPE_LABELS: Record<string, string> = {
+      linkedRecords: 'Linked records',
+      formulas: 'Formulas',
+      rollups: 'Rollups',
+      lookups: 'Lookups',
+      lastModified: 'Last modified',
+    }
+    const TYPE_ORDER = ['linkedRecords', 'formulas', 'rollups', 'lookups', 'lastModified']
+
+    const badges = (d: Derived) => {
+      let b = ''
+      if (!d.valid) b += '<span class="badge badge-sm badge-error">invalid</span> '
+      if (d.hasRemovedHistory) b += '<span class="badge badge-sm badge-warning">has removed</span> '
+      return b
+    }
+
+    // Clickable entity chip → opens the shared detail modal (click-through).
+    const entityChip = (type: string, id: string | undefined, name: string, removed = false) => {
+      const label = esc(name) + (removed ? ' (removed)' : '')
+      return id
+        ? `<button type="button" class="link link-hover text-xs text-base-content/50" data-entity-type="${type}" data-entity-id="${esc(id)}" data-entity-name="${esc(name)}">${label}</button>`
+        : `<span class="text-xs text-base-content/40">${label}</span>`
+    }
+
+    const derivedRow = (d: Derived) =>
+      `<li class="flex flex-wrap items-center gap-2 rounded border border-base-300/60 px-3 py-2"><span class="font-medium text-base-content">${esc(d.label)}</span> ${badges(d)}${d.refs.length ? `<span class="flex flex-wrap items-center gap-2">${d.refs.map((r) => entityChip(r.tableId ? 'table' : 'field', r.tableId ?? r.fieldId, r.name, r.removed)).join('')}</span>` : ''}</li>`
+
+    const syncedRow = (s: Synced) => {
+      const statusBadge = s.inferred
+        ? '<span class="badge badge-sm badge-info">inferred</span>'
+        : s.status === 'confirmed'
+          ? '<span class="badge badge-sm badge-success">confirmed</span>'
+          : `<span class="badge badge-sm badge-ghost">${esc(s.status)}</span>`
+      const score =
+        s.matchScore != null ? `<span class="text-xs text-base-content/40">${s.matchScore}% match</span>` : ''
+      const actions = s.inferred
+        ? `<span class="ml-auto flex gap-1"><button type="button" class="btn btn-xs btn-success" data-rel-action="confirm" data-rel-id="${esc(s.id)}">Confirm</button><button type="button" class="btn btn-xs btn-ghost" data-rel-action="dismiss" data-rel-id="${esc(s.id)}">Dismiss</button></span>`
+        : ''
+      const src = `<button type="button" class="link link-hover font-medium text-base-content" data-entity-type="table" data-entity-id="${esc(s.sourceTableId)}" data-entity-name="${esc(s.sourceTableName)}">${esc(s.sourceTableName)}</button>`
+      const dst = `<button type="button" class="link link-hover font-medium text-base-content" data-entity-type="table" data-entity-id="${esc(s.destTableId)}" data-entity-name="${esc(s.destTableName)}">${esc(s.destTableName)}</button>`
+      return `<li class="flex flex-wrap items-center gap-2 rounded border border-base-300/60 px-3 py-2">${src} → ${dst} ${statusBadge} ${score}${s.origin === 'user' ? '<span class="badge badge-sm badge-ghost">manual</span>' : ''}${actions}</li>`
+    }
+
+    const renderRelationships = (data: { derived: Derived[]; syncedViews: Synced[] }) => {
+      const showRemoved = !!includeRemoved?.checked
+      const term =
+        (document.getElementById('rel-search') as HTMLInputElement | null)?.value.trim().toLowerCase() ?? ''
+      const match = (s: string) => term === '' || s.toLowerCase().includes(term)
+      let derived = showRemoved ? data.derived : data.derived.filter((d) => d.valid)
+      if (term) derived = derived.filter((d) => match(d.label) || d.refs.some((r) => match(r.name)))
+      let synced = data.syncedViews
+      if (term) synced = synced.filter((s) => match(s.sourceTableName) || match(s.destTableName))
+
+      const sections: string[] = []
+      for (const type of TYPE_ORDER) {
+        const rows = derived.filter((d) => d.type === type)
+        if (rows.length === 0) continue
+        sections.push(
+          `<div><h3 class="mb-2 text-sm font-semibold text-base-content">${TYPE_LABELS[type]} <span class="text-base-content/40">(${rows.length})</span></h3><ul class="space-y-2">${rows.map(derivedRow).join('')}</ul></div>`,
+        )
+      }
+      if (synced.length > 0) {
+        sections.push(
+          `<div><h3 class="mb-2 text-sm font-semibold text-base-content">Synced views <span class="text-base-content/40">(${synced.length})</span></h3><ul class="space-y-2">${synced.map(syncedRow).join('')}</ul></div>`,
+        )
+      }
+      return sections.length === 0
+        ? '<p class="text-base-content/50">No relationships match.</p>'
+        : `<div class="space-y-6">${sections.join('')}</div>`
+    }
+
+    let lastData: { derived: Derived[]; syncedViews: Synced[] } | null = null
+
+    const load = async () => {
+      if (!content || !select) return
+      const baseId = select.value
+      if (!baseId) {
+        content.innerHTML = '<p class="text-base-content/50">No base selected.</p>'
+        return
+      }
+      content.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
+      const q = includeRemoved?.checked ? '&includeDismissed=1' : ''
+      let res: Response
+      try {
+        res = await fetch(
+          `/api/spaces/${spaceId}/relationships?baseId=${encodeURIComponent(baseId)}${q}`,
+        )
+      } catch {
+        content.innerHTML = '<span class="text-error">Could not load relationships.</span>'
+        return
+      }
+      if (res.status === 403) {
+        content.innerHTML =
+          '<p class="text-base-content/60">Relationships are available on the Launch plan and above.</p>'
+        return
+      }
+      if (!res.ok) {
+        content.innerHTML = '<span class="text-error">Could not load relationships.</span>'
+        return
+      }
+      lastData = (await res.json()) as { derived: Derived[]; syncedViews: Synced[] }
+      content.innerHTML = renderRelationships(lastData)
+    }
+
+    // Click-through: an entity chip opens the shared detail modal.
+    content?.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-entity-id]')
+      if (!chip) return
+      document.dispatchEvent(
+        new CustomEvent('open-entity-detail', {
+          detail: { type: chip.dataset.entityType, id: chip.dataset.entityId, name: chip.dataset.entityName },
+        }),
+      )
+    })
+
+    // Confirm / dismiss inferred synced views.
+    content?.addEventListener('click', async (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-rel-action]')
+      if (!btn) return
+      const action = btn.dataset.relAction
+      const id = btn.dataset.relId
+      if (!action || !id) return
+      btn.disabled = true
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/relationship-mutate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action, id }),
+        })
+        if (res.ok) await load()
+        else btn.disabled = false
+      } catch {
+        btn.disabled = false
+      }
+    })
+
+    let loaded = false
+    const tabRadios = document.querySelectorAll<HTMLInputElement>('input[name="schema_tabs"]')
+    const relRadio = Array.from(tabRadios).find((r) => r.getAttribute('aria-label') === 'Relationships')
+    relRadio?.addEventListener('change', () => {
+      if (relRadio.checked && !loaded) {
+        loaded = true
+        load()
+      }
+    })
+    select?.addEventListener('change', load)
+    includeRemoved?.addEventListener('change', load)
+
+    // Search re-filters the last fetched data (no refetch).
+    document.getElementById('rel-search')?.addEventListener('input', () => {
+      if (content && lastData) content.innerHTML = renderRelationships(lastData)
+    })
+
+    // Create a user-authored synced view (engine `create` action).
+    const createForm = document.getElementById('rel-create-form') as HTMLFormElement | null
+    const createSource = document.getElementById('rel-create-source') as HTMLSelectElement | null
+    const createDest = document.getElementById('rel-create-dest') as HTMLSelectElement | null
+    const createStatus = document.getElementById('rel-create-status')
+    type FvT = { tableId: string; baseId: string; name: string }
+    const fvData = document.getElementById('fv-schema-data')
+    const fvTables: FvT[] = fvData
+      ? ((JSON.parse(fvData.textContent || '{"tables":[]}') as { tables?: FvT[] }).tables ?? [])
+      : []
+    const populateCreate = () => {
+      if (!select || !createSource || !createDest) return
+      const opts = fvTables
+        .filter((t) => t.baseId === select.value)
+        .map((t) => `<option value="${esc(t.tableId)}">${esc(t.name)}</option>`)
+        .join('')
+      createSource.innerHTML = opts
+      createDest.innerHTML = opts
+    }
+    document.getElementById('rel-new')?.addEventListener('click', () => {
+      if (!createForm) return
+      const hidden = createForm.classList.toggle('hidden')
+      createForm.classList.toggle('flex', !hidden)
+      if (!hidden) populateCreate()
+    })
+    document.getElementById('rel-create-cancel')?.addEventListener('click', () => {
+      createForm?.classList.add('hidden')
+      createForm?.classList.remove('flex')
+    })
+    createForm?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      if (!select || !createSource || !createDest) return
+      const sourceTableId = createSource.value
+      const destTableId = createDest.value
+      if (!sourceTableId || !destTableId || sourceTableId === destTableId) {
+        if (createStatus) createStatus.textContent = 'Pick two different tables.'
+        return
+      }
+      if (createStatus) createStatus.textContent = 'Creating…'
+      const res = await fetch(`/api/spaces/${spaceId}/relationship-mutate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'create', baseId: select.value, sourceTableId, destTableId }),
+      })
+      if (res.ok) {
+        if (createStatus) createStatus.textContent = ''
+        createForm.classList.add('hidden')
+        createForm.classList.remove('flex')
+        await load()
+      } else {
+        if (createStatus) createStatus.textContent = 'Could not create synced view.'
+      }
+    })
+  }
+</script>
+
+<script>
+  // Chat tab (web-chat-tab): thread list + conversation + composer. The AI reply
+  // is generated async (workflows chat-respond) and written back; the assistant
+  // message starts `pending`, so after sending we poll the thread until it
+  // resolves (mirrors the backup-status polling pattern). Pro+ gated server-side;
+  // scoped-context controls + convert-to-doc + clickable refs are follow-ups.
+  const chatTab = document.querySelector<HTMLElement>('[data-chat-tab]')
+  const chatRoot = document.querySelector<HTMLElement>('[data-schema-docs]')
+  if (chatTab && chatRoot) {
+    const spaceId = chatRoot.dataset.spaceId!
+    const esc = (s: string) =>
+      String(s).replace(
+        /[&<>"]/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
+      )
+    const threadsEl = document.getElementById('chat-threads')!
+    const convEl = document.getElementById('chat-conversation')!
+    const form = document.getElementById('chat-form') as HTMLFormElement
+    const input = document.getElementById('chat-input') as HTMLTextAreaElement
+    const sendBtn = document.getElementById('chat-send') as HTMLButtonElement
+    const newBtn = document.getElementById('chat-new') as HTMLButtonElement
+    const scopeSel = document.getElementById('chat-scope') as HTMLSelectElement | null
+    const renameBtn = document.getElementById('chat-rename') as HTMLButtonElement | null
+    const archiveBtn = document.getElementById('chat-archive') as HTMLButtonElement | null
+
+    type Msg = { id: string; role: string; status: string; content: string }
+    type Thread = {
+      id: string
+      title: string
+      archived?: boolean
+      scope?: { baseIds?: string[] } | null
+      messages: Msg[]
+    }
+    type ThreadSummary = { id: string; title: string }
+
+    let currentThreadId: string | null = null
+    let pollTimer: ReturnType<typeof setInterval> | null = null
+
+    const stopPoll = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer)
+        pollTimer = null
+      }
+    }
+
+    const bubble = (m: Msg) => {
+      if (m.role === 'user') {
+        return `<div class="chat chat-end"><div class="chat-bubble chat-bubble-primary">${esc(m.content)}</div></div>`
+      }
+      const body =
+        m.status === 'pending'
+          ? '<span class="loading loading-dots loading-sm"></span>'
+          : esc(m.content)
+      const cls = m.status === 'error' ? ' chat-bubble-error' : ''
+      return `<div class="chat chat-start"><div class="chat-bubble${cls}">${body}</div></div>`
+    }
+
+    const renderConversation = (thread: Thread) => {
+      convEl.innerHTML =
+        thread.messages.length === 0
+          ? '<p class="text-base-content/50">Ask a question to get started.</p>'
+          : thread.messages.map(bubble).join('')
+      convEl.scrollTop = convEl.scrollHeight
+    }
+
+    const renderThreads = (threads: ThreadSummary[], activeId: string | null) => {
+      threadsEl.innerHTML =
+        threads.length === 0
+          ? '<li class="px-2 py-1 text-base-content/40">No chats yet</li>'
+          : threads
+              .map(
+                (t) =>
+                  `<li><button type="button" class="${t.id === activeId ? 'menu-active' : ''}" data-thread-id="${esc(t.id)}">${esc(t.title || 'Untitled')}</button></li>`,
+              )
+              .join('')
+    }
+
+    const fetchThread = async (id: string): Promise<Thread | null> => {
+      const res = await fetch(`/api/spaces/${spaceId}/chat/threads/${encodeURIComponent(id)}`)
+      if (!res.ok) return null
+      const data = (await res.json()) as { thread: Thread }
+      return data.thread
+    }
+
+    const refreshOpenThread = async () => {
+      if (!currentThreadId) return
+      const thread = await fetchThread(currentThreadId)
+      if (!thread) return
+      renderConversation(thread)
+      if (!thread.messages.some((m) => m.status === 'pending')) stopPoll()
+    }
+
+    const startPoll = () => {
+      stopPoll()
+      pollTimer = setInterval(refreshOpenThread, 2000)
+    }
+
+    const selectThread = async (id: string, threads?: ThreadSummary[]) => {
+      currentThreadId = id
+      stopPoll()
+      input.disabled = false
+      sendBtn.disabled = false
+      if (threads) renderThreads(threads, id)
+      else threadsEl.querySelectorAll('button[data-thread-id]').forEach((b) =>
+        b.classList.toggle('menu-active', (b as HTMLElement).dataset.threadId === id),
+      )
+      convEl.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
+      const thread = await fetchThread(id)
+      if (thread) {
+        renderConversation(thread)
+        if (scopeSel) {
+          scopeSel.disabled = false
+          scopeSel.value = thread.scope?.baseIds?.[0] ?? ''
+        }
+        if (renameBtn) renameBtn.disabled = false
+        if (archiveBtn) archiveBtn.disabled = false
+        if (thread.messages.some((m) => m.status === 'pending')) startPoll()
+      }
+    }
+
+    const loadThreads = async (selectFirst = false): Promise<ThreadSummary[]> => {
+      const res = await fetch(`/api/spaces/${spaceId}/chat/threads`)
+      if (!res.ok) {
+        threadsEl.innerHTML =
+          res.status === 403
+            ? '<li class="px-2 py-1 text-base-content/50">Pro plan required.</li>'
+            : '<li class="px-2 py-1 text-error">Could not load chats.</li>'
+        return []
+      }
+      const data = (await res.json()) as { threads: ThreadSummary[] }
+      renderThreads(data.threads, currentThreadId)
+      if (selectFirst && data.threads.length > 0 && !currentThreadId) {
+        await selectThread(data.threads[0]!.id, data.threads)
+      }
+      return data.threads
+    }
+
+    threadsEl.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-thread-id]')
+      if (btn?.dataset.threadId) selectThread(btn.dataset.threadId)
+    })
+
+    newBtn.addEventListener('click', async () => {
+      newBtn.disabled = true
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/chat/threads`, { method: 'POST' })
+        if (!res.ok) return
+        const { id } = (await res.json()) as { id: string }
+        currentThreadId = null
+        const threads = await loadThreads()
+        await selectThread(id, threads)
+        input.focus()
+      } finally {
+        newBtn.disabled = false
+      }
+    })
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const message = input.value.trim()
+      if (!message || !currentThreadId) return
+      input.value = ''
+      sendBtn.disabled = true
+      // Optimistic: show the user message + a pending assistant bubble.
+      convEl.insertAdjacentHTML(
+        'beforeend',
+        bubble({ id: 'tmp', role: 'user', status: 'complete', content: message }) +
+          bubble({ id: 'tmp2', role: 'assistant', status: 'pending', content: '' }),
+      )
+      convEl.scrollTop = convEl.scrollHeight
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/chat/send`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ threadId: currentThreadId, message }),
+        })
+        if (res.ok) {
+          await refreshOpenThread()
+          startPoll()
+          loadThreads() // titles may update from the first message
+        } else {
+          await refreshOpenThread()
+        }
+      } finally {
+        sendBtn.disabled = false
+      }
+    })
+
+    // Scope the thread's context to a base (or Whole Space). Engine reads
+    // thread.scope on the next turn (web-chat-tab scoped-context).
+    scopeSel?.addEventListener('change', async () => {
+      if (!currentThreadId) return
+      const v = scopeSel.value
+      await fetch(`/api/spaces/${spaceId}/chat/threads/${encodeURIComponent(currentThreadId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ scope: v ? { baseIds: [v] } : null, attachedDocIds: [] }),
+      })
+    })
+
+    renameBtn?.addEventListener('click', async () => {
+      if (!currentThreadId) return
+      const title = window.prompt('Rename chat')?.trim()
+      if (!title) return
+      const res = await fetch(`/api/spaces/${spaceId}/chat/threads/${encodeURIComponent(currentThreadId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title }),
+      })
+      if (res.ok) loadThreads()
+    })
+
+    archiveBtn?.addEventListener('click', async () => {
+      if (!currentThreadId) return
+      const res = await fetch(`/api/spaces/${spaceId}/chat/threads/${encodeURIComponent(currentThreadId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ archived: true }),
+      })
+      if (res.ok) {
+        currentThreadId = null
+        stopPoll()
+        convEl.innerHTML = '<p class="text-base-content/50">Chat archived. Pick or start another on the left.</p>'
+        input.disabled = true
+        sendBtn.disabled = true
+        if (scopeSel) scopeSel.disabled = true
+        if (renameBtn) renameBtn.disabled = true
+        if (archiveBtn) archiveBtn.disabled = true
+        loadThreads()
+      }
+    })
+
+    let loaded = false
+    const tabRadios = document.querySelectorAll<HTMLInputElement>('input[name="schema_tabs"]')
+    const chatRadio = Array.from(tabRadios).find((r) => r.getAttribute('aria-label') === 'Chat')
+    chatRadio?.addEventListener('change', () => {
+      if (chatRadio.checked && !loaded) {
+        loaded = true
+        loadThreads(true)
+      }
+    })
+  }
+</script>
+
+<script>
+  // Shared entity-detail modal (web-relationships-tab click-through). Any tab can
+  // open it by dispatching `open-entity-detail` with {type,id,name}; it reuses the
+  // Browse docs-by-entity endpoint to show the entity + its documents.
+  const emodal = document.getElementById('entity-modal') as HTMLDialogElement | null
+  const ebody = document.getElementById('entity-modal-body')
+  const eroot = document.querySelector<HTMLElement>('[data-schema-docs]')
+  if (emodal && ebody && eroot) {
+    const spaceId = eroot.dataset.spaceId!
+    const esc = (s: string) =>
+      String(s).replace(
+        /[&<>"]/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
+      )
+    document.addEventListener('open-entity-detail', async (e) => {
+      const d = (e as CustomEvent).detail as { type: string; id: string; name?: string }
+      ebody.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
+      emodal.showModal()
+      let res: Response
+      try {
+        res = await fetch(
+          `/api/spaces/${spaceId}/docs-by-entity?targetType=${encodeURIComponent(d.type)}&targetId=${encodeURIComponent(d.id)}`,
+        )
+      } catch {
+        ebody.innerHTML = '<span class="text-error">Could not load entity.</span>'
+        return
+      }
+      if (!res.ok) {
+        ebody.innerHTML = '<span class="text-error">Could not load entity.</span>'
+        return
+      }
+      const data = (await res.json()) as { entityRemoved: boolean; documents: { title: string; excerpt?: string | null }[] }
+      const head = `<div class="mb-3 flex items-center gap-2"><span class="font-semibold text-base-content">${esc(d.name ?? d.id)}</span><span class="badge badge-ghost">${esc(d.type)}</span>${data.entityRemoved ? '<span class="badge badge-warning">removed from Airtable</span>' : ''}</div>`
+      const docs =
+        data.documents.length === 0
+          ? '<p class="text-base-content/50">No documents tag this entity yet.</p>'
+          : `<ul class="space-y-2">${data.documents
+              .map(
+                (doc) =>
+                  `<li class="rounded border border-base-300/60 p-3"><span class="font-medium">${esc(doc.title)}</span>${doc.excerpt ? `<span class="mt-1 block text-sm text-base-content/60">${esc(doc.excerpt)}</span>` : ''}</li>`,
+              )
+              .join('')}</ul>`
+      ebody.innerHTML = head + docs
+    })
   }
 </script>

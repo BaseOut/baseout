@@ -56,6 +56,30 @@ describe('saveBackupConfig', () => {
     expect(JSON.parse(init?.body as string)).toEqual({ frequency: 'weekly' })
   })
 
+  it('includes scope + schemaFrequency (server-backup-scope) when set', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse({ ok: true }))
+    await saveBackupConfig(
+      { spaceId: SPACE_ID, frequency: 'monthly', scope: 'schema_and_data', schemaFrequency: 'daily' },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    )
+    const init = fetchImpl.mock.calls[0]![1]
+    expect(JSON.parse(init?.body as string)).toEqual({
+      frequency: 'monthly',
+      scope: 'schema_and_data',
+      schemaFrequency: 'daily',
+    })
+  })
+
+  it('sends schemaFrequency:null to clear the schema schedule', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse({ ok: true }))
+    await saveBackupConfig(
+      { spaceId: SPACE_ID, scope: 'schema_only', schemaFrequency: null },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    )
+    const init = fetchImpl.mock.calls[0]![1]
+    expect(JSON.parse(init?.body as string)).toEqual({ scope: 'schema_only', schemaFrequency: null })
+  })
+
   it.each([
     ['frequency_not_allowed', 422],
     ['unsupported_storage_type', 422],

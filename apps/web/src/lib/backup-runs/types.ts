@@ -73,6 +73,8 @@ export type BackupRunsStartResult =
 export interface BackupRunSummary {
   id: string;
   status: string;
+  /** server-backup-scope: 'full' = schema + data; 'schema' = schema-only run. */
+  kind: string;
   isTrial: boolean;
   triggeredBy: string;
   recordCount: number | null;

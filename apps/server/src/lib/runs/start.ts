@@ -78,6 +78,12 @@ export interface BackupBaseTaskPayload {
    * Required for BYOS destinations; ignored on local_fs.
    */
   spaceId: string;
+  /**
+   * 'full' (schema + data) or 'schema' (schema only). Forwarded from
+   * backup_runs.kind so the task skips records/attachments on a schema run
+   * (server-backup-scope / workflows-schema-only-backup).
+   */
+  kind: "full" | "schema";
 }
 
 const ACCEPTED_STORAGE_TYPES = new Set([
@@ -182,6 +188,10 @@ export async function processRunStart(
       runStartedAt: runStartedAtIso,
       storageType: config.storageType,
       spaceId: run.spaceId,
+      // Forward the run kind so a schema run skips records/attachments. The row
+      // defaults to 'full' (manual + data-scheduled); the SpaceDO stamps
+      // 'schema' on schema-scheduled runs (server-backup-scope).
+      kind: run.kind === "schema" ? "schema" : "full",
     });
     triggerRunIds.push(handle.id);
   }

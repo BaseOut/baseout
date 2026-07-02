@@ -24,6 +24,7 @@ function makeRun(overrides: Partial<BackupRunSummary> = {}): BackupRunSummary {
   return {
     id: 'r_1',
     status: 'running',
+    kind: 'full',
     isTrial: false,
     triggeredBy: 'manual',
     recordCount: null,

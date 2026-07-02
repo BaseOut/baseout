@@ -9,7 +9,7 @@ function state(overrides: Partial<IntegrationsState> = {}): IntegrationsState {
     tierBasesPerSpace: null,
     availableFrequencies: ['monthly'],
     hasBackupConfig: false,
-    policy: { frequency: 'monthly', storageType: 'r2_managed', nextScheduledAt: null, autoAddFutureBases: false },
+    policy: { frequency: 'monthly', scope: 'schema_and_data', schemaFrequency: null, schemaNextScheduledAt: null, storageType: 'r2_managed', nextScheduledAt: null, autoAddFutureBases: false },
     storageDestination: null,
     unreadEvents: [],
     ...overrides,

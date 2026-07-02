@@ -188,8 +188,17 @@ export type EngineDeleteRunResult =
 
 export interface EngineSetSpaceFrequencySuccess {
   ok: true;
-  /** Unix-ms the SpaceDO scheduled the next alarm for. */
-  nextFireMs: number;
+  /** Unix-ms of the next data (full) fire, or null when no data schedule. */
+  dataNextFire: number | null;
+  /** Unix-ms of the next schema fire, or null when no schema schedule. */
+  schemaNextFire: number | null;
+}
+
+/** The scope-aware schedule sent to the engine (server-backup-scope). */
+export interface SpaceScheduleInput {
+  scope: string;
+  dataFrequency: string | null;
+  schemaFrequency: string | null;
 }
 
 /**
@@ -439,6 +448,132 @@ export type GetSchemaResult =
     }
   | SchemaDocsError;
 
+// Health tab (server-schema-health-scoring / web-health-tab).
+export interface HealthOverviewMetricView {
+  ruleId: string;
+  name: string;
+  weight: number;
+  severity: string | null;
+  entityTier: string | null;
+  score: number;
+  lastGeneratedAt: string | null;
+}
+export interface HealthOverviewIssueView {
+  ruleId: string;
+  severity: string;
+  tableId: string | null;
+  fieldId: string | null;
+  message: string;
+  airtableDeeplink: string | null;
+}
+export type GetHealthOverviewResult =
+  | {
+      ok: true;
+      grade: { score: number; band: string } | null;
+      metrics: HealthOverviewMetricView[];
+      issues: HealthOverviewIssueView[];
+    }
+  | SchemaDocsError;
+
+// Health Pro+ editor (server-schema-health-scoring §4.2c / web-health-tab).
+export interface HealthConfigMetricView {
+  ruleId: string;
+  name: string;
+  category: string | null;
+  severity: string;
+  weight: number;
+  entityTier: string | null;
+  enabled: boolean;
+  effectivePrompt: string;
+  promptSource: string; // override | space | system
+  systemDefault: string;
+  hasSpacePrompt: boolean;
+  hasBaseOverride: boolean;
+  scored: boolean;
+  isStale: boolean;
+}
+export type GetHealthConfigResult =
+  | { ok: true; metrics: HealthConfigMetricView[] }
+  | SchemaDocsError;
+export type HealthMutationResult = { ok: true } | SchemaDocsError;
+export type RerunHealthResult =
+  | { ok: true; enqueued: boolean; runId?: string; metricCount?: number }
+  | SchemaDocsError;
+
+// Relationships tab (server-relationships / web-relationships-tab).
+export interface RelationshipRefView {
+  tableId?: string;
+  fieldId?: string;
+  name: string;
+  removed: boolean;
+}
+export interface DerivedRelationshipView {
+  id: string;
+  baseId: string;
+  type: "linkedRecords" | "formulas" | "rollups" | "lookups" | "lastModified";
+  anchorFieldId: string;
+  anchorTableId: string;
+  label: string;
+  refs: RelationshipRefView[];
+  inferred: false;
+  hasRemovedHistory: boolean;
+  valid: boolean;
+}
+export interface SyncedViewRelationshipView {
+  id: string;
+  baseId: string;
+  type: "syncedViews";
+  sourceTableId: string;
+  sourceTableName: string;
+  destTableId: string;
+  destTableName: string;
+  status: string; // inferred | confirmed | dismissed
+  origin: string; // inferred | user
+  inferred: boolean;
+  matchScore: number | null;
+  matchedPairs: unknown;
+}
+export type GetRelationshipsResult =
+  | {
+      ok: true;
+      derived: DerivedRelationshipView[];
+      syncedViews: SyncedViewRelationshipView[];
+    }
+  | SchemaDocsError;
+export type MutateRelationshipResult = { ok: true; id?: string } | SchemaDocsError;
+
+// Chat tab (server-schema-chat / web-chat-tab).
+export interface ChatThreadSummaryView {
+  id: string;
+  title: string;
+  archived: boolean;
+  updatedAt: string | null;
+}
+export interface ChatMessageView {
+  id: string;
+  role: string;
+  status: string;
+  content: string;
+  createdAt: string | null;
+}
+export interface ChatThreadDetailView {
+  id: string;
+  title: string;
+  archived: boolean;
+  scope: { baseIds?: string[]; tableIds?: string[]; fieldIds?: string[] } | null;
+  attachedDocIds: string[];
+  messages: ChatMessageView[];
+}
+export type ListChatThreadsResult =
+  | { ok: true; threads: ChatThreadSummaryView[] }
+  | SchemaDocsError;
+export type CreateChatThreadResult = { ok: true; id: string } | SchemaDocsError;
+export type GetChatThreadResult = { ok: true; thread: ChatThreadDetailView } | SchemaDocsError;
+export type PatchChatThreadResult = { ok: true } | SchemaDocsError;
+export type SendChatMessageResult =
+  | { ok: true; userMessageId: string; assistantMessageId: string }
+  | SchemaDocsError;
+
 // ───────────────────────── Run Detail (web-run-detail) ─────────────────────────
 
 export interface EngineRunDetailTable {
@@ -499,7 +634,7 @@ export interface BackupEngineClient {
   deleteRun(runId: string): Promise<EngineDeleteRunResult>;
   setSpaceFrequency(
     spaceId: string,
-    frequency: string,
+    schedule: SpaceScheduleInput,
   ): Promise<EngineSetSpaceFrequencyResult>;
   rescanBases(spaceId: string): Promise<EngineRescanBasesResult>;
   provisionDatabase(
@@ -521,6 +656,38 @@ export interface BackupEngineClient {
     targetId: string,
   ): Promise<DocsByEntityResult>;
   getSchema(spaceId: string): Promise<GetSchemaResult>;
+  getHealthOverview(spaceId: string, baseId: string): Promise<GetHealthOverviewResult>;
+  getHealthConfig(spaceId: string, baseId: string): Promise<GetHealthConfigResult>;
+  setHealthPrompt(
+    spaceId: string,
+    body:
+      | { ruleId: string; level: "space"; prompt: string | null }
+      | { ruleId: string; level: "entity"; targetType: string; targetId: string; prompt: string | null },
+  ): Promise<HealthMutationResult>;
+  setHealthEnable(
+    spaceId: string,
+    body: { baseId: string; ruleId: string; enabled: boolean },
+  ): Promise<HealthMutationResult>;
+  rerunHealth(spaceId: string, baseId: string): Promise<RerunHealthResult>;
+  getRelationships(spaceId: string, baseId: string, includeDismissed?: boolean): Promise<GetRelationshipsResult>;
+  mutateRelationship(
+    spaceId: string,
+    body:
+      | { action: "confirm" | "dismiss"; id: string }
+      | { action: "create"; baseId: string; sourceTableId: string; destTableId: string },
+  ): Promise<MutateRelationshipResult>;
+  listChatThreads(spaceId: string, includeArchived?: boolean): Promise<ListChatThreadsResult>;
+  createChatThread(spaceId: string, createdByUserId?: string | null): Promise<CreateChatThreadResult>;
+  getChatThread(spaceId: string, threadId: string): Promise<GetChatThreadResult>;
+  patchChatThread(
+    spaceId: string,
+    threadId: string,
+    body:
+      | { title: string }
+      | { archived: boolean }
+      | { scope: ChatThreadDetailView["scope"]; attachedDocIds: string[] },
+  ): Promise<PatchChatThreadResult>;
+  sendChatMessage(spaceId: string, threadId: string, message: string): Promise<SendChatMessageResult>;
   getRunDetail(runId: string): Promise<EngineRunDetailResult>;
 }
 
@@ -834,7 +1001,7 @@ export function createBackupEngine(
       return out;
     },
 
-    async setSpaceFrequency(spaceId, frequency) {
+    async setSpaceFrequency(spaceId, schedule) {
       const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/set-frequency`;
       let res: Response;
       try {
@@ -845,15 +1012,23 @@ export function createBackupEngine(
             "content-type": "application/json",
             accept: "application/json",
           },
-          body: JSON.stringify({ frequency }),
+          body: JSON.stringify(schedule),
         });
       } catch {
         return { ok: false, code: "engine_unreachable", status: 0 };
       }
 
       if (res.ok) {
-        const body = (await res.json()) as { ok: true; nextFireMs: number };
-        return { ok: true, nextFireMs: body.nextFireMs };
+        const body = (await res.json()) as {
+          ok: true;
+          dataNextFire: number | null;
+          schemaNextFire: number | null;
+        };
+        return {
+          ok: true,
+          dataNextFire: body.dataNextFire ?? null,
+          schemaNextFire: body.schemaNextFire ?? null,
+        };
       }
 
       let body: Record<string, unknown> = {};
@@ -1061,6 +1236,110 @@ export function createBackupEngine(
         tables: (res.body.tables ?? []) as SchemaEntityTable[],
         fields: (res.body.fields ?? []) as SchemaEntityField[],
         views: (res.body.views ?? []) as SchemaEntityView[],
+      };
+    },
+
+    async getHealthOverview(spaceId, baseId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/health-overview?baseId=${encodeURIComponent(baseId)}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        grade: (res.body.grade ?? null) as { score: number; band: string } | null,
+        metrics: (res.body.metrics ?? []) as HealthOverviewMetricView[],
+        issues: (res.body.issues ?? []) as HealthOverviewIssueView[],
+      };
+    },
+
+    async getHealthConfig(spaceId, baseId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/health-config?baseId=${encodeURIComponent(baseId)}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return { ok: true, metrics: (res.body.metrics ?? []) as HealthConfigMetricView[] };
+    },
+
+    async setHealthPrompt(spaceId, body) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/health-prompt`;
+      const res = await schemaDocsRequest(options, "POST", path, body);
+      if (!res.ok) return res;
+      return { ok: true };
+    },
+
+    async setHealthEnable(spaceId, body) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/health-enable`;
+      const res = await schemaDocsRequest(options, "POST", path, body);
+      if (!res.ok) return res;
+      return { ok: true };
+    },
+
+    async rerunHealth(spaceId, baseId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/health-rerun`;
+      const res = await schemaDocsRequest(options, "POST", path, { baseId });
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        enqueued: Boolean(res.body.enqueued),
+        runId: res.body.runId as string | undefined,
+        metricCount: res.body.metricCount as number | undefined,
+      };
+    },
+
+    async getRelationships(spaceId, baseId, includeDismissed) {
+      const q = includeDismissed ? "&includeDismissed=1" : "";
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/relationships?baseId=${encodeURIComponent(baseId)}${q}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        derived: (res.body.derived ?? []) as DerivedRelationshipView[],
+        syncedViews: (res.body.syncedViews ?? []) as SyncedViewRelationshipView[],
+      };
+    },
+
+    async mutateRelationship(spaceId, body) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/relationships/mutate`;
+      const res = await schemaDocsRequest(options, "POST", path, body);
+      if (!res.ok) return res;
+      return { ok: true, id: (res.body.id as string | undefined) ?? undefined };
+    },
+
+    async listChatThreads(spaceId, includeArchived) {
+      const q = includeArchived ? "?includeArchived=1" : "";
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/chat/threads${q}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return { ok: true, threads: (res.body.threads ?? []) as ChatThreadSummaryView[] };
+    },
+
+    async createChatThread(spaceId, createdByUserId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/chat/threads`;
+      const res = await schemaDocsRequest(options, "POST", path, { createdByUserId: createdByUserId ?? null });
+      if (!res.ok) return res;
+      return { ok: true, id: res.body.id as string };
+    },
+
+    async getChatThread(spaceId, threadId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/chat/threads/${encodeURIComponent(threadId)}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return { ok: true, thread: res.body.thread as ChatThreadDetailView };
+    },
+
+    async patchChatThread(spaceId, threadId, body) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/chat/threads/${encodeURIComponent(threadId)}`;
+      const res = await schemaDocsRequest(options, "PATCH", path, body);
+      if (!res.ok) return res;
+      return { ok: true };
+    },
+
+    async sendChatMessage(spaceId, threadId, message) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/chat/send`;
+      const res = await schemaDocsRequest(options, "POST", path, { threadId, message });
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        userMessageId: res.body.userMessageId as string,
+        assistantMessageId: res.body.assistantMessageId as string,
       };
     },
 

@@ -4,6 +4,10 @@
 //             (adds next_scheduled_at — written by SpaceDO on alarm set/fire)
 //             apps/web/drizzle/0008_workspace_rediscovery.sql
 //             (adds auto_add_future_bases — read by engine on rediscovery)
+//             apps/web/drizzle/0022_backup_scope.sql
+//             (adds scope / schema_frequency / schema_next_scheduled_at — the
+//              schema schedule; read by SpaceDO.alarm(), schema_next written by
+//              the DO. server-backup-scope.)
 //
 // apps/web INSERTs/UPDATEs frequency / mode / storage_type / auto_add_future_bases
 // when the user picks bases / frequency / storage destination (and later
@@ -40,7 +44,18 @@ export const backupConfigurations = baseout.table("backup_configurations", {
   nextScheduledAt: timestamp("next_scheduled_at", { withTimezone: true }),
   // Engine-owned (SpaceDO is the canonical writer). NULL until the first
   // /set-frequency call lands. Surfaced by apps/web's IntegrationsView as
-  // "Next backup: <date>".
+  // "Next backup: <date>". This is the DATA schedule's next fire.
+  scope: text("scope").notNull(),
+  // 'schema_only' | 'schema_and_data' — read by SpaceDO.alarm() to decide
+  // which schedule(s) fire (server-backup-scope).
+  schemaFrequency: text("schema_frequency"),
+  // Optional schema-only cadence; read by SpaceDO.alarm(). NULL ⇒ no separate
+  // schema schedule (schema refreshes with each full data backup).
+  schemaNextScheduledAt: timestamp("schema_next_scheduled_at", {
+    withTimezone: true,
+  }),
+  // Engine-owned (SpaceDO writes it on alarm set/fire) — the schema schedule's
+  // next fire, mirror of next_scheduled_at.
 });
 
 export type BackupConfigurationRow = typeof backupConfigurations.$inferSelect;

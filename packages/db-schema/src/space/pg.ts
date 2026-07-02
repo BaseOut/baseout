@@ -245,6 +245,44 @@ export const healthIssues = pgTable('bo_at_health_issues', {
   airtableDeeplink: text('airtable_deeplink'),
 }, (t) => ({ byBase: index('bo_at_health_issues_base_idx').on(t.baseId) }))
 
+// ---- Health metric config + results (server-schema-health-scoring) ----
+// The metric catalog + system-default prompts live in master health_score_rules;
+// these per-Space tables hold the space-level / per-entity prompt overrides, the
+// per-base enable/disable state, and per-metric sub-scores (breakdown +
+// staleness). rule_id references master health_score_rules.id (cross-DB, plain).
+
+export const healthMetricPrompts = pgTable('bo_at_health_metric_prompts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  ruleId: text('rule_id').notNull(),
+  prompt: text('prompt').notNull(),                   // space-level prompt override
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+}, (t) => ({ byRule: index('bo_at_health_metric_prompts_rule_idx').on(t.ruleId) }))
+
+export const healthMetricOverrides = pgTable('bo_at_health_metric_overrides', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  ruleId: text('rule_id').notNull(),
+  targetType: text('target_type').notNull(),          // base | table | field
+  targetId: text('target_id').notNull(),              // Airtable entity id
+  prompt: text('prompt').notNull(),                   // per-entity prompt override
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+}, (t) => ({ byRule: index('bo_at_health_metric_overrides_rule_idx').on(t.ruleId) }))
+
+export const healthMetricState = pgTable('bo_at_health_metric_state', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  ruleId: text('rule_id').notNull(),
+  enabled: boolean('enabled').notNull().default(true), // per-base enable/disable
+}, (t) => ({ byBase: index('bo_at_health_metric_state_base_idx').on(t.baseId) }))
+
+export const healthMetricScores = pgTable('bo_at_health_metric_scores', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  ruleId: text('rule_id').notNull(),
+  runId: uuid('run_id').notNull(),
+  score: integer('score').notNull(),                  // 0–100 sub-score
+  lastGeneratedAt: timestamp('last_generated_at', { withTimezone: true }),
+}, (t) => ({ byBase: index('bo_at_health_metric_scores_base_idx').on(t.baseId) }))
+
 // ---- Inbound-captured metadata (Airtable API doesn't expose these) ----
 // Submission-driven (Inbound API), not run-driven → own timestamps, not *_run.
 
@@ -317,3 +355,54 @@ export const documentDiagrams = pgTable('bo_at_document_diagrams', {
   state: jsonb('state').notNull(),                    // serialized React Flow state (nodes / positions / visible fields)
   sortOrder: integer('sort_order').notNull().default(0),
 }, (t) => ({ byDocument: index('bo_at_document_diagrams_doc_idx').on(t.documentId) }))
+
+// ---- Relationships: synced-view candidates (server-relationships) ----
+// API-derived relationships (linked records / formulas / rollups / lookups /
+// lastModified) are computed on read from bo_at_fields — NOT persisted here.
+// Only "synced view" candidates need a row: the engine can't see Airtable's Sync
+// feature via the API, so the inference task (workflows-relationship-inference)
+// proposes pairs by field overlap, and the user confirms/dismisses them. One row
+// per unordered table pair (canonical source<dest). status: inferred | confirmed
+// | dismissed. origin: inferred (engine) | user (manually created).
+export const syncedViewCandidates = pgTable('bo_at_synced_view_candidates', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  sourceTableId: text('source_table_id').notNull(),
+  destTableId: text('dest_table_id').notNull(),
+  status: text('status').notNull().default('inferred'), // inferred|confirmed|dismissed
+  origin: text('origin').notNull().default('inferred'), // inferred|user
+  matchScore: integer('match_score'),                   // 0–100 (null for user-created)
+  matchedPairs: jsonb('matched_pairs'),                 // [{sourceFieldName,destFieldName,type}]
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  createdAt: timestamp('created_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+}, (t) => ({
+  byBase: index('bo_at_synced_view_candidates_base_idx').on(t.baseId),
+  uniqPair: uniqueIndex('bo_at_synced_view_candidates_pair_uq').on(t.baseId, t.sourceTableId, t.destTableId),
+}))
+
+// ---- Chat: AI conversations about the schema (server-schema-chat) ----
+// Persisted threads + messages, like Docs but conversational. Context is scoped
+// to bases/tables/fields (scope jsonb) + attached docs (attached_doc_ids); the AI
+// reply is generated asynchronously in workflows (chat-respond) and written back,
+// so the assistant message carries a status (pending|complete|error).
+export const chatThreads = pgTable('bo_at_chat_threads', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  title: text('title').notNull().default('New chat'),
+  archived: boolean('archived').notNull().default(false),
+  scope: jsonb('scope'),                              // { baseIds?, tableIds?, fieldIds? }; null = whole Space
+  attachedDocIds: jsonb('attached_doc_ids'),          // string[] of bo_at_documents.id
+  createdByUserId: uuid('created_by_user_id'),        // → master users.id
+  createdAt: timestamp('created_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+})
+
+export const chatMessages = pgTable('bo_at_chat_messages', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  threadId: uuid('thread_id').notNull(),              // → bo_at_chat_threads.id
+  role: text('role').notNull(),                       // user | assistant
+  status: text('status').notNull().default('complete'), // assistant: pending|complete|error
+  content: text('content').notNull().default(''),
+  createdAt: timestamp('created_at', { withTimezone: true }),
+}, (t) => ({ byThread: index('bo_at_chat_messages_thread_idx').on(t.threadId) }))

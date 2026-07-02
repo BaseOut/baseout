@@ -22,6 +22,10 @@ import type {
   DeleteRunFilesPayload,
   restoreBaseTask,
   RestoreBaseTaskPayload,
+  chatRespondTask,
+  ChatRespondPayload,
+  healthScoreBaseTask,
+  HealthScoreBasePayload,
 } from "@baseout/workflows";
 import type { BackupBaseTaskPayload } from "./runs/start";
 
@@ -98,6 +102,42 @@ export async function enqueueDeleteRunFiles(
   configureFromEnv(env);
   const handle = await tasks.trigger<typeof deleteRunFilesTask>(
     "delete-run-files",
+    payload,
+  );
+  return { id: handle.id };
+}
+
+/**
+ * Enqueue one Health scoring run for a base (server-schema-health-scoring). The
+ * /health-rerun route resolves the enabled metrics + their effective prompts +
+ * the schema context, then calls this; the task scores each metric via Claude and
+ * POSTs /health-sync to write the sub-scores + base grade.
+ */
+export async function enqueueHealthScoreBase(
+  env: Env,
+  payload: HealthScoreBasePayload,
+): Promise<TriggerHandle> {
+  configureFromEnv(env);
+  const handle = await tasks.trigger<typeof healthScoreBaseTask>(
+    "health-score-base",
+    payload,
+  );
+  return { id: handle.id };
+}
+
+/**
+ * Enqueue one chat-respond turn (server-schema-chat). The /chat/send route
+ * appends the user message + a pending assistant message, assembles the
+ * metadata-only context, then calls this; the task generates the reply and POSTs
+ * /chat/message-complete to flip the pending message to complete.
+ */
+export async function enqueueChatRespond(
+  env: Env,
+  payload: ChatRespondPayload,
+): Promise<TriggerHandle> {
+  configureFromEnv(env);
+  const handle = await tasks.trigger<typeof chatRespondTask>(
+    "chat-respond",
     payload,
   );
   return { id: handle.id };

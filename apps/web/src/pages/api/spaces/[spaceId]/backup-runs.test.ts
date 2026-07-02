@@ -226,6 +226,7 @@ describe('handlePost', () => {
 const r1: BackupRunRowLike = {
   id: 'r_1',
   status: 'succeeded',
+  kind: 'full',
   isTrial: false,
   triggeredBy: 'manual',
   recordCount: 100,
@@ -305,6 +306,7 @@ describe('handleGet', () => {
         {
           id: 'r_1',
           status: 'succeeded',
+          kind: 'full',
           isTrial: false,
           triggeredBy: 'manual',
           recordCount: 100,

@@ -18,6 +18,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.105.0",
     "@baseout/db-schema": "workspace:*",
     "@baseout/shared": "workspace:*",
     "@trigger.dev/sdk": "4.4.6",

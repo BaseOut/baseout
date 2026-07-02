@@ -1,0 +1,218 @@
+---
+import { eq } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import RetentionView, { type RetentionKnob } from '../views/RetentionView.astro';
+import { getBreadcrumbs } from '../lib/config';
+import { resolveCapabilities } from '../lib/capabilities/resolve';
+import { resolveRetentionPolicy } from '../lib/capabilities/retention';
+import { backupRetentionPolicies } from '../db/schema';
+
+const breadcrumbs = getBreadcrumbs('/retention');
+const { account, db } = Astro.locals;
+const spaceId = account?.space?.id ?? null;
+const orgId = account?.organization?.id ?? null;
+
+// No Space / org / DB → back to backups list.
+if (!spaceId || !orgId || !db) return Astro.redirect('/backups');
+
+const { tier } = await resolveCapabilities(db, orgId, 'airtable');
+const policy = resolveRetentionPolicy(tier);
+
+// Overlay any persisted policy row onto the tier defaults so the form shows
+// current values. A row is absent until the user saves (or the backfill runs).
+const [stored] = await db
+  .select({
+    keepLastN: backupRetentionPolicies.keepLastN,
+    dailyWindowDays: backupRetentionPolicies.dailyWindowDays,
+    weeklyWindowDays: backupRetentionPolicies.weeklyWindowDays,
+    customRules: backupRetentionPolicies.customRules,
+  })
+  .from(backupRetentionPolicies)
+  .where(eq(backupRetentionPolicies.spaceId, spaceId))
+  .limit(1);
+
+const tierLabel = tier
+  ? tier.charAt(0).toUpperCase() + tier.slice(1)
+  : 'Trial';
+
+const KNOB_META: Record<string, { label: string; hint: (k: { min?: number; max?: number }) => string }> = {
+  keepLastN: {
+    label: 'Keep last N backups',
+    hint: (k) => `Older backups are pruned. ${k.min}–${k.max}.`,
+  },
+  dailyWindowDays: {
+    label: 'Daily window (days)',
+    hint: (k) => `Keep every snapshot for this many days. ${k.min}–${k.max}.`,
+  },
+  weeklyWindowDays: {
+    label: 'Weekly window (days)',
+    hint: (k) =>
+      `After the daily window, keep one snapshot per week up to this many days. ${k.min}–${k.max}.`,
+  },
+};
+
+function buildKnob(
+  key: 'keepLastN' | 'dailyWindowDays' | 'weeklyWindowDays',
+  knob: { editable: boolean; min?: number; max?: number; default: number },
+  current: number,
+): RetentionKnob {
+  const meta = KNOB_META[key]!;
+  return {
+    key,
+    label: meta.label,
+    hint: meta.hint(knob),
+    value: current,
+    min: knob.min,
+    max: knob.max,
+    editable: knob.editable,
+  };
+}
+
+let knobs: RetentionKnob[] = [];
+let policyDescription = '';
+let isCustom = false;
+let monthlyIndefinite = false;
+let customRulesJson = '{}';
+
+switch (policy.tier) {
+  case 'basic': {
+    const n = stored?.keepLastN ?? policy.keepLastN;
+    knobs = [buildKnob('keepLastN', policy.knobs.keepLastN, n)];
+    policyDescription = `Keeps your ${n} most recent backups. Older snapshots are pruned by the hourly cleanup.`;
+    break;
+  }
+  case 'time_based': {
+    const d = stored?.dailyWindowDays ?? policy.dailyWindowDays;
+    knobs = [buildKnob('dailyWindowDays', policy.knobs.dailyWindowDays, d)];
+    policyDescription = `Keeps every daily snapshot for the last ${d} days. Older snapshots are pruned.`;
+    break;
+  }
+  case 'two_tier': {
+    const d = stored?.dailyWindowDays ?? policy.dailyWindowDays;
+    const w = stored?.weeklyWindowDays ?? policy.weeklyWindowDays;
+    knobs = [
+      buildKnob('dailyWindowDays', policy.knobs.dailyWindowDays, d),
+      buildKnob('weeklyWindowDays', policy.knobs.weeklyWindowDays, w),
+    ];
+    policyDescription = `Keeps daily snapshots for ${d} days, then one per week up to ${w} days. Older snapshots are pruned.`;
+    break;
+  }
+  case 'three_tier': {
+    const d = stored?.dailyWindowDays ?? policy.dailyWindowDays;
+    const w = stored?.weeklyWindowDays ?? policy.weeklyWindowDays;
+    knobs = [
+      buildKnob('dailyWindowDays', policy.knobs.dailyWindowDays, d),
+      buildKnob('weeklyWindowDays', policy.knobs.weeklyWindowDays, w),
+    ];
+    monthlyIndefinite = true;
+    policyDescription = `Keeps daily snapshots for ${d} days, one per week up to ${w} days, then one per calendar month indefinitely.`;
+    break;
+  }
+  case 'custom': {
+    isCustom = true;
+    policyDescription =
+      'Your plan supports a fully custom retention policy. Edit the JSON rules below.';
+    if (stored?.customRules != null) {
+      customRulesJson = JSON.stringify(stored.customRules, null, 2);
+    }
+    break;
+  }
+}
+---
+
+<SidebarLayout pageTitle="Retention" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <div data-retention-page data-space-id={spaceId}>
+    <RetentionView
+      tierLabel={tierLabel}
+      policyDescription={policyDescription}
+      knobs={knobs}
+      isCustom={isCustom}
+      customRulesJson={customRulesJson}
+      monthlyIndefinite={monthlyIndefinite}
+    />
+  </div>
+</SidebarLayout>
+
+<script>
+  import { setButtonLoading } from '../lib/ui';
+
+  function wireRetentionSave() {
+    const page = document.querySelector<HTMLElement>('[data-retention-page]');
+    const root = document.querySelector<HTMLElement>('[data-retention-view]');
+    if (!page || !root) return;
+
+    const saveBtn = root.querySelector<HTMLButtonElement>('[data-retention-save]');
+    const feedback = root.querySelector<HTMLElement>('[data-retention-feedback]');
+    if (!saveBtn || !feedback) return;
+
+    const spaceId = page.dataset.spaceId ?? '';
+
+    function showFeedback(variant: 'success' | 'error', message: string) {
+      if (!feedback) return;
+      feedback.innerHTML = '';
+      const el = document.createElement('div');
+      el.className = `alert alert-soft alert-${variant}`;
+      el.setAttribute('role', variant === 'error' ? 'alert' : 'status');
+      el.textContent = message;
+      feedback.appendChild(el);
+    }
+
+    saveBtn.addEventListener('click', async () => {
+      if (!spaceId) return;
+
+      const body: Record<string, unknown> = {};
+      let parseError = false;
+      root
+        .querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[data-retention-knob]')
+        .forEach((el) => {
+          const key = el.dataset.key ?? '';
+          if (!key) return;
+          if (key === 'customRules') {
+            try {
+              body.customRules = el.value.trim() ? JSON.parse(el.value) : null;
+            } catch {
+              parseError = true;
+            }
+          } else {
+            body[key] = Number(el.value);
+          }
+        });
+
+      if (parseError) {
+        showFeedback('error', 'Custom rules must be valid JSON.');
+        return;
+      }
+
+      setButtonLoading(saveBtn, true);
+      try {
+        const res = await fetch(
+          `/api/spaces/${encodeURIComponent(spaceId)}/retention-policy`,
+          {
+            method: 'PATCH',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+          },
+        );
+        if (res.ok) {
+          showFeedback('success', 'Retention policy saved.');
+        } else {
+          const data = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            field?: string;
+          };
+          showFeedback(
+            'error',
+            data.error === 'knob_out_of_range'
+              ? `That value is out of range for your plan${data.field ? ` (${data.field})` : ''}.`
+              : 'Could not save the policy — try again.',
+          );
+        }
+      } finally {
+        setButtonLoading(saveBtn, false);
+      }
+    });
+  }
+
+  wireRetentionSave();
+  document.addEventListener('astro:after-swap', wireRetentionSave);
+</script>

@@ -20,3 +20,5 @@ export * from "./space-databases";
 export * from "./restore-runs";
 export * from "./backup-run-bases";
 export * from "./backup-run-tables";
+export * from "./backup-retention-policies";
+export * from "./health-score-rules";

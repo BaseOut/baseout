@@ -29,6 +29,7 @@ function makeRun(overrides: Partial<BackupRunSummary> = {}): BackupRunSummary {
   return {
     id: 'r_1',
     status: 'succeeded',
+    kind: 'full',
     isTrial: false,
     triggeredBy: 'manual',
     recordCount: null,
@@ -148,6 +149,15 @@ describe('backupRowHtml', () => {
     const html = backupRowHtml(makeRun({ id: 'r_bad', status: 'failed', errorMessage: 'boom' }))
     expect(html).toContain('badge-soft badge-error')
     expect(html).toContain('Failed')
+  })
+
+  it('renders the run-kind badge (Schema vs Full) alongside the status', () => {
+    const full = backupRowHtml(makeRun({ id: 'r_full', status: 'succeeded', kind: 'full' }))
+    expect(full).toContain('badge-ghost')
+    expect(full).toContain('Full')
+    const schema = backupRowHtml(makeRun({ id: 'r_schema', status: 'succeeded', kind: 'schema' }))
+    expect(schema).toContain('badge-info')
+    expect(schema).toContain('Schema')
   })
 
   it('renders a trial_complete row as "Trial run"/success, NOT "Cancelled"', () => {

@@ -70,6 +70,13 @@ export interface BackupBaseInput {
    * BYOS destinations; ignored for `local_fs`.
    */
   spaceId: string;
+  /**
+   * 'full' (default) captures schema + data; 'schema' captures + syncs the base
+   * schema only and skips the record / CSV / attachment loop
+   * (openspec/changes/workflows-schema-only-backup). Set by the engine
+   * run-start from backup_runs.kind (server-backup-scope).
+   */
+  kind?: "full" | "schema";
 }
 
 interface AirtableClientShape {
@@ -286,9 +293,15 @@ export async function runBackupBase(
   // 2026-06-09 when a Space had Box connected but storage_type was still the
   // legacy r2_managed default. The cached value is reused below to avoid
   // calling deps.getR2Creds twice.
+  // Schema-only runs never touch storage (no CSV / attachments), so the
+  // r2_managed creds guard and credential fetch below don't apply
+  // (workflows-schema-only-backup).
+  const isSchemaOnly = input.kind === "schema";
   const r2CredsRaw =
-    input.storageType === "r2_managed" ? deps.getR2Creds?.() ?? null : null;
-  if (input.storageType === "r2_managed" && !r2CredsRaw) {
+    !isSchemaOnly && input.storageType === "r2_managed"
+      ? deps.getR2Creds?.() ?? null
+      : null;
+  if (!isSchemaOnly && input.storageType === "r2_managed" && !r2CredsRaw) {
     return failed("missing_r2_creds", 0, 0);
   }
 
@@ -329,10 +342,11 @@ export async function runBackupBase(
   // fetch. `local_fs` doesn't. `r2_managed` uses app-level env creds via
   // getR2Creds (not the engine route).
   if (
-    input.storageType === "google_drive" ||
-    input.storageType === "box" ||
-    input.storageType === "dropbox" ||
-    input.storageType === "onedrive"
+    !isSchemaOnly &&
+    (input.storageType === "google_drive" ||
+      input.storageType === "box" ||
+      input.storageType === "dropbox" ||
+      input.storageType === "onedrive")
   ) {
     const fetchCreds =
       deps.fetchStorageCreds ??
@@ -344,7 +358,7 @@ export async function runBackupBase(
           spaceId,
         ));
     storageCreds = await fetchCreds(input.spaceId);
-  } else if (input.storageType === "r2_managed") {
+  } else if (!isSchemaOnly && input.storageType === "r2_managed") {
     // r2CredsRaw is guaranteed non-null here — the guard at the top of this
     // function returns `failed` before reaching the lock-acquire step when
     // creds are absent. Reuse the cached value rather than re-invoking the
@@ -448,6 +462,26 @@ export async function runBackupBase(
         recordsEnabled = sync.recordsEnabled;
         perSpaceBaseRunId = sync.baseRunId;
       }
+    }
+
+    // workflows-schema-only-backup: a schema run captures + syncs the base
+    // structure only. Skip the record / CSV / attachment loop entirely and
+    // report zero records/attachments with per-table field counts. The finally
+    // block still unlocks the connection.
+    if (isSchemaOnly) {
+      return {
+        status: trialTruncated ? "trial_truncated" : "succeeded",
+        tablesProcessed: tables.length,
+        recordsProcessed: 0,
+        attachmentsProcessed: 0,
+        tableDetail: tables.map((t) => ({
+          tableId: t.id,
+          tableName: t.name,
+          recordCount: 0,
+          fieldCount: t.fields.length,
+          attachmentCount: 0,
+        })),
+      };
     }
 
     // 5. Per table.

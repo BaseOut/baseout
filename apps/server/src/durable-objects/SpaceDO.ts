@@ -1,27 +1,26 @@
 // SpaceDO — per-Space scheduler.
 //
-// Phase B of baseout-backup-schedule-and-cancel activates the alarm-driven
-// dispatch half of the DO's responsibilities. The state-machine + WebSocket
-// fan-out (PRD §5 / §10) remain deferred — the current polling-based
-// live-status path is good enough for MVP per the
-// baseout-backup-history-live-status change.
+// Dispatches a Space's backup schedule(s) from a single Durable Object alarm.
+// server-backup-scope extends the original single-cadence design
+// (server-schedule-and-cancel Phase B) to multiplex TWO cadences — a DATA
+// (full) schedule and an optional more-frequent SCHEMA schedule — onto the one
+// alarm. The DO stores both next-fire timestamps, fires whichever are due, and
+// re-arms for the nearer remaining fire. The state-machine + WebSocket fan-out
+// (PRD §5 / §10) remain deferred — polling covers live status for MVP.
 //
 // Two surfaces:
-//   - POST /set-frequency : called by apps/web's PATCH backup-config when
-//     frequency changes (forwarded through an engine proxy route). Reads
-//     the body, validates the frequency, computes the next fire timestamp
-//     via the Phase B.2 pure function, and asks the DO runtime to schedule
-//     an alarm. Returns { ok: true, nextFireMs }.
-//   - alarm()             : runs on the Cloudflare-scheduled alarm tick.
-//     Pulls the Space's config, INSERTs a 'queued' backup_runs row with
-//     triggered_by='scheduled', drives processRunStart to fan out per-base
-//     Trigger.dev tasks, then computes + re-sets the alarm for the next
-//     cadence boundary and writes backup_configurations.next_scheduled_at.
+//   - POST /set-frequency : called by apps/web's PATCH backup-config (via an
+//     engine proxy route) when the schedule/scope changes. Accepts the new
+//     { scope, dataFrequency, schemaFrequency } body and the legacy
+//     { frequency } shape. Computes both next-fires, stores them, arms the
+//     alarm for the nearer, and returns { ok, dataNextFire, schemaNextFire }.
+//   - alarm()             : on the scheduled tick, reads the stored fires +
+//     the Space's config, inserts a backup_runs row per due kind (stamping
+//     kind), drives processRunStart, recomputes the fired schedule(s), re-arms,
+//     and writes next_scheduled_at + schema_next_scheduled_at.
 //
-// All side effects (DB queries, processRunStart) flow through the
-// `SpaceDOAlarmDeps` interface. Production wires this via
-// `productionDeps(env)` below; tests inject vi.fn() shapes via
-// `setSchedulerDepsForTests` (see tests/integration/space-do.test.ts).
+// All side effects flow through SpaceDOAlarmDeps; productionDeps(env) wires the
+// real DB/processRunStart, tests inject vi.fn() shapes.
 
 import { and, desc, eq } from "drizzle-orm";
 import { createMasterDb } from "../db/worker";
@@ -35,16 +34,19 @@ import {
 import { processRunStart } from "../lib/runs/start";
 import { buildRunStartDeps } from "../lib/runs/start-deps";
 import {
-  computeNextFire,
-  type ScheduledFrequency,
-} from "../lib/scheduling/next-fire";
+  asScheduledFrequency,
+  computeScheduleFires,
+  dueKinds,
+  nextAlarm,
+  parseScheduleBody,
+  type RunKind,
+  type ScheduleConfig,
+  type ScheduleFires,
+} from "../lib/scheduling/dual-schedule";
 import type { Env } from "../env";
 
-const VALID_SCHEDULED_FREQUENCIES = new Set<ScheduledFrequency>([
-  "monthly",
-  "weekly",
-  "daily",
-]);
+// DO storage key for the two next-fire timestamps.
+const FIRES_KEY = "schedule_fires";
 
 interface SpaceLike {
   id: string;
@@ -58,7 +60,10 @@ interface ConnectionLike {
 
 interface ConfigLike {
   id: string;
-  frequency: string;
+  scope: string;
+  /** `backup_configurations.frequency` — the data (full) cadence. */
+  dataFrequency: string | null;
+  schemaFrequency: string | null;
 }
 
 export interface SpaceDOAlarmDeps {
@@ -71,10 +76,11 @@ export interface SpaceDOAlarmDeps {
   insertScheduledRun: (input: {
     spaceId: string;
     connectionId: string;
+    kind: RunKind;
   }) => Promise<string>;
   deleteRun: (runId: string) => Promise<void>;
   runStart: (runId: string) => Promise<{ ok: boolean; code?: string }>;
-  updateNextScheduledAt: (configId: string, nextFireMs: number) => Promise<void>;
+  updateNextScheduled: (configId: string, fires: ScheduleFires) => Promise<void>;
 }
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -82,6 +88,14 @@ function jsonResponse(body: unknown, status: number): Response {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+function configToScheduleConfig(config: ConfigLike): ScheduleConfig {
+  return {
+    scope: config.scope === "schema_only" ? "schema_only" : "schema_and_data",
+    dataFrequency: asScheduledFrequency(config.dataFrequency),
+    schemaFrequency: asScheduledFrequency(config.schemaFrequency),
+  };
 }
 
 export class SpaceDO {
@@ -93,8 +107,7 @@ export class SpaceDO {
   ) {}
 
   // Test-only seam — production never calls this; productionDeps() runs
-  // lazily on the first alarm-fire / setFrequency. Same shape as
-  // ConnectionDO.setDecryptImplForTests.
+  // lazily on the first alarm-fire / set-schedule.
   setSchedulerDepsForTests(deps: SpaceDOAlarmDeps): void {
     this.deps = deps;
   }
@@ -106,7 +119,7 @@ export class SpaceDO {
       if (request.method !== "POST") {
         return jsonResponse({ error: "method_not_allowed" }, 405);
       }
-      return this.handleSetFrequency(request);
+      return this.handleSetSchedule(request);
     }
 
     return jsonResponse({ error: "not_found" }, 404);
@@ -118,81 +131,103 @@ export class SpaceDO {
     const config = await deps.fetchConfig(spaceId);
 
     // Config gone (Space deleted, backup-config row removed): stop firing.
-    // The DO state survives but the alarm chain dies here — re-setting
-    // frequency from the apps/web side will re-arm the loop.
+    // Re-setting the schedule from apps/web re-arms the loop.
     if (!config) return;
 
-    // Instant is webhook-driven; the alarm path is not the right
-    // dispatcher. Same no-op rule as missing-config — but here we also
-    // explicitly do NOT reschedule, because a non-scheduled cadence
-    // shouldn't be re-armed by this DO.
-    if (config.frequency === "instant") return;
+    const now = deps.now();
+    const nowMs = now.getTime();
+    const scheduleConfig = configToScheduleConfig(config);
 
-    if (!VALID_SCHEDULED_FREQUENCIES.has(config.frequency as ScheduledFrequency)) {
-      // Defensive: a frequency we don't know how to compute. Skip the
-      // fire, don't reschedule — apps/web validates frequency before
-      // calling /set-frequency, so this branch shouldn't fire from the
-      // supported flow.
-      return;
+    // Read the stored fires. A DO armed before dual-schedule landed has none;
+    // it only ever had a single data schedule, so treat this tick as the data
+    // schedule firing now (when the config still describes a runnable data
+    // schedule). The re-arm below stores fires so later ticks use real values.
+    let fires = (await this.state.storage.get<ScheduleFires>(FIRES_KEY)) ?? null;
+    if (!fires) {
+      const dataRunnable =
+        scheduleConfig.scope === "schema_and_data" &&
+        scheduleConfig.dataFrequency != null &&
+        scheduleConfig.dataFrequency !== "instant";
+      fires = { dataNextFire: dataRunnable ? nowMs : null, schemaNextFire: null };
     }
 
-    const space = await deps.fetchSpace(spaceId);
-    if (!space) return;
+    const kinds = dueKinds(fires, nowMs);
 
-    const connection = await deps.fetchActiveAirtableConnection(
-      space.organizationId,
-    );
-
-    // Skip the fire when no active connection; STILL reschedule so the
-    // schedule keeps firing in the background — when the user reconnects,
-    // the next tick lands a successful run. Skipping the reschedule would
-    // silently disable the schedule for any Space in 'pending_reauth'.
-    if (connection && connection.status === "active") {
-      const runId = await deps.insertScheduledRun({
-        spaceId,
-        connectionId: connection.id,
-      });
-      const result = await deps.runStart(runId);
-      if (!result.ok) {
-        // Rollback the orphaned queued row — mirrors the apps/web POST
-        // /backup-runs failure path.
-        await deps.deleteRun(runId);
+    if (kinds.length > 0) {
+      const space = await deps.fetchSpace(spaceId);
+      if (space) {
+        const connection = await deps.fetchActiveAirtableConnection(
+          space.organizationId,
+        );
+        // Skip the fire when there's no active connection, but STILL advance +
+        // re-arm below so the schedule keeps firing once the user reconnects.
+        if (connection && connection.status === "active") {
+          for (const kind of kinds) {
+            const runId = await deps.insertScheduledRun({
+              spaceId,
+              connectionId: connection.id,
+              kind,
+            });
+            const result = await deps.runStart(runId);
+            if (!result.ok) {
+              // Roll back the orphaned queued row — mirrors the apps/web POST
+              // /backup-runs failure path.
+              await deps.deleteRun(runId);
+            }
+          }
+        }
       }
     }
 
-    // Recompute + re-set alarm + write the next-scheduled-at marker.
-    const nextFireMs = computeNextFire(
-      config.frequency as ScheduledFrequency,
-      deps.now(),
-    );
-    await this.state.storage.setAlarm(nextFireMs);
-    await deps.updateNextScheduledAt(config.id, nextFireMs);
+    // Advance the schedule(s) that fired; keep the un-fired one's stored fire.
+    const recomputed = computeScheduleFires(scheduleConfig, now);
+    const nextFires: ScheduleFires = {
+      dataNextFire: kinds.includes("full")
+        ? recomputed.dataNextFire
+        : fires.dataNextFire,
+      schemaNextFire: kinds.includes("schema")
+        ? recomputed.schemaNextFire
+        : fires.schemaNextFire,
+    };
+
+    await this.state.storage.put(FIRES_KEY, nextFires);
+    const next = nextAlarm(nextFires);
+    if (next != null) {
+      await this.state.storage.setAlarm(next);
+    } else {
+      await this.state.storage.deleteAlarm();
+    }
+    await deps.updateNextScheduled(config.id, nextFires);
   }
 
-  private async handleSetFrequency(request: Request): Promise<Response> {
+  private async handleSetSchedule(request: Request): Promise<Response> {
     let body: unknown;
     try {
       body = await request.json();
     } catch {
       return jsonResponse({ error: "invalid_request" }, 400);
     }
-    if (typeof body !== "object" || body === null) {
+    const parsed = parseScheduleBody(body);
+    if (!parsed) {
       return jsonResponse({ error: "invalid_request" }, 400);
     }
-    const frequency = (body as { frequency?: unknown }).frequency;
-    if (
-      typeof frequency !== "string" ||
-      !VALID_SCHEDULED_FREQUENCIES.has(frequency as ScheduledFrequency)
-    ) {
-      return jsonResponse({ error: "invalid_frequency" }, 400);
-    }
     const deps = this.getDeps();
-    const nextFireMs = computeNextFire(
-      frequency as ScheduledFrequency,
-      deps.now(),
+    const fires = computeScheduleFires(parsed, deps.now());
+    await this.state.storage.put(FIRES_KEY, fires);
+    const next = nextAlarm(fires);
+    if (next != null) {
+      await this.state.storage.setAlarm(next);
+    } else {
+      await this.state.storage.deleteAlarm();
+    }
+    return jsonResponse(
+      {
+        ok: true,
+        dataNextFire: fires.dataNextFire,
+        schemaNextFire: fires.schemaNextFire,
+      },
+      200,
     );
-    await this.state.storage.setAlarm(nextFireMs);
-    return jsonResponse({ ok: true, nextFireMs }, 200);
   }
 
   private getDeps(): SpaceDOAlarmDeps {
@@ -203,12 +238,9 @@ export class SpaceDO {
   }
 
   private spaceId(): string {
-    // DOs are addressed by `idFromName(spaceId)` from the engine proxy
-    // route (see /api/internal/spaces/:spaceId/set-frequency in Phase
-    // B.4). `state.id.name` echoes that name back inside the DO; if
-    // anyone calls `idFromString` directly with a non-named ID the name
-    // will be undefined and we'll fail loudly here — that's intentional,
-    // a runtime contract failure rather than a silently mis-scheduled run.
+    // DOs are addressed by `idFromName(spaceId)` from the engine proxy route.
+    // `state.id.name` echoes that name back; a missing name means someone used
+    // idFromString — fail loudly rather than mis-schedule.
     const name = this.state.id.name;
     if (!name) {
       throw new Error(
@@ -228,7 +260,9 @@ function productionDeps(env: Env): SpaceDOAlarmDeps {
         const rows = await db
           .select({
             id: backupConfigurations.id,
-            frequency: backupConfigurations.frequency,
+            scope: backupConfigurations.scope,
+            dataFrequency: backupConfigurations.frequency,
+            schemaFrequency: backupConfigurations.schemaFrequency,
           })
           .from(backupConfigurations)
           .where(eq(backupConfigurations.spaceId, spaceId))
@@ -274,7 +308,7 @@ function productionDeps(env: Env): SpaceDOAlarmDeps {
         await sql.end({ timeout: 5 });
       }
     },
-    insertScheduledRun: async ({ spaceId, connectionId }) => {
+    insertScheduledRun: async ({ spaceId, connectionId, kind }) => {
       const { db, sql } = createMasterDb(env);
       try {
         const [row] = await db
@@ -284,6 +318,7 @@ function productionDeps(env: Env): SpaceDOAlarmDeps {
             connectionId,
             status: "queued",
             triggeredBy: "scheduled",
+            kind,
             isTrial: false,
           })
           .returning({ id: backupRuns.id });
@@ -313,12 +348,19 @@ function productionDeps(env: Env): SpaceDOAlarmDeps {
         await sql.end({ timeout: 5 });
       }
     },
-    updateNextScheduledAt: async (configId, nextFireMs) => {
+    updateNextScheduled: async (configId, fires) => {
       const { db, sql } = createMasterDb(env);
       try {
         await db
           .update(backupConfigurations)
-          .set({ nextScheduledAt: new Date(nextFireMs) })
+          .set({
+            nextScheduledAt:
+              fires.dataNextFire != null ? new Date(fires.dataNextFire) : null,
+            schemaNextScheduledAt:
+              fires.schemaNextFire != null
+                ? new Date(fires.schemaNextFire)
+                : null,
+          })
           .where(eq(backupConfigurations.id, configId));
       } finally {
         await sql.end({ timeout: 5 });

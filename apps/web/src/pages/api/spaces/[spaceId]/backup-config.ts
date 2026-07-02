@@ -28,7 +28,7 @@ import {
 } from '../../../../lib/backup-config/persist-policy'
 import { resolveCapabilities } from '../../../../lib/capabilities/resolve'
 import type { Tier } from '../../../../lib/capabilities/tier-capabilities'
-import { createBackupEngine } from '../../../../lib/backup-engine'
+import { createBackupEngine, type SpaceScheduleInput } from '../../../../lib/backup-engine'
 import { promoteSpaceIfSetupIncomplete } from '../../../../lib/spaces'
 
 const UUID_RE =
@@ -54,18 +54,23 @@ export interface HandlePatchInput {
   resolveTier: (organizationId: string) => Promise<Tier | null>
   upsertConfig: (input: UpsertConfigInput) => Promise<void>
   /**
-   * Phase B of baseout-backup-schedule-and-cancel. Called after a
-   * successful upsert if the body included a scheduled frequency
-   * (monthly / weekly / daily). Forwards to the engine's
-   * /api/internal/spaces/:spaceId/set-frequency proxy which drives the
-   * per-Space DO's alarm + writes next_scheduled_at. May be null in
-   * environments where the engine binding isn't wired — in that case
-   * the call is skipped (the bootstrap script will pick up the schedule
-   * on the next manual run).
+   * Called after a successful upsert when the body touched any schedule field
+   * (scope / frequency / schemaFrequency). Forwards the FULL post-upsert
+   * schedule (read via `fetchScheduleForSpace`) to the engine's
+   * /api/internal/spaces/:spaceId/set-frequency proxy, which drives the
+   * per-Space DO's alarm(s) + writes the next-scheduled columns
+   * (server-backup-scope). May be null when the engine binding isn't wired —
+   * the bootstrap script re-arms on the next run. Best-effort.
    */
   onScheduledFrequencyChange:
-    | ((spaceId: string, frequency: string) => Promise<void>)
+    | ((spaceId: string, schedule: SpaceScheduleInput) => Promise<void>)
     | null
+  /**
+   * Reads the current (post-upsert) schedule so the engine always receives the
+   * complete picture even on a partial PATCH. Returns null if no config row
+   * exists yet.
+   */
+  fetchScheduleForSpace: (spaceId: string) => Promise<SpaceScheduleInput | null>
   /**
    * Setup-complete promotion. Called after a successful upsert with the
    * spaceId. Implementation flips spaces.status from 'setup_incomplete'
@@ -106,23 +111,24 @@ export async function handlePatch(input: HandlePatchInput): Promise<Response> {
   )
 
   if (result.ok) {
-    // Phase B: after a successful upsert, hand off to the SpaceDO via
-    // the engine proxy if the body included a scheduled frequency.
-    // 'instant' is webhook-driven (out of scope this change). Engine
-    // failures are swallowed — the bootstrap script catches up later.
-    const newFrequency = input.body.frequency
-    if (
-      input.onScheduledFrequencyChange &&
-      typeof newFrequency === 'string' &&
-      (newFrequency === 'monthly' ||
-        newFrequency === 'weekly' ||
-        newFrequency === 'daily')
-    ) {
+    // After a successful upsert, hand off to the SpaceDO via the engine proxy
+    // when the body touched any schedule field. We send the FULL post-upsert
+    // schedule (scope + both cadences) so the engine computes both fires
+    // correctly even on a partial PATCH. Engine failures are swallowed — the
+    // bootstrap script catches up later (server-backup-scope).
+    const touchedSchedule =
+      'scope' in input.body ||
+      'frequency' in input.body ||
+      'schemaFrequency' in input.body
+    if (input.onScheduledFrequencyChange && touchedSchedule) {
       try {
-        await input.onScheduledFrequencyChange(input.spaceId, newFrequency)
+        const schedule = await input.fetchScheduleForSpace(input.spaceId)
+        if (schedule) {
+          await input.onScheduledFrequencyChange(input.spaceId, schedule)
+        }
       } catch {
-        // Schedule hand-off is best-effort. The config is already
-        // persisted; the alarm can be re-armed by the bootstrap script.
+        // Best-effort. The config is already persisted; the alarm can be
+        // re-armed by the bootstrap script.
       }
     }
     // Setup-complete promotion. Best-effort: the config save is the
@@ -161,6 +167,10 @@ function buildUpsert(db: AppDb): (input: UpsertConfigInput) => Promise<void> {
     if (upsert.autoAddFutureBases !== undefined) {
       insertValues.autoAddFutureBases = upsert.autoAddFutureBases
     }
+    if (upsert.scope !== undefined) insertValues.scope = upsert.scope
+    if (upsert.schemaFrequency !== undefined) {
+      insertValues.schemaFrequency = upsert.schemaFrequency
+    }
 
     await db
       .insert(backupConfigurations)
@@ -172,6 +182,10 @@ function buildUpsert(db: AppDb): (input: UpsertConfigInput) => Promise<void> {
           ...(upsert.storageType !== undefined && { storageType: upsert.storageType }),
           ...(upsert.autoAddFutureBases !== undefined && {
             autoAddFutureBases: upsert.autoAddFutureBases,
+          }),
+          ...(upsert.scope !== undefined && { scope: upsert.scope }),
+          ...(upsert.schemaFrequency !== undefined && {
+            schemaFrequency: upsert.schemaFrequency,
           }),
           modifiedAt: now,
         },
@@ -209,6 +223,24 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
     },
     upsertConfig: buildUpsert(db),
     onScheduledFrequencyChange: buildScheduledFrequencyHandoff(),
+    fetchScheduleForSpace: async (id) => {
+      const [row] = await db
+        .select({
+          scope: backupConfigurations.scope,
+          dataFrequency: backupConfigurations.frequency,
+          schemaFrequency: backupConfigurations.schemaFrequency,
+        })
+        .from(backupConfigurations)
+        .where(eq(backupConfigurations.spaceId, id))
+        .limit(1)
+      return row
+        ? {
+            scope: row.scope,
+            dataFrequency: row.dataFrequency,
+            schemaFrequency: row.schemaFrequency,
+          }
+        : null
+    },
     promoteSpaceIfReady: (spaceId) => promoteSpaceIfSetupIncomplete(db, spaceId),
   })
 }
@@ -220,15 +252,15 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
  * armed until the bootstrap script runs.
  */
 function buildScheduledFrequencyHandoff():
-  | ((spaceId: string, frequency: string) => Promise<void>)
+  | ((spaceId: string, schedule: SpaceScheduleInput) => Promise<void>)
   | null {
   if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
   const engine = createBackupEngine({
     binding: env.BACKUP_ENGINE,
     internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
   })
-  return async (spaceId, frequency) => {
-    await engine.setSpaceFrequency(spaceId, frequency)
+  return async (spaceId, schedule) => {
+    await engine.setSpaceFrequency(spaceId, schedule)
   }
 }
 

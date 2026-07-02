@@ -1,0 +1,116 @@
+---
+/**
+ * RetentionView — per-Space backup retention settings
+ * (openspec/changes/server-retention-and-cleanup Phase E).
+ *
+ * Renders the tier-resolved retention policy: a plain-language description of
+ * what's kept, the editable numeric knobs for the tier (basic keepLastN /
+ * time-based + two-/three-tier windows), or a free-form JSON editor for Custom
+ * (Business/Enterprise, first pass). The Save button POSTs the knobs to
+ * PATCH /api/spaces/:id/retention-policy (wired by the page script).
+ *
+ * Governance: pure composition of ui/* primitives (PageHeader, SectionPanel,
+ * TextInput, Button, Alert) + daisyUI markup — no new ui primitive, so no story
+ * is required (audit:components only governs src/components/ui/*).
+ */
+import PageHeader from '../components/ui/PageHeader.astro';
+import SectionPanel from '../components/ui/SectionPanel.astro';
+import TextInput from '../components/ui/TextInput.astro';
+import Button from '../components/ui/Button.astro';
+import Alert from '../components/ui/Alert.astro';
+
+export interface RetentionKnob {
+  key: string;
+  label: string;
+  hint: string;
+  value: number;
+  min?: number;
+  max?: number;
+  editable: boolean;
+}
+
+interface Props {
+  /** Human tier name for the eyebrow (e.g. "Pro"). */
+  tierLabel: string;
+  /** Plain-language summary of what this policy keeps. */
+  policyDescription: string;
+  /** The editable numeric knobs for this tier (empty for Custom). */
+  knobs?: RetentionKnob[];
+  /** Custom tier (Business/Enterprise): the JSON rules to edit. */
+  isCustom?: boolean;
+  customRulesJson?: string;
+  /** three_tier keeps monthly snapshots forever — surfaced as a note. */
+  monthlyIndefinite?: boolean;
+}
+
+const {
+  tierLabel,
+  policyDescription,
+  knobs = [],
+  isCustom = false,
+  customRulesJson = '{}',
+  monthlyIndefinite = false,
+} = Astro.props;
+---
+
+<div data-retention-view>
+  <PageHeader
+    title="Retention policy"
+    eyebrow={`${tierLabel} plan`}
+    description="Control how long automated backups are kept before the hourly cleanup prunes them. Automated cleanup is always free."
+    backHref="/backups"
+    backLabel="Backups"
+  />
+
+  <SectionPanel title="What's kept" description={policyDescription} class="mb-6">
+    {monthlyIndefinite && (
+      <Alert variant="info" title="Monthly snapshots are kept indefinitely">
+        Beyond the weekly window, one snapshot per calendar month is retained for
+        the life of the subscription.
+      </Alert>
+    )}
+  </SectionPanel>
+
+  <SectionPanel title="Policy" padded={true}>
+    <form data-retention-form class="flex flex-col gap-5">
+      {!isCustom && knobs.map((k) => (
+        <TextInput
+          type="number"
+          label={k.label}
+          name={k.key}
+          id={`retention-${k.key}`}
+          value={String(k.value)}
+          hint={k.hint}
+          disabled={!k.editable}
+          min={k.min}
+          max={k.max}
+          data-retention-knob
+          data-key={k.key}
+        />
+      ))}
+
+      {isCustom && (
+        <label class="form-control w-full">
+          <span class="label-text mb-1 font-medium">Custom rules (JSON)</span>
+          <textarea
+            class="textarea textarea-bordered font-mono text-sm min-h-40"
+            data-retention-knob
+            data-key="customRules"
+            spellcheck="false"
+          >{customRulesJson}</textarea>
+          <span class="label-text-alt mt-1 opacity-70">
+            Business and Enterprise plans accept a free-form policy. Must be valid JSON.
+          </span>
+        </label>
+      )}
+
+      <div data-retention-feedback aria-live="polite"></div>
+
+      <div class="flex items-center gap-3">
+        <Button type="button" variant="primary" data-retention-save>
+          Save policy
+        </Button>
+      </div>
+    </form>
+  </SectionPanel>
+</div>

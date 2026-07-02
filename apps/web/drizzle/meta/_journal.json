@@ -148,6 +148,27 @@
       "when": 1782525419880,
       "tag": "0020_complex_the_hood",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1782576084794,
+      "tag": "0021_backup_retention_and_cleanup",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1782772042787,
+      "tag": "0022_backup_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1782827015862,
+      "tag": "0023_health_metric_prompt",
+      "breakpoints": true
     }
   ]
 }

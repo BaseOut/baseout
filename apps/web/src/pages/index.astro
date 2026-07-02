@@ -33,6 +33,9 @@ const integrations: IntegrationsState =
         hasBackupConfig: false,
         policy: {
           frequency: 'monthly',
+          scope: 'schema_and_data',
+          schemaFrequency: null,
+          schemaNextScheduledAt: null,
           storageType: 'r2_managed',
           nextScheduledAt: null,
           autoAddFutureBases: false,
@@ -115,15 +118,26 @@ const statusCode: 'saved' | 'running' | null =
 ---
 
 <SidebarLayout pageTitle="Home" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <SpaceHomeView
-    state={integrations}
-    source={source}
-    destinations={destinations}
-    runs={initialRuns}
-    statusCode={statusCode}
-    baseMetrics={[]}
-    usage={[]}
-  />
+  {/* data-backup-history + the JSON tag feed setupBackupHistory (hydrate the
+      $backupRuns store + start the 2s poll). Home re-renders via soft reload
+      on status transitions — see lib/backups/home-live.ts. */}
+  <div data-backup-history data-space-id={spaceId}>
+    <SpaceHomeView
+      state={integrations}
+      source={source}
+      destinations={destinations}
+      runs={initialRuns}
+      statusCode={statusCode}
+      baseMetrics={[]}
+      usage={[]}
+    />
+    <script
+      type="application/json"
+      data-backup-history-state
+      is:inline
+      set:html={JSON.stringify(initialRuns).replace(/</g, '\\u003c')}
+    />
+  </div>
 </SidebarLayout>
 
 <script
@@ -143,6 +157,8 @@ const statusCode: 'saved' | 'running' | null =
 <script>
   import { $account } from '../stores/account';
   import { $integrations } from '../stores/connections';
+  import { createHomeLiveRender } from '../lib/backups/home-live';
+  import { registerBackupHistoryLifecycle, makeFetchRuns } from '../lib/backups/widget-lifecycle';
 
   const accountEl = document.getElementById('account-state');
   if (accountEl?.textContent) {
@@ -153,4 +169,16 @@ const statusCode: 'saved' | 'running' | null =
   if (integrationsEl?.textContent) {
     $integrations.set(JSON.parse(integrationsEl.textContent));
   }
+
+  // Live backup status on Home: poll the run store and soft-reload on a
+  // status transition so SSR recomputes the KPIs, rail and history table.
+  // location.replace(pathname) drops a stale ?status=running param so the
+  // rail reflects real run state after the reload. No-ops on pages without
+  // the [data-backup-history] root (lifecycle setup returns null).
+  registerBackupHistoryLifecycle({
+    render: createHomeLiveRender(() => {
+      window.location.replace(window.location.pathname);
+    }),
+    fetchRuns: makeFetchRuns(10),
+  });
 </script>

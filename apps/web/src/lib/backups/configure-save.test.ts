@@ -24,13 +24,28 @@ describe('saveConfigureForm', () => {
     expect(result).toEqual({ ok: true, redirect: '/?status=saved' })
   })
 
-  it('skips the PATCH when no frequency is provided', async () => {
+  it('skips the PATCH when no schedule field is provided', async () => {
     const saveConfigImpl = vi.fn(async (): Promise<SaveConfigResult> => ({ ok: true }))
     const result = await saveConfigureForm(
       { spaceId: SPACE_ID, runFirstBackup: false },
       { saveConfigImpl, runBackupImpl: okRun },
     )
     expect(saveConfigImpl).not.toHaveBeenCalled()
+    expect(result).toEqual({ ok: true, redirect: '/?status=saved' })
+  })
+
+  it('saves when only scope/schemaFrequency are provided (no data frequency)', async () => {
+    const saveConfigImpl = vi.fn(async (): Promise<SaveConfigResult> => ({ ok: true }))
+    const result = await saveConfigureForm(
+      { spaceId: SPACE_ID, scope: 'schema_only', schemaFrequency: 'weekly', runFirstBackup: false },
+      { saveConfigImpl, runBackupImpl: okRun },
+    )
+    expect(saveConfigImpl).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      frequency: undefined,
+      scope: 'schema_only',
+      schemaFrequency: 'weekly',
+    })
     expect(result).toEqual({ ok: true, redirect: '/?status=saved' })
   })
 

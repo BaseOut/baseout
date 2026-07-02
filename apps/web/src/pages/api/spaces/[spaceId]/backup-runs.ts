@@ -302,6 +302,7 @@ export const GET: APIRoute = async ({ locals, params, url }) => {
         .select({
           id: backupRuns.id,
           status: backupRuns.status,
+          kind: backupRuns.kind,
           isTrial: backupRuns.isTrial,
           triggeredBy: backupRuns.triggeredBy,
           recordCount: backupRuns.recordCount,

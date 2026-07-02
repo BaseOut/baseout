@@ -48,6 +48,9 @@ export const EMPTY_INTEGRATIONS_STATE: IntegrationsState = {
   hasBackupConfig: false,
   policy: {
     frequency: 'monthly',
+    scope: 'schema_and_data',
+    schemaFrequency: null,
+    schemaNextScheduledAt: null,
     storageType: 'r2_managed',
     nextScheduledAt: null,
     autoAddFutureBases: false,
@@ -106,6 +109,9 @@ export async function getIntegrationsState(
       .select({
         id: backupConfigurations.id,
         frequency: backupConfigurations.frequency,
+        scope: backupConfigurations.scope,
+        schemaFrequency: backupConfigurations.schemaFrequency,
+        schemaNextScheduledAt: backupConfigurations.schemaNextScheduledAt,
         storageType: backupConfigurations.storageType,
         nextScheduledAt: backupConfigurations.nextScheduledAt,
         autoAddFutureBases: backupConfigurations.autoAddFutureBases,
@@ -216,6 +222,14 @@ export async function getIntegrationsState(
 
   const policy: BackupPolicy = {
     frequency: asFrequency(config?.frequency ?? null),
+    scope: config?.scope === 'schema_only' ? 'schema_only' : 'schema_and_data',
+    schemaFrequency: config?.schemaFrequency
+      ? asFrequency(config.schemaFrequency)
+      : null,
+    schemaNextScheduledAt:
+      config?.schemaNextScheduledAt instanceof Date
+        ? config.schemaNextScheduledAt.toISOString()
+        : (config?.schemaNextScheduledAt as string | null | undefined) ?? null,
     storageType: config?.storageType ?? 'r2_managed',
     nextScheduledAt:
       config?.nextScheduledAt instanceof Date

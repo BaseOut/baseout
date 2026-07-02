@@ -218,6 +218,42 @@ export const healthIssues = sqliteTable('bo_at_health_issues', {
   airtableDeeplink: text('airtable_deeplink'),
 }, (t) => ({ byBase: index('bo_at_health_issues_base_idx').on(t.baseId) }))
 
+// ---- Health metric config + results (server-schema-health-scoring) ----
+// Mirror of pg.ts. Space-level / per-entity prompt overrides, per-base
+// enable/disable, and per-metric sub-scores. See pg.ts for semantics.
+
+export const healthMetricPrompts = sqliteTable('bo_at_health_metric_prompts', {
+  id: text('id').primaryKey(),
+  ruleId: text('rule_id').notNull(),
+  prompt: text('prompt').notNull(),
+  updatedAt: text('updated_at'),
+}, (t) => ({ byRule: index('bo_at_health_metric_prompts_rule_idx').on(t.ruleId) }))
+
+export const healthMetricOverrides = sqliteTable('bo_at_health_metric_overrides', {
+  id: text('id').primaryKey(),
+  ruleId: text('rule_id').notNull(),
+  targetType: text('target_type').notNull(),
+  targetId: text('target_id').notNull(),
+  prompt: text('prompt').notNull(),
+  updatedAt: text('updated_at'),
+}, (t) => ({ byRule: index('bo_at_health_metric_overrides_rule_idx').on(t.ruleId) }))
+
+export const healthMetricState = sqliteTable('bo_at_health_metric_state', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  ruleId: text('rule_id').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+}, (t) => ({ byBase: index('bo_at_health_metric_state_base_idx').on(t.baseId) }))
+
+export const healthMetricScores = sqliteTable('bo_at_health_metric_scores', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  ruleId: text('rule_id').notNull(),
+  runId: text('run_id').notNull(),
+  score: integer('score').notNull(),
+  lastGeneratedAt: text('last_generated_at'),
+}, (t) => ({ byBase: index('bo_at_health_metric_scores_base_idx').on(t.baseId) }))
+
 export const automations = sqliteTable('bo_at_automations', {
   id: text('id').primaryKey(),
   baseId: text('base_id').notNull(),
@@ -285,3 +321,46 @@ export const documentDiagrams = sqliteTable('bo_at_document_diagrams', {
   state: text('state', { mode: 'json' }).notNull(),   // serialized React Flow state
   sortOrder: integer('sort_order').notNull().default(0),
 }, (t) => ({ byDocument: index('bo_at_document_diagrams_doc_idx').on(t.documentId) }))
+
+// ---- Relationships: synced-view candidates (server-relationships) ----
+// Mirror of pg.ts syncedViewCandidates. API-derived relationships are computed
+// on read from bo_at_fields; only synced-view candidates persist here.
+export const syncedViewCandidates = sqliteTable('bo_at_synced_view_candidates', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  sourceTableId: text('source_table_id').notNull(),
+  destTableId: text('dest_table_id').notNull(),
+  status: text('status').notNull().default('inferred'), // inferred|confirmed|dismissed
+  origin: text('origin').notNull().default('inferred'), // inferred|user
+  matchScore: integer('match_score'),
+  matchedPairs: text('matched_pairs', { mode: 'json' }),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  createdAt: text('created_at'),
+  updatedAt: text('updated_at'),
+}, (t) => ({
+  byBase: index('bo_at_synced_view_candidates_base_idx').on(t.baseId),
+  uniqPair: uniqueIndex('bo_at_synced_view_candidates_pair_uq').on(t.baseId, t.sourceTableId, t.destTableId),
+}))
+
+// ---- Chat: AI conversations about the schema (server-schema-chat) ----
+// Mirror of pg.ts chatThreads + chatMessages.
+export const chatThreads = sqliteTable('bo_at_chat_threads', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull().default('New chat'),
+  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+  scope: text('scope', { mode: 'json' }),
+  attachedDocIds: text('attached_doc_ids', { mode: 'json' }),
+  createdByUserId: text('created_by_user_id'),
+  createdAt: text('created_at'),
+  updatedAt: text('updated_at'),
+})
+
+export const chatMessages = sqliteTable('bo_at_chat_messages', {
+  id: text('id').primaryKey(),
+  threadId: text('thread_id').notNull(),
+  role: text('role').notNull(),
+  status: text('status').notNull().default('complete'),
+  content: text('content').notNull().default(''),
+  createdAt: text('created_at'),
+}, (t) => ({ byThread: index('bo_at_chat_messages_thread_idx').on(t.threadId) }))

@@ -16,6 +16,8 @@ import {
   atBases,
   subscriptions,
   subscriptionItems,
+  backupRetentionPolicies,
+  healthScoreRules,
 } from "../../src/db/schema";
 
 describe("schema mirrors", () => {
@@ -29,6 +31,8 @@ describe("schema mirrors", () => {
         "connectionId",
         "status",
         "triggeredBy",
+        // server-backup-scope: stamped by run-start, passed to the task payload.
+        "kind",
         "isTrial",
         "recordCount",
         "tableCount",
@@ -37,7 +41,48 @@ describe("schema mirrors", () => {
         "completedAt",
         "errorMessage",
         "triggerRunIds",
+        // server-retention-and-cleanup: the cleanup pass reads (deleted_at IS NULL
+        // filter) and writes (cleanup-complete soft-delete) this column.
+        "deletedAt",
         "modifiedAt",
+      ].sort(),
+    );
+  });
+
+  it("backup_retention_policies exposes the full policy the cleanup engine reads", () => {
+    // server-retention-and-cleanup: the cleanup pass reads every knob to decide
+    // deletions, so the engine mirrors the full table.
+    expect(Object.keys(getTableColumns(backupRetentionPolicies)).sort()).toEqual(
+      [
+        "id",
+        "spaceId",
+        "policyTier",
+        "keepLastN",
+        "dailyWindowDays",
+        "weeklyWindowDays",
+        "monthlyIndefinite",
+        "customRules",
+        "createdAt",
+        "modifiedAt",
+      ].sort(),
+    );
+  });
+
+  it("health_score_rules exposes the catalog columns the engine reads (server-schema-health-scoring)", () => {
+    // The engine reads the org-scoped catalog to weight the base grade + label
+    // the per-metric breakdown + resolve effective prompts.
+    expect(Object.keys(getTableColumns(healthScoreRules)).sort()).toEqual(
+      [
+        "id",
+        "organizationId",
+        "code",
+        "name",
+        "category",
+        "severity",
+        "weight",
+        "enabled",
+        "prompt",
+        "entityTier",
       ].sort(),
     );
   });
@@ -56,6 +101,11 @@ describe("schema mirrors", () => {
         "storageType",
         "autoAddFutureBases",
         "nextScheduledAt",
+        // server-backup-scope: read by SpaceDO.alarm() (scope, schemaFrequency)
+        // + written by the DO (schemaNextScheduledAt).
+        "scope",
+        "schemaFrequency",
+        "schemaNextScheduledAt",
       ].sort(),
     );
   });

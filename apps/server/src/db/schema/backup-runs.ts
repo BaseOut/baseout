@@ -1,6 +1,7 @@
 // MIRROR of apps/web/src/db/schema/core.ts:322 (canonical writer).
 // Migrations: apps/web/drizzle/0004_user_role_and_backup_runs.sql
 //             apps/web/drizzle/0006_windy_sauron.sql (trigger_run_ids column)
+//             apps/web/drizzle/0022_backup_scope.sql (kind column — full|schema)
 //
 // apps/web INSERTs each row on user-triggered or scheduled run-create.
 // apps/server flips status (queued → running → succeeded | failed |
@@ -46,6 +47,12 @@ export const backupRuns = baseout.table("backup_runs", {
   // 'manual' | 'scheduled' | 'webhook' | 'trial' (engine-defined free text).
   // The SpaceDO scheduler (Phase B of baseout-backup-schedule-and-cancel)
   // INSERTs rows with triggered_by='scheduled' on every alarm fire.
+  kind: text("kind").notNull().default("full"),
+  // 'full' | 'schema' — what this run captured (server-backup-scope). Stamped
+  // by the run-start path; passed into the per-base task payload so a schema
+  // run skips records/attachments. Migration: 0022_backup_scope.sql.
+  // .default("full") mirrors the canonical DB default so a SpaceDO INSERT may
+  // omit `kind` for full runs (same pattern as id / modifiedAt above).
   isTrial: boolean("is_trial").notNull(),
   recordCount: integer("record_count"),
   tableCount: integer("table_count"),
@@ -57,6 +64,11 @@ export const backupRuns = baseout.table("backup_runs", {
   // JSON array of Trigger.dev v3 run IDs — one per included base. Set by
   // the run-start handler when fanning out; consumed by run-complete to
   // determine when all per-base work has reported in.
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Soft-delete marker — the cleanup pass sets this AFTER the run's storage
+  // objects are removed (openspec/changes/server-retention-and-cleanup). The
+  // row is retained for audit; cleanup queries filter `deleted_at IS NULL`.
+  // Migration: apps/web/drizzle/0021_backup_retention_and_cleanup.sql.
   modifiedAt: timestamp("modified_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

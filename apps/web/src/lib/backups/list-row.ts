@@ -20,6 +20,7 @@
  */
 
 import type { BackupRunSummary } from '../backup-runs/types'
+import { kindBadgeClass, kindLabel } from './format'
 
 export type BadgeVariant = 'success' | 'warning' | 'error' | 'default'
 export interface StatusMeta {
@@ -142,7 +143,7 @@ export function backupRowHtml(run: BackupRunSummary): string {
     `<tr class="bl-row" data-run-id="${esc(run.id)}" data-status="${esc(run.status)}"` +
     ` data-trigger="${esc(triggerKey(run.triggeredBy))}" data-date="${esc(run.completedAt ?? run.createdAt)}"` +
     ` data-search="${search}" onclick="window.location='${href}'">` +
-    `<td><span class="badge ${badgeClass[sm.variant]}">${spinner}${esc(sm.label)}</span></td>` +
+    `<td><span class="badge ${badgeClass[sm.variant]}">${spinner}${esc(sm.label)}</span> <span class="badge badge-sm ${kindBadgeClass(run.kind)}">${esc(kindLabel(run.kind))}</span></td>` +
     `<td>${whenCell}</td>` +
     `<td class="text-base-content/64">${esc(triggerLabel(run.triggeredBy))}</td>` +
     `<td class="text-right tabular-nums">${run.includedBases.length}</td>` +

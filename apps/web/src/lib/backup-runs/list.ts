@@ -23,6 +23,8 @@ import type { BackupRunSummary } from "./types";
 export interface BackupRunRowLike {
   id: string;
   status: string;
+  /** server-backup-scope: 'full' | 'schema' (defaults to 'full' in the schema). */
+  kind: string;
   isTrial: boolean;
   triggeredBy: string;
   recordCount: number | null;
@@ -89,6 +91,7 @@ function rowToSummary(
   return {
     id: row.id,
     status: row.status,
+    kind: row.kind,
     isTrial: row.isTrial,
     triggeredBy: row.triggeredBy,
     recordCount: row.recordCount,

@@ -27,8 +27,25 @@ export interface BaseSummary {
 }
 
 export interface BackupPolicy {
-  /** Currently saved frequency (defaults to 'monthly' from the schema). */
+  /** Currently saved DATA (full-backup) frequency (defaults to 'monthly'). */
   frequency: Frequency
+  /**
+   * server-backup-scope: what the schedule(s) back up.
+   *   'schema_and_data' (default) — full data backups on `frequency`, plus a
+   *     more-frequent schema-only schedule when `schemaFrequency` is set.
+   *   'schema_only' — no data backup; schema refreshes on `schemaFrequency`.
+   */
+  scope: 'schema_only' | 'schema_and_data'
+  /**
+   * server-backup-scope: cadence of the schema-only schedule, or null when the
+   * schema refreshes only alongside each full data backup.
+   */
+  schemaFrequency: Frequency | null
+  /**
+   * Engine-written next-fire of the schema schedule (ISO-8601) or null when no
+   * schema alarm is armed. Surface as "Next schema backup: <date>".
+   */
+  schemaNextScheduledAt: string | null
   /** Currently saved storage destination (defaults to 'r2_managed'). */
   storageType: string
   /**

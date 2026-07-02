@@ -185,6 +185,7 @@ describe("processRunStart — happy path", () => {
       runStartedAt: NOW.toISOString(),
       storageType: "r2_managed",
       spaceId: SPACE_ID,
+      kind: "full",
     });
     expect(second?.[0]).toEqual({
       runId: RUN_ID,
@@ -198,6 +199,21 @@ describe("processRunStart — happy path", () => {
       runStartedAt: NOW.toISOString(),
       storageType: "r2_managed",
       spaceId: SPACE_ID,
+      kind: "full",
+    });
+  });
+
+  it("forwards run.kind='schema' into the per-base payload (server-backup-scope)", async () => {
+    const deps = makeDeps();
+    deps.fetchRunById = vi.fn(async () => makeRun({ kind: "schema" }));
+    deps.fetchIncludedBases = vi.fn(async () => [
+      { atBaseId: "appAAA111", name: "Tasks" },
+    ]);
+
+    await processRunStart({ runId: RUN_ID }, { ...deps, now: () => NOW });
+
+    expect(deps.enqueueBackupBase.mock.calls[0]?.[0]).toMatchObject({
+      kind: "schema",
     });
   });
 

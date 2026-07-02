@@ -61,6 +61,27 @@ CREATE TABLE `bo_at_bases` (
 	`last_seen_run` text
 );
 --> statement-breakpoint
+CREATE TABLE `bo_at_chat_messages` (
+	`id` text PRIMARY KEY NOT NULL,
+	`thread_id` text NOT NULL,
+	`role` text NOT NULL,
+	`status` text DEFAULT 'complete' NOT NULL,
+	`content` text DEFAULT '' NOT NULL,
+	`created_at` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_chat_messages_thread_idx` ON `bo_at_chat_messages` (`thread_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_chat_threads` (
+	`id` text PRIMARY KEY NOT NULL,
+	`title` text DEFAULT 'New chat' NOT NULL,
+	`archived` integer DEFAULT false NOT NULL,
+	`scope` text,
+	`attached_doc_ids` text,
+	`created_by_user_id` text,
+	`created_at` text,
+	`updated_at` text
+);
+--> statement-breakpoint
 CREATE TABLE `bo_at_document_diagrams` (
 	`id` text PRIMARY KEY NOT NULL,
 	`document_id` text NOT NULL,
@@ -134,6 +155,42 @@ CREATE TABLE `bo_at_health_issues` (
 );
 --> statement-breakpoint
 CREATE INDEX `bo_at_health_issues_base_idx` ON `bo_at_health_issues` (`base_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_health_metric_overrides` (
+	`id` text PRIMARY KEY NOT NULL,
+	`rule_id` text NOT NULL,
+	`target_type` text NOT NULL,
+	`target_id` text NOT NULL,
+	`prompt` text NOT NULL,
+	`updated_at` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_health_metric_overrides_rule_idx` ON `bo_at_health_metric_overrides` (`rule_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_health_metric_prompts` (
+	`id` text PRIMARY KEY NOT NULL,
+	`rule_id` text NOT NULL,
+	`prompt` text NOT NULL,
+	`updated_at` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_health_metric_prompts_rule_idx` ON `bo_at_health_metric_prompts` (`rule_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_health_metric_scores` (
+	`id` text PRIMARY KEY NOT NULL,
+	`base_id` text NOT NULL,
+	`rule_id` text NOT NULL,
+	`run_id` text NOT NULL,
+	`score` integer NOT NULL,
+	`last_generated_at` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_health_metric_scores_base_idx` ON `bo_at_health_metric_scores` (`base_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_health_metric_state` (
+	`id` text PRIMARY KEY NOT NULL,
+	`base_id` text NOT NULL,
+	`rule_id` text NOT NULL,
+	`enabled` integer DEFAULT true NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_health_metric_state_base_idx` ON `bo_at_health_metric_state` (`base_id`);--> statement-breakpoint
 CREATE TABLE `bo_at_health_scores` (
 	`id` text PRIMARY KEY NOT NULL,
 	`base_id` text NOT NULL,
@@ -231,6 +288,23 @@ CREATE TABLE `bo_at_schema_versions` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `bo_at_schema_versions_base_hash_uq` ON `bo_at_schema_versions` (`base_id`,`schema_hash`);--> statement-breakpoint
+CREATE TABLE `bo_at_synced_view_candidates` (
+	`id` text PRIMARY KEY NOT NULL,
+	`base_id` text NOT NULL,
+	`source_table_id` text NOT NULL,
+	`dest_table_id` text NOT NULL,
+	`status` text DEFAULT 'inferred' NOT NULL,
+	`origin` text DEFAULT 'inferred' NOT NULL,
+	`match_score` integer,
+	`matched_pairs` text,
+	`first_seen_run` text,
+	`last_seen_run` text,
+	`created_at` text,
+	`updated_at` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_synced_view_candidates_base_idx` ON `bo_at_synced_view_candidates` (`base_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_synced_view_candidates_pair_uq` ON `bo_at_synced_view_candidates` (`base_id`,`source_table_id`,`dest_table_id`);--> statement-breakpoint
 CREATE TABLE `bo_at_tables` (
 	`table_id` text PRIMARY KEY NOT NULL,
 	`base_id` text NOT NULL,

@@ -239,4 +239,77 @@ describe('persistBackupConfigPolicy', () => {
     )
     expect(result).toEqual({ ok: true })
   })
+
+  // server-backup-scope: scope + schema schedule
+  it('upserts scope + dual cadence (schema_and_data, data + schema)', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      {
+        spaceId: SPACE_ID,
+        body: { scope: 'schema_and_data', frequency: 'monthly', schemaFrequency: 'daily' },
+        tier: 'pro',
+      },
+      d,
+    )
+    expect(result).toEqual({ ok: true })
+    expect(d.upsertConfig).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      scope: 'schema_and_data',
+      frequency: 'monthly',
+      schemaFrequency: 'daily',
+    })
+  })
+
+  it('upserts scope=schema_only with a schema cadence', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      { spaceId: SPACE_ID, body: { scope: 'schema_only', schemaFrequency: 'weekly' }, tier: 'launch' },
+      d,
+    )
+    expect(result).toEqual({ ok: true })
+    expect(d.upsertConfig).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      scope: 'schema_only',
+      schemaFrequency: 'weekly',
+    })
+  })
+
+  it('accepts schemaFrequency=null to clear the schema schedule', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      { spaceId: SPACE_ID, body: { schemaFrequency: null }, tier: 'pro' },
+      d,
+    )
+    expect(result).toEqual({ ok: true })
+    expect(d.upsertConfig).toHaveBeenCalledWith({ spaceId: SPACE_ID, schemaFrequency: null })
+  })
+
+  it('rejects an unknown scope with invalid_request', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      { spaceId: SPACE_ID, body: { scope: 'everything' }, tier: 'pro' },
+      d,
+    )
+    expect(result).toEqual({ ok: false, error: 'invalid_request' })
+    expect(d.upsertConfig).not.toHaveBeenCalled()
+  })
+
+  it('tier-gates schemaFrequency like the data cadence', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      { spaceId: SPACE_ID, body: { scope: 'schema_only', schemaFrequency: 'daily' }, tier: 'starter' },
+      d,
+    )
+    expect(result).toEqual({ ok: false, error: 'frequency_not_allowed' })
+    expect(d.upsertConfig).not.toHaveBeenCalled()
+  })
+
+  it('rejects an unrecognized schemaFrequency literal with invalid_request', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      { spaceId: SPACE_ID, body: { schemaFrequency: 'hourly' }, tier: 'enterprise' },
+      d,
+    )
+    expect(result).toEqual({ ok: false, error: 'invalid_request' })
+  })
 })

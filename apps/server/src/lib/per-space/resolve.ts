@@ -9,6 +9,8 @@ export interface ResolvedSpaceDb {
   pgLocator: string | null;
   recordsEnabled: boolean;
   status: string; // 'pending' | 'provisioning' | 'active' | 'migrating' | 'error'
+  /** Applied per-Space schema version; drives the lazy upgrade (system-per-space-upgrade). */
+  schemaVersion: number | null;
 }
 
 export async function resolveSpaceDb(
@@ -21,6 +23,7 @@ export async function resolveSpaceDb(
       pgLocator: spaceDatabases.pgLocator,
       recordsEnabled: spaceDatabases.recordsEnabled,
       status: spaceDatabases.status,
+      schemaVersion: spaceDatabases.schemaVersion,
     })
     .from(spaceDatabases)
     .where(eq(spaceDatabases.spaceId, spaceId))

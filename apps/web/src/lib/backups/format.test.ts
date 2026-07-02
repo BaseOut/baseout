@@ -2,20 +2,42 @@ import { describe, expect, it } from 'vitest'
 import {
   describeCounts,
   expandedTimestamp,
+  formatDeletedAt,
   formatDuration,
   formatNextScheduledAt,
   formatTriggeredBy,
   healthBadgeClass,
   healthStatus,
+  kindBadgeClass,
+  kindLabel,
   statusBadgeClass,
   statusLabel,
 } from './format'
 import type { BackupRunSummary } from '../backup-runs/types'
 
+describe('kindLabel', () => {
+  it('labels full and schema runs', () => {
+    expect(kindLabel('full')).toBe('Full')
+    expect(kindLabel('schema')).toBe('Schema')
+  })
+  it('treats unknown/legacy values as Full', () => {
+    expect(kindLabel('')).toBe('Full')
+    expect(kindLabel('weird')).toBe('Full')
+  })
+})
+
+describe('kindBadgeClass', () => {
+  it('distinguishes schema from full', () => {
+    expect(kindBadgeClass('schema')).toBe('badge-info')
+    expect(kindBadgeClass('full')).toBe('badge-ghost')
+  })
+})
+
 function run(overrides: Partial<BackupRunSummary> = {}): BackupRunSummary {
   return {
     id: 'r_1',
     status: 'queued',
+    kind: 'full',
     isTrial: false,
     triggeredBy: 'manual',
     recordCount: null,
@@ -333,6 +355,22 @@ describe('expandedTimestamp', () => {
     // string with the year in it.
     const out = expandedTimestamp('2026-05-09T18:30:00.000Z')
     expect(out).not.toBe('—')
+    expect(out).toMatch(/2026/)
+  })
+})
+
+describe('formatDeletedAt', () => {
+  it('returns "" for null (run not pruned)', () => {
+    expect(formatDeletedAt(null)).toBe('')
+  })
+
+  it('returns "" for unparseable input', () => {
+    expect(formatDeletedAt('not-a-date')).toBe('')
+  })
+
+  it('prefixes "Pruned" with the date for a valid ISO timestamp', () => {
+    const out = formatDeletedAt('2026-06-01T00:00:00.000Z')
+    expect(out).toMatch(/^Pruned /)
     expect(out).toMatch(/2026/)
   })
 })

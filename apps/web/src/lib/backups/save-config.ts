@@ -22,6 +22,10 @@ export interface SaveConfigInput {
   spaceId: string
   /** Partial body — at least one field must be set. */
   frequency?: 'monthly' | 'weekly' | 'daily' | 'instant'
+  /** server-backup-scope: what the schedule(s) back up. */
+  scope?: 'schema_only' | 'schema_and_data'
+  /** server-backup-scope: schema-only cadence, or null to clear it. */
+  schemaFrequency?: 'monthly' | 'weekly' | 'daily' | 'instant' | null
   storageType?: string
   autoAddFutureBases?: boolean
 }
@@ -54,6 +58,8 @@ export async function saveBackupConfig(
 
   const body: Record<string, unknown> = {}
   if (input.frequency !== undefined) body.frequency = input.frequency
+  if (input.scope !== undefined) body.scope = input.scope
+  if (input.schemaFrequency !== undefined) body.schemaFrequency = input.schemaFrequency
   if (input.storageType !== undefined) body.storageType = input.storageType
   if (input.autoAddFutureBases !== undefined) body.autoAddFutureBases = input.autoAddFutureBases
 

@@ -1,16 +1,16 @@
-// SpaceDO scheduler — Phase B of baseout-backup-schedule-and-cancel.
+// SpaceDO scheduler — server-backup-scope (dual schema + data schedules,
+// extends server-schedule-and-cancel Phase B).
 //
-// Two surfaces:
-//   - POST /set-frequency : computes the next-fire timestamp via
-//     computeNextFire(frequency, now), calls state.storage.setAlarm(),
-//     returns { ok: true, nextFireMs }.
-//   - alarm()             : fetches the Space's config, INSERTs a
-//     'queued' backup_runs row with triggered_by='scheduled', calls
-//     processRunStart, then recomputes + re-sets the alarm and writes
-//     backup_configurations.next_scheduled_at.
+// Surfaces:
+//   - POST /set-frequency : parses { scope, dataFrequency, schemaFrequency }
+//     (legacy { frequency } accepted), computes both next-fires, stores them,
+//     arms the alarm for the nearer, returns { ok, dataNextFire, schemaNextFire }.
+//   - alarm()             : reads stored fires + config, inserts a backup_runs
+//     row per due kind (stamping kind), calls processRunStart, advances the
+//     fired schedule(s), re-arms, and writes both next-scheduled columns.
 //
-// Spy-injection uses `runInDurableObject` from cloudflare:test — same
-// pattern as connection-do-token-cache.test.ts.
+// Pure dual-cadence math is covered by scheduling/dual-schedule.test.ts; this
+// pins the DO wiring. Spy-injection via runInDurableObject (cloudflare:test).
 
 import { env, runInDurableObject } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
@@ -31,49 +31,38 @@ const ORG_ID = "22222222-2222-2222-2222-222222222222";
 const CONFIG_ID = "33333333-3333-3333-3333-333333333333";
 const CONN_ID = "44444444-4444-4444-4444-444444444444";
 const RUN_ID = "55555555-5555-5555-5555-555555555555";
-// Far-future date so workerd doesn't clamp setAlarm(pastTimestamp) — when
-// FIXED_NOW is in the past relative to real wall-clock, computeNextFire's
-// output (e.g. tomorrow-from-FIXED_NOW midnight UTC) is also in the past,
-// and state.storage.setAlarm clamps to "fire ASAP" instead of persisting
-// the requested timestamp verbatim. Bump on review if 2030+ ever arrives.
+// Far-future so workerd doesn't clamp setAlarm(pastTimestamp) — see the
+// long-form note in the original Phase B test history.
 const FIXED_NOW = new Date("2030-01-15T14:23:00.000Z");
+const FIRES_KEY = "schedule_fires";
 
-// The DO addresses itself by `state.id.name` (set by idFromName(spaceId)).
-// Each test threads its DO-name through deps as the spaceId so assertions
-// match what the production path would see.
 function depsFor(
   spaceId: string,
   overrides: Partial<SpaceDOAlarmDeps> = {},
 ): SpaceDOAlarmDeps {
   return {
     now: () => FIXED_NOW,
-    fetchSpace: vi.fn(async () => ({
-      id: spaceId,
-      organizationId: ORG_ID,
-    })),
+    fetchSpace: vi.fn(async () => ({ id: spaceId, organizationId: ORG_ID })),
     fetchActiveAirtableConnection: vi.fn(async () => ({
       id: CONN_ID,
       status: "active",
     })),
     fetchConfig: vi.fn(async () => ({
       id: CONFIG_ID,
-      frequency: "daily",
+      scope: "schema_and_data",
+      dataFrequency: "daily",
+      schemaFrequency: null,
     })),
     insertScheduledRun: vi.fn(async () => RUN_ID),
     deleteRun: vi.fn(async () => undefined),
     runStart: vi.fn(async () => ({ ok: true })),
-    updateNextScheduledAt: vi.fn(async () => undefined),
+    updateNextScheduled: vi.fn(async () => undefined),
     ...overrides,
   };
 }
 
 describe("SpaceDO POST /set-frequency", () => {
-  it("computes next-fire via computeNextFire and calls state.storage.setAlarm", async () => {
-    // Drive the action via inst.fetch inside the same runInDurableObject
-    // block as the storage read-back so both touch the same isolate.
-    // A split pattern (stub.fetch → second runInDurableObject for getAlarm)
-    // crosses an isolate boundary under @cloudflare/vitest-pool-workers
-    // and the alarm read returns null.
+  it("computes the data next-fire and arms the alarm (legacy { frequency })", async () => {
     const spaceId = `set-freq-${crypto.randomUUID()}`;
     const stub = getStub(spaceId);
 
@@ -86,37 +75,64 @@ describe("SpaceDO POST /set-frequency", () => {
         }),
       );
       expect(res.status).toBe(200);
-      const body = (await res.json()) as { ok: boolean; nextFireMs: number };
+      const body = (await res.json()) as {
+        ok: boolean;
+        dataNextFire: number | null;
+        schemaNextFire: number | null;
+      };
       expect(body.ok).toBe(true);
-      expect(body.nextFireMs).toBe(computeNextFire("daily", FIXED_NOW));
+      expect(body.dataNextFire).toBe(computeNextFire("daily", FIXED_NOW));
+      expect(body.schemaNextFire).toBeNull();
 
       const scheduledFor = await state.storage.getAlarm();
       expect(scheduledFor).toBe(computeNextFire("daily", FIXED_NOW));
     });
   });
 
-  it("returns 400 for an unknown frequency", async () => {
-    const spaceId = `bad-freq-${crypto.randomUUID()}`;
+  it("arms the alarm for the nearer of two cadences (schema + data)", async () => {
+    const spaceId = `dual-set-${crypto.randomUUID()}`;
     const stub = getStub(spaceId);
-    await runInDurableObject(stub, async (inst) => {
+
+    await runInDurableObject(stub, async (inst, state) => {
       inst.setSchedulerDepsForTests(depsFor(spaceId));
+      const res = await inst.fetch(
+        new Request("http://do/set-frequency", {
+          method: "POST",
+          body: JSON.stringify({
+            spaceId,
+            scope: "schema_and_data",
+            dataFrequency: "monthly",
+            schemaFrequency: "daily",
+          }),
+        }),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        dataNextFire: number;
+        schemaNextFire: number;
+      };
+      expect(body.dataNextFire).toBe(computeNextFire("monthly", FIXED_NOW));
+      expect(body.schemaNextFire).toBe(computeNextFire("daily", FIXED_NOW));
+      // daily (schema) is nearer than monthly (data) → alarm = schema fire.
+      const scheduledFor = await state.storage.getAlarm();
+      expect(scheduledFor).toBe(computeNextFire("daily", FIXED_NOW));
     });
+  });
+
+  it("returns 400 for an unknown frequency", async () => {
+    const stub = getStub(`bad-freq-${crypto.randomUUID()}`);
     const res = await stub.fetch("http://do/set-frequency", {
       method: "POST",
-      body: JSON.stringify({ spaceId, frequency: "hourly" }),
+      body: JSON.stringify({ frequency: "hourly" }),
     });
     expect(res.status).toBe(400);
   });
 
   it("returns 400 when frequency='instant' (out of scope this change)", async () => {
-    const spaceId = `instant-${crypto.randomUUID()}`;
-    const stub = getStub(spaceId);
-    await runInDurableObject(stub, async (inst) => {
-      inst.setSchedulerDepsForTests(depsFor(spaceId));
-    });
+    const stub = getStub(`instant-${crypto.randomUUID()}`);
     const res = await stub.fetch("http://do/set-frequency", {
       method: "POST",
-      body: JSON.stringify({ spaceId, frequency: "instant" }),
+      body: JSON.stringify({ frequency: "instant" }),
     });
     expect(res.status).toBe(400);
   });
@@ -129,36 +145,65 @@ describe("SpaceDO POST /set-frequency", () => {
 });
 
 describe("SpaceDO alarm() — happy path", () => {
-  it("inserts a scheduled run, calls runStart, recomputes alarm, writes next_scheduled_at", async () => {
+  it("inserts a full scheduled run, calls runStart, advances + writes both next-scheduled cols", async () => {
     const spaceId = `alarm-${crypto.randomUUID()}`;
     const stub = getStub(spaceId);
     const deps = depsFor(spaceId);
 
-    // Both the alarm() invocation AND the state.storage.getAlarm() read-back
-    // happen in the same runInDurableObject block so both touch the same
-    // isolate. A second runInDurableObject would see the alarm read-back as
-    // null under @cloudflare/vitest-pool-workers.
     await runInDurableObject(stub, async (inst, state) => {
       inst.setSchedulerDepsForTests(deps);
       await inst.alarm();
-      // Re-sets the alarm so the next fire happens on schedule.
       const next = await state.storage.getAlarm();
       expect(next).toBe(computeNextFire("daily", FIXED_NOW));
     });
 
     expect(deps.fetchConfig).toHaveBeenCalledOnce();
-    expect(deps.fetchSpace).toHaveBeenCalledOnce();
-    expect(deps.fetchActiveAirtableConnection).toHaveBeenCalledWith(ORG_ID);
     expect(deps.insertScheduledRun).toHaveBeenCalledWith({
       spaceId,
       connectionId: CONN_ID,
+      kind: "full",
     });
     expect(deps.runStart).toHaveBeenCalledWith(RUN_ID);
     expect(deps.deleteRun).not.toHaveBeenCalled();
-    expect(deps.updateNextScheduledAt).toHaveBeenCalledWith(
-      CONFIG_ID,
-      computeNextFire("daily", FIXED_NOW),
-    );
+    expect(deps.updateNextScheduled).toHaveBeenCalledWith(CONFIG_ID, {
+      dataNextFire: computeNextFire("daily", FIXED_NOW),
+      schemaNextFire: null,
+    });
+  });
+
+  it("fires BOTH kinds when both schedules are due at the tick", async () => {
+    const spaceId = `dual-alarm-${crypto.randomUUID()}`;
+    const stub = getStub(spaceId);
+    const deps = depsFor(spaceId, {
+      fetchConfig: vi.fn(async () => ({
+        id: CONFIG_ID,
+        scope: "schema_and_data",
+        dataFrequency: "monthly",
+        schemaFrequency: "daily",
+      })),
+    });
+
+    await runInDurableObject(stub, async (inst, state) => {
+      inst.setSchedulerDepsForTests(deps);
+      // Seed both stored fires as already due.
+      await state.storage.put(FIRES_KEY, {
+        dataNextFire: FIXED_NOW.getTime() - 1000,
+        schemaNextFire: FIXED_NOW.getTime() - 1000,
+      });
+      await inst.alarm();
+    });
+
+    expect(deps.insertScheduledRun).toHaveBeenCalledTimes(2);
+    expect(deps.insertScheduledRun).toHaveBeenCalledWith({
+      spaceId,
+      connectionId: CONN_ID,
+      kind: "full",
+    });
+    expect(deps.insertScheduledRun).toHaveBeenCalledWith({
+      spaceId,
+      connectionId: CONN_ID,
+      kind: "schema",
+    });
   });
 });
 
@@ -166,9 +211,7 @@ describe("SpaceDO alarm() — error gates", () => {
   it("returns without scheduling when the config is missing", async () => {
     const spaceId = `no-config-${crypto.randomUUID()}`;
     const stub = getStub(spaceId);
-    const deps = depsFor(spaceId, {
-      fetchConfig: vi.fn(async () => null),
-    });
+    const deps = depsFor(spaceId, { fetchConfig: vi.fn(async () => null) });
 
     await runInDurableObject(stub, async (inst) => {
       inst.setSchedulerDepsForTests(deps);
@@ -176,67 +219,57 @@ describe("SpaceDO alarm() — error gates", () => {
     });
 
     expect(deps.insertScheduledRun).not.toHaveBeenCalled();
-    expect(deps.runStart).not.toHaveBeenCalled();
-    expect(deps.updateNextScheduledAt).not.toHaveBeenCalled();
-    // No alarm rescheduled when config is gone (the Space's config was
-    // deleted — there's nothing to keep firing for).
+    expect(deps.updateNextScheduled).not.toHaveBeenCalled();
     await runInDurableObject(stub, async (_inst, state) => {
-      const next = await state.storage.getAlarm();
-      expect(next).toBeNull();
+      expect(await state.storage.getAlarm()).toBeNull();
     });
   });
 
-  it("returns without scheduling when frequency='instant'", async () => {
-    // Instant is webhook-driven; the alarm path is not the right
-    // dispatcher. Same no-op rule as missing-config.
+  it("does not fire and clears the alarm when the data cadence is instant", async () => {
     const spaceId = `instant-alarm-${crypto.randomUUID()}`;
     const stub = getStub(spaceId);
     const deps = depsFor(spaceId, {
       fetchConfig: vi.fn(async () => ({
         id: CONFIG_ID,
-        frequency: "instant",
+        scope: "schema_and_data",
+        dataFrequency: "instant",
+        schemaFrequency: null,
       })),
     });
 
-    await runInDurableObject(stub, async (inst) => {
+    await runInDurableObject(stub, async (inst, state) => {
       inst.setSchedulerDepsForTests(deps);
       await inst.alarm();
+      expect(await state.storage.getAlarm()).toBeNull();
     });
 
     expect(deps.insertScheduledRun).not.toHaveBeenCalled();
-    expect(deps.updateNextScheduledAt).not.toHaveBeenCalled();
   });
 
   it("reschedules but skips the fire when no active Airtable connection exists", async () => {
-    // Per design.md: empty-connection cases log + reschedule. Otherwise
-    // a Space without bases (or with a stale connection) silently
-    // disables itself — not what the user wants.
     const spaceId = `no-conn-${crypto.randomUUID()}`;
     const stub = getStub(spaceId);
     const deps = depsFor(spaceId, {
       fetchActiveAirtableConnection: vi.fn(async () => null),
     });
 
-    // Single-block pattern: alarm() and getAlarm() in the same isolate.
     await runInDurableObject(stub, async (inst, state) => {
       inst.setSchedulerDepsForTests(deps);
       await inst.alarm();
-      const next = await state.storage.getAlarm();
-      expect(next).toBe(computeNextFire("daily", FIXED_NOW));
+      expect(await state.storage.getAlarm()).toBe(
+        computeNextFire("daily", FIXED_NOW),
+      );
     });
 
     expect(deps.insertScheduledRun).not.toHaveBeenCalled();
     expect(deps.runStart).not.toHaveBeenCalled();
-    // Reschedules.
-    expect(deps.updateNextScheduledAt).toHaveBeenCalledWith(
-      CONFIG_ID,
-      computeNextFire("daily", FIXED_NOW),
-    );
+    expect(deps.updateNextScheduled).toHaveBeenCalledWith(CONFIG_ID, {
+      dataNextFire: computeNextFire("daily", FIXED_NOW),
+      schemaNextFire: null,
+    });
   });
 
-  it("rolls back the inserted run when runStart fails (e.g. no_bases_selected)", async () => {
-    // Same shape as the apps/web POST /backup-runs route's failure
-    // path — the queued row is deleted so it doesn't linger.
+  it("rolls back the inserted run when runStart fails", async () => {
     const spaceId = `rollback-${crypto.randomUUID()}`;
     const stub = getStub(spaceId);
     const deps = depsFor(spaceId, {
@@ -250,12 +283,9 @@ describe("SpaceDO alarm() — error gates", () => {
 
     expect(deps.insertScheduledRun).toHaveBeenCalledOnce();
     expect(deps.deleteRun).toHaveBeenCalledWith(RUN_ID);
-
-    // Schedule still moves forward — we don't want a failed fire to
-    // silently disable the schedule.
-    expect(deps.updateNextScheduledAt).toHaveBeenCalledWith(
-      CONFIG_ID,
-      computeNextFire("daily", FIXED_NOW),
-    );
+    expect(deps.updateNextScheduled).toHaveBeenCalledWith(CONFIG_ID, {
+      dataNextFire: computeNextFire("daily", FIXED_NOW),
+      schemaNextFire: null,
+    });
   });
 });

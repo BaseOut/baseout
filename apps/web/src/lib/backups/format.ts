@@ -54,6 +54,20 @@ export function statusBadgeClass(status: string): string {
 }
 
 /**
+ * Backup run kind (server-backup-scope): 'full' = schema + data; 'schema' =
+ * schema-only run (skips records/attachments). Shown as a secondary badge in
+ * history. Unknown/legacy values fall back to 'Full' so old rows read sensibly.
+ */
+export function kindLabel(kind: string): string {
+  return kind === 'schema' ? 'Schema' : 'Full'
+}
+
+/** daisyUI badge class for the run-kind chip (secondary to the status chip). */
+export function kindBadgeClass(kind: string): string {
+  return kind === 'schema' ? 'badge-info' : 'badge-ghost'
+}
+
+/**
  * Render a duration in human-friendly form. <60s → "Xs"; <60m → "Xm Ys";
  * else → "Xh Ym". Returns null when either bound is missing (still
  * running, or never started).
@@ -159,6 +173,19 @@ export function expandedTimestamp(iso: string | null): string {
     dateStyle: 'medium',
     timeStyle: 'medium',
   })
+}
+
+/**
+ * Footer label for a soft-deleted (cleanup-pruned) run — the cleanup engine
+ * sets backup_runs.deleted_at after removing the snapshot's storage objects
+ * (server-retention-and-cleanup Phase E.3). Returns '' when the run hasn't
+ * been pruned (null / invalid) so the widget can skip the pruned styling.
+ */
+export function formatDeletedAt(iso: string | null): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (!Number.isFinite(date.getTime())) return ''
+  return `Pruned ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date)}`
 }
 
 /**

@@ -54,6 +54,12 @@ export interface BackupBaseTaskPayload {
    * history); creds are fetched fresh at task start.
    */
   spaceId: string;
+  /**
+   * 'full' (default) or 'schema' — what to capture (server-backup-scope). A
+   * 'schema' run skips records/attachments. The engine run-start forwards
+   * backup_runs.kind here; flows into runBackupBase via the payload spread.
+   */
+  kind?: "full" | "schema";
 }
 
 function trimSlash(s: string): string {

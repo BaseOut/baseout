@@ -18,6 +18,8 @@ import {
   readSchemaWorkingSet,
   withSpaceSchema,
 } from "../../../../lib/per-space/space-db-pg";
+import { inferAndWriteSyncedViews } from "../../../../lib/per-space/relationships-io";
+import { ensureSpaceSchemaCurrent } from "../../../../lib/provisioning/upgrade";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -54,11 +56,23 @@ export async function spacesSchemaSyncHandler(
   const backupRunId = String(body.backupRunId);
   const confident = body.confident !== false; // default true (full schema capture)
 
-  const { db: masterDb } = locals.getMasterDb();
+  const { db: masterDb, sql } = locals.getMasterDb();
   const space = await resolveSpaceDb(masterDb, spaceId);
   if (!space || space.status !== "active") return jsonResponse({ error: "space_db_not_ready" }, 409);
   if (space.backend !== "managed_pg" || !space.pgLocator) {
     return jsonResponse({ error: "backend_not_implemented" }, 501);
+  }
+
+  // Best-effort: bring an older Space to the current per-Space schema before the
+  // write + inference below (system-per-space-upgrade). Must not fail the sync.
+  try {
+    await ensureSpaceSchemaCurrent(masterDb, sql, {
+      spaceId,
+      pgLocator: space.pgLocator,
+      schemaVersion: space.schemaVersion,
+    });
+  } catch {
+    // ignored — re-attempted on the next sync.
   }
 
   try {
@@ -69,6 +83,19 @@ export async function spacesSchemaSyncHandler(
       await applySchemaDiff(tx, { baseId: captured.baseId, baseRunId, result, schemaJson: captured });
       return { baseRunId, result };
     });
+
+    // Best-effort synced-view inference off the freshly-written schema
+    // (server-relationships). Advisory + idempotent: a failure here must NOT
+    // fail the schema sync, so it runs in its own tx and swallows errors. An
+    // explicit re-infer is also available via /relationships/sync.
+    try {
+      await withSpaceSchema(masterDb, space.pgLocator, (tx) =>
+        inferAndWriteSyncedViews(tx, { baseId: captured.baseId, runId: baseRunId }),
+      );
+    } catch {
+      // ignored — the next schema capture re-runs inference.
+    }
+
     return jsonResponse(
       {
         ok: true,

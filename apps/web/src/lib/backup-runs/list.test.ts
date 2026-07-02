@@ -17,6 +17,7 @@ function makeRow(overrides: Partial<BackupRunRowLike> = {}): BackupRunRowLike {
   return {
     id: 'r_1',
     status: 'queued',
+    kind: 'full',
     isTrial: false,
     triggeredBy: 'manual',
     recordCount: null,
@@ -93,6 +94,7 @@ describe('listRecentRuns', () => {
     expect(result[0]).toEqual({
       id: 'r_x',
       status: 'succeeded',
+      kind: 'full',
       isTrial: true,
       triggeredBy: 'scheduled',
       recordCount: 42,

@@ -1,0 +1,3 @@
+ALTER TABLE "baseout"."health_score_rules" ADD COLUMN "prompt" text;--> statement-breakpoint
+ALTER TABLE "baseout"."health_score_rules" ADD COLUMN "entity_tier" text;--> statement-breakpoint
+ALTER TABLE "baseout"."health_score_rules" ADD CONSTRAINT "health_score_rules_entity_tier_check" CHECK ("baseout"."health_score_rules"."entity_tier" IS NULL OR "baseout"."health_score_rules"."entity_tier" IN ('base', 'table', 'field'));

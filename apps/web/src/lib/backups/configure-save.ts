@@ -24,6 +24,10 @@ import {
 export interface ConfigureSaveInput {
   spaceId: string
   frequency?: 'monthly' | 'weekly' | 'daily' | 'instant'
+  /** server-backup-scope: what the schedule(s) back up. */
+  scope?: 'schema_only' | 'schema_and_data'
+  /** server-backup-scope: schema-only cadence, or null to clear it. */
+  schemaFrequency?: 'monthly' | 'weekly' | 'daily' | 'instant' | null
   /** First-time setup: kick off the first backup right after saving. */
   runFirstBackup: boolean
 }
@@ -57,10 +61,16 @@ export async function saveConfigureForm(
   const saveConfigFn = deps.saveConfigImpl ?? saveBackupConfig
   const runBackupFn = deps.runBackupImpl ?? runBackup
 
-  if (input.frequency !== undefined) {
+  if (
+    input.frequency !== undefined ||
+    input.scope !== undefined ||
+    input.schemaFrequency !== undefined
+  ) {
     const saved = await saveConfigFn({
       spaceId: input.spaceId,
       frequency: input.frequency,
+      scope: input.scope,
+      schemaFrequency: input.schemaFrequency,
     })
     if (!saved.ok) {
       return { ok: false, message: describeSaveConfigError(saved.error) }

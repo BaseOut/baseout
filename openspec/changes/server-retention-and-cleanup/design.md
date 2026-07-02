@@ -84,6 +84,15 @@ The "tier-cap" column is enforced at decide-time, not at policy-edit-time — a 
 
 ## Phase C — Cleanup engine architecture
 
+> **Superseded during implementation (2026-06-27) — see tasks.md status block.** The
+> `runCleanupPass({ db, makeWriter })` sketch below (engine + R2 in one function, called from the
+> workflows cron) is **not buildable**: Cloudflare Workers can't reach R2 *and* `apps/workflows` has no
+> DB layer. Shipped instead as a three-way split that mirrors the backup path — engine **plans**
+> (`POST /api/internal/cleanup-plan` → `buildCleanupPlan`, DB-only), workflows cron **executes**
+> (`deletePrefix` in Node), engine **records** (`POST /api/internal/cleanup-complete` → sets
+> `deleted_at`). `decideDeletions` is unchanged. The rest of this section is kept for the decision
+> rationale (Trigger.dev cron vs SpaceDO alarm, the keep/delete policy semantics).
+
 ### `decideDeletions` pure function
 
 `apps/server/src/lib/retention/decide-deletions.ts`. Pure; dep-injected `now()`.

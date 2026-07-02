@@ -378,6 +378,12 @@ export const backupRuns = baseout.table('backup_runs', {
   //  row hard-DELETE, not a status flip.)
   triggeredBy: text('triggered_by').notNull(),
   // free-text; engine-defined (e.g. 'manual', 'scheduled', 'webhook', 'trial')
+  kind: text('kind').notNull().default('full'),
+  // 'full' | 'schema' — what this run captured (openspec/changes/server-backup-scope).
+  // 'full' = schema + data (manual + data-scheduled runs); 'schema' = schema only
+  // (schema-scheduled runs, which skip records/attachments). Plain text +
+  // application-level constraint, like `status`. Drives the history Schema/Full
+  // badge and the per-base task's capture path.
   isTrial: boolean('is_trial').notNull().default(false),
   recordCount: integer('record_count'),
   tableCount: integer('table_count'),
@@ -389,6 +395,12 @@ export const backupRuns = baseout.table('backup_runs', {
   // JSON array of Trigger.dev v3 run IDs (one per included base). Set when the
   // engine fans out to per-base tasks; consumed by the run-complete callback to
   // determine when all per-base work has reported in.
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  // Soft-delete marker for the retention/cleanup engine
+  // (openspec/changes/server-retention-and-cleanup). Set when the cleanup pass
+  // has removed this run's storage objects; the row itself is retained for
+  // audit. NULL until pruned. Distinct from the user-initiated per-run delete
+  // (shared-backup-run-delete), which hard-DELETEs the row.
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -396,6 +408,10 @@ export const backupRuns = baseout.table('backup_runs', {
   index('backup_runs_connection_id_idx').on(table.connectionId),
   index('backup_runs_status_idx').on(table.status),
   index('backup_runs_created_at_idx').on(table.createdAt),
+  // Partial index — the cleanup pass scans live runs per Space, newest-first.
+  index('backup_runs_undeleted_idx')
+    .on(table.spaceId, table.startedAt.desc())
+    .where(sql`${table.deletedAt} IS NULL`),
 ])
 
 // ———————————————————————————————————————————————————————————————————————————
@@ -445,7 +461,20 @@ export const backupConfigurations = baseout.table('backup_configurations', {
     .notNull()
     .references(() => spaces.id, { onDelete: 'cascade' }),
   frequency: text('frequency').notNull().default('monthly'),
-  // 'monthly' | 'weekly' | 'daily' | 'instant' — gated by tier per Features §6.1
+  // 'monthly' | 'weekly' | 'daily' | 'instant' — gated by tier per Features §6.1.
+  // This is the DATA (full-backup) schedule. See `scope` + `schema_frequency`
+  // for the schema schedule (openspec/changes/server-backup-scope).
+  scope: text('scope').notNull().default('schema_and_data'),
+  // 'schema_only' | 'schema_and_data' — what the schedule(s) back up
+  // (openspec/changes/server-backup-scope). schema_only runs NO data backup
+  // (schema schedule only); schema_and_data runs the data schedule (`frequency`)
+  // plus, when `schema_frequency` is set, a more-frequent schema-only schedule.
+  schemaFrequency: text('schema_frequency'),
+  // Optional cadence for the schema-only schedule ('monthly'|'weekly'|'daily').
+  // NULL ⇒ schema refreshes only with each full data backup. server-backup-scope.
+  schemaNextScheduledAt: timestamp('schema_next_scheduled_at', { withTimezone: true }),
+  // Engine-owned mirror of next_scheduled_at for the schema schedule; SpaceDO
+  // writes it on alarm-set / alarm-fire. NULL until scheduled. server-backup-scope.
   mode: text('mode').notNull().default('static'),
   // 'static' | 'dynamic' — Features §6.2
   storageType: text('storage_type').notNull().default('r2_managed'),
@@ -744,6 +773,46 @@ export const backupRunTables = baseout.table('backup_run_tables', {
 ])
 
 // ———————————————————————————————————————————————————————————————————————————
+// BACKUP RETENTION POLICIES
+// One row per Space — the resolved retention policy the cleanup engine prunes
+// against. Filed by openspec/changes/server-retention-and-cleanup (Phase A).
+// `policy_tier` is derived from the Space's subscription tier on write; the
+// numeric knobs are nullable because each tier only uses a subset (see the
+// design's per-tier field table). Canonical owner; apps/server mirrors this in
+// backup-retention-policies.ts. Migration:
+// apps/web/drizzle/0021_backup_retention_and_cleanup.sql
+// ———————————————————————————————————————————————————————————————————————————
+
+/** Retention policy shape per Features §6.9 — Basic → Custom ladder. */
+export type RetentionPolicyTier =
+  | 'basic'
+  | 'time_based'
+  | 'two_tier'
+  | 'three_tier'
+  | 'custom'
+
+export const backupRetentionPolicies = baseout.table('backup_retention_policies', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .unique()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  policyTier: text('policy_tier').notNull().$type<RetentionPolicyTier>(),
+  keepLastN: integer('keep_last_n'),
+  dailyWindowDays: integer('daily_window_days'),
+  weeklyWindowDays: integer('weekly_window_days'),
+  monthlyIndefinite: boolean('monthly_indefinite').notNull().default(false),
+  customRules: jsonb('custom_rules'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check(
+    'backup_retention_policies_policy_tier_check',
+    sql`${table.policyTier} IN ('basic','time_based','two_tier','three_tier','custom')`,
+  ),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
 // HEALTH SCORE RULES
 // Filed by openspec/changes/system-per-space-db. Org-scoped, configurable rules
 // the engine evaluates per run to compute a Base's health score. The computed
@@ -766,12 +835,23 @@ export const healthScoreRules = baseout.table('health_score_rules', {
   weight: integer('weight').notNull().default(0),
   enabled: boolean('enabled').notNull().default(true),
   config: jsonb('config'),                                 // rule-specific thresholds / params
+  // server-schema-health-scoring: the metric-driven AI model. `prompt` is the
+  // system-default AI prompt for the metric (space-level + per-entity overrides
+  // live per-Space in bo_at_health_metric_prompts / _overrides); `entity_tier`
+  // groups metrics by the level they evaluate. Both NULL on legacy deterministic
+  // rules (weight/config only).
+  prompt: text('prompt'),
+  entityTier: text('entity_tier'),                         // 'base' | 'table' | 'field'
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   check(
     'health_score_rules_severity_check',
     sql`${table.severity} IN ('high', 'medium', 'low')`,
+  ),
+  check(
+    'health_score_rules_entity_tier_check',
+    sql`${table.entityTier} IS NULL OR ${table.entityTier} IN ('base', 'table', 'field')`,
   ),
   unique('health_score_rules_org_code_unique').on(table.organizationId, table.code),
   index('health_score_rules_organization_id_idx').on(table.organizationId),

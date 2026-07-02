@@ -32,6 +32,7 @@ function summary(overrides: Partial<BackupRunSummary> = {}): BackupRunSummary {
   return {
     id: 'r_test',
     status: 'running',
+    kind: 'full',
     isTrial: false,
     triggeredBy: 'manual',
     recordCount: null,

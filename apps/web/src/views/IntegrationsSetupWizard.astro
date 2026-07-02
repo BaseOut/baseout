@@ -87,6 +87,10 @@ const CLEANUP_TIERS: Record<string, string[]> = {
 const freqLabel = (v: string) => FREQS.find((f) => f.value === v)?.label ?? 'Monthly';
 const initialFreq = state.policy.frequency;
 const initialTiers = CLEANUP_TIERS[initialFreq] ?? CLEANUP_TIERS.monthly;
+// server-backup-scope: scope (Data depth) + the schema-only cadence. When no
+// schema cadence is saved yet, default-select it to the data cadence.
+const initialScope = state.policy.scope;
+const initialSchemaFreq = state.policy.schemaFrequency ?? state.policy.frequency;
 ---
 
 <div class="mx-auto max-w-5xl space-y-6" data-wizard data-mode={mode} data-space-id={realSpaceId ?? undefined}>
@@ -278,8 +282,8 @@ const initialTiers = CLEANUP_TIERS[initialFreq] ?? CLEANUP_TIERS.monthly;
           </li>
           <li class="opt-row">
             <label class="opt-check">
-              <input type="checkbox" class="checkbox checkbox-sm" checked />
-              <span class="min-w-0"><span class="opt-row-name">Data</span><span class="opt-row-sub">Every row and field value. On by default.</span></span>
+              <input type="checkbox" class="checkbox checkbox-sm" checked={initialScope === 'schema_and_data'} data-scope-data />
+              <span class="min-w-0"><span class="opt-row-name">Data</span><span class="opt-row-sub">Every row and field value. On by default — turn off for a schema-only backup.</span></span>
             </label>
           </li>
           <li class="opt-row">
@@ -293,21 +297,48 @@ const initialTiers = CLEANUP_TIERS[initialFreq] ?? CLEANUP_TIERS.monthly;
         <p class="text-xs text-base-content/50 mt-2.5">Airtable's API can't export automations, interfaces, forms or views — those aren't backed up.</p>
 
         <h3 class="opt-subhead mt-5">Schedule</h3>
-        <ul class="opt-list">
-          {FREQS.map((f) => {
-            const allowed = (state.availableFrequencies as readonly string[]).includes(f.value);
-            return (
-              <li class={`opt-row ${!allowed ? 'opacity-55' : ''}`}>
-                <label class={`opt-check ${allowed ? '' : 'cursor-not-allowed'}`}>
-                  <input type="radio" name="wz-frequency" value={f.value} checked={state.policy.frequency === f.value} disabled={!allowed} class="radio radio-sm radio-primary" data-frequency />
-                  <span class="min-w-0"><span class="opt-row-name">{f.label}</span><span class="opt-row-sub">{f.helper}</span></span>
-                </label>
-                {!allowed && <Button href="/settings/billing" variant="warning" size="sm" outline class="shrink-0">Upgrade</Button>}
-              </li>
-            );
-          })}
-        </ul>
-        <p class="text-xs text-base-content/60 mt-2.5">Next backup: <span class="font-medium text-base-content/80">{formatNextScheduledAt(state.policy.nextScheduledAt)}</span></p>
+
+        {/* DATA cadence — only relevant when Data depth is on (scope = schema_and_data). */}
+        <div data-cadence-data>
+          <p class="text-sm font-semibold text-base-content/80 mb-1.5">Data backups <span class="font-normal text-xs text-base-content/50">— full rows + field values</span></p>
+          <ul class="opt-list">
+            {FREQS.map((f) => {
+              const allowed = (state.availableFrequencies as readonly string[]).includes(f.value);
+              return (
+                <li class={`opt-row ${!allowed ? 'opacity-55' : ''}`}>
+                  <label class={`opt-check ${allowed ? '' : 'cursor-not-allowed'}`}>
+                    <input type="radio" name="wz-frequency" value={f.value} checked={state.policy.frequency === f.value} disabled={!allowed} class="radio radio-sm radio-primary" data-frequency />
+                    <span class="min-w-0"><span class="opt-row-name">{f.label}</span><span class="opt-row-sub">{f.helper}</span></span>
+                  </label>
+                  {!allowed && <Button href="/settings/billing" variant="warning" size="sm" outline class="shrink-0">Upgrade</Button>}
+                </li>
+              );
+            })}
+          </ul>
+          <p class="text-xs text-base-content/60 mt-2">Next data backup: <span class="font-medium text-base-content/80" data-next-data>{formatNextScheduledAt(state.policy.nextScheduledAt)}</span></p>
+        </div>
+
+        {/* SCHEMA cadence — schema is always captured; this picks how often it refreshes. */}
+        <div class="mt-4" data-cadence-schema>
+          <p class="text-sm font-semibold text-base-content/80 mb-1.5">Schema backups <span class="font-normal text-xs text-base-content/50">— tables, fields, views, relationships</span></p>
+          <ul class="opt-list">
+            {FREQS.map((f) => {
+              const allowed = (state.availableFrequencies as readonly string[]).includes(f.value);
+              return (
+                <li class={`opt-row ${!allowed ? 'opacity-55' : ''}`}>
+                  <label class={`opt-check ${allowed ? '' : 'cursor-not-allowed'}`}>
+                    <input type="radio" name="wz-schema-frequency" value={f.value} checked={initialSchemaFreq === f.value} disabled={!allowed} class="radio radio-sm radio-primary" data-schema-frequency />
+                    <span class="min-w-0"><span class="opt-row-name">{f.label}</span><span class="opt-row-sub">{f.helper}</span></span>
+                  </label>
+                  {!allowed && <Button href="/settings/billing" variant="warning" size="sm" outline class="shrink-0">Upgrade</Button>}
+                </li>
+              );
+            })}
+          </ul>
+          <p class="text-xs text-base-content/60 mt-2">Next schema backup: <span class="font-medium text-base-content/80" data-next-schema>{formatNextScheduledAt(state.policy.schemaNextScheduledAt)}</span></p>
+        </div>
+
+        <p class="text-xs text-base-content/55 mt-3" data-redundancy-hint>Schema backups are lightweight — run them more often than full data backups to keep your Schema docs current while spending fewer credits on full exports.</p>
 
         {/* Cleanup schedule — tiered retention keyed to the frequency above (informational). */}
         <h3 class="opt-subhead mt-5">Cleanup schedule</h3>
@@ -675,6 +706,19 @@ const initialTiers = CLEANUP_TIERS[initialFreq] ?? CLEANUP_TIERS.monthly;
       const v = $<HTMLInputElement>('[data-frequency]:checked')?.value;
       return v && (FREQS_ALLOWED as readonly string[]).includes(v) ? (v as Freq) : undefined;
     };
+    // server-backup-scope: Data depth ⇒ scope; the schema picker ⇒ schemaFrequency.
+    const chosenScope = (): 'schema_only' | 'schema_and_data' =>
+      $<HTMLInputElement>('[data-scope-data]')?.checked ? 'schema_and_data' : 'schema_only';
+    const chosenSchemaFrequency = (): Freq | undefined => {
+      const v = $<HTMLInputElement>('[data-schema-frequency]:checked')?.value;
+      return v && (FREQS_ALLOWED as readonly string[]).includes(v) ? (v as Freq) : undefined;
+    };
+    // Hide the data cadence + redundancy hint when Data depth is off (schema-only).
+    function syncScope() {
+      const on = chosenScope() === 'schema_and_data';
+      $('[data-cadence-data]')?.classList.toggle('hidden', !on);
+      $('[data-redundancy-hint]')?.classList.toggle('hidden', !on);
+    }
 
     // Persist + (optionally) run the first backup. Production calls the real
     // helpers; the harness simulates and reflects the setup in the overview.
@@ -693,7 +737,7 @@ const initialTiers = CLEANUP_TIERS[initialFreq] ?? CLEANUP_TIERS.monthly;
           if (saveStatus) saveStatus.textContent = 'Could not save your base selection. Please try again.';
           return;
         }
-        const outcome = await saveConfigureForm({ spaceId: prodSpaceId!, frequency: chosenFrequency(), runFirstBackup: runFirst });
+        const outcome = await saveConfigureForm({ spaceId: prodSpaceId!, frequency: chosenFrequency(), scope: chosenScope(), schemaFrequency: chosenSchemaFrequency(), runFirstBackup: runFirst });
         if (outcome.ok) { window.location.href = outcome.redirect; return; }
         setButtonLoading(btn, false);
         if (saveStatus) saveStatus.textContent = outcome.message;
@@ -767,8 +811,13 @@ const initialTiers = CLEANUP_TIERS[initialFreq] ?? CLEANUP_TIERS.monthly;
       const db = $<HTMLInputElement>('[data-dest-db-radio]:checked');
       const dbName = db && db.value ? db.closest('.opt-opt')?.querySelector('.opt-name')?.childNodes[0]?.textContent?.trim() : '';
       $('[data-review-dest]')!.textContent = dbName ? `${fileName} + ${dbName}` : fileName;
-      const freq = $<HTMLInputElement>('[data-frequency]:checked');
-      $('[data-review-schedule]')!.textContent = freq ? freq.value.charAt(0).toUpperCase() + freq.value.slice(1) : 'Monthly';
+      const capW = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+      const dataOn = chosenScope() === 'schema_and_data';
+      const dataFreq = chosenFrequency() ?? 'monthly';
+      const schemaFreq = chosenSchemaFrequency() ?? dataFreq;
+      $('[data-review-schedule]')!.textContent = dataOn
+        ? `Data ${capW(dataFreq)} · Schema ${capW(schemaFreq)}`
+        : `Schema only · ${capW(schemaFreq)}`;
       const depth = ['Schema'];
       const checks = $$<HTMLInputElement>('.panel-options .opt-check input[type="checkbox"]');
       if (checks[1]?.checked) depth.push('Data');
@@ -834,6 +883,7 @@ const initialTiers = CLEANUP_TIERS[initialFreq] ?? CLEANUP_TIERS.monthly;
       if (t?.matches?.('[data-base-checkbox]')) { hideBasesResetNote(); render(); return; }
       if (t?.matches?.('[data-dest-file-radio], [data-dest-db-radio]')) render();
       if (t?.matches?.('[data-frequency]')) updateCleanup((t as HTMLInputElement).value);
+      if (t?.matches?.('[data-scope-data]')) syncScope();
     });
 
     // Edit mode: free tabs (jump anywhere) + Save changes.
@@ -1064,6 +1114,7 @@ const initialTiers = CLEANUP_TIERS[initialFreq] ?? CLEANUP_TIERS.monthly;
       render();
     });
 
+    syncScope();
     render();
   }
   wizard();

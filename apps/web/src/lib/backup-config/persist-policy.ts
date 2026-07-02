@@ -25,7 +25,15 @@ import {
   type Tier,
 } from '../capabilities/tier-capabilities'
 
-const ALLOWED_BODY_KEYS = new Set(['frequency', 'storageType', 'autoAddFutureBases'])
+const ALLOWED_BODY_KEYS = new Set([
+  'frequency',
+  'storageType',
+  'autoAddFutureBases',
+  // server-backup-scope: what to back up + the schema schedule.
+  'scope',
+  'schemaFrequency',
+])
+const ALLOWED_SCOPES = new Set(['schema_only', 'schema_and_data'])
 const ALL_FREQUENCIES: ReadonlySet<Frequency> = new Set([
   'monthly',
   'weekly',
@@ -62,6 +70,10 @@ export interface UpsertConfigInput {
   frequency?: Frequency
   storageType?: string
   autoAddFutureBases?: boolean
+  /** server-backup-scope: 'schema_only' | 'schema_and_data'. */
+  scope?: string
+  /** server-backup-scope: the schema schedule cadence, or null to clear it. */
+  schemaFrequency?: Frequency | null
 }
 
 export interface PersistBackupConfigPolicyDeps {
@@ -121,21 +133,51 @@ export async function persistBackupConfigPolicy(
     autoAddFutureBases = v
   }
 
+  // 3c. Validate scope (server-backup-scope).
+  let scope: string | undefined
+  if ('scope' in input.body) {
+    const v = input.body.scope
+    if (typeof v !== 'string' || !ALLOWED_SCOPES.has(v)) {
+      return { ok: false, error: 'invalid_request' }
+    }
+    scope = v
+  }
+
+  // 3d. Validate schemaFrequency. `null` clears the schema schedule; a string
+  //     must be a known cadence (tier-gated below alongside `frequency`).
+  let schemaFrequency: Frequency | null | undefined
+  if ('schemaFrequency' in input.body) {
+    const v = input.body.schemaFrequency
+    if (v === null) {
+      schemaFrequency = null
+    } else if (typeof v === 'string' && ALL_FREQUENCIES.has(v as Frequency)) {
+      schemaFrequency = v as Frequency
+    } else {
+      return { ok: false, error: 'invalid_request' }
+    }
+  }
+
   // 4. Reject empty bodies (no-op upsert).
   if (
     frequency === undefined &&
     storageType === undefined &&
-    autoAddFutureBases === undefined
+    autoAddFutureBases === undefined &&
+    scope === undefined &&
+    schemaFrequency === undefined
   ) {
     return { ok: false, error: 'invalid_request' }
   }
 
-  // 5. Tier-gate the frequency. Unknown tier falls back to starter caps.
-  if (frequency !== undefined) {
-    const caps = getTierCapabilities(input.tier)
-    if (!caps.frequencies.includes(frequency)) {
-      return { ok: false, error: 'frequency_not_allowed' }
-    }
+  // 5. Tier-gate both cadences. Unknown tier falls back to starter caps.
+  const caps = getTierCapabilities(input.tier)
+  if (frequency !== undefined && !caps.frequencies.includes(frequency)) {
+    return { ok: false, error: 'frequency_not_allowed' }
+  }
+  if (
+    schemaFrequency != null &&
+    !caps.frequencies.includes(schemaFrequency)
+  ) {
+    return { ok: false, error: 'frequency_not_allowed' }
   }
 
   // 6. Dispatch the upsert. Only include the fields actually present in
@@ -146,6 +188,8 @@ export async function persistBackupConfigPolicy(
   if (autoAddFutureBases !== undefined) {
     upsertInput.autoAddFutureBases = autoAddFutureBases
   }
+  if (scope !== undefined) upsertInput.scope = scope
+  if (schemaFrequency !== undefined) upsertInput.schemaFrequency = schemaFrequency
   await deps.upsertConfig(upsertInput)
 
   return { ok: true }

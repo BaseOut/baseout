@@ -44,6 +44,13 @@ function makeDeps(
     // the SpaceDO hand-off pass unchanged. Tests targeting the hand-off
     // override with vi.fn().
     onScheduledFrequencyChange: null,
+    // server-backup-scope: the route reads the post-upsert schedule before the
+    // hand-off. Default returns a full schedule; hand-off tests override.
+    fetchScheduleForSpace: vi.fn(async () => ({
+      scope: 'schema_and_data',
+      dataFrequency: 'monthly',
+      schemaFrequency: null,
+    })),
     // Setup promotion: defaults to a no-op vi.fn(). Tests asserting on it
     // override; tests not asserting don't care.
     promoteSpaceIfReady: vi.fn(async () => {}),
@@ -212,9 +219,13 @@ describe('handlePatch', () => {
 
   // Phase B: SpaceDO hand-off ─────────────────────────────────────────────
 
-  it('calls onScheduledFrequencyChange with the new frequency on a successful PATCH', async () => {
+  it('hands off the full post-upsert schedule on a successful schedule PATCH', async () => {
+    const schedule = { scope: 'schema_and_data', dataFrequency: 'daily', schemaFrequency: null }
     const onScheduledFrequencyChange = vi.fn(async () => undefined)
-    const d = makeDeps({ onScheduledFrequencyChange })
+    const d = makeDeps({
+      onScheduledFrequencyChange,
+      fetchScheduleForSpace: vi.fn(async () => schedule),
+    })
     const res = await handlePatch({
       account: makeAccount(),
       spaceId: SPACE_ID,
@@ -222,7 +233,25 @@ describe('handlePatch', () => {
       ...d,
     })
     expect(res.status).toBe(200)
-    expect(onScheduledFrequencyChange).toHaveBeenCalledWith(SPACE_ID, 'daily')
+    expect(onScheduledFrequencyChange).toHaveBeenCalledWith(SPACE_ID, schedule)
+  })
+
+  it('persists scope + schema cadence and fires the hand-off (server-backup-scope)', async () => {
+    const onScheduledFrequencyChange = vi.fn(async () => undefined)
+    const d = makeDeps({ onScheduledFrequencyChange })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { scope: 'schema_only', schemaFrequency: 'daily' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+    expect(d.upsertConfig).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      scope: 'schema_only',
+      schemaFrequency: 'daily',
+    })
+    expect(onScheduledFrequencyChange).toHaveBeenCalled()
   })
 
   it('does NOT call onScheduledFrequencyChange when only storageType changed', async () => {
@@ -237,12 +266,13 @@ describe('handlePatch', () => {
     expect(onScheduledFrequencyChange).not.toHaveBeenCalled()
   })
 
-  it("does NOT call onScheduledFrequencyChange for frequency='instant' (out of scope)", async () => {
+  it("accepts frequency='instant' and still fires the hand-off (engine ignores the un-schedulable cadence)", async () => {
+    // Pre-dual, the route skipped the hand-off for instant. Now it always
+    // hands off the full schedule; the engine's parseScheduleBody rejects an
+    // instant cadence (so no alarm is armed for it) while still arming any
+    // schedulable schema cadence on the same Space. The route swallows the
+    // engine's 400. 'instant' needs Business+ per Features §6.1.
     const onScheduledFrequencyChange = vi.fn(async () => undefined)
-    // 'instant' is only allowed at Business+ per Features §6.1 — use that
-    // tier so the policy doesn't reject the body before we get to the
-    // hand-off decision. The point of the test is the hand-off skip,
-    // not the tier gate.
     const d = makeDeps({
       onScheduledFrequencyChange,
       resolveTier: vi.fn(async () => 'business' as const),
@@ -250,13 +280,11 @@ describe('handlePatch', () => {
     const res = await handlePatch({
       account: makeAccount(),
       spaceId: SPACE_ID,
-      // The PATCH should accept the new frequency but skip the SpaceDO
-      // hand-off — instant is webhook-driven (separate change).
       body: { frequency: 'instant' },
       ...d,
     })
     expect(res.status).toBe(200)
-    expect(onScheduledFrequencyChange).not.toHaveBeenCalled()
+    expect(onScheduledFrequencyChange).toHaveBeenCalled()
   })
 
   it('still returns 200 when the SpaceDO hand-off throws (best-effort)', async () => {

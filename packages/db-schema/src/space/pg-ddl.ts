@@ -5,7 +5,7 @@
  * (workerd, no filesystem), so it cannot read the .sql migration at runtime —
  * it needs the DDL bundled. This module is the bundled copy.
  *
- * GENERATED FROM migrations/space-pg/0000_dark_mister_sinister.sql by scripts/gen-space-pg-ddl.mjs — DO NOT HAND-EDIT.
+ * GENERATED FROM migrations/space-pg/0000_luxuriant_silver_surfer.sql by scripts/gen-space-pg-ddl.mjs — DO NOT HAND-EDIT.
  * tests/space-pg-ddl-parity.test.ts asserts this stays in lockstep with that
  * migration (drift fails CI). Regenerate after a per-Space schema change:
  *   node packages/db-schema/scripts/gen-space-pg-ddl.mjs
@@ -72,6 +72,26 @@ CREATE TABLE "bo_at_bases" (
 	"last_seen_run" uuid
 );
 --> statement-breakpoint
+CREATE TABLE "bo_at_chat_messages" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"thread_id" uuid NOT NULL,
+	"role" text NOT NULL,
+	"status" text DEFAULT 'complete' NOT NULL,
+	"content" text DEFAULT '' NOT NULL,
+	"created_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_chat_threads" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"title" text DEFAULT 'New chat' NOT NULL,
+	"archived" boolean DEFAULT false NOT NULL,
+	"scope" jsonb,
+	"attached_doc_ids" jsonb,
+	"created_by_user_id" uuid,
+	"created_at" timestamp with time zone,
+	"updated_at" timestamp with time zone
+);
+--> statement-breakpoint
 CREATE TABLE "bo_at_document_diagrams" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"document_id" uuid NOT NULL,
@@ -136,6 +156,38 @@ CREATE TABLE "bo_at_health_issues" (
 	"message" text NOT NULL,
 	"occurrence_count" integer,
 	"airtable_deeplink" text
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_health_metric_overrides" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"rule_id" text NOT NULL,
+	"target_type" text NOT NULL,
+	"target_id" text NOT NULL,
+	"prompt" text NOT NULL,
+	"updated_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_health_metric_prompts" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"rule_id" text NOT NULL,
+	"prompt" text NOT NULL,
+	"updated_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_health_metric_scores" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"base_id" text NOT NULL,
+	"rule_id" text NOT NULL,
+	"run_id" uuid NOT NULL,
+	"score" integer NOT NULL,
+	"last_generated_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_health_metric_state" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"base_id" text NOT NULL,
+	"rule_id" text NOT NULL,
+	"enabled" boolean DEFAULT true NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "bo_at_health_scores" (
@@ -226,6 +278,21 @@ CREATE TABLE "bo_at_schema_versions" (
 	"first_seen_run" uuid
 );
 --> statement-breakpoint
+CREATE TABLE "bo_at_synced_view_candidates" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"base_id" text NOT NULL,
+	"source_table_id" text NOT NULL,
+	"dest_table_id" text NOT NULL,
+	"status" text DEFAULT 'inferred' NOT NULL,
+	"origin" text DEFAULT 'inferred' NOT NULL,
+	"match_score" integer,
+	"matched_pairs" jsonb,
+	"first_seen_run" uuid,
+	"last_seen_run" uuid,
+	"created_at" timestamp with time zone,
+	"updated_at" timestamp with time zone
+);
+--> statement-breakpoint
 CREATE TABLE "bo_at_tables" (
 	"table_id" text PRIMARY KEY NOT NULL,
 	"base_id" text NOT NULL,
@@ -263,6 +330,7 @@ CREATE INDEX "bo_at_attachments_hash_idx" ON "bo_at_attachments" USING btree ("c
 CREATE INDEX "bo_at_automations_base_idx" ON "bo_at_automations" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_base_runs_backup_run_idx" ON "bo_at_base_runs" USING btree ("backup_run_id");--> statement-breakpoint
 CREATE INDEX "bo_at_base_runs_base_idx" ON "bo_at_base_runs" USING btree ("base_id");--> statement-breakpoint
+CREATE INDEX "bo_at_chat_messages_thread_idx" ON "bo_at_chat_messages" USING btree ("thread_id");--> statement-breakpoint
 CREATE INDEX "bo_at_document_diagrams_doc_idx" ON "bo_at_document_diagrams" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "bo_at_document_links_doc_idx" ON "bo_at_document_links" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "bo_at_document_tags_doc_idx" ON "bo_at_document_tags" USING btree ("document_id");--> statement-breakpoint
@@ -270,6 +338,10 @@ CREATE INDEX "bo_at_document_tags_target_idx" ON "bo_at_document_tags" USING btr
 CREATE UNIQUE INDEX "bo_at_document_tags_uq" ON "bo_at_document_tags" USING btree ("document_id","target_type","target_id");--> statement-breakpoint
 CREATE INDEX "bo_at_fields_table_idx" ON "bo_at_fields" USING btree ("table_id");--> statement-breakpoint
 CREATE INDEX "bo_at_health_issues_base_idx" ON "bo_at_health_issues" USING btree ("base_id");--> statement-breakpoint
+CREATE INDEX "bo_at_health_metric_overrides_rule_idx" ON "bo_at_health_metric_overrides" USING btree ("rule_id");--> statement-breakpoint
+CREATE INDEX "bo_at_health_metric_prompts_rule_idx" ON "bo_at_health_metric_prompts" USING btree ("rule_id");--> statement-breakpoint
+CREATE INDEX "bo_at_health_metric_scores_base_idx" ON "bo_at_health_metric_scores" USING btree ("base_id");--> statement-breakpoint
+CREATE INDEX "bo_at_health_metric_state_base_idx" ON "bo_at_health_metric_state" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_health_scores_base_idx" ON "bo_at_health_scores" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_interfaces_base_idx" ON "bo_at_interfaces" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_rfd_table_field_idx" ON "bo_at_record_field_data" USING btree ("table_id","field_id");--> statement-breakpoint
@@ -279,6 +351,8 @@ CREATE INDEX "bo_at_records_table_idx" ON "bo_at_records" USING btree ("table_id
 CREATE INDEX "bo_at_schema_updates_run_idx" ON "bo_at_schema_updates" USING btree ("run_id");--> statement-breakpoint
 CREATE INDEX "bo_at_schema_updates_entity_idx" ON "bo_at_schema_updates" USING btree ("entity_type","entity_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "bo_at_schema_versions_base_hash_uq" ON "bo_at_schema_versions" USING btree ("base_id","schema_hash");--> statement-breakpoint
+CREATE INDEX "bo_at_synced_view_candidates_base_idx" ON "bo_at_synced_view_candidates" USING btree ("base_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_synced_view_candidates_pair_uq" ON "bo_at_synced_view_candidates" USING btree ("base_id","source_table_id","dest_table_id");--> statement-breakpoint
 CREATE INDEX "bo_at_tables_base_idx" ON "bo_at_tables" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_views_table_idx" ON "bo_at_views" USING btree ("table_id");`;
 

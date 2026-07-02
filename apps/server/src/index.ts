@@ -28,6 +28,20 @@ import { runsDetailHandler } from "./pages/api/internal/runs/detail";
 import { spacesSetFrequencyHandler } from "./pages/api/internal/spaces/set-frequency";
 import { spacesProvisionDatabaseHandler } from "./pages/api/internal/spaces/provision-database";
 import { spacesSchemaSyncHandler } from "./pages/api/internal/spaces/schema-sync";
+import { spacesHealthSyncHandler } from "./pages/api/internal/spaces/health-sync";
+import { spacesHealthOverviewHandler } from "./pages/api/internal/spaces/health-overview";
+import { spacesRelationshipsOverviewHandler } from "./pages/api/internal/spaces/relationships-overview";
+import { spacesRelationshipsSyncHandler } from "./pages/api/internal/spaces/relationships-sync";
+import { spacesRelationshipsMutateHandler } from "./pages/api/internal/spaces/relationships-mutate";
+import { spacesChatThreadsHandler } from "./pages/api/internal/spaces/chat-threads";
+import { spacesChatThreadHandler } from "./pages/api/internal/spaces/chat-thread";
+import { spacesChatSendHandler } from "./pages/api/internal/spaces/chat-send";
+import { spacesChatMessageCompleteHandler } from "./pages/api/internal/spaces/chat-message-complete";
+import { spacesMigrateSchemaHandler } from "./pages/api/internal/spaces/migrate-schema";
+import { spacesHealthRerunHandler } from "./pages/api/internal/spaces/health-rerun";
+import { spacesHealthPromptHandler } from "./pages/api/internal/spaces/health-prompt";
+import { spacesHealthEnableHandler } from "./pages/api/internal/spaces/health-enable";
+import { spacesHealthConfigHandler } from "./pages/api/internal/spaces/health-config";
 import { spacesRecordsSyncHandler } from "./pages/api/internal/spaces/records-sync";
 import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
 import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
@@ -35,6 +49,8 @@ import { spacesDocumentsHandler } from "./pages/api/internal/spaces/documents";
 import { spacesDocumentHandler } from "./pages/api/internal/spaces/document";
 import { spacesDocsByEntityHandler } from "./pages/api/internal/spaces/docs-by-entity";
 import { spacesSchemaReadHandler } from "./pages/api/internal/spaces/schema-read";
+import { cleanupPlanHandler } from "./pages/api/internal/cleanup-plan";
+import { cleanupCompleteHandler } from "./pages/api/internal/cleanup-complete";
 import {
   attachmentsLookupHandler,
   attachmentsRecordHandler,
@@ -62,6 +78,38 @@ const SPACES_PROVISION_DATABASE_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/provision-database$/;
 const SPACES_SCHEMA_SYNC_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/schema-sync$/;
+const SPACES_HEALTH_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/health-sync$/;
+const SPACES_HEALTH_OVERVIEW_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/health-overview$/;
+// Health Pro+ config + re-run (server-schema-health-scoring §4.2c).
+const SPACES_HEALTH_CONFIG_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/health-config$/;
+const SPACES_HEALTH_RERUN_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/health-rerun$/;
+const SPACES_HEALTH_PROMPT_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/health-prompt$/;
+const SPACES_HEALTH_ENABLE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/health-enable$/;
+// Relationships tab (server-relationships).
+const SPACES_RELATIONSHIPS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/relationships$/;
+const SPACES_RELATIONSHIPS_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/relationships\/sync$/;
+const SPACES_RELATIONSHIPS_MUTATE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/relationships\/mutate$/;
+// Chat tab (server-schema-chat).
+const SPACES_CHAT_THREADS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/chat\/threads$/;
+const SPACES_CHAT_THREAD_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/chat\/threads\/([^/]+)$/;
+const SPACES_CHAT_SEND_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/chat\/send$/;
+const SPACES_CHAT_MESSAGE_COMPLETE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/chat\/message-complete$/;
+// In-place per-Space schema upgrade (system-per-space-upgrade).
+const SPACES_MIGRATE_SCHEMA_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/migrate-schema$/;
 const SPACES_RECORDS_SYNC_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/records-sync$/;
 const SPACES_RESCAN_BASES_RE =
@@ -127,6 +175,17 @@ export default {
       }
       if (url.pathname === "/api/internal/__trigger-smoke") {
         return await triggerSmokeHandler(request, env, ctx, locals);
+      }
+
+      // Retention cleanup (openspec/changes/server-retention-and-cleanup):
+      // cleanup-plan returns the per-pass delete plan (the workflows cron then
+      // deletes the storage objects); cleanup-complete soft-deletes the rows
+      // (deleted_at) the cron confirmed. Both POST-only; handlers return 405.
+      if (url.pathname === "/api/internal/cleanup-plan") {
+        return await cleanupPlanHandler(request, env, ctx, locals);
+      }
+      if (url.pathname === "/api/internal/cleanup-complete") {
+        return await cleanupCompleteHandler(request, env, ctx, locals);
       }
 
       // PoC-only DO smoke test: forwards to ConnectionDO by stable name.
@@ -328,6 +387,76 @@ export default {
       const recordsSync = SPACES_RECORDS_SYNC_RE.exec(url.pathname);
       if (recordsSync) {
         return await spacesRecordsSyncHandler(request, env, ctx, locals, recordsSync[1]!);
+      }
+
+      const healthSync = SPACES_HEALTH_SYNC_RE.exec(url.pathname);
+      if (healthSync) {
+        return await spacesHealthSyncHandler(request, env, ctx, locals, healthSync[1]!);
+      }
+
+      const healthOverview = SPACES_HEALTH_OVERVIEW_RE.exec(url.pathname);
+      if (healthOverview) {
+        return await spacesHealthOverviewHandler(request, env, ctx, locals, healthOverview[1]!);
+      }
+
+      const healthConfig = SPACES_HEALTH_CONFIG_RE.exec(url.pathname);
+      if (healthConfig) {
+        return await spacesHealthConfigHandler(request, env, ctx, locals, healthConfig[1]!);
+      }
+
+      const healthRerun = SPACES_HEALTH_RERUN_RE.exec(url.pathname);
+      if (healthRerun) {
+        return await spacesHealthRerunHandler(request, env, ctx, locals, healthRerun[1]!);
+      }
+
+      const healthPrompt = SPACES_HEALTH_PROMPT_RE.exec(url.pathname);
+      if (healthPrompt) {
+        return await spacesHealthPromptHandler(request, env, ctx, locals, healthPrompt[1]!);
+      }
+
+      const healthEnable = SPACES_HEALTH_ENABLE_RE.exec(url.pathname);
+      if (healthEnable) {
+        return await spacesHealthEnableHandler(request, env, ctx, locals, healthEnable[1]!);
+      }
+
+      const relSync = SPACES_RELATIONSHIPS_SYNC_RE.exec(url.pathname);
+      if (relSync) {
+        return await spacesRelationshipsSyncHandler(request, env, ctx, locals, relSync[1]!);
+      }
+
+      const relMutate = SPACES_RELATIONSHIPS_MUTATE_RE.exec(url.pathname);
+      if (relMutate) {
+        return await spacesRelationshipsMutateHandler(request, env, ctx, locals, relMutate[1]!);
+      }
+
+      const relOverview = SPACES_RELATIONSHIPS_RE.exec(url.pathname);
+      if (relOverview) {
+        return await spacesRelationshipsOverviewHandler(request, env, ctx, locals, relOverview[1]!);
+      }
+
+      const chatThread = SPACES_CHAT_THREAD_RE.exec(url.pathname);
+      if (chatThread) {
+        return await spacesChatThreadHandler(request, env, ctx, locals, chatThread[1]!, chatThread[2]!);
+      }
+
+      const chatThreads = SPACES_CHAT_THREADS_RE.exec(url.pathname);
+      if (chatThreads) {
+        return await spacesChatThreadsHandler(request, env, ctx, locals, chatThreads[1]!);
+      }
+
+      const chatSend = SPACES_CHAT_SEND_RE.exec(url.pathname);
+      if (chatSend) {
+        return await spacesChatSendHandler(request, env, ctx, locals, chatSend[1]!);
+      }
+
+      const chatMessageComplete = SPACES_CHAT_MESSAGE_COMPLETE_RE.exec(url.pathname);
+      if (chatMessageComplete) {
+        return await spacesChatMessageCompleteHandler(request, env, ctx, locals, chatMessageComplete[1]!);
+      }
+
+      const migrateSchema = SPACES_MIGRATE_SCHEMA_RE.exec(url.pathname);
+      if (migrateSchema) {
+        return await spacesMigrateSchemaHandler(request, env, ctx, locals, migrateSchema[1]!);
       }
 
       // Workspace rediscovery — manual rescan. apps/web's POST
