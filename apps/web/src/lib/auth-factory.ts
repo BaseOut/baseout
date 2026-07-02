@@ -62,7 +62,9 @@ const DEV_TRUSTED_ORIGINS = ['https://baseout.local:*', 'http://baseout.local:*'
 // the Vite-baked `import.meta.env.DEV` flag) keeps this in lockstep with the
 // handoff-cookie helper in oauth/local-dev-secure.ts. Returns undefined for
 // deployed/prod hosts so better-auth keeps its Secure default there.
-function resolveUseSecureCookies(baseUrl: string | undefined): false | undefined {
+// Exported for /api/internal/test/auth-config, which reports the resolved
+// cookie mode so session-cookie drift is probeable without a browser.
+export function resolveUseSecureCookies(baseUrl: string | undefined): false | undefined {
   if (!baseUrl) return undefined
   try {
     return isLocalDevHost(new URL(baseUrl).hostname) ? false : undefined

@@ -29,7 +29,7 @@ vi.mock('cloudflare:workers', () => ({
   },
 }))
 
-import { isPublicRoute } from './middleware'
+import { buildLoginRedirect, isPublicRoute } from './middleware'
 
 describe('isPublicRoute', () => {
   describe('OAuth callback paths — MUST be public (regression: 2026-06-01 4d2ddfc)', () => {
@@ -109,5 +109,32 @@ describe('isPublicRoute', () => {
     it('a callback path with a trailing segment is NOT public', () => {
       expect(isPublicRoute('/api/connections/airtable/callback/extra')).toBe(false)
     })
+  })
+})
+
+// Pins the unauthenticated-page bounce target. Preserving the original
+// destination as ?returnTo= means a transient session-cookie loss (e.g. a
+// browser withholding the SameSite=Lax cookie on the cross-site return from
+// an OAuth provider — the 2026-07-02 Box incident) costs the user one login
+// instead of stranding them at the app root with no context.
+describe('buildLoginRedirect', () => {
+  it('carries the original path + query as returnTo', () => {
+    expect(buildLoginRedirect('/destinations', '?connected=box')).toBe(
+      '/login?returnTo=%2Fdestinations%3Fconnected%3Dbox',
+    )
+  })
+
+  it('carries a bare path without a query', () => {
+    expect(buildLoginRedirect('/backups', '')).toBe(
+      '/login?returnTo=%2Fbackups',
+    )
+  })
+
+  it('omits returnTo for the app root (the default post-login landing)', () => {
+    expect(buildLoginRedirect('/', '')).toBe('/login')
+  })
+
+  it('omits returnTo for paths the sanitizer rejects', () => {
+    expect(buildLoginRedirect('/api/foo', '')).toBe('/login')
   })
 })

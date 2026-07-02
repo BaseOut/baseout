@@ -41,4 +41,30 @@ describe('validateReturnTo', () => {
     expect(validateReturnTo('', { dev: true })).toBeNull()
     expect(validateReturnTo('not a url', { dev: true })).toBeNull()
   })
+
+  // Same-app relative paths — added for the middleware login bounce
+  // (`/login?returnTo=<path>`), so a transient session-cookie loss (e.g. the
+  // 2026-07-02 post-Box-OAuth bounce) returns the user where they were going
+  // instead of stranding them at the app root.
+  describe('same-app relative paths', () => {
+    it('accepts a plain app path in any env', () => {
+      expect(validateReturnTo('/destinations', { dev: true })).toBe('/destinations')
+      expect(validateReturnTo('/destinations', { dev: false })).toBe('/destinations')
+    })
+
+    it('accepts a path with a query string', () => {
+      expect(validateReturnTo('/destinations?connected=box', { dev: false })).toBe(
+        '/destinations?connected=box',
+      )
+    })
+
+    it('rejects protocol-relative and backslash-escape forms', () => {
+      expect(validateReturnTo('//evil.example.com', { dev: true })).toBeNull()
+      expect(validateReturnTo('/\\evil.example.com', { dev: true })).toBeNull()
+    })
+
+    it('rejects API paths', () => {
+      expect(validateReturnTo('/api/auth/get-session', { dev: true })).toBeNull()
+    })
+  })
 })

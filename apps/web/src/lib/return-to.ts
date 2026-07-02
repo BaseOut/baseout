@@ -11,6 +11,8 @@
 // deployed admin origin). Everything else returns null → caller falls back to
 // the default post-login destination.
 
+import { sanitizeReturnTo } from './airtable/return-to'
+
 export interface ReturnToOptions {
   dev: boolean
   allowedOrigins?: string[]
@@ -21,6 +23,14 @@ export function validateReturnTo(
   opts: ReturnToOptions,
 ): string | null {
   if (!raw) return null
+
+  // Same-app relative paths (set by the middleware's /login bounce) are safe
+  // in every env — the browser resolves them against the current origin, so
+  // they cannot redirect off-site. Reuses the OAuth returnTo sanitizer for
+  // one shared definition of "relative app path".
+  if (raw.startsWith('/')) {
+    return sanitizeReturnTo(raw)
+  }
 
   let url: URL
   try {

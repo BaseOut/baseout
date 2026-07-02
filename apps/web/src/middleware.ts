@@ -9,6 +9,7 @@ import {
   SESSION_TTL_MS,
 } from "./lib/session-cache";
 import { rewriteLocalhostTrapUrl } from "./lib/oauth/canonical-dev-origin";
+import { sanitizeReturnTo } from "./lib/airtable/return-to";
 
 const PUBLIC_PATHS = new Set(['/login', '/register']);
 
@@ -53,6 +54,18 @@ export function isPublicRoute(pathname: string): boolean {
     return true;
   }
   return false;
+}
+
+// Where to send an unauthenticated page request. Carrying the original
+// destination as ?returnTo= (validated again by /login before use) means a
+// transient session-cookie loss — e.g. a browser withholding the
+// SameSite=Lax cookie on the cross-site return from an OAuth provider, the
+// 2026-07-02 Box incident — costs one login instead of stranding the user
+// at the app root. Pinned by src/middleware.test.ts.
+export function buildLoginRedirect(pathname: string, search: string): string {
+  const target = sanitizeReturnTo(`${pathname}${search}`);
+  if (!target || target === '/') return '/login';
+  return `/login?returnTo=${encodeURIComponent(target)}`;
 }
 
 function buildAuthEnv(): Parameters<typeof createAppAuth>[1] {
@@ -167,14 +180,20 @@ export const onRequest = defineMiddleware(async (context, next) => {
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      return context.redirect('/login');
+      return context.redirect(
+        buildLoginRedirect(context.url.pathname, context.url.search),
+      );
     }
 
     const gate = applyOnboardingGate(context);
     if (gate) return gate;
 
     if (session && (context.url.pathname === '/login' || context.url.pathname === '/register')) {
-      return context.redirect('/');
+      // Honor a validated same-app returnTo so a user whose session cookie
+      // reappears by the time they land on /login (transient withholding)
+      // continues to their original destination instead of the root.
+      const returnTo = sanitizeReturnTo(context.url.searchParams.get('returnTo'));
+      return context.redirect(returnTo ?? '/');
     }
 
     return await next();
