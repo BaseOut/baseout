@@ -28,6 +28,7 @@ import { exchangeCodeForTokens } from '../../../../../lib/dropbox/oauth'
 import { persistDropboxDestination } from '../../../../../lib/dropbox/persist'
 import { sanitizeReturnTo } from '../../../../../lib/airtable/return-to'
 import { shouldSetSecureOAuthCookie } from '../../../../../lib/oauth/local-dev-secure'
+import { resolvePostOAuthReturnLocation } from '../../../../../lib/oauth/canonical-dev-origin'
 
 function appendQuery(path: string, key: string, value: string): string {
   const sep = path.includes('?') ? '&' : '?'
@@ -55,6 +56,7 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
     DROPBOX_OAUTH_CLIENT_ID?: string
     DROPBOX_OAUTH_CLIENT_SECRET?: string
     BASEOUT_ENCRYPTION_KEY?: string
+    PUBLIC_AUTH_BASE_URL?: string
   }
 
   const sealed = readHandoffCookie(request.headers.get('cookie'))
@@ -67,8 +69,11 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
     }
   }
   const returnTo = sanitizeReturnTo(handoff?.returnTo) ?? '/backups'
-  const failUrl = (code: string) => appendQuery(returnTo, 'storage_error', code)
-  const successUrl = appendQuery(returnTo, 'connected', 'dropbox')
+  const toLocation = (path: string) =>
+    resolvePostOAuthReturnLocation(path, workerEnv.PUBLIC_AUTH_BASE_URL)
+  const failUrl = (code: string) =>
+    toLocation(appendQuery(returnTo, 'storage_error', code))
+  const successUrl = toLocation(appendQuery(returnTo, 'connected', 'dropbox'))
 
   const dbxError = url.searchParams.get('error')
   if (dbxError) {

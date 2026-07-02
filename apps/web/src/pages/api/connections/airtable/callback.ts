@@ -31,6 +31,7 @@ import {
   resolveSuccessRedirect,
 } from '../../../../lib/airtable/success-redirect'
 import { shouldSetSecureOAuthCookie } from '../../../../lib/oauth/local-dev-secure'
+import { resolvePostOAuthReturnLocation } from '../../../../lib/oauth/canonical-dev-origin'
 import { backupConfigurations } from '../../../../db/schema'
 import { eq } from 'drizzle-orm'
 
@@ -56,6 +57,7 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
     AIRTABLE_OAUTH_CLIENT_SECRET?: string
     BASEOUT_ENCRYPTION_KEY?: string
     AIRTABLE_STUBS_ENABLED?: string
+    PUBLIC_AUTH_BASE_URL?: string
   }
 
   // Open the handoff cookie up front so error redirects can land on the
@@ -71,7 +73,10 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
     }
   }
   const returnTo = sanitizeReturnTo(handoff?.returnTo) ?? '/'
-  const failUrl = (code: string) => appendQuery(returnTo, 'error', code)
+  const toLocation = (path: string) =>
+    resolvePostOAuthReturnLocation(path, workerEnv.PUBLIC_AUTH_BASE_URL)
+  const failUrl = (code: string) =>
+    toLocation(appendQuery(returnTo, 'error', code))
 
   const airtableError = url.searchParams.get('error')
   if (airtableError) {
@@ -169,7 +174,7 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
   }
 
   return redirectWith(
-    resolveSuccessRedirect({ returnTo, hasBackupConfig }),
+    toLocation(resolveSuccessRedirect({ returnTo, hasBackupConfig })),
     clearCookie,
   )
 }
