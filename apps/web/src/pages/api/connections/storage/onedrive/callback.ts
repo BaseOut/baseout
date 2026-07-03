@@ -30,6 +30,7 @@ import {
   type OAuthHandoffPayload,
 } from '../../../../../lib/onedrive/cookie'
 import { exchangeCodeForTokens } from '../../../../../lib/onedrive/oauth'
+import { promoteStorageTypeIfDefault } from '../../../../../lib/backup-config/storage-type'
 import { persistOneDriveDestination } from '../../../../../lib/onedrive/persist'
 import { sanitizeReturnTo } from '../../../../../lib/airtable/return-to'
 import { shouldSetSecureOAuthCookie } from '../../../../../lib/oauth/local-dev-secure'
@@ -164,6 +165,9 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
         providerFolderId: folder.id,
       },
     )
+    // First BYOS connect becomes the primary destination; an explicitly
+    // chosen BYOS primary is never displaced (shared-multi-destinations).
+    await promoteStorageTypeIfDefault(locals.db, handoff.spaceId, 'onedrive')
   } catch {
     return redirectWith(failUrl('persist_failed'), clearCookie)
   }

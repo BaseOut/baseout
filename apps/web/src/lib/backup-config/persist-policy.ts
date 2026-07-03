@@ -9,10 +9,11 @@
  *   - `frequency` must be a known label AND allowed by the org's tier
  *     capability (Features §6.1). Otherwise → invalid_request /
  *     frequency_not_allowed.
- *   - `storageType` is restricted to `r2_managed` for MVP per Phase 10a
- *     scope. Other values → unsupported_storage_type even if syntactically
- *     correct. The StoragePicker UI prevents this in normal use; this
- *     check is defense-in-depth.
+ *   - `storageType` must be in ALLOWED_STORAGE_TYPES (managed defaults +
+ *     every landed BYOS provider). Other values → unsupported_storage_type
+ *     even if syntactically correct. The route additionally requires a
+ *     connected destination row for BYOS values (swap-primary validation,
+ *     shared-multi-destinations); this shape check is defense-in-depth.
  *
  * Mirrors the start.ts DI pattern: the route owns the DB upsert, this
  * helper validates + dispatches via a vi.fn-able dep.
@@ -108,7 +109,7 @@ export async function persistBackupConfigPolicy(
     frequency = v as Frequency
   }
 
-  // 3. Validate storageType type + MVP restriction.
+  // 3. Validate storageType type + allow-list membership.
   let storageType: string | undefined
   if ('storageType' in input.body) {
     const v = input.body.storageType

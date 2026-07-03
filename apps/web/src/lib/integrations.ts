@@ -55,7 +55,7 @@ export const EMPTY_INTEGRATIONS_STATE: IntegrationsState = {
     nextScheduledAt: null,
     autoAddFutureBases: false,
   },
-  storageDestination: null,
+  storageDestinations: [],
   unreadEvents: [],
 }
 
@@ -137,6 +137,7 @@ export async function getIntegrationsState(
       .orderBy(desc(spaceEvents.createdAt))
       .limit(10),
     // Client-safe columns only — never select the *_enc token ciphertext.
+    // One row per provider type (multi-destination); most recent first.
     db
       .select({
         type: storageDestinations.type,
@@ -145,7 +146,7 @@ export async function getIntegrationsState(
       })
       .from(storageDestinations)
       .where(eq(storageDestinations.spaceId, spaceId))
-      .limit(1),
+      .orderBy(desc(storageDestinations.connectedAt)),
   ])
 
   const [config] = configRows
@@ -208,17 +209,15 @@ export async function getIntegrationsState(
     }
   })
 
-  const [destination] = destinationRows
-  const storageDestination: StorageDestinationSummary | null = destination
-    ? {
-        type: destination.type,
-        accountEmail: destination.accountEmail ?? null,
-        connectedAt:
-          destination.connectedAt instanceof Date
-            ? destination.connectedAt.toISOString()
-            : String(destination.connectedAt),
-      }
-    : null
+  const storageDestinationSummaries: StorageDestinationSummary[] =
+    destinationRows.map((destination) => ({
+      type: destination.type,
+      accountEmail: destination.accountEmail ?? null,
+      connectedAt:
+        destination.connectedAt instanceof Date
+          ? destination.connectedAt.toISOString()
+          : String(destination.connectedAt),
+    }))
 
   const policy: BackupPolicy = {
     frequency: asFrequency(config?.frequency ?? null),
@@ -274,7 +273,7 @@ export async function getIntegrationsState(
     availableFrequencies: caps.capabilities.frequencies,
     hasBackupConfig: Boolean(config),
     policy,
-    storageDestination,
+    storageDestinations: storageDestinationSummaries,
     unreadEvents,
   }
 }

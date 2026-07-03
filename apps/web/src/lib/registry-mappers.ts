@@ -39,7 +39,10 @@ export function toSourceSummary(
         spaceId,
         spaceName,
         baseCount: includedCount,
-        destinations: state.storageDestination ? '1 destination' : 'No destination',
+        destinations:
+          state.storageDestinations.length > 0
+            ? `${state.storageDestinations.length} destination${state.storageDestinations.length === 1 ? '' : 's'}`
+            : 'No destination',
         schedule: state.policy?.frequency ?? '—',
         lastBackup: null,
         status: status === 'connected' ? 'ok' : 'paused',
@@ -53,40 +56,45 @@ export function toSourceSummary(
 /** Local disk is the dev-only managed type; otherwise fall back to the raw slug. */
 const LOCAL_FS_META = { label: 'Local disk', kind: 'file' as const };
 
-/** Map the active Space's storage destination → DestinationSummary[] (0 or 1). */
+/**
+ * Map the active Space's connected storage destinations → DestinationSummary[]
+ * (one per provider type). `id` is the provider type — unique per Space under
+ * the (space_id, type) constraint — and `primary` marks the one backups write
+ * to (type === policy.storageType; false everywhere when the config points at
+ * row-less r2_managed).
+ */
 export function toDestinationSummaries(
   state: IntegrationsState,
-  spaceId: string,
+  _spaceId: string,
   spaceName: string,
 ): DestinationSummary[] {
-  const sd = state.storageDestination;
-  if (!sd) return [];
-  // Provider label + kind come from the shared catalog (provider-catalog.ts) so
-  // the registry and the per-Space StoragePicker can't disagree; local_fs is
-  // dev-only and not in the catalog, and unknown types fall back to the slug.
-  const meta =
-    sd.type === 'local_fs'
-      ? LOCAL_FS_META
-      : destinationMeta(sd.type) ?? { label: sd.type, kind: 'file' as const };
-  // Status is honestly 'connected': a storage_destinations row exists ONLY once
-  // the destination has been connected (the BYOS OAuth callback / managed default
-  // writes it), so a present destination is always connected — note a connected
-  // BYOS provider may still have a null accountEmail. The account-level
-  // needs_connection / reconnect states await real per-destination persistence
-  // (shared-destinations "Engineer" handoff); they're exercised in the harness.
-  const managed = isManagedDestination(sd.type);
-  return [
-    {
-      id: spaceId,
+  return state.storageDestinations.map((sd) => {
+    // Provider label + kind come from the shared catalog (provider-catalog.ts) so
+    // the registry and the per-Space StoragePicker can't disagree; local_fs is
+    // dev-only and not in the catalog, and unknown types fall back to the slug.
+    const meta =
+      sd.type === 'local_fs'
+        ? LOCAL_FS_META
+        : destinationMeta(sd.type) ?? { label: sd.type, kind: 'file' as const };
+    // Status is honestly 'connected': a storage_destinations row exists ONLY once
+    // the destination has been connected (the BYOS OAuth callback / managed default
+    // writes it), so a present destination is always connected — note a connected
+    // BYOS provider may still have a null accountEmail. The account-level
+    // needs_connection / reconnect states await real per-destination persistence
+    // (shared-destinations "Engineer" handoff); they're exercised in the harness.
+    const managed = isManagedDestination(sd.type);
+    return {
+      id: sd.type,
       name: `${meta.label} backup`,
       kind: meta.kind,
       provider: sd.type,
       providerLabel: meta.label,
-      status: 'connected',
+      status: 'connected' as const,
+      primary: sd.type === state.policy.storageType,
       detail: !managed && sd.accountEmail ? `Connected as ${sd.accountEmail}` : `/Baseout/${spaceName}`,
       inUseBy: [spaceName],
       lastWrite: null,
       addedAt: sd.connectedAt,
-    },
-  ];
+    };
+  });
 }

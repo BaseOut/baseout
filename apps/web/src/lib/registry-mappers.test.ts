@@ -10,7 +10,7 @@ function state(overrides: Partial<IntegrationsState> = {}): IntegrationsState {
     availableFrequencies: ['monthly'],
     hasBackupConfig: false,
     policy: { frequency: 'monthly', scope: 'schema_and_data', schemaFrequency: null, schemaNextScheduledAt: null, storageType: 'r2_managed', nextScheduledAt: null, autoAddFutureBases: false },
-    storageDestination: null,
+    storageDestinations: [],
     unreadEvents: [],
     ...overrides,
   }
@@ -42,7 +42,7 @@ describe('toDestinationSummaries', () => {
   })
 
   it('maps a persisted destination as Connected (a row exists only post-connect)', () => {
-    const [d] = toDestinationSummaries(state({ storageDestination: dest() }), 'space-1', 'Ops')
+    const [d] = toDestinationSummaries(state({ storageDestinations: [dest()] }), 'space-1', 'Ops')
     expect(d.status).toBe('connected')
     expect(d.providerLabel).toBe('Google Drive') // label comes from the shared catalog
     expect(d.kind).toBe('file')
@@ -51,7 +51,7 @@ describe('toDestinationSummaries', () => {
 
   it('treats a managed destination (r2_managed) as Connected with a folder detail', () => {
     const [d] = toDestinationSummaries(
-      state({ storageDestination: dest({ type: 'r2_managed', accountEmail: null }) }),
+      state({ storageDestinations: [dest({ type: 'r2_managed', accountEmail: null })] }),
       'space-1',
       'Ops',
     )
@@ -62,7 +62,7 @@ describe('toDestinationSummaries', () => {
 
   it('does NOT downgrade a connected BYOS destination that has no account email', () => {
     const [d] = toDestinationSummaries(
-      state({ storageDestination: dest({ type: 'box', accountEmail: null }) }),
+      state({ storageDestinations: [dest({ type: 'box', accountEmail: null })] }),
       'space-1',
       'Ops',
     )
@@ -72,12 +72,57 @@ describe('toDestinationSummaries', () => {
 
   it('falls back to the raw type for an unknown provider', () => {
     const [d] = toDestinationSummaries(
-      state({ storageDestination: dest({ type: 'mystery', accountEmail: null }) }),
+      state({ storageDestinations: [dest({ type: 'mystery', accountEmail: null })] }),
       'space-1',
       'Ops',
     )
     expect(d.providerLabel).toBe('mystery')
     expect(d.kind).toBe('file')
+  })
+
+  it('maps every connected destination with the provider type as its id', () => {
+    const ds = toDestinationSummaries(
+      state({
+        storageDestinations: [dest(), dest({ type: 'box', accountEmail: null })],
+      }),
+      'space-1',
+      'Ops',
+    )
+    expect(ds).toHaveLength(2)
+    expect(ds.map((d) => d.id)).toEqual(['google_drive', 'box'])
+  })
+
+  it('flags primary on the destination matching policy.storageType only', () => {
+    const ds = toDestinationSummaries(
+      state({
+        storageDestinations: [dest(), dest({ type: 'box', accountEmail: null })],
+        policy: {
+          frequency: 'monthly',
+          scope: 'schema_and_data',
+          schemaFrequency: null,
+          schemaNextScheduledAt: null,
+          storageType: 'box',
+          nextScheduledAt: null,
+          autoAddFutureBases: false,
+        },
+      }),
+      'space-1',
+      'Ops',
+    )
+    expect(ds.map((d) => [d.id, d.primary])).toEqual([
+      ['google_drive', false],
+      ['box', true],
+    ])
+  })
+
+  it('flags no primary when the config points at row-less r2_managed', () => {
+    // state()'s default policy.storageType is 'r2_managed'.
+    const ds = toDestinationSummaries(
+      state({ storageDestinations: [dest()] }),
+      'space-1',
+      'Ops',
+    )
+    expect(ds[0].primary).toBe(false)
   })
 })
 

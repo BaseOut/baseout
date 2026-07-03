@@ -356,6 +356,7 @@ export async function runBackupBase(
           engineBase,
           deps.internalToken,
           spaceId,
+          input.storageType,
         ));
     storageCreds = await fetchCreds(input.spaceId);
   } else if (!isSchemaOnly && input.storageType === "r2_managed") {
@@ -691,11 +692,17 @@ export async function defaultFetchStorageCreds(
   engineBase: string,
   internalToken: string,
   spaceId: string,
+  storageType: string,
 ): Promise<StorageWriterCreds | null> {
   const url = `${engineBase}/api/internal/spaces/${encodeURIComponent(spaceId)}/storage-destination`;
+  // Pin every read to the run's enqueue-time storageType. A Space holds one
+  // destination row per provider type (shared-multi-destinations); without
+  // the pin, a mid-run primary swap could flip which creds come back between
+  // the initial read and a ?refresh=1 re-read.
+  const typeQuery = `type=${encodeURIComponent(storageType)}`;
 
   async function read(refresh: boolean): Promise<StorageDestinationResponse> {
-    const target = refresh ? `${url}?refresh=1` : url;
+    const target = refresh ? `${url}?refresh=1&${typeQuery}` : `${url}?${typeQuery}`;
     const res = await fetchFn(target, {
       method: "GET",
       headers: { "x-internal-token": internalToken },

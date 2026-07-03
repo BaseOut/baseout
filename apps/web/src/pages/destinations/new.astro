@@ -3,20 +3,37 @@
  * Add an account-level destination. Honest-pending: a destination is per-Space
  * today, so "add" connects a destination for the active Space. Connecting itself
  * goes through the existing per-provider OAuth routes (BYOS) or the managed
- * local-fs connect.
+ * local-fs connect. Already-connected providers show a Connected badge and
+ * offer "Set as primary" instead of a fresh OAuth run (shared-multi-destinations).
  */
 import { env } from 'cloudflare:workers';
 import SidebarLayout from '../../layouts/SidebarLayout.astro';
 import DestinationAddView from '../../views/DestinationAddView.astro';
 import { getBreadcrumbs } from '../../lib/config';
+import { EMPTY_INTEGRATIONS_STATE, getIntegrationsState } from '../../lib/integrations';
 import { getDestinationProviders, type DestinationEnv } from '../../lib/provider-catalog';
 
-const spaceId = Astro.locals.account?.space?.id ?? null;
+const { account, db } = Astro.locals;
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
 const selectedType = Astro.url.searchParams.get('type');
 const providers = getDestinationProviders(env as unknown as DestinationEnv);
 const breadcrumbs = getBreadcrumbs('/destinations');
+
+const state =
+  orgId && spaceId && db ? await getIntegrationsState(db, orgId, spaceId) : EMPTY_INTEGRATIONS_STATE;
+const connectedTypes = state.storageDestinations.map((d) => d.type);
+const primaryType = connectedTypes.includes(state.policy.storageType)
+  ? state.policy.storageType
+  : null;
 ---
 
 <SidebarLayout pageTitle="Add destination" breadcrumbs={breadcrumbs}>
-  <DestinationAddView selectedType={selectedType} providers={providers} spaceId={spaceId} />
+  <DestinationAddView
+    selectedType={selectedType}
+    providers={providers}
+    spaceId={spaceId}
+    connectedTypes={connectedTypes}
+    primaryType={primaryType}
+  />
 </SidebarLayout>

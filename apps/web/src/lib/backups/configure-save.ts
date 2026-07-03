@@ -28,6 +28,8 @@ export interface ConfigureSaveInput {
   scope?: 'schema_only' | 'schema_and_data'
   /** server-backup-scope: schema-only cadence, or null to clear it. */
   schemaFrequency?: 'monthly' | 'weekly' | 'daily' | 'instant' | null
+  /** Selected primary destination (shared-multi-destinations). */
+  storageType?: string
   /** First-time setup: kick off the first backup right after saving. */
   runFirstBackup: boolean
 }
@@ -49,6 +51,8 @@ function describeSaveConfigError(error: SaveConfigError): string {
       return 'Please sign in again.'
     case 'network':
       return 'Network error — check your connection and try again.'
+    case 'destination_not_connected':
+      return 'Connect that destination before making it the primary.'
     default:
       return 'Could not save changes. Please try again.'
   }
@@ -64,13 +68,15 @@ export async function saveConfigureForm(
   if (
     input.frequency !== undefined ||
     input.scope !== undefined ||
-    input.schemaFrequency !== undefined
+    input.schemaFrequency !== undefined ||
+    input.storageType !== undefined
   ) {
     const saved = await saveConfigFn({
       spaceId: input.spaceId,
       frequency: input.frequency,
       scope: input.scope,
       schemaFrequency: input.schemaFrequency,
+      storageType: input.storageType,
     })
     if (!saved.ok) {
       return { ok: false, message: describeSaveConfigError(saved.error) }

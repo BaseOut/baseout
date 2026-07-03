@@ -51,6 +51,9 @@ const fileDestinations = destinations.filter((d) => d.kind === 'file');
 const dbDestinations = destinations.filter((d) => d.kind === 'database');
 const noSources = sources.length === 0;
 const noFileDest = fileDestinations.length === 0;
+// Pre-check the PRIMARY destination (the one backups write to); first row
+// when none is flagged (e.g. the config still points at row-less r2_managed).
+const hasPrimaryFileDest = fileDestinations.some((d) => d.primary);
 
 const statusChip = (s: string) =>
   s === 'connected' ? { cls: 'is-ok', label: 'Connected' } : { cls: 'is-warn', label: s === 'needs_connection' ? 'Needs connection' : 'Lost access' };
@@ -219,7 +222,7 @@ const initialSchemaFreq = state.policy.schemaFrequency ?? state.policy.frequency
                 const chip = statusChip(d.status);
                 return (
                   <label class="opt-opt">
-                    <input type="radio" name="wz-dest-file" value={d.id} checked={i === 0} class="radio radio-sm radio-primary" data-dest-file-radio />
+                    <input type="radio" name="wz-dest-file" value={d.provider} checked={hasPrimaryFileDest ? Boolean(d.primary) : i === 0} class="radio radio-sm radio-primary" data-dest-file-radio />
                     <span class="opt-ic"><span class="iconify lucide--hard-drive"></span></span>
                     <span class="min-w-0 flex-1">
                       <span class="opt-name">{d.name} <span class={`opt-chip ${chip.cls}`}>{chip.label}</span></span>
@@ -737,7 +740,11 @@ const initialSchemaFreq = state.policy.schemaFrequency ?? state.policy.frequency
           if (saveStatus) saveStatus.textContent = 'Could not save your base selection. Please try again.';
           return;
         }
-        const outcome = await saveConfigureForm({ spaceId: prodSpaceId!, frequency: chosenFrequency(), scope: chosenScope(), schemaFrequency: chosenSchemaFrequency(), runFirstBackup: runFirst });
+        // The selected file-destination radio carries the provider type —
+        // forwarding it swaps the primary destination (backup_configurations
+        // .storage_type). Undefined when the Space has no destination rows.
+        const chosenStorageType = $<HTMLInputElement>('[data-dest-file-radio]:checked')?.value || undefined;
+        const outcome = await saveConfigureForm({ spaceId: prodSpaceId!, frequency: chosenFrequency(), scope: chosenScope(), schemaFrequency: chosenSchemaFrequency(), storageType: chosenStorageType, runFirstBackup: runFirst });
         if (outcome.ok) { window.location.href = outcome.redirect; return; }
         setButtonLoading(btn, false);
         if (saveStatus) saveStatus.textContent = outcome.message;

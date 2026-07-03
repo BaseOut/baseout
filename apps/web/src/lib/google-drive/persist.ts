@@ -1,9 +1,10 @@
 /**
  * Persist a successful Google Drive OAuth round-trip into storage_destinations.
  *
- * UPSERTs the row keyed on `space_id` (UNIQUE per schema). Re-connecting
- * replaces the row in place. Tokens are encrypted via the master key before
- * insert; the engine reads them on backup-start via the internal route.
+ * UPSERTs the Drive row keyed on `(space_id, type)` (UNIQUE per schema) —
+ * re-connecting replaces only Drive's row; other providers' rows for the
+ * Space are untouched. Tokens are encrypted via the master key before insert;
+ * the engine reads them on backup-start via the internal route.
  */
 
 import { sql } from 'drizzle-orm'
@@ -62,9 +63,8 @@ export async function persistDriveDestination(
       lastValidatedAt: now,
     })
     .onConflictDoUpdate({
-      target: storageDestinations.spaceId,
+      target: [storageDestinations.spaceId, storageDestinations.type],
       set: {
-        type: sql`'google_drive'`,
         oauthAccessTokenEnc: sql`excluded.oauth_access_token_enc`,
         // Refresh tokens only come back on first consent (because we set
         // prompt=consent in the authorize URL). Replace iff the new exchange
@@ -88,7 +88,8 @@ export async function persistDriveDestination(
 }
 
 /**
- * Hard-delete the destination row for a Space. Used by the disconnect route.
+ * Hard-delete the Space's Drive destination row. Used by the disconnect
+ * route. Scoped to type='google_drive' so other providers' rows survive.
  * Returns the number of rows removed (0 or 1).
  */
 export async function deleteDriveDestination(
@@ -97,7 +98,9 @@ export async function deleteDriveDestination(
 ): Promise<{ removed: number }> {
   const result = await db
     .delete(storageDestinations)
-    .where(sql`${storageDestinations.spaceId} = ${spaceId}`)
+    .where(
+      sql`${storageDestinations.spaceId} = ${spaceId} AND ${storageDestinations.type} = 'google_drive'`,
+    )
     .returning({ id: storageDestinations.id })
   return { removed: result.length }
 }

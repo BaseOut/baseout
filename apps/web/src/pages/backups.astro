@@ -101,7 +101,10 @@ const spaceName = account?.space?.name ?? null;
 const storageType = integrations?.policy?.storageType ?? null;
 const destination =
   spaceId && hasAirtableConnection
-    ? describeDestination(storageType, integrations?.storageDestination ?? null)
+    ? describeDestination(
+        storageType,
+        integrations?.storageDestinations.find((d) => d.type === storageType) ?? null,
+      )
     : null;
 // When already on dev local-disk there's nothing to switch to; otherwise offer
 // a one-click switch so a Space stuck on an unconnected cloud provider can run.

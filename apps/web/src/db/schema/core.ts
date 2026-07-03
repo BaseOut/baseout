@@ -553,12 +553,13 @@ export const spaceEvents = baseout.table('space_events', {
 
 // ———————————————————————————————————————————————————————————————————————————
 // STORAGE DESTINATIONS
-// Per-Space BYOS destination. One row per Space (UNIQUE on space_id);
-// re-connecting REPLACES the row (UPSERT keyed on space_id). Filed by
-// openspec/changes/shared-byos-drive — Google Drive is the first concrete
-// non-local-fs writer. CHECK on `type` widens additively as subsequent
-// providers (Dropbox, Box, OneDrive, S3, Frame.io) land in their own
-// changes.
+// Per-Space BYOS destinations. One row per (Space, provider type) — UNIQUE on
+// (space_id, type); re-connecting a provider UPSERTs its own row only. The
+// PRIMARY destination (the one backups write to) is whichever type
+// backup_configurations.storage_type points at (shared-multi-destinations).
+// Originally filed by openspec/changes/shared-byos-drive — Google Drive is
+// the first concrete non-local-fs writer. CHECK on `type` widens additively
+// as subsequent providers (S3, Frame.io) land in their own changes.
 //
 // Token columns are AES-256-GCM ciphertext (PRD §20.2). Encryption key
 // (BASEOUT_ENCRYPTION_KEY) is shared between apps/web (writes on Connect)
@@ -570,7 +571,6 @@ export const storageDestinations = baseout.table('storage_destinations', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()`),
   spaceId: text('space_id')
     .notNull()
-    .unique()
     .references(() => spaces.id, { onDelete: 'cascade' }),
   type: text('type').notNull(),
   // 'local_fs' | 'google_drive' | 'box' | 'dropbox' | 'onedrive' — enforced
@@ -603,6 +603,7 @@ export const storageDestinations = baseout.table('storage_destinations', {
     sql`${table.type} IN ('local_fs', 'google_drive', 'box', 'dropbox', 'onedrive')`,
   ),
   index('storage_destinations_type_idx').on(table.type),
+  unique('storage_destinations_space_id_type_unique').on(table.spaceId, table.type),
 ])
 
 // ———————————————————————————————————————————————————————————————————————————

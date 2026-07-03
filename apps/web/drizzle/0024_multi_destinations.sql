@@ -1,0 +1,2 @@
+ALTER TABLE "baseout"."storage_destinations" DROP CONSTRAINT "storage_destinations_space_id_unique";--> statement-breakpoint
+ALTER TABLE "baseout"."storage_destinations" ADD CONSTRAINT "storage_destinations_space_id_type_unique" UNIQUE("space_id","type");

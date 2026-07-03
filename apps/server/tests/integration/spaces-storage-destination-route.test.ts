@@ -49,4 +49,17 @@ describe("GET /api/internal/spaces/:spaceId/storage-destination — routing laye
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("invalid_request");
   });
+
+  it("returns 400 invalid_request on an unknown ?type= (validated pre-DB)", async () => {
+    const res = await SELF.fetch(
+      `http://test/api/internal/spaces/${SPACE_ID}/storage-destination?type=evil`,
+      {
+        method: "GET",
+        headers: { "x-internal-token": TEST_TOKEN },
+      },
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe("invalid_request");
+  });
 });

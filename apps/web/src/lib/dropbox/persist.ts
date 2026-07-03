@@ -1,9 +1,10 @@
 /**
  * Persist a successful Dropbox OAuth round-trip into storage_destinations.
  *
- * UPSERTs the row keyed on `space_id` (UNIQUE per schema). Re-connecting
- * replaces the row in place. Tokens are encrypted via the master key before
- * insert; the engine reads them on backup-start via the internal route.
+ * UPSERTs the Dropbox row keyed on `(space_id, type)` (UNIQUE per schema) —
+ * re-connecting replaces only Dropbox's row; other providers' rows for the
+ * Space are untouched. Tokens are encrypted via the master key before insert;
+ * the engine reads them on backup-start via the internal route.
  *
  * Dropbox vs Box divergence (mirrors Drive's pattern): Dropbox refresh
  * tokens are STABLE (no rotation, no expiry by default). On an UPSERT
@@ -71,9 +72,8 @@ export async function persistDropboxDestination(
       lastValidatedAt: now,
     })
     .onConflictDoUpdate({
-      target: storageDestinations.spaceId,
+      target: [storageDestinations.spaceId, storageDestinations.type],
       set: {
-        type: sql`'dropbox'`,
         oauthAccessTokenEnc: sql`excluded.oauth_access_token_enc`,
         // Dropbox refresh tokens are stable. The initial code-exchange path
         // returns a refresh_token; the refresh path returns null. Preserve
@@ -98,7 +98,8 @@ export async function persistDropboxDestination(
 }
 
 /**
- * Hard-delete the destination row for a Space. Used by the disconnect route.
+ * Hard-delete the Space's Dropbox destination row. Used by the disconnect
+ * route. Scoped to type='dropbox' so other providers' rows survive.
  * Returns the number of rows removed (0 or 1).
  */
 export async function deleteDropboxDestination(
@@ -107,7 +108,9 @@ export async function deleteDropboxDestination(
 ): Promise<{ removed: number }> {
   const result = await db
     .delete(storageDestinations)
-    .where(sql`${storageDestinations.spaceId} = ${spaceId}`)
+    .where(
+      sql`${storageDestinations.spaceId} = ${spaceId} AND ${storageDestinations.type} = 'dropbox'`,
+    )
     .returning({ id: storageDestinations.id })
   return { removed: result.length }
 }

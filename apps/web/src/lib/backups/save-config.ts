@@ -10,6 +10,7 @@
 export type SaveConfigError =
   | 'frequency_not_allowed'
   | 'unsupported_storage_type'
+  | 'destination_not_connected'
   | 'invalid_request'
   | 'space_not_found'
   | 'space_org_mismatch'
@@ -37,6 +38,7 @@ export type SaveConfigResult =
 const KNOWN_ERRORS: ReadonlySet<SaveConfigError> = new Set([
   'frequency_not_allowed',
   'unsupported_storage_type',
+  'destination_not_connected',
   'invalid_request',
   'space_not_found',
   'space_org_mismatch',

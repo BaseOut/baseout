@@ -13,6 +13,11 @@ export type DestinationKind = 'file' | 'database';
 export type DestinationStatus = 'connected' | 'reconnect' | 'connecting' | 'needs_connection';
 
 export interface DestinationSummary {
+  /**
+   * Stable identifier. For the per-Space registry this is the provider type
+   * (unique per Space under the (space_id, type) constraint) and is used in
+   * /destinations/detail?id= links and swap-primary calls.
+   */
   id: string;
   name: string;
   kind: DestinationKind;
@@ -21,6 +26,12 @@ export interface DestinationSummary {
   /** human label, e.g. 'Google Drive' | 'Amazon S3' | 'Postgres' */
   providerLabel: string;
   status: DestinationStatus;
+  /**
+   * True when this is the Space's PRIMARY destination — the one backups write
+   * to (backup_configurations.storage_type). Optional so harness fixtures
+   * that predate multi-destination stay valid.
+   */
+  primary?: boolean;
   /** where data lands, e.g. 'folder /Baseout' | 'bucket baseout-ops' | 'database ops_mirror' */
   detail: string;
   /** Space names currently linked to this destination ("in use by") */

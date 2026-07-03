@@ -3,11 +3,12 @@
  * Account-level Destinations registry (production, honest-pending).
  *
  * The design assumes account-level, reusable Destinations (Airbyte model). In
- * baseout's backend a destination is PER-SPACE (storage_destinations.space_id is
- * UNIQUE) — the account-level model is a backend follow-up (web-nav-ia-restructure
- * / shared-destinations "Engineer"). Until then this renders the current Space's
- * destination mapped into the registry shape, with a notice, and points add /
- * manage at the working per-Space Configure flow.
+ * baseout's backend destinations are PER-SPACE — one row per (space, provider
+ * type) with the PRIMARY selected by backup_configurations.storage_type
+ * (shared-multi-destinations); the account-level model remains a follow-up
+ * (web-nav-ia-restructure / shared-destinations "Engineer"). This renders the
+ * current Space's destinations mapped into the registry shape, with a notice,
+ * and offers swap-primary on connected non-primary rows.
  */
 import { env } from 'cloudflare:workers';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
@@ -32,7 +33,7 @@ const destinations = toDestinationSummaries(state, spaceId ?? 'space', spaceName
 const providers = getDestinationProviders(env as unknown as DestinationEnv);
 
 const notice =
-  'Account-level Destinations (reused across Spaces) are on the roadmap. Today each Space has one destination — shown here and managed in Configure.';
+  'Account-level Destinations (reused across Spaces) are on the roadmap. Today destinations are per-Space — connect several and pick which one is Primary (where backups write).';
 ---
 
 <SidebarLayout pageTitle="Destinations" breadcrumbs={breadcrumbs}>
@@ -40,5 +41,7 @@ const notice =
     destinations={destinations}
     notice={notice}
     providers={providers}
+    spaceId={spaceId}
+    primaryType={state.policy.storageType}
   />
 </SidebarLayout>

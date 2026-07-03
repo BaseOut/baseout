@@ -11,14 +11,25 @@ interface Props {
   providers?: DestinationProvider[];
   /** Active Space id — needed to connect a managed (no-OAuth) destination. */
   spaceId?: string | null;
+  /** Provider types already connected for the active Space (multi-destination). */
+  connectedTypes?: string[];
+  /** The connected type backups currently write to, or null (e.g. r2_managed). */
+  primaryType?: string | null;
 }
-const { selectedType = null, providers = getDestinationProviders(), spaceId = null } = Astro.props;
+const {
+  selectedType = null,
+  providers = getDestinationProviders(),
+  spaceId = null,
+  connectedTypes = [],
+  primaryType = null,
+} = Astro.props;
 
 const fileTypes = providers.filter((p) => p.kind === 'file');
 const dbTypes = providers.filter((p) => p.kind === 'database');
 const sel = providers.find((p) => p.slug === selectedType && p.availability === 'available') ?? null;
 
 const tierLabel = (t?: string) => (t === 'growth' ? 'Growth+' : t === 'pro' ? 'Pro+' : null);
+const isConnected = (slug: string) => connectedTypes.includes(slug);
 const iconFor = (p: DestinationProvider) =>
   p.managed ? 'lucide--box' : p.slug === 's3' ? 'lucide--cloud' : p.kind === 'database' ? 'lucide--database' : 'lucide--hard-drive';
 const selIcon = sel ? iconFor(sel) : 'lucide--hard-drive';
@@ -41,7 +52,7 @@ const selIcon = sel ? iconFor(sel) : 'lucide--hard-drive';
             t.availability === 'available' ? (
               <a href={`/destinations/new?type=${t.slug}`} class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 no-underline text-inherit transition-colors hover:border-primary/50 hover:bg-primary/5">
                 <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-base-200/80"><span class={`iconify ${iconFor(t)} text-lg text-base-content/70`} aria-hidden="true"></span></span>
-                <span class="min-w-0"><span class="flex items-center gap-1.5 text-sm font-semibold">{t.label}{t.managed && <span class="rounded-full bg-success/15 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-success">Managed</span>}</span><span class="block text-xs text-base-content/50">{t.note}</span></span>
+                <span class="min-w-0"><span class="flex items-center gap-1.5 text-sm font-semibold">{t.label}{t.managed && <span class="rounded-full bg-success/15 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-success">Managed</span>}{t.slug === primaryType ? <span class="rounded-full bg-primary/15 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-primary">Primary</span> : isConnected(t.slug) && <span class="inline-flex items-center gap-1 rounded-full bg-success/15 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-success"><span class="size-1.5 rounded-full bg-current"></span>Connected</span>}</span><span class="block text-xs text-base-content/50">{t.note}</span></span>
               </a>
             ) : (
               <div class="flex cursor-not-allowed items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 opacity-60" aria-disabled="true" title="Coming soon">
@@ -92,9 +103,34 @@ const selIcon = sel ? iconFor(sel) : 'lucide--hard-drive';
           <p class="text-sm text-error hidden" data-managed-error role="alert"></p>
           <div class="mt-1 flex items-center justify-end gap-2">
             <Button href="/destinations/new" variant="ghost" size="sm">Back</Button>
-            <Button type="button" variant="primary" data-managed-connect data-slug={sel.slug} data-space-id={spaceId ?? ''}>Use {sel.label}</Button>
+            {sel.slug === primaryType ? (
+              <span class="rounded-full bg-primary/15 px-2 py-1 text-[0.68rem] font-bold uppercase tracking-wide text-primary">Current primary</span>
+            ) : (
+              <Button type="button" variant="primary" data-managed-connect data-slug={sel.slug} data-space-id={spaceId ?? ''}>Use {sel.label}</Button>
+            )}
           </div>
         </div>
+      ) : sel.kind === 'file' && isConnected(sel.slug) ? (
+        /* Already-connected BYOS provider — swap primary (the existing
+           data-managed-connect handler PATCHes storageType, which IS the
+           swap) or re-run OAuth via the demoted Reconnect action. */
+        <form method="POST" action={`/api/connections/storage/${sel.slug}/authorize`} class="flex max-w-lg flex-col gap-4" data-byos-connect data-astro-reload>
+          <input type="hidden" name="returnTo" value="/destinations" />
+          <p class="flex items-center gap-2 rounded-lg border border-success/20 bg-success/10 px-3 py-2.5 text-sm text-base-content/75">
+            <span class="iconify lucide--circle-check text-success" aria-hidden="true"></span>
+            {sel.label} is connected for this Space{sel.slug === primaryType ? ' and is the primary destination — backups write here.' : '.'}
+          </p>
+          <p class="text-sm text-error hidden" data-managed-error role="alert"></p>
+          <div class="mt-1 flex items-center justify-end gap-2">
+            <Button href="/destinations/new" variant="ghost" size="sm">Back</Button>
+            <Button type="submit" variant="ghost" size="sm" data-byos-connect-btn>Reconnect</Button>
+            {sel.slug === primaryType ? (
+              <span class="rounded-full bg-primary/15 px-2 py-1 text-[0.68rem] font-bold uppercase tracking-wide text-primary">Current primary</span>
+            ) : (
+              <Button type="button" variant="primary" data-managed-connect data-slug={sel.slug} data-space-id={spaceId ?? ''}>Set as primary</Button>
+            )}
+          </div>
+        </form>
       ) : sel.kind === 'file' ? (
         /* BYOS file storage — real OAuth: POST → provider authorize → consent → callback → returnTo. */
         <form method="POST" action={`/api/connections/storage/${sel.slug}/authorize`} class="flex max-w-lg flex-col gap-4" data-byos-connect data-astro-reload>
@@ -123,9 +159,10 @@ const selIcon = sel ? iconFor(sel) : 'lucide--hard-drive';
   import { saveBackupConfig } from '../lib/backups/save-config';
   import { setButtonLoading } from '../lib/ui';
 
-  // Managed destinations (local_fs / r2_managed): no OAuth — connect for the active
-  // Space via fetch, then return to the registry. local_fs creates the destination
-  // row (connectLocalFs); r2_managed just sets the config's storageType.
+  // No-OAuth actions: managed connects (local_fs creates the destination row
+  // via connectLocalFs; r2_managed just sets the config's storageType) and
+  // "Set as primary" on an already-connected BYOS provider (also just sets
+  // storageType — that IS the primary swap). All return to the registry.
   document.addEventListener('click', async (event) => {
     const btn = (event.target as HTMLElement | null)?.closest('[data-managed-connect]');
     if (!(btn instanceof HTMLButtonElement)) return;

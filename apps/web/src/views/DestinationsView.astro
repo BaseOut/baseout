@@ -16,8 +16,19 @@ interface Props {
   addHref?: string;
   rowHref?: string | null;
   providers?: DestinationProvider[];
+  /** Active Space id — needed to swap the primary destination. */
+  spaceId?: string | null;
+  /**
+   * backup_configurations.storage_type — the type backups write to. Unlike
+   * the destinations' own `primary` flags this also covers row-less managed
+   * types (r2_managed), so the provider boxes can mark it Primary.
+   */
+  primaryType?: string | null;
 }
-const { destinations, notice = null, addHref = '/destinations/new', rowHref = null, providers = [] } = Astro.props;
+const { destinations, notice = null, addHref = '/destinations/new', rowHref = null, providers = [], spaceId = null, primaryType = null } = Astro.props;
+
+const isConnectedType = (slug: string) => destinations.some((d) => d.provider === slug);
+
 
 const tierLabel = (t?: string) => (t === 'growth' ? 'Growth+' : t === 'pro' ? 'Pro+' : null);
 const availableProviders = providers.filter((p) => p.availability === 'available');
@@ -43,7 +54,7 @@ const detailHref = (d: DestinationSummary) =>
 const registryColumns = 'minmax(0,1.5fr) minmax(0,1fr) 9.5rem 6rem 6rem';
 ---
 
-<div class="mx-auto max-w-5xl space-y-6">
+<div class="mx-auto max-w-5xl space-y-6" data-destinations-root data-space-id={spaceId ?? ''}>
   <PageHeader title="Destinations" description="Storage and databases your Spaces back up to. Set up once on your account, reuse across Spaces.">
     <Button slot="actions" href={addHref} variant="primary">Add destination</Button>
   </PageHeader>
@@ -73,7 +84,7 @@ const registryColumns = 'minmax(0,1.5fr) minmax(0,1fr) 9.5rem 6rem 6rem';
       </div>
       {destinations.map((d) => (
         <a href={rowHref ?? detailHref(d)} class="grid items-center gap-3 border-b border-base-300/50 px-4 py-3 text-sm text-base-content no-underline transition-colors last:border-b-0 hover:bg-base-200/50" style={`grid-template-columns: ${registryColumns};`} role="row">
-          <span class="min-w-0 font-semibold">{d.name}<span class="block truncate text-xs font-normal text-base-content/50">{d.detail}</span></span>
+          <span class="min-w-0 font-semibold"><span class="inline-flex max-w-full items-center gap-1.5">{d.name}{d.primary && <Badge variant="primary">Primary</Badge>}</span><span class="block truncate text-xs font-normal text-base-content/50">{d.detail}</span></span>
           <span class="inline-flex min-w-0 items-center gap-1.5 text-base-content/75"><span class={`iconify ${kindMeta[d.kind].icon} text-base opacity-50`} aria-hidden="true"></span>{d.providerLabel}</span>
           <span><Badge variant={statusMeta[d.status].variant} dot={statusMeta[d.status].dot}>{statusMeta[d.status].label}</Badge></span>
           <span class="text-base-content/70">{d.inUseBy.length} Space{d.inUseBy.length === 1 ? '' : 's'}</span>
@@ -88,16 +99,54 @@ const registryColumns = 'minmax(0,1.5fr) minmax(0,1fr) 9.5rem 6rem 6rem';
     <section class="mt-6">
       <h2 class="mb-3 text-xs font-bold uppercase tracking-wider text-base-content/50">What you can connect</h2>
       <div class="grid gap-2 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]">
-        {availableProviders.map((p) => (
-          <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5">
+        {availableProviders.map((p) => {
+          const label = (
             <span class="inline-flex min-w-0 items-center gap-1.5 text-sm font-semibold">{p.label}{p.managed && <span class="rounded-full bg-success/15 px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-success">Managed</span>}</span>
-            {p.slug === 'local_fs' ? (
-              <Button type="button" variant="tonal" size="sm" data-connect-local-dest>Connect</Button>
-            ) : (
+          );
+          if (p.slug === primaryType) {
+            /* The destination backups currently write to. */
+            return (
+              <div class="flex items-center justify-between gap-2 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2.5">
+                {label}
+                <Badge variant="primary">Primary</Badge>
+              </div>
+            );
+          }
+          if (spaceId && (isConnectedType(p.slug) || p.slug === 'r2_managed')) {
+            /* Connected (or row-less managed R2) — the whole box selects it
+               as the primary destination via the data-set-primary handler. */
+            return (
+              <button
+                type="button"
+                class="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
+                data-set-primary
+                data-provider={p.slug}
+                title={`Make ${p.label} the primary destination`}
+              >
+                {label}
+                <span class="inline-flex shrink-0 items-center gap-1.5">
+                  {isConnectedType(p.slug) && <Badge variant="success" dot>Connected</Badge>}
+                  <span class="text-xs font-semibold text-primary">Set primary</span>
+                </span>
+              </button>
+            );
+          }
+          if (p.slug === 'local_fs') {
+            return (
+              <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5">
+                {label}
+                <Button type="button" variant="tonal" size="sm" data-connect-local-dest>Connect</Button>
+              </div>
+            );
+          }
+          /* Not connected yet — the box starts the connect flow. */
+          return (
+            <a href={`/destinations/new?type=${p.slug}`} class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5 text-inherit no-underline transition-colors hover:border-primary/50 hover:bg-primary/5">
+              {label}
               <Badge variant="success" dot>Available</Badge>
-            )}
-          </div>
-        ))}
+            </a>
+          );
+        })}
         {comingSoonProviders.map((p) => (
           <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5 opacity-70">
             <span class="inline-flex min-w-0 items-center gap-1.5 text-sm font-semibold">{p.label}{tierLabel(p.tier) && <span class="rounded-full bg-base-content/10 px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-base-content/60">{tierLabel(p.tier)}</span>}</span>
@@ -111,6 +160,7 @@ const registryColumns = 'minmax(0,1.5fr) minmax(0,1fr) 9.5rem 6rem 6rem';
 
 <script>
   import { connectLocalFs } from '../lib/backups/connect-local-fs';
+  import { saveBackupConfig } from '../lib/backups/save-config';
   import { setButtonLoading } from '../lib/ui';
 
   // Connect the dev local-disk destination (managed, no OAuth) for the active
@@ -121,6 +171,26 @@ const registryColumns = 'minmax(0,1.5fr) minmax(0,1fr) 9.5rem 6rem 6rem';
     setButtonLoading(btn, true);
     try {
       const res = await connectLocalFs();
+      if (res.ok) window.location.reload();
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  });
+
+  // Swap the primary destination: PATCH backup-config.storageType to the
+  // clicked row's provider, then reload so the Primary badge moves. The
+  // button sits inside the row's <a> — stop the navigation first.
+  document.addEventListener('click', async (event) => {
+    const btn = (event.target as HTMLElement | null)?.closest('[data-set-primary]');
+    if (!(btn instanceof HTMLButtonElement)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const provider = btn.dataset.provider;
+    const spaceId = document.querySelector<HTMLElement>('[data-destinations-root]')?.dataset.spaceId;
+    if (!provider || !spaceId) return;
+    setButtonLoading(btn, true);
+    try {
+      const res = await saveBackupConfig({ spaceId, storageType: provider });
       if (res.ok) window.location.reload();
     } finally {
       setButtonLoading(btn, false);

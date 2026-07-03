@@ -1,9 +1,10 @@
 /**
  * Persist a successful Box OAuth round-trip into storage_destinations.
  *
- * UPSERTs the row keyed on `space_id` (UNIQUE per schema). Re-connecting
- * replaces the row in place. Tokens are encrypted via the master key before
- * insert; the engine reads them on backup-start via the internal route.
+ * UPSERTs the Box row keyed on `(space_id, type)` (UNIQUE per schema) —
+ * re-connecting replaces only Box's row; other providers' rows for the Space
+ * are untouched. Tokens are encrypted via the master key before insert; the
+ * engine reads them on backup-start via the internal route.
  *
  * Box vs. Drive divergence: Box rotates refresh tokens on every refresh AND
  * on every fresh code exchange. Whenever we persist a Box destination we
@@ -69,9 +70,8 @@ export async function persistBoxDestination(
       lastValidatedAt: now,
     })
     .onConflictDoUpdate({
-      target: storageDestinations.spaceId,
+      target: [storageDestinations.spaceId, storageDestinations.type],
       set: {
-        type: sql`'box'`,
         oauthAccessTokenEnc: sql`excluded.oauth_access_token_enc`,
         // Box rotates refresh tokens on every code exchange. Always replace
         // — never preserve a previous Box refresh token, it's invalidated
@@ -93,7 +93,8 @@ export async function persistBoxDestination(
 }
 
 /**
- * Hard-delete the destination row for a Space. Used by the disconnect route.
+ * Hard-delete the Space's Box destination row. Used by the disconnect route.
+ * Scoped to type='box' so other providers' rows survive.
  * Returns the number of rows removed (0 or 1).
  */
 export async function deleteBoxDestination(
@@ -102,7 +103,9 @@ export async function deleteBoxDestination(
 ): Promise<{ removed: number }> {
   const result = await db
     .delete(storageDestinations)
-    .where(sql`${storageDestinations.spaceId} = ${spaceId}`)
+    .where(
+      sql`${storageDestinations.spaceId} = ${spaceId} AND ${storageDestinations.type} = 'box'`,
+    )
     .returning({ id: storageDestinations.id })
   return { removed: result.length }
 }

@@ -2,9 +2,11 @@
  * Persistence for the dev local-disk ("Local disk (dev)") destination.
  *
  * local_fs is a managed, zero-setup destination — no OAuth. Connecting it
- * upserts a storage_destinations row (clearing any prior cloud OAuth fields,
- * since a Space has at most one destination) and points the Space's backup
- * config at local_fs so runs write to the local-disk writer.
+ * upserts the Space's local_fs storage_destinations row (one row per
+ * (space_id, type); other providers' rows are untouched) and points the
+ * Space's backup config at local_fs so runs write to the local-disk writer
+ * (connecting a managed destination is an explicit "use this" action, so it
+ * always takes primary).
  *
  * Each storage provider owns its own module (mirrors lib/box, lib/google-drive)
  * so provider work stays isolated and can't regress Airtable/other providers.
@@ -25,8 +27,8 @@ export async function connectLocalFsDestination(
 ): Promise<void> {
   const now = new Date()
 
-  // One destination per Space (storage_destinations.space_id is UNIQUE). Upsert
-  // to local_fs, clearing any cloud OAuth fields left by a prior destination.
+  // Upsert the Space's local_fs row (keyed on (space_id, type)). The OAuth
+  // null-outs are defensive — a local_fs row never holds cloud creds.
   await db
     .insert(storageDestinations)
     .values({
@@ -37,9 +39,8 @@ export async function connectLocalFsDestination(
       lastValidatedAt: now,
     })
     .onConflictDoUpdate({
-      target: storageDestinations.spaceId,
+      target: [storageDestinations.spaceId, storageDestinations.type],
       set: {
-        type: 'local_fs',
         oauthAccessTokenEnc: null,
         oauthRefreshTokenEnc: null,
         oauthExpiresAt: null,

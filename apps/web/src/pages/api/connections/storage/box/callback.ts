@@ -23,6 +23,7 @@ import {
   type OAuthHandoffPayload,
 } from '../../../../../lib/box/cookie'
 import { exchangeCodeForTokens } from '../../../../../lib/box/oauth'
+import { promoteStorageTypeIfDefault } from '../../../../../lib/backup-config/storage-type'
 import { persistBoxDestination } from '../../../../../lib/box/persist'
 import { sanitizeReturnTo } from '../../../../../lib/airtable/return-to'
 import { shouldSetSecureOAuthCookie } from '../../../../../lib/oauth/local-dev-secure'
@@ -145,6 +146,9 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
       accountId: me.id,
       providerFolderId: folder.id,
     })
+    // First BYOS connect becomes the primary destination; an explicitly
+    // chosen BYOS primary is never displaced (shared-multi-destinations).
+    await promoteStorageTypeIfDefault(locals.db, handoff.spaceId, 'box')
   } catch {
     return redirectWith(failUrl('persist_failed'), clearCookie)
   }

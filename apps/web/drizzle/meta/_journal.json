@@ -169,6 +169,13 @@
       "when": 1782827015862,
       "tag": "0023_health_metric_prompt",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1783024030115,
+      "tag": "0024_multi_destinations",
+      "breakpoints": true
     }
   ]
 }

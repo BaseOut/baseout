@@ -97,4 +97,32 @@ describe('saveConfigureForm', () => {
       message: 'Select at least one base before running a backup.',
     })
   })
+
+  it('forwards the selected storageType (primary destination) in the PATCH', async () => {
+    const saveConfigImpl = vi.fn(async (): Promise<SaveConfigResult> => ({ ok: true }))
+    const result = await saveConfigureForm(
+      { spaceId: SPACE_ID, storageType: 'box', runFirstBackup: false },
+      { saveConfigImpl, runBackupImpl: okRun },
+    )
+    expect(saveConfigImpl).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      storageType: 'box',
+    })
+    expect(result).toEqual({ ok: true, redirect: '/?status=saved' })
+  })
+
+  it('describes destination_not_connected when the swap target has no row', async () => {
+    const saveConfigImpl = vi.fn(
+      async (): Promise<SaveConfigResult> =>
+        ({ ok: false, error: 'destination_not_connected', status: 422 }),
+    )
+    const result = await saveConfigureForm(
+      { spaceId: SPACE_ID, storageType: 'dropbox', runFirstBackup: false },
+      { saveConfigImpl, runBackupImpl: okRun },
+    )
+    expect(result).toEqual({
+      ok: false,
+      message: 'Connect that destination before making it the primary.',
+    })
+  })
 })

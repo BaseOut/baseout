@@ -1,15 +1,15 @@
 /**
  * POST /api/connections/storage/onedrive/disconnect
  *
- * Removes the storage_destinations row for the active Space and flips
- * backup_configurations.storage_type back to 'local_fs'. Files already in
- * the customer's OneDrive account are NOT deleted — that's customer-owned
+ * Removes the active Space's OneDrive destination row. If OneDrive was the
+ * primary (backup_configurations.storage_type), repoints to the most recently
+ * connected remaining destination (local_fs when none remain). Files already
+ * in the customer's OneDrive account are NOT deleted — that's customer-owned
  * data.
  */
 
 import type { APIRoute } from 'astro'
-import { eq } from 'drizzle-orm'
-import { backupConfigurations } from '../../../../../db/schema'
+import { repointStorageTypeAfterDisconnect } from '../../../../../lib/backup-config/storage-type'
 import { deleteOneDriveDestination } from '../../../../../lib/onedrive/persist'
 
 function jsonError(message: string, status: number): Response {
@@ -28,13 +28,9 @@ export const POST: APIRoute = async ({ locals }) => {
   const spaceId = account.space.id
 
   const { removed } = await deleteOneDriveDestination(locals.db, spaceId)
-  // Flip storage_type back to local_fs so future runs don't try to use a
-  // destination row that no longer exists. Only update if a config row exists
-  // for this Space; if none does, the default is already a non-OneDrive value.
-  await locals.db
-    .update(backupConfigurations)
-    .set({ storageType: 'local_fs', modifiedAt: new Date() })
-    .where(eq(backupConfigurations.spaceId, spaceId))
+  // If OneDrive was the primary, repoint storage_type so future runs don't
+  // reference a destination row that no longer exists.
+  await repointStorageTypeAfterDisconnect(locals.db, spaceId, 'onedrive')
 
   return new Response(
     JSON.stringify({ ok: true, removed }),

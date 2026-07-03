@@ -3,9 +3,11 @@
  *
  * Updates the backup_configurations row's `frequency` and / or `storageType`
  * for a Space. Validates the body against the org's tier capability per
- * Features §6.1 and the MVP storage rule (only `r2_managed` accepted).
+ * Features §6.1 and the allowed storage types. `storageType` is also the
+ * swap-primary surface (shared-multi-destinations): a BYOS value is accepted
+ * only when the Space has a connected storage_destinations row for it.
  *
- * Body: `{ frequency?: Frequency; storageType?: 'r2_managed' }`. At least
+ * Body: `{ frequency?: Frequency; storageType?: string }`. At least
  * one field required. Unknown keys → 400 invalid_request.
  *
  * Same pattern as backup-runs.ts: a testable handlePatch inner function
@@ -19,6 +21,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import {
   backupConfigurations,
   spaces,
+  storageDestinations,
 } from '../../../../db/schema'
 import type { AccountContext } from '../../../../lib/account'
 import type { AppDb } from '../../../../db'
@@ -33,6 +36,9 @@ import { promoteSpaceIfSetupIncomplete } from '../../../../lib/spaces'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Providers that require a connected storage_destinations row to be primary. */
+const BYOS_STORAGE_TYPES = new Set(['google_drive', 'box', 'dropbox', 'onedrive'])
 
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -72,6 +78,13 @@ export interface HandlePatchInput {
    */
   fetchScheduleForSpace: (spaceId: string) => Promise<SpaceScheduleInput | null>
   /**
+   * Swap-primary validation (shared-multi-destinations): whether the Space
+   * has a connected storage_destinations row for the given provider type.
+   * Consulted only for BYOS storageType values — managed types (r2_managed,
+   * local_fs) are row-less and always accepted.
+   */
+  hasConnectedDestination: (spaceId: string, type: string) => Promise<boolean>
+  /**
    * Setup-complete promotion. Called after a successful upsert with the
    * spaceId. Implementation flips spaces.status from 'setup_incomplete'
    * to 'active' (idempotent — no-op if the row is already active). The
@@ -104,6 +117,23 @@ export async function handlePatch(input: HandlePatchInput): Promise<Response> {
   }
 
   const tier = await input.resolveTier(input.account.organization.id)
+
+  // Swapping primary to a BYOS provider requires a connected destination row
+  // — storage_type must never point at a row-less BYOS type or the next run
+  // 404s its creds fetch. Managed types need no row.
+  const requestedStorageType = input.body.storageType
+  if (
+    typeof requestedStorageType === 'string' &&
+    BYOS_STORAGE_TYPES.has(requestedStorageType)
+  ) {
+    const connected = await input.hasConnectedDestination(
+      input.spaceId,
+      requestedStorageType,
+    )
+    if (!connected) {
+      return jsonResponse({ error: 'destination_not_connected' }, 422)
+    }
+  }
 
   const result = await persistBackupConfigPolicy(
     { spaceId: input.spaceId, body: input.body, tier },
@@ -222,6 +252,19 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
       return resolved.tier
     },
     upsertConfig: buildUpsert(db),
+    hasConnectedDestination: async (spaceId, type) => {
+      const [row] = await db
+        .select({ id: storageDestinations.id })
+        .from(storageDestinations)
+        .where(
+          and(
+            eq(storageDestinations.spaceId, spaceId),
+            eq(storageDestinations.type, type),
+          ),
+        )
+        .limit(1)
+      return Boolean(row)
+    },
     onScheduledFrequencyChange: buildScheduledFrequencyHandoff(),
     fetchScheduleForSpace: async (id) => {
       const [row] = await db

@@ -1,7 +1,8 @@
 ---
 /**
- * Destination detail / management. Honest-pending: shows the active Space's
- * storage destination mapped into the registry shape (one per Space today).
+ * Destination detail / management. Honest-pending: shows one of the active
+ * Space's storage destinations mapped into the registry shape, selected by
+ * ?id=<provider type> (falls back to the primary, then the most recent).
  * Reconnect/Remove route through the existing per-provider OAuth + disconnect.
  */
 import SidebarLayout from '../../layouts/SidebarLayout.astro';
@@ -17,7 +18,13 @@ const spaceName = account?.space?.name ?? 'this Space';
 
 const state =
   orgId && spaceId && db ? await getIntegrationsState(db, orgId, spaceId) : EMPTY_INTEGRATIONS_STATE;
-const destination = toDestinationSummaries(state, spaceId ?? 'space', spaceName)[0] ?? null;
+const summaries = toDestinationSummaries(state, spaceId ?? 'space', spaceName);
+const requestedId = Astro.url.searchParams.get('id');
+const destination =
+  summaries.find((d) => d.id === requestedId) ??
+  summaries.find((d) => d.primary) ??
+  summaries[0] ??
+  null;
 
 // No destination connected for this Space → nothing to manage; offer to add one.
 if (!destination) return Astro.redirect('/destinations');

@@ -1,11 +1,15 @@
-// GET /api/internal/spaces/:spaceId/storage-destination
+// GET /api/internal/spaces/:spaceId/storage-destination[?type=<provider>]
 //
 // Filed by openspec/changes/shared-byos-drive Phase 3; Box dispatch added by
 // the box-provider commit chain (3/3); Dropbox dispatch added by the
-// dropbox-provider commit chain (3/3). The workflows runner (Node, no master
+// dropbox-provider commit chain (3/3); multi-destination type resolution by
+// shared-multi-destinations. The workflows runner (Node, no master
 // encryption key) calls this at backup-base task start to fetch the decrypted
 // access token for the Space's storage destination. The engine:
-//   1. SELECTs the storage_destinations row.
+//   1. SELECTs the storage_destinations row — by (space_id, ?type=) when the
+//      param is present (workflows pins a run to its enqueue-time type), else
+//      by the Space's backup_configurations.storage_type (the primary), else
+//      the legacy single-row lookup. Unknown ?type → 400 invalid_request.
 //   2. Decrypts the access + refresh token columns.
 //   3. If `oauthExpiresAt - now < 5 min` OR `?refresh=1` query: calls the
 //      type-specific refresh helper, re-encrypts the new access token (and
@@ -39,10 +43,14 @@
 //
 // Token gate is applied by middleware (path begins /api/internal/).
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { AppLocals, Env } from "../../../../env";
-import { storageDestinations } from "../../../../db/schema";
+import { backupConfigurations, storageDestinations } from "../../../../db/schema";
 import { decryptToken, encryptToken } from "../../../../lib/crypto";
+import {
+  parseTypeParam,
+  resolveTypeFilter,
+} from "../../../../lib/storage/resolve-destination-type";
 import { refreshDriveAccessToken } from "../../../../lib/storage/refresh-drive";
 import { refreshBoxAccessToken } from "../../../../lib/storage/refresh-box";
 import { refreshDropboxAccessToken } from "../../../../lib/storage/refresh-dropbox";
@@ -76,8 +84,26 @@ export async function spacesStorageDestinationHandler(
 
   const url = new URL(request.url);
   const forceRefresh = url.searchParams.get("refresh") === "1";
+  const typeParam = parseTypeParam(url.searchParams.get("type"));
+  if (!typeParam.ok) {
+    return jsonResponse({ error: "invalid_request" }, 400);
+  }
 
   const { db } = locals.getMasterDb();
+
+  // A Space holds one row per provider type; pick which one to serve. No
+  // explicit ?type= → the primary per the Space's config (fallback covers
+  // workflows deploys that predate the param).
+  let typeFilter = typeParam.type;
+  if (typeFilter === null) {
+    const [config] = await db
+      .select({ storageType: backupConfigurations.storageType })
+      .from(backupConfigurations)
+      .where(eq(backupConfigurations.spaceId, spaceId))
+      .limit(1);
+    typeFilter = resolveTypeFilter(null, config?.storageType ?? null);
+  }
+
   const [row] = await db
     .select({
       id: storageDestinations.id,
@@ -88,7 +114,14 @@ export async function spacesStorageDestinationHandler(
       providerFolderId: storageDestinations.providerFolderId,
     })
     .from(storageDestinations)
-    .where(eq(storageDestinations.spaceId, spaceId))
+    .where(
+      typeFilter === null
+        ? eq(storageDestinations.spaceId, spaceId)
+        : and(
+            eq(storageDestinations.spaceId, spaceId),
+            eq(storageDestinations.type, typeFilter),
+          ),
+    )
     .limit(1);
 
   if (!row) {

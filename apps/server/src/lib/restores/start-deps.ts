@@ -6,17 +6,19 @@
 //
 // The deps shape is owned by src/lib/restores/start.ts — ProcessRestoreStartDeps.
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   restoreRuns,
   connections,
   storageDestinations,
+  backupConfigurations,
   backupRuns,
   atBases,
   type RestoreRunRow,
   type ConnectionRow,
   type StorageDestinationRow,
 } from "../../db/schema";
+import { resolveTypeFilter } from "../storage/resolve-destination-type";
 import { enqueueRestoreBase } from "../trigger-client";
 import type { Env } from "../../env";
 import type { ProcessRestoreStartDeps, SourceRunInfo } from "./start";
@@ -42,10 +44,26 @@ export function buildRestoreStartDeps(db: MasterDb, env: Env): ProcessRestoreSta
       return (rows[0] ?? null) as ConnectionRow | null;
     },
     fetchStorageDestinationBySpace: async (spaceId) => {
+      // Multi-destination: a Space holds one row per provider type. Resolve
+      // the PRIMARY (backup_configurations.storage_type); legacy single-row
+      // lookup when there's no config or it's row-less r2_managed.
+      const [config] = await db
+        .select({ storageType: backupConfigurations.storageType })
+        .from(backupConfigurations)
+        .where(eq(backupConfigurations.spaceId, spaceId))
+        .limit(1);
+      const typeFilter = resolveTypeFilter(null, config?.storageType ?? null);
       const rows = await db
         .select()
         .from(storageDestinations)
-        .where(eq(storageDestinations.spaceId, spaceId))
+        .where(
+          typeFilter === null
+            ? eq(storageDestinations.spaceId, spaceId)
+            : and(
+                eq(storageDestinations.spaceId, spaceId),
+                eq(storageDestinations.type, typeFilter),
+              ),
+        )
         .limit(1);
       return (rows[0] ?? null) as StorageDestinationRow | null;
     },

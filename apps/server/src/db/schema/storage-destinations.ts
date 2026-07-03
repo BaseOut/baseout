@@ -4,6 +4,10 @@
 //   apps/web/drizzle/0010_storage_destinations_box.sql       — adds 'box' to CHECK
 //   apps/web/drizzle/0011_storage_destinations_dropbox.sql   — adds 'dropbox' to CHECK
 //   apps/web/drizzle/0012_storage_destinations_onedrive.sql  — adds 'onedrive' to CHECK
+//   apps/web/drizzle/0024_multi_destinations.sql              — UNIQUE(space_id) → UNIQUE(space_id, type);
+//     a Space holds one row per provider type; the PRIMARY destination is
+//     backup_configurations.storage_type (shared-multi-destinations). The
+//     internal route resolves by (space_id, ?type=) with a config fallback.
 //
 // Filed by openspec/changes/shared-byos-drive. Per CLAUDE.md §2, master-DB
 // schema is owned by apps/web. This mirror exists only because the engine

@@ -25,6 +25,7 @@ import {
   type OAuthHandoffPayload,
 } from '../../../../../lib/dropbox/cookie'
 import { exchangeCodeForTokens } from '../../../../../lib/dropbox/oauth'
+import { promoteStorageTypeIfDefault } from '../../../../../lib/backup-config/storage-type'
 import { persistDropboxDestination } from '../../../../../lib/dropbox/persist'
 import { sanitizeReturnTo } from '../../../../../lib/airtable/return-to'
 import { shouldSetSecureOAuthCookie } from '../../../../../lib/oauth/local-dev-secure'
@@ -151,6 +152,9 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
         providerFolderId: folder.path,
       },
     )
+    // First BYOS connect becomes the primary destination; an explicitly
+    // chosen BYOS primary is never displaced (shared-multi-destinations).
+    await promoteStorageTypeIfDefault(locals.db, handoff.spaceId, 'dropbox')
   } catch {
     return redirectWith(failUrl('persist_failed'), clearCookie)
   }

@@ -54,6 +54,9 @@ function makeDeps(
     // Setup promotion: defaults to a no-op vi.fn(). Tests asserting on it
     // override; tests not asserting don't care.
     promoteSpaceIfReady: vi.fn(async () => {}),
+    // Multi-destination: swap-primary validation. Defaults to "connected"
+    // so existing tests pass unchanged; the swap tests override.
+    hasConnectedDestination: vi.fn(async () => true),
     ...overrides,
   }
 }
@@ -361,5 +364,50 @@ describe('handlePatch', () => {
       ...d,
     })
     expect(res.status).toBe(200)
+  })
+
+  // ── Swap-primary validation (shared-multi-destinations) ─────────────────
+
+  it('rejects a BYOS storageType with no connected row (422 destination_not_connected)', async () => {
+    const hasConnectedDestination = vi.fn(async () => false)
+    const d = makeDeps({ hasConnectedDestination })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { storageType: 'box' },
+      ...d,
+    })
+    expect(res.status).toBe(422)
+    expect(await readJson(res)).toEqual({ error: 'destination_not_connected' })
+    expect(hasConnectedDestination).toHaveBeenCalledWith(SPACE_ID, 'box')
+    expect(d.upsertConfig).not.toHaveBeenCalled()
+  })
+
+  it('accepts a BYOS storageType with a connected row', async () => {
+    const hasConnectedDestination = vi.fn(async () => true)
+    const d = makeDeps({ hasConnectedDestination })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { storageType: 'google_drive' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+    expect(d.upsertConfig).toHaveBeenCalled()
+  })
+
+  it('skips the row check for managed types (r2_managed, local_fs)', async () => {
+    for (const storageType of ['r2_managed', 'local_fs']) {
+      const hasConnectedDestination = vi.fn(async () => false)
+      const d = makeDeps({ hasConnectedDestination })
+      const res = await handlePatch({
+        account: makeAccount(),
+        spaceId: SPACE_ID,
+        body: { storageType },
+        ...d,
+      })
+      expect(res.status).toBe(200)
+      expect(hasConnectedDestination).not.toHaveBeenCalled()
+    }
   })
 })

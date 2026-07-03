@@ -19,6 +19,7 @@ import {
   type OAuthHandoffPayload,
 } from '../../../../../lib/google-drive/cookie'
 import { exchangeCodeForTokens } from '../../../../../lib/google-drive/oauth'
+import { promoteStorageTypeIfDefault } from '../../../../../lib/backup-config/storage-type'
 import { persistDriveDestination } from '../../../../../lib/google-drive/persist'
 import { sanitizeReturnTo } from '../../../../../lib/airtable/return-to'
 import { shouldSetSecureOAuthCookie } from '../../../../../lib/oauth/local-dev-secure'
@@ -143,6 +144,9 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
       accountId: about.user.permissionId,
       providerFolderId: folder.id,
     })
+    // First BYOS connect becomes the primary destination; an explicitly
+    // chosen BYOS primary is never displaced (shared-multi-destinations).
+    await promoteStorageTypeIfDefault(locals.db, handoff.spaceId, 'google_drive')
   } catch {
     return redirectWith(failUrl('persist_failed'), clearCookie)
   }
