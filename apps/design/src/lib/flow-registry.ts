@@ -889,4 +889,31 @@ export const FLOW_REGISTRY: RegistryFlow[] = [
     ],
     note: 'BUILT 2026-06-26 (feat/notifications) from the connection-health research (research/connection-health/index.html) — recommended model: graded health + banner-led surfacing + Plaid-style one-click reconnect + verify + re-queue the missed backup. Documented in the Storybook (/styleguide → Connection-health banner). Placement: top of the work area via an app-banner slot in SidebarLayout (NOT above the sidebar); a broken bar collapses to a topbar-status pill in Header by the bell. STILL PRESENTATIONAL — driven by props/fixtures on /connection-banner, not yet wired to the real connection state ($integrations: active/refreshing/pending_reauth/invalid). "Expires in N days" ships only if the Airtable/Drive token APIs expose a TTL (research §8.2, unverified). No OpenSpec change yet — the research doc is the contract.',
   },
+
+  // ── Schema navigation (prototype) ────────────────────────────────────────────
+  {
+    id: 'schema-nav-grouping',
+    name: 'Schema navigation — A/B',
+    feature: 'Schema',
+    status: 'discussion',
+    blurb:
+      'The Schema section has grown to 9 top-level tabs — past the point a flat row stays scannable. A throwaway prototype (real components, real shell, no change to the live SchemaView) lets the client click two candidate reworks of the bar over a shared placeholder body. Both group the tabs into 4 clusters (Explore · App layer · Monitor · Knowledge) and pull Chat OUT of the tab row (9 → 8) into a persistent "Ask about your schema" launcher — the chat opens as a modal drawer that can Expand to a full page. Flip A/B with the floating switcher.',
+    specs: [],
+    code: ['apps/web/src/views/SchemaView.astro'],
+    steps: [
+      {
+        label: 'Variant A — grouped bar (dividers + labels)',
+        href: '/schema-nav?v=a',
+        caption:
+          'One tab row, thin dividers + quiet cluster labels between the 4 groups (lowest-risk, everything stays visible). Click "Ask about your schema" → the chat opens as a modal drawer; its Expand ⤢ button blows it up to the full 3-column chat page.',
+      },
+      {
+        label: 'Variant B — two-level bar (clusters → sub-tabs)',
+        href: '/schema-nav?v=b',
+        caption:
+          'Top row = 4 clusters, a lighter second row = the selected cluster\'s tabs (scales best as Schema keeps growing). Same chat surface as A: a modal drawer that Expands to full page. Switch A/B with the floating switcher at the bottom.',
+      },
+    ],
+    note: 'Prototype only — the live SchemaView bar is untouched. Decisions with Oleh 2026-07-02: keep A + B (drop the Neon-pills+More option C); pull Chat out of the tabs in both; use ONE chat surface everywhere — a modal drawer that Expands to full page (the inset side-panel concept was dropped). Rationale + competitor evidence: research/schema-navigation/index.html. Next: client picks the bar (lead = B), then port to SchemaView. This is round-2 Epic 6.',
+  },
 ];
