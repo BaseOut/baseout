@@ -39,17 +39,22 @@ export const FIXTURE_INTEGRATIONS_STATE: IntegrationsState = {
   hasBackupConfig: true,
   policy: {
     frequency: 'daily',
+    scope: 'schema_and_data',
+    schemaFrequency: null,
+    schemaNextScheduledAt: null,
     storageType: 'byos_google_drive',
     nextScheduledAt: new Date(
       new Date('2026-06-04T09:00:00.000Z').getTime() + 6 * 60 * 60 * 1000,
     ).toISOString(),
     autoAddFutureBases: false,
   },
-  storageDestination: {
-    type: 'google_drive',
-    accountEmail: 'ops@demo.co',
-    connectedAt: '2026-04-15T14:25:00.000Z',
-  },
+  storageDestinations: [
+    {
+      type: 'google_drive',
+      accountEmail: 'ops@demo.co',
+      connectedAt: '2026-04-15T14:25:00.000Z',
+    },
+  ],
   unreadEvents: [
     {
       id: 'evt_design_bases_discovered',
@@ -73,11 +78,14 @@ export const FIXTURE_INTEGRATIONS_STATE_EMPTY: IntegrationsState = {
   hasBackupConfig: false,
   policy: {
     frequency: 'monthly',
+    scope: 'schema_and_data',
+    schemaFrequency: null,
+    schemaNextScheduledAt: null,
     storageType: 'r2_managed',
     nextScheduledAt: null,
     autoAddFutureBases: false,
   },
-  storageDestination: null,
+  storageDestinations: [],
   unreadEvents: [],
 };
 
@@ -191,7 +199,7 @@ export const FIXTURE_INTEGRATIONS_STATE_SETUP_MANY: IntegrationsState = {
     nextScheduledAt: null,
     autoAddFutureBases: false,
   },
-  storageDestination: null,
+  storageDestinations: [],
   unreadEvents: [],
 };
 
@@ -217,6 +225,6 @@ export const FIXTURE_INTEGRATIONS_STATE_SETUP_FITS: IntegrationsState = {
     nextScheduledAt: null,
     autoAddFutureBases: false,
   },
-  storageDestination: null,
+  storageDestinations: [],
   unreadEvents: [],
 };

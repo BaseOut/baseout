@@ -33,6 +33,7 @@ const BASE_RUNS: BackupRunSummary[] = [
   {
     id: 'run_design_queued',
     status: 'queued',
+    kind: 'full',
     isTrial: false,
     triggeredBy: 'user_manual',
     recordCount: null,
@@ -50,6 +51,7 @@ const BASE_RUNS: BackupRunSummary[] = [
   {
     id: 'run_design_running',
     status: 'running',
+    kind: 'full',
     isTrial: false,
     triggeredBy: 'schedule_daily',
     recordCount: 4_812,
@@ -67,6 +69,7 @@ const BASE_RUNS: BackupRunSummary[] = [
   {
     id: 'run_design_completed_1',
     status: 'succeeded',
+    kind: 'full',
     isTrial: false,
     triggeredBy: 'schedule_daily',
     recordCount: 12_407,
@@ -84,6 +87,7 @@ const BASE_RUNS: BackupRunSummary[] = [
   {
     id: 'run_design_completed_2',
     status: 'succeeded',
+    kind: 'full',
     isTrial: false,
     triggeredBy: 'schedule_daily',
     recordCount: 12_402,
@@ -101,6 +105,7 @@ const BASE_RUNS: BackupRunSummary[] = [
   {
     id: 'run_design_completed_3',
     status: 'succeeded',
+    kind: 'full',
     isTrial: false,
     triggeredBy: 'user_manual',
     recordCount: 12_389,
@@ -118,6 +123,7 @@ const BASE_RUNS: BackupRunSummary[] = [
   {
     id: 'run_design_completed_trial',
     status: 'trial_succeeded',
+    kind: 'full',
     isTrial: true,
     triggeredBy: 'onboarding_trial',
     recordCount: 8_141,
@@ -135,6 +141,7 @@ const BASE_RUNS: BackupRunSummary[] = [
   {
     id: 'run_design_failed',
     status: 'failed',
+    kind: 'full',
     isTrial: false,
     triggeredBy: 'schedule_daily',
     recordCount: 0,
@@ -153,6 +160,7 @@ const BASE_RUNS: BackupRunSummary[] = [
   {
     id: 'run_design_cancelled',
     status: 'cancelled',
+    kind: 'full',
     isTrial: false,
     triggeredBy: 'user_manual',
     recordCount: 2_104,
@@ -195,6 +203,7 @@ const HISTORY_RUNS: BackupRunSummary[] = Array.from({ length: 42 }, (_, i) => {
   return {
     id: `run_design_h${seq}`,
     status,
+    kind: 'full',
     isTrial: false,
     triggeredBy: isManual ? 'user_manual' : 'schedule_daily',
     recordCount: records,
