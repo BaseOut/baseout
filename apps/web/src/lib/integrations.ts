@@ -70,6 +70,34 @@ interface PlatformConfig {
   is_enterprise_scope?: boolean
 }
 
+/**
+ * Minimal per-request read for the app-wide connection-health banner: just the
+ * status + display name of the org's Airtable connections. Deliberately lighter
+ * than getIntegrationsState (no bases / policy / destinations) because it runs
+ * in the shared layout on every authenticated page. `deriveBannerProps`
+ * (lib/connection-health.ts) consumes this shape; storage destinations carry no
+ * status column, so they contribute no live banner state and stay `[]` here.
+ */
+export async function getConnectionHealthSummary(
+  db: AppDb,
+  organizationId: string,
+): Promise<{
+  connections: { status: string; displayName: string | null }[]
+  storageDestinations: { type: string }[]
+}> {
+  const rows = await db
+    .select({ status: connections.status, displayName: connections.displayName })
+    .from(connections)
+    .innerJoin(platforms, eq(platforms.id, connections.platformId))
+    .where(
+      and(
+        eq(connections.organizationId, organizationId),
+        eq(platforms.slug, 'airtable'),
+      ),
+    )
+  return { connections: rows, storageDestinations: [] }
+}
+
 export async function getIntegrationsState(
   db: AppDb,
   organizationId: string,

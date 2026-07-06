@@ -1,0 +1,85 @@
+---
+// Harness route — preview the promoted @web connection-health banner: the
+// selected state in context (top of the work area) plus a static gallery of
+// every state. Real component, real shell. In production the app shell derives
+// the banner from live connection status; here we drive it from fixtures.
+//   /connection-banner?state=broken | broken-dest | multiple | expiring |
+//                            degraded | reconnecting | restored | healthy
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import ConnectionHealthBanner from '@web/components/patterns/ConnectionHealthBanner.astro';
+import ConnectionHealthPill from '@web/components/patterns/ConnectionHealthPill.astro';
+import { BANNER_PREVIEWS, findBannerPreview } from '../fixtures/connection-health';
+
+const stateKey = Astro.url.searchParams.get('state') ?? 'broken';
+const active = stateKey === 'healthy' ? undefined : findBannerPreview(stateKey);
+const breadcrumbs = [{ label: 'Connection health' }];
+---
+
+<SidebarLayout pageTitle="Connection health banner" breadcrumbs={breadcrumbs}>
+  <div class="max-w-4xl">
+    {active && (
+      <div class="mb-8">
+        <ConnectionHealthBanner {...active.props} />
+        {active.props.state === 'broken' && (
+          <div class="border-base-300 mt-3 flex items-center gap-3 rounded-md border border-dashed px-4 py-2">
+            <span class="text-base-content/55 text-xs">Collapsed form (topbar pill):</span>
+            <ConnectionHealthPill {...active.props} class="!inline-flex" />
+          </div>
+        )}
+      </div>
+    )}
+
+    <header class="mb-6">
+      <p class="text-base-content/60 text-sm">feat/notifications · promoted @web component</p>
+      <h1 class="text-title mt-1">Connection-health banner</h1>
+      <p class="text-base-content/70 mt-2 max-w-2xl">
+        The bar above renders the selected state. In the real app the shell derives it from
+        live connection status (active · refreshing · pending_reauth · invalid) via
+        <code>deriveBannerProps</code> and shows it at the top of every page; here it's
+        fixture-driven. Built from daisyUI <code>alert-soft</code> + our <code>Button</code>
+        and Lucide icons. Collapsing a Broken bar (chevron) tucks it into the topbar pill
+        next to the bell; warning and success states dismiss.
+      </p>
+    </header>
+
+    <!-- State switcher -->
+    <div class="mb-10 flex flex-wrap gap-2">
+      {BANNER_PREVIEWS.map((p) => (
+        <a href={`?state=${p.key}`} class:list={['btn btn-sm', p.key === stateKey ? 'btn-primary' : 'btn-ghost']}>
+          {p.label}
+        </a>
+      ))}
+      <a href="?state=healthy" class:list={['btn btn-sm', stateKey === 'healthy' ? 'btn-primary' : 'btn-ghost']}>
+        Healthy (none)
+      </a>
+    </div>
+
+    <!-- All states, stacked -->
+    <h2 class="border-base-300 text-base-content/80 mb-1 border-t pt-4 text-sm font-semibold tracking-wide uppercase">
+      All states
+    </h2>
+    <p class="text-base-content/60 mb-6 text-sm">Every state at full width, with the event that raises it.</p>
+
+    <div class="space-y-7">
+      {BANNER_PREVIEWS.map((p) => (
+        <div>
+          <div class="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+            <span class="text-base-content/90 text-sm font-semibold">{p.label}</span>
+            <span class="text-base-content/55 text-xs">{p.trigger}</span>
+          </div>
+          <ConnectionHealthBanner {...p.props} collapsible={false} />
+        </div>
+      ))}
+
+      <div>
+        <div class="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span class="text-base-content/90 text-sm font-semibold">Healthy</span>
+          <span class="text-base-content/55 text-xs">everything live → no banner is rendered</span>
+        </div>
+        <div class="border-base-300 text-base-content/50 rounded-md border border-dashed px-4 py-3 text-sm">
+          No banner. The shell stays clean; health shows only on the Sources / Destinations badges.
+        </div>
+      </div>
+    </div>
+  </div>
+</SidebarLayout>

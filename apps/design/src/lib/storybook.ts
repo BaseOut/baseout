@@ -332,14 +332,15 @@ export const SB_ENTRIES: SBEntry[] = [
     name: 'Spacing',
     summary: 'A 4px grid — the rhythm everything snaps to.',
     description:
-      'Spacing is Tailwind’s default 4px scale (<code>--spacing: 0.25rem</code>); every padding, gap and margin is a multiple of 4. Use the scale, never arbitrary pixel values, so vertical rhythm stays consistent across views. The knob is <code>--spacing</code> plus the discipline of using <code>p-*</code> / <code>gap-*</code> / <code>m-*</code> steps.',
+      'Spacing is Tailwind’s default 4px scale (<code>--spacing: 0.25rem</code>) — which is also daisyUI’s native scale, so snapping to it aligns WITH the framework. Every padding, gap and margin is a multiple of 4 (4·8·12·16·20·24·28·32·40·48). Prefer Tailwind utilities (<code>p-*</code> / <code>gap-*</code> / <code>m-*</code>); <strong>bespoke component CSS rounds to the same grid</strong>. Only 1–2px is allowed off-grid, and only for borders / hairlines / optical nudges — never for spacing. Enforced by <code>ds-lint</code> (rule <code>spacing-grid</code>): an off-grid padding/margin/gap px value fails the gate.',
     showCode: false,
     usageDo: [
-      'Snap every gap and pad to the scale (4 / 8 / 12 / 16 / 24 / 32 / 48).',
+      'Snap every gap and pad to the scale (4 / 8 / 12 / 16 / 20 / 24 / 32 / 48).',
       'Use larger steps (24–48) to separate sections, smaller (4–8) to group.',
+      'In bespoke CSS too: round padding/margin/gap to a multiple of 4 (ds-lint enforces it).',
     ],
     usageDont: [
-      "Don't hand-pick 14px / 18px / 30px — those break the grid.",
+      "Don't hand-pick 6 / 7 / 9 / 10 / 14 / 18 / 30px — those break the grid (1–2px is fine for a border only).",
     ],
     examples: [
       {
@@ -1289,7 +1290,7 @@ export const SB_ENTRIES: SBEntry[] = [
         ],
       },
     ],
-    usageDo: ['Use the soft style for calm, on-brand banners.', 'Give an error alert a recovery action (Reconnect, Retry).', 'Make every user hint / heads-up an alert with a leading icon — a gating hint is a persistent alert-warning + lucide--circle-alert; a non-gating tip may add a × to dismiss.'],
+    usageDo: ['Use the soft style for calm, on-brand banners.', 'Give an error alert a recovery action (Reconnect, Retry).', 'Make every user hint / heads-up an alert with a leading icon — a gating hint is a persistent alert-warning + lucide--circle-alert; a non-gating tip may add a × to dismiss.', 'Use it for EVERY in-panel message banner — provenance/AI = alert-info, removed/invalid/stale/broken-data = alert-warning (see pattern-removed-notice). Never a hand-rolled tinted box. (Inline helper text under an input is a caption, not an alert.)'],
     usageDont: ["Don't stack multiple alerts — collapse to the most important.", "Don't use an alert for a transient confirmation — that's a Toast.", "Don't render a hint as a bare tinted <p> — it must be an alert with an icon."],
     examples: [
       {
@@ -1589,6 +1590,34 @@ export const SB_ENTRIES: SBEntry[] = [
     <div class="flex justify-between text-sm"><span class="text-base-content/70">Usage this month</span><span class="font-mono tabular-nums">64%</span></div>
     <progress class="progress progress-primary mt-1.5 w-full" value="64" max="100"></progress>
   </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-connection-health',
+    group: 'Patterns',
+    name: 'Connection health',
+    summary: 'App-wide banner (+ topbar pill) for a broken or at-risk source / destination connection.',
+    reference: 'components/patterns/ConnectionHealthBanner.astro · components/patterns/ConnectionHealthPill.astro',
+    showCode: false,
+    description:
+      'A graded warning bar at the top of the work area, derived from the live connection status (active · refreshing · pending_reauth · invalid) and rendered only when something needs attention. Severity maps to daisyUI alert-soft tints — error (broken), warning (expiring / degraded), info (reconnecting), success (restored). A broken bar collapses (chevron) into a compact pill next to the notification bell; warning / success states dismiss. All copy + severity logic lives in <code>connection-health-banner.ts</code>; the two .astro files stay thin. Live: <a href="/connection-banner">Connection health</a>.',
+    usageDo: ['Derive the state from real connection status via deriveBannerProps — render nothing on a healthy Space.', 'Point Reconnect at the existing Sources / Destinations reconnect flow.'],
+    usageDont: ["Don't stack multiple banners — roll 2+ broken connections into the grouped state.", "Don't fabricate a token TTL: the days-to-expiry copy only shows when the number is genuinely known."],
+    examples: [
+      {
+        html: `
+<div role="alert" class="alert alert-soft alert-error flex items-center gap-3">
+  <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-error/15 text-error" aria-hidden="true">
+    <span class="iconify lucide--triangle-alert icon-md"></span>
+  </span>
+  <div class="min-w-0 flex-1">
+    <div class="leading-snug font-semibold">Backups paused: your <strong>Airtable</strong> connection expired.</div>
+    <div class="mt-0.5 text-sm text-base-content/70">Nothing is being backed up until you reconnect. Last successful backup: <strong>2 days ago</strong>.</div>
+  </div>
+  <a href="#" class="btn btn-primary btn-sm gap-1.5"><span class="iconify lucide--refresh-cw icon-sm"></span>Reconnect</a>
+  <button class="btn btn-ghost btn-sm btn-square text-base-content/55" aria-label="Collapse to topbar"><span class="iconify lucide--chevron-up icon-md"></span></button>
 </div>`,
       },
     ],

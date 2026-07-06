@@ -1,4 +1,16 @@
 {
+  "patterns/ConnectionHealthBanner.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-connection-health",
+    "designHarnessPath": "pages/connection-banner.astro",
+    "rationale": "App-shell connection-health warning bar composed from daisyUI alert-soft, the Button primitive, and Lucide icons; Storybook documents the state matrix, apps/design validates the collapse↔pill behavior."
+  },
+  "patterns/ConnectionHealthPill.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-connection-health",
+    "designHarnessPath": "pages/connection-banner.astro",
+    "rationale": "Compact topbar form of the connection-health banner (daisyUI alert-soft pill); shares getBannerConfig with the bar and re-expands it."
+  },
   "patterns/AppShellHeader.astro": {
     "classification": "storybook-pattern",
     "styleguideId": "pattern-app-shell",

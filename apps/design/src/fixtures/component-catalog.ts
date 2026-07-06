@@ -126,3 +126,26 @@ export const appShellSidebarFixture = {
   user: { name: 'Alex Morgan', email: 'alex@example.com', role: 'owner' },
   organization: { id: 'org-1', name: 'Acme Corp', slug: 'acme' },
 };
+
+// ConnectionHealthBanner / ConnectionHealthPill — props are plain objects so the
+// shared catalog stays import-free (it's read from both apps). `state` strings
+// match ConnectionBannerState in components/patterns/connection-health-banner.ts.
+export const connectionHealthBannerFixture = {
+  state: 'broken',
+  provider: 'Airtable',
+  side: 'source',
+  lastBackup: '2 days ago',
+  reconnectHref: '/sources',
+};
+
+export const connectionHealthPillFixture = connectionHealthBannerFixture;
+
+export const connectionHealthStates = [
+  { key: 'broken', label: 'Broken · source', props: connectionHealthBannerFixture },
+  { key: 'broken-dest', label: 'Broken · destination', props: { state: 'broken', provider: 'Google Drive', side: 'destination', reconnectHref: '/destinations' } },
+  { key: 'multiple', label: 'Multiple broken', props: { state: 'broken', count: 3, names: ['Airtable', 'Google Drive', 'Dropbox'], reconnectHref: '/sources' } },
+  { key: 'expiring', label: 'Expiring soon', props: { state: 'expiring', provider: 'Google Drive', daysToExpiry: 5, reconnectHref: '/destinations' } },
+  { key: 'degraded', label: 'Degraded', props: { state: 'degraded', provider: 'Airtable', reconnectHref: '/sources' } },
+  { key: 'reconnecting', label: 'Reconnecting', props: { state: 'reconnecting', provider: 'Airtable' } },
+  { key: 'restored', label: 'Restored', props: { state: 'restored' } },
+];

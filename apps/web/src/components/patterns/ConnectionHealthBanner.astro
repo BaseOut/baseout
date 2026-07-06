@@ -1,0 +1,92 @@
+---
+/**
+ * ConnectionHealthBanner — app-shell warning bar for a broken / at-risk
+ * source (Airtable) or destination connection.
+ *
+ * Sits at the top of the work area (SidebarLayout, under the topbar). All the
+ * presentation logic + types live in ./connection-health-banner.ts; this file
+ * stays thin and renders what getBannerConfig() returns. States map onto the
+ * real connection-status vocabulary (active · refreshing · pending_reauth ·
+ * invalid) and extend it with the graded model from the connection-health
+ * research: broken · expiring · degraded · reconnecting · restored.
+ */
+import { cn } from '../../lib/ui';
+import Button from '../ui/Button.astro';
+import { getBannerConfig, type ConnectionBannerProps } from './connection-health-banner';
+
+interface Props extends ConnectionBannerProps {}
+
+const { id, class: className = '', bleed = false, group = 'main' } = Astro.props;
+const uid = id ?? `chb-${Math.random().toString(36).slice(2, 8)}`;
+const c = getBannerConfig(Astro.props);
+---
+
+<div data-connection-banner data-chb-bar={c.collapsible ? group : undefined} id={uid} class={cn('w-full', className)}>
+  <div
+    role="alert"
+    class={cn('chb-full alert alert-soft flex items-center gap-3', c.alertClass, bleed && 'rounded-none border-x-0 border-t-0')}
+  >
+    <span class={cn('grid size-8 shrink-0 place-items-center rounded-lg', c.iconChip)} aria-hidden="true">
+      <span class={cn('iconify', c.icon, 'icon-md', c.spin && 'animate-spin')}></span>
+    </span>
+
+    <div class="min-w-0 flex-1">
+      <div class="leading-snug font-semibold text-base-content" set:html={c.titleHtml} />
+      <div class="mt-0.5 text-sm text-base-content/70" set:html={c.descHtml} />
+    </div>
+
+    <div class="flex shrink-0 items-center gap-1.5">
+      {c.action && (
+        <Button variant={c.action.variant} size="sm" href={c.action.href}>
+          {c.action.icon && <span class={cn('iconify', c.action.icon, 'icon-sm')} aria-hidden="true"></span>}
+          {c.action.label}
+        </Button>
+      )}
+      {c.collapsible && (
+        <button type="button" class="btn btn-ghost btn-sm btn-square text-base-content/55 hover:text-base-content" aria-label="Collapse to topbar" data-chb-collapse={group}>
+          <span class="iconify lucide--chevron-up icon-md" aria-hidden="true"></span>
+        </button>
+      )}
+      {c.dismissible && (
+        <button type="button" class="btn btn-ghost btn-sm btn-square text-base-content/55 hover:text-base-content" aria-label="Dismiss" data-banner-dismiss>
+          <span class="iconify lucide--x icon-md" aria-hidden="true"></span>
+        </button>
+      )}
+    </div>
+  </div>
+</div>
+
+<script>
+  // Delegated, bundled once per page. Collapsing the full-width bar hides it and
+  // reveals the compact pill in the topbar (matched by data-chb group); the pill
+  // expands the bar back. Dismiss removes a warning/success banner outright.
+  function setHidden(selector: string, hidden: boolean) {
+    document.querySelectorAll(selector).forEach((el) => el.classList.toggle('hidden', hidden));
+  }
+
+  document.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement;
+
+    const collapse = t.closest('[data-chb-collapse]');
+    if (collapse) {
+      const g = collapse.getAttribute('data-chb-collapse');
+      setHidden(`[data-chb-bar="${g}"]`, true);
+      setHidden(`[data-chb-pill="${g}"]`, false);
+      return;
+    }
+
+    const expand = t.closest('[data-chb-expand]');
+    if (expand) {
+      e.preventDefault();
+      const g = expand.getAttribute('data-chb-expand');
+      setHidden(`[data-chb-bar="${g}"]`, false);
+      setHidden(`[data-chb-pill="${g}"]`, true);
+      return;
+    }
+
+    const dismiss = t.closest('[data-banner-dismiss]');
+    if (dismiss) {
+      dismiss.closest('[data-connection-banner]')?.remove();
+    }
+  });
+</script>

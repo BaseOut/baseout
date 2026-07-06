@@ -2,7 +2,12 @@
 import Layout from './Layout.astro';
 import Sidebar from '../components/patterns/AppShellSidebar.astro';
 import Header  from '../components/patterns/AppShellHeader.astro';
+import ConnectionHealthBanner from '../components/patterns/ConnectionHealthBanner.astro';
+import ConnectionHealthPill from '../components/patterns/ConnectionHealthPill.astro';
 import { getPageContext } from '../lib/config';
+import { getConnectionHealthSummary } from '../lib/integrations';
+import { deriveBannerProps } from '../lib/connection-health';
+import type { ConnectionBannerProps } from '../components/patterns/connection-health-banner';
 import type { NavItem, UserInfo, Breadcrumb } from '../lib/types';
 
 interface Props {
@@ -35,6 +40,19 @@ const spacesState = {
   list: ctx.spaces,
   activeSpaceId: Astro.locals.account?.space?.id ?? null,
 };
+
+// App-wide connection-health banner, derived from the active org's connection
+// status. Guarded + best-effort: a banner-read failure must never break the
+// shell, so it degrades to no banner rather than throwing on every page.
+let bannerProps: ConnectionBannerProps | null = null;
+try {
+  const orgId = Astro.locals.account?.organization?.id;
+  if (orgId && Astro.locals.db) {
+    bannerProps = deriveBannerProps(await getConnectionHealthSummary(Astro.locals.db, orgId));
+  }
+} catch {
+  bannerProps = null;
+}
 
 const {
   title,
@@ -82,7 +100,13 @@ const resolvedTitle = title ?? (pageTitle ? `${pageTitle} | ${brandName}` : bran
     <label for="layout-sidebar-toggle-trigger" id="layout-sidebar-backdrop"></label>
 
     <div class="flex flex-1 flex-col min-w-0">
-      <Header notificationCount={notificationCount} />
+      <Header notificationCount={notificationCount}>
+        {bannerProps?.state === 'broken' && (
+          <ConnectionHealthPill slot="topbar-status" {...bannerProps} />
+        )}
+      </Header>
+
+      {bannerProps && <ConnectionHealthBanner {...bannerProps} bleed />}
 
       <script
         type="application/json"

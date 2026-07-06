@@ -1,0 +1,41 @@
+---
+/**
+ * ConnectionHealthPill — the compact topbar form of ConnectionHealthBanner.
+ * Lives in the Header next to the notification bell, hidden until the user
+ * collapses the full-width bar (matched by the shared `group`). Clicking the
+ * label re-expands the bar; Reconnect runs the recovery flow.
+ */
+import { cn } from '../../lib/ui';
+import { getBannerConfig, type ConnectionBannerProps } from './connection-health-banner';
+
+interface Props extends ConnectionBannerProps {
+  group?: string;
+}
+
+const { group = 'main' } = Astro.props;
+const c = getBannerConfig(Astro.props);
+---
+
+<span
+  data-chb-pill={group}
+  class={cn('chb-pill alert alert-soft hidden inline-flex w-fit items-center gap-2 rounded-full py-1 ps-2.5 pe-1', c.alertClass)}
+>
+  <button
+    type="button"
+    data-chb-expand={group}
+    class="group inline-flex items-center gap-1.5 text-sm font-medium"
+    aria-label="Expand connection warning"
+  >
+    <span class={cn('grid size-5 shrink-0 place-items-center rounded-md', c.iconChip)} aria-hidden="true">
+      <span class={cn('iconify', c.icon, 'icon-xs', c.spin && 'animate-spin')}></span>
+    </span>
+    <span class="group-hover:underline">{c.pillLabel}</span>
+  </button>
+
+  {c.action?.href && (
+    <a href={c.action.href} class="btn btn-ghost btn-sm gap-1.5">
+      <span class="iconify lucide--refresh-cw icon-sm" aria-hidden="true"></span>
+      Reconnect
+    </a>
+  )}
+</span>
