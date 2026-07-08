@@ -49,6 +49,7 @@ import { spacesDocumentsHandler } from "./pages/api/internal/spaces/documents";
 import { spacesDocumentHandler } from "./pages/api/internal/spaces/document";
 import { spacesDocsByEntityHandler } from "./pages/api/internal/spaces/docs-by-entity";
 import { spacesSchemaReadHandler } from "./pages/api/internal/spaces/schema-read";
+import { spacesSchemaChangelogHandler } from "./pages/api/internal/spaces/schema-changelog";
 import { cleanupPlanHandler } from "./pages/api/internal/cleanup-plan";
 import { cleanupCompleteHandler } from "./pages/api/internal/cleanup-complete";
 import {
@@ -125,6 +126,8 @@ const SPACES_DOCS_BY_ENTITY_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/docs-by-entity$/;
 const SPACES_SCHEMA_READ_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/schema$/;
+const SPACES_SCHEMA_CHANGELOG_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/schema-changelog$/;
 
 // Re-export Durable Object classes so workerd can resolve their bindings.
 // Required even when Astro adapter wraps the entry — see CLAUDE.md §5.1.
@@ -507,6 +510,11 @@ export default {
       const schemaRead = SPACES_SCHEMA_READ_RE.exec(url.pathname);
       if (schemaRead) {
         return await spacesSchemaReadHandler(request, env, ctx, locals, schemaRead[1]!);
+      }
+
+      const schemaChangelog = SPACES_SCHEMA_CHANGELOG_RE.exec(url.pathname);
+      if (schemaChangelog) {
+        return await spacesSchemaChangelogHandler(request, env, ctx, locals, schemaChangelog[1]!);
       }
 
       // Attachment dedup (openspec/changes/server-attachments). The workflows
