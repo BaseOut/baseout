@@ -562,6 +562,26 @@ export type GetRelationshipsResult =
   | SchemaDocsError;
 export type MutateRelationshipResult = { ok: true; id?: string } | SchemaDocsError;
 
+// Changelog tab (server-schema-changelog / web-schema-changelog).
+export interface ChangelogEntryView {
+  runId: string | null;
+  at: string | null;
+  entityType: "base" | "table" | "field" | "view";
+  entityId: string;
+  entityName: string | null;
+  baseId: string;
+  tableId: string | null;
+  kind: "modified" | "removed";
+  changeType: string | null;
+  changeTypeName: string | null;
+  before: unknown;
+  after: unknown;
+  breaksData: boolean;
+}
+export type GetSchemaChangelogResult =
+  | { ok: true; entries: ChangelogEntryView[] }
+  | SchemaDocsError;
+
 // Chat tab (server-schema-chat / web-chat-tab).
 export interface ChatThreadSummaryView {
   id: string;
@@ -690,6 +710,7 @@ export interface BackupEngineClient {
   ): Promise<HealthMutationResult>;
   rerunHealth(spaceId: string, baseId: string): Promise<RerunHealthResult>;
   getRelationships(spaceId: string, baseId: string, includeDismissed?: boolean): Promise<GetRelationshipsResult>;
+  getSchemaChangelog(spaceId: string, baseId: string, limit?: number): Promise<GetSchemaChangelogResult>;
   mutateRelationship(
     spaceId: string,
     body:
@@ -1314,6 +1335,14 @@ export function createBackupEngine(
         derived: (res.body.derived ?? []) as DerivedRelationshipView[],
         syncedViews: (res.body.syncedViews ?? []) as SyncedViewRelationshipView[],
       };
+    },
+
+    async getSchemaChangelog(spaceId, baseId, limit) {
+      const q = limit != null ? `&limit=${encodeURIComponent(String(limit))}` : "";
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/schema-changelog?baseId=${encodeURIComponent(baseId)}${q}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return { ok: true, entries: (res.body.entries ?? []) as ChangelogEntryView[] };
     },
 
     async mutateRelationship(spaceId, body) {
