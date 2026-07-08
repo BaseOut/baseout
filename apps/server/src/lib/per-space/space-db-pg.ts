@@ -9,12 +9,14 @@
 // provisioning uses. The pure diff modules decide WHAT changes; this applies it.
 
 import { and, eq, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Sql } from "postgres";
 import type { AppDb } from "../../db/worker";
 import { spacePg } from "@baseout/db-schema/space";
 import { schemaNameForSpace } from "../provisioning/posture";
 import type { LifecycleOp, PriorWorkingSet, SchemaDiffResult } from "./schema-diff";
 import type { PriorCell, PriorRecord, RecordDiffResult } from "./record-diff";
+import { extractFieldConfig, type FieldConfig } from "./schema-enrich";
 
 /** The transaction handle drizzle hands the `db.transaction` callback. */
 export type SpaceTx = Parameters<Parameters<AppDb["transaction"]>[0]>[0];
@@ -111,30 +113,59 @@ export async function readSchemaWorkingSet(
   };
 }
 
+const isoOrNull = (d: Date | null): string | null => (d ? d.toISOString() : null);
+
 /**
  * Read every captured schema entity across all bases — powers the Browse tab's
  * entity tree (Schema Docs, openspec/changes/shared-schema-docs §4). Flat lists;
  * the web view groups bases → tables → fields/views. Read-only broker; the
  * browser never connects to the per-Space DB.
+ *
+ * Enriched (server-schema-read-enrichment): annotation columns, options-derived
+ * field config (extractFieldConfig), and removedAt (first_unseen_run → that base
+ * run's completed_at) — all additive to the original payload shape.
  */
 export async function readAllEntities(tx: SpaceTx): Promise<{
-  bases: { baseId: string; name: string; description: string | null; status: string }[];
-  tables: { tableId: string; baseId: string; name: string; recordCount: number | null; fieldCount: number | null; description: string | null; status: string }[];
-  fields: { fieldId: string; tableId: string; baseId: string; name: string; type: string; isPrimary: boolean; description: string | null; status: string }[];
-  views: { viewId: string; tableId: string; baseId: string; name: string; type: string | null; status: string }[];
+  bases: { baseId: string; name: string; description: string | null; aiDescription: string | null; descriptionOverride: string | null; status: string; removedAt: string | null }[];
+  tables: { tableId: string; baseId: string; name: string; recordCount: number | null; fieldCount: number | null; description: string | null; aiDescription: string | null; descriptionOverride: string | null; status: string; removedAt: string | null }[];
+  fields: ({ fieldId: string; tableId: string; baseId: string; name: string; type: string; isPrimary: boolean; description: string | null; aiDescription: string | null; descriptionOverride: string | null; status: string; removedAt: string | null } & FieldConfig)[];
+  views: { viewId: string; tableId: string; baseId: string; name: string; type: string | null; status: string; removedAt: string | null }[];
 }> {
-  const bases = await tx
-    .select({ baseId: spacePg.bases.baseId, name: spacePg.bases.name, description: spacePg.bases.description, status: spacePg.bases.status })
-    .from(spacePg.bases);
-  const tables = await tx
-    .select({ tableId: spacePg.tables.tableId, baseId: spacePg.tables.baseId, name: spacePg.tables.name, recordCount: spacePg.tables.recordCount, fieldCount: spacePg.tables.fieldCount, description: spacePg.tables.description, status: spacePg.tables.status })
-    .from(spacePg.tables);
-  const fields = await tx
-    .select({ fieldId: spacePg.fields.fieldId, tableId: spacePg.fields.tableId, baseId: spacePg.fields.baseId, name: spacePg.fields.name, type: spacePg.fields.type, isPrimary: spacePg.fields.isPrimary, description: spacePg.fields.description, status: spacePg.fields.status })
-    .from(spacePg.fields);
-  const views = await tx
-    .select({ viewId: spacePg.views.viewId, tableId: spacePg.views.tableId, baseId: spacePg.views.baseId, name: spacePg.views.name, type: spacePg.views.type, status: spacePg.views.status })
-    .from(spacePg.views);
+  const removedRuns = alias(spacePg.baseRuns, "removed_runs");
+  const removedAt = isoOrNull;
+
+  const bases = (
+    await tx
+      .select({ baseId: spacePg.bases.baseId, name: spacePg.bases.name, description: spacePg.bases.description, aiDescription: spacePg.bases.aiDescription, descriptionOverride: spacePg.bases.descriptionOverride, status: spacePg.bases.status, removedAtTs: removedRuns.completedAt })
+      .from(spacePg.bases)
+      .leftJoin(removedRuns, eq(spacePg.bases.firstUnseenRun, removedRuns.id))
+  ).map(({ removedAtTs, ...b }) => ({ ...b, removedAt: removedAt(removedAtTs) }));
+
+  const tables = (
+    await tx
+      .select({ tableId: spacePg.tables.tableId, baseId: spacePg.tables.baseId, name: spacePg.tables.name, recordCount: spacePg.tables.recordCount, fieldCount: spacePg.tables.fieldCount, description: spacePg.tables.description, aiDescription: spacePg.tables.aiDescription, descriptionOverride: spacePg.tables.descriptionOverride, status: spacePg.tables.status, removedAtTs: removedRuns.completedAt })
+      .from(spacePg.tables)
+      .leftJoin(removedRuns, eq(spacePg.tables.firstUnseenRun, removedRuns.id))
+  ).map(({ removedAtTs, ...t }) => ({ ...t, removedAt: removedAt(removedAtTs) }));
+
+  const fields = (
+    await tx
+      .select({ fieldId: spacePg.fields.fieldId, tableId: spacePg.fields.tableId, baseId: spacePg.fields.baseId, name: spacePg.fields.name, type: spacePg.fields.type, options: spacePg.fields.options, isPrimary: spacePg.fields.isPrimary, description: spacePg.fields.description, aiDescription: spacePg.fields.aiDescription, descriptionOverride: spacePg.fields.descriptionOverride, status: spacePg.fields.status, removedAtTs: removedRuns.completedAt })
+      .from(spacePg.fields)
+      .leftJoin(removedRuns, eq(spacePg.fields.firstUnseenRun, removedRuns.id))
+  ).map(({ removedAtTs, options, ...f }) => ({
+    ...f,
+    ...extractFieldConfig(f.type, options),
+    removedAt: removedAt(removedAtTs),
+  }));
+
+  const views = (
+    await tx
+      .select({ viewId: spacePg.views.viewId, tableId: spacePg.views.tableId, baseId: spacePg.views.baseId, name: spacePg.views.name, type: spacePg.views.type, status: spacePg.views.status, removedAtTs: removedRuns.completedAt })
+      .from(spacePg.views)
+      .leftJoin(removedRuns, eq(spacePg.views.firstUnseenRun, removedRuns.id))
+  ).map(({ removedAtTs, ...v }) => ({ ...v, removedAt: removedAt(removedAtTs) }));
+
   return { bases, tables, fields, views };
 }
 

@@ -409,7 +409,10 @@ export interface SchemaEntityBase {
   baseId: string;
   name: string;
   description: string | null;
+  aiDescription: string | null;
+  descriptionOverride: string | null;
   status: string;
+  removedAt: string | null;
 }
 export interface SchemaEntityTable {
   tableId: string;
@@ -418,7 +421,10 @@ export interface SchemaEntityTable {
   recordCount: number | null;
   fieldCount: number | null;
   description: string | null;
+  aiDescription: string | null;
+  descriptionOverride: string | null;
   status: string;
+  removedAt: string | null;
 }
 export interface SchemaEntityField {
   fieldId: string;
@@ -428,7 +434,20 @@ export interface SchemaEntityField {
   type: string;
   isPrimary: boolean;
   description: string | null;
+  aiDescription: string | null;
+  descriptionOverride: string | null;
   status: string;
+  removedAt: string | null;
+  // Options-derived config (server-schema-read-enrichment) — null when the
+  // field's type carries no such config or the captured options were malformed.
+  linkedTableId: string | null;
+  allowsMultiple: boolean | null;
+  inverseFieldId: string | null;
+  formula: string | null;
+  referencedFieldIds: string[] | null;
+  lookupViaFieldId: string | null;
+  lookupTargetFieldId: string | null;
+  choices: string[] | null;
 }
 export interface SchemaEntityView {
   viewId: string;
@@ -437,6 +456,7 @@ export interface SchemaEntityView {
   name: string;
   type: string | null;
   status: string;
+  removedAt: string | null;
 }
 export type GetSchemaResult =
   | {

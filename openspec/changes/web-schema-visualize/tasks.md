@@ -1,5 +1,24 @@
 ## Status
 
+PROPOSED — engine dependency CLEARED 2026-07-07 by `server-schema-read-enrichment`:
+the schema payload now carries `linkedTableId` / `allowsMultiple` / `inverseFieldId`
+(+ formula/lookup config and annotations), so Data-mode edges are drawable. The
+`/schema` shell now renders a soon-gated Visualize panel (`web-schema-round3-shell`)
+for this change to light up. Per-table `health` remains optional/uncovered.
+
+**Original blocker (2026-07-06, resolved) — Data (ER) mode needs engine schema enrichment.** The graph's whole
+value is drawing linked-record edges between tables, but this repo's engine
+schema payload (`GetSchemaResult` → `SchemaEntityField` in
+`apps/web/src/lib/backup-engine.ts`) exposes only `fieldId/tableId/baseId/name/
+type/isPrimary/description/status` — **no `linkedTableId`** (the linked-record
+target) and no per-table `health`. Without linked-record targets there are no
+edges to draw, so Data mode would render disconnected boxes. Unblock with a
+paired **server** change that adds `linkedTableId` (+ optional health) to the
+schema payload, then port `SchemaCanvas.tsx` (1704 lines). The **Relationships**
+mode is separately feedable via an adapter over the existing per-base
+`getRelationships` (`derived` + `syncedViews`). Sequenced AFTER the Changelog
+slice per the maintainer's call.
+
 PROPOSED — not yet implemented. A new **Visualize** tab on `/schema` (after Browse):
 a React Flow island (`components/schema/SchemaCanvas.tsx`) with a Data / Relationships
 / Automations & Interfaces mode menu, the ported `FieldsFilter.tsx` + `FacetFilter.astro`
