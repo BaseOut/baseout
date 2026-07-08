@@ -1,0 +1,443 @@
+---
+/**
+ * SchemaChat — the Schema page's Chat tab (openspec chat-tab). Last tab.
+ *
+ * Chat with AI about the Space's schema: a thread rail, a conversation, and a
+ * composer with a persistent CONTEXT BAR (scope chips for bases/tables/fields +
+ * attached docs; "Whole Space" when empty). Assistant replies carry clickable
+ * entity/doc reference chips (→ the shared EntityPanel / the doc). "Convert to
+ * doc" drops a linked reference card. Pro+ gated; responses "stream" (faked).
+ *
+ * Dense / utility tone (Linear), NOT a consumer chat: no avatars, sender shown
+ * by label + subtle background. Reuses EntitySearch (add-context typeahead), the
+ * Airtable field icons, the entity tag-chip, and the Pro+ upgrade affordance.
+ */
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+import type { SchemaEntity } from './schemaEntities';
+
+export interface ChatRef {
+  kind: 'entity' | 'doc';
+  id: string;
+  name: string;
+  entityKind?: 'base' | 'table' | 'field';
+  fieldType?: string;
+}
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  /** Entity/doc reference chips shown under an assistant reply. */
+  refs?: ChatRef[];
+  /** A convert-to-doc result rendered as a linked reference card. */
+  convertedDoc?: { id: string; title: string };
+}
+export interface ChatThread {
+  id: string;
+  title: string;
+  updatedAt: string;
+  archived?: boolean;
+  /** Context scope for the thread (entity + doc chips). Empty = Whole Space. */
+  scope?: ChatRef[];
+  messages: ChatMessage[];
+}
+interface Props {
+  threads: ChatThread[];
+  index: SchemaEntity[];
+  docs: { id: string; title: string }[];
+  /** Pro+ capability. `ready` → active composer; otherwise the upgrade gate. */
+  aiState?: 'ready' | 'locked' | 'no-credits';
+}
+const { threads, index, docs, aiState = 'ready' } = Astro.props;
+const canChat = aiState === 'ready';
+
+const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const fmtWhen = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+};
+const fieldIconSvg = (type?: string) => {
+  const k = type ? airtableIconKey(type) : null;
+  return k ? `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
+};
+const refIcon = (r: ChatRef) =>
+  r.kind === 'doc' ? '<span class="iconify lucide--file-text"></span>'
+  : r.entityKind === 'field' ? fieldIconSvg(r.fieldType) || '<span class="iconify lucide--tag"></span>'
+  : r.entityKind === 'table' ? '<span class="iconify lucide--table-2"></span>'
+  : '<span class="iconify lucide--database concept-ic-base"></span>';
+// A reference chip — same component for context-bar scope + in-message references.
+const refChip = (r: ChatRef, removable = false) =>
+  `<span class="chat-chip" data-chat-chip data-ref-kind="${r.kind}" data-ref-id="${esc(r.id)}">
+    <button type="button" class="chat-chip-open" ${r.kind === 'doc' ? `data-doc-open="${esc(r.id)}"` : `data-entity-open="${esc(r.id)}"`}>
+      <span class="chat-chip-ic">${refIcon(r)}</span><span class="chat-chip-name">${esc(r.name)}</span>
+    </button>${removable ? '<button type="button" class="chat-chip-x" data-chip-remove aria-label="Remove from context"><span class="iconify lucide--x size-3"></span></button>' : ''}
+  </span>`;
+
+// Assistant footer — the AI marker + hover actions (Copy / thumbs), Claude-style.
+const msgActions = `<div class="chat-msg-foot">
+  <span class="chat-msg-mark"><span class="iconify lucide--sparkles size-3.5" aria-hidden="true"></span></span>
+  <div class="chat-msg-acts">
+    <button type="button" class="chat-act" data-chat-copy aria-label="Copy"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span></button>
+    <button type="button" class="chat-act" aria-label="Good response"><span class="iconify lucide--thumbs-up size-3.5" aria-hidden="true"></span></button>
+    <button type="button" class="chat-act" aria-label="Bad response"><span class="iconify lucide--thumbs-down size-3.5" aria-hidden="true"></span></button>
+  </div>
+</div>`;
+
+const renderMessage = (m: ChatMessage) => {
+  if (m.convertedDoc) {
+    return `<div class="chat-msg chat-msg-system" data-chat-msg>
+      <div class="chat-doccard">
+        <span class="chat-doccard-ic"><span class="iconify lucide--file-plus-2 size-4" aria-hidden="true"></span></span>
+        <span class="chat-doccard-meta"><span class="chat-doccard-label">Saved as a doc</span><span class="chat-doccard-title">${esc(m.convertedDoc.title)}</span></span>
+        <button type="button" class="btn btn-sm btn-neutral gap-1.5 chat-doccard-open" data-doc-open="${esc(m.convertedDoc.id)}">Open<span class="iconify lucide--arrow-up-right size-3.5" aria-hidden="true"></span></button>
+      </div>
+    </div>`;
+  }
+  const refs = m.refs && m.refs.length > 0
+    ? `<div class="chat-msg-refs"><span class="chat-msg-refs-label">References</span>${m.refs.map((r) => refChip(r)).join('')}</div>`
+    : '';
+  return m.role === 'assistant'
+    ? `<div class="chat-msg chat-msg-assistant" data-chat-msg>
+        <span class="chat-msg-who">Assistant</span>
+        <div class="chat-msg-body">${esc(m.text)}</div>
+        ${refs}
+        ${msgActions}
+      </div>`
+    : `<div class="chat-msg chat-msg-user" data-chat-msg>
+        <span class="chat-msg-who">You</span>
+        <div class="chat-msg-body">${esc(m.text)}</div>
+      </div>`;
+};
+
+const active = threads.filter((t) => !t.archived);
+const archived = threads.filter((t) => t.archived);
+const defaultId = active[0]?.id;
+const hasThreads = threads.length > 0;
+const docList = docs;
+
+// Add-context picker — a browsable + searchable list of everything you can scope to.
+const ctxIcon = (e: SchemaEntity) =>
+  e.kind === 'field' ? fieldIconSvg(e.fieldType) || '<span class="iconify lucide--tag"></span>'
+  : e.kind === 'table' ? '<span class="iconify lucide--table-2"></span>'
+  : '<span class="iconify lucide--database concept-ic-base"></span>';
+const ctxSearchStr = (e: SchemaEntity) => [e.name, e.tableName, e.baseName].filter(Boolean).join(' ').toLowerCase();
+const ctxGroups = [
+  { label: 'Bases', items: index.filter((e) => e.kind === 'base') },
+  { label: 'Tables', items: index.filter((e) => e.kind === 'table') },
+  { label: 'Fields', items: index.filter((e) => e.kind === 'field') },
+];
+---
+
+<section class="chat" data-chat data-can-chat={canChat ? '1' : '0'}>
+  {/* ── thread rail ── */}
+  <aside class="chat-rail">
+    <button type="button" class="btn btn-sm btn-neutral gap-1.5 chat-newbtn" data-chat-new>
+      <span class="iconify lucide--plus size-4" aria-hidden="true"></span>New chat
+    </button>
+    <div class="chat-threads" data-chat-threads role="tablist" aria-label="Chat threads">
+      {active.map((t, i) => (
+        <div class="chat-trow" data-chat-trow={t.id} class:list={[{ 'is-active': t.id === defaultId }]}>
+          <button type="button" class="chat-trow-main" data-chat-open={t.id} role="tab" aria-selected={t.id === defaultId}>
+            <span class="iconify lucide--message-square size-3.5 chat-trow-ic" aria-hidden="true"></span>
+            <span class="chat-trow-title" data-chat-title>{t.title}</span>
+            <span class="chat-trow-when">{fmtWhen(t.updatedAt)}</span>
+          </button>
+          <div class="dropdown dropdown-end chat-trow-menu">
+            <div tabindex="0" role="button" class="btn btn-sm btn-ghost btn-square chat-trow-kebab" aria-label="Thread actions"><span class="iconify lucide--ellipsis size-4" aria-hidden="true"></span></div>
+            <ul tabindex="0" class="dropdown-content menu chat-kebab-menu">
+              <li><button type="button" data-chat-rename={t.id}><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span>Rename</button></li>
+              <li><button type="button" data-chat-archive={t.id}><span class="iconify lucide--archive size-3.5" aria-hidden="true"></span>Archive</button></li>
+            </ul>
+          </div>
+        </div>
+      ))}
+      <p class="chat-rail-empty" data-chat-rail-empty hidden={active.length > 0}>No chats yet.</p>
+    </div>
+    {archived.length > 0 && (
+      <label class="chat-arctoggle">
+        <input type="checkbox" class="toggle toggle-sm" data-chat-show-archived />
+        <span>Show archived <span class="chat-arc-n">{archived.length}</span></span>
+      </label>
+    )}
+    <div class="chat-arc-list" data-chat-arc-list hidden>
+      {archived.map((t) => (
+        <div class="chat-trow chat-trow-arc" data-chat-trow={t.id}>
+          <button type="button" class="chat-trow-main" data-chat-open={t.id}>
+            <span class="iconify lucide--archive size-3.5 chat-trow-ic" aria-hidden="true"></span>
+            <span class="chat-trow-title">{t.title}</span>
+          </button>
+          <button type="button" class="btn btn-sm btn-ghost chat-trow-restore" data-chat-restore={t.id}>Restore</button>
+        </div>
+      ))}
+    </div>
+  </aside>
+
+  {/* ── main: conversation + composer (per thread; only the active one shows) ── */}
+  <div class="chat-main">
+    {!canChat ? (
+      <div class="chat-gate">
+        <span class="chat-gate-ic"><span class="iconify lucide--sparkles size-6" aria-hidden="true"></span></span>
+        <p class="chat-gate-title">Chat with your schema</p>
+        <p class="chat-gate-sub">Ask questions about your bases, tables, and fields, scope the context to what matters, and turn answers into docs. Chatting uses AI credits.</p>
+        <a href="/settings/billing" class="btn btn-sm btn-primary gap-1.5"><span class="iconify lucide--arrow-up-circle size-4" aria-hidden="true"></span>Upgrade to Pro</a>
+      </div>
+    ) : !hasThreads ? (
+      <div class="chat-empty" data-chat-empty>
+        <span class="chat-empty-ic"><span class="iconify lucide--messages-square size-6" aria-hidden="true"></span></span>
+        <p class="chat-empty-title">Ask anything about your schema</p>
+        <p class="chat-empty-sub">Start a chat to explore how your bases link, find undocumented fields, or draft a doc. Scope the context to a base or table to keep answers focused.</p>
+        <button type="button" class="btn btn-sm btn-primary gap-1.5" data-chat-new><span class="iconify lucide--plus size-4" aria-hidden="true"></span>New chat</button>
+      </div>
+    ) : (
+      <>
+        {/* slim top bar — collapse toggle + active thread title + conversation actions (Claude-style) */}
+        <div class="chat-topbar">
+          <button type="button" class="btn btn-sm btn-ghost btn-square chat-collapse" data-chat-collapse aria-label="Toggle sidebar"><span class="iconify lucide--panel-left-close size-4" data-chat-collapse-ic aria-hidden="true"></span></button>
+          <span class="chat-topbar-title" data-chat-topbar-title>{active[0]?.title}</span>
+          <div class="dropdown dropdown-end chat-convert-dd">
+            <div tabindex="0" role="button" class="btn btn-sm btn-ghost gap-1.5 chat-convert" data-chat-convert><span class="iconify lucide--file-plus-2 size-4" aria-hidden="true"></span>Convert to doc</div>
+            <div tabindex="0" class="dropdown-content chat-convert-pop">
+              <p class="chat-convert-label">Save this conversation as a doc</p>
+              <input type="text" class="input input-sm chat-convert-input" data-chat-convert-name placeholder="Document name" aria-label="Document name" autocomplete="off" />
+              <div class="chat-convert-actions">
+                <button type="button" class="btn btn-sm btn-ghost" data-chat-convert-cancel>Cancel</button>
+                <button type="button" class="btn btn-sm btn-primary gap-1.5" data-chat-convert-create><span class="iconify lucide--check size-3.5" aria-hidden="true"></span>Create doc</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {threads.map((t) => (
+          <div class="chat-thread" data-chat-thread={t.id} hidden={t.id !== defaultId}>
+            <div class="chat-convo" data-chat-convo>
+              {t.messages.length === 0 ? (
+                <div class="chat-greet">
+                  <span class="chat-greet-ic"><span class="iconify lucide--sparkles size-7" aria-hidden="true"></span></span>
+                  <p class="chat-greet-title">Ask anything about your schema</p>
+                  <p class="chat-greet-sub">Try “Which tables link to Companies?” or “What’s undocumented in Sales CRM?” Scope the context to a base or table to keep answers focused.</p>
+                </div>
+              ) : (
+                <Fragment set:html={t.messages.map((m) => renderMessage(m)).join('')} />
+              )}
+            </div>
+          </div>
+        ))}
+
+        {/* shared composer (Claude/Cursor model): scope chips sit at the top of the box,
+            and a "+ Add context" affordance in the toolbar manages the thread's context. */}
+        <div class="chat-composer-wrap">
+          <button type="button" class="chat-scrollbtn" data-chat-scrollbtn aria-label="Scroll to latest" hidden><span class="iconify lucide--arrow-down size-4" aria-hidden="true"></span></button>
+          <div class="chat-composer">
+            <div class="chat-context-chips" data-chat-context-chips>
+              {/* JS fills this from the active thread's scope; "Whole Space" when empty */}
+            </div>
+            <textarea class="chat-input" data-chat-input rows="1" placeholder="Ask about your schema…" aria-label="Message"></textarea>
+            <div class="chat-composer-bar">
+              <div class="dropdown dropdown-top chat-addctx">
+                <div tabindex="0" role="button" class="btn btn-sm btn-ghost gap-1 chat-addctx-btn" data-chat-addctx><span class="iconify lucide--plus size-4" aria-hidden="true"></span>Add context</div>
+                <div tabindex="0" class="dropdown-content chat-addctx-pop">
+                  <label class="input input-sm chat-addctx-search">
+                    <span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span>
+                    <input type="text" data-chat-ctx-search placeholder="Search bases, tables, fields, docs…" aria-label="Search context" autocomplete="off" />
+                  </label>
+                  <div class="chat-addctx-list" data-chat-ctx-list>
+                    {ctxGroups.map((g) => g.items.length > 0 && (
+                      <>
+                        <div class="chat-addctx-sec" data-ctx-sec>{g.label}</div>
+                        {g.items.map((e) => (
+                          <button type="button" class="chat-addctx-item" data-chat-add-ent={e.id} data-ent-name={e.name} data-ent-kind={e.kind} data-ent-ftype={e.fieldType ?? ''} data-search={ctxSearchStr(e)}>
+                            <span class="chat-addctx-ic" set:html={ctxIcon(e)}></span>
+                            <span class="chat-addctx-item-name">{e.name}</span>
+                            {(e.tableName ?? e.baseName) && <span class="chat-addctx-item-path">{e.tableName ?? e.baseName}</span>}
+                          </button>
+                        ))}
+                      </>
+                    ))}
+                    {docList.length > 0 && <div class="chat-addctx-sec" data-ctx-sec>Docs</div>}
+                    {docList.map((d) => (
+                      <button type="button" class="chat-addctx-item chat-addctx-doc" data-chat-add-doc={d.id} data-doc-title={d.title} data-search={d.title.toLowerCase()}>
+                        <span class="chat-addctx-ic"><span class="iconify lucide--file-text size-3.5" aria-hidden="true"></span></span>
+                        <span class="chat-addctx-item-name">{d.title}</span>
+                      </button>
+                    ))}
+                    <div class="chat-addctx-empty" data-ctx-empty hidden>No match.</div>
+                  </div>
+                </div>
+              </div>
+              <span class="chat-credits"><span class="iconify lucide--zap size-3.5" aria-hidden="true"></span>~2 credits / message</span>
+              <button type="button" class="btn btn-sm btn-primary btn-square chat-send" data-chat-send aria-label="Send" disabled><span class="iconify lucide--arrow-up size-4" aria-hidden="true"></span></button>
+              <button type="button" class="btn btn-sm btn-neutral btn-square chat-stop" data-chat-stop aria-label="Stop" hidden><span class="iconify lucide--square size-3.5" aria-hidden="true"></span></button>
+            </div>
+          </div>
+          <p class="chat-disclaimer">AI can make mistakes. Verify important details against your schema.</p>
+        </div>
+      </>
+    )}
+  </div>
+</section>
+
+{/* per-thread scope, read by the module to render the shared context bar on switch */}
+<script type="application/json" data-chat-scope is:inline set:html={JSON.stringify(Object.fromEntries(threads.map((t) => [t.id, t.scope ?? []])))} />
+
+<style is:global>
+  /* is:global — messages + context chips are injected via set:html / JS; classes are `.chat-`-prefixed. */
+  /* full-height chat (Claude feel) — fills the viewport below the page chrome.
+     grid-template-rows: minmax(0,1fr) clamps the row to the chat height so the
+     conversation scrolls internally instead of growing the page. */
+  .chat { display: grid; grid-template-columns: minmax(200px, 256px) 1fr; grid-template-rows: minmax(0, 1fr); gap: 1rem; height: max(520px, calc(100dvh - 216px)); }
+  /* collapsed sidebar (toggle in the top bar) — like the Docs list collapse */
+  .chat.is-rail-collapsed { grid-template-columns: 1fr; }
+  .chat.is-rail-collapsed .chat-rail { display: none; }
+
+  /* thread rail — full height + its own scroll */
+  .chat-rail { display: flex; flex-direction: column; gap: .6rem; min-height: 0; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: .7rem; }
+
+  /* slim top bar — collapse toggle + active thread title */
+  .chat-topbar { display: flex; align-items: center; gap: .35rem; padding: .5rem .65rem; border-bottom: 1px solid var(--color-base-300); flex: none; }
+  .chat-topbar-title { flex: 1; font-size: .88rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-collapse { flex: none; }
+
+  /* home / empty-thread greeting — centered (Claude home feel) */
+  .chat-greet { margin: auto; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .6rem; max-width: 52ch; padding: 2rem; }
+  .chat-greet-ic { width: 3.4rem; height: 3.4rem; border-radius: 1rem; display: grid; place-items: center; background: color-mix(in oklch, var(--color-primary) 14%, var(--color-base-200)); color: var(--color-primary); margin-bottom: .2rem; }
+  .chat-greet-title { font-size: 1.25rem; font-weight: 650; }
+  .chat-greet-sub { font-size: .9rem; line-height: 1.55; color: oklch(from var(--color-base-content) l c h / .6); }
+  .chat-newbtn { width: 100%; justify-content: center; }
+  .chat-threads { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; flex: 1; }
+  .chat-trow { display: flex; align-items: center; border-radius: 7px; }
+  .chat-trow:hover { background: oklch(from var(--color-base-200) l c h / .6); }
+  .chat-trow.is-active { background: oklch(from var(--color-primary) l c h / .1); }
+  .chat-trow-main { display: flex; align-items: center; gap: .45rem; flex: 1; min-width: 0; padding: .45rem .5rem; border: 0; background: none; cursor: pointer; text-align: left; font: inherit; color: var(--color-base-content); }
+  .chat-trow-ic { color: oklch(from var(--color-base-content) l c h / .45); flex: none; }
+  .chat-trow.is-active .chat-trow-ic { color: var(--color-primary); }
+  .chat-trow-title { font-size: .84rem; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .chat-trow-when { font-size: .68rem; color: oklch(from var(--color-base-content) l c h / .4); flex: none; }
+  .chat-trow-kebab { opacity: 0; transition: opacity .12s ease; }
+  .chat-trow:hover .chat-trow-kebab, .chat-trow:focus-within .chat-trow-kebab { opacity: 1; }
+  .chat-kebab-menu { z-index: 30; width: 9.5rem; margin-top: .2rem; padding: .25rem; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: .55rem; box-shadow: 0 8px 24px oklch(0 0 0 / .16); font-size: .82rem; }
+  .chat-rail-empty { padding: 1rem .5rem; font-size: .8rem; text-align: center; color: oklch(from var(--color-base-content) l c h / .5); }
+  .chat-arctoggle { display: inline-flex; align-items: center; gap: .4rem; font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .7); cursor: pointer; padding: .2rem .3rem; }
+  .chat-arc-n { font-size: .68rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .55); background: var(--color-base-200); border-radius: 999px; padding: 0 .35rem; }
+  .chat-arc-list[hidden] { display: none; }
+  .chat-arc-list { display: flex; flex-direction: column; gap: 2px; }
+  .chat-trow-arc { opacity: .7; padding-right: .35rem; }
+  .chat-trow-restore { flex: none; }
+
+  /* main */
+  .chat-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); overflow: hidden; }
+  .chat-thread { display: contents; }
+  .chat-thread[hidden] { display: none; }
+  /* conversation centered in a readable column (like ChatGPT/Claude) */
+  .chat-convo { flex: 1; overflow-y: auto; min-height: 0; padding: 1.9rem max(1.5rem, calc((100% - 48rem) / 2)); display: flex; flex-direction: column; gap: 1.9rem; }
+  .chat-convo-hint { display: flex; align-items: center; gap: .5rem; margin: auto; max-width: 48ch; text-align: center; font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .6); }
+
+  /* messages — Claude model: user = grey rounded bubble (right, content-width);
+     assistant = no bubble, full-width text + a marker & hover actions beneath. */
+  .chat-msg { display: flex; flex-direction: column; gap: .5rem; }
+  .chat-msg-user { align-self: flex-end; align-items: flex-end; max-width: 78%; }
+  .chat-msg-assistant { align-self: stretch; max-width: 100%; }
+  .chat-msg-who { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .chat-msg-body { font-size: .95rem; line-height: 1.7; white-space: pre-wrap; }
+  .chat-msg-assistant .chat-msg-body { color: var(--color-base-content); }
+  .chat-msg-user .chat-msg-body { padding: .65rem .95rem; border-radius: 1.1rem 1.1rem .3rem 1.1rem; background: oklch(from var(--color-base-200) l c h / .9); font-size: .92rem; line-height: 1.6; }
+  /* references — quiet defined chips under the reply */
+  .chat-msg-refs { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-top: .15rem; }
+  .chat-msg-refs-label { font-size: .7rem; color: oklch(from var(--color-base-content) l c h / .45); margin-right: .1rem; }
+  /* assistant footer — coral marker + hover actions (Copy / thumbs), Claude-style */
+  .chat-msg-foot { display: flex; align-items: center; gap: .35rem; margin-top: .35rem; }
+  .chat-msg-mark { display: grid; place-items: center; width: 1.4rem; height: 1.4rem; color: var(--color-primary); flex: none; }
+  .chat-msg-mark .iconify { font-size: .85rem; }
+  .chat-msg-acts { display: inline-flex; align-items: center; gap: 1px; opacity: 0; transition: opacity .12s ease; }
+  .chat-msg-assistant:hover .chat-msg-acts, .chat-msg-assistant:focus-within .chat-msg-acts { opacity: 1; }
+  .chat-act { display: grid; place-items: center; width: 1.7rem; height: 1.7rem; border: 0; background: none; border-radius: 6px; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .55); }
+  .chat-act:hover { background: oklch(from var(--color-base-content) l c h / .07); color: var(--color-base-content); }
+
+  /* reference / context chip (shared) — neutral by default; primary is reserved for accents */
+  .chat-chip { display: inline-flex; align-items: center; border: 1px solid var(--color-base-300); border-radius: 999px; background: oklch(from var(--color-base-200) l c h / .5); overflow: hidden; max-width: 100%; }
+  .chat-chip-open { display: inline-flex; align-items: center; gap: .3rem; padding: .12rem .5rem; border: 0; background: none; cursor: pointer; font: inherit; font-size: .76rem; color: var(--color-base-content); min-width: 0; }
+  .chat-chip-open:hover { background: oklch(from var(--color-base-content) l c h / .06); }
+  .chat-chip-ic { display: inline-grid; place-items: center; width: 13px; flex: none; color: oklch(from var(--color-base-content) l c h / .55); }
+  .chat-chip-ic svg { width: 12px; height: 12px; }
+  .chat-chip-ic .iconify { font-size: .76rem; }
+  .chat-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-chip-x { display: inline-grid; place-items: center; padding: 0 .3rem; border: 0; background: none; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .5); align-self: stretch; }
+  .chat-chip-x:hover { background: oklch(from var(--color-error) l c h / .14); color: var(--color-error); }
+
+  /* convert-to-doc reference card */
+  .chat-msg-system { align-self: stretch; max-width: 100%; }
+  /* convert-to-doc reference — a quiet neutral card spanning the column, Open pinned right */
+  .chat-doccard { display: flex; align-items: center; gap: .65rem; width: 100%; padding: .65rem .8rem; border: 1px solid var(--color-base-300); background: oklch(from var(--color-base-200) l c h / .4); border-radius: .7rem; }
+  .chat-doccard-ic { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: .5rem; background: var(--color-base-200); color: oklch(from var(--color-base-content) l c h / .6); flex: none; }
+  .chat-doccard-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+  .chat-doccard-label { font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .45); }
+  .chat-doccard-title { font-size: .86rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-doccard-open { margin-left: auto; flex: none; }
+
+  /* convert-to-doc naming popover (top bar) */
+  .chat-convert-pop { width: 19rem; margin-top: 8px; padding: 12px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: 12px; box-shadow: 0 10px 30px oklch(0 0 0 / .22); z-index: 50; display: flex; flex-direction: column; gap: 8px; }
+  .chat-convert-label { font-size: .78rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .72); }
+  .chat-convert-input { width: 100%; }
+  .chat-convert-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 2px; }
+
+  /* composer — one box: scope chips (top) → textarea → toolbar (+ Add context · …) */
+  .chat-composer-wrap { border-top: 1px solid var(--color-base-300); padding: .85rem max(.9rem, calc((100% - 48rem) / 2)) 1.1rem; background: var(--color-base-100); }
+  .chat-context-chips { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+  .chat-context-chips:empty { display: none; }
+  .chat-context-whole { font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .5); display: inline-flex; align-items: center; gap: .3rem; }
+  .chat-addctx-btn { font-weight: 500; }
+  .chat-addctx-pop { width: 23rem; margin-bottom: 8px; padding: 8px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: 11px; box-shadow: 0 8px 24px oklch(0 0 0 / .2); z-index: 40; }
+  .chat-addctx-search { width: 100%; margin-bottom: 8px; }
+  .chat-addctx-list { max-height: 18rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+  .chat-addctx-sec { font-size: .62rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .45; padding: 8px 4px 2px; }
+  .chat-addctx-sec[hidden] { display: none; }
+  .chat-addctx-item { display: flex; align-items: center; gap: .45rem; padding: .38rem .45rem; border: 0; background: none; border-radius: 6px; cursor: pointer; font: inherit; font-size: .82rem; text-align: left; color: var(--color-base-content); width: 100%; }
+  .chat-addctx-item:hover { background: oklch(from var(--color-base-content) l c h / .06); }
+  .chat-addctx-item[hidden] { display: none; }
+  .chat-addctx-ic { display: inline-grid; place-items: center; width: 15px; flex: none; color: oklch(from var(--color-base-content) l c h / .55); }
+  .chat-addctx-ic svg { width: 13px; height: 13px; }
+  .chat-addctx-item-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-addctx-item-path { margin-left: auto; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .42); flex: none; padding-left: .6rem; }
+  .chat-addctx-empty { padding: .6rem .5rem; font-size: .8rem; opacity: .5; }
+  .chat-addctx-empty[hidden] { display: none; }
+
+  /* composer — a big rounded card (Claude) */
+  .chat-composer-wrap { position: relative; }
+  .chat-composer { border: 1px solid var(--color-base-300); border-radius: 1.1rem; background: var(--color-base-100); padding: .85rem 1rem .7rem; display: flex; flex-direction: column; gap: .6rem; box-shadow: 0 1px 3px oklch(0 0 0 / .05); }
+  .chat-composer:focus-within { border-color: color-mix(in oklch, var(--color-primary) 45%, var(--color-base-300)); box-shadow: 0 2px 10px oklch(0 0 0 / .08); }
+  .chat-input { width: 100%; border: 0; background: none; resize: none; outline: none; font: inherit; font-size: .95rem; line-height: 1.55; color: var(--color-base-content); max-height: 12rem; min-height: 2.6rem; }
+  .chat-composer-bar { display: flex; align-items: center; gap: .4rem; }
+  .chat-credits { display: inline-flex; align-items: center; gap: .25rem; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); margin-left: auto; }
+  .chat-credits .iconify { opacity: .7; }
+  .chat-send, .chat-stop { flex: none; }
+  .chat-send[disabled] { opacity: .4; cursor: not-allowed; }
+  .chat-stop[hidden] { display: none; }
+  /* scroll-to-latest chip (Claude) — floats just above the composer when scrolled up */
+  .chat-scrollbtn { position: absolute; top: -2.9rem; left: 50%; transform: translateX(-50%); display: grid; place-items: center; width: 2.1rem; height: 2.1rem; border-radius: 999px; border: 1px solid var(--color-base-300); background: var(--color-base-100); color: var(--color-base-content); cursor: pointer; box-shadow: 0 4px 14px oklch(0 0 0 / .14); z-index: 5; }
+  .chat-scrollbtn:hover { background: var(--color-base-200); }
+  .chat-scrollbtn[hidden] { display: none; }
+  .chat-disclaimer { text-align: center; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .4); margin-top: .55rem; }
+
+  /* streaming status line — coral marker + "thinking" */
+  .chat-streaming { display: flex; flex-direction: row; align-items: center; gap: .35rem; }
+  .chat-status { display: inline-flex; align-items: center; gap: .45rem; font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .chat-status .iconify { color: var(--color-primary); }
+  .chat-status-dot { width: .5rem; height: .5rem; border-radius: 999px; background: var(--color-primary); animation: chatPulse 1s ease-in-out infinite; }
+  @keyframes chatPulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+
+  /* gate + empty */
+  .chat-gate, .chat-empty { margin: auto; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .55rem; padding: 2rem; max-width: 52ch; }
+  .chat-gate-ic, .chat-empty-ic { width: 3.2rem; height: 3.2rem; border-radius: .9rem; display: grid; place-items: center; background: var(--color-base-200); color: oklch(from var(--color-base-content) l c h / .6); margin-bottom: .3rem; }
+  .chat-gate-title, .chat-empty-title { font-size: 1.05rem; font-weight: 650; }
+  .chat-gate-sub, .chat-empty-sub { font-size: .87rem; line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .62); }
+
+  @media (max-width: 760px) {
+    .chat { grid-template-columns: 1fr; height: auto; }
+    .chat-rail { flex-direction: row; flex-wrap: wrap; align-items: center; }
+    .chat-threads { flex-direction: row; overflow-x: auto; }
+  }
+</style>
+
+<script>
+  import { wireChat } from './schemaChat';
+  wireChat();
+  document.addEventListener('astro:after-swap', wireChat);
+</script>

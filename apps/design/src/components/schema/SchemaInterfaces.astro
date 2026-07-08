@@ -1,0 +1,462 @@
+---
+/**
+ * SchemaInterfaces — the Schema "Interfaces" tab (openspec automations-interfaces-tabs).
+ *
+ * Like Automations, Airtable's API doesn't expose interfaces, so they're registered
+ * MANUALLY (or via inbound API). An Interface has child **Pages** — the list nests Pages
+ * under their parent Interface (one level; Zendesk-style). Each entity has an id + name +
+ * type (interface|page), an optional raw `definition` JSON, and Table/Field tags. Drives
+ * the create/edit modal (a `page` requires a parent-interface pick) + soft-delete.
+ *
+ * Frontmatter-thin; interactivity in schemaInterfaces.ts. is:global `.if-`-prefixed styles.
+ */
+import EntitySearch from './EntitySearch.astro';
+import Drawer from '../ui/Drawer.astro';
+import FacetFilter from './FacetFilter.astro';
+import type { SchemaEntity } from './schemaEntities';
+import type { AutomationTag } from './SchemaAutomations.astro';
+
+export interface SchemaInterface {
+  id: string;
+  name: string;
+  type: 'interface' | 'page';
+  /** The single Base this interface/page belongs to — drives the Base-grouped listing + sidebar. */
+  baseId: string;
+  /** Required when type = 'page' — the parent Interface id. */
+  parentId?: string;
+  /** Deletion state (soft-delete in Airtable). Distinct from `published`. */
+  status: 'active' | 'removed';
+  /** Whether the interface/page is published in Airtable. Default true. */
+  published?: boolean;
+  /** Baseout-only note — interfaces/pages have NO Airtable description, so this is
+   *  the only description (never synced). */
+  internalDescription?: string;
+  /** Opaque raw definition, often empty (the API can't export it). */
+  definition?: string;
+  tags?: AutomationTag[];
+  /** Automation ids this page/interface triggers — captured page→automation links (manual /
+   *  inbound API, like tags). Drives the Visualize app-layer graph's `triggers` edges. */
+  triggers?: string[];
+  removedAt?: string;
+}
+
+interface Props {
+  interfaces?: SchemaInterface[];
+  bases: { id: string; name: string }[];
+  index: SchemaEntity[];
+  /** Full changelog — the read drawer surfaces each interface/page's own change history. */
+  changelog?: { entityId?: string; entityKind?: string; at: string; type: string; summary: string; before?: string; after?: string }[];
+  aiState?: 'ready' | 'locked' | 'no-credits';
+}
+const { interfaces = [], bases = [], index = [], changelog = [], aiState = 'ready' } = Astro.props as Props;
+const canUse = aiState === 'ready';
+// Slim per-interface/page change history for the read drawer.
+const ifChangelog = changelog.filter((c) => (c.entityKind === 'interface' || c.entityKind === 'page') && c.entityId).map((c) => ({ entityId: c.entityId, at: c.at, type: c.type, summary: c.summary, before: c.before, after: c.after }));
+
+const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const entById = new Map(index.map((e) => [e.id, e]));
+// Base id → name + canonical order (from the bases prop), for the Base-grouped listing.
+const baseName = new Map(bases.map((b) => [b.id, b.name]));
+const baseOrder = new Map(bases.map((b, i) => [b.id, i]));
+const baseOf = (i: SchemaInterface) => i.baseId;
+
+const parents = interfaces.filter((i) => i.type === 'interface');
+const pagesByParent = new Map<string, SchemaInterface[]>();
+for (const p of interfaces.filter((i) => i.type === 'page')) {
+  const key = p.parentId || '__orphan__';
+  (pagesByParent.get(key) ?? pagesByParent.set(key, []).get(key)!).push(p);
+}
+const orphanPages = pagesByParent.get('__orphan__') || [];
+const sortStatus = (a: SchemaInterface, b: SchemaInterface) => (a.status === b.status ? 0 : a.status === 'removed' ? 1 : -1);
+
+// Group interfaces by Base (Dan 2026-07-01) — Base ▸ Interface ▸ Pages. Group order follows
+// the bases prop.
+const ifBaseGroups = (() => {
+  const map = new Map<string, SchemaInterface[]>();
+  for (const p of parents) {
+    const key = p.baseId || '__nobase__';
+    (map.get(key) ?? map.set(key, []).get(key)!).push(p);
+  }
+  const keys = Array.from(map.keys()).sort((x, y) => (baseOrder.get(x) ?? 999) - (baseOrder.get(y) ?? 999));
+  return keys.map((k) => ({ key: k, label: baseName.get(k) || 'No base', items: map.get(k)!.slice().sort(sortStatus) }));
+})();
+
+const hasAny = interfaces.length > 0;
+const removedCount = interfaces.filter((i) => i.status === 'removed').length;
+
+// Search + Table/Field facets (Dan 2026-07-03, cross-tab UX parity).
+const tagNameOf = (id: string) => entById.get(id)?.name ?? '';
+const ifTaggedTables = (i: SchemaInterface) => (i.tags || []).filter((t) => entById.get(t.entityId)?.kind === 'table').map((t) => t.entityId);
+const ifTaggedFields = (i: SchemaInterface) => (i.tags || []).filter((t) => entById.get(t.entityId)?.kind === 'field').map((t) => t.entityId);
+const ifSearchStr = (i: SchemaInterface) => [i.name, i.type, ...(i.tags || []).map((t) => tagNameOf(t.entityId))].filter(Boolean).join(' ').toLowerCase();
+const ifTblMap = new Map<string, string>();
+const ifFldMap = new Map<string, string>();
+for (const i of interfaces) {
+  for (const t of i.tags || []) {
+    const e = entById.get(t.entityId);
+    if (e?.kind === 'table') ifTblMap.set(e.id, e.name);
+    else if (e?.kind === 'field') ifFldMap.set(e.id, (e as any).tableName ? `${e.name} · ${(e as any).tableName}` : e.name);
+  }
+}
+const ifTableFacet = [...ifTblMap].map(([value, label]) => ({ value, label }));
+const ifFieldFacet = [...ifFldMap].map(([value, label]) => ({ value, label }));
+const ifRowAttrs = (i: SchemaInterface) => `data-tables="${esc(ifTaggedTables(i).join(' '))}" data-fields="${esc(ifTaggedFields(i).join(' '))}" data-search="${esc(ifSearchStr(i))}"`;
+
+const tagCell = (i: SchemaInterface) => {
+  const n = (i.tags || []).length;
+  return n ? `<span class="if-row-tags tooltip tooltip-left" data-tip="${n} tagged table${n === 1 ? '' : 's'} / field${n === 1 ? '' : 's'}"><span class="iconify lucide--tags size-3.5" aria-hidden="true"></span><span class="mono-data">${n}</span> tagged</span>` : '<span class="if-dash">—</span>';
+};
+// Status badge — our Storybook pattern (badge-soft + semantic + bg-current dot). Always shown,
+// for interfaces AND pages: Published (success) / Not published (neutral) / Removed (warning).
+const ifStatusBadge = (i: SchemaInterface) => {
+  if (i.status === 'removed') return `<span class="badge badge-soft badge-warning if-badge tooltip tooltip-right" data-tip="No longer exists in Airtable"><span class="size-1.5 rounded-full bg-current"></span>Removed</span>`;
+  return i.published === false
+    ? `<span class="badge badge-soft badge-neutral if-badge tooltip tooltip-right" data-tip="Not published in Airtable — not live for users yet"><span class="size-1.5 rounded-full bg-current"></span>Not published</span>`
+    : `<span class="badge badge-soft badge-success if-badge tooltip tooltip-right" data-tip="Published in Airtable — live for users"><span class="size-1.5 rounded-full bg-current"></span>Published</span>`;
+};
+const rowActions = (i: SchemaInterface) => {
+  const removed = i.status === 'removed';
+  return `<span class="if-row-actions"><button type="button" class="btn btn-sm btn-ghost btn-square" data-if-edit="${esc(i.id)}" aria-label="Edit"><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span></button>${removed ? '' : `<button type="button" class="btn btn-sm btn-ghost btn-square text-error" data-if-delete="${esc(i.id)}" aria-label="Delete"><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span></button>`}</span>`;
+};
+
+// Child page row (indented) — table columns: Name · Type · Status · Tagged · actions.
+const renderPage = (p: SchemaInterface) => `<div class="if-row if-page" data-if-row data-if-kind="page" data-if-id="${esc(p.id)}" data-base="${esc(baseOf(p))}" ${ifRowAttrs(p)} data-removed-row="${p.status === 'removed' ? '1' : '0'}" role="button" tabindex="0">
+  <span class="if-nm"><span class="iconify lucide--file concept-ic-page size-3.5 if-page-ic" aria-hidden="true"></span><span class="if-row-name">${esc(p.name)}</span></span>
+  <span class="if-c-type">Page</span>
+  <span class="if-c-status">${ifStatusBadge(p)}</span>
+  <span class="if-c-tags">${tagCell(p)}</span>
+  <span class="if-c-act">${rowActions(p)}</span>
+</div>`;
+---
+
+<section class="if" data-interfaces data-can-use={canUse ? '1' : '0'}>
+  {!canUse ? (
+    <div class="if-gate">
+      <span class="if-gate-ic"><span class="iconify lucide--layout-panel-left size-6" aria-hidden="true"></span></span>
+      <p class="if-gate-title">Track your Airtable interfaces</p>
+      <p class="if-gate-sub">Register the interfaces and pages Airtable's API can't export, so they're tracked and documented alongside your schema. Available on Growth and above.</p>
+      <a href="/settings/billing" class="btn btn-sm btn-primary gap-1.5"><span class="iconify lucide--arrow-up-circle size-4" aria-hidden="true"></span>View plans</a>
+    </div>
+  ) : !hasAny ? (
+    <div class="if-empty">
+      <span class="if-empty-ic"><span class="iconify lucide--layout-panel-left" aria-hidden="true"></span></span>
+      <p class="if-empty-title">No interfaces registered yet</p>
+      <p class="if-empty-sub">Airtable's API doesn't expose interfaces, so Baseout can't detect them automatically. Register them (and their pages) here to track them alongside your schema.</p>
+      <button type="button" class="btn btn-sm btn-primary gap-1.5" data-if-new="interface"><span class="iconify lucide--plus size-4" aria-hidden="true"></span>Register interface</button>
+    </div>
+  ) : (
+    <>
+      {/* Toolbar — the shared .sch-tb pattern: search │ facets + Include-removed + Clear → right (Register). */}
+      <div class="sch-tb">
+        <label class="input input-sm sch-tb-search">
+          <span class="iconify lucide--search size-4 opacity-55" aria-hidden="true"></span>
+          <input type="search" data-if-search data-sch-search placeholder="Search interfaces…" aria-label="Search interfaces" autocomplete="off" spellcheck="false" />
+          <kbd class="kbd kbd-sm sch-tb-slash" aria-hidden="true">/</kbd>
+        </label>
+        <span class="sch-tb-div" aria-hidden="true"></span>
+
+        {bases.length > 1 && <FacetFilter label="Bases" name="ifbase" groups={[{ items: bases.map((b) => ({ value: b.id, label: b.name })) }]} />}
+        {ifTableFacet.length > 0 && <FacetFilter label="Tables" name="iftable" groups={[{ items: ifTableFacet }]} />}
+        {ifFieldFacet.length > 0 && <FacetFilter label="Fields" name="iffield" groups={[{ items: ifFieldFacet }]} />}
+
+        {removedCount > 0 && (
+          <label class="sch-tb-check tooltip tooltip-top" data-tip="Show interfaces removed from Airtable (kept for history)"><input type="checkbox" class="checkbox checkbox-sm" data-if-removed /> Include removed <span class="badge badge-sm badge-ghost">{removedCount}</span></label>
+        )}
+
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1 if-clear" data-if-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+
+        <div class="sch-tb-right">
+          <button type="button" class="btn btn-sm btn-primary gap-1.5" data-if-new="interface"><span class="iconify lucide--plus size-4" aria-hidden="true"></span>Register interface</button>
+        </div>
+      </div>
+
+      <div class="if-list" data-if-list>
+        {ifBaseGroups.map((g) => (
+          <div class="if-basegroup" data-if-basegroup data-group-key={g.key}>
+            <button type="button" class="if-basegroup-head" data-if-basetwist aria-expanded="true">
+              <span class="iconify lucide--chevron-down size-4 if-caret" aria-hidden="true"></span>
+              <span class="iconify lucide--database concept-ic-base size-4 if-basegroup-ic" aria-hidden="true"></span>
+              <span class="if-basegroup-name">{g.label}</span>
+              <span class="if-basegroup-count mono-data">{g.items.filter((i) => i.status !== 'removed').length}</span>
+            </button>
+            <div class="if-basegroup-body">
+              <div class="if-thead">
+                <span class="if-th-name" data-sort-col="0">Name</span>
+                <span class="if-c-type">Type</span>
+                <span class="if-c-status" data-sort-col="2">Status</span>
+                <span class="if-c-tags" data-sort-col="3">Tagged</span>
+                <span class="if-c-act" aria-hidden="true"></span>
+              </div>
+        {g.items.map((iface) => {
+          const pages = (pagesByParent.get(iface.id) || []).slice().sort(sortStatus);
+          const activePages = pages.filter((p) => p.status !== 'removed').length;
+          return (
+            <div class="if-node" data-if-node>
+              <div class="if-parent if-row" data-if-row data-if-kind="interface" data-if-id={iface.id} data-base={baseOf(iface)} data-tables={ifTaggedTables(iface).join(' ')} data-fields={ifTaggedFields(iface).join(' ')} data-search={ifSearchStr(iface)} data-removed-row={iface.status === 'removed' ? '1' : '0'} role="button" tabindex="0">
+                <span class="if-nm">
+                  {pages.length > 0 ? (
+                    <button type="button" class="if-twist" data-if-twist aria-expanded="true" aria-label="Toggle pages"><span class="iconify lucide--chevron-down size-4 if-caret" aria-hidden="true"></span></button>
+                  ) : (
+                    <span class="if-twist-spacer" aria-hidden="true"></span>
+                  )}
+                  <span class="iconify lucide--layout-panel-left concept-ic-interface size-4 if-parent-ic" aria-hidden="true"></span>
+                  <span class="if-row-name if-parent-name">{iface.name}</span>
+                  {pages.length > 0 && <span class="if-pagecount mono-data">{activePages} page{activePages === 1 ? '' : 's'}</span>}
+                </span>
+                <span class="if-c-type">Interface</span>
+                <span class="if-c-status" set:html={ifStatusBadge(iface)} />
+                <span class="if-c-tags" set:html={tagCell(iface)} />
+                <span class="if-c-act" set:html={rowActions(iface)} />
+              </div>
+              <div class="if-children">
+                {pages.map((p) => <Fragment set:html={renderPage(p)} />)}
+              </div>
+            </div>
+          );
+        })}
+            </div>
+          </div>
+        ))}
+        {orphanPages.length > 0 && (
+          <div class="if-node" data-if-node>
+            <div class="if-parent if-orphan-head"><span class="if-twist-spacer" aria-hidden="true"></span><span class="iconify lucide--file-question size-4 if-parent-ic" aria-hidden="true"></span><span class="if-row-name">Pages without an interface</span></div>
+            <div class="if-children">
+              {orphanPages.sort(sortStatus).map((p) => <Fragment set:html={renderPage(p)} />)}
+            </div>
+          </div>
+        )}
+        <p class="if-nomatch" data-if-nomatch hidden>No interfaces match the current filters.</p>
+      </div>
+    </>
+  )}
+</section>
+
+{/* Create / edit — a right drawer (project default; not a modal). */}
+{canUse && (
+  <Drawer id="if-modal" title="Interface" width="w-[min(94vw,36rem)]">
+    {/* Read view — the default when you click a row. Filled by the .ts. */}
+    <div class="if-read" data-if-read hidden></div>
+
+    <form class="if-form" data-if-form hidden>
+      <div class="if-form-grid">
+        <label class="if-field">
+          <span class="if-field-lbl">Name <span class="if-req">*</span></span>
+          <input type="text" class="input input-sm" data-if-f-name placeholder="e.g. Sales dashboard" required />
+        </label>
+        <label class="if-field">
+          <span class="if-field-lbl">Interface ID <span class="if-req">*</span></span>
+          <input type="text" class="input input-sm mono-data" data-if-f-id placeholder="pblXXXXXXXXXXXXXX" required />
+        </label>
+        <label class="if-field">
+          <span class="if-field-lbl">Base <span class="if-req">*</span></span>
+          <select class="select select-sm" data-if-f-base required>
+            <option value="" disabled selected>Select a base…</option>
+            {bases.map((b) => <option value={b.id}>{b.name}</option>)}
+          </select>
+        </label>
+        <label class="if-field">
+          <span class="if-field-lbl">Type <span class="if-req">*</span></span>
+          <select class="select select-sm" data-if-f-type>
+            <option value="interface">Interface</option>
+            <option value="page">Page</option>
+          </select>
+        </label>
+        <label class="if-field" data-if-parent-field hidden>
+          <span class="if-field-lbl">Parent interface <span class="if-req">*</span></span>
+          <select class="select select-sm" data-if-f-parent>
+            <option value="">Select an interface…</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="if-field if-field-toggle">
+        <span class="if-toggle-lead"><span class="if-field-lbl">Published</span><span class="if-field-hint">Whether this interface/page is published in Airtable.</span></span>
+        <input type="checkbox" class="toggle toggle-sm toggle-primary" data-if-f-published checked />
+      </label>
+
+      {/* Tags are the core value (impact analysis + reverse surfacing) — front them above Description. */}
+      <div class="if-field if-field-tags">
+        <span class="if-field-lbl">Tagged tables &amp; fields</span>
+        <div class="if-chips" data-if-chips></div>
+        <EntitySearch index={index.filter((e) => e.kind !== 'base')} name="iftag" placeholder="Tag a table or field…" pickEvent="schema:ifTagAdd" size="sm" />
+      </div>
+
+      <label class="if-field">
+        <span class="if-field-lbl">Internal note</span>
+        <textarea class="textarea textarea-sm" data-if-f-desc rows="2" placeholder="What this interface/page shows — Baseout-only (interfaces have no Airtable description)."></textarea>
+      </label>
+
+      {/* No raw-definition input: `definition` JSON only comes from the inbound API, so it's
+          read-only + shown in the detail ONLY when present — never hand-entered. */}
+
+      <div class="if-form-foot">
+        <button type="button" class="btn btn-sm btn-ghost" data-if-cancel>Cancel</button>
+        <button type="submit" class="btn btn-sm btn-primary" data-if-save>Register interface</button>
+      </div>
+    </form>
+  </Drawer>
+)}
+
+<style is:global>
+  /* is:global — rows render via set:html (no Astro scope hash); every selector `.if-`-prefixed. */
+  .if { display: flex; flex-direction: column; gap: 1rem; }
+
+  /* toolbar now uses the shared .sch-tb pattern (global.css) — if-tb/if-search/if-tb-actions removed */
+
+  .if-list { display: flex; flex-direction: column; gap: .75rem; }
+  /* Base group = ONE bordered container (Browse-style): base row on top, then the Interface ▸ Pages
+     tree, all inside the same card, collapsible at each level. */
+  .if-basegroup { border: 1px solid var(--color-base-300); border-radius: .8rem; overflow: hidden; background: var(--color-base-100); }
+  .if-basegroup[hidden] { display: none; }
+  .if-basegroup-head { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .5rem .75rem; background: oklch(from var(--color-base-200) l c h / .4); border: 0; cursor: pointer; text-align: left; font: inherit; }
+  .if-basegroup-ic { flex: none; margin-left: -.1rem; }
+  .if-basegroup-name { font-size: .85rem; font-weight: 650; }
+  .if-basegroup-count { font-size: .74rem; opacity: .55; }
+  .if-basegroup-body { display: flex; flex-direction: column; }
+  .if-basegroup[data-collapsed] .if-basegroup-body { display: none; }
+  .if-basegroup[data-collapsed] .if-basegroup-head .if-caret { transform: rotate(-90deg); }
+  .if-node { display: flex; flex-direction: column; }
+  .if-node[hidden] { display: none; }
+
+  /* table-like rows: fixed trailing columns (Type/Status/Tagged/actions) pinned right so they
+     line up across interfaces + pages; the name area (flex:1) absorbs the tree indentation.
+     A per-group header row (.if-thead) names the columns. */
+  .if-thead { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border-top: 1px solid oklch(from var(--color-base-300) l c h / .55); }
+  .if-thead span { font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .45); }
+  .if-th-name { flex: 1; min-width: 0; }
+  .if-c-type { width: 6.5rem; flex: none; }
+  .if-c-status { width: 9.5rem; flex: none; }
+  .if-c-tags { width: 7rem; flex: none; }
+  .if-c-act { width: 4.75rem; flex: none; display: flex; justify-content: flex-end; }
+
+  .if-row { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; font-size: .875rem; cursor: pointer; border-top: 1px solid oklch(from var(--color-base-300) l c h / .55); }
+  .if-row[hidden] { display: none; }
+  .if-row[data-removed-row="1"] { opacity: .55; }
+  .if-row:hover { background: oklch(from var(--color-base-200) l c h / .4); }
+  .if-orphan-head { cursor: default; display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border-top: 1px solid oklch(from var(--color-base-300) l c h / .55); color: oklch(from var(--color-base-content) l c h / .6); }
+  .if-nm { display: flex; align-items: center; gap: .5rem; flex: 1; min-width: 0; }
+  .if-page .if-nm { padding-left: 2rem; }
+  .if-twist { display: grid; place-items: center; width: 1.4rem; height: 1.4rem; border: 0; background: transparent; cursor: pointer; flex: none; padding: 0; margin-left: -.5rem; }
+  .if-twist-spacer { width: 1.05rem; flex: none; }
+  .if-caret { transition: transform .15s ease; color: oklch(from var(--color-base-content) l c h / .5); }
+  .if-node[data-collapsed] .if-caret { transform: rotate(-90deg); }
+  .if-node[data-collapsed] .if-children { display: none; }
+  .if-parent-ic { color: oklch(from var(--color-base-content) l c h / .55); flex: none; }
+  .if-parent-name { font-weight: 650; }
+  .if-pagecount { font-size: .74rem; opacity: .55; flex: none; }
+
+  .if-children { display: flex; flex-direction: column; }
+  .if-page-ic { color: oklch(from var(--color-base-content) l c h / .45); flex: none; }
+
+  .if-row-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+  .if-page .if-row-name { font-weight: 500; }
+  .if-row .if-c-type { font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .if-row-tags { display: inline-flex; align-items: center; gap: .25rem; font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .if-dash { color: oklch(from var(--color-base-content) l c h / .32); }
+  .if-badge { gap: .25rem; }
+  .if-row-actions { display: inline-flex; align-items: center; gap: .1rem; opacity: 0; transition: opacity .12s ease; }
+  .if-row:hover .if-row-actions, .if-row:focus-within .if-row-actions { opacity: 1; }
+  .if-nomatch { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .55); padding: .75rem .25rem; }
+  .if-nomatch[hidden] { display: none; }
+
+  .if-empty, .if-gate { display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; padding: 3.5rem 1rem; }
+  .if-empty-ic, .if-gate-ic { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 999px; background: oklch(from var(--color-base-content) l c h / .06); color: oklch(from var(--color-base-content) l c h / .5); margin-bottom: .25rem; }
+  .if-empty-ic .iconify { width: 1.5rem; height: 1.5rem; }
+  .if-empty-title, .if-gate-title { font-size: 1rem; font-weight: 650; }
+  .if-empty-sub, .if-gate-sub { font-size: .84rem; line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .6); max-width: 30rem; }
+  .if-empty > .btn, .if-gate > .btn { margin-top: .5rem; }
+
+  .if-form { display: flex; flex-direction: column; gap: 1rem; }
+  .if-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+  .if-field { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+  .if-field[hidden] { display: none; }
+  .if-field-lbl { font-size: .78rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .72); }
+  .if-field-hint { font-size: .72rem; line-height: 1.4; color: oklch(from var(--color-base-content) l c h / .5); }
+  .if-req { color: var(--color-error); }
+  .if-field-toggle { flex-direction: row; align-items: center; justify-content: space-between; gap: 1rem; }
+  .if-toggle-lead { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+  .if-read-status { display: inline-flex; align-items: center; gap: .5rem; }
+  .if-read-status .if-status-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
+  .if-read-status.is-on .if-status-dot { background: var(--color-success); }
+  .if-read-status.is-off .if-status-dot { background: oklch(from var(--color-base-content) l c h / .4); }
+  .if-chips { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .1rem; }
+  .if-chips:empty { display: none; }
+  .if-chip { display: inline-flex; align-items: center; gap: .25rem; font-size: .78rem; padding: .25rem .5rem; border-radius: 999px; }
+  .if-chip-auto { background: oklch(from var(--color-primary) l c h / .1); color: var(--color-primary); }
+  .if-chip-manual { border: 1px solid var(--color-base-300); background: var(--color-base-100); }
+  .if-chip-x { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 999px; cursor: pointer; opacity: .6; }
+  .if-chip-x:hover { opacity: 1; background: oklch(from var(--color-base-content) l c h / .1); }
+  .if-def-head { display: flex; align-items: center; justify-content: space-between; }
+  .if-def-tools { display: flex; align-items: center; gap: .5rem; }
+  .if-def-valid { font-size: .74rem; font-weight: 600; }
+  .if-def-valid.is-ok { color: var(--color-success); }
+  .if-def-valid.is-bad { color: var(--color-error); }
+  .if-def-valid[hidden] { display: none; }
+  .if-form textarea, .if-form .textarea { width: 100%; box-sizing: border-box; }
+  .if-optional { font-weight: 400; color: oklch(from var(--color-base-content) l c h / .5); }
+  .if-def-input { width: 100%; font-size: .8rem; line-height: 1.5; }
+  .if-def-err { font-size: .76rem; color: var(--color-error); }
+  .if-def-err[hidden] { display: none; }
+  .if-form-foot { display: flex; justify-content: flex-end; gap: .5rem; padding-top: .25rem; }
+  .if-def-hint { font-size: .74rem; color: oklch(from var(--color-base-content) l c h / .55); }
+  .if-adv { border-top: 1px solid var(--color-base-300); padding-top: .5rem; }
+  .if-adv-sum { display: inline-flex; align-items: center; gap: .5rem; font-size: .8rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .7); cursor: pointer; list-style: none; }
+  .if-adv-sum::-webkit-details-marker { display: none; }
+  .if-adv-sum .iconify { opacity: .6; }
+  .if-adv[open] .if-adv-sum { margin-bottom: .5rem; }
+
+  /* read view */
+  .if-read { display: flex; flex-direction: column; gap: 1rem; }
+  .if-read-crumbs { display: flex; align-items: center; gap: .5rem; font-size: .8rem; flex-wrap: wrap; margin-bottom: -.5rem; }
+  .if-crumb { background: transparent; border: 0; padding: 0; cursor: pointer; color: var(--color-primary); font: inherit; }
+  .if-crumb:hover { text-decoration: underline; }
+  .if-crumb-sep { color: oklch(from var(--color-base-content) l c h / .4); }
+  .if-crumb-cur { color: oklch(from var(--color-base-content) l c h / .6); }
+  .if-read-meta { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .if-read-base { display: inline-flex; align-items: center; gap: .25rem; }
+  /* read-drawer changelog (this interface/page's own history) */
+  .if-cl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25rem; }
+  .if-cl-item { display: flex; align-items: center; gap: .5rem; font-size: .8rem; padding: .5rem .5rem; border-radius: 7px; background: oklch(from var(--color-base-200) l c h / .35); }
+  .if-cl-ic { flex: none; }
+  .if-cl-added .if-cl-ic { color: var(--color-success); }
+  .if-cl-removed .if-cl-ic { color: var(--color-error); }
+  .if-cl-renamed .if-cl-ic, .if-cl-config .if-cl-ic { color: var(--color-primary); }
+  .if-cl-txt { flex: 1; min-width: 0; }
+  .if-cl-delta { color: oklch(from var(--color-base-content) l c h / .55); }
+  .if-cl-when { margin-left: auto; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); white-space: nowrap; flex: none; }
+  .if-read-desc { font-size: .9rem; line-height: 1.55; }
+  .if-read-desc.is-empty { color: oklch(from var(--color-base-content) l c h / .5); font-style: italic; }
+  .if-read-sect-lbl { display: flex; align-items: center; gap: 8px; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .5); font-weight: 600; margin-bottom: .5rem; }
+  .if-read-sect-ic { flex: none; opacity: .85; }
+  /* Canonical panel-anatomy: hairline divider between top-level body sections. */
+  .if-read > div:has(> .if-read-sect-lbl) { padding-top: 16px; border-top: 1px solid var(--color-base-300); }
+  .if-read-chips { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .if-read-empty { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .5); }
+  .if-read-pages { display: flex; flex-direction: column; gap: .1rem; border: 1px solid var(--color-base-300); border-radius: 8px; overflow: hidden; }
+  .if-read-page { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; font-size: .85rem; cursor: pointer; background: transparent; border: 0; text-align: left; width: 100%; }
+  .if-read-page + .if-read-page { border-top: 1px solid oklch(from var(--color-base-300) l c h / .6); }
+  .if-read-page:hover { background: oklch(from var(--color-base-200) l c h / .4); }
+  .if-read-page .iconify { opacity: .45; flex: none; }
+  .if-read-def { border: 1px solid var(--color-base-300); border-radius: 8px; }
+  .if-read-def summary { font-size: .8rem; font-weight: 600; padding: .5rem .75rem; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .7); list-style: none; }
+  .if-read-def summary::-webkit-details-marker { display: none; }
+  .if-read-def pre { margin: 0; padding: .75rem; border-top: 1px solid var(--color-base-300); font-size: .76rem; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  .if-read-foot { display: flex; gap: .5rem; padding-top: .75rem; border-top: 1px solid var(--color-base-300); }
+
+  @media (max-width: 560px) { .if-form-grid { grid-template-columns: 1fr; } }
+</style>
+
+<script type="application/json" data-if-json is:inline set:html={JSON.stringify(interfaces)} />
+<script type="application/json" data-if-entindex is:inline set:html={JSON.stringify(Object.fromEntries(index.map((e) => [e.id, { name: e.name, kind: e.kind, tableName: (e as any).tableName ?? null }])))} />
+{/* Base id → name, so the .ts can label a Base group it creates for a newly-registered interface. */}
+<script type="application/json" data-if-bases is:inline set:html={JSON.stringify(Object.fromEntries(bases.map((b) => [b.id, b.name])))} />
+{/* Per-interface/page change history for the read drawer's Changelog section. */}
+<script type="application/json" data-if-changelog is:inline set:html={JSON.stringify(ifChangelog)} />
+
+<script>
+  import { wireInterfaces } from './schemaInterfaces';
+  wireInterfaces();
+  document.addEventListener('astro:after-swap', wireInterfaces);
+</script>

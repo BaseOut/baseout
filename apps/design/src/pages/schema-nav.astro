@@ -6,15 +6,21 @@
  * shared placeholder body, WITHOUT touching the real SchemaView. The two
  * variants differ ONLY in the bar treatment (decided with Oleh 2026-07-02):
  *
- *   Variant A — Grouped bar (dividers + cluster labels)
+ *   Variant A — Grouped bar (cluster labels ABOVE each group's tabs)  ← Dan confirmed 2026-07-03
  *   Variant B — Two-level bar (clusters → sub-tabs)
  *
- * Both share the SAME chat surface: a modal side-drawer over a dimmed body that
- * can "Expand" to the full 3-column chat page (the inset-panel concept was
- * dropped — Oleh 2026-07-02). Chat is pulled OUT of the tab row in both
- * (9 → 8 tabs) and launched from a persistent "Ask about your schema" button.
- * Everything here is presentational — scoped `.pn-` classes, no real SchemaChat
- * wiring. See research/schema-navigation/index.html for the rationale.
+ * Dan's 2026-07-03 calls, folded in:
+ *  - Variant A is the direction: groupings are visual labels above the tabs, NOT tabs.
+ *  - Mobile (A2): the labels-above bar doesn't fit narrow screens, so on mobile Variant A
+ *    swaps to the cluster TABS (Variant B's two-level treatment) — see the max-width media query.
+ *  - Chat (A3): keep the global "Ask about your schema" quick-ask drawer AND add a "Chat History"
+ *    item under the Knowledge group that opens the full 3-column chat page.
+ *
+ * Both share the SAME chat surface: a modal side-drawer over a dimmed body that can "Expand" to
+ * the full chat page (the inset-panel concept was dropped — Oleh 2026-07-02). Chat is pulled OUT
+ * of the tab row (9 → 8) and launched from the persistent Ask button. Everything here is
+ * presentational — scoped `.pn-` classes, no real SchemaChat wiring. See
+ * research/schema-navigation/index.html for the rationale.
  */
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 
@@ -185,6 +191,7 @@ const PANEL: Record<string, string> = {
         <span class="pn-glabel">Knowledge</span>
         <div class="pn-gtabs">
           <button type="button" class="pn-tab" data-tab data-panel="docs"><span class="iconify lucide--book-text size-4"></span>Docs</button>
+          <button type="button" class="pn-tab" data-pn-chat-history><span class="iconify lucide--messages-square size-4"></span>Chat History</button>
         </div>
       </div>
     </div>
@@ -212,6 +219,7 @@ const PANEL: Record<string, string> = {
       </div>
       <div class="pn-subrow" data-sub="knowledge" hidden>
         <button type="button" class="pn-subtab is-on" data-tab data-panel="docs">Docs</button>
+        <button type="button" class="pn-subtab" data-pn-chat-history>Chat History</button>
       </div>
     </div>
 
@@ -345,6 +353,16 @@ const PANEL: Record<string, string> = {
   .pn[data-variant="a"] .pn-bar-a { display: flex; }
   .pn[data-variant="b"] .pn-bar-a { display: none; }
   .pn[data-variant="b"] .pn-bar-b { display: flex; }
+
+  /* A2 (Dan 2026-07-03): on mobile the labels-above-tabs bar doesn't fit, so the clusters become
+     tabs (the two-level treatment) — the one place the tab pattern earns its keep. Variant A's
+     grouped bar swaps to the cluster tabs + sub-row on narrow screens. */
+  @media (max-width: 680px) {
+    .pn[data-variant="a"] .pn-bar-a { display: none; }
+    .pn[data-variant="a"] .pn-bar-b { display: flex; }
+    .pn-head { flex-wrap: wrap; }
+    .pn-launcher { margin-left: 0; }
+  }
 
   /* ── work area ── */
   .pn-work { display: flex; gap: 1rem; flex: 1; min-height: 0; margin-top: 1.1rem; }
@@ -530,6 +548,9 @@ const PANEL: Record<string, string> = {
 
     // launcher + close + expand + collapse
     root.querySelectorAll('[data-pn-open]').forEach((b) => b.addEventListener('click', openChat));
+    // "Chat History" under Knowledge (Dan 2026-07-03): jumps straight to the full 3-column chat page
+    // (thread list + conversation), distinct from the global quick-ask drawer.
+    root.querySelectorAll('[data-pn-chat-history]').forEach((b) => b.addEventListener('click', () => setMode('full')));
     root.querySelectorAll('[data-pn-close]').forEach((b) => b.addEventListener('click', () => setMode('closed')));
     root.querySelectorAll('[data-pn-expand]').forEach((b) => b.addEventListener('click', () => setMode('full')));
     root.querySelectorAll('[data-pn-collapse]').forEach((b) => b.addEventListener('click', () => setMode('drawer')));

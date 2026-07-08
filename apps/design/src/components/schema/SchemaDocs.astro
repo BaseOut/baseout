@@ -1,0 +1,614 @@
+---
+/**
+ * SchemaDocs — the Docs tab. Author long-form documentation ABOUT the schema:
+ * a documents LIST, and a DOCUMENT view (a dependency-free rich-text editor shell
+ * with inline @-entity tags, a tags panel, external links, and saved React-Flow
+ * mini-diagrams) plus a clean READING mode.
+ *
+ * Distinct from Browse descriptions: a description is a field ON an entity; a
+ * document is a page that can span many entities. Tagging is bidirectional — the
+ * entity ids a doc tags surface in each entity's "Documentation" panel section.
+ *
+ * Editor: the production target is Plate (platejs.org) for the custom inline
+ * entity-tag node; this mirror ships a faithful contenteditable shell wired to the
+ * shared EntitySearch typeahead, real tag chips, and the real ER engine for the
+ * embedded diagrams. Swap the editor core for Plate in the monorepo.
+ */
+import EntitySearch from './EntitySearch.astro';
+import SchemaCanvas from './SchemaCanvas';
+import { fieldTypeLabel, type SchemaEntity, type SchemaDoc, type DocInline, type DocBlock } from './schemaEntities';
+import type { SchemaTable } from './SchemaCanvas';
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+
+interface Props {
+  docs: SchemaDoc[];
+  index: SchemaEntity[];
+  bases: { id: string; name: string }[];
+  tables: SchemaTable[];
+}
+const { docs, index, bases, tables } = Astro.props;
+const byId = new Map(index.map((e) => [e.id, e]));
+
+const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const fieldIconSvg = (type?: string) => {
+  const k = type ? airtableIconKey(type) : null;
+  return k ? `<svg viewBox="0 0 16 16" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
+};
+const chipIcon = (e: SchemaEntity) =>
+  e.kind === 'base' ? '<span class="iconify lucide--database concept-ic-base"></span>'
+  : e.kind === 'table' ? '<span class="iconify lucide--table-2"></span>'
+  : `<span class="concept-ic-field">${fieldIconSvg(e.fieldType) || '<span class="iconify lucide--circle"></span>'}</span>`;
+
+/** A tag chip — clickable in both edit and read mode (opens the shared panel). */
+function chip(id: string): string {
+  const e = byId.get(id);
+  if (!e) return `<span class="doc-chip doc-chip-missing tooltip tooltip-top" contenteditable="false" data-tip="No longer in schema"><span class="iconify lucide--unlink"></span>${esc(id)}</span>`;
+  return `<span class="doc-chip" contenteditable="false" data-entity-open="${e.id}" data-kind="${e.kind}"><span class="doc-chip-ic">${chipIcon(e)}</span>${esc(e.name)}</span>`;
+}
+function renderInline(content: DocInline[] = []): string {
+  return content.map((c) => (typeof c === 'string' ? esc(c) : chip(c.entity))).join('');
+}
+function renderBlocks(body: DocBlock[]): string {
+  return body
+    .map((b) => {
+      if (b.type === 'h2') return `<h2>${renderInline(b.content)}</h2>`;
+      if (b.type === 'p') return `<p>${renderInline(b.content)}</p>`;
+      if (b.type === 'ul') return `<ul>${(b.items || []).map((it) => `<li>${renderInline(it)}</li>`).join('')}</ul>`;
+      if (b.type === 'diagram') return `<div class="doc-diagram-anchor" data-diagram="${esc(b.diagramId || '')}"></div>`;
+      return '';
+    })
+    .join('');
+}
+
+const fmtDate = (iso: string) => {
+  try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch { return iso; }
+};
+const tablesForDiagram = (ids: string[]) => tables.filter((t) => ids.includes(t.id));
+---
+
+<section class="dc" data-docs>
+  {docs.length === 0 ? (
+    <div class="dc-empty">
+      <span class="iconify lucide--book-text size-7 opacity-40" aria-hidden="true"></span>
+      <p class="dc-empty-t">No documents yet</p>
+      <p class="dc-empty-s">Document how a base or workflow is structured, tagging the real tables and fields.</p>
+      <button type="button" class="btn btn-sm btn-primary gap-1.5" data-dc-new><span class="iconify lucide--plus size-4"></span>New document</button>
+    </div>
+  ) : (
+    <div class="dc-shell">
+      {/* ===== LEFT — persistent documents list (master), like the Health console ===== */}
+      <aside class="dc-sidebar">
+        <div class="dc-sidebar-head">
+          <h2 class="dc-sidebar-title">Documents <span class="dc-sidebar-count">{docs.length}</span></h2>
+          <button type="button" class="btn btn-sm btn-primary gap-1.5" data-dc-new><span class="iconify lucide--plus size-4" aria-hidden="true"></span>New</button>
+        </div>
+        <div class="dc-sidebar-search"><EntitySearch index={index} name="docfind" placeholder="Search documents…" pickEvent="schema:openEntity" /></div>
+        <div class="dc-doclist" data-dc-doclist>
+          {docs.map((d) => (
+            <button type="button" class="dc-docitem" data-dc-open={d.id} data-dc-item={d.id}>
+              <span class="dc-docitem-title">{d.title}</span>
+              <span class="dc-docitem-meta">Edited {fmtDate(d.updatedAt)} · {d.entityIds.length} tags</span>
+              <span class="dc-docitem-excerpt">{d.excerpt}</span>
+            </button>
+          ))}
+        </div>
+      </aside>
+
+      {/* ===== RIGHT — the selected document (detail) ===== */}
+      <div class="dc-pane">
+        <div class="dc-pane-empty" data-dc-pane-empty hidden>
+          <span class="iconify lucide--file-text size-7 opacity-40" aria-hidden="true"></span>
+          <p>Select a document to read or edit.</p>
+        </div>
+        <div class="dc-doc" data-dc-doc hidden>
+          <div class="dc-doc-bar">
+            <button type="button" class="btn btn-sm btn-ghost btn-square dc-listtoggle tooltip tooltip-bottom" data-dc-listtoggle aria-label="Hide document list" data-tip="Hide document list"><span class="iconify lucide--panel-left-close size-4" data-dc-listtoggle-ic aria-hidden="true"></span></button>
+            <span class="dc-doc-byline" data-dc-byline></span>
+            <div class="join dc-modeswitch">
+              <button type="button" class="btn btn-sm join-item dc-mode-active" data-dc-mode="edit"><span class="iconify lucide--pencil size-3.5"></span>Edit</button>
+              <button type="button" class="btn btn-sm join-item" data-dc-mode="read"><span class="iconify lucide--book-open size-3.5"></span>Read</button>
+            </div>
+            <button type="button" class="btn btn-sm btn-ghost btn-square text-error dc-delete tooltip tooltip-bottom" data-dc-delete aria-label="Delete document" data-tip="Delete document"><span class="iconify lucide--trash-2 size-4" aria-hidden="true"></span></button>
+          </div>
+
+          <div class="dc-doc-grid">
+            <div class="dc-main">
+              <input class="dc-titlefield" data-dc-title placeholder="Untitled document" />
+              <div class="dc-hint" data-dc-hint>
+                <span class="iconify lucide--at-sign size-3.5"></span>Type <kbd class="kbd kbd-xs">@</kbd> to tag a base, table, or field.
+              </div>
+              <div class="dc-editor" data-dc-editor contenteditable="true" spellcheck="false"></div>
+            </div>
+
+            <aside class="dc-rail">
+              <div class="dc-rail-sec">
+                <div class="dc-rail-h">Tagged entities <span data-dc-tagcount class="dc-rail-n"></span></div>
+                <div class="dc-tags" data-dc-tags></div>
+                <div class="dc-addtag"><EntitySearch index={index} name="doctag" placeholder="Add a tag…" pickEvent="schema:addTag" /></div>
+              </div>
+
+              <div class="dc-rail-sec">
+                <div class="dc-rail-h">Links</div>
+                <div class="dc-links" data-dc-links></div>
+                <button type="button" class="btn btn-sm btn-ghost gap-1 text-primary dc-addlink" data-dc-addlink><span class="iconify lucide--plus size-3.5"></span>Add link</button>
+              </div>
+            </aside>
+          </div>
+
+          <div class="dc-diagrams" data-dc-diagrams>
+            {/* Diagram blocks are mounted here per-doc; each is a scoped, read-only ER view. */}
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* Pre-rendered diagram canvases (one per doc diagram), shown/hidden by the active doc. */}
+  <div class="dc-diagram-pool" data-dc-diagram-pool hidden>
+    {docs.flatMap((d) => d.diagrams.map((dg) => (
+      <div class="dc-diagram" data-dc-diagram={dg.id} data-dc-diagram-doc={d.id}>
+        <div class="dc-diagram-head">
+          <span class="dc-diagram-name"><span class="iconify lucide--workflow size-4" aria-hidden="true"></span>{dg.name}</span>
+          <div class="dc-diagram-actions">
+            <span class="dc-diagram-scope">{dg.tableIds.length} tables</span>
+            <button type="button" class="btn btn-sm btn-ghost gap-1 dc-diagram-open tooltip tooltip-top" data-diagram-tables={dg.tableIds.join(',')} data-tip="Open this diagram in the Visualize tab"><span class="iconify lucide--maximize-2 size-3.5"></span>Open in Visualize</button>
+          </div>
+        </div>
+        <div class="dc-diagram-canvas">
+          <SchemaCanvas client:only="react" tables={tablesForDiagram(dg.tableIds)} bases={bases} genState="locked" embed={true} />
+        </div>
+      </div>
+    )))}
+  </div>
+
+  {/* D6 — delete-document confirmation */}
+  <dialog class="modal" data-dc-delete-modal>
+    <div class="modal-box">
+      <h3 class="text-base font-semibold">Delete document?</h3>
+      <p class="py-3 text-sm opacity-80">“<span data-dc-delete-name></span>” will be removed. This can’t be undone.</p>
+      <div class="modal-action">
+        <form method="dialog"><button class="btn btn-sm">Cancel</button></form>
+        <button type="button" class="btn btn-sm btn-error gap-1.5" data-dc-delete-confirm><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span>Delete</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button aria-label="Close">close</button></form>
+  </dialog>
+</section>
+
+{/* Per-doc data the client uses to hydrate the editor / rail / diagrams. */}
+<script type="application/json" data-dc-data set:html={JSON.stringify(
+  docs.map((d) => ({
+    id: d.id, title: d.title, updatedAt: d.updatedAt, author: d.author,
+    bodyHtml: renderBlocks(d.body),
+    entityIds: d.entityIds, links: d.links,
+    diagramIds: d.diagrams.map((dg) => dg.id),
+  }))
+)} />
+<script type="application/json" data-dc-entities set:html={JSON.stringify(
+  index.map((e) => ({ id: e.id, kind: e.kind, name: e.name, baseName: e.baseName, tableName: e.tableName, fieldType: e.fieldType }))
+)} />
+
+<style is:global>
+  .dc { display: block; }
+
+  /* Two-pane master-detail (documents list left, selected document right) — matches the
+     Health console + the Docs wireframe. The list stays put while you read/edit on the right. */
+  /* Two-pane console (documents list left, document right). align-items: stretch makes the
+     list panel the FULL height of the right content — it fills the column instead of floating
+     as a short card. The list itself scrolls inside the panel if it gets long. */
+  .dc-shell { display: grid; grid-template-columns: minmax(320px, 360px) minmax(0, 1fr); gap: 20px; align-items: stretch; }
+  @media (max-width: 900px) { .dc-shell { grid-template-columns: 1fr; } }
+
+  .dc-sidebar { display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--color-base-300); border-radius: 12px; background: var(--color-base-100); padding: 16px; min-height: 0; align-self: stretch; }
+  .dc-sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .dc-sidebar-title { font-size: 14px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+  .dc-sidebar-count { font-size: 12px; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .5); }
+  .dc-doclist { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; margin: 2px -4px -4px; padding: 0 4px 4px; }
+  .dc-docitem { display: flex; flex-direction: column; gap: 2px; text-align: left; width: 100%; border: 1px solid transparent; border-radius: 9px; padding: 8px 12px; cursor: pointer; background: none; }
+  .dc-docitem:hover { background: var(--color-base-200); }
+  .dc-docitem.dc-active { background: color-mix(in oklch, var(--color-primary) 9%, transparent); border-color: color-mix(in oklch, var(--color-primary) 28%, transparent); }
+  .dc-docitem-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dc-docitem.dc-active .dc-docitem-title { color: var(--color-primary); }
+  .dc-docitem-meta { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .5); }
+  .dc-docitem-excerpt { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .6); margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+  .dc-pane { min-width: 0; }
+  .dc-pane-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 80px 20px; border: 1px dashed var(--color-base-300); border-radius: 12px; color: oklch(from var(--color-base-content) l c h / .55); }
+  .dc-pane-empty[hidden] { display: none; }
+
+  .dc-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 56px 20px; text-align: center; border: 1px dashed var(--color-base-300); border-radius: 12px; }
+  .dc-empty-t { font-size: 15px; font-weight: 650; margin: 8px 0 0; }
+  .dc-empty-s { font-size: 13px; color: oklch(from var(--color-base-content) l c h / .6); max-width: 46ch; margin: 0 0 8px; }
+
+  /* document */
+  .dc-doc-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .dc-doc-byline { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .5); margin-left: 4px; }
+  .dc-modeswitch { margin-left: auto; }
+  .dc-modeswitch .btn { background: var(--color-base-100); border-color: var(--color-base-300); font-weight: 500; box-shadow: none; }
+  .dc-modeswitch .dc-mode-active { background: var(--color-base-200); font-weight: 600; }
+  /* D1 — collapse the document list to give the editor more room */
+  .dc-list-collapsed .dc-shell { grid-template-columns: 1fr; }
+  .dc-list-collapsed .dc-sidebar { display: none; }
+  .dc-listtoggle, .dc-delete { flex: none; }
+
+  .dc-doc-grid { display: grid; grid-template-columns: minmax(0, 1fr) 248px; gap: 24px; align-items: start; }
+  /* The Tags/Links rail sits beside the editor only when the pane is genuinely wide
+     (the sidebar already eats ~264px); below that it stacks under the editor as a row so
+     the editor keeps a readable measure. */
+  @media (max-width: 1200px) { .dc-doc-grid { grid-template-columns: 1fr; } }
+
+  .dc-titlefield { width: 100%; border: 0; background: none; font-size: 24px; font-weight: 700; letter-spacing: -.01em; padding: 2px 0; outline: none; color: var(--color-base-content); }
+  .dc-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: oklch(from var(--color-base-content) l c h / .5); margin: 4px 0 12px; }
+  .dc-editor { font-size: 14px; line-height: 1.7; min-height: 320px; outline: none; max-width: 72ch; }
+  .dc-editor:focus { outline: none; }
+  .dc-editor h2 { font-size: 17px; font-weight: 650; margin: 24px 0 8px; }
+  .dc-editor p { margin: 12px 0; }
+  .dc-editor ul { margin: 12px 0; padding-left: 24px; list-style: disc; }
+  .dc-editor li { margin: 4px 0; }
+  .dc-editor .doc-diagram-anchor { margin: 16px 0; }
+
+  /* tag chips (shared look, edit + read) */
+  .doc-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 4px; border-radius: 6px; font-size: 13px; font-weight: 500; line-height: 1.4; background: color-mix(in oklch, var(--color-primary) 10%, transparent); color: var(--color-primary); border: 1px solid color-mix(in oklch, var(--color-primary) 22%, transparent); cursor: pointer; white-space: nowrap; vertical-align: baseline; }
+  .doc-chip:hover { background: color-mix(in oklch, var(--color-primary) 16%, transparent); }
+  .doc-chip-ic { display: inline-grid; place-items: center; width: 13px; }
+  .doc-chip-ic svg { width: 12px; height: 12px; }
+  .doc-chip-ic .iconify { font-size: .72rem; }
+  .doc-chip-missing { background: color-mix(in oklch, var(--color-error) 9%, transparent); color: var(--color-error); border-color: color-mix(in oklch, var(--color-error) 25%, transparent); cursor: default; }
+
+  /* rail */
+  .dc-rail { display: flex; flex-direction: column; gap: 20px; position: sticky; top: 8px; }
+  .dc-rail-sec { border: 1px solid var(--color-base-300); border-radius: 11px; padding: 12px; background: var(--color-base-100); }
+  /* When the rail drops below the editor (narrow panes), lay Tags + Links side by side.
+     Placed AFTER the base .dc-rail so it wins the cascade (Lightning CSS keeps source order). */
+  @media (max-width: 1200px) {
+    .dc-rail { position: static; flex-direction: row; flex-wrap: wrap; align-items: start; }
+    .dc-rail-sec { flex: 1 1 240px; }
+  }
+  @media (max-width: 600px) { .dc-rail { flex-direction: column; } }
+  .dc-rail-h { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .5); margin-bottom: 8px; display: flex; align-items: center; gap: 4px; }
+  .dc-rail-n { font-weight: 600; opacity: .7; }
+  .dc-tags { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+  .dc-tags:empty { margin-bottom: 0; }
+  .dc-tagrow { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 7px; }
+  .dc-tagrow:hover { background: var(--color-base-200); }
+  .dc-tagrow-ic { width: 16px; display: grid; place-items: center; flex: none; }
+  .dc-tagrow-ic svg { width: 13px; height: 13px; opacity: .8; }
+  .dc-tagrow-ic .iconify { font-size: .82rem; opacity: .75; }
+  .dc-tagrow-name { flex: 1; min-width: 0; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .dc-tagrow-path { font-size: 10.5px; color: oklch(from var(--color-base-content) l c h / .45); }
+  .dc-tagrow-x { opacity: 0; border: 0; background: none; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .5); display: grid; place-items: center; padding: 2px; border-radius: 4px; flex: none; }
+  .dc-tagrow:hover .dc-tagrow-x { opacity: 1; }
+  .dc-tagrow-x:hover { background: var(--color-base-300); color: var(--color-error); }
+  .dc-tags-empty { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .45); padding: 2px 2px 8px; }
+
+  .dc-links { display: flex; flex-direction: column; gap: 4px; }
+  .dc-linkrow { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 4px 8px; border-radius: 6px; }
+  .dc-linkrow:hover { background: var(--color-base-200); }
+  .dc-linkrow a { color: var(--color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dc-links-empty { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .45); padding: 2px 2px 8px; }
+
+  /* @-mention dropdown */
+  .dc-mention { position: absolute; z-index: 50; min-width: 240px; max-width: 300px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: 10px; box-shadow: 0 10px 30px oklch(0 0 0 / .18); padding: 4px; max-height: 280px; overflow-y: auto; }
+  .dc-mention[hidden] { display: none; }
+  .dc-mention-group { padding: 8px 8px 4px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .45; }
+  .dc-mention-opt { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 7px; cursor: pointer; }
+  .dc-mention-opt[aria-selected="true"], .dc-mention-opt:hover { background: var(--color-base-200); }
+  .dc-mention-ic { width: 16px; display: grid; place-items: center; flex: none; }
+  .dc-mention-ic svg { width: 14px; height: 14px; opacity: .8; }
+  .dc-mention-ic .iconify { font-size: .85rem; opacity: .75; }
+  .dc-mention-main { min-width: 0; flex: 1; }
+  .dc-mention-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dc-mention-path { font-size: 10.5px; color: oklch(from var(--color-base-content) l c h / .5); }
+
+  /* diagrams */
+  .dc-diagrams { margin-top: 8px; display: flex; flex-direction: column; gap: 16px; }
+  .dc-diagram { border: 1px solid var(--color-base-300); border-radius: 11px; overflow: hidden; }
+  .dc-diagram-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--color-base-300); background: var(--color-base-200); }
+  .dc-diagram-name { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+  .dc-diagram-actions { display: inline-flex; align-items: center; gap: 12px; }
+  .dc-diagram-scope { font-size: 11.5px; color: oklch(from var(--color-base-content) l c h / .55); }
+  .dc-diagram-canvas { height: 340px; background: var(--color-base-100); }
+  .dc-diagram-canvas .react-flow { background: transparent; }
+
+  /* reading mode */
+  .dc.dc-reading [data-dc-editor] { pointer-events: auto; }
+  .dc.dc-reading .dc-titlefield { pointer-events: none; }
+  .dc.dc-reading .dc-hint, .dc.dc-reading .dc-addtag, .dc.dc-reading .dc-addlink, .dc.dc-reading .dc-tagrow-x { display: none; }
+  .dc.dc-reading .dc-editor { max-width: 68ch; }
+</style>
+
+<script>
+  import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+
+  type Ent = { id: string; kind: 'base' | 'table' | 'field'; name: string; baseName: string; tableName?: string; fieldType?: string };
+  type DocData = { id: string; title: string; updatedAt: string; author?: string; bodyHtml: string; entityIds: string[]; links: { label: string; url: string }[]; diagramIds: string[] };
+
+  function wireDocs() {
+    const root = document.querySelector<HTMLElement>('[data-docs]');
+    if (!root || root.dataset.dcWired) return;
+    root.dataset.dcWired = '1';
+
+    const entEl = document.querySelector('[data-dc-entities]');
+    const dataEl = document.querySelector('[data-dc-data]');
+    const entities: Ent[] = entEl ? JSON.parse(entEl.textContent || '[]') : [];
+    const allDocs: DocData[] = dataEl ? JSON.parse(dataEl.textContent || '[]') : [];
+    const entById = new Map(entities.map((e) => [e.id, e]));
+
+    const docView = root.querySelector<HTMLElement>('[data-dc-doc]');
+    if (!docView) return; // no documents → the empty state is shown; nothing to wire
+    const doclist = root.querySelector<HTMLElement>('[data-dc-doclist]')!;
+    const paneEmpty = root.querySelector<HTMLElement>('[data-dc-pane-empty]')!;
+    const editor = root.querySelector<HTMLElement>('[data-dc-editor]')!;
+    const titleField = root.querySelector<HTMLInputElement>('[data-dc-title]')!;
+    const byline = root.querySelector<HTMLElement>('[data-dc-byline]')!;
+    const tagsEl = root.querySelector<HTMLElement>('[data-dc-tags]')!;
+    const tagCountEl = root.querySelector<HTMLElement>('[data-dc-tagcount]')!;
+    const linksEl = root.querySelector<HTMLElement>('[data-dc-links]')!;
+    const diagramsEl = root.querySelector<HTMLElement>('[data-dc-diagrams]')!;
+    const pool = root.querySelector<HTMLElement>('[data-dc-diagram-pool]')!;
+    const delModal = root.querySelector<HTMLDialogElement>('[data-dc-delete-modal]');
+    const delName = root.querySelector<HTMLElement>('[data-dc-delete-name]');
+    const sidebarCount = root.querySelector<HTMLElement>('.dc-sidebar-count');
+
+    // "Open in Visualize" on a doc diagram → switch to the Visualize tab and scope the canvas to
+    // that diagram's tables (delegated; diagrams move between the pool and the active doc).
+    if (!root.dataset.dcDiagramOpenWired) {
+      root.dataset.dcDiagramOpenWired = '1';
+      root.addEventListener('click', (ev) => {
+        const btn = (ev.target as HTMLElement).closest('.dc-diagram-open');
+        if (!btn) return;
+        const ids = (btn.getAttribute('data-diagram-tables') || '').split(',').filter(Boolean);
+        document.querySelector<HTMLElement>('[data-tab="visualize"]')?.click();
+        document.dispatchEvent(new CustomEvent('schema:visualizeScope', { detail: { tableIds: ids } }));
+      });
+    }
+
+    const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+    const fieldIcon = (type?: string) => { const k = type ? airtableIconKey(type) : null; return k ? `<svg viewBox="0 0 16 16">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '<span class="iconify lucide--circle size-3.5"></span>'; };
+    const icon = (e: Ent) => e.kind === 'base' ? '<span class="iconify lucide--database concept-ic-base"></span>' : e.kind === 'table' ? '<span class="iconify lucide--table-2"></span>' : `<span class="concept-ic-field">${fieldIcon(e.fieldType)}</span>`;
+    const path = (e: Ent) => e.kind === 'field' ? `${e.baseName} ▸ ${e.tableName}` : e.kind === 'table' ? e.baseName : 'Base';
+    const fmt = (iso: string) => { try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch { return iso; } };
+
+    let current: DocData | null = null;
+    let tagIds: string[] = [];
+
+    function renderTags() {
+      tagCountEl.textContent = tagIds.length ? String(tagIds.length) : '';
+      if (!tagIds.length) { tagsEl.innerHTML = '<p class="dc-tags-empty">No entities tagged yet.</p>'; return; }
+      tagsEl.innerHTML = tagIds.map((id) => {
+        const e = entById.get(id);
+        if (!e) return '';
+        return `<div class="dc-tagrow" data-tag-id="${id}">
+          <span class="dc-tagrow-ic">${icon(e)}</span>
+          <span class="dc-tagrow-name" data-entity-open="${id}">${esc(e.name)} <span class="dc-tagrow-path">${esc(path(e))}</span></span>
+          <button type="button" class="dc-tagrow-x" data-tag-remove="${id}" aria-label="Remove tag"><span class="iconify lucide--x size-3.5"></span></button>
+        </div>`;
+      }).join('');
+    }
+    function renderLinks() {
+      const links = current?.links || [];
+      linksEl.innerHTML = links.length
+        ? links.map((l) => `<div class="dc-linkrow"><span class="iconify lucide--external-link size-3.5 opacity-60"></span><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a></div>`).join('')
+        : '<p class="dc-links-empty">No links yet.</p>';
+    }
+    function mountDiagrams() {
+      // Return currently-mounted diagrams to the pool (don't destroy the React instances),
+      // then mount this doc's. Lets us switch docs without re-creating canvases.
+      Array.from(diagramsEl.children).forEach((c) => pool.appendChild(c));
+      (current?.diagramIds || []).forEach((id) => {
+        const node = pool.querySelector<HTMLElement>(`[data-dc-diagram="${id}"]`);
+        if (node) diagramsEl.appendChild(node);
+      });
+      window.dispatchEvent(new Event('resize'));
+    }
+    function setActiveItem(id: string | null) {
+      doclist.querySelectorAll<HTMLElement>('[data-dc-item]').forEach((i) => i.classList.toggle('dc-active', i.dataset.dcItem === id));
+    }
+
+    function openDoc(id: string) {
+      const d = allDocs.find((x) => x.id === id);
+      if (!d) return;
+      current = d;
+      tagIds = [...d.entityIds];
+      titleField.value = d.title;
+      editor.innerHTML = d.bodyHtml;
+      byline.textContent = `${d.author ? d.author + ' · ' : ''}Edited ${fmt(d.updatedAt)}`;
+      renderTags(); renderLinks(); mountDiagrams();
+      paneEmpty.hidden = true; docView.hidden = false;
+      setActiveItem(id);
+      root.classList.remove('dc-reading');
+      setMode('edit');
+    }
+    function newDoc() {
+      current = { id: 'new', title: '', updatedAt: new Date().toISOString(), bodyHtml: '<p></p>', entityIds: [], links: [], diagramIds: [] };
+      tagIds = [];
+      titleField.value = '';
+      editor.innerHTML = '<p></p>';
+      byline.textContent = 'Draft · not saved';
+      renderTags(); renderLinks(); mountDiagrams();
+      paneEmpty.hidden = true; docView.hidden = false;
+      setActiveItem(null);
+      root.classList.remove('dc-reading'); setMode('edit');
+      titleField.focus();
+    }
+
+    // D6 — remove the current document (after confirm), then open the next or show empty.
+    function deleteCurrent() {
+      if (!current || current.id === 'new') return;
+      const id = current.id;
+      const idx = allDocs.findIndex((d) => d.id === id);
+      if (idx >= 0) allDocs.splice(idx, 1);
+      doclist.querySelector(`[data-dc-item="${id}"]`)?.remove();
+      if (sidebarCount) sidebarCount.textContent = String(allDocs.length);
+      delModal?.close();
+      if (allDocs.length) openDoc(allDocs[0].id);
+      else { docView!.hidden = true; paneEmpty.hidden = false; current = null; setActiveItem(null); }
+    }
+
+    function setMode(mode: 'edit' | 'read') {
+      root.classList.toggle('dc-reading', mode === 'read');
+      editor.contentEditable = mode === 'edit' ? 'true' : 'false';
+      titleField.readOnly = mode === 'read';
+      root.querySelectorAll('[data-dc-mode]').forEach((b) => b.classList.toggle('dc-mode-active', (b as HTMLElement).dataset.dcMode === mode));
+    }
+
+    // List → open.
+    root.addEventListener('click', (ev) => {
+      const open = (ev.target as HTMLElement).closest<HTMLElement>('[data-dc-open]');
+      if (open) { openDoc(open.dataset.dcOpen!); return; }
+      if ((ev.target as HTMLElement).closest('[data-dc-new]')) { newDoc(); return; }
+      const mode = (ev.target as HTMLElement).closest<HTMLElement>('[data-dc-mode]');
+      if (mode) { setMode(mode.dataset.dcMode as 'edit' | 'read'); return; }
+      const rm = (ev.target as HTMLElement).closest<HTMLElement>('[data-tag-remove]');
+      if (rm) { tagIds = tagIds.filter((t) => t !== rm.dataset.tagRemove); renderTags(); return; }
+      const addlink = (ev.target as HTMLElement).closest('[data-dc-addlink]');
+      if (addlink) { addLinkPrompt(); return; }
+      // D1 — collapse / expand the document list.
+      const lt = (ev.target as HTMLElement).closest('[data-dc-listtoggle]');
+      if (lt) {
+        const collapsed = root.classList.toggle('dc-list-collapsed');
+        const ic = root.querySelector<HTMLElement>('[data-dc-listtoggle-ic]');
+        if (ic) ic.className = `iconify size-4 ${collapsed ? 'lucide--panel-left-open' : 'lucide--panel-left-close'}`;
+        (lt as HTMLElement).title = collapsed ? 'Show document list' : 'Hide document list';
+        window.dispatchEvent(new Event('resize'));
+        return;
+      }
+      // D6 — delete with confirmation.
+      const del = (ev.target as HTMLElement).closest('[data-dc-delete]');
+      if (del) { if (current && current.id !== 'new' && delModal) { if (delName) delName.textContent = current.title || 'Untitled document'; delModal.showModal(); } return; }
+      if ((ev.target as HTMLElement).closest('[data-dc-delete-confirm]')) { deleteCurrent(); return; }
+    });
+
+    function addLinkPrompt() {
+      const url = window.prompt('Link URL'); if (!url) return;
+      const label = window.prompt('Link label', url) || url;
+      if (current) { current.links.push({ label, url }); renderLinks(); }
+    }
+
+    // Add tag from the rail typeahead.
+    document.addEventListener('schema:addTag', (ev) => {
+      const id = (ev as CustomEvent).detail?.id;
+      if (!id || tagIds.includes(id)) return;
+      tagIds.push(id); renderTags();
+      // Also insert a chip at the end of the editor for visibility.
+      const e = entById.get(id);
+      if (e && editor.contentEditable === 'true') {
+        const chip = makeChip(e);
+        editor.appendChild(chip); editor.appendChild(document.createTextNode(' '));
+      }
+    });
+
+    function makeChip(e: Ent): HTMLElement {
+      const span = document.createElement('span');
+      span.className = 'doc-chip';
+      span.contentEditable = 'false';
+      span.setAttribute('data-entity-open', e.id);
+      span.innerHTML = `<span class="doc-chip-ic">${icon(e)}</span>${esc(e.name)}`;
+      return span;
+    }
+
+    // ===== Inline @-mention =====
+    const mention = document.createElement('div');
+    mention.className = 'dc-mention'; mention.hidden = true;
+    document.body.appendChild(mention);
+    let mentionRange: Range | null = null;
+    let mResults: Ent[] = [];
+    let mActive = -1;
+
+    function closeMention() { mention.hidden = true; mentionRange = null; mActive = -1; }
+    function queryAtCaret(): { q: string; range: Range } | null {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount || !editor.contains(sel.anchorNode)) return null;
+      const node = sel.anchorNode;
+      if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+      const text = node.textContent || '';
+      const off = sel.anchorOffset;
+      const before = text.slice(0, off);
+      const m = before.match(/@([\w ]{0,30})$/);
+      if (!m) return null;
+      const range = document.createRange();
+      range.setStart(node, off - m[0].length);
+      range.setEnd(node, off);
+      return { q: m[1].trim().toLowerCase(), range };
+    }
+    function showMention(q: string, range: Range) {
+      mResults = entities.filter((e) => `${e.name} ${e.tableName || ''} ${e.baseName}`.toLowerCase().includes(q)).slice(0, 24);
+      mentionRange = range;
+      if (!mResults.length) { mention.innerHTML = '<div class="dc-mention-group">No matches</div>'; }
+      else {
+        const groups: Array<[string, string]> = [['base', 'Bases'], ['table', 'Tables'], ['field', 'Fields']];
+        let html = ''; let i = 0; const ordered: Ent[] = [];
+        for (const [kind, label] of groups) {
+          const items = mResults.filter((e) => e.kind === kind);
+          if (!items.length) continue;
+          html += `<div class="dc-mention-group">${label}</div>`;
+          for (const e of items) {
+            html += `<div class="dc-mention-opt" data-m-i="${i}" data-m-id="${e.id}"><span class="dc-mention-ic">${icon(e)}</span><span class="dc-mention-main"><div class="dc-mention-name">${esc(e.name)}</div><div class="dc-mention-path">${esc(path(e))}</div></span></div>`;
+            ordered.push(e); i++;
+          }
+        }
+        mResults = ordered;
+        mention.innerHTML = html;
+      }
+      const rect = range.getBoundingClientRect();
+      mention.style.left = `${Math.min(rect.left, window.innerWidth - 320)}px`;
+      mention.style.top = `${rect.bottom + 4}px`;
+      mention.hidden = false; mActive = -1;
+    }
+    function setMActive(i: number) {
+      const opts = Array.from(mention.querySelectorAll<HTMLElement>('.dc-mention-opt'));
+      if (!opts.length) return;
+      mActive = (i + opts.length) % opts.length;
+      opts.forEach((o, k) => o.setAttribute('aria-selected', String(k === mActive)));
+      opts[mActive]?.scrollIntoView({ block: 'nearest' });
+    }
+    function insertChip(e: Ent) {
+      if (!mentionRange) return;
+      mentionRange.deleteContents();
+      const chip = makeChip(e);
+      mentionRange.insertNode(chip);
+      const space = document.createTextNode(' ');
+      chip.after(space);
+      const sel = window.getSelection();
+      const r = document.createRange(); r.setStartAfter(space); r.collapse(true);
+      sel?.removeAllRanges(); sel?.addRange(r);
+      if (!tagIds.includes(e.id)) { tagIds.push(e.id); renderTags(); }
+      closeMention();
+    }
+
+    editor.addEventListener('input', () => {
+      if (editor.contentEditable !== 'true') return;
+      const at = queryAtCaret();
+      if (at) showMention(at.q, at.range); else closeMention();
+    });
+    editor.addEventListener('keydown', (ev) => {
+      if (mention.hidden) return;
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); setMActive(mActive + 1); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); setMActive(mActive - 1); }
+      else if (ev.key === 'Enter' && mActive >= 0) { ev.preventDefault(); insertChip(mResults[mActive]); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); closeMention(); }
+    });
+    mention.addEventListener('mousedown', (ev) => { const o = (ev.target as HTMLElement).closest<HTMLElement>('.dc-mention-opt'); if (o) { ev.preventDefault(); insertChip(entById.get(o.dataset.mId!)!); } });
+    editor.addEventListener('blur', () => window.setTimeout(closeMention, 150));
+
+    // Route entity-tag clicks that arrive while editing (don't place caret).
+    editor.addEventListener('click', (ev) => {
+      const chip = (ev.target as HTMLElement).closest<HTMLElement>('.doc-chip[data-entity-open]');
+      if (chip) { ev.preventDefault(); document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id: chip.getAttribute('data-entity-open') } })); }
+    });
+
+    // Open a specific doc when Browse's panel links to it.
+    document.addEventListener('schema:openDoc', (ev) => {
+      const id = (ev as CustomEvent).detail?.id;
+      const tabBtn = document.querySelector<HTMLElement>('[data-tab="docs"]');
+      tabBtn?.click();
+      if (id) window.setTimeout(() => openDoc(id), 30);
+    });
+
+    // Auto-select the first document (master-detail console, like Health).
+    if (allDocs.length) openDoc(allDocs[0].id);
+    else { docView.hidden = true; paneEmpty.hidden = false; }
+  }
+  wireDocs();
+  document.addEventListener('astro:after-swap', wireDocs);
+</script>

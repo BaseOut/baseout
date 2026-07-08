@@ -2,12 +2,14 @@ import { defineConfig } from 'astro/config';
 import { fileURLToPath } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import node from '@astrojs/node';
+import react from '@astrojs/react';
 
 const webSrc = fileURLToPath(new URL('../web/src', import.meta.url));
 
 export default defineConfig({
   output: 'server',
   adapter: node({ mode: 'standalone' }),
+  integrations: [react()],
   publicDir: fileURLToPath(new URL('../web/public', import.meta.url)),
   server: { port: 4332, host: true },
   prefetch: {

@@ -1,0 +1,132 @@
+---
+/**
+ * RelationshipPanel — the shared relationship-detail overlay, included ONCE at the
+ * Schema page level (like EntityPanel) so it can open over ANY tab. Both the
+ * Relationships TABLE tab (row click) and the Visualize "Relationships" graph mode
+ * (edge click) open it by dispatching `schema:openRelationship { id }`.
+ *
+ * Also hosts the **synced-table create/edit Drawer** (Dan 2026-07-01): Airtable's
+ * metadata API doesn't expose sync links, so synced-view relationships are inferred
+ * (Confirm/Dismiss) OR declared here by hand. The "New synced relationship" button in
+ * the Relationships toolbar + the Edit action on a synced row open this form.
+ *
+ * Markup-only here: `.rl-detail*` / `.rl-d*` / `.rl-toast*` styles are the `is:global`
+ * block in SchemaRelationships.astro; wiring lives in schemaRelationships.ts.
+ */
+import type { SchemaRelationship } from './SchemaRelationships.astro';
+import Drawer from '../ui/Drawer.astro';
+interface Props {
+  relationships: SchemaRelationship[];
+  /** Tables in the Space — feed the synced-relationship table pickers. */
+  tables?: { id: string; name: string; baseId?: string }[];
+  bases?: { id: string; name: string }[];
+}
+const { relationships, tables = [], bases = [] } = Astro.props as Props;
+const baseNameOf = (id?: string) => (id && bases.find((b) => b.id === id)?.name) || '';
+// A searchable single-select combobox (the pe-scope pattern): a trigger that shows the pick, a
+// dropdown with a search + the full table list. Rendered twice (Synced / Source table).
+---
+
+{/* Undo toast — Dismiss is reversible (Confirm/Dismiss are faked here anyway). */}
+<div class="rl-toast toast toast-top toast-end" data-rl-toast hidden>
+  <div class="alert rl-toast-alert">
+    <span class="iconify lucide--circle-check size-4" aria-hidden="true"></span>
+    <span data-rl-toast-msg>Relationship dismissed.</span>
+    <button type="button" class="btn btn-sm btn-ghost text-primary gap-1" data-rl-toast-undo><span class="iconify lucide--undo-2 size-3.5" aria-hidden="true"></span>Undo</button>
+  </div>
+</div>
+
+{/* Relationship detail — right panel; entity chips inside open the shared EntityPanel. */}
+<div class="rl-detail" data-rl-detail hidden>
+  <div class="rl-detail-scrim" data-rl-detail-close></div>
+  <aside class="rl-detail-panel" role="dialog" aria-label="Relationship details" aria-modal="false">
+    <div class="rl-detail-head">
+      <span class="rl-detail-ic" data-d-ic aria-hidden="true"></span>
+      <div class="rl-detail-headmeta">
+        <span class="rl-detail-type" data-d-type>Relationship</span>
+        <span class="rl-detail-sub" data-d-sub></span>
+      </div>
+      <button type="button" class="btn btn-sm btn-ghost btn-square" data-rl-detail-close aria-label="Close details">
+        <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+      </button>
+    </div>
+    <div class="rl-detail-body" data-d-body></div>
+  </aside>
+</div>
+
+{/* Synced-table create/edit — the right Drawer (project default; not a modal). */}
+<Drawer id="rl-synced-modal" title="Synced relationship" width="w-[min(94vw,34rem)]">
+  <form class="rl-form" data-rl-form>
+    <p class="rl-form-lead">Airtable's API can't detect synced tables, so declare them here — a table that mirrors another via a sync.</p>
+    {['synced', 'source'].map((which) => (
+      <div class="rl-field">
+        <span class="rl-field-lbl">{which === 'synced' ? 'Synced table' : 'Source table'} <span class="rl-req">*</span></span>
+        <div class="dropdown rl-cb" data-rl-cb={which}>
+          <div tabindex="0" role="button" class="btn btn-sm rl-cb-trigger" data-rl-cb-trigger>
+            <span class="rl-cb-cur" data-rl-cb-cur>Select a table…</span>
+            <span class="iconify lucide--chevron-down size-4 opacity-60" aria-hidden="true"></span>
+          </div>
+          <div tabindex="0" class="dropdown-content rl-cb-menu">
+            <label class="input input-sm rl-cb-search">
+              <span class="iconify lucide--search size-3.5 opacity-55" aria-hidden="true"></span>
+              <input type="text" placeholder="Search tables…" data-rl-cb-search aria-label="Search tables" autocomplete="off" />
+            </label>
+            <div class="rl-cb-list" data-rl-cb-list>
+              {tables.map((t) => (
+                <button type="button" class="rl-cb-opt" data-rl-cb-opt data-value={t.id} data-label={t.name} data-base={baseNameOf(t.baseId)} data-search={`${t.name} ${baseNameOf(t.baseId)}`.toLowerCase()}>
+                  <span class="iconify lucide--table-2 concept-ic-table size-4" aria-hidden="true"></span>
+                  <span class="rl-cb-opt-lbl">{t.name}</span>
+                  <span class="rl-cb-opt-sub">{baseNameOf(t.baseId)}</span>
+                </button>
+              ))}
+            </div>
+            <div class="rl-cb-empty" data-rl-cb-empty hidden>No tables match.</div>
+          </div>
+        </div>
+        <span class="rl-field-hint">{which === 'synced' ? "The table that's kept in sync (the mirror). Its base is used for the relationship." : 'Where it syncs from (can be another base).'}</span>
+      </div>
+    ))}
+    <label class="rl-field">
+      <span class="rl-field-lbl">Note</span>
+      <textarea class="textarea textarea-sm" data-rl-f-note rows="2" placeholder="Optional — e.g. which view it syncs from, or why it exists."></textarea>
+    </label>
+    <div class="rl-form-foot">
+      <button type="button" class="btn btn-sm btn-ghost" data-rl-f-cancel>Cancel</button>
+      <button type="submit" class="btn btn-sm btn-primary" data-rl-f-save>Add relationship</button>
+    </div>
+  </form>
+</Drawer>
+
+{/* Relationship data for the detail-panel builder (parsed by schemaRelationships.ts). */}
+<script type="application/json" data-rl-json is:inline set:html={JSON.stringify(relationships)} />
+{/* Tables (id → name/baseId) for the synced-relationship pickers. */}
+<script type="application/json" data-rl-tables is:inline set:html={JSON.stringify(tables.map((t) => ({ id: t.id, name: t.name, baseId: t.baseId })))} />
+<script type="application/json" data-rl-basemap is:inline set:html={JSON.stringify(Object.fromEntries(bases.map((b) => [b.id, b.name])))} />
+
+<style is:global>
+  .rl-form { display: flex; flex-direction: column; gap: .9rem; }
+  .rl-form-lead { font-size: .82rem; line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .62); }
+  .rl-field { display: flex; flex-direction: column; gap: .3rem; }
+  .rl-field-lbl { font-size: .78rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .72); }
+  .rl-field-hint { font-size: .72rem; line-height: 1.4; color: oklch(from var(--color-base-content) l c h / .5); }
+  .rl-req { color: var(--color-error); }
+  /* every control fills the drawer width */
+  .rl-field .input, .rl-field .textarea { width: 100%; }
+  /* searchable combobox (pe-scope pattern): a trigger + a dropdown with search + the full list. */
+  .rl-cb { width: 100%; }
+  .rl-cb-trigger { width: 100%; justify-content: space-between; font-weight: 400; background: var(--color-base-100); border-color: var(--color-base-300); box-shadow: none; }
+  .rl-cb:not(.rl-cb-chosen) .rl-cb-cur { color: oklch(from var(--color-base-content) l c h / .55); }
+  .rl-cb-cur { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rl-cb-menu { width: 100%; margin-top: 4px; padding: 8px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: 11px; box-shadow: 0 8px 24px oklch(0 0 0 / .18); z-index: 50; }
+  .rl-cb-search { width: 100%; margin-bottom: 8px; }
+  .rl-cb-list { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+  .rl-cb-opt { display: flex; align-items: center; gap: .5rem; padding: .4rem .5rem; border: 0; background: none; cursor: pointer; border-radius: 7px; font: inherit; font-size: .82rem; text-align: left; color: var(--color-base-content); width: 100%; }
+  .rl-cb-opt:hover { background: oklch(from var(--color-base-content) l c h / .06); }
+  .rl-cb-opt[hidden] { display: none; }
+  .rl-cb-opt .iconify { flex: none; }
+  .rl-cb-opt-lbl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rl-cb-opt-sub { margin-left: auto; font-size: .74rem; color: oklch(from var(--color-base-content) l c h / .5); white-space: nowrap; flex: none; }
+  .rl-cb-empty { padding: .5rem; font-size: .8rem; opacity: .5; }
+  .rl-cb-empty[hidden] { display: none; }
+  .rl-form-foot { display: flex; justify-content: flex-end; gap: .5rem; padding-top: .3rem; }
+</style>

@@ -1,0 +1,668 @@
+---
+/**
+ * SchemaBrowse — the Browse tab. The list/explorer counterpart to Visualize:
+ * find and inspect any base / table / field, then open the shared stacking
+ * detail panel. Two display modes (Tree ↔ Flat, the dbt Project/Database
+ * toggle), one global search (EntitySearch), a faceted filter bar (reusing
+ * FacetFilter), derived filters, a "showing N of M" count, and a staleness stamp.
+ * Read-only; all data is inside the Airtable metadata boundary (counts are
+ * "as of last backup"; no value statistics; no workspace grouping).
+ */
+import FacetFilter from './FacetFilter.astro';
+import EntitySearch from './EntitySearch.astro';
+import { fieldTypeLabel, type SchemaEntity, type SchemaDoc } from './schemaEntities';
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+import type { ChatThread } from './SchemaChat.astro';
+
+interface Props {
+  index: SchemaEntity[];
+  bases: { id: string; name: string }[];
+  docs?: SchemaDoc[];
+  /** Chat threads — drive the chat-kind tags in the Tagged column (B9). */
+  chatThreads?: ChatThread[];
+}
+const { index, bases, docs = [], chatThreads = [] } = Astro.props;
+const multiBase = bases.length > 1;
+const docTitle = new Map(docs.map((d) => [d.id, d.title]));
+// Reverse chat-tag map: entity id → chats referencing it. PRODUCTION / ENGINE NOTE: this
+// aggregation is derived here in the mirror from fixtures — Airtable's API returns no chat
+// references, so the engine must emit it (same boundary as the reverse reference graph).
+const chatTagsById = new Map<string, { id: string; title: string }[]>();
+chatThreads.filter((t) => !t.archived).forEach((t) => {
+  const seen = new Set<string>();
+  t.messages.forEach((m) => (m.refs || []).forEach((r) => {
+    if (r.kind === 'entity' && !seen.has(r.id)) { seen.add(r.id); const a = chatTagsById.get(r.id) || []; a.push({ id: t.id, title: t.title }); chatTagsById.set(r.id, a); }
+  }));
+});
+/** Resolve an entity's doc tags into a "Tagged in …" label (one named doc, or a count). */
+const tagInfo = (docIds: string[]) =>
+  docIds.length === 0 ? null
+  : docIds.length === 1 ? { single: true, id: docIds[0], text: docTitle.get(docIds[0]) ?? 'a document' }
+  : { single: false, id: '', text: `${docIds.length} documents` };
+
+const basesIx = index.filter((e) => e.kind === 'base');
+const tablesIx = index.filter((e) => e.kind === 'table');
+const fieldsIx = index.filter((e) => e.kind === 'field');
+
+const fieldIconSvg = (type?: string) => {
+  const k = type ? airtableIconKey(type) : null;
+  return k ? `<svg viewBox="0 0 16 16" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '<span class="iconify lucide--circle size-3.5"></span>';
+};
+const HEALTH_RANK = { red: 0, amber: 1, green: 2 } as const;
+const searchStr = (e: SchemaEntity) => `${e.name} ${e.tableName ?? ''} ${e.baseName}`.toLowerCase();
+const descState = (e: SchemaEntity) => (e.hasDescription ? (e.aiDescription ? 'ai' : 'doc') : 'none');
+// An Airtable description edited locally but not yet published shows a Draft pip here, so
+// unpublished edits are visible across the list. Runtime edits toggle it via schema:descChanged.
+const isDraft = (e: SchemaEntity) => (e.airtableDraft && e.airtableDraft.trim() !== (e.airtableDescription || '').trim() ? '1' : '0');
+// deleted-items-filter: removed entities are kept for history, hidden by default.
+const fmtDate = (iso?: string) => (iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
+const removedCount = index.filter((e) => e.removed).length;
+// Health as a soft semantic badge, matching the Backups list Status pills.
+const healthBadge = (h: string) =>
+  h === 'green' ? { cls: 'badge-soft badge-success', label: 'Healthy' }
+  : h === 'red' ? { cls: 'badge-soft badge-error', label: 'Needs attention' }
+  : { cls: 'badge-soft badge-warning', label: 'Could improve' };
+// Cardinality token for a LINK field, derived honestly from its own multiplicity
+// (allowsMultiple). Non-link / unknown fields get no token (— dash), like Relationships
+// shows for formulas/lookups. Reuses the Relationships `.rl-card` mono token style.
+const fieldCard = (f: SchemaEntity) =>
+  f.linkedTableId && typeof f.allowsMultiple === 'boolean' ? (f.allowsMultiple ? '1:m' : '1:1') : '';
+const escHtml = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+// Tagged cell (B9) — an icon per tag KIND (doc = lucide--book-text, chat = lucide--messages-square)
+// with its count, and a hover popover (catalog daisyUI dropdown-hover) that lists EVERY tagged
+// place, each click-through (doc → opens the doc; chat → jumps to the Chat tab + opens the thread).
+// This reuses the Tagged-hover pattern Dan liked (A11) and the app's dropdown primitive. "—" when
+// none. Data: doc tags from e.docIds; chat tags from chatTagsById (see the engine note above).
+const taggedHtml = (e: SchemaEntity) => {
+  const docIds = e.docIds || [];
+  const chats = chatTagsById.get(e.id) || [];
+  const nDoc = docIds.length;
+  const nChat = chats.length;
+  if (!nDoc && !nChat) return '<span class="rl-dash">—</span>';
+  const kind = (icon: string, n: number) =>
+    `<span class="br-tagkind"><span class="iconify ${icon} size-4" aria-hidden="true"></span><span class="mono-data">${n}</span></span>`;
+  const kinds = [nDoc ? kind('lucide--book-text', nDoc) : '', nChat ? kind('lucide--messages-square', nChat) : ''].join('');
+  const label = escHtml(`${nDoc + nChat} tagged — show where`);
+  // Trigger = the catalog Ghost Button; the popover is a daisyUI menu of click-through rows.
+  const trigger = `<div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-2 br-tagtrig" aria-label="${label}">${kinds}</div>`;
+  const items = [
+    ...docIds.map((id) => `<li><button type="button" data-doc-open="${escHtml(id)}"><span class="iconify lucide--book-text size-4" aria-hidden="true"></span><span class="br-tagitem-t">${escHtml(docTitle.get(id) ?? 'a document')}</span></button></li>`),
+    ...chats.map((c) => `<li><button type="button" data-chat-open="${escHtml(c.id)}"><span class="iconify lucide--messages-square size-4" aria-hidden="true"></span><span class="br-tagitem-t">${escHtml(c.title)}</span></button></li>`),
+  ].join('');
+  return `<div class="dropdown dropdown-hover dropdown-end br-tagdd">${trigger}<ul tabindex="0" class="dropdown-content menu br-tagmenu">${items}</ul></div>`;
+};
+// Health status badge, shared by base / table rows (mirrors the field Status cell).
+const statusBadgeHtml = (h: string) => {
+  const b = healthBadge(h);
+  return `<span class="badge ${b.cls} gap-1"><span class="size-1.5 rounded-full bg-current"></span>${b.label}</span>`;
+};
+
+// Tree: base ▸ tables ▸ fields.
+const tree = basesIx.map((b) => ({
+  base: b,
+  tables: tablesIx
+    .filter((t) => t.baseId === b.id)
+    .map((t) => ({ table: t, fields: fieldsIx.filter((f) => f.tableId === t.id) })),
+}));
+
+// Flat: tables + fields, worst health first (trust-signals-first).
+const flat = [...tablesIx, ...fieldsIx].sort(
+  (a, b) => HEALTH_RANK[a.health] - HEALTH_RANK[b.health] || a.baseName.localeCompare(b.baseName) || a.name.localeCompare(b.name),
+);
+const totalCount = flat.length;
+
+// Facet groups.
+// Status dot = the same health the tree/Visualize use (success / warning / error), so every
+// facet that lists bases or tables reads consistently with the canvas.
+const healthDot = (h: string) =>
+  h === 'green' ? 'var(--color-success)' : h === 'red' ? 'var(--color-error)' : 'var(--color-warning)';
+const baseHealth = new Map(basesIx.map((b) => [b.id, b.health]));
+const baseGroups = [{ items: bases.map((b) => ({ value: b.id, label: b.name, dot: baseHealth.has(b.id) ? healthDot(baseHealth.get(b.id) as string) : undefined })) }];
+const typeGroups = [{ items: [
+  { value: 'base', label: 'Bases' },
+  { value: 'table', label: 'Tables' },
+  { value: 'field', label: 'Fields' },
+] }];
+const presentTypes = Array.from(new Set(fieldsIx.map((f) => f.fieldType))).filter(Boolean) as string[];
+const ftypeGroups = [{ items: presentTypes
+  .sort((a, b) => fieldTypeLabel(a).localeCompare(fieldTypeLabel(b)))
+  .map((t) => ({ value: t, label: fieldTypeLabel(t), iconKey: t })) }];
+const healthGroups = [{ items: [
+  { value: 'green', label: 'Healthy', dot: 'var(--color-success)' },
+  { value: 'amber', label: 'Could improve', dot: 'var(--color-warning)' },
+  { value: 'red', label: 'Needs attention', dot: 'var(--color-error)' },
+] }];
+---
+
+<section class="br" data-browse data-total={totalCount}>
+  {/* One toolbar row: search │ filters … → right cluster (count + Tree/Flat view toggle). */}
+  <div class="sch-tb">
+    <div class="sch-tb-search"><EntitySearch index={index} name="browse" placeholder="Search bases, tables, fields…" /></div>
+    <span class="sch-tb-div" aria-hidden="true"></span>
+
+    {multiBase && <FacetFilter label="Bases" name="brbase" groups={baseGroups} />}
+    <FacetFilter label="Type" name="bretype" groups={typeGroups} />
+    {presentTypes.length > 0 && <FacetFilter label="Field types" name="brftype" groups={ftypeGroups} />}
+    <FacetFilter label="Health" name="brhealth" groups={healthGroups} />
+
+    <label class="sch-tb-check tooltip tooltip-top" data-tip="Show only items that have no description yet"><input type="checkbox" class="checkbox checkbox-sm" data-br-flag="undoc" /> Undocumented</label>
+    <label class="sch-tb-check tooltip tooltip-top" data-tip="Show only fields that link to another table"><input type="checkbox" class="checkbox checkbox-sm" data-br-flag="linked" /> Linked only</label>
+    {removedCount > 0 && (
+      <label class="sch-tb-check tooltip tooltip-top" data-tip="Show tables and fields removed from Airtable (kept for history)"><input type="checkbox" class="checkbox checkbox-sm" data-br-deleted /> Include removed <span class="badge badge-sm badge-ghost br-del-count">{removedCount}</span></label>
+    )}
+
+    <button type="button" class="btn btn-sm btn-ghost text-error br-clear gap-1" data-br-clear hidden>
+      <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+    </button>
+
+    <div class="sch-tb-right">
+      <span class="sch-tb-count" data-br-count>{totalCount} entities</span>
+      <div class="join sch-tb-modes" role="tablist" aria-label="Display mode">
+        <button type="button" class="btn btn-sm join-item sch-tb-mode-active" data-br-mode="tree" role="tab">
+          <span class="iconify lucide--list-tree size-4" aria-hidden="true"></span>Tree
+        </button>
+        <button type="button" class="btn btn-sm join-item" data-br-mode="flat" role="tab">
+          <span class="iconify lucide--table size-4" aria-hidden="true"></span>Flat
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {/* Tree view */}
+  <div class="br-tree" data-br-view="tree">
+    {/* ONE sticky column header for the whole tree (Quicken/Productboard hierarchical-table
+        pattern). Every row (base ▸ table ▸ field) aligns its fixed columns under it; base/table
+        rows leave Type/Link/Cardinality blank and fill Status + Tagged. */}
+    <div class="br-fhead">
+      <button type="button" class="br-fmain br-sortbtn" data-br-tsort="name" aria-label="Sort by name"><span class="br-fhead-lbl">Name</span><span class="br-sortind" aria-hidden="true"></span></button>
+      <button type="button" class="br-fcol br-fcol-type br-sortbtn" data-br-tsort="type" aria-label="Sort by type"><span class="br-fhead-lbl">Type</span><span class="br-sortind" aria-hidden="true"></span></button>
+      <button type="button" class="br-fcol br-fcol-link br-sortbtn" data-br-tsort="link" aria-label="Sort by link"><span class="br-fhead-lbl">Link</span><span class="br-sortind" aria-hidden="true"></span></button>
+      <button type="button" class="br-fcol br-fcol-card br-sortbtn" data-br-tsort="card" aria-label="Sort by cardinality"><span class="br-fhead-lbl">Cardinality</span><span class="br-sortind" aria-hidden="true"></span></button>
+      <button type="button" class="br-fcol br-fcol-status br-sortbtn" data-br-tsort="status" aria-label="Sort by status"><span class="br-fhead-lbl">Status</span><span class="br-sortind" aria-hidden="true"></span></button>
+      <button type="button" class="br-fcol br-fcol-tags br-sortbtn" data-br-tsort="tags" aria-label="Sort by tagged"><span class="br-fhead-lbl">Tagged</span><span class="br-sortind" aria-hidden="true"></span></button>
+    </div>
+    {tree.map(({ base, tables }) => (
+      <div class="br-node" data-br-node-base={base.id}>
+        <div class="br-row br-row-base" data-kind="base" data-base={base.id} data-health={base.health} data-desc="none" data-linked="0" data-search={searchStr(base)} data-entity-open={base.id} role="button" tabindex="0">
+          <button type="button" class="br-twist" data-br-toggle aria-label="Expand base"><span class="iconify lucide--chevron-right size-4"></span></button>
+          <span class="br-ic"><span class="iconify lucide--database size-4"></span></span>
+          <span class="br-fmain">
+            <span class="br-name">{base.name}</span>
+            <span class="br-sub">{tables.filter((t) => !t.removed).length} tables · {base.fieldCount} fields</span>
+          </span>
+          <span class="br-fcol br-fcol-type"></span>
+          <span class="br-fcol br-fcol-link"></span>
+          <span class="br-fcol br-fcol-card"></span>
+          <span class="br-fcol br-fcol-status"><Fragment set:html={statusBadgeHtml(base.health)} /></span>
+          <span class="br-fcol br-fcol-tags"><Fragment set:html={taggedHtml(base)} /></span>
+        </div>
+        <div class="br-group" data-br-group>
+          {tables.map(({ table, fields }) => (
+            <div class="br-node br-node-table" data-br-node-table={table.id}>
+              <div class="br-row br-row-table" data-kind="table" data-base={base.id} data-health={table.health} data-desc={descState(table)} data-draft={isDraft(table)} data-linked="0" data-removed={table.removed ? '1' : '0'} data-search={searchStr(table)} data-entity-open={table.id} role="button" tabindex="0">
+                <button type="button" class="br-twist" data-br-toggle aria-label="Expand table"><span class="iconify lucide--chevron-right size-4"></span></button>
+                <span class="br-ic"><span class="iconify lucide--table-2 size-4"></span></span>
+                <span class="br-fmain">
+                  <span class="br-name">{table.name}</span>
+                  <span class="br-sub">{table.fieldCount} fields{typeof table.recordCount === 'number' ? ` · ${table.recordCount.toLocaleString()} records` : ''}</span>
+                  <span class="badge badge-warning badge-soft br-draft">Draft</span>
+                </span>
+                <span class="br-fcol br-fcol-type"></span>
+                <span class="br-fcol br-fcol-link"></span>
+                <span class="br-fcol br-fcol-card"></span>
+                <span class="br-fcol br-fcol-status">{table.removed
+                  ? <span class="badge badge-soft badge-neutral gap-1 tooltip tooltip-left" data-tip={`No longer in Airtable${table.removedAt ? ` since ${fmtDate(table.removedAt)}` : ''}`}>Deleted</span>
+                  : <Fragment set:html={statusBadgeHtml(table.health)} />}</span>
+                <span class="br-fcol br-fcol-tags"><Fragment set:html={taggedHtml(table)} /></span>
+              </div>
+              <div class="br-group" data-br-group>
+                {fields.map((f) => (
+                  <div class="br-row br-row-field" data-kind="field" data-base={base.id} data-ftype={f.fieldType} data-health={f.health} data-desc={descState(f)} data-draft={isDraft(f)} data-linked={f.linkedTableId ? '1' : '0'} data-removed={f.removed ? '1' : '0'} data-search={searchStr(f)} data-entity-open={f.id} data-s-name={f.name.toLowerCase()} data-s-type={fieldTypeLabel(f.fieldType).toLowerCase()} data-s-link={(f.linkedTableName ?? '').toLowerCase()} data-s-card={fieldCard(f)} data-s-status={HEALTH_RANK[f.health]} data-s-tags={f.docIds.length + (chatTagsById.get(f.id)?.length ?? 0)} role="button" tabindex="0">
+                    <span class="br-twist-spacer" aria-hidden="true"></span>
+                    <span class="br-ic br-ic-field" set:html={fieldIconSvg(f.fieldType)} />
+                    {/* Name column (flexes + truncates); doc backlink + Draft pip stay hugging the name. */}
+                    <span class="br-fmain">
+                      <span class="br-name">{f.name}{f.isPrimary && <span class="br-primary">primary</span>}</span>
+                      <span class="badge badge-warning badge-soft br-draft">Draft</span>
+                    </span>
+                    {/* Aligned columns — reuse the Relationships table elements (type chip, mono
+                        cardinality token, dash) + the documented soft-semantic status badge. */}
+                    <span class="br-fcol br-fcol-type"><span class="badge badge-soft badge-neutral rl-type-badge">{fieldTypeLabel(f.fieldType)}</span></span>
+                    <span class="br-fcol br-fcol-link">{f.linkedTableName ? <button type="button" class="br-linkcell br-linkbtn tooltip tooltip-left" data-entity-open={f.linkedTableId} data-tip={`Open ${f.linkedTableName}`} aria-label={`Open linked table ${f.linkedTableName}`}>→ {f.linkedTableName}</button> : <span class="rl-dash">—</span>}</span>
+                    <span class="br-fcol br-fcol-card">{fieldCard(f) ? <span class="rl-card tooltip tooltip-left" data-tip={f.allowsMultiple ? 'Links to many records' : 'Links to one record'}>{fieldCard(f)}</span> : <span class="rl-dash">—</span>}</span>
+                    <span class="br-fcol br-fcol-status">{f.removed
+                      ? <span class="badge badge-soft badge-neutral gap-1 tooltip tooltip-left" data-tip={`No longer in Airtable${f.removedAt ? ` since ${fmtDate(f.removedAt)}` : ''}`}>Deleted</span>
+                      : <span class={`badge ${healthBadge(f.health).cls} gap-1`}><span class="size-1.5 rounded-full bg-current"></span>{healthBadge(f.health).label}</span>}</span>
+                    <span class="br-fcol br-fcol-tags"><Fragment set:html={taggedHtml(f)} /></span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    ))}
+  </div>
+
+  {/* Flat */}
+  <div class="br-flat" data-br-view="flat" hidden>
+    <div class="br-table-wrap">
+      <table class="table text-sm br-table">
+        <thead>
+          <tr class="text-xs uppercase tracking-wider text-base-content/60">
+            <th data-br-sort="name" class="br-th">Name</th>
+            <th data-br-sort="type" class="br-th">Type</th>
+            <th data-br-sort="parent" class="br-th">Parent</th>
+            <th data-br-sort="linked" class="br-th">Linked</th>
+            <th data-br-sort="health" class="br-th br-th-active">Health</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody data-br-flatbody>
+          {flat.map((e) => (
+            <tr class="br-trow" data-kind={e.kind} data-base={e.baseId} data-ftype={e.fieldType} data-health={e.health} data-desc={descState(e)} data-draft={isDraft(e)} data-linked={e.linkedTableId ? '1' : '0'} data-removed={e.removed ? '1' : '0'} data-search={searchStr(e)} data-name={e.name.toLowerCase()} data-type={e.kind === 'field' ? fieldTypeLabel(e.fieldType).toLowerCase() : e.kind} data-parent={(e.tableName ?? e.baseName).toLowerCase()} data-healthrank={HEALTH_RANK[e.health]} data-entity-open={e.id} role="button" tabindex="0">
+              <td class="br-td-name">
+                <div class="br-namecell">
+                  <span class="br-ic br-ic-field" set:html={e.kind === 'field' ? fieldIconSvg(e.fieldType) : e.kind === 'table' ? '<span class="iconify lucide--table-2 size-4"></span>' : '<span class="iconify lucide--database size-4"></span>'} />
+                  <span class="br-name">{e.name}{e.isPrimary && <span class="br-primary">primary</span>}</span>
+                  <span class="badge badge-sm badge-warning badge-soft br-draft">Draft</span>
+                  {e.removed && (<span class="br-deleted"><span class="badge badge-sm badge-ghost br-del-badge">Deleted</span><span class="br-del-since">no longer in Airtable{e.removedAt ? ` since ${fmtDate(e.removedAt)}` : ''}</span></span>)}
+                  {e.docIds.length > 0 && (e.docIds.length === 1 ? (
+                    <button type="button" class="tooltip tooltip-right br-docmark br-docmark-btn" data-tip={`Tagged in ${docTitle.get(e.docIds[0]) ?? 'a document'}`} data-doc-open={e.docIds[0]} aria-label={`Tagged in ${docTitle.get(e.docIds[0]) ?? 'a document'}`}>
+                      <span class="iconify lucide--file-text size-3.5" aria-hidden="true"></span>
+                    </button>
+                  ) : (
+                    <span class="tooltip tooltip-right br-docmark" data-tip={`Tagged in ${e.docIds.length} documents`} aria-label={`Tagged in ${e.docIds.length} documents`}>
+                      <span class="iconify lucide--file-text size-3.5" aria-hidden="true"></span>
+                    </span>
+                  ))}
+                </div>
+              </td>
+              <td class="text-base-content/64">{e.kind === 'field' ? fieldTypeLabel(e.fieldType) : e.kind === 'table' ? 'Table' : 'Base'}</td>
+              <td class="text-base-content/64">{e.kind === 'field' ? e.tableName : e.baseName}</td>
+              <td class="text-base-content/64">{e.linkedTableName ?? '—'}</td>
+              <td>{e.removed ? <span class="text-base-content/40">—</span> : <span class={`badge ${healthBadge(e.health).cls}`}>{healthBadge(e.health).label}</span>}</td>
+              <td class="text-right"><span class="br-openlink">Open →</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="br-empty" data-br-empty hidden>
+    <span class="iconify lucide--search-x size-6 opacity-40" aria-hidden="true"></span>
+    <p>No entities match your filters.</p>
+    <button type="button" class="btn btn-sm btn-ghost text-primary" data-br-clear>Clear filters</button>
+  </div>
+</section>
+
+<style is:global>
+  /* B9 — Tagged cell: one icon+count per tag kind (doc / chat) in a ghost-button trigger, with a
+     hover popover (daisyUI dropdown-hover) listing every tagged place. is:global (unique .br-tag*
+     prefix) because taggedHtml is injected via `set:html`, which scoped styles never reach. */
+  .br-tagkind { display: inline-flex; align-items: center; gap: 4px; }
+  .br-tagtrig { font-weight: 500; }
+  .br-tagmenu { z-index: 20; width: 16rem; max-width: 78vw; max-height: 60vh; overflow-y: auto; padding: 4px; background: var(--color-base-100); border-radius: 12px; box-shadow: 0 8px 24px oklch(0 0 0 / .18); border: 1px solid var(--color-base-300); }
+  .br-tagmenu li > button { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+  .br-tagmenu li > button .iconify { flex: none; opacity: .7; }
+  .br-tagitem-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+
+<style>
+  .br { display: flex; flex-direction: column; gap: 12px; }
+  /* Toolbar layout is the shared .sch-tb pattern (global.css). Only the Tree/Flat segment
+     keeps component-local styling. */
+  /* view toggle styling moved to the shared .sch-tb-modes in global.css */
+
+  /* tree */
+  /* overflow: clip (NOT hidden) — clips the rounded corners WITHOUT creating a scroll container,
+     so the sticky column header can still pin to the scrollport. */
+  .br-tree { border: 1px solid var(--color-base-300); border-radius: 11px; overflow: clip; background: var(--color-base-100); }
+  .br-node-table > .br-group { display: none; }
+  .br-node-table.br-open > .br-group { display: block; }
+  .br-node[data-br-node-base] > .br-group { display: block; }
+  .br-node[data-br-node-base].br-collapsed > .br-group { display: none; }
+
+  /* Row rhythm matches the Backups/Flat table: roomy rows, 14px text. */
+  .br-row { display: flex; align-items: center; gap: 12px; padding: 12px 12px; cursor: pointer; border-bottom: 1px solid var(--color-base-200); min-height: 48px; }
+  .br-row:hover { background: var(--color-base-200); }
+  .br-row:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+  /* Stair-step indentation: each level's icon sits +20px deeper than its parent's.
+     Tables/bases carry a 20px twist; fields carry a 20px spacer in its place so the
+     field icon lands one full level inside the table name (not aligned with it). */
+  .br-row-base { padding-left: 12px; }
+  .br-row-table { padding-left: 32px; }
+  .br-row-field { padding-left: 52px; }
+  .br-row[hidden] { display: none; }
+  .br-twist-spacer { width: 20px; flex: none; }
+
+  .br-twist { display: grid; place-items: center; width: 20px; height: 20px; border: 0; background: none; cursor: pointer; border-radius: 5px; flex: none; color: oklch(from var(--color-base-content) l c h / .5); padding: 0; }
+  .br-twist:hover { background: var(--color-base-300); }
+  .br-twist .iconify { transition: transform .15s ease; }
+  .br-node.br-open > .br-row .br-twist .iconify, .br-node-table.br-open > .br-row .br-twist .iconify { transform: rotate(90deg); }
+  .br-node[data-br-node-base]:not(.br-collapsed) > .br-row .br-twist .iconify { transform: rotate(90deg); }
+
+  .br-ic { width: 20px; flex: none; display: grid; place-items: center; color: oklch(from var(--color-base-content) l c h / .7); }
+  .br-ic-field svg { width: 15px; height: 15px; opacity: .82; }
+  /* Level colour-coding (palette tokens, softened toward neutral so it reads as a tint,
+     not a bright fill): base = primary (blue), table = success (green), field = neutral. */
+  .br-row-base .br-ic, .br-trow[data-kind="base"] .br-ic { color: color-mix(in oklch, var(--color-primary) 78%, var(--color-base-content)); }
+  .br-row-table .br-ic, .br-trow[data-kind="table"] .br-ic { color: color-mix(in oklch, var(--color-success) 78%, var(--color-base-content)); }
+  .br-name { font-size: 14px; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; }
+  .br-row-base .br-name, .br-row-table .br-name { font-weight: 600; }
+  .br-primary { font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--color-primary); background: color-mix(in oklch, var(--color-primary) 12%, transparent); padding: 1px 5px; border-radius: 4px; } /* ds-ok: intentional micro-label pill (PRIMARY marker), not body/control text; pre-existing */
+  .br-sub { font-size: 14px; color: oklch(from var(--color-base-content) l c h / .5); white-space: nowrap; }
+  /* Field rows are columnar (matching the Relationships table): the name flexes and truncates,
+     then fixed-width Type / Link / Cardinality / Status columns line up across EVERY field row,
+     regardless of name length. The chips/tokens are the shared Relationships elements. */
+  .br-fmain { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 8px; }
+  .br-fmain .br-name { flex: 0 1 auto; }
+  .br-fcol { flex: none; display: flex; align-items: center; }
+  .br-fcol-type { width: 9.5rem; }
+  .br-fcol-link { width: 9rem; }
+  .br-fcol-card { width: 7rem; }
+  .br-fcol-status { width: 9rem; }
+  .br-fcol-tags { width: 8rem; }
+  /* Tagged cell = the catalog Ghost Button (btn btn-ghost, rendered in taggedHtml). The Link
+     value is the interactive element here — a ghost-hover wash signals it opens the linked table. */
+  .br-linkbtn { border: 0; background: none; cursor: pointer; font: inherit; display: inline-flex; align-items: center; max-width: 100%; padding: 2px 8px; margin-left: -8px; border-radius: 6px; transition: background-color .12s ease, color .12s ease; }
+  .br-linkbtn:hover { background: oklch(from var(--color-base-content) l c h / .12); color: var(--color-primary); }
+  .br-linkcell { font-size: 14px; color: oklch(from var(--color-base-content) l c h / .55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Per-table column header — reuses the field-row column classes so the labels sit exactly
+     above their cells (mirrors the Relationships per-Base header). */
+  /* ONE sticky column header for the whole tree — pins to the top while the tree scrolls.
+     Field label aligns to the base-level name; the fixed columns align to every row's cells. */
+  /* top: 64px clears the app's sticky topbar (h-16) so the header pins just below it, not behind. */
+  .br-fhead { position: sticky; top: 64px; z-index: 3; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 72px; border-bottom: 1px solid var(--color-base-300); background: var(--color-base-200); border-radius: 11px 11px 0 0; }
+  .br-fhead-lbl { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .5); white-space: nowrap; }
+  /* Click-to-sort headers — sort the fields WITHIN each table (base/table rows never move). */
+  .br-sortbtn { border: 0; background: none; cursor: pointer; font: inherit; padding: 0; gap: 4px; text-align: left; }
+  .br-sortbtn:hover .br-fhead-lbl { color: oklch(from var(--color-base-content) l c h / .82); }
+  .br-sortind { font-size: 8px; line-height: 1; color: var(--color-primary); min-width: 8px; }
+  .br-sortbtn[data-sort-active="asc"] .br-sortind::after { content: "▲"; }
+  .br-sortbtn[data-sort-active="desc"] .br-sortind::after { content: "▼"; }
+  /* Doc backlink icon on base / table rows — sits at the right, before the health dot. */
+  .br-row-base > .br-docmark-row, .br-row-table > .br-docmark-row { margin-left: auto; }
+  .br-docmark-row + .br-dot { margin-left: 12px; }
+  .br-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; margin-left: auto; }
+  /* "Tagged in {doc}" reverse backlink — written out in the tree (room to the right),
+     a clickable icon in the dense flat table. Clicking the named doc opens it in Docs. */
+  .br-taglink { display: inline-flex; align-items: center; gap: 4px; font-family: inherit; font-weight: 500; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .5); border: 0; background: none; cursor: pointer; padding: 0; max-width: 300px; white-space: nowrap; }
+  .br-taglink .iconify { flex: none; }
+  .br-taglink-txt { overflow: hidden; text-overflow: ellipsis; }
+  button.br-taglink:hover { color: var(--color-primary); }
+  .br-row .br-taglink { margin-left: auto; }
+  .br-row .br-taglink + .br-dot { margin-left: 12px; }
+  .br-docmark { display: inline-grid; place-items: center; color: oklch(from var(--color-base-content) l c h / .42); flex: none; }
+  .br-docmark-btn { border: 0; background: none; cursor: pointer; padding: 0; }
+  .br-docmark:hover { color: var(--color-primary); }
+  .br-td-name .br-docmark { margin-left: 8px; }
+  .br-dot-green { background: var(--color-success); } .br-dot-amber { background: var(--color-warning); } .br-dot-red { background: var(--color-error); }
+  /* Unpublished-description pip — hidden unless the row is flagged data-draft="1" (seeded
+     server-side, toggled at runtime by schema:descChanged from the detail panel). */
+  .br-draft { display: none; flex: none; }
+  [data-draft="1"] .br-draft { display: inline-flex; }
+
+  /* deleted-items-filter: removed rows render muted with a "Deleted" badge + "since" caption. */
+  .br-row[data-removed="1"], .br-trow[data-removed="1"] { opacity: .5; }
+  .br-deleted { display: inline-flex; align-items: center; gap: 8px; flex: none; min-width: 0; }
+  .br-del-badge { font-weight: 600; }
+  .br-del-since { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .58); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .br-row .br-draft { margin-left: auto; }
+  .br-row .br-taglink + .br-draft { margin-left: 8px; }
+  .br-row .br-draft + .br-dot { margin-left: 8px; }
+  .br-td-name .br-draft { margin-left: 8px; }
+
+  /* flat */
+  /* Flat — same style as the Backups run-history table: daisyUI `table text-sm`
+     (default row height = generous spacing, 14px body), muted uppercase header (no fill),
+     soft semantic Health badge, whole-row clickable, a trailing Open affordance. */
+  .br-table-wrap { border: 1px solid var(--color-base-300); border-radius: .85rem; overflow: hidden; background: var(--color-base-100); }
+  .br-table { margin: 0; }
+  .br-table thead th { cursor: pointer; user-select: none; white-space: nowrap; font-weight: 700; }
+  .br-table thead th:hover { color: var(--color-base-content); }
+  .br-th-active { color: var(--color-primary); }
+  .br-trow { cursor: pointer; }
+  .br-trow:hover { background: oklch(from var(--color-base-200) l c h / .5); }
+  .br-trow[hidden] { display: none; }
+  .br-trow td { white-space: nowrap; }
+  /* Comfortable row height — a touch taller than the daisyUI default for breathing room. */
+  .br-table tbody td { padding-block: .95rem; }
+  /* Name cell: keep the <td> a normal table-cell so it stretches to the row height like its
+     siblings. A `display:flex` <td> drops out of the table model and shrinks to its content,
+     so it reads SHORTER than the neighbouring cells — do the icon+name flex on an inner wrapper. */
+  .br-td-name { vertical-align: middle; }
+  .br-namecell { display: flex; align-items: center; gap: 8px; }
+  .br-trow .br-name { font-size: 14px; }
+  .br-openlink { color: var(--color-primary); font-size: 13px; font-weight: 500; white-space: nowrap; opacity: 0; transition: opacity .12s ease; }
+  .br-trow:hover .br-openlink, .br-trow:focus-within .br-openlink { opacity: 1; }
+
+  .br-empty { display: none; flex-direction: column; align-items: center; gap: 8px; padding: 48px 20px; text-align: center; color: oklch(from var(--color-base-content) l c h / .6); }
+  .br-empty[data-br-empty]:not([hidden]) { display: flex; }
+  .br-empty p { font-size: 13px; margin: 0; }
+</style>
+
+<script>
+  function wireBrowse() {
+    const root = document.querySelector<HTMLElement>('[data-browse]');
+    if (!root || root.dataset.brWired) return;
+    root.dataset.brWired = '1';
+    // Totals exclude removed (deleted) rows by default; the All variants count them in when
+    // "Include removed" is on, so the entity count stays coherent either way.
+    const totalFlatAll = root.querySelectorAll('.br-trow').length;
+    const totalFlatActive = root.querySelectorAll('.br-trow:not([data-removed="1"])').length;
+    const totalTreeAll = root.querySelectorAll('.br-tree .br-row').length;
+    const totalTreeActive = root.querySelectorAll('.br-tree .br-row:not([data-removed="1"])').length;
+
+    const treeView = root.querySelector<HTMLElement>('[data-br-view="tree"]')!;
+    const flatView = root.querySelector<HTMLElement>('[data-br-view="flat"]')!;
+    const emptyEl = root.querySelector<HTMLElement>('[data-br-empty]')!;
+    const countEl = root.querySelector<HTMLElement>('[data-br-count]')!;
+    const clearBtns = Array.from(root.querySelectorAll<HTMLElement>('[data-br-clear]'));
+
+    // Filter state.
+    let query = '';
+    const hidden: Record<string, Set<string>> = { brbase: new Set(), bretype: new Set(), brftype: new Set(), brhealth: new Set() };
+    const flags = { undoc: false, linked: false };
+    let mode: 'tree' | 'flat' = 'tree';
+    let showDeleted = false; // "Include removed" reveals removed entities (default hidden).
+
+    const rowVisible = (el: HTMLElement) => {
+      const kind = el.dataset.kind!;
+      if (el.dataset.removed === '1' && !showDeleted) return false;
+      if (query && !(el.dataset.search || '').includes(query)) return false;
+      if (hidden.bretype.has(kind)) return false;
+      if (el.dataset.base && hidden.brbase.has(el.dataset.base)) return false;
+      if (el.dataset.health && hidden.brhealth.has(el.dataset.health)) return false;
+      if (kind === 'field' && el.dataset.ftype && hidden.brftype.has(el.dataset.ftype)) return false;
+      if (flags.undoc && el.dataset.desc !== 'none') return false;
+      if (flags.linked && el.dataset.linked !== '1') return false;
+      return true;
+    };
+
+    function apply() {
+      let shown = 0;
+      // Flat rows.
+      flatView.querySelectorAll<HTMLElement>('.br-trow').forEach((r) => {
+        const v = rowVisible(r);
+        r.hidden = !v;
+        if (v) shown++;
+      });
+      // Tree rows: a field shows on its own merit; a table shows if it matches or has a visible field; a base if it matches or has a visible table.
+      let treeShown = 0;
+      root.querySelectorAll<HTMLElement>('[data-br-node-table]').forEach((tnode) => {
+        const tableRow = tnode.querySelector<HTMLElement>('.br-row-table')!;
+        let anyField = false;
+        tnode.querySelectorAll<HTMLElement>('.br-row-field').forEach((fr) => {
+          const v = rowVisible(fr);
+          fr.hidden = !v;
+          if (v) { anyField = true; treeShown++; }
+        });
+        const tableSelf = rowVisible(tableRow);
+        const showTable = tableSelf || anyField;
+        tnode.hidden = !showTable;
+        if (tableSelf) treeShown++;
+        if (anyField) tnode.classList.add('br-open');
+      });
+      root.querySelectorAll<HTMLElement>('[data-br-node-base]').forEach((bnode) => {
+        const baseRow = bnode.querySelector<HTMLElement>('.br-row-base')!;
+        const anyTable = Array.from(bnode.querySelectorAll<HTMLElement>('[data-br-node-table]')).some((t) => !t.hidden);
+        const baseSelf = rowVisible(baseRow);
+        bnode.hidden = !(baseSelf || anyTable);
+        if (baseSelf) treeShown++;
+        if (anyTable && (query || activeFilters())) bnode.classList.remove('br-collapsed');
+      });
+
+      const modeTotal = mode === 'flat' ? (showDeleted ? totalFlatAll : totalFlatActive) : (showDeleted ? totalTreeAll : totalTreeActive);
+      const visibleCount = mode === 'flat' ? shown : treeShown;
+      const any = activeFilters() || !!query;
+      countEl.textContent = any ? `Showing ${visibleCount} of ${modeTotal}` : `${modeTotal} entities`;
+      const noResults = visibleCount === 0;
+      emptyEl.hidden = !noResults;
+      (mode === 'flat' ? flatView : treeView).hidden = noResults;
+      clearBtns.forEach((b) => (b.hidden = !any));
+    }
+
+    const activeFilters = () => Object.values(hidden).some((s) => s.size) || flags.undoc || flags.linked;
+
+    // Search (filter-in-place) from EntitySearch.
+    document.addEventListener('schema:searchInput', (ev) => {
+      const d = (ev as CustomEvent).detail;
+      if (d.name !== 'browse') return;
+      query = (d.query || '').toLowerCase();
+      apply();
+    });
+
+    // Facet changes.
+    document.addEventListener('facetchange', (ev) => {
+      const d = (ev as CustomEvent).detail;
+      if (!(d.name in hidden)) return;
+      hidden[d.name] = new Set(d.hidden || []);
+      apply();
+    });
+
+    // Derived-filter checkboxes.
+    root.querySelectorAll<HTMLInputElement>('[data-br-flag]').forEach((cb) => {
+      cb.addEventListener('change', () => { (flags as any)[cb.dataset.brFlag!] = cb.checked; apply(); });
+    });
+
+    // Include-deleted toggle — reveals removed (deleted) entities, hidden by default.
+    const deletedToggle = root.querySelector<HTMLInputElement>('[data-br-deleted]');
+    deletedToggle?.addEventListener('change', () => { showDeleted = deletedToggle.checked; apply(); });
+
+    // Mode toggle.
+    root.querySelectorAll<HTMLElement>('[data-br-mode]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        mode = btn.dataset.brMode as 'tree' | 'flat';
+        root.querySelectorAll('[data-br-mode]').forEach((b) => b.classList.toggle('sch-tb-mode-active', b === btn));
+        treeView.hidden = mode !== 'tree';
+        flatView.hidden = mode !== 'flat';
+        apply();
+      });
+    });
+
+    // Tagged column (B9): the hover popover lists doc/chat tags. Any click inside the Tagged
+    // dropdown must NOT open the row's entity panel — stop it bubbling to the document-level
+    // [data-entity-open] handler. A doc row opens the doc; a chat row jumps to the Chat tab + opens
+    // the thread; the bare trigger just toggles the popover.
+    root.addEventListener('click', (ev) => {
+      const target = ev.target as HTMLElement;
+      const inTagDd = target.closest<HTMLElement>('[data-br-tagdd]');
+      const docLink = target.closest<HTMLElement>('[data-doc-open]');
+      const chatLink = target.closest<HTMLElement>('[data-chat-open]');
+      if (!inTagDd && !docLink && !chatLink) return;
+      ev.preventDefault(); ev.stopPropagation();
+      if (docLink) { document.dispatchEvent(new CustomEvent('schema:openDoc', { detail: { id: docLink.dataset.docOpen } })); (document.activeElement as HTMLElement | null)?.blur(); return; }
+      if (chatLink) {
+        document.querySelector<HTMLElement>('[data-tab="chat"]')?.click();
+        document.dispatchEvent(new CustomEvent('schema:openChat', { detail: { id: chatLink.dataset.chatOpen } }));
+        (document.activeElement as HTMLElement | null)?.blur();
+      }
+    });
+
+    // Tree expand/collapse (twist). Stop propagation so the row's open-panel doesn't fire.
+    root.addEventListener('click', (ev) => {
+      const twist = (ev.target as HTMLElement).closest<HTMLElement>('[data-br-toggle]');
+      if (!twist) return;
+      ev.preventDefault(); ev.stopPropagation();
+      const node = twist.closest<HTMLElement>('.br-node')!;
+      if (node.hasAttribute('data-br-node-base')) node.classList.toggle('br-collapsed');
+      else node.classList.toggle('br-open');
+    });
+    // Keyboard open on rows.
+    root.addEventListener('keydown', (ev) => {
+      const row = (ev.target as HTMLElement).closest<HTMLElement>('[data-entity-open]');
+      if (row && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id: row.dataset.entityOpen } })); }
+    });
+
+    // Flat sort.
+    let sortKey = 'health'; let sortDir = 1;
+    const tbody = flatView.querySelector<HTMLElement>('[data-br-flatbody]')!;
+    root.querySelectorAll<HTMLElement>('[data-br-sort]').forEach((th) => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.brSort!;
+        if (key === sortKey) sortDir *= -1; else { sortKey = key; sortDir = 1; }
+        root.querySelectorAll('[data-br-sort]').forEach((h) => h.classList.toggle('br-th-active', h === th));
+        const rows = Array.from(tbody.querySelectorAll<HTMLElement>('.br-trow'));
+        rows.sort((a, b) => {
+          let av: string | number, bv: string | number;
+          if (key === 'health') { av = Number(a.dataset.healthrank); bv = Number(b.dataset.healthrank); }
+          else { av = (a.dataset[key] || ''); bv = (b.dataset[key] || ''); }
+          return (av < bv ? -1 : av > bv ? 1 : 0) * sortDir;
+        });
+        rows.forEach((r) => tbody.appendChild(r));
+      });
+    });
+
+    // Tree sort — clicking a column header sorts the FIELDS within each table group (contextual:
+    // the Base ▸ Table structure never moves, only the leaf field rows reorder inside their table).
+    let treeSortKey = ''; let treeSortDir = 1;
+    const numericSort = new Set(['status', 'tags']);
+    root.querySelectorAll<HTMLElement>('[data-br-tsort]').forEach((h) => {
+      h.addEventListener('click', () => {
+        const key = h.dataset.brTsort!;
+        if (key === treeSortKey) treeSortDir *= -1; else { treeSortKey = key; treeSortDir = 1; }
+        root.querySelectorAll('[data-br-tsort]').forEach((x) => x.removeAttribute('data-sort-active'));
+        h.setAttribute('data-sort-active', treeSortDir > 0 ? 'asc' : 'desc');
+        const dkey = 's' + key.charAt(0).toUpperCase() + key.slice(1); // e.g. name → sName
+        const numeric = numericSort.has(key);
+        root.querySelectorAll<HTMLElement>('.br-node-table > .br-group').forEach((group) => {
+          const rows = Array.from(group.querySelectorAll<HTMLElement>(':scope > .br-row-field'));
+          rows.sort((a, b) => {
+            const av = a.dataset[dkey] ?? ''; const bv = b.dataset[dkey] ?? '';
+            let cmp: number;
+            if (numeric) cmp = (Number(av) || 0) - (Number(bv) || 0);
+            else { const ae = av === '', be = bv === ''; if (ae !== be) return ae ? 1 : -1; cmp = av.localeCompare(bv); }
+            return cmp * treeSortDir;
+          });
+          rows.forEach((r) => group.appendChild(r));
+        });
+      });
+    });
+
+    // Clear.
+    clearBtns.forEach((b) => b.addEventListener('click', () => {
+      query = ''; flags.undoc = false; flags.linked = false; showDeleted = false;
+      Object.keys(hidden).forEach((k) => (hidden[k] = new Set()));
+      root.querySelectorAll<HTMLInputElement>('[data-br-flag]').forEach((cb) => (cb.checked = false));
+      if (deletedToggle) deletedToggle.checked = false;
+      root.querySelectorAll<HTMLInputElement>('[data-es-field]').forEach((f) => (f.value = ''));
+      root.querySelectorAll<HTMLElement>('[data-facet]').forEach((ff) => ff.dispatchEvent(new CustomEvent('facetreset')));
+      apply();
+    }));
+
+    apply();
+  }
+  wireBrowse();
+  document.addEventListener('astro:after-swap', wireBrowse);
+
+  // Reflect description edits made in the detail panel: flip the row's Draft pip live.
+  document.addEventListener('schema:descChanged', (ev) => {
+    const d = (ev as CustomEvent).detail || {};
+    if (!d.id) return;
+    document.querySelectorAll<HTMLElement>(`[data-browse] [data-entity-open="${d.id}"]`).forEach((el) => {
+      el.dataset.draft = d.draft ? '1' : '0';
+    });
+  });
+</script>

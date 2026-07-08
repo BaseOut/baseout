@@ -1,0 +1,637 @@
+---
+/**
+ * SchemaChangelog — the Schema page's Changelog tab (overview/schema/02-changelog-tab.md).
+ *
+ * A time-ordered, day-grouped feed of schema changes (field renamed, table added,
+ * type changed…) generated from backup-snapshot diffs. The engine pre-renders the
+ * human-readable strings; this tab styles them for hierarchy + scan. A ⚠️ flags
+ * changes that may have invalidated data — the highest-value signal in the feed.
+ *
+ * Filters (founder direction): show/hide by Base / Table / Field type via the faceted
+ * FacetFilter (the Visualize "Display" pattern); Change type + Time stay plain selects.
+ * Clicking an entry opens a right-side detail panel with its full context.
+ * All catalog Astro/daisyUI.
+ */
+import FacetFilter, { type FacetGroup } from './FacetFilter.astro';
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+
+export interface ChangelogEntry {
+  id: string;
+  at: string; // ISO timestamp
+  base: string; // base name
+  /** The table the change happened in (a new table names itself). */
+  table?: string;
+  /** The field, for field-level changes. */
+  field?: string;
+  /** C3 — the entity id (base/table/field) this change is about, so the location opens the
+   *  Browse panel. Absent for new/removed entities that aren't in the current schema. */
+  entityId?: string;
+  /** The Airtable field type, for field-level changes — drives the Field-type filter + icon. */
+  fieldType?: string;
+  /** App-layer changes (automations / interfaces / pages) — when set, the entry is about that
+   *  entity (not a table/field); the location shows base ▸ its concept icon + `entityName`. */
+  entityKind?: 'automation' | 'interface' | 'page';
+  /** The automation/interface/page name (app-layer entries). */
+  entityName?: string;
+  type: 'added' | 'removed' | 'renamed' | 'typed' | 'config' | 'view';
+  /** Pre-rendered summary (engine). Linked-record/type changes show before → after. */
+  summary: string;
+  before?: string;
+  after?: string;
+  /** AI-written plain-language explanation of the change + its impact (detail panel). */
+  aiSummary?: string;
+  /** Set when the change may have broken data — drives the ⚠️ affordance. */
+  warning?: string;
+}
+interface Props {
+  entries: ChangelogEntry[];
+  /** Current health per base name / "base::table" — drives the status dot in the Base/Table
+   *  facets so they read consistently with Browse + Visualize. Removed entities have none. */
+  baseHealth?: Record<string, 'green' | 'amber' | 'red'>;
+  tableHealth?: Record<string, 'green' | 'amber' | 'red'>;
+  /** Name → entity-id maps so the detail panel's Location breadcrumb can open the shared
+   *  EntityPanel (base by name, table by "base::table"; the field uses the entry's entityId). */
+  baseId?: Record<string, string>;
+  tableId?: Record<string, string>;
+}
+const { entries, baseHealth = {}, tableHealth = {}, baseId = {}, tableId = {} } = Astro.props;
+const healthDot = (h?: string) =>
+  h === 'green' ? 'var(--color-success)' : h === 'red' ? 'var(--color-error)' : h === 'amber' ? 'var(--color-warning)' : undefined;
+
+// Location breadcrumb (detail panel) — built server-side with the Browse icon hierarchy
+// (base = database, table = table, field = its Airtable type icon) and a clickable button per
+// segment whose entity exists in the schema. The JS injects this and delegates the open.
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const fieldTypeIcon = (type?: string) => {
+  const k = type ? airtableIconKey(type) : null;
+  return k
+    ? `<svg class="cl-crumb-ic" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>`
+    : '<span class="iconify lucide--circle size-3.5 cl-crumb-ic" aria-hidden="true"></span>';
+};
+const crumb = (icon: string, label: string, id?: string) => {
+  const inner = `${icon}<span class="cl-crumb-name">${esc(label)}</span>`;
+  return id
+    ? `<button type="button" class="cl-detail-crumb cl-crumblink tooltip tooltip-top" data-open-entity="${esc(id)}" data-tip="Open ${esc(label)} in Browse" aria-label="Open ${esc(label)} in Browse">${inner}<span class="iconify lucide--arrow-up-right size-3 cl-crumb-go" aria-hidden="true"></span></button>`
+    : `<span class="cl-detail-crumb">${inner}</span>`;
+};
+// App-layer concept icons (match the Automations/Interfaces + Visualize legend).
+const APP_ICON: Record<string, string> = {
+  automation: '<span class="iconify lucide--zap concept-ic-automation size-3.5 cl-crumb-ic" aria-hidden="true"></span>',
+  interface: '<span class="iconify lucide--layout-panel-left concept-ic-interface size-3.5 cl-crumb-ic" aria-hidden="true"></span>',
+  page: '<span class="iconify lucide--file concept-ic-page size-3.5 cl-crumb-ic" aria-hidden="true"></span>',
+};
+const locHtml = (e: ChangelogEntry) => {
+  const segs = [crumb('<span class="iconify lucide--database concept-ic-base size-3.5 cl-crumb-ic" aria-hidden="true"></span>', e.base, baseId[e.base])];
+  if (e.entityKind) {
+    // App-layer: base ▸ [concept icon] name (name opens the automation/interface via the .ts).
+    segs.push(`<button type="button" class="cl-detail-crumb cl-crumblink" data-open-app-kind="${esc(e.entityKind)}" data-open-app-id="${esc(e.entityId ?? '')}">${APP_ICON[e.entityKind]}<span class="cl-crumb-name">${esc(e.entityName ?? '')}</span><span class="iconify lucide--arrow-up-right size-3 cl-crumb-go" aria-hidden="true"></span></button>`);
+    return segs.join('<span class="iconify lucide--chevron-right size-3.5 cl-crumb-sep" aria-hidden="true"></span>');
+  }
+  if (e.table) segs.push(crumb('<span class="iconify lucide--table-2 size-3.5 cl-crumb-ic" aria-hidden="true"></span>', e.table, tableId[`${e.base}::${e.table}`]));
+  if (e.field) segs.push(crumb(fieldTypeIcon(e.fieldType), e.field, e.entityId));
+  return segs.join('<span class="iconify lucide--chevron-right size-3.5 cl-crumb-sep" aria-hidden="true"></span>');
+};
+// The panel title (deepest entity) is itself openable when that entity exists in the schema.
+// App-layer entries open via their own handler, not the Browse EntityPanel, so deepId is empty.
+const deepId = (e: ChangelogEntry) => (e.entityKind ? '' : e.field ? e.entityId : e.table ? tableId[`${e.base}::${e.table}`] : baseId[e.base]) ?? '';
+// Title icon = the deepest entity's kind (field → its Airtable type icon, table → table, base →
+// database), so the drawer header matches the Browse icon hierarchy.
+const titleIcon = (e: ChangelogEntry) => {
+  if (e.entityKind) {
+    const ic = e.entityKind === 'automation' ? 'lucide--zap concept-ic-automation' : e.entityKind === 'interface' ? 'lucide--layout-panel-left concept-ic-interface' : 'lucide--file concept-ic-page';
+    return `<span class="cl-detail-title-ic"><span class="iconify ${ic}"></span></span>`;
+  }
+  if (e.field) {
+    const k = e.fieldType ? airtableIconKey(e.fieldType) : null;
+    const inner = k ? `<svg viewBox="0 0 16 16" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '<span class="iconify lucide--circle"></span>';
+    return `<span class="cl-detail-title-ic">${inner}</span>`;
+  }
+  return e.table
+    ? '<span class="cl-detail-title-ic"><span class="iconify lucide--table-2"></span></span>'
+    : '<span class="cl-detail-title-ic"><span class="iconify lucide--database concept-ic-base"></span></span>';
+};
+const baseNames = [...new Set(entries.map((e) => e.base))];
+const multiBase = baseNames.length > 1;
+
+const TYPE = {
+  added: { label: 'Added', badge: 'badge-soft badge-success', icon: 'lucide--plus' },
+  removed: { label: 'Removed', badge: 'badge-soft badge-error', icon: 'lucide--minus' },
+  renamed: { label: 'Renamed', badge: 'badge-soft badge-primary', icon: 'lucide--pencil-line' },
+  typed: { label: 'Type changed', badge: 'badge-soft badge-warning', icon: 'lucide--replace' },
+  config: { label: 'Config changed', badge: 'badge-soft badge-info', icon: 'lucide--sliders-horizontal' },
+  view: { label: 'View', badge: 'badge-ghost', icon: 'lucide--eye' },
+};
+const TYPE_OPTS: [string, string][] = [['', 'All changes'], ['added', 'Added'], ['removed', 'Removed'], ['renamed', 'Renamed'], ['typed', 'Type changed'], ['config', 'Config changed'], ['view', 'View']];
+const DATE_OPTS: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']];
+
+const FT_LABEL: Record<string, string> = {
+  single_line_text: 'text', long_text: 'long text', rich_text: 'rich text', single_select: 'single-select',
+  multiple_select: 'multi-select', number: 'number', currency: 'currency', percent: 'percent', date: 'date',
+  email: 'email', url: 'url', phone_number: 'phone', checkbox: 'checkbox', collaborator: 'user', link: 'link',
+};
+const ftLabel = (t: string) => FT_LABEL[t] ?? t.replace(/_/g, ' ');
+
+// Facet groups: Tables grouped by base; field types collapsed to those present.
+const tableGroups: FacetGroup[] = baseNames
+  .map((b) => ({
+    label: multiBase ? b : undefined,
+    items: [...new Set(entries.filter((e) => e.base === b && e.table).map((e) => e.table as string))].map((t) => ({ value: t, label: t, dot: healthDot(tableHealth[`${b}::${t}`]) })),
+  }))
+  .filter((g) => g.items.length);
+const baseGroups: FacetGroup[] = [{ items: baseNames.map((n) => ({ value: n, label: n, dot: healthDot(baseHealth[n]) })) }];
+const ftypeGroups: FacetGroup[] = [
+  { items: [...new Set(entries.map((e) => e.fieldType).filter(Boolean) as string[])].sort().map((t) => ({ value: t, label: ftLabel(t), iconKey: t })) },
+];
+const hasFieldTypes = ftypeGroups[0].items.length > 0;
+
+const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+// Group sorted-desc by calendar day.
+const sorted = entries.slice().sort((a, b) => b.at.localeCompare(a.at));
+const days: { day: string; label: string; entries: ChangelogEntry[] }[] = [];
+for (const e of sorted) {
+  const day = e.at.slice(0, 10);
+  let g = days.find((d) => d.day === day);
+  if (!g) { g = { day, label: fmtDay(e.at), entries: [] }; days.push(g); }
+  g.entries.push(e);
+}
+---
+
+<div class="cl" data-changelog>
+  {entries.length > 0 ? (
+    <>
+      {/* One toolbar row (the shared .sch-tb pattern): search │ filters … → Export.
+          Base / Table / Field type = faceted show/hide; Change type + Time = single facets. */}
+      <div class="sch-tb cl-filters">
+        <label class="input input-sm sch-tb-search cl-search">
+          <span class="iconify lucide--search size-4 opacity-55" aria-hidden="true"></span>
+          <input type="search" placeholder="Search changes…" data-cl-search data-sch-search aria-label="Search changes" autocomplete="off" spellcheck="false" />
+          <kbd class="kbd kbd-sm sch-tb-slash" aria-hidden="true">/</kbd>
+        </label>
+        <span class="sch-tb-div" aria-hidden="true"></span>
+
+        {multiBase && <FacetFilter label="Bases" name="base" groups={baseGroups} />}
+        <FacetFilter label="Tables" name="table" groups={tableGroups} />
+        {hasFieldTypes && <FacetFilter label="Field types" name="ftype" groups={ftypeGroups} />}
+        <FacetFilter single label="Change type" name="ctype" groups={[{ items: TYPE_OPTS.map(([v, l]) => ({ value: v, label: l })) }]} />
+        <FacetFilter single label="Time" name="cdate" groups={[{ items: DATE_OPTS.map(([v, l]) => ({ value: v, label: l })) }]} />
+        <label class="sch-tb-check tooltip tooltip-top" data-tip="Show only changes that may have broken data"><input type="checkbox" class="checkbox checkbox-sm" data-cl-attn /> Needs attention</label>
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-cl-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+
+        {/* Export — the tab-specific right cluster (changelog as CSV / JSON). */}
+        <div class="sch-tb-right">
+          <div class="dropdown dropdown-end cl-export">
+            <div tabindex="0" role="button" class="btn btn-sm btn-neutral gap-1.5">
+              <span class="iconify lucide--download size-4" aria-hidden="true"></span>Export
+              <span class="iconify lucide--chevron-down size-3 opacity-60" aria-hidden="true"></span>
+            </div>
+            <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-20 mt-1 w-44 border border-base-300 p-1 shadow-lg">
+              <li class="menu-title">Changelog</li>
+              <li><a>CSV</a></li>
+              <li><a>JSON</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* day-grouped feed — timeline rail down the left, one node per change */}
+      <div class="cl-feed" data-cl-feed>
+        {days.map((g) => (
+          <section class="cl-day" data-cl-day>
+            <div class="cl-dayhead">
+              <span class="cl-daynode" aria-hidden="true"></span>
+              <div class="cl-dayrow"><span class="cl-daylabel">{g.label}</span><span class="cl-dayrule" aria-hidden="true"></span></div>
+            </div>
+            <div class="cl-entries">
+              {g.entries.map((e) => (
+                <div
+                  class="cl-entry"
+                  role="button"
+                  tabindex="0"
+                  data-cl-entry
+                  data-cl-open
+                  data-base={e.base}
+                  data-table={e.table ?? ''}
+                  data-field={e.field ?? ''}
+                  data-ftype={e.fieldType ?? ''}
+                  data-app-kind={e.entityKind ?? ''}
+                  data-app-id={e.entityId ?? ''}
+                  data-type={e.type}
+                  data-date={e.at}
+                  data-warn={e.warning ? '1' : '0'}
+                  data-summary={e.summary}
+                  data-before={e.before ?? ''}
+                  data-after={e.after ?? ''}
+                  data-ai={e.aiSummary ?? ''}
+                  data-warntext={e.warning ?? ''}
+                  data-loc-html={locHtml(e)}
+                  data-deep-id={deepId(e)}
+                  data-title-icon={titleIcon(e)}
+                >
+                  <span class="cl-node" aria-hidden="true"></span>
+                  <div class="cl-content">
+                    <div class="cl-head">
+                      {e.entityKind ? (
+                        <button type="button" class="cl-loclink tooltip tooltip-left" data-cl-app-kind={e.entityKind} data-cl-app-id={e.entityId ?? ''} data-tip="Open" aria-label="Open">
+                          <span class="cl-basename">{e.base}</span>
+                          <span class="cl-loc"><span class="iconify lucide--chevron-right size-3 cl-loc-sep" aria-hidden="true"></span><span set:html={APP_ICON[e.entityKind].replace('cl-crumb-ic', 'cl-loc-appic')} /><span class="cl-loc-appname">{e.entityName}</span></span>
+                          <span class="iconify lucide--arrow-up-right size-3 cl-loclink-ic" aria-hidden="true"></span>
+                        </button>
+                      ) : deepId(e) ? (
+                        <button type="button" class="cl-loclink tooltip tooltip-left" data-cl-entity={deepId(e)} data-tip="Open in Browse" aria-label="Open in Browse">
+                          <span class="cl-basename">{e.base}</span>
+                          {e.table && <span class="cl-loc"><span class="iconify lucide--chevron-right size-3 cl-loc-sep" aria-hidden="true"></span>{e.table}</span>}
+                          <span class="iconify lucide--arrow-up-right size-3 cl-loclink-ic" aria-hidden="true"></span>
+                        </button>
+                      ) : (<>
+                        <span class="cl-basename">{e.base}</span>
+                        {e.table && <span class="cl-loc"><span class="iconify lucide--chevron-right size-3 cl-loc-sep" aria-hidden="true"></span>{e.table}</span>}
+                      </>)}
+                      <span class={`badge badge-sm ${TYPE[e.type].badge} gap-1`}><span class={`iconify ${TYPE[e.type].icon} size-3.5`} aria-hidden="true"></span>{TYPE[e.type].label}</span>
+                      <span class="cl-time mono-data">{fmtTime(e.at)}</span>
+                    </div>
+                    <p class="cl-summary">
+                      {e.summary}
+                      {e.before && e.after && (
+                        <span class="cl-delta"><span class="cl-before">{e.before}</span><span class="iconify lucide--arrow-right size-3.5 cl-arrow" aria-hidden="true"></span><span class="cl-after">{e.after}</span></span>
+                      )}
+                    </p>
+                    {e.warning && (
+                      <p class="cl-warn"><span class="iconify lucide--triangle-alert size-3.5" aria-hidden="true"></span>{e.warning}</p>
+                    )}
+                  </div>
+                  <span class="iconify lucide--chevron-right size-4 cl-entry-chev" aria-hidden="true"></span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      {/* no-match (filters exclude everything) */}
+      <div class="cl-nomatch" data-cl-nomatch hidden>
+        <span class="iconify lucide--search-x size-6 opacity-50" aria-hidden="true"></span>
+        <p>No changes match these filters.</p>
+        <button type="button" class="btn btn-sm btn-ghost" data-cl-clear>Clear filters</button>
+      </div>
+
+      {/* entry detail side panel */}
+      <div class="cl-detail" data-cl-detail hidden>
+        <div class="cl-detail-scrim" data-cl-detail-close></div>
+        <aside class="cl-detail-panel" role="dialog" aria-label="Change details" aria-modal="false">
+          <div class="cl-detail-head">
+            <span class="cl-detail-titletext" data-d-title></span>
+            <button type="button" class="btn btn-sm btn-ghost btn-square" data-cl-detail-close aria-label="Close details">
+              <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="cl-detail-body">
+            <div class="cl-detail-block">
+              <span class="cl-detail-k">Change type</span>
+              <span class="cl-detail-badge" data-d-badge></span>
+            </div>
+            <div class="cl-detail-block">
+              <span class="cl-detail-k">Location</span>
+              <div class="cl-detail-loc" data-d-loc></div>
+            </div>
+            <div class="cl-detail-block">
+              <span class="cl-detail-k">What changed</span>
+              <p class="cl-detail-summary" data-d-summary></p>
+            </div>
+
+            {/* before → after */}
+            <div class="cl-detail-block" data-d-delta-wrap hidden>
+              <span class="cl-detail-k">Before → After</span>
+              <div class="cl-detail-delta">
+              <div class="cl-detail-deltacol">
+                <span class="cl-detail-deltak">Before</span>
+                <span class="cl-detail-beforeval" data-d-before></span>
+              </div>
+              <span class="iconify lucide--arrow-right size-4 cl-detail-deltaarrow" aria-hidden="true"></span>
+              <div class="cl-detail-deltacol">
+                <span class="cl-detail-deltak">After</span>
+                <span class="cl-detail-afterval" data-d-after></span>
+              </div>
+              </div>
+            </div>
+
+            {/* AI summary of the change + its impact */}
+            <div class="alert alert-soft alert-info cl-detail-ai" role="status" data-d-ai-wrap hidden>
+              <span class="iconify lucide--sparkles size-4" aria-hidden="true"></span>
+              <div>
+                <div class="cl-detail-ai-head">AI summary</div>
+                <p class="cl-detail-ai-text" data-d-ai></p>
+              </div>
+            </div>
+
+            {/* broken-data warning */}
+            <div class="alert alert-soft alert-warning cl-detail-warn" role="alert" data-d-warn-wrap hidden>
+              <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span><span data-d-warn></span>
+            </div>
+
+            <div class="cl-detail-meta">
+              <span class="iconify lucide--clock size-3.5" aria-hidden="true"></span>Detected <span class="mono-data" data-d-when></span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </>
+  ) : (
+    <div class="cl-empty">
+      <span class="cl-empty-ic"><span class="iconify lucide--history"></span></span>
+      <p class="cl-empty-title">No schema changes yet</p>
+      <p class="cl-empty-sub">Changes appear once there are two backups to compare. New tables, renamed fields, and type changes show up here as they happen.</p>
+    </div>
+  )}
+</div>
+
+<style>
+  .cl { display: flex; flex-direction: column; }
+  /* Layout comes from the shared .sch-tb pattern (global.css); .cl-filters only adds the
+     under-toolbar separator. */
+  .cl-filters { padding-bottom: 1rem; margin-bottom: 1.5rem; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .6); }
+
+  /* Timeline feed — a single rail down the left; day = ring node, change = colored dot. */
+  .cl-feed { position: relative; display: flex; flex-direction: column; gap: 1.5rem; }
+  .cl-feed::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: calc(.75rem - 1px); width: 2px; z-index: 0;
+    background: var(--color-base-300);
+    -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 20px, #000 calc(100% - 14px), transparent 100%); /* ds-ok: mask gradient opaque value, not a UI colour */
+            mask-image: linear-gradient(180deg, transparent 0, #000 20px, #000 calc(100% - 14px), transparent 100%); /* ds-ok: mask gradient opaque value, not a UI colour */
+  }
+
+  .cl-day { display: flex; flex-direction: column; }
+  .cl-dayhead { display: grid; grid-template-columns: 1.5rem 1fr; align-items: center; margin-bottom: .75rem; }
+  .cl-daynode { position: relative; z-index: 1; justify-self: center; width: 9px; height: 9px; border-radius: 50%; background: var(--color-base-100); border: 2px solid oklch(from var(--color-base-content) l c h / .32); }
+  .cl-dayrow { display: flex; align-items: center; gap: .75rem; min-width: 0; }
+  .cl-daylabel { font-size: .72rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .55); white-space: nowrap; }
+  .cl-dayrule { flex: 1; height: 1px; background: oklch(from var(--color-base-300) l c h / .7); }
+
+  .cl-entries { display: flex; flex-direction: column; }
+  .cl-entry { display: grid; grid-template-columns: 1.5rem 1fr auto; align-items: start; gap: 0 .25rem; padding: .5rem .5rem .75rem 0; border-radius: .5rem; transition: background .12s ease; cursor: pointer; text-align: left; }
+  .cl-entry:hover { background: oklch(from var(--color-base-200) l c h / .55); }
+  .cl-entry:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+  .cl-node { position: relative; z-index: 1; justify-self: center; margin-top: .25rem; width: 9px; height: 9px; border-radius: 50%; background: oklch(from var(--color-base-content) l c h / .4); }
+  .cl-entry[data-type="added"] .cl-node { background: var(--color-success); }
+  .cl-entry[data-type="removed"] .cl-node { background: var(--color-error); }
+  .cl-entry[data-type="renamed"] .cl-node { background: var(--color-primary); }
+  .cl-entry[data-type="typed"] .cl-node { background: var(--color-warning); }
+  .cl-entry-chev { align-self: center; color: oklch(from var(--color-base-content) l c h / .3); opacity: 0; transition: opacity .12s ease; }
+  .cl-entry:hover .cl-entry-chev, .cl-entry:focus-visible .cl-entry-chev { opacity: 1; }
+
+  .cl-content { position: relative; z-index: 1; min-width: 0; }
+  /* entry head: base name = heading, location (table) beside it, one change-type badge, time pushed right */
+  .cl-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: .25rem; }
+  .cl-basename { font-size: .95rem; font-weight: 650; color: var(--color-base-content); letter-spacing: -.005em; }
+  .cl-loc { display: inline-flex; align-items: center; gap: .25rem; font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .cl-loc-sep { color: oklch(from var(--color-base-content) l c h / .35); }
+  .cl-loc-appic { display: inline-flex; align-items: center; margin: 0 .1rem 0 .05rem; }
+  .cl-loc-appname { font-weight: 550; color: oklch(from var(--color-base-content) l c h / .8); }
+  /* C3 — clickable location → opens the Browse entity panel */
+  .cl-loclink { display: inline-flex; align-items: center; gap: .25rem; background: none; border: 0; padding: 0; margin: 0; font: inherit; cursor: pointer; }
+  .cl-loclink:hover .cl-basename { text-decoration: underline; text-underline-offset: 2px; }
+  .cl-loclink-ic { opacity: 0; color: var(--color-primary); transition: opacity .12s ease; margin-left: .1rem; }
+  .cl-loclink:hover .cl-loclink-ic { opacity: .9; }
+  .cl-time { margin-left: auto; font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .5); white-space: nowrap; }
+  .cl-summary { font-size: .9rem; line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .82); }
+  .cl-delta { display: inline-flex; align-items: center; gap: .5rem; margin-left: .5rem; }
+  .cl-before { color: oklch(from var(--color-base-content) l c h / .5); text-decoration: line-through; text-decoration-color: oklch(from var(--color-base-content) l c h / .3); }
+  .cl-after { font-weight: 600; }
+  .cl-arrow { color: oklch(from var(--color-base-content) l c h / .45); }
+  .cl-warn { display: inline-flex; align-items: center; gap: .5rem; margin-top: .5rem; padding: .25rem .5rem; border-radius: .45rem; font-size: .78rem; font-weight: 500; line-height: 1.3; color: var(--color-warning); background: oklch(from var(--color-warning) l c h / .12); }
+  .cl-warn .iconify { flex-shrink: 0; }
+  :global([data-theme="baseout-light"]) .cl-warn { color: oklch(from var(--color-warning) calc(l - 0.12) c h); background: oklch(from var(--color-warning) l c h / .15); }
+
+  .cl-nomatch { display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; padding: 3rem 1rem; }
+  .cl-nomatch p { font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* Entry detail side panel — a right drawer over a scrim. */
+  .cl-detail[hidden] { display: none; }
+  .cl-detail-scrim { position: fixed; inset: 0; z-index: 60; background: oklch(0 0 0 / .28); animation: clFade .14s ease-out; }
+  .cl-detail-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 61; width: min(380px, 92vw); display: flex; flex-direction: column; background: var(--color-base-100); border-left: 1px solid var(--color-base-300); box-shadow: -10px 0 30px oklch(0 0 0 / .18); animation: clSlide .18s cubic-bezier(.22,1,.36,1); }
+  @keyframes clFade { from { opacity: 0; } }
+  @keyframes clSlide { from { transform: translateX(16px); opacity: .4; } }
+  .cl-detail-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .75rem .75rem .75rem 1rem; border-bottom: 1px solid var(--color-base-200); }
+  .cl-detail-titletext { display: flex; align-items: center; gap: .5rem; flex: 1; min-width: 0; font-size: 1.05rem; font-weight: 650; letter-spacing: -.01em; color: var(--color-base-content); }
+  /* title name + kind icon are injected via innerHTML → :global so the rules reach them */
+  :global(.cl-detail-title-name) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :global(.cl-detail-title-ic) { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; opacity: .85; color: oklch(from var(--color-base-content) l c h / .65); }
+  :global(.cl-detail-title-ic svg) { width: 17px; height: 17px; }
+  :global(.cl-detail-title-ic .iconify) { font-size: 17px; }
+  .cl-detail-badge { display: inline-flex; }
+  .cl-detail-body { display: flex; flex-direction: column; gap: 1rem; padding: 1rem 1rem; overflow-y: auto; }
+
+  .cl-detail-loc { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem; font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .65); }
+  /* The location breadcrumb is injected via innerHTML, so its styling must be :global to reach
+     it (scoped selectors never match runtime-injected DOM). The cl- prefix keeps it collision-safe. */
+  :global(.cl-detail-crumb) { display: inline-flex; align-items: center; gap: .25rem; }
+  :global(.cl-detail-crumb .cl-crumb-ic) { width: 14px; height: 14px; flex: none; display: inline-grid; place-items: center; opacity: .8; color: oklch(from var(--color-base-content) l c h / .6); }
+  :global(.cl-detail-crumb .cl-crumb-ic svg) { width: 14px; height: 14px; }
+  :global(.cl-crumb-name) { white-space: nowrap; }
+  :global(.cl-crumb-sep) { color: oklch(from var(--color-base-content) l c h / .3); flex: none; }
+  :global(.cl-crumblink) { display: inline-flex; align-items: center; gap: .25rem; background: none; border: 0; padding: .1rem .25rem; margin: -.1rem 0; font: inherit; color: inherit; cursor: pointer; border-radius: .4rem; }
+  :global(.cl-crumblink:hover) { background: var(--color-base-200); color: var(--color-base-content); }
+  :global(.cl-crumblink:hover .cl-crumb-name) { text-decoration: underline; text-underline-offset: 2px; }
+  :global(.cl-crumb-go) { opacity: 0; color: var(--color-primary); transition: opacity .12s ease; }
+  :global(.cl-crumblink:hover .cl-crumb-go) { opacity: .9; }
+  /* the panel title doubles as a link to the deepest entity (template element → scoped is fine) */
+  .cl-title-link { cursor: pointer; transition: color .12s ease; }
+  .cl-title-link:hover { color: var(--color-primary); text-decoration: underline; text-underline-offset: 3px; }
+  .cl-detail-summary { font-size: .95rem; line-height: 1.55; color: var(--color-base-content); }
+  .cl-detail-block { display: flex; flex-direction: column; gap: .25rem; }
+  /* Canonical panel-anatomy: hairline divider between top-level body blocks (skip the first). */
+  .cl-detail-block:not(:first-child) { padding-top: 16px; border-top: 1px solid var(--color-base-300); }
+  .cl-detail-k { font-size: .66rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .48); }
+
+  /* before → after, as two framed cells */
+  .cl-detail-delta { display: flex; align-items: stretch; gap: .5rem; }
+  .cl-detail-deltacol { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .25rem; padding: .5rem .75rem; border: 1px solid var(--color-base-300); border-radius: .6rem; background: oklch(from var(--color-base-200) l c h / .4); }
+  .cl-detail-deltak { font-size: .64rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .45); }
+  .cl-detail-beforeval { font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .6); text-decoration: line-through; text-decoration-color: oklch(from var(--color-base-content) l c h / .3); }
+  .cl-detail-afterval { font-size: .9rem; font-weight: 600; color: var(--color-base-content); }
+  .cl-detail-deltaarrow { align-self: center; flex: none; color: oklch(from var(--color-base-content) l c h / .4); }
+
+  /* AI summary — sparkle-marked, subtle primary tint */
+  /* AI summary + broken-data warning = catalog Alerts (alert alert-soft alert-{info|warning});
+     only the internal label/text + top-align overrides remain here. */
+  .cl-detail-ai { align-items: flex-start; }
+  .cl-detail-ai-head { font-size: .7rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin-bottom: .25rem; }
+  .cl-detail-ai-text { font-size: .9rem; line-height: 1.55; }
+
+  .cl-detail-warn { align-items: flex-start; font-size: .85rem; line-height: 1.4; }
+  .cl-detail-meta { display: inline-flex; align-items: center; gap: .25rem; margin-top: .25rem; padding-top: .75rem; border-top: 1px solid var(--color-base-200); font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .55); }
+
+  .cl-empty { border: 1px dashed var(--color-base-300); border-radius: .85rem; background: oklch(from var(--color-base-200) l c h / .3); padding: 3rem 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; }
+  .cl-empty-ic { width: 3rem; height: 3rem; border-radius: .8rem; display: grid; place-items: center; background: var(--color-base-100); border: 1px solid var(--color-base-300); margin-bottom: .25rem; }
+  .cl-empty-ic .iconify { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .55); }
+  .cl-empty-title { font-size: 1rem; font-weight: 650; }
+  .cl-empty-sub { font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .6); max-width: 48ch; }
+
+  @media (max-width: 600px) { .cl-summary { font-size: .88rem; } }
+</style>
+
+<script>
+  const TYPE_META: Record<string, { label: string; badge: string; icon: string }> = {
+    added: { label: 'Added', badge: 'badge-soft badge-success', icon: 'lucide--plus' },
+    removed: { label: 'Removed', badge: 'badge-soft badge-error', icon: 'lucide--minus' },
+    renamed: { label: 'Renamed', badge: 'badge-soft badge-primary', icon: 'lucide--pencil-line' },
+    typed: { label: 'Type changed', badge: 'badge-soft badge-warning', icon: 'lucide--replace' },
+    view: { label: 'View', badge: 'badge-ghost', icon: 'lucide--eye' },
+  };
+
+  function wireChangelog() {
+    const root = document.querySelector<HTMLElement>('[data-changelog]');
+    if (!root || root.dataset.clWired) return;
+    root.dataset.clWired = '1';
+    const feed = root.querySelector<HTMLElement>('[data-cl-feed]');
+    if (!feed) return;
+    const entries = Array.from(root.querySelectorAll<HTMLElement>('[data-cl-entry]'));
+    const dayGroups = Array.from(root.querySelectorAll<HTMLElement>('[data-cl-day]'));
+    const attn = root.querySelector<HTMLInputElement>('[data-cl-attn]');
+    const searchInput = root.querySelector<HTMLInputElement>('[data-cl-search]');
+    const noMatch = root.querySelector<HTMLElement>('[data-cl-nomatch]');
+    const clears = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-cl-clear]'));
+    const facets = Array.from(root.querySelectorAll<HTMLElement>('.ff[data-facet]'));
+    const DAY = 86_400_000;
+    // Cache each entry's searchable text once (its rendered summary + location + meta).
+    const searchText = new Map(entries.map((e) => [e, (e.textContent || '').toLowerCase()]));
+
+    // hidden-value sets per multi facet (base / table / ftype) + single-select values (ctype / cdate)
+    const hidden: Record<string, Set<string>> = { base: new Set(), table: new Set(), ftype: new Set() };
+    const single: Record<string, string> = { ctype: '', cdate: '' };
+    let query = '';
+
+    const apply = () => {
+      const ft = single.ctype;
+      const fd = single.cdate;
+      const fa = !!attn?.checked;
+      const q = query.trim().toLowerCase();
+      const facetActive = hidden.base.size || hidden.table.size || hidden.ftype.size;
+      const active = !!(ft || fd || fa || q || facetActive);
+      let shown = 0;
+      entries.forEach((e) => {
+        let ok = true;
+        if (hidden.base.has(e.dataset.base || '')) ok = false;
+        if (e.dataset.table && hidden.table.has(e.dataset.table)) ok = false;
+        if (e.dataset.ftype && hidden.ftype.has(e.dataset.ftype)) ok = false;
+        if (ft && e.dataset.type !== ft) ok = false;
+        if (fa && e.dataset.warn !== '1') ok = false;
+        if (fd && (Date.now() - new Date(e.dataset.date as string).getTime()) / DAY > Number(fd)) ok = false;
+        if (q && !(searchText.get(e) || '').includes(q)) ok = false;
+        e.style.display = ok ? '' : 'none';
+        if (ok) shown++;
+      });
+      dayGroups.forEach((g) => {
+        const any = Array.from(g.querySelectorAll<HTMLElement>('[data-cl-entry]')).some((e) => e.style.display !== 'none');
+        g.style.display = any ? '' : 'none';
+      });
+      if (noMatch) noMatch.hidden = shown !== 0;
+      feed.style.display = shown === 0 ? 'none' : '';
+      clears.forEach((c) => (c.hidden = !active));
+    };
+
+    // every filter (multi-facet + single-facet) reports via `facetchange`
+    root.addEventListener('facetchange', (ev) => {
+      const d = (ev as CustomEvent).detail as { name: string; hidden?: string[]; value?: string };
+      if (d.hidden && hidden[d.name]) { hidden[d.name] = new Set(d.hidden); apply(); }
+      else if (d.value !== undefined && d.name in single) { single[d.name] = d.value; apply(); }
+    });
+    attn?.addEventListener('change', apply);
+    searchInput?.addEventListener('input', () => { query = searchInput.value; apply(); });
+    clears.forEach((c) =>
+      c.addEventListener('click', () => {
+        single.ctype = '';
+        single.cdate = '';
+        query = '';
+        if (searchInput) searchInput.value = '';
+        if (attn) attn.checked = false;
+        Object.values(hidden).forEach((s) => s.clear());
+        facets.forEach((f) => f.dispatchEvent(new CustomEvent('facetreset')));
+        apply();
+      }),
+    );
+
+    // ── detail side panel ──
+    const detail = root.querySelector<HTMLElement>('[data-cl-detail]');
+    const set = (sel: string, text: string) => { const el = detail?.querySelector<HTMLElement>(sel); if (el) el.textContent = text; };
+    const openDetail = (e: HTMLElement) => {
+      if (!detail) return;
+      const t = e.dataset.type || 'added';
+      const m = TYPE_META[t] || TYPE_META.added;
+      const badge = detail.querySelector<HTMLElement>('[data-d-badge]');
+      if (badge) badge.innerHTML = `<span class="badge badge-sm ${m.badge} gap-1"><span class="iconify ${m.icon} size-3.5" aria-hidden="true"></span>${m.label}</span>`;
+      // Title = the deepest entity, with its kind icon; clickable when that entity still exists.
+      const titleEl = detail.querySelector<HTMLElement>('[data-d-title]');
+      if (titleEl) {
+        titleEl.innerHTML = (e.dataset.titleIcon || '') + '<span class="cl-detail-title-name"></span>';
+        const nameEl = titleEl.querySelector<HTMLElement>('.cl-detail-title-name');
+        if (nameEl) nameEl.textContent = e.dataset.field || e.dataset.table || e.dataset.base || '';
+        const deep = e.dataset.deepId || '';
+        if (deep) titleEl.dataset.openEntity = deep; else delete titleEl.dataset.openEntity;
+        titleEl.classList.toggle('cl-title-link', !!deep);
+      }
+      // Location breadcrumb — pre-built server-side (icon hierarchy + a clickable button per
+      // segment whose entity exists). Injected as-is; the open is delegated below.
+      const loc = detail.querySelector<HTMLElement>('[data-d-loc]');
+      if (loc) loc.innerHTML = e.dataset.locHtml || '';
+      set('[data-d-when]', new Date(e.dataset.date as string).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }));
+      set('[data-d-summary]', e.dataset.summary || '');
+      const deltaWrap = detail.querySelector<HTMLElement>('[data-d-delta-wrap]');
+      if (deltaWrap) {
+        const has = !!(e.dataset.before && e.dataset.after);
+        deltaWrap.hidden = !has;
+        if (has) { set('[data-d-before]', e.dataset.before || ''); set('[data-d-after]', e.dataset.after || ''); }
+      }
+      const aiWrap = detail.querySelector<HTMLElement>('[data-d-ai-wrap]');
+      if (aiWrap) { const a = e.dataset.ai || ''; aiWrap.hidden = !a; set('[data-d-ai]', a); }
+      const warnWrap = detail.querySelector<HTMLElement>('[data-d-warn-wrap]');
+      if (warnWrap) { const w = e.dataset.warntext || ''; warnWrap.hidden = !w; set('[data-d-warn]', w); }
+      detail.hidden = false;
+    };
+    const closeDetail = () => { if (detail) detail.hidden = true; };
+    entries.forEach((e) => {
+      e.addEventListener('click', () => openDetail(e));
+      e.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openDetail(e); } });
+    });
+    // C3 — the location opens the shared Browse entity panel (not the change detail).
+    root.querySelectorAll<HTMLElement>('[data-cl-entity]').forEach((el) => {
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const id = el.getAttribute('data-cl-entity');
+        if (id) document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id } }));
+      });
+    });
+    // App-layer location (automations / interfaces / pages) opens the matching tab + read drawer,
+    // the same handoff EntityPanel's "Referenced by" jump uses.
+    const openApp = (kind: string, id: string) => {
+      if (!id) return;
+      const tab = kind === 'automation' ? 'automations' : 'interfaces';
+      const ev = kind === 'automation' ? 'schema:openAutomation' : 'schema:openInterface';
+      document.querySelector<HTMLElement>(`[data-tab="${tab}"]`)?.click();
+      document.dispatchEvent(new CustomEvent(ev, { detail: { id } }));
+    };
+    root.querySelectorAll<HTMLElement>('[data-cl-app-kind]').forEach((el) => {
+      el.addEventListener('click', (ev) => { ev.stopPropagation(); openApp(el.dataset.clAppKind || '', el.dataset.clAppId || ''); });
+    });
+    // The detail panel's Location segments + title open the shared EntityPanel. Close this drawer
+    // first so the panel isn't hidden behind it (the change drawer sits above the EntityPanel).
+    detail?.addEventListener('click', (ev) => {
+      const app = (ev.target as HTMLElement).closest<HTMLElement>('[data-open-app-kind]');
+      if (app) { closeDetail(); openApp(app.dataset.openAppKind || '', app.dataset.openAppId || ''); return; }
+      const t = (ev.target as HTMLElement).closest('[data-open-entity]') as HTMLElement | null;
+      const id = t?.dataset.openEntity;
+      if (!id) return;
+      closeDetail();
+      document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id } }));
+    });
+    root.querySelectorAll<HTMLElement>('[data-cl-detail-close]').forEach((c) => c.addEventListener('click', closeDetail));
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeDetail(); });
+
+    apply();
+  }
+  wireChangelog();
+  document.addEventListener('astro:after-swap', wireChangelog);
+</script>

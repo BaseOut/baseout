@@ -1,0 +1,1000 @@
+---
+/**
+ * EntityPanel — the shared stacking entity detail panel (Browse row-click + Docs
+ * chip-click). A right-anchored drawer over a scrim. Selecting a child / related
+ * entity swaps the panel to that entity and PUSHES a crumb onto a sticky breadcrumb
+ * trail (Base ▸ Table ▸ Field); back / a crumb pops. Drilling a different branch
+ * truncates the trail past the branch point (Miller-columns rule). Descriptions use two
+ * source tabs (Airtable · Internal): editing the Airtable copy makes it "out of sync"
+ * (Draft → Publish overrides the live Airtable description); the Internal note is Baseout-only
+ * and never syncs. AI is a "Generate" action inside EITHER tab (not a stored tab) — the Airtable
+ * draft is public-facing, the Internal draft is prompted to be more technical/verbose. Write-back
+ * is faked here.
+ *
+ * Driven by one entity index (JSON) + the Space's docs (for the Documentation
+ * section). Open from anywhere: `[data-entity-open="<id>"]` clicks, or
+ * document.dispatchEvent(new CustomEvent('schema:openEntity', {detail:{id}})).
+ */
+import type { SchemaEntity, SchemaDoc } from './schemaEntities';
+import type { SchemaAutomation } from './SchemaAutomations.astro';
+import type { SchemaInterface } from './SchemaInterfaces.astro';
+import type { ChatThread } from './SchemaChat.astro';
+
+/** Minimal changelog shape for the per-entity Changelog section (C4). */
+type ClEntry = { id: string; at: string; type: string; summary: string; before?: string; after?: string; entityId?: string };
+interface Props {
+  index: SchemaEntity[];
+  docs?: SchemaDoc[];
+  /** Schema changelog — drives the per-entity "Changelog" section (C4). */
+  changelog?: ClEntry[];
+  /** Registered automations / interfaces — drive the reverse "Referenced by" section. */
+  automations?: SchemaAutomation[];
+  interfaces?: SchemaInterface[];
+  /** Chat threads — drive the "Chats" group in the reverse "Referenced by" section (B8). */
+  chatThreads?: ChatThread[];
+  /** AI Generate-description capability (matches the Visualize side panel). */
+  aiState?: 'ready' | 'locked' | 'no-credits';
+}
+const { index, docs = [], changelog = [], automations = [], interfaces = [], chatThreads = [], aiState = 'ready' } = Astro.props;
+const docTitles = docs.map((d) => ({ id: d.id, title: d.title }));
+// Reverse tag map: entity id → the automations/interfaces that tag it (bidirectional
+// surfacing). Removed entities are excluded (history, not a live reference).
+type RefKind = 'automation' | 'interface' | 'page';
+const refsByEntity: Record<string, { id: string; name: string; kind: RefKind }[]> = {};
+const addRefs = (tags: { entityId: string }[] | undefined, id: string, name: string, kind: RefKind) =>
+  (tags || []).forEach((t) => { (refsByEntity[t.entityId] ??= []).push({ id, name, kind }); });
+automations.filter((a) => a.status !== 'removed').forEach((a) => addRefs(a.tags, a.id, a.name, 'automation'));
+interfaces.filter((i) => i.status !== 'removed').forEach((i) => addRefs(i.tags, i.id, i.name, i.type));
+// Reverse chat map: entity id → the chats whose messages reference it (B8 "Chats" group).
+// PRODUCTION / ENGINE NOTE: like the reverse reference graph (B3/B8 formulas·rollups·lookups),
+// this aggregation is computed here in the mirror from fixtures — Airtable's API returns neither
+// the reverse reference graph nor chat references, so the ENGINE must emit both. Do not hand-fake.
+const chatRefsByEntity: Record<string, { id: string; title: string }[]> = {};
+chatThreads.filter((t) => !t.archived).forEach((t) => {
+  const seen = new Set<string>();
+  t.messages.forEach((m) => (m.refs || []).forEach((r) => {
+    if (r.kind === 'entity' && !seen.has(r.id)) { seen.add(r.id); (chatRefsByEntity[r.id] ??= []).push({ id: t.id, title: t.title }); }
+  }));
+});
+// Only entries tied to an entity matter to the panel (keeps the payload small).
+const entityChangelog = changelog.filter((c) => c.entityId);
+---
+
+<div class="ep" data-entity-panel hidden>
+  <div class="ep-scrim" data-ep-close></div>
+  <aside class="ep-sheet" role="dialog" aria-modal="false" aria-label="Entity details">
+    <header class="ep-head">
+      <button type="button" class="btn btn-sm btn-ghost btn-square ep-back" data-ep-back aria-label="Back" hidden>
+        <span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span>
+      </button>
+      <nav class="ep-crumbs" data-ep-crumbs aria-label="Breadcrumb"></nav>
+      <button type="button" class="btn btn-sm btn-ghost btn-square ep-expand tooltip tooltip-bottom" data-ep-expand aria-label="Expand panel" data-tip="Expand panel">
+        <span class="iconify lucide--maximize-2 size-4" data-ep-expand-ic aria-hidden="true"></span>
+      </button>
+      <button type="button" class="btn btn-sm btn-ghost btn-square ep-x" data-ep-close aria-label="Close">
+        <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+      </button>
+    </header>
+    <div class="ep-body" data-ep-body></div>
+    <div class="sr-only" aria-live="polite" data-ep-live></div>
+    <div class="ep-toast" data-ep-toast role="status" hidden></div>
+  </aside>
+</div>
+
+<script
+  type="application/json"
+  data-ep-index
+  set:html={JSON.stringify(index)}
+/>
+<script
+  type="application/json"
+  data-ep-docs
+  set:html={JSON.stringify(docTitles)}
+/>
+<script type="application/json" data-ep-ai set:html={JSON.stringify(aiState)} />
+<script type="application/json" data-ep-changelog set:html={JSON.stringify(entityChangelog)} />
+<script type="application/json" data-ep-refs set:html={JSON.stringify(refsByEntity)} />
+<script type="application/json" data-ep-chatrefs set:html={JSON.stringify(chatRefsByEntity)} />
+
+<style is:global>
+  /* Global: the panel body is rendered at runtime via innerHTML, so scoped styles
+     would not reach it. Classes are uniquely .ep- prefixed; the panel is schema-only. */
+  .ep { position: fixed; inset: 0; z-index: 60; }
+  .ep[hidden] { display: none; }
+  .ep-scrim { position: absolute; inset: 0; background: oklch(0 0 0 / .28); opacity: 0; transition: opacity .18s ease; }
+  .ep.ep-in .ep-scrim { opacity: 1; }
+  .ep-sheet {
+    position: absolute; top: 0; right: 0; height: 100%;
+    width: min(94vw, 460px); display: flex; flex-direction: column;
+    background: var(--color-base-100); border-left: 1px solid var(--color-base-300);
+    box-shadow: -12px 0 40px oklch(0 0 0 / .16);
+    transform: translateX(100%); transition: transform .22s cubic-bezier(.22,1,.36,1);
+  }
+  .ep.ep-in .ep-sheet { transform: translateX(0); }
+  /* A7 — expand the panel for reviewing a lot of data (toggle in the header). */
+  .ep.ep-wide .ep-sheet { width: min(96vw, 900px); }
+
+  .ep-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--color-base-300); min-height: 48px; }
+  .ep-crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; overflow: hidden; font-size: 12.5px; }
+  .ep-crumb { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; color: var(--color-base-content); opacity: .55; white-space: nowrap; cursor: pointer; background: none; border: 0; font: inherit; }
+  .ep-crumb:hover { opacity: 1; background: var(--color-base-200); }
+  .ep-crumb.ep-crumb-last { opacity: 1; font-weight: 600; cursor: default; }
+  .ep-crumb.ep-crumb-last:hover { background: none; }
+  .ep-crumb-sep { opacity: .35; flex: none; }
+  .ep-crumb-ellipsis { opacity: .55; padding: 0 2px; flex: none; }
+
+  .ep-body { flex: 1; overflow-y: auto; padding: 16px 20px 24px; }
+  .ep-body.ep-swap { animation: epslide .2s cubic-bezier(.22,1,.36,1); }
+  @keyframes epslide { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: translateX(0); } }
+  @media (prefers-reduced-motion: reduce) { .ep-sheet, .ep-scrim { transition: none; } .ep-body.ep-swap { animation: none; } }
+
+  /* Context header */
+  .ep-title { display: flex; align-items: flex-start; gap: 12px; }
+  .ep-title-ic { width: 30px; height: 30px; border-radius: 8px; flex: none; display: grid; place-items: center; background: var(--color-base-200); }
+  .ep-title-ic .iconify { font-size: 1rem; opacity: .8; }
+  .ep-title-ic svg { width: 17px; height: 17px; opacity: .85; }
+  .ep-title-main { min-width: 0; flex: 1; }
+  .ep-title-name { font-size: 16px; font-weight: 650; line-height: 1.25; word-break: break-word; }
+  .ep-title-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .6); }
+  /* Health as an inline chip in the identity line (replaces the old full-width Health card). */
+  .ep-meta-sep { opacity: .4; }
+  .ep-meta-health { display: inline-flex; align-items: center; gap: 4px; font-weight: 550; color: oklch(from var(--color-base-content) l c h / .85); }
+  .ep-meta-fresh { opacity: .85; }
+
+  /* Metric tiles — the same bordered strip + dashed dividers as the Home KPI tiles
+     (.hm-kpis), so the panel reads as part of the system, not a bare text row. */
+  /* deleted-items-filter: read-only-history banner for a removed entity. */
+  /* Removed/deleted notice = catalog warning Alert (storybook pattern-removed-notice); only spacing + compact size here. */
+  .ep-removed { margin: 16px 0 2px; font-size: 12.5px; }
+  .ep-stats { display: grid; grid-template-columns: repeat(var(--ep-stat-n, 3), minmax(0, 1fr)); border: 1px solid var(--color-base-300); border-radius: 11px; background: var(--color-base-100); overflow: hidden; margin: 16px 0 4px; }
+  .ep-stat { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 12px 12px 12px; }
+  .ep-stat + .ep-stat { border-left: 1px dashed oklch(from var(--color-base-content) l c h / .16); }
+  .ep-stat-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ep-stat-k { font-size: 11px; font-weight: 600; letter-spacing: .02em; color: oklch(from var(--color-base-content) l c h / .55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ep-stat-ic { font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .4); flex: none; }
+  .ep-stat-v { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.25; }
+  .ep-stat-sub { font-size: 11px; color: oklch(from var(--color-base-content) l c h / .5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ep-stat-health { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; }
+
+  /* Sections */
+  /* Canon (c): hairline divider between top-level sections + right-aligned count badge. */
+  .ep-sec { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--color-base-300); }
+  .ep-sec-h { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .5); margin-bottom: 8px; }
+  .ep-sec-ic { flex: none; opacity: .85; }
+  .ep-sec-h .ep-sec-n { font-weight: 600; opacity: .7; margin-left: auto; }
+  /* B8 — the "Referenced by" section groups its rows by kind (Automations · Interfaces · Formulas ·
+     Rollups · Lookups · Docs · Chats). Each group's SUB-header carries its kind concept-icon as the
+     group signifier (the sanctioned exception to "sub-labels get no icon" — documented in the
+     pattern-detail-panel storybook entry), with the per-group count right-aligned like the section. */
+  .ep-refgrp { margin-top: 16px; }
+  .ep-refgrp:first-child { margin-top: 0; }
+  .ep-refgrp-h { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .5); margin: 0 0 4px; }
+  .ep-refgrp-ic { flex: none; opacity: .7; }
+  .ep-refgrp-n { font-weight: 600; opacity: .7; margin-left: auto; }
+  /* Canon (b): "+N more" INLINE disclosure — expands the rest in place inside the panel body
+     (a floating popover escapes a scroll-owning panel). Native <details>, marker hidden. */
+  .ep-more { margin-top: 2px; }
+  .ep-more-sum { list-style: none; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; padding: 4px 8px; font-size: 13px; font-weight: 500; color: var(--color-primary); border-radius: 8px; }
+  .ep-more-sum::-webkit-details-marker { display: none; }
+  .ep-more-sum:hover { background: var(--color-base-200); }
+  .ep-more-chev { transition: transform .15s ease; }
+  .ep-more[open] .ep-more-chev { transform: rotate(180deg); }
+
+  /* description value text (shared by both source tabs) */
+  .ep-desc-v { font-size: 13px; line-height: 1.5; }
+  .ep-desc-v.ep-empty { color: oklch(from var(--color-base-content) l c h / .42); font-style: italic; }
+
+  /* child / relation rows */
+  .ep-rows { display: flex; flex-direction: column; gap: 2px; }
+  .ep-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; cursor: pointer; border: 0; background: none; width: 100%; text-align: left; font: inherit; }
+  .ep-row:hover { background: var(--color-base-200); }
+  .ep-row-ic { width: 18px; flex: none; display: grid; place-items: center; }
+  .ep-row-ic svg { width: 15px; height: 15px; opacity: .8; }
+  .ep-row-ic .iconify { font-size: .9rem; opacity: .75; }
+  .ep-row-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; }
+  .ep-row-type { font-size: 11.5px; color: oklch(from var(--color-base-content) l c h / .5); flex: none; }
+  .ep-row-kind { font-size: 11px; color: oklch(from var(--color-base-content) l c h / .5); flex: none; margin-left: auto; }
+  .ep-row-chev { opacity: .35; flex: none; }
+  .ep-row:hover .ep-row-chev { opacity: .7; }
+  .ep-rel-dir { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .45); flex: none; }
+
+  .ep-options { display: flex; flex-wrap: wrap; gap: 8px; }
+  .ep-empty-note { font-size: 12.5px; color: oklch(from var(--color-base-content) l c h / .5); }
+  .ep-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+
+  .ep-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
+  .ep-dot-green { background: var(--color-success); }
+  .ep-dot-amber { background: var(--color-warning); }
+  .ep-dot-red { background: var(--color-error); }
+
+  /* Description source tabs — a custom two-button strip with a full-width baseline rail so the
+     tabs don't "float" (daisyUI radio tabs drew only the active label's underline). The active
+     tab's 2px border sits ON the 1px rail via a -1px bottom margin. */
+  .ep-desc-tabsbar { display: flex; gap: 2px; margin-top: 8px; border-bottom: 1px solid var(--color-base-300); }
+  .ep-desc-tabbtn { appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 8px 12px 8px; font: inherit; font-size: 12.5px; font-weight: 500; line-height: 1.2; color: oklch(from var(--color-base-content) l c h / .58); cursor: pointer; transition: color .12s ease; }
+  .ep-desc-tabbtn:hover { color: var(--color-base-content); }
+  .ep-desc-tabbtn.ep-tab-on { color: var(--color-base-content); font-weight: 650; border-bottom-color: var(--color-primary); }
+  .ep-desc-tab { margin-top: 12px; }
+  /* The value box holds ONLY the description content (caption + status + actions are siblings
+     below it), so a small floor keeps it reading as a field. */
+  .ep-desc-panel { border: 1px solid var(--color-base-300); border-radius: 9px; padding: 12px 12px; min-height: 50px; background: oklch(from var(--color-base-200) l c h / .55); }
+  /* Click-to-edit affordance: the value box is the edit target (no separate Edit button). A
+     hover wash + a corner pencil signal it, and the cursor is a text caret. */
+  .ep-desc-zone { position: relative; cursor: text; transition: border-color .12s ease, background-color .12s ease; }
+  .ep-desc-zone:hover { border-color: oklch(from var(--color-primary) l c h / .5); background: oklch(from var(--color-base-200) l c h / .85); }
+  .ep-desc-zone:focus-visible { outline: 2px solid oklch(from var(--color-primary) l c h / .5); outline-offset: 1px; }
+  .ep-desc-zone-ic { position: absolute; top: 7px; right: 8px; opacity: 0; color: oklch(from var(--color-base-content) l c h / .5); transition: opacity .12s ease; pointer-events: none; }
+  .ep-desc-zone:hover .ep-desc-zone-ic, .ep-desc-zone:focus-visible .ep-desc-zone-ic { opacity: .7; }
+  /* sync lifecycle: the Draft flag folds the status into ONE badge in the section heading. The
+     heading is uppercase + letter-spaced; reset that here so the sentence reads naturally and
+     wraps (instead of overflowing) on a narrow panel. */
+  .ep-desc-flag { vertical-align: middle; margin-left: 8px; gap: 4px; text-transform: none; letter-spacing: normal; font-weight: 500; white-space: normal; height: auto; padding: 2px 8px; line-height: 1.35; }
+  /* scope caption — a quiet note BELOW the value (who sees this copy + whether it syncs) */
+  .ep-desc-meta { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: oklch(from var(--color-base-content) l c h / .6); margin: 8px 2px 0; }
+  .ep-desc-meta-ic { flex: none; opacity: .75; }
+  /* Public/private cue (canon d): the Airtable caption gets a NEUTRAL globe (public/synced info),
+     NOT a warning triangle — the triangle is reserved for genuine problems. Internal keeps the lock. */
+  .ep-desc-meta-pub { opacity: .75; }
+  /* Canon (b): a long read-mode description grows to a max height, then scrolls in its own box. */
+  .ep-desc-v { max-height: 40vh; overflow-y: auto; }
+  /* AI disclaimer — the "under the input" slot in edit mode (mutually exclusive with the
+     sync status, which owns that slot at rest). */
+  .ep-desc-hint { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 11.5px; line-height: 1.4; color: oklch(from var(--color-base-content) l c h / .6); }
+  .ep-desc-hint .iconify { color: var(--color-primary); font-size: .95rem; flex: none; }
+  /* success toast — floats over the sheet, auto-dismisses (restrained surface, green check) */
+  .ep-toast { position: absolute; left: 50%; bottom: 18px; transform: translate(-50%, 8px); display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 9px; background: var(--color-base-100); color: var(--color-base-content); border: 1px solid var(--color-base-300); box-shadow: 0 8px 24px oklch(0 0 0 / .18); font-size: 13px; font-weight: 500; opacity: 0; transition: opacity .2s ease, transform .2s cubic-bezier(.22,1,.36,1); z-index: 5; pointer-events: none; white-space: nowrap; }
+  .ep-toast .iconify { color: var(--color-success); flex: none; }
+  .ep-toast.ep-toast-in { opacity: 1; transform: translate(-50%, 0); }
+  .ep-toast[hidden] { display: none; }
+  .ep-desc-status { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 1.4; margin-top: 8px; }
+  .ep-desc-synced { color: oklch(from var(--color-base-content) l c h / .55); }
+  .ep-desc-synced .iconify { color: var(--color-success); font-size: .95rem; }
+  .ep-desc-draft { color: oklch(from var(--color-base-content) l c h / .72); }
+  .ep-desc-draft .iconify { color: var(--color-warning); font-size: .95rem; }
+  .ep-desc-busy { color: oklch(from var(--color-base-content) l c h / .6); }
+  /* Taller editor — generous vertical room to write (not a cramped 2-line input). */
+  .ep-desc-input { margin-top: 2px; line-height: 1.5; min-height: 132px; resize: vertical; }
+  /* Cost suffix — inline within the button label (shares its baseline); a small left gap
+     restores the breathing room that the old separate-flex-item gap used to give. */
+  .ep-credit { font-size: 11px; font-weight: 600; opacity: .65; margin-left: 4px; }
+  /* Publish confirm + stale-warning card (destructive write-back step) */
+  /* Publish confirm = NEUTRAL container card (like ConfirmModal); the stale consequence is a
+     catalog soft warning Alert inside it, not a second amber box. */
+  .ep-desc-confirm { margin-top: 12px; border: 1px solid var(--color-base-300); background: var(--color-base-100); border-radius: 9px; padding: 12px 12px; }
+  .ep-desc-confirm-h { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; line-height: 1.4; }
+  .ep-desc-confirm-h .iconify { color: var(--color-warning); font-size: .95rem; flex: none; }
+  .ep-desc-stale { margin-top: 8px; align-items: flex-start; font-size: 12px; line-height: 1.4; }
+  .ep-desc-confirm .ep-actions { margin-top: 8px; }
+  .ep-row-draft { flex: none; }
+
+  /* A3 — in-list field/table filter */
+  .ep-filter { width: 100%; margin-bottom: 8px; }
+
+  /* A4 — field-type configuration; A6 — relationship cardinality + backlink */
+  .ep-cfg-k { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .5); margin: 12px 0 4px; }
+  .ep-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: var(--color-base-200); border: 1px solid var(--color-base-300); border-radius: 7px; padding: 8px 12px; white-space: pre-wrap; word-break: break-word; margin: 0; }
+  .ep-link { color: var(--color-primary); background: none; border: 0; padding: 0; font: inherit; cursor: pointer; font-weight: 600; }
+  .ep-link:hover { text-decoration: underline; }
+  /* Cardinality — a single soft badge under a "Cardinality" label (matching the Backlink
+     section), never the old badge + loose-text combo. */
+  .ep-rel-card { margin-top: 1px; }
+  .ep-rel-back { margin-top: 8px; }
+
+  /* C4 — per-entity changelog section */
+  .ep-cl { display: flex; flex-direction: column; gap: 8px; }
+  .ep-cl-row { border: 1px solid var(--color-base-300); border-radius: 9px; padding: 8px 12px; }
+  .ep-cl-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .ep-cl-date { font-size: 11.5px; color: oklch(from var(--color-base-content) l c h / .5); font-variant-numeric: tabular-nums; }
+  .ep-cl-sum { font-size: 13px; line-height: 1.45; }
+  .ep-cl-delta { font-size: 12px; }
+  .ep-cl-before { color: oklch(from var(--color-base-content) l c h / .5); text-decoration: line-through; }
+  .ep-cl-after { font-weight: 600; }
+</style>
+
+<script>
+  import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+  import { fieldTypeLabel, tableRelationships, type SchemaEntity } from './schemaEntities';
+
+  type DocRef = { id: string; title: string };
+
+  function wireEntityPanel() {
+    const root = document.querySelector<HTMLElement>('[data-entity-panel]');
+    if (!root || root.dataset.epWired) return;
+    root.dataset.epWired = '1';
+
+    const indexEl = document.querySelector('[data-ep-index]');
+    const docsEl = document.querySelector('[data-ep-docs]');
+    const aiEl = document.querySelector('[data-ep-ai]');
+    const index: SchemaEntity[] = indexEl ? JSON.parse(indexEl.textContent || '[]') : [];
+    const docs: DocRef[] = docsEl ? JSON.parse(docsEl.textContent || '[]') : [];
+    type ClItem = { id: string; at: string; type: string; summary: string; before?: string; after?: string; entityId?: string };
+    const clEl = document.querySelector('[data-ep-changelog]');
+    const changelog: ClItem[] = clEl ? JSON.parse(clEl.textContent || '[]') : [];
+    const clByEntity = new Map<string, ClItem[]>();
+    changelog.forEach((c) => { if (c.entityId) { const a = clByEntity.get(c.entityId) || []; a.push(c); clByEntity.set(c.entityId, a); } });
+    const aiState: string = aiEl ? JSON.parse(aiEl.textContent || '"ready"') : 'ready';
+    const refsEl = document.querySelector('[data-ep-refs]');
+    const refsByEntity: Record<string, { id: string; name: string; kind: 'automation' | 'interface' | 'page' }[]> = refsEl ? JSON.parse(refsEl.textContent || '{}') : {};
+    const chatRefsEl = document.querySelector('[data-ep-chatrefs]');
+    const chatRefsByEntity: Record<string, { id: string; title: string }[]> = chatRefsEl ? JSON.parse(chatRefsEl.textContent || '{}') : {};
+    const byId = new Map(index.map((e) => [e.id, e]));
+
+    // B3/B8 — the REVERSE reference graph, inverted from the forward field config carried in
+    // `index`. PRODUCTION / ENGINE NOTE: Airtable's meta API returns only the FORWARD config
+    // (a formula's referenced fields, a lookup/rollup's target). The reverse edges ("what
+    // references THIS field") are NOT returned — the engine must invert the graph across the
+    // base. Here the mirror derives it client-side from the fixtures; do not hand-fake edges.
+    const fieldReferencers = (e: SchemaEntity): SchemaEntity[] => {
+      if (e.kind !== 'field') return [];
+      const seen = new Set<string>();
+      const out: SchemaEntity[] = [];
+      for (const t of index) {
+        if (t.kind !== 'field' || t.id === e.id) continue;
+        const hit = (t.referencedFieldIds || []).includes(e.id) || t.lookupTargetFieldId === e.id || t.derivedFrom === e.id;
+        if (hit && !seen.has(t.id)) { seen.add(t.id); out.push(t); }
+      }
+      return out;
+    };
+
+    const body = root.querySelector<HTMLElement>('[data-ep-body]')!;
+    const crumbsEl = root.querySelector<HTMLElement>('[data-ep-crumbs]')!;
+    const backBtn = root.querySelector<HTMLElement>('[data-ep-back]')!;
+    let stack: string[] = [];
+
+    // Description lifecycle — fake (no backend in ui-only). `descStates` is a per-entity
+    // overlay that survives re-renders: `airtable` = the locally-held copy, `synced` = what
+    // is actually in Airtable. They differ ⇒ "out of sync" (Draft + Publish). `descEdit`
+    // is the single active edit buffer (one field at a time); `descTab` keeps the active
+    // source tab across the innerHTML rebuilds that each action triggers.
+    type DescState = { airtable: string; synced: string; extended: string };
+    const descStates = new Map<string, DescState>();
+    const descOf = (e: SchemaEntity): DescState => {
+      let s = descStates.get(e.id);
+      if (!s) {
+        s = {
+          airtable: e.airtableDraft ?? e.airtableDescription ?? '',
+          synced: e.airtableDescription ?? '',
+          extended: e.userDescription ?? '',
+        };
+        descStates.set(e.id, s);
+      }
+      return s;
+    };
+    let descEdit: { id: string; field: 'airtable' | 'extended' } | null = null;
+    let descTab: 'airtable' | 'extended' = 'airtable';
+    // Publish lifecycle (faked async): draft → confirm step → Publishing… → Synced + toast.
+    let descConfirmId: string | null = null;
+    let descBusyId: string | null = null;
+    // True while the open editor's text came from Generate (drives the AI disclaimer slot).
+    let descEditAi = false;
+    // Caret offset to restore when entering edit by clicking the text, so the cursor lands where
+    // you clicked rather than at the end. null ⇒ place the caret at the end.
+    let descEditCaret: number | null = null;
+    const descInput = () => body.querySelector<HTMLTextAreaElement>('[data-ep-desc-input]');
+    const focusDescInput = () => { const ta = descInput(); if (ta) { ta.focus(); const n = ta.value.length; const pos = descEditCaret == null ? n : Math.min(Math.max(0, descEditCaret), n); try { ta.setSelectionRange(pos, pos); } catch {} descEditCaret = null; } };
+    // Map a click point inside a read value to a character offset (for caret-at-click on edit).
+    const caretOffsetAt = (zone: HTMLElement, x: number, y: number): number | null => {
+      const valEl = zone.querySelector('.ep-desc-v'); if (!valEl) return null;
+      const d = document as unknown as { caretRangeFromPoint?: (x: number, y: number) => Range | null; caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null };
+      try {
+        if (d.caretRangeFromPoint) { const r = d.caretRangeFromPoint(x, y); if (r && valEl.contains(r.startContainer)) return r.startOffset; }
+        else if (d.caretPositionFromPoint) { const p = d.caretPositionFromPoint(x, y); if (p && valEl.contains(p.offsetNode)) return p.offset; }
+      } catch {}
+      return null;
+    };
+    // A11y: announce description state changes to screen readers, and restore keyboard
+    // focus after an action re-renders the panel body (innerHTML swap drops focus).
+    const liveEl = root.querySelector<HTMLElement>('[data-ep-live]');
+    const announce = (m: string) => { if (liveEl) liveEl.textContent = m; };
+    const focusDescEdit = (field: 'airtable' | 'extended') => body.querySelector<HTMLElement>(`[data-ep-desc-editzone="${field}"]`)?.focus();
+    // Transient success confirmation — floats over the sheet, survives body re-renders, auto-dismisses.
+    let toastTimer = 0;
+    const toast = (m: string) => {
+      const el = root.querySelector<HTMLElement>('[data-ep-toast]'); if (!el) return;
+      el.innerHTML = `<span class="iconify lucide--circle-check size-4"></span>${esc(m)}`;
+      el.hidden = false; requestAnimationFrame(() => el.classList.add('ep-toast-in'));
+      window.clearTimeout(toastTimer);
+      toastTimer = window.setTimeout(() => { el.classList.remove('ep-toast-in'); window.setTimeout(() => { el.hidden = true; }, 200); }, 2400);
+    };
+    // A draft exists when the local Airtable copy differs from what's synced. Reads the
+    // runtime overlay first, then the fixture seed (so seeded drafts show before first open).
+    const hasDraft = (e: SchemaEntity): boolean => {
+      const st = descStates.get(e.id);
+      if (st) return st.airtable.trim() !== st.synced.trim();
+      return !!(e.airtableDraft && e.airtableDraft.trim() !== (e.airtableDescription || '').trim());
+    };
+    // Autosave an in-progress edit before any navigation / close, so typed text is never lost.
+    const commitOpenEdit = () => {
+      if (!descEdit) return;
+      const ta = descInput(); const st = descStates.get(descEdit.id);
+      if (ta && st) { if (descEdit.field === 'airtable') st.airtable = ta.value; else st.extended = ta.value; }
+    };
+    const commitField = (id: string, field: 'airtable' | 'extended', value: string) => {
+      const e = byId.get(id); if (!e) return; const s = descOf(e);
+      if (field === 'airtable') s.airtable = value; else s.extended = value;
+      if (field === 'airtable') {
+        const draft = s.airtable.trim() !== s.synced.trim();
+        document.dispatchEvent(new CustomEvent('schema:descChanged', { detail: { id, draft } }));
+      }
+    };
+
+    const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+    const fmtDate = (iso?: string) => { if (!iso) return ''; try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch { return iso; } };
+    const dot = (h: string) => `<span class="ep-dot ep-dot-${h === 'green' ? 'green' : h === 'red' ? 'red' : 'amber'}"></span>`;
+    const fieldIcon = (type?: string) => {
+      const k = type ? airtableIconKey(type) : null;
+      return k ? `<svg viewBox="0 0 16 16" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '<span class="iconify lucide--circle size-3.5"></span>';
+    };
+    const kindIcon = (e: SchemaEntity) =>
+      e.kind === 'base' ? '<span class="iconify lucide--database concept-ic-base"></span>'
+      : e.kind === 'table' ? '<span class="iconify lucide--table-2"></span>'
+      : fieldIcon(e.fieldType);
+    const healthLabel = (h: string) => (h === 'green' ? 'Healthy' : h === 'red' ? 'Needs attention' : 'Could improve');
+
+    function row(e: SchemaEntity, dir?: string) {
+      const type = e.kind === 'field' ? `<span class="ep-row-type">${esc(fieldTypeLabel(e.fieldType))}</span>` : '';
+      const dirLabel = dir ? `<span class="ep-rel-dir">${dir}</span>` : '';
+      const draft = hasDraft(e) ? '<span class="badge badge-sm badge-warning badge-soft ep-row-draft tooltip tooltip-left" data-tip="Unpublished description change">Draft</span>' : '';
+      return `<button type="button" class="ep-row" data-ep-push="${e.id}">
+        <span class="ep-row-ic">${kindIcon(e)}</span>
+        <span class="ep-row-name">${esc(e.name)}${e.isPrimary ? ' <span class="ep-row-type">· primary</span>' : ''}</span>
+        ${type}${dirLabel}${draft}${dot(e.health)}
+        <span class="iconify lucide--chevron-right size-3.5 ep-row-chev"></span>
+      </button>`;
+    }
+
+    // Canon (c) hierarchy: a top-level section header carries a quiet grey concept icon (the SAME
+    // icons the app/tabs use). Sub-labels inside a section (.ep-cfg-k: Formula / References / Rolls up)
+    // do NOT go through section(), so they stay icon-less — that contrast is what marks the levels.
+    const SECTION_ICON: Record<string, string> = {
+      Description: 'lucide--text', Descriptions: 'lucide--text',
+      Configuration: 'lucide--settings-2',
+      Relationships: 'lucide--waypoints', 'Derived from': 'lucide--waypoints',
+      Fields: 'lucide--table-2', Tables: 'lucide--table-2',
+      Options: 'lucide--list', Changelog: 'lucide--history',
+      Documentation: 'lucide--book-text', 'Referenced by': 'lucide--link',
+    };
+    function section(title: string, count: number | null, inner: string) {
+      const ic = SECTION_ICON[title];
+      const icHtml = ic ? `<span class="iconify ${ic} size-3.5 ep-sec-ic" aria-hidden="true"></span>` : '';
+      return `<div class="ep-sec"><div class="ep-sec-h">${icHtml}${title}${count !== null ? `<span class="ep-sec-n">${count}</span>` : ''}</div>${inner}</div>`;
+    }
+
+    // Descriptions as two source tabs (Airtable · Internal). Per Dan's model: only the
+    // Airtable copy syncs back — editing it locally makes it "out of sync" (Draft → Publish,
+    // which overrides the live Airtable description through a confirm + stale-warning step).
+    // The Internal copy is Baseout-only and never syncs. AI is not a stored tab but a
+    // "Generate" action that seeds the Airtable description. Write-back is faked client-side.
+    function renderDescriptions(e: SchemaEntity) {
+      // Removed entities are read-only history — show last-known values only (no edit / publish / AI).
+      if (e.removed) {
+        const sr = descOf(e);
+        const block = (cap: string, val: string) => `<div class="ep-desc-panel" style="margin-top:12px">${val.trim() ? `<div class="ep-desc-v">${esc(val)}</div>` : `<div class="ep-desc-v ep-empty">—</div>`}</div><div class="ep-desc-meta">${cap}</div>`;
+        let ro = '';
+        if (sr.airtable.trim()) ro += block('Airtable description · from the last backup', sr.airtable);
+        if (sr.extended.trim()) ro += block('Internal note · from the last backup', sr.extended);
+        if (!ro) ro = `<p class="ep-empty-note">No description was captured before it was deleted.</p>`;
+        return section('Description', null, ro);
+      }
+      const s = descOf(e);
+      const ai = (e.aiDescription || '').trim();
+      // The Internal note's AI draft is prompted to be more technical/verbose. In this faked
+      // harness we fall back to the public AI text where no distinct technical draft is seeded
+      // (in production the engine always returns a separate, more-technical draft).
+      const aiTech = (e.aiTechnicalDescription || e.aiDescription || '').trim();
+      const out = s.airtable.trim() !== s.synced.trim();
+      const editing = descEdit && descEdit.id === e.id ? descEdit.field : null;
+      const canGen = aiState === 'ready' && !!ai;
+      const canGenExt = aiState === 'ready' && !!aiTech;
+      const busy = descBusyId === e.id;
+      const confirming = descConfirmId === e.id;
+      const credit = '<span class="ep-credit">10 credits</span>';
+
+      const editor = (field: 'airtable' | 'extended', value: string) => {
+        const ph = field === 'airtable'
+          ? 'Describe this for everyone who uses the base in Airtable…'
+          : 'Internal notes — more technical detail, visible only in Baseout…';
+        // Both copies can be AI-generated: the Airtable (public) draft and the Internal note,
+        // which is prompted to be more technical/verbose (a separate engine draft).
+        const genOn = field === 'airtable' ? canGen : canGenExt;
+        const gen = genOn
+          ? `<button type="button" class="btn btn-sm btn-ghost gap-1.5 text-primary" data-ep-desc-gen="${field}"><span class="iconify lucide--sparkles size-3.5"></span><span>${value.trim() ? 'Regenerate' : 'Generate'} ${credit}</span></button>`
+          : '';
+        // AI disclaimer sits in the shared "under the input" slot — only in edit mode, only
+        // when the text came from Generate. At rest, that slot is the sync status instead, so
+        // the two never stack (Square / Udemy "review before publishing" pattern). The Internal
+        // note is never published, so its wording is "review before saving".
+        const hint = descEditAi
+          ? `<div class="ep-desc-hint"><span class="iconify lucide--sparkles size-3.5"></span>AI-generated — review before ${field === 'airtable' ? 'publishing' : 'saving'}.</div>`
+          : '';
+        return `<textarea class="textarea textarea-bordered textarea-sm w-full ep-desc-input" rows="6" data-ep-desc-input placeholder="${ph}">${esc(value)}</textarea>
+          ${field === 'airtable' ? atMeta : extMeta}
+          ${hint}
+          <div class="ep-actions">
+            <button type="button" class="btn btn-sm btn-primary gap-1.5" data-ep-desc-save="${field}"><span class="iconify lucide--check size-3.5"></span>Save</button>
+            ${gen}
+            <button type="button" class="btn btn-sm btn-ghost ml-auto" data-ep-desc-cancel>Cancel</button>
+          </div>`;
+      };
+
+      // Scope captions — a quiet note under each value (who sees this copy + whether it syncs).
+      // Airtable = Public (the only synced copy); Internal = Baseout-only, never synced.
+      const atMeta = `<div class="ep-desc-meta"><span class="iconify lucide--globe size-3.5 ep-desc-meta-ic ep-desc-meta-pub"></span>Shown to everyone in Airtable · the only synced copy.</div>`;
+      const extMeta = `<div class="ep-desc-meta"><span class="iconify lucide--lock size-3.5 ep-desc-meta-ic"></span>Visible only in Baseout · never synced to Airtable.</div>`;
+      // The value box holds ONLY the description content; the caption, status and actions are
+      // siblings BELOW it. When `field` is set the box doubles as the edit affordance — clicking
+      // it (or focusing + Enter) drops straight into the textarea at the caret, with no separate
+      // "Edit" button to gate it.
+      const box = (inner: string, field?: 'airtable' | 'extended') =>
+        `<div class="ep-desc-panel${field ? ' ep-desc-zone' : ''}"${field ? ` data-ep-desc-editzone="${field}" tabindex="0" role="button" aria-label="Edit description"` : ''}>${inner}${field ? '<span class="ep-desc-zone-ic" aria-hidden="true"><span class="iconify lucide--pencil size-3.5"></span></span>' : ''}</div>`;
+
+      // Each state = the value box + the scope caption (atMeta/extMeta) BELOW it + any status
+      // line + the actions. The caption is now a quiet footnote under the value, not a header.
+      let at: string;
+      if (editing === 'airtable') {
+        at = editor('airtable', s.airtable);
+      } else if (busy) {
+        at = box(`<div class="ep-desc-v">${esc(s.airtable)}</div>`) + atMeta
+          + `<div class="ep-desc-status ep-desc-busy"><span class="loading loading-spinner loading-sm"></span>Publishing to Airtable…</div>`;
+      } else if (confirming) {
+        const stale = e.airtableExternallyChanged
+          ? `<div class="alert alert-soft alert-warning ep-desc-stale" role="alert"><span class="iconify lucide--triangle-alert size-4"></span><span>Airtable's description changed since the last backup — publishing overwrites it.</span></div>`
+          : '';
+        at = box(`<div class="ep-desc-v">${esc(s.airtable)}</div>`) + atMeta
+          + `<div class="ep-desc-confirm">
+            <div class="ep-desc-confirm-h"><span class="iconify lucide--upload-cloud size-3.5"></span>Publish replaces the entire description in Airtable.</div>
+            ${stale}
+            <div class="ep-actions">
+              <button type="button" class="btn btn-sm btn-primary gap-1.5" data-ep-desc-publish-confirm><span class="iconify lucide--check size-3.5"></span>Publish</button>
+              <button type="button" class="btn btn-sm btn-ghost" data-ep-desc-publish-cancel>Cancel</button>
+            </div>
+          </div>`;
+      } else if (s.airtable.trim() === '') {
+        // Empty: the box itself is click-to-write; AI generate is the alternative.
+        const genCta = canGen
+          ? `<div class="ep-actions"><button type="button" class="btn btn-sm btn-primary gap-1.5" data-ep-desc-gen="airtable"><span class="iconify lucide--sparkles size-3.5"></span><span>Generate with AI ${credit}</span></button></div>`
+          : aiState === 'locked'
+          ? `<div class="ep-actions"><a href="/settings/billing" class="btn btn-sm btn-primary gap-1.5"><span class="iconify lucide--lock size-3.5"></span>Generate with AI</a></div>`
+          : '';
+        at = box(`<div class="ep-desc-v ep-empty">No description in Airtable yet — click to write one.</div>`, 'airtable') + atMeta + genCta;
+      } else if (out) {
+        // Click the value to edit it in place; the "not yet published" status lives in the
+        // section heading, so no Edit button is needed here.
+        at = box(`<div class="ep-desc-v">${esc(s.airtable)}</div>`, 'airtable') + atMeta
+          + `<div class="ep-actions">
+            <button type="button" class="btn btn-sm btn-primary gap-1.5" data-ep-desc-publish><span class="iconify lucide--upload-cloud size-3.5"></span>Publish to Airtable</button>
+            <button type="button" class="btn btn-sm btn-ghost gap-1.5 text-error ml-auto" data-ep-desc-discard><span class="iconify lucide--undo-2 size-3.5"></span>Discard changes</button>
+          </div>`;
+      } else {
+        at = box(`<div class="ep-desc-v">${esc(s.airtable)}</div>`, 'airtable') + atMeta
+          + `<div class="ep-desc-status ep-desc-synced"><span class="iconify lucide--circle-check size-3.5"></span>Synced with Airtable</div>`;
+      }
+
+      let ext: string;
+      if (editing === 'extended') {
+        ext = editor('extended', s.extended);
+      } else if (s.extended.trim() === '') {
+        // Mirror the Airtable empty-state: offer AI generation (a more technical draft) as the
+        // alternative to writing the internal note by hand.
+        const genExtCta = canGenExt
+          ? `<div class="ep-actions"><button type="button" class="btn btn-sm btn-primary gap-1.5" data-ep-desc-gen="extended"><span class="iconify lucide--sparkles size-3.5"></span><span>Generate with AI ${credit}</span></button></div>`
+          : aiState === 'locked'
+          ? `<div class="ep-actions"><a href="/settings/billing" class="btn btn-sm btn-primary gap-1.5"><span class="iconify lucide--lock size-3.5"></span>Generate with AI</a></div>`
+          : '';
+        ext = box(`<div class="ep-desc-v ep-empty">Click to add an internal note — more technical detail for your team.</div>`, 'extended') + extMeta + genExtCta;
+      } else {
+        ext = box(`<div class="ep-desc-v">${esc(s.extended)}</div>`, 'extended') + extMeta;
+      }
+
+      // Custom two-button tab strip with a full-width baseline rail (the daisyUI radio tabs left
+      // the labels "floating" with no underline). Only the active panel renders; switching tabs
+      // re-renders via the click handler (descTab persists across rebuilds).
+      const isAirtable = descTab !== 'extended';
+      const tabsBar = `<div role="tablist" class="ep-desc-tabsbar">
+        <button type="button" role="tab" aria-selected="${isAirtable}" class="ep-desc-tabbtn${isAirtable ? ' ep-tab-on' : ''}" data-ep-desc-tab="airtable">Airtable</button>
+        <button type="button" role="tab" aria-selected="${!isAirtable}" class="ep-desc-tabbtn${!isAirtable ? ' ep-tab-on' : ''}" data-ep-desc-tab="extended">Internal</button>
+      </div>`;
+      const tabs = `${tabsBar}<div role="tabpanel" class="ep-desc-tab">${isAirtable ? at : ext}</div>`;
+
+      // Draft flag + its explanation folded into ONE badge in the section heading (the single
+      // home for "this Airtable copy has unpublished changes") — kept out of the field body.
+      const draftFlag = out
+        ? ` <span class="badge badge-sm badge-warning badge-soft ep-desc-flag"><span class="iconify lucide--pencil-line size-3"></span>Draft — Not yet published to Airtable</span>`
+        : '';
+      const title = `Descriptions${draftFlag}`;
+      return section(title, null, tabs);
+    }
+
+    // C4 — this entity's change history (the same feed, scoped to one entity).
+    const CL_BADGE: Record<string, string> = { added: 'badge-soft badge-success', removed: 'badge-soft badge-error', renamed: 'badge-soft badge-primary', typed: 'badge-soft badge-warning', config: 'badge-soft badge-info', view: 'badge-ghost' };
+    const CL_LABEL: Record<string, string> = { added: 'Added', removed: 'Removed', renamed: 'Renamed', typed: 'Type changed', config: 'Config changed', view: 'View' };
+    const fmtClDate = (iso: string) => { try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch { return iso; } };
+    function renderChangelogSection(e: SchemaEntity): string {
+      const items = clByEntity.get(e.id) || [];
+      if (!items.length) return '';
+      const rows = items.map((c) => `<div class="ep-cl-row">
+        <div class="ep-cl-top"><span class="badge badge-sm ${CL_BADGE[c.type] || 'badge-ghost'}">${esc(CL_LABEL[c.type] || c.type)}</span><span class="ep-cl-date">${esc(fmtClDate(c.at))}</span></div>
+        <div class="ep-cl-sum">${esc(c.summary)}${c.before && c.after ? ` <span class="ep-cl-delta"><span class="ep-cl-before">${esc(c.before)}</span> → <span class="ep-cl-after">${esc(c.after)}</span></span>` : ''}</div>
+      </div>`).join('');
+      return section('Changelog', items.length, `<div class="ep-cl">${rows}</div>`);
+    }
+
+    function renderDocsSection(e: SchemaEntity) {
+      const refs = (e.docIds || []).map((id) => docs.find((d) => d.id === id)).filter(Boolean) as DocRef[];
+      const inner = refs.length
+        ? `<div class="ep-rows">${refs.map((d) => `<button type="button" class="ep-row" data-ep-doc="${d.id}"><span class="ep-row-ic"><span class="iconify lucide--file-text size-3.5"></span></span><span class="ep-row-name">${esc(d.title)}</span><span class="iconify lucide--arrow-up-right size-3.5 ep-row-chev"></span></button>`).join('')}</div>`
+        : `<p class="ep-empty-note">No documents reference this yet.</p>`;
+      return section('Documentation', refs.length || null, inner);
+    }
+
+    // B8 — grouped "Referenced by": every place that points at THIS entity, grouped by kind
+    // (Automations · Interfaces & pages · Formulas · Rollups · Lookups · Docs · Chats), each a
+    // labelled sub-list with the kind's concept icon + a capped (5) row list. Empty groups are
+    // omitted. Sources: automations/interfaces from the tag map; formulas/rollups/lookups from the
+    // inverted reference graph (fieldReferencers); docs from e.docIds; chats from the chat map.
+    // Every row is click-through (reuses the existing data-ep-ref-*/data-ep-doc handlers; chats add
+    // data-ep-chat → jump to the Chat tab).
+    function renderReferencedBy(e: SchemaEntity) {
+      const tagRefs = refsByEntity[e.id] || [];
+      const autos = tagRefs.filter((r) => r.kind === 'automation');
+      const ifaces = tagRefs.filter((r) => r.kind !== 'automation');
+      const referencers = fieldReferencers(e);
+      const formulas = referencers.filter((t) => t.fieldType === 'formula');
+      const rollups = referencers.filter((t) => t.fieldType === 'rollup');
+      const lookups = referencers.filter((t) => t.fieldType === 'lookup');
+      const chatRefs = chatRefsByEntity[e.id] || [];
+
+      const tagRow = (r: { id: string; name: string; kind: string }, icon: string) =>
+        `<button type="button" class="ep-row" ${r.kind === 'automation' ? 'data-ep-ref-auto' : 'data-ep-ref-iface'}="${esc(r.id)}"><span class="ep-row-ic"><span class="iconify ${icon} size-3.5"></span></span><span class="ep-row-name">${esc(r.name)}</span><span class="iconify lucide--arrow-up-right size-3.5 ep-row-chev"></span></button>`;
+      const chatRow = (c: { id: string; title: string }) =>
+        `<button type="button" class="ep-row" data-ep-chat="${esc(c.id)}"><span class="ep-row-ic"><span class="iconify lucide--messages-square size-3.5"></span></span><span class="ep-row-name">${esc(c.title)}</span><span class="iconify lucide--arrow-up-right size-3.5 ep-row-chev"></span></button>`;
+
+      const groups: [string, string, string[]][] = [
+        ['lucide--zap', 'Automations', autos.map((r) => tagRow(r, 'lucide--zap'))],
+        ['lucide--layout-panel-left', 'Interfaces & pages', ifaces.map((r) => tagRow(r, 'lucide--layout-panel-left'))],
+        ['lucide--variable', 'Formulas', formulas.map((t) => row(t))],
+        ['lucide--sigma', 'Rollups', rollups.map((t) => row(t))],
+        ['lucide--search', 'Lookups', lookups.map((t) => row(t))],
+        // Docs are NOT a group here — they live in the dedicated Documentation section (avoids
+        // showing the same doc twice on one panel). Referenced-by = automations/pages/computed/chats.
+        ['lucide--messages-square', 'Chats', chatRefs.map(chatRow)],
+      ];
+      const total = groups.reduce((n, g) => n + g[2].length, 0);
+      if (!total) return '';
+      const inner = groups
+        .filter((g) => g[2].length)
+        .map(([ic, label, rows]) => `<div class="ep-refgrp"><div class="ep-refgrp-h"><span class="iconify ${ic} size-3.5 ep-refgrp-ic" aria-hidden="true"></span>${label}<span class="ep-refgrp-n">${rows.length}</span></div>${capRows(rows)}</div>`)
+        .join('');
+      return section('Referenced by', total, inner);
+    }
+
+    // Canon (b): cap a row list at 5, then a "+N more" hover popover (daisyUI dropdown-hover)
+    // holding the rest. Rows keep their data-ep-* attrs, so the delegated click handler still
+    // opens each entity from inside the popover. Prevents the 50-reference worst-case wall.
+    function capRows(rowHtml: string[], cap = 5): string {
+      if (rowHtml.length <= cap) return `<div class="ep-rows">${rowHtml.join('')}</div>`;
+      const rest = rowHtml.length - cap;
+      return `<div class="ep-rows">${rowHtml.slice(0, cap).join('')}</div>`
+        + `<details class="ep-more">`
+        + `<summary class="ep-more-sum">+${rest} more<span class="iconify lucide--chevron-down size-3.5 ep-more-chev" aria-hidden="true"></span></summary>`
+        + `<div class="ep-rows">${rowHtml.slice(cap).join('')}</div>`
+        + `</details>`;
+    }
+
+    // A4 — formula / lookup configuration block, resolved against the index.
+    function renderConfig(e: SchemaEntity): string {
+      const parts: string[] = [];
+      if (e.formula) {
+        const refs = (e.referencedFieldIds || []).map((id) => byId.get(id)).filter(Boolean) as SchemaEntity[];
+        parts.push(`<div class="ep-cfg-k">Formula</div><pre class="ep-code">${esc(e.formula)}</pre>`);
+        if (refs.length) parts.push(`<div class="ep-cfg-k">References ${refs.length}</div>${capRows(refs.map((r) => row(r)))}`);
+      }
+      if (e.lookupViaFieldId) {
+        const via = byId.get(e.lookupViaFieldId);
+        const target = e.lookupTargetFieldId ? byId.get(e.lookupTargetFieldId) : undefined;
+        const tName = target?.tableName || via?.linkedTableName || 'the linked table';
+        parts.push(`<div class="ep-cfg-k">${e.fieldType === 'rollup' ? 'Rolls up' : 'Looks up'}</div>`);
+        if (target) parts.push(`<div class="ep-rows">${row(target)}</div>`);
+        parts.push(`<p class="ep-empty-note">in <strong>${esc(tName)}</strong>${via ? `, via <button type="button" class="ep-link" data-ep-push="${via.id}">${esc(via.name)}</button>` : ''}.</p>`);
+      }
+      return parts.length ? section('Configuration', null, parts.join('')) : '';
+    }
+
+    function renderBody(e: SchemaEntity): string {
+      const kindWord = e.kind === 'field' ? fieldTypeLabel(e.fieldType) : e.kind === 'base' ? 'Base' : 'Table';
+
+      let html = `<div class="ep-title">
+        <span class="ep-title-ic">${kindIcon(e)}</span>
+        <div class="ep-title-main">
+          <div class="ep-title-name">${esc(e.name)}${e.isPrimary ? ' <span class="badge badge-sm badge-neutral">Primary</span>' : ''}</div>
+          <div class="ep-title-meta">${esc(kindWord)}${!e.removed ? ` <span class="ep-meta-sep" aria-hidden="true">·</span> <span class="ep-meta-health">${dot(e.health)}${esc(healthLabel(e.health))}</span> <span class="ep-meta-sep" aria-hidden="true">·</span> <span class="ep-meta-fresh">as of last backup</span>` : ''}</div>
+        </div>
+      </div>`;
+
+      // deleted-items-filter: a removed entity is read-only history — say so up front.
+      if (e.removed) {
+        html += `<div class="alert alert-soft alert-warning ep-removed" role="status"><span class="iconify lucide--trash-2 size-4" aria-hidden="true"></span><span>This ${esc(kindWord.toLowerCase())} no longer exists in Airtable${e.removedAt ? ` (deleted ${esc(fmtDate(e.removedAt))})` : ''}. Showing the last backup.</span></div>`;
+      }
+
+      // Metric tiles — the bordered strip + dashed dividers, matching the Home KPI tiles
+      // (each tile = label + icon on top · big value · sub-label). Icons are written as
+      // literals so their masks are generated (the panel renders via innerHTML at runtime).
+      const statTile = (k: string, icon: string, value: string, sub: string) =>
+        `<div class="ep-stat"><div class="ep-stat-top"><span class="ep-stat-k">${k}</span><span class="iconify ${icon} ep-stat-ic" aria-hidden="true"></span></div><span class="ep-stat-v">${value}</span><span class="ep-stat-sub">${sub}</span></div>`;
+      const stats: string[] = [];
+      if (typeof e.recordCount === 'number') stats.push(statTile('Records', 'lucide--rows-3', e.recordCount.toLocaleString(), 'as of last backup'));
+      if (typeof e.fieldCount === 'number') stats.push(statTile('Fields', 'lucide--columns-3', String(e.fieldCount), e.kind === 'base' ? 'across all tables' : 'in this table'));
+      // Health is NOT a tile any more — it's an inline chip in the identity meta line above (label +
+      // heart-icon + status was 3× redundant and a lone Health tile ballooned to a full-width card).
+      if (stats.length) html += `<div class="ep-stats" style="--ep-stat-n:${stats.length}">${stats.join('')}</div>`;
+
+      // Descriptions (table + field).
+      if (e.kind !== 'base') html += renderDescriptions(e);
+
+      // A4 — field-type configuration (formula / lookup).
+      if (e.kind === 'field') html += renderConfig(e);
+
+      // Children.
+      const children = (e.childIds || []).map((id) => byId.get(id)).filter(Boolean) as SchemaEntity[];
+      if (children.length) {
+        const title = e.kind === 'base' ? 'Tables' : 'Fields';
+        // A3 — filter within a long child list (tables with many fields / bases with many tables).
+        const filter = children.length > 7
+          ? `<input type="text" class="input input-sm ep-filter" data-ep-filter placeholder="Filter ${title.toLowerCase()}…" aria-label="Filter ${title.toLowerCase()}" />`
+          : '';
+        html += section(title, children.length, `${filter}<div class="ep-rows" data-ep-rows>${children.map((c) => row(c)).join('')}</div>`);
+      }
+      if (e.kind === 'field' && e.options && e.options.length) {
+        html += section('Options', e.options.length, `<div class="ep-options">${e.options.map((o) => `<span class="badge badge-sm badge-ghost">${esc(o)}</span>`).join('')}</div>`);
+      }
+
+      // Relationships.
+      // B3 — back-references: the fields that point AT this field (formula / rollup / lookup),
+      // computed by inverting the forward graph. Rendered as rows with a "← REFERENCED BY"
+      // direction marker (mirrors the table-level LINKS TO / LINKED FROM language); the row's own
+      // type text (Formula / Rollup / Lookup) is the type indicator. Forward config is untouched.
+      const backRefRows = e.kind === 'field' ? fieldReferencers(e).map((t) => row(t, '← referenced by')) : [];
+      const backRefBlock = backRefRows.length
+        ? `<div class="ep-rel-back"><div class="ep-cfg-k">Referenced by ${backRefRows.length}</div>${capRows(backRefRows)}</div>`
+        : '';
+      if (e.kind === 'field' && e.linkedTableId && byId.get(e.linkedTableId)) {
+        const target = byId.get(e.linkedTableId)!;
+        // A6 — linked table + cardinality (Hasura object/array semantics, not crow's-foot) + the backlink field.
+        // One labelled meta (like the Backlink section below) — a single soft badge that
+        // carries both the notation and its plain meaning, never a badge + loose text.
+        const card = e.allowsMultiple === false ? '1:1 · links to a single record' : '1:many · allows multiple records';
+        let inner = `<div class="ep-rows">${row(target, 'links to')}</div>`;
+        inner += `<div class="ep-cfg-k">Cardinality</div><span class="badge badge-sm badge-soft badge-primary ep-rel-card">${card}</span>`;
+        const inverse = e.inverseFieldId ? byId.get(e.inverseFieldId) : undefined;
+        if (inverse) inner += `<div class="ep-rel-back"><div class="ep-cfg-k">Backlink</div><div class="ep-rows">${row(inverse, 'in ' + esc(inverse.tableName || ''))}</div></div>`;
+        inner += backRefBlock;
+        html += section('Relationships', null, inner);
+      } else if (e.kind === 'field' && e.derivedFrom) {
+        html += section('Derived from', null, `<p class="ep-empty-note">Computed from <strong>${esc(e.derivedFrom)}</strong>.</p>`);
+        if (backRefBlock) html += section('Relationships', backRefRows.length, backRefBlock);
+      } else if (e.kind === 'field' && backRefBlock) {
+        // A plain field (no outgoing link) that other fields reference — its Relationships section
+        // is the back-references alone (e.g. Amount ← Weighted Value / Pipeline Value).
+        html += section('Relationships', backRefRows.length, backRefBlock);
+      } else if (e.kind === 'table') {
+        const rel = tableRelationships(e, index);
+        const out = rel.outgoing.map((r) => { const t = byId.get(r.tableId); return t ? row(t, 'links to') : ''; }).join('');
+        const inc = rel.incoming
+          .filter((r, i, a) => a.findIndex((x) => x.tableId === r.tableId) === i)
+          .map((r) => { const t = byId.get(r.tableId); return t ? row(t, 'linked from') : ''; }).join('');
+        if (out || inc)
+          html += section('Relationships', rel.outgoing.length + rel.incoming.length, `<div class="ep-rows">${out}${inc}</div>`);
+      }
+
+      // C4 — this entity's change history.
+      html += renderChangelogSection(e);
+
+      // Documentation (reverse tagging).
+      html += renderDocsSection(e);
+      // Referenced by (automations / interfaces that tag this entity).
+      html += renderReferencedBy(e);
+      return html;
+    }
+
+    // Structural path of an entity: Base ▸ Table ▸ Field (base leads).
+    function structuralPath(e: SchemaEntity): SchemaEntity[] {
+      const out: SchemaEntity[] = [];
+      const base = byId.get(e.baseId);
+      if (base) out.push(base);
+      if (e.kind === 'field') {
+        const table = e.tableId ? byId.get(e.tableId) : undefined;
+        if (table) out.push(table);
+        out.push(e);
+      } else if (e.kind === 'table') {
+        out.push(e);
+      }
+      return out;
+    }
+
+    // Structural breadcrumb: base leads, the current entity is the bold tail, and
+    // every ancestor is a navigational link. The drawer's own Back button (and Esc)
+    // walks the visit history (stack) separately.
+    function renderCrumbs() {
+      const cur = byId.get(stack[stack.length - 1]);
+      if (!cur) { crumbsEl.innerHTML = ''; backBtn.hidden = true; return; }
+      const path = structuralPath(cur);
+      crumbsEl.innerHTML = path
+        .map((p, idx) => {
+          const last = idx === path.length - 1;
+          const sep = idx > 0 ? '<span class="iconify lucide--chevron-right size-3 ep-crumb-sep"></span>' : '';
+          const attr = last ? '' : ` data-ep-crumb-id="${p.id}"`;
+          return `${sep}<button type="button" class="ep-crumb${last ? ' ep-crumb-last' : ''}"${attr}>${esc(p.name)}</button>`;
+        })
+        .join('');
+      backBtn.hidden = stack.length <= 1;
+    }
+
+    function render(swap = true) {
+      const e = byId.get(stack[stack.length - 1]);
+      if (!e) return;
+      commitOpenEdit();
+      descEdit = null; descTab = 'airtable'; descConfirmId = null; descEditAi = false;
+      body.innerHTML = renderBody(e);
+      renderCrumbs();
+      if (swap) { body.classList.remove('ep-swap'); void body.offsetWidth; body.classList.add('ep-swap'); }
+      body.scrollTop = 0;
+    }
+    // In-place re-render for description actions — no swap animation, keeps scroll.
+    function refresh() {
+      const e = byId.get(stack[stack.length - 1]);
+      if (!e) return;
+      const top = body.scrollTop;
+      body.innerHTML = renderBody(e);
+      body.scrollTop = top;
+    }
+
+    function openEntity(id: string, reset = true) {
+      if (!byId.has(id)) return;
+      if (reset || stack.length === 0) stack = [id];
+      root.hidden = false;
+      requestAnimationFrame(() => root.classList.add('ep-in'));
+      render(true);
+    }
+    function push(id: string) {
+      if (!byId.has(id)) return;
+      // Miller rule: if this id is already deeper in the trail, jump to it; else append.
+      const at = stack.indexOf(id);
+      stack = at >= 0 ? stack.slice(0, at + 1) : [...stack, id];
+      render(true);
+    }
+    function popTo(i: number) { stack = stack.slice(0, i + 1); render(true); }
+    function close() {
+      commitOpenEdit();
+      root.classList.remove('ep-in');
+      window.setTimeout(() => { root.hidden = true; stack = []; }, 220);
+    }
+
+    // Events.
+    document.addEventListener('schema:openEntity', (ev) => {
+      const d = (ev as CustomEvent).detail || {};
+      openEntity(d.id, d.reset !== false);
+    });
+    document.addEventListener('click', (ev) => {
+      const opener = (ev.target as HTMLElement).closest('[data-entity-open]');
+      if (opener) { ev.preventDefault(); openEntity(opener.getAttribute('data-entity-open')!); }
+    });
+    root.addEventListener('click', (ev) => {
+      const t = ev.target as HTMLElement;
+      if (t.closest('[data-ep-close]')) { close(); return; }
+      const exp = t.closest<HTMLElement>('[data-ep-expand]');
+      if (exp) {
+        const wide = root.classList.toggle('ep-wide');
+        const ic = root.querySelector<HTMLElement>('[data-ep-expand-ic]');
+        if (ic) ic.className = `iconify size-4 ${wide ? 'lucide--minimize-2' : 'lucide--maximize-2'}`;
+        const lbl = wide ? 'Shrink panel' : 'Expand panel';
+        exp.dataset.tip = lbl;
+        exp.setAttribute('aria-label', lbl);
+        return;
+      }
+      if (t.closest('[data-ep-back]')) { if (stack.length > 1) popTo(stack.length - 2); return; }
+      const crumb = t.closest<HTMLElement>('[data-ep-crumb-id]');
+      if (crumb) { push(crumb.dataset.epCrumbId!); return; }
+      const pushEl = t.closest<HTMLElement>('[data-ep-push]');
+      if (pushEl) { push(pushEl.dataset.epPush!); return; }
+      const docEl = t.closest<HTMLElement>('[data-ep-doc]');
+      if (docEl) { close(); document.dispatchEvent(new CustomEvent('schema:openDoc', { detail: { id: docEl.dataset.epDoc } })); return; }
+      // "Referenced by" → jump to the Automations / Interfaces tab and open that entity.
+      const refAuto = t.closest<HTMLElement>('[data-ep-ref-auto]');
+      if (refAuto) { close(); document.querySelector<HTMLElement>('[data-tab="automations"]')?.click(); document.dispatchEvent(new CustomEvent('schema:openAutomation', { detail: { id: refAuto.dataset.epRefAuto } })); return; }
+      const refIface = t.closest<HTMLElement>('[data-ep-ref-iface]');
+      if (refIface) { close(); document.querySelector<HTMLElement>('[data-tab="interfaces"]')?.click(); document.dispatchEvent(new CustomEvent('schema:openInterface', { detail: { id: refIface.dataset.epRefIface } })); return; }
+      // "Referenced by" → Chats: jump to the Chat tab and open that thread.
+      const refChat = t.closest<HTMLElement>('[data-ep-chat]');
+      if (refChat) { close(); document.querySelector<HTMLElement>('[data-tab="chat"]')?.click(); document.dispatchEvent(new CustomEvent('schema:openChat', { detail: { id: refChat.dataset.epChat } })); return; }
+
+      // Switch description source tab (Airtable ↔ Internal). Commit any open edit first so
+      // typed text isn't lost, then re-render the active panel (descTab persists the choice).
+      const tabBtn = t.closest<HTMLElement>('[data-ep-desc-tab]');
+      if (tabBtn) {
+        const next = tabBtn.dataset.epDescTab as 'airtable' | 'extended';
+        if (next !== descTab) { commitOpenEdit(); descEdit = null; descTab = next; refresh(); }
+        return;
+      }
+
+      // — Descriptions lifecycle (fake, client-only) —
+      const cur = () => byId.get(stack[stack.length - 1]);
+      // Click the value box (read mode) to edit it in place — caret lands where you clicked.
+      const zoneEl = t.closest<HTMLElement>('[data-ep-desc-editzone]');
+      if (zoneEl) {
+        const e = cur(); if (e) { const field = zoneEl.dataset.epDescEditzone as 'airtable' | 'extended'; descEditCaret = caretOffsetAt(zoneEl, ev.clientX, ev.clientY); descEditAi = false; descEdit = { id: e.id, field }; descTab = field; refresh(); focusDescInput(); }
+        return;
+      }
+      const genEl = t.closest<HTMLElement>('[data-ep-desc-gen]');
+      if (genEl) {
+        const e = cur(); if (!e) return;
+        const field = genEl.dataset.epDescGen as 'airtable' | 'extended';
+        // Airtable → the public AI draft; Internal → the more-technical draft (falls back to
+        // the public text in this faked harness when no distinct technical draft is seeded).
+        const ai = field === 'extended' ? (e.aiTechnicalDescription || e.aiDescription || '') : (e.aiDescription || '');
+        // Generate seeds the editor with AI text and flags it so the AI disclaimer shows.
+        descEditAi = true; descEdit = { id: e.id, field }; descTab = field; refresh();
+        const ta = descInput(); if (ta) { ta.value = ai; focusDescInput(); }
+        return;
+      }
+      const saveEl = t.closest<HTMLElement>('[data-ep-desc-save]');
+      if (saveEl) { const e = cur(); if (e) { const field = saveEl.dataset.epDescSave as 'airtable' | 'extended'; commitField(e.id, field, descInput()?.value ?? ''); descEdit = null; descTab = field; refresh(); focusDescEdit(field); const s = descOf(e); announce(field === 'airtable' ? (s.airtable.trim() !== s.synced.trim() ? 'Draft saved, not yet published to Airtable' : 'Saved') : 'Internal note saved'); } return; }
+      if (t.closest('[data-ep-desc-cancel]')) { descEdit = null; refresh(); return; }
+      // Publish is a two-step, destructive write-back: a confirm card (with a stale warning
+      // when Airtable drifted) → a faked Publishing… → Published ✓ → Synced.
+      if (t.closest('[data-ep-desc-publish]')) { const e = cur(); if (e) { descConfirmId = e.id; descTab = 'airtable'; refresh(); } return; }
+      if (t.closest('[data-ep-desc-publish-cancel]')) { descConfirmId = null; refresh(); return; }
+      if (t.closest('[data-ep-desc-publish-confirm]')) {
+        const e = cur(); if (!e) return;
+        const id = e.id; const s = descOf(e);
+        descConfirmId = null; descBusyId = id; descTab = 'airtable'; refresh();
+        window.setTimeout(() => {
+          s.synced = s.airtable; descBusyId = null;
+          commitField(id, 'airtable', s.airtable);
+          if (stack[stack.length - 1] === id) { refresh(); focusDescEdit('airtable'); }
+          announce('Published to Airtable'); toast('Published to Airtable');
+        }, 750);
+        return;
+      }
+      if (t.closest('[data-ep-desc-discard]')) { const e = cur(); if (e) { const s = descOf(e); s.airtable = s.synced; descEdit = null; descConfirmId = null; descTab = 'airtable'; refresh(); focusDescEdit('airtable'); commitField(e.id, 'airtable', s.airtable); announce('Changes discarded'); } return; }
+    });
+    // A3 — filter the rows of a long child list in place.
+    root.addEventListener('input', (ev) => {
+      const inp = (ev.target as HTMLElement).closest<HTMLInputElement>('[data-ep-filter]');
+      if (!inp) return;
+      const q = inp.value.trim().toLowerCase();
+      const sec = inp.closest('.ep-sec');
+      sec?.querySelectorAll<HTMLElement>('[data-ep-rows] .ep-row').forEach((r) => {
+        const name = (r.querySelector('.ep-row-name')?.textContent || '').toLowerCase();
+        r.style.display = !q || name.includes(q) ? '' : 'none';
+      });
+    });
+    document.addEventListener('keydown', (ev) => {
+      if (root.hidden) return;
+      // Cmd/Ctrl+Enter commits the open editor (power-user save).
+      if (descEdit && (ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+        const f = descEdit.field; const id = descEdit.id; commitField(id, f, descInput()?.value ?? ''); descEdit = null; descTab = f; refresh(); focusDescEdit(f);
+        const s = byId.has(id) ? descOf(byId.get(id)!) : null;
+        announce(f === 'airtable' ? (s && s.airtable.trim() !== s.synced.trim() ? 'Draft saved, not yet published to Airtable' : 'Saved') : 'Internal note saved');
+        return;
+      }
+      // Enter on a focused value box (read mode) enters edit — the keyboard mirror of clicking it.
+      if (!descEdit && ev.key === 'Enter') {
+        const zone = (document.activeElement as HTMLElement | null)?.closest?.('[data-ep-desc-editzone]') as HTMLElement | null;
+        if (zone && root.contains(zone)) {
+          ev.preventDefault();
+          const e = byId.get(stack[stack.length - 1]); if (!e) return;
+          const field = zone.dataset.epDescEditzone as 'airtable' | 'extended';
+          descEditCaret = null; descEditAi = false; descEdit = { id: e.id, field }; descTab = field; refresh(); focusDescInput();
+          return;
+        }
+      }
+      if (ev.key === 'Escape') {
+        if (descEdit) { descEdit = null; refresh(); return; }
+        if (descConfirmId) { descConfirmId = null; refresh(); return; }
+        if (stack.length > 1) popTo(stack.length - 2); else close();
+      }
+    });
+  }
+  wireEntityPanel();
+  document.addEventListener('astro:after-swap', wireEntityPanel);
+</script>

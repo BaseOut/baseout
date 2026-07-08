@@ -1,0 +1,511 @@
+---
+/**
+ * SchemaRelationships — the Schema page's Relationships tab (openspec relationships-tab).
+ *
+ * A list of a Space's relationships (linked records, formulas, rollups, lookups,
+ * lastModified, and inferred synced views), grouped Base ▸ type, with a Flat mode.
+ * Each row: a type icon, an "A ↔ B" summary (entities primary, fields muted), a
+ * validity status dot, a cardinality token, and soft badges (Inferred / Removed
+ * history). Inferred (synced-view) rows carry inline Confirm / Dismiss; declared
+ * ones don't. Selecting a row opens a right detail panel listing the linked
+ * entities — each a click-through to the shared EntityPanel (same as Browse).
+ *
+ * Filters are consolidated (research-backed, openspec deviation flagged for Dan):
+ * ONE hierarchical scope picker (Base ▸ Table) + a Type facet + an Include-removed
+ * toggle, with quick chips for validity / inferred. Reuses Browse's toolbar chrome
+ * (.sch-tb), the Airtable field icons, and the status-badge palette.
+ */
+import FacetFilter, { type FacetGroup } from './FacetFilter.astro';
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+
+export type RelType = 'linkedRecords' | 'formulas' | 'rollups' | 'lookups' | 'lastModified' | 'syncedViews';
+export interface RelEndpoint {
+  /** Entity id (opens the shared sidebar via data-entity-open). */
+  id: string;
+  name: string;
+  kind: 'table' | 'field';
+  fieldType?: string;
+  /** For a field, its parent table name (shown muted in the detail). */
+  tableName?: string;
+}
+export interface RelLink {
+  from: RelEndpoint;
+  to: RelEndpoint;
+  /** A removed link is history — hidden unless "Include removed" is on. */
+  removed?: boolean;
+  firstSeen?: string;
+  removedAt?: string;
+  note?: string;
+}
+export interface SchemaRelationship {
+  id: string;
+  type: RelType;
+  baseId: string;
+  baseName: string;
+  /** The two headline entities for the row summary. */
+  a: RelEndpoint;
+  b: RelEndpoint;
+  /** e.g. "m:1", "1:1", "m:m". Shown as a small mono token. */
+  cardinality?: string;
+  /** one = A → B (one-way), two = A ↔ B (reciprocal). */
+  direction?: 'one' | 'two';
+  /** Inferred (synced views): a guess needing Confirm / Dismiss. */
+  inferred?: boolean;
+  /** valid = has ≥1 active link; invalid = all links removed (kept for history). */
+  validity: 'valid' | 'invalid';
+  /** Has at least one removed link (history). */
+  hasRemovedHistory?: boolean;
+  /** Why this is inferred / the source field type — shown in the detail. */
+  provenance?: string;
+  /** Per-link breakdown for the detail panel. */
+  links?: RelLink[];
+}
+interface Props {
+  relationships: SchemaRelationship[];
+  bases: { id: string; name: string }[];
+}
+const { relationships, bases } = Astro.props;
+
+const REL_TYPES: { key: RelType; label: string; icon: string; declared: boolean }[] = [
+  { key: 'linkedRecords', label: 'Linked records', icon: 'lucide--link', declared: true },
+  { key: 'formulas', label: 'Formulas', icon: 'lucide--variable', declared: true },
+  { key: 'rollups', label: 'Rollups', icon: 'lucide--sigma', declared: true },
+  { key: 'lookups', label: 'Lookups', icon: 'lucide--search', declared: true },
+  { key: 'lastModified', label: 'Last modified', icon: 'lucide--history', declared: true },
+  { key: 'syncedViews', label: 'Synced views', icon: 'lucide--refresh-cw', declared: false },
+];
+const TYPE_META = Object.fromEntries(REL_TYPES.map((t) => [t.key, t])) as Record<RelType, (typeof REL_TYPES)[number]>;
+
+const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const fmtDate = (iso?: string) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+const fieldIconSvg = (type?: string) => {
+  const k = type ? airtableIconKey(type) : null;
+  return k ? `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
+};
+const endpointIcon = (e: RelEndpoint) =>
+  e.kind === 'field' ? `<span class="concept-ic-field">${fieldIconSvg(e.fieldType) || '<span class="iconify lucide--tag"></span>'}</span>` : '<span class="iconify lucide--table-2"></span>';
+const arrow = (r: SchemaRelationship) => (r.direction === 'two' ? '↔' : '→');
+const searchStr = (r: SchemaRelationship) =>
+  [r.a.name, r.b.name, r.a.tableName, r.b.tableName, r.baseName, TYPE_META[r.type].label, r.cardinality].filter(Boolean).join(' ').toLowerCase();
+
+// Tree: Base ▸ type ▸ relationships (authored order within each).
+const tree = bases
+  .map((base) => {
+    const inBase = relationships.filter((r) => r.baseId === base.id);
+    const groups = REL_TYPES.map((t) => ({ type: t, items: inBase.filter((r) => r.type === t.key) })).filter((g) => g.items.length > 0);
+    return { base, groups, count: inBase.length };
+  })
+  .filter((b) => b.count > 0);
+const flat = [...relationships];
+
+const multiBase = bases.length > 1;
+const presentTypes = REL_TYPES.filter((t) => relationships.some((r) => r.type === t.key));
+const typeGroups: FacetGroup[] = [{ items: presentTypes.map((t) => ({ value: t.key, label: t.label })) }];
+// Facet groups — matching Visualize's faceted toolbar + Dan's spec (base · type · status · validity).
+const baseGroups: FacetGroup[] = [{ items: bases.map((b) => ({ value: b.id, label: b.name })) }];
+const hasConfirmed = relationships.some((r) => !r.inferred);
+const statusGroups: FacetGroup[] = [{
+  items: [
+    ...(relationships.some((r) => r.inferred) ? [{ value: 'inferred', label: 'Inferred' }] : []),
+    ...(hasConfirmed ? [{ value: 'confirmed', label: 'Confirmed' }] : []),
+  ],
+}];
+const validityGroups: FacetGroup[] = [{
+  items: [
+    ...(relationships.some((r) => r.validity === 'valid') ? [{ value: 'valid', label: 'Valid' }] : []),
+    ...(relationships.some((r) => r.validity === 'invalid') ? [{ value: 'invalid', label: 'Invalid' }] : []),
+  ],
+}];
+
+const total = relationships.length;
+const inferredCount = relationships.filter((r) => r.inferred).length;
+// Invalid (all links removed) relationships are history — hidden until "Include removed".
+const hiddenCount = relationships.filter((r) => r.validity === 'invalid').length;
+const hasRel = total > 0;
+
+// ---- server-rendered row HTML (tree rows are divs so they can hold the Confirm/Dismiss buttons) ----
+const statusClass = (r: SchemaRelationship) => (r.inferred ? 'rl-status-inferred' : r.validity === 'invalid' ? 'rl-status-invalid' : 'rl-status-valid');
+const entHtml = (e: RelEndpoint) =>
+  `<span class="rl-ent"><span class="rl-ent-ic">${endpointIcon(e)}</span><span class="rl-ent-name">${esc(e.name)}</span></span>`;
+// Inferred carries a sparkles glyph (matches the bulk bar) so it reads as an AI status tag, not a button.
+const rowBadges = (r: SchemaRelationship) =>
+  (r.inferred ? '<span class="badge badge-soft badge-primary rl-b-inferred"><span class="iconify lucide--sparkles size-3.5" aria-hidden="true"></span>Inferred</span>' : '') +
+  (r.hasRemovedHistory ? '<span class="badge badge-soft badge-warning rl-b-removed">Removed history</span>' : '');
+const confirmDismiss = '<button type="button" class="btn btn-sm btn-ghost btn-square rl-confirm tooltip tooltip-left" data-rl-confirm data-tip="Confirm" aria-label="Confirm"><span class="iconify lucide--check size-4" aria-hidden="true"></span></button><button type="button" class="btn btn-sm btn-ghost btn-square rl-dismiss tooltip tooltip-left" data-rl-dismiss data-tip="Dismiss" aria-label="Dismiss"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button>';
+// Only DECLARED synced-view rows are user-editable (they own the fact); Edit opens the form.
+// Inferred rows are OUR guess → Confirm/Dismiss only (Confirm promotes to declared, then editable).
+const editSynced = '<button type="button" class="btn btn-sm btn-ghost btn-square rl-edit" data-rl-edit-synced aria-label="Edit synced relationship"><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span></button>';
+const rowActions = (r: SchemaRelationship) =>
+  r.inferred ? `<span class="rl-actions">${confirmDismiss}</span>`
+  : r.type === 'syncedViews' ? `<span class="rl-actions">${editSynced}</span>`
+  : '<span class="rl-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>';
+const flatActions = (r: SchemaRelationship) =>
+  r.inferred ? `<span class="rl-actions">${confirmDismiss}</span>`
+  : r.type === 'syncedViews' ? `<span class="rl-actions">${editSynced}</span>`
+  : '<span class="rl-openlink">Open →</span>';
+const rowDataAttrs = (r: SchemaRelationship) => {
+  const tableIds = [r.a, r.b].filter((e) => e.kind === 'table').map((e) => e.id).join(' ');
+  return `data-rl-row data-rl-id="${esc(r.id)}" data-base="${esc(r.baseId)}" data-tables="${esc(tableIds)}" data-type="${esc(r.type)}" data-inferred="${r.inferred ? '1' : '0'}" data-validity="${esc(r.validity)}" data-removed-row="${r.validity === 'invalid' ? '1' : '0'}" data-search="${esc(searchStr(r))}"`;
+};
+// --- table columns (default view, matching Automations/Interfaces) ---
+const CARD_WORD: Record<string, string> = { 'm:1': 'Many-to-one', '1:m': 'One-to-many', '1:1': 'One-to-one', 'm:m': 'Many-to-many' };
+const cardWord = (c?: string) => (c && CARD_WORD[c]) || c || '';
+const typeBadge = (r: SchemaRelationship) =>
+  `<span class="badge badge-soft badge-neutral rl-type-badge"><span class="iconify ${TYPE_META[r.type].icon} size-3.5" aria-hidden="true"></span>${esc(TYPE_META[r.type].label)}</span>`;
+const cardCell = (r: SchemaRelationship) =>
+  r.cardinality ? `<span class="rl-card tooltip tooltip-left" data-tip="${esc(cardWord(r.cardinality))}">${esc(r.cardinality)}</span>` : '<span class="rl-dash">—</span>';
+// Status column — our Storybook status badges (badge-soft + semantic + dot): Valid / Invalid /
+// Inferred, plus a "Removed history" badge when some links were removed.
+const relStatusBadge = (r: SchemaRelationship) => {
+  let color = 'success', label = 'Valid', tip = 'Active, working links';
+  let dot = '<span class="size-1.5 rounded-full bg-current"></span>';
+  if (r.inferred) { color = 'primary'; label = 'Inferred'; tip = "A guess we couldn't confirm from Airtable — Confirm or Dismiss it"; dot = '<span class="iconify lucide--sparkles size-3.5" aria-hidden="true"></span>'; }
+  else if (r.validity === 'invalid') { color = 'neutral'; label = 'Invalid'; tip = 'Every link was removed — kept as history'; }
+  return `<span class="badge badge-soft badge-${color} rl-badge tooltip tooltip-left" data-tip="${tip}">${dot}${label}</span>` +
+    (r.hasRemovedHistory ? '<span class="badge badge-soft badge-warning rl-badge rl-b-removed tooltip tooltip-left" data-tip="Some links were removed — see the Changelog in the detail">Removed history</span>' : '');
+};
+const renderRow = (r: SchemaRelationship) =>
+  `<tr class="rl-row" ${rowDataAttrs(r)} role="button" tabindex="0">
+    <td class="rl-c-rel"><span class="rl-pair">${entHtml(r.a)}<span class="rl-arrow">${arrow(r)}</span>${entHtml(r.b)}</span></td>
+    <td class="rl-c-type">${typeBadge(r)}</td>
+    <td class="rl-c-card">${cardCell(r)}</td>
+    <td class="rl-c-status">${relStatusBadge(r)}</td>
+    <td class="rl-c-act">${rowActions(r)}</td>
+  </tr>`;
+const renderFlatRow = (r: SchemaRelationship) =>
+  `<tr class="rl-frow" ${rowDataAttrs(r)} role="button" tabindex="0">
+    <td><span class="rl-pair"><span class="rl-status ${statusClass(r)}" aria-hidden="true"></span>${entHtml(r.a)}<span class="rl-arrow">${arrow(r)}</span>${entHtml(r.b)}${rowBadges(r)}</span></td>
+    <td><span class="rl-ftype"><span class="iconify ${TYPE_META[r.type].icon} size-3.5" aria-hidden="true"></span>${esc(TYPE_META[r.type].label)}</span></td>
+    <td class="rl-td-muted">${esc(r.baseName)}</td>
+    <td class="rl-ft-r">${r.cardinality ? `<span class="rl-card">${esc(r.cardinality)}</span>` : ''}</td>
+    <td class="rl-ft-act">${flatActions(r)}</td>
+  </tr>`;
+---
+
+<section class="rl" data-relationships data-total={total}>
+  {hasRel ? (
+    <>
+      {/* One toolbar row: search │ consolidated filters → right cluster (count + Tree/Flat). */}
+      <div class="sch-tb">
+        <label class="input input-sm sch-tb-search rl-search">
+          <span class="iconify lucide--search size-4 opacity-50" aria-hidden="true"></span>
+          <input type="search" placeholder="Search relationships…" data-rl-search data-sch-search aria-label="Search relationships" autocomplete="off" spellcheck="false" />
+          <kbd class="kbd kbd-sm sch-tb-slash" aria-hidden="true">/</kbd>
+        </label>
+        <span class="sch-tb-div" aria-hidden="true"></span>
+
+        {/* Faceted filters — same chrome + order as Visualize / Browse (base · type · status · validity). */}
+        {multiBase && <FacetFilter label="Bases" name="rlbase" groups={baseGroups} />}
+        <FacetFilter label="Type" name="rltype" groups={typeGroups} />
+        {statusGroups[0].items.length > 1 && <FacetFilter label="Status" name="rlstatus" groups={statusGroups} />}
+        {validityGroups[0].items.length > 1 && <FacetFilter label="Validity" name="rlvalidity" groups={validityGroups} />}
+
+        {hiddenCount > 0 && (
+          <label class="sch-tb-check tooltip tooltip-top" data-tip="Show invalid relationships whose links were all removed in Airtable (kept for history)">
+            <input type="checkbox" class="checkbox checkbox-sm" data-rl-removed /> Include removed <span class="badge badge-sm badge-ghost">{hiddenCount}</span>
+          </label>
+        )}
+
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1 rl-clear" data-rl-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+
+        <div class="sch-tb-right">
+          {/* Glossary — what relationships are + the status legend + what Confirm/Dismiss do. */}
+          <div class="tooltip tooltip-bottom rl-help-tt">
+            <div class="tooltip-content">
+              <p class="rl-help-lead">Relationships are the connections in your schema: links, formulas, rollups, lookups, and synced views. They matter for restores, since connected tables usually need to come back together.</p>
+              <ul class="rl-help-legend">
+                <li><span class="rl-status rl-status-valid" aria-hidden="true"></span><span><b>Valid</b> — active, working links.</span></li>
+                <li><span class="rl-status rl-status-invalid" aria-hidden="true"></span><span><b>Invalid</b> — every link was removed; kept as history.</span></li>
+                <li><span class="rl-status rl-status-inferred" aria-hidden="true"></span><span><b>Inferred</b> — a guess we couldn’t confirm from Airtable. Confirm or dismiss it.</span></li>
+              </ul>
+              <p class="rl-help-note"><b>m:1 / 1:1</b> is cardinality: how many records link to how many. <b>Confirm</b> keeps an inferred relationship; <b>Dismiss</b> removes it and stops it being suggested.</p>
+            </div>
+            <span class="btn btn-sm btn-ghost gap-1.5 rl-help-trigger"><span class="iconify lucide--info size-4" aria-hidden="true"></span>How this works</span>
+          </div>
+          <span class="sch-tb-count" data-rl-count>{total} relationships</span>
+          {/* Synced tables can't be detected via the API — declare them by hand (Dan 2026-07-01). */}
+          <button type="button" class="btn btn-sm btn-primary gap-1.5" data-rl-new-synced><span class="iconify lucide--plus size-4" aria-hidden="true"></span>New synced relationship</button>
+          <div class="join sch-tb-modes" role="tablist" aria-label="Display mode">
+            <button type="button" class="btn btn-sm join-item sch-tb-mode-active" data-rl-mode="tree" role="tab">
+              <span class="iconify lucide--list-tree size-4" aria-hidden="true"></span>Tree
+            </button>
+            <button type="button" class="btn btn-sm join-item" data-rl-mode="flat" role="tab">
+              <span class="iconify lucide--table size-4" aria-hidden="true"></span>Flat
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Inferred bulk bar — only while inferred rows are present/visible. */}
+      {inferredCount > 0 && (
+        <div class="rl-bulk" data-rl-bulk>
+          <span class="iconify lucide--sparkles size-4" aria-hidden="true"></span>
+          <span class="rl-bulk-txt"><b data-rl-bulk-n>{inferredCount}</b> inferred synced-view {inferredCount === 1 ? 'relationship' : 'relationships'} to review — confirm the ones that are real, dismiss the rest.</span>
+          <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-rl-bulk-confirm><span class="iconify lucide--check size-3.5" aria-hidden="true"></span>Confirm all</button>
+          <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-rl-bulk-dismiss><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Dismiss all</button>
+        </div>
+      )}
+
+      {/* Default view — one table per Base (Type · Relationship · Cardinality · Status), matching
+          Automations/Interfaces. The per-type sub-grouping is now the Type column. */}
+      <div class="rl-tree" data-rl-view="tree">
+        {tree.map(({ base, groups }) => {
+          const items = groups.flatMap((g) => g.items);
+          return (
+          <div class="rl-base" data-rl-base-node={base.id}>
+            <button type="button" class="rl-base-head" data-rl-twist aria-expanded="true">
+              <span class="rl-twist" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+              <span class="iconify lucide--database size-4 rl-base-ic" aria-hidden="true"></span>
+              <span class="rl-base-name">{base.name}</span>
+              <span class="rl-base-meta">{items.length} {items.length === 1 ? 'relationship' : 'relationships'}</span>
+            </button>
+            <div class="rl-base-body">
+              <table class="rl-tbl">
+                <thead>
+                  <tr>
+                    <th class="rl-th-rel" data-sort-col="0">Relationship</th>
+                    <th class="rl-th-type" data-sort-col="1">Type</th>
+                    <th class="rl-th-card" data-sort-col="2">Cardinality</th>
+                    <th class="rl-th-status" data-sort-col="3">Status</th>
+                    <th class="rl-th-act" aria-label="Actions"></th>
+                  </tr>
+                </thead>
+                <tbody set:html={items.map((r) => renderRow(r)).join('')} />
+              </table>
+            </div>
+          </div>
+          );
+        })}
+        <div class="rl-nomatch" data-rl-nomatch hidden>
+          <span class="iconify lucide--filter-x size-5 opacity-50" aria-hidden="true"></span>
+          <p>No relationships match your filters.</p>
+          <button type="button" class="btn btn-sm btn-ghost text-primary gap-1.5" data-rl-clear-empty><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+        </div>
+      </div>
+
+      {/* Flat view — one table of all relationships */}
+      <div class="rl-flat" data-rl-view="flat" hidden>
+        <div class="rl-flatwrap">
+          <table class="table text-sm rl-ftable">
+            <thead>
+              <tr class="text-xs uppercase tracking-wider text-base-content/60">
+                <th>Relationship</th><th>Type</th><th>Base</th><th class="rl-ft-r">Cardinality</th><th class="rl-ft-act">Actions</th>
+              </tr>
+            </thead>
+            <tbody data-rl-flatbody>
+              {flat.map((r) => (
+                <Fragment set:html={renderFlatRow(r)} />
+              ))}
+            </tbody>
+          </table>
+          <div class="rl-nomatch" data-rl-nomatch-flat hidden>
+            <span class="iconify lucide--filter-x size-5 opacity-50" aria-hidden="true"></span>
+            <p>No relationships match your filters.</p>
+            <button type="button" class="btn btn-sm btn-ghost text-primary gap-1.5" data-rl-clear-empty><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+          </div>
+        </div>
+      </div>
+
+      {/* The undo toast + relationship detail overlay now live in the shared
+          RelationshipPanel (page level) so the graph edge-click can open them too. */}
+    </>
+  ) : (
+    <div class="rl-empty">
+      <span class="rl-empty-ic"><span class="iconify lucide--waypoints"></span></span>
+      <p class="rl-empty-title">No relationships yet</p>
+      <p class="rl-empty-sub">Once a backup captures your schema, linked records, formulas, rollups, lookups, and synced views show up here.</p>
+    </div>
+  )}
+</section>
+
+
+<!-- is:global because rows (set:html) and the detail body (JS innerHTML) are injected
+     without Astro's scope attribute; every selector is uniquely `.rl-`-prefixed. -->
+<style is:global>
+  .rl { display: flex; flex-direction: column; gap: 1rem; }
+  .rl-search { flex: 0 1 280px; min-width: 180px; }
+
+  /* inferred bulk bar */
+  .rl-bulk { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border: 1px solid color-mix(in oklch, var(--color-primary) 28%, var(--color-base-300)); background: color-mix(in oklch, var(--color-primary) 6%, var(--color-base-100)); border-radius: 10px; font-size: .84rem; }
+  .rl-bulk[hidden] { display: none; }
+  .rl-bulk .iconify { color: var(--color-primary); flex: none; }
+  .rl-bulk-txt { flex: 1; min-width: 0; color: oklch(from var(--color-base-content) l c h / .85); }
+
+  /* tree */
+  .rl-tree { border: 1px solid var(--color-base-300); border-radius: 11px; overflow: hidden; background: var(--color-base-100); }
+  .rl-base + .rl-base { border-top: 1px solid var(--color-base-300); }
+  .rl-base-head { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .75rem .75rem; background: oklch(from var(--color-base-200) l c h / .5); border: 0; cursor: pointer; text-align: left; }
+  .rl-base-head:hover { background: oklch(from var(--color-base-200) l c h / .8); }
+  .rl-twist .iconify { transition: transform .12s ease; color: oklch(from var(--color-base-content) l c h / .5); }
+  .rl-base[data-collapsed] .rl-base-body { display: none; }
+  .rl-base:not([data-collapsed]) .rl-base-head .rl-twist .iconify { transform: rotate(90deg); }
+  .rl-base-ic { color: color-mix(in oklch, var(--color-primary) 78%, var(--color-base-content)); }
+  .rl-base-name { font-weight: 600; font-size: .9rem; }
+  /* count sits inline right after the name (Browse "8 tables · 47 fields" style), not floating at the edge */
+  .rl-base-meta { font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .5); }
+
+  .rl-typegroup { border-top: 1px solid var(--color-base-200); }
+  /* tree indent steps (like Browse): base ~0.85rem → type group → relationship row */
+  .rl-type-head { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem .5rem 2rem; font-size: .72rem; }
+  .rl-type-ic { color: oklch(from var(--color-base-content) l c h / .5); }
+  .rl-type-label { font-weight: 600; letter-spacing: .02em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .55); font-size: .66rem; }
+  /* type count inline after the label, quiet — no edge-floating column of numbers */
+  .rl-type-n { font-size: .68rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .4); }
+
+  /* default view — table per Base (Type · Relationship · Cardinality · Status · actions),
+     fixed-width columns so they align across Base groups (matches Automations/Interfaces). */
+  .rl-tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .rl-tbl thead th { text-align: left; font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .45); padding: .5rem .75rem; border-top: 1px solid var(--color-base-200); }
+  .rl-th-type { width: 9.5rem; }
+  .rl-th-card { width: 7rem; }
+  .rl-th-status { width: 13rem; }
+  .rl-th-act { width: 6rem; }
+  .rl-tbl td { padding: .5rem .75rem; border-top: 1px solid var(--color-base-200); font-size: .875rem; vertical-align: middle; }
+  .rl-c-rel { overflow: hidden; }
+  .rl-row { cursor: pointer; }
+  .rl-row:hover { background: var(--color-base-200); }
+  .rl-row:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+  .rl-row[hidden] { display: none; }
+  .rl-row[data-removed-row="1"], .rl-frow[data-removed-row="1"] { opacity: .55; }
+  /* Type chip — a solid, legible category chip (NOT the faint badge-soft, which read as disabled). */
+  .rl-type-badge { gap: .25rem; font-weight: 500; background: var(--color-base-200); color: oklch(from var(--color-base-content) l c h / .82); border: 1px solid var(--color-base-300); }
+  .rl-type-badge .iconify { opacity: .7; }
+  .rl-c-status { white-space: normal; }
+  .rl-badge { gap: .25rem; }
+  .rl-c-status .rl-badge + .rl-badge { margin-left: .25rem; }
+  .rl-c-act { text-align: right; }
+  .rl-dash { color: oklch(from var(--color-base-content) l c h / .32); }
+
+  /* status dot (flat view + the "How this works" legend) */
+  .rl-status { width: .6rem; height: .6rem; border-radius: 999px; flex: none; display: inline-block; }
+  .rl-status-valid { background: var(--color-success); }
+  .rl-status-invalid { background: oklch(from var(--color-base-content) l c h / .35); }
+  .rl-status-inferred { background: transparent; border: 1.5px dashed color-mix(in oklch, var(--color-primary) 60%, var(--color-base-content)); }
+  .rl-frow[data-removed-row="1"] .rl-status { background: oklch(from var(--color-base-content) l c h / .3); }
+  .rl-pair { display: inline-flex; align-items: center; gap: .5rem; min-width: 0; }
+  .rl-ent { display: inline-flex; align-items: center; gap: .25rem; min-width: 0; }
+  .rl-ent-ic { display: inline-grid; place-items: center; width: 14px; flex: none; color: oklch(from var(--color-base-content) l c h / .6); }
+  .rl-ent-ic svg { width: 13px; height: 13px; }
+  .rl-ent-ic .iconify { font-size: .82rem; }
+  .rl-ent-name { font-weight: 560; font-size: .9rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rl-ent-sub { color: oklch(from var(--color-base-content) l c h / .5); font-weight: 400; }
+  .rl-arrow { color: oklch(from var(--color-base-content) l c h / .45); flex: none; font-size: .9rem; }
+  /* Cardinality mono token — sized to the same 1.5rem/24px height as the default badge so it
+     never reads smaller than the type / status chips in the same row (in-table chip floor). */
+  .rl-card { display: inline-flex; align-items: center; height: 1.5rem; font-family: var(--font-mono, ui-monospace, monospace); font-size: .875rem; color: oklch(from var(--color-base-content) l c h / .6); background: var(--color-base-200); border-radius: 6px; padding: 0 .5rem; }
+  .rl-actions { display: inline-flex; align-items: center; gap: .25rem; flex: none; justify-content: flex-end; }
+
+  /* flat table — mirrors Browse's flat (table text-sm · roomy padding-block · hover Open→) */
+  .rl-flatwrap { border: 1px solid var(--color-base-300); border-radius: .85rem; overflow: hidden; background: var(--color-base-100); }
+  .rl-ftable { margin: 0; }
+  .rl-ftable thead th { font-weight: 700; white-space: nowrap; }
+  .rl-ftable th.rl-ft-r, .rl-ftable td.rl-ft-r { text-align: right; }
+  .rl-ftable tbody td { padding-block: 1rem; vertical-align: middle; white-space: nowrap; }
+  .rl-td-muted { color: oklch(from var(--color-base-content) l c h / .64); }
+  .rl-frow { cursor: pointer; }
+  .rl-frow:hover { background: oklch(from var(--color-base-200) l c h / .5); }
+  .rl-frow[hidden] { display: none; }
+  .rl-ftype { display: inline-flex; align-items: center; gap: .5rem; color: oklch(from var(--color-base-content) l c h / .7); }
+  .rl-ftype .iconify { opacity: .6; }
+  /* trailing action column — Open→ for declared (hover), Confirm/Dismiss for inferred (hover), right-aligned */
+  .rl-ft-act { text-align: right; }
+  .rl-openlink { color: var(--color-primary); font-size: 13px; font-weight: 500; white-space: nowrap; opacity: 0; transition: opacity .12s ease; }
+  .rl-frow:hover .rl-openlink, .rl-frow:focus-within .rl-openlink { opacity: 1; }
+  .rl-frow .rl-actions { justify-content: flex-end; }
+
+  /* Tree / Flat view toggle styling now lives in the shared .sch-tb-modes (global.css). */
+
+  /* badges (soft, semantic, max two per row) */
+  .rl-b-inferred { color: var(--color-primary); }
+  .rl-b-removed { }
+  .rl-confirm { color: var(--color-success); }
+  .rl-dismiss { color: oklch(from var(--color-base-content) l c h / .6); }
+
+  /* row "open detail" affordance — a quiet chevron that appears on hover */
+  .rl-go { display: inline-grid; place-items: center; margin-left: auto; flex: none; color: oklch(from var(--color-base-content) l c h / .35); opacity: 0; transition: opacity .12s ease; }
+  .rl-row:hover .rl-go, .rl-frow:hover .rl-go { opacity: 1; }
+  .rl-badges + .rl-go { margin-left: .5rem; }
+
+  /* glossary tooltip ("How this works") — a rich hover card, same pattern as Health methodology */
+  .rl-help-trigger { cursor: help; }
+  .rl-help-tt { --tt-bg: var(--color-base-100); display: inline-block; }
+  .rl-help-tt .tooltip-content { width: 290px; max-width: 290px; text-align: left; white-space: normal; padding: 12px 12px; border: 1px solid var(--color-base-300); border-radius: 11px; box-shadow: 0 12px 32px oklch(0 0 0 / .24); color: var(--color-base-content); z-index: 80; }
+  .rl-help-lead { font-size: .8rem; line-height: 1.45; color: oklch(from var(--color-base-content) l c h / .82); margin: 0; }
+  .rl-help-legend { list-style: none; margin: .5rem 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; }
+  .rl-help-legend li { display: flex; align-items: flex-start; gap: .5rem; font-size: .76rem; line-height: 1.4; color: oklch(from var(--color-base-content) l c h / .8); }
+  .rl-help-legend li .rl-status { flex: none; margin-top: .25rem; }
+  .rl-help-legend b { font-weight: 600; color: var(--color-base-content); }
+  .rl-help-note { font-size: .74rem; line-height: 1.45; color: oklch(from var(--color-base-content) l c h / .7); margin: .5rem 0 0; padding-top: .5rem; border-top: 1px solid var(--color-base-300); }
+  .rl-help-note b { color: var(--color-base-content); font-weight: 600; }
+
+  /* nomatch + empty */
+  .rl-nomatch { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .5rem; padding: 2.25rem 1.5rem; text-align: center; font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .rl-nomatch[hidden] { display: none; }
+  .rl-nomatch p { margin: 0; }
+
+  /* undo toast */
+  .rl-toast { z-index: 70; }
+  .rl-toast[hidden] { display: none; }
+  .rl-toast-alert { border: 1px solid var(--color-base-300); background: var(--color-base-100); box-shadow: 0 10px 30px oklch(0 0 0 / .2); border-radius: 11px; font-size: .85rem; padding: .5rem .75rem; }
+  .rl-toast-alert .iconify { color: var(--color-success); }
+  .rl-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: .5rem; padding: 3rem 2rem; border: 1px dashed var(--color-base-300); border-radius: 11px; }
+  .rl-empty-ic { width: 3rem; height: 3rem; border-radius: .8rem; display: grid; place-items: center; background: var(--color-base-200); }
+  .rl-empty-ic .iconify { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .55); }
+  .rl-empty-title { font-size: 1rem; font-weight: 650; }
+  .rl-empty-sub { font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .6); max-width: 46ch; }
+
+  /* detail panel (right; entity chips open the shared EntityPanel which stacks over this) */
+  /* below the shared EntityPanel (z-60) so a chip click-through stacks the sidebar cleanly on top */
+  .rl-detail { position: fixed; inset: 0; z-index: 50; }
+  .rl-detail[hidden] { display: none; }
+  .rl-detail-scrim { position: absolute; inset: 0; background: oklch(0 0 0 / .32); }
+  .rl-detail-panel { position: absolute; top: 0; right: 0; height: 100%; width: min(94vw, 30rem); background: var(--color-base-100); border-left: 1px solid var(--color-base-300); box-shadow: -12px 0 34px oklch(0 0 0 / .22); display: flex; flex-direction: column; }
+  .rl-detail-head { display: flex; align-items: center; gap: .5rem; padding: 1rem 1rem; border-bottom: 1px solid var(--color-base-300); }
+  .rl-detail-ic { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .55rem; background: var(--color-base-200); color: oklch(from var(--color-base-content) l c h / .7); flex: none; }
+  .rl-detail-headmeta { min-width: 0; flex: 1; }
+  .rl-detail-type { display: block; font-size: .95rem; font-weight: 650; }
+  .rl-detail-sub { display: block; font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .55); }
+  .rl-detail-body { padding: 1rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; }
+
+  /* detail body bits (rendered via JS innerHTML → keep selectors global-safe) */
+  .rl-dsect-label { display: flex; align-items: center; gap: 8px; font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .5); font-weight: 600; margin-bottom: .5rem; }
+  .rl-dsect-ic { flex: none; opacity: .85; }
+  /* Canonical panel-anatomy: hairline divider between top-level body sections (skip the first —
+     the head already carries a border-bottom, so bordering "Connects" would double the line). */
+  .rl-detail-body > div:not(:first-child):has(> .rl-dsect-label) { padding-top: 16px; border-top: 1px solid var(--color-base-300); }
+  .rl-dpair { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .rl-dchip { display: inline-flex; align-items: center; gap: .5rem; padding: .25rem .5rem; border: 1px solid color-mix(in oklch, var(--color-primary) 22%, var(--color-base-300)); border-radius: 999px; background: color-mix(in oklch, var(--color-primary) 6%, transparent); font-size: .82rem; color: var(--color-base-content); cursor: pointer; }
+  .rl-dchip:hover { background: color-mix(in oklch, var(--color-primary) 13%, transparent); border-color: color-mix(in oklch, var(--color-primary) 45%, var(--color-base-300)); }
+  .rl-dchip-ic { display: inline-grid; place-items: center; width: 13px; flex: none; color: var(--color-primary); }
+  .rl-dchip-ic svg { width: 12px; height: 12px; }
+  .rl-dchip-sub { color: oklch(from var(--color-base-content) l c h / .5); }
+  .rl-darrow { color: oklch(from var(--color-base-content) l c h / .45); }
+  .rl-dmeta { font-size: .82rem; line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .72); }
+  /* Provenance = catalog Alert (alert alert-soft alert-info); only compact size here. */
+  .rl-dprov { font-size: .8rem; line-height: 1.45; }
+  /* Linked fields (formula/rollup) — the referenced fields as click-through chips. */
+  .rl-dfields { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  /* Changelog — the relationship's added/removed history. */
+  .rl-dlog { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25rem; }
+  .rl-dlog-item { display: flex; align-items: center; gap: .5rem; font-size: .8rem; padding: .5rem .5rem; border-radius: 7px; background: oklch(from var(--color-base-200) l c h / .35); }
+  .rl-dlog-ic { flex: none; }
+  .rl-dlog-added .rl-dlog-ic { color: var(--color-success); }
+  .rl-dlog-removed .rl-dlog-ic { color: var(--color-error); }
+  .rl-dlog-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rl-dlog-when { margin-left: auto; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); white-space: nowrap; flex: none; }
+  /* Invalid = catalog Alert (alert alert-soft alert-warning); only compact size here. */
+  .rl-dinvalid { font-size: .8rem; }
+  .rl-dactions { display: flex; gap: .5rem; padding-top: .25rem; }
+</style>
+
+<script>
+  import { wireRelationships } from './schemaRelationships';
+  wireRelationships();
+  document.addEventListener('astro:after-swap', wireRelationships);
+</script>

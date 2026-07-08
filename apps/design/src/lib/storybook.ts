@@ -1570,6 +1570,127 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
+    id: 'pattern-detail-panel',
+    group: 'Patterns',
+    name: 'Entity detail panel (canonical anatomy)',
+    summary: 'The one anatomy every right-side detail panel/drawer follows.',
+    description:
+      'The canonical shape for the Schema detail panels (EntityPanel, RelationshipPanel, the Automations/Interfaces read-drawers, Changelog detail): a fixed header rail (back · breadcrumb · expand · close) → title+type → optional status band → a scroll-owning body of ordered, present-only sections → optional fixed footer action rail. Same slot order everywhere: absent → absent; present → the same fixed position. Sections are separated by a 1px <code>base-300</code> hairline; the count badge is right-aligned to the header edge; every list caps at 5 rows then a <code>+N more</code> inline disclosure (<code>&lt;details&gt;</code> — expands in place, never a floating popover that escapes the panel); long free-text grows to a max height then scrolls inside its own box; the panel owns its scroll and locks the page scroll behind it. Icon vocabulary: <code>lucide--globe</code> public-info · <code>lucide--lock</code> internal · <code>lucide--triangle-alert</code> real warning ONLY · <code>lucide--circle-check</code> success · <code>lucide--sparkles</code> AI. Spec: overview/schema/panel-anatomy-canonical.md. Live: <a href="/panels">Panel Lab</a>.',
+    reference: 'views/schema/BrowseTab.astro (detail panel)',
+    showCode: false,
+    usageDo: [
+      'Keep the slot order fixed across every panel; omit a section entirely when absent.',
+      'Give each TOP-LEVEL section header a quiet grey concept icon (the same icons the app/tabs use: Relationships=waypoints, Changelog=history, Documentation=book-text, Configuration=settings-2, …). Sub-labels INSIDE a section (Formula / References / Rolls up) get NO icon — that contrast is what marks the levels. EXCEPTION: the "Referenced by" section groups its rows BY KIND (Automations=zap · Interfaces & pages=layout-panel-left · Formulas=variable · Rollups=sigma · Lookups=search · Docs=book-text · Chats=messages-square) — each group sub-header DOES carry its kind concept-icon (+ a right-aligned per-group count), because there the icon is the group signifier, not a section label. Empty groups are omitted.',
+      "Show BACK-references in the field Relationships section: the fields that point at this field (formula / rollup / lookup), each an ordinary row with a '← referenced by' direction marker that mirrors the table-level LINKS TO / LINKED FROM language. Forward config (Formula / Looks up / Rolls up) stays untouched. The reverse edges are derived by inverting the forward graph — the engine must emit them (Airtable's API returns only the forward config).",
+      'Right-align section count badges; separate top-level sections with a 1px base-300 hairline.',
+      'Cap any list at 5 rows, then a "+N more" disclosure that expands the rest INLINE inside the panel body (never a floating popover — it escapes a scroll-owning panel).',
+      'Grow long free-text to a max height, then scroll inside its own box — never push the panel.',
+      'Use lucide--globe for public/synced info; reserve lucide--triangle-alert for genuine warnings.',
+      'daisyUI tooltip for hints — never native title=.',
+    ],
+    usageDont: [
+      "Don't render an uncapped 50-row list; that's the worst-case this pattern exists to prevent.",
+      "Don't put a warning-triangle on an informational line — it reads as an error.",
+      "Don't inline the count badge right after the label (reads as “references to 2”); right-align it.",
+    ],
+    examples: [
+      {
+        html: `
+<div class="max-w-sm rounded-box border border-base-300 bg-base-100 p-4 text-sm">
+  <div class="flex items-baseline justify-between border-t border-base-300 pt-3">
+    <span class="text-[11px] font-bold uppercase tracking-wider text-base-content/50">References</span>
+    <span class="font-mono text-base-content/60">50</span>
+  </div>
+  <ul class="mt-2 grid gap-1">
+    <li class="rounded-lg px-2 py-1.5 hover:bg-base-200">Amount</li>
+    <li class="rounded-lg px-2 py-1.5 hover:bg-base-200">Probability</li>
+    <li class="rounded-lg px-2 py-1.5 hover:bg-base-200">Adjustment</li>
+  </ul>
+  <details class="mt-1">
+    <summary class="inline-flex cursor-pointer list-none items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-primary hover:bg-base-200">+47 more<span class="iconify lucide--chevron-down size-3.5"></span></summary>
+    <ul class="mt-1 grid gap-1"><li class="rounded-lg px-2 py-1.5 hover:bg-base-200">Metric 04</li><li class="rounded-lg px-2 py-1.5 hover:bg-base-200">Metric 05</li><li class="rounded-lg px-2 py-1.5 hover:bg-base-200">…</li></ul>
+  </details>
+  <p class="mt-3 flex items-center gap-1.5 text-[11.5px] text-base-content/60"><span class="iconify lucide--globe size-3.5"></span>Shown to everyone in Airtable · the only synced copy.</p>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-removed-notice',
+    group: 'Patterns',
+    name: 'Removed / deleted notice',
+    summary: 'The in-panel banner for an entity that no longer exists in the source — a catalog warning Alert, not a hand-rolled grey box.',
+    description:
+      'When a detail panel shows an entity that was deleted in Airtable (kept only from the last backup), it leads with a <a href="#alert">soft warning Alert</a> — <code>alert alert-soft alert-warning</code> + <code>lucide--trash-2</code> + "This {field/table} no longer exists in Airtable (deleted {date}). Showing the last backup." <strong>Amber (warning)</strong> is used for consistency: every other "Removed" signal in the app is warning-toned (the Removed <a href="#badge">badges</a> on Automations / Interfaces / Relationships). It is the catalog <a href="#alert">Alert</a> primitive, never a bespoke banner, so it reads the same everywhere a removed/deleted entity surfaces (EntityPanel, and the invalid-relationship notice). A one-token swap to <code>alert-error</code> (red) is possible if the product decides deletion should read as destructive rather than advisory. Live: <a href="/panels">Panel Lab</a> → EntityPanel → "Field — removed".',
+    reference: 'views/schema/BrowseTab.astro (removed notice)',
+    showCode: false,
+    usageDo: [
+      'Use the catalog Alert (alert alert-soft alert-warning) — never a hand-rolled grey box.',
+      'Amber/warning to match every other Removed indicator; keep the trash icon + "showing the last backup" copy.',
+      'Reuse the same treatment wherever a removed/deleted entity is surfaced.',
+    ],
+    usageDont: [
+      "Don't invent per-panel removed styling — it drifts and stops reading as a warning.",
+      "Don't leave it flat/neutral grey — a removed entity is a state the user must notice.",
+    ],
+    examples: [
+      {
+        html: `
+<div role="status" class="alert alert-soft alert-warning">
+  <span class="iconify lucide--trash-2 size-4"></span>
+  <span>This field no longer exists in Airtable (deleted May 14, 2026). Showing the last backup.</span>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-section-nav',
+    group: 'Patterns',
+    name: 'Grouped section nav (clustered tabs)',
+    summary: 'A section with many tabs, grouped into labelled clusters — catalog underline tabs (tabs tabs-border) laid out under quiet cluster labels, with a right-aligned freshness stamp + a ghost launcher.',
+    description:
+      'When a section has more tabs than read comfortably in one flat row (Schema has 8), group them into <strong>labelled clusters</strong> (Explore · App layer · Monitor · Knowledge) with a <strong>quiet uppercase label ABOVE each cluster</strong> and a <strong>thin vertical divider</strong> between clusters. The tabs themselves are the <a href="#tabs">catalog Tabs primitive</a> — daisyUI <code>tabs tabs-border</code> containers with <code>tab</code> buttons and <code>tab-active</code> on the current one; the pattern only themes them to the app\'s quiet-inactive / <strong>primary-underline-active</strong> look (a token accent on the primitive, NOT a re-implemented tab). One 1px baseline runs under the whole bar. Section-wide metadata (a "Schema as of …" freshness stamp) sits at the <strong>page-title level, right-aligned</strong> — never inside a tab. A persistent action that belongs to the whole section (here the "Ask about your schema" chat launcher) is a <strong>catalog <a href="#button">Ghost Button</a></strong> (<code>btn btn-ghost</code>) in the header, not a bespoke pill. On mobile the clustered bar scrolls sideways (a fuller mobile treatment is a follow-up). Layout classes are <code>.sch-tabbar / .sch-group / .sch-glabel / .sch-gtabs / .sch-tabdiv</code>; the tab visuals come from the daisyUI tab primitive + the pattern accent. Live: <a href="/schema">Schema</a>.',
+    reference: 'views/SchemaView.astro',
+    showCode: false,
+    usageDo: [
+      'Use the catalog Tabs primitive (`tabs tabs-border` + `tab`/`tab-active`) for the tabs; the pattern only adds the cluster grouping + the primary-underline-active accent. Never hand-roll a bespoke tab class.',
+      'Group tabs into labelled clusters (label ABOVE each group) with a thin divider between clusters, once a flat row gets too long.',
+      'Put a section-wide freshness/"as of" stamp at the page-title level (right-aligned), not inside a tab.',
+      'A whole-section persistent action (e.g. an AI/chat launcher) is a catalog Ghost Button in the header — not a custom pill.',
+    ],
+    usageDont: [
+      "Don't re-implement tabs with a custom class — reuse the daisyUI tab primitive and theme it.",
+      "Don't build the launcher as a bespoke tinted pill (custom border-radius/color-mix) — that was retired 2026-07-03 for the catalog Ghost Button.",
+      "Don't cram many tabs into one flat, ungrouped row when they fall into natural clusters.",
+    ],
+    examples: [
+      {
+        label: 'Two clusters of catalog tabs (Explore · Monitor), Browse active + a ghost launcher',
+        html: `
+<div style="padding:1rem">
+  <div style="display:flex;justify-content:flex-end;margin-bottom:.6rem"><button class="btn btn-ghost btn-sm gap-1.5"><span class="iconify lucide--sparkles size-4"></span>Ask about your schema</button></div>
+  <div style="display:flex;align-items:stretch;gap:.1rem;border-bottom:1px solid var(--color-base-300)">
+    <div style="display:flex;flex-direction:column">
+      <span style="font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:oklch(from var(--color-base-content) l c h /.42);padding:0 0 .1rem .6rem">Explore</span>
+      <div class="tabs tabs-border" style="border:0">
+        <button class="tab" style="border-bottom:2px solid var(--color-primary);color:var(--color-primary);font-size:.86rem;font-weight:560;padding:.5rem .6rem;margin-bottom:-1px">Browse</button>
+        <button class="tab" style="border-bottom:2px solid transparent;color:oklch(from var(--color-base-content) l c h /.68);font-size:.86rem;font-weight:560;padding:.5rem .6rem;margin-bottom:-1px">Visualize</button>
+      </div>
+    </div>
+    <span style="width:1px;background:var(--color-base-300);margin:0 .6rem;align-self:flex-end;height:1.9rem"></span>
+    <div style="display:flex;flex-direction:column">
+      <span style="font-size:.6rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:oklch(from var(--color-base-content) l c h /.42);padding:0 0 .1rem .6rem">Monitor</span>
+      <div class="tabs tabs-border" style="border:0">
+        <button class="tab" style="border-bottom:2px solid transparent;color:oklch(from var(--color-base-content) l c h /.68);font-size:.86rem;font-weight:560;padding:.5rem .6rem;margin-bottom:-1px">Changelog</button>
+        <button class="tab" style="border-bottom:2px solid transparent;color:oklch(from var(--color-base-content) l c h /.68);font-size:.86rem;font-weight:560;padding:.5rem .6rem;margin-bottom:-1px">Health</button>
+      </div>
+    </div>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
     id: 'pattern-status-rail',
     group: 'Patterns',
     name: 'Status rail',
