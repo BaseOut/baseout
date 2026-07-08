@@ -3,10 +3,22 @@
 PROPOSED — not yet implemented.
 
 **Blocked on** [`server-automations-interfaces-docs`](../server-automations-interfaces-docs/tasks.md)
-(currently **0/9, UNBUILT**): the engine must ship the automations/interfaces **read** +
-**manual-create/edit/delete** endpoints before these web tabs can list or persist entities.
-Build order is engine-first, then this change. No DB / migration / capability-key change here —
-gates via the existing Schema Docs (Growth+) tier guard, like the Health and Relationships tabs.
+(currently **0/40, UNBUILT** — the per-Space `bo_at_automations`/`bo_at_interfaces` tables exist
+in `packages/db-schema`, but no engine intake/read/CRUD code does): the engine must ship the
+automations/interfaces **read** + **manual-create/edit/delete** endpoints before these web tabs
+can list or persist entities. Build order is engine-first
+(`server-automations-interfaces-docs` → `workflows-automations-interfaces-docs` → this change).
+No DB / migration / capability-key change here — gates via the existing Schema Docs (Growth+)
+tier guard, like the Health and Relationships tabs.
+
+**Round-3 shell note (2026-07-08):** `web-schema-round3-shell` landed (`09949d3`) — the Schema
+page now renders per-file tab components under `apps/web/src/views/schema/`, and Automations +
+Interfaces each render a soon-gated `SoonTab.astro` placeholder in the **App layer** cluster.
+Task 2.1's wiring is therefore two new `views/schema/AutomationsTab.astro` +
+`views/schema/InterfacesTab.astro` components replacing those SoonTab entries (lazy-loaded like
+`RelationshipsTab.astro`), not radio tabs added to a monolithic `SchemaView.astro`.
+Schema-page sequencing: this is the LAST remaining schema slice (largest chain) — after
+Changelog UI → Visualize → entity-graph → Insights.
 
 ---
 
@@ -37,9 +49,10 @@ gates via the existing Schema Docs (Growth+) tier guard, like the Health and Rel
 
 ## 2. Tabs & routing (UI)
 
-- [ ] 2.1 `SchemaView.astro` — add "Automations" and "Interfaces" radio tabs (native
-      `tabs`+`tab-content`, matching the existing Browse/Docs pattern). Empty state when
-      `!hasSchema`. Leave the existing 5 tabs unchanged.
+- [ ] 2.1 New `views/schema/AutomationsTab.astro` + `views/schema/InterfacesTab.astro`
+      replacing the two `SoonTab.astro` entries in `SchemaView.astro` (App layer cluster —
+      see the round-3 shell note above; lazy-load on first open like `RelationshipsTab.astro`).
+      Empty state when `!hasSchema`. Leave the existing live tabs unchanged.
 - [ ] 2.2 Below-Growth: render the upsell empty state per tab instead of the listing/form when
       the org lacks Schema Docs (Growth+); 403 from the proxy shows the upgrade affordance.
 

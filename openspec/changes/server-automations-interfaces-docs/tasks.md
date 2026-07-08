@@ -1,6 +1,23 @@
+## Status
+
+PROPOSED — 0/40, unbuilt (2026-07-08 audit). This change is the root blocker for the
+Schema page's Automations + Interfaces tabs
+([`web-automations-interfaces-tabs`](../web-automations-interfaces-tabs/tasks.md)), the
+changelog's app-layer events ([`server-schema-changelog`](../server-schema-changelog/tasks.md)
+tasks §4), and the entity-graph's A&I nodes
+([`server-schema-entity-graph`](../server-schema-entity-graph/tasks.md)). Build order:
+this change → [`workflows-automations-interfaces-docs`](../workflows-automations-interfaces-docs/)
+→ the web tabs.
+
+Note (Phase A): the per-Space `bo_at_automations` / `bo_at_interfaces` tables ALREADY exist in
+[`packages/db-schema/src/space/pg.ts`](../../../packages/db-schema/src/space/pg.ts) (applied
+initial migration) — Phase A concerns the **master-DB** `submitted_entities` table only, and
+the `0014` migration number below is stale (master-DB migrations are past `0024`); use the
+next available number at apply time.
+
 ## Phase A — Schema
 
-- [ ] A.1 Generate `apps/web/drizzle/0014_submitted_entities.sql` per design.md §Phase A.
+- [ ] A.1 Generate `apps/web/drizzle/<next>_submitted_entities.sql` per design.md §Phase A (number was `0014` when proposed — stale, see Status).
 - [ ] A.2 Apply migration.
 - [ ] A.3 Update [apps/web/src/db/schema/core.ts](../../../apps/web/src/db/schema/core.ts) with `submittedEntities`.
 - [ ] A.4 Engine mirror.

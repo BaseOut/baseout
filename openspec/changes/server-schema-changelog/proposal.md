@@ -1,5 +1,33 @@
 # server-schema-changelog — Per-Space schema changelog feed
 
+## Status
+
+PARTIALLY LANDED — a leaner v0 shipped in `388d380` (2026-07-08). What landed
+differs from the original text below in four ways; the landed shape is
+authoritative:
+
+- **Modules:** `apps/server/src/lib/per-space/schema-changelog.ts`
+  (`assembleChangelog`) + `schema-changelog-io.ts` (`readSchemaChangelog`) —
+  not `changelog.ts` / `buildChangelog`.
+- **Route:** `GET /api/internal/spaces/:spaceId/schema-changelog` with
+  `baseId` **required** + `limit` (1–1000, default 200) — not `/changelog`
+  with `since`/`kinds`/`includeRemoved` (those filters remain in scope, see
+  tasks §5).
+- **Entry shape:** `ChangelogEntry` with `kind: 'modified' | 'removed'` and the
+  raw `changeType`/`changeTypeName`/`before`/`after`/`breaksData` — no
+  engine-rendered `summary` and no `added` kind yet. The web derives wording +
+  the richer kind taxonomy (renamed/retyped/config) from `changeType`
+  client-side, and resolves entity names/locations from the SSR entity index it
+  already holds. Engine-side `summary` moved to Deferred; post-baseline `added`
+  events remain in scope (tasks §3).
+- **No automation/interface events yet** — the `schema_updates` emit + feed
+  inclusion remains in scope (tasks §4).
+
+Remaining scope is pinned in [`tasks.md`](./tasks.md) §3–§6. Consumed by
+[`web-schema-changelog`](../web-schema-changelog/) whose client + proxy landed
+in `efdb90c`; the Changelog tab UI (the smallest remaining schema-page slice —
+its data path is live) is that change's remaining work.
+
 ## Why
 
 The Schema page needs a **Changelog** tab ([`web-schema-changelog`](../web-schema-changelog/)) — a time-ordered feed of "what changed in my Airtable structure": fields renamed, tables added, a field type change that may have broken data, an automation turned off. The engine already **captures** every ingredient of that feed but never **exposes** it as a feed:

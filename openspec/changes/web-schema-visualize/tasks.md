@@ -3,8 +3,18 @@
 PROPOSED — engine dependency CLEARED 2026-07-07 by `server-schema-read-enrichment`:
 the schema payload now carries `linkedTableId` / `allowsMultiple` / `inverseFieldId`
 (+ formula/lookup config and annotations), so Data-mode edges are drawable. The
-`/schema` shell now renders a soon-gated Visualize panel (`web-schema-round3-shell`)
-for this change to light up. Per-table `health` remains optional/uncovered.
+`/schema` shell now renders a soon-gated Visualize panel (`web-schema-round3-shell`,
+landed `09949d3` — tabs are per-file components under `views/schema/`; this change
+replaces the `SoonTab.astro` Visualize entry with a `VisualizeTab.astro` hosting the
+island). Per-table `health` remains optional/uncovered.
+
+**Buildable today:** the **Data** and **Relationships** modes have zero remaining
+backend dependencies (enriched `getSchema` + existing `getRelationships`). Only the
+**Automations & Interfaces** mode waits on
+[`server-schema-entity-graph`](../server-schema-entity-graph/) (0/19, unbuilt) — it
+can ship behind its empty state and light up when the engine route lands.
+Schema-page sequencing: this slice follows the Changelog tab UI (smallest — its data
+path is already live) per the maintainer's call.
 
 **Original blocker (2026-07-06, resolved) — Data (ER) mode needs engine schema enrichment.** The graph's whole
 value is drawing linked-record edges between tables, but this repo's engine
@@ -53,7 +63,7 @@ existing 5 vanilla tabs.
 
 ## 4. SchemaView wiring + audit allowlist
 
-- [ ] 4.1 Add a "Visualize" radio tab **after Browse** in [`SchemaView.astro`](../../../apps/web/src/views/SchemaView.astro), hosting `SchemaCanvas` (`client:visible`) with the SSR `fv-schema-data` for Data mode + lazy fetch for the other modes. Empty state when `!hasSchema`. Do NOT touch the other 5 tabs.
+- [ ] 4.1 New `apps/web/src/views/schema/VisualizeTab.astro` replacing the `SoonTab.astro` Visualize entry in [`SchemaView.astro`](../../../apps/web/src/views/SchemaView.astro) (Explore cluster, after Browse — do NOT reorder or touch the other tabs), hosting `SchemaCanvas` (`client:visible`) with the SSR `fv-schema-data` for Data mode + lazy fetch for the other modes. Empty state when `!hasSchema`.
 - [ ] 4.2 If the tab body is composed vanilla-in-view (daisyUI-direct second tier), add the `SchemaView.astro` entry to [`raw-markup-audit-allowlist.json`](../../../apps/web/src/components/raw-markup-audit-allowlist.json) noting the React Flow / mode-menu carve-out.
 - [ ] 4.3 Storybook entry for the canvas pattern (typed nodes + legend + do/don't), reusing the Automations/Interfaces fixtures + a `triggers` link + a removed node.
 
@@ -71,3 +81,4 @@ existing 5 vanilla tabs.
 - [ ] `page → automation` **triggers** edges populate once submitted interface payloads carry the triggered-automation reference (server-side deferred in [`server-schema-entity-graph`](../server-schema-entity-graph/)).
 - [ ] Promote inline daisyUI (mode menu / legend) into Storybook components on a second call site.
 - [ ] Mobile-breakpoint polish of the canvas + filters.
+- [ ] **Diagram export** — PNG (Growth+), SVG (Pro+), PDF (Business+), embed widget (Enterprise) per Features §7.1 / PRD §3.1. Flagged as a spec-required follow-up, deliberately NOT in this change's scope (needs its own tier-gate + export plumbing proposal when prioritized).

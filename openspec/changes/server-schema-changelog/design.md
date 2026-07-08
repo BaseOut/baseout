@@ -2,7 +2,22 @@
 
 The changelog is a **read-time union** of diff data the engine already persists.
 No new capture, no new table, no Trigger.dev task. This doc pins the event model
-so the aggregator (`buildChangelog`) and the web renderer agree.
+so the aggregator and the web renderer agree.
+
+> **Landed v0 (`388d380`) vs this design.** The shipped assembler
+> (`schema-changelog.ts` → `assembleChangelog`) emits a leaner
+> `ChangelogEntry`: `kind: 'modified' | 'removed'` plus raw
+> `changeType`/`changeTypeName`/`before`/`after`/`breaksData` — the web maps
+> `changeType` to the display taxonomy below (name→renamed, type→retyped,
+> options/description/primary_field→config) and renders `summary` wording
+> client-side from the SSR entity index (no engine-side `summary`; moved to
+> Deferred). The route is `/schema-changelog` with required `baseId` + `limit`
+> only. `added` events, automation/interface events, and the
+> `since`/`kinds`/`includeRemoved` filters are the remaining scope
+> ([`tasks.md`](./tasks.md) §3–§5). The `ChangelogEvent` shape below is the
+> target contract for that remaining scope; location-name fields
+> (`baseName`/`tableName`/`fieldType`) are OPTIONAL for the web, which already
+> holds the SSR entity index to resolve them.
 
 ## Sources → events
 

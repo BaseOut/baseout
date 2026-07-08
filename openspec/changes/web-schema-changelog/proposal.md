@@ -1,5 +1,33 @@
 # web-schema-changelog — Changelog tab on the Schema page
 
+## Status
+
+PARTIALLY LANDED — the data path shipped in `efdb90c` (2026-07-08); the tab UI
+is the remaining work (and the smallest remaining schema-page slice, since its
+feed is already live end-to-end). Reconciliation notes:
+
+- **Landed:** engine client method `getSchemaChangelog(spaceId, baseId, limit?)`
+  + `ChangelogEntryView` / `GetSchemaChangelogResult` types in
+  `apps/web/src/lib/backup-engine.ts`, and the guarded proxy
+  `GET /api/spaces/[spaceId]/changelog` (`guardSchemaDocsRequest` — auth + IDOR
+  + Launch+) with tests (5 green). Names differ from the original text below
+  (`getChangelog` / `ChangelogEvent`); the landed names are authoritative.
+- **Leaner engine payload than originally designed** (see
+  [`server-schema-changelog`](../server-schema-changelog/proposal.md) Status):
+  entries carry `kind: 'modified' | 'removed'` + raw `changeType`/
+  `changeTypeName`/`before`/`after`/`breaksData`, no engine-rendered `summary`.
+  The tab derives the display taxonomy (renamed / retyped / config badges) from
+  `changeType` and resolves entity names/breadcrumbs from the SSR entity index
+  the Schema page already embeds. `added` events, automation/interface events,
+  and `since`/`kinds`/`includeRemoved` params are the engine change's remaining
+  scope — the tab's kind filter can ship client-side first.
+- **Round-3 shell landed** (`web-schema-round3-shell`, `09949d3`): tabs are now
+  per-file components under `apps/web/src/views/schema/` and Changelog renders
+  the `SoonTab.astro` placeholder. The tab UI work is a new
+  `views/schema/ChangelogTab.astro` (lazy-loaded like `RelationshipsTab.astro` /
+  `HealthTab.astro`), replacing the SoonTab entry in `SchemaView.astro` — not
+  a radio tab added to a monolithic SchemaView as written below.
+
 ## Why
 
 The engine now assembles a per-Space schema changelog feed

@@ -38,4 +38,5 @@ The Data and Relationships modes need **no new backend** — they reuse the exis
   - `page → automation` **triggers** edges render on demand but stay empty until the submitted interface payloads carry the triggered-automation reference (server-side deferred).
   - Promote inline daisyUI in the mode menu / legend into Storybook components once a second call site exists.
   - Mobile-breakpoint polish of the canvas + filters.
+  - **Diagram export** (PNG Growth+ / SVG Pro+ / PDF Business+ / embed Enterprise — Features §7.1, PRD §3.1): spec-required but deliberately out of this change's scope; file its own proposal when prioritized.
   - No DB/migration/capability-key change.

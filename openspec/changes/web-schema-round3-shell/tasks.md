@@ -36,3 +36,14 @@
 - [x] 5.1 Web unit suites + typecheck + build green; design build green
 - [ ] 5.2 Human smoke on the managed_pg Space (deployed engine): clustered nav, 5 live
       tabs on real data, 4 soon tabs, Browse panel anatomy + back-refs
+
+## Deferred follow-ups (2026-07-08 audit)
+
+- [ ] **Entity description write-back / Pro+ management actions** (Features §7.3: Rename
+      Table / Rename Field / Add-Update Description / AI descriptions). The per-Space
+      entity tables already carry `description_override` / `ai_description` columns and
+      the Browse detail panel renders the three description sections, but NO engine write
+      endpoint exists to set them (audit 2026-07-08) — the panel is read-only. Spec-required
+      for Pro+ but deliberately unproposed; needs its own paired server+web change
+      (entity-annotations write route + panel edit affordances + Airtable write-back
+      decision) when prioritized.

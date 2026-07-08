@@ -8,19 +8,22 @@ events, with filters and Launch+ gating.
 
 ### Requirement: Day-grouped changelog feed of base ▸ entity events
 
-The Schema page SHALL add a **Changelog** tab that renders the engine feed
-([`server-schema-changelog`](../../../server-schema-changelog/)) as a day-grouped
-list of events, each shown as a **base ▸ [concept-icon] entity** row with a typed
-badge (added / removed / renamed / type changed / config / view), the engine's
-rendered summary, and an optional before → after delta. The tab SHALL lazy-load on
-first open and refetch on base/filter change. When the Space has no captured
-schema, the tab SHALL show an empty state. Existing Schema-page tabs SHALL remain
-unchanged.
+The Schema page SHALL add a **Changelog** tab (a `views/schema/ChangelogTab.astro`
+replacing the SoonTab placeholder in the round-3 shell) that renders the engine
+feed ([`server-schema-changelog`](../../../server-schema-changelog/)) as a
+day-grouped list of entries, each shown as a **base ▸ [concept-icon] entity** row
+with a typed badge derived client-side from the entry's `kind` + `changeType`
+(added / removed / renamed / type changed / config), client-rendered wording
+(entity names and breadcrumbs resolved from the SSR entity index — the engine
+payload carries identifiers, not display names), and an optional before → after
+delta. The tab SHALL lazy-load on first open and refetch on base/filter change.
+When the Space has no captured schema, the tab SHALL show an empty state.
+Existing Schema-page tabs SHALL remain unchanged.
 
-#### Scenario: Feed renders with typed events
+#### Scenario: Feed renders with typed entries
 
-- **WHEN** a user opens the Changelog tab for a Space with change events
-- **THEN** events appear grouped by day, each as a base ▸ [concept-icon] entity row with a typed badge and its summary
+- **WHEN** a user opens the Changelog tab for a Space with change entries
+- **THEN** entries appear grouped by day, each as a base ▸ [concept-icon] entity row with a typed badge and readable wording
 
 #### Scenario: Before → after delta on rename/retype
 
@@ -29,29 +32,32 @@ unchanged.
 
 ### Requirement: Breaks-data warning surfaced
 
-An event whose engine payload carries a breaks-data `warning` SHALL render a ⚠️
+An entry whose engine payload carries `breaksData: true` SHALL render a ⚠️
 affordance making it unmissable (the highest-value signal in the feed).
 
 #### Scenario: Type change that may break data
 
-- **WHEN** a field type change event carries a `warning`
-- **THEN** its row shows a ⚠️ warning line with the warning text
+- **WHEN** a field type change entry carries `breaksData: true`
+- **THEN** its row shows a ⚠️ warning line
 
 ### Requirement: Filters — base, event kind, include-removed, search
 
-The tab SHALL offer a base picker, an event-kind filter, and an **include-removed**
-toggle (forwarding `baseId` / `kinds` / `includeRemoved` to the proxy), plus a
-client-side search over the last-fetched events. When filters exclude every event,
-the tab SHALL show a no-match state.
+The tab SHALL offer a base picker (forwarding `baseId` to the proxy — required by
+the engine route), an event-kind filter, and an **include-removed** toggle, plus a
+client-side search over the last-fetched entries. Kind and include-removed
+filtering MAY be applied client-side until the engine's `kinds` / `includeRemoved`
+params land ([`server-schema-changelog`](../../../server-schema-changelog/)
+tasks §5), after which the tab SHALL forward them. When filters exclude every
+entry, the tab SHALL show a no-match state.
 
 #### Scenario: Include removed
 
-- **WHEN** the user enables include-removed
-- **THEN** the proxy is refetched with `includeRemoved=true` and `removed` events appear
+- **WHEN** the user disables include-removed
+- **THEN** `removed` entries disappear from the feed (client-side, or via `includeRemoved=false` once the engine param lands)
 
 #### Scenario: Filters exclude everything
 
-- **WHEN** the active filters/search match no events
+- **WHEN** the active filters/search match no entries
 - **THEN** the tab shows a "no changes match these filters" state with a clear-filters affordance
 
 ### Requirement: Empty states and tier gating

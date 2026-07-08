@@ -21,7 +21,7 @@ those two tabs and the guarded web proxy routes they read + write through.
 **Hard dependency:** this web UI is **blocked** until
 [`server-automations-interfaces-docs`](../server-automations-interfaces-docs/proposal.md)
 ships the engine's automations/interfaces **read** + **manual-create** endpoints. That
-change is currently **0/9 (UNBUILT)**. The web tabs cannot list or persist entities
+change is currently **0/40 (UNBUILT)**. The web tabs cannot list or persist entities
 without the engine read + manual-CRUD routes it delivers; build order is engine-first,
 then this change wires the tabs against it.
 
@@ -89,9 +89,10 @@ no new tier decision of its own.
   [`relationships.ts`](../../../apps/web/src/pages/api/spaces/[spaceId]/relationships.ts):
   `guardSchemaDocsRequest`, `baseId` / body / action validation, 503 when the engine binding
   or token is unconfigured, `schemaDocsErrorStatus` mapping. Co-located `*.test.ts`.
-- [`SchemaView.astro`](../../../apps/web/src/views/SchemaView.astro) — mounts the two new tabs
-  (radio `tabs`+`tab-content`, matching the existing Browse/Docs pattern) and passes the SSR
-  entity index + tier level through.
+- [`SchemaView.astro`](../../../apps/web/src/views/SchemaView.astro) — swaps the two App-layer
+  `SoonTab.astro` entries for new `views/schema/AutomationsTab.astro` +
+  `views/schema/InterfacesTab.astro` components (round-3 shell pattern: lazy-load on first
+  open, like `RelationshipsTab.astro`) and passes the SSR entity index + tier level through.
 - New governed components under `apps/web/src/components/schema/`: `SchemaAutomations.astro`,
   `SchemaInterfaces.astro`, and the ported shared `EntitySearch.astro` / `EntityPanel.astro`
   tag-picker + sidebar (if not already present in this repo). **Prerequisite:** a new governed

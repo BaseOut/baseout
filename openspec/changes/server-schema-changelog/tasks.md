@@ -1,6 +1,10 @@
 ## Status
 
-PROPOSED — not yet implemented.
+PARTIALLY LANDED — a leaner v0 of the feed shipped in `388d380`
+(`feat(server): schema changelog read feed`). Sections 1–2 below record what
+landed (rewritten to match the shipped code); sections 3–6 are the remaining
+scope. See the Status section in [`proposal.md`](./proposal.md) for the full
+landed-vs-proposed reconciliation.
 
 Engine half of the Schema Changelog. A read-time aggregator + one internal route
 that union already-persisted diff data (`bo_at_schema_updates` + lifecycle +
@@ -10,41 +14,44 @@ capability key — reuses the readiness/IDOR guards of `relationships-overview`.
 
 ---
 
-## 1. Pure aggregator (`buildChangelog`) — TDD
+## 1. Landed v0 — pure assembler + read I/O (`388d380`)
 
-- [ ] 1.1 RED: `changelog.test.ts` — feed lifecycle rows (base/table/field/view with `firstSeenRun`/`status`/`lastSeenRun`), `bo_at_schema_updates` rows (name/type/options/description/primary_field), automation/interface status transitions, and a run→date map; assert the union produces the expected `ChangelogEvent[]` (kinds, before/after, `warning` on `breaks_data`, `entityKind` on app-layer, correct `at` per source).
-- [ ] 1.2 GREEN: `apps/server/src/lib/per-space/changelog.ts` — pure `buildChangelog(args)` mapping the three sources per [`design.md`](./design.md); render `summary` engine-side; resolve location (`baseName`/`tableName`/`entityName`/`fieldType`) + `at` from the run map.
-- [ ] 1.3 Edge cases (tests): first-run-only (no diff → `[]`); no-changes (`[]`); partial capture never emits `removed` (unknown, not removed); `includeRemoved=false` omits `removed`; `kinds`/`since`/`baseId` filtering; stable `id` per (runId, entityId, changeType).
+- [x] 1.1 Pure assembler `apps/server/src/lib/per-space/schema-changelog.ts` — `assembleChangelog(modifications, removals, { limit })` merges `bo_at_schema_updates` modification rows (raw `changeType`/`changeTypeName`/`before`/`after`/`breaksData`) with lifecycle removals (base/table/field/view, `status='removed'` + `first_unseen_run`) into a date-descending, limited `ChangelogEntry[]` with `kind: 'modified' | 'removed'`. Unit-testable without a DB.
+- [x] 1.2 Read I/O `apps/server/src/lib/per-space/schema-changelog-io.ts` — `readSchemaChangelog(tx, baseId, { limit })` loads modifications + removals + run dates (`bo_at_base_runs.completed_at ?? started_at`) via `withSpaceSchema` and feeds the assembler.
+- [x] 1.3 Integration test `tests/integration/per-space/schema-changelog.test.ts` (real local PG, 5 green) — assembled feed, ordering, limit, removal stamping.
 
-## 2. Read I/O (`changelog-io.ts`) — TDD
+## 2. Landed v0 — internal route (`388d380`)
 
-- [ ] 2.1 RED: integration test (real local PG + `withSpaceSchema`) seeding a per-Space DB with two runs' worth of diff data, then asserting the assembled feed + each filter (`baseId`, `since`, `kinds`, `includeRemoved`).
-- [ ] 2.2 GREEN: `changelog-io.ts` — load lifecycle rows + `bo_at_schema_updates` + `bo_at_base_runs` + automations/interfaces via `withSpaceSchema`; build the run→date map; call `buildChangelog`; apply filters; return `{ ok, events }`.
+- [x] 2.1 Route `GET /api/internal/spaces/:spaceId/schema-changelog?baseId=<required>[&limit=1..1000, default 200]` — `spacesSchemaChangelogHandler` in `apps/server/src/pages/api/internal/spaces/schema-changelog.ts`; guard chain mirrors `relationships-overview` (`resolveSpaceDb` → `managed_pg` → `ensureSpaceSchemaCurrent` → `withSpaceSchema`); 405/400/409/501/500 contract.
+- [x] 2.2 Registered in `apps/server/src/index.ts` (alongside `spacesRelationshipsOverviewHandler`). Token gate via `/api/internal/` middleware.
+- [x] 2.3 `tsc` green; no stray `console.*` (verified at commit).
 
-## 3. Automation/interface `schema_updates` emit — TDD
+## 3. Remaining — post-baseline `added` events — TDD
 
-- [ ] 3.1 RED: test that a status transition (active→removed) + a config change on an automation/interface during `schema-sync` reconcile writes a `schema_updates` row with `entityType='automation'|'interface'` and correct before/after — and that a failure to write it does NOT fail the sync (best-effort/advisory).
-- [ ] 3.2 GREEN: extend `schema-sync.ts`'s automation/interface reconcile to best-effort emit those `schema_updates` rows. No change to base/table/field/view diffing (already emits).
+- [ ] 3.1 RED: assembler test — entities whose `firstSeenRun` is later than the base's earliest run yield an `added` entry; baseline-capture entities do NOT (the flood problem documented in the `schema-changelog.ts` header).
+- [ ] 3.2 GREEN: extend `schema-changelog-io.ts` to load the base's earliest run + `first_seen_run` rows; extend `assembleChangelog` with `kind: 'added'`.
 
-## 4. Internal route — TDD
+## 4. Remaining — automation/interface `schema_updates` emit + feed inclusion — TDD
 
-- [ ] 4.1 RED: route test mirroring `relationships-overview` — `INTERNAL_TOKEN` gate (401 without), IDOR/readiness guard (`resolveSpaceDb` → `managed_pg` → `ensureSpaceSchemaCurrent`), 400 on bad params, 200 `{ ok, events }`, empty-feed 200.
-- [ ] 4.2 GREEN: `apps/server/src/pages/api/internal/spaces/changelog.ts` — parse `baseId`/`since`/`kinds`/`includeRemoved`, guard, call `changelog-io`, return JSON. Mirror the guard chain of [`relationships-overview.ts`](../../../apps/server/src/pages/api/internal/spaces/relationships-overview.ts).
-- [ ] 4.3 Wire `CHANGELOG_RE` + dispatch in `apps/server/src/index.ts` (alongside `spacesRelationshipsOverviewHandler`).
+> **Blocked on [`server-automations-interfaces-docs`](../server-automations-interfaces-docs/tasks.md) (0/40, unbuilt).** The per-Space tables (`bo_at_automations` / `bo_at_interfaces`) exist in `packages/db-schema`, but no engine code populates or reconciles them yet — there is no automation/interface reconcile in `schema-sync.ts` to extend. Ship the capture change first; §3 and §5 are NOT blocked.
 
-## 5. Verification
+- [ ] 4.1 RED: test that a status transition (active→removed) + a config change on an automation/interface during `schema-sync` reconcile writes a `schema_updates` row with `entityType='automation'|'interface'` and correct before/after — and that a failure to write it does NOT fail the sync (best-effort/advisory).
+- [ ] 4.2 GREEN: extend `schema-sync.ts`'s automation/interface reconcile to best-effort emit those `schema_updates` rows. No change to base/table/field/view diffing (already emits).
+- [ ] 4.3 Extend `readSchemaChangelog` to include `entityType in (automation, interface)` rows in the feed (the assembler already passes `entityType` through; widen the type union).
 
-- [ ] 5.1 `pnpm --filter @baseout/server test changelog` green (aggregator + io + route). No stray `console.*`.
-- [ ] 5.2 `pnpm --filter @baseout/server exec tsc --noEmit` 0 errors; `pnpm --filter @baseout/server run build` green.
-- [ ] 5.3 Full targeted server suites for touched areas green (per the "targeted suites, not full suite" DO-hang note in memory) — schema-sync + per-space read suites.
+## 5. Remaining — `since` / `kinds` / `includeRemoved` filters — TDD
 
-## 6. Human smoke (deployed engine, `--remote`)
+- [ ] 5.1 RED: io/route tests — `?since=<ISO>` cuts on the entry's run date; `?kinds=modified,removed,added` filters kinds; `?includeRemoved=false` (default stays current behavior: removals included — decide + pin the default with the web tab) shapes the feed.
+- [ ] 5.2 GREEN: parse the params in `schema-changelog.ts` (route), apply in `schema-changelog-io.ts`. Keep `baseId` required + `limit` semantics unchanged.
 
-- [ ] 6.1 On a `managed_pg` Space with ≥2 backup runs where the schema changed between them (rename a field, add a table, change a field type, toggle an automation), `pnpm --filter @baseout/server deploy:dev`, then `curl -H "x-internal-token: …" ".../api/internal/spaces/<id>/changelog"` returns dated events with correct kinds, before→after, and a `warning` on the type change.
-- [ ] 6.2 Verify filters: `?baseId=`, `?since=`, `?kinds=renamed,retyped`, `?includeRemoved=true` each shape the feed as expected. Confirm a Space with one run returns `events: []`.
+## 6. Verification + human smoke (deployed engine, `--remote`)
+
+- [ ] 6.1 `pnpm --filter @baseout/server exec vitest run tests/integration/per-space/schema-changelog.test.ts` green with the new cases; targeted schema-sync suite green (per the "targeted suites, not full suite" DO-hang note). `tsc --noEmit` 0 errors.
+- [ ] 6.2 On a `managed_pg` Space with ≥2 backup runs where the schema changed between them (rename a field, add a table, change a field type, toggle an automation), `pnpm --filter @baseout/server deploy:dev`, then `curl -H "x-internal-token: …" ".../api/internal/spaces/<id>/schema-changelog?baseId=…"` returns dated entries with correct kinds, before→after, and `breaksData` on the type change; filter params shape the feed. A Space with one run returns `entries: []` (modifications) — removals/additions only appear from the second run on.
 
 ## Deferred follow-ups
 
+- [ ] Engine-rendered `summary` strings per entry — the landed direction is web-side rendering (the tab derives wording from `changeType`/`changeTypeName` + the SSR entity index); revisit only if a second consumer (API/export) needs engine-side text.
 - [ ] Materialized `bo_at_changelog` projection (append-only, written during schema-sync) if read-time union proves heavy on a high-volume Space.
 - [ ] AI `aiSummary` per event (plain-language explanation) — deferred to the Schema-chat/insights track.
 - [ ] Cross-link a breaks-data (⚠️) event to its Health-tab issue.
