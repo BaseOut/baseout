@@ -31,11 +31,6 @@
         "href": "/schema",
         "icon": "iconify lucide--git-branch"
       },
-      {
-        "label": "Reports",
-        "href": "/reports",
-        "icon": "iconify lucide--file-text"
-      },
       { "label": "Account", "icon": "", "isTitle": true },
       {
         "label": "Sources",

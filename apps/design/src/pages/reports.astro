@@ -1,11 +1,4 @@
 ---
-import SidebarLayout from '../layouts/SidebarLayout.astro';
-import PlaceholderView from '@web/views/PlaceholderView.astro';
-import { getBreadcrumbs } from '@web/lib/config';
-
-const breadcrumbs = getBreadcrumbs('/reports');
+// Reports is out of V1 scope (web-v1-scope-trim) — mirror of the production redirect.
+return Astro.redirect('/', 302);
 ---
-
-<SidebarLayout pageTitle="Reports" breadcrumbs={breadcrumbs} spaceScoped={true}>
-  <PlaceholderView label="Reports" />
-</SidebarLayout>
