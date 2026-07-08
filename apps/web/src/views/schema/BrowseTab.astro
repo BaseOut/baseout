@@ -1,0 +1,497 @@
+---
+/**
+ * Browse tab (Schema shell, web-schema-round3-shell §2.1) — SSR entity tree +
+ * detail panel. Body and scripts moved verbatim from the pre-split
+ * SchemaView.astro; ids and behavior unchanged (shared-schema-docs §4,
+ * web-deleted-items-filter, web-field-visibility-filter).
+ */
+import Card from '../../components/ui/Card.astro'
+import Badge from '../../components/ui/Badge.astro'
+import EmptyState from '../../components/ui/EmptyState.astro'
+import type {
+  SchemaEntityBase,
+  SchemaEntityField,
+  SchemaEntityTable,
+  SchemaEntityView,
+} from '../../lib/backup-engine'
+import { countDeleted, isRemoved, removalNote } from '../../lib/schema-docs/deleted-filter'
+import { triggerLabel, type FvSchema } from '../../lib/schema-docs/field-visibility'
+import { buildEntityPanelIndex } from '../../lib/schema-docs/entity-index'
+
+interface Props {
+  spaceId: string
+  schema: {
+    bases: SchemaEntityBase[]
+    tables: SchemaEntityTable[]
+    fields: SchemaEntityField[]
+    views: SchemaEntityView[]
+  }
+  state: 'ok' | 'not_ready' | 'unconfigured' | 'error'
+}
+
+const { schema, state } = Astro.props
+
+const tables = (baseId: string) => schema.tables.filter((t) => t.baseId === baseId)
+const fields = (tableId: string) => schema.fields.filter((f) => f.tableId === tableId)
+const views = (tableId: string) => schema.views.filter((v) => v.tableId === tableId)
+
+const hasSchema = schema.bases.length > 0
+const deletedCount = countDeleted(schema)
+
+const fvSchema: FvSchema = {
+  bases: schema.bases.map((b) => ({ baseId: b.baseId, name: b.name })),
+  tables: schema.tables.map((t) => ({ tableId: t.tableId, baseId: t.baseId, name: t.name })),
+  fields: schema.fields.map((f) => ({
+    fieldId: f.fieldId,
+    tableId: f.tableId,
+    baseId: f.baseId,
+    name: f.name,
+    type: f.type,
+  })),
+}
+const totalFields = schema.fields.length
+
+// Per-entity panel payload — identity, descriptions, field config, and the
+// reverse graph ("Referenced by"), rendered client-side by the detail panel
+// (web-schema-round3-shell §3, canonical panel anatomy).
+const entityIndex = buildEntityPanelIndex(schema)
+---
+
+      {!hasSchema ? (
+        <EmptyState
+          icon="lucide--table-2"
+          title={state === 'not_ready' ? 'Schema not captured yet' : 'No schema to browse'}
+          description={
+            state === 'not_ready'
+              ? 'Your schema appears here after the first backup run completes.'
+              : state === 'unconfigured'
+                ? 'The backup engine is not configured in this environment.'
+                : 'Run a backup to capture this Space’s Airtable schema.'
+          }
+        />
+      ) : (
+        <div class="grid gap-6 lg:grid-cols-[minmax(0,22rem)_1fr]">
+          <div>
+            <div class="mb-3 flex flex-wrap items-center gap-3">
+              {totalFields > 0 && (
+                <div class="dropdown">
+                  <div tabindex="0" role="button" class="btn btn-outline btn-sm gap-1">
+                    <span class="iconify lucide--list-filter size-4" aria-hidden="true"></span>
+                    <span id="fv-trigger-label">{triggerLabel(totalFields, totalFields)}</span>
+                  </div>
+                  <div tabindex="0" class="dropdown-content z-10 mt-2 w-80 rounded-box border border-base-300 bg-base-100 p-3 shadow-lg">
+                    <input
+                      type="search"
+                      id="fv-search"
+                      class="input input-sm input-bordered mb-2 w-full"
+                      placeholder="Search fields…"
+                      aria-label="Search fields"
+                    />
+                    <label class="mb-2 flex cursor-pointer items-center gap-2 border-b border-base-300/60 pb-2 text-sm font-medium">
+                      <input type="checkbox" class="checkbox checkbox-xs fv-global" checked />
+                      <span>All fields</span>
+                      <span class="ml-auto text-xs text-base-content/40"><span id="fv-global-count">{totalFields}</span>/{totalFields}</span>
+                    </label>
+                    <div id="fv-tree" class="max-h-72 space-y-1 overflow-auto">
+                      {schema.bases.map((b) => (
+                        <div class="fv-base-group" data-base-id={b.baseId}>
+                          <label class="flex cursor-pointer items-center gap-2 py-0.5 text-sm font-semibold">
+                            <input type="checkbox" class="checkbox checkbox-xs fv-base" data-base-id={b.baseId} checked />
+                            <span class="truncate">{b.name}</span>
+                            <span class="fv-base-count ml-auto shrink-0 text-xs text-base-content/40" data-base-id={b.baseId}></span>
+                          </label>
+                          <div class="ml-4 space-y-0.5">
+                            {tables(b.baseId).map((t) => (
+                              <div class="fv-table-group" data-table-id={t.tableId}>
+                                <label class="flex cursor-pointer items-center gap-2 py-0.5 text-sm">
+                                  <input type="checkbox" class="checkbox checkbox-xs fv-table" data-table-id={t.tableId} checked />
+                                  <span class="truncate">{t.name}</span>
+                                  <span class="fv-table-count ml-auto shrink-0 text-xs text-base-content/40" data-table-id={t.tableId}></span>
+                                </label>
+                                <div class="ml-4">
+                                  {fields(t.tableId).map((f) => (
+                                    <label class="fv-field-row flex cursor-pointer items-center gap-2 py-0.5 text-xs" data-field-id={f.fieldId}>
+                                      <input type="checkbox" class="checkbox checkbox-xs fv-field" data-field-id={f.fieldId} checked />
+                                      <span class="truncate">{f.name}</span>
+                                      <span class="ml-auto shrink-0 text-base-content/40">{f.type}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+              {deletedCount > 0 && (
+                <label class="flex w-fit cursor-pointer items-center gap-2 text-sm">
+                  <input type="checkbox" id="include-deleted-toggle" class="toggle toggle-sm" />
+                  <span>Include removed <span class="text-base-content/50">({deletedCount})</span></span>
+                </label>
+              )}
+            </div>
+            <Card variant="outlined" class="max-h-[70vh] overflow-auto p-4">
+            <ul id="schema-tree" class="space-y-3 text-sm">
+              {schema.bases.map((bse) => (
+                <li data-removed={isRemoved(bse.status) ? '' : undefined} hidden={isRemoved(bse.status)}>
+                  <button
+                    type="button"
+                    class:list={['entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left font-semibold hover:bg-base-200', { 'opacity-50': isRemoved(bse.status) }]}
+                    data-target-type="base"
+                    data-target-id={bse.baseId}
+                    data-name={bse.name}
+                  >
+                    <span class="iconify lucide--database size-4 text-base-content/50" aria-hidden="true"></span>
+                    {bse.name}
+                    {isRemoved(bse.status) && <Badge variant="warning" size="sm">deleted</Badge>}
+                    {isRemoved(bse.status) && <span class="text-xs italic text-base-content/40">{removalNote()}</span>}
+                  </button>
+                  <ul class="ml-4 mt-1 space-y-1 border-l border-base-300 pl-3">
+                    {tables(bse.baseId).map((table) => (
+                      <li data-removed={isRemoved(table.status) ? '' : undefined} hidden={isRemoved(table.status)}>
+                        <button
+                          type="button"
+                          class:list={['entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-base-200', { 'opacity-50': isRemoved(table.status) }]}
+                          data-target-type="table"
+                          data-target-id={table.tableId}
+                          data-name={table.name}
+                        >
+                          <span class="iconify lucide--table size-4 text-base-content/40" aria-hidden="true"></span>
+                          {table.name}
+                          {isRemoved(table.status) && <Badge variant="warning" size="sm">deleted</Badge>}
+                          {isRemoved(table.status) && <span class="text-xs italic text-base-content/40">{removalNote()}</span>}
+                        </button>
+                        <ul class="ml-4 mt-1 space-y-0.5 text-base-content/70">
+                          {fields(table.tableId).map((field) => (
+                            <li data-removed={isRemoved(field.status) ? '' : undefined} hidden={isRemoved(field.status)} data-field-id={field.fieldId}>
+                              <button
+                                type="button"
+                                class:list={['entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-base-200', { 'opacity-50': isRemoved(field.status) }]}
+                                data-target-type="field"
+                                data-target-id={field.fieldId}
+                                data-name={field.name}
+                              >
+                                <span class="iconify lucide--columns-3 size-3.5 text-base-content/30" aria-hidden="true"></span>
+                                {field.name}
+                                <span class="text-xs text-base-content/40">{field.type}</span>
+                                {isRemoved(field.status) && <Badge variant="warning" size="sm">deleted</Badge>}
+                                {isRemoved(field.status) && <span class="text-xs italic text-base-content/40">{removalNote()}</span>}
+                              </button>
+                            </li>
+                          ))}
+                          {views(table.tableId).map((view) => (
+                            <li data-removed={isRemoved(view.status) ? '' : undefined} hidden={isRemoved(view.status)}>
+                              <button
+                                type="button"
+                                class:list={['entity-link flex w-full items-center gap-2 rounded px-1 py-0.5 text-left hover:bg-base-200', { 'opacity-50': isRemoved(view.status) }]}
+                                data-target-type="view"
+                                data-target-id={view.viewId}
+                                data-name={view.name}
+                              >
+                                <span class="iconify lucide--eye size-3.5 text-base-content/30" aria-hidden="true"></span>
+                                {view.name}
+                                {isRemoved(view.status) && <Badge variant="warning" size="sm">deleted</Badge>}
+                                {isRemoved(view.status) && <span class="text-xs italic text-base-content/40">{removalNote()}</span>}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </Card>
+          </div>
+
+          <Card variant="outlined" class="min-h-[16rem]">
+            <div id="entity-detail" class="text-sm text-base-content/60">
+              Select an entity to see its documentation.
+            </div>
+          </Card>
+        </div>
+      )}
+
+<script>
+  // Browse tab detail panel — renders the canonical entity anatomy
+  // (web-schema-round3-shell §3) from the serialized entity index: identity,
+  // removed notice, present-only description sections, field configuration,
+  // and the grouped "Referenced by" reverse graph; then loads the documents
+  // that tag the entity (docs-by-entity). Lists cap at 5 rows with an inline
+  // +N more disclosure — never a floating popover.
+  import type { EntityPanelInfo, RefRow, ReferencedBy } from '../../lib/schema-docs/entity-index'
+
+  const root = document.querySelector<HTMLElement>('[data-schema-docs]')
+  const indexEl = document.getElementById('entity-index-data')
+  if (root) {
+    const spaceId = root.dataset.spaceId!
+    const base = `/api/spaces/${spaceId}`
+    const index = JSON.parse(indexEl?.textContent || '{}') as Record<string, EntityPanelInfo>
+    const esc = (s: string) =>
+      String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)
+    const detail = document.getElementById('entity-detail')
+
+    const fmtDate = (iso: string) => {
+      const d = new Date(iso)
+      return Number.isNaN(d.getTime())
+        ? iso
+        : d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+    }
+
+    // A top-level anatomy section: hairline, quiet uppercase label, right-aligned count.
+    const section = (label: string, count: number | null, body: string) =>
+      `<div class="mt-3 border-t border-base-300 pt-3"><div class="flex items-baseline justify-between"><span class="text-[11px] font-bold uppercase tracking-wider text-base-content/50">${esc(label)}</span>${count != null ? `<span class="font-mono text-xs text-base-content/60">${count}</span>` : ''}</div><div class="mt-2 text-sm">${body}</div></div>`
+
+    // Cap a list at 5 rows, then an inline <details> disclosure (expands in place).
+    const capList = (rows: string[]) =>
+      rows.length <= 5
+        ? `<ul class="grid gap-1">${rows.join('')}</ul>`
+        : `<ul class="grid gap-1">${rows.slice(0, 5).join('')}</ul><details class="mt-1"><summary class="inline-flex cursor-pointer list-none items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-primary hover:bg-base-200">+${rows.length - 5} more<span class="iconify lucide--chevron-down size-3.5"></span></summary><ul class="mt-1 grid gap-1">${rows.slice(5).join('')}</ul></details>`
+
+    const refRow = (r: RefRow) =>
+      `<li class="rounded-lg px-2 py-1.5 hover:bg-base-200"><span class="text-base-content/40">← referenced by</span> ${esc(r.fieldName)} <span class="text-xs text-base-content/40">(${esc(r.tableName)})</span></li>`
+
+    const REF_GROUPS: [keyof ReferencedBy, string, string][] = [
+      ['formulas', 'Formulas', 'lucide--variable'],
+      ['rollups', 'Rollups', 'lucide--sigma'],
+      ['lookups', 'Lookups', 'lucide--search'],
+      ['links', 'Links', 'lucide--waypoints'],
+    ]
+
+    const renderInfo = (info: EntityPanelInfo): string => {
+      const parts: string[] = []
+      if (info.removedAt || info.status === 'removed') {
+        const when = info.removedAt ? ` (deleted ${esc(fmtDate(info.removedAt))})` : ''
+        parts.push(
+          `<div role="status" class="alert alert-soft alert-warning mb-3"><span class="iconify lucide--trash-2 size-4"></span><span>This ${esc(info.kind)} no longer exists in Airtable${when}. Showing the last backup.</span></div>`,
+        )
+      }
+      const loc =
+        info.kind === 'field' || info.kind === 'view'
+          ? `${esc(info.baseName)} ▸ ${esc(info.tableName ?? '')}`
+          : info.kind === 'table'
+            ? esc(info.baseName)
+            : ''
+      parts.push(
+        `<div class="flex flex-wrap items-center gap-2"><span class="font-semibold text-base-content">${esc(info.name)}</span><span class="badge badge-ghost">${esc(info.kind)}</span>${info.fieldType ? `<span class="badge badge-ghost badge-sm font-mono">${esc(info.fieldType)}</span>` : ''}${info.isPrimary ? '<span class="badge badge-soft badge-info badge-sm">primary</span>' : ''}</div>`,
+      )
+      if (loc) parts.push(`<p class="mt-0.5 text-xs text-base-content/50">${loc}</p>`)
+      if (info.kind === 'table') {
+        const bits: string[] = []
+        if (info.recordCount != null) bits.push(`${info.recordCount.toLocaleString()} records`)
+        if (info.fieldCount != null) bits.push(`${info.fieldCount} fields`)
+        if (bits.length)
+          parts.push(
+            `<p class="mt-1 text-xs text-base-content/50">${bits.join(' · ')} <span class="text-base-content/40">as of last backup</span></p>`,
+          )
+      }
+      if (info.airtableDescription)
+        parts.push(
+          section('Description', null, `<p>${esc(info.airtableDescription)}</p><p class="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-base-content/60"><span class="iconify lucide--globe size-3.5"></span>Shown to everyone in Airtable · the only synced copy.</p>`),
+        )
+      if (info.aiDescription)
+        parts.push(
+          section('AI description', null, `<p>${esc(info.aiDescription)}</p><p class="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-base-content/60"><span class="iconify lucide--sparkles size-3.5"></span>AI-generated · stored in Baseout only.</p>`),
+        )
+      if (info.internalDescription)
+        parts.push(
+          section('Internal notes', null, `<p>${esc(info.internalDescription)}</p><p class="mt-1.5 flex items-center gap-1.5 text-[11.5px] text-base-content/60"><span class="iconify lucide--lock size-3.5"></span>Internal · never synced to Airtable.</p>`),
+        )
+      const cfg: string[] = []
+      if (info.formula)
+        cfg.push(
+          `<div><span class="text-xs text-base-content/50">Formula</span><pre class="mt-1 overflow-x-auto rounded-lg bg-base-200 p-2 font-mono text-xs">${esc(info.formula)}</pre></div>`,
+        )
+      if (info.linksTo)
+        cfg.push(
+          `<p><span class="text-xs text-base-content/50">Links to</span> <span class="font-medium">→ ${esc(info.linksTo.tableName)}</span> <span class="font-mono text-xs text-base-content/60">${info.linksTo.allowsMultiple === false ? '1:1' : '1:many'}</span>${info.linksTo.inverseFieldName ? `<span class="text-xs text-base-content/50"> · inverse: ${esc(info.linksTo.inverseFieldName)}</span>` : ''}</p>`,
+        )
+      if (info.lookupVia)
+        cfg.push(
+          `<p><span class="text-xs text-base-content/50">${info.fieldType === 'rollup' ? 'Rolls up' : 'Looks up'}</span> via <span class="font-medium">${esc(info.lookupVia.fieldName)}</span>${info.lookupTarget ? ` → <span class="font-medium">${esc(info.lookupTarget.fieldName)}</span>${info.lookupTarget.tableName ? ` <span class="text-xs text-base-content/40">(${esc(info.lookupTarget.tableName)})</span>` : ''}` : ''}</p>`,
+        )
+      if (info.choices?.length)
+        cfg.push(
+          `<div><span class="text-xs text-base-content/50">Choices</span>${capList(info.choices.map((c) => `<li class="rounded-lg px-2 py-1 hover:bg-base-200">${esc(c)}</li>`))}</div>`,
+        )
+      if (cfg.length) parts.push(section('Configuration', null, `<div class="grid gap-2">${cfg.join('')}</div>`))
+      const groups = REF_GROUPS.filter(([k]) => info.referencedBy[k].length > 0)
+      if (groups.length) {
+        const total = groups.reduce((n, [k]) => n + info.referencedBy[k].length, 0)
+        const body = groups
+          .map(
+            ([k, label, icon]) =>
+              `<div class="mt-2 first:mt-0"><div class="flex items-baseline justify-between"><span class="flex items-center gap-1.5 text-xs font-medium text-base-content/60"><span class="iconify ${icon} size-3.5"></span>${label}</span><span class="font-mono text-xs text-base-content/50">${info.referencedBy[k].length}</span></div>${capList(info.referencedBy[k].map(refRow))}</div>`,
+          )
+          .join('')
+        parts.push(section('Referenced by', total, body))
+      }
+      return parts.join('')
+    }
+
+    document.querySelectorAll<HTMLElement>('.entity-link').forEach((el) =>
+      el.addEventListener('click', async () => {
+        if (!detail) return
+        const type = el.dataset.targetType!
+        const id = el.dataset.targetId!
+        const name = el.dataset.name ?? id
+        const info = index[id]
+        const head = info
+          ? renderInfo(info)
+          : `<div class="flex items-center gap-2"><span class="font-semibold text-base-content">${esc(name)}</span><span class="badge badge-ghost">${esc(type)}</span></div>`
+        detail.innerHTML = `${head}<div id="entity-docs"><span class="loading loading-spinner loading-sm mt-3"></span></div>`
+        const docsEl = document.getElementById('entity-docs')
+        const res = await fetch(
+          `${base}/docs-by-entity?targetType=${encodeURIComponent(type)}&targetId=${encodeURIComponent(id)}`,
+        )
+        if (!docsEl) return
+        if (!res.ok) {
+          docsEl.innerHTML = '<p class="mt-3 text-error">Could not load documentation.</p>'
+          return
+        }
+        const data = (await res.json()) as { entityRemoved: boolean; documents: any[] }
+        const docsBody =
+          data.documents.length === 0
+            ? '<p class="text-base-content/50">No documents tag this entity yet.</p>'
+            : capList(
+                data.documents.map(
+                  (d) =>
+                    `<li class="rounded-lg border border-base-300/60 p-3"><span class="font-medium">${esc(d.title)}</span>${d.excerpt ? `<span class="mt-1 block text-sm text-base-content/60">${esc(d.excerpt)}</span>` : ''}</li>`,
+                ),
+              )
+        docsEl.innerHTML = section('Documentation', data.documents.length || null, docsBody)
+      }),
+    )
+
+    // "Include removed" toggle: reveal/hide removed entities (rendered hidden by
+    // default). Pure client interaction, no refetch — getSchema already returned
+    // their status (web-deleted-items-filter).
+    const includeDeleted = document.getElementById('include-deleted-toggle') as HTMLInputElement | null
+    if (includeDeleted) {
+      includeDeleted.addEventListener('change', () => {
+        document.querySelectorAll<HTMLElement>('[data-removed]').forEach((el) => {
+          el.hidden = !includeDeleted.checked
+        })
+      })
+    }
+  }
+</script>
+
+<script is:inline type="application/json" id="entity-index-data" set:html={JSON.stringify(entityIndex).replace(/</g, '\\u003c')}></script>
+
+<script is:inline type="application/json" id="fv-schema-data" set:html={JSON.stringify(fvSchema).replace(/</g, '\\u003c')}></script>
+
+<script>
+  // Reusable Fields visibility filter (web-field-visibility-filter). The pure
+  // selection model lives in lib/schema-docs/field-visibility; this wires it to
+  // the Browse Fields dropdown + tree. Field rows hide via the `hidden` *class*,
+  // independent of the deleted filter's `hidden` *attribute*, so they compose.
+  import {
+    fieldIdsOfBase,
+    fieldIdsOfTable,
+    groupState,
+    matchesQuery,
+    setFieldsVisible,
+    triggerLabel,
+    visibleCount,
+    type FvSchema,
+    type TriState,
+  } from '../../lib/schema-docs/field-visibility'
+
+  const dataEl = document.getElementById('fv-schema-data')
+  const fvTree = document.getElementById('fv-tree')
+  if (dataEl && fvTree) {
+    const schema = JSON.parse(dataEl.textContent || '{"bases":[],"tables":[],"fields":[]}') as FvSchema
+    const allFieldIds = schema.fields.map((f) => f.fieldId)
+    let visible = new Set<string>(allFieldIds)
+
+    const query = () => (document.getElementById('fv-search') as HTMLInputElement | null)?.value ?? ''
+    // Bulk controls act on the matched fields when a search is active.
+    const scopeIds = (ids: string[]) => {
+      if (query().trim() === '') return ids
+      const matched = matchesQuery(schema, query()).fieldIds
+      return ids.filter((id) => matched.has(id))
+    }
+
+    const setTri = (cb: HTMLInputElement, state: TriState) => {
+      cb.indeterminate = state === 'indeterminate'
+      cb.checked = state === 'checked'
+    }
+
+    const applyTree = () => {
+      document.querySelectorAll<HTMLElement>('#schema-tree li[data-field-id]').forEach((li) => {
+        li.classList.toggle('hidden', !visible.has(li.dataset.fieldId!))
+      })
+    }
+
+    const refreshMenu = () => {
+      fvTree.querySelectorAll<HTMLInputElement>('.fv-field').forEach((cb) => {
+        cb.checked = visible.has(cb.dataset.fieldId!)
+      })
+      fvTree.querySelectorAll<HTMLInputElement>('.fv-table').forEach((cb) => {
+        const ids = fieldIdsOfTable(schema, cb.dataset.tableId!)
+        setTri(cb, groupState(ids, visible))
+        const c = fvTree.querySelector(`.fv-table-count[data-table-id="${cb.dataset.tableId}"]`)
+        if (c) c.textContent = `${visibleCount(ids, visible)}/${ids.length}`
+      })
+      fvTree.querySelectorAll<HTMLInputElement>('.fv-base').forEach((cb) => {
+        const ids = fieldIdsOfBase(schema, cb.dataset.baseId!)
+        setTri(cb, groupState(ids, visible))
+        const c = fvTree.querySelector(`.fv-base-count[data-base-id="${cb.dataset.baseId}"]`)
+        if (c) c.textContent = `${visibleCount(ids, visible)}/${ids.length}`
+      })
+      const global = document.querySelector<HTMLInputElement>('.fv-global')
+      if (global) setTri(global, groupState(allFieldIds, visible))
+      const gc = document.getElementById('fv-global-count')
+      if (gc) gc.textContent = String(visibleCount(allFieldIds, visible))
+      const label = document.getElementById('fv-trigger-label')
+      if (label) label.textContent = triggerLabel(visibleCount(allFieldIds, visible), allFieldIds.length)
+    }
+
+    const applyMenuSearch = () => {
+      const m = matchesQuery(schema, query())
+      fvTree.querySelectorAll<HTMLElement>('.fv-field-row').forEach((row) => {
+        row.classList.toggle('hidden', !m.fieldIds.has(row.dataset.fieldId!))
+      })
+      fvTree.querySelectorAll<HTMLElement>('.fv-table-group').forEach((g) => {
+        g.classList.toggle('hidden', !m.tableIds.has(g.dataset.tableId!))
+      })
+      fvTree.querySelectorAll<HTMLElement>('.fv-base-group').forEach((g) => {
+        g.classList.toggle('hidden', !m.baseIds.has(g.dataset.baseId!))
+      })
+    }
+
+    const sync = () => {
+      applyTree()
+      refreshMenu()
+    }
+
+    fvTree.addEventListener('change', (e) => {
+      const cb = e.target as HTMLInputElement
+      if (cb.classList.contains('fv-field')) {
+        visible = setFieldsVisible(visible, [cb.dataset.fieldId!], cb.checked)
+      } else if (cb.classList.contains('fv-table')) {
+        visible = setFieldsVisible(visible, scopeIds(fieldIdsOfTable(schema, cb.dataset.tableId!)), cb.checked)
+      } else if (cb.classList.contains('fv-base')) {
+        visible = setFieldsVisible(visible, scopeIds(fieldIdsOfBase(schema, cb.dataset.baseId!)), cb.checked)
+      } else {
+        return
+      }
+      sync()
+    })
+
+    const globalCb = document.querySelector<HTMLInputElement>('.fv-global')
+    globalCb?.addEventListener('change', () => {
+      visible = setFieldsVisible(visible, scopeIds(allFieldIds), globalCb.checked)
+      sync()
+    })
+
+    document.getElementById('fv-search')?.addEventListener('input', applyMenuSearch)
+
+    sync()
+  }
+</script>

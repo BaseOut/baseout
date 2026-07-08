@@ -157,8 +157,9 @@ describe('component catalog classification', () => {
     ) as Record<string, string[]>;
 
     const viewsDir = join(webRootDir, 'src/views');
-    const output = readdirSync(viewsDir)
-      .filter((path) => path.endsWith('.astro'))
+    // Recursive: views may nest (src/views/schema/*, web-schema-round3-shell) —
+    // subdirectory views get audited the same as top-level ones.
+    const output = listAstroComponents(viewsDir)
       .filter((path) => /class="[^"]*(btn|badge|card|alert|input|select|table|dropdown|pagination)/.test(
         readFileSync(join(viewsDir, path), 'utf8'),
       ))

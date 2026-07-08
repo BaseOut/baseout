@@ -1,0 +1,22 @@
+---
+/**
+ * Coming-soon panel for Schema tabs whose backing slice hasn't shipped yet
+ * (web-schema-round3-shell §2.4): Visualize (server-schema-entity-graph +
+ * web-schema-visualize), Changelog (server/web-schema-changelog), Automations +
+ * Interfaces (server-automations-interfaces-docs + web-automations-interfaces-tabs).
+ * Never an error, never fixture data — the section icon + one line of what's coming.
+ */
+interface Props {
+  icon: string
+  title: string
+  description: string
+}
+
+const { icon, title, description } = Astro.props
+---
+
+<div class="sch-soon">
+  <span class="sch-empty-ic"><span class={`iconify ${icon}`} aria-hidden="true"></span></span>
+  <p class="sch-empty-title">{title}</p>
+  <p>{description}</p>
+</div>

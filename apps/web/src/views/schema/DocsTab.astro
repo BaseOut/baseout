@@ -1,0 +1,26 @@
+---
+/**
+ * Docs tab — mounts the DocsTab React island (Plate + tags + links + diagrams,
+ * shared-schema-docs §5). client:visible defers hydration until the panel is
+ * first shown (hidden panels do not intersect).
+ */
+import DocsTab, { type DocsTabEntity } from '../../components/islands/DocsTab'
+import type { SchemaDocSummary } from '../../lib/backup-engine'
+
+interface Props {
+  spaceId: string
+  docs: SchemaDocSummary[]
+  aiEnabled: boolean
+  entities: DocsTabEntity[]
+}
+
+const { spaceId, docs, aiEnabled, entities } = Astro.props
+---
+
+      <DocsTab
+        client:visible
+        spaceId={spaceId}
+        initialDocs={docs}
+        aiEnabled={aiEnabled}
+        entities={entities}
+      />

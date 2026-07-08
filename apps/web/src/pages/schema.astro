@@ -14,6 +14,8 @@ import {
 } from '../lib/backup-engine';
 import { resolveSchemaDocsLevel } from '../lib/schema-docs/proxy';
 import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities';
+import { backupRuns } from '../db/schema/core';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
 const breadcrumbs = getBreadcrumbs('/schema');
 const { account, db } = Astro.locals;
@@ -58,6 +60,18 @@ if (level !== 'none' && spaceId) {
     viewState = 'unconfigured';
   }
 }
+
+// Freshness stamp — the schema reflects the latest completed backup run.
+let lastBackupAt: string | null = null;
+if (db && spaceId) {
+  const [latest] = await db
+    .select({ completedAt: backupRuns.completedAt })
+    .from(backupRuns)
+    .where(and(eq(backupRuns.spaceId, spaceId), eq(backupRuns.status, 'succeeded'), isNotNull(backupRuns.completedAt)))
+    .orderBy(desc(backupRuns.completedAt))
+    .limit(1);
+  lastBackupAt = latest?.completedAt?.toISOString() ?? null;
+}
 ---
 
 <SidebarLayout pageTitle="Schema" breadcrumbs={breadcrumbs} spaceScoped={true}>
@@ -76,6 +90,6 @@ if (level !== 'none' && spaceId) {
       description="Select a Space to view its schema."
     />
   ) : (
-    <SchemaView spaceId={spaceId} level={level} docs={docs} schema={schema} state={viewState} />
+    <SchemaView spaceId={spaceId} level={level} docs={docs} schema={schema} state={viewState} lastBackupAt={lastBackupAt} />
   )}
 </SidebarLayout>

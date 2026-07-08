@@ -3,8 +3,7 @@
     "daisyUI `table` primitive on the backup-history table: no Storybook table component exists, and the `.table` class supplies the cell padding the dense run table needs. Per CLAUDE.md §4.2 this is sanctioned daisyUI-direct-in-view (the audit's escape hatch), not a custom component."
   ],
   "src/views/SchemaView.astro": [
-    "daisyUI `tabs`+`tab-content` for the Browse/Docs tab panels: the `ui/Tabs.astro` primitive renders header inputs only (no content panels), so CSS-only radio tabs are the sanctioned daisyUI-direct second tier (CLAUDE.md §4.2). The Docs panel hosts the DocsTab React island (shared-schema-docs §5).",
-    "`badge`/`loading` chips built as innerHTML in the Browse-tab client script for dynamically-rendered tagged-document chips (incl. the removed-entity warning) and the entity-detail load spinner."
+    "The Schema shell (web-schema-round3-shell): the clustered tab bar uses the daisyUI `tab` primitive inside `tabs tabs-border` cluster containers (icon-carrying buttons — the header-only ui/Tabs.astro carries no content panels, CLAUDE.md §4.2), the chat launcher is a catalog Ghost Button (`btn btn-ghost`), and the shared entity modal uses `modal`/`btn`."
   ],
   "src/views/RestoreView.astro": [
     "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the restore flow uses btn/alert/badge/table/select/input/checkbox/radio/stats/breadcrumbs primitives directly. The per-base picker, staged steps, and outcome panel are a bespoke Pattern composition mirroring the backup-audit tables — not covered by a single Storybook component."
@@ -14,5 +13,18 @@
   ],
   "src/views/SpaceHomeView.astro": [
     "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the two-region Home (primary + sticky status rail) uses alert/btn/badge and a daisyUI `table` for the backup-history + schema previews directly. The status rail, vertical pipeline, and KPI strip are a bespoke dashboard composition — not a single Storybook component."
+  ],
+  "src/views/schema/BrowseTab.astro": [
+    "Moved verbatim from the pre-split SchemaView.astro (web-schema-round3-shell §2.1): the Fields visibility `dropdown` + `input`/`checkbox` tree, the `toggle` Include-removed control, and Card-hosted entity tree (shared-schema-docs §4).",
+    "The detail panel renders the canonical entity anatomy (badge chips, alert-soft removed notice, capped lists) as innerHTML in the client script — dynamic content, daisyUI classes only."
+  ],
+  "src/views/schema/RelationshipsTab.astro": [
+    "Moved verbatim from the pre-split SchemaView.astro (web-relationships-tab): base `select`, Include-removed `toggle`, `input` search, `btn` actions, and relationship groups rendered as innerHTML in the lazy-load client script."
+  ],
+  "src/views/schema/HealthTab.astro": [
+    "Moved verbatim from the pre-split SchemaView.astro (web-health-tab): base `select`, Pro+ `btn` controls, and grade/metric/issue `stats`/`table`/`badge` markup rendered as innerHTML in the lazy-load client script."
+  ],
+  "src/views/schema/ChatTab.astro": [
+    "Moved verbatim from the pre-split SchemaView.astro (web-chat-tab): thread `menu`, context `select`, composer `textarea`/`btn`, and conversation bubbles rendered as innerHTML in the client script."
   ]
 }

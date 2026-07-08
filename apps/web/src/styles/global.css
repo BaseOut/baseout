@@ -133,3 +133,217 @@ body {
    reason. (Page navigation still uses Astro's ClientRouter, but <html> carries
    transition:animate="none", so the theme attribute is the only thing the
    swap touches.) */
+
+/* ═══ Schema (round-3 shell + shared toolbar) — promoted from ui-only@d97c777 ═══
+   Sections below came via apps/design/src/styles/schema-lab.css (now deleted) plus
+   the design SchemaView's shell layout CSS (web-schema-round3-shell §4.1). */
+
+/* ── Ghost-button hover (app-wide) ──────────────────────
+   daisyUI's default btn-ghost hover tint is too faint to read on our dark surfaces.
+   Lift it to a clearly-visible base-content wash so ghost buttons (toolbars, row
+   actions, drawer Cancel, menu items) give obvious hover feedback. `!important`
+   because Tailwind v4 + Lightning CSS otherwise merges a plain `.btn-ghost:hover`
+   into daisyUI's own rule and drops it (same build behaviour as the btn-sm note). */
+.btn-ghost:hover { background-color: oklch(from var(--color-base-content) l c h / 0.14) !important; }
+
+
+/* ── Tooltips ─────────────────────────────────────────────
+   daisyUI tooltips are the ONLY tooltips we use — never the native `title`
+   attribute (it waits ~1s, looks unstyled, and ignores the theme). Zero the
+   open-delay so the hint appears the instant the pointer lands; the fade stays,
+   only the wait is removed. See the Tooltip entry in /styleguide. */
+.tooltip::before,
+.tooltip::after {
+  transition-delay: 0s;
+}
+
+/* ── Schema toolbar (shared) ──────────────────────────────
+   ONE filter-bar pattern across every Schema tab (Browse / Visualize / Changelog).
+   Global (not scoped) so the Astro tabs AND the React Visualize island share the
+   exact same layout: [search] │ [filters…] ……… [tab-specific right cluster].
+   Left → right: a search box, a short vertical divider, then the filters; the
+   right cluster (segment / actions) is pushed to the far edge. */
+.sch-tb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* the search box — fixed-ish width on the left so the filters share the line */
+.sch-tb-search {
+  flex: 0 1 300px;
+  min-width: 200px;
+}
+.sch-tb-search > .es,
+.sch-tb-search > .input {
+  width: 100%;
+}
+/* the short vertical divider separating search from the filters */
+.sch-tb-div {
+  flex: none;
+  width: 1px;
+  height: 1.4rem;
+  background: var(--color-base-300);
+  margin: 0 2px;
+}
+/* the tab-specific right cluster (Tree/Flat segment, Export, Add to doc…) */
+.sch-tb-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+/* a muted count/metadata chip living in the right cluster */
+.sch-tb-count {
+  font-size: 12px;
+  color: oklch(from var(--color-base-content) l c h / 0.55);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* a plain checkbox + label filter (Undocumented / Linked only / Needs attention).
+   One neutral checkbox everywhere — never a coloured (warning) variant. */
+.sch-tb-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 4px;
+  white-space: nowrap;
+  color: oklch(from var(--color-base-content) l c h / 0.8);
+}
+/* the shared Tree/Flat view-toggle segment. `.rl-modes` is kept as an alias for the Visualize
+   island (SchemaCanvas), which still uses the old class name — same styling, one source. */
+.sch-tb-modes .btn,
+.rl-modes .btn {
+  background: var(--color-base-100);
+  border-color: var(--color-base-300);
+  font-weight: 500;
+  box-shadow: none;
+}
+.sch-tb-modes .btn:hover,
+.rl-modes .btn:hover { background: var(--color-base-200); }
+.sch-tb-modes .sch-tb-mode-active,
+.rl-modes .rl-mode-active {
+  background: var(--color-base-200);
+  color: var(--color-base-content);
+  border-color: var(--color-base-300);
+  font-weight: 600;
+}
+/* the "/" keyboard hint inside a search field — pushed to the right edge, muted */
+.sch-tb-search .sch-tb-slash { margin-left: auto; opacity: 0.55; }
+
+/* ── Entity concept-icon colour language ──────────────────────────────────────
+   Wherever an entity NAME appears in tabular/text/chip contexts, its concept icon
+   carries a consistent colour so bases / tables / fields read the same everywhere
+   (the Browse treatment, generalised): base = primary (blue), table = success
+   (green), field = neutral. Graph nodes keep their own health-dot language (React
+   inline colours override these).
+
+   `table-2` is used ONLY as the table-entity icon, so it can be coloured globally.
+   `database` is overloaded (base entity AND database destinations), and fields use
+   many per-type icons, so base/field are opted-in per icon via a `concept-ic-*`
+   class on the icon span (or its wrapper) — set by the entity-icon helpers. */
+.iconify.lucide--table-2,
+.concept-ic-table .iconify, .concept-ic-table svg, .iconify.concept-ic-table {
+  color: color-mix(in oklch, var(--color-success) 78%, var(--color-base-content));
+}
+.concept-ic-base .iconify, .concept-ic-base svg, .iconify.concept-ic-base {
+  color: color-mix(in oklch, var(--color-primary) 78%, var(--color-base-content));
+}
+.concept-ic-field .iconify, .concept-ic-field svg, .iconify.concept-ic-field {
+  color: var(--color-base-content);
+}
+/* App-layer concept colours (match the Visualize graph legend): automation = amber,
+   interface = violet, page = blue — softened toward neutral like the Browse tree. */
+.concept-ic-automation .iconify, .iconify.concept-ic-automation {
+  color: color-mix(in oklch, #d97706 82%, var(--color-base-content));
+}
+.concept-ic-interface .iconify, .iconify.concept-ic-interface {
+  color: color-mix(in oklch, #7c3aed 82%, var(--color-base-content));
+}
+.concept-ic-page .iconify, .iconify.concept-ic-page {
+  color: color-mix(in oklch, #2563eb 82%, var(--color-base-content));
+}
+
+/* Sortable table headers (Schema table views: Automations · Interfaces · Relationships).
+   A header with data-sort-col is clickable; the active one shows a ▲/▼ via data-sort-dir. */
+[data-sort-col] {
+  cursor: pointer;
+  user-select: none;
+}
+[data-sort-col]:hover {
+  color: var(--color-base-content);
+}
+[data-sort-col]::after {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-left: 0.3rem;
+  vertical-align: middle;
+  opacity: 0;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+}
+[data-sort-col][data-sort-dir="asc"]::after {
+  opacity: 0.75;
+  border-bottom: 4px solid currentColor;
+}
+[data-sort-col][data-sort-dir="desc"]::after {
+  opacity: 0.75;
+  border-top: 4px solid currentColor;
+}
+
+/* Panel scroll-lock: while any full-cover detail overlay is open, the app (document) scroll
+   is locked so the page behind can't scroll — only the panel's own scrollbar works (standard
+   modal behaviour). Pure CSS :has(), shared across every Schema overlay; releases automatically
+   when the overlay closes (hidden re-added / checkbox unchecked / data-chat=closed). */
+html:has([data-entity-panel]:not([hidden])),
+html:has([data-rl-detail]:not([hidden])),
+html:has([data-cl-detail]:not([hidden])),
+html:has(#au-modal:checked),
+html:has(#if-modal:checked),
+html:has([data-schema][data-chat="drawer"]) {
+  overflow: hidden;
+}
+
+/* ── Schema shell layout (.sch-*) — clustered tab bar, freshness stamp, panels ── */
+  .sch { display: flex; flex-direction: column; gap: 1rem; }
+  .sch-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  /* Section-wide freshness stamp — quiet, right-aligned. */
+  .sch-stamp { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .55); }
+  .sch-head-r { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; justify-content: flex-end; }
+  /* the chat launcher (top-right) is now the catalog Ghost Button (btn btn-ghost) — no custom CSS */
+
+  /* grouped tab bar (approved Variant A) — cluster label ABOVE each group's tabs, thin dividers */
+  .sch-tabbar { display: flex; align-items: stretch; gap: .1rem; flex-wrap: wrap; border-bottom: 1px solid var(--color-base-300); }
+  .sch-group { display: flex; flex-direction: column; }
+  .sch-glabel { font-size: .6rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .42); padding: 0 0 .1rem .6rem; }
+  /* The tabs are the catalog daisyUI `tab` (inside `tabs tabs-border`); the pattern themes them to
+     the quiet-inactive / primary-underline-active look. The 1px baseline is the .sch-tabbar border. */
+  .sch-gtabs { display: flex; align-items: stretch; }
+  .sch-gtabs.tabs { border: 0; }
+  /* The active underline is daisyUI's own tab-active indicator (its ::before, already primary in
+     this theme) — we DON'T add a second border-bottom (that caused a doubled/offset underline). */
+  .sch-gtabs .tab { height: auto; padding: .5rem .6rem; font-size: .86rem; font-weight: 560; gap: .4rem; color: oklch(from var(--color-base-content) l c h / .68); background: transparent; white-space: nowrap; }
+  .sch-gtabs .tab .iconify { opacity: .72; }
+  .sch-gtabs .tab:hover { color: var(--color-base-content); background: transparent; }
+  .sch-gtabs .tab.tab-active { color: var(--color-primary); }
+  .sch-gtabs .tab.tab-active .iconify { opacity: 1; }
+  .sch-tabdiv { width: 1px; background: var(--color-base-300); margin: 0 .6rem; align-self: flex-end; height: 1.9rem; }
+
+  /* primitive mobile: let the grouped bar scroll sideways (a fuller mobile nav is a follow-up) */
+  @media (max-width: 720px) {
+    .sch-tabbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+    .sch-head-r { align-items: flex-start; }
+  }
+  .sch-panel { width: 100%; }
+  .sch-empty, .sch-soon { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: .5rem; padding: 2rem; }
+  .sch-empty-ic { width: 3rem; height: 3rem; border-radius: .8rem; display: grid; place-items: center; background: var(--color-base-200); margin-bottom: .3rem; }
+  .sch-empty-ic .iconify { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .55); }
+  .sch-empty-title { font-size: 1rem; font-weight: 650; }
+  .sch-empty-sub { font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .6); max-width: 44ch; }
+
+  .sch-soon { min-height: 300px; border: 1px dashed var(--color-base-300); border-radius: .85rem; background: oklch(from var(--color-base-200) l c h / .3); }
+  .sch-soon p { font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .66); max-width: 56ch; }
