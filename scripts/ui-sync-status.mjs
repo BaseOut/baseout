@@ -33,29 +33,42 @@ function git(...args) {
 }
 
 // --- last synced hash -------------------------------------------------------
-const marker = git(
+// `--grep` matches the WHOLE message, so promotion commits that cite the hash
+// in their body match too. Walk recent matches: a subject citation wins
+// (sync commits put it there); otherwise fall back to the newest body match.
+const markers = git(
   "log",
   "--grep=ui-only@",
   "-n",
-  "1",
-  "--format=%H%x00%s",
-);
-if (!marker) {
+  "10",
+  "--format=%H%x00%s%x00%b%x1e",
+)
+  .split("\x1e")
+  .map((e) => e.trim())
+  .filter(Boolean)
+  .map((e) => {
+    const [commit, subject, body] = e.split("\0");
+    return { commit, subject, body: body ?? "" };
+  });
+if (markers.length === 0) {
   console.error(
     'No commit citing "ui-only@<hash>" found on HEAD — cannot determine the last sync point.',
   );
   console.error("See shared/internal/ui-sync.md §1 for the convention.");
   process.exit(1);
 }
-const [markerCommit, markerSubject] = marker.split("\0");
-const hashMatch = markerSubject.match(/ui-only@([0-9a-f]{7,40})/);
-if (!hashMatch) {
+const HASH_RE = /ui-only@([0-9a-f]{7,40})/;
+const bySubject = markers.find((m) => HASH_RE.test(m.subject));
+const byBody = markers.find((m) => HASH_RE.test(m.body));
+const marker = bySubject ?? byBody;
+if (!marker) {
   console.error(
-    `Found sync commit ${markerCommit.slice(0, 7)} but could not parse a hash from: ${markerSubject}`,
+    `Found ${markers.length} commit(s) mentioning ui-only@ but none carries a parseable hash.`,
   );
   process.exit(1);
 }
-const lastSynced = hashMatch[1];
+const markerSubject = marker.subject;
+const lastSynced = (marker.subject.match(HASH_RE) ?? marker.body.match(HASH_RE))[1];
 
 // --- fetch -------------------------------------------------------------------
 if (!process.argv.includes("--no-fetch")) {
