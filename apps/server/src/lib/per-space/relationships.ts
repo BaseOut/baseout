@@ -159,18 +159,18 @@ export function deriveRelationships(input: {
       }
     }
 
-    const anchorRemoved = isRemoved(field.status);
-    const refsRemoved = refs.length > 0 && refs.every((r) => r.removed);
-    // Valid: the anchor is live and, when it references entities, at least one
-    // still resolves. A relationship with no resolvable refs (e.g. a formula we
-    // couldn't expand) is still valid as long as the anchor field is active.
-    const valid =
-      !anchorRemoved && (refs.length === 0 || refs.some((r) => !r.removed));
+    // No second endpoint → no relationship (2026-07-09 product call): a formula
+    // referencing zero fields (e.g. built purely from RECORD_ID()) or a link/
+    // lookup whose options carry no target expresses nothing to relate — the
+    // old anchor-only rows read as noise on real schemas.
+    if (refs.length === 0) continue;
 
-    const refLabel =
-      refs.length === 0
-        ? field.name
-        : refs.map((r) => r.name).join(", ");
+    const anchorRemoved = isRemoved(field.status);
+    const refsRemoved = refs.every((r) => r.removed);
+    // Valid: the anchor is live and at least one referenced entity still resolves.
+    const valid = !anchorRemoved && refs.some((r) => !r.removed);
+
+    const refLabel = refs.map((r) => r.name).join(", ");
 
     out.push({
       id: `${type}:${field.fieldId}`,

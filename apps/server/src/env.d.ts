@@ -70,6 +70,16 @@ export interface Env {
   CONNECTION_DO: DurableObjectNamespace;
   /** Per-Space scheduler DO. */
   SPACE_DO: DurableObjectNamespace;
+  /**
+   * Workers AI binding — schema description generation
+   * (server-schema-descriptions). Platform-authenticated: no API key. Optional
+   * so environments without the binding skip generation gracefully.
+   */
+  AI?: Ai;
+  /** Kill switch for post-sync AI description generation. Unset/anything-but-"false" = on. */
+  AI_DESCRIPTIONS_ENABLED?: string;
+  /** Workers AI model id override for descriptions. */
+  AI_DESCRIPTIONS_MODEL?: string;
 }
 
 export interface AppLocals {

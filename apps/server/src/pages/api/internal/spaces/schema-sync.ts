@@ -10,6 +10,7 @@
 // Token gate is applied by middleware (path begins /api/internal/).
 
 import type { AppLocals, Env } from "../../../../env";
+import { createMasterDb } from "../../../../db/worker";
 import { diffSchema, type CapturedBase } from "../../../../lib/per-space/schema-diff";
 import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import {
@@ -18,6 +19,12 @@ import {
   readSchemaWorkingSet,
   withSpaceSchema,
 } from "../../../../lib/per-space/space-db-pg";
+import {
+  loadDescribeBaseData,
+  runDescribeBase,
+  saveDescriptionUpdates,
+  workersAiGenerate,
+} from "../../../../lib/per-space/describe-schema-io";
 import { inferAndWriteSyncedViews } from "../../../../lib/per-space/relationships-io";
 import { ensureSpaceSchemaCurrent } from "../../../../lib/provisioning/upgrade";
 
@@ -33,8 +40,8 @@ function jsonResponse(body: unknown, status: number): Response {
 
 export async function spacesSchemaSyncHandler(
   request: Request,
-  _env: Env,
-  _ctx: ExecutionContext,
+  env: Env,
+  ctx: ExecutionContext,
   locals: AppLocals,
   spaceId: string,
 ): Promise<Response> {
@@ -94,6 +101,37 @@ export async function spacesSchemaSyncHandler(
       );
     } catch {
       // ignored — the next schema capture re-runs inference.
+    }
+
+    // Best-effort AI descriptions for undescribed entities of this base
+    // (server-schema-descriptions). Runs AFTER the response via waitUntil with
+    // a FRESH DB client — the request-scoped client is torn down at response
+    // time, and the model calls must not delay the sync ack or hold a pooled
+    // connection (load and save are separate short transactions around the
+    // generation). Skipped when the AI binding is absent or disabled.
+    const generate = workersAiGenerate(env);
+    if (generate) {
+      const pgLocator = space.pgLocator;
+      ctx.waitUntil(
+        (async () => {
+          const fresh = createMasterDb(env);
+          try {
+            await runDescribeBase({
+              baseId: captured.baseId,
+              load: () => withSpaceSchema(fresh.db, pgLocator, (tx) => loadDescribeBaseData(tx, captured.baseId)),
+              save: (updates) => withSpaceSchema(fresh.db, pgLocator, (tx) => saveDescriptionUpdates(tx, updates)),
+              generate,
+            });
+          } catch (err) {
+            // Advisory — the next sync retries. Logged because a silent failure
+            // here means "descriptions never appear" with zero signal anywhere.
+            // eslint-disable-next-line no-console -- background-task failure would otherwise be invisible
+            console.error("describe-schema failed:", err instanceof Error ? err.message : String(err));
+          } finally {
+            await fresh.sql.end({ timeout: 5 }).catch(() => {});
+          }
+        })(),
+      );
     }
 
     return jsonResponse(

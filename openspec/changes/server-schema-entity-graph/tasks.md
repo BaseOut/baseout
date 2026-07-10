@@ -6,15 +6,15 @@ Interfaces" mode: a pure node/edge graph builder + one internal route + a web pr
 change. Consumes [`server-automations-interfaces-docs`](../server-automations-interfaces-docs/);
 pairs with [`web-schema-visualize`](../web-schema-visualize/).
 
-**Data-source status (2026-07-08):** the per-Space `bo_at_automations` /
-`bo_at_interfaces` tables exist (`packages/db-schema/src/space/pg.ts`), but
-[`server-automations-interfaces-docs`](../server-automations-interfaces-docs/tasks.md)
-is **0/40 unbuilt** — nothing populates them yet. The graph builder + route can be
-built and tested against seeded rows (table/field nodes come from the already-live
-schema tables), but the A&I nodes stay empty in production until the capture change
-ships. Note the schema-read enrichment (`server-schema-read-enrichment`, landed)
-already unblocked web-schema-visualize's Data + Relationships modes — only the A&I
-mode waits on this change.
+**Data-source status (updated 2026-07-09):** A&I nodes now source from the per-Space
+`bo_at_automations` / `bo_at_interfaces` + `bo_at_entity_tags` tables, populated by
+[`server-automations-interfaces-manual-crud`](../server-automations-interfaces-manual-crud/tasks.md)
+(the manual-entry-first slice — build it BEFORE this change so `references`/`reads`
+edges come from deterministic tag rows and `page` nesting from `parent_id`). The
+builder signature is `buildEntityGraph({ automations, interfaces, tags, tables, fields })`.
+Note the schema-read enrichment (`server-schema-read-enrichment`, landed) already
+unblocked web-schema-visualize's Data + Relationships modes — only the A&I mode waits
+on this change.
 
 ---
 

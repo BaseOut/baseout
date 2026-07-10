@@ -16,6 +16,11 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "baseout-server",
+  // Pin the account: the team's wrangler OAuth logins can span multiple
+  // Cloudflare accounts, and non-interactive contexts (deploys, background dev,
+  // the AI-binding remote proxy) fail with a misleading "must be logged in" /
+  // account-selection error when wrangler has to guess.
+  "account_id": "f094d60e8a0996752eb1efd971bda45a",
   "main": "./src/index.ts",
   "compatibility_date": "2026-04-22",
   "compatibility_flags": ["nodejs_compat"],
@@ -39,6 +44,13 @@
   // (which proxies the connection) is what actually makes per-request
   // postgres-js usable from a Worker. See apps/web/wrangler.jsonc for the
   // matching binding (same dev DB cluster, same id is fine for local dev).
+  // Workers AI — schema description generation (server-schema-descriptions).
+  // Platform-authenticated binding: no API key, no .dev.vars entry. Optional in
+  // Env typing; generation is skipped when absent. NOTE: local `wrangler dev`
+  // serves this binding through a remote proxy session — it requires a valid
+  // `wrangler login` (expired auth kills the dev server at startup).
+  "ai": { "binding": "AI" },
+
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
@@ -81,6 +93,7 @@
   "env": {
     "dev": {
       "name": "baseout-server-dev",
+      "ai": { "binding": "AI" },
       "hyperdrive": [
         {
           "binding": "HYPERDRIVE",

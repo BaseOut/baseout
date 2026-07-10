@@ -1,6 +1,6 @@
 ## Context
 
-The engine already stores, per Space, the Base/Table/Field schema (read by `schema-read` / `relationships-overview`) and the user-submitted Automations + Interfaces (`submitted_entities`, from [`server-automations-interfaces-docs`](../server-automations-interfaces-docs/)). Nothing joins those two into a single cross-entity graph. This change adds a **read-time** builder that assembles one node/edge graph per Space and exposes it on an internal route the web Visualize tab proxies. It writes nothing.
+The engine already stores, per Space, the Base/Table/Field schema (read by `schema-read` / `relationships-overview`) and the user-submitted Automations + Interfaces (**per-Space `bo_at_automations` / `bo_at_interfaces` + `bo_at_entity_tags`, populated by [`server-automations-interfaces-manual-crud`](../server-automations-interfaces-manual-crud/proposal.md)** — re-sourced 2026-07-09 from the originally-planned master `submitted_entities`, which is now the deferred provenance ledger). Nothing joins those two into a single cross-entity graph. This change adds a **read-time** builder that assembles one node/edge graph per Space and exposes it on an internal route the web Visualize tab proxies. It writes nothing.
 
 ## Goals / Non-Goals
 
@@ -21,9 +21,9 @@ The engine already stores, per Space, the Base/Table/Field schema (read by `sche
 ### Node kinds
 | kind | source | id shape | notes |
 | --- | --- | --- | --- |
-| `automation` | `submitted_entities` where `entity_type='automation'` | `airtable_entity_id` (or synthetic) | an Airtable Automation |
-| `interface` | `submitted_entities` where `entity_type='interface'` | interface id from payload | an Interface (container of pages) |
-| `page` | interface payload → pages | `interfaceId:pageId` | a page within an Interface |
+| `automation` | per-Space `bo_at_automations` | row `id` (uuid; `airtable_entity_id` on the node payload) | an Airtable Automation |
+| `interface` | per-Space `bo_at_interfaces` where `type='interface'` | row `id` | an Interface (container of pages) |
+| `page` | per-Space `bo_at_interfaces` where `type='page'` (`parent_id` → interface) | row `id` | a page within an Interface |
 | `table` | per-Space Base/Table schema | Airtable table id | maps to an Airtable Table |
 | `field` | per-Space Field schema | Airtable field id | maps to an Airtable Field |
 
@@ -39,10 +39,10 @@ Every node carries: `id`, `kind`, `label`, `baseId` (nullable for cross-base aut
 Each edge carries: `id`, `kind`, `source`, `target`, and `status` (inherited as `removed` when either endpoint is removed, so the web can mute the edge).
 
 ### Assembly outline (pure function)
-`buildEntityGraph({ automations, interfaces, tables, fields })`:
+`buildEntityGraph({ automations, interfaces, tags, tables, fields })`:
 1. Emit `table` + `field` nodes from the per-Space schema (dedup by Airtable id).
-2. Emit `automation` nodes from submitted automations; for each Table/Field the automation payload references, emit a `references` edge (skip references to unknown/removed ids by re-pointing to the removed node, not dropping — history stays visible).
-3. Emit `interface` + `page` nodes from submitted interfaces; for each page's Table/Field reads, emit a `reads` edge.
+2. Emit `automation` nodes from `bo_at_automations`; `references` edges come from `bo_at_entity_tags` rows (`entity_kind='automation'` → `target_type`/`target_id`) — deterministic tag rows, NOT payload parsing (re-point references to unknown/removed ids at the removed node, not dropping — history stays visible).
+3. Emit `interface` + `page` nodes from `bo_at_interfaces` (pages nest via `parent_id`); `reads` edges from `bo_at_entity_tags` rows with `entity_kind='interface'`; `triggers` edges from the interface row's definition payload (deferred until captured — ship the edge kind, data arrives later).
 4. For each page/interface that names a triggered automation, emit a `triggers` edge (empty set until payloads carry it — see the deferred follow-up).
 5. Propagate `status='removed'` to edges whose endpoints are removed.
 

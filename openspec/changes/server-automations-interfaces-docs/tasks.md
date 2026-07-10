@@ -1,13 +1,21 @@
 ## Status
 
-PROPOSED — 0/40, unbuilt (2026-07-08 audit). This change is the root blocker for the
-Schema page's Automations + Interfaces tabs
-([`web-automations-interfaces-tabs`](../web-automations-interfaces-tabs/tasks.md)), the
-changelog's app-layer events ([`server-schema-changelog`](../server-schema-changelog/tasks.md)
-tasks §4), and the entity-graph's A&I nodes
-([`server-schema-entity-graph`](../server-schema-entity-graph/tasks.md)). Build order:
-this change → [`workflows-automations-interfaces-docs`](../workflows-automations-interfaces-docs/)
-→ the web tabs.
+PROPOSED — 0/40, unbuilt. **RE-SCOPED 2026-07-09 (manual-entry-first decision):** this
+change is NO LONGER the blocker for the Schema page. The read + manual-CRUD slice was
+carved out into [`server-automations-interfaces-manual-crud`](../server-automations-interfaces-manual-crud/proposal.md),
+which writes the per-Space `bo_at_automations` / `bo_at_interfaces` tables directly and
+unblocks the web tabs, the entity-graph, and the changelog's app-layer events. This
+umbrella retains the deferred capture funnel: master `submitted_entities` ledger (Phase A),
+apps/api inbound endpoints (Phase B), Airtable script/automation generators (C/D), and the
+backup-run reconcile (F).
+
+**Layering contract (binding on Phase F when built):** `submitted_entities` is an
+append-only provenance/version ledger only — never the read model. The reconcile UPSERTs
+per-Space rows `ON CONFLICT (base_id, airtable_entity_id)` (partial unique shipped by the
+manual-crud slice), **preserves the row `id`** (tags + page-parent links survive), updates
+name/type/definition/status/last_seen_at/submitted_via, and replaces only
+`source='auto'` rows in `bo_at_entity_tags` — `manual` tag rows are never touched.
+Build order when revived: this change → [`workflows-automations-interfaces-docs`](../workflows-automations-interfaces-docs/).
 
 Note (Phase A): the per-Space `bo_at_automations` / `bo_at_interfaces` tables ALREADY exist in
 [`packages/db-schema/src/space/pg.ts`](../../../packages/db-schema/src/space/pg.ts) (applied

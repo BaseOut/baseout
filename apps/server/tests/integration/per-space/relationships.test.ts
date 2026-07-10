@@ -110,7 +110,7 @@ describe("deriveRelationships", () => {
     expect(roll!.valid).toBe(true);
   });
 
-  it("expands formula referencedFieldIds and stays valid even if unexpandable", () => {
+  it("expands formula referencedFieldIds into refs", () => {
     const withRefs = deriveRelationships({
       tables,
       fields: [
@@ -120,22 +120,33 @@ describe("deriveRelationships", () => {
     });
     const form = withRefs.find((r) => r.type === "formulas")!;
     expect(form.refs.map((r) => r.fieldId)).toEqual(["fA"]);
+  });
 
-    // No referencedFieldIds → no refs, but still valid (anchor active).
+  it("emits NO row for a formula that references no fields (2026-07-09 product call)", () => {
+    // A formula like `"https://…" & ENCODE_URL_COMPONENT(RECORD_ID())` references
+    // zero fields — Airtable exposes referencedFieldIds: []. A "relationship"
+    // with only its anchor endpoint is noise, not a relationship.
     const noRefs = deriveRelationships({
       tables,
       fields: [field({ fieldId: "fForm2", name: "Calc", type: "formula", options: {} })],
     });
-    expect(noRefs[0]!.refs).toEqual([]);
-    expect(noRefs[0]!.valid).toBe(true);
+    expect(noRefs).toEqual([]);
+    const emptyRefs = deriveRelationships({
+      tables,
+      fields: [field({ fieldId: "fLm", type: "lastModifiedTime", options: { referencedFieldIds: [] } })],
+    });
+    expect(emptyRefs).toEqual([]);
   });
 
   it("maps lastModifiedTime to a lastModified relationship", () => {
     const rels = deriveRelationships({
       tables,
-      fields: [field({ fieldId: "fLm", type: "lastModifiedTime", options: { referencedFieldIds: [] } })],
+      fields: [
+        field({ fieldId: "fA", name: "A", type: "number" }),
+        field({ fieldId: "fLm", type: "lastModifiedTime", options: { referencedFieldIds: ["fA"] } }),
+      ],
     });
-    expect(rels[0]!.type).toBe("lastModified");
+    expect(rels.find((r) => r.type === "lastModified")).toBeTruthy();
   });
 
   it("a removed anchor field is invalid + flagged", () => {

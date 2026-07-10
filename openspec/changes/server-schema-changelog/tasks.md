@@ -33,7 +33,12 @@ capability key — reuses the readiness/IDOR guards of `relationships-overview`.
 
 ## 4. Remaining — automation/interface `schema_updates` emit + feed inclusion — TDD
 
-> **Blocked on [`server-automations-interfaces-docs`](../server-automations-interfaces-docs/tasks.md) (0/40, unbuilt).** The per-Space tables (`bo_at_automations` / `bo_at_interfaces`) exist in `packages/db-schema`, but no engine code populates or reconciles them yet — there is no automation/interface reconcile in `schema-sync.ts` to extend. Ship the capture change first; §3 and §5 are NOT blocked.
+> **Re-scoped 2026-07-09:** the per-Space tables are now populated by
+> [`server-automations-interfaces-manual-crud`](../server-automations-interfaces-manual-crud/tasks.md)
+> (manual entry). The schema-sync reconcile emit below stays deferred with the umbrella's
+> auto-capture (Phase F); the near-term path is emitting app-layer `schema_updates` rows
+> from the manual **mutate** routes (create/update/remove → added/config/removed events) —
+> do that after the manual-crud slice lands. §3 and §5 are NOT blocked either way.
 
 - [ ] 4.1 RED: test that a status transition (active→removed) + a config change on an automation/interface during `schema-sync` reconcile writes a `schema_updates` row with `entityType='automation'|'interface'` and correct before/after — and that a failure to write it does NOT fail the sync (best-effort/advisory).
 - [ ] 4.2 GREEN: extend `schema-sync.ts`'s automation/interface reconcile to best-effort emit those `schema_updates` rows. No change to base/table/field/view diffing (already emits).
