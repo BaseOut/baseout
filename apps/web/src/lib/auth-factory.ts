@@ -122,6 +122,12 @@ export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
       }),
     ],
     session: {
+      // 30-day sliding window (product decision 2026-07-09; default was 7d/1d).
+      // updateAge=1d slides expiry forward on the first request each day, so
+      // monthly-active users never re-login while an abandoned cookie still
+      // dies within 30 days of its last use.
+      expiresIn: 60 * 60 * 24 * 30,
+      updateAge: 60 * 60 * 24,
       cookieCache: {
         enabled: true,
         maxAge: 5 * 60,

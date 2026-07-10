@@ -56,3 +56,18 @@ describe('createAuth — local-dev secure-cookie decision', () => {
     expect(useSecureCookies(build(undefined))).toBeUndefined()
   })
 })
+
+describe('createAuth — session lifetime', () => {
+  // 30-day sliding sessions (product decision 2026-07-09): better-auth's 7-day
+  // default forced monthly-active users back through the magic-link flow. With
+  // updateAge=1d, any visit a day after the last refresh pushes expiry out
+  // another 30 days — active users stay signed in; an abandoned cookie still
+  // dies within a month.
+  it('sets a 30-day expiry with a 1-day sliding refresh', () => {
+    const session = (build('https://baseout.dev').options as {
+      session: { expiresIn?: number; updateAge?: number }
+    }).session
+    expect(session.expiresIn).toBe(60 * 60 * 24 * 30)
+    expect(session.updateAge).toBe(60 * 60 * 24)
+  })
+})
