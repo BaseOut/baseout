@@ -11,6 +11,7 @@
  * until the entity-graph slice lands (server-schema-entity-graph).
  */
 import EmptyState from '../../components/ui/EmptyState.astro'
+import ExportControl from '../../components/patterns/ExportControl.astro'
 import SchemaCanvas from '../../components/islands/SchemaCanvas'
 import type { SchemaTable as CanvasTable } from '../../components/islands/SchemaCanvas'
 import type {
@@ -91,6 +92,14 @@ const genState = level === 'none' ? 'locked' : 'ready'
     description="The diagram appears once a backup has captured this Space’s schema."
   />
 ) : (
+  <>
+  {/* The canvas fills the tab, so the export mounts above it in a right-aligned
+      row (Dan's sch-tb-right idiom). One diagram, no rows — no rowSelector. The
+      real PNG bake (whole graph, background + scale options) ships with the
+      canvas export follow-up. */}
+  <div class="mb-3 flex items-center justify-end">
+    <ExportControl tab="visualize" format="image" noun="diagram" total={1} />
+  </div>
   <div data-visualize-tab class="h-[70vh] min-h-[420px] overflow-hidden rounded-box border border-base-300 bg-base-100">
     <SchemaCanvas
       client:visible
@@ -100,4 +109,5 @@ const genState = level === 'none' ? 'locked' : 'ready'
       genState={genState}
     />
   </div>
+  </>
 )}

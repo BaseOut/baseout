@@ -13,6 +13,7 @@
 import '../styles/design.css';
 import WebSidebarLayout from '@web/layouts/SidebarLayout.astro';
 import { getFooterNavItems } from '@web/lib/config';
+import { inboxItems, inboxEmpty, inboxOneSpace } from '../fixtures/inbox';
 
 const props = Astro.props as Record<string, unknown>;
 const footerNavItems = [
@@ -20,8 +21,15 @@ const footerNavItems = [
   { label: 'Handoff', href: '/handoff', icon: 'iconify lucide--workflow' },
   { label: 'Storybook', href: '/styleguide', icon: 'iconify lucide--book-open' },
 ];
+
+// `?fixture=empty` drives the inbox zero-state.
+const inboxFixture = Astro.url.searchParams.get('fixture');
+const items =
+  inboxFixture === 'empty' ? inboxEmpty : inboxFixture === 'one-space' ? inboxOneSpace : inboxItems;
 ---
 
-<WebSidebarLayout {...props} footerNavItems={footerNavItems}>
+<WebSidebarLayout {...props} footerNavItems={footerNavItems} inboxItems={items}>
+  <slot name="app-banner" slot="app-banner" />
+  <slot name="topbar-status" slot="topbar-status" />
   <slot />
 </WebSidebarLayout>

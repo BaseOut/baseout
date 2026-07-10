@@ -2,6 +2,7 @@
 import Layout from './Layout.astro';
 import Sidebar from '../components/patterns/AppShellSidebar.astro';
 import Header  from '../components/patterns/AppShellHeader.astro';
+import Inbox   from '../components/layout/Inbox.astro';
 import ConnectionHealthBanner from '../components/patterns/ConnectionHealthBanner.astro';
 import ConnectionHealthPill from '../components/patterns/ConnectionHealthPill.astro';
 import { getPageContext } from '../lib/config';
@@ -9,6 +10,7 @@ import { getConnectionHealthSummary } from '../lib/integrations';
 import { deriveBannerProps } from '../lib/connection-health';
 import type { ConnectionBannerProps } from '../components/patterns/connection-health-banner';
 import type { NavItem, UserInfo, Breadcrumb } from '../lib/types';
+import type { InboxItem } from '../components/layout/inbox';
 
 interface Props {
   // <head>
@@ -28,7 +30,11 @@ interface Props {
   // Header
   pageTitle?:          string;
   breadcrumbs?:        Breadcrumb[];
-  notificationCount?:  number;
+
+  // Inbox — the notification center (see the `pattern-inbox` storybook entry).
+  // No notifications backend yet, so the default is the empty feed and the
+  // panel renders its designed zero-states.
+  inboxItems?:         InboxItem[];
 
   // Page interior re-renders on Space switch when true.
   // Default false: switch updates the sidebar pill but leaves the page body alone.
@@ -68,7 +74,8 @@ const {
 
   pageTitle,
   breadcrumbs,
-  notificationCount,
+
+  inboxItems    = [],
 
   spaceScoped   = false,
 } = Astro.props;
@@ -99,8 +106,13 @@ const resolvedTitle = title ?? (pageTitle ? `${pageTitle} | ${brandName}` : bran
 
     <label for="layout-sidebar-toggle-trigger" id="layout-sidebar-backdrop"></label>
 
-    <div class="flex flex-1 flex-col min-w-0">
-      <Header notificationCount={notificationCount}>
+    <div class="relative flex flex-1 flex-col min-w-0">
+      {/* The Inbox OVERLAYS the work area from its left edge — it never pushes the
+          page narrower (at 1280px that hid ~340px of the Backups table). Still
+          non-modal: no scrim, no focus trap, the page behind stays interactive. */}
+      <Inbox items={inboxItems} />
+
+      <Header>
         {bannerProps?.state === 'broken' && (
           <ConnectionHealthPill slot="topbar-status" {...bannerProps} />
         )}

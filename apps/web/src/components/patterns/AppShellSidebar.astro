@@ -107,6 +107,27 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
   <i class="iconify lucide--panel-left-open size-3.5 hidden group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:block"></i>
 </label>
 
+<!-- Inbox — account-scoped, so it sits ABOVE the Space groups. Opens the side
+     panel rather than navigating; the badge counts rows that need a decision. -->
+<div class="mb-2 px-2.5 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-1">
+  <button
+    type="button"
+    data-inbox-trigger
+    aria-expanded="false"
+    aria-controls="layout-inbox"
+    data-tip="Inbox"
+    class="menu-item menu-item-link sidebar-tip w-full group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0"
+  >
+    <i class="iconify lucide--inbox size-4 shrink-0"></i>
+    <span class="grow text-start group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">Inbox</span>
+    <span
+      data-inbox-count
+      class="badge badge-sm badge-error badge-soft group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden"
+      hidden
+    ></span>
+  </button>
+</div>
+
 {organization && (
   <p class="px-5 -mt-2 mb-2 text-[11px] font-medium uppercase tracking-wider text-base-content/65 truncate group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
     {organization.name}

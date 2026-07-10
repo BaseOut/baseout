@@ -1,0 +1,264 @@
+---
+/**
+ * ExportControl — the one export affordance for every Schema tab (`pattern-export-control`).
+ *
+ * The format is FIXED per tab (client's answer), so the trigger NAMES it: "Export CSV" / "Export image"
+ * / "Export PDF". A bare "Export" is only honest when the user still has a format to pick.
+ *
+ * Built from the app's one filter language (ff-trigger / ff-panel / ff-group / ff-opt, global in
+ * styles/components/facet-filter.css) — an export is a quiet toolbar control, not the page's primary
+ * action. It replaces three divergent, hand-rolled, dead `btn-neutral` dropdowns.
+ *
+ * Scope shows BOTH counts so "keeps your filters" is verifiable, not promised. Zero matches disables the
+ * control with a reason rather than producing a header-only file. The filename encodes the scope.
+ *
+ * Promoted from the design mirror (web-schema-export, ui-only@3153dfd). The mirror faked every export;
+ * here the confirm offers the export to the owning tab via a cancelable `schema:export` event — a tab
+ * whose data is client-available downloads for real, the rest announce honestly that their export ships
+ * with the tab's backend. Panel styles live in styles/components/export-control.css (component
+ * governance forbids scoped style blocks in tracked components).
+ */
+export type ExportFormat = 'csv' | 'image' | 'pdf';
+
+interface Props {
+  /** Tab slug — goes into the filename and the aria label. */
+  tab: string;
+  format: ExportFormat;
+  /** What the counts are counting: "fields", "changes", "relationships"… */
+  noun: string;
+  /** M — everything, server-known. */
+  total: number;
+  /** Selector for the rows that make up "current view". Counted live; omit when the tab has no rows. */
+  rowSelector?: string;
+  /** The Space name, for the filename. */
+  space?: string;
+  /** Above this many items the export degrades to an async request (ProBackup's pattern). */
+  heavyAbove?: number;
+}
+
+const { tab, format, noun, total, rowSelector = '', space = 'Space', heavyAbove = 500 } = Astro.props;
+
+const LABEL: Record<ExportFormat, string> = {
+  csv: 'Export CSV',
+  image: 'Export image',
+  pdf: 'Export PDF',
+};
+---
+
+<div
+  class="dropdown dropdown-end ff xp"
+  data-export
+  data-export-tab={tab}
+  data-export-format={format}
+  data-export-noun={noun}
+  data-export-total={String(total)}
+  data-export-rows={rowSelector}
+  data-export-space={space}
+  data-export-heavy={String(heavyAbove)}
+>
+  <button type="button" class="btn btn-sm gap-1.5 ff-trigger xp-trigger" data-export-trigger aria-haspopup="true" aria-expanded="false">
+    <span class="iconify lucide--download size-4 opacity-70" aria-hidden="true"></span>
+    <span data-export-label>{LABEL[format]}</span>
+    <span class="iconify lucide--chevron-down size-3 opacity-55" aria-hidden="true"></span>
+  </button>
+
+  <div tabindex="0" class="dropdown-content ff-panel xp-panel" data-export-panel>
+    <div class="ff-group">Scope</div>
+
+    <label class="ff-opt">
+      <span class="ff-label">Current view</span>
+      <span class="xp-count" data-export-current>0</span>
+      <input type="radio" class="radio radio-sm radio-primary" name={`xp-${tab}`} data-export-scope="filtered" checked />
+    </label>
+    <label class="ff-opt">
+      <span class="ff-label">Everything</span>
+      <span class="xp-count">{total} {noun}</span>
+      <input type="radio" class="radio radio-sm radio-primary" name={`xp-${tab}`} data-export-scope="all" />
+    </label>
+
+    {format === 'csv' && (
+      <>
+        <div class="ff-sep"></div>
+        {/* Name the OUTCOME, not the byte. "UTF-8 byte-order mark" is jargon; "opens correctly in Excel"
+            is the decision the user is actually making. The default is off: the marker fixes Excel on
+            Windows but corrupts the first column header for many other importers. */}
+        <label class="ff-opt">
+          <span class="ff-label">Opening in Excel</span>
+          <input type="checkbox" class="toggle toggle-sm toggle-primary" data-export-bom />
+        </label>
+        <p class="xp-note">Keeps accents, dashes and emoji readable in Excel on Windows.</p>
+      </>
+    )}
+
+    {format === 'image' && (
+      <>
+        <div class="ff-sep"></div>
+        {/* ASSUMPTION (Dan has not answered): the whole graph, fitted with padding — never the viewport,
+            which silently drops the off-screen nodes the user wanted. See research/schema-export/. */}
+        <div class="ff-group">Background</div>
+        <label class="ff-opt"><span class="ff-label">Match theme</span><input type="radio" class="radio radio-sm radio-primary" name={`xp-bg-${tab}`} data-export-bg="theme" checked /></label>
+        <label class="ff-opt"><span class="ff-label">Light</span><input type="radio" class="radio radio-sm radio-primary" name={`xp-bg-${tab}`} data-export-bg="light" /></label>
+        <label class="ff-opt"><span class="ff-label">Transparent</span><input type="radio" class="radio radio-sm radio-primary" name={`xp-bg-${tab}`} data-export-bg="transparent" /></label>
+        <div class="ff-group">Scale</div>
+        {/* ASSUMPTION: 2x by default — raster blurs when a schema diagram is zoomed. */}
+        <label class="ff-opt"><span class="ff-label">1×</span><input type="radio" class="radio radio-sm radio-primary" name={`xp-sc-${tab}`} data-export-scale="1" /></label>
+        <label class="ff-opt"><span class="ff-label">2×</span><input type="radio" class="radio radio-sm radio-primary" name={`xp-sc-${tab}`} data-export-scale="2" checked /></label>
+        <label class="ff-opt"><span class="ff-label">3×</span><input type="radio" class="radio radio-sm radio-primary" name={`xp-sc-${tab}`} data-export-scale="3" /></label>
+        <p class="xp-note">The whole graph, fitted with padding — not just what is on screen.</p>
+      </>
+    )}
+
+    <div class="ff-sep"></div>
+    {/* What you are about to get: its name, and — for CSV — the one thing about its contents a user
+        could be surprised by. Grouped, because both describe the FILE, not the options above it. */}
+    <p class="xp-file"><span class="iconify lucide--file-down size-3.5 opacity-60 mt-0.5 shrink-0" aria-hidden="true"></span><code data-export-filename></code></p>
+    {format === 'csv' && <p class="xp-note xp-file-note">Formulas export as text, never evaluated.</p>}
+
+    {/* Disabled with a reason beats a header-only file, which reads as a bug — and a bug in an export is
+        indistinguishable from data loss. */}
+    <p class="xp-empty" data-export-empty hidden>No {noun} match the current filter.</p>
+
+    <button type="button" class="btn btn-sm btn-primary xp-go" data-export-go>
+      <span data-export-go-label>Export</span>
+    </button>
+  </div>
+
+  <span class="sr-only" role="status" aria-live="polite" data-export-live></span>
+</div>
+
+{/* Panel styles live in styles/components/export-control.css (after facet-filter.css) — tracked
+    components carry no scoped style blocks (component-classification.test.ts). */}
+
+<script>
+  import { exportFilename } from '../../lib/csv';
+
+  /** Every wired control's sync(), so a filter change anywhere can refresh the counts. */
+  const syncs: Array<() => void> = [];
+
+  function wireExports() {
+    document.querySelectorAll<HTMLElement>('[data-export]').forEach((root) => {
+      if (root.dataset.exportWired) return;
+      root.dataset.exportWired = '1';
+
+      const trigger = root.querySelector<HTMLButtonElement>('[data-export-trigger]')!;
+      const go = root.querySelector<HTMLButtonElement>('[data-export-go]')!;
+      const goLabel = root.querySelector<HTMLElement>('[data-export-go-label]')!;
+      const currentEl = root.querySelector<HTMLElement>('[data-export-current]')!;
+      const fileEl = root.querySelector<HTMLElement>('[data-export-filename]')!;
+      const emptyEl = root.querySelector<HTMLElement>('[data-export-empty]')!;
+      const live = root.querySelector<HTMLElement>('[data-export-live]')!;
+
+      const tab = root.dataset.exportTab!;
+      const noun = root.dataset.exportNoun!;
+      const rowSel = root.dataset.exportRows || '';
+      const space = root.dataset.exportSpace || 'Space';
+      const format = root.dataset.exportFormat as 'csv' | 'image' | 'pdf';
+      const ext = format === 'csv' ? 'csv' : format === 'image' ? 'png' : 'pdf';
+
+      // Promotion-time adaptation: total reads live (like the heavy threshold below) — the
+      // lazy-loaded tabs (Changelog, Relationships, Chat) only learn their real totals after
+      // their first fetch and write them back onto data-export-total.
+      const totalOf = () => Number(root.dataset.exportTotal || 0);
+      // The "Everything" count span, so a live total refresh keeps the panel honest too.
+      const allCountEl = root
+        .querySelector<HTMLInputElement>('[data-export-scope="all"]')
+        ?.closest('label')
+        ?.querySelector<HTMLElement>('.xp-count');
+
+      const scopeOf = () =>
+        (root.querySelector<HTMLInputElement>('[data-export-scope]:checked')?.dataset.exportScope || 'filtered') as
+          | 'filtered'
+          | 'all';
+
+      /** "Current view" = the rows the tab is actually showing. No rowSelector ⇒ the tab has no rows. */
+      const currentCount = () => {
+        if (!rowSel) return totalOf();
+        return Array.from(document.querySelectorAll<HTMLElement>(rowSel)).filter((r) => r.offsetParent !== null).length;
+      };
+
+      function sync() {
+        // A hidden tab reports zero visible rows, which would disable a control the user cannot even see
+        // — and would then be wrong the moment they switch to it. Only recount what is on screen.
+        if (root.offsetParent === null) return;
+        // Read live: the threshold is a tab-owned knob, not a value frozen at wire time.
+        const heavy = Number(root.dataset.exportHeavy || 500);
+        const total = totalOf();
+        const scope = scopeOf();
+        const n = currentCount();
+        currentEl.textContent = `${n} ${noun}`;
+        if (allCountEl) allCountEl.textContent = `${total} ${noun}`;
+        const count = scope === 'all' ? total : n;
+
+        // Zero matches: refuse, and say why. Only the filtered scope can be empty.
+        const empty = count === 0;
+        emptyEl.hidden = !empty;
+        go.disabled = empty;
+
+        // ProBackup's degrade-on-size: the label change IS the warning and the wait-communication.
+        const isHeavy = !empty && count > heavy;
+        goLabel.textContent = empty
+          ? 'Nothing to export'
+          : isHeavy
+            ? 'Request full export'
+            : `Export ${count} ${noun}`;
+        go.setAttribute(
+          'aria-label',
+          `${goLabel.textContent} — ${scope === 'all' ? 'everything' : 'current view'}, as ${ext.toUpperCase()}`,
+        );
+        fileEl.textContent = exportFilename({ space, tab, scope, ext, date: new Date() });
+      }
+
+      root.querySelectorAll<HTMLInputElement>('[data-export-scope]').forEach((r) => r.addEventListener('change', sync));
+      trigger.addEventListener('click', () => {
+        trigger.setAttribute('aria-expanded', String(trigger.getAttribute('aria-expanded') !== 'true'));
+        sync();
+      });
+
+      go.addEventListener('click', () => {
+        const heavy = Number(root.dataset.exportHeavy || 500);
+        const scope = scopeOf();
+        const count = scope === 'all' ? totalOf() : currentCount();
+        const name = fileEl.textContent;
+        const heavyNow = count > heavy;
+
+        if (heavyNow) {
+          // Async degrade unchanged from the design mirror — the full-export pipeline is backend work.
+          live.textContent = `Export requested. It will arrive in your Inbox. Nothing was downloaded — this preview has no backend.`;
+          document.dispatchEvent(new CustomEvent('schema:exportQueued', { detail: { tab, name, count } }));
+        } else {
+          // Promotion-time adaptation (web-schema-export): the design mirror faked every export here.
+          // Instead, offer the export to the owning tab: a cancelable event a tab may preventDefault()
+          // after performing a REAL download (Browse + Changelog own their data client-side). Tabs
+          // without a listener fall through to the honest not-yet message.
+          const handled = !document.dispatchEvent(
+            new CustomEvent('schema:export', {
+              detail: { tab, format, scope, count, filename: name },
+              cancelable: true,
+            }),
+          );
+          live.textContent = handled
+            ? `Exported ${count} ${noun} as ${name}.`
+            : `Nothing was downloaded — the export for this tab ships with its backend.`;
+        }
+
+        // Focus belongs back on the trigger once the panel closes; never on an async result.
+        (document.activeElement as HTMLElement | null)?.blur();
+        trigger.setAttribute('aria-expanded', 'false');
+        trigger.focus();
+      });
+
+      syncs.push(sync);
+      sync();
+    });
+  }
+
+  const syncAll = () => syncs.forEach((fn) => fn());
+
+  wireExports();
+  document.addEventListener('astro:after-swap', () => { syncs.length = 0; wireExports(); });
+  // The counts are only honest if they follow the tab. Facets emit `facetchange`; search boxes and the
+  // derived checkboxes just fire input/change. Listen to all three and recount from the DOM.
+  document.addEventListener('facetchange', syncAll);
+  document.addEventListener('input', syncAll);
+  document.addEventListener('change', syncAll);
+</script>

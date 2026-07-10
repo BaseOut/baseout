@@ -5,6 +5,7 @@
  * (web-schema-round3-shell §2.1); only the lazy-load trigger changed (button tab).
  */
 import EmptyState from '../../components/ui/EmptyState.astro'
+import ExportControl from '../../components/patterns/ExportControl.astro'
 
 interface Props {
   hasSchema: boolean
@@ -23,6 +24,13 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
         />
       ) : (
         <div data-health-tab class="space-y-4">
+          {/* Health's toolbar rows are both conditional (multi-base select, Pro+ actions),
+              so the export mounts in its own right-aligned row (Dan's sch-tb-right idiom).
+              No rowSelector: the tab shows one base's overview, not a row list — current
+              view equals everything. PDF generation ships with the reports backend. */}
+          <div class="flex flex-wrap items-center justify-end gap-3">
+            <ExportControl tab="health" format="pdf" noun="bases" total={healthBases.length} />
+          </div>
           {healthBases.length > 1 && (
             <div class="flex flex-wrap items-center gap-3">
               <label class="text-sm font-medium" for="health-base-select">Base</label>

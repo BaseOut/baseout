@@ -1,0 +1,28 @@
+/**
+ * Export control (`pattern-export-control`) — panel chrome for patterns/ExportControl.astro.
+ *
+ * Promotion note (web-schema-export): these rules lived in a scoped <style> block in the design
+ * mirror's ExportControl. apps/web's component governance forbids scoped style blocks in tracked
+ * components (component-classification.test.ts), so they live here — the same move facet-filter.css
+ * and space-pipeline-hero.css made. Selectors are verbatim from the design component.
+ *
+ * MUST be imported after facet-filter.css: `.xp-panel` overrides `.ff-panel`'s width/max-height at
+ * equal specificity, so source order decides.
+ */
+
+/* The shared .ff-panel caps at min(58vh, 420px) — right for a long facet list, too short for a
+   panel whose content is fixed and short. Scrolling a 6-row form is worse than making it fit. */
+.xp-panel { width: 264px; max-height: min(88vh, 620px); }
+.xp-count { flex: none; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .55); font-variant-numeric: tabular-nums; }
+.xp-note { margin: 4px 8px 0; font-size: 12px; line-height: 1.4; color: oklch(from var(--color-base-content) l c h / .5); }
+/* Sits with the filename — both describe the file, not the options. No rule: it is not a section. */
+/* Indented to the filename's text column, not the icon's (pad 8 + icon 14 + gap 4 = 26; 24 is the
+   nearest grid step and the 2px is optical). */
+.xp-file-note { margin: -4px 8px 8px 24px; }
+.xp-file { display: flex; align-items: flex-start; gap: 4px; margin: 0 8px 8px; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .55); }
+/* WRAPS, never ellipsises. The scope suffix (`_filtered` / `_all`) is the last thing in the name and
+   the whole reason the preview exists — truncating hides exactly the word it is here to show. */
+.xp-file code { min-width: 0; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+.xp-empty { margin: 0 8px 8px; font-size: 12px; color: var(--color-error); }
+.xp-empty[hidden] { display: none; }
+.xp-go { width: 100%; }

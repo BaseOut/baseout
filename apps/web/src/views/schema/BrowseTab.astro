@@ -8,6 +8,7 @@
 import Card from '../../components/ui/Card.astro'
 import Badge from '../../components/ui/Badge.astro'
 import EmptyState from '../../components/ui/EmptyState.astro'
+import ExportControl from '../../components/patterns/ExportControl.astro'
 import type {
   SchemaEntityBase,
   SchemaEntityField,
@@ -50,6 +51,9 @@ const fvSchema: FvSchema = {
   })),
 }
 const totalFields = schema.fields.length
+// Everything the tree can show — ExportControl's server-known "Everything" count.
+const totalEntities =
+  schema.bases.length + schema.tables.length + schema.fields.length + schema.views.length
 
 // Per-entity panel payload — identity, descriptions, field config, and the
 // reverse graph ("Referenced by"), rendered client-side by the detail panel
@@ -132,6 +136,15 @@ const entityIndex = buildEntityPanelIndex(schema)
                   <span>Include removed <span class="text-base-content/50">({deletedCount})</span></span>
                 </label>
               )}
+              <div class="ml-auto">
+                <ExportControl
+                  tab="browse"
+                  format="csv"
+                  noun="entities"
+                  total={totalEntities}
+                  rowSelector="#schema-tree .entity-link"
+                />
+              </div>
             </div>
             {/* Scroll lives on an INNER div: ui/Card bakes `overflow-hidden` into its
                 base classes, which wins the cascade over a passed `overflow-auto`
@@ -498,5 +511,42 @@ const entityIndex = buildEntityPanelIndex(schema)
     document.getElementById('fv-search')?.addEventListener('input', applyMenuSearch)
 
     sync()
+  }
+</script>
+
+<script>
+  // Real CSV export (web-schema-export): Browse owns its entity index client-side
+  // (#entity-index-data), so it answers the ExportControl's cancelable
+  // `schema:export` event with an actual download. Scope 'filtered' = the tree
+  // rows currently visible (composes with the removed + field-visibility
+  // filters); 'all' = every entity in the index.
+  import { formatCsv } from '../../lib/csv'
+  import { downloadTextFile } from '../../lib/ui'
+  import { ENTITY_EXPORT_HEADER, entityRow } from '../../lib/schema-docs/export-rows'
+  import type { EntityPanelInfo } from '../../lib/schema-docs/entity-index'
+
+  const xpIndexEl = document.getElementById('entity-index-data')
+  if (xpIndexEl) {
+    const xpIndex = JSON.parse(xpIndexEl.textContent || '{}') as Record<string, EntityPanelInfo>
+    document.addEventListener('schema:export', (e) => {
+      const ev = e as CustomEvent<{
+        tab: string
+        scope: 'filtered' | 'all'
+        filename: string
+      }>
+      if (ev.detail?.tab !== 'browse') return
+      ev.preventDefault()
+      const infos =
+        ev.detail.scope === 'all'
+          ? Object.values(xpIndex)
+          : Array.from(document.querySelectorAll<HTMLElement>('#schema-tree .entity-link'))
+              .filter((el) => el.offsetParent !== null)
+              .map((el) => xpIndex[el.dataset.targetId ?? ''])
+              .filter((info): info is EntityPanelInfo => Boolean(info))
+      const bom = Boolean(
+        document.querySelector<HTMLInputElement>('[data-export-tab="browse"] [data-export-bom]')?.checked,
+      )
+      downloadTextFile(ev.detail.filename, formatCsv(ENTITY_EXPORT_HEADER, infos.map(entityRow), { bom }))
+    })
   }
 </script>

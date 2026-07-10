@@ -5,6 +5,7 @@
  * (web-schema-round3-shell §2.1); only the lazy-load trigger changed (button tab).
  */
 import EmptyState from '../../components/ui/EmptyState.astro'
+import ExportControl from '../../components/patterns/ExportControl.astro'
 
 interface Props {
   hasSchema: boolean
@@ -51,6 +52,11 @@ const { hasSchema, healthBases } = Astro.props
             <button type="button" id="rel-new" class="btn btn-outline btn-sm gap-1">
               <span class="iconify lucide--plus size-4" aria-hidden="true"></span> New synced view
             </button>
+            {/* total starts at 0 — the feed is lazy-fetched; load() writes the real
+                total back onto data-export-total (ExportControl reads it live). */}
+            <div class="ml-auto">
+              <ExportControl tab="relationships" format="csv" noun="relationships" total={0} rowSelector="#rel-content li" />
+            </div>
           </div>
           <form id="rel-create-form" class="hidden flex-wrap items-end gap-2 rounded-box border border-base-300 p-3">
             <div class="flex flex-col gap-1">
@@ -216,6 +222,9 @@ const { hasSchema, healthBases } = Astro.props
         return
       }
       lastData = (await res.json()) as { derived: Derived[]; syncedViews: Synced[] }
+      // Tell the export control what "Everything" means for this base (read live).
+      const xpRoot = document.querySelector<HTMLElement>('[data-export-tab="relationships"]')
+      if (xpRoot) xpRoot.dataset.exportTotal = String(lastData.derived.length + lastData.syncedViews.length)
       content.innerHTML = renderRelationships(lastData)
     }
 

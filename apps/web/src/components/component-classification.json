@@ -1,4 +1,10 @@
 {
+  "layout/Inbox.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-inbox",
+    "designHarnessPath": "pages/index.astro",
+    "rationale": "Notification-center side panel composed from daisyUI tabs (tabs-border lane switcher), badge (counts, Space and Handled chips), btn (row actions, Mark all read, Clear), and dropdown (the ff-trigger/ff-panel filter menu from the shared facet-filter stylesheet); Storybook documents structure and the zero-states, apps/design drives the fixture feed and triage behaviour."
+  },
   "patterns/ConnectionHealthBanner.astro": {
     "classification": "storybook-pattern",
     "styleguideId": "pattern-connection-health",
@@ -52,6 +58,12 @@
     "styleguideId": "pattern-entity-detail",
     "designHarnessPath": "pages/sources/detail.astro",
     "rationale": "Product detail header composing PageHeader, Badge, and action controls."
+  },
+  "patterns/ExportControl.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-export-control",
+    "designHarnessPath": "pages/schema.astro",
+    "rationale": "One export affordance per Schema tab, repurposing catalog primitives — the daisyUI dropdown/join/btn set plus the shared ff-trigger/ff-panel facet language — and replacing the per-tab divergent format pickers with a single scope-aware, format-named control."
   },
   "patterns/MetaBlock.astro": {
     "classification": "storybook-pattern",

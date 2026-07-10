@@ -10,6 +10,7 @@
  * refetches (baseId is required by the engine route).
  */
 import EmptyState from '../../components/ui/EmptyState.astro'
+import ExportControl from '../../components/patterns/ExportControl.astro'
 
 interface Props {
   hasSchema: boolean
@@ -78,6 +79,11 @@ const clSchema = {
         placeholder="Filter changes…"
         aria-label="Filter changes"
       />
+      {/* total starts at 0 — the feed is lazy-fetched; load() writes the real
+          total back onto data-export-total (ExportControl reads it live). */}
+      <div class="ml-auto">
+        <ExportControl tab="changelog" format="csv" noun="changes" total={0} rowSelector="#cl-content li" />
+      </div>
     </div>
     <div id="cl-content" class="min-h-[12rem] text-sm text-base-content/60">
       <span class="loading loading-spinner loading-sm"></span>
@@ -105,6 +111,9 @@ const clSchema = {
     type NameIndex,
     type NameIndexInput,
   } from '../../lib/schema-docs/changelog-view'
+  import { formatCsv } from '../../lib/csv'
+  import { downloadTextFile } from '../../lib/ui'
+  import { CHANGELOG_EXPORT_HEADER, changelogRow } from '../../lib/schema-docs/export-rows'
 
   const clTab = document.querySelector<HTMLElement>('[data-changelog-tab]')
   const clRoot = document.querySelector<HTMLElement>('[data-schema-docs]')
@@ -216,6 +225,9 @@ const clSchema = {
         return
       }
       lastEntries = ((await res.json()) as { entries: ChangelogEntryView[] }).entries
+      // Tell the export control what "Everything" means for this base (read live).
+      const xpRoot = document.querySelector<HTMLElement>('[data-export-tab="changelog"]')
+      if (xpRoot) xpRoot.dataset.exportTotal = String(lastEntries.length)
       rerender()
     }
 
@@ -241,5 +253,36 @@ const clSchema = {
     kindSelect?.addEventListener('change', rerender)
     includeRemoved?.addEventListener('change', rerender)
     search?.addEventListener('input', rerender)
+
+    // Real CSV export (web-schema-export): the entries live client-side after the
+    // first fetch, so Changelog answers the ExportControl's cancelable
+    // `schema:export` event with an actual download. Scope 'filtered' applies the
+    // same kind / include-removed / search filter as the rendered feed; 'all' is
+    // the whole last fetch. Before the first fetch there is nothing to export, so
+    // the event falls through to the control's honest fallback.
+    document.addEventListener('schema:export', (e) => {
+      const ev = e as CustomEvent<{ tab: string; scope: 'filtered' | 'all'; filename: string }>
+      if (ev.detail?.tab !== 'changelog' || !lastEntries) return
+      ev.preventDefault()
+      const entries =
+        ev.detail.scope === 'all'
+          ? lastEntries
+          : filterEntries(
+              lastEntries,
+              {
+                kind: (kindSelect?.value || null) as ChangelogKindKey | null,
+                includeRemoved: includeRemoved?.checked ?? true,
+                term: search?.value ?? '',
+              },
+              index,
+            )
+      const bom = Boolean(
+        document.querySelector<HTMLInputElement>('[data-export-tab="changelog"] [data-export-bom]')?.checked,
+      )
+      downloadTextFile(
+        ev.detail.filename,
+        formatCsv(CHANGELOG_EXPORT_HEADER, entries.map((entry) => changelogRow(entry, index)), { bom }),
+      )
+    })
   }
 </script>

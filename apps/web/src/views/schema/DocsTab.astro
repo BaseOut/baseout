@@ -5,6 +5,7 @@
  * first shown (hidden panels do not intersect).
  */
 import DocsTab, { type DocsTabEntity } from '../../components/islands/DocsTab'
+import ExportControl from '../../components/patterns/ExportControl.astro'
 import type { SchemaDocSummary } from '../../lib/backup-engine'
 
 interface Props {
@@ -17,6 +18,13 @@ interface Props {
 const { spaceId, docs, aiEnabled, entities } = Astro.props
 ---
 
+      {/* The island renders its own toolbar, so the export mounts above it in a
+          right-aligned row (Dan's sch-tb-right idiom). No rowSelector: the React
+          list rows carry no stable hook — current view equals everything. PDF
+          generation ships with the reports backend. */}
+      <div class="mb-3 flex flex-wrap items-center justify-end gap-3">
+        <ExportControl tab="docs" format="pdf" noun="documents" total={docs.length} />
+      </div>
       <DocsTab
         client:visible
         spaceId={spaceId}

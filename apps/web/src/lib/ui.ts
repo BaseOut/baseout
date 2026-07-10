@@ -44,3 +44,20 @@ export function setButtonLoading(btn: HTMLButtonElement, loading: boolean): void
     existing.remove();
   }
 }
+
+/**
+ * Client-side file download via a Blob + a transient anchor (web-schema-export).
+ * Used by the Schema tabs that answer the ExportControl's `schema:export` event
+ * with a real CSV. The object URL is revoked immediately — Blob data stays alive
+ * for the duration of the click it is dispatched from.
+ */
+export function downloadTextFile(filename: string, text: string, mime = 'text/csv'): void {
+  const url = URL.createObjectURL(new Blob([text], { type: `${mime};charset=utf-8` }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

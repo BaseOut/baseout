@@ -60,7 +60,7 @@ screenshots under `research/**/shots/`.
 | 2026-06-12 | `f0f9171` | `789727e` | initial fork integration: apps/design baseline + openspec imports |
 | 2026-07-04 | `beb43a7` | `6d4c698` | decoupled round-2 handoff surfaces only (flow-registry, handoff, schema-nav, planning docs); schema web layer deferred |
 | 2026-07-08 | `d97c777` | `53110f8` | round-2/3 schema web layer LOCALIZED into apps/design (21 schema components + SchemaView + Drawer); React enabled; storybook 3-way |
-| 2026-07-10 | `3153dfd` | *(this commit)* | schema export control + csv.ts, panels round-4 (EntityPanel anchor model, entityChip/locationCrumbs), drawer/changelog/facet polish, prototypes pages, research+overview docs, `web-notifications-inbox` spec import. storybook.ts merged as upstream-skeleton + 11 local-only entries (upstream ships a duplicate `tooltip` id — left verbatim). Deferred to the 4c promotion commit: `fixtures/inbox.ts` + the design `SidebarLayout.astro` wrapper (both type-import `@web/components/layout/inbox`, which exists only after the app-shell promotion) |
+| 2026-07-10 | `3153dfd` | `e93f111` | schema export control + csv.ts, panels round-4 (EntityPanel anchor model, entityChip/locationCrumbs), drawer/changelog/facet polish, prototypes pages, research+overview docs, `web-notifications-inbox` spec import. storybook.ts merged as upstream-skeleton + 11 local-only entries (upstream ships a duplicate `tooltip` id — left verbatim). Deferred to the 4c promotion commit: `fixtures/inbox.ts` + the design `SidebarLayout.astro` wrapper (both type-import `@web/components/layout/inbox`, which exists only after the app-shell promotion) |
 
 ## 4. Promotion status matrix
 
@@ -68,9 +68,9 @@ screenshots under `research/**/shots/`.
 |---|---|---|---|---|
 | Schema shell + 8 tabs | `d97c777` | `09949d3` (web-schema-round3-shell) | yes — SSR `schema.astro` via `createBackupEngine()` | pre-split SchemaView in git history |
 | Schema Visualize / Changelog tabs | `d97c777` | in-flight on `autumn/june-ui-refactor` (web-schema-visualize / web-schema-changelog) | changelog feed live; visualize from SSR payload | — |
-| Schema export control | `3153dfd` pending | planned: `web-schema-export` | SSR schema payload + `lib/csv.ts` | — |
-| EntityPanel anchor model + panel polish | `3153dfd` pending | planned: `web-schema-panels-round4` (upstream drawer-round4 questions OPEN — promoted per user direction 2026-07-10) | entity-graph/back-refs payload (`entity-index.ts`) | prior EntityPanel → `.legacy` |
-| Notifications Inbox | `3153dfd` pending | planned: `web-notifications-inbox` (UI mounted, feed empty/"soon") | blocked on paired `server-notifications-inbox` | Header/Sidebar pre-inbox in git history |
+| Schema export control | `3153dfd` | `web-schema-export` (patterns/ExportControl + lib/csv, mounted on all 7 Schema tabs) | Browse + Changelog export REAL CSV client-side (`schema:export` event + `export-rows.ts`); other tabs honest-fallback until their backends | — |
+| EntityPanel anchor model + panel polish | `3153dfd` (design harness) | **STAGED — web mount deliberately deferred** (2026-07-10): the type-import closure drags 3 fixture-driven tab components into web; draft/publish/generate actions are fixture-faked upstream, so mounting would replace the real docs-by-entity panel with faked actions; upstream drawer-round4 client questions still OPEN. 19 styleguide entries for un-promoted surfaces carry `design:`-prefixed references (the resolvability gate skips them; retarget at promotion) | pending — needs real description-publish + generate seams before mount | current BrowseTab panel is the working fallback |
+| Notifications Inbox | `3153dfd` | `web-notifications-inbox` §1–4 (Inbox + inbox.ts + inbox-client verbatim; AppShellHeader bell removed/`lg:hidden`; AppShellSidebar trigger + badge; SidebarLayout `inboxItems` prop default `[]` → designed zero-states) | UI live with empty feed; feed blocked on `server-notifications-inbox` (stub filed) | Header/Sidebar pre-inbox in git history |
 
 ## 5. Known traps
 

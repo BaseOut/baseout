@@ -6,6 +6,7 @@
  * also fired by the header "Ask about your schema" launcher).
  */
 import EmptyState from '../../components/ui/EmptyState.astro'
+import ExportControl from '../../components/patterns/ExportControl.astro'
 
 interface Props {
   hasSchema: boolean
@@ -49,7 +50,10 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
                   <option value={b.baseId}>{b.name}</option>
                 ))}
               </select>
-              <span class="ml-auto flex gap-1">
+              <span class="ml-auto flex items-center gap-1">
+                {/* total starts at 0 — threads are lazy-fetched; loadThreads() writes the
+                    real total back onto data-export-total (ExportControl reads it live). */}
+                <ExportControl tab="chat" format="pdf" noun="threads" total={0} rowSelector="#chat-threads [data-thread-id]" />
                 <button type="button" id="chat-rename" class="btn btn-ghost btn-xs" disabled>Rename</button>
                 <button type="button" id="chat-archive" class="btn btn-ghost btn-xs" disabled>Archive</button>
               </span>
@@ -201,6 +205,9 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
         return []
       }
       const data = (await res.json()) as { threads: ThreadSummary[] }
+      // Tell the export control what "Everything" means (read live).
+      const xpRoot = document.querySelector<HTMLElement>('[data-export-tab="chat"]')
+      if (xpRoot) xpRoot.dataset.exportTotal = String(data.threads.length)
       renderThreads(data.threads, currentThreadId)
       if (selectFirst && data.threads.length > 0 && !currentThreadId) {
         await selectThread(data.threads[0]!.id, data.threads)

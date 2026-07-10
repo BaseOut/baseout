@@ -113,9 +113,9 @@ export const backupHistoryFixture = {
 
 export const createSpaceModalFixture = {};
 
-export const appShellHeaderFixture = {
-  notificationCount: 2,
-};
+// The topbar lost its bell to the sidebar Inbox trigger (pattern-inbox) — it
+// takes no props now.
+export const appShellHeaderFixture = {};
 
 export const appShellSidebarFixture = {
   currentSpace: 'Operations',
@@ -149,3 +149,27 @@ export const connectionHealthStates = [
   { key: 'reconnecting', label: 'Reconnecting', props: { state: 'reconnecting', provider: 'Airtable' } },
   { key: 'restored', label: 'Restored', props: { state: 'restored' } },
 ];
+
+// ExportControl (pattern-export-control) — one export affordance per Schema tab.
+// Variants cover the story matrix: csv vs pdf, small vs heavy (total > heavyAbove),
+// with vs without a rowSelector (no rows ⇒ current view === everything).
+export const exportControlFixture = {
+  tab: 'browse',
+  format: 'csv',
+  noun: 'entities',
+  total: 108,
+  rowSelector: '.br-row',
+  space: 'Core CRM',
+};
+
+export const exportControlVariants = [
+  { key: 'csv', label: 'CSV · small', props: exportControlFixture },
+  { key: 'pdf', label: 'PDF · no rows', props: { tab: 'health', format: 'pdf', noun: 'bases', total: 3, space: 'Core CRM' } },
+  { key: 'heavy', label: 'CSV · heavy (async degrade)', props: { tab: 'changelog', format: 'csv', noun: 'changes', total: 1200, rowSelector: '[data-cl-open]', space: 'Core CRM' } },
+  { key: 'image', label: 'Image · diagram', props: { tab: 'visualize', format: 'image', noun: 'diagram', total: 1, space: 'Core CRM' } },
+];
+
+// Inbox (pattern-inbox) — the notification-center panel. Rows live in the shared
+// fixture module (fixtures/inbox.ts) so the design harness and the Storybook
+// story render the same feed.
+export { inboxItems as inboxFixture, inboxEmpty as inboxEmptyFixture } from './inbox';

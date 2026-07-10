@@ -1,0 +1,41 @@
+/**
+ * Facet filter — the ONE filter-control language in the app (Backups list, Schema tabs, Inbox).
+ * Catalogued as `pattern-faceted-filter`.
+ *
+ * These rules used to live in a scoped <style> inside FacetFilter.astro, so a second surface could
+ * only ever COPY the look. Copies drift. They are global now, which is what "one pattern" has to mean:
+ * FacetFilter.astro and the Inbox filter menu render the same classes, from the same stylesheet.
+ *
+ * Anatomy: a bordered `btn btn-sm` trigger with a chevron (`.ff-trigger`, `.ff-on` when the filter is
+ * doing something), over a panel (`.ff-panel`) of uppercase group labels (`.ff-group`) and rows
+ * (`.ff-opt`) that are label-left, control-right.
+ */
+
+/* Trigger matches the daisyUI select look (bordered, not a filled button); the whole
+   filter bar reads as one set of controls. Active state = primary tint (Backups pattern). */
+.ff-trigger { background-color: var(--color-base-100); border-color: var(--color-base-300); box-shadow: none; font-weight: 400; }
+.ff-trigger:hover { background-color: var(--color-base-200); border-color: var(--color-base-300); }
+.ff-trigger.ff-on { background-color: color-mix(in oklch, var(--color-primary) 13%, transparent); border-color: color-mix(in oklch, var(--color-primary) 35%, transparent); color: var(--color-primary); }
+.ff-trigger.ff-on:hover { background-color: color-mix(in oklch, var(--color-primary) 18%, transparent); }
+.ff-panel {
+  z-index: 30; margin-top: 4px; padding: 8px; width: 232px;
+  max-height: min(58vh, 420px); overflow-y: auto; font-size: 13px;
+  background: var(--color-base-100); border: 1px solid var(--color-base-300);
+  border-radius: var(--radius-box, .9rem); box-shadow: 0 8px 24px oklch(0 0 0 / .16);
+}
+.ff-allrow { display: flex; gap: 4px; padding: 2px 2px 8px; }
+.ff-search { padding: 2px 2px 8px; }
+.ff-search-input { width: 100%; }
+.ff-nomatch { padding: 8px 8px; font-size: 12px; opacity: .5; }
+.ff-group { padding: 8px 8px 2px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .45; }
+.ff-opt { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 7px; cursor: pointer; transition: opacity .12s ease, background .12s ease; }
+.ff-opt:hover { background: var(--color-base-200); }
+.ff-opt:has(input[type="checkbox"]:not(:checked)) { opacity: .45; }
+.ff-dot { width: 7px; height: 7px; border-radius: 999px; flex: none; }
+.ff-icon { width: 14px; height: 14px; flex: none; display: grid; place-items: center; opacity: .7; }
+.ff-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.ff-opt .toggle, .ff-opt .radio { flex: none; }
+/* A row that runs a command rather than setting a filter (Mark all as read). Same geometry as
+   `.ff-opt`, but it is a button, so it carries the icon on the left and no control on the right. */
+.ff-cmd { width: 100%; text-align: left; background: none; border: 0; font: inherit; color: inherit; }
+.ff-sep { height: 1px; margin: 4px 0; background: var(--color-base-300); }

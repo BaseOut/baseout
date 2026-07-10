@@ -53,6 +53,9 @@
 @import "./components/base-selection.css";
 @import "./components/auth.css";
 @import "./components/brand-logo.css";
+/* facet-filter before export-control: .xp-panel overrides .ff-panel at equal specificity. */
+@import "./components/facet-filter.css";
+@import "./components/export-control.css";
 
 /* ── Body Background (uses Nexus --root-bg token) ───────── */
 body {
