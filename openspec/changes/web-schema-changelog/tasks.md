@@ -1,8 +1,10 @@
 ## Status
 
-PARTIALLY LANDED — §1 (client + proxy) shipped in `efdb90c`; §2–§5 (the tab UI)
-are the remaining work. See the Status section in [`proposal.md`](./proposal.md)
-for the landed-name and round-3-shell reconciliation.
+BUILT — AWAITING HUMAN SMOKE. §1 (client + proxy) shipped in `efdb90c`; §2–§4
+(the tab UI: `views/schema/ChangelogTab.astro` + `lib/schema-docs/changelog-view.ts`
++ governance) built 2026-07-08, all checks green. Remaining: §4.3 visual breakpoint
+check + §5 human smoke on a deployed dev engine. See the Status section in
+[`proposal.md`](./proposal.md) for the landed-name and round-3-shell reconciliation.
 
 Web half of the Schema Changelog. A read-only Changelog tab over
 [`server-schema-changelog`](../server-schema-changelog/) — a day-grouped, base ▸
@@ -21,22 +23,22 @@ DB/migration/capability-key change — gates via the existing `schemaDocs` level
 
 ## 2. Governance decision + component — TDD
 
-- [ ] 2.1 Decide the render path: promote the `apps/design` `SchemaChangelog.astro` under strict governance (register in `component-classification.json`, add `SchemaChangelog.stories.ts`, document in `apps/design` `/styleguide`, **remove any `<style>` block** → daisyUI classes only), OR compose the feed **vanilla-in-view** inside the new `ChangelogTab.astro` (daisyUI markup, documented in the `/styleguide`, ungoverned component not added). Record the choice in the change notes.
-- [ ] 2.2 Whichever path: render a day-grouped feed of base ▸ [concept-icon] entity rows — typed badge derived client-side from `kind` + `changeType` (added / removed / renamed / type changed / config), before→after delta, ⚠️ row when `breaksData`; `esc()` on all engine strings; entity names/breadcrumbs resolved from the SSR entity index (the engine payload carries identifiers, not display names — see the server change's design note); concept icons (base/table/field-type) reused from the existing icon module.
-- [ ] 2.3 `pnpm --filter @baseout/web run audit:components` green (classification + story + styleguide coverage), whichever path is chosen.
+- [x] 2.1 **DECISION: vanilla-in-view.** The feed is composed inside `views/schema/ChangelogTab.astro` with daisyUI markup (the design's `cl-*`-styled `SchemaChangelog.astro` stays in `apps/design`), matching how RelationshipsTab/HealthTab shipped. Documented as the `pattern-changelog-feed` entry in the `apps/design` `/styleguide` (`apps/design/src/lib/storybook.ts`); `ChangelogTab.astro` registered in `raw-markup-audit-allowlist.json`.
+- [x] 2.2 Day-grouped feed of base ▸ [concept-icon] entity rows — typed badge derived client-side from `kind` + `changeType` (added / removed / renamed / type changed / config), before→after delta, ⚠️ row when `breaksData`; `esc()` on all engine strings; entity names/breadcrumbs resolved from the SSR schema index embedded by the tab (`cl-schema-data`). Derivation/grouping/filtering logic is the pure module `lib/schema-docs/changelog-view.ts`, TDD'd in `changelog-view.test.ts` (13 green).
+- [x] 2.3 `pnpm --filter @baseout/web run audit:components` green (classification + story + styleguide coverage + raw-markup allowlist).
 
 ## 3. Changelog tab UI — TDD (or view integration test)
 
-- [ ] 3.1 New `apps/web/src/views/schema/ChangelogTab.astro`, replacing the `SoonTab.astro` Changelog entry in [`SchemaView.astro`](../../../apps/web/src/views/SchemaView.astro) (Monitor cluster; do NOT reorder or touch the other tabs' logic). Lazy-load on first open, mirroring `RelationshipsTab.astro` / `HealthTab.astro`. Empty state when `!hasSchema`.
-- [ ] 3.2 Base picker + event-kind picker + an "include removed" toggle. Lazy fetch via `/api/spaces/{spaceId}/changelog?baseId=…` on first open; refetch on base change. Kind + include-removed filtering is client-side over the last-fetched entries until the engine's `kinds`/`includeRemoved` params land (server change tasks §5) — then forward them. Client-side search filters the last-fetched entries (rendered wording + entity/base names). `setButtonLoading` on refetch controls.
-- [ ] 3.3 Empty states from the engine contract: single-run ("changes appear after your second backup"), backed-up-no-changes ("no changes since your first backup"), and filters-exclude-everything ("no changes match these filters"). 403 → upgrade affordance (like Health/Relationships).
+- [x] 3.1 New `apps/web/src/views/schema/ChangelogTab.astro`, replacing the `SoonTab.astro` Changelog entry in [`SchemaView.astro`](../../../apps/web/src/views/SchemaView.astro) (Monitor cluster; other tabs untouched). Lazy-load on first `[data-tab="changelog"]` click, mirroring `RelationshipsTab.astro`. Empty state when `!hasSchema`.
+- [x] 3.2 Base picker (refetches — `baseId` is required by the engine route) + kind picker + an "include removed" toggle (default ON — removals are half the feed's value) + `data-sch-search` search. Kind / include-removed / search filter client-side over the last-fetched entries until the engine's `kinds`/`includeRemoved` params land (server change tasks §5). Loading spinner in the content area during fetch (select-driven refetch — no button to spin).
+- [x] 3.3 Empty states: no-entries ("changes appear once a backup captures a difference — from your second backup on"; the engine returns `entries: []` for both single-run and no-changes, so one honest combined message), filters-exclude-everything ("No changes match these filters" + Clear-filters affordance), 403 → upgrade message (like Health/Relationships), fetch/error state.
 
 ## 4. Verification
 
-- [ ] 4.1 `pnpm --filter @baseout/web test` green including the tab/view tests. No stray `console.*`.
-- [ ] 4.2 `pnpm --filter @baseout/web exec tsc --noEmit` 0 errors; `pnpm --filter @baseout/web run build` green.
-- [ ] 4.3 Mobile responsiveness checked at <375 / <768 / <1024px (the feed + filter bar).
-- [ ] 4.4 `db:check` clean (schema-aware SSR reads no missing columns — per the "migrate before smoke" memory).
+- [x] 4.1 `pnpm --filter @baseout/web exec vitest run` — full suite green (92 files / 1032 tests, incl. the 13 new `changelog-view` tests). No stray `console.*` in the diff.
+- [x] 4.2 `pnpm --filter @baseout/web typecheck` (astro check) 0 errors; `pnpm --filter @baseout/web run build` green; `apps/design` build green (styleguide entry).
+- [ ] 4.3 Mobile responsiveness checked at <375 / <768 / <1024px (the feed + filter bar — same flex-wrap layout as the verified sibling tabs; visual check folds into the §5 smoke).
+- [x] 4.4 `db:check` clean (no pending migrations — this change reads no new columns).
 
 ## 5. Human smoke (deployed engine, `--remote`)
 

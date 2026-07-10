@@ -1,0 +1,103 @@
+---
+/**
+ * Visualize tab (web-schema-visualize) — the React Flow schema canvas.
+ *
+ * Frontmatter adapts the SSR schema payload (enriched SchemaEntity* shapes from
+ * the engine) to the island's SchemaTable/SchemaField contract and mounts
+ * SchemaCanvas `client:visible`, so the React Flow bundle loads when the tab
+ * first becomes visible. Data mode draws from these props; Relationships mode
+ * lazy-fetches the live per-base feed inside the island (spaceId prop); the
+ * Automations & Interfaces mode shows its empty state / below-Growth upsell
+ * until the entity-graph slice lands (server-schema-entity-graph).
+ */
+import EmptyState from '../../components/ui/EmptyState.astro'
+import SchemaCanvas from '../../components/islands/SchemaCanvas'
+import type { SchemaTable as CanvasTable } from '../../components/islands/SchemaCanvas'
+import type {
+  SchemaEntityBase,
+  SchemaEntityField,
+  SchemaEntityTable,
+} from '../../lib/backup-engine'
+import type { SchemaDocsLevel } from '../../lib/capabilities/tier-capabilities'
+import { isRemoved } from '../../lib/schema-docs/deleted-filter'
+
+interface Props {
+  spaceId: string
+  level: SchemaDocsLevel
+  hasSchema: boolean
+  schema: {
+    bases: SchemaEntityBase[]
+    tables: SchemaEntityTable[]
+    fields: SchemaEntityField[]
+  }
+}
+
+const { spaceId, level, hasSchema, schema } = Astro.props
+
+// Live bases/tables only — removed entities are history (Browse's include-removed
+// concern), not part of the live diagram. Removed FIELDS pass through with their
+// flag; the canvas filters them out of node rows itself.
+const liveBases = schema.bases.filter((b) => !isRemoved(b.status))
+const liveBaseIds = new Set(liveBases.map((b) => b.baseId))
+const canvasBases = liveBases.map((b) => ({ id: b.baseId, name: b.name }))
+
+const fieldsByTable = new Map<string, SchemaEntityField[]>()
+for (const f of schema.fields) {
+  const list = fieldsByTable.get(f.tableId) ?? []
+  list.push(f)
+  fieldsByTable.set(f.tableId, list)
+}
+
+const canvasTables: CanvasTable[] = schema.tables
+  .filter((t) => !isRemoved(t.status) && liveBaseIds.has(t.baseId))
+  .map((t) => {
+    const fields = (fieldsByTable.get(t.tableId) ?? []).map((f) => ({
+      id: f.fieldId,
+      name: f.name,
+      type: f.type,
+      isPrimary: f.isPrimary,
+      linkedTableId: f.linkedTableId ?? undefined,
+      allowsMultiple: f.allowsMultiple ?? undefined,
+      inverseFieldId: f.inverseFieldId ?? undefined,
+      formula: f.formula ?? undefined,
+      referencedFieldIds: f.referencedFieldIds ?? undefined,
+      lookupViaFieldId: f.lookupViaFieldId ?? undefined,
+      lookupTargetFieldId: f.lookupTargetFieldId ?? undefined,
+      description: f.description ?? undefined,
+      removed: isRemoved(f.status),
+    }))
+    return {
+      id: t.tableId,
+      name: t.name,
+      baseId: t.baseId,
+      fieldCount: t.fieldCount ?? fields.length,
+      recordCount: t.recordCount ?? undefined,
+      description: t.description ?? undefined,
+      fields,
+    }
+  })
+
+// A&I mode upsell: `SchemaDocsLevel` is none | manual | manual_ai — it can't
+// express the precise Growth+ gate (that's enforced server-side by the A&I
+// routes; the proxy 403 drives the real upsell once the entity-graph lands).
+// Here: below-Launch orgs see the locked card, entitled ones the empty state.
+const genState = level === 'none' ? 'locked' : 'ready'
+---
+
+{!hasSchema ? (
+  <EmptyState
+    icon="lucide--workflow"
+    title="Nothing to visualize yet"
+    description="The diagram appears once a backup has captured this Space’s schema."
+  />
+) : (
+  <div data-visualize-tab class="h-[70vh] min-h-[420px] overflow-hidden rounded-box border border-base-300 bg-base-100">
+    <SchemaCanvas
+      client:visible
+      spaceId={spaceId}
+      tables={canvasTables}
+      bases={canvasBases}
+      genState={genState}
+    />
+  </div>
+)}

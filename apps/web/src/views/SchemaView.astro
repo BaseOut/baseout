@@ -10,12 +10,14 @@
  *
  * Tab bodies live in ./schema/*Tab.astro (views tier, raw-markup allowlisted);
  * this shell owns the cluster tab bar (buttons toggling data-panel sections),
- * the shared entity modal, and the "/" search shortcut. Visualize / Changelog /
- * Automations / Interfaces are soon-gated until their slices land.
+ * the shared entity modal, and the "/" search shortcut. Automations /
+ * Interfaces are soon-gated until their slices land.
  */
 import PageHeader from '../components/ui/PageHeader.astro'
 import BrowseTab from './schema/BrowseTab.astro'
+import ChangelogTab from './schema/ChangelogTab.astro'
 import RelationshipsTab from './schema/RelationshipsTab.astro'
+import VisualizeTab from './schema/VisualizeTab.astro'
 import HealthTab from './schema/HealthTab.astro'
 import DocsTabPanel from './schema/DocsTab.astro'
 import ChatTab from './schema/ChatTab.astro'
@@ -151,11 +153,7 @@ const CLUSTERS = [
   </div>
 
   <div class="sch-panel" data-panel="visualize" hidden>
-    <SoonTab
-      icon="lucide--workflow"
-      title="Visualize is coming soon"
-      description="An interactive diagram of your bases — tables, links, and the app layer — drawn from your captured schema."
-    />
+    <VisualizeTab spaceId={spaceId} level={level} hasSchema={hasSchema} schema={schema} />
   </div>
 
   <div class="sch-panel" data-panel="relationships" hidden>
@@ -179,11 +177,7 @@ const CLUSTERS = [
   </div>
 
   <div class="sch-panel" data-panel="changelog" hidden>
-    <SoonTab
-      icon="lucide--history"
-      title="Changelog is coming soon"
-      description="Every schema change between backups — adds, removals, renames, and type changes, with what they might break."
-    />
+    <ChangelogTab hasSchema={hasSchema} healthBases={healthBases} schema={schema} />
   </div>
 
   <div class="sch-panel" data-panel="health" hidden>

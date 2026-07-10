@@ -1,0 +1,245 @@
+---
+/**
+ * Changelog tab (web-schema-changelog) — lazy-loaded, day-grouped feed of schema
+ * change entries from the engine's read-time changelog (server-schema-changelog).
+ *
+ * The engine payload is lean (kind modified|removed + raw changeType + ids); the
+ * display taxonomy and entity names derive client-side via lib/schema-docs/
+ * changelog-view.ts over the SSR schema this component embeds. Kind /
+ * include-removed / search filter client-side over the last fetch; base change
+ * refetches (baseId is required by the engine route).
+ */
+import EmptyState from '../../components/ui/EmptyState.astro'
+
+interface Props {
+  hasSchema: boolean
+  healthBases: { baseId: string; name: string }[]
+  schema: {
+    bases: { baseId: string; name: string }[]
+    tables: { tableId: string; baseId: string; name: string }[]
+    fields: { fieldId: string; tableId: string; baseId: string; name: string }[]
+    views: { viewId: string; tableId: string; baseId: string; name: string }[]
+  }
+}
+
+const { hasSchema, healthBases, schema } = Astro.props
+
+// Slim name index for the client — ids + names only (no descriptions/config).
+const clSchema = {
+  bases: schema.bases.map((b) => ({ baseId: b.baseId, name: b.name })),
+  tables: schema.tables.map((t) => ({ tableId: t.tableId, baseId: t.baseId, name: t.name })),
+  fields: schema.fields.map((f) => ({ fieldId: f.fieldId, tableId: f.tableId, baseId: f.baseId, name: f.name })),
+  views: schema.views.map((v) => ({ viewId: v.viewId, tableId: v.tableId, baseId: v.baseId, name: v.name })),
+}
+---
+
+{!hasSchema ? (
+  <EmptyState
+    icon="lucide--history"
+    title="No schema history yet"
+    description="Changelog entries appear once a backup has captured this Space’s schema."
+  />
+) : (
+  <div data-changelog-tab class="space-y-4">
+    <div class="flex flex-wrap items-center gap-4">
+      {healthBases.length > 1 && (
+        <div class="flex items-center gap-2">
+          <label class="text-sm font-medium" for="cl-base-select">Base</label>
+          <select id="cl-base-select" class="select select-bordered select-sm w-64">
+            {healthBases.map((b) => (
+              <option value={b.baseId}>{b.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
+      {healthBases.length === 1 && (
+        <input type="hidden" id="cl-base-select" value={healthBases[0].baseId} />
+      )}
+      <div class="flex items-center gap-2">
+        <label class="text-sm font-medium" for="cl-kind-select">Kind</label>
+        <select id="cl-kind-select" class="select select-bordered select-sm w-40">
+          <option value="">All kinds</option>
+          <option value="added">Added</option>
+          <option value="removed">Removed</option>
+          <option value="renamed">Renamed</option>
+          <option value="retyped">Type changed</option>
+          <option value="config">Config</option>
+        </select>
+      </div>
+      <label class="flex cursor-pointer items-center gap-2 text-sm">
+        <input type="checkbox" id="cl-include-removed" class="toggle toggle-sm" checked />
+        <span>Include removed</span>
+      </label>
+      <input
+        type="search"
+        id="cl-search"
+        data-sch-search
+        class="input input-sm input-bordered w-48"
+        placeholder="Filter changes…"
+        aria-label="Filter changes"
+      />
+    </div>
+    <div id="cl-content" class="min-h-[12rem] text-sm text-base-content/60">
+      <span class="loading loading-spinner loading-sm"></span>
+    </div>
+  </div>
+)}
+
+<script is:inline type="application/json" id="cl-schema-data" set:html={JSON.stringify(clSchema).replace(/</g, '\\u003c')}></script>
+
+<script>
+  // Changelog tab (web-schema-changelog): lazy-load a base's changelog feed when
+  // first opened; refetch on base change; kind / include-removed / search filter
+  // the last-fetched entries client-side (the landed engine route takes
+  // baseId+limit only — forwarding kinds/includeRemoved is the engine follow-up).
+  // Entry click-through to the shared entity modal is a deferred follow-up.
+  import type { ChangelogEntryView } from '../../lib/backup-engine'
+  import {
+    buildNameIndex,
+    deriveKind,
+    filterEntries,
+    formatValue,
+    groupByDay,
+    resolveEntry,
+    type ChangelogKindKey,
+    type NameIndex,
+    type NameIndexInput,
+  } from '../../lib/schema-docs/changelog-view'
+
+  const clTab = document.querySelector<HTMLElement>('[data-changelog-tab]')
+  const clRoot = document.querySelector<HTMLElement>('[data-schema-docs]')
+  if (clTab && clRoot) {
+    const spaceId = clRoot.dataset.spaceId!
+    const select = document.getElementById('cl-base-select') as
+      | HTMLSelectElement
+      | HTMLInputElement
+      | null
+    const kindSelect = document.getElementById('cl-kind-select') as HTMLSelectElement | null
+    const includeRemoved = document.getElementById('cl-include-removed') as HTMLInputElement | null
+    const search = document.getElementById('cl-search') as HTMLInputElement | null
+    const content = document.getElementById('cl-content')
+    const dataEl = document.getElementById('cl-schema-data')
+    const index: NameIndex = buildNameIndex(
+      dataEl
+        ? (JSON.parse(dataEl.textContent || '{}') as NameIndexInput)
+        : { bases: [], tables: [], fields: [], views: [] },
+    )
+    const esc = (s: string) =>
+      String(s).replace(
+        /[&<>"]/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
+      )
+
+    const KIND_BADGE: Record<ChangelogKindKey, string> = {
+      added: 'badge-success',
+      removed: 'badge-warning',
+      renamed: 'badge-info',
+      retyped: 'badge-secondary',
+      config: 'badge-ghost',
+    }
+    const TYPE_ICON: Record<ChangelogEntryView['entityType'], string> = {
+      base: 'lucide--database',
+      table: 'lucide--table-2',
+      field: 'lucide--tag',
+      view: 'lucide--layout-list',
+    }
+
+    const crumb = (icon: string, label: string) =>
+      `<span class="inline-flex items-center gap-1"><span class="iconify ${icon} size-3.5 opacity-50" aria-hidden="true"></span>${esc(label)}</span>`
+
+    const entryRow = (entry: ChangelogEntryView) => {
+      const kind = deriveKind(entry)
+      const r = resolveEntry(entry, index)
+      const sep = '<span class="iconify lucide--chevron-right size-3 opacity-40" aria-hidden="true"></span>'
+      const crumbs = [crumb('lucide--database', r.baseName)]
+      if (r.tableName) crumbs.push(crumb('lucide--table-2', r.tableName))
+      if (entry.entityType !== 'base') crumbs.push(crumb(TYPE_ICON[entry.entityType], r.entityLabel))
+      const delta =
+        entry.kind === 'modified'
+          ? `<span class="text-xs text-base-content/60">${esc(formatValue(entry.before))} <span class="opacity-50">→</span> ${esc(formatValue(entry.after))}</span>`
+          : ''
+      const warn = entry.breaksData
+        ? '<span class="mt-1 flex w-full items-center gap-1.5 text-xs text-warning"><span class="iconify lucide--triangle-alert size-3.5" aria-hidden="true"></span>This change may have broken existing data.</span>'
+        : ''
+      return `<li class="flex flex-wrap items-center gap-2 rounded border border-base-300/60 px-3 py-2"><span class="badge badge-sm ${KIND_BADGE[kind.key]}">${kind.label}</span><span class="flex flex-wrap items-center gap-1 font-medium text-base-content">${crumbs.join(sep)}</span>${delta}${warn}</li>`
+    }
+
+    const renderFeed = (entries: ChangelogEntryView[]) => {
+      const kind = (kindSelect?.value || null) as ChangelogKindKey | null
+      const filtered = filterEntries(
+        entries,
+        { kind, includeRemoved: includeRemoved?.checked ?? true, term: search?.value ?? '' },
+        index,
+      )
+      if (filtered.length === 0) {
+        if (entries.length > 0) {
+          return '<div class="flex flex-col items-start gap-2"><p class="text-base-content/50">No changes match these filters.</p><button type="button" class="btn btn-ghost btn-sm text-error gap-1" data-cl-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button></div>'
+        }
+        return '<p class="text-base-content/50">No schema changes recorded for this base yet. Changes appear once a backup captures a difference — from your second backup on.</p>'
+      }
+      return groupByDay(filtered)
+        .map(
+          (g) =>
+            `<div><h3 class="mb-2 text-sm font-semibold text-base-content">${esc(g.label)} <span class="text-base-content/40">(${g.entries.length})</span></h3><ul class="space-y-2">${g.entries.map(entryRow).join('')}</ul></div>`,
+        )
+        .join('')
+    }
+
+    let lastEntries: ChangelogEntryView[] | null = null
+
+    const rerender = () => {
+      if (content && lastEntries) content.innerHTML = `<div class="space-y-6">${renderFeed(lastEntries)}</div>`
+    }
+
+    const load = async () => {
+      if (!content || !select) return
+      const baseId = select.value
+      if (!baseId) {
+        content.innerHTML = '<p class="text-base-content/50">No base selected.</p>'
+        return
+      }
+      content.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
+      let res: Response
+      try {
+        res = await fetch(`/api/spaces/${spaceId}/changelog?baseId=${encodeURIComponent(baseId)}`)
+      } catch {
+        content.innerHTML = '<span class="text-error">Could not load the changelog.</span>'
+        return
+      }
+      if (res.status === 403) {
+        content.innerHTML =
+          '<p class="text-base-content/60">The schema changelog is available on the Launch plan and above.</p>'
+        return
+      }
+      if (!res.ok) {
+        content.innerHTML = '<span class="text-error">Could not load the changelog.</span>'
+        return
+      }
+      lastEntries = ((await res.json()) as { entries: ChangelogEntryView[] }).entries
+      rerender()
+    }
+
+    // "Clear filters" inside the no-match state.
+    content?.addEventListener('click', (e) => {
+      if (!(e.target as HTMLElement).closest('[data-cl-clear]')) return
+      if (kindSelect) kindSelect.value = ''
+      if (includeRemoved) includeRemoved.checked = true
+      if (search) search.value = ''
+      rerender()
+    })
+
+    let loaded = false
+    // Lazy-load on first open — shell cluster tabs are buttons (web-schema-round3-shell).
+    const clTabBtn = document.querySelector<HTMLButtonElement>('[data-tab="changelog"]')
+    clTabBtn?.addEventListener('click', () => {
+      if (!loaded) {
+        loaded = true
+        load()
+      }
+    })
+    select?.addEventListener('change', load)
+    kindSelect?.addEventListener('change', rerender)
+    includeRemoved?.addEventListener('change', rerender)
+    search?.addEventListener('input', rerender)
+  }
+</script>

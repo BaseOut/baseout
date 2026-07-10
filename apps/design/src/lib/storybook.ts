@@ -1953,4 +1953,74 @@ export const SB_ENTRIES: SBEntry[] = [
       },
     ],
   },
+  {
+    id: 'pattern-schema-canvas',
+    group: 'Patterns',
+    name: 'Schema canvas (Visualize)',
+    summary: 'The React Flow diagram island — mode switch, faceted toolbar, typed nodes/edges, mode-aware legend.',
+    description:
+      'The Visualize tab (web-schema-visualize): a React island (the React carve-out — an interactive node-graph daisyUI cannot express) hosted by a thin Astro view. Three modes on one canvas via a <strong>segmented mode switch</strong> (Data ER diagram · Relationships web · Automations &amp; Interfaces graph). The toolbar is the shared <code>.sch-tb</code> pattern: a find-a-table search with a jump menu, <strong>faceted show/hide dropdowns</strong> (Bases / Tables / Field types / Relationships — toggle rows with an active-count badge on the trigger), the hierarchical <strong>Field-visibility</strong> tri-state tree (FieldsFilter island, backed by the shared field-visibility model), and a red Clear. Nodes: hybrid table cards (header + relationship-bearing field rows, overflow collapses to “+N more”); edges are coloured by relation kind (linked neutral solid · lookup/rollup/formula dashed hues) with a <strong>bottom-left legend</strong> keyed to the current mode. Node click opens the shared entity modal (<code>open-entity-detail</code>). Empty/upsell cards render per mode (no relationships yet · A&amp;I below Growth). Live: <a href="/schema">Schema → Visualize</a> (design source: <code>components/schema/SchemaCanvas.tsx</code>).',
+    reference: 'components/islands/SchemaCanvas.tsx · components/islands/FieldsFilter.tsx · views/schema/VisualizeTab.astro',
+    showCode: false,
+    usageDo: [
+      'Keep dagre left→right auto-layout — positions must be deterministic, never force-directed.',
+      'Anchor edges on the specific field row that carries the relationship; incoming edges dock on the table header.',
+      'Dim non-neighbours on selection (focus mode) — large schemas stay legible.',
+    ],
+    usageDont: [
+      "Don't add canvas chrome in Astro around the island — toolbar, filters, and legend live inside the React island.",
+      "Don't ship actions that don't persist (the design's Add-to-doc / Export were prototypes; they stay out until real).",
+    ],
+    examples: [
+      {
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100 p-3 text-sm text-base-content/70">
+  Interactive React Flow canvas — see it live on <a class="link" href="/schema">Schema → Visualize</a>.
+  <div class="mt-2 flex items-center gap-2">
+    <div class="join"><button class="btn btn-sm join-item btn-active">Data</button><button class="btn btn-sm join-item">Relationships</button><button class="btn btn-sm join-item">Automations &amp; Interfaces</button></div>
+    <button class="btn btn-sm">Field visibility <span class="badge badge-sm badge-primary">18/25</span></button>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-changelog-feed',
+    group: 'Patterns',
+    name: 'Changelog feed',
+    summary: 'A day-grouped feed of typed change entries — kind badge, breadcrumb, before→after delta, warning line.',
+    description:
+      'The Schema Changelog shape (web-schema-changelog, vanilla-in-view): entries group under a <strong>day heading</strong> (date + count), each row leading with a <strong>kind badge</strong> (Added <code>badge-success</code> · Removed <code>badge-warning</code> · Renamed <code>badge-info</code> · Type changed <code>badge-secondary</code> · Config <code>badge-ghost</code>), then a <strong>base ▸ table ▸ entity breadcrumb</strong> (quiet concept icons + chevron separators), an optional muted <strong>before → after</strong> delta, and — for changes that may have broken data — a full-width <strong>warning line</strong> (<code>lucide--triangle-alert</code> + <code>text-warning</code>; the real-warning-only icon rule from the detail-panel pattern). The toolbar above it is base/kind <a href="#select">Selects</a>, an include-removed <a href="#checkbox-toggle">Toggle</a>, and a search <a href="#input">Input</a>. Names render client-side from the SSR schema index — the engine feed carries identifiers, not display strings. The richer design treatment (faceted filters, export, entry detail panel) lives in the ui-only SchemaChangelog component and lands as follow-ups. Live: <a href="/schema">Schema → Changelog</a>.',
+    reference: 'views/schema/ChangelogTab.astro',
+    showCode: false,
+    usageDo: [
+      'Group by calendar day and keep entries date-descending — the feed answers “what changed lately”.',
+      'Reserve the ⚠️ warning line for breaks-data changes only (field type changes) — it must stay unmissable.',
+      'Show before → after for every modification; a rename without the old name is useless for triage.',
+    ],
+    usageDont: [
+      "Don't colour every badge — Config stays ghost so Removed/Type-changed carry the signal.",
+      "Don't hide removal entries by default — the include-removed toggle starts ON; removals are half the feed's value.",
+    ],
+    examples: [
+      {
+        html: `
+<div class="space-y-6">
+  <div>
+    <h3 class="mb-2 text-sm font-semibold text-base-content">Jul 8, 2026 <span class="text-base-content/40">(2)</span></h3>
+    <ul class="space-y-2">
+      <li class="flex flex-wrap items-center gap-2 rounded border border-base-300/60 px-3 py-2"><span class="badge badge-sm badge-secondary">Type changed</span><span class="flex flex-wrap items-center gap-1 font-medium text-base-content"><span class="inline-flex items-center gap-1"><span class="iconify lucide--database size-3.5 opacity-50"></span>Sales CRM</span><span class="iconify lucide--chevron-right size-3 opacity-40"></span><span class="inline-flex items-center gap-1"><span class="iconify lucide--table-2 size-3.5 opacity-50"></span>Deals</span><span class="iconify lucide--chevron-right size-3 opacity-40"></span><span class="inline-flex items-center gap-1"><span class="iconify lucide--tag size-3.5 opacity-50"></span>Amount</span></span><span class="text-xs text-base-content/60">singleLineText <span class="opacity-50">→</span> number</span><span class="mt-1 flex w-full items-center gap-1.5 text-xs text-warning"><span class="iconify lucide--triangle-alert size-3.5"></span>This change may have broken existing data.</span></li>
+      <li class="flex flex-wrap items-center gap-2 rounded border border-base-300/60 px-3 py-2"><span class="badge badge-sm badge-info">Renamed</span><span class="flex flex-wrap items-center gap-1 font-medium text-base-content"><span class="inline-flex items-center gap-1"><span class="iconify lucide--database size-3.5 opacity-50"></span>Sales CRM</span><span class="iconify lucide--chevron-right size-3 opacity-40"></span><span class="inline-flex items-center gap-1"><span class="iconify lucide--table-2 size-3.5 opacity-50"></span>Deals</span><span class="iconify lucide--chevron-right size-3 opacity-40"></span><span class="inline-flex items-center gap-1"><span class="iconify lucide--tag size-3.5 opacity-50"></span>Close date</span></span><span class="text-xs text-base-content/60">Closed on <span class="opacity-50">→</span> Close date</span></li>
+    </ul>
+  </div>
+  <div>
+    <h3 class="mb-2 text-sm font-semibold text-base-content">Jul 5, 2026 <span class="text-base-content/40">(1)</span></h3>
+    <ul class="space-y-2">
+      <li class="flex flex-wrap items-center gap-2 rounded border border-base-300/60 px-3 py-2"><span class="badge badge-sm badge-warning">Removed</span><span class="flex flex-wrap items-center gap-1 font-medium text-base-content"><span class="inline-flex items-center gap-1"><span class="iconify lucide--database size-3.5 opacity-50"></span>Sales CRM</span><span class="iconify lucide--chevron-right size-3 opacity-40"></span><span class="inline-flex items-center gap-1"><span class="iconify lucide--table-2 size-3.5 opacity-50"></span>Old Projects</span></span></li>
+    </ul>
+  </div>
+</div>`,
+      },
+    ],
+  },
 ];

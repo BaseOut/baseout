@@ -133,7 +133,11 @@ const entityIndex = buildEntityPanelIndex(schema)
                 </label>
               )}
             </div>
-            <Card variant="outlined" class="max-h-[70vh] overflow-auto p-4">
+            {/* Scroll lives on an INNER div: ui/Card bakes `overflow-hidden` into its
+                base classes, which wins the cascade over a passed `overflow-auto`
+                and silently clips the tree instead of scrolling it. */}
+            <Card variant="outlined" class="p-4">
+            <div class="max-h-[70vh] overflow-y-auto">
             <ul id="schema-tree" class="space-y-3 text-sm">
               {schema.bases.map((bse) => (
                 <li data-removed={isRemoved(bse.status) ? '' : undefined} hidden={isRemoved(bse.status)}>
@@ -205,6 +209,7 @@ const entityIndex = buildEntityPanelIndex(schema)
                 </li>
               ))}
             </ul>
+            </div>
           </Card>
           </div>
 

@@ -26,5 +26,8 @@
   ],
   "src/views/schema/ChatTab.astro": [
     "Moved verbatim from the pre-split SchemaView.astro (web-chat-tab): thread `menu`, context `select`, composer `textarea`/`btn`, and conversation bubbles rendered as innerHTML in the client script."
+  ],
+  "src/views/schema/ChangelogTab.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier, web-schema-changelog vanilla-in-view decision): base/kind `select`, Include-removed `toggle`, `input` search, and the day-grouped feed rows (`badge` kind chips, breadcrumb, before→after delta, warning line) rendered as innerHTML in the lazy-load client script — same shape as RelationshipsTab/HealthTab."
   ]
 }

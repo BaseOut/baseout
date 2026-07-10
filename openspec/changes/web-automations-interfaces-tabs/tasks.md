@@ -2,12 +2,14 @@
 
 PROPOSED — not yet implemented.
 
-**Blocked on** [`server-automations-interfaces-docs`](../server-automations-interfaces-docs/tasks.md)
-(currently **0/40, UNBUILT** — the per-Space `bo_at_automations`/`bo_at_interfaces` tables exist
-in `packages/db-schema`, but no engine intake/read/CRUD code does): the engine must ship the
-automations/interfaces **read** + **manual-create/edit/delete** endpoints before these web tabs
-can list or persist entities. Build order is engine-first
-(`server-automations-interfaces-docs` → `workflows-automations-interfaces-docs` → this change).
+**Blocked on** [`server-automations-interfaces-manual-crud`](../server-automations-interfaces-manual-crud/tasks.md)
+(the manual-entry-first slice carved out of the umbrella on 2026-07-09): it ships the engine
+read + manual-CRUD routes over per-Space `bo_at_automations`/`bo_at_interfaces` (+ the new
+`bo_at_entity_tags` and `interfaces.parent_id`, space schema v6) AND the web client methods +
+guarded proxies this change's §1 originally described — §1 below is satisfied by that change;
+this change now starts at §0 (Drawer) + §2 (tabs). The old blocker
+[`server-automations-interfaces-docs`](../server-automations-interfaces-docs/tasks.md) retains
+only the deferred capture funnel (inbound API, script generators, backup reconcile).
 No DB / migration / capability-key change here — gates via the existing Schema Docs (Growth+)
 tier guard, like the Health and Relationships tabs.
 
