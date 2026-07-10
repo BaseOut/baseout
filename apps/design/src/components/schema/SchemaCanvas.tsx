@@ -196,6 +196,91 @@ const RELATION: Record<RelKind, { label: string; color: string; dashed: boolean 
   formula: { label: 'Formula', color: '#2563eb', dashed: true }, // ds-ok: ER-diagram edge/legend palette (6 distinguishable hues, no 1:1 theme token)
 };
 const REL_KINDS = Object.keys(RELATION) as RelKind[];
+/**
+ * The Visualize tab's export. Image only, and never a bare button:
+ *  - ASSUMPTION: the WHOLE graph, fitted with padding — the viewport silently drops off-screen nodes,
+ *    which are exactly what the user wanted to keep. (Figma/Miro both make this an explicit choice.)
+ *  - ASSUMPTION: the background follows the theme by default, with light and transparent offered. A
+ *    dark canvas baked into a PNG lands in a white document — the most-reported Excalidraw complaint.
+ *  - ASSUMPTION: 2x, because a raster schema diagram is exactly what someone zooms into.
+ * None of these are answered by the client's "image is sufficient"; see research/schema-export/.
+ * There is no backend here: nothing is downloaded, and the control says so.
+ */
+function ExportImageControl({ nodeCount }: { nodeCount: number }) {
+  const [scope, setScope] = useState<'filtered' | 'all'>('filtered');
+  const [bg, setBg] = useState<'theme' | 'light' | 'transparent'>('theme');
+  const [scale, setScale] = useState('2');
+  const [said, setSaid] = useState('');
+
+  const iso = new Date().toISOString().slice(0, 10);
+  const filename = `baseout_space_visualize_${iso}_${scope === 'all' ? 'all' : 'filtered'}.png`;
+  const empty = nodeCount === 0;
+
+  return (
+    <div className="dropdown dropdown-end ff">
+      <button type="button" className="btn btn-sm gap-1.5 ff-trigger" aria-haspopup="true" data-export-trigger>
+        <span aria-hidden style={{ width: 14, height: 14, display: 'grid', placeItems: 'center' }}><DownloadGlyph /></span>Export image
+        <span aria-hidden style={{ width: 12, height: 12, display: 'grid', placeItems: 'center', opacity: 0.6 }}><ChevronGlyph /></span>
+      </button>
+      {/* Same cap as the Astro control: .ff-panel's 420px ceiling is for long facet lists, not for a
+          short fixed form. A 6-row panel that scrolls is a panel that is too short. */}
+      <div tabIndex={0} className="dropdown-content ff-panel" style={{ width: 264, maxHeight: 'min(88vh, 620px)' }} data-export-panel>
+        <div className="ff-group">Scope</div>
+        <label className="ff-opt">
+          <span className="ff-label">Current view</span>
+          <span style={{ fontSize: 11.5, opacity: 0.55 }}>{nodeCount} nodes</span>
+          <input type="radio" className="radio radio-sm radio-primary" name="xp-vis" checked={scope === 'filtered'} onChange={() => setScope('filtered')} />
+        </label>
+        <label className="ff-opt">
+          <span className="ff-label">Everything</span>
+          <span style={{ fontSize: 11.5, opacity: 0.55 }}>{nodeCount} nodes</span>
+          <input type="radio" className="radio radio-sm radio-primary" name="xp-vis" checked={scope === 'all'} onChange={() => setScope('all')} />
+        </label>
+
+        <div className="ff-sep" />
+        <div className="ff-group">Background</div>
+        {(['theme', 'light', 'transparent'] as const).map((v) => (
+          <label className="ff-opt" key={v}>
+            <span className="ff-label" style={{ textTransform: 'capitalize' }}>{v === 'theme' ? 'Match theme' : v}</span>
+            <input type="radio" className="radio radio-sm radio-primary" name="xp-vis-bg" checked={bg === v} onChange={() => setBg(v)} />
+          </label>
+        ))}
+
+        <div className="ff-group">Scale</div>
+        {['1', '2', '3'].map((v) => (
+          <label className="ff-opt" key={v}>
+            <span className="ff-label">{v}×</span>
+            <input type="radio" className="radio radio-sm radio-primary" name="xp-vis-scale" checked={scale === v} onChange={() => setScale(v)} />
+          </label>
+        ))}
+        <p style={{ margin: '4px 8px 0', fontSize: 11, lineHeight: 1.4, opacity: 0.5 }}>
+          The whole graph, fitted with padding — not just what is on screen.
+        </p>
+
+        <div className="ff-sep" />
+        <p style={{ margin: '0 8px 8px', fontSize: 11, opacity: 0.55, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <code style={{ fontSize: 10.5 }}>{filename}</code>
+        </p>
+        {empty && <p style={{ margin: '0 8px 8px', fontSize: 11.5, color: 'var(--color-error)' }}>No nodes match the current filter.</p>}
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          style={{ width: '100%' }}
+          disabled={empty}
+          aria-label={`Export ${nodeCount} nodes — ${scope === 'all' ? 'everything' : 'current view'}, as PNG`}
+          onClick={() => {
+            setSaid(`Exported ${nodeCount} nodes as ${filename}. Nothing was downloaded — this preview has no backend.`);
+            (document.activeElement as HTMLElement | null)?.blur();
+          }}
+        >
+          {empty ? 'Nothing to export' : `Export ${nodeCount} nodes`}
+        </button>
+        <span className="sr-only" role="status" aria-live="polite">{said}</span>
+      </div>
+    </div>
+  );
+}
+
 function relKind(f: SchemaField): RelKind | null {
   if (f.type === 'rollup') return 'rollup';
   if (f.type === 'lookup') return 'lookup';
@@ -1387,21 +1472,11 @@ function Canvas({ tables, bases, baseHealth, docs, genState = 'ready', embed = f
             </div>
           </div>
         )}
-        {/* Export — diagram (PNG/PDF) + data (JSON/CSV). */}
-        <div className="dropdown dropdown-end">
-          <div tabIndex={0} role="button" className="btn btn-sm btn-neutral gap-1.5">
-            <span aria-hidden style={{ width: 14, height: 14, display: 'grid', placeItems: 'center' }}><DownloadGlyph /></span>Export
-            <span aria-hidden style={{ width: 12, height: 12, display: 'grid', placeItems: 'center', opacity: 0.6 }}><ChevronGlyph /></span>
-          </div>
-          <ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box border border-base-300 shadow-lg" style={{ zIndex: 20, marginTop: 4, width: 184, padding: 4 }}>
-            <li className="menu-title">Diagram</li>
-            <li><a>PNG</a></li>
-            <li><a>PDF</a></li>
-            <li className="menu-title">Data</li>
-            <li><a>JSON</a></li>
-            <li><a>CSV</a></li>
-          </ul>
-        </div>
+        {/* Export — image only (the client's answer). The PDF / JSON / CSV items that used to live here
+            promised formats nobody asked for and nothing implemented. This is the same control as the
+            other tabs (`pattern-export-control`), rendered with the global ff-* classes so the React
+            island and the Astro tabs cannot drift apart. */}
+        <ExportImageControl nodeCount={nodes.length} />
         </div>
       </div>
       )}

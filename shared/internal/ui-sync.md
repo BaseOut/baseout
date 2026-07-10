@@ -23,14 +23,22 @@ and `r2-setup.md`). The procedure lives in `.claude/skills/ui-sync/SKILL.md`
 
 | ui-only path | lands at | treatment |
 |---|---|---|
-| `apps/design/**` | same path | verbatim |
-| `apps/web/src/views/**` | `apps/design/src/views/**` | verbatim copy, localized imports |
-| `apps/web/src/components/{schema,ui,layout}/**` | `apps/design/src/components/{schema,ui,layout}/**` | verbatim copy, localized imports |
-| `apps/web/src/lib/**` (design-coupled helpers) | `apps/design/src/lib/**` | verbatim copy; `ui.ts` stays a shim re-exporting from `@web` behavior |
-| `apps/web/src/styles/**` | `apps/design/src/styles/**` (then `apps/web/src/styles/global.css` at promotion) | verbatim on sync; prefixed sections on promotion |
+| `apps/design/**` | same path | verbatim (pages/fixtures get the `@web` rewrites below; `src/pages/prototypes/*.html.ts` get the research-depth rewrite) |
+| `apps/web/src/views/**` | `apps/design/src/views/**` | verbatim copy (files use relative imports; no rewrites needed) |
+| `apps/web/src/components/{schema,ui}/**` | `apps/design/src/components/{schema,ui}/**` | verbatim copy (relative imports carry over) |
+| `apps/web/src/components/layout/**` + `apps/web/src/layouts/**` | **straight to `apps/web`** at promotion — NO design copy | the design harness renders the app shell via the `@web` alias (`apps/design/src/layouts/SidebarLayout.astro` wraps `@web/layouts/SidebarLayout.astro`), so shell changes only render once they land in apps/web |
+| `apps/web/src/lib/**` (design-coupled helpers, e.g. `csv.ts`) | `apps/design/src/lib/**` | verbatim copy; `ui.ts` stays a shim |
+| `apps/web/src/styles/**` | **promotion-time only** → `apps/web/src/styles/**` | design has no style copies — `design.css` @source-scans apps/web, so styles reach the harness once promoted |
+| `apps/web/app-config.json` | **never-sync** | fork drift (upstream carries routes we don't have); promotion adds entries selectively |
 | `overview/**` | `apps/design/overview/**` | verbatim |
-| `research/**` (HTML/MD) | `apps/design/research/**` | verbatim; **`shots/*.png` skipped** — retrievable at the pinned hash |
+| `research/**` (HTML/MD) | `apps/design/research/**` | verbatim; **`shots/*.png` skipped** — retrievable at the pinned hash. Prototype pages import these via `?raw`: rewrite `../../../../../research/` → `../../../research/` |
 | `openspec/changes/<x>/` | `openspec/changes/web-<x>/` (or per §3.6) | imported, task state preserved, backend-blocked tasks annotated |
+
+**Permitted `@web` rewrites (design pages/fixtures only):**
+`@web/components/schema` → `../components/schema`, `@web/views/SchemaView.astro`
+→ `../views/SchemaView.astro`. All other `@web/*` imports (layouts, `lib/config`)
+stay — they intentionally resolve to the real apps/web via the alias in
+`apps/design/astro.config.mjs`.
 
 **Permitted rewrites on sync (the ONLY edits):** `@web/views` → relative,
 `@web/components/schema` → local, `@web/lib/ui` → local shim. Everything
@@ -52,7 +60,7 @@ screenshots under `research/**/shots/`.
 | 2026-06-12 | `f0f9171` | `789727e` | initial fork integration: apps/design baseline + openspec imports |
 | 2026-07-04 | `beb43a7` | `6d4c698` | decoupled round-2 handoff surfaces only (flow-registry, handoff, schema-nav, planning docs); schema web layer deferred |
 | 2026-07-08 | `d97c777` | `53110f8` | round-2/3 schema web layer LOCALIZED into apps/design (21 schema components + SchemaView + Drawer); React enabled; storybook 3-way |
-| — | `3153dfd` | *pending* | schema export control, panels round-4 (EntityPanel anchor model), Notifications Inbox, drawer/changelog/facet polish, research+overview docs |
+| 2026-07-10 | `3153dfd` | *(this commit)* | schema export control + csv.ts, panels round-4 (EntityPanel anchor model, entityChip/locationCrumbs), drawer/changelog/facet polish, prototypes pages, research+overview docs, `web-notifications-inbox` spec import. storybook.ts merged as upstream-skeleton + 11 local-only entries (upstream ships a duplicate `tooltip` id — left verbatim). Deferred to the 4c promotion commit: `fixtures/inbox.ts` + the design `SidebarLayout.astro` wrapper (both type-import `@web/components/layout/inbox`, which exists only after the app-shell promotion) |
 
 ## 4. Promotion status matrix
 

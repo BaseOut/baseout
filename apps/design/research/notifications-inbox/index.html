@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notification / Inbox center — research &amp; recommendation</title>
+<style>
+  :root {
+    --bg: #0b0d10; --panel: #14171c; --panel-2: #1a1e24; --line: #262b33;
+    --text: #e5e8ec; --muted: #9aa3ae; --dim: #6b7480;
+    --primary: #4f8ef7; --ok: #3fb950; --warn: #d29922; --err: #f85149; --info: #58a6ff;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#fbfcfd; --panel:#fff; --panel-2:#f4f6f8; --line:#e2e6ea; --text:#12151a; --muted:#5b6470; --dim:#8892a0; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font: 15px/1.65 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: 30px; line-height:1.25; margin:0 0 8px; letter-spacing:-.02em; }
+  h2 { font-size: 20px; margin: 48px 0 12px; letter-spacing:-.01em;
+       padding-bottom:8px; border-bottom:1px solid var(--line); }
+  h3 { font-size: 15px; margin: 24px 0 8px; }
+  p, li { color: var(--text); }
+  .sub { color: var(--muted); margin:0 0 4px; }
+  .meta { color: var(--dim); font-size: 13px; font-family: var(--mono); }
+  code { font-family: var(--mono); font-size: .88em; background: var(--panel-2);
+    border:1px solid var(--line); border-radius:4px; padding:1px 5px; }
+  a { color: var(--primary); }
+  .card { background: var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:16px 20px; margin:16px 0; }
+  .card.rec { border-left: 3px solid var(--primary); }
+  .card.warn { border-left: 3px solid var(--warn); }
+  .card.gap { border-left: 3px solid var(--err); }
+  .lbl { display:inline-block; font-size:11px; text-transform:uppercase; letter-spacing:.08em;
+    font-weight:700; color:var(--dim); margin-bottom:6px; }
+  .scroll { overflow-x:auto; margin:16px 0; border:1px solid var(--line); border-radius:10px; }
+  table { border-collapse: collapse; width:100%; font-size:13.5px; min-width:640px; }
+  th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background: var(--panel-2); font-size:11px; text-transform:uppercase;
+    letter-spacing:.06em; color:var(--muted); font-weight:700; white-space:nowrap; }
+  tr:last-child td { border-bottom:0; }
+  .yes { color:var(--ok); font-weight:600; }
+  .no  { color:var(--dim); }
+  .may { color:var(--warn); font-weight:600; }
+  .pill { display:inline-block; font-size:11px; font-weight:600; padding:2px 8px;
+    border-radius:999px; border:1px solid var(--line); background:var(--panel-2); color:var(--muted); }
+  .pill.act { color:var(--err); border-color:color-mix(in srgb, var(--err) 40%, var(--line)); }
+  .pill.fyi { color:var(--info); border-color:color-mix(in srgb, var(--info) 40%, var(--line)); }
+  ul { padding-left: 20px; }
+  li { margin: 5px 0; }
+  .dec { display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-bottom:1px solid var(--line); }
+  .dec:last-child { border-bottom:0; }
+  .dec b { font-family:var(--mono); color:var(--primary); font-size:13px; flex:0 0 34px; padding-top:1px; }
+  .ascii { font-family:var(--mono); font-size:12.5px; line-height:1.5; white-space:pre;
+    background:var(--panel-2); border:1px solid var(--line); border-radius:8px;
+    padding:14px 16px; overflow-x:auto; color:var(--muted); margin:12px 0; }
+  .foot { margin-top:56px; padding-top:16px; border-top:1px solid var(--line); color:var(--dim); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="meta">Baseout · research · 2026-07-09 · branch feat/notifications-inbox</p>
+  <h1>Notification / Inbox center</h1>
+  <p class="sub">What to build, where it lives, and which signal goes to which surface.</p>
+
+  <div class="card rec">
+    <span class="lbl">The one-paragraph answer</span>
+    <p style="margin:0">Build a <b>non-modal side panel</b> that opens beside the work area from an
+    <b>Inbox item in the sidebar</b> — Notion's posture, not Linear's. Split the list into
+    <b>Needs attention</b> and <b>Activity</b>, because our alerts are heterogeneous and a flat list
+    (Linear's actual weakness) buries the one row that matters. <b>Roll up successful backups per base;
+    never roll up failures, breaking schema changes, or reconnect.</b> Make connection and health alerts
+    <b>self-healing</b> — when the user reconnects, the alert and the banner clear themselves, silently.</p>
+  </div>
+
+  <h2>1. The naming trap: “like Linear” means the opposite of what we want</h2>
+  <p>Linear's Inbox is <b>not</b> a side panel. It is a full nav destination rendering a two-pane
+  master–detail: a middle notification list and a right pane holding the selected issue's full detail.
+  So the phrase in the Slack thread — “an INBOX item like Linear” — literally describes the heavy
+  full-page surface we are trying to avoid.</p>
+  <p>The pattern actually being described is <b>Notion's</b>: Inbox sits at the top of the sidebar with an
+  unread count, and clicking it opens a second column <em>between the sidebar and the page</em>, pushing
+  the page narrower rather than covering it. Notion lets you <b>lock it open</b> while you work, and ships a
+  chevron that expands the same panel into a two-pane view — so peek and “full inbox” are one surface,
+  with no route change. Notion reports the lock-open change measurably increased how often people check it.</p>
+  <div class="card warn">
+    <span class="lbl">Worth flagging to the client</span>
+    <p style="margin:0">If we say “like Linear” and then ship a side panel, fellars will compare against
+    Linear and see a mismatch. Better to name the reference precisely: <b>Notion's Inbox panel, with
+    Vercel's alert-row anatomy</b>.</p>
+  </div>
+
+  <h2>2. What the direct competitors actually do</h2>
+  <p>The category finding is blunt: <b>backup and ETL tools have no in-app inbox.</b> They push to
+  email/Slack/webhook and reserve the dashboard for diagnosable errors. That is simultaneously our
+  opportunity and a warning — we are defining this pattern, not copying a proven one, so the
+  <em>interaction</em> model must be borrowed from productivity tools and only the <em>what-to-notify</em>
+  from the backup category.</p>
+  <div class="scroll"><table>
+    <tr><th>Product</th><th>Where notifications live</th><th>The idea worth stealing</th></tr>
+    <tr><td><b>Fivetran</b></td><td>Email + webhook; dashboard shows Errors</td>
+      <td>Splits <i>known, diagnosable failure</i> (→ dashboard error + resolution steps) from
+      <i>unknown cause</i> (→ notification, auto-escalates after 48h). The dashboard surface is reserved.</td></tr>
+    <tr><td><b>Airbyte</b></td><td>Email/Slack/webhook, per-type toggles</td>
+      <td>Graded escalation (Sync-Disabled <i>Warning</i> → <i>Sync Disabled</i>). The consequential one
+      <b>can't be turned off</b>. “Queued syncs” defaults <b>off</b> — don't notify about expected states.</td></tr>
+    <tr><td><b>ProBackup</b><br><span class="meta">direct competitor</span></td><td>Email only</td>
+      <td>Digest-first: weekly/monthly status summary. But <b>connection-expired is broken out and sent
+      immediately</b> — reconnect is treated as urgent, never digested.</td></tr>
+    <tr><td><b>Airtable's bell</b></td><td>Bell + email + push</td>
+      <td>Fires only on <i>social</i> events (shared a base, @mention, assigned). It is <b>not operational</b>
+      — so our inbox complements it rather than duplicating it.</td></tr>
+    <tr><td><b>Rewind, BackupSheep</b></td><td colspan="2" class="no">Could not verify — no authoritative docs found. Do not represent their behavior.</td></tr>
+  </table></div>
+
+  <h2>3. Panel anatomy — cross-product</h2>
+  <div class="scroll"><table>
+    <tr><th>Product</th><th>Surface</th><th>Push / overlay</th><th>Grouping</th><th>Triage</th><th>Unread</th></tr>
+    <tr><td><b>Notion</b></td><td>Side panel (nav item)</td><td class="yes">Pushes; lockable</td><td>By time, and by page/thread</td><td>Mark done (hover ✓), archive read/all, reply inline, per-page subscribe</td><td>Dot + red count</td></tr>
+    <tr><td><b>Linear</b></td><td>Full page</td><td>—</td><td>Status; Snoozed group</td><td>Snooze (auto-un-snooze on new activity), mark all read, unsubscribe</td><td>Hollow dot + count</td></tr>
+    <tr><td><b>GitHub</b></td><td>Full page</td><td>—</td><td>Group by date; Inbox/Saved/Done</td><td>Done, Save, bulk-select, Unwatch + custom events</td><td>Blue dot + count</td></tr>
+    <tr><td><b>Slack</b></td><td>Panel column</td><td>Beside content</td><td>By time; All/Threads/Apps</td><td>Save-for-later, overflow</td><td>Count badge</td></tr>
+    <tr><td><b>Vercel</b></td><td>Bell dropdown</td><td>Overlay</td><td>Inbox / Archive tabs</td><td>Archive</td><td>Icon-led</td></tr>
+    <tr><td><b>incident.io</b></td><td>Panel <b>+</b> full Alerts page</td><td>Overlay, dims page</td><td>“NEW” section</td><td>Mute source on hover → toast</td><td>NEW label</td></tr>
+  </table></div>
+  <p><b>Convergence:</b> everyone ships (bulk mark-read + archive/done) + (per-source subscription) +
+  (a filterable list). Every product uses a <b>numeric badge</b> where a count is feasible — nobody uses a bare dot.
+  Dense products hover-reveal the per-row actions and keep <i>mark-all-read</i> always visible.</p>
+
+  <h3>Vercel's row is our row</h3>
+  <div class="ascii">⚠  nextjs <b>failed to deploy</b> in the <b>Production</b> environment      2h
+△  Sales CRM <b>backup failed</b> — 3 of 12 bases incomplete            2h  [View log]</div>
+  <p>Icon-led, entity bolded, everything else terse, timestamp right. That maps 1:1 onto
+  “backup failed” and “connection needs reconnect”.</p>
+
+  <h2>4. The information model — three surfaces, one rule each</h2>
+  <p>We already own three places a signal can land: a <b>toast</b>, the <b>inbox</b>, and the
+  <b>ConnectionHealthBanner</b>. The design literature (Carbon, and the ARIA live-region guidance) gives a
+  machine-checkable test for the first split:</p>
+  <div class="card">
+    <p style="margin:0"><b>If a notification carries an interactive element, it must not be a toast.</b>
+    A toast is a passive live region that auto-dismisses in ~3–5s and moves no focus — so anything requiring
+    a decision has to be persistent. That single rule separates toast from inbox.</p>
+  </div>
+
+  <div class="scroll"><table>
+    <tr><th>Signal</th><th>Toast</th><th>Inbox</th><th>Banner</th></tr>
+    <tr><td>Backup finished OK</td><td>only if user triggered it manually</td><td><span class="pill fyi">FYI</span> rolled up per base</td><td class="no">no</td></tr>
+    <tr><td><b>Backup failed</b></td><td>only if on the triggering page</td><td><span class="pill act">Needs attention</span> standalone, never rolled up</td><td class="no">no</td></tr>
+    <tr><td><b>Connection needs reconnect</b></td><td class="no">no — banner is louder</td><td><span class="pill act">Needs attention</span> = the record</td><td class="yes">yes — primary</td></tr>
+    <tr><td>Schema changed (breaking)</td><td class="no">no</td><td><span class="pill act">Needs attention</span> high emphasis</td><td class="no">no</td></tr>
+    <tr><td>Schema changed (non-breaking)</td><td class="no">no</td><td><span class="pill fyi">FYI</span> rolled up per base</td><td class="no">no</td></tr>
+    <tr><td>Health score dropped</td><td class="no">no</td><td><span class="pill act">Needs attention</span> if it crosses a threshold, else <span class="pill fyi">FYI</span></td><td class="no">no</td></tr>
+    <tr><td>Automation off / interface unpublished</td><td class="no">no</td><td><span class="pill fyi">FYI</span> — an external change you should know about</td><td class="no">no</td></tr>
+    <tr><td>Chat answer saved as a doc</td><td class="yes">toast</td><td>optional <span class="pill fyi">FYI</span></td><td class="no">no</td></tr>
+    <tr><td>Saved a setting · ran an export</td><td class="yes">toast</td><td class="no">no</td><td class="no">no</td></tr>
+  </table></div>
+
+  <h3>Governing rules</h3>
+  <ul>
+    <li><b>The banner means exactly one thing: a broken connection that undermines “is it working right now.”</b>
+      It is the loudest surface — reserve it. Let health dips or schema drift in and it stops meaning “act now.”</li>
+    <li><b>Toasts never carry a decision.</b> If the user must choose, it is persistent.</li>
+    <li><b>The inbox is the union of actionable alerts and FYI activity, visually split.</b> Linear's docs
+      describe <i>no</i> visual distinction between actionable and FYI — everything lands in one list. That is
+      the thing to improve on, not copy.</li>
+    <li><b>Reconnect appears in both the banner and the inbox.</b> The banner is the interrupt; the inbox is
+      the record. Resolving it clears both.</li>
+  </ul>
+
+  <h2>5. The flood problem — nightly backups will bury everything</h2>
+  <p>This is the single biggest risk for a backup tool. A daily backup per base, times N bases, drowns the one
+  row that mattered. The guidance converges:</p>
+  <ul>
+    <li><b>Group by an entity key, not globally.</b> “3 backups completed for <i>Sales CRM</i>”, not “37 backups completed.”</li>
+    <li><b>Critical alerts bypass batching.</b> Failures and broken connections are instant and standalone; only successes digest.</li>
+    <li><b>Don't notify about expected states</b> (Airbyte's “queued syncs” defaults to off).</li>
+    <li><b>Per-entity subscription is the flood valve</b> — per base: All runs / Failures only / Off.</li>
+    <li><b>Health scores must be debounced</b> — report net movement over a window, or we invent our own flapping-alert problem.</li>
+  </ul>
+  <p class="meta">Implementation note: “batch-on-read” (collapse at render time) is the pragmatic build and is
+  all a fixture-driven prototype needs.</p>
+
+  <h2>6. Read, done, and self-healing</h2>
+  <p>Two questions that good products keep separate.</p>
+  <h3>Does opening mark it read?</h3>
+  <p>Yes in both Notion and Linear — but <b>read ≠ resolved</b>. GitHub explicitly decouples <i>Done</i> from
+  read, and that separation is exactly what lets an inbox function as a task list. We want both states.</p>
+  <h3>Does fixing the problem clear the alert?</h3>
+  <p>Not for free. GitHub does <b>not</b> auto-resolve a notification when the issue closes. The precedent
+  comes from incident tooling instead: when a Datadog monitor recovers it auto-resolves the linked PagerDuty
+  incident — and, deliberately, <b>PagerDuty does not notify on recovery</b>. Resolution silently clears the
+  item rather than minting a new “it's fixed!” ping. Linear's <i>auto-un-snooze on new activity</i> is the
+  inverse of the same idea: state changes move the item.</p>
+  <div class="card rec">
+    <span class="lbl">Recommended: a graded resolve model</span>
+    <ul style="margin:4px 0 0">
+      <li><b>State-backed alerts self-heal.</b> Reconnect and health are bound to live state — when the user
+        reconnects, the alert resolves and the banner disappears. A stale “reconnect!” after you already
+        reconnected is precisely the trust-eroding bug this product cannot afford.</li>
+      <li><b>Resolve silently.</b> Show a quiet “Resolved” state on the existing row; do not mint a new one.</li>
+      <li><b>Event alerts are acknowledge-based.</b> A failed backup describes a past event — a later success
+        does not un-happen it. The user marks it done; we may annotate “later run succeeded.”</li>
+      <li><b>Deep-link everything</b> to the exact surface: the failed run's log, the schema diff with the
+        breaking flag, the connection's reconnect flow.</li>
+    </ul>
+  </div>
+
+  <h2>7. Accessibility (a non-modal panel has different rules)</h2>
+  <ul>
+    <li>A non-modal side panel is <b>not</b> a <code>role="dialog"</code>. Don't trap focus, don't steal focus on
+      open. Make it a labeled <code>complementary</code> region reachable by shortcut. Focus-trap and
+      <code>aria-modal</code> belong only to modal overlays.</li>
+    <li>Announce arrivals through a <b>polite</b> live region (“1 new notification”); reserve <b>assertive</b>
+      for failed-backup and broken-connection.</li>
+    <li>Keyboard triage, borrowing Linear's vocabulary: open/focus the panel, <code>J</code>/<code>K</code> to move,
+      <code>U</code> read-toggle, <code>E</code> done, <code>Esc</code> returns focus to the trigger.</li>
+  </ul>
+
+  <h2>8. What this means for our catalog</h2>
+  <p>Good news: the behavior is already sanctioned. <code>pattern-multi-panel-drawer</code> (the Schema EntityPanel)
+  is already <b>non-modal</b> — no scrim, content behind stays visible and clickable, with a resize shutter and a
+  width persisted in <code>localStorage</code>. The <code>drawer</code> primitive, by contrast, is modal
+  (<code>drawer-overlay</code> scrim) and is the wrong base for an inbox.</p>
+  <p>So the build is: <b>one new <code>storybook.ts</code> entry</b> (<code>pattern-inbox</code>), inheriting the
+  non-modal posture, plus a fixture. No invented components.</p>
+
+  <h2>9. Decisions to lock before building</h2>
+  <div class="card">
+    <div class="dec"><b>D1</b><div><b>Push or overlay?</b> Notion pushes the content narrower; incident.io overlays and dims.
+      Push is the admin-appropriate choice and matches our existing decision to keep the banner inside the work area.</div></div>
+    <div class="dec"><b>D2</b><div><b>Sidebar Inbox item, and where?</b> Above the Space group (it is account-scoped, not Space-scoped)
+      or inside it? Note the client is also adding a <i>Data</i> item and moving <i>Restore</i> down.</div></div>
+    <div class="dec"><b>D3</b><div><b>Needs attention / Activity — tabs or two sections in one scroll?</b>
+      Sections keep the count visible without a click; tabs scale better if volume grows.</div></div>
+    <div class="dec"><b>D4</b><div><b>Triage vocabulary.</b> Minimum is read/unread + Done. Do we also want
+      Snooze (Linear) and Mute-this-base (incident.io hover action)?</div></div>
+    <div class="dec"><b>D5</b><div><b>Full-page inbox — does it earn its keep?</b> Notion expands the panel in place via a chevron;
+      incident.io ships a separate Alerts page for history. Given our alert volume, expand-in-place is probably enough.</div></div>
+    <div class="dec"><b>D6</b><div><b>Which rows get an inline action button</b> (Reconnect · View log · Review diff)
+      versus deep-link-only?</div></div>
+    <div class="dec"><b>D7</b><div><b>Topbar fate.</b> If the Inbox moves to the sidebar, the bell disappears — and the
+      connection-health pill (which lives in <code>topbar-status</code>) loses its home. The topbar then holds only a
+      mobile-only hamburger.</div></div>
+    <div class="dec"><b>D8</b><div><b>Rollup thresholds and the health-score debounce window.</b> No external number to cite —
+      judgment call, tune with the client.</div></div>
+  </div>
+
+  <h2>Honest gaps</h2>
+  <div class="card gap">
+    <ul style="margin:0">
+      <li><b>Rewind / BackupSheep notification UX: unverified.</b> No authoritative docs found.</li>
+      <li><b>Self-healing is a cross-domain transfer</b>, from incident tooling — <i>no backup tool was observed
+        doing this in an in-app inbox</i>. High upside, low risk to prototype, but it is our invention, not a copied pattern.</li>
+      <li><b>No direct competitor validates an in-app backup inbox at all.</b> The category lives in email. We are
+        defining the pattern.</li>
+      <li><b>Digest thresholds and debounce windows have no citable number.</b> Set by feel, tune with the client.</li>
+      <li>Airtable ships often — re-check the bell's behavior before mirroring it. The load-bearing point
+        (bell = social, not operational) is robust.</li>
+    </ul>
+  </div>
+
+  <p class="foot">Sources: Mobbin (Notion, Linear, GitHub, Slack, Vercel, incident.io, Digg, Postman flows) ·
+  Fivetran, Airbyte, ProBackup, Airtable support docs · Linear, Notion, GitHub product docs ·
+  Carbon Design System · Sara Soueidan on ARIA live regions · Datadog/PagerDuty integration docs ·
+  Knock and SuprSend on batching &amp; digests.</p>
+
+</div>
+</body>
+</html>

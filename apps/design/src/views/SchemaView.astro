@@ -25,6 +25,7 @@ import SchemaDocs from '../components/schema/SchemaDocs.astro';
 import EntityPanel from '../components/schema/EntityPanel.astro';
 import RelationshipPanel from '../components/schema/RelationshipPanel.astro';
 import { buildEntityIndex, type SchemaDoc } from '../components/schema/schemaEntities';
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from '../components/schema/airtableFieldIcons';
 
 interface Props {
   bases: { id: string; name: string }[];
@@ -80,6 +81,35 @@ for (const e of index) {
   if (e.kind === 'base') { baseHealthByName[e.name] = e.health; baseHealthById[e.id] = e.health; baseIdByName[e.name] = e.id; }
   else if (e.kind === 'table') { tableHealthByKey[`${e.baseName}::${e.name}`] = e.health; tableIdByKey[`${e.baseName}::${e.name}`] = e.id; }
 }
+
+// Quick-ask drawer thread switcher — the compact drawer showed one hardcoded conversation with
+// no way to switch. It now lists the same NON-ARCHIVED threads the full Chat tab rail uses
+// (from the shared chatThreads fixture) and swaps the shown exchange on select (presentational —
+// first user question + first assistant answer per thread; the full Chat tab owns real history).
+const scdThreads = chatThreads
+  .filter((t) => !t.archived)
+  .map((t) => ({ id: t.id, title: t.title, messages: t.messages }));
+const scdCurrent = scdThreads[0];
+// Quiet reference-chip icon for the quick-ask drawer (kept simple; the full Chat tab has the rich set).
+const scdRefIcon = (r: { kind: string; entityKind?: string }) =>
+  r.kind === 'doc' ? 'lucide--file-text' : r.entityKind === 'base' ? 'lucide--database' : r.entityKind === 'field' ? 'lucide--hash' : 'lucide--table-2';
+
+// Quick-ask "Add context" picker — the same browsable + searchable list the full Chat composer
+// uses (SchemaChat), scoped to the slim drawer. Bases/Tables/Fields from the entity index + Docs.
+const scdFieldIcon = (type?: string) => {
+  const k = type ? airtableIconKey(type) : null;
+  return k ? `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
+};
+const scdCtxIcon = (e: (typeof index)[number]) =>
+  e.kind === 'field' ? scdFieldIcon(e.fieldType) || '<span class="iconify lucide--tag"></span>'
+  : e.kind === 'table' ? '<span class="iconify lucide--table-2"></span>'
+  : '<span class="iconify lucide--database"></span>';
+const scdCtxSearch = (e: (typeof index)[number]) => [e.name, e.tableName, e.baseName].filter(Boolean).join(' ').toLowerCase();
+const scdCtxGroups = [
+  { label: 'Bases', items: index.filter((e) => e.kind === 'base' && !e.removed) },
+  { label: 'Tables', items: index.filter((e) => e.kind === 'table' && !e.removed) },
+  { label: 'Fields', items: index.filter((e) => e.kind === 'field' && !e.removed) },
+];
 ---
 
 <div class="sch" data-schema data-chat="closed">
@@ -253,26 +283,104 @@ for (const e of index) {
     <div class="scd" data-scd>
       <div class="scd-scrim" data-scd-close aria-hidden="true"></div>
       <aside class="scd-drawer" aria-label="Schema assistant">
+        <div class="scd-grip" data-scd-grip aria-hidden="true"></div>
         <div class="scd-top">
-          <span class="scd-ttl"><span class="iconify lucide--sparkles size-4" aria-hidden="true"></span>Schema assistant</span>
+          {scdThreads.length > 0 ? (
+            <div class="dropdown scd-threadmenu">
+              <div tabindex="0" role="button" class="scd-threadbtn tooltip tooltip-bottom" data-tip="Switch chat" aria-label="Switch chat">
+                <span class="iconify lucide--sparkles size-4 scd-threadmark" aria-hidden="true"></span>
+                <span class="scd-threadttl" data-scd-current>{scdCurrent.title}</span>
+                <span class="iconify lucide--chevron-down size-3.5 scd-threadchev" aria-hidden="true"></span>
+              </div>
+              <ul tabindex="0" class="dropdown-content scd-threadlist">
+                {scdThreads.map((t) => (
+                  <li>
+                    <button type="button" class="scd-threaditem" data-scd-pick={t.id} data-scd-title={t.title}>
+                      <span class="iconify lucide--message-square size-3.5" aria-hidden="true"></span>
+                      <span class="scd-threaditem-ttl">{t.title}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <span class="scd-ttl"><span class="iconify lucide--sparkles size-4" aria-hidden="true"></span>Schema assistant</span>
+          )}
           <div class="scd-acts">
+            <button type="button" class="scd-icobtn tooltip tooltip-bottom" data-scd-new data-tip="New chat" aria-label="New chat"><span class="iconify lucide--plus size-4" aria-hidden="true"></span></button>
             <button type="button" class="scd-icobtn tooltip tooltip-bottom" data-scd-expand data-tip="Open full chat" aria-label="Open full chat"><span class="iconify lucide--arrow-up-right size-4" aria-hidden="true"></span></button>
             <button type="button" class="scd-icobtn" data-scd-close aria-label="Close"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button>
           </div>
         </div>
-        <div class="scd-scope"><span class="scd-chip"><span class="iconify lucide--database size-3.5" aria-hidden="true"></span>Whole Space</span></div>
-        <div class="scd-convo">
-          <div class="scd-msg-user">Which tables in Sales CRM have undocumented fields?</div>
-          <div class="scd-msg-ai">
-            <span class="scd-mark"><span class="iconify lucide--sparkles size-3.5" aria-hidden="true"></span></span>Three tables in Sales CRM have fields with no description: <b>Deals</b> (4), <b>Contacts</b> (2), and <b>Activities</b> (1). The most linked is <b>Deals.Stage</b>, referenced by two rollups.
-            <div class="scd-refs"><span class="scd-refs-lbl">References</span><span class="scd-refchip"><span class="iconify lucide--table-2 size-3.5" aria-hidden="true"></span>Deals</span><span class="scd-refchip"><span class="iconify lucide--table-2 size-3.5" aria-hidden="true"></span>Contacts</span></div>
+        <div class="scd-scope" data-scd-scope><span class="scd-chip scd-chip-whole" data-scd-whole><span class="iconify lucide--database size-3.5" aria-hidden="true"></span>Whole Space</span></div>
+        <div class="scd-convo" data-scd-convo>
+          {scdThreads.map((t) => (
+            <div class="scd-thread" data-scd-thread={t.id} hidden={t.id !== scdCurrent.id}>
+              {t.messages.map((m) => (
+                m.role === 'user' ? (
+                  <div class="scd-msg-user">{m.text}</div>
+                ) : m.convertedDoc ? (
+                  <div class="scd-msg-doc"><span class="iconify lucide--file-plus-2 size-3.5" aria-hidden="true"></span><span>Saved as a doc · <strong>{m.convertedDoc.title}</strong></span></div>
+                ) : (
+                  <div class="scd-msg-ai">
+                    <span class="scd-mark"><span class="iconify lucide--sparkles size-3.5" aria-hidden="true"></span></span>
+                    <div class="scd-msg-ai-body">
+                      <div class="scd-msg-ai-text">{m.text}</div>
+                      {m.refs && m.refs.length > 0 && (
+                        <div class="scd-refs">
+                          <span class="scd-refs-lbl">References</span>
+                          {m.refs.map((r) => (
+                            <span class="scd-refchip"><span class={`iconify ${scdRefIcon(r)} size-3.5`} aria-hidden="true"></span>{r.name}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              ))}
+            </div>
+          ))}
+          <div class="scd-newempty" data-scd-empty hidden>
+            <span class="iconify lucide--sparkles size-5" aria-hidden="true"></span>
+            <p class="scd-newempty-ttl">Ask anything about your schema</p>
+            <p class="scd-newempty-sub">Start a new question below, or switch to an existing chat.</p>
           </div>
         </div>
         <div class="scd-composer">
           <div class="scd-box">
             <div class="scd-input">Ask about your schema…</div>
             <div class="scd-bar">
-              <span class="scd-addctx"><span class="iconify lucide--plus size-3.5" aria-hidden="true"></span>Add context</span>
+              <div class="dropdown dropdown-top scd-addctxwrap">
+                <div tabindex="0" role="button" class="scd-addctx" data-scd-addctx><span class="iconify lucide--plus size-3.5" aria-hidden="true"></span>Add context</div>
+                <div tabindex="0" class="dropdown-content scd-addctx-pop">
+                  <label class="input input-sm scd-addctx-search">
+                    <span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span>
+                    <input type="text" data-scd-ctx-search placeholder="Search bases, tables, fields, docs…" aria-label="Search context" autocomplete="off" />
+                  </label>
+                  <div class="scd-addctx-list">
+                    {scdCtxGroups.map((g) => g.items.length > 0 && (
+                      <>
+                        <div class="scd-addctx-sec" data-scd-ctx-sec>{g.label}</div>
+                        {g.items.map((e) => (
+                          <button type="button" class="scd-addctx-item" data-scd-add-ent={e.id} data-ent-name={e.name} data-search={scdCtxSearch(e)}>
+                            <span class="scd-addctx-ic" set:html={scdCtxIcon(e)}></span>
+                            <span class="scd-addctx-item-name">{e.name}</span>
+                            {(e.tableName ?? e.baseName) && <span class="scd-addctx-item-path">{e.tableName ?? e.baseName}</span>}
+                          </button>
+                        ))}
+                      </>
+                    ))}
+                    {docs.length > 0 && <div class="scd-addctx-sec" data-scd-ctx-sec>Docs</div>}
+                    {docs.map((d) => (
+                      <button type="button" class="scd-addctx-item" data-scd-add-doc={d.id} data-doc-title={d.title} data-search={d.title.toLowerCase()}>
+                        <span class="scd-addctx-ic"><span class="iconify lucide--file-text size-3.5" aria-hidden="true"></span></span>
+                        <span class="scd-addctx-item-name">{d.title}</span>
+                      </button>
+                    ))}
+                    <div class="scd-addctx-empty" data-scd-ctx-empty hidden>No match.</div>
+                  </div>
+                </div>
+              </div>
               <span class="scd-credits"><span class="iconify lucide--zap size-3.5" aria-hidden="true"></span>~2 credits</span>
               <span class="scd-send"><span class="iconify lucide--arrow-up size-4" aria-hidden="true"></span></span>
             </div>
@@ -324,22 +432,52 @@ for (const e of index) {
 
   /* quick-ask chat dock — a modal right drawer opened by the Ask launcher; Expand ⤢ → full Chat tab */
   .scd-scrim { position: fixed; inset: 0; background: oklch(0 0 0 / .32); opacity: 0; pointer-events: none; transition: opacity .18s ease; z-index: 60; }
-  .scd-drawer { position: fixed; top: 0; right: 0; height: 100dvh; width: min(420px, 94vw); background: var(--color-base-100); border-left: 1px solid var(--color-base-300); box-shadow: -12px 0 40px oklch(0 0 0 / .18); transform: translateX(100%); transition: transform .2s ease; z-index: 61; display: flex; flex-direction: column; }
+  .scd-drawer { position: fixed; top: 0; right: 0; height: 100dvh; width: var(--scd-w, min(480px, 94vw)); background: var(--color-base-100); border-left: 1px solid var(--color-base-300); box-shadow: -12px 0 40px oklch(0 0 0 / .18); transform: translateX(100%); transition: transform .2s ease; z-index: 61; display: flex; flex-direction: column; }
+  /* Left-edge resize (same rule as the detail panels): drag to widen, width persisted. */
+  .scd-grip { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 2; }
+  .scd-grip::after { content: ''; position: absolute; left: 3px; top: 0; bottom: 0; width: 2px; background: transparent; transition: background-color .12s ease; }
+  .scd-grip:hover::after, .scd-grip.scd-grip-on::after { background: oklch(from var(--color-primary) l c h / .6); }
   .sch[data-chat="drawer"] .scd-scrim { opacity: 1; pointer-events: auto; }
   .sch[data-chat="drawer"] .scd-drawer { transform: translateX(0); }
   .scd-top { display: flex; align-items: center; gap: .5rem; padding: .6rem .5rem .6rem .85rem; border-bottom: 1px solid var(--color-base-300); }
   .scd-ttl { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; font-weight: 640; }
   .scd-ttl .iconify { color: var(--color-primary); }
+  /* thread switcher — a daisyUI dropdown whose trigger is the current chat title; menu lists the
+     non-archived threads (mirrors the full Chat tab rail). Compact, quiet, on the 4px grid. */
+  .scd-threadmenu { min-width: 0; }
+  .scd-threadbtn { display: inline-flex; align-items: center; gap: .35rem; max-width: 15rem; padding: .25rem .4rem; border-radius: 8px; cursor: pointer; font-size: .85rem; font-weight: 640; color: var(--color-base-content); }
+  .scd-threadbtn:hover { background: oklch(from var(--color-base-content) l c h / .07); }
+  .scd-threadmark { color: var(--color-primary); flex: none; }
+  .scd-threadttl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scd-threadchev { flex: none; opacity: .5; }
+  .scd-threadlist { z-index: 62; margin-top: .35rem; width: 17rem; max-height: 60dvh; overflow-y: auto; padding: .3rem; border: 1px solid var(--color-base-300); border-radius: 12px; background: var(--color-base-100); box-shadow: 0 8px 28px oklch(0 0 0 / .16); }
+  .scd-threaditem { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .4rem .5rem; border: 0; background: none; border-radius: 8px; cursor: pointer; text-align: left; font-size: .84rem; color: var(--color-base-content); }
+  .scd-threaditem:hover { background: oklch(from var(--color-base-content) l c h / .07); }
+  .scd-threaditem .iconify { flex: none; opacity: .55; }
+  .scd-threaditem-ttl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scd-newempty { margin: auto; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .3rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .scd-newempty .iconify { color: var(--color-primary); opacity: .8; }
+  .scd-newempty-ttl { font-size: .95rem; font-weight: 640; color: var(--color-base-content); }
+  .scd-newempty-sub { font-size: .8rem; max-width: 30ch; }
   .scd-acts { margin-left: auto; display: inline-flex; gap: .1rem; }
   .scd-icobtn { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border: 0; background: none; border-radius: 7px; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .55); }
   .scd-icobtn:hover { background: oklch(from var(--color-base-content) l c h / .07); color: var(--color-base-content); }
   .scd-scope { padding: .55rem .85rem; border-bottom: 1px solid var(--color-base-200); }
   .scd-chip { display: inline-flex; align-items: center; gap: .3rem; font-size: .74rem; padding: .12rem .5rem; border-radius: 999px; border: 1px solid var(--color-base-300); background: oklch(from var(--color-base-200) l c h / .5); color: oklch(from var(--color-base-content) l c h / .7); }
   .scd-chip .iconify { opacity: .6; }
-  .scd-convo { flex: 1; overflow-y: auto; min-height: 0; padding: 1.1rem 1rem; display: flex; flex-direction: column; gap: 1.2rem; }
-  .scd-msg-user { align-self: flex-end; max-width: 85%; padding: .6rem .9rem; border-radius: 1.1rem 1.1rem .3rem 1.1rem; background: oklch(from var(--color-base-200) l c h / .9); font-size: .88rem; line-height: 1.55; }
-  .scd-msg-ai { align-self: stretch; font-size: .9rem; line-height: 1.65; color: var(--color-base-content); }
-  .scd-mark { display: inline-grid; place-items: center; width: 1.3rem; height: 1.3rem; color: var(--color-primary); vertical-align: -.3rem; margin-right: .1rem; }
+  .scd-convo { flex: 1; overflow-y: auto; min-height: 0; padding: 16px 16px 20px; }
+  .scd-thread { display: flex; flex-direction: column; gap: 20px; }
+  .scd-thread[hidden] { display: none; }
+  .scd-msg-user { align-self: flex-end; max-width: 85%; padding: 8px 12px; border-radius: 14px 14px 4px 14px; background: var(--color-base-200); font-size: 13px; line-height: 1.55; }
+  /* Assistant turn: a small sparkle avatar + the answer body, so a multi-turn thread reads as a real chat. */
+  .scd-msg-ai { align-self: stretch; display: flex; gap: 8px; }
+  .scd-mark { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 999px; background: color-mix(in oklch, var(--color-primary) 14%, transparent); color: var(--color-primary); }
+  .scd-msg-ai-body { min-width: 0; flex: 1; }
+  .scd-msg-ai-text { font-size: 13px; line-height: 1.6; color: var(--color-base-content); }
+  /* "Saved as a doc" system line between turns. */
+  .scd-msg-doc { align-self: center; display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--color-base-300); background: oklch(from var(--color-base-200) l c h / .5); font-size: 12px; color: oklch(from var(--color-base-content) l c h / .75); }
+  .scd-msg-doc .iconify { color: var(--color-primary); opacity: .85; }
+  .scd-msg-doc strong { font-weight: 600; color: var(--color-base-content); }
   .scd-refs { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .6rem; align-items: center; }
   .scd-refs-lbl { font-size: .68rem; color: oklch(from var(--color-base-content) l c h / .42); }
   .scd-refchip { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; padding: .1rem .45rem; border-radius: 999px; border: 1px solid var(--color-base-300); background: oklch(from var(--color-base-200) l c h / .5); color: oklch(from var(--color-base-content) l c h / .75); }
@@ -348,7 +486,25 @@ for (const e of index) {
   .scd-box { border: 1px solid var(--color-base-300); border-radius: 1rem; background: var(--color-base-100); padding: .7rem .85rem .6rem; box-shadow: 0 1px 3px oklch(0 0 0 / .05); }
   .scd-input { font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .4); padding: .2rem 0 .7rem; }
   .scd-bar { display: flex; align-items: center; gap: .5rem; }
-  .scd-addctx { display: inline-flex; align-items: center; gap: .25rem; font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .scd-addctx { display: inline-flex; align-items: center; gap: .25rem; font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .6); cursor: pointer; padding: .2rem .35rem; border-radius: 6px; }
+  .scd-addctx:hover { background: oklch(from var(--color-base-content) l c h / .07); color: var(--color-base-content); }
+  /* Add-context picker (opens upward from the composer). Mirrors the full Chat picker. */
+  .scd-addctx-pop { width: 20rem; max-width: calc(100vw - 4rem); margin-bottom: 8px; padding: 8px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: 12px; box-shadow: 0 8px 28px oklch(0 0 0 / .18); z-index: 62; }
+  .scd-addctx-search { width: 100%; margin-bottom: 8px; }
+  .scd-addctx-list { max-height: 16rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+  .scd-addctx-sec { font-size: .62rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .45; padding: 8px 4px 2px; }
+  .scd-addctx-sec[hidden] { display: none; }
+  .scd-addctx-item { display: flex; align-items: center; gap: .45rem; padding: .38rem .45rem; border: 0; background: none; border-radius: 6px; cursor: pointer; font: inherit; font-size: .82rem; text-align: left; color: var(--color-base-content); width: 100%; }
+  .scd-addctx-item:hover { background: oklch(from var(--color-base-content) l c h / .06); }
+  .scd-addctx-item[hidden] { display: none; }
+  .scd-addctx-ic { display: inline-grid; place-items: center; width: 15px; flex: none; color: oklch(from var(--color-base-content) l c h / .55); }
+  .scd-addctx-ic svg { width: 13px; height: 13px; }
+  .scd-addctx-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scd-addctx-item-path { margin-left: auto; font-size: .72rem; opacity: .5; white-space: nowrap; flex: none; }
+  .scd-addctx-empty { padding: .5rem .45rem; font-size: .8rem; opacity: .5; }
+  /* scope row: injected context chips sit beside/replace "Whole Space" */
+  .scd-scope { display: flex; align-items: center; flex-wrap: wrap; gap: .3rem; }
+  .scd-scope[data-has-ctx] .scd-chip-whole { display: none; }
   .scd-credits { display: inline-flex; align-items: center; gap: .25rem; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); margin-left: auto; }
   .scd-send { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: 8px; background: var(--color-primary); color: var(--color-primary-content); flex: none; }
   .scd-disclaimer { text-align: center; font-size: .7rem; color: oklch(from var(--color-base-content) l c h / .4); margin-top: .5rem; }
@@ -382,6 +538,17 @@ for (const e of index) {
   .sch-soon p { font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .66); max-width: 56ch; }
 </style>
 
+{/* Scoped styles don't reach the JS-injected context chips (innerHTML) — style them globally
+    under a unique `.scd-`-prefix. Matches the "Whole Space" chip's pill look. */}
+<style is:global>
+  .scd-ctxchip { display: inline-flex; align-items: center; gap: .3rem; font-size: .74rem; padding: .12rem .2rem .12rem .5rem; border-radius: 999px; border: 1px solid var(--color-base-300); background: oklch(from var(--color-primary) l c h / .08); color: oklch(from var(--color-base-content) l c h / .82); }
+  .scd-ctxchip .iconify, .scd-ctxchip svg { width: 12px; height: 12px; opacity: .7; flex: none; }
+  .scd-ctxchip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 11rem; }
+  .scd-ctxchip-x { display: inline-grid; place-items: center; width: 16px; height: 16px; border: 0; border-radius: 999px; background: none; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .5); flex: none; }
+  .scd-ctxchip-x:hover { background: oklch(from var(--color-base-content) l c h / .12); color: var(--color-base-content); }
+  .scd-ctxchip-x .iconify { opacity: 1; }
+</style>
+
 <script>
   function wireSchemaTabs() {
     const root = document.querySelector<HTMLElement>('[data-schema]');
@@ -403,6 +570,99 @@ for (const e of index) {
     root.querySelector<HTMLButtonElement>('[data-sch-ask]')?.addEventListener('click', () => setChat('drawer'));
     root.querySelectorAll<HTMLElement>('[data-scd-close]').forEach((b) => b.addEventListener('click', () => setChat('closed')));
     root.querySelector<HTMLButtonElement>('[data-scd-expand]')?.addEventListener('click', () => { setChat('closed'); chatTab?.click(); });
+    // Quick-ask thread switcher: pick a thread → swap the shown title + exchange; New chat → blank
+    // it (presentational — the full Chat tab owns real history). Blur closes the daisyUI dropdown.
+    const scdCurEl = root.querySelector<HTMLElement>('[data-scd-current]');
+    const scdEmpty = root.querySelector<HTMLElement>('[data-scd-empty]');
+    const scdThreadsEls = Array.from(root.querySelectorAll<HTMLElement>('[data-scd-thread]'));
+    // Show one thread's full conversation (or the empty state on New) — toggle, don't re-render.
+    const showScdThread = (id: string | null) => {
+      scdThreadsEls.forEach((el) => { el.hidden = el.dataset.scdThread !== id; });
+      if (scdEmpty) scdEmpty.hidden = id !== null;
+      const convo = root.querySelector<HTMLElement>('[data-scd-convo]'); if (convo) convo.scrollTop = 0;
+    };
+    root.querySelectorAll<HTMLButtonElement>('[data-scd-pick]').forEach((b) =>
+      b.addEventListener('click', () => {
+        if (scdCurEl) scdCurEl.textContent = b.dataset.scdTitle ?? '';
+        showScdThread(b.dataset.scdPick ?? null);
+        (document.activeElement as HTMLElement | null)?.blur();
+      }),
+    );
+    root.querySelector<HTMLButtonElement>('[data-scd-new]')?.addEventListener('click', () => {
+      if (scdCurEl) scdCurEl.textContent = 'New chat';
+      showScdThread(null);
+      (document.activeElement as HTMLElement | null)?.blur();
+    });
+    // Quick-ask "Add context": mirror the full Chat picker — pick an entity/doc → a removable scope
+    // chip; picker search filters items + hides empty section headers. Presentational (no real send).
+    const scdScope = root.querySelector<HTMLElement>('[data-scd-scope]');
+    const scdCtx = new Map<string, { name: string; icon: string }>();
+    const renderScdCtx = () => {
+      scdScope?.querySelectorAll('[data-scd-ctxchip]').forEach((c) => c.remove());
+      scdScope?.toggleAttribute('data-has-ctx', scdCtx.size > 0);
+      scdCtx.forEach((v, key) => {
+        const chip = document.createElement('span');
+        chip.className = 'scd-ctxchip';
+        chip.dataset.scdCtxchip = key;
+        chip.innerHTML = `${v.icon}<span class="scd-ctxchip-name">${v.name}</span><button type="button" class="scd-ctxchip-x" data-scd-ctx-remove aria-label="Remove ${v.name}"><span class="iconify lucide--x size-3" aria-hidden="true"></span></button>`;
+        scdScope?.appendChild(chip);
+      });
+    };
+    root.addEventListener('click', (ev) => {
+      const t = ev.target as HTMLElement;
+      const item = t.closest<HTMLElement>('[data-scd-add-ent],[data-scd-add-doc]');
+      if (item) {
+        const isDoc = item.hasAttribute('data-scd-add-doc');
+        const id = (isDoc ? item.dataset.scdAddDoc : item.dataset.scdAddEnt) || '';
+        const key = (isDoc ? 'doc:' : 'ent:') + id;
+        const name = (isDoc ? item.dataset.docTitle : item.dataset.entName) || id;
+        const icon = item.querySelector<HTMLElement>('.scd-addctx-ic')?.innerHTML || '';
+        if (!scdCtx.has(key)) scdCtx.set(key, { name, icon });
+        renderScdCtx();
+        (document.activeElement as HTMLElement | null)?.blur();
+        return;
+      }
+      const rm = t.closest<HTMLElement>('[data-scd-ctx-remove]');
+      if (rm) {
+        const chip = rm.closest<HTMLElement>('[data-scd-ctxchip]');
+        if (chip?.dataset.scdCtxchip) { scdCtx.delete(chip.dataset.scdCtxchip); renderScdCtx(); }
+      }
+    });
+    const scdCtxSearchEl = root.querySelector<HTMLInputElement>('[data-scd-ctx-search]');
+    const scdCtxEmptyEl = root.querySelector<HTMLElement>('[data-scd-ctx-empty]');
+    scdCtxSearchEl?.addEventListener('input', () => {
+      const q = scdCtxSearchEl.value.trim().toLowerCase();
+      let shown = 0;
+      root.querySelectorAll<HTMLElement>('.scd-addctx-item').forEach((it) => {
+        const ok = !q || (it.dataset.search || '').includes(q);
+        it.hidden = !ok;
+        if (ok) shown++;
+      });
+      root.querySelectorAll<HTMLElement>('[data-scd-ctx-sec]').forEach((sec) => {
+        let any = false;
+        let n = sec.nextElementSibling as HTMLElement | null;
+        while (n && !n.hasAttribute('data-scd-ctx-sec') && !n.hasAttribute('data-scd-ctx-empty')) {
+          if (n.classList.contains('scd-addctx-item') && !n.hidden) { any = true; break; }
+          n = n.nextElementSibling as HTMLElement | null;
+        }
+        sec.hidden = !any;
+      });
+      if (scdCtxEmptyEl) scdCtxEmptyEl.hidden = shown > 0;
+    });
+    // Left-edge resize of the drawer — same feel as the detail panels; width persisted.
+    const scdDrawer = root.querySelector<HTMLElement>('.scd-drawer');
+    const scdGrip = root.querySelector<HTMLElement>('[data-scd-grip]');
+    const SCD_MIN = 340; const scdMax = () => Math.min(760, window.innerWidth - 80);
+    try { const w = parseInt(localStorage.getItem('scd-w') || '', 10); if (Number.isFinite(w) && w >= SCD_MIN && scdDrawer) scdDrawer.style.setProperty('--scd-w', w + 'px'); } catch { /* ignore */ }
+    if (scdGrip && scdDrawer) {
+      scdGrip.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); scdGrip.classList.add('scd-grip-on');
+        const sx = e.clientX; const sw = scdDrawer.getBoundingClientRect().width;
+        const mv = (me: PointerEvent) => { const w = Math.max(SCD_MIN, Math.min(sw + (sx - me.clientX), scdMax())); scdDrawer.style.setProperty('--scd-w', w + 'px'); };
+        const up = () => { scdGrip.classList.remove('scd-grip-on'); document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', up); try { localStorage.setItem('scd-w', String(Math.round(scdDrawer.getBoundingClientRect().width))); } catch { /* ignore */ } };
+        document.addEventListener('pointermove', mv); document.addEventListener('pointerup', up);
+      });
+    }
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && root.dataset.chat === 'drawer') setChat('closed'); });
     // "/" focuses the search of the currently-visible tab — the shared shortcut for every list tab.
     document.addEventListener('keydown', (e) => {

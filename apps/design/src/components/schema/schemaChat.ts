@@ -7,6 +7,7 @@
  * switch to the Docs tab and open the doc.
  */
 import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+import { entityChip } from './entityChip';
 
 const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const fieldIconSvg = (type?: string) => {
@@ -20,12 +21,12 @@ const refIcon = (r: Ref) =>
   : r.entityKind === 'field' ? fieldIconSvg(r.fieldType) || '<span class="iconify lucide--tag"></span>'
   : r.entityKind === 'table' ? '<span class="iconify lucide--table-2"></span>'
   : '<span class="iconify lucide--database concept-ic-base"></span>';
+// The shared catalog chip (entityChip) — mirrors SchemaChat.astro's refChip. Context-bar chips
+// are removable static pills; in-message references are clickable buttons. Hooks preserved.
 const chipHtml = (r: Ref, removable = false) =>
-  `<span class="chat-chip" data-chat-chip data-ref-kind="${r.kind}" data-ref-id="${esc(r.id)}">` +
-  `<button type="button" class="chat-chip-open" ${r.kind === 'doc' ? `data-doc-open="${esc(r.id)}"` : `data-entity-open="${esc(r.id)}"`}>` +
-  `<span class="chat-chip-ic">${refIcon(r)}</span><span class="chat-chip-name">${esc(r.name)}</span></button>` +
-  (removable ? '<button type="button" class="chat-chip-x" data-chip-remove aria-label="Remove from context"><span class="iconify lucide--x size-3"></span></button>' : '') +
-  '</span>';
+  removable
+    ? entityChip({ name: r.name, icon: refIcon(r), attrs: `data-chat-chip data-ref-kind="${esc(r.kind)}" data-ref-id="${esc(r.id)}"`, remove: 'data-chip-remove' })
+    : entityChip({ name: r.name, icon: refIcon(r), clickable: true, attrs: r.kind === 'doc' ? `data-doc-open="${esc(r.id)}"` : `data-entity-open="${esc(r.id)}"` });
 
 export function wireChat() {
   const root = document.querySelector<HTMLElement>('[data-chat]');

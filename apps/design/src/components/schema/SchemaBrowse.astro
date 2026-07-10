@@ -9,6 +9,7 @@
  * "as of last backup"; no value statistics; no workspace grouping).
  */
 import FacetFilter from './FacetFilter.astro';
+import ExportControl from './ExportControl.astro';
 import EntitySearch from './EntitySearch.astro';
 import { fieldTypeLabel, type SchemaEntity, type SchemaDoc } from './schemaEntities';
 import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
@@ -62,11 +63,6 @@ const healthBadge = (h: string) =>
   h === 'green' ? { cls: 'badge-soft badge-success', label: 'Healthy' }
   : h === 'red' ? { cls: 'badge-soft badge-error', label: 'Needs attention' }
   : { cls: 'badge-soft badge-warning', label: 'Could improve' };
-// Cardinality token for a LINK field, derived honestly from its own multiplicity
-// (allowsMultiple). Non-link / unknown fields get no token (— dash), like Relationships
-// shows for formulas/lookups. Reuses the Relationships `.rl-card` mono token style.
-const fieldCard = (f: SchemaEntity) =>
-  f.linkedTableId && typeof f.allowsMultiple === 'boolean' ? (f.allowsMultiple ? '1:m' : '1:1') : '';
 const escHtml = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 // Tagged cell (B9) — an icon per tag KIND (doc = lucide--book-text, chat = lucide--messages-square)
 // with its count, and a hover popover (catalog daisyUI dropdown-hover) that lists EVERY tagged
@@ -157,6 +153,7 @@ const healthGroups = [{ items: [
 
     <div class="sch-tb-right">
       <span class="sch-tb-count" data-br-count>{totalCount} entities</span>
+      <ExportControl tab="browse" format="csv" noun="entities" total={totalCount} rowSelector=".br-row" />
       <div class="join sch-tb-modes" role="tablist" aria-label="Display mode">
         <button type="button" class="btn btn-sm join-item sch-tb-mode-active" data-br-mode="tree" role="tab">
           <span class="iconify lucide--list-tree size-4" aria-hidden="true"></span>Tree
@@ -176,8 +173,6 @@ const healthGroups = [{ items: [
     <div class="br-fhead">
       <button type="button" class="br-fmain br-sortbtn" data-br-tsort="name" aria-label="Sort by name"><span class="br-fhead-lbl">Name</span><span class="br-sortind" aria-hidden="true"></span></button>
       <button type="button" class="br-fcol br-fcol-type br-sortbtn" data-br-tsort="type" aria-label="Sort by type"><span class="br-fhead-lbl">Type</span><span class="br-sortind" aria-hidden="true"></span></button>
-      <button type="button" class="br-fcol br-fcol-link br-sortbtn" data-br-tsort="link" aria-label="Sort by link"><span class="br-fhead-lbl">Link</span><span class="br-sortind" aria-hidden="true"></span></button>
-      <button type="button" class="br-fcol br-fcol-card br-sortbtn" data-br-tsort="card" aria-label="Sort by cardinality"><span class="br-fhead-lbl">Cardinality</span><span class="br-sortind" aria-hidden="true"></span></button>
       <button type="button" class="br-fcol br-fcol-status br-sortbtn" data-br-tsort="status" aria-label="Sort by status"><span class="br-fhead-lbl">Status</span><span class="br-sortind" aria-hidden="true"></span></button>
       <button type="button" class="br-fcol br-fcol-tags br-sortbtn" data-br-tsort="tags" aria-label="Sort by tagged"><span class="br-fhead-lbl">Tagged</span><span class="br-sortind" aria-hidden="true"></span></button>
     </div>
@@ -191,8 +186,6 @@ const healthGroups = [{ items: [
             <span class="br-sub">{tables.filter((t) => !t.removed).length} tables · {base.fieldCount} fields</span>
           </span>
           <span class="br-fcol br-fcol-type"></span>
-          <span class="br-fcol br-fcol-link"></span>
-          <span class="br-fcol br-fcol-card"></span>
           <span class="br-fcol br-fcol-status"><Fragment set:html={statusBadgeHtml(base.health)} /></span>
           <span class="br-fcol br-fcol-tags"><Fragment set:html={taggedHtml(base)} /></span>
         </div>
@@ -208,8 +201,6 @@ const healthGroups = [{ items: [
                   <span class="badge badge-warning badge-soft br-draft">Draft</span>
                 </span>
                 <span class="br-fcol br-fcol-type"></span>
-                <span class="br-fcol br-fcol-link"></span>
-                <span class="br-fcol br-fcol-card"></span>
                 <span class="br-fcol br-fcol-status">{table.removed
                   ? <span class="badge badge-soft badge-neutral gap-1 tooltip tooltip-left" data-tip={`No longer in Airtable${table.removedAt ? ` since ${fmtDate(table.removedAt)}` : ''}`}>Deleted</span>
                   : <Fragment set:html={statusBadgeHtml(table.health)} />}</span>
@@ -217,7 +208,7 @@ const healthGroups = [{ items: [
               </div>
               <div class="br-group" data-br-group>
                 {fields.map((f) => (
-                  <div class="br-row br-row-field" data-kind="field" data-base={base.id} data-ftype={f.fieldType} data-health={f.health} data-desc={descState(f)} data-draft={isDraft(f)} data-linked={f.linkedTableId ? '1' : '0'} data-removed={f.removed ? '1' : '0'} data-search={searchStr(f)} data-entity-open={f.id} data-s-name={f.name.toLowerCase()} data-s-type={fieldTypeLabel(f.fieldType).toLowerCase()} data-s-link={(f.linkedTableName ?? '').toLowerCase()} data-s-card={fieldCard(f)} data-s-status={HEALTH_RANK[f.health]} data-s-tags={f.docIds.length + (chatTagsById.get(f.id)?.length ?? 0)} role="button" tabindex="0">
+                  <div class="br-row br-row-field" data-kind="field" data-base={base.id} data-ftype={f.fieldType} data-health={f.health} data-desc={descState(f)} data-draft={isDraft(f)} data-linked={f.linkedTableId ? '1' : '0'} data-removed={f.removed ? '1' : '0'} data-search={searchStr(f)} data-entity-open={f.id} data-s-name={f.name.toLowerCase()} data-s-type={fieldTypeLabel(f.fieldType).toLowerCase()} data-s-status={HEALTH_RANK[f.health]} data-s-tags={f.docIds.length + (chatTagsById.get(f.id)?.length ?? 0)} role="button" tabindex="0">
                     <span class="br-twist-spacer" aria-hidden="true"></span>
                     <span class="br-ic br-ic-field" set:html={fieldIconSvg(f.fieldType)} />
                     {/* Name column (flexes + truncates); doc backlink + Draft pip stay hugging the name. */}
@@ -225,11 +216,9 @@ const healthGroups = [{ items: [
                       <span class="br-name">{f.name}{f.isPrimary && <span class="br-primary">primary</span>}</span>
                       <span class="badge badge-warning badge-soft br-draft">Draft</span>
                     </span>
-                    {/* Aligned columns — reuse the Relationships table elements (type chip, mono
-                        cardinality token, dash) + the documented soft-semantic status badge. */}
+                    {/* Aligned columns — the type chip + the documented soft-semantic status badge.
+                        Link/Cardinality live in the field's detail panel, not the top-level table (B4). */}
                     <span class="br-fcol br-fcol-type"><span class="badge badge-soft badge-neutral rl-type-badge">{fieldTypeLabel(f.fieldType)}</span></span>
-                    <span class="br-fcol br-fcol-link">{f.linkedTableName ? <button type="button" class="br-linkcell br-linkbtn tooltip tooltip-left" data-entity-open={f.linkedTableId} data-tip={`Open ${f.linkedTableName}`} aria-label={`Open linked table ${f.linkedTableName}`}>→ {f.linkedTableName}</button> : <span class="rl-dash">—</span>}</span>
-                    <span class="br-fcol br-fcol-card">{fieldCard(f) ? <span class="rl-card tooltip tooltip-left" data-tip={f.allowsMultiple ? 'Links to many records' : 'Links to one record'}>{fieldCard(f)}</span> : <span class="rl-dash">—</span>}</span>
                     <span class="br-fcol br-fcol-status">{f.removed
                       ? <span class="badge badge-soft badge-neutral gap-1 tooltip tooltip-left" data-tip={`No longer in Airtable${f.removedAt ? ` since ${fmtDate(f.removedAt)}` : ''}`}>Deleted</span>
                       : <span class={`badge ${healthBadge(f.health).cls} gap-1`}><span class="size-1.5 rounded-full bg-current"></span>{healthBadge(f.health).label}</span>}</span>
@@ -253,7 +242,6 @@ const healthGroups = [{ items: [
             <th data-br-sort="name" class="br-th">Name</th>
             <th data-br-sort="type" class="br-th">Type</th>
             <th data-br-sort="parent" class="br-th">Parent</th>
-            <th data-br-sort="linked" class="br-th">Linked</th>
             <th data-br-sort="health" class="br-th br-th-active">Health</th>
             <th></th>
           </tr>
@@ -280,7 +268,6 @@ const healthGroups = [{ items: [
               </td>
               <td class="text-base-content/64">{e.kind === 'field' ? fieldTypeLabel(e.fieldType) : e.kind === 'table' ? 'Table' : 'Base'}</td>
               <td class="text-base-content/64">{e.kind === 'field' ? e.tableName : e.baseName}</td>
-              <td class="text-base-content/64">{e.linkedTableName ?? '—'}</td>
               <td>{e.removed ? <span class="text-base-content/40">—</span> : <span class={`badge ${healthBadge(e.health).cls}`}>{healthBadge(e.health).label}</span>}</td>
               <td class="text-right"><span class="br-openlink">Open →</span></td>
             </tr>
@@ -293,7 +280,7 @@ const healthGroups = [{ items: [
   <div class="br-empty" data-br-empty hidden>
     <span class="iconify lucide--search-x size-6 opacity-40" aria-hidden="true"></span>
     <p>No entities match your filters.</p>
-    <button type="button" class="btn btn-sm btn-ghost text-primary" data-br-clear>Clear filters</button>
+    <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-br-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
   </div>
 </section>
 
@@ -354,21 +341,15 @@ const healthGroups = [{ items: [
   .br-primary { font-size: 10px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; color: var(--color-primary); background: color-mix(in oklch, var(--color-primary) 12%, transparent); padding: 1px 5px; border-radius: 4px; } /* ds-ok: intentional micro-label pill (PRIMARY marker), not body/control text; pre-existing */
   .br-sub { font-size: 14px; color: oklch(from var(--color-base-content) l c h / .5); white-space: nowrap; }
   /* Field rows are columnar (matching the Relationships table): the name flexes and truncates,
-     then fixed-width Type / Link / Cardinality / Status columns line up across EVERY field row,
-     regardless of name length. The chips/tokens are the shared Relationships elements. */
+     then fixed-width Type / Status columns line up across EVERY field row, regardless of name
+     length. (Link / Cardinality were dropped — they only apply to link fields and are visible in
+     the field's detail panel; see B4.) The Type chip is the shared Relationships element. */
   .br-fmain { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 8px; }
   .br-fmain .br-name { flex: 0 1 auto; }
   .br-fcol { flex: none; display: flex; align-items: center; }
   .br-fcol-type { width: 9.5rem; }
-  .br-fcol-link { width: 9rem; }
-  .br-fcol-card { width: 7rem; }
   .br-fcol-status { width: 9rem; }
   .br-fcol-tags { width: 8rem; }
-  /* Tagged cell = the catalog Ghost Button (btn btn-ghost, rendered in taggedHtml). The Link
-     value is the interactive element here — a ghost-hover wash signals it opens the linked table. */
-  .br-linkbtn { border: 0; background: none; cursor: pointer; font: inherit; display: inline-flex; align-items: center; max-width: 100%; padding: 2px 8px; margin-left: -8px; border-radius: 6px; transition: background-color .12s ease, color .12s ease; }
-  .br-linkbtn:hover { background: oklch(from var(--color-base-content) l c h / .12); color: var(--color-primary); }
-  .br-linkcell { font-size: 14px; color: oklch(from var(--color-base-content) l c h / .55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* Per-table column header — reuses the field-row column classes so the labels sit exactly
      above their cells (mirrors the Relationships per-Base header). */
   /* ONE sticky column header for the whole tree — pins to the top while the tree scrolls.

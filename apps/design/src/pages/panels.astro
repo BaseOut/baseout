@@ -173,6 +173,15 @@ const breadcrumbs = getBreadcrumbs('/schema');
       } else if (t.kind === 'attr') {
         var node = document.querySelector(t.selector);
         if (node) node.setAttribute(t.attr, t.value);
+      } else if (t.kind === 'sequence') {
+        // Run each step in order, waiting a beat between so the previous render lands (e.g. open
+        // an anchor, then click a reference row inside it to spawn the focus panel).
+        var steps = t.steps || [];
+        (function run(i) {
+          if (i >= steps.length) return;
+          open(steps[i]);
+          setTimeout(function () { run(i + 1); }, 340);
+        })(0);
       }
     }
     // Panels nested inside a tab section are display:none until their tab is active — so

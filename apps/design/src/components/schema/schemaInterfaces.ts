@@ -7,6 +7,8 @@
  */
 import { setButtonLoading } from '../../lib/ui';
 import { wireTableSort } from './tableSort';
+import { entityChip } from './entityChip';
+import { locationCrumbs } from './locationCrumbs';
 
 interface IfTag { entityId: string; source: 'auto' | 'manual' }
 interface Iface { id: string; name: string; type: 'interface' | 'page'; baseId: string; parentId?: string; status: 'active' | 'removed'; published?: boolean; internalDescription?: string; definition?: string; tags?: IfTag[]; removedAt?: string }
@@ -14,6 +16,17 @@ type Ent = { name: string; kind: 'base' | 'table' | 'field'; tableName: string |
 
 const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const entIcon = (kind: string) => kind === 'field' ? 'lucide--tag concept-ic-field' : kind === 'table' ? 'lucide--table-2' : 'lucide--database concept-ic-base';
+// Section count badge (DRAWER CANON v2): a catalog badge pressed after the label, shown only from 2 up (suppress "1").
+const countBadge = (n: number) => (n >= 2 ? ` <span class="badge badge-sm badge-neutral">${n}</span>` : '');
+
+// Identity status (read drawer meta line): a colored DOT + label, NOT a soft badge.
+// Published = green, Draft = amber, Not published = grey, Removed = red. (Badge stays in the listing.)
+const statusDot = (i: Iface) => {
+  if (i.status === 'removed') return `<span class="if-status"><span class="if-dot if-dot-red"></span>Removed</span>`;
+  return i.published === false
+    ? `<span class="if-status"><span class="if-dot if-dot-grey"></span>Not published</span>`
+    : `<span class="if-status"><span class="if-dot if-dot-green"></span>Published</span>`;
+};
 
 // Status badge (mirror of the Astro ifStatusBadge): Published / Not published / Removed,
 // our Storybook badge-soft + semantic + bg-current dot. Shown for interfaces AND pages.
@@ -47,7 +60,7 @@ export function wireInterfaces() {
     const evs = changelog.filter((c) => c.entityId === id).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
     if (!evs.length) return '';
     const items = evs.map((c) => `<li class="if-cl-item if-cl-${c.type}"><span class="iconify ${CL_ICON[c.type] || 'lucide--dot'} size-3.5 if-cl-ic" aria-hidden="true"></span><span class="if-cl-txt">${esc(c.summary)}${c.before && c.after ? ` <span class="if-cl-delta">${esc(c.before)} → ${esc(c.after)}</span>` : ''}</span><span class="if-cl-when">${esc(fmtCl(c.at))}</span></li>`).join('');
-    return `<div><div class="if-read-sect-lbl"><span class="iconify lucide--history size-3.5 if-read-sect-ic" aria-hidden="true"></span>Changelog</div><ul class="if-cl">${items}</ul></div>`;
+    return `<div><div class="if-read-sect-lbl"><span class="iconify lucide--history size-3.5 if-read-sect-ic" aria-hidden="true"></span>Changelog${countBadge(evs.length)}</div><ul class="if-cl">${items}</ul></div>`;
   };
 
   // ── filters (search · Base/Table/Field facets · include-removed) — node-based so the tree stays intact ──
@@ -142,15 +155,26 @@ export function wireInterfaces() {
   const readEl = $m<HTMLElement>('[data-if-read]');
   const formEl = $m<HTMLElement>('[data-if-form]');
   const title = panel?.querySelector<HTMLElement>('.sb-drawer-title');
+  const titleIc = panel?.querySelector<HTMLElement>('[data-sb-drawer-titleic]');
+  const crumbsEl = panel?.querySelector<HTMLElement>('[data-sb-drawer-crumbs]');
   const saveBtn = $m<HTMLButtonElement>('[data-if-save]');
   let editingId: string | null = null;
   let readingId: string | null = null;
   let tags: IfTag[] = [];
 
+  // The parent-interface crumb now lives in the drawer header (outside readEl), so wire its
+  // click here → open that interface's read view.
+  crumbsEl?.addEventListener('click', (ev) => {
+    const b = (ev.target as HTMLElement).closest<HTMLElement>('[data-if-read-open]');
+    if (b) openRead(b.dataset.ifReadOpen!);
+  });
+
   const chipHtml = (t: IfTag) => {
     const e = ents[t.entityId];
-    const label = e ? (e.kind === 'field' && e.tableName ? `${e.name} · ${e.tableName}` : e.name) : t.entityId;
-    return `<span class="if-chip if-chip-${t.source}" data-if-chip="${esc(t.entityId)}"><span class="iconify ${entIcon(e?.kind || 'table')} size-3.5" aria-hidden="true"></span>${esc(label)}${t.source === 'manual' ? `<button type="button" class="if-chip-x" data-if-chip-x="${esc(t.entityId)}" aria-label="Remove tag"><span class="iconify lucide--x size-3" aria-hidden="true"></span></button>` : ''}</span>`;
+    const name = e ? e.name : t.entityId;
+    const context = e && e.kind === 'field' && e.tableName ? e.tableName : undefined;
+    const icon = `<span class="iconify ${entIcon(e?.kind || 'table')} size-3.5" aria-hidden="true"></span>`;
+    return entityChip({ name, icon, context, attrs: 'data-if-chip="' + esc(t.entityId) + '"', remove: t.source === 'manual' ? 'data-if-chip-x="' + esc(t.entityId) + '"' : undefined, derived: t.source === 'auto' });
   };
   const renderChips = () => { if (chipsWrap) chipsWrap.innerHTML = tags.map(chipHtml).join(''); };
 
@@ -168,6 +192,8 @@ export function wireInterfaces() {
   const syncType = () => {
     const isPage = fType?.value === 'page';
     if (parentField) parentField.hidden = !isPage;
+    if (titleIc) { titleIc.innerHTML = ''; titleIc.hidden = true; }
+    if (crumbsEl) { crumbsEl.innerHTML = ''; crumbsEl.hidden = true; }
     if (title) title.textContent = editingId ? (isPage ? 'Edit page' : 'Edit interface') : (isPage ? 'Register page' : 'Register interface');
     if (saveBtn) saveBtn.textContent = editingId ? 'Save changes' : (isPage ? 'Register page' : 'Register interface');
   };
@@ -178,36 +204,49 @@ export function wireInterfaces() {
   // Read view (default on row click) — leads with description + pages + what it touches.
   const readChip = (t: IfTag) => {
     const e = ents[t.entityId];
-    const label = e ? (e.kind === 'field' && e.tableName ? `${e.name} · ${e.tableName}` : e.name) : t.entityId;
-    return `<button type="button" class="if-chip if-chip-${t.source}" data-entity-open="${esc(t.entityId)}"><span class="iconify ${entIcon(e?.kind || 'table')} size-3.5" aria-hidden="true"></span>${esc(label)}</button>`;
+    const name = e ? e.name : t.entityId;
+    const context = e && e.kind === 'field' && e.tableName ? e.tableName : undefined;
+    const icon = `<span class="iconify ${entIcon(e?.kind || 'table')} size-3.5" aria-hidden="true"></span>`;
+    // Read view: plain neutral chip — the auto/manual distinction isn't actionable here, so we don't signal it.
+    return entityChip({ name, icon, context, clickable: true, attrs: 'data-entity-open="' + esc(t.entityId) + '"' });
   };
   const openRead = (id: string) => {
     const i = byId.get(id);
     if (!i || !readEl) return;
     readingId = id;
-    if (title) title.textContent = i.name;
     const removed = i.status === 'removed';
     const kindLabel = i.type === 'page' ? 'Page' : 'Interface';
-    // Breadcrumbs — trace the Interface ▸ Page hierarchy (clickable back to the parent).
+    const headIcon = i.type === 'page' ? 'lucide--file concept-ic-page' : 'lucide--layout-panel-left concept-ic-interface';
+    // Canon drawer header: the concept-icon tile + entity name live in the fixed rail; the body opens
+    // with the location crumb (for a page) + the identity meta line. Populate the rail here.
+    if (titleIc) { titleIc.innerHTML = `<span class="iconify ${headIcon} size-4" aria-hidden="true"></span>`; titleIc.hidden = false; }
+    if (title) title.textContent = i.name;
+    // Location → header crumbs sub-row: base (static). For a PAGE, add ▸ parent interface (clickable).
     const parent = i.type === 'page' && i.parentId ? byId.get(i.parentId) : null;
-    const crumbs = parent
-      ? `<nav class="if-read-crumbs"><button type="button" class="if-crumb" data-if-read-open="${esc(parent.id)}">${esc(parent.name)}</button><span class="if-crumb-sep" aria-hidden="true">›</span><span class="if-crumb-cur">${esc(i.name)}</span></nav>`
-      : '';
+    if (crumbsEl) {
+      const baseSeg = { name: baseLabel(i.baseId), icon: '<span class="iconify lucide--database concept-ic-base size-3.5"></span>' };
+      crumbsEl.innerHTML = locationCrumbs(
+        parent
+          ? [baseSeg, { name: parent.name, icon: '<span class="iconify lucide--layout-panel-left concept-ic-interface size-3.5"></span>', openAttrs: `data-if-read-open="${esc(parent.id)}"` }]
+          : [baseSeg],
+      );
+      crumbsEl.hidden = false;
+    }
     // Interface → list its Pages. (A page's parent is already shown by the breadcrumb.)
     let related = '';
     if (i.type === 'interface') {
       const pages = [...byId.values()].filter((p) => p.type === 'page' && p.parentId === i.id && p.status !== 'removed');
-      if (pages.length) related = `<div><div class="if-read-sect-lbl"><span class="iconify lucide--layout-panel-left size-3.5 if-read-sect-ic" aria-hidden="true"></span>Pages</div><div class="if-read-pages">${pages.map((p) => `<button type="button" class="if-read-page" data-if-read-open="${esc(p.id)}"><span class="iconify lucide--file size-3.5" aria-hidden="true"></span>${esc(p.name)}</button>`).join('')}</div></div>`;
+      if (pages.length) related = `<div><div class="if-read-sect-lbl"><span class="iconify lucide--layout-panel-left size-3.5 if-read-sect-ic" aria-hidden="true"></span>Pages${countBadge(pages.length)}</div><div class="if-read-pages">${pages.map((p) => `<button type="button" class="if-read-page" data-if-read-open="${esc(p.id)}"><span class="iconify lucide--file size-3.5" aria-hidden="true"></span>${esc(p.name)}</button>`).join('')}</div></div>`;
     }
+    const tagCount = (i.tags || []).length;
     readEl.innerHTML = `
-      ${crumbs}
-      <div class="if-read-meta"><span class="badge badge-soft badge-primary">${kindLabel}</span>${ifStatusBadge(i)}<span class="if-read-base"><span class="iconify lucide--database concept-ic-base size-3.5" aria-hidden="true"></span>${esc(baseLabel(i.baseId))}</span></div>
+      <div class="if-read-meta"><span class="if-read-kind">${kindLabel}</span><span class="if-read-sep" aria-hidden="true">·</span>${statusDot(i)}<span class="if-read-sep" aria-hidden="true">·</span><span class="if-meta-fresh">as of last backup</span></div>
       <div><div class="if-read-sect-lbl"><span class="iconify lucide--text size-3.5 if-read-sect-ic" aria-hidden="true"></span>Internal note</div><p class="if-read-desc${i.internalDescription ? '' : ' is-empty'}">${i.internalDescription ? esc(i.internalDescription) : 'No note yet — add one so teammates know what this shows.'}</p></div>
       ${related}
-      <div><div class="if-read-sect-lbl"><span class="iconify lucide--at-sign size-3.5 if-read-sect-ic" aria-hidden="true"></span>Touches</div>${(i.tags || []).length ? `<div class="if-read-chips">${(i.tags || []).map(readChip).join('')}</div>` : `<p class="if-read-empty">No tables or fields tagged.</p>`}</div>
+      <div><div class="if-read-sect-lbl"><span class="iconify lucide--at-sign size-3.5 if-read-sect-ic" aria-hidden="true"></span>Touches${countBadge(tagCount)}</div>${tagCount ? `<div class="if-read-listbox">${(i.tags || []).map(readChip).join('')}</div>` : `<p class="if-read-empty">No tables or fields tagged.</p>`}</div>
       ${changelogHtml(i.id)}
-      ${i.definition ? `<details class="if-read-def"><summary>Raw definition (JSON)</summary><pre>${esc(i.definition)}</pre></details>` : ''}
-      <div class="if-read-foot"><button type="button" class="btn btn-sm btn-neutral gap-1.5" data-if-read-edit><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span>Edit</button>${removed ? '' : `<button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-if-read-delete><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span>Delete</button>`}</div>`;
+      ${i.definition ? `<details class="sch-read-def"><summary>Raw definition (JSON)<span class="iconify lucide--chevron-down size-3.5 sch-def-chev" aria-hidden="true"></span></summary><pre>${esc(i.definition)}</pre></details>` : ''}
+      <div class="sch-read-foot"><button type="button" class="btn btn-sm btn-neutral gap-1.5" data-read-edit><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span>Edit</button>${removed ? '' : `<button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-read-delete><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span>Delete</button>`}</div>`;
     readEl.hidden = false;
     if (formEl) formEl.hidden = true;
     openDrawer(true);
@@ -236,8 +275,8 @@ export function wireInterfaces() {
   $m<HTMLElement>('[data-if-cancel]')?.addEventListener('click', () => openDrawer(false));
   readEl?.addEventListener('click', (ev) => {
     const t = ev.target as HTMLElement;
-    if (t.closest('[data-if-read-edit]')) { if (readingId) openEdit(readingId); return; }
-    if (t.closest('[data-if-read-delete]')) { if (readingId) softDelete(readingId); openDrawer(false); return; }
+    if (t.closest('[data-read-edit]')) { if (readingId) openEdit(readingId); return; }
+    if (t.closest('[data-read-delete]')) { if (readingId) softDelete(readingId); openDrawer(false); return; }
     const openOther = t.closest<HTMLElement>('[data-if-read-open]');
     if (openOther) { openRead(openOther.dataset.ifReadOpen!); return; }
     if (t.closest('[data-entity-open]')) openDrawer(false);

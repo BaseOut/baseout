@@ -15,6 +15,8 @@
  * embedded diagrams. Swap the editor core for Plate in the monorepo.
  */
 import EntitySearch from './EntitySearch.astro';
+import ExportControl from './ExportControl.astro';
+import { entityChip } from './entityChip';
 import SchemaCanvas from './SchemaCanvas';
 import { fieldTypeLabel, type SchemaEntity, type SchemaDoc, type DocInline, type DocBlock } from './schemaEntities';
 import type { SchemaTable } from './SchemaCanvas';
@@ -39,11 +41,14 @@ const chipIcon = (e: SchemaEntity) =>
   : e.kind === 'table' ? '<span class="iconify lucide--table-2"></span>'
   : `<span class="concept-ic-field">${fieldIconSvg(e.fieldType) || '<span class="iconify lucide--circle"></span>'}</span>`;
 
-/** A tag chip — clickable in both edit and read mode (opens the shared panel). */
+/** A tag chip — the shared catalog chip (entityChip), clickable in both edit + read mode
+ *  (opens the shared panel). `contenteditable="false"` keeps it atomic inside the editor.
+ *  A tag whose entity was removed from the schema is a BROKEN reference (not a live entity
+ *  ref) — the builder has no missing variant, so it keeps its own quiet error affordance. */
 function chip(id: string): string {
   const e = byId.get(id);
-  if (!e) return `<span class="doc-chip doc-chip-missing tooltip tooltip-top" contenteditable="false" data-tip="No longer in schema"><span class="iconify lucide--unlink"></span>${esc(id)}</span>`;
-  return `<span class="doc-chip" contenteditable="false" data-entity-open="${e.id}" data-kind="${e.kind}"><span class="doc-chip-ic">${chipIcon(e)}</span>${esc(e.name)}</span>`;
+  if (!e) return `<span class="doc-chip-missing tooltip tooltip-top" contenteditable="false" data-tip="No longer in schema"><span class="iconify lucide--unlink"></span>${esc(id)}</span>`;
+  return entityChip({ name: e.name, icon: chipIcon(e), clickable: true, attrs: `data-entity-open="${esc(e.id)}" data-kind="${esc(e.kind)}" contenteditable="false"` });
 }
 function renderInline(content: DocInline[] = []): string {
   return content.map((c) => (typeof c === 'string' ? esc(c) : chip(c.entity))).join('');
@@ -64,6 +69,13 @@ const fmtDate = (iso: string) => {
   try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch { return iso; }
 };
 const tablesForDiagram = (ids: string[]) => tables.filter((t) => ids.includes(t.id));
+
+// Document-list sort options (mirrors the Health base-list sorter).
+const DOC_SORTS: { v: string; l: string }[] = [
+  { v: 'recent', l: 'Recently edited' },
+  { v: 'oldest', l: 'Oldest edited' },
+  { v: 'name', l: 'Name A–Z' },
+];
 ---
 
 <section class="dc" data-docs>
@@ -79,13 +91,29 @@ const tablesForDiagram = (ids: string[]) => tables.filter((t) => ids.includes(t.
       {/* ===== LEFT — persistent documents list (master), like the Health console ===== */}
       <aside class="dc-sidebar">
         <div class="dc-sidebar-head">
-          <h2 class="dc-sidebar-title">Documents <span class="dc-sidebar-count">{docs.length}</span></h2>
+          <h2 class="dc-sidebar-title">Documents <span class="badge badge-sm badge-neutral dc-sidebar-count">{docs.length}</span></h2>
           <button type="button" class="btn btn-sm btn-primary gap-1.5" data-dc-new><span class="iconify lucide--plus size-4" aria-hidden="true"></span>New</button>
         </div>
-        <div class="dc-sidebar-search"><EntitySearch index={index} name="docfind" placeholder="Search documents…" pickEvent="schema:openEntity" /></div>
+        {/* toolbar: search + sort dropdown, mirroring the Health base-list tools */}
+        <div class="dc-tools">
+          <div class="dc-tools-search"><EntitySearch index={index} name="docfind" placeholder="Search documents…" pickEvent="schema:openEntity" /></div>
+          {/* ASSUMPTION: the open document, not every document in the Space. Dan has not answered. */}
+          <ExportControl tab="docs" format="pdf" noun="documents" total={docs.length} rowSelector="[data-dc-item]" />
+          <div class="dropdown dropdown-end">
+            <div tabindex="0" role="button" class="btn btn-sm btn-square btn-ghost dc-sortbtn tooltip tooltip-left" aria-label="Sort documents" data-tip="Sort documents">
+              <span class="iconify lucide--arrow-up-down size-4" aria-hidden="true"></span>
+            </div>
+            <ul tabindex="0" class="dropdown-content menu dc-sortmenu">
+              <li class="menu-title">Sort by</li>
+              {DOC_SORTS.map((s) => (
+                <li><button type="button" class:list={['dc-sortopt', { 'is-active': s.v === 'recent' }]} data-dc-sort={s.v}><span class="iconify lucide--check size-3.5 dc-sort-check" aria-hidden="true"></span>{s.l}</button></li>
+              ))}
+            </ul>
+          </div>
+        </div>
         <div class="dc-doclist" data-dc-doclist>
           {docs.map((d) => (
-            <button type="button" class="dc-docitem" data-dc-open={d.id} data-dc-item={d.id}>
+            <button type="button" class="dc-docitem" data-dc-open={d.id} data-dc-item={d.id} data-name={d.title.toLowerCase()} data-date={d.updatedAt}>
               <span class="dc-docitem-title">{d.title}</span>
               <span class="dc-docitem-meta">Edited {fmtDate(d.updatedAt)} · {d.entityIds.length} tags</span>
               <span class="dc-docitem-excerpt">{d.excerpt}</span>
@@ -199,18 +227,33 @@ const tablesForDiagram = (ids: string[]) => tables.filter((t) => ids.includes(t.
   .dc-shell { display: grid; grid-template-columns: minmax(320px, 360px) minmax(0, 1fr); gap: 20px; align-items: stretch; }
   @media (max-width: 900px) { .dc-shell { grid-template-columns: 1fr; } }
 
-  .dc-sidebar { display: flex; flex-direction: column; gap: 12px; border: 1px solid var(--color-base-300); border-radius: 12px; background: var(--color-base-100); padding: 16px; min-height: 0; align-self: stretch; }
+  /* Borderless column (like the Health nav): only the doc list carries the border, so we
+     avoid a card-in-card. Head + tools sit above the bordered list. */
+  .dc-sidebar { display: flex; flex-direction: column; gap: 12px; min-height: 0; align-self: stretch; }
   .dc-sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .dc-sidebar-title { font-size: 14px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
-  .dc-sidebar-count { font-size: 12px; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .5); }
-  .dc-doclist { display: flex; flex-direction: column; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; margin: 2px -4px -4px; padding: 0 4px 4px; }
-  .dc-docitem { display: flex; flex-direction: column; gap: 2px; text-align: left; width: 100%; border: 1px solid transparent; border-radius: 9px; padding: 8px 12px; cursor: pointer; background: none; }
-  .dc-docitem:hover { background: var(--color-base-200); }
-  .dc-docitem.dc-active { background: color-mix(in oklch, var(--color-primary) 9%, transparent); border-color: color-mix(in oklch, var(--color-primary) 28%, transparent); }
+
+  /* toolbar: search grows, sort is a square dropdown button (mirrors .hl-tools / .hl-sortbtn) */
+  .dc-tools { display: flex; align-items: center; gap: 8px; }
+  .dc-tools-search { flex: 1; min-width: 0; }
+  .dc-sortbtn { flex: none; border: 1px solid var(--color-base-300); }
+  .dc-sortmenu { z-index: 30; width: 12rem; margin-top: 4px; padding: 4px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: 10px; box-shadow: 0 8px 24px oklch(0 0 0 / .16); }
+  .dc-sortopt { display: flex; align-items: center; gap: 8px; }
+  .dc-sort-check { flex: none; opacity: 0; color: var(--color-primary); }
+  .dc-sortopt.is-active { font-weight: 600; }
+  .dc-sortopt.is-active .dc-sort-check { opacity: 1; }
+
+  /* ONE bordered container; rows share it and are split by a hairline — no per-item card
+     (the Health .hl-master pattern). Compact: title + meta + a single-line excerpt. */
+  .dc-doclist { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden auto; border: 1px solid var(--color-base-300); border-radius: 10px; }
+  .dc-docitem { display: flex; flex-direction: column; gap: 1px; text-align: left; width: 100%; border: 0; border-top: 1px solid oklch(from var(--color-base-300) l c h / .55); padding: 8px 12px; cursor: pointer; background: none; transition: background .12s ease; }
+  .dc-docitem:first-child { border-top: 0; }
+  .dc-docitem:hover { background: oklch(from var(--color-base-200) l c h / .45); }
+  .dc-docitem.dc-active { background: oklch(from var(--color-primary) l c h / .08); }
   .dc-docitem-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dc-docitem.dc-active .dc-docitem-title { color: var(--color-primary); }
   .dc-docitem-meta { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .5); }
-  .dc-docitem-excerpt { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .6); margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .dc-docitem-excerpt { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .6); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .dc-pane { min-width: 0; }
   .dc-pane-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 80px 20px; border: 1px dashed var(--color-base-300); border-radius: 12px; color: oklch(from var(--color-base-content) l c h / .55); }
@@ -247,13 +290,11 @@ const tablesForDiagram = (ids: string[]) => tables.filter((t) => ids.includes(t.
   .dc-editor li { margin: 4px 0; }
   .dc-editor .doc-diagram-anchor { margin: 16px 0; }
 
-  /* tag chips (shared look, edit + read) */
-  .doc-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 4px; border-radius: 6px; font-size: 13px; font-weight: 500; line-height: 1.4; background: color-mix(in oklch, var(--color-primary) 10%, transparent); color: var(--color-primary); border: 1px solid color-mix(in oklch, var(--color-primary) 22%, transparent); cursor: pointer; white-space: nowrap; vertical-align: baseline; }
-  .doc-chip:hover { background: color-mix(in oklch, var(--color-primary) 16%, transparent); }
-  .doc-chip-ic { display: inline-grid; place-items: center; width: 13px; }
-  .doc-chip-ic svg { width: 12px; height: 12px; }
-  .doc-chip-ic .iconify { font-size: .72rem; }
-  .doc-chip-missing { background: color-mix(in oklch, var(--color-error) 9%, transparent); color: var(--color-error); border-color: color-mix(in oklch, var(--color-error) 25%, transparent); cursor: default; }
+  /* tag chips use the shared catalog chip (.sb-chip, is:global via EntityChip.astro). Only the
+     broken-reference state (entity removed from the schema) keeps a bespoke, self-contained
+     affordance — the builder has no missing variant. */
+  .doc-chip-missing { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 999px; font-size: 13px; font-weight: 500; line-height: 1.2; white-space: nowrap; vertical-align: middle; cursor: default; background: color-mix(in oklch, var(--color-error) 9%, transparent); color: var(--color-error); border: 1px solid color-mix(in oklch, var(--color-error) 25%, transparent); }
+  .doc-chip-missing .iconify { font-size: 14px; }
 
   /* rail */
   .dc-rail { display: flex; flex-direction: column; gap: 20px; position: sticky; top: 8px; }
@@ -319,6 +360,7 @@ const tablesForDiagram = (ids: string[]) => tables.filter((t) => ids.includes(t.
 
 <script>
   import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+  import { entityChip } from './entityChip';
 
   type Ent = { id: string; kind: 'base' | 'table' | 'field'; name: string; baseName: string; tableName?: string; fieldType?: string };
   type DocData = { id: string; title: string; updatedAt: string; author?: string; bodyHtml: string; entityIds: string[]; links: { label: string; url: string }[]; diagramIds: string[] };
@@ -349,6 +391,25 @@ const tablesForDiagram = (ids: string[]) => tables.filter((t) => ids.includes(t.
     const delModal = root.querySelector<HTMLDialogElement>('[data-dc-delete-modal]');
     const delName = root.querySelector<HTMLElement>('[data-dc-delete-name]');
     const sidebarCount = root.querySelector<HTMLElement>('.dc-sidebar-count');
+
+    // Sort the document list (mirrors the Health base-list sorter): reorder rows in place.
+    // Re-query each time so a deleted row drops out of the set.
+    const sortOpts = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-dc-sort]'));
+    sortOpts.forEach((opt) =>
+      opt.addEventListener('click', () => {
+        const mode = opt.dataset.dcSort;
+        Array.from(doclist.querySelectorAll<HTMLElement>('[data-dc-item]'))
+          .sort((a, b) => {
+            if (mode === 'name') return (a.dataset.name ?? '').localeCompare(b.dataset.name ?? '');
+            const da = Date.parse(a.dataset.date ?? '') || 0;
+            const db = Date.parse(b.dataset.date ?? '') || 0;
+            return mode === 'oldest' ? da - db : db - da;
+          })
+          .forEach((r) => doclist.appendChild(r));
+        sortOpts.forEach((o) => o.classList.toggle('is-active', o === opt));
+        (document.activeElement as HTMLElement | null)?.blur();
+      }),
+    );
 
     // "Open in Visualize" on a doc diagram → switch to the Visualize tab and scope the canvas to
     // that diagram's tables (delegated; diagrams move between the pool and the active doc).
@@ -499,12 +560,9 @@ const tablesForDiagram = (ids: string[]) => tables.filter((t) => ids.includes(t.
     });
 
     function makeChip(e: Ent): HTMLElement {
-      const span = document.createElement('span');
-      span.className = 'doc-chip';
-      span.contentEditable = 'false';
-      span.setAttribute('data-entity-open', e.id);
-      span.innerHTML = `<span class="doc-chip-ic">${icon(e)}</span>${esc(e.name)}`;
-      return span;
+      const tpl = document.createElement('template');
+      tpl.innerHTML = entityChip({ name: e.name, icon: icon(e), clickable: true, attrs: `data-entity-open="${esc(e.id)}" data-kind="${esc(e.kind)}" contenteditable="false"` }).trim();
+      return tpl.content.firstElementChild as HTMLElement;
     }
 
     // ===== Inline @-mention =====
@@ -593,7 +651,7 @@ const tablesForDiagram = (ids: string[]) => tables.filter((t) => ids.includes(t.
 
     // Route entity-tag clicks that arrive while editing (don't place caret).
     editor.addEventListener('click', (ev) => {
-      const chip = (ev.target as HTMLElement).closest<HTMLElement>('.doc-chip[data-entity-open]');
+      const chip = (ev.target as HTMLElement).closest<HTMLElement>('.sb-chip[data-entity-open]');
       if (chip) { ev.preventDefault(); document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id: chip.getAttribute('data-entity-open') } })); }
     });
 

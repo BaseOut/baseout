@@ -107,9 +107,12 @@ const lite = index.map((e) => ({ id: e.id, kind: e.kind, name: e.name, baseName:
       let active = -1;
 
       function close() { pop.hidden = true; active = -1; }
+      // Optional base-scope: a host sets root.dataset.esScopeBase = "<baseName>" to restrict results to
+      // that base (the multi-panel "Compare with…" picker uses this); empty = all bases.
+      const inScope = (e: Lite) => { const s = root.dataset.esScopeBase || ''; return !s || (e.kind === 'base' ? e.name === s : e.baseName === s); };
       function render(q: string) {
         if (!q) { close(); return; }
-        results = index.filter((e) => matches(e, q)).slice(0, 40);
+        results = index.filter((e) => inScope(e) && matches(e, q)).slice(0, 40);
         if (!results.length) { pop.hidden = false; listbox.innerHTML = '<div class="es-empty">No matching entities</div>'; return; }
         const groups: Array<[string, string]> = [['base', 'Bases'], ['table', 'Tables'], ['field', 'Fields']];
         let html = '';
@@ -128,7 +131,7 @@ const lite = index.map((e) => ({ id: e.id, kind: e.kind, name: e.name, baseName:
           }
         }
         // Re-order results to match the grouped DOM order for keyboard nav.
-        results = groups.flatMap(([kind]) => index.filter((e) => matches(e, q)).slice(0, 40).filter((e) => e.kind === kind));
+        results = groups.flatMap(([kind]) => index.filter((e) => inScope(e) && matches(e, q)).slice(0, 40).filter((e) => e.kind === kind));
         listbox.innerHTML = html;
         pop.hidden = false;
         active = -1;

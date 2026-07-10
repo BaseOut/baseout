@@ -15,6 +15,8 @@
  * The selected base's report is shared by both navs.
  */
 import Drawer from '../ui/Drawer.astro';
+import ExportControl from './ExportControl.astro';
+import { entityChip } from './entityChip';
 import { airtableIconKey, AIRTABLE_FIELD_ICONS } from './airtableFieldIcons';
 export type HealthTier = 'Base' | 'Table' | 'Field';
 export interface HealthFinding {
@@ -112,14 +114,14 @@ const { health, aiState = 'ready', overrideTargets = [] } = Astro.props;
 const canEditPrompts = aiState === 'ready';
 
 const BAND = {
-  green: { label: 'Green', badge: 'badge-success', text: 'text-success', dot: 'var(--color-success)', means: 'In good shape. Minor polish at most.' },
-  amber: { label: 'Yellow', badge: 'badge-warning', text: 'text-warning', dot: 'var(--color-warning)', means: 'A few things could be tidier. Your records are safe.' },
-  red: { label: 'Red', badge: 'badge-error', text: 'text-error', dot: 'var(--color-error)', means: 'Several things are worth a look. Nothing is broken by us.' },
+  green: { label: 'Green', badge: 'badge-success', scoreBadge: 'badge-soft badge-success', text: 'text-success', dot: 'var(--color-success)', means: 'In good shape. Minor polish at most.' },
+  amber: { label: 'Yellow', badge: 'badge-warning', scoreBadge: 'badge-soft badge-warning', text: 'text-warning', dot: 'var(--color-warning)', means: 'A few things could be tidier. Your records are safe.' },
+  red: { label: 'Red', badge: 'badge-error', scoreBadge: 'badge-soft badge-error', text: 'text-error', dot: 'var(--color-error)', means: 'Several things are worth a look. Nothing is broken by us.' },
 };
 const SEV = {
   high: { label: 'High', badge: 'badge-soft badge-error', dot: 'var(--color-error)' },
   med: { label: 'Medium', badge: 'badge-soft badge-warning', dot: 'var(--color-warning)' },
-  low: { label: 'Low', badge: 'badge-ghost', dot: 'oklch(from var(--color-base-content) l c h / .4)' },
+  low: { label: 'Low', badge: 'badge-neutral', dot: 'oklch(from var(--color-base-content) l c h / .4)' },
 };
 const barBand = (s: number) => (s >= 90 ? 'var(--color-success)' : s >= 60 ? 'var(--color-warning)' : 'var(--color-error)');
 const counts = (issues: HealthIssue[]) => ({
@@ -162,6 +164,7 @@ const INSIGHT_CAT_ICON: Record<string, string> = {
   'Empty table': 'lucide--table',
 };
 const insightCatIcon = (c?: string) => (c && INSIGHT_CAT_ICON[c]) || 'lucide--lightbulb';
+const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 // Field-type SVG for an insight tag chip (sized via inline attrs so it survives set:html).
 const fieldIconSvg = (type?: string) => {
   const k = type ? airtableIconKey(type) : null;
@@ -177,7 +180,7 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
 <div class:list={['hl', 'hl-ov-mode']} data-health>
   {/* Health-level header: scoring methodology + rule config are Space/Org-wide, NOT per-base */}
   <div class="hl-header">
-    <h3 class="hl-header-title">Bases <span class="hl-issues-n">{health.length}</span></h3>
+    <h3 class="hl-header-title">Bases <span class="badge badge-sm badge-neutral">{health.length}</span></h3>
     <div class="hl-header-actions">
       <div class="tooltip tooltip-bottom hl-method-tt">
         <div class="tooltip-content">
@@ -189,20 +192,11 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
           </ul>
           <div class="hl-method-bands"><span><i style="background:var(--color-error)"></i>Red &lt; 60</span><span><i style="background:var(--color-warning)"></i>Yellow 60–89</span><span><i style="background:var(--color-success)"></i>Green ≥ 90</span></div>
         </div>
-        <span class="btn btn-sm btn-ghost gap-1.5 hl-method-trigger"><span class="iconify lucide--info size-4" aria-hidden="true"></span>How this is scored</span>
+        <button type="button" class="btn btn-sm btn-ghost gap-1.5 hl-method-trigger"><span class="iconify lucide--info size-4" aria-hidden="true"></span>How this is scored</button>
       </div>
       <a href="/settings/billing" class="btn btn-sm btn-neutral gap-1.5"><span class="iconify lucide--sliders-horizontal size-4" aria-hidden="true"></span>Configure rules <span class="badge badge-sm badge-soft badge-primary">Pro+</span></a>
-      <div class="dropdown dropdown-end">
-        <div tabindex="0" role="button" class="btn btn-sm btn-neutral gap-1.5">
-          <span class="iconify lucide--download size-4" aria-hidden="true"></span>Export
-          <span class="iconify lucide--chevron-down size-3 opacity-60" aria-hidden="true"></span>
-        </div>
-        <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-20 mt-1 w-44 border border-base-300 p-1 shadow-lg">
-          <li class="menu-title">Health report</li>
-          <li><a>CSV</a></li>
-          <li><a>PDF</a></li>
-        </ul>
-      </div>
+      {/* PDF only — the client's answer. The CSV item that used to sit here contradicted it. */}
+      <ExportControl tab="health" format="pdf" noun="bases" total={health.length} rowSelector="[data-hl-card]" />
     </div>
   </div>
 
@@ -230,8 +224,7 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
         const tot = b.issues.length;
         return (
           <button type="button" class:list={['hl-mrow', { 'is-active': i === 0 }]} role="tab" aria-selected={i === 0} data-hl-card={b.baseId} data-name={b.baseName.toLowerCase()} data-score={b.score}>
-            <span class="hl-mrow-dot" style={`background:${BAND[b.band].dot}`} aria-hidden="true"></span>
-            <span class={`hl-mrow-score ${BAND[b.band].text}`}>{b.score}<span class="sr-only"> out of 100, {BAND[b.band].label} band</span></span>
+            <span class={`badge badge-lg ${BAND[b.band].scoreBadge} hl-mrow-score`}>{b.score}<span class="sr-only"> out of 100, {BAND[b.band].label} band</span></span>
             <span class="hl-mrow-name">{b.baseName}</span>
             <span class="iconify lucide--chevron-right size-4 hl-mrow-chev" aria-hidden="true"></span>
             <span class="hl-mrow-sub">
@@ -299,7 +292,7 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
                   <div class:list={['hl-metric', { 'hl-metric-off': m.enabled === false }]} data-hl-metric>
                     <div class="hl-metric-row" data-hl-metric-row role="button" tabindex="0" aria-expanded="false">
                       <span class="hl-metric-caret" aria-hidden="true"><span class="iconify lucide--chevron-right size-3.5"></span></span>
-                      <span class="hl-metric-namewrap"><span class="hl-metric-name">{m.name}</span><span class="hl-metric-offtag">Not counted</span></span>
+                      <span class="hl-metric-namewrap"><span class="hl-metric-name">{m.name}</span><span class="badge badge-sm badge-ghost hl-offtag">Not counted</span></span>
                       <span class="hl-metric-tiers">{m.tiers.map((t) => <span class="badge badge-sm badge-ghost hl-metric-tier">{t}</span>)}</span>
                       <span class="hl-bar hl-metric-bar"><span class="hl-bar-fill" style={`width:${m.score}%;background:${barBand(m.score)}`}></span></span>
                       <span class="hl-metric-weight tabular-nums tooltip tooltip-top" data-tip="Contribution to the grade">{m.weight}%</span>
@@ -336,29 +329,31 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
             </div>
           </div>
 
-          {/* Issues / Insights — a sub-switcher under the Health card, so the report isn't one long stack. */}
-          {hasInsights && (
-            <div class="hl-subnav" role="tablist" aria-label="Issues and insights">
-              <button type="button" class="hl-subtab is-active" role="tab" aria-selected="true" data-subtab="issues">
-                <span class="iconify lucide--list-checks size-3.5" aria-hidden="true"></span>Issues <span class="hl-subtab-n">{b.issues.length}</span>
-              </button>
-              <button type="button" class="hl-subtab" role="tab" aria-selected="false" data-subtab="insights">
-                <span class="iconify lucide--sparkles size-3.5" aria-hidden="true"></span>Insights <span class="hl-subtab-n" data-ins-count>{insActive.length}</span>
-              </button>
+          {/* Issues / Insights sub-switcher + the base's severity legend, aligned on ONE row. */}
+          {(hasInsights || b.issues.length > 0) && (
+            <div class="hl-subhead">
+              {hasInsights && (
+                <div class="hl-subnav" role="tablist" aria-label="Issues and insights">
+                  <button type="button" class="hl-subtab is-active" role="tab" aria-selected="true" data-subtab="issues">
+                    <span class="iconify lucide--list-checks size-3.5" aria-hidden="true"></span>Issues <span class="badge badge-sm badge-neutral">{b.issues.length}</span>
+                  </button>
+                  <button type="button" class="hl-subtab" role="tab" aria-selected="false" data-subtab="insights">
+                    <span class="iconify lucide--sparkles size-3.5" aria-hidden="true"></span>Insights <span class="badge badge-sm badge-neutral" data-ins-count>{insActive.length}</span>
+                  </button>
+                </div>
+              )}
+              {b.issues.length > 0 && (
+                <div class="hl-sevsum" data-sevsum>
+                  {c.high > 0 && <span class="hl-sevpill"><i style={`background:${SEV.high.dot}`}></i>{c.high} High</span>}
+                  {c.med > 0 && <span class="hl-sevpill"><i style={`background:${SEV.med.dot}`}></i>{c.med} Medium</span>}
+                  {c.low > 0 && <span class="hl-sevpill"><i style={`background:${SEV.low.dot}`}></i>{c.low} Low</span>}
+                </div>
+              )}
             </div>
           )}
 
           {/* issues panel — grouped by severity, daisyUI table + standard buttons */}
           <div class="hl-subpanel" data-subpanel="issues">
-          {b.issues.length > 0 && (
-            <div class="hl-issues-head hl-issues-head-b hl-issues-head-tab">
-              <div class="hl-sevsum">
-                {c.high > 0 && <span class="hl-sevpill"><i style={`background:${SEV.high.dot}`}></i>{c.high} High</span>}
-                {c.med > 0 && <span class="hl-sevpill"><i style={`background:${SEV.med.dot}`}></i>{c.med} Medium</span>}
-                {c.low > 0 && <span class="hl-sevpill"><i style={`background:${SEV.low.dot}`}></i>{c.low} Low</span>}
-              </div>
-            </div>
-          )}
 
           {b.issues.length > 0 ? (
             <div class="hl-groups">
@@ -424,7 +419,7 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
                   </button>
                   <label class="hl-ins-arctoggle" hidden={insArchived.length === 0}>
                     <input type="checkbox" class="toggle toggle-sm" data-ins-show-archived />
-                    <span>Show archived <span class="hl-ins-arc-n">{insArchived.length}</span></span>
+                    <span>Show archived <span class="badge badge-sm badge-neutral hl-ins-arc-n">{insArchived.length}</span></span>
                   </label>
                 </div>
               </div>
@@ -450,7 +445,7 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
                             <span class={`iconify ${insightCatIcon(ins.category)} size-3.5`} aria-hidden="true"></span>
                             {ins.category ?? 'Insight'}
                           </span>
-                          {isArc && <span class="hl-ins-arctag">Archived</span>}
+                          {isArc && <span class="badge badge-sm badge-ghost hl-arctag">Archived</span>}
                           <span class="hl-ins-date">{fmtAssessed(ins.generatedAt)}</span>
                         </div>
                         <p class="hl-ins-text">{ins.text}</p>
@@ -458,10 +453,7 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
                         {ins.tags && ins.tags.length > 0 && (
                           <div class="hl-ins-tags">
                             {ins.tags.map((tg) => (
-                              <button type="button" class="ins-chip" data-entity-open={tg.id} data-kind={tg.kind}>
-                                <span class="ins-chip-ic" set:html={tagChipIcon(tg)}></span>
-                                <span class="ins-chip-name">{tg.name}</span>
-                              </button>
+                              <Fragment set:html={entityChip({ name: tg.name, icon: tagChipIcon(tg), clickable: true, attrs: `data-entity-open="${esc(tg.id)}" data-kind="${esc(tg.kind)}"` })} />
                             ))}
                           </div>
                         )}
@@ -640,7 +632,6 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
   .hl-header { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
   .hl-header-title { font-size: .9rem; font-weight: 650; display: inline-flex; align-items: center; gap: .45rem; }
   .hl-header-actions { margin-left: auto; display: inline-flex; align-items: center; gap: .6rem; flex-wrap: wrap; }
-  .hl-issues-n { font-size: .75rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .55); background: var(--color-base-200); border-radius: 999px; padding: 0 .45rem; }
 
   /* ===================== base nav: TABS (≤ 6 bases) ===================== */
   .hl-cards { display: flex; gap: .6rem; flex-wrap: wrap; }
@@ -676,17 +667,16 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
   .hl-sortopt.is-active .hl-sort-check { opacity: 1; }
 
   .hl-master { display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: .8rem; overflow: hidden auto; max-height: calc(100dvh - 13rem); }
-  /* one aligned grid per row: [dot] [score, right] [name + badges, shared left edge] [chevron, centered] */
-  .hl-mrow { display: grid; grid-template-columns: .65rem 1.8rem 1fr auto; grid-template-rows: auto auto; align-items: center; column-gap: .4rem; row-gap: .4rem; width: 100%; padding: .7rem .9rem; text-align: left; background: transparent; border: 0; border-top: 1px solid oklch(from var(--color-base-300) l c h / .55); cursor: pointer; transition: background .12s ease; }
+  /* one aligned grid per row: [icon tile] [score, right] [name + badges, shared left edge] [chevron, centered] */
+  .hl-mrow { display: grid; grid-template-columns: 3.4rem 1fr auto; grid-template-rows: auto auto; align-items: center; column-gap: .5rem; row-gap: .4rem; width: 100%; padding: .7rem .9rem; text-align: left; background: transparent; border: 0; border-top: 1px solid oklch(from var(--color-base-300) l c h / .55); cursor: pointer; transition: background .12s ease; }
   .hl-mrow:first-child { border-top: 0; }
   .hl-mrow:hover { background: oklch(from var(--color-base-200) l c h / .45); }
   .hl-mrow.is-active { background: oklch(from var(--color-primary) l c h / .08); }
-  .hl-mrow-dot { grid-column: 1; grid-row: 1; justify-self: center; width: .6rem; height: .6rem; border-radius: 999px; }
-  .hl-mrow-score { grid-column: 2; grid-row: 1; text-align: left; font-size: 1rem; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
-  .hl-mrow-name { grid-column: 3; grid-row: 1; font-size: .9rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .hl-mrow-chev { grid-column: 4; grid-row: 1 / 3; align-self: center; color: oklch(from var(--color-base-content) l c h / .3); }
+  .hl-mrow-score { grid-column: 1; grid-row: 1 / 3; align-self: center; justify-self: center; min-width: 2.5rem; font-size: .95rem; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .hl-mrow-name { grid-column: 2; grid-row: 1; font-size: .9rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hl-mrow-chev { grid-column: 3; grid-row: 1 / 3; align-self: center; color: oklch(from var(--color-base-content) l c h / .3); }
   .hl-mrow.is-active .hl-mrow-chev { color: var(--color-primary); }
-  .hl-mrow-sub { grid-column: 3; grid-row: 2; display: inline-flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+  .hl-mrow-sub { grid-column: 2; grid-row: 2; display: inline-flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
   .hl-master-empty { padding: 1.1rem .75rem; font-size: .8rem; text-align: center; color: oklch(from var(--color-base-content) l c h / .55); }
   .hl-mrow-sub .badge { font-weight: 550; }
 
@@ -745,8 +735,8 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
   @media (max-width: 640px) { .hl-metric-row, .hl-metrics-head { grid-template-columns: 16px minmax(0,1fr) auto 30px 38px; } .hl-metric-bar, .hl-metric-weight, .hl-metrics-head span:nth-child(4), .hl-metrics-head span:nth-child(5) { display: none; } }
   /* H2 — enable/disable per base + score trend */
   .hl-metric-namewrap { min-width: 0; display: flex; align-items: center; gap: .4rem; }
-  .hl-metric-offtag { display: none; font-size: .62rem; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .5); border: 1px solid var(--color-base-300); border-radius: 5px; padding: 0 .35rem; flex: none; }
-  .hl-metric-off .hl-metric-offtag { display: inline-block; }
+  .hl-offtag { display: none; flex: none; }
+  .hl-metric-off .hl-offtag { display: inline-flex; }
   .hl-metric-off .hl-metric-row :is(.hl-metric-name, .hl-metric-tiers, .hl-bar, .hl-metric-weight, .hl-metric-score) { opacity: .45; }
   .hl-metric-off .hl-metric-row .hl-bar-fill { filter: grayscale(1); }
   .hl-metric-en { display: inline-flex; align-items: center; justify-self: end; cursor: pointer; }
@@ -807,6 +797,8 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
   /* "How this is scored" — a rich hover tooltip (was a modal). A narrow base-100 card with the
      methodology stacked vertically; the bands list one-per-line so it reads cleanly, not wide. */
   .hl-method-trigger { cursor: help; }
+  /* keyboard/touch users reach the methodology: reveal the rich tooltip on focus, not hover-only */
+  .hl-method-tt:focus-within .tooltip-content { opacity: 1; visibility: visible; transform: none; }
   .hl-method-tt { --tt-bg: var(--color-base-100); display: inline-block; }
   .hl-method-tt .tooltip-content { width: 250px; max-width: 250px; text-align: left; white-space: normal; padding: 12px 12px; border: 1px solid var(--color-base-300); border-radius: 11px; box-shadow: 0 12px 32px oklch(0 0 0 / .24); color: var(--color-base-content); z-index: 80; }
   .hl-method-lead { font-size: .8rem; line-height: 1.45; color: oklch(from var(--color-base-content) l c h / .82); margin: 0; }
@@ -842,17 +834,16 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
 
   .hl-clean { display: flex; align-items: center; gap: .55rem; font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .7); padding: 1rem 0; }
 
-  /* Issues / Insights sub-switcher (segmented control under the Health card) */
-  .hl-subnav { display: inline-flex; gap: 2px; padding: 4px; margin-bottom: 1.15rem; background: var(--color-base-200); border: 1px solid var(--color-base-300); border-radius: 9px; }
+  /* Issues / Insights sub-switcher + the base's severity legend, aligned on one row */
+  .hl-subhead { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.15rem; }
+  .hl-subhead .hl-sevsum[hidden] { display: none; }
+  .hl-subnav { display: inline-flex; gap: 2px; padding: 4px; background: var(--color-base-200); border: 1px solid var(--color-base-300); border-radius: 9px; }
   .hl-subtab { display: inline-flex; align-items: center; gap: .4rem; padding: .38rem .85rem; border: 0; border-radius: 6px; background: none; cursor: pointer; font: inherit; font-size: .85rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .6); }
   .hl-subtab .iconify { opacity: .7; }
   .hl-subtab:hover { color: var(--color-base-content); }
   .hl-subtab.is-active { background: var(--color-base-100); color: var(--color-base-content); box-shadow: 0 1px 2px oklch(0 0 0 / .08); }
-  .hl-subtab-n { font-size: .72rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .55); background: oklch(from var(--color-base-content) l c h / .08); border-radius: 999px; padding: 0 .42rem; }
-  .hl-subtab.is-active .hl-subtab-n { color: var(--color-primary); background: color-mix(in oklch, var(--color-primary) 14%, transparent); }
+  .hl-subtab .badge { flex: none; }
   .hl-subpanel[hidden] { display: none; }
-  /* the issues panel's severity summary, now without a redundant title (the tab carries it) */
-  .hl-issues-head-tab { justify-content: flex-end; }
 
   /* ===================== Insights (schema-insights-ui) ===================== */
   .hl-insights { margin-top: 0; }
@@ -863,7 +854,7 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
   .hl-ins-actions { margin-left: auto; display: inline-flex; align-items: center; gap: .35rem; flex-wrap: wrap; }
   .hl-ins-arctoggle { display: inline-flex; align-items: center; gap: .4rem; font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .7); cursor: pointer; padding-left: .3rem; }
   .hl-ins-arctoggle[hidden] { display: none; }
-  .hl-ins-arc-n { font-size: .7rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .55); background: var(--color-base-200); border-radius: 999px; padding: 0 .4rem; }
+  .hl-ins-arc-n { flex: none; }
 
   /* Stale-insight notice = catalog Alert; compact + margin + the [hidden] toggle beats .alert. */
   .hl-ins-stale { margin-bottom: .7rem; font-size: .8rem; }
@@ -880,18 +871,13 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
   .hl-ins-top { display: flex; align-items: center; gap: .5rem; margin-bottom: .4rem; }
   .hl-ins-cat { display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem; font-weight: 600; letter-spacing: .01em; color: oklch(from var(--color-base-content) l c h / .72); }
   .hl-ins-cat .iconify { color: oklch(from var(--color-base-content) l c h / .5); }
-  .hl-ins-arctag { font-size: .62rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .55); border: 1px solid var(--color-base-300); border-radius: 5px; padding: 0 .35rem; }
+  .hl-arctag { flex: none; }
   .hl-ins-date { margin-left: auto; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .45); white-space: nowrap; }
 
   .hl-ins-text { font-size: .88rem; line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .9); }
   .hl-ins-ev { margin-top: .3rem; font-size: .78rem; line-height: 1.45; color: oklch(from var(--color-base-content) l c h / .55); }
 
   .hl-ins-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .6rem; }
-  .ins-chip { display: inline-flex; align-items: center; gap: .3rem; max-width: 100%; padding: .15rem .5rem; border: 1px solid color-mix(in oklch, var(--color-primary) 22%, var(--color-base-300)); border-radius: 999px; background: color-mix(in oklch, var(--color-primary) 6%, transparent); font-size: .76rem; font-weight: 500; color: var(--color-base-content); cursor: pointer; transition: background .12s ease, border-color .12s ease; }
-  .ins-chip:hover { background: color-mix(in oklch, var(--color-primary) 13%, transparent); border-color: color-mix(in oklch, var(--color-primary) 45%, var(--color-base-300)); }
-  .ins-chip-ic { display: inline-grid; place-items: center; width: 13px; flex: none; color: var(--color-primary); }
-  .ins-chip-ic .iconify { font-size: .76rem; }
-  .ins-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .hl-ins-foot { display: flex; justify-content: flex-end; margin-top: .5rem; }
   .hl-ins-act { opacity: 0; transition: opacity .12s ease; color: oklch(from var(--color-base-content) l c h / .6); }
@@ -1071,10 +1057,12 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
       const subtabs = Array.from(detail.querySelectorAll<HTMLButtonElement>('[data-subtab]'));
       const subpanels = Array.from(detail.querySelectorAll<HTMLElement>('[data-subpanel]'));
       if (subtabs.length === 0) return;
+      const sevsum = detail.querySelector<HTMLElement>('[data-sevsum]');
       subtabs.forEach((tb) =>
         tb.addEventListener('click', () => {
           subtabs.forEach((x) => { const on = x === tb; x.classList.toggle('is-active', on); x.setAttribute('aria-selected', String(on)); });
           subpanels.forEach((p) => (p.hidden = p.dataset.subpanel !== tb.dataset.subtab));
+          if (sevsum) sevsum.hidden = tb.dataset.subtab !== 'issues'; // legend is issue-only
         }),
       );
     });
@@ -1087,10 +1075,10 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
         ? '<button type="button" class="btn btn-sm btn-ghost gap-1 hl-ins-act" data-ins-restore><span class="iconify lucide--rotate-ccw size-3.5" aria-hidden="true"></span>Restore</button>'
         : '<button type="button" class="btn btn-sm btn-ghost gap-1 hl-ins-act" data-ins-archive><span class="iconify lucide--archive size-3.5" aria-hidden="true"></span>Archive</button>';
       const top = card.querySelector('.hl-ins-top');
-      let tag = card.querySelector('.hl-ins-arctag');
+      let tag = card.querySelector('.hl-arctag');
       if (isArc && !tag && top) {
         tag = document.createElement('span');
-        tag.className = 'hl-ins-arctag';
+        tag.className = 'badge badge-sm badge-ghost hl-arctag';
         tag.textContent = 'Archived';
         top.insertBefore(tag, top.querySelector('.hl-ins-date'));
       }

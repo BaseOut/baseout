@@ -183,7 +183,7 @@ export const FLOW_REGISTRY: RegistryFlow[] = [
   {
     id: 'reconnect-inline',
     name: 'Reconnect mid-setup',
-    feature: 'Edge cases',
+    feature: 'Space setup',
     status: 'built',
     blurb: 'A Source/Destination that lost access reconnects in place, without leaving the wizard.',
     specs: [
@@ -211,7 +211,7 @@ export const FLOW_REGISTRY: RegistryFlow[] = [
   {
     id: 'source-change-resets-bases',
     name: 'Source change resets bases',
-    feature: 'Edge cases',
+    feature: 'Space setup',
     status: 'built',
     blurb: 'Bases belong to a Source; switching it clears the selection after a heads-up.',
     specs: [
@@ -239,7 +239,7 @@ export const FLOW_REGISTRY: RegistryFlow[] = [
   {
     id: 'base-cap-upgrade',
     name: 'Plan base cap + new bases',
-    feature: 'Edge cases',
+    feature: 'Space setup',
     status: 'built',
     blurb: 'Block selecting beyond the plan limit with an upgrade nudge; notify on new Airtable bases (opt-in auto-add).',
     specs: [
@@ -694,6 +694,7 @@ export const FLOW_REGISTRY: RegistryFlow[] = [
       { label: 'AI description · ready (Pro+)', href: '/schema', caption: 'In the shared panel, Generate with AI (Pro+, 10 credits, cost shown on the button) seeds a blank Airtable description; it then follows the Draft → Publish lifecycle. AI generation lives on the public Airtable copy only (see schema-descriptions).' },
       { label: 'AI · below Pro+ (locked)', href: '/schema?ai=locked', caption: 'Below Pro+, Generate is a locked upsell (lock + Pro+) that routes to billing, not a dead control — shown in the shared panel opened from a node.' },
       { label: 'AI · out of credits (GAP)', href: '/schema?ai=no-credits', caption: 'HONEST STATE: with ai=no-credits the shared panel currently just HIDES the Generate CTA — there is no dedicated "out of credits · top up" message or route. A distinct out-of-credits affordance is unbuilt — see schema-section-gaps.' },
+      { label: 'Empty — never backed up', href: '/schema?fixture=empty', caption: 'Before the first backup, Visualize shows the shared "Schema appears after your first backup" empty (the .sch-empty workflow-icon state SchemaView renders for every tab when there is no schema yet). Reachable via ?fixture=empty.' },
     ],
     note: 'Node-clicks open the SHARED EntityPanel (schema:openEntity), so Visualize, Browse, Docs and Changelog all use one detail surface — descriptions, AI Generate and the Draft/Publish lifecycle live there (see schema-descriptions). The old Visualize-only inline description panel was retired dead code and was DELETED 2026-06-26. The real vendored Airtable field-icon set, focus-mode + search-jump, and the multi-base filter were BUILT 2026-06-23; the app-layer graph mode is PARTIAL (renders, but tier states are coarse). Still open: tier-gated Export + the Fields-visibility filter with counts (field-visibility-filter spec) — see schema-visualize-planned. No query-param forces the single-base or "no schema" canvas; those are fixture-driven.',
   },
@@ -830,6 +831,7 @@ export const FLOW_REGISTRY: RegistryFlow[] = [
       { label: 'How this is scored', href: '/schema', caption: 'A Health-level "How this is scored" explainer (a tooltip, not a modal) covers the default rules + the band thresholds, so the score is not a black box. Below Pro+ the defaults still show read-only — never a blank.' },
       { label: 'Configure rules (Pro+)', href: '/settings/billing', caption: 'Configure rules (Pro+) — Space/Org-level, in the Health header — currently routes to billing; the real rule-config + per-metric scoring screens are planned (see schema-health-planned).' },
       { label: 'Schema-only vs dynamic-backup data', href: '/schema', caption: 'Record-level data-quality metrics (empty records, broken links) need a dynamic backup; schema-only Spaces grade on schema-level rules and a category can read as "schema-only" without looking broken or empty.' },
+      { label: 'Empty — never backed up', href: '/schema?fixture=empty', caption: 'Before the first backup completes, the Health tab shows its "Health appears after your first backup completes — a per-base 0–100 grade…" empty (the .sch-soon dashed state, gated on health.length). Reachable via ?fixture=empty.' },
     ],
     note: 'Grade dots match the Visualize node dots. Backend produces 0–100 + Green/Yellow/Red (design to that, not a letter grade). Per-metric enable/disable, prompt overrides + stale re-run, the Insights section, and rule configuration are spec-defined but NOT built here — see schema-health-planned.',
   },

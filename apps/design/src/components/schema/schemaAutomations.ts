@@ -7,6 +7,8 @@
  */
 import { setButtonLoading } from '../../lib/ui';
 import { wireTableSort } from './tableSort';
+import { entityChip } from './entityChip';
+import { locationCrumbs } from './locationCrumbs';
 
 interface AuTag { entityId: string; source: 'auto' | 'manual' }
 interface Automation { id: string; name: string; baseId: string; triggerType?: string; status: 'active' | 'removed'; enabled?: boolean; airtableDescription?: string; internalDescription?: string; subscribers?: string[]; definition?: string; tags?: AuTag[]; removedAt?: string }
@@ -14,6 +16,18 @@ type Ent = { name: string; kind: 'base' | 'table' | 'field'; tableName: string |
 
 const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 const entIcon = (kind: string) => kind === 'field' ? 'lucide--tag concept-ic-field' : kind === 'table' ? 'lucide--table-2' : 'lucide--database concept-ic-base';
+// Section count badge (DRAWER CANON v2): a catalog badge pressed after the label, shown only from 2 up (suppress "1").
+const countBadge = (n: number) => (n >= 2 ? ` <span class="badge badge-sm badge-neutral">${n}</span>` : '');
+
+// Identity status (read drawer meta line): a colored DOT + label, NOT a soft badge.
+// Active = green, Inactive (off) = grey, Removed = red. (The soft badge stays in the listing.)
+const statusDot = (a: Automation) => {
+  const removed = a.status === 'removed';
+  const on = a.enabled !== false;
+  const tone = removed ? 'red' : on ? 'green' : 'grey';
+  const label = removed ? 'Removed' : on ? 'Active' : 'Inactive';
+  return `<span class="au-status"><span class="au-dot au-dot-${tone}"></span>${label}</span>`;
+};
 
 // Status badge (mirror of the Astro statusBadge): badge-soft + semantic color + bg-current dot.
 const statusBadge = (a: Automation) => {
@@ -48,7 +62,7 @@ export function wireAutomations() {
     const evs = changelog.filter((c) => c.entityId === id).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
     if (!evs.length) return '';
     const items = evs.map((c) => `<li class="au-cl-item au-cl-${c.type}"><span class="iconify ${CL_ICON[c.type] || 'lucide--dot'} size-3.5 au-cl-ic" aria-hidden="true"></span><span class="au-cl-txt">${esc(c.summary)}${c.before && c.after ? ` <span class="au-cl-delta">${esc(c.before)} → ${esc(c.after)}</span>` : ''}</span><span class="au-cl-when">${esc(fmtCl(c.at))}</span></li>`).join('');
-    return `<div><div class="au-read-sect-lbl"><span class="iconify lucide--history size-3.5 au-read-sect-ic" aria-hidden="true"></span>Changelog</div><ul class="au-cl">${items}</ul></div>`;
+    return `<div><div class="au-read-sect-lbl"><span class="iconify lucide--history size-3.5 au-read-sect-ic" aria-hidden="true"></span>Changelog${countBadge(evs.length)}</div><ul class="au-cl">${items}</ul></div>`;
   };
 
   // ── filters (search · Base/Table/Field facets · include-removed) — same model as Browse/Relationships ──
@@ -130,6 +144,8 @@ export function wireAutomations() {
   const readEl = $m<HTMLElement>('[data-au-read]');
   const formEl = $m<HTMLElement>('[data-au-form]');
   const title = panel?.querySelector<HTMLElement>('.sb-drawer-title');
+  const titleIc = panel?.querySelector<HTMLElement>('[data-sb-drawer-titleic]');
+  const crumbsEl = panel?.querySelector<HTMLElement>('[data-sb-drawer-crumbs]');
   const saveBtn = $m<HTMLButtonElement>('[data-au-save]');
   let editingId: string | null = null;
   let readingId: string | null = null;
@@ -149,8 +165,10 @@ export function wireAutomations() {
 
   const chipHtml = (t: AuTag) => {
     const e = ents[t.entityId];
-    const label = e ? (e.kind === 'field' && e.tableName ? `${e.name} · ${e.tableName}` : e.name) : t.entityId;
-    return `<span class="au-chip au-chip-${t.source}" data-au-chip="${esc(t.entityId)}"><span class="iconify ${entIcon(e?.kind || 'table')} size-3.5" aria-hidden="true"></span>${esc(label)}${t.source === 'manual' ? `<button type="button" class="au-chip-x" data-au-chip-x="${esc(t.entityId)}" aria-label="Remove tag"><span class="iconify lucide--x size-3" aria-hidden="true"></span></button>` : ''}</span>`;
+    const name = e ? e.name : t.entityId;
+    const context = e && e.kind === 'field' && e.tableName ? e.tableName : undefined;
+    const icon = `<span class="iconify ${entIcon(e?.kind || 'table')} size-3.5" aria-hidden="true"></span>`;
+    return entityChip({ name, icon, context, attrs: 'data-au-chip="' + esc(t.entityId) + '"', remove: t.source === 'manual' ? 'data-au-chip-x="' + esc(t.entityId) + '"' : undefined, derived: t.source === 'auto' });
   };
   const renderChips = () => { if (chipsWrap) chipsWrap.innerHTML = tags.map(chipHtml).join(''); };
 
@@ -158,31 +176,46 @@ export function wireAutomations() {
   // JSON is opaque/optional, tucked at the bottom.
   const readChip = (t: AuTag) => {
     const e = ents[t.entityId];
-    const label = e ? (e.kind === 'field' && e.tableName ? `${e.name} · ${e.tableName}` : e.name) : t.entityId;
-    return `<button type="button" class="au-chip au-chip-${t.source}" data-entity-open="${esc(t.entityId)}"><span class="iconify ${entIcon(e?.kind || 'table')} size-3.5" aria-hidden="true"></span>${esc(label)}</button>`;
+    const name = e ? e.name : t.entityId;
+    const context = e && e.kind === 'field' && e.tableName ? e.tableName : undefined;
+    const icon = `<span class="iconify ${entIcon(e?.kind || 'table')} size-3.5" aria-hidden="true"></span>`;
+    // Read view: plain neutral chip — the auto/manual distinction isn't actionable here, so we don't signal it.
+    return entityChip({ name, icon, context, clickable: true, attrs: 'data-entity-open="' + esc(t.entityId) + '"' });
   };
   const openRead = (id: string) => {
     const a = byId.get(id);
     if (!a || !readEl) return;
     readingId = id;
+    // Canon drawer header: the concept-icon tile + entity name live in the fixed rail (like the other
+    // detail drawers); the body opens with the identity meta line. Populate the rail here.
+    if (titleIc) { titleIc.innerHTML = '<span class="iconify lucide--zap concept-ic-automation size-4" aria-hidden="true"></span>'; titleIc.hidden = false; }
     if (title) title.textContent = a.name;
+    // Location → header crumbs sub-row (the base), not the meta line.
+    if (crumbsEl) {
+      crumbsEl.innerHTML = locationCrumbs([
+        { name: baseLabel(a.baseId), icon: '<span class="iconify lucide--database concept-ic-base size-3.5"></span>' },
+      ]);
+      crumbsEl.hidden = false;
+    }
     const removed = a.status === 'removed';
-    const subsHtml = (a.subscribers || []).length
-      ? `<div><div class="au-read-sect-lbl"><span class="iconify lucide--users size-3.5 au-read-sect-ic" aria-hidden="true"></span>Subscribers</div><div class="au-read-subs">${(a.subscribers || []).map((e) => `<span class="au-read-sub"><span class="iconify lucide--mail size-3.5" aria-hidden="true" style="opacity:.6"></span>${esc(e)}</span>`).join('')}</div></div>`
+    const subCount = (a.subscribers || []).length;
+    const subsHtml = subCount
+      ? `<div><div class="au-read-sect-lbl"><span class="iconify lucide--users size-3.5 au-read-sect-ic" aria-hidden="true"></span>Subscribers${countBadge(subCount)}</div><div class="au-read-listbox">${(a.subscribers || []).map((e) => `<span class="au-read-sub"><span class="iconify lucide--mail size-3.5" aria-hidden="true" style="opacity:.6"></span>${esc(e)}</span>`).join('')}</div></div>`
       : '';
     // Two descriptions: the Airtable-side copy (manual, no sync) + the Baseout-only Internal note.
     const noteHtml =
       `<div><div class="au-read-sect-lbl"><span class="iconify lucide--text size-3.5 au-read-sect-ic" aria-hidden="true"></span>Airtable description</div><p class="au-read-desc${a.airtableDescription ? '' : ' is-empty'}">${a.airtableDescription ? esc(a.airtableDescription) : 'No Airtable description saved.'}</p></div>` +
       `<div><div class="au-read-sect-lbl"><span class="iconify lucide--text size-3.5 au-read-sect-ic" aria-hidden="true"></span>Internal note</div><p class="au-read-desc${a.internalDescription ? '' : ' is-empty'}">${a.internalDescription ? esc(a.internalDescription) : 'No internal note yet.'}</p></div>`;
+    const tagCount = (a.tags || []).length;
     readEl.innerHTML = `
-      <div class="au-read-meta"><span class="badge badge-soft badge-primary">Automation</span>${statusBadge(a)}<span class="au-read-base"><span class="iconify lucide--database concept-ic-base size-3.5" aria-hidden="true"></span>${esc(baseLabel(a.baseId))}</span></div>
+      <div class="au-read-meta"><span class="au-read-kind">Automation</span><span class="au-read-sep" aria-hidden="true">·</span>${statusDot(a)}<span class="au-read-sep" aria-hidden="true">·</span><span class="au-meta-fresh">as of last backup</span></div>
       ${a.triggerType ? `<div><div class="au-read-sect-lbl"><span class="iconify lucide--zap size-3.5 au-read-sect-ic" aria-hidden="true"></span>Trigger</div><p class="au-read-desc">${esc(a.triggerType)}</p></div>` : ''}
       ${noteHtml}
-      <div><div class="au-read-sect-lbl"><span class="iconify lucide--at-sign size-3.5 au-read-sect-ic" aria-hidden="true"></span>Touches</div>${(a.tags || []).length ? `<div class="au-read-chips">${(a.tags || []).map(readChip).join('')}</div>` : `<p class="au-read-empty">No tables or fields tagged.</p>`}</div>
+      <div><div class="au-read-sect-lbl"><span class="iconify lucide--at-sign size-3.5 au-read-sect-ic" aria-hidden="true"></span>Touches${countBadge(tagCount)}</div>${tagCount ? `<div class="au-read-listbox">${(a.tags || []).map(readChip).join('')}</div>` : `<p class="au-read-empty">No tables or fields tagged.</p>`}</div>
       ${subsHtml}
       ${changelogHtml(a.id)}
-      ${a.definition ? `<details class="au-read-def"><summary>Raw definition (JSON)</summary><pre>${esc(a.definition)}</pre></details>` : ''}
-      <div class="au-read-foot"><button type="button" class="btn btn-sm btn-neutral gap-1.5" data-au-read-edit><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span>Edit</button>${removed ? '' : `<button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-au-read-delete><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span>Delete</button>`}</div>`;
+      ${a.definition ? `<details class="sch-read-def"><summary>Raw definition (JSON)<span class="iconify lucide--chevron-down size-3.5 sch-def-chev" aria-hidden="true"></span></summary><pre>${esc(a.definition)}</pre></details>` : ''}
+      <div class="sch-read-foot"><button type="button" class="btn btn-sm btn-neutral gap-1.5" data-read-edit><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span>Edit</button>${removed ? '' : `<button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-read-delete><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span>Delete</button>`}</div>`;
     readEl.hidden = false;
     if (formEl) formEl.hidden = true;
     openDrawer(true);
@@ -191,6 +224,8 @@ export function wireAutomations() {
   const openEdit = (id: string | null) => {
     editingId = id;
     const a = id ? byId.get(id) : null;
+    if (titleIc) { titleIc.innerHTML = ''; titleIc.hidden = true; }
+    if (crumbsEl) { crumbsEl.innerHTML = ''; crumbsEl.hidden = true; }
     if (title) title.textContent = a ? 'Edit automation' : 'Register automation';
     if (saveBtn) saveBtn.textContent = a ? 'Save changes' : 'Register automation';
     if (fName) fName.value = a?.name ?? '';
@@ -222,8 +257,8 @@ export function wireAutomations() {
   // the drawer so the EntityPanel (opened by the global data-entity-open delegate) shows.
   readEl?.addEventListener('click', (ev) => {
     const t = ev.target as HTMLElement;
-    if (t.closest('[data-au-read-edit]')) { if (readingId) openEdit(readingId); return; }
-    if (t.closest('[data-au-read-delete]')) { if (readingId) softDelete(readingId); openDrawer(false); return; }
+    if (t.closest('[data-read-edit]')) { if (readingId) openEdit(readingId); return; }
+    if (t.closest('[data-read-delete]')) { if (readingId) softDelete(readingId); openDrawer(false); return; }
     if (t.closest('[data-entity-open]')) openDrawer(false);
   });
   // EntityPanel "Referenced by" jump opens the automation's read view here.

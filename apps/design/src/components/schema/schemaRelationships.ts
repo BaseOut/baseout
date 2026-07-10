@@ -8,6 +8,8 @@
  */
 import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
 import { wireTableSort } from './tableSort';
+import { entityChip } from './entityChip';
+import { locationCrumbs } from './locationCrumbs';
 
 type RelType = 'linkedRecords' | 'formulas' | 'rollups' | 'lookups' | 'lastModified' | 'syncedViews';
 interface RelEndpoint { id: string; name: string; kind: 'table' | 'field'; fieldType?: string; tableName?: string }
@@ -28,6 +30,10 @@ const TYPE_META: Record<RelType, { label: string; icon: string }> = {
   syncedViews: { label: 'Synced views', icon: 'lucide--refresh-cw' },
 };
 const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+// Cardinality: readable label in the meta line, compact token kept as the tooltip. Falls back to
+// the raw token for anything unmapped.
+const CARD_WORD: Record<string, string> = { 'm:1': 'Many-to-one', '1:m': 'One-to-many', '1:1': 'One-to-one', 'm:m': 'Many-to-many' };
+const cardWord = (c?: string) => (c && CARD_WORD[c]) || c || '';
 const fieldIconSvg = (type?: string) => {
   const k = type ? airtableIconKey(type) : null;
   return k ? `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
@@ -40,6 +46,10 @@ const fmtDate = (iso?: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
+// Canonical section heading: concept icon + uppercase label + a catalog count badge pressed right
+// after the name. Show the badge ONLY from 2 up — a lone "1" is self-evident from the row below.
+const sectLabel = (icon: string, text: string, count = 0) =>
+  `<div class="rl-dsect-label"><span class="iconify ${icon} size-3.5 rl-dsect-ic" aria-hidden="true"></span>${text}${count >= 2 ? `<span class="badge badge-sm badge-neutral rl-dsect-count">${count}</span>` : ''}</div>`;
 
 export function wireRelationships() {
   const root = document.querySelector<HTMLElement>('[data-relationships]');
@@ -232,7 +242,7 @@ export function wireRelationships() {
   // ---- detail panel (shared, page-level RelationshipPanel — query on document) ----
   const detail = document.querySelector<HTMLElement>('[data-rl-detail]');
   const dType = document.querySelector<HTMLElement>('[data-d-type]');
-  const dSub = document.querySelector<HTMLElement>('[data-d-sub]');
+  const dCrumbs = document.querySelector<HTMLElement>('[data-d-crumbs]');
   const dIc = document.querySelector<HTMLElement>('[data-d-ic]');
   const dBody = document.querySelector<HTMLElement>('[data-d-body]');
   const closeDetail = () => { if (detail) detail.hidden = true; };
@@ -240,20 +250,47 @@ export function wireRelationships() {
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && detail && !detail.hidden) closeDetail(); });
 
   const entChip = (e: RelEndpoint) =>
-    `<button type="button" class="rl-dchip" data-entity-open="${esc(e.id)}"><span class="rl-dchip-ic">${endpointIcon(e)}</span>${esc(e.name)}${e.kind === 'field' && e.tableName ? `<span class="rl-dchip-sub">· ${esc(e.tableName)}</span>` : ''}</button>`;
+    entityChip({ name: e.name, icon: endpointIcon(e), context: e.kind === 'field' && e.tableName ? e.tableName : undefined, clickable: true, attrs: 'data-entity-open="' + esc(e.id) + '"' });
 
   const buildDetail = (rel: SchemaRelationship) => {
     const meta = TYPE_META[rel.type];
     if (dIc) dIc.innerHTML = `<span class="iconify ${meta.icon} size-4"></span>`;
-    if (dType) dType.textContent = meta.label + (rel.inferred ? '' : '');
-    if (dSub) dSub.textContent = [rel.baseName, rel.cardinality, rel.validity === 'invalid' ? 'invalid' : ''].filter(Boolean).join(' · ');
-    const parts: string[] = [];
-    parts.push(`<div><div class="rl-dsect-label"><span class="iconify lucide--waypoints size-3.5 rl-dsect-ic" aria-hidden="true"></span>Connects</div><div class="rl-dpair">${entChip(rel.a)}<span class="rl-darrow">${arrow(rel)}</span>${entChip(rel.b)}</div></div>`);
-    if (rel.inferred) {
-      parts.push(`<div class="rl-dactions"><button type="button" class="btn btn-sm btn-primary gap-1.5" data-rl-confirm data-rl-id="${esc(rel.id)}"><span class="iconify lucide--check size-3.5"></span>Confirm</button><button type="button" class="btn btn-sm btn-ghost gap-1.5" data-rl-dismiss data-rl-id="${esc(rel.id)}"><span class="iconify lucide--x size-3.5"></span>Dismiss</button></div>`);
+    // Title = the relationship TYPE (don't repeat it in the meta line below).
+    if (dType) dType.textContent = meta.label;
+    // Location (base) → the header's Row 2 crumbs, via the shared builder. Base = the location
+    // (no openAttrs → a plain muted segment).
+    if (dCrumbs) {
+      dCrumbs.innerHTML = rel.baseName
+        ? locationCrumbs([{ name: rel.baseName, icon: '<span class="iconify lucide--database concept-ic-base size-3.5"></span>' }])
+        : '';
+      dCrumbs.hidden = !rel.baseName;
     }
-    if (rel.provenance) {
-      parts.push(`<div class="alert alert-soft alert-info rl-dprov" role="status"><span class="iconify ${rel.inferred ? 'lucide--sparkles' : 'lucide--info'} size-4"></span><span>${esc(rel.provenance)}</span></div>`);
+    const parts: string[] = [];
+    // FIRST body element = identity meta line: state (coloured dot + label) · readable cardinality
+    // (compact token as tooltip). Inferred rels show the salient unconfirmed-guess state (primary
+    // dot) instead of validity — the Confirm/Dismiss card below acts on exactly that state.
+    {
+      const valid = rel.validity !== 'invalid';
+      const status = rel.inferred
+        ? `<span class="rl-dstatus"><span class="rl-dot rl-dot-primary" aria-hidden="true"></span>Inferred</span>`
+        : `<span class="rl-dstatus"><span class="rl-dot rl-dot-${valid ? 'green' : 'red'}" aria-hidden="true"></span>${valid ? 'Valid' : 'Invalid'}</span>`;
+      const card = rel.cardinality
+        ? ` <span class="rl-meta-sep" aria-hidden="true">·</span> <span class="rl-card tooltip tooltip-bottom" data-tip="${esc(rel.cardinality)}">${esc(cardWord(rel.cardinality))}</span>`
+        : '';
+      parts.push(`<div class="rl-dbody-meta">${status}${card}</div>`);
+    }
+    parts.push(`<div>${sectLabel('lucide--waypoints', 'Connects')}<div class="rl-dpair">${entChip(rel.a)}<span class="rl-darrow">${arrow(rel)}</span>${entChip(rel.b)}</div></div>`);
+    if (rel.inferred) {
+      // ONE grouped inference card (catalog Alert look): a labelled header, the provenance
+      // explanation, and the Confirm/Dismiss actions as its footer — all inside one bordered
+      // ancestor so it reads "here's the inference — confirm/dismiss it". Buttons keep their
+      // exact data-rl-confirm / data-rl-dismiss + data-rl-id hooks (handlers unchanged).
+      const header = `<div class="rl-dinf-head"><span class="iconify lucide--sparkles size-4" aria-hidden="true"></span>Inferred — best guess</div>`;
+      const copy = rel.provenance ? `<p class="rl-dinf-copy">${esc(rel.provenance)}</p>` : '';
+      const actions = `<div class="rl-dactions"><button type="button" class="btn btn-sm btn-primary gap-1.5" data-rl-confirm data-rl-id="${esc(rel.id)}"><span class="iconify lucide--check size-3.5"></span>Confirm</button><button type="button" class="btn btn-sm btn-ghost gap-1.5" data-rl-dismiss data-rl-id="${esc(rel.id)}"><span class="iconify lucide--x size-3.5"></span>Dismiss</button></div>`;
+      parts.push(`<div class="alert alert-soft alert-info rl-dinf" role="group"><div class="rl-dinf-inner">${header}${copy}${actions}</div></div>`);
+    } else if (rel.provenance) {
+      parts.push(`<div class="alert alert-soft alert-info rl-dprov" role="status"><span class="iconify lucide--info size-4"></span><span>${esc(rel.provenance)}</span></div>`);
     }
     if (rel.validity === 'invalid') {
       parts.push(`<div class="alert alert-soft alert-warning rl-dinvalid" role="alert"><span class="iconify lucide--unlink size-4"></span><span>All links for this relationship were removed. It’s kept as history — restore the table or fields to make it valid again.</span></div>`);
@@ -263,7 +300,7 @@ export function wireRelationships() {
     if ((rel.type === 'formulas' || rel.type === 'rollups') && rel.links && rel.links.length) {
       const seen = new Set<string>();
       const fields = rel.links.map((l) => l.to).filter((e) => e.kind === 'field' && e.id !== rel.a.id && !seen.has(e.id) && seen.add(e.id));
-      if (fields.length) parts.push(`<div><div class="rl-dsect-label"><span class="iconify lucide--link size-3.5 rl-dsect-ic" aria-hidden="true"></span>Linked fields</div><div class="rl-dfields">${fields.map(entChip).join('')}</div></div>`);
+      if (fields.length) parts.push(`<div>${sectLabel('lucide--link', 'Linked fields', fields.length)}<div class="rl-dfields">${fields.map(entChip).join('')}</div></div>`);
     }
     // Changelog — the relationship's history (links added / removed), derived from the per-link
     // firstSeen / removedAt. Replaces the old inline "Links" list; removed links live here now,
@@ -276,7 +313,7 @@ export function wireRelationships() {
     events.sort((x, y) => (x.at < y.at ? 1 : x.at > y.at ? -1 : 0));
     if (events.length) {
       const items = events.map((e) => `<li class="rl-dlog-item rl-dlog-${e.kind}"><span class="iconify ${e.kind === 'removed' ? 'lucide--minus-circle' : 'lucide--plus-circle'} size-3.5 rl-dlog-ic" aria-hidden="true"></span><span class="rl-dlog-txt">${esc(e.label)}</span><span class="rl-dlog-when">${esc(fmtDate(e.at))}</span></li>`).join('');
-      parts.push(`<div><div class="rl-dsect-label"><span class="iconify lucide--history size-3.5 rl-dsect-ic" aria-hidden="true"></span>Changelog</div><ul class="rl-dlog">${items}</ul></div>`);
+      parts.push(`<div>${sectLabel('lucide--history', 'Changelog', events.length)}<ul class="rl-dlog">${items}</ul></div>`);
     }
     if (dBody) dBody.innerHTML = parts.join('');
   };
@@ -414,6 +451,9 @@ export function wireRelationships() {
   root.addEventListener('click', (ev) => {
     const t = ev.target as HTMLElement;
     if (t.closest('[data-rl-confirm]') || t.closest('[data-rl-dismiss]')) return; // handled above
+    // B1: a referenced-field chip / "+N more" popover entry opens that field's EntityPanel via
+    // the global [data-entity-open] delegate — don't also open the row's primary field.
+    if (t.closest('[data-entity-open]') || t.closest('.rl-more')) return;
     const editBtn = t.closest<HTMLElement>('[data-rl-edit-synced]');
     if (editBtn) { ev.stopPropagation(); const row = editBtn.closest<HTMLElement>('[data-rl-row]'); if (row) openSyncedForm(row.dataset.rlId!); return; }
     const row = t.closest<HTMLElement>('[data-rl-row]');
@@ -424,7 +464,7 @@ export function wireRelationships() {
   // Entity chip inside the (page-level) detail → close our panel; the global EntityPanel
   // delegate ([data-entity-open]) opens the shared sidebar on top.
   detail?.addEventListener('click', (ev) => {
-    if ((ev.target as HTMLElement).closest('.rl-dchip[data-entity-open]')) closeDetail();
+    if ((ev.target as HTMLElement).closest('[data-entity-open]')) closeDetail();
   });
   // The Visualize "Relationships" graph opens the same detail by dispatching this event.
   document.addEventListener('schema:openRelationship', (ev) => {
@@ -434,6 +474,8 @@ export function wireRelationships() {
   });
   root.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    // Let a focused reference chip / "+N more" trigger handle its own Enter/Space (opens the field).
+    if ((ev.target as HTMLElement).closest('[data-entity-open]') || (ev.target as HTMLElement).closest('.rl-more')) return;
     const row = (ev.target as HTMLElement).closest<HTMLElement>('[data-rl-row]');
     if (!row) return;
     const rel = byId.get(row.dataset.rlId!);

@@ -15,6 +15,7 @@
 import EntitySearch from './EntitySearch.astro';
 import Drawer from '../ui/Drawer.astro';
 import FacetFilter from './FacetFilter.astro';
+import ExportControl from './ExportControl.astro';
 import type { SchemaEntity } from './schemaEntities';
 
 export interface AutomationTag {
@@ -194,6 +195,7 @@ const renderRow = (a: SchemaAutomation) => {
         </button>
 
         <div class="sch-tb-right">
+          <ExportControl tab="automations" format="csv" noun="automations" total={automations.length} rowSelector="[data-au-row]" />
           <button type="button" class="btn btn-sm btn-primary gap-1.5" data-au-new><span class="iconify lucide--plus size-4" aria-hidden="true"></span>Register automation</button>
         </div>
       </div>
@@ -229,7 +231,7 @@ const renderRow = (a: SchemaAutomation) => {
 
 {/* Create / edit — a right drawer (project default; not a modal). */}
 {canUse && (
-  <Drawer id="au-modal" title="Automation" width="w-[min(94vw,36rem)]">
+  <Drawer id="au-modal" title="Automation" width="w-[min(94vw,30rem)]">
     {/* Read view — the default when you click a row. Filled by the .ts. */}
     <div class="au-read" data-au-read hidden></div>
 
@@ -322,7 +324,6 @@ const renderRow = (a: SchemaAutomation) => {
   .au-group-ic { flex: none; margin-left: -.15rem; }
   .au-group-name { font-size: .85rem; font-weight: 650; }
   .au-group-count { font-size: .74rem; opacity: .55; }
-  .au-read-base { display: inline-flex; align-items: center; gap: .25rem; }
   .au-caret { transition: transform .15s ease; color: oklch(from var(--color-base-content) l c h / .5); }
   .au-group[data-collapsed] .au-caret { transform: rotate(-90deg); }
   .au-group[data-collapsed] .au-tbl { display: none; }
@@ -389,11 +390,6 @@ const renderRow = (a: SchemaAutomation) => {
   .au-sub-x:hover { opacity: 1; background: oklch(from var(--color-base-content) l c h / .1); }
   .au-chips { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .1rem; }
   .au-chips:empty { display: none; }
-  .au-chip { display: inline-flex; align-items: center; gap: .25rem; font-size: .78rem; padding: .25rem .5rem; border-radius: 999px; }
-  .au-chip-auto { background: oklch(from var(--color-primary) l c h / .1); color: var(--color-primary); }
-  .au-chip-manual { border: 1px solid var(--color-base-300); background: var(--color-base-100); }
-  .au-chip-x { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 999px; cursor: pointer; opacity: .6; }
-  .au-chip-x:hover { opacity: 1; background: oklch(from var(--color-base-content) l c h / .1); }
   .au-def-head { display: flex; align-items: center; justify-content: space-between; }
   .au-def-tools { display: flex; align-items: center; gap: .5rem; }
   .au-def-valid { font-size: .74rem; font-weight: 600; }
@@ -413,20 +409,39 @@ const renderRow = (a: SchemaAutomation) => {
   .au-adv-sum .iconify { opacity: .6; }
   .au-adv[open] .au-adv-sum { margin-bottom: .5rem; }
 
-  /* read view */
-  .au-read { display: flex; flex-direction: column; gap: 1rem; }
-  .au-read-meta { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  /* read view — DRAWER CANON v2: canon header block (icon tile + name + meta) as the first
+     body element; sections separated by generous whitespace (28px top margin), NO hairline. */
+  .au-read { display: flex; flex-direction: column; }
+  .au-read > * + * { margin-top: 28px; }
+  .au-read-hd { display: flex; flex-direction: column; gap: 8px; }
+  .au-read-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .65); }
+  .au-read-sep { opacity: .4; }
+  /* Freshness ("as of last backup") is a trust signal — inherits the meta line's .65 alpha
+     (no extra dimming) so it stays legible beside its siblings. */
+  .au-meta-fresh { }
+  /* Identity: STATUS as a colored dot + label (twins with Interfaces' .if-status). */
+  .au-status { display: inline-flex; align-items: center; gap: 4px; font-weight: 550; color: oklch(from var(--color-base-content) l c h / .85); }
+  .au-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
+  .au-dot-green { background: var(--color-success); }
+  .au-dot-amber { background: var(--color-warning); }
+  .au-dot-red { background: var(--color-error); }
+  .au-dot-grey { background: color-mix(in oklch, var(--color-base-content) 40%, transparent); }
+  /* Location crumbs now use the shared .sb-crumb* (styles/global.css) via locationCrumbs(). */
   .au-read-desc { font-size: .9rem; line-height: 1.55; }
   .au-read-desc.is-empty { color: oklch(from var(--color-base-content) l c h / .5); font-style: italic; }
   .au-read-status { display: inline-flex; align-items: center; gap: .5rem; }
   .au-read-status .au-status-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
   .au-read-status.is-on .au-status-dot { background: var(--color-success); }
   .au-read-status.is-off .au-status-dot { background: oklch(from var(--color-base-content) l c h / .4); }
-  .au-read-sub { display: inline-flex; align-items: center; gap: .5rem; font-size: .82rem; padding: .25rem .5rem; border-radius: 999px; border: 1px solid var(--color-base-300); }
-  .au-read-subs { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .au-read-sub { display: inline-flex; align-items: center; gap: .5rem; font-size: .82rem; padding: .25rem .5rem; border-radius: 999px; border: 1px solid var(--color-base-300); background: var(--color-base-100); }
+  /* Shared row-list container (DRAWER CANON v2): a 1–2 item list never floats. */
+  .au-read-listbox { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border: 1px solid var(--color-base-300); border-radius: 11px; background: color-mix(in oklch, var(--color-base-200) 45%, transparent); overflow: hidden; }
   /* read-drawer changelog (this automation's own history) */
-  .au-cl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .25rem; }
-  .au-cl-item { display: flex; align-items: center; gap: .5rem; font-size: .8rem; padding: .5rem .5rem; border-radius: 7px; background: oklch(from var(--color-base-200) l c h / .35); }
+  /* Changelog = shared row-list container (pattern-detail-panel): one bordered, faintly-tinted box
+     with hairline-split rows, so a lone 1–2-event history reads as a group, not floating text. */
+  .au-cl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: 11px; background: color-mix(in oklch, var(--color-base-200) 45%, transparent); overflow: hidden; }
+  .au-cl-item { display: flex; align-items: center; gap: .5rem; font-size: .8rem; padding: 8px 12px; }
+  .au-cl-item + .au-cl-item { border-top: 1px solid var(--color-base-200); }
   .au-cl-ic { flex: none; }
   .au-cl-added .au-cl-ic { color: var(--color-success); }
   .au-cl-removed .au-cl-ic { color: var(--color-error); }
@@ -434,17 +449,19 @@ const renderRow = (a: SchemaAutomation) => {
   .au-cl-txt { flex: 1; min-width: 0; }
   .au-cl-delta { color: oklch(from var(--color-base-content) l c h / .55); }
   .au-cl-when { margin-left: auto; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); white-space: nowrap; flex: none; }
-  .au-read-sect-lbl { display: flex; align-items: center; gap: 8px; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .5); font-weight: 600; margin-bottom: .5rem; }
+  .au-read-sect-lbl { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .5); font-weight: 700; margin-bottom: 8px; }
   .au-read-sect-ic { flex: none; opacity: .85; }
-  /* Canonical panel-anatomy: hairline divider between top-level body sections. */
-  .au-read > div:has(> .au-read-sect-lbl) { padding-top: 16px; border-top: 1px solid var(--color-base-300); }
   .au-read-chips { display: flex; flex-wrap: wrap; gap: .5rem; }
   .au-read-empty { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .5); }
-  .au-read-def { border: 1px solid var(--color-base-300); border-radius: 8px; }
-  .au-read-def summary { font-size: .8rem; font-weight: 600; padding: .5rem .75rem; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .7); list-style: none; }
-  .au-read-def summary::-webkit-details-marker { display: none; }
-  .au-read-def pre { margin: 0; padding: .75rem; border-top: 1px solid var(--color-base-300); font-size: .76rem; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
-  .au-read-foot { display: flex; gap: .5rem; padding-top: .75rem; border-top: 1px solid var(--color-base-300); }
+  /* Raw-definition disclosure + footer rail — shared `.sch-*` canon (byte-identical in Interfaces). */
+  .sch-read-def { border: 1px solid var(--color-base-300); border-radius: 8px; }
+  .sch-read-def summary { display: flex; align-items: center; font-size: .8rem; font-weight: 600; padding: 8px 12px; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .7); list-style: none; }
+  .sch-read-def summary:hover { color: var(--color-base-content); }
+  .sch-read-def summary::-webkit-details-marker { display: none; }
+  .sch-def-chev { transition: transform .15s ease; margin-left: auto; opacity: .6; }
+  .sch-read-def[open] .sch-def-chev { transform: rotate(180deg); }
+  .sch-read-def pre { margin: 0; padding: 12px; border-top: 1px solid var(--color-base-300); font-size: .76rem; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  .sch-read-foot { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--color-base-200); }
 
   @media (max-width: 560px) { .au-form-grid { grid-template-columns: 1fr; } }
 </style>

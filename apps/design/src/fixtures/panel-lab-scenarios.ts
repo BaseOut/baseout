@@ -40,7 +40,10 @@ export type LabTrigger =
   | { kind: 'event'; event: string; id: string; tab?: string }
   | { kind: 'click'; selector: string; tab?: string }
   | { kind: 'clickMatch'; selector: string; attr: string; contains: string; tab?: string }
-  | { kind: 'attr'; selector: string; attr: string; value: string; tab?: string };
+  | { kind: 'attr'; selector: string; attr: string; value: string; tab?: string }
+  // Multi-panel (pattern-multi-panel-drawer): run steps in order with a short wait between
+  // each (open an anchor, then click a reference row inside it to spawn the focus panel).
+  | { kind: 'sequence'; steps: LabTrigger[]; tab?: string };
 
 export interface LabScenario {
   label: string;
@@ -56,6 +59,28 @@ export interface LabGroup {
 const ev = (event: string, id: string, tab?: string): LabTrigger => ({ kind: 'event', event, id, ...(tab ? { tab } : {}) });
 
 export const SCENARIOS: LabGroup[] = [
+  {
+    panel: 'Multi-panel (Anchor + Focus)',
+    hint: 'Side-by-side drawers, capped at 2. Opens an anchor then drills a reference inside it to spawn the focus — then keep drilling inside the focus (it navigates in place, never a 3rd panel). Drag a panel’s left edge to resize; the round button on the anchor balances 50/50.',
+    scenarios: [
+      {
+        label: 'Anchor + Focus (table → field)',
+        note: 'Companies pinned left · a field opens right',
+        trigger: { kind: 'sequence', steps: [
+          ev('schema:openEntity', 'b-companies'),
+          { kind: 'click', selector: '.ep-sheet[data-ep-role="anchor"] [data-ep-push="f-co-pipeline"]' },
+        ] },
+      },
+      {
+        label: 'Anchor + Focus (formula → reference)',
+        note: 'drill a formula, then its referenced field in the focus',
+        trigger: { kind: 'sequence', steps: [
+          ev('schema:openEntity', 'f-co-pipeline'),
+          { kind: 'click', selector: '.ep-sheet[data-ep-role="anchor"] [data-ep-push]' },
+        ] },
+      },
+    ],
+  },
   {
     panel: 'EntityPanel',
     hint: 'The field / table / base detail sidecart (schema:openEntity).',

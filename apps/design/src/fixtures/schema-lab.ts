@@ -69,6 +69,7 @@ const tables: SchemaTable[] = [
       { id: 'f-dl-notes', name: 'Notes', type: 'link', linkedTableId: 'b-notes' },
       { id: 'f-dl-owner', name: 'Deal Owner', type: 'collaborator' },
       { id: 'f-dl-weighted', name: 'Weighted Value', type: 'formula', formula: '{Amount} * {Probability}', referencedFieldIds: ['f-dl-amount', 'f-dl-prob'], airtableDescription: 'Amount × Probability — the pipeline-weighted value.' },
+      { id: 'f-dl-score', name: 'Deal Score', type: 'formula', formula: 'weighted heuristic across Amount, Probability, Stage, Close Date, Company Industry', referencedFieldIds: ['f-dl-amount', 'f-dl-prob', 'f-dl-stage', 'f-dl-close', 'f-dl-coindustry'], airtableDescription: 'Composite deal-quality score derived from five signals — used to prioritise the pipeline.' },
       { id: 'f-dl-coindustry', name: 'Company Industry', type: 'lookup', lookupViaFieldId: 'f-dl-company', lookupTargetFieldId: 'f-co-industry' },
     ],
   },
@@ -426,6 +427,22 @@ const relationships: SchemaRelationship[] = [
     links: [
       { from: { id: 'f-dl-weighted', name: 'Weighted Value', kind: 'field', fieldType: 'formula', tableName: 'Deals' }, to: { id: 'f-dl-amount', name: 'Amount', kind: 'field', fieldType: 'currency', tableName: 'Deals' } },
       { from: { id: 'f-dl-weighted', name: 'Weighted Value', kind: 'field', fieldType: 'formula', tableName: 'Deals' }, to: { id: 'f-dl-prob', name: 'Probability', kind: 'field', fieldType: 'percent', tableName: 'Deals' } },
+    ],
+  },
+  {
+    // A many-field formula (5 referenced fields) — exercises the B1 "+N more" cap: the summary
+    // shows 3 chips then a "+2 more" hover popover, each field click-through to its panel.
+    id: 'rel-deals-score', type: 'formulas', baseId: 'b-sales', baseName: 'Sales CRM',
+    a: { id: 'f-dl-score', name: 'Deal Score', kind: 'field', fieldType: 'formula', tableName: 'Deals' },
+    b: { id: 'f-dl-amount', name: 'Amount', kind: 'field', fieldType: 'currency', tableName: 'Deals' },
+    direction: 'one', validity: 'valid',
+    provenance: 'The “Deal Score” formula references five fields — Amount, Probability, Stage, Close Date, and Company Industry — editing any of them changes its result.',
+    links: [
+      { from: { id: 'f-dl-score', name: 'Deal Score', kind: 'field', fieldType: 'formula', tableName: 'Deals' }, to: { id: 'f-dl-amount', name: 'Amount', kind: 'field', fieldType: 'currency', tableName: 'Deals' } },
+      { from: { id: 'f-dl-score', name: 'Deal Score', kind: 'field', fieldType: 'formula', tableName: 'Deals' }, to: { id: 'f-dl-prob', name: 'Probability', kind: 'field', fieldType: 'percent', tableName: 'Deals' } },
+      { from: { id: 'f-dl-score', name: 'Deal Score', kind: 'field', fieldType: 'formula', tableName: 'Deals' }, to: { id: 'f-dl-stage', name: 'Stage', kind: 'field', fieldType: 'singleSelect', tableName: 'Deals' } },
+      { from: { id: 'f-dl-score', name: 'Deal Score', kind: 'field', fieldType: 'formula', tableName: 'Deals' }, to: { id: 'f-dl-close', name: 'Close Date', kind: 'field', fieldType: 'date', tableName: 'Deals' } },
+      { from: { id: 'f-dl-score', name: 'Deal Score', kind: 'field', fieldType: 'formula', tableName: 'Deals' }, to: { id: 'f-dl-coindustry', name: 'Company Industry', kind: 'field', fieldType: 'multipleLookupValues', tableName: 'Deals' } },
     ],
   },
   {

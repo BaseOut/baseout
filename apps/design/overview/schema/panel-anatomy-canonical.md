@@ -17,6 +17,94 @@ Modals (confirm/create/connect) are OUT. Backups/Setup panels are a later pass o
 
 ---
 
+## Drawer canon v2 (2026-07-06 — BUILT, supersedes the header/width specifics below)
+
+After the Stage-2 refactor the five detail drawers still visibly diverged (three mechanisms, four
+widths, icon in body vs header, crumbs present-or-not, inconsistent section headers/footers/row
+containers). Oleh's call: **harmonize IN PLACE** (no shared component — each file edited to match the
+same tokens) so a user gets the identical drawer UX on Browse, Relationships, Automations, Interfaces
+and Changelog. The locked tokens (these override the Stage-1 `H*`/`T1`/`S*` details above where they
+conflict):
+
+- **Width — ONE value:** every detail sheet is `min(94vw, 30rem)` (**480px**). EntityPanel keeps its
+  optional wide/expand mode (900px); the other four have no expand.
+- **Header — THE ONE canonical structure (2026-07-07). Every drawer is identical; only the PRESENCE of a
+  field varies, never the order or the element used.**
+  - **Row 1 (title rail):** `[back — EntityPanel only] · concept-icon tile (2rem, radius .55rem, bg base-200) ·
+    entity NAME (~15px/650, ellipsis) · [expand — EntityPanel only] · close (btn btn-sm btn-ghost btn-square +
+    lucide--x size-4)`.
+  - **Row 2 (crumbs sub-row), inside the same `<header>`:** the LOCATION (Base ▸ Table ▸ … / Base ▸ parent) —
+    the ONE shared **`location-crumbs`** element (`locationCrumbs()` builder + `.sb-crumb*` in global.css), a
+    muted row of concept-icon + name segments joined by `›`. Ancestors only (the current entity is the title,
+    never a repeated crumb); existing ancestors are clickable. Shown only where the entity has a location.
+  - **[header border-bottom]**, then the body owns the scroll.
+  - **First body element = the identity meta line** — one `.ep-title-meta` style everywhere:
+    `[kind] · ● status(dot+label) · [trailing]`, muted, "·" separators at .4.
+  - **Presence table** (the only variation): back/expand → EntityPanel only · crumbs → all where a location
+    exists · kind-in-meta → shown when NAME≠kind (Browse/au/if), OMITTED for Relationship (its type is the
+    title) · status → health (Browse) / Published (Interface) / Active-Removed (Automation) / Valid-Invalid-
+    Inferred (Relationship) · trailing → `as of last backup` (entity drawers) / readable cardinality (Relationship).
+  - *Outliers fixed 2026-07-07: the Relationship drawer used to put the meta IN the header and the crumbs as a
+    separate row after it; Changelog kept its crumbs outside the header — both now follow Row1/Row2/first-body.*
+  - **ONE header token set (2026-07-07, after the Impeccable critique — the four header CSS blocks were
+    structurally aligned but drifted on padding/size/tracking):** header padding = **12px 16px**; **row gap
+    (title → crumbs) = 8px** (was 4px — too cramped, Oleh 2026-07-07); title =
+    **15px / 650 / letter-spacing -0.15px / line-height 1.2**; tile = 2rem / radius .55rem / base-200, glyph
+    **opacity .8**; close × via `margin-left:auto`; identity meta line = `base-content/.65` with the
+    "as of last backup" freshness at the SAME .65 (no extra dimming — it's the trust signal, must stay legible).
+    These values are identical across `.ep-head` · `.sb-drawer-head` · `.rl-detail-head` · `.cl-detail-head`.
+- **Identity meta line** = the first body element: `kind · STATUS soft-semantic chip · health chip (where
+  it applies) · base chip`, in the `.ep-title-meta` style. The old Automations/Interfaces soft-badges row
+  folds into this line.
+- **Section headers** = the `section()` convention everywhere: leading SECTION_ICON concept icon +
+  uppercase 11px/700 label + `badge badge-sm badge-neutral` count **only when count ≥ 2** (the lone "1"
+  is suppressed). Sections separated by ~28px whitespace, **no divider hairline**.
+- **Row-list container** = the shared `.ep-rows` recipe everywhere (1px base-300 border · color-mix
+  base-200 45% fill · radius 11px · overflow hidden · rows hairline-split by 1px base-200). A 1–2-item
+  list must sit inside it, never float (Automations Touches/Subscribers, Interfaces Touches were bare —
+  now wrapped).
+- **Footer** = read-only by default (EntityPanel / Relationship / Changelog have NO action bar; Changelog
+  keeps its "Detected <date>" meta line). Automations + Interfaces keep Edit/Delete but through ONE
+  identical standardized footer bar (border-top 1px base-200 · Edit = `btn btn-sm btn-neutral` + pencil ·
+  Delete = `btn btn-sm btn-ghost text-error` + trash).
+- **"Raw definition (JSON)"** (Automations/Interfaces) = identical `<details>/<summary>` disclosure in both,
+  with a trailing **chevron that rotates on open** (the `+N more` affordance) so it reads as expandable.
+
+### Identity model (2026-07-07 — the meta line + location, standardized on Browse)
+
+The header/title tell the user WHAT and its NAME. Below that, a user must read — at a glance — its **status**
+and **where it lives**, not a flat comma-list of cryptic tokens (the old `Interface · Published · Sales CRM`,
+`Sales CRM · m:1 · invalid`). Locked with Oleh:
+- **Location → the crumbs sub-row** (Base, or Base ▸ Table ▸ … / Base ▸ parent-interface for a page). The
+  base is NEVER a chip in the meta line. The catalog `Drawer` hosts this via a `[data-sb-drawer-crumbs]` hook.
+- **Identity meta line = `kind · STATUS · trailing note`** — kind label kept everywhere (Interface / Page /
+  Automation / Lookup / Table / relationship type), consistent with Browse.
+- **STATUS = a colored DOT + label**, never a soft badge (a badge reads as a button/tag). Same treatment as
+  the Browse health chip. Color map: **green** = Published / Active / Valid / Healthy · **amber** = Draft /
+  Paused / Could improve · **red** = Invalid / Not published / At risk / Removed · **grey** = Inactive /
+  Unknown. (Soft badges still belong in LISTING table cells — the dot+label is for the detail meta line.)
+- **Trailing note** = `as of last backup` on the entity drawers (Browse / Automations / Interfaces) — honest
+  (all Schema is a read-only post-backup mirror) and the explanatory touch Oleh liked.
+- **Cardinality (Relationships)** = a READABLE label — "Many-to-one" / "One-to-many" / "One-to-one" /
+  "Many-to-many" — with the compact token (`m:1`) as a daisyUI tooltip. It takes the trailing slot; the
+  relationship meta reads `● Valid|Invalid · Many-to-one` (the type is already the title, so it isn't repeated).
+
+Every inline **entity reference** (Touches · Connects · Linked fields · referenced-by · doc/chat/insight
+refs) is the ONE shared **`entity-chip`** — built by `entityChip()` (markup) + `styles/global.css`
+(`.sb-chip*`), never a per-surface hand-rolled pill. Neutral soft pill; variants =
+clickable / static / removable / derived. A **chip GROUP never floats bare** — it sits in the same shared
+bordered container as a row list (Connects · Linked fields · Touches all boxed). The `derived` variant is a
+**quiet muted pill (never dashed)** and appears only in the edit form; read views show plain chips.
+
+**Inferred (synced-view) relationships** read as ONE coherent context: the identity meta shows `● Inferred`
+(a primary/info dot, not the valid/invalid dot), and the provenance explanation + the **Confirm / Dismiss**
+actions live together inside a single `alert-soft alert-info` **inference card** ("Inferred — best guess" +
+copy + the two buttons) — so the buttons are obviously the action for *this* inference, not orphaned.
+
+Storybook authority: `pattern-detail-panel` (+ the drawer-footer, status-dot, disclosure-chevron notes) and `entity-chip` in `storybook.ts`.
+
+---
+
 ## (a) Canonical ordered slot list + presence rules
 
 Every detail panel renders these slots in THIS fixed order, top→bottom. **Presence rule:** a slot that
@@ -67,21 +155,36 @@ the panel never reshuffles between entity kinds.
    more", never 50 rows. *(Dan A1/A5.)*
 3. **Grow-to-max then inner-scroll for free text.** Long descriptions / notes grow to a max-height
    (~`40vh`) then scroll inside their own box — never push the panel. *(Dan A3.)*
-4. **Optional sticky section jump-nav.** When the body exceeds a height/section-count threshold, an
-   Airtable-style sticky sub-nav of section links may appear at the top of the body and scroll-jump to a
-   section. Fork — see the doc's open questions; ship only if it earns its keep. *(Dan A5.)*
+4. **Progressive section jump-nav — BUILT (2026-07-07).** An Airtable-style horizontal chip-strip of the
+   panel's section names, rendered as the **THIRD header row — inside `.ep-head`, ABOVE its border** (part
+   of the fixed header, so it stays put while the body scrolls), shown **only when the panel has ≥ 4
+   top-level sections** (progressive — shorter panels hide it). Each top-level section carries a stable
+   anchor id (`ep-sec-<slug>`) + a small `scroll-margin-top`; a chip click scrolls `.ep-body` (never the window) to that
+   section, and a scroll-spy (`IntersectionObserver` rooted on `.ep-body`, rebuilt every re-render) marks
+   the top-most visible section's chip `.is-active`. Selectors: `.ep-secnav` / `.ep-secnav-chip` /
+   `.is-active`. Storybook: [`panel-section-nav`]. Resolves the (b.4) fork's "ship only if it earns its
+   keep" — it does, gated behind the ≥ 4-section threshold. *(Dan A5.)*
 
 ---
 
 ## (c) Count-badge alignment + section-divider / heading rules
 
 - **Section heading:** uppercase label (`~11px`, weight 700, letter-spacing `.05em`, dimmed) — kept.
-- **Divider:** a hairline `1px` `var(--color-base-200)` rule separates adjacent top-level body sections
-  (today it is label-only spacing, which blends — Dan A2). Sub-items indent UNDER their parent section
-  and never sit at the parent's level (Dan A2 hierarchy bug).
-- **Count badge:** **right-aligned** to the trailing edge of the section header row, not inline 4px after
-  the label. "REFERENCES 2" must not read as "references to 2" (Dan A6). Same treatment for every
-  counted section (Relationships · Changelog · Documentation · Referenced by · Children · Options).
+- **Section separation:** adjacent top-level body sections are separated by **generous whitespace, NOT a
+  divider line** (Oleh 2026-07-06 — the hairline ladder got busy once panels grew many sections). Give each
+  section a comfortable top margin (~28px in EntityPanel; ≥24px elsewhere); no `border-top` rule. Sub-items
+  indent UNDER their parent section and never sit at the parent's level (Dan A2 hierarchy bug). *(This
+  supersedes the earlier hairline-divider decision; the row-list CONTAINER borders stay — those group data,
+  they are not section dividers.)*
+- **Count badge:** a small **catalog `badge`** (`badge-sm badge-neutral`) **pressed right after
+  the section name** (Oleh 2026-07-06 — a badge reads as a count and is easier to parse next to its label
+  than a far-right float; `badge-xs` is below our SM sizing floor so use `badge-sm`). Same treatment for every
+  counted section + Referenced-by group sub-header (Relationships · Changelog · Documentation · Referenced by ·
+  Children · Options · Formulas/Rollups/Lookups/Automations/Chats). *(Supersedes the earlier right-align
+  decision — the "references to 2" ambiguity is gone once it's a distinct badge pill.)*
+  **Show the badge only from 2 upward — suppress the lone "1"** (Oleh 2026-07-06): a count of 1 is self-evident
+  from the single row directly below, so a "1" badge is noise (and read as disabled/faint). Applies to both the
+  section badge and the Referenced-by group sub-headers.
 
 ---
 

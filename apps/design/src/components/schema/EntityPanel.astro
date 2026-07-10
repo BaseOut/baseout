@@ -15,6 +15,7 @@
  * section). Open from anywhere: `[data-entity-open="<id>"]` clicks, or
  * document.dispatchEvent(new CustomEvent('schema:openEntity', {detail:{id}})).
  */
+import EntitySearch from './EntitySearch.astro';
 import type { SchemaEntity, SchemaDoc } from './schemaEntities';
 import type { SchemaAutomation } from './SchemaAutomations.astro';
 import type { SchemaInterface } from './SchemaInterfaces.astro';
@@ -60,26 +61,85 @@ chatThreads.filter((t) => !t.archived).forEach((t) => {
 const entityChangelog = changelog.filter((c) => c.entityId);
 ---
 
-<div class="ep" data-entity-panel hidden>
-  <div class="ep-scrim" data-ep-close></div>
-  <aside class="ep-sheet" role="dialog" aria-modal="false" aria-label="Entity details">
+<div class="ep-wrap" data-ep-wrap hidden>
+  <div class="ep-cols" data-ep-row>
+    <div class="ep-rail" data-ep-rail hidden>
+      <button type="button" class="ep-shutter tooltip tooltip-right" data-ep-shutter aria-label="Drag to resize all panels" data-tip="Drag to resize all panels equally">
+        <span class="ep-shutter-pill" aria-hidden="true"></span>
+      </button>
+      <button type="button" class="btn btn-sm btn-primary btn-circle ep-rail-add tooltip tooltip-left" data-ep-add aria-label="Add a panel" data-tip="Add a panel to compare">
+        <span class="iconify lucide--plus size-4" aria-hidden="true"></span>
+      </button>
+      <span class="ep-rail-count" data-ep-count aria-hidden="true" hidden></span>
+    </div>
+  </div>
+  <!-- "Compare with…" picker (rail ＋): a scoped entity typeahead (reuses EntitySearch) + Suggested
+       defaults. Scoped to the focused panel's base by default; the scope pill toggles All bases. -->
+  <div class="ep-addpop" data-ep-addpop hidden>
+    <div class="ep-addpop-head">
+      <span class="ep-addpop-title">Add a panel to compare</span>
+      <button type="button" class="btn btn-sm btn-ghost ep-addscope" data-ep-scope>
+        <span class="iconify lucide--database size-3.5" aria-hidden="true"></span><span data-ep-scope-label>This base</span>
+      </button>
+    </div>
+    <div class="ep-addsearch"><EntitySearch index={index} name="ep-add" pickEvent="schema:pickAdd" placeholder="Compare with…" /></div>
+    <div class="ep-addsugg" data-ep-sugg></div>
+  </div>
+</div>
+
+  <!-- Undo toast (pattern-undo-toast): catalog toast + soft alert + ghost button, plus a countdown bar
+       that drains over the dismiss window. Bottom-centre on purpose — the panels' own ✕ live top-right.
+       OUTSIDE .ep-wrap: that wrapper is hidden when the last panel closes, which is exactly the moment
+       the Undo offer matters most. -->
+  <div class="ep-undo toast toast-bottom toast-center" data-ep-undo hidden>
+    <div class="alert alert-soft ep-undo-alert" role="status" aria-live="polite">
+      <span class="iconify lucide--rotate-ccw size-4" data-ep-undo-ic aria-hidden="true"></span>
+      <span data-ep-undo-label>Panel closed</span>
+      <button type="button" class="btn btn-sm btn-ghost" data-ep-undo-btn>Undo</button>
+      <span class="ep-undo-bar" data-ep-undo-bar aria-hidden="true"></span>
+    </div>
+  </div>
+
+<template data-ep-sheet-tpl>
+  <aside class="ep-sheet" data-entity-panel role="dialog" aria-modal="false" aria-label="Entity details">
+    <!-- Shown only while a reorder drag is live, and only on the anchor: an opaque scrim that says why
+         this panel refuses the drop. Decorative for AT — the drag is a pointer-only affordance. -->
+    <div class="ep-lock" aria-hidden="true">
+      <span class="iconify lucide--lock size-5" aria-hidden="true"></span>
+      <span class="ep-lock-title">Docked to the table</span>
+      <span class="ep-lock-sub">This panel can’t be reordered</span>
+    </div>
+    <div class="ep-grip" data-ep-grip><span class="ep-grip-line" aria-hidden="true"></span></div>
     <header class="ep-head">
-      <button type="button" class="btn btn-sm btn-ghost btn-square ep-back" data-ep-back aria-label="Back" hidden>
-        <span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span>
-      </button>
-      <nav class="ep-crumbs" data-ep-crumbs aria-label="Breadcrumb"></nav>
-      <button type="button" class="btn btn-sm btn-ghost btn-square ep-expand tooltip tooltip-bottom" data-ep-expand aria-label="Expand panel" data-tip="Expand panel">
-        <span class="iconify lucide--maximize-2 size-4" data-ep-expand-ic aria-hidden="true"></span>
-      </button>
-      <button type="button" class="btn btn-sm btn-ghost btn-square ep-x" data-ep-close aria-label="Close">
-        <span class="iconify lucide--x size-4" aria-hidden="true"></span>
-      </button>
+      <div class="ep-head-row">
+        <button type="button" class="btn btn-sm btn-ghost btn-square ep-reorder tooltip tooltip-bottom" data-ep-reorder aria-label="Drag to reorder" data-tip="Drag to reorder">
+          <span class="iconify lucide--grip-vertical size-4" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square ep-back" data-ep-back aria-label="Back" hidden>
+          <span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span>
+        </button>
+        <span class="ep-head-ic" data-ep-head-ic aria-hidden="true"></span>
+        <div class="ep-head-title" data-ep-head-title></div>
+        <!-- tooltip-LEFT, not bottom: this button sits near the right edge, and a bottom-centred bubble
+             runs off-screen whenever the panel hugs the viewport. Left grows inward, never past the edge. -->
+        <button type="button" class="btn btn-sm btn-soft btn-primary ep-detach tooltip tooltip-left" data-ep-detach data-tip="Make this a panel of your own, and free the slot by the table">
+          Detach
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square ep-park tooltip tooltip-left" data-ep-park aria-label="Park to a rail" data-tip="Park to a rail">
+          <span class="iconify lucide--chevrons-left size-4" aria-hidden="true"></span>
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square ep-x tooltip tooltip-left" data-ep-close aria-label="Close" data-tip="Close">
+          <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+        </button>
+      </div>
+      <nav class="ep-crumbs sb-crumb-row" data-ep-crumbs aria-label="Breadcrumb" hidden></nav>
+      <nav class="ep-secnav" data-ep-secnav-rail aria-label="Sections" hidden></nav>
     </header>
     <div class="ep-body" data-ep-body></div>
     <div class="sr-only" aria-live="polite" data-ep-live></div>
     <div class="ep-toast" data-ep-toast role="status" hidden></div>
   </aside>
-</div>
+</template>
 
 <script
   type="application/json"
@@ -99,34 +159,133 @@ const entityChangelog = changelog.filter((c) => c.entityId);
 <style is:global>
   /* Global: the panel body is rendered at runtime via innerHTML, so scoped styles
      would not reach it. Classes are uniquely .ep- prefixed; the panel is schema-only. */
-  .ep { position: fixed; inset: 0; z-index: 60; }
-  .ep[hidden] { display: none; }
-  .ep-scrim { position: absolute; inset: 0; background: oklch(0 0 0 / .28); opacity: 0; transition: opacity .18s ease; }
-  .ep.ep-in .ep-scrim { opacity: 1; }
+  /* Multi-panel (pattern-multi-panel-drawer): a NON-MODAL, right-anchored region holding a flex row
+     of up to two panels (anchor + focus). No scrim — the container passes pointer events through so
+     the table behind stays clickable; only the sheets themselves capture pointer events. */
+  .ep-wrap { position: fixed; top: 0; right: 0; bottom: 0; z-index: 60; pointer-events: none; }
+  .ep-wrap[hidden] { display: none; }
+  /* Undo toast (pattern-undo-toast) — catalog toast + alert + button. The only bespoke part is the
+     countdown bar: daisyUI has no draining timer. It animates a TRANSFORM (scaleX 1→0 from the left
+     edge), so the right edge walks leftwards without ever reflowing the alert. `--ep-undo-ms` is the
+     single source of truth for both the animation and the JS dismiss timer. */
+  .ep-undo { z-index: 70; pointer-events: auto; }
+  .ep-undo[hidden] { display: none; }
+  .ep-undo-alert { position: relative; overflow: hidden; gap: 8px; white-space: nowrap; box-shadow: 0 8px 24px oklch(0 0 0 / .22); }
+  .ep-undo-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--color-primary); transform-origin: left center; transform: scaleX(0); }
+  /* The bar is a DEADLINE, so it only appears when the toast offers an action. A statement of fact
+     ("opened as a strip") has nothing to be late for; a draining bar there would promise a choice that
+     doesn't exist. Two kinds of toast, one surface. */
+  .ep-undo:not(.ep-undo-actionable) .ep-undo-bar { display: none; }
+  .ep-undo.ep-undo-run.ep-undo-actionable .ep-undo-bar { animation: ep-undo-count var(--ep-undo-ms, 4000ms) linear forwards; }
+  @keyframes ep-undo-count { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  @media (prefers-reduced-motion: reduce) { .ep-undo.ep-undo-run .ep-undo-bar { animation: none; transform: scaleX(1); } }
+  /* .ep-cols (NOT .ep-row — that class is the entity data-row and carries gap/padding). */
+  .ep-cols { display: flex; height: 100%; justify-content: flex-end; align-items: stretch; }
   .ep-sheet {
-    position: absolute; top: 0; right: 0; height: 100%;
-    width: min(94vw, 460px); display: flex; flex-direction: column;
+    position: relative; height: 100%; flex: none;
+    width: var(--ep-w, min(94vw, 30rem)); display: flex; flex-direction: column;
     background: var(--color-base-100); border-left: 1px solid var(--color-base-300);
-    box-shadow: -12px 0 40px oklch(0 0 0 / .16);
     transform: translateX(100%); transition: transform .22s cubic-bezier(.22,1,.36,1);
+    pointer-events: auto;
   }
-  .ep.ep-in .ep-sheet { transform: translateX(0); }
-  /* A7 — expand the panel for reviewing a lot of data (toggle in the header). */
-  .ep.ep-wide .ep-sheet { width: min(96vw, 900px); }
+  .ep-sheet[hidden] { display: none; }
+  .ep-sheet.ep-in { transform: translateX(0); }
+  /* The panels are PEERS: coplanar, separated by a hairline, never stacked. Only the leftmost casts a
+     shadow — onto the table it floats over. A per-panel shadow made each sheet look layered under its
+     right-hand neighbour (loud in the light theme) and implied a hierarchy that does not exist. */
+  .ep-sheet:first-of-type { box-shadow: -12px 0 40px oklch(0 0 0 / .16); }
+  /* No hover lift. The header tooltips that used to be clipped by the next panel now open LEFTWARDS
+     (tooltip-left), i.e. over an EARLIER sibling, which paints below them anyway. Raising the whole
+     sheet on hover was solving a problem that no longer exists — and it made the leftmost panel jump
+     above its neighbour, dragging its shadow with it. */
+  /* Resize handle (macOS-style): the full-height EDGE LINE — drag it to resize THIS panel alone
+     (it turns primary on hover) — plus a centered capsule GRABBER for resizing BOTH at once (drag =
+     scale the pair proportionally · click = even them 50/50). The grabber only appears when two
+     panels are open. */
+  .ep-grip { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 3; }
+  .ep-grip-line { position: absolute; left: 3px; top: 0; bottom: 0; width: 2px; background: transparent; transition: background-color .12s ease; pointer-events: none; }
+  .ep-grip:hover .ep-grip-line, .ep-grip.ep-grip-on .ep-grip-line { background: oklch(from var(--color-primary) l c h / .7); }
+  /* Collapse-to-rail (pattern-panel-collapse-rail): a parked panel becomes a ~46px vertical strip —
+     ✕ (top) · icon tile · rotated name. Click the strip to expand; the ✕ closes. Also the overflow
+     state of the auto-accordion (pattern-panel-accordion). */
+  .ep-sheet.ep-collapsed { width: 46px !important; min-width: 46px; cursor: pointer; }
+  .ep-sheet.ep-collapsed .ep-body,
+  .ep-sheet.ep-collapsed .ep-crumbs,
+  .ep-sheet.ep-collapsed .ep-secnav,
+  .ep-sheet.ep-collapsed .ep-grip,
+  .ep-sheet.ep-collapsed .ep-back,
+  .ep-sheet.ep-collapsed .ep-reorder,
+  .ep-sheet.ep-collapsed .ep-park { display: none !important; }
+  /* Reorder handle (pattern-panel-reorder): a ⠿ grip, quiet until header-hover; drag live-swaps the
+     panel order. The dragged sheet gets a dashed accent outline. */
+  .ep-reorder { cursor: grab; opacity: .35; transition: opacity .12s ease; }
+  .ep-head-row:hover .ep-reorder { opacity: .8; }
+  .ep-reorder:hover { opacity: 1; }
+  .ep-reorder.ep-grip-on { cursor: grabbing; }
+  /* The dragged sheet stays OPAQUE. `opacity` here used to let the Browse table bleed through it, since
+     the drawer is non-modal and sits over the table. Lift it instead: dashed accent outline + shadow. */
+  .ep-sheet.ep-dragging { outline: 2px dashed var(--color-primary); outline-offset: -2px; z-index: 5;
+    box-shadow: 0 12px 32px oklch(0 0 0 / .35); }
+  /* While a reorder drag is live, the anchor visibly withdraws: it is not a drop target and never moves.
+     Implemented as an OPAQUE scrim INSIDE the sheet — never `opacity` on the sheet itself, which would
+     make the whole panel translucent and let the Browse table show through it (the drawer is non-modal
+     and sits over the table). The scrim also swallows the pointer, so the cursor reads not-allowed.
+     Shown only for the duration of the gesture: dimmed at rest would say "disabled", and the anchor is
+     fully interactive. */
+  .ep-lock { display: none; }
+  .ep-cols.ep-reordering .ep-sheet.ep-anchor .ep-lock {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    position: absolute; inset: 0; z-index: 6; cursor: not-allowed; text-align: center; padding: 16px;
+    background: oklch(from var(--color-base-100) l c h / .88);
+    color: oklch(from var(--color-base-content) l c h / .6);
+    animation: ep-scrim-in .12s ease;
+  }
+  .ep-lock-title { font-size: 14px; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .8); }
+  .ep-lock-sub { font-size: 12px; }
+  @keyframes ep-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+  .ep-sheet.ep-collapsed .ep-head { padding: 8px 0; height: 100%; border-bottom: 0; }
+  .ep-sheet.ep-collapsed .ep-head-row { flex-direction: column; align-items: center; gap: 12px; height: 100%; min-height: 0; }
+  .ep-sheet.ep-collapsed .ep-x { order: -1; }
+  .ep-sheet.ep-collapsed .ep-head-title { display: block; flex: 0 1 auto; writing-mode: vertical-rl; transform: rotate(180deg); overflow: hidden; max-height: 100%; }
+  .ep-sheet.ep-collapsed .ep-head-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-height: 100%; }
+  /* A parked strip rotates its title into a vertical writing mode, which drags any sibling badge
+     ("Primary") into the same text flow — it lands on top of the name, and at 46px it is unreadable
+     anyway. The strip carries identity only: icon + name. The badge returns when the panel expands. */
+  .ep-sheet.ep-collapsed .ep-head-title .badge { display: none; }
+  /* Mobile: one full-width column. When a focus panel is open it takes the screen and the anchor
+     tucks away (Back from an exhausted focus reveals the anchor again). */
+  @media (max-width: 899.98px) {
+    .ep-sheet { --ep-w: 94vw; }
+    .ep-grip { display: none; }
+    .ep-shutter { display: none; }
+  }
 
-  .ep-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--color-base-300); min-height: 48px; }
-  .ep-crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; overflow: hidden; font-size: 12.5px; }
-  .ep-crumb { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px; color: var(--color-base-content); opacity: .55; white-space: nowrap; cursor: pointer; background: none; border: 0; font: inherit; }
-  .ep-crumb:hover { opacity: 1; background: var(--color-base-200); }
-  .ep-crumb.ep-crumb-last { opacity: 1; font-weight: 600; cursor: default; }
-  .ep-crumb.ep-crumb-last:hover { background: none; }
-  .ep-crumb-sep { opacity: .35; flex: none; }
-  .ep-crumb-ellipsis { opacity: .55; padding: 0 2px; flex: none; }
+  /* Drawer canon v2: two-row header — icon tile + dynamic title on top, ancestor crumbs below. */
+  .ep-head { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--color-base-300); }
+  .ep-head-row { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+  .ep-head-ic { width: 2rem; height: 2rem; border-radius: .55rem; flex: none; display: grid; place-items: center; background: var(--color-base-200); }
+  .ep-head-ic .iconify { font-size: 1rem; opacity: .8; }
+  .ep-head-ic svg { width: 17px; height: 17px; opacity: .8; }
+  .ep-head-ic:empty { display: none; }
+  .ep-head-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 650; letter-spacing: -0.15px; line-height: 1.2; }
+  .ep-head-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Crumb-segment styling comes from the shared .sb-crumb* (styles/global.css); .ep-crumbs keeps
+     only the row's layout + hide rule. */
+  .ep-crumbs { min-width: 0; overflow: hidden; }
+  .ep-crumbs[hidden] { display: none; }
 
   .ep-body { flex: 1; overflow-y: auto; padding: 16px 20px 24px; }
+  /* Slim, calm scrollbar: a low-alpha thumb over a transparent track, brighter on hover. The
+     transparent border + background-clip insets the thumb so it reads as a thin floating bar rather
+     than a heavy bright rail. Token colours so it holds in both themes. */
+  .ep-body, .ep-desc-v { scrollbar-width: thin; scrollbar-color: oklch(from var(--color-base-content) l c h / .2) transparent; }
+  .ep-body::-webkit-scrollbar, .ep-desc-v::-webkit-scrollbar { width: 10px; }
+  .ep-body::-webkit-scrollbar-track, .ep-desc-v::-webkit-scrollbar-track { background: transparent; }
+  .ep-body::-webkit-scrollbar-thumb, .ep-desc-v::-webkit-scrollbar-thumb { background: oklch(from var(--color-base-content) l c h / .18); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+  .ep-body::-webkit-scrollbar-thumb:hover, .ep-desc-v::-webkit-scrollbar-thumb:hover { background: oklch(from var(--color-base-content) l c h / .38); background-clip: padding-box; }
   .ep-body.ep-swap { animation: epslide .2s cubic-bezier(.22,1,.36,1); }
   @keyframes epslide { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: translateX(0); } }
-  @media (prefers-reduced-motion: reduce) { .ep-sheet, .ep-scrim { transition: none; } .ep-body.ep-swap { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .ep-sheet { transition: none; } .ep-body.ep-swap { animation: none; } }
 
   /* Context header */
   .ep-title { display: flex; align-items: flex-start; gap: 12px; }
@@ -135,11 +294,16 @@ const entityChangelog = changelog.filter((c) => c.entityId);
   .ep-title-ic svg { width: 17px; height: 17px; opacity: .85; }
   .ep-title-main { min-width: 0; flex: 1; }
   .ep-title-name { font-size: 16px; font-weight: 650; line-height: 1.25; word-break: break-word; }
-  .ep-title-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .6); }
+  .ep-title-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .65); }
+  .ep-body-meta { margin-top: 0; }
+  /* "View in Airtable" sits under the identity meta line, not welded to it. */
+  .ep-viewat { margin-top: 12px; }
   /* Health as an inline chip in the identity line (replaces the old full-width Health card). */
   .ep-meta-sep { opacity: .4; }
   .ep-meta-health { display: inline-flex; align-items: center; gap: 4px; font-weight: 550; color: oklch(from var(--color-base-content) l c h / .85); }
-  .ep-meta-fresh { opacity: .85; }
+  /* Freshness ("as of last backup") is a trust signal — it inherits the identity meta's .65
+     alpha rather than dimming further, so it stays legible next to its siblings. */
+  .ep-meta-fresh { }
 
   /* Metric tiles — the same bordered strip + dashed dividers as the Home KPI tiles
      (.hm-kpis), so the panel reads as part of the system, not a bare text row. */
@@ -158,10 +322,36 @@ const entityChangelog = changelog.filter((c) => c.entityId);
 
   /* Sections */
   /* Canon (c): hairline divider between top-level sections + right-aligned count badge. */
-  .ep-sec { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--color-base-300); }
+  /* Sections are separated by whitespace, not a divider line (Oleh: the hairline ladder got busy
+     once panels grew many sections). More air, no rule. */
+  .ep-sec { margin-top: 28px; scroll-margin-top: 8px; }
+
+  /* Progressive in-panel section-nav (pattern panel-section-nav): a chip-strip of the panel's section
+     anchors, rendered as the THIRD header row — inside .ep-head, ABOVE the header's border (part of the
+     fixed header) — ONLY on a genuinely LONG panel (a large formula / long paragraph). Chips are daisyUI
+     SOFT badges (so they don't read like the bordered entity-chips / content pills); the active one goes
+     solid (badge-soft toggled off by the scroll-spy). A chip click scrolls .ep-body to that section. */
+  .ep-secnav {
+    display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none;
+  }
+  .ep-secnav[hidden] { display: none; }
+  .ep-secnav::-webkit-scrollbar { display: none; }
+  /* When the strip overflows, fade both edges so it's obvious it scrolls horizontally. */
+  .ep-secnav.ep-secnav-scroll { -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent); mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent); } /* ds-ok: black is a mask alpha stop, not a visible colour */
+  /* Legible jump-nav pills — the old soft badges read too faintly in dark mode. Inactive = a clear muted
+     label; hover = base-200 fill; active = a primary-tinted pill with primary text. */
+  .ep-secnav-chip {
+    flex: none; white-space: nowrap; cursor: pointer; appearance: none; border: 0; background: transparent;
+    padding: 4px 8px; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 550; line-height: 1.4;
+    color: oklch(from var(--color-base-content) l c h / .68); transition: background-color .12s ease, color .12s ease;
+  }
+  .ep-secnav-chip:hover { background: var(--color-base-200); color: var(--color-base-content); }
+  .ep-secnav-chip.is-active { background: color-mix(in oklch, var(--color-primary) 16%, transparent); color: var(--color-primary); font-weight: 650; }
+  .ep-secnav-chip:focus-visible { outline: 2px solid oklch(from var(--color-primary) l c h / .5); outline-offset: 1px; }
   .ep-sec-h { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .5); margin-bottom: 8px; }
   .ep-sec-ic { flex: none; opacity: .85; }
-  .ep-sec-h .ep-sec-n { font-weight: 600; opacity: .7; margin-left: auto; }
+  /* Count = a catalog badge pressed right after the section name (Oleh) — not a far-right float. */
+  .ep-sec-h .ep-sec-n { text-transform: none; letter-spacing: normal; }
   /* B8 — the "Referenced by" section groups its rows by kind (Automations · Interfaces · Formulas ·
      Rollups · Lookups · Docs · Chats). Each group's SUB-header carries its kind concept-icon as the
      group signifier (the sanctioned exception to "sub-labels get no icon" — documented in the
@@ -170,11 +360,13 @@ const entityChangelog = changelog.filter((c) => c.entityId);
   .ep-refgrp:first-child { margin-top: 0; }
   .ep-refgrp-h { display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .5); margin: 0 0 4px; }
   .ep-refgrp-ic { flex: none; opacity: .7; }
-  .ep-refgrp-n { font-weight: 600; opacity: .7; margin-left: auto; }
+  .ep-refgrp-n { text-transform: none; letter-spacing: normal; }
   /* Canon (b): "+N more" INLINE disclosure — expands the rest in place inside the panel body
      (a floating popover escapes a scroll-owning panel). Native <details>, marker hidden. */
-  .ep-more { margin-top: 2px; }
-  .ep-more-sum { list-style: none; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; padding: 4px 8px; font-size: 13px; font-weight: 500; color: var(--color-primary); border-radius: 8px; }
+  /* "+N more" toggle now lives INSIDE the row-list container (see capRows) — flush, full-width,
+     reads as a final row separated by the same hairline. */
+  .ep-more { margin: 0; }
+  .ep-more-sum { list-style: none; display: flex; align-items: center; gap: 4px; cursor: pointer; padding: 8px 12px; font-size: 13px; font-weight: 500; color: var(--color-primary); border-radius: 0; }
   .ep-more-sum::-webkit-details-marker { display: none; }
   .ep-more-sum:hover { background: var(--color-base-200); }
   .ep-more-chev { transition: transform .15s ease; }
@@ -185,9 +377,29 @@ const entityChangelog = changelog.filter((c) => c.entityId);
   .ep-desc-v.ep-empty { color: oklch(from var(--color-base-content) l c h / .42); font-style: italic; }
 
   /* child / relation rows */
-  .ep-rows { display: flex; flex-direction: column; gap: 2px; }
-  .ep-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; cursor: pointer; border: 0; background: none; width: 100%; text-align: left; font: inherit; }
+  /* Row-list container (pattern-detail-panel canon): every data-row list sits in ONE bordered,
+     faintly-tinted rounded box so a lone 1–2-row list reads as a grouped surface, not floating
+     text. Rows touch and are split by a 1px base-200 hairline; the box clips the first/last row's
+     hover corner. Same container language as the .ep-stats metric strip + description box. */
+  .ep-rows { display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: 11px; background: color-mix(in oklch, var(--color-base-200) 45%, transparent); overflow: hidden; }
+  .ep-rows .ep-row:not(:first-child), .ep-rows .ep-more { border-top: 1px solid var(--color-base-200); }
+  .ep-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 0; cursor: pointer; border: 0; background: none; width: 100%; text-align: left; font: inherit; }
   .ep-row:hover { background: var(--color-base-200); }
+  /* hover "open beside" ⧉ — a sibling button overlaying the row's right edge (revealed on row hover) */
+  .ep-rowwrap { position: relative; }
+  /* ⧉ open-beside occupies the same spot as the row's trailing meta (type · dir · health dot), so the
+     two SWAP rather than overlap: as a transparent ghost the label read straight through it, and merely
+     making it opaque just chopped the label against its edge. On hover the meta fades out, the button
+     fades in. It carries a base-100 fill + hairline so it reads as a control on the hovered base-200 row. */
+  .ep-beside { position: absolute; right: 28px; top: 50%; transform: translateY(-50%); opacity: 0; transition: opacity .1s; z-index: 2;
+    background: var(--color-base-100); border: 1px solid var(--color-base-300); }
+  .ep-rowwrap:hover .ep-beside, .ep-beside:focus-visible { opacity: 1; }
+  .ep-beside:hover { color: var(--color-primary); background: var(--color-base-200); }
+  .ep-rowwrap:hover .ep-row-type,
+  .ep-rowwrap:hover .ep-rel-dir,
+  .ep-rowwrap:hover .ep-dot { opacity: 0; transition: opacity .1s; }
+  /* …but the primary marker lives inside the NAME, not the trailing meta — it must stay put. */
+  .ep-rowwrap:hover .ep-row-name .ep-row-type { opacity: 1; }
   .ep-row-ic { width: 18px; flex: none; display: grid; place-items: center; }
   .ep-row-ic svg { width: 15px; height: 15px; opacity: .8; }
   .ep-row-ic .iconify { font-size: .9rem; opacity: .75; }
@@ -196,9 +408,17 @@ const entityChangelog = changelog.filter((c) => c.entityId);
   .ep-row-kind { font-size: 11px; color: oklch(from var(--color-base-content) l c h / .5); flex: none; margin-left: auto; }
   .ep-row-chev { opacity: .35; flex: none; }
   .ep-row:hover .ep-row-chev { opacity: .7; }
+  /* Master-detail selection: the anchor row whose child is open on the right stays SELECTED — a soft
+     primary tint + a primary chevron + a slightly bolder name, so "the right panel = THIS row expanded"
+     reads at a glance (Finder-column / list-detail convention). No side-stripe (banned): the fill + the
+     chevron carry it. */
+  .ep-row-active, .ep-row-active:hover { background: color-mix(in oklch, var(--color-primary) 14%, transparent); }
+  .ep-row-active .ep-row-chev { opacity: 1; color: var(--color-primary); }
+  .ep-row-active .ep-row-name { font-weight: 650; }
   .ep-rel-dir { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .45); flex: none; }
 
-  .ep-options { display: flex; flex-wrap: wrap; gap: 8px; }
+  /* Options chips share the same row-list container so a short option set reads as a group. */
+  .ep-options { display: flex; flex-wrap: wrap; gap: 8px; border: 1px solid var(--color-base-300); border-radius: 11px; background: color-mix(in oklch, var(--color-base-200) 45%, transparent); padding: 12px; }
   .ep-empty-note { font-size: 12.5px; color: oklch(from var(--color-base-content) l c h / .5); }
   .ep-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 
@@ -281,26 +501,94 @@ const entityChangelog = changelog.filter((c) => c.entityId);
   .ep-rel-back { margin-top: 8px; }
 
   /* C4 — per-entity changelog section */
-  .ep-cl { display: flex; flex-direction: column; gap: 8px; }
-  .ep-cl-row { border: 1px solid var(--color-base-300); border-radius: 9px; padding: 8px 12px; }
+  /* Changelog = the same row-list container (one box, hairline-split rows) rather than a stack of
+     per-row cards, so it reads consistently with References / Fields / Relationships. */
+  .ep-cl { display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: 11px; background: color-mix(in oklch, var(--color-base-200) 45%, transparent); overflow: hidden; }
+  .ep-cl-row { padding: 12px; }
+  .ep-cl-row + .ep-cl-row { border-top: 1px solid var(--color-base-200); }
   .ep-cl-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
   .ep-cl-date { font-size: 11.5px; color: oklch(from var(--color-base-content) l c h / .5); font-variant-numeric: tabular-nums; }
   .ep-cl-sum { font-size: 13px; line-height: 1.45; }
   .ep-cl-delta { font-size: 12px; }
   .ep-cl-before { color: oklch(from var(--color-base-content) l c h / .5); text-decoration: line-through; }
   .ep-cl-after { font-weight: 600; }
+
+  /* Independent-panels redesign (pattern-multi-panel-drawer) — a left control RAIL rides the left edge
+     of the leftmost panel (shutter + ＋ add + open-count); a transient PREVIEW bar (catalog soft alert)
+     explains a preview panel + offers Pin. */
+  /* Shutter: a pill on the stack's outer edge. Dragging it resizes ALL expanded panels together and
+     equalizes them to one width — drag left to grow the stack, right to shrink it. Per-panel widths
+     still live on each panel's own .ep-grip. */
+  .ep-shutter { position: absolute; left: -13px; top: 50%; transform: translateY(-50%); width: 16px; height: 56px; display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: ew-resize; z-index: 3; touch-action: none; }
+  .ep-shutter-pill { width: 4px; height: 40px; border-radius: 999px; background: oklch(from var(--color-base-content) l c h / .28); transition: background-color .12s ease, height .12s ease; }
+  .ep-shutter:hover .ep-shutter-pill,
+  .ep-shutter:focus-visible .ep-shutter-pill,
+  .ep-shutter.ep-shutter-on .ep-shutter-pill { background: oklch(from var(--color-primary) l c h / .8); height: 56px; }
+  /* The rail is a zero-width anchor, not a surface: its controls float on the leftmost drawer's edge,
+     so the drawers keep every pixel of width (there is no translucent column any more). */
+  .ep-rail { position: relative; flex: none; align-self: stretch; width: 0; pointer-events: none; }
+  .ep-rail > * { pointer-events: auto; }
+  .ep-rail[hidden] { display: none; }
+  /* Centred on the header's title row: .ep-head has 12px of top padding and the row is 32px, so the
+     row's centre sits 28px down; a 32px button at top:12px lands on it. (It used to sit at 56px to
+     clear the preview bar — that bar left with the preview/pin model.) */
+  .ep-rail-add { position: absolute; top: 12px; left: -16px; z-index: 4; box-shadow: 0 4px 12px oklch(0 0 0 / .28); }
+  .ep-rail-count { position: absolute; top: 52px; left: -16px; width: 32px; text-align: center; font-size: 11px; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .5); font-variant-numeric: tabular-nums; }
+  .ep-rail-count[hidden] { display: none; }
+  /* "Compare with…" picker popover (rail ＋) */
+  .ep-addpop { position: fixed; z-index: 60; width: 320px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: var(--radius-box, .9rem); box-shadow: 0 12px 40px oklch(0 0 0 / .22); padding: 12px; display: flex; flex-direction: column; gap: 8px; pointer-events: auto; }
+  .ep-addpop[hidden] { display: none; }
+  .ep-addpop-head { display: flex; align-items: center; gap: 8px; }
+  .ep-addpop-title { font-size: 12px; font-weight: 600; }
+  .ep-addscope { margin-left: auto; gap: 4px; }
+  .ep-addsugg { display: flex; flex-direction: column; }
+  .ep-addsugg:empty { display: none; }
+  .ep-sugg-lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .45; padding: 4px 8px; }
+  .ep-sugg-row { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 8px; cursor: pointer; border: 0; background: none; width: 100%; text-align: left; font: inherit; font-size: 13px; }
+  .ep-sugg-row:hover { background: var(--color-base-200); }
+  .ep-sugg-row .ep-sugg-meta { margin-left: auto; font-size: 11px; opacity: .5; }
+  /* The ANCHOR slot. The panel nearest the table is docked to it: every plain row click lands in THAT
+     panel and in no other, even when focus sits elsewhere. Transience is encoded by POSITION, not by a
+     badge — no preview chip, no italic title, no Pin.
+     The header — the surface you would drag a panel by — is HATCHED to say "this bar does not move".
+     Deliberately NOT an accent left border: that pixel already belongs to .ep-grip, whose hover state
+     is the same primary colour, so a static line there would contradict the resize affordance.
+     The hatch is barely-there on purpose: it must read as "fixed", never as "disabled" — the panel
+     below it stays fully interactive. Detach frees the slot; a non-anchor panel keeps its drag grip. */
+  .ep-sheet:not(.ep-anchor) .ep-detach,
+  .ep-sheet.ep-anchor .ep-reorder,
+  .ep-sheet.ep-collapsed .ep-detach,
+  .ep-sheet.ep-collapsed .ep-lock { display: none !important; }
+  .ep-sheet.ep-anchor .ep-head {
+    background-color: oklch(from var(--color-base-200) l c h / .5);
+    background-image: repeating-linear-gradient(-45deg,
+      transparent 0 5px,
+      oklch(from var(--color-base-content) l c h / .045) 5px 6px);
+    /* An accent line ALONG THE TOP closes the hatched zone. Drawn as an inset shadow, not a border-top,
+       so the header keeps its height. The panel's LEFT edge stays free — it belongs to .ep-grip. */
+    box-shadow: inset 0 2px 0 var(--color-primary);
+  }
+  .ep-detach { flex: none; }
 </style>
 
 <script>
   import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
   import { fieldTypeLabel, tableRelationships, type SchemaEntity } from './schemaEntities';
+  import { locationCrumbs } from './locationCrumbs';
 
   type DocRef = { id: string; title: string };
 
-  function wireEntityPanel() {
-    const root = document.querySelector<HTMLElement>('[data-entity-panel]');
-    if (!root || root.dataset.epWired) return;
-    root.dataset.epWired = '1';
+  // Per-panel factory (pattern-multi-panel-drawer). Each call wires ONE .ep-sheet into a fully
+  // independent panel (own stack, own description-edit state, own DOM). The controller below
+  // (wireEntityPanel) creates two — anchor + focus — and routes drills/close/back between them.
+  // opts.onDrill/onClose/onCloseAll/onExhaustedBack hand control back to the controller so a click
+  // in one panel can spawn/replace/close the other. Rendering + description logic are unchanged.
+  type PanelOpts = { role: 'anchor' | 'focus'; onDrill?: (id: string) => void; onOpenBeside: (id: string) => void; onClose: () => void; onCloseAll: () => void; onExhaustedBack: () => void };
+  function makePanel(root: HTMLElement, opts: PanelOpts) {
+    let panelActive = false;
+    // Master-detail: the id of the reference row (in THIS panel) whose child is open on the right — that
+    // row is kept SELECTED (.ep-row-active) so the pair reads as parent → child. Re-applied every render.
+    let activeChildId: string | null = null;
 
     const indexEl = document.querySelector('[data-ep-index]');
     const docsEl = document.querySelector('[data-ep-docs]');
@@ -318,6 +606,12 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     const chatRefsEl = document.querySelector('[data-ep-chatrefs]');
     const chatRefsByEntity: Record<string, { id: string; title: string }[]> = chatRefsEl ? JSON.parse(chatRefsEl.textContent || '{}') : {};
     const byId = new Map(index.map((e) => [e.id, e]));
+    // Space level: a synthetic top entity whose children are the bases, so a panel can drill
+    // Space→Base→Table→Field. Panel-local only (NOT added to the shared index → Browse / typeahead /
+    // other tabs stay untouched).
+    const SPACE_ID = '__ep_space__';
+    const spaceBases = index.filter((e) => e.kind === 'base');
+    if (spaceBases.length) byId.set(SPACE_ID, { id: SPACE_ID, kind: 'space', name: 'Space', baseId: SPACE_ID, baseName: 'Space', health: 'green', hasDescription: false, childIds: spaceBases.map((b) => b.id) } as SchemaEntity);
 
     // B3/B8 — the REVERSE reference graph, inverted from the forward field config carried in
     // `index`. PRODUCTION / ENGINE NOTE: Airtable's meta API returns only the FORWARD config
@@ -339,7 +633,11 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     const body = root.querySelector<HTMLElement>('[data-ep-body]')!;
     const crumbsEl = root.querySelector<HTMLElement>('[data-ep-crumbs]')!;
     const backBtn = root.querySelector<HTMLElement>('[data-ep-back]')!;
+    const headIcEl = root.querySelector<HTMLElement>('[data-ep-head-ic]')!;
+    const headTitleEl = root.querySelector<HTMLElement>('[data-ep-head-title]')!;
     let stack: string[] = [];
+    // Scroll-spy observer for the progressive section-nav; rebuilt on every body re-render.
+    let secNavOff: (() => void) | null = null;
 
     // Description lifecycle — fake (no backend in ui-only). `descStates` is a per-entity
     // overlay that survives re-renders: `airtable` = the locally-held copy, `synced` = what
@@ -426,7 +724,8 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       return k ? `<svg viewBox="0 0 16 16" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '<span class="iconify lucide--circle size-3.5"></span>';
     };
     const kindIcon = (e: SchemaEntity) =>
-      e.kind === 'base' ? '<span class="iconify lucide--database concept-ic-base"></span>'
+      e.kind === 'space' ? '<span class="iconify lucide--layers"></span>'
+      : e.kind === 'base' ? '<span class="iconify lucide--database concept-ic-base"></span>'
       : e.kind === 'table' ? '<span class="iconify lucide--table-2"></span>'
       : fieldIcon(e.fieldType);
     const healthLabel = (h: string) => (h === 'green' ? 'Healthy' : h === 'red' ? 'Needs attention' : 'Could improve');
@@ -435,12 +734,16 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       const type = e.kind === 'field' ? `<span class="ep-row-type">${esc(fieldTypeLabel(e.fieldType))}</span>` : '';
       const dirLabel = dir ? `<span class="ep-rel-dir">${dir}</span>` : '';
       const draft = hasDraft(e) ? '<span class="badge badge-sm badge-warning badge-soft ep-row-draft tooltip tooltip-left" data-tip="Unpublished description change">Draft</span>' : '';
-      return `<button type="button" class="ep-row" data-ep-push="${e.id}">
+      // Wrapper so the hover "open beside" ⧉ can be a SIBLING button (can't nest a <button> in the row <button>).
+      return `<div class="ep-rowwrap">
+        <button type="button" class="ep-row" data-ep-push="${e.id}">
         <span class="ep-row-ic">${kindIcon(e)}</span>
         <span class="ep-row-name">${esc(e.name)}${e.isPrimary ? ' <span class="ep-row-type">· primary</span>' : ''}</span>
         ${type}${dirLabel}${draft}${dot(e.health)}
         <span class="iconify lucide--chevron-right size-3.5 ep-row-chev"></span>
-      </button>`;
+      </button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square ep-beside tooltip tooltip-left" data-ep-beside="${e.id}" aria-label="Open beside" data-tip="Open beside · ⌘/Ctrl-click"><span class="iconify lucide--columns-2 size-4" aria-hidden="true"></span></button>
+      </div>`;
     }
 
     // Canon (c) hierarchy: a top-level section header carries a quiet grey concept icon (the SAME
@@ -454,10 +757,20 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       Options: 'lucide--list', Changelog: 'lucide--history',
       Documentation: 'lucide--book-text', 'Referenced by': 'lucide--link',
     };
+    // Collected in render order so the section-nav chip strip always matches the body (reset at
+    // the top of renderBody). Label = the title text before any trailing badge HTML; slug = a
+    // stable anchor id. Section titles are unique within one panel, so slugs don't collide.
+    let secList: { slug: string; label: string }[] = [];
     function section(title: string, count: number | null, inner: string) {
+      const label = title.split('<')[0].trim();
+      const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+      secList.push({ slug, label });
       const ic = SECTION_ICON[title];
       const icHtml = ic ? `<span class="iconify ${ic} size-3.5 ep-sec-ic" aria-hidden="true"></span>` : '';
-      return `<div class="ep-sec"><div class="ep-sec-h">${icHtml}${title}${count !== null ? `<span class="ep-sec-n">${count}</span>` : ''}</div>${inner}</div>`;
+      // Count badge only when it carries information: a lone item (count === 1) is self-evident
+      // from the single row below, so we suppress the "1" badge. Shown from 2 upward.
+      const nBadge = count !== null && count > 1 ? `<span class="badge badge-sm badge-neutral ep-sec-n">${count}</span>` : '';
+      return `<div class="ep-sec" id="ep-sec-${slug}"><div class="ep-sec-h">${icHtml}${title}${nBadge}</div>${inner}</div>`;
     }
 
     // Descriptions as two source tabs (Airtable · Internal). Per Dan's model: only the
@@ -663,7 +976,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       if (!total) return '';
       const inner = groups
         .filter((g) => g[2].length)
-        .map(([ic, label, rows]) => `<div class="ep-refgrp"><div class="ep-refgrp-h"><span class="iconify ${ic} size-3.5 ep-refgrp-ic" aria-hidden="true"></span>${label}<span class="ep-refgrp-n">${rows.length}</span></div>${capRows(rows)}</div>`)
+        .map(([ic, label, rows]) => `<div class="ep-refgrp"><div class="ep-refgrp-h"><span class="iconify ${ic} size-3.5 ep-refgrp-ic" aria-hidden="true"></span>${label}${rows.length > 1 ? `<span class="badge badge-sm badge-neutral ep-refgrp-n">${rows.length}</span>` : ''}</div>${capRows(rows)}</div>`)
         .join('');
       return section('Referenced by', total, inner);
     }
@@ -674,11 +987,16 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     function capRows(rowHtml: string[], cap = 5): string {
       if (rowHtml.length <= cap) return `<div class="ep-rows">${rowHtml.join('')}</div>`;
       const rest = rowHtml.length - cap;
-      return `<div class="ep-rows">${rowHtml.slice(0, cap).join('')}</div>`
+      // The whole capped list is ONE container: the first `cap` rows, then the "+N more" details
+      // (its expanded rows are direct .ep-row children, so the hairline separators + clipped hover
+      // continue seamlessly inside the same box).
+      return `<div class="ep-rows">`
+        + rowHtml.slice(0, cap).join('')
         + `<details class="ep-more">`
         + `<summary class="ep-more-sum">+${rest} more<span class="iconify lucide--chevron-down size-3.5 ep-more-chev" aria-hidden="true"></span></summary>`
-        + `<div class="ep-rows">${rowHtml.slice(cap).join('')}</div>`
-        + `</details>`;
+        + rowHtml.slice(cap).join('')
+        + `</details>`
+        + `</div>`;
     }
 
     // A4 — formula / lookup configuration block, resolved against the index.
@@ -701,15 +1019,21 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     }
 
     function renderBody(e: SchemaEntity): string {
-      const kindWord = e.kind === 'field' ? fieldTypeLabel(e.fieldType) : e.kind === 'base' ? 'Base' : 'Table';
+      secList = [];
+      const kindWord = e.kind === 'field' ? fieldTypeLabel(e.fieldType) : e.kind === 'base' ? 'Base' : e.kind === 'space' ? 'Space' : 'Table';
 
-      let html = `<div class="ep-title">
-        <span class="ep-title-ic">${kindIcon(e)}</span>
-        <div class="ep-title-main">
-          <div class="ep-title-name">${esc(e.name)}${e.isPrimary ? ' <span class="badge badge-sm badge-neutral">Primary</span>' : ''}</div>
-          <div class="ep-title-meta">${esc(kindWord)}${!e.removed ? ` <span class="ep-meta-sep" aria-hidden="true">·</span> <span class="ep-meta-health">${dot(e.health)}${esc(healthLabel(e.health))}</span> <span class="ep-meta-sep" aria-hidden="true">·</span> <span class="ep-meta-fresh">as of last backup</span>` : ''}</div>
-        </div>
-      </div>`;
+      // Drawer canon v2: the icon + name render in the HEADER (see renderCrumbs). The body opens
+      // with the identity meta line only (kind · health · freshness).
+      let html = `<div class="ep-title-meta ep-body-meta"><span class="ep-meta-kind">${esc(kindWord)}</span>${!e.removed ? ` <span class="ep-meta-sep" aria-hidden="true">·</span> <span class="ep-meta-health">${dot(e.health)}${esc(healthLabel(e.health))}</span> <span class="ep-meta-sep" aria-hidden="true">·</span> <span class="ep-meta-fresh">as of last backup</span>` : ''}</div>`;
+
+      // #11 View in Airtable — deep-link to the source (standard airtable.com scheme). Reuses the
+      // catalog `button` (btn-soft btn-primary). TODO(engine): these are backup ids; production needs
+      // the real Airtable app/tbl/fld ids to build a working URL.
+      if (!e.removed && (e.kind === 'base' || e.kind === 'table' || e.kind === 'field')) {
+        const parts = e.kind === 'base' ? [e.baseId] : e.kind === 'table' ? [e.baseId, e.id] : [e.baseId, e.tableId || '', e.id];
+        const url = 'https://airtable.com/' + parts.filter(Boolean).join('/');
+        html += `<a class="btn btn-sm btn-soft btn-primary ep-viewat" href="${esc(url)}" target="_blank" rel="noopener"><span class="iconify lucide--external-link size-4" aria-hidden="true"></span>View ${e.kind} in Airtable</a>`;
+      }
 
       // deleted-items-filter: a removed entity is read-only history — say so up front.
       if (e.removed) {
@@ -728,8 +1052,8 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       // heart-icon + status was 3× redundant and a lone Health tile ballooned to a full-width card).
       if (stats.length) html += `<div class="ep-stats" style="--ep-stat-n:${stats.length}">${stats.join('')}</div>`;
 
-      // Descriptions (table + field).
-      if (e.kind !== 'base') html += renderDescriptions(e);
+      // Descriptions (table + field only — base/space have none).
+      if (e.kind === 'table' || e.kind === 'field') html += renderDescriptions(e);
 
       // A4 — field-type configuration (formula / lookup).
       if (e.kind === 'field') html += renderConfig(e);
@@ -737,7 +1061,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       // Children.
       const children = (e.childIds || []).map((id) => byId.get(id)).filter(Boolean) as SchemaEntity[];
       if (children.length) {
-        const title = e.kind === 'base' ? 'Tables' : 'Fields';
+        const title = e.kind === 'space' ? 'Bases' : e.kind === 'base' ? 'Tables' : 'Fields';
         // A3 — filter within a long child list (tables with many fields / bases with many tables).
         const filter = children.length > 7
           ? `<input type="text" class="input input-sm ep-filter" data-ep-filter placeholder="Filter ${title.toLowerCase()}…" aria-label="Filter ${title.toLowerCase()}" />`
@@ -793,12 +1117,43 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       html += renderDocsSection(e);
       // Referenced by (automations / interfaces that tag this entity).
       html += renderReferencedBy(e);
+
+      // The progressive section-nav is NOT in the body — it's rendered into the fixed HEADER (above the
+      // header border) by renderSecNav(), from the SAME `secList` collected while building these sections.
       return html;
+    }
+
+    // Progressive section-nav: only worth a jump strip on a genuinely LONG panel — a large formula or a
+    // long paragraph makes the body tall enough that scrolling is a chore. Gate on REAL scroll overflow
+    // (measured post-render), not just the section count, so an ordinary few-section panel gets nothing.
+    // Populates the header rail (above the border, part of the fixed header). Chips are legible pills
+    // (muted label · primary-tinted active); the strip scrolls horizontally with a fade when it overflows.
+    const secNavEl = root.querySelector<HTMLElement>('[data-ep-secnav-rail]')!;
+    // "Long" is a CONTENT property, not a viewport one (rendered height is capped by the sheet + inner
+    // scrolls, so it never overflows on a tall screen): show the jump-nav ONLY on a panel with a LARGE
+    // formula or a LONG paragraph description — the cases that genuinely make the panel a chore to read.
+    const isLongPanel = (e: SchemaEntity) => {
+      const bigFormula = !!e.formula && (e.formula.length > 140 || (e.referencedFieldIds || []).length >= 8);
+      const longDesc = [e.airtableDescription, e.userDescription, e.aiDescription, e.aiTechnicalDescription]
+        .some((d) => (d || '').length > 400);
+      return bigFormula || longDesc;
+    };
+    function renderSecNav(e: SchemaEntity) {
+      const longEnough = secList.length >= 3 && isLongPanel(e);
+      if (!longEnough) { secNavEl.innerHTML = ''; secNavEl.hidden = true; secNavEl.classList.remove('ep-secnav-scroll'); return; }
+      secNavEl.innerHTML = secList
+        .map((s) => `<button type="button" class="ep-secnav-chip" data-ep-secnav="ep-sec-${s.slug}">${esc(s.label)}</button>`)
+        .join('');
+      secNavEl.hidden = false;
+      // Fade the edges only when the strip actually overflows (so it's clear it scrolls). Measured
+      // after layout.
+      requestAnimationFrame(() => secNavEl.classList.toggle('ep-secnav-scroll', secNavEl.scrollWidth > secNavEl.clientWidth + 1));
     }
 
     // Structural path of an entity: Base ▸ Table ▸ Field (base leads).
     function structuralPath(e: SchemaEntity): SchemaEntity[] {
       const out: SchemaEntity[] = [];
+      const space = byId.get(SPACE_ID); if (space && e.kind !== 'space') out.push(space);
       const base = byId.get(e.baseId);
       if (base) out.push(base);
       if (e.kind === 'field') {
@@ -816,26 +1171,104 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     // walks the visit history (stack) separately.
     function renderCrumbs() {
       const cur = byId.get(stack[stack.length - 1]);
-      if (!cur) { crumbsEl.innerHTML = ''; backBtn.hidden = true; return; }
-      const path = structuralPath(cur);
-      crumbsEl.innerHTML = path
-        .map((p, idx) => {
-          const last = idx === path.length - 1;
-          const sep = idx > 0 ? '<span class="iconify lucide--chevron-right size-3 ep-crumb-sep"></span>' : '';
-          const attr = last ? '' : ` data-ep-crumb-id="${p.id}"`;
-          return `${sep}<button type="button" class="ep-crumb${last ? ' ep-crumb-last' : ''}"${attr}>${esc(p.name)}</button>`;
-        })
-        .join('');
+      if (!cur) { crumbsEl.innerHTML = ''; crumbsEl.hidden = true; headIcEl.innerHTML = ''; headTitleEl.innerHTML = ''; backBtn.hidden = true; return; }
+      // Drawer canon v2: the entity's icon + name live in the header title row; the crumbs
+      // sub-row shows only its ANCESTORS (the current node is the header title, not a crumb).
+      headIcEl.innerHTML = kindIcon(cur);
+      headTitleEl.innerHTML = `<span class="ep-head-name">${esc(cur.name)}</span>${cur.isPrimary ? ' <span class="badge badge-sm badge-neutral">Primary</span>' : ''}`;
+      const ancestors = structuralPath(cur).slice(0, -1);
+      crumbsEl.hidden = ancestors.length === 0;
+      crumbsEl.innerHTML = locationCrumbs(
+        ancestors.map((p) => ({ name: p.name, icon: kindIcon(p), openAttrs: `data-ep-crumb-id="${p.id}"` })),
+      );
+      // Back appears only when there's somewhere to go back to WITHIN this panel (depth >= 2) — the
+      // nav-stack convention (Navattic / Squarespace / Airtable detail panels show only Close at the
+      // root, Back once you drill deeper). At depth 1 the × dismisses instead (onClose).
       backBtn.hidden = stack.length <= 1;
+    }
+
+    // Wire the progressive section-nav after each body re-render. Scroll-spy is POSITION-based (not an
+    // IntersectionObserver): the active section is the LAST one whose top has scrolled past the body top,
+    // AND when the body is scrolled to the bottom the LAST section always wins — so a short trailing
+    // section (e.g. an empty "Documentation") that can never reach the top still activates when you jump
+    // to it. Rebuilt every render (the body innerHTML is replaced on open / drill / refresh); the previous
+    // scroll listener is removed first. Chip clicks are handled by the root delegate (below).
+    function wireSecNav() {
+      if (secNavOff) { secNavOff(); secNavOff = null; }
+      const nav = secNavEl; // the section-nav lives in the fixed header (above the border), outside the body scroll
+      if (nav.hidden || !nav.children.length) return;
+      const chips = Array.from(nav.querySelectorAll<HTMLElement>('[data-ep-secnav]'));
+      const secs = chips
+        .map((c) => body.querySelector<HTMLElement>('#' + (c.dataset.epSecnav || '')))
+        .filter((s): s is HTMLElement => !!s);
+      if (!secs.length) return;
+      const setActive = (id: string | null) => {
+        chips.forEach((c) => {
+          const active = c.dataset.epSecnav === id;
+          c.classList.toggle('is-active', active);
+          if (active) {
+            // Keep the active chip visible when the strip has scrolled horizontally (nice-to-have).
+            const cr = c.getBoundingClientRect(); const nr = nav.getBoundingClientRect();
+            if (cr.left < nr.left || cr.right > nr.right) c.scrollIntoView({ block: 'nearest', inline: 'center' });
+          }
+        });
+      };
+      // Position-based: the active section is the last one whose top has scrolled to/above the body top
+      // (a small 12px tolerance). Purely from position, so it stays correct however tall the panel is.
+      const computeActive = () => {
+        const bodyTop = body.getBoundingClientRect().top;
+        let activeId = secs[0].id;
+        for (const s of secs) {
+          if (s.getBoundingClientRect().top - bodyTop <= 12) activeId = s.id; else break;
+        }
+        setActive(activeId);
+      };
+      // A chip CLICK is authoritative: it activates that section and locks the spy briefly so the
+      // smooth-scroll's own scroll events don't override it — this is what lets a SHORT trailing section
+      // (which can never scroll to the top) stay active when you jump to it. After the scroll settles the
+      // lock releases (without re-computing), so the next MANUAL scroll takes over normally.
+      let raf = 0;
+      let clickLock = false;
+      let lockTimer = 0;
+      const onScroll = () => { if (clickLock || raf) return; raf = requestAnimationFrame(() => { raf = 0; computeActive(); }); };
+      const onClick = (ev: Event) => {
+        const btn = (ev.target as HTMLElement).closest<HTMLElement>('[data-ep-secnav]');
+        if (!btn) return;
+        const target = body.querySelector<HTMLElement>('#' + (btn.dataset.epSecnav || ''));
+        if (!target) return;
+        clickLock = true;
+        setActive(btn.dataset.epSecnav || null);
+        const delta = target.getBoundingClientRect().top - body.getBoundingClientRect().top;
+        body.scrollTo({ top: body.scrollTop + delta - 8, behavior: 'smooth' });
+        window.clearTimeout(lockTimer);
+        lockTimer = window.setTimeout(() => { clickLock = false; }, 800);
+      };
+      body.addEventListener('scroll', onScroll, { passive: true });
+      nav.addEventListener('click', onClick);
+      secNavOff = () => {
+        body.removeEventListener('scroll', onScroll);
+        nav.removeEventListener('click', onClick);
+        window.clearTimeout(lockTimer);
+        if (raf) cancelAnimationFrame(raf);
+      };
+      computeActive();
     }
 
     function render(swap = true) {
       const e = byId.get(stack[stack.length - 1]);
       if (!e) return;
+      // Expose the current entity id + stack depth on the sheet so the controller / tests can read
+      // which entity each panel holds and how deep its back-stack is, without reaching into JS state.
+      root.dataset.epCur = e.id;
+      root.dataset.epKind = e.kind;
+      root.dataset.epDepth = String(stack.length);
       commitOpenEdit();
       descEdit = null; descTab = 'airtable'; descConfirmId = null; descEditAi = false;
       body.innerHTML = renderBody(e);
+      if (activeChildId) body.querySelector<HTMLElement>('[data-ep-push="' + activeChildId + '"]')?.classList.add('ep-row-active');
       renderCrumbs();
+      renderSecNav(e);
+      wireSecNav();
       if (swap) { body.classList.remove('ep-swap'); void body.offsetWidth; body.classList.add('ep-swap'); }
       body.scrollTop = 0;
     }
@@ -845,12 +1278,15 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       if (!e) return;
       const top = body.scrollTop;
       body.innerHTML = renderBody(e);
+      if (activeChildId) body.querySelector<HTMLElement>('[data-ep-push="' + activeChildId + '"]')?.classList.add('ep-row-active');
+      renderSecNav(e);
+      wireSecNav();
       body.scrollTop = top;
     }
 
-    function openEntity(id: string, reset = true) {
+    function open(id: string, resetStack = true) {
       if (!byId.has(id)) return;
-      if (reset || stack.length === 0) stack = [id];
+      if (resetStack || stack.length === 0) stack = [id];
       root.hidden = false;
       requestAnimationFrame(() => root.classList.add('ep-in'));
       render(true);
@@ -863,49 +1299,45 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       render(true);
     }
     function popTo(i: number) { stack = stack.slice(0, i + 1); render(true); }
-    function close() {
+    function doClose(instant = false) {
       commitOpenEdit();
+      document.removeEventListener('keydown', onKeydown);
       root.classList.remove('ep-in');
-      window.setTimeout(() => { root.hidden = true; stack = []; }, 220);
+      window.setTimeout(() => { root.hidden = true; stack = []; delete root.dataset.epCur; delete root.dataset.epDepth; }, instant ? 0 : 220);
     }
 
-    // Events.
-    document.addEventListener('schema:openEntity', (ev) => {
-      const d = (ev as CustomEvent).detail || {};
-      openEntity(d.id, d.reset !== false);
-    });
-    document.addEventListener('click', (ev) => {
-      const opener = (ev.target as HTMLElement).closest('[data-entity-open]');
-      if (opener) { ev.preventDefault(); openEntity(opener.getAttribute('data-entity-open')!); }
-    });
+    // Per-panel click handling (scoped to THIS sheet). schema:openEntity + data-entity-open live on
+    // the controller (they always target the anchor), so they are not wired here.
     root.addEventListener('click', (ev) => {
       const t = ev.target as HTMLElement;
-      if (t.closest('[data-ep-close]')) { close(); return; }
-      const exp = t.closest<HTMLElement>('[data-ep-expand]');
-      if (exp) {
-        const wide = root.classList.toggle('ep-wide');
-        const ic = root.querySelector<HTMLElement>('[data-ep-expand-ic]');
-        if (ic) ic.className = `iconify size-4 ${wide ? 'lucide--minimize-2' : 'lucide--maximize-2'}`;
-        const lbl = wide ? 'Shrink panel' : 'Expand panel';
-        exp.dataset.tip = lbl;
-        exp.setAttribute('aria-label', lbl);
-        return;
-      }
-      if (t.closest('[data-ep-back]')) { if (stack.length > 1) popTo(stack.length - 2); return; }
+      // × / (former scrim) → the controller decides: × on focus closes just the focus, × on anchor
+      // closes both.
+      if (t.closest('[data-ep-close]')) { opts.onClose(); return; }
+      // Section-nav chip clicks are handled in wireSecNav (click-authoritative + scroll-spy lock).
+      if (t.closest('[data-ep-secnav]')) return;
+      // Back walks THIS panel's stack; once exhausted the controller decides (a focus panel closes
+      // back to the single anchor; the anchor's Back button is hidden at stack length 1).
+      if (t.closest('[data-ep-back]')) { if (stack.length > 1) popTo(stack.length - 2); else opts.onExhaustedBack(); return; }
       const crumb = t.closest<HTMLElement>('[data-ep-crumb-id]');
       if (crumb) { push(crumb.dataset.epCrumbId!); return; }
+      // Independent-panels model: a plain reference click DRILLS IN PLACE within this panel;
+      // The visible hover ⧉ "open beside" button (a sibling of the row) — same as ⌘/Ctrl-click.
+      const besideEl = t.closest<HTMLElement>('[data-ep-beside]');
+      if (besideEl) { opts.onOpenBeside(besideEl.dataset.epBeside!); return; }
+      // ⌘/Ctrl-click opens that entity in a NEW panel beside (routed through the controller).
       const pushEl = t.closest<HTMLElement>('[data-ep-push]');
-      if (pushEl) { push(pushEl.dataset.epPush!); return; }
+      if (pushEl) { if ((ev as MouseEvent).metaKey || (ev as MouseEvent).ctrlKey) opts.onOpenBeside(pushEl.dataset.epPush!); else push(pushEl.dataset.epPush!); return; }
+      // Cross-tab handoffs leave the schema panels entirely → close BOTH, then dispatch.
       const docEl = t.closest<HTMLElement>('[data-ep-doc]');
-      if (docEl) { close(); document.dispatchEvent(new CustomEvent('schema:openDoc', { detail: { id: docEl.dataset.epDoc } })); return; }
+      if (docEl) { opts.onCloseAll(); document.dispatchEvent(new CustomEvent('schema:openDoc', { detail: { id: docEl.dataset.epDoc } })); return; }
       // "Referenced by" → jump to the Automations / Interfaces tab and open that entity.
       const refAuto = t.closest<HTMLElement>('[data-ep-ref-auto]');
-      if (refAuto) { close(); document.querySelector<HTMLElement>('[data-tab="automations"]')?.click(); document.dispatchEvent(new CustomEvent('schema:openAutomation', { detail: { id: refAuto.dataset.epRefAuto } })); return; }
+      if (refAuto) { opts.onCloseAll(); document.querySelector<HTMLElement>('[data-tab="automations"]')?.click(); document.dispatchEvent(new CustomEvent('schema:openAutomation', { detail: { id: refAuto.dataset.epRefAuto } })); return; }
       const refIface = t.closest<HTMLElement>('[data-ep-ref-iface]');
-      if (refIface) { close(); document.querySelector<HTMLElement>('[data-tab="interfaces"]')?.click(); document.dispatchEvent(new CustomEvent('schema:openInterface', { detail: { id: refIface.dataset.epRefIface } })); return; }
+      if (refIface) { opts.onCloseAll(); document.querySelector<HTMLElement>('[data-tab="interfaces"]')?.click(); document.dispatchEvent(new CustomEvent('schema:openInterface', { detail: { id: refIface.dataset.epRefIface } })); return; }
       // "Referenced by" → Chats: jump to the Chat tab and open that thread.
       const refChat = t.closest<HTMLElement>('[data-ep-chat]');
-      if (refChat) { close(); document.querySelector<HTMLElement>('[data-tab="chat"]')?.click(); document.dispatchEvent(new CustomEvent('schema:openChat', { detail: { id: refChat.dataset.epChat } })); return; }
+      if (refChat) { opts.onCloseAll(); document.querySelector<HTMLElement>('[data-tab="chat"]')?.click(); document.dispatchEvent(new CustomEvent('schema:openChat', { detail: { id: refChat.dataset.epChat } })); return; }
 
       // Switch description source tab (Airtable ↔ Internal). Commit any open edit first so
       // typed text isn't lost, then re-render the active panel (descTab persists the choice).
@@ -957,6 +1389,12 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       }
       if (t.closest('[data-ep-desc-discard]')) { const e = cur(); if (e) { const s = descOf(e); s.airtable = s.synced; descEdit = null; descConfirmId = null; descTab = 'airtable'; refresh(); focusDescEdit('airtable'); commitField(e.id, 'airtable', s.airtable); announce('Changes discarded'); } return; }
     });
+    // Middle-click a reference row → open that entity in a new panel beside (browser-tab convention).
+    root.addEventListener('auxclick', (ev) => {
+      if ((ev as MouseEvent).button !== 1) return;
+      const pushEl = (ev.target as HTMLElement).closest<HTMLElement>('[data-ep-push]');
+      if (pushEl) { ev.preventDefault(); opts.onOpenBeside(pushEl.dataset.epPush!); }
+    });
     // A3 — filter the rows of a long child list in place.
     root.addEventListener('input', (ev) => {
       const inp = (ev.target as HTMLElement).closest<HTMLInputElement>('[data-ep-filter]');
@@ -968,10 +1406,18 @@ const entityChangelog = changelog.filter((c) => c.entityId);
         r.style.display = !q || name.includes(q) ? '' : 'none';
       });
     });
-    document.addEventListener('keydown', (ev) => {
+    const onKeydown = (ev: KeyboardEvent) => {
       if (root.hidden) return;
+      // D1 — route keys to the panel the user is actually IN: edit shortcuts (save / cancel / enter-edit)
+      // act on whichever panel is being edited or holds keyboard focus, even if it's not the "active"
+      // panel; only Esc-to-close/back is reserved for the active panel. stopImmediatePropagation keeps
+      // the sibling panel's identical listener from double-acting. (Both panels listen on document.)
+      const editingHere = !!descEdit || !!descConfirmId;
+      const focusedHere = root.contains(document.activeElement);
+      if (!editingHere && !focusedHere && !panelActive) return;
       // Cmd/Ctrl+Enter commits the open editor (power-user save).
       if (descEdit && (ev.metaKey || ev.ctrlKey) && ev.key === 'Enter') {
+        ev.stopImmediatePropagation();
         const f = descEdit.field; const id = descEdit.id; commitField(id, f, descInput()?.value ?? ''); descEdit = null; descTab = f; refresh(); focusDescEdit(f);
         const s = byId.has(id) ? descOf(byId.get(id)!) : null;
         announce(f === 'airtable' ? (s && s.airtable.trim() !== s.synced.trim() ? 'Draft saved, not yet published to Airtable' : 'Saved') : 'Internal note saved');
@@ -981,7 +1427,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       if (!descEdit && ev.key === 'Enter') {
         const zone = (document.activeElement as HTMLElement | null)?.closest?.('[data-ep-desc-editzone]') as HTMLElement | null;
         if (zone && root.contains(zone)) {
-          ev.preventDefault();
+          ev.preventDefault(); ev.stopImmediatePropagation();
           const e = byId.get(stack[stack.length - 1]); if (!e) return;
           const field = zone.dataset.epDescEditzone as 'airtable' | 'extended';
           descEditCaret = null; descEditAi = false; descEdit = { id: e.id, field }; descTab = field; refresh(); focusDescInput();
@@ -989,11 +1435,446 @@ const entityChangelog = changelog.filter((c) => c.entityId);
         }
       }
       if (ev.key === 'Escape') {
-        if (descEdit) { descEdit = null; refresh(); return; }
-        if (descConfirmId) { descConfirmId = null; refresh(); return; }
-        if (stack.length > 1) popTo(stack.length - 2); else close();
+        if (descEdit) { ev.stopImmediatePropagation(); descEdit = null; refresh(); return; }
+        if (descConfirmId) { ev.stopImmediatePropagation(); descConfirmId = null; refresh(); return; }
+        if (!panelActive) return; // closing/back is the active panel's job
+        ev.stopImmediatePropagation();
+        // Back within this panel, else hand to the controller (focus → close focus; anchor → close all).
+        if (stack.length > 1) popTo(stack.length - 2); else opts.onClose();
       }
+    };
+    document.addEventListener('keydown', onKeydown);
+
+    return {
+      el: root,
+      open,
+      push,
+      popTo,
+      doClose,
+      setActive: (b: boolean) => { panelActive = b; },
+      setWidth: (px: number | null) => { if (px == null) root.style.removeProperty('--ep-w'); else root.style.setProperty('--ep-w', px + 'px'); },
+      currentId: () => stack[stack.length - 1] || null,
+      getStack: () => stack.slice(),
+      // Master-detail: mark (or clear) the reference row whose child is open on the right.
+      setActiveChild: (id: string | null) => {
+        activeChildId = id;
+        body.querySelectorAll<HTMLElement>('.ep-row-active').forEach((r) => r.classList.remove('ep-row-active'));
+        if (id) body.querySelector<HTMLElement>('[data-ep-push="' + id + '"]')?.classList.add('ep-row-active');
+      },
+      // Replace this panel's whole visit-stack (used to promote a focus into the anchor and to undo a
+      // focus replacement). Invalid ids are dropped; an empty result is a no-op.
+      setStack: (arr: string[]) => { const valid = arr.filter((id) => byId.has(id)); if (!valid.length) return; stack = valid; render(true); },
+    };
+  }
+  type Panel = ReturnType<typeof makePanel>;
+
+  // Controller — independent-panels model (pattern-multi-panel-drawer, redesigned). Owns an array of
+  // up to CAP panels, each an independent makePanel over a cloned sheet. A plain open (Browse row /
+  // schema:openEntity) reuses ONE transient PREVIEW panel; Pin keeps it. ⌘/Ctrl/middle-click a row, the
+  // ⧉, or the picker opens a NEW pinned panel beside. Each panel closes independently. Wired once.
+  function wireEntityPanel() {
+    const wrap = document.querySelector<HTMLElement>('[data-ep-wrap]');
+    if (!wrap || wrap.dataset.epWired) return;
+    wrap.dataset.epWired = '1';
+    const cols = wrap.querySelector<HTMLElement>('[data-ep-row]')!;
+    const rail = wrap.querySelector<HTMLElement>('[data-ep-rail]')!;
+    const countEl = wrap.querySelector<HTMLElement>('[data-ep-count]')!;
+    const tpl = document.querySelector<HTMLTemplateElement>('[data-ep-sheet-tpl]')!;
+
+    // MINEXP === MINW so four panels fit a 1440px laptop expanded side by side:
+    // 4*MINW + TABLEGAP + RAILW = 4*320 + 110 + 0 = 1390. Raising MINEXP again breaks that promise.
+    // RAILW is 0: the rail no longer reserves a column — its ＋ and shutter float on the drawer's edge.
+    //
+    // MAXPANELS is a ceiling on how many panels EXIST, not on how many are visible (Dan): opening past
+    // what fits parks the new one to a 46px strip instead of destroying an old panel. The number is
+    // measured, not guessed — at 1440 ten panels still leave THREE expanded side by side
+    // (3*320 + 7*46 = 1282 ≤ 1330 avail); twelve would force you down to two.
+    const DEFW = 468, MINW = 320, TABLEGAP = 110, RAILW = 0, MAXPANELS = 10, MINEXP = 320, COLLAPSE_AT = 300;
+    const loadW = () => { try { const v = parseInt(localStorage.getItem('ep-w-panel') || '', 10); return Number.isFinite(v) && v >= MINW ? v : DEFW; } catch { return DEFW; } };
+    const saveW = (px: number) => { try { localStorage.setItem('ep-w-panel', String(Math.round(px))); } catch { /* ignore */ } };
+    let defW = loadW();
+    const isMobile = () => window.innerWidth < 900;
+
+    type P = { uid: number; el: HTMLElement; panel: Panel; anchor: boolean; w: number; seq: number; collapsed: boolean };
+    let panels: P[] = [];
+    let uidSeq = 1, focusSeq = 1;
+    let focusUid = 0;
+    let lastClosed: { id: string | null; anchor: boolean } | null = null;
+    let undoTimer = 0;
+
+    const byUid = (uid: number) => panels.find((p) => p.uid === uid) || null;
+    const anchorOf = () => panels.find((p) => p.anchor) || null;
+
+    function showRail() { rail.hidden = panels.length === 0; countEl.textContent = String(panels.length); countEl.hidden = panels.length < 2; }
+    function setFocus(uid: number) {
+      focusUid = uid; const p = byUid(uid); if (p) p.seq = ++focusSeq;
+      panels.forEach((q) => { q.el.classList.toggle('ep-focus', q.uid === focusUid); q.panel.setActive(q.uid === focusUid); });
+    }
+    function setAnchorFlags() { panels.forEach((q) => q.el.classList.toggle('ep-anchor', q.anchor)); }
+    // DOM order must mirror panels[] order, because the anchor's meaning IS its position.
+    const syncOrder = () => panels.forEach((p) => cols.appendChild(p.el));
+
+    function layout() {
+      if (!panels.length) { wrap!.hidden = true; return; }
+      wrap!.hidden = false;
+      showRail(); setAnchorFlags();
+      if (isMobile()) {
+        // Single-column mobile: only the focused panel shows, full width (parity with the old collapse).
+        panels.forEach((p) => { p.el.classList.remove('ep-collapsed'); p.panel.setWidth(null); p.el.style.display = (p.uid === focusUid || panels.length === 1) ? '' : 'none'; });
+        return;
+      }
+      panels.forEach((p) => p.el.style.removeProperty('display'));
+      const avail = window.innerWidth - TABLEGAP - RAILW;
+      // Auto-accordion (pattern-panel-accordion): park the least-recently-focused overflow to strips.
+      // Capacity must SUBTRACT the strips themselves — each one costs 46px of the same budget. Parking
+      // one shrinks the budget, which can force another, so iterate until it settles. Recomputed on
+      // every layout(), hence self-correcting on open, expand and window resize.
+      for (;;) {
+        const strips = panels.filter((p) => p.collapsed).length;
+        const cap = Math.max(1, Math.floor((avail - strips * 46) / MINEXP));
+        const expandedList = panels.filter((p) => !p.collapsed);
+        if (expandedList.length <= cap) break;
+        const victim = expandedList.filter((p) => !p.anchor).sort((a, b) => a.seq - b.seq)[0] || expandedList[0];
+        victim.collapsed = true;
+      }
+      panels.forEach((p) => p.el.classList.toggle('ep-collapsed', p.collapsed));
+      const expanded = panels.filter((p) => !p.collapsed);
+      const expAvail = avail - (panels.length - expanded.length) * 46;
+      let ws = expanded.map((p) => p.w);
+      const sum = ws.reduce((a, b) => a + b, 0);
+      if (sum > expAvail) { const k = expAvail / sum; ws = ws.map((w) => Math.max(MINW, Math.round(w * k))); }
+      let ei = 0;
+      panels.forEach((p) => { if (p.collapsed) p.panel.setWidth(46); else p.panel.setWidth(ws[ei++]); });
+    }
+
+    // Room for one more EXPANDED panel? The strips already parked eat the same width budget.
+    function roomToExpand(): boolean {
+      if (isMobile()) return true;
+      const avail = window.innerWidth - TABLEGAP - RAILW;
+      const strips = panels.filter((p) => p.collapsed).length;
+      const cap = Math.max(1, Math.floor((avail - strips * 46) / MINEXP));
+      return panels.filter((p) => !p.collapsed).length < cap;
+    }
+    // `anchor` panels are unshifted into slot 0 (nearest the table); everything else appends.
+    // Beyond what fits, an ordinary panel arrives ALREADY PARKED (Dan) — nothing is destroyed to make
+    // room. Only the hard MAXPANELS ceiling still evicts, and that stays undoable.
+    function createPanel(id: string, anchor: boolean): P {
+      if (anchor && panels.length >= MAXPANELS) evictLRU();
+      const frag = tpl.content.cloneNode(true) as DocumentFragment;
+      const el = frag.querySelector<HTMLElement>('.ep-sheet')!;
+      cols.appendChild(el);
+      const uid = uidSeq++;
+      const panel = makePanel(el, {
+        role: 'anchor',
+        onOpenBeside: (rid) => openBeside(rid),
+        onClose: () => closePanel(uid),
+        onCloseAll: () => closeAll(),
+        onExhaustedBack: () => {},
+      });
+      // The anchor is never born parked: a plain table click must always land somewhere visible.
+      const bornParked = !anchor && !roomToExpand();
+      const p: P = { uid, el, panel, anchor, w: defW, seq: ++focusSeq, collapsed: bornParked };
+      if (anchor) panels.unshift(p); else panels.push(p);
+      syncOrder();
+      wireGrip(p);
+      panel.open(id, true);
+      // A panel born as a strip must not steal focus — the user is still reading the panel they had.
+      // Say so once, otherwise the new entity just appears to be missing.
+      if (bornParked) showUndoless('No room to expand — opened as a strip. Click it to open.');
+      else setFocus(uid);
+      return p;
+    }
+    function closePanel(uid: number) {
+      const i = panels.findIndex((p) => p.uid === uid); if (i < 0) return;
+      const p = panels[i];
+      lastClosed = { id: p.panel.currentId(), anchor: p.anchor };
+      p.panel.doClose(true);
+      const el = p.el; window.setTimeout(() => el.remove(), 0);
+      panels.splice(i, 1);
+      if (focusUid === uid) { const n = panels[Math.max(0, i - 1)]; if (n) setFocus(n.uid); else focusUid = 0; }
+      showUndo('Panel closed');
+      layout();
+    }
+    function closeAll() { panels.slice().forEach((p) => { p.panel.doClose(true); p.el.remove(); }); panels = []; focusUid = 0; hideUndo(); layout(); }
+    // The anchor is never the victim: it is the one panel the user did not ask for by hand.
+    // `announce` is false when the user pressed "Close oldest" themselves — they already know.
+    function evictLRU(announce = true) {
+      const victim = panels.filter((p) => !p.anchor).sort((a, b) => a.seq - b.seq)[0] || panels[0]; if (!victim) return;
+      lastClosed = { id: victim.panel.currentId(), anchor: victim.anchor };
+      victim.panel.doClose(true); victim.el.remove();
+      panels = panels.filter((p) => p.uid !== victim.uid);
+      if (announce) showUndo(`Closed oldest panel — ${MAXPANELS} max`);
+    }
+    function focusExisting(id: string): boolean {
+      const p = panels.find((q) => q.panel.currentId() === id);
+      if (p) { setFocus(p.uid); p.el.scrollIntoView({ inline: 'nearest', block: 'nearest' }); layout(); return true; }
+      return false;
+    }
+    // Plain open (Browse row / schema:openEntity): ALWAYS lands in the anchor — never in the focused
+    // panel, never in a new one. Focus is an accident of the last click and must not decide what gets
+    // replaced. No anchor yet ⇒ create one in slot 0.
+    function openEntity(id: string) {
+      if (focusExisting(id)) return;
+      const a = anchorOf();
+      if (a) { if (a.collapsed) { a.collapsed = false; } a.panel.open(id, true); setFocus(a.uid); layout(); }
+      else { createPanel(id, true); layout(); }
+    }
+    // Open beside: ⌘/Ctrl/middle-click, a reference, the ⧉, or the picker → a NEW ordinary panel.
+    // At the ceiling we do NOT quietly destroy the oldest panel and hope the user catches the Undo.
+    // The action refuses, and the toast offers the destructive step as a one-click opt-in — so nothing
+    // the user opened by hand ever disappears unless they said so.
+    function openBeside(id: string) {
+      if (focusExisting(id)) return;
+      if (panels.length >= MAXPANELS) {
+        // Name the REFUSAL, not just the state: the user clicked and nothing opened, so say so first.
+        // The button carries the remedy, so the sentence stays one clause plus the reason.
+        showToast(`Can't add another panel — maximum of ${MAXPANELS} reached.`,
+          { label: 'Close oldest', icon: 'lucide--layers', run: () => { evictLRU(false); createPanel(id, false); layout(); } }, 6000);
+        return;
+      }
+      createPanel(id, false); layout();
+    }
+    // Detach: the anchor becomes an ordinary panel and the slot is free for the next table click.
+    function detachPanel(uid: number) {
+      const p = byUid(uid); if (!p || !p.anchor) return;
+      p.anchor = false; setAnchorFlags();
+      showUndoless('Detached — this panel is yours now. The next row you click opens a fresh one beside the table.');
+    }
+    // Collapse-to-rail (pattern-panel-collapse-rail): park a panel to a slim strip / expand it back.
+    function parkPanel(uid: number) { const p = byUid(uid); if (!p || p.collapsed) return; p.collapsed = true; layout(); }
+    function expandPanel(uid: number) { const p = byUid(uid); if (!p) return; p.collapsed = false; setFocus(uid); layout(); }
+
+    // ── Reorder (pattern-panel-reorder): drag the ⠿ grip to live-swap panel order ──
+    function uidAtX(x: number): number { for (const p of panels) { const r = p.el.getBoundingClientRect(); if (x >= r.left && x <= r.right) return p.uid; } return 0; }
+    function movePanel(dragUid: number, overUid: number) {
+      const from = panels.findIndex((p) => p.uid === dragUid), to = panels.findIndex((p) => p.uid === overUid);
+      if (from < 0 || to < 0 || from === to) return;
+      if (panels[from].anchor) return;              // the anchor's slot is its meaning — it never moves
+      if (anchorOf() && to === 0) return;           // …and nothing else may take slot 0
+      const [m] = panels.splice(from, 1); panels.splice(to, 0, m);
+      syncOrder();
+      layout();
+    }
+    document.addEventListener('pointerdown', (e) => {
+      const h = (e.target as HTMLElement).closest<HTMLElement>('[data-ep-reorder]'); if (!h || isMobile()) return;
+      const sheet = h.closest<HTMLElement>('.ep-sheet'); const p = panels.find((q) => q.el === sheet); if (!p) return;
+      e.preventDefault(); const dragUid = p.uid, sx = e.clientX; let dragging = false; h.classList.add('ep-grip-on');
+      const mv = (me: PointerEvent) => {
+        if (!dragging && Math.abs(me.clientX - sx) > 6) {
+          dragging = true; p.el.classList.add('ep-dragging');
+          if (anchorOf()) cols.classList.add('ep-reordering'); // fade the one panel that can't receive the drop
+        }
+        if (!dragging) return; const over = uidAtX(me.clientX); if (over && over !== dragUid) movePanel(dragUid, over);
+      };
+      const end = () => { h.classList.remove('ep-grip-on'); p.el.classList.remove('ep-dragging'); cols.classList.remove('ep-reordering'); document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', end); };
+      document.addEventListener('pointermove', mv); document.addEventListener('pointerup', end);
     });
+
+    // Undo toast (pattern-undo-toast). ONE duration drives both the countdown bar and the dismiss
+    // timer, so the bar can never lie about how long the offer stands.
+    const UNDO_MS = 4000; // catalog rule for toasts is 3–5s; 6s felt slow once the bar made it visible
+    // The bar's animation is `forwards`, so a second toast would reuse the finished one and show an
+    // empty bar. Remove the run class, force a reflow, re-add it.
+    function restartCountdown(el: HTMLElement, ms: number) {
+      el.style.setProperty('--ep-undo-ms', `${ms}ms`);
+      el.classList.remove('ep-undo-run');
+      void el.offsetWidth;
+      el.classList.add('ep-undo-run');
+    }
+    // One toast surface, three uses: an Undo offer, a bare statement, or a named action the user opts
+    // into. The countdown always matches the dismiss timer.
+    // `icon` names the ACTION, not the fact that one exists: rotate-ccw only ever means "Undo".
+    function showToast(label: string, action: { label: string; run: () => void; icon?: string } | null, ms = UNDO_MS) {
+      const el = document.querySelector<HTMLElement>('[data-ep-undo]'); if (!el) return;
+      const lbl = el.querySelector<HTMLElement>('[data-ep-undo-label]'); if (lbl) lbl.textContent = label;
+      const btn = el.querySelector<HTMLElement>('[data-ep-undo-btn]');
+      if (btn) {
+        btn.hidden = !action;
+        if (action) { btn.textContent = action.label; btn.onclick = () => { action.run(); hideUndo(); }; }
+        else btn.onclick = null;
+      }
+      // Actionable ⇒ undo glyph + a draining deadline. Informational ⇒ an info glyph and no bar.
+      el.classList.toggle('ep-undo-actionable', !!action);
+      const ic = el.querySelector<HTMLElement>('[data-ep-undo-ic]');
+      if (ic) ic.className = `iconify ${action ? (action.icon || 'lucide--rotate-ccw') : 'lucide--info'} size-4`;
+      el.hidden = false; restartCountdown(el, ms);
+      window.clearTimeout(undoTimer); undoTimer = window.setTimeout(hideUndo, ms);
+    }
+    function showUndo(label: string) {
+      if (!lastClosed) return;
+      const snap = lastClosed;
+      // A restored anchor only reclaims slot 0 if the slot is still free.
+      showToast(label, { label: 'Undo', run: () => { if (snap.id) { createPanel(snap.id, snap.anchor && !anchorOf()); layout(); } } });
+    }
+    // The same surface, stating a fact rather than offering a reversal.
+    function showUndoless(label: string) { showToast(label, null); }
+    function hideUndo() { const el = document.querySelector<HTMLElement>('[data-ep-undo]'); if (!el) return; window.clearTimeout(undoTimer); el.classList.remove('ep-undo-run'); el.hidden = true; }
+
+    // Global entry points (unchanged contract — every tab opens via these).
+    document.addEventListener('schema:openEntity', (ev) => { const d = (ev as CustomEvent).detail || {}; if (d.id) openEntity(d.id); });
+    document.addEventListener('click', (ev) => {
+      const me = ev as MouseEvent;
+      const o = (ev.target as HTMLElement).closest('[data-entity-open]');
+      if (o) { ev.preventDefault(); const id = o.getAttribute('data-entity-open')!; if (me.metaKey || me.ctrlKey) openBeside(id); else openEntity(id); return; }
+      const det = (ev.target as HTMLElement).closest<HTMLElement>('[data-ep-detach]');
+      if (det) { const sheet = det.closest<HTMLElement>('.ep-sheet'); const p = panels.find((q) => q.el === sheet); if (p) detachPanel(p.uid); return; }
+      const park = (ev.target as HTMLElement).closest<HTMLElement>('[data-ep-park]');
+      if (park) { const sh = park.closest<HTMLElement>('.ep-sheet'); const p = panels.find((q) => q.el === sh); if (p) parkPanel(p.uid); return; }
+      // Click a parked strip (anywhere but its ✕) → expand it back.
+      const coll = (ev.target as HTMLElement).closest<HTMLElement>('.ep-sheet.ep-collapsed');
+      if (coll && !(ev.target as HTMLElement).closest('[data-ep-close]')) { const p = panels.find((q) => q.el === coll); if (p) expandPanel(p.uid); return; }
+      if ((ev.target as HTMLElement).closest('[data-ep-add]')) { toggleAddPop(); return; }
+      // Focus a panel by clicking its chrome (not while it's the target of another handler).
+      const sheet = (ev.target as HTMLElement).closest<HTMLElement>('.ep-sheet[data-entity-panel]');
+      if (sheet) { const p = panels.find((q) => q.el === sheet); if (p && focusUid !== p.uid) setFocus(p.uid); }
+    });
+    document.addEventListener('auxclick', (ev) => {
+      const me = ev as MouseEvent; if (me.button !== 1) return;
+      const o = (ev.target as HTMLElement).closest('[data-entity-open]');
+      if (o) { ev.preventDefault(); openBeside(o.getAttribute('data-entity-open')!); }
+    });
+    window.addEventListener('resize', () => { if (!wrap.hidden) layout(); });
+
+    // ── "Compare with…" picker (rail ＋): scoped EntitySearch + Suggested defaults ──────────────────
+    const pIndex: SchemaEntity[] = (() => { const el = document.querySelector('[data-ep-index]'); return el ? JSON.parse(el.textContent || '[]') : []; })();
+    const pById = new Map(pIndex.map((e) => [e.id, e]));
+    const escv = (s: string) => (s || '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!));
+    const addPop = wrap.querySelector<HTMLElement>('[data-ep-addpop]')!;
+    const addSearch = addPop.querySelector<HTMLElement>('[data-entity-search]')!;
+    const addScopeBtn = addPop.querySelector<HTMLElement>('[data-ep-scope]')!;
+    const addScopeLbl = addPop.querySelector<HTMLElement>('[data-ep-scope-label]')!;
+    const addSugg = addPop.querySelector<HTMLElement>('[data-ep-sugg]')!;
+    const addField = () => addSearch.querySelector<HTMLInputElement>('[data-es-field]');
+    let addScope = '';
+    // The focused panel's entity → its base + table (the scope + Suggested defaults).
+    function pickerCtx(): { base: SchemaEntity | null; table: SchemaEntity | null } {
+      const f = byUid(focusUid); const id = f ? f.panel.currentId() : null; const e = id ? pById.get(id) : null;
+      if (!e) return { base: pIndex.find((x) => x.kind === 'base') || null, table: null };
+      const base = pIndex.find((x) => x.kind === 'base' && x.name === e.baseName) || null;
+      const table = e.kind === 'table' ? e : (e.kind === 'field' ? (pIndex.find((x) => x.kind === 'table' && x.name === e.tableName && x.baseName === e.baseName) || null) : null);
+      return { base, table };
+    }
+    // Suggested = what you'd most likely compare next, and it FOLLOWS the scope pill.
+    //  · This base → the focused table (all fields) · the whole base · its sibling tables.
+    //  · All bases → every base, focused one first.
+    // Panels already open are dropped: re-opening one beside itself is never the intent.
+    function renderSugg() {
+      const { base, table } = pickerCtx();
+      const open = new Set(panels.map((p) => p.panel.currentId()));
+      const row = (e: SchemaEntity, meta: string, ic: string) => ({ e, meta, ic });
+      const groups: Array<{ label: string; items: Array<{ e: SchemaEntity; meta: string; ic: string }> }> = [];
+      if (addScope) {
+        const head = [
+          ...(table ? [row(table, 'all fields', 'lucide--table-2')] : []),
+          ...(base ? [row(base, 'whole base', 'lucide--database')] : []),
+        ].filter((it) => !open.has(it.e.id));
+        if (head.length) groups.push({ label: 'Suggested', items: head });
+        const siblings = pIndex
+          .filter((x) => x.kind === 'table' && x.baseName === addScope && x.id !== table?.id && !open.has(x.id))
+          .slice(0, 6)
+          .map((x) => row(x, 'all fields', 'lucide--table-2'));
+        if (siblings.length) groups.push({ label: `Tables in ${addScope}`, items: siblings });
+      } else {
+        const bases = pIndex
+          .filter((x) => x.kind === 'base' && !open.has(x.id))
+          .sort((a, b) => Number(b.name === base?.name) - Number(a.name === base?.name))
+          .map((x) => row(x, 'whole base', 'lucide--database'));
+        if (bases.length) groups.push({ label: 'Bases', items: bases });
+      }
+      let n = 0;
+      addSugg.innerHTML = groups
+        .map((g) => `<div class="ep-sugg-lbl">${escv(g.label)}</div>` + g.items
+          .map((it) => `<button type="button" class="ep-sugg-row" data-ep-sugg-id="${it.e.id}"${n++ === 0 ? ' data-ep-sugg-default' : ''}><span class="iconify ${it.ic} size-4" aria-hidden="true"></span><span>${escv(it.e.name)}</span><span class="ep-sugg-meta">${it.meta}</span></button>`)
+          .join(''))
+        .join('');
+    }
+    function setScope(base: string) {
+      addScope = base; addSearch.dataset.esScopeBase = base;
+      addScopeLbl.textContent = base || 'All bases';
+      const f = addField(); if (f) f.placeholder = base ? `Search ${base}…` : 'Search all bases…';
+      // The typeahead filters by dataset at query time, so a live result list has to be re-queried —
+      // without this the scope pill looks inert (it was).
+      if (f) f.dispatchEvent(new Event('input'));
+      renderSugg();
+    }
+    function openAddPop() {
+      const { base } = pickerCtx();
+      setScope(base ? base.name : '');
+      const r = (rail.querySelector('[data-ep-add]') || rail).getBoundingClientRect();
+      addPop.style.left = Math.min(r.right + 8, window.innerWidth - 340) + 'px';
+      addPop.style.top = Math.max(12, Math.min(r.top, window.innerHeight - 420)) + 'px';
+      addPop.hidden = false;
+      const f = addField(); if (f) { f.value = ''; f.dispatchEvent(new Event('input')); f.focus(); }
+    }
+    function closeAddPop() { addPop.hidden = true; }
+    function toggleAddPop() { if (addPop.hidden) openAddPop(); else closeAddPop(); }
+    addScopeBtn.addEventListener('click', () => { setScope(addScope ? '' : (pickerCtx().base?.name || '')); const f = addField(); if (f) f.focus(); });
+    addSugg.addEventListener('click', (ev) => { const b = (ev.target as HTMLElement).closest<HTMLElement>('[data-ep-sugg-id]'); if (b) { openBeside(b.dataset.epSuggId!); closeAddPop(); } });
+    // Enter on an empty search opens the Suggested default (current table · all fields).
+    addSearch.addEventListener('keydown', (ev) => { const f = addField(); if ((ev as KeyboardEvent).key === 'Enter' && f && !f.value.trim()) { const d = addSugg.querySelector<HTMLElement>('[data-ep-sugg-default]'); if (d) { ev.preventDefault(); openBeside(d.dataset.epSuggId!); closeAddPop(); } } });
+    document.addEventListener('schema:pickAdd', (ev) => { const id = (ev as CustomEvent).detail?.id; if (id) { openBeside(id); closeAddPop(); } });
+    document.addEventListener('click', (ev) => { if (!addPop.hidden && !addPop.contains(ev.target as Node) && !(ev.target as HTMLElement).closest('[data-ep-add]')) closeAddPop(); });
+    document.addEventListener('keydown', (ev) => { if ((ev as KeyboardEvent).key === 'Escape' && !addPop.hidden) closeAddPop(); });
+
+    // Per-panel resize: the full-height left edge line drags THIS panel's width (persists a default).
+    function wireGrip(p: P) {
+      const grip = p.el.querySelector<HTMLElement>('[data-ep-grip]'); if (!grip) return;
+      grip.addEventListener('pointerdown', (e) => {
+        if (isMobile()) return; e.preventDefault(); grip.classList.add('ep-grip-on');
+        const sx = e.clientX, sw = p.w;
+        const mv = (me: PointerEvent) => {
+          const raw = sw + (sx - me.clientX);
+          if (raw < COLLAPSE_AT) { end(); parkPanel(p.uid); return; } // dragged past the floor → park to a rail
+          const cap = window.innerWidth * 0.7; p.w = Math.max(MINW, Math.min(raw, cap)); layout();
+        };
+        const end = () => { grip.classList.remove('ep-grip-on'); document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', end); defW = p.w; saveW(p.w); };
+        document.addEventListener('pointermove', mv); document.addEventListener('pointerup', end);
+      });
+    }
+
+    // Stack resize (the rail's shutter pill): drag left to grow the whole stack, right to shrink it.
+    // Unlike a per-panel grip this drives the TOTAL width, so every expanded panel ends the drag at the
+    // same size. Panels park ONE AT A TIME, leftmost first: for a stack width S we keep the largest k
+    // whose expanded panels still clear the floor (k*MINW + (n−k)*46 ≤ S); the rest become rail strips
+    // and the survivors re-share what's left. Pulling back out unparks them in reverse, right to left.
+    // `p.w` is kept while parked, so the total stays continuous across every boundary.
+    function stackResize(total: number) {
+      const n = panels.length; if (!n) return;
+      const maxTotal = window.innerWidth - TABLEGAP - RAILW;
+      const S = Math.min(total, maxTotal);
+      let k = 0;
+      for (let i = n; i >= 1; i--) { if (i * MINW + (n - i) * 46 <= S) { k = i; break; } }
+      const w = k ? Math.round(Math.max(MINW, Math.min((S - (n - k) * 46) / k, (maxTotal - (n - k) * 46) / k))) : MINW;
+      panels.forEach((p, i) => { p.collapsed = i < n - k; p.w = w; });
+      layout();
+      return k ? w : null;
+    }
+    function wireShutter() {
+      const sh = wrap!.querySelector<HTMLElement>('[data-ep-shutter]'); if (!sh) return;
+      // The rendered stack width — parked panels contribute their 46px strip, not their stored width.
+      const stackWidth = () => panels.reduce((a, p) => a + (p.collapsed ? 46 : p.w), 0);
+      sh.addEventListener('pointerdown', (e) => {
+        if (isMobile()) return; e.preventDefault(); sh.classList.add('ep-shutter-on');
+        const sx = e.clientX, st = stackWidth();
+        const mv = (me: PointerEvent) => { stackResize(st + (sx - me.clientX)); };
+        const end = () => {
+          sh.classList.remove('ep-shutter-on');
+          document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', end);
+          const w = panels.find((p) => !p.collapsed)?.w; if (w) { defW = w; saveW(w); }
+        };
+        document.addEventListener('pointermove', mv); document.addEventListener('pointerup', end);
+      });
+      // Keyboard parity: ← grows the stack, → shrinks it (same step as a comfortable drag).
+      sh.addEventListener('keydown', (e) => {
+        const k = (e as KeyboardEvent).key;
+        if (k !== 'ArrowLeft' && k !== 'ArrowRight') return;
+        e.preventDefault();
+        const n = panels.length || 1;
+        const w = stackResize(stackWidth() + (k === 'ArrowLeft' ? 32 : -32) * n);
+        if (w) { defW = w; saveW(w); }
+      });
+    }
+    wireShutter();
   }
   wireEntityPanel();
   document.addEventListener('astro:after-swap', wireEntityPanel);

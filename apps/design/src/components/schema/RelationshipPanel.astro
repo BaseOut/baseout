@@ -40,16 +40,16 @@ const baseNameOf = (id?: string) => (id && bases.find((b) => b.id === id)?.name)
 <div class="rl-detail" data-rl-detail hidden>
   <div class="rl-detail-scrim" data-rl-detail-close></div>
   <aside class="rl-detail-panel" role="dialog" aria-label="Relationship details" aria-modal="false">
-    <div class="rl-detail-head">
-      <span class="rl-detail-ic" data-d-ic aria-hidden="true"></span>
-      <div class="rl-detail-headmeta">
+    <header class="rl-detail-head">
+      <div class="rl-detail-headrow">
+        <span class="rl-detail-ic" data-d-ic aria-hidden="true"></span>
         <span class="rl-detail-type" data-d-type>Relationship</span>
-        <span class="rl-detail-sub" data-d-sub></span>
+        <button type="button" class="btn btn-sm btn-ghost btn-square" data-rl-detail-close aria-label="Close details">
+          <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+        </button>
       </div>
-      <button type="button" class="btn btn-sm btn-ghost btn-square" data-rl-detail-close aria-label="Close details">
-        <span class="iconify lucide--x size-4" aria-hidden="true"></span>
-      </button>
-    </div>
+      <nav class="rl-detail-crumbs sb-crumb-row" data-d-crumbs hidden aria-label="Breadcrumb"></nav>
+    </header>
     <div class="rl-detail-body" data-d-body></div>
   </aside>
 </div>

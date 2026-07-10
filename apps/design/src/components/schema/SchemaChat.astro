@@ -13,6 +13,8 @@
  * Airtable field icons, the entity tag-chip, and the Pro+ upgrade affordance.
  */
 import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+import ExportControl from './ExportControl.astro';
+import { entityChip } from './entityChip';
 import type { SchemaEntity } from './schemaEntities';
 
 export interface ChatRef {
@@ -64,13 +66,13 @@ const refIcon = (r: ChatRef) =>
   : r.entityKind === 'field' ? fieldIconSvg(r.fieldType) || '<span class="iconify lucide--tag"></span>'
   : r.entityKind === 'table' ? '<span class="iconify lucide--table-2"></span>'
   : '<span class="iconify lucide--database concept-ic-base"></span>';
-// A reference chip — same component for context-bar scope + in-message references.
+// A reference chip — the shared catalog chip (entityChip). Context-bar scope chips are
+// removable (a static pill + trailing ×); in-message references are clickable buttons that
+// open the entity / doc. The removal + open hooks are preserved on the chip via attrs.
 const refChip = (r: ChatRef, removable = false) =>
-  `<span class="chat-chip" data-chat-chip data-ref-kind="${r.kind}" data-ref-id="${esc(r.id)}">
-    <button type="button" class="chat-chip-open" ${r.kind === 'doc' ? `data-doc-open="${esc(r.id)}"` : `data-entity-open="${esc(r.id)}"`}>
-      <span class="chat-chip-ic">${refIcon(r)}</span><span class="chat-chip-name">${esc(r.name)}</span>
-    </button>${removable ? '<button type="button" class="chat-chip-x" data-chip-remove aria-label="Remove from context"><span class="iconify lucide--x size-3"></span></button>' : ''}
-  </span>`;
+  removable
+    ? entityChip({ name: r.name, icon: refIcon(r), attrs: `data-chat-chip data-ref-kind="${esc(r.kind)}" data-ref-id="${esc(r.id)}"`, remove: 'data-chip-remove' })
+    : entityChip({ name: r.name, icon: refIcon(r), clickable: true, attrs: r.kind === 'doc' ? `data-doc-open="${esc(r.id)}"` : `data-entity-open="${esc(r.id)}"` });
 
 // Assistant footer — the AI marker + hover actions (Copy / thumbs), Claude-style.
 const msgActions = `<div class="chat-msg-foot">
@@ -204,6 +206,11 @@ const ctxGroups = [
               </div>
             </div>
           </div>
+
+          {/* Beside "Convert to doc", because both act on the OPEN conversation. In the thread rail it
+              read as an action on the list.
+              ASSUMPTION: the open thread, not the whole history; archived threads excluded. */}
+          <ExportControl tab="chat" format="pdf" noun="threads" total={threads.length} rowSelector=".chat-trow" />
         </div>
 
         {threads.map((t) => (
@@ -350,17 +357,6 @@ const ctxGroups = [
   .chat-msg-assistant:hover .chat-msg-acts, .chat-msg-assistant:focus-within .chat-msg-acts { opacity: 1; }
   .chat-act { display: grid; place-items: center; width: 1.7rem; height: 1.7rem; border: 0; background: none; border-radius: 6px; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .55); }
   .chat-act:hover { background: oklch(from var(--color-base-content) l c h / .07); color: var(--color-base-content); }
-
-  /* reference / context chip (shared) — neutral by default; primary is reserved for accents */
-  .chat-chip { display: inline-flex; align-items: center; border: 1px solid var(--color-base-300); border-radius: 999px; background: oklch(from var(--color-base-200) l c h / .5); overflow: hidden; max-width: 100%; }
-  .chat-chip-open { display: inline-flex; align-items: center; gap: .3rem; padding: .12rem .5rem; border: 0; background: none; cursor: pointer; font: inherit; font-size: .76rem; color: var(--color-base-content); min-width: 0; }
-  .chat-chip-open:hover { background: oklch(from var(--color-base-content) l c h / .06); }
-  .chat-chip-ic { display: inline-grid; place-items: center; width: 13px; flex: none; color: oklch(from var(--color-base-content) l c h / .55); }
-  .chat-chip-ic svg { width: 12px; height: 12px; }
-  .chat-chip-ic .iconify { font-size: .76rem; }
-  .chat-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chat-chip-x { display: inline-grid; place-items: center; padding: 0 .3rem; border: 0; background: none; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .5); align-self: stretch; }
-  .chat-chip-x:hover { background: oklch(from var(--color-error) l c h / .14); color: var(--color-error); }
 
   /* convert-to-doc reference card */
   .chat-msg-system { align-self: stretch; max-width: 100%; }
