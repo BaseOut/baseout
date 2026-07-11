@@ -102,7 +102,10 @@ export async function readMasterInboxSources(
         eq(backupRuns.spaceId, spaceId),
         inArray(backupRuns.status, ["failed", "succeeded"]),
         isNull(backupRuns.deletedAt),
-        sql`${runTs} >= ${since}`,
+        // ISO string, not the Date object: a Date inside a raw sql fragment
+        // reaches Postgres as its toString() form, which timestamptz rejects
+        // (observed as read_failed 500s on the deployed Worker).
+        sql`${runTs} >= ${since.toISOString()}`,
       ),
     )
     .orderBy(desc(runTs))
@@ -189,7 +192,7 @@ export async function readSpaceInboxSources(
     .from(spacePg.schemaUpdates)
     .leftJoin(spacePg.baseRuns, eq(spacePg.schemaUpdates.runId, spacePg.baseRuns.id))
     .leftJoin(spacePg.bases, eq(spacePg.schemaUpdates.baseId, spacePg.bases.baseId))
-    .where(sql`${updateTs} >= ${since}`)
+    .where(sql`${updateTs} >= ${since.toISOString()}`)
     .orderBy(desc(updateTs))
     .limit(INBOX_FEED_CAP);
 
