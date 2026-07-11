@@ -9,7 +9,7 @@
 **Design principles (from `research-notes.md`):**
 - **DORA's four keys, translated to Airtable** [A-5]: structural-change frequency (§7), lead time (§7), change failure rate (§7), recovery time (§5/§6). Copado proved the four keys transfer to a SaaS platform [A-2 #10].
 - **Gearset's credibility pattern** [A-1]: screener up front, demographics for disclosure (we publish our sample's customer share, role mix, and plan mix), a "topic of the year" section (AI, §10), and stable annual IDs.
-- **Neutrality:** no product names in question stems except as answer options; nothing in this instrument mentions BaseOut features. The report's authority depends on the survey not reading as a lead form.
+- **Neutrality:** no product names in question stems except as answer options; nothing in this instrument mentions Baseout features. The report's authority depends on the survey not reading as a lead form.
 - **Measure the traps we found in research:** URL-only attachment backups [N-6], the automations/interfaces export gap [N-7, T-2], snapshot-restore rewiring cost [T-12], plan-retention awareness [N-1], untested restores [A-6].
 
 ---
@@ -476,5 +476,5 @@ Community-first, per the Gearset playbook [A-1]: Airtable Community + TableForum
 
 ### Guardrails
 - **No unreleased pricing or tier names** (Features §3 is not public) — 11.2/11.3 stay as neutral bands.
-- No BaseOut feature language in stems; vendor names appear only inside answer options where respondents need them ("On2Air, etc." in 4.1; "Whalesync, Coefficient, etc." in 9.2).
+- No Baseout feature language in stems; vendor names appear only inside answer options where respondents need them ("On2Air, etc." in 4.1; "Whalesync, Coefficient, etc." in 9.2).
 - Keep all scored questions ordinal; never reorder answer options between annual editions — IDs and options are the trend line.

@@ -5,9 +5,9 @@ Everything for the July 2026 audience-research push: two surveys, the research b
 ## The play
 
 1. **Send two surveys** — one to existing On2Air Backups customers, one to the general mailing list. Both share an identical core question bank (Sections B–F), so the results merge into a single dataset. A third, longer **benchmark instrument** (`survey-state-of-airtable-devops.md`) targets the whole ecosystem through community/partner channels — it's a superset of the same core, so all three merge; run it as the public-facing "State of Airtable DevOps survey" motion.
-2. **The incentive is the report, not the product.** Respondents get *The State of Airtable DevOps* report first, plus a sneak peek at BaseOut. For non-customers, the report is the entire draw — lead with it in subject lines.
+2. **The incentive is the report, not the product.** Respondents get *The State of Airtable DevOps* report first, plus a sneak peek at Baseout. For non-customers, the report is the entire draw — lead with it in subject lines.
 3. **Survey data completes the report.** The report draft is written from desk research with `[SURVEY: …]` placeholders; the survey benchmarks make it credible and original. Publish after the response window closes (recommend 2–3 weeks + one reminder).
-4. **The report positions BaseOut as the category leader** for "Airtable DevOps" — the same move Gearset made with the State of Salesforce DevOps report: define the category, publish the benchmark, own the term.
+4. **The report positions Baseout as the category leader** for "Airtable DevOps" — the same move Gearset made with the State of Salesforce DevOps report: define the category, publish the benchmark, own the term.
 
 ## Files
 
@@ -39,4 +39,4 @@ Everything for the July 2026 audience-research push: two surveys, the research b
 
 ## Naming note
 
-These docs spell the product **BaseOut** (as used in marketing conversation). `shared/Baseout_Features.md` Open Question #3 ("Baseout" vs "BaseOut") is still unresolved — settle it before the survey/report ship publicly, since these are outward-facing artifacts.
+Spelling is settled: always **Baseout** in prose (capital B, one word). Lowercase **baseout** is reserved for the logo mark only.

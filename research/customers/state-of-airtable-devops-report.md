@@ -2,7 +2,7 @@
 
 **The first benchmark report on how teams protect, manage, and govern their Airtable data.**
 
-*Published by BaseOut (formerly On2Air) — draft v0.1, July 2026.*
+*Published by Baseout (formerly On2Air) — draft v0.1, July 2026.*
 
 ---
 
@@ -11,8 +11,8 @@
 > - Every `[SURVEY: …]` placeholder keys to a question ID in the shared core (Sections B–F) of `survey-existing-customers.md` / `survey-mailing-list.md`. Fill from the merged dataset after the response window closes.
 > - Every `[RESEARCH: …]` tag cites a numbered finding in `research-notes.md`. Desk-research facts are already written in final prose with sources; the tags are for verification traceability — strip them at publication, keep the inline source attributions.
 > - Check `research-notes.md` §5 (do-not-print list) before publishing. Highlights: snapshots DO capture automations/interfaces; "Fortune **100**" not 500; no Airtable IPO claims; hedge all vendor-sourced stats as written.
-> - Product guardrails (GTM inputs §6.5): no unreleased pricing or tier names; the About BaseOut section must track the shipped feature list at publication time; "SOC 2 in progress" is the only approved compliance formulation.
-> - Naming: this draft spells the product **BaseOut** per the marketing docs. `Baseout_Features.md` Open Question #3 (Baseout vs BaseOut) must be settled before this ships.
+> - Product guardrails (GTM inputs §6.5): no unreleased pricing or tier names; the About Baseout section must track the shipped feature list at publication time; "SOC 2 in progress" is the only approved compliance formulation.
+> - Naming: **Baseout** in prose everywhere (settled); lowercase "baseout" only as the logo mark.
 > - Threshold language: sentences like "most teams" / "a minority" are written assuming directional expectations from desk research — rewrite honestly if the data disagrees. The report's credibility is the asset; never bend a number.
 
 ---
@@ -68,7 +68,7 @@ The survey measures how many teams have actually internalized that: [SURVEY: C6 
 
 *(Methodology first, per the standard set by DORA, Gearset, and every credible "State of X" report [RESEARCH: A-5]. Disclose the sample skew the way Gearset discloses its own-customer share each year [RESEARCH: A-1].)*
 
-The survey ran [SURVEY: fieldwork dates] across two channels: customers of On2Air Backups (the product BaseOut succeeds) and the broader On2Air/BaseOut mailing list of Airtable builders and operators. **n = [SURVEY: total merged N]** after screening out non-Airtable-users; [SURVEY: % audience=customer] were existing backup customers.
+The survey ran [SURVEY: fieldwork dates] across two channels: customers of On2Air Backups (the product Baseout succeeds) and the broader On2Air/Baseout mailing list of Airtable builders and operators. **n = [SURVEY: total merged N]** after screening out non-Airtable-users; [SURVEY: % audience=customer] were existing backup customers.
 
 **Read the numbers with that skew in mind.** A list reached through a backup vendor over-represents people who already think about data protection. If anything, the true state of the wider Airtable market is *less* mature than reported here — the gaps in this report are a floor, not a ceiling.
 
@@ -80,7 +80,7 @@ The survey ran [SURVEY: fieldwork dates] across two channels: customers of On2Ai
 - **Estate size** [SURVEY: B4 distribution] bases under active maintenance; largest-base record counts [SURVEY: B5 distribution].
 - **Criticality** [SURVEY: B6 distribution]; what runs on the most important bases [SURVEY: B7 top categories].
 
-Percentages throughout are of the merged dataset unless labeled otherwise. Customer-only questions (the On2Air experience section) are labeled as the customer subsample. Where we cite third-party research, the sponsor is named — much of the industry's backup data comes from vendors who sell the remedy, and we flag that every time, including our own interest: BaseOut builds Airtable backup and data-intelligence tooling. The survey questions, answer options, and scoring rubric are reproduced in the appendix so anyone can audit or replicate the method.
+Percentages throughout are of the merged dataset unless labeled otherwise. Customer-only questions (the On2Air experience section) are labeled as the customer subsample. Where we cite third-party research, the sponsor is named — much of the industry's backup data comes from vendors who sell the remedy, and we flag that every time, including our own interest: Baseout builds Airtable backup and data-intelligence tooling. The survey questions, answer options, and scoring rubric are reproduced in the appendix so anyone can audit or replicate the method.
 
 ---
 
@@ -236,13 +236,13 @@ We intend to run this survey annually and track the ecosystem's maturity the way
 
 ---
 
-## About BaseOut
+## About Baseout
 
 *(Keep to four sentences, claim-hygiene per GTM §6.5 — track shipped status at publication time; no pricing; "SOC 2 in progress" only if mentioned at all.)*
 
-BaseOut is the backup, restore, and data intelligence layer for Airtable — the next generation of On2Air Backups, which has protected Airtable data for paying customers for years. It automatically backs up schema, records, and attachments to storage the customer controls (Google Drive, Dropbox, Box, OneDrive) or to BaseOut-managed storage, with per-run audit reports. On static backups to customer-owned storage, record data streams through memory and is never stored on BaseOut servers. Learn more at [URL].
+Baseout is the backup, restore, and data intelligence layer for Airtable — the next generation of On2Air Backups, which has protected Airtable data for paying customers for years. It automatically backs up schema, records, and attachments to storage the customer controls (Google Drive, Dropbox, Box, OneDrive) or to Baseout-managed storage, with per-run audit reports. On static backups to customer-owned storage, record data streams through memory and is never stored on Baseout servers. Learn more at [URL].
 
-*This report was produced by BaseOut. We sell tooling in the category this report benchmarks; the survey instrument, answer options, and scoring rubric are published in full in the appendices so you can audit our method.*
+*This report was produced by Baseout. We sell tooling in the category this report benchmarks; the survey instrument, answer options, and scoring rubric are published in full in the appendices so you can audit our method.*
 
 ---
 

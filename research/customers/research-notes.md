@@ -200,7 +200,7 @@ Sources: https://on2air.com/pricing/ · https://www.probackup.io/backup/airtable
 - First State of DevOps survey 2012 (Puppet + Gene Kim), 4,000+ respondents; *Accelerate* published 2018; Google acquired DORA Dec 2018; continues as Google Cloud's Accelerate State of DevOps Report. Cumulative reach **32,000+ professionals**. https://dora.dev/guides/dora-metrics-four-keys/ `[OFFICIAL/PRESS]`
 - **Four keys:** deployment frequency, lead time for changes, change failure rate, failed-deployment recovery time — two throughput, two stability.
 - **DORA segments respondents into Low / Medium / High / Elite** — the direct precedent for **Ad hoc → Aware → Managed → Engineered**. Cluster thresholds shift by edition; cite a specific year when quoting cutoffs.
-- Other "State of X" scale markers: State of JavaScript 2024 **14,015** responses; State of CSS 2023 **9,190**; HackerOne report annual since 2017, mixes **platform telemetry + survey** — a pattern BaseOut could copy (product data + survey) that nothing in the Airtable ecosystem does.
+- Other "State of X" scale markers: State of JavaScript 2024 **14,015** responses; State of CSS 2023 **9,190**; HackerOne report annual since 2017, mixes **platform telemetry + survey** — a pattern Baseout could copy (product data + survey) that nothing in the Airtable ecosystem does.
 - Standard structure across all: methodology/demographics up front → maturity segmentation → YoY benchmarks → topic-of-the-year chapter → prescriptive recommendations → year-round derivative content.
 
 ### A-6. Backup/DR discipline stats
@@ -251,4 +251,4 @@ Sources: https://on2air.com/pricing/ · https://www.probackup.io/backup/airtable
 8. Kanban-view / scripting-automation "deprecations" that surface in search come from **miniExtensions'** changelog, not Airtable — do not attribute to Airtable.
 9. Trash is **7 days at base level** but **30 days for deleted bases** (30–180 on Enterprise Scale) — don't flatten to "7 days" without the qualifier.
 10. All pricing figures are as-published mid-2026 and change often — re-verify before print.
-11. Per the repo guardrails: **no unreleased BaseOut pricing/tier names** anywhere in the report, and claims about BaseOut itself must track shipped status (GTM doc §6.5).
+11. Per the repo guardrails: **no unreleased Baseout pricing/tier names** anywhere in the report, and claims about Baseout itself must track shipped status (GTM doc §6.5).

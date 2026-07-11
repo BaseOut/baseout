@@ -1,8 +1,8 @@
-# BaseOut Survey — Mailing List / General Airtable Audience
+# Baseout Survey — Mailing List / General Airtable Audience
 
 **Audience:** Mailing-list subscribers who are *not* (or may not be) On2Air Backups customers — Airtable builders, consultants, ops people who followed On2Air content, tools, or the newsletter.
-**Goal:** Measure the broader market's Airtable DevOps pain (backup, schema visibility, change management, data access) and appetite for BaseOut; grow the launch list.
-**Incentive:** *The State of Airtable DevOps* report + a sneak peek at BaseOut.
+**Goal:** Measure the broader market's Airtable DevOps pain (backup, schema visibility, change management, data access) and appetite for Baseout; grow the launch list.
+**Incentive:** *The State of Airtable DevOps* report + a sneak peek at Baseout.
 **Target length:** 6–7 minutes (shorter than the customer form — this audience has less commitment). Questions marked ⭑ are required.
 **Merge key:** Sections B–F are the **shared core**, word-for-word identical to `survey-existing-customers.md` so the two datasets combine for the report. Section A (screener) and Section G (early access) are list-only.
 
@@ -16,7 +16,7 @@
 >
 > As a thank-you, you'll get:
 > 1. **The State of Airtable DevOps report** before anyone else — see how your practices compare to other teams.
-> 2. **A sneak peek at BaseOut**, the Airtable backup & data-intelligence platform we're building (the next generation of On2Air Backups).
+> 2. **A sneak peek at Baseout**, the Airtable backup & data-intelligence platform we're building (the next generation of On2Air Backups).
 >
 > Your individual answers stay private; only aggregated results appear in the report.
 
@@ -210,7 +210,7 @@
 
 ## Section G — Stay in the loop *(list-only)*
 
-**G1. ⭑ Want early access to BaseOut when it launches?** *(single select)*
+**G1. ⭑ Want early access to Baseout when it launches?** *(single select)*
 - Yes — put me on the early-access list
 - Yes — and I'd beta test in exchange for free access
 - Just send the report
@@ -219,7 +219,7 @@
 **G2. Can we interview you for 20 minutes about your Airtable setup? (We'll share extra findings from the report as thanks.)** *(single select)*
 - Yes · No
 
-**G3. ⭑ Email for your copy of *The State of Airtable DevOps* report + BaseOut sneak peek:** *(email field — prefill from the ESP link where possible)*
+**G3. ⭑ Email for your copy of *The State of Airtable DevOps* report + Baseout sneak peek:** *(email field — prefill from the ESP link where possible)*
 
 ---
 

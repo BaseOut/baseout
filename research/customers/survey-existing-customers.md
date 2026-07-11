@@ -1,8 +1,8 @@
-# BaseOut Survey — Existing On2Air Customers
+# Baseout Survey — Existing On2Air Customers
 
 **Audience:** Current + recent On2Air Backups customers (~200 paying orgs) and On2Air users of deprecated non-backup products.
-**Goal:** Validate that BaseOut's roadmap (backup/restore core + Schema & Data intelligence) matches what these customers actually need; surface migration risks; recruit beta users.
-**Incentive:** Early access to *The State of Airtable DevOps* report + a sneak peek at BaseOut.
+**Goal:** Validate that Baseout's roadmap (backup/restore core + Schema & Data intelligence) matches what these customers actually need; surface migration risks; recruit beta users.
+**Incentive:** Early access to *The State of Airtable DevOps* report + a sneak peek at Baseout.
 **Target length:** 8–10 minutes. Questions marked ⭑ are required; everything else optional.
 **Merge key:** Sections B–F are the **shared core** — identical wording and answer options to the mailing-list survey so both datasets combine for the report. Sections A and G are customer-only.
 
@@ -12,11 +12,11 @@
 
 > **Help shape the future of Airtable backup & DevOps — and get the report first.**
 >
-> We're building **BaseOut**, the next generation of On2Air Backups — backup, restore, schema intelligence, and direct data access for Airtable. Before we lock the roadmap, we want to make sure it solves *your* problems.
+> We're building **Baseout**, the next generation of On2Air Backups — backup, restore, schema intelligence, and direct data access for Airtable. Before we lock the roadmap, we want to make sure it solves *your* problems.
 >
 > This takes about 8 minutes. As a thank-you, you'll get:
 > 1. **First access to *The State of Airtable DevOps* report** — benchmarks on how teams protect, manage, and govern their Airtable data (built from this survey).
-> 2. **A sneak peek at BaseOut** before public launch.
+> 2. **A sneak peek at Baseout** before public launch.
 >
 > Your individual answers stay private; only aggregated results appear in the report.
 
@@ -46,7 +46,7 @@
 - No — never needed to
 - No — I tried and couldn't figure it out
 
-**A7. If BaseOut replaces On2Air Backups, what would make the migration feel safe to you?** *(multi-select)*
+**A7. If Baseout replaces On2Air Backups, what would make the migration feel safe to you?** *(multi-select)*
 - Keeping my current price for a transition period
 - Automatic migration of my backup configurations
 - Keeping my existing backup history/snapshots accessible
@@ -227,20 +227,20 @@
 
 ## Section G — Migration & early access *(customer-only)*
 
-**G1. ⭑ BaseOut will replace On2Air Backups. Which statement best matches your reaction?** *(single select)*
+**G1. ⭑ Baseout will replace On2Air Backups. Which statement best matches your reaction?** *(single select)*
 - Excited — On2Air needed a next generation
 - Cautiously optimistic — as long as nothing breaks
 - Nervous — I depend on this and change is risk
 - Indifferent
 - Frustrated — I just wanted the old product maintained
 
-**G2. Would you like to be a BaseOut beta tester (free early access in exchange for feedback)?** *(single select)*
+**G2. Would you like to be a Baseout beta tester (free early access in exchange for feedback)?** *(single select)*
 - Yes · Maybe — tell me more · No
 
 **G3. Can we interview you for 20 minutes about your Airtable setup? (We'll share extra findings from the report as thanks.)** *(single select)*
 - Yes · No
 
-**G4. ⭑ Email for your copy of *The State of Airtable DevOps* report + BaseOut sneak peek:** *(email field — prefill where the ESP supports it)*
+**G4. ⭑ Email for your copy of *The State of Airtable DevOps* report + Baseout sneak peek:** *(email field — prefill where the ESP supports it)*
 
 ---
 
