@@ -45,8 +45,14 @@ export interface InboxItem {
   /** Row copy. `*markers*` render bold — same convention as the connection banner. */
   title: string;
   detail?: string;
-  /** The base this concerns. Doubles as the rollup key and the mute key. */
+  /** The base this concerns (display name). Doubles as the rollup key. */
   base?: string;
+  /**
+   * Airtable base id — the persistence key for `Mute this base`
+   * (web-notifications-inbox §5.1). Absent on rows that predate the engine
+   * feed (fixtures); muting those stays client-only.
+   */
+  baseId?: string;
   /**
    * The Space this row came from. The Inbox is ACCOUNT-level (Dan agreed, on the
    * condition that each row says where it is from), so with two or more Spaces every
@@ -54,6 +60,13 @@ export interface InboxItem {
    * noise and are not rendered at all.
    */
   space?: string;
+  /**
+   * The Space's UUID — the address for the triage/mute proxy routes
+   * (`/api/spaces/:spaceId/inbox/*`). Stamped by the SSR fan-out
+   * (lib/inbox-feed.ts) even for single-Space accounts, where the display
+   * `space` label above is deliberately absent.
+   */
+  spaceId?: string;
   /** ISO timestamp. */
   at: string;
   /** Deep-link to the exact surface (a run's log, the schema diff, the reconnect flow). */

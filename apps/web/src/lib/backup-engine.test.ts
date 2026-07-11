@@ -785,3 +785,82 @@ describe('createBackupEngine.provisionDatabase', () => {
     }
   })
 })
+
+describe('createBackupEngine inbox methods (web-notifications-inbox §5.1)', () => {
+  const SPACE_ID = '11111111-2222-3333-4444-555555555555'
+
+  it('getNotifications GETs the canonical notifications path and returns items', async () => {
+    const items = [
+      { id: 'run:r1', kind: 'backup-failed', title: '*Sales CRM* backup failed', at: '2026-07-09T10:00:00.000Z' },
+    ]
+    const binding = fetcherStub(() => jsonResponse({ ok: true, items }))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.getNotifications(SPACE_ID)
+    const req = binding.fetch.mock.calls[0]
+    const url = new URL(req![0] as string)
+    expect(url.pathname).toBe(`/api/internal/spaces/${SPACE_ID}/notifications`)
+    expect((req![1] as RequestInit).method).toBe('GET')
+    expect(((req![1] as RequestInit).headers as Record<string, string>)['x-internal-token']).toBe(TOKEN)
+    expect(result).toEqual({ ok: true, items })
+  })
+
+  it('getNotifications tolerates a missing items array', async () => {
+    const binding = fetcherStub(() => jsonResponse({ ok: true }))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await expect(engine.getNotifications(SPACE_ID)).resolves.toEqual({ ok: true, items: [] })
+  })
+
+  it('triageNotification POSTs the triage path with the input body', async () => {
+    const binding = fetcherStub(() => jsonResponse({ ok: true }))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.triageNotification(SPACE_ID, {
+      itemId: 'run:r1',
+      action: 'snooze',
+      snoozedUntil: '2026-07-11T00:00:00.000Z',
+    })
+    const req = binding.fetch.mock.calls[0]
+    const url = new URL(req![0] as string)
+    expect(url.pathname).toBe(`/api/internal/spaces/${SPACE_ID}/notifications/triage`)
+    expect((req![1] as RequestInit).method).toBe('POST')
+    expect(JSON.parse((req![1] as RequestInit).body as string)).toEqual({
+      itemId: 'run:r1',
+      action: 'snooze',
+      snoozedUntil: '2026-07-11T00:00:00.000Z',
+    })
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('triageNotification surfaces the 422 state-backed-done rejection as engine_error/422', async () => {
+    const binding = fetcherStub(() => jsonResponse({ ok: false, error: 'state_backed' }, 422))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.triageNotification(SPACE_ID, { itemId: 'conn:c1', action: 'done' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(422)
+      expect(result.code).toBe('engine_error')
+    }
+  })
+
+  it('muteNotificationBase POSTs the mute path with baseId + muted', async () => {
+    const binding = fetcherStub(() => jsonResponse({ ok: true }))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.muteNotificationBase(SPACE_ID, 'appXYZ', true)
+    const req = binding.fetch.mock.calls[0]
+    const url = new URL(req![0] as string)
+    expect(url.pathname).toBe(`/api/internal/spaces/${SPACE_ID}/notifications/mute`)
+    expect(JSON.parse((req![1] as RequestInit).body as string)).toEqual({ baseId: 'appXYZ', muted: true })
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('inbox methods return engine_unreachable when the binding throws', async () => {
+    const binding = fetcherStub(() => {
+      throw new Error('socket hang up')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await expect(engine.getNotifications(SPACE_ID)).resolves.toEqual({
+      ok: false,
+      code: 'engine_unreachable',
+      status: 0,
+    })
+  })
+})

@@ -1,16 +1,94 @@
 /**
  * Inbox — client behaviour.
  *
- * There is no backend. Triage mutates DOM state only and a refresh resets to the
- * fixture, so every faked action announces its result (the honest-signal pattern)
- * rather than implying persistence.
+ * Triage persists through the guarded web proxy under
+ * `/api/spaces/:spaceId/inbox/*` (web-notifications-inbox §5.1 — the
+ * promotion-time adaptation of the design fixture's client-only actions).
+ * The UI stays OPTIMISTIC: the row updates first, the fetch follows, and a
+ * failed save reverts the row and announces. Rows without a `data-space-id`
+ * (fixture/preview renders) keep the original client-only behaviour.
  *
  * The panel is NON-MODAL: it does not trap focus, does not steal focus on open,
  * and carries no role="dialog". Arrivals announce through a polite live region.
  */
 
+import { setButtonLoading } from '../../lib/ui';
+
 const PANEL = '[data-inbox]';
 const OPEN_ATTR = 'data-inbox-open';
+
+type TriageAction = 'read' | 'unread' | 'done' | 'undone' | 'snooze' | 'unsnooze';
+
+/** POST helper — resolves false on any transport or HTTP failure, never throws. */
+async function postJson(url: string, body: unknown, keepalive = false): Promise<boolean> {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      keepalive,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Persist one triage action for a row. Returns null when the row carries no
+ * `data-space-id` — an unwired (fixture) row whose triage stays client-only.
+ * `keepalive` survives the navigation a deep-link click triggers.
+ */
+function persistTriage(
+  row: HTMLElement,
+  action: TriageAction,
+  extra: { snoozedUntil?: string } = {},
+  keepalive = false,
+): Promise<boolean> | null {
+  const spaceId = row.dataset.spaceId;
+  const itemId = row.dataset.row;
+  if (!spaceId || !itemId) return null;
+  return postJson(
+    `/api/spaces/${encodeURIComponent(spaceId)}/inbox/triage`,
+    { itemId, action, ...extra },
+    keepalive,
+  );
+}
+
+/** Persist a per-base mute/unmute. Null when spaceId or baseId is missing. */
+function persistMute(row: HTMLElement, muted: boolean): Promise<boolean> | null {
+  const spaceId = row.dataset.spaceId;
+  const baseId = row.dataset.baseId;
+  if (!spaceId || !baseId) return null;
+  return postJson(`/api/spaces/${encodeURIComponent(spaceId)}/inbox/mute`, { baseId, muted });
+}
+
+/**
+ * Optimistic-save plumbing: show the spinner on the tapped control while the
+ * save is in flight (repo rule — a server wait is never silent), and run
+ * `revert` + announce when it fails. No-op for client-only (null) saves.
+ */
+function trackSave(
+  panel: HTMLElement,
+  save: Promise<boolean> | null,
+  btn: HTMLButtonElement | null,
+  onFail: () => void,
+  failMessage: string,
+): void {
+  if (!save) return;
+  if (btn) setButtonLoading(btn, true);
+  void save
+    .then((ok) => {
+      if (!ok) {
+        onFail();
+        announce(panel, failMessage);
+        sync(panel);
+      }
+    })
+    .finally(() => {
+      if (btn && btn.isConnected) setButtonLoading(btn, false);
+    });
+}
 
 /** Rows still live in a lane — handled (done/snoozed/resolved) and muted rows are out. */
 function liveRows(panel: HTMLElement, lane?: string): HTMLElement[] {
@@ -273,12 +351,29 @@ export function wireInbox(): void {
   // Mark-all-read touches ACTIVITY ONLY. Marking an unresolved "reconnect!" as
   // read would let the New filter hide a broken connection — the panel would show
   // a clean inbox while backups are stopped. Read is not resolved.
-  panel.querySelector('[data-inbox-read-all]')?.addEventListener('click', () => {
+  panel.querySelector<HTMLButtonElement>('[data-inbox-read-all]')?.addEventListener('click', (e) => {
+    const btn = e.currentTarget as HTMLButtonElement;
     const rows = liveRows(panel, 'activity');
     for (const row of rows) row.dataset.read = 'true';
     announce(panel, `${rows.length} activity notifications marked read`);
     toast('Activity marked read. Rows that need attention were left alone.');
     sync(panel);
+    // Persist per row (the engine triage route is per-item). Optimistic and
+    // best-effort — a partial failure announces rather than reverting a bulk
+    // action the user can't un-see.
+    const saves = rows
+      .map((row) => persistTriage(row, 'read'))
+      .filter((p): p is Promise<boolean> => p !== null);
+    if (saves.length > 0) {
+      setButtonLoading(btn, true);
+      void Promise.all(saves)
+        .then((oks) => {
+          if (oks.some((ok) => !ok)) {
+            announce(panel, 'Some read states could not be saved');
+          }
+        })
+        .finally(() => setButtonLoading(btn, false));
+    }
   });
 
   // Activity: "Unread only" — a catalog toggle, so it reports its own state.
@@ -331,31 +426,70 @@ export function wireInbox(): void {
 
     if (!row) return;
 
-    // Restore a handled row back into the live Activity lane.
+    // Restore a handled row back into the live Activity lane. Persist the
+    // reversal of whatever handled it (done → undone, snoozed → unsnooze).
     if (target.closest('[data-inbox-restore]')) {
+      const reason = row.dataset.handled;
       delete row.dataset.handled;
       announce(panel, 'Notification moved back to Activity');
+      trackSave(
+        panel,
+        persistTriage(row, reason === 'snoozed' ? 'unsnooze' : 'undone'),
+        target.closest<HTMLButtonElement>('[data-inbox-restore]'),
+        () => {
+          if (reason) row.dataset.handled = reason;
+        },
+        'Could not save — the notification stays handled',
+      );
       sync(panel);
       return;
     }
 
     if (target.closest('[data-inbox-done]')) {
-      setHandled(row, 'done');
-      announce(panel, 'Notification marked done');
-      toast('Marked done.', () => {
+      const revert = () => {
         delete row.dataset.handled;
         sync(panel);
+      };
+      setHandled(row, 'done');
+      announce(panel, 'Notification marked done');
+      trackSave(
+        panel,
+        persistTriage(row, 'done'),
+        target.closest<HTMLButtonElement>('[data-inbox-done]'),
+        () => {
+          delete row.dataset.handled;
+        },
+        'Could not save — the notification was moved back',
+      );
+      toast('Marked done.', () => {
+        revert();
+        void persistTriage(row, 'undone');
       });
       sync(panel);
       return;
     }
 
     if (target.closest('[data-inbox-snooze]')) {
-      setHandled(row, 'snoozed');
-      announce(panel, 'Notification snoozed for one day');
-      toast('Snoozed for 1 day. It resurfaces early on new activity.', () => {
+      const revert = () => {
         delete row.dataset.handled;
         sync(panel);
+      };
+      setHandled(row, 'snoozed');
+      announce(panel, 'Notification snoozed for one day');
+      trackSave(
+        panel,
+        persistTriage(row, 'snooze', {
+          snoozedUntil: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        }),
+        target.closest<HTMLButtonElement>('[data-inbox-snooze]'),
+        () => {
+          delete row.dataset.handled;
+        },
+        'Could not save — the notification was moved back',
+      );
+      toast('Snoozed for 1 day. It resurfaces early on new activity.', () => {
+        revert();
+        void persistTriage(row, 'unsnooze');
       });
       sync(panel);
       return;
@@ -371,8 +505,18 @@ export function wireInbox(): void {
         }
       }
       announce(panel, `Muted ${base}`);
+      trackSave(
+        panel,
+        persistMute(row, true),
+        target.closest<HTMLButtonElement>('[data-inbox-mute]'),
+        () => {
+          for (const r of muted) delete r.dataset.muted;
+        },
+        `Could not save — ${base} was unmuted`,
+      );
       toast(`Muted ${base}. Failures still come through.`, () => {
         for (const r of muted) delete r.dataset.muted;
+        void persistMute(row, false);
         sync(panel);
       });
       sync(panel);
@@ -382,9 +526,11 @@ export function wireInbox(): void {
     // Opening a row marks it read and follows the deep-link — the surface you
     // land on IS the detail, and it is where you can act (re-run, reconnect, diff).
     // Read is NOT resolved: a read "reconnect!" is still broken, so state-backed
-    // rows stay in the attention lane.
+    // rows stay in the attention lane. Persist is fire-and-forget (keepalive —
+    // the click navigates away); a lost read-state is not worth blocking a link.
     if (target.closest('[data-inbox-open-row]')) {
       row.dataset.read = 'true';
+      void persistTriage(row, 'read', {}, true);
       sync(panel);
     }
   });

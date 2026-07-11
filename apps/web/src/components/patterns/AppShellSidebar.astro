@@ -14,6 +14,12 @@ interface Props {
   /** @deprecated No longer rendered; kept for back-compat with existing callers. */
   showAiAssistant?: boolean;
   currentPath?: string;
+  /**
+   * SSR needs-decision count for the Inbox badge (attention-lane rows). The
+   * client keeps it in sync afterwards (inbox-client sync()); this is the
+   * first-paint truth so the badge doesn't wait on hydration.
+   */
+  inboxCount?: number;
 }
 
 const {
@@ -32,6 +38,7 @@ const {
   user = { name: 'Guest', email: 'guest@example.com', role: 'viewer' },
   organization = null,
   currentPath     = Astro.url.pathname,
+  inboxCount      = 0,
 } = Astro.props;
 
 function isActive(item: NavItem): boolean {
@@ -123,8 +130,8 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
     <span
       data-inbox-count
       class="badge badge-sm badge-error badge-soft group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden"
-      hidden
-    ></span>
+      hidden={inboxCount === 0}
+    >{inboxCount > 9 ? '9+' : String(inboxCount)}</span>
   </button>
 </div>
 

@@ -582,6 +582,55 @@ export type GetSchemaChangelogResult =
   | { ok: true; entries: ChangelogEntryView[] }
   | SchemaDocsError;
 
+// Inbox feed (server-notifications-inbox / web-notifications-inbox §5.1).
+
+/**
+ * One notification row from the engine's per-Space feed
+ * (GET /api/internal/spaces/:spaceId/notifications). Mirrors the web
+ * `InboxItem` (src/components/layout/inbox.ts) field-for-field EXCEPT `space`
+ * / `spaceId`, which the web fan-out stamps when merging feeds across the
+ * account's Spaces (lib/inbox-feed.ts). `kind` is a plain string on the wire —
+ * the fan-out drops kinds the panel doesn't know instead of crashing a render
+ * against a newer engine.
+ */
+export interface InboxItemView {
+  id: string;
+  kind: string;
+  /** Row copy. `*markers*` render bold — composed engine-side. */
+  title: string;
+  detail?: string;
+  /** Base display name — the panel's rollup key. */
+  base?: string;
+  /** Airtable base id — the mute-route key (`bo_at_inbox_mutes.base_id`). */
+  baseId?: string;
+  /** ISO timestamp. */
+  at: string;
+  href?: string;
+  action?: { label: string; href: string; icon: string; primary?: boolean };
+  read?: boolean;
+  done?: boolean;
+  snoozedUntil?: string | null;
+  stateBacked?: boolean;
+  resolved?: boolean;
+}
+export type GetNotificationsResult = { ok: true; items: InboxItemView[] } | SchemaDocsError;
+
+export type InboxTriageAction =
+  | "read"
+  | "unread"
+  | "done"
+  | "undone"
+  | "snooze"
+  | "unsnooze";
+export interface InboxTriageInput {
+  itemId: string;
+  action: InboxTriageAction;
+  /** ISO timestamp; meaningful with action 'snooze'. */
+  snoozedUntil?: string | null;
+}
+export type TriageNotificationResult = { ok: true } | SchemaDocsError;
+export type MuteNotificationBaseResult = { ok: true } | SchemaDocsError;
+
 // Chat tab (server-schema-chat / web-chat-tab).
 export interface ChatThreadSummaryView {
   id: string;
@@ -711,6 +760,9 @@ export interface BackupEngineClient {
   rerunHealth(spaceId: string, baseId: string): Promise<RerunHealthResult>;
   getRelationships(spaceId: string, baseId: string, includeDismissed?: boolean): Promise<GetRelationshipsResult>;
   getSchemaChangelog(spaceId: string, baseId: string, limit?: number): Promise<GetSchemaChangelogResult>;
+  getNotifications(spaceId: string): Promise<GetNotificationsResult>;
+  triageNotification(spaceId: string, input: InboxTriageInput): Promise<TriageNotificationResult>;
+  muteNotificationBase(spaceId: string, baseId: string, muted: boolean): Promise<MuteNotificationBaseResult>;
   mutateRelationship(
     spaceId: string,
     body:
@@ -1343,6 +1395,27 @@ export function createBackupEngine(
       const res = await schemaDocsRequest(options, "GET", path);
       if (!res.ok) return res;
       return { ok: true, entries: (res.body.entries ?? []) as ChangelogEntryView[] };
+    },
+
+    async getNotifications(spaceId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/notifications`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return { ok: true, items: (res.body.items ?? []) as InboxItemView[] };
+    },
+
+    async triageNotification(spaceId, input) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/notifications/triage`;
+      const res = await schemaDocsRequest(options, "POST", path, input);
+      if (!res.ok) return res;
+      return { ok: true };
+    },
+
+    async muteNotificationBase(spaceId, baseId, muted) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/notifications/mute`;
+      const res = await schemaDocsRequest(options, "POST", path, { baseId, muted });
+      if (!res.ok) return res;
+      return { ok: true };
     },
 
     async mutateRelationship(spaceId, body) {

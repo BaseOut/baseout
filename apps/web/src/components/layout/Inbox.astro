@@ -217,7 +217,9 @@ const lanes = [
                 data-kind={g.lead.kind}
                 data-lane={lane.key}
                 data-base={g.lead.base}
+                data-base-id={g.lead.baseId}
                 data-space={g.lead.space}
+                data-space-id={g.lead.spaceId}
                 data-state-backed={g.lead.stateBacked ? 'true' : undefined}
                 data-read={g.lead.read ? 'true' : 'false'}
               >
@@ -335,6 +337,8 @@ const lanes = [
                 data-kind={item.kind}
                 data-lane={lane.key}
                 data-base={item.base}
+                data-base-id={item.baseId}
+                data-space-id={item.spaceId}
                 data-read="true"
                 data-handled={reason}
               >

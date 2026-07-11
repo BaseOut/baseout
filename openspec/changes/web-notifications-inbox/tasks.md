@@ -39,7 +39,7 @@
 > promotion mounts the Inbox UI with an empty feed + the designed zero-states
 > ("soon"-gated actions) so wiring the backend later swaps the data source only.
 
-- [ ] 5.1 Bind the panel to engine-brokered alerts instead of `apps/design/src/fixtures/inbox.ts`. **(blocked: server-notifications-inbox)**
+- [x] 5.1 Bind the panel to engine-brokered alerts instead of `apps/design/src/fixtures/inbox.ts` — `SidebarLayout` fans `getNotifications` out across the account's Spaces (parallel, timeout-guarded, degrades to the zero-states), `/api/spaces/:spaceId/inbox{,/triage,/mute}` proxies carry triage, and `inbox-client` persists done/snooze/mute/read optimistically with revert-on-failure. Built against the `server-notifications-inbox` design.md contract; end-to-end smoke pending the engine routes landing.
 - [ ] 5.2 Clear the connection-health banner when the reconnect alert resolves (both are currently independent).
 - [ ] 5.3 Notification settings page — channels (in-app / email / digest) and granularity (Space / base / watched entity). The gear links to `/settings` today.
 - [ ] 5.4 Keyboard triage (`J`/`K`, `U`, `E`) and a shortcut to focus the panel.

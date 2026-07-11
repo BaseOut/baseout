@@ -187,8 +187,13 @@ const { hasSchema, healthBases } = Astro.props
           `<div><h3 class="mb-2 text-sm font-semibold text-base-content">Synced views <span class="text-base-content/40">(${synced.length})</span></h3><ul class="space-y-2">${synced.map(syncedRow).join('')}</ul></div>`,
         )
       }
+      // Distinguish "this base has none" from "your filters/search excluded them" —
+      // a base without links/lookups/rollups showing "no match" reads like a bug.
+      const nothingInBase = data.derived.length === 0 && data.syncedViews.length === 0
       return sections.length === 0
-        ? '<p class="text-base-content/50">No relationships match.</p>'
+        ? nothingInBase
+          ? '<p class="text-base-content/50">No relationships in this base yet — linked records, lookups, rollups, formulas that reference other fields, and synced views appear here once the schema has them.</p>'
+          : '<p class="text-base-content/50">No relationships match these filters.</p>'
         : `<div class="space-y-6">${sections.join('')}</div>`
     }
 

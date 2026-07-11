@@ -1,4 +1,5 @@
 ---
+import { env } from 'cloudflare:workers';
 import Layout from './Layout.astro';
 import Sidebar from '../components/patterns/AppShellSidebar.astro';
 import Header  from '../components/patterns/AppShellHeader.astro';
@@ -8,9 +9,11 @@ import ConnectionHealthPill from '../components/patterns/ConnectionHealthPill.as
 import { getPageContext } from '../lib/config';
 import { getConnectionHealthSummary } from '../lib/integrations';
 import { deriveBannerProps } from '../lib/connection-health';
+import { createBackupEngine } from '../lib/backup-engine';
+import { fetchInboxItems } from '../lib/inbox-feed';
 import type { ConnectionBannerProps } from '../components/patterns/connection-health-banner';
 import type { NavItem, UserInfo, Breadcrumb } from '../lib/types';
-import type { InboxItem } from '../components/layout/inbox';
+import { attentionCount, type InboxItem } from '../components/layout/inbox';
 
 interface Props {
   // <head>
@@ -32,8 +35,9 @@ interface Props {
   breadcrumbs?:        Breadcrumb[];
 
   // Inbox — the notification center (see the `pattern-inbox` storybook entry).
-  // No notifications backend yet, so the default is the empty feed and the
-  // panel renders its designed zero-states.
+  // When omitted, the layout fans the engine-brokered feed out across the
+  // account's Spaces itself (web-notifications-inbox §5.1); pass an explicit
+  // array to override (previews/fixtures).
   inboxItems?:         InboxItem[];
 
   // Page interior re-renders on Space switch when true.
@@ -60,6 +64,33 @@ try {
   bannerProps = null;
 }
 
+// Inbox feed — engine-brokered per-Space alerts, fanned out IN PARALLEL across
+// the account's Spaces and merged newest-first with Space labels
+// (web-notifications-inbox §5.1). Guarded + best-effort like the banner above:
+// no account (marketing/auth pages) or no engine binding ⇒ skip entirely;
+// any failure or timeout degrades to [] and the panel's designed zero-states —
+// the feed must never block or error a page render.
+let resolvedInboxItems: InboxItem[] = Astro.props.inboxItems ?? [];
+if (Astro.props.inboxItems === undefined) {
+  try {
+    const accountSpaces = Astro.locals.account?.organization
+      ? (Astro.locals.account.spaces ?? [])
+      : [];
+    if (accountSpaces.length > 0 && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+      const engine = createBackupEngine({
+        binding: env.BACKUP_ENGINE,
+        internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+      });
+      resolvedInboxItems = await fetchInboxItems(
+        engine,
+        accountSpaces.map((s) => ({ id: s.id, name: s.name })),
+      );
+    }
+  } catch {
+    resolvedInboxItems = [];
+  }
+}
+
 const {
   title,
   description,
@@ -75,13 +106,14 @@ const {
   pageTitle,
   breadcrumbs,
 
-  inboxItems    = [],
-
   spaceScoped   = false,
 } = Astro.props;
 
 const currentPath = Astro.url.pathname;
 const resolvedTitle = title ?? (pageTitle ? `${pageTitle} | ${brandName}` : brandName);
+// First-paint truth for the sidebar's needs-decision badge; the client's
+// sync() takes over from there (same element, same semantics).
+const inboxAttentionCount = attentionCount(resolvedInboxItems, new Date());
 ---
 
 <Layout title={resolvedTitle} description={description}>
@@ -101,6 +133,7 @@ const resolvedTitle = title ?? (pageTitle ? `${pageTitle} | ${brandName}` : bran
         user={user}
         organization={null}
         currentPath={currentPath}
+        inboxCount={inboxAttentionCount}
       />
     </div>
 
@@ -110,7 +143,7 @@ const resolvedTitle = title ?? (pageTitle ? `${pageTitle} | ${brandName}` : bran
       {/* The Inbox OVERLAYS the work area from its left edge — it never pushes the
           page narrower (at 1280px that hid ~340px of the Backups table). Still
           non-modal: no scrim, no focus trap, the page behind stays interactive. */}
-      <Inbox items={inboxItems} />
+      <Inbox items={resolvedInboxItems} />
 
       <Header>
         {bannerProps?.state === 'broken' && (
