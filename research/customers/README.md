@@ -15,7 +15,7 @@ Everything for the July 2026 audience-research push: two surveys, the research b
 |---|---|
 | `survey-existing-customers.md` | Form for current/recent On2Air Backups customers. Adds On2Air satisfaction + migration-safety sections around the shared core. ~8–10 min. |
 | `survey-mailing-list.md` | Form for the broader list. Adds a screener + early-access close around the same shared core. ~6–7 min. |
-| `survey-state-of-airtable-devops.md` | The **definitive benchmark instrument** for the whole ecosystem (community, partners, social — not just our list). A superset of the shared core plus governance, incident deep-dive, DORA-style change metrics, and an AI section. Designed for annual re-runs with stable IDs. ~12–14 min. |
+| `survey-state-of-airtable-devops.md` | The **definitive benchmark instrument** for the whole ecosystem (community, partners, social — not just our list). A superset of the shared core plus governance, capability checklist, incident deep-dive, cost-of-status-quo, DORA-style change metrics, an AI section, and a **private validation tail** (never published — WTP, agency resell, product-updates opt-in). Sponsored by **Baseout × BuiltOnAir**, "from the team behind On2Air." On-screen maturity band at completion. ~15 min. |
 | `research-notes.md` | Verified desk-research findings (Airtable-native gaps, tool landscape, Salesforce/Power Platform DevOps analogs) with sources — the evidence base for the report. |
 | `state-of-airtable-devops-report.md` | Full report draft with maturity model, pillar analysis, and `[SURVEY: …]` placeholders keyed to survey question IDs. |
 

@@ -2,8 +2,9 @@
 
 **Audience:** the *entire* Airtable ecosystem — builders, admins, ops/RevOps, IT, consultants, founders — reached through community channels (Airtable Community, BuiltOnAir, consultant/partner networks, LinkedIn, newsletters), not just our own list. This is the definitive-benchmark instrument; the wider and more neutral the sample, the more citable the report.
 **Goal:** produce the authoritative annual dataset on how teams protect, change, document, and access Airtable data — the Airtable analog of Gearset's State of Salesforce DevOps and Google's DORA research. Re-runnable annually with stable question IDs for year-over-year trend lines.
-**Incentive:** first access to *The State of Airtable DevOps* report ("see how you compare").
-**Target length:** 12–14 minutes, ~45 questions. Questions marked ⭑ are required. Every required practice question keeps **ordinal** answer options so it can feed the maturity index.
+**Incentive:** an **instant sneak-peek** of Baseout + an **on-screen maturity band** at completion, then first access to *The State of Airtable DevOps* report by email ("see how you compare").
+**Sponsorship:** run and sponsored by **Baseout × BuiltOnAir** — positioned as "from the team behind On2Air" for credibility. On2Air is *not* the sponsor (this survey is Baseout's coming-out moment as the DevOps platform). Neutrality guardrail: Baseout never appears in public-core question stems; product names appear only as answer options.
+**Target length:** ~15 minutes, ~52 questions (incl. the optional private tail). Questions marked ⭑ are required. Every required practice question keeps **ordinal** answer options so it can feed the maturity index.
 **Relationship to the other two surveys:** Sections 1, 4–9, 11 are a **superset** of the shared core (B–F) in `survey-existing-customers.md` / `survey-mailing-list.md` — overlapping questions use identical wording (mapping table in the builder notes) so all three datasets merge. New material (team & governance, incident deep-dive, DORA-style change metrics, AI section) exists only here.
 
 **Design principles (from `research-notes.md`):**
@@ -17,10 +18,11 @@
 ## Intro copy (top of form)
 
 > **The first State of Airtable DevOps survey**
+> *Run by Baseout and BuiltOnAir — from the team behind On2Air.*
 >
 > How do teams actually protect, change, and manage the Airtable bases their business runs on? Nobody has measured it — so we are. Salesforce has had a State of DevOps report for years; Airtable's ecosystem deserves the same benchmark.
 >
-> ~12 minutes. In return you get **the State of Airtable DevOps report before anyone else**, with benchmarks to compare your own practices against.
+> About 15 minutes. When you finish you'll see **where your team lands on the Airtable DevOps maturity ladder**, get an **instant sneak peek of Baseout**, and receive **the full report before anyone else** when it publishes.
 >
 > Answers are confidential; only aggregated results are published. There are no right answers — honest ones make the benchmark worth reading.
 
@@ -130,6 +132,17 @@
 - No — but it hasn't hurt us yet
 - Not sure
 
+**3.4 ⭑ Which of these do you have in place today?** *(multi-select)*
+- A record of what changed and when
+- A safe way to test changes before they go live
+- Up-to-date documentation of how things are built
+- Monitoring or alerts when something breaks
+- A way to freely query or export the data (SQL or API)
+- An external backup we control
+- Access controls or an audit trail
+- None of these
+  - *(The "missing-capability map" — the one-question headline chart ("X% have no way to know what changed"). Also cross-validates the scored maturity index: self-reported capabilities vs. computed stage.)*
+
 ---
 
 ## Section 4 — Backup & recovery
@@ -183,6 +196,16 @@
 - Internal audit / leadership mandate
 - Other: ___
 
+**4.8 If you use a third-party backup tool (per 4.1): which one(s)?** *(multi-select, conditional)*
+- On2Air Backups
+- Baseout
+- ProBackup
+- AirBackups
+- A sync tool used as backup (Whalesync, Stacksync, etc.)
+- Something we built ourselves on another platform
+- Other: ___
+  - *(Named-tool share data without touching the locked 4.1 wording. List reflects tools that actually back up Airtable — research-notes T-1; do NOT add Rewind, it doesn't cover Airtable.)*
+
 ---
 
 ## Section 5 — Incidents (the last 12 months)
@@ -191,7 +214,16 @@
 - Never · Once · 2–5 times · 6+ times · Not sure
   - *(Benchmarks against Gearset's 47–67% annual data-loss incidence in Salesforce [A-2 #5].)*
 
-**5.2 Thinking of the *worst* incident: what caused it?** *(single select, conditional on ≥1)*
+**5.2 ⭑ In the last 12 months, which of these have you experienced?** *(multi-select)*
+- A change broke something in a live system
+- An automation failed silently — and we found out late
+- Data was lost, overwritten, or corrupted
+- We couldn't tell what changed, or who changed it
+- A client or stakeholder spotted a problem before we did
+- None of these
+  - *(Incident breadth beyond data loss — silent automation failure and "the client found it first" are two of the most quotable stats this instrument can produce.)*
+
+**5.3 Thinking of the *worst* incident: what caused it?** *(single select, conditional on ≥1 in 5.1 or any non-"None" in 5.2)*
 - Someone deleted records/tables/fields by accident
 - An automation or script misbehaved
 - A sync/integration overwrote good data
@@ -201,13 +233,13 @@
 - Not sure
 - Other: ___
 
-**5.3 How long did it take to *notice* that incident had happened?** *(single select, conditional)*
+**5.4 How long did it take to *notice* that incident had happened?** *(single select, conditional)*
 - Minutes · Hours · Days · Weeks or longer · We found it by accident
 
-**5.4 How long did it take to get back to a working state?** *(single select, conditional)*
+**5.5 How long did it take to get back to a working state?** *(single select, conditional)*
 - Under an hour · Same day · A few days · A week or more · We never fully recovered
 
-**5.5 What did recovery involve?** *(multi-select, conditional)*
+**5.6 What did recovery involve?** *(multi-select, conditional)*
 - Airtable's undo / revision history
 - Restoring records from Airtable's trash
 - Restoring a base snapshot (and rebuilding links/integrations)
@@ -216,11 +248,25 @@
 - Contacting Airtable support
 - We couldn't recover some or all of it
 
-**5.6 ⭑ Have you ever permanently lost Airtable data — gone for good?** *(single select — maps to C2 for merge)*
+**5.7 ⭑ Have you ever permanently lost Airtable data — gone for good?** *(single select — maps to C2 for merge)*
 - Yes
 - No, but only because we got lucky
 - No — we've always recovered
 - Never had an incident
+
+**5.8 ⭑ Roughly how much time per month goes to *manual safety work* — taking backups, updating docs, double-checking changes, firefighting?** *(single select)*
+- Under 1 hour · 1–4 hours · 5–15 hours · 15+ hours
+  - *(The cost-of-the-status-quo number. Distinct from 8.5, which measures time spent* understanding *bases; this is time spent* protecting *them.)*
+
+**5.9 ⭑ What has been the biggest knock-on cost when something went wrong?** *(single select)*
+- Data we couldn't fully recover
+- Firefighting hours and lost productivity
+- We're afraid to change things now, so we move slowly
+- A client or leadership lost trust
+- We were blocked from BI, AI, or reporting we wanted
+- Revenue or customer impact
+- Nothing significant has gone wrong
+  - *(Consequence framing — "afraid to change" is the change-paralysis stat; "client/leadership lost trust" pairs with 5.2's who-spotted-it.)*
 
 ---
 
@@ -349,6 +395,17 @@
 - No
 - Didn't know there were limits
 
+**9.5 ⭑ Beyond Airtable: which other platforms would you want the same backup and DevOps protection for?** *(multi-select)*
+- Notion
+- monday.com
+- ClickUp
+- SmartSuite
+- HubSpot
+- Salesforce
+- Another platform: ___
+- None — Airtable is the one that matters
+  - *(Multi-platform appetite — V2 validation; option list leads with the named V2 platforms.)*
+
 ---
 
 ## Section 10 — AI & Airtable *(topic of the year)*
@@ -418,6 +475,34 @@
 
 ---
 
+## Section P — Private validation tail *(optional; never published)*
+
+*Intro shown to respondents:* "Last few, and they're optional. These help **Baseout** — the team behind On2Air — build the right tool. Your answers here stay private and never appear in the report."
+
+**P1. Imagine one tool gave you all of this: change history, safe restores, monitoring and alerts, always-current docs, a live SQL/API copy of your data, and an external backup you own. How interested are you?** *(single select)*
+- I'd want it now
+- I'd pilot it on one base or client
+- Interested, but I'd need to see it work
+- Not for me
+
+**P2. Consultants/agencies (shown when S1 or 1.1 = consultant/agency): what would feel reasonable to pay per *client estate*, per month, for that tool?** *(single select, conditional)*
+- Under $20 · $20–49 · $50–149 · $150–499 · $500+
+  - *(Per-client-estate framing — complements the locked 11.3 org-budget bands; the agency channel prices differently.)*
+
+**P3. Consultants/agencies: would you resell or mark this up to clients?** *(single select, conditional)*
+- Yes — as a recurring line item
+- Yes — bundled into my fee
+- Maybe
+- No / not applicable
+  - *(The partner-program channel-economics question — feeds the founding-partner motion directly.)*
+
+**P4. Want product updates from Baseout as this gets built?** *(single select)*
+- Yes
+- No thanks
+  - *(The report email is already captured at 12.1 — this is a separate, explicit opt-in for product marketing. Never merge the two consents.)*
+
+---
+
 ## Section 12 — Wrap-up
 
 **12.1 ⭑ Email for your copy of *The State of Airtable DevOps* report:** *(email field)*
@@ -435,10 +520,12 @@
 ## Builder notes (not shown to respondents)
 
 ### Platform & mechanics
-- Needs: branching (S1 exclusion; conditionals 4.2, 4.4, 4.7, 5.2–5.5, 8.2, 9.2), one matrix (10.4), rank-3 (11.1), hidden fields.
+- Needs: branching (S1 exclusion; conditionals 4.2, 4.4, 4.7, 4.8, 5.3–5.6, 8.2, 9.2, P2–P3), one matrix (10.4), rank-3 (11.1), hidden fields.
 - **Hidden fields:** `source` (community / partner / newsletter / social / paid), `audience` (customer / list / public) — publish the source mix in the methodology note, per the Gearset disclosure pattern [A-1].
 - **Quality control:** min-time gate (<4 min = flag), S1 screener, and treat straight-lining on 10.4 as a flag. Gearset's 2025 shift to fewer, screened responses is the precedent: quality over volume [A-1].
-- ~45 questions, ~29 required. If length testing says trim: drop 1.3, 1.4, 8.6, 9.4, 12.4 first — never trim a maturity-index or shared-core question.
+- ~52 questions, ~35 required. If length testing says trim: drop 1.3, 1.4, 8.6, 9.4, 12.4 first, then 5.6 and P1 — never trim a maturity-index or shared-core question.
+- **Completion screen:** compute the **core maturity index** from the answers on the spot and show the band (Ad hoc / Aware / Managed / Engineered) with a one-line description before the sneak-peek — instant payoff, shareable, and itself a report angle ("only X% reach Engineered").
+- **Private tail (Section P):** clearly labeled optional + never published; excluded from the public report dataset entirely (separate analysis file). Section 12 (email + logistics) may render before P on platforms where that flows better — IDs stay stable either way. P4 is a standalone product-updates consent, separate from the 12.1 report email — never merge the two.
 
 ### Shared-core mapping (for merging with the other two surveys)
 | This survey | Shared core | | This survey | Shared core |
@@ -452,29 +539,35 @@
 | 2.6 | B7 | | 9.1 / 9.2 / 9.3 | E1 / E2 / E3 |
 | 4.1 | C1 | | 10.4 | E4 |
 | 4.6 | C6 | | 11.1 / 11.2 / 11.3 | F1 / F2 / F3 |
-| 5.6 | C2 (recoded) | | 11.7 | F5 |
+| 5.7 | C2 (recoded) | | 11.7 | F5 |
 | 6.1 | C4 | | | |
 
-Wording of mapped questions is **locked** to the shared core — any change must land in all three files. 5.6→C2 needs a recode at analysis time (documented above); everything else merges directly.
+Wording of mapped questions is **locked** to the shared core — any change must land in all three files. 5.7→C2 needs a recode at analysis time (documented above); everything else merges directly. The 2026-07 additions (3.4, 4.8, 5.2, 5.8, 5.9, 9.5, Section P) are benchmark-only — deliberately NOT in the shared core, so they don't touch the lock.
 
 ### Maturity index (extended)
 The 6-question core index (C1/C4/C5/D1/D3/D4 ↔ 4.1/6.1/6.2/8.1/7.6/7.3) stays canonical for cross-survey comparability — score it identically to Appendix B of the report. This survey additionally supports an **extended index** (0–3 each): 4.3 external copy, 4.4 coverage breadth, 6.3 RTO target, 7.4 change failure rate, 7.8 dependency visibility, 7.9 pre-change snapshots, 8.4 logic-layer docs, 3.2 conventions. Report the core index as the headline (comparable across all respondents and future years); use the extended index for the deep-dive chapter. Validate that band cutoffs produce interpretable clusters before publishing.
 
 ### DORA mapping (for the report's methodology note)
-- Deployment frequency → 7.1 · Lead time → 7.2 · Change failure rate → 7.4 · Time to restore → 5.4 (actual) + 6.1 (expected) · MTTD (our addition) → 5.3.
+- Deployment frequency → 7.1 · Lead time → 7.2 · Change failure rate → 7.4 · Time to restore → 5.5 (actual) + 6.1 (expected) · MTTD (our addition) → 5.4.
 
 ### Headline charts this instrument is designed to produce
-1. **The confidence gap:** self-assessed maturity (11.5) vs. computed index — expect systematic overconfidence.
+1. **The confidence gap:** self-assessed maturity (11.5) vs. computed index — expect systematic overconfidence; 3.4's self-reported capabilities give a third axis.
 2. **The coverage illusion:** % who "back up" (4.1) whose backups miss attachments/automations/interfaces (4.4) — the finding no one else can produce [N-6, N-7].
-3. **Incident funnel:** 5.1 incidence → 5.3 detection lag → 5.4 recovery → 5.6 permanent loss, benchmarked against Gearset's 47–67% [A-2].
-4. **The AI wildcard:** 10.2 (AI agents editing bases) × 7.6 (can't tell what changed) — the 2026-specific risk story.
-5. **Retention awareness:** 4.5 — % who assumed native history "was forever."
-6. Year-over-year trends on every shared-core ID, starting next edition.
+3. **The missing-capability map:** 3.4 — "X% have no record of what changed; Y% have no safe way to test; Z% picked None of these."
+4. **Incident funnel:** 5.1 incidence → 5.4 detection lag → 5.5 recovery → 5.7 permanent loss, benchmarked against Gearset's 47–67% [A-2].
+5. **The client found it first:** 5.2 — % whose breakage was spotted by a client/stakeholder before the team; % with silent automation failures. Cut by role (in-house vs. agency).
+6. **The cost of the status quo:** 5.8 hours/month on manual safety work × 5.9 knock-on costs (incl. the change-paralysis stat: "% afraid to change things now").
+7. **The AI wildcard:** 10.2 (AI agents editing bases) × 7.6 (can't tell what changed) — the 2026-specific risk story.
+8. **Retention awareness:** 4.5 — % who assumed native history "was forever."
+9. **Platform expansion appetite:** 9.5 — which platforms respondents want the same protection for (V2 signal, publishable).
+10. Year-over-year trends on every shared-core ID, starting next edition. (Private-tail P1–P4 feed product/channel decisions only — never charts.)
 
 ### Distribution plan (sketch)
 Community-first, per the Gearset playbook [A-1]: Airtable Community + TableForums posts, BuiltOnAir podcast/newsletter, consultant/partner networks (each consultant reaches many orgs — offer a co-branded findings pack for partners who share), LinkedIn, no-code newsletters. Subject the *survey and report*, never the product. Target n: 300+ screened responses year one (Gearset's screened 2025 edition was 464 [A-1]); disclose whatever the customer/list share turns out to be.
 
 ### Guardrails
-- **No unreleased pricing or tier names** (Features §3 is not public) — 11.2/11.3 stay as neutral bands.
-- No Baseout feature language in stems; vendor names appear only inside answer options where respondents need them ("On2Air, etc." in 4.1; "Whalesync, Coefficient, etc." in 9.2).
+- **No unreleased pricing or tier names** (Features §3 is not public) — 11.2/11.3 stay as neutral bands; P2's bands are generic dollar ranges, not tier prices.
+- No Baseout feature language in public-core stems; vendor names appear only inside answer options where respondents need them ("On2Air, etc." in 4.1; the 4.8 tool list; "Whalesync, Coefficient, etc." in 9.2). Baseout is named openly in the intro/sponsorship line and Section P — sponsorship is disclosed, the questions stay neutral.
+- **Sponsorship line everywhere the survey is presented:** "Run by Baseout and BuiltOnAir — from the team behind On2Air." On2Air is the credibility anchor, never the sponsor.
 - Keep all scored questions ordinal; never reorder answer options between annual editions — IDs and options are the trend line.
+- Never include Rewind in tool lists — it does not back up Airtable (research-notes §5 do-not-print list).
