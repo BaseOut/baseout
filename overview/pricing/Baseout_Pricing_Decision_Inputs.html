@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Baseout — Pricing Decision Inputs</title>
+<style>
+  @page { size: letter; margin: 0.45in 0.55in; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 8.7pt; line-height: 1.36; color: #1a1f2e;
+  }
+  .page { page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+
+  header.masthead {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 2.5pt solid #1a1f2e; padding-bottom: 5pt; margin-bottom: 8pt;
+  }
+  .masthead h1 { font-size: 15pt; font-weight: 800; letter-spacing: -0.02em; }
+  .masthead h1 span { color: #2563eb; }
+  .masthead .meta { font-size: 7.2pt; color: #5b6472; text-align: right; line-height: 1.5; }
+
+  h2 {
+    font-size: 10pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #2563eb; margin: 8pt 0 3pt; padding-top: 1pt;
+  }
+  h2:first-of-type { margin-top: 0; }
+  h3 { font-size: 8.8pt; font-weight: 700; margin: 5pt 0 2pt; }
+  p { margin-bottom: 3.5pt; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+
+  .banner {
+    background: #eef4ff; border: 0.75pt solid #b6ccf5; border-left: 3pt solid #2563eb;
+    padding: 6pt 9pt; margin-bottom: 7pt; font-size: 8.8pt; color: #1e3a8a;
+  }
+  .banner .tag { font-weight: 800; text-transform: uppercase; font-size: 7.4pt; letter-spacing: 0.05em; color: #2563eb; }
+
+  table { width: 100%; border-collapse: collapse; margin: 3pt 0 5pt; font-size: 7.7pt; }
+  th {
+    background: #1a1f2e; color: #fff; text-align: left; font-weight: 700;
+    padding: 2.5pt 5pt; font-size: 7.2pt; text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  td { padding: 2.5pt 5pt; border-bottom: 0.5pt solid #d6dae2; vertical-align: top; }
+  tr:nth-child(even) td { background: #f6f8fb; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .tight td { padding: 2pt 5pt; }
+  tr.group td {
+    background: #dbe6f7 !important; font-weight: 800; font-size: 7.2pt;
+    text-transform: uppercase; letter-spacing: 0.04em; color: #1e3a8a; padding: 2pt 5pt;
+  }
+
+  .cols { display: flex; gap: 14pt; }
+  .cols > div { flex: 1; }
+
+  ul { margin: 2pt 0 4pt 11pt; }
+  li { margin-bottom: 1.5pt; }
+  ol { margin: 2pt 0 4pt 13pt; }
+  ol li { margin-bottom: 2pt; }
+
+  .callout {
+    background: #fff4ed; border: 0.75pt solid #f0b28a; border-left: 3pt solid #ea580c;
+    padding: 5pt 8pt; margin: 5pt 0; font-size: 8.2pt;
+  }
+  .callout .tag { font-weight: 800; color: #c2410c; text-transform: uppercase; font-size: 7.2pt; letter-spacing: 0.05em; }
+
+  .kv { font-size: 8pt; }
+  .kv b { color: #2563eb; }
+
+  footer.pagefoot {
+    margin-top: 6pt; padding-top: 3pt; border-top: 0.75pt solid #d6dae2;
+    font-size: 6.8pt; color: #8a93a3; display: flex; justify-content: space-between;
+  }
+  .check { color: #15803d; font-weight: 700; }
+  .cross { color: #b91c1c; font-weight: 700; }
+  .part { color: #b45309; font-weight: 700; }
+  .muted { color: #5b6472; }
+</style>
+</head>
+<body>
+
+<!-- ============================= PAGE 1 ============================= -->
+<section class="page">
+  <header class="masthead">
+    <h1>base<span>out</span> — Pricing Decision Inputs</h1>
+    <div class="meta">Prepared for pricing-strategy engagement · July 2026<br>
+    Companion detail: <em>Baseout_Pricing_Decision_Inputs.md</em></div>
+  </header>
+
+  <div class="banner"><span class="tag">Status of pricing: undecided.</span> This document deliberately proposes no tiers, price points, or metering model — that is the output we are hiring for. Internal exploratory drafts exist and are available on request, but are excluded here to avoid anchoring. <strong>Goal:</strong> a pricing strategy that is easy to understand, captures the different intents customers arrive with, and stays sound against our cost structure.</div>
+
+  <h2>1 · The Product</h2>
+  <p>Baseout is a B2B SaaS utility for <strong>Airtable platform admins</strong>. It (1) <strong>backs up Airtable automatically</strong> — schema, records, attachments via the REST API on monthly/weekly/daily/webhook-"instant" cadences (all technical capabilities of the system), plus automations &amp; interfaces via user-submitted intake; (2) <strong>restores</strong> — base- or table-level, point-in-time, always into new bases/tables; (3) <strong>gives the data an external home</strong> — the customer's own storage (Drive, Dropbox, Box, OneDrive, S3, BYOS) or Baseout-managed storage, optionally with a <strong>live SQL database copy</strong> (SQLite → shared Postgres → dedicated Postgres → customer's own DB); (4) <strong>layers intelligence on top</strong> — schema visualization &amp; change history, base health scoring, documentation tooling, data metrics/alerts, AI-assisted docs, analytics, and (roadmap) governance, MCP/RAG AI access, connectors. V1 is Airtable-only; architecture is built for multi-platform V2 (Notion, HubSpot, Salesforce), each platform its own subscription component under one billing relationship.</p>
+
+  <h3>The four jobs customers hire it for — different intents, different WTP curves</h3>
+  <table class="tight">
+    <tr><th style="width:15%">Job</th><th>Description</th><th style="width:34%">WTP character</th></tr>
+    <tr><td><strong>Insurance</strong></td><td>Fear of data loss / accidental deletion; someone accountable for recovery</td><td>Cheap peace of mind; price-sensitive</td></tr>
+    <tr><td><strong>Governance</strong></td><td>Best practice &amp; compliance require a copy <em>outside</em> the vendor; Airtable's native snapshots don't satisfy this</td><td>Budgeted, requirement-driven</td></tr>
+    <tr><td><strong>Visibility</strong></td><td>No native view of schema complexity, change history, or estate health</td><td>Professional/consultant value</td></tr>
+    <tr><td><strong>Data liberation</strong></td><td>Data locked in a proprietary format; a SQL copy makes it queryable, portable, BI-connectable</td><td>Buying an unlock, not a backup</td></tr>
+  </table>
+
+  <h3>The architectural fork any packaging must respect</h3>
+  <table class="tight">
+    <tr><th style="width:14%"></th><th style="width:43%">Static backup</th><th>Dynamic backup</th></tr>
+    <tr><td><strong>Mechanism</strong></td><td>Flat-file export (CSV) per run to a storage destination</td><td>Continuous sync into a managed database</td></tr>
+    <tr><td><strong>Privacy</strong></td><td>With customer-owned storage, record data <strong>never touches Baseout servers</strong> — a marketed differentiator</td><td>Customer explicitly opts in to Baseout hosting their data</td></tr>
+    <tr><td><strong>Cost shape</strong></td><td>Re-transfers the <strong>full dataset every run</strong> — volume × frequency</td><td>Expensive initial sync, cheap deltas, <strong>ongoing storage at rest</strong></td></tr>
+    <tr><td><strong>Enables</strong></td><td>Backup + restore only</td><td>Everything else: SQL, APIs, real-time sync, all intelligence features</td></tr>
+  </table>
+  <p class="kv">Open question for packaging: separate products, modes within a plan, or a ladder? All intelligence features depend on dynamic mode, so the database is simultaneously a <b>capability unlock</b>, a <b>cost driver</b>, and a <b>trust decision</b>.</p>
+
+  <h3>Differentiation claims (pressure-test these)</h3>
+  <p class="kv">Only Airtable-exclusive backup vendor · most storage destinations in market (only OneDrive support) · only BYOS <em>and</em> BYODB vendor (competitors moving away) · "never stores your data" static posture · only vendor unlocking Airtable data as a live SQL layer.</p>
+
+  <footer class="pagefoot"><span>Baseout — Pricing Decision Inputs</span><span>Page 1 of 6</span></footer>
+</section>
+
+<!-- ============================= PAGE 2 ============================= -->
+<section class="page">
+  <h2>2 · Customers &amp; Market</h2>
+  <p><strong>Primary buyer:</strong> the Airtable platform admin — internal IT / RevOps / BizOps owners and independent consultants managing client accounts. Technically capable (OAuth, storage config, SQL); professionally accountable. Secondary (V2): developers on the SQL layer; enterprise IT/compliance.</p>
+  <table class="tight">
+    <tr><th style="width:19%">Segment</th><th>Profile &amp; what they value</th><th style="width:33%">Notes for pricing research</th></tr>
+    <tr><td>Solo / small ops admin</td><td>1 org, a few bases; set-and-forget protection; cheap, simple</td><td>Bulk of the legacy base skews here</td></tr>
+    <tr><td>Consultant / agency</td><td>Many client orgs; per-client separation; professional artifacts to show clients</td><td>Multi-home one subscription or per-client billing? — packaging question</td></tr>
+    <tr><td>RevOps / BizOps at scale-up</td><td>Airtable business-critical; frequency, retention, SQL for BI, alerts, API</td><td>Overlaps the "data liberation" buyer</td></tr>
+    <tr><td>Enterprise IT / compliance</td><td>Governance mandates; BYODB (data never leaves), audit trails, SSO, SLA, CSM</td><td>Gated by our SOC 2 timeline (§6)</td></tr>
+    <tr><td>Legacy On2Air (~200 paying)</td><td>Continuity — "static backups work exactly the same"</td><td>Anchored to old prices (below)</td></tr>
+  </table>
+
+  <h3>Price anchor #1 — what our existing customers pay today (On2Air, being replaced by Baseout)</h3>
+  <table class="tight">
+    <tr><th>On2Air plan</th><th class="num">Price/mo</th><th class="num">Bases</th><th class="num">Records</th><th class="num">Attachments</th><th class="num">Restores</th><th class="num">Max frequency</th></tr>
+    <tr><td>Basic (free)</td><td class="num">$0</td><td class="num">1</td><td class="num">~1,000</td><td class="num">25</td><td class="num">1</td><td class="num">—</td></tr>
+    <tr><td>Starter</td><td class="num">$9.99</td><td class="num">1</td><td class="num">50,000</td><td class="num">2,500</td><td class="num">1/mo</td><td class="num">Monthly</td></tr>
+    <tr><td>Essentials</td><td class="num">$29.99</td><td class="num">15</td><td class="num">250,000</td><td class="num">25,000</td><td class="num">1/mo</td><td class="num">Weekly</td></tr>
+    <tr><td>Professional</td><td class="num">$49.99</td><td class="num">50</td><td class="num">1,000,000</td><td class="num">500,000</td><td class="num">5/mo</td><td class="num">Daily</td></tr>
+    <tr><td>Premium</td><td class="num">$79.99</td><td class="num">250</td><td class="num">5,000,000</td><td class="num">1,000,000</td><td class="num">10/mo</td><td class="num">Hourly</td></tr>
+  </table>
+  <p class="kv">Team observations (inputs, not conclusions): flat fee regardless of actual usage; frequency hard-gated by tier; count caps did the limiting; the team believes On2Air was <b>historically underpriced</b> and Baseout is substantially more capable. Migration sensitivity is real — these customers chose cheap and simple; grandfathering / bridge / usage mapping are all open.</p>
+
+  <h3>Other anchors &amp; landscape</h3>
+  <p class="kv"><b>Airtable's own seat pricing</b> (Team ~$20–24, Business ~$45–54 per seat/mo) sets expectations for "tooling around Airtable"; a customer's Airtable spend proxies their Baseout budget. <b>Competitors:</b> Airtable native snapshots (free "do nothing" default — no external copy, no intelligence, no SQL); Sync Inc (defunct); Whalesync (narrowing); Coefficient (spreadsheet sync); DIY scripts. <b>Distribution:</b> Airtable Marketplace listing planned; free pre-registration schema visualization (OAuth in, see your ERD before signup) is the conversion hook.</p>
+
+  <footer class="pagefoot"><span>Baseout — Pricing Decision Inputs</span><span>Page 2 of 6</span></footer>
+</section>
+
+<!-- ============================= PAGE 3 ============================= -->
+<section class="page">
+  <h2>3 · Feature Catalog (Packaging Raw Material)</h2>
+  <p class="kv">Each row is a discrete, gateable unit. Dependencies and cost character are engineering facts; <b>grouping into packages is open</b> — internal drafts assign features to tiers; treat all assignments as provisional. Unshipped features can't carry a launch promise. <span class="check">✓ built</span> · <span class="part">◐ partial</span> · <span class="cross">✗ not built</span></p>
+  <table class="tight">
+    <tr><th style="width:36%">Feature</th><th style="width:19%">Dependency</th><th style="width:33%">Marginal cost character</th><th>Status</th></tr>
+    <tr class="group"><td colspan="4">Core backup &amp; restore</td></tr>
+    <tr><td>Scheduled backup (monthly/weekly/daily) + manual runs; run history &amp; audit reports</td><td>—</td><td>Transfer compute per run (static re-sends all)</td><td><span class="check">✓</span></td></tr>
+    <tr><td>Instant backup (webhook-driven)</td><td>Webhook infra</td><td>Low steady-state</td><td><span class="cross">✗</span></td></tr>
+    <tr><td>Destinations: managed R2, Drive, Dropbox, Box, OneDrive <span class="check">✓</span> · S3, Frame.io, custom BYOS <span class="cross">✗</span></td><td>OAuth per provider</td><td>R2 = our storage $; BYOS ≈ zero at rest</td><td><span class="part">◐</span></td></tr>
+    <tr><td>Restore (base/table, point-in-time, to new data)</td><td>Retained snapshots</td><td>Reverse transfer; Airtable writes slow/rate-limited</td><td><span class="cross">✗</span></td></tr>
+    <tr><td>Retention windows / smart rolling cleanup</td><td>—</td><td><strong>Retention = persistent storage cost</strong></td><td><span class="cross">✗</span></td></tr>
+    <tr><td>Automations &amp; interfaces backup (user-submitted intake)</td><td>Intake API/forms</td><td>Negligible</td><td><span class="cross">✗</span></td></tr>
+    <tr class="group"><td colspan="4">Data intelligence (all require dynamic mode)</td></tr>
+    <tr><td>Schema visualization · changelog · health score · docs</td><td>Schema-only DB suffices</td><td>Negligible</td><td><span class="part">◐</span></td></tr>
+    <tr><td>AI documentation / schema insights</td><td>LLM inference</td><td>Cents per generation</td><td><span class="cross">✗</span></td></tr>
+    <tr><td>Record metrics, data changelog, alerts, PII, analytics</td><td><strong>Full</strong> dynamic DB</td><td>DB storage at rest + scan compute</td><td><span class="cross">✗</span></td></tr>
+    <tr><td>Governance suite (rules, lineage, retention policy, compliance tooling)</td><td>Full dynamic DB</td><td>Moderate</td><td><span class="cross">✗</span> V2</td></tr>
+    <tr class="group"><td colspan="4">Access &amp; integration (all require dynamic mode)</td></tr>
+    <tr><td>Inbound API · SQL REST API · direct SQL connection string</td><td>Hosted DB</td><td>≈ zero per call; DB instance $ for direct</td><td><span class="cross">✗</span></td></tr>
+    <tr><td>MCP / RAG / chatbot / vector DB · Zapier/Make · writeback</td><td>Inference + infra</td><td>Real per-op cost</td><td><span class="cross">✗</span> V2</td></tr>
+    <tr class="group"><td colspan="4">Enterprise &amp; trust surface</td></tr>
+    <tr><td>SSO/SAML, 2FA, SOC 2 (in progress), DPAs, support ladder, Enterprise API</td><td>—</td><td>Human step costs (support, compliance)</td><td><span class="part">◐</span></td></tr>
+  </table>
+  <p class="kv"><b>The database ladder inside dynamic mode</b> (each step a real COGS step — §5): schema-only SQLite → full SQLite (per-GB) → shared Postgres (amortized) → <b>dedicated Postgres (fixed $/mo per instance)</b> → BYODB (≈ zero infra to us; value is control/compliance).</p>
+
+  <footer class="pagefoot"><span>Baseout — Pricing Decision Inputs</span><span>Page 3 of 6</span></footer>
+</section>
+
+<!-- ============================= PAGE 4 ============================= -->
+<section class="page">
+  <h2>4 · Meterable Dimensions (Candidate Pricing Metrics)</h2>
+  <p class="kv">Everything the system can count, cap, or gate. No recommendation implied by ordering. "Measured today" = plumbing exists in shipped code.</p>
+  <table class="tight">
+    <tr><th style="width:24%">Dimension</th><th style="width:26%">Value-aligned?</th><th style="width:24%">Cost-aligned?</th><th style="width:12%">Measured today</th><th>Enforceable today</th></tr>
+    <tr><td>Records transferred /mo</td><td>Strong — estate size × cadence</td><td>Weak-moderate (compute)</td><td><span class="check">✓</span> per-run counts</td><td><span class="cross">✗</span> no billing pipe</td></tr>
+    <tr><td>Attachment volume (GB) transferred</td><td>Strong</td><td>Moderate</td><td><span class="check">✓</span> per-run counts</td><td><span class="cross">✗</span></td></tr>
+    <tr><td><strong>Backup frequency</strong> (monthly→instant)</td><td><strong>Very strong — frequency = RPO (tolerable data loss)</strong></td><td>Strong on static; weak on dynamic</td><td><span class="check">✓</span></td><td><span class="check">✓</span> shipped</td></tr>
+    <tr><td>File storage at rest (GB)</td><td>Moderate</td><td><strong>Strong — persistent, accumulates</strong></td><td><span class="part">◐</span> per-run sizes</td><td><span class="cross">✗</span></td></tr>
+    <tr><td>DB storage (GB) + engine class</td><td>Strong (SQL unlock)</td><td><strong>Strong — engine class is a step function</strong></td><td><span class="cross">✗</span></td><td><span class="cross">✗</span> provisioning unbuilt</td></tr>
+    <tr><td>Snapshot retention window</td><td>Strong for governance buyers</td><td>Strong (storage × time)</td><td><span class="cross">✗</span></td><td><span class="cross">✗</span></td></tr>
+    <tr><td>Workspaces ("Spaces")</td><td>Strong for consultants (per-client)</td><td>Weak — unless each carries a dedicated DB</td><td><span class="check">✓</span></td><td><span class="part">◐</span></td></tr>
+    <tr><td>Bases</td><td>Strong — estate-size proxy</td><td>Weak</td><td><span class="check">✓</span></td><td><span class="check">✓</span> caps shipped</td></tr>
+    <tr><td>Connections</td><td>Moderate</td><td>Weak</td><td><span class="check">✓</span></td><td><span class="part">◐</span></td></tr>
+    <tr><td>Seats / team members</td><td>Weak-moderate — admin tool, few users</td><td>≈ Zero</td><td><span class="check">✓</span></td><td><span class="cross">✗</span> not enforced</td></tr>
+    <tr><td>Restores /mo</td><td>High perceived value (crisis moment)</td><td>Weak</td><td colspan="2"><span class="cross">✗</span> restore itself not built</td></tr>
+    <tr><td>API calls / SQL queries</td><td>Strong for integration buyers</td><td>≈ Zero</td><td colspan="2"><span class="cross">✗</span> services not built</td></tr>
+    <tr><td>AI operations</td><td>Moderate</td><td>Real per-op inference cost</td><td colspan="2"><span class="cross">✗</span></td></tr>
+    <tr><td>Platforms connected (V2)</td><td>Strong — new estate protected</td><td>Moderate</td><td colspan="2"><span class="part">◐</span> billing architecture ready</td></tr>
+  </table>
+  <p class="kv">Composites the data model could also support (options, not recommendations): a <b>single abstract usage unit</b> unifying several dimensions (one number, flexible; but customers can't predict bills unaided — internal drafts explored this), or <b>pure feature-tiering with soft caps</b> (what shipped code does today).</p>
+  <div class="callout"><span class="tag">Usage physics any metered model must handle</span> — <strong>(1) The initial-backup spike:</strong> the first backup of a large base can be 100–200× steady-state usage; without grants/amortization the first invoice ambushes the customer. <strong>(2)</strong> Static mode re-transfers everything each run — usage grows with frequency even if data never changes; dynamic inverts this (deltas only). <strong>(3)</strong> Storage persists while activity resets — retention promises accumulate COGS monthly. <strong>(4)</strong> Airtable rate limits bound transfer speed — big backups cost <em>time</em>, not just dollars.</div>
+
+  <footer class="pagefoot"><span>Baseout — Pricing Decision Inputs</span><span>Page 4 of 6</span></footer>
+</section>
+
+<!-- ============================= PAGE 5 ============================= -->
+<section class="page">
+  <h2>5 · Cost Structure</h2>
+  <p>Fully serverless/usage-based stack — near-zero COGS at rest, scales with activity: Cloudflare Workers + Durable Objects, Trigger.dev v3 (per-second compute for backup tasks), DigitalOcean PostgreSQL master DB, Cloudflare D1/R2/KV/Email, Workers AI, Stripe (~2.9% + 30¢), PostHog, dub.co. The Airtable API is free — its rate limits, not dollars, are the constraint.</p>
+  <div class="cols">
+    <div>
+      <h3>Marginal cost anchors (early-2026 list prices — verify)</h3>
+      <table class="tight">
+        <tr><th>Activity</th><th>Order of magnitude</th></tr>
+        <tr><td>Transfer 1,000 records</td><td>Fractions of a cent</td></tr>
+        <tr><td>Transfer 1 GB attachments</td><td>~$0.01/GB or less (zero egress on R2)</td></tr>
+        <tr><td>Store 1 GB in R2, 1 month</td><td>~$0.015</td></tr>
+        <tr><td>Store 1 GB in D1 (SQLite), 1 month</td><td>~$0.75 + per-row ops</td></tr>
+        <tr><td>Shared Postgres instance</td><td>~$15–60/mo ÷ tenants</td></tr>
+        <tr><td><strong>Dedicated Postgres per workspace</strong></td><td><strong>~$19–60+/mo each — the big step cost</strong></td></tr>
+        <tr><td>AI doc generation / restore / API call / email</td><td>Cents / low $ / ≈zero / ≈zero</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>Illustrative cost-to-serve (for floor-setting)</h3>
+      <table class="tight">
+        <tr><th>Profile</th><th class="num">COGS/mo</th></tr>
+        <tr><td>Small static/BYOS — 1 base, 10K rec, 0.5 GB, weekly to their Drive</td><td class="num">&lt; $0.50</td></tr>
+        <tr><td>Medium managed — 5 bases, 250K rec, 10 GB, weekly to R2</td><td class="num">~$1–3</td></tr>
+        <tr><td>Large dynamic-shared — 20 bases, 1M rec, 50 GB, daily incremental, shared PG</td><td class="num">~$5–15</td></tr>
+        <tr><td>Heavy dedicated — 50 bases, 5M rec, 200 GB, daily + dedicated PG, long retention</td><td class="num">~$30–80+</td></tr>
+      </table>
+      <p class="kv">Marginal cost is tiny at the low end; dominated by <b>database instances</b> and <b>storage-retention promises</b> at the high end. Static/BYOS costs ≈ nothing at rest; enterprise BYODB is the <b>cheapest to serve</b> — its margin is support/compliance, not COGS.</p>
+    </div>
+  </div>
+  <p class="kv"><b>Fixed &amp; step costs:</b> base platform is low hundreds of $/mo at launch scale. Steps: dedicated DB instances (above), human support (chat / CSM / SLA where promised), SOC 2 certification, payment processing ~3% of revenue. <b>Asymmetries to exploit:</b> zero egress makes restore/download nearly free; dynamic incremental sync is cheaper for us <i>and</i> the customer at high frequency; retention is the quiet cost accumulator.</p>
+
+  <footer class="pagefoot"><span>Baseout — Pricing Decision Inputs</span><span>Page 5 of 6</span></footer>
+</section>
+
+<!-- ============================= PAGE 5 ============================= -->
+<section class="page">
+  <h2>6 · Constraints &amp; Assets</h2>
+  <div class="cols">
+    <div>
+      <h3>Billing infrastructure (asset)</h3>
+      <ul>
+        <li>Stripe: one subscription per customer org, <strong>one subscription item per platform</strong> — V2 multi-platform slots in without re-architecting.</li>
+        <li>Entitlements resolve from Stripe <strong>product metadata</strong>, never names — new packages are config, not code.</li>
+        <li>Metered billing, seat quantities, coupons, per-item trials all supported — no known blocker to tiered, usage-based, hybrid, or seat models.</li>
+        <li>Data model designed so <strong>plan limits live in database rows, not code</strong> — limit changes without deploys.</li>
+        <li>Trial mechanism live: $0 subscription at signup, no card; currently 7 days + one backup run. Trial shape (length, caps, free-tier-or-not) is <strong>open for you to revisit</strong>.</li>
+      </ul>
+      <h3>Migration constraint</h3>
+      <p class="kv">~200 On2Air customers must land somewhere. Believed-real constraints: their current prices are the anchor; their product experience must not regress; legacy accounts can be flagged to see new capabilities as upgrade prompts rather than losing anything. Grandfathering duration, bridge pricing, and mapping are open — internal sketches exist if useful.</p>
+    </div>
+    <div>
+      <h3>Enforcement reality (constraint)</h3>
+      <p class="kv"><b>Can gate/meter today:</b> backup frequency, bases-per-workspace caps, trial limits, per-run record/attachment counts (recorded, not billed). <b>Not built yet:</b> usage metering/billing pipeline, storage quotas, seat enforcement, restore (entire feature), retention/cleanup, dynamic DB provisioning, webhooks/instant, API/SQL services, AI features. <b>Implication:</b> a launch model can only enforce what's built — if your recommendation depends on metering or unshipped features, please make the sequencing explicit (launch simple → layer metering, or build first).</p>
+      <h3>Timeline &amp; roadmap constraints</h3>
+      <ul>
+        <li><strong>SOC 2 in progress</strong> (~6-month runway from ~Apr 2026) — enterprise/governance segment can't be broadly marketed until certified.</li>
+        <li>GDPR/DPAs required before hosted-data plans launch.</li>
+        <li><strong>V2 roadmap must extend, not break, the model:</strong> per-platform pricing, possible multi-platform discount, AI features with real inference COGS.</li>
+      </ul>
+      <h3>Product-experience commitments (soft — challenge if warranted)</h3>
+      <ul>
+        <li>Restore should never feel punitive at the moment of crisis.</li>
+        <li>Bill-shock protection (caps, alerts, predictable defaults) is table stakes if any usage meter exists.</li>
+        <li>Pricing shouldn't force privacy-motivated customers into hosted storage (the BYOS "we never store your data" posture is marketed).</li>
+        <li>Pre-registration schema visualization stays free (conversion hook).</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2>7 · The Decision Space — What We're Asking You to Determine</h2>
+  <table class="tight">
+    <tr><td style="width:50%"><strong>1. Value metric(s).</strong> Which dimension(s) from §4 carry price? Single metric, composite unit, pure feature tiers, or hybrid?</td><td><strong>2. Packaging architecture.</strong> How many packages; what anchors each (frequency? DB ladder? intelligence? segment identity?); add-on vs. included; how static and dynamic relate commercially.</td></tr>
+    <tr><td><strong>3. Price levels.</strong> Against the anchors: legacy On2Air prices, Airtable's own seat spend, competitors, our cost floors (§5), and the "historically underpriced" belief.</td><td><strong>4. Free motion.</strong> Free tier vs. trial-only; trial shape (time, runs, data caps); what the free schema-visualization hook feeds into.</td></tr>
+    <tr><td><strong>5. Expansion &amp; overage philosophy.</strong> How customers grow spend — upgrades only, metered overage, add-on packs, seats — and the defaults that prevent bill shock.</td><td><strong>6. Migration mapping.</strong> Where each On2Air cohort lands, what's grandfathered, for how long, and the messaging.</td></tr>
+    <tr><td><strong>7. Enterprise definition.</strong> What qualifies as custom-priced; the floor; what's reserved (BYODB, SSO, SLA, CSM).</td><td><strong>8. Sequencing &amp; multi-platform readiness.</strong> What launches given enforcement reality (§6), what it evolves into as metering ships, and how the model extends when Notion/HubSpot arrive.</td></tr>
+  </table>
+  <p class="kv"><b>Success criteria (from the founders):</b> easy to understand · captures customers' different intents · sound against the cost structure · gives the ~200 legacy customers a respectful path · leaves room for the V2 roadmap.</p>
+
+  <h2>8 · Data &amp; Materials Available on Request</h2>
+  <ul>
+    <li>On2Air customer roster with plan, tenure, and usage shape (bases, records, attachment volumes, frequency) — for cohort/WTP analysis.</li>
+    <li>Shipped telemetry: per-run record/table/attachment counts for every backup run.</li>
+    <li>Internal exploratory pricing drafts (tiers, a credit-style meter, overage/add-on sketches) — withheld here to avoid anchoring; available as a strawman whenever useful.</li>
+    <li>Product spec set (PRD, features spec, credit-system design, implementation plan) and infrastructure billing exports (Cloudflare, DigitalOcean, Trigger.dev, Stripe) to firm up §5 anchors.</li>
+  </ul>
+
+  <footer class="pagefoot"><span>Baseout — Pricing Decision Inputs</span><span>Page 6 of 6</span></footer>
+</section>
+
+</body>
+</html>
