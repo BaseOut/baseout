@@ -14,7 +14,7 @@ The ui-only [`data-page`](../../../../ui-only/openspec/changes/data-page/) chang
   - `GET /data/search` — cross-base/table search over field **values** and field **names**, results grouped base → table with counts, bounded per-group.
   - `POST /data/export` + `GET /data/export/:jobId` — CSV (single-table scope) / JSON (any scope) respecting filters; small scopes return synchronously (streamed), large scopes run as an async job.
 - **Indexing for the above** (per-Space schema version bump): keyset-support index on records `(table_id, record_id)` (exists via `byTable` + PK; verify), changelog range support on `bo_at_record_updates` (`byRun` exists), and a **trigram GIN index on `bo_at_record_field_data.value`** for search — the one genuinely new index; see design for the fallback if it's deferred.
-- **Data-chat context (flagged conflict).** Schema chat's context assembly is deliberately **metadata-only** ("only metadata leaves the Space" — `server-schema-chat`). Data chat is *about record data*, which that stance forbids. This change specs the context contract but **gates it behind an explicit per-Space opt-in** and records the decision options in `design.md` — do not implement the chat context without resolving that question.
+- **Data-chat context (decision resolved 2026-07-11: allowed).** Record-data chat context is **in scope**, governed by the AI-usage policy from [`shared-ai-controls`](../shared-ai-controls/) — data-scoped context requires effective policy `all` (Org ceiling + per-Space restriction; `schema_only` restores the old metadata-only posture; `off` disables AI entirely). Context = the scoped/filtered rows, capped (e.g. 200 rows × visible fields), assembled only after the policy re-assert. Build order: `shared-ai-controls` enforcement lands first; the context assembler + `workflows-data-chat` follow.
 - **Web wiring is out of scope here**: `apps/web` proxy routes, capability gating, and the ported UI land via a `web-data-page` follow-up when the ui-only change ports (same pairing as `server-schema-chat` ↔ `web-chat-tab`).
 
 ## Capabilities
@@ -23,13 +23,13 @@ The ui-only [`data-page`](../../../../ui-only/openspec/changes/data-page/) chang
 - `data-browse`: engine query layer over backed-up record data — paginated/filtered record reads, per-record history, linked-record expansion + formula/lookup provenance, Space-wide changelog, cross-entity search, and CSV/JSON export.
 
 ### Modified Capabilities
-- `schema-chat`: context assembly gains an **opt-in** record-data scope (decision gated; see design).
+- `schema-chat`: context assembly gains a record-data scope, allowed only at AI-usage policy `all` (`shared-ai-controls`).
 
 ## Impact
 
 - `apps/server/src/lib/per-space/` — `record-read.ts` (pure query builders: filters → SQL, keyset cursor encode/decode), `record-history.ts` (pure diff reconstruction), `record-provenance.ts` (pure: field-options interpretation for formula refs + lookup/rollup traversal, link-set query builder), `record-search.ts`, `record-export.ts` (streaming writers).
 - Routes: `data-records.ts`, `data-record.ts`, `data-record-history.ts`, `data-record-links.ts`, `data-record-provenance.ts`, `data-changelog.ts`, `data-search.ts`, `data-export.ts` + `index.ts` wiring.
 - `packages/db-schema/src/space/{pg,sqlite}.ts` — search index (+ any missing keyset index); `SPACE_SCHEMA_VERSION` bump; squashed migrations + `pg-ddl.ts` regenerated. Existing Spaces follow the standard per-Space upgrade path.
-- **Security:** internal routes only; filters compile through parameterized builders (never string-concatenated SQL); export jobs are Space-scoped; record data in AI context is opt-in and off by default.
+- **Security:** internal routes only; filters compile through parameterized builders (never string-concatenated SQL); export jobs are Space-scoped; record data reaches AI context only at effective policy `all`, re-asserted at assembly time (`shared-ai-controls`).
 - **Tests first** (per §3.4): pure modules (filter compiler, cursor codec, history reconstruction, CSV/JSON writers) + route integration against a real per-Space Postgres.
-- **Pairs with**: ui-only [`data-page`](../../../../ui-only/openspec/changes/data-page/) (UI), `web-data-page` follow-up (proxy + gating), and — only if the chat decision lands — a `workflows-data-chat` follow-up.
+- **Pairs with**: ui-only [`data-page`](../../../../ui-only/openspec/changes/data-page/) (UI), [`shared-ai-controls`](../shared-ai-controls/) (policy gate — lands first), `web-data-page` follow-up (proxy + gating), and a `workflows-data-chat` follow-up (the model call).

@@ -68,11 +68,16 @@ The engine SHALL export a scope respecting active filters — CSV for single-tab
 - **WHEN** a client exports a 500k-row filtered scope as JSON
 - **THEN** a job is returned, progresses to complete, and the artifact contains exactly the matching records
 
-### Requirement: Record data stays out of AI context pending opt-in decision
+### Requirement: Record-data AI context gated by the AI-usage policy
 
-Record data SHALL NOT be included in chat/AI context by this change. Any future record-data context SHALL require an explicit per-Space opt-in (off by default, logged) and a recorded decision on the context mechanism, and SHALL scope the product's metadata-only AI claims accordingly.
+Record data SHALL be includable in chat/AI context only when the effective AI-usage policy (per `shared-ai-controls`: Org ceiling + Space restriction) is `all` — enforced at the route guard and re-asserted inside the context assembler immediately before the payload is built. The context SHALL be the scoped/filtered rows with a hard cap on rows × fields. At `schema_only` the assembler SHALL include schema metadata and docs only (the prior posture); at `off` no AI payload SHALL be assembled.
 
-#### Scenario: Chat context unchanged
+#### Scenario: Policy allows data context
 
-- **WHEN** a chat context is assembled for a Space after this change ships
-- **THEN** it contains schema metadata and attached docs only, exactly as before
+- **WHEN** a Space with effective policy `all` sends a data-scoped chat message over a filtered view
+- **THEN** the assembled context contains the capped row slice for that scope
+
+#### Scenario: Policy blocks data context
+
+- **WHEN** the same Space is restricted to `schema_only` and sends a data-scoped message
+- **THEN** the request is rejected with `ai_disabled_by_policy` and no record data reaches the assembler

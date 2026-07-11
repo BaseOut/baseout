@@ -43,15 +43,14 @@ Per-run rollup: created = records with `first_seen_run = run`, deleted = `first_
 - **Async path**: an export job row (per-Space `bo_at_export_jobs` — id, scope JSON, format, status, output location, error) processed via a workflows task writing to the Space's storage destination (or managed R2), engine notified on completion. CSV = single table only (heterogeneous rows don't fit CSV); JSON = `{base → table → rows}` for multi-entity scopes.
 - Attachment **cells** export as backup-file references (path/URL in the backup destination), never re-downloaded bytes.
 
-## The data-chat conflict (decision required — do not implement silently)
+## Data-chat context (decision resolved 2026-07-11)
 
-`server-schema-chat` established: context is metadata-only, record data NEVER goes to the AI. Data chat breaks that by definition. Options:
+`server-schema-chat` established a metadata-only stance; the product decision replaces it with the **customer-controlled AI-usage policy** in [`shared-ai-controls`](../shared-ai-controls/) (`all | schema_only | off`, Org ceiling + Space brake, default `all`). For this change:
 
-1. **Opt-in raw-slice context** — per-Space setting ("Allow AI to read record data"); context = the scoped/filtered rows (capped, e.g. 200 rows × visible fields). Simple, honest, but record data leaves the Space when enabled.
-2. **Tool-mediated queries** — the workflows task gets a query tool against the per-Space DB (read-only, Space-scoped); the model sees only query *results* it asks for. Better minimization, bigger build.
-3. **Aggregates-only** — context limited to counts/distributions the engine computes. Weakest chat, no raw rows leave.
-
-**Recommendation: 1 now (explicit opt-in, off by default, logged), 2 as the V2 path.** Whichever lands, the sovereign-AI claim in marketing/docs must be scoped accordingly (claims hygiene — GTM §6.5). This change ships the routes WITHOUT chat context; the opt-in + context lands only after sign-off, as `workflows-data-chat`.
+- **Mechanism = raw-slice context** (option 1 of the original analysis): context is the scoped/filtered rows, capped (e.g. 200 rows × the visible fields), assembled by the engine and passed to the workflows chat task. **Tool-mediated queries** (the model queries the per-Space DB read-only and sees only results it asks for) remain the V2 path when conversations need more than a slice.
+- **Gate**: data-scoped context requires effective policy `all`, checked at the route guard AND re-asserted inside the assembler immediately before the payload is built (`shared-ai-controls` enforcement pattern). `schema_only` = the old posture, one click away; `off` = no AI.
+- **Ordering**: `shared-ai-controls` lands before any data context ships; the model call itself is the `workflows-data-chat` follow-up.
+- **Claims**: the marketing "metadata-only" language updates to the conditional formulation in the same release (owned by `shared-ai-controls` task 5.1).
 
 ## Perf guardrails
 
