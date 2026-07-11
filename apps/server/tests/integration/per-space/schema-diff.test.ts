@@ -32,6 +32,53 @@ function base(overrides: Partial<CapturedBase> = {}): CapturedBase {
 
 const EMPTY_PRIOR: PriorWorkingSet = { base: null, tables: [], fields: [], views: [] };
 
+describe("options comparison is key-order insensitive (JSONB round-trip)", () => {
+  // Postgres JSONB canonicalizes object key order; Airtable's captured JSON does
+  // not. A textual JSON.stringify compare made every non-alphabetical options
+  // object (e.g. formula fields' {result, formula, isValid, referencedFieldIds})
+  // emit a no-op "options changed" update on EVERY run — the QRCodeLink
+  // changelog-spam bug (2026-07-10).
+  it("emits NO update when options differ only by key order", () => {
+    const captured = base({
+      tables: [
+        {
+          tableId: "tblA", name: "Deals", primaryFieldId: "fld1", description: null,
+          fields: [
+            { fieldId: "fld1", name: "Name", type: "singleLineText", isPrimary: true },
+            // Airtable order: result first (non-alphabetical)
+            { fieldId: "fld2", name: "Calc", type: "formula", options: { result: { type: "singleLineText" }, formula: "1+1", isValid: true, referencedFieldIds: [] } },
+          ],
+          views: [{ viewId: "viwA", name: "Grid", type: "grid" }],
+        },
+      ],
+    });
+    const prior = priorFrom(captured);
+    // JSONB round-trip: same content, alphabetized keys
+    prior.fields[1]!.options = { formula: "1+1", isValid: true, referencedFieldIds: [], result: { type: "singleLineText" } };
+    const d = diffSchema({ captured, prior, runId: RUN, confident: true });
+    expect(d.schemaUpdates.filter((u) => u.changeType === "options")).toEqual([]);
+  });
+
+  it("still emits an update when option VALUES change", () => {
+    const captured = base({
+      tables: [
+        {
+          tableId: "tblA", name: "Deals", primaryFieldId: "fld1", description: null,
+          fields: [
+            { fieldId: "fld1", name: "Name", type: "singleLineText", isPrimary: true },
+            { fieldId: "fld2", name: "Calc", type: "formula", options: { result: { type: "number" }, formula: "2+2", isValid: true, referencedFieldIds: [] } },
+          ],
+          views: [{ viewId: "viwA", name: "Grid", type: "grid" }],
+        },
+      ],
+    });
+    const prior = priorFrom(captured);
+    prior.fields[1]!.options = { formula: "1+1", isValid: true, referencedFieldIds: [], result: { type: "singleLineText" } };
+    const d = diffSchema({ captured, prior, runId: RUN, confident: true });
+    expect(d.schemaUpdates.filter((u) => u.changeType === "options")).toHaveLength(1);
+  });
+});
+
 // Build a prior working set that exactly matches a captured base (all active).
 function priorFrom(b: CapturedBase): PriorWorkingSet {
   return {

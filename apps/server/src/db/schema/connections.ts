@@ -25,6 +25,10 @@ export const connections = baseout.table("connections", {
   platformId: text("platform_id").notNull(),
   status: text("status").notNull(),
   // Canonical status set: 'active' | 'invalid' | 'refreshing' | 'pending_reauth'
+  displayName: text("display_name"),
+  // User-given label (e.g. "Main Airtable Account") — read by the
+  // notifications feed (server-notifications-inbox) for connection-broken
+  // row copy.
   accessTokenEnc: text("access_token_enc").notNull(),
   refreshTokenEnc: text("refresh_token_enc"),
   tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),

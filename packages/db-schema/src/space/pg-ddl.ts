@@ -5,7 +5,7 @@
  * (workerd, no filesystem), so it cannot read the .sql migration at runtime —
  * it needs the DDL bundled. This module is the bundled copy.
  *
- * GENERATED FROM migrations/space-pg/0000_luxuriant_silver_surfer.sql by scripts/gen-space-pg-ddl.mjs — DO NOT HAND-EDIT.
+ * GENERATED FROM migrations/space-pg/0000_good_darkhawk.sql by scripts/gen-space-pg-ddl.mjs — DO NOT HAND-EDIT.
  * tests/space-pg-ddl-parity.test.ts asserts this stays in lockstep with that
  * migration (drift fails CI). Regenerate after a per-Space schema change:
  *   node packages/db-schema/scripts/gen-space-pg-ddl.mjs
@@ -197,6 +197,19 @@ CREATE TABLE "bo_at_health_scores" (
 	"score" integer NOT NULL,
 	"band" text NOT NULL,
 	"categories" jsonb
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_inbox_mutes" (
+	"base_id" text PRIMARY KEY NOT NULL,
+	"created_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_inbox_state" (
+	"item_id" text PRIMARY KEY NOT NULL,
+	"read" boolean DEFAULT false NOT NULL,
+	"done" boolean DEFAULT false NOT NULL,
+	"snoozed_until" timestamp with time zone,
+	"updated_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE "bo_at_interfaces" (

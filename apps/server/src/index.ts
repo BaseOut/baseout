@@ -50,6 +50,9 @@ import { spacesDocumentHandler } from "./pages/api/internal/spaces/document";
 import { spacesDocsByEntityHandler } from "./pages/api/internal/spaces/docs-by-entity";
 import { spacesSchemaReadHandler } from "./pages/api/internal/spaces/schema-read";
 import { spacesSchemaChangelogHandler } from "./pages/api/internal/spaces/schema-changelog";
+import { spacesNotificationsHandler } from "./pages/api/internal/spaces/notifications";
+import { spacesNotificationsTriageHandler } from "./pages/api/internal/spaces/notifications-triage";
+import { spacesNotificationsMuteHandler } from "./pages/api/internal/spaces/notifications-mute";
 import { cleanupPlanHandler } from "./pages/api/internal/cleanup-plan";
 import { cleanupCompleteHandler } from "./pages/api/internal/cleanup-complete";
 import {
@@ -128,6 +131,13 @@ const SPACES_SCHEMA_READ_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/schema$/;
 const SPACES_SCHEMA_CHANGELOG_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/schema-changelog$/;
+// Inbox notification feed + triage (server-notifications-inbox).
+const SPACES_NOTIFICATIONS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/notifications$/;
+const SPACES_NOTIFICATIONS_TRIAGE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/notifications\/triage$/;
+const SPACES_NOTIFICATIONS_MUTE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/notifications\/mute$/;
 
 // Re-export Durable Object classes so workerd can resolve their bindings.
 // Required even when Astro adapter wraps the entry — see CLAUDE.md §5.1.
@@ -515,6 +525,22 @@ export default {
       const schemaChangelog = SPACES_SCHEMA_CHANGELOG_RE.exec(url.pathname);
       if (schemaChangelog) {
         return await spacesSchemaChangelogHandler(request, env, ctx, locals, schemaChangelog[1]!);
+      }
+
+      // Inbox notifications (server-notifications-inbox): derived alert feed
+      // + idempotent triage/mute. The two sub-routes are checked before the
+      // bare feed route (all three are $-anchored, so order is cosmetic).
+      const notificationsTriage = SPACES_NOTIFICATIONS_TRIAGE_RE.exec(url.pathname);
+      if (notificationsTriage) {
+        return await spacesNotificationsTriageHandler(request, env, ctx, locals, notificationsTriage[1]!);
+      }
+      const notificationsMute = SPACES_NOTIFICATIONS_MUTE_RE.exec(url.pathname);
+      if (notificationsMute) {
+        return await spacesNotificationsMuteHandler(request, env, ctx, locals, notificationsMute[1]!);
+      }
+      const notifications = SPACES_NOTIFICATIONS_RE.exec(url.pathname);
+      if (notifications) {
+        return await spacesNotificationsHandler(request, env, ctx, locals, notifications[1]!);
       }
 
       // Attachment dedup (openspec/changes/server-attachments). The workflows

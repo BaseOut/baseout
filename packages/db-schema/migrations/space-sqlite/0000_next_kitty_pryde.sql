@@ -201,6 +201,19 @@ CREATE TABLE `bo_at_health_scores` (
 );
 --> statement-breakpoint
 CREATE INDEX `bo_at_health_scores_base_idx` ON `bo_at_health_scores` (`base_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_inbox_mutes` (
+	`base_id` text PRIMARY KEY NOT NULL,
+	`created_at` text
+);
+--> statement-breakpoint
+CREATE TABLE `bo_at_inbox_state` (
+	`item_id` text PRIMARY KEY NOT NULL,
+	`read` integer DEFAULT false NOT NULL,
+	`done` integer DEFAULT false NOT NULL,
+	`snoozed_until` text,
+	`updated_at` text
+);
+--> statement-breakpoint
 CREATE TABLE `bo_at_interfaces` (
 	`id` text PRIMARY KEY NOT NULL,
 	`base_id` text NOT NULL,

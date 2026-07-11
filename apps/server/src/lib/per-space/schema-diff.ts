@@ -171,8 +171,24 @@ export function hashSchema(base: CapturedBase): string {
   return hash.toString(16).padStart(16, "0");
 }
 
+/**
+ * Key-order-insensitive structural JSON serialization. Postgres JSONB
+ * canonicalizes object key order while Airtable's captured JSON does not — a
+ * textual stringify compare made every non-alphabetical options object emit a
+ * no-op "options changed" update on EVERY run (changelog spam, 2026-07-10).
+ */
+const canonicalJson = (v: unknown): string => {
+  if (v === null || typeof v !== "object") return JSON.stringify(v ?? null);
+  if (Array.isArray(v)) return `[${v.map(canonicalJson).join(",")}]`;
+  const o = v as Record<string, unknown>;
+  return `{${Object.keys(o)
+    .sort()
+    .map((k) => `${JSON.stringify(k)}:${canonicalJson(o[k])}`)
+    .join(",")}}`;
+};
+
 const jsonEq = (a: unknown, b: unknown): boolean =>
-  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+  canonicalJson(a ?? null) === canonicalJson(b ?? null);
 
 export function diffSchema(args: {
   captured: CapturedBase;

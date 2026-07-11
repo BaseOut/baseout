@@ -364,3 +364,19 @@ export const chatMessages = sqliteTable('bo_at_chat_messages', {
   content: text('content').notNull().default(''),
   createdAt: text('created_at'),
 }, (t) => ({ byThread: index('bo_at_chat_messages_thread_idx').on(t.threadId) }))
+
+// ---- Inbox: notification triage state (server-notifications-inbox) ----
+// Mirror of pg.ts inboxState + inboxMutes. Feed is derived at read time; only
+// triage state persists. Account-shared in V1.
+export const inboxState = sqliteTable('bo_at_inbox_state', {
+  itemId: text('item_id').primaryKey(),
+  read: integer('read', { mode: 'boolean' }).notNull().default(false),
+  done: integer('done', { mode: 'boolean' }).notNull().default(false),
+  snoozedUntil: text('snoozed_until'),
+  updatedAt: text('updated_at'),
+})
+
+export const inboxMutes = sqliteTable('bo_at_inbox_mutes', {
+  baseId: text('base_id').primaryKey(),
+  createdAt: text('created_at'),
+})

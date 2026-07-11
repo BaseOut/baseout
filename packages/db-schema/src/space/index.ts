@@ -31,4 +31,5 @@ export { spacePgDdlStatementsIdempotent } from './pg-ddl-upgrade'
 // v4: Relationships — bo_at_synced_view_candidates (server-relationships). API
 // relationships are derived on read from bo_at_fields, so no table for those.
 // v5: Chat — bo_at_chat_threads + bo_at_chat_messages (server-schema-chat).
-export const SPACE_SCHEMA_VERSION = 5
+// v6: Inbox — bo_at_inbox_state + bo_at_inbox_mutes (server-notifications-inbox).
+export const SPACE_SCHEMA_VERSION = 6

@@ -29,11 +29,12 @@ describe("per-Space PG DDL ↔ migration parity", () => {
     expect(fromModule).toEqual(fromMigration);
   });
 
-  it("covers all 27 bo_at_ tables", () => {
+  it("covers all 29 bo_at_ tables", () => {
     // 20 base + 4 Health metric (server-schema-health-scoring)
     // + 1 synced-view-candidates (server-relationships)
-    // + 2 chat (server-schema-chat: threads + messages).
+    // + 2 chat (server-schema-chat: threads + messages)
+    // + 2 inbox (server-notifications-inbox: triage state + per-base mutes).
     const creates = (SPACE_PG_DDL.match(/CREATE TABLE/g) ?? []).length;
-    expect(creates).toBe(27);
+    expect(creates).toBe(29);
   });
 });

@@ -35,8 +35,8 @@ describe("spacePgDdlStatementsIdempotent", () => {
     }
   });
 
-  it("covers all 27 tables (idempotent set matches the schema)", () => {
+  it("covers all 29 tables (idempotent set matches the schema)", () => {
     const tables = spacePgDdlStatementsIdempotent().filter((s) => s.startsWith("CREATE TABLE"));
-    expect(tables).toHaveLength(27);
+    expect(tables).toHaveLength(29);
   });
 });

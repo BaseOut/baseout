@@ -183,6 +183,19 @@ CREATE TABLE "bo_at_health_scores" (
 	"categories" jsonb
 );
 --> statement-breakpoint
+CREATE TABLE "bo_at_inbox_mutes" (
+	"base_id" text PRIMARY KEY NOT NULL,
+	"created_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_inbox_state" (
+	"item_id" text PRIMARY KEY NOT NULL,
+	"read" boolean DEFAULT false NOT NULL,
+	"done" boolean DEFAULT false NOT NULL,
+	"snoozed_until" timestamp with time zone,
+	"updated_at" timestamp with time zone
+);
+--> statement-breakpoint
 CREATE TABLE "bo_at_interfaces" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"base_id" text NOT NULL,

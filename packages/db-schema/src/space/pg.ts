@@ -406,3 +406,24 @@ export const chatMessages = pgTable('bo_at_chat_messages', {
   content: text('content').notNull().default(''),
   createdAt: timestamp('created_at', { withTimezone: true }),
 }, (t) => ({ byThread: index('bo_at_chat_messages_thread_idx').on(t.threadId) }))
+
+// ---- Inbox: notification triage state (server-notifications-inbox) ----
+// The feed itself is DERIVED at read time (backup_runs / connections /
+// bo_at_schema_updates) — only the user's triage lives here. One row per
+// triaged item, keyed by the deterministic item id (`run:<id>`, `schema:<id>`,
+// `conn:<id>`); absence = untouched. Account-shared in V1 (no user_id — the
+// documented follow-up adds one).
+export const inboxState = pgTable('bo_at_inbox_state', {
+  itemId: text('item_id').primaryKey(),
+  read: boolean('read').notNull().default(false),
+  done: boolean('done').notNull().default(false),
+  snoozedUntil: timestamp('snoozed_until', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+})
+
+// Per-base mute: drops activity-lane rows for the base from the derived feed
+// (attention rows ignore mutes per the web spec). Row present = muted.
+export const inboxMutes = pgTable('bo_at_inbox_mutes', {
+  baseId: text('base_id').primaryKey(),
+  createdAt: timestamp('created_at', { withTimezone: true }),
+})
