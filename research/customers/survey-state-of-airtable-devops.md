@@ -4,14 +4,14 @@
 **Goal:** produce the authoritative annual dataset on how teams protect, change, document, and access Airtable data — the Airtable analog of Gearset's State of Salesforce DevOps and Google's DORA research. Re-runnable annually with stable question IDs for year-over-year trend lines.
 **Incentive:** an **instant sneak-peek** of Baseout + an **on-screen maturity band** at completion, then first access to *The State of Airtable DevOps* report by email ("see how you compare").
 **Sponsorship:** run and sponsored by **Baseout × BuiltOnAir** — positioned as "from the team behind On2Air" for credibility. On2Air is *not* the sponsor (this survey is Baseout's coming-out moment as the DevOps platform). Neutrality guardrail: Baseout never appears in public-core question stems; product names appear only as answer options.
-**Target length:** ~15 minutes, ~52 questions (incl. the optional private tail). Questions marked ⭑ are required. Every required practice question keeps **ordinal** answer options so it can feed the maturity index.
+**Target length:** ~15 minutes, ~55 questions (incl. the optional private tail). Questions marked ⭑ are required. Every required practice question keeps **ordinal** answer options so it can feed the maturity index.
 **Relationship to the other two surveys:** Sections 1, 4–9, 11 are a **superset** of the shared core (B–F) in `survey-existing-customers.md` / `survey-mailing-list.md` — overlapping questions use identical wording (mapping table in the builder notes) so all three datasets merge. New material (team & governance, incident deep-dive, DORA-style change metrics, AI section) exists only here.
 
 **Design principles (from `research-notes.md`):**
 - **DORA's four keys, translated to Airtable** [A-5]: structural-change frequency (§7), lead time (§7), change failure rate (§7), recovery time (§5/§6). Copado proved the four keys transfer to a SaaS platform [A-2 #10].
 - **Gearset's credibility pattern** [A-1]: screener up front, demographics for disclosure (we publish our sample's customer share, role mix, and plan mix), a "topic of the year" section (AI, §10), and stable annual IDs.
 - **Neutrality:** no product names in question stems except as answer options; nothing in this instrument mentions Baseout features. The report's authority depends on the survey not reading as a lead form.
-- **Measure the traps we found in research:** URL-only attachment backups [N-6], the automations/interfaces export gap [N-7, T-2], snapshot-restore rewiring cost [T-12], plan-retention awareness [N-1], untested restores [A-6].
+- **Measure the traps we found in research:** URL-only attachment backups [N-6], the automations/interfaces export gap [N-7, T-2], snapshot-restore rewiring cost [T-12], plan-retention awareness [N-1], untested restores [A-6], App Sandbox awareness [N-11], automation run caps [N-12], current MCP/agent write access [N-16].
 
 ---
 
@@ -140,6 +140,7 @@
 - A way to freely query or export the data (SQL or API)
 - An external backup we control
 - Access controls or an audit trail
+- A named backup owner/steward for critical bases (someone besides the original builder)
 - None of these
   - *(The "missing-capability map" — the one-question headline chart ("X% have no way to know what changed"). Also cross-validates the scored maturity index: self-reported capabilities vs. computed stage.)*
 
@@ -339,6 +340,14 @@
 **7.9 Do you take a snapshot before making a risky change?** *(single select)*
 - Always · Usually · Sometimes · Never · Didn't know that was a thing
 
+**7.10 ⭑ Airtable's App Sandbox lets you test schema/automation changes in a copy and publish them back. Do you use it?** *(single select)*
+- Yes — regularly
+- Tried it
+- Know of it, haven't used it
+- Never heard of it
+- Not on a plan that has it (Business/Enterprise only)
+  - *(Awareness/adoption of the native staging feature, GA Oct 2025 [N-11] — the awareness split is itself a headline stat.)*
+
 ---
 
 ## Section 8 — Documentation & schema visibility
@@ -389,11 +398,12 @@
 
 **9.3 ⭑ How interested are you in a continuously-synced SQL database of your Airtable data (queryable with SQL / BI tools / your own code)?** *(1–5: Not interested → Extremely interested — identical to E3)*
 
-**9.4 Have Airtable's API limits (rate limits, monthly call caps) ever constrained something you were trying to build or export?** *(single select)*
-- Yes — a real blocker
+**9.4 Have Airtable's platform limits — API rate limits, monthly automation run caps, record caps per base — ever constrained something you were running or building?** *(single select)*
+- Yes — a real blocker (something stopped working)
 - Yes — annoying but workable
 - No
 - Didn't know there were limits
+  - *(Run caps are a hard monthly stop, not a throttle [N-12] — "something stopped working" captures the cap-hit incident.)*
 
 **9.5 ⭑ Beyond Airtable: which other platforms would you want the same backup and DevOps protection for?** *(multi-select)*
 - Notion
@@ -435,6 +445,14 @@
 - AI-generated documentation of your bases
 - Connecting your data to AI assistants you already use (Claude, ChatGPT) via MCP
 - AI flagging anomalies (sudden deletions, unusual data changes)
+
+**10.5 ⭑ Do you connect external AI assistants (Claude, ChatGPT, etc.) to your Airtable data today — via MCP or connectors?** *(single select)*
+- Yes — regularly
+- Experimenting
+- No, but planning to
+- No
+- Didn't know that was possible
+  - *(Current MCP/connector adoption — 10.4 measures interest; this measures behavior. Pairs with 10.2 for the "agents can already write" story [N-16].)*
 
 ---
 
@@ -523,7 +541,7 @@
 - Needs: branching (S1 exclusion; conditionals 4.2, 4.4, 4.7, 4.8, 5.3–5.6, 8.2, 9.2, P2–P3), one matrix (10.4), rank-3 (11.1), hidden fields.
 - **Hidden fields:** `source` (community / partner / newsletter / social / paid), `audience` (customer / list / public) — publish the source mix in the methodology note, per the Gearset disclosure pattern [A-1].
 - **Quality control:** min-time gate (<4 min = flag), S1 screener, and treat straight-lining on 10.4 as a flag. Gearset's 2025 shift to fewer, screened responses is the precedent: quality over volume [A-1].
-- ~52 questions, ~35 required. If length testing says trim: drop 1.3, 1.4, 8.6, 9.4, 12.4 first, then 5.6 and P1 — never trim a maturity-index or shared-core question.
+- ~55 questions, ~38 required. If length testing says trim: drop 1.3, 1.4, 8.6, 9.4, 12.4 first, then 5.6 and P1 — never trim a maturity-index or shared-core question.
 - **Completion screen:** compute the **core maturity index** from the answers on the spot and show the band (Ad hoc / Aware / Managed / Engineered) with a one-line description before the sneak-peek — instant payoff, shareable, and itself a report angle ("only X% reach Engineered").
 - **Private tail (Section P):** clearly labeled optional + never published; excluded from the public report dataset entirely (separate analysis file). Section 12 (email + logistics) may render before P on platforms where that flows better — IDs stay stable either way. P4 is a standalone product-updates consent, separate from the 12.1 report email — never merge the two.
 
@@ -560,6 +578,8 @@ The 6-question core index (C1/C4/C5/D1/D3/D4 ↔ 4.1/6.1/6.2/8.1/7.6/7.3) stays 
 7. **The AI wildcard:** 10.2 (AI agents editing bases) × 7.6 (can't tell what changed) — the 2026-specific risk story.
 8. **Retention awareness:** 4.5 — % who assumed native history "was forever."
 9. **Platform expansion appetite:** 9.5 — which platforms respondents want the same protection for (V2 signal, publishable).
+9b. **The staging gap:** 7.10 — % who have never heard of App Sandbox vs. % using it; crossed with 7.3 staging practice.
+9c. **Agents are already inside:** 10.5 (current MCP/connector use) × 10.2 (agents making changes) × 7.6 (can't tell what changed).
 10. Year-over-year trends on every shared-core ID, starting next edition. (Private-tail P1–P4 feed product/channel decisions only — never charts.)
 
 ### Distribution plan (sketch)
