@@ -19,7 +19,7 @@
 
 ## Executive summary
 
-Airtable has quietly become production infrastructure. More than 500,000 organizations — including 80% of the Fortune 100 — run on it [RESEARCH: N-9], and the bases that started as a spreadsheet replacement now hold customer records, order pipelines, and the operational logic of entire businesses. Gartner forecast that by 2025, 70% of new enterprise applications would be built on low-code technologies, and that by 2026 at least 80% of low-code users would sit outside formal IT [RESEARCH: A-7]. That is exactly the population this report surveyed: the admins, operators, and consultants who own business-critical Airtable estates without a platform team behind them.
+Airtable has quietly become production infrastructure. More than 500,000 organizations — including 80% of the Fortune 100 — run on it [RESEARCH: N-9], and the bases that started as a spreadsheet replacement now hold customer records, order pipelines, and the operational logic of entire businesses. Gartner forecast that by 2025, 70% of new enterprise applications would be built on low-code technologies, and that by 2026 at least 80% of low-code users would sit outside formal IT [RESEARCH: A-7]. That is exactly the population this report surveyed: the admins, operators, and consultants who run business-critical Airtable setups without a platform team behind them.
 
 Every mature software ecosystem eventually grows a discipline for this — version control, backups, staging environments, change management. Salesforce got there a decade ago and the practice got a name, Salesforce DevOps; by 2024, 87% of Salesforce teams backed up their orgs or planned to, and backup had become the single most-adopted DevOps process in that ecosystem [RESEARCH: A-2]. Microsoft built application lifecycle management directly into Power Platform "to democratize ALM… for all makers, admins, and developers" [RESEARCH: A-4].
 
@@ -77,7 +77,7 @@ The survey ran [SURVEY: fieldwork dates] across two channels: customers of On2Ai
 - **Roles** [SURVEY: B1 distribution]: consultants/agencies serving multiple clients, internal Airtable admins, ops/RevOps, IT/engineering, founders.
 - **Org sizes** [SURVEY: B2 distribution].
 - **Plans** [SURVEY: B3 distribution] — note the share on Free/Team plans, where native retention windows are shortest (§3.1).
-- **Estate size** [SURVEY: B4 distribution] bases under active maintenance; largest-base record counts [SURVEY: B5 distribution].
+- **Scale** [SURVEY: B4 distribution] bases under active maintenance; largest-base record counts [SURVEY: B5 distribution].
 - **Criticality** [SURVEY: B6 distribution]; what runs on the most important bases [SURVEY: B7 top categories].
 
 Percentages throughout are of the merged dataset unless labeled otherwise. Customer-only questions (the On2Air experience section) are labeled as the customer subsample. Where we cite third-party research, the sponsor is named — much of the industry's backup data comes from vendors who sell the remedy, and we flag that every time, including our own interest: Baseout builds Airtable backup and data-intelligence tooling. The survey questions, answer options, and scoring rubric are reproduced in the appendix so anyone can audit or replicate the method.
@@ -183,9 +183,9 @@ Automated external backups with regularly tested restores; recovery in hours, no
 
 ### What separates the stages
 
-- **Criticality doesn't predict maturity.** [SURVEY: B6 × MATURITY — report whether mission-critical estates are meaningfully more mature; expected finding: barely]. The teams with the most to lose are not systematically the best protected — the report's central tension.
+- **Criticality doesn't predict maturity.** [SURVEY: B6 × MATURITY — report whether teams with mission-critical data are meaningfully more mature; expected finding: barely]. The teams with the most to lose are not systematically the best protected — the report's central tension.
 - **Incidents drive maturity more than foresight does.** [SURVEY: C2 × MATURITY — are teams that lost data more mature today?]. The pattern the whole industry shows: the backup budget appears the week after the incident.
-- **Consultants vs. internal admins.** [SURVEY: B1 × MATURITY]. Consultants manage many estates and their practices propagate to every client — the highest-leverage population for maturing the ecosystem.
+- **Consultants vs. internal admins.** [SURVEY: B1 × MATURITY]. Consultants manage many clients' setups and their practices propagate to every one of them — the highest-leverage population for maturing the ecosystem.
 - **Recovery expectations.** Median expected recovery time by stage: [SURVEY: MATURITY × C4 medians] — the Airtable expression of Copado's 37× elite-recovery multiplier [RESEARCH: A-2].
 
 ---

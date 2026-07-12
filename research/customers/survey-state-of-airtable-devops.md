@@ -71,7 +71,7 @@
 
 ---
 
-## Section 2 — Your Airtable estate
+## Section 2 — Your Airtable setup
 
 **2.1 ⭑ Which Airtable plan are you on?** *(single select — identical to B3)*
 - Free · Team · Business · Enterprise Scale · Multiple plans (consultant) · Not sure
@@ -485,9 +485,9 @@
 - Interested, but I'd need to see it work
 - Not for me
 
-**P2. Consultants/agencies (shown when S1 or 1.1 = consultant/agency): what would feel reasonable to pay per *client estate*, per month, for that tool?** *(single select, conditional)*
+**P2. Consultants/agencies (shown when S1 or 1.1 = consultant/agency): what would feel reasonable to pay *per client*, per month, for that tool?** *(single select, conditional)*
 - Under $20 · $20–49 · $50–149 · $150–499 · $500+
-  - *(Per-client-estate framing — complements the locked 11.3 org-budget bands; the agency channel prices differently.)*
+  - *(Per-client framing — complements the locked 11.3 org-budget bands; the agency channel prices differently.)*
 
 **P3. Consultants/agencies: would you resell or mark this up to clients?** *(single select, conditional)*
 - Yes — as a recurring line item
