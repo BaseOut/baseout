@@ -19,6 +19,7 @@
 - [ ] 3.3 `GET /data/changelog` — per-run rollups + paginated row lists, base/table/field/change-type/run-range filters.
 - [ ] 3.4 `GET /data/search` — grouped results, caps, `partial` flag.
 - [ ] 3.5 `POST /data/export` (sync streamed ≤ threshold; async job above) + `GET /data/export/:jobId`; workflows export task writes to the Space's destination and calls back. (Task body → `workflows-data-export` follow-up if it outgrows a small task.)
+- [ ] 3.5b Static-snapshot ingest: `POST /data/static-review` (consent-token verified) → stream CSVs from the Storage Destination → parse/coerce via snapshot schema JSON into the per-Space `review` schema → pollable status (async via workflows task for large snapshots); TTL purge + `DELETE` purge, both audit-logged; record-read/search/export machinery served schema-qualified; `missing_table` link fallback. Unit tests: CSV parse/coercion report, TTL math; integration: ingest → browse → purge leaves nothing.
 - [ ] 3.6 `index.ts` wiring; INTERNAL_TOKEN gate covered by existing middleware tests; slow-query logging on record routes.
 
 ## 4. Data-chat context (decision resolved: allowed, policy-gated)

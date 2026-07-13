@@ -68,6 +68,15 @@ The engine SHALL export a scope respecting active filters — CSV for single-tab
 - **WHEN** a client exports a 500k-row filtered scope as JSON
 - **THEN** a job is returned, progresses to complete, and the artifact contains exactly the matching records
 
+### Requirement: Consent-gated static-snapshot ingest
+
+For static-only Spaces, the engine SHALL load a backup snapshot's CSV files into a temporary per-Space review store only upon a verified, per-snapshot user consent, parsing and type-coercing against the snapshot's captured schema. The review copy SHALL be served through the standard read/search/export machinery (history, changelog, and chat excluded), SHALL expire on an idle TTL and be purgeable on demand with real deletion, and ingest and purge SHALL both be audit-logged.
+
+#### Scenario: Ingest, browse, purge
+
+- **WHEN** a static-only user consents to reviewing a snapshot
+- **THEN** its tables become browsable with filters/search/export, links into non-ingested tables return a missing-table fallback, and after purge (manual or TTL) no snapshot data remains in the review store
+
 ### Requirement: Record-data AI context gated by the AI-usage policy
 
 Record data SHALL be includable in chat/AI context only when the effective AI-usage policy (per `shared-ai-controls`: Org ceiling + Space restriction) is `all` — enforced at the route guard and re-asserted inside the context assembler immediately before the payload is built. The context SHALL be the scoped/filtered rows with a hard cap on rows × fields. At `schema_only` the assembler SHALL include schema metadata and docs only (the prior posture); at `off` no AI payload SHALL be assembled.

@@ -27,6 +27,13 @@ All the metadata needed is already captured — this is interpretation, not new 
 - **Lookup / rollup**: `options.recordLinkFieldId` names the link field to traverse and `options.fieldIdInLinkedTable` the field being read; rollups add the aggregation function. Response = the link-field metadata + per-source-record `{recordId, display, lookedUpValue}` (paginated with the same machinery when the link set is large), + `{aggregation}` for rollups.
 - Dangling ids (linked record deleted since the backup, or filtered by `status='deleted'`) return as `{recordId, missing: true}` rows — the UI states it rather than silently dropping, since "the linked record is gone" is exactly the insight a backup tool should surface.
 
+## Static-snapshot ingest (static-only Spaces)
+
+- **Store**: a per-Space `review` schema (parallel to the `bo_at_*` tables, minimal shape: tables/fields from the snapshot's schema JSON + a records/values pair) — reusing the record-read/search/export machinery via a schema-qualified path. No history/changelog tables: a single snapshot has no cross-run data by definition.
+- **Flow**: `POST /data/static-review {snapshotRef}` → verify consent token from the web layer → stream the snapshot's CSVs from the Storage Destination (same credential path the backup writer used) → parse + type-coerce against the snapshot's captured schema JSON (bad cells → string fallback + a per-table coercion report) → status pollable (`GET /data/static-review/:jobId`); large snapshots parse async via a workflows task.
+- **Lifecycle**: TTL purge on idle (default 72h; config), explicit `DELETE /data/static-review` purge; ingest + purge both audit-logged (who consented, which snapshot, when purged). Purge is real deletion — this is the consented exception to the static/BYOS "never stored" posture, and it must be provably temporary.
+- **Capability caveats surfaced to the UI**: link/lookup expansion only within ingested tables (`missing_table` fallback), no history/changelog/chat (dynamic-only), formula provenance works (schema JSON carries `referencedFieldIds` when the capture has it).
+
 ## Changelog
 
 Per-run rollup: created = records with `first_seen_run = run`, deleted = `first_unseen_run = run`, updated = distinct records in `record_updates where run_id = run`. Row lists paginate with the same keyset machinery. Field-level filter narrows on `record_updates.field_id`.
