@@ -1,6 +1,14 @@
 ## Status
 
-Engine half of the AI Health tab. Decision (2026-06): **full AI engine, Claude API from the workflows runner**. Substrate exists (`health_score_rules` catalog + `bo_at_health_scores`/`bo_at_health_issues`). Build order mirrors Phase 2: foundation → scoring task → routes → UI. Pairs with `workflows-health-scoring` + `web-health-tab`.
+Engine half of the AI Health tab. Decision (2026-06): **full AI engine, Claude API from the workflows runner**.
+**RE-SCOPED 2026-07-10 (all-Cloudflare POC decision):** generation moved ENGINE-SIDE onto the
+Workers AI binding — `health-score-run.ts` (ported per-metric loop + `parseScoreResponse`
+sanitizer, 4 tests) driven by `health-rerun` (waitUntil, fresh client) and auto-run after every
+schema-changing `/schema-sync`. Zero API keys. The workflows Claude task remains in place,
+unenqueued, as the future premium-model path.
+**GAP FILED:** the `health_score_rules` catalog had NO seeding path anywhere — every org started
+empty, so Health never scored for anyone. A 4-rule default set (descriptions / naming /
+structure / field types) was seeded manually for the dev org; see the unchecked task below. Substrate exists (`health_score_rules` catalog + `bo_at_health_scores`/`bo_at_health_issues`). Build order mirrors Phase 2: foundation → scoring task → routes → UI. Pairs with `workflows-health-scoring` + `web-health-tab`.
 
 ---
 
@@ -31,3 +39,8 @@ Engine half of the AI Health tab. Decision (2026-06): **full AI engine, Claude A
 
 - [x] 5.1 `pnpm --filter @baseout/server typecheck` + `build` clean + `health-sync`/`health-overview`/`health-config-route`/`health-scoring` + `schema-mirrors` batch green (74). No stray `console.*`.
 - [ ] 5.2 Human smoke (with the task + UI): re-run scoring → grade + per-metric breakdown + issues populate; edit a prompt → metric goes stale → re-run updates it; disable a metric → excluded; non-Pro+ blocked. Needs `npx trigger.dev dev` + `ANTHROPIC_API_KEY` + engine `--remote`.
+
+
+## Follow-up (2026-07-10 gap)
+
+- [ ] Seed the default `health_score_rules` catalog for every org — at org creation (onboarding) + a backfill for existing orgs. Until this ships, Health silently shows "not scored" for any org whose catalog is empty (`no_enabled_metrics`).

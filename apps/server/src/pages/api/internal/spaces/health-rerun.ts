@@ -1,17 +1,19 @@
 // POST /api/internal/spaces/:spaceId/health-rerun   { baseId }
 //
-// Resolves the base's enabled metrics + effective prompts + schema context and
-// enqueues the workflows health-score-base task, which scores each metric via
-// Claude and POSTs /health-sync. This is the trigger that makes Health produce
-// data (manual re-score; Pro+ gated web-side). Returns the generated runId.
+// Scores the base's enabled metrics ENGINE-SIDE on the Workers AI binding
+// (all-Cloudflare POC, 2026-07-10 — replaced the Claude-via-Trigger.dev
+// enqueue; zero API keys). Generation runs after the response via waitUntil
+// with a fresh DB client; the web polls /health-overview for the result, same
+// contract as before. Returns the generated runId.
 //
 // Token gate is applied by middleware (path begins /api/internal/).
 
 import type { AppLocals, Env } from "../../../../env";
+import { createMasterDb } from "../../../../db/worker";
 import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import { ensureSpaceSchemaCurrent } from "../../../../lib/provisioning/upgrade";
 import { resolveScoreInputs } from "../../../../lib/per-space/health-resolve";
-import { enqueueHealthScoreBase } from "../../../../lib/trigger-client";
+import { runEngineHealthScore, workersAiScoreMetric } from "../../../../lib/per-space/health-score-run";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -26,7 +28,7 @@ function jsonResponse(body: unknown, status: number): Response {
 export async function spacesHealthRerunHandler(
   request: Request,
   env: Env,
-  _ctx: ExecutionContext,
+  ctx: ExecutionContext,
   locals: AppLocals,
   spaceId: string,
 ): Promise<Response> {
@@ -58,7 +60,7 @@ export async function spacesHealthRerunHandler(
       schemaVersion: space.schemaVersion,
     });
 
-    const { metrics, schemaContext } = await resolveScoreInputs(masterDb, space.pgLocator, {
+    const { metrics } = await resolveScoreInputs(masterDb, space.pgLocator, {
       spaceId,
       baseId,
     });
@@ -66,8 +68,26 @@ export async function spacesHealthRerunHandler(
       return jsonResponse({ ok: true, enqueued: false, reason: "no_enabled_metrics" }, 200);
     }
 
+    const scoreMetric = workersAiScoreMetric(env);
+    if (!scoreMetric) {
+      return jsonResponse({ ok: true, enqueued: false, reason: "ai_unavailable" }, 200);
+    }
+
     const runId = crypto.randomUUID();
-    await enqueueHealthScoreBase(env, { spaceId, baseId, runId, metrics, schemaContext });
+    const pgLocator = space.pgLocator;
+    ctx.waitUntil(
+      (async () => {
+        const fresh = createMasterDb(env);
+        try {
+          await runEngineHealthScore({ masterDb: fresh.db, pgLocator, spaceId, baseId, runId, scoreMetric });
+        } catch (err) {
+          // eslint-disable-next-line no-console -- background-scoring failure would otherwise be invisible
+          console.error("health-score run failed:", err instanceof Error ? err.message : String(err));
+        } finally {
+          await fresh.sql.end({ timeout: 5 }).catch(() => {});
+        }
+      })(),
+    );
     return jsonResponse({ ok: true, enqueued: true, runId, metricCount: metrics.length }, 200);
   } catch (err) {
     return jsonResponse(

@@ -25,6 +25,7 @@ import {
   saveDescriptionUpdates,
   workersAiGenerate,
 } from "../../../../lib/per-space/describe-schema-io";
+import { runEngineHealthScore, workersAiScoreMetric } from "../../../../lib/per-space/health-score-run";
 import { inferAndWriteSyncedViews } from "../../../../lib/per-space/relationships-io";
 import { ensureSpaceSchemaCurrent } from "../../../../lib/provisioning/upgrade";
 
@@ -110,23 +111,41 @@ export async function spacesSchemaSyncHandler(
     // connection (load and save are separate short transactions around the
     // generation). Skipped when the AI binding is absent or disabled.
     const generate = workersAiGenerate(env);
-    if (generate) {
+    const scoreMetric = workersAiScoreMetric(env);
+    if (generate || scoreMetric) {
       const pgLocator = space.pgLocator;
       ctx.waitUntil(
         (async () => {
           const fresh = createMasterDb(env);
           try {
-            await runDescribeBase({
-              baseId: captured.baseId,
-              load: () => withSpaceSchema(fresh.db, pgLocator, (tx) => loadDescribeBaseData(tx, captured.baseId)),
-              save: (updates) => withSpaceSchema(fresh.db, pgLocator, (tx) => saveDescriptionUpdates(tx, updates)),
-              generate,
-            });
+            if (generate) {
+              await runDescribeBase({
+                baseId: captured.baseId,
+                load: () => withSpaceSchema(fresh.db, pgLocator, (tx) => loadDescribeBaseData(tx, captured.baseId)),
+                save: (updates) => withSpaceSchema(fresh.db, pgLocator, (tx) => saveDescriptionUpdates(tx, updates)),
+                generate,
+              });
+            }
+            // Health scores after every schema capture (the Health tab's
+            // "runs after a schema backup completes" contract) — only when the
+            // schema actually changed or the base has never been scored is
+            // decided inside resolveScoreInputs' enabled-metrics gate; scoring
+            // an unchanged base refreshes staleness cheaply at POC scale.
+            if (scoreMetric && result.schemaChanged) {
+              await runEngineHealthScore({
+                masterDb: fresh.db,
+                pgLocator,
+                spaceId,
+                baseId: captured.baseId,
+                runId: baseRunId,
+                scoreMetric,
+              });
+            }
           } catch (err) {
             // Advisory — the next sync retries. Logged because a silent failure
-            // here means "descriptions never appear" with zero signal anywhere.
+            // here means "descriptions/health never appear" with zero signal.
             // eslint-disable-next-line no-console -- background-task failure would otherwise be invisible
-            console.error("describe-schema failed:", err instanceof Error ? err.message : String(err));
+            console.error("post-sync AI task failed:", err instanceof Error ? err.message : String(err));
           } finally {
             await fresh.sql.end({ timeout: 5 }).catch(() => {});
           }
