@@ -1,0 +1,90 @@
+---
+// Background-service monitor — DERIVED signals (PRD §16.1). Read-only; gated
+// to role='super' by src/middleware.ts.
+//
+// There is no per-service run log yet (apps/server's scheduled() is a phase-2
+// stub; its cron triggers are commented out), so health is inferred from data
+// side-effects. The page labels itself accordingly. A service_runs table is
+// the named phase-2 follow-up.
+import { desc, eq, isNotNull, lt, sql } from 'drizzle-orm';
+import Layout from '../layouts/Layout.astro';
+import { backupConfigurations, backupRuns, connectionSessions } from '../db/schema';
+import { deriveServiceHealth, SIGNAL_BADGE } from '../lib/service-health';
+
+const { db, user } = Astro.locals;
+const now = new Date();
+const nowSql = sql`${now.toISOString()}::timestamptz`;
+
+const [scheduleCounts, lastScheduledRun, lastCleanup, staleSessions] = await Promise.all([
+  db
+    .select({
+      total: sql<number>`count(*)::int`,
+      overdue: sql<number>`count(*) filter (where ${backupConfigurations.nextScheduledAt} < ${nowSql} or ${backupConfigurations.schemaNextScheduledAt} < ${nowSql})::int`,
+    })
+    .from(backupConfigurations),
+  db
+    .select({ createdAt: backupRuns.createdAt })
+    .from(backupRuns)
+    .where(eq(backupRuns.triggeredBy, 'scheduled'))
+    .orderBy(desc(backupRuns.createdAt))
+    .limit(1),
+  db
+    .select({ deletedAt: backupRuns.deletedAt })
+    .from(backupRuns)
+    .where(isNotNull(backupRuns.deletedAt))
+    .orderBy(desc(backupRuns.deletedAt))
+    .limit(1),
+  db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(connectionSessions)
+    .where(lt(connectionSessions.expiresAt, nowSql)),
+]);
+
+const signals = deriveServiceHealth(
+  {
+    scheduleCount: scheduleCounts[0]?.total ?? 0,
+    overdueScheduleCount: scheduleCounts[0]?.overdue ?? 0,
+    lastScheduledRunAt: lastScheduledRun[0]?.createdAt ?? null,
+    lastCleanupAt: lastCleanup[0]?.deletedAt ?? null,
+    staleSessionCount: staleSessions[0]?.count ?? 0,
+  },
+  now,
+);
+---
+
+<Layout title="Admin — Services">
+  <span slot="user">{user?.email}</span>
+
+  <div class="space-y-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Background services</h1>
+      <p class="text-sm text-base-content/60 mt-1">
+        Health derived from data side-effects — there is no per-service run log yet
+        (server cron work is phase-2; a service_runs table is the follow-up).
+      </p>
+    </div>
+
+    <div class="grid gap-4 md:grid-cols-2">
+      {signals.map((s) => (
+        <div class="card bg-base-100 border border-base-300">
+          <div class="card-body gap-2 py-4">
+            <div class="flex items-center justify-between">
+              <h2 class="card-title text-base">{s.label}</h2>
+              <span class={`badge ${SIGNAL_BADGE[s.status]}`}>{s.status}</span>
+            </div>
+            <p class="text-sm text-base-content/70">{s.detail}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+
+    <div class="alert">
+      <span class="text-sm">
+        Not yet observable (no data source): webhook renewal, OAuth refresh cron
+        (refresh is lazy on-access — see the Connections page for per-connection
+        refresh errors), trial-expiry monitor, quota monitor, error-log search
+        (needs Logpush — deferred).
+      </span>
+    </div>
+  </div>
+</Layout>

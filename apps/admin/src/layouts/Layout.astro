@@ -5,6 +5,19 @@ interface Props {
   title?: string;
 }
 const { title = 'Baseout Admin' } = Astro.props;
+
+// Read-only staff surfaces (PRD §16.1). Active state derives from the current
+// pathname — every page uses this layout, so the nav needs no per-page props.
+const NAV = [
+  { href: '/', label: 'Organizations' },
+  { href: '/subscriptions', label: 'Subscriptions' },
+  { href: '/backups', label: 'Backups' },
+  { href: '/connections', label: 'Connections' },
+  { href: '/databases', label: 'Databases' },
+  { href: '/services', label: 'Services' },
+  { href: '/migration', label: 'Migration' },
+];
+const currentPath = Astro.url.pathname.replace(/\/+$/, '') || '/';
 ---
 <!doctype html>
 <html lang="en" data-theme="dark">
@@ -14,11 +27,22 @@ const { title = 'Baseout Admin' } = Astro.props;
     <title>{title}</title>
   </head>
   <body class="min-h-screen bg-base-200 text-base-content antialiased">
-    <header class="navbar bg-base-300 border-b border-base-100 px-6">
-      <div class="flex-1">
-        <span class="text-lg font-semibold">Baseout Admin</span>
-        <span class="badge badge-ghost badge-sm ml-3">staff</span>
+    <header class="navbar bg-base-300 border-b border-base-100 px-6 gap-4">
+      <div class="flex items-center gap-3">
+        <span class="text-lg font-semibold whitespace-nowrap">Baseout Admin</span>
+        <span class="badge badge-ghost badge-sm">staff</span>
       </div>
+      <nav class="flex-1 overflow-x-auto">
+        <ul class="menu menu-horizontal menu-sm flex-nowrap px-1">
+          {NAV.map((item) => (
+            <li>
+              <a href={item.href} class={currentPath === item.href ? 'menu-active' : ''}>
+                {item.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
       <div class="flex-none text-sm text-base-content/60">
         <slot name="user" />
       </div>

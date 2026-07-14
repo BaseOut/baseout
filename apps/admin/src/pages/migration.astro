@@ -1,0 +1,90 @@
+---
+// On2Air migration status (PRD §16.1 — "completed vs pending user counts").
+// Read-only; gated to role='super' by src/middleware.ts.
+import { eq } from 'drizzle-orm';
+import Layout from '../layouts/Layout.astro';
+import { organizations, subscriptions } from '../db/schema';
+import { buildMigrationView, type MigrationOrgRow } from '../lib/migration';
+
+const { db, user } = Astro.locals;
+
+const orgRows: MigrationOrgRow[] = await db
+  .select({
+    id: organizations.id,
+    name: organizations.name,
+    slug: organizations.slug,
+    hasMigrated: organizations.hasMigrated,
+    dynamicLocked: organizations.dynamicLocked,
+    createdAt: organizations.createdAt,
+    subscriptionStatus: subscriptions.status,
+  })
+  .from(organizations)
+  .leftJoin(subscriptions, eq(subscriptions.organizationId, organizations.id));
+
+const view = buildMigrationView(orgRows);
+const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
+---
+
+<Layout title="Admin — Migration">
+  <span slot="user">{user?.email}</span>
+
+  <div class="space-y-6">
+    <div>
+      <h1 class="text-2xl font-semibold">On2Air migration</h1>
+      <p class="text-sm text-base-content/60 mt-1">
+        Completed vs pending migrations (PRD §16.1). Pending = organizations.has_migrated is false.
+      </p>
+    </div>
+
+    <div class="stats stats-horizontal bg-base-100 border border-base-300">
+      <div class="stat py-3">
+        <div class="stat-title">Organizations</div>
+        <div class="stat-value text-2xl">{view.total}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Migrated</div>
+        <div class="stat-value text-2xl text-success">{view.migrated}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Pending</div>
+        <div class={`stat-value text-2xl ${view.pending > 0 ? 'text-warning' : ''}`}>{view.pending}</div>
+        <div class="stat-desc">{view.pendingPct}% of all orgs</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Dynamic-locked</div>
+        <div class="stat-value text-2xl">{view.dynamicLocked}</div>
+        <div class="stat-desc">On2Air-origin accounts</div>
+      </div>
+    </div>
+
+    {view.pendingOrgs.length === 0 ? (
+      <div class="alert alert-success"><span>No pending migrations. 🎉</span></div>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
+        <table class="table table-zebra table-sm">
+          <thead>
+            <tr>
+              <th>Organization</th>
+              <th>Created</th>
+              <th>Dynamic-locked</th>
+              <th>Subscription</th>
+            </tr>
+          </thead>
+          <tbody>
+            {view.pendingOrgs.map((o) => (
+              <tr>
+                <td>
+                  <div class="font-medium">{o.name}</div>
+                  <div class="font-mono text-xs text-base-content/50">{o.slug}</div>
+                </td>
+                <td class="font-mono text-xs">{fmtDate(o.createdAt)}</td>
+                <td>{o.dynamicLocked ? <span class="badge badge-sm badge-warning">locked</span> : '—'}</td>
+                <td>{o.subscriptionStatus ?? <span class="text-base-content/50">none</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+</Layout>

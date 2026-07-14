@@ -1,0 +1,135 @@
+---
+// Cross-org backup run viewer (PRD §16.1 — "backup run status" across all
+// Organizations). Read-only; gated to role='super' by src/middleware.ts.
+// Absorbs the web /ops page, improved with org/space names.
+import { desc, eq } from 'drizzle-orm';
+import Layout from '../layouts/Layout.astro';
+import { backupRuns, spaces, organizations } from '../db/schema';
+import {
+  summarizeRuns,
+  filterByStatus,
+  formatDuration,
+  RUN_STATUS_BADGE,
+  type RunRow,
+} from '../lib/backup-runs';
+
+const { db, user } = Astro.locals;
+
+const rows: RunRow[] = await db
+  .select({
+    id: backupRuns.id,
+    status: backupRuns.status,
+    kind: backupRuns.kind,
+    isTrial: backupRuns.isTrial,
+    triggeredBy: backupRuns.triggeredBy,
+    recordCount: backupRuns.recordCount,
+    tableCount: backupRuns.tableCount,
+    attachmentCount: backupRuns.attachmentCount,
+    startedAt: backupRuns.startedAt,
+    completedAt: backupRuns.completedAt,
+    errorMessage: backupRuns.errorMessage,
+    deletedAt: backupRuns.deletedAt,
+    createdAt: backupRuns.createdAt,
+    spaceName: spaces.name,
+    orgName: organizations.name,
+  })
+  .from(backupRuns)
+  .leftJoin(spaces, eq(spaces.id, backupRuns.spaceId))
+  .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
+  .orderBy(desc(backupRuns.createdAt))
+  .limit(100);
+
+const statusFilter = Astro.url.searchParams.get('status');
+const summaries = summarizeRuns(rows, new Date());
+const visible = filterByStatus(rows, statusFilter);
+
+const FILTERS = ['failed', 'running', 'queued', 'succeeded'];
+const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 19) : '—');
+---
+
+<Layout title="Admin — Backup Runs">
+  <span slot="user">{user?.email}</span>
+
+  <div class="space-y-6">
+    <div class="flex items-baseline justify-between flex-wrap gap-2">
+      <div>
+        <h1 class="text-2xl font-semibold">Backup runs</h1>
+        <p class="text-sm text-base-content/60 mt-1">
+          100 most-recent runs across all organizations (PRD §16.1).
+        </p>
+      </div>
+      <div class="join">
+        <a href="/backups" class={`btn btn-sm join-item ${!statusFilter ? 'btn-active' : ''}`}>all</a>
+        {FILTERS.map((s) => (
+          <a
+            href={`/backups?status=${s}`}
+            class={`btn btn-sm join-item ${statusFilter === s ? 'btn-active' : ''}`}
+          >{s}</a>
+        ))}
+      </div>
+    </div>
+
+    <div class="stats stats-horizontal bg-base-100 border border-base-300">
+      {summaries.map((s) => (
+        <>
+          <div class="stat py-3">
+            <div class="stat-title">Runs · {s.window}</div>
+            <div class="stat-value text-2xl">{s.total}</div>
+          </div>
+          <div class="stat py-3">
+            <div class="stat-title">Failed · {s.window}</div>
+            <div class={`stat-value text-2xl ${s.failed > 0 ? 'text-error' : ''}`}>{s.failed}</div>
+            <div class="stat-desc">{s.succeeded} succeeded · {s.active} active</div>
+          </div>
+        </>
+      ))}
+    </div>
+
+    {visible.length === 0 ? (
+      <div class="alert alert-info">
+        <span>No backup runs{statusFilter ? ` with status “${statusFilter}”` : ''} yet.</span>
+      </div>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
+        <table class="table table-zebra table-sm">
+          <thead>
+            <tr>
+              <th>Created</th>
+              <th>Organization</th>
+              <th>Space</th>
+              <th>Status</th>
+              <th>Kind</th>
+              <th>Trigger</th>
+              <th>Records</th>
+              <th>Tables</th>
+              <th>Duration</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((r) => (
+              <tr>
+                <td class="font-mono text-xs whitespace-nowrap">{fmt(r.createdAt)}</td>
+                <td>{r.orgName ?? '—'}</td>
+                <td>{r.spaceName ?? '—'}</td>
+                <td>
+                  <span class={`badge badge-sm ${RUN_STATUS_BADGE[r.status] ?? 'badge-ghost'}`}>{r.status}</span>
+                  {r.isTrial && <span class="badge badge-sm badge-outline ml-1">trial</span>}
+                  {r.deletedAt && <span class="badge badge-sm badge-ghost ml-1">pruned</span>}
+                </td>
+                <td>{r.kind}</td>
+                <td>{r.triggeredBy}</td>
+                <td class="text-right">{r.recordCount ?? '—'}</td>
+                <td class="text-right">{r.tableCount ?? '—'}</td>
+                <td class="whitespace-nowrap">{formatDuration(r.startedAt, r.completedAt)}</td>
+                <td class="max-w-xs truncate text-error text-xs" title={r.errorMessage ?? ''}>
+                  {r.errorMessage ?? ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+</Layout>

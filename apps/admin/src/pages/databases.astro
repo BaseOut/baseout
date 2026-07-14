@@ -1,0 +1,149 @@
+---
+// Database provisioning tracker (PRD §5.4 / §16.1). Read-only; gated to
+// role='super' by src/middleware.ts. Utilization is a proxy from the latest
+// succeeded backup run per Space — real byte metrics are phase-2.
+import { desc, eq } from 'drizzle-orm';
+import Layout from '../layouts/Layout.astro';
+import { spaceDatabases, spaces, organizations, backupRuns } from '../db/schema';
+import {
+  buildDbTracker,
+  DB_STATUS_BADGE,
+  type SpaceDbRow,
+  type VolumeRow,
+} from '../lib/db-tracker';
+
+const { db, user } = Astro.locals;
+
+const [dbRows, recentSucceeded] = await Promise.all([
+  db
+    .select({
+      id: spaceDatabases.id,
+      spaceId: spaceDatabases.spaceId,
+      spaceName: spaces.name,
+      orgName: organizations.name,
+      backend: spaceDatabases.backend,
+      recordsEnabled: spaceDatabases.recordsEnabled,
+      status: spaceDatabases.status,
+      d1DatabaseId: spaceDatabases.d1DatabaseId,
+      pgLocator: spaceDatabases.pgLocator,
+      schemaVersion: spaceDatabases.schemaVersion,
+      lastSchemaSyncAt: spaceDatabases.lastSchemaSyncAt,
+      lastRecordsSyncAt: spaceDatabases.lastRecordsSyncAt,
+      provisionedAt: spaceDatabases.provisionedAt,
+      errorMessage: spaceDatabases.errorMessage,
+    })
+    .from(spaceDatabases)
+    .leftJoin(spaces, eq(spaces.id, spaceDatabases.spaceId))
+    .leftJoin(organizations, eq(organizations.id, spaces.organizationId)) as Promise<SpaceDbRow[]>,
+  db
+    .select({
+      spaceId: backupRuns.spaceId,
+      recordCount: backupRuns.recordCount,
+      tableCount: backupRuns.tableCount,
+      attachmentCount: backupRuns.attachmentCount,
+      completedAt: backupRuns.completedAt,
+    })
+    .from(backupRuns)
+    .where(eq(backupRuns.status, 'succeeded'))
+    .orderBy(desc(backupRuns.completedAt))
+    .limit(500),
+]);
+
+// Newest-first dedupe → latest succeeded run per Space.
+const seen = new Set<string>();
+const volumes: VolumeRow[] = [];
+for (const r of recentSucceeded) {
+  if (seen.has(r.spaceId)) continue;
+  seen.add(r.spaceId);
+  volumes.push(r);
+}
+
+const { entries, summary } = buildDbTracker(dbRows, volumes);
+const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 16) : '—');
+---
+
+<Layout title="Admin — Databases">
+  <span slot="user">{user?.email}</span>
+
+  <div class="space-y-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Database provisioning</h1>
+      <p class="text-sm text-base-content/60 mt-1">
+        Per-Space database backend, lifecycle, and locator (PRD §5.4).
+        Volume = last succeeded backup run per Space; real size metrics are phase-2.
+      </p>
+    </div>
+
+    <div class="stats stats-horizontal bg-base-100 border border-base-300">
+      <div class="stat py-3">
+        <div class="stat-title">Databases</div>
+        <div class="stat-value text-2xl">{summary.total}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Errors</div>
+        <div class={`stat-value text-2xl ${summary.errors > 0 ? 'text-error' : ''}`}>{summary.errors}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">By backend</div>
+        <div class="stat-desc text-sm mt-1">
+          {Object.entries(summary.byBackend).map(([k, v]) => <span class="mr-2">{k}: <b>{v}</b></span>)}
+        </div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">By status</div>
+        <div class="stat-desc text-sm mt-1">
+          {Object.entries(summary.byStatus).map(([k, v]) => <span class="mr-2">{k}: <b>{v}</b></span>)}
+        </div>
+      </div>
+    </div>
+
+    {entries.length === 0 ? (
+      <div class="alert alert-info">
+        <span>No per-Space databases provisioned yet (rows appear in baseout.space_databases).</span>
+      </div>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
+        <table class="table table-zebra table-sm">
+          <thead>
+            <tr>
+              <th>Organization</th>
+              <th>Space</th>
+              <th>Backend</th>
+              <th>Status</th>
+              <th>Records</th>
+              <th>Locator</th>
+              <th>Schema v</th>
+              <th>Schema sync</th>
+              <th>Records sync</th>
+              <th>Last volume</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e) => (
+              <tr>
+                <td>{e.orgName ?? '—'}</td>
+                <td>{e.spaceName ?? '—'}</td>
+                <td><span class="badge badge-sm badge-ghost">{e.backend}</span></td>
+                <td><span class={`badge badge-sm ${DB_STATUS_BADGE[e.status] ?? 'badge-ghost'}`}>{e.status}</span></td>
+                <td>{e.recordsEnabled ? 'on' : 'off'}</td>
+                <td class="font-mono text-xs max-w-48 truncate" title={e.locator}>{e.locator}</td>
+                <td class="text-right">{e.schemaVersion ?? '—'}</td>
+                <td class="font-mono text-xs whitespace-nowrap">{fmt(e.lastSchemaSyncAt)}</td>
+                <td class="font-mono text-xs whitespace-nowrap">{fmt(e.lastRecordsSyncAt)}</td>
+                <td class="text-xs whitespace-nowrap">
+                  {e.volume
+                    ? `${e.volume.recordCount ?? '?'} rec · ${e.volume.tableCount ?? '?'} tbl · ${e.volume.attachmentCount ?? '?'} att`
+                    : '—'}
+                </td>
+                <td class="max-w-xs truncate text-error text-xs" title={e.errorMessage ?? ''}>
+                  {e.errorMessage ?? ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+</Layout>

@@ -1,0 +1,160 @@
+---
+// Subscriptions dashboard (PRD §16.1 — "Subscriptions view"). Read-only;
+// gated to role='super' by src/middleware.ts.
+import { eq } from 'drizzle-orm';
+import Layout from '../layouts/Layout.astro';
+import {
+  organizations,
+  subscriptions,
+  subscriptionItems,
+  platforms,
+} from '../db/schema';
+import {
+  buildSubscriptionsView,
+  SUB_STATUS_BADGE,
+  TRIAL_STATE_BADGE,
+  type SubItemRow,
+} from '../lib/subscriptions';
+
+const { db, user } = Astro.locals;
+
+const [orgRows, subRows, itemRows] = await Promise.all([
+  db
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      slug: organizations.slug,
+      stripeCustomerId: organizations.stripeCustomerId,
+    })
+    .from(organizations),
+  db
+    .select({
+      organizationId: subscriptions.organizationId,
+      stripeSubscriptionId: subscriptions.stripeSubscriptionId,
+      status: subscriptions.status,
+    })
+    .from(subscriptions),
+  db
+    .select({
+      organizationId: subscriptions.organizationId,
+      platformName: platforms.name,
+      tier: subscriptionItems.tier,
+      billingPeriod: subscriptionItems.billingPeriod,
+      trialEndsAt: subscriptionItems.trialEndsAt,
+      trialBackupRunUsed: subscriptionItems.trialBackupRunUsed,
+      trialEverUsed: subscriptionItems.trialEverUsed,
+      currentPeriodEnd: subscriptionItems.currentPeriodEnd,
+      cancelledAt: subscriptionItems.cancelledAt,
+    })
+    .from(subscriptionItems)
+    .innerJoin(subscriptions, eq(subscriptions.id, subscriptionItems.subscriptionId))
+    .leftJoin(platforms, eq(platforms.id, subscriptionItems.platformId)) as Promise<SubItemRow[]>,
+]);
+
+const { rows, summary } = buildSubscriptionsView(orgRows, subRows, itemRows, new Date());
+const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
+---
+
+<Layout title="Admin — Subscriptions">
+  <span slot="user">{user?.email}</span>
+
+  <div class="space-y-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Subscriptions</h1>
+      <p class="text-sm text-base-content/60 mt-1">
+        Stripe subscription + trial state per Organization (PRD §16.1).
+      </p>
+    </div>
+
+    <div class="stats stats-horizontal bg-base-100 border border-base-300">
+      <div class="stat py-3">
+        <div class="stat-title">Organizations</div>
+        <div class="stat-value text-2xl">{summary.organizations}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Active trials</div>
+        <div class="stat-value text-2xl">{summary.activeTrials}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Past due</div>
+        <div class={`stat-value text-2xl ${summary.pastDue > 0 ? 'text-error' : ''}`}>{summary.pastDue}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">By status</div>
+        <div class="stat-desc text-sm mt-1">
+          {Object.entries(summary.byStatus).map(([status, count]) => (
+            <span class="mr-2">{status}: <b>{count}</b></span>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    {rows.length === 0 ? (
+      <div class="alert alert-info"><span>No organizations in the master DB yet.</span></div>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
+        <table class="table table-zebra table-sm">
+          <thead>
+            <tr>
+              <th>Organization</th>
+              <th>Status</th>
+              <th>Platform / Tier</th>
+              <th>Trial</th>
+              <th>Period ends</th>
+              <th>Cancelled</th>
+              <th>Stripe</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((org) => (
+              <tr>
+                <td>
+                  <div class="font-medium">{org.name}</div>
+                  <div class="font-mono text-xs text-base-content/50">{org.slug}</div>
+                </td>
+                <td>
+                  {org.subscriptionStatus ? (
+                    <span class={`badge badge-sm ${SUB_STATUS_BADGE[org.subscriptionStatus] ?? 'badge-ghost'}`}>
+                      {org.subscriptionStatus}
+                    </span>
+                  ) : (
+                    <span class="badge badge-sm badge-ghost">no subscription</span>
+                  )}
+                </td>
+                <td>
+                  {org.items.length === 0 ? '—' : org.items.map((i) => (
+                    <div class="whitespace-nowrap">
+                      {i.platformName ?? '?'} · <span class="badge badge-primary badge-sm">{i.tier}</span>
+                      <span class="text-xs text-base-content/50 ml-1">{i.billingPeriod}</span>
+                    </div>
+                  ))}
+                </td>
+                <td>
+                  {org.items.map((i) => (
+                    <div class="whitespace-nowrap">
+                      <span class={`badge badge-sm ${TRIAL_STATE_BADGE[i.trialState]}`}>
+                        {i.trialState.replace('_', ' ')}
+                      </span>
+                      {i.trialDaysLeft !== null && (
+                        <span class="text-xs text-base-content/60 ml-1">{i.trialDaysLeft}d left</span>
+                      )}
+                      {i.trialBackupRunUsed && (
+                        <span class="badge badge-sm badge-outline ml-1" title="Trial backup run consumed">run used</span>
+                      )}
+                    </div>
+                  ))}
+                </td>
+                <td>{org.items.map((i) => <div>{fmtDate(i.currentPeriodEnd)}</div>)}</td>
+                <td>{org.items.map((i) => <div>{fmtDate(i.cancelledAt)}</div>)}</td>
+                <td class="font-mono text-xs">
+                  <div title={org.stripeCustomerId ?? ''}>{org.stripeCustomerId ? `${org.stripeCustomerId.slice(0, 14)}…` : '—'}</div>
+                  <div title={org.stripeSubscriptionId ?? ''}>{org.stripeSubscriptionId ? `${org.stripeSubscriptionId.slice(0, 14)}…` : ''}</div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+</Layout>

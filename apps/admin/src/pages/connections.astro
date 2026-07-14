@@ -1,0 +1,187 @@
+---
+// Connection health (PRD §16.1 — "OAuth connections dashboard"). Read-only;
+// gated to role='super' by src/middleware.ts. Webhook renewal state is not
+// instrumented yet (no table, renewal cron unbuilt) — noted below rather than
+// faked.
+import { eq, lt, sql } from 'drizzle-orm';
+import Layout from '../layouts/Layout.astro';
+import {
+  connections,
+  connectionSessions,
+  organizations,
+  platforms,
+  spaces,
+  storageDestinations,
+} from '../db/schema';
+import {
+  summarizeHealth,
+  classifyDestination,
+  HEALTH_BADGE,
+  type ConnectionRow,
+  type DestinationRow,
+} from '../lib/connection-health';
+
+const { db, user } = Astro.locals;
+const now = new Date();
+
+const [connRows, staleSessions, destRows] = await Promise.all([
+  db
+    .select({
+      id: connections.id,
+      orgName: organizations.name,
+      platformName: platforms.name,
+      displayName: connections.displayName,
+      scope: connections.scope,
+      status: connections.status,
+      tokenExpiresAt: connections.tokenExpiresAt,
+      invalidatedAt: connections.invalidatedAt,
+      lastUsedAt: connections.lastUsedAt,
+      oauthRefreshClaimId: connections.oauthRefreshClaimId,
+      oauthRefreshClaimedAt: connections.oauthRefreshClaimedAt,
+      oauthRefreshLastError: connections.oauthRefreshLastError,
+      createdAt: connections.createdAt,
+    })
+    .from(connections)
+    .leftJoin(organizations, eq(organizations.id, connections.organizationId))
+    .leftJoin(platforms, eq(platforms.id, connections.platformId)) as Promise<ConnectionRow[]>,
+  db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(connectionSessions)
+    .where(lt(connectionSessions.expiresAt, sql`${now.toISOString()}::timestamptz`)),
+  db
+    .select({
+      type: storageDestinations.type,
+      orgName: organizations.name,
+      spaceName: spaces.name,
+      oauthAccountEmail: storageDestinations.oauthAccountEmail,
+      oauthExpiresAt: storageDestinations.oauthExpiresAt,
+      connectedAt: storageDestinations.connectedAt,
+      lastValidatedAt: storageDestinations.lastValidatedAt,
+    })
+    .from(storageDestinations)
+    .leftJoin(spaces, eq(spaces.id, storageDestinations.spaceId))
+    .leftJoin(organizations, eq(organizations.id, spaces.organizationId)) as Promise<DestinationRow[]>,
+]);
+
+const { classified, summary } = summarizeHealth(connRows, now);
+const staleSessionCount = staleSessions[0]?.count ?? 0;
+const destinations = destRows.map((d) => ({ ...d, health: classifyDestination(d, now) }));
+
+const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 16) : '—');
+const broken = summary.total - summary.byHealth.healthy;
+---
+
+<Layout title="Admin — Connections">
+  <span slot="user">{user?.email}</span>
+
+  <div class="space-y-6">
+    <div>
+      <h1 class="text-2xl font-semibold">Connection health</h1>
+      <p class="text-sm text-base-content/60 mt-1">
+        OAuth connection status across all organizations (PRD §16.1).
+        Webhook renewal state is not yet instrumented — no renewal cron or table exists (phase-2).
+      </p>
+    </div>
+
+    <div class="stats stats-horizontal bg-base-100 border border-base-300">
+      <div class="stat py-3">
+        <div class="stat-title">Connections</div>
+        <div class="stat-value text-2xl">{summary.total}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Needing attention</div>
+        <div class={`stat-value text-2xl ${broken > 0 ? 'text-error' : ''}`}>{broken}</div>
+        <div class="stat-desc">
+          {summary.byHealth.invalid} invalid · {summary.byHealth.pending_reauth} reauth ·
+          {summary.byHealth.refresh_stuck} stuck · {summary.byHealth.refresh_error} refresh err ·
+          {summary.byHealth.token_expired} expired
+        </div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Stale session locks</div>
+        <div class={`stat-value text-2xl ${staleSessionCount > 0 ? 'text-warning' : ''}`}>{staleSessionCount}</div>
+        <div class="stat-desc">connection_sessions past expires_at</div>
+      </div>
+    </div>
+
+    {classified.length === 0 ? (
+      <div class="alert alert-info"><span>No connections yet.</span></div>
+    ) : (
+      <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
+        <table class="table table-zebra table-sm">
+          <thead>
+            <tr>
+              <th>Organization</th>
+              <th>Platform</th>
+              <th>Name / scope</th>
+              <th>Status</th>
+              <th>Health</th>
+              <th>Token expires</th>
+              <th>Last used</th>
+              <th>Last refresh error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {classified.map((c) => (
+              <tr>
+                <td>{c.orgName ?? '—'}</td>
+                <td>{c.platformName ?? '—'}</td>
+                <td>
+                  <div>{c.displayName ?? '—'}</div>
+                  <div class="text-xs text-base-content/50">{c.scope}</div>
+                </td>
+                <td><span class="badge badge-sm badge-ghost">{c.status}</span></td>
+                <td><span class={`badge badge-sm ${HEALTH_BADGE[c.health]}`}>{c.health.replace('_', ' ')}</span></td>
+                <td class="font-mono text-xs whitespace-nowrap">{fmt(c.tokenExpiresAt)}</td>
+                <td class="font-mono text-xs whitespace-nowrap">{fmt(c.lastUsedAt)}</td>
+                <td class="max-w-xs truncate text-error text-xs" title={c.oauthRefreshLastError ?? ''}>
+                  {c.oauthRefreshLastError ?? ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+
+    <div>
+      <h2 class="text-lg font-semibold">Storage destinations (BYOS OAuth)</h2>
+      {destinations.length === 0 ? (
+        <p class="text-sm text-base-content/50 mt-2">No storage destinations yet.</p>
+      ) : (
+        <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100 mt-2">
+          <table class="table table-zebra table-sm">
+            <thead>
+              <tr>
+                <th>Organization</th>
+                <th>Space</th>
+                <th>Provider</th>
+                <th>Account</th>
+                <th>OAuth health</th>
+                <th>Connected</th>
+                <th>Last validated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {destinations.map((d) => (
+                <tr>
+                  <td>{d.orgName ?? '—'}</td>
+                  <td>{d.spaceName ?? '—'}</td>
+                  <td><span class="badge badge-sm badge-ghost">{d.type}</span></td>
+                  <td class="text-xs">{d.oauthAccountEmail ?? '—'}</td>
+                  <td>
+                    <span class={`badge badge-sm ${d.health === 'token_expired' ? 'badge-warning' : d.health === 'ok' ? 'badge-success' : 'badge-ghost'}`}>
+                      {d.health === 'no_oauth' ? 'n/a' : d.health.replace('_', ' ')}
+                    </span>
+                  </td>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmt(d.connectedAt)}</td>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmt(d.lastValidatedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  </div>
+</Layout>
