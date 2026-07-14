@@ -29,7 +29,7 @@ vi.mock('cloudflare:workers', () => ({
   },
 }))
 
-import { buildLoginRedirect, isPublicRoute } from './middleware'
+import { buildLoginRedirect, isPublicRoute, resolveLoginBounceTarget } from './middleware'
 
 describe('isPublicRoute', () => {
   describe('OAuth callback paths — MUST be public (regression: 2026-06-01 4d2ddfc)', () => {
@@ -136,5 +136,41 @@ describe('buildLoginRedirect', () => {
 
   it('omits returnTo for paths the sanitizer rejects', () => {
     expect(buildLoginRedirect('/api/foo', '')).toBe('/login')
+  })
+})
+
+// Pins the signed-in /login bounce. A staffer bounced here from the DEPLOYED
+// admin console arrives already holding a web session — redirecting them back
+// to the raw admin origin would loop (the session cookie is host-only and
+// cannot follow to a workers.dev sibling), and the old relative-only
+// sanitizer stranded them at '/'. The allowlisted cross-origin target must
+// resolve to the same-origin /api/admin/handoff wrapper instead.
+// See openspec/changes/shared-admin-dev-deploy.
+describe('resolveLoginBounceTarget', () => {
+  const adminAppUrl = 'https://baseout-admin-dev.openside.workers.dev'
+
+  it('wraps the allowlisted admin origin in the handoff route', () => {
+    expect(
+      resolveLoginBounceTarget(`${adminAppUrl}/`, { dev: false, adminAppUrl }),
+    ).toBe('/api/admin/handoff')
+  })
+
+  it('keeps same-app relative paths', () => {
+    expect(
+      resolveLoginBounceTarget('/destinations?connected=box', { dev: false }),
+    ).toBe('/destinations?connected=box')
+  })
+
+  it('redirects directly to a baseout.local origin in dev (shared cookie)', () => {
+    expect(
+      resolveLoginBounceTarget('http://baseout.local:4332/', { dev: true }),
+    ).toBe('http://baseout.local:4332/')
+  })
+
+  it('falls back to the root for missing or unallowed targets', () => {
+    expect(resolveLoginBounceTarget(null, { dev: false })).toBe('/')
+    expect(
+      resolveLoginBounceTarget('https://evil.example.com/', { dev: false, adminAppUrl }),
+    ).toBe('/')
   })
 })

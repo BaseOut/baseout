@@ -9,14 +9,24 @@
 // This is an INTERIM gate. The `admin` umbrella change replaces it with Google
 // Workspace SSO. See openspec/changes/admin-foundation/proposal.md.
 
-// Parses the raw Cookie header for the better-auth session token. Accepts both
-// the dev cookie name and the prod `__Secure-` variant. Copied from
-// apps/web/src/lib/session-cache.ts (kept identical on purpose).
+// Parses the raw Cookie header for the session-token value. Two sources, in
+// priority order:
+//   1. web's better-auth cookie (dev name or the `__Secure-` prod variant) —
+//      the local-dev path, where web and admin share the baseout.local host.
+//      Regex copied from apps/web/src/lib/session-cache.ts.
+//   2. `baseout_admin_session` — admin's own host-only cookie, set by
+//      /auth/handoff on the DEPLOYED path where web's cookie can never reach
+//      this origin (host-only + workers.dev is on the Public Suffix List).
+//      Carries the same `<token>.<signature>` value.
+// The better-auth cookie wins when both are present so local dev always
+// reflects web's live session.
 export function extractSessionTokenCookie(cookieHeader: string): string | null {
-  const m = cookieHeader.match(
+  const betterAuth = cookieHeader.match(
     /(?:^|;\s*)(?:__Secure-)?better-auth\.session_token=([^;]+)/,
   )
-  return m ? m[1] : null
+  if (betterAuth) return betterAuth[1]
+  const handoff = cookieHeader.match(/(?:^|;\s*)baseout_admin_session=([^;]+)/)
+  return handoff ? handoff[1] : null
 }
 
 // Better Auth's cookie value is `<token>.<signature>`; the DB `sessions.token`

@@ -210,6 +210,39 @@ wrangler secret put --env production BACKUP_ENGINE_INTERNAL_TOKEN
    precondition (see status-code matrix in
    `apps/server/src/pages/api/internal/connections/whoami.ts`).
 
+### Local dev: deploying baseout-admin-dev (staff console)
+
+`apps/admin` deploys to the dev env only (staging/prod stay in the `admin`
+umbrella change). It reuses the **shared dev Hyperdrive**
+(`ba2652f40f864918a2da0849f24d12a2`) — same origin pool as `baseout-dev` +
+`baseout-server-dev`, so it adds zero new Postgres connections. Never give
+admin its own Hyperdrive config (a second 15-conn pool would saturate the
+~19-conn dev cluster).
+
+**One-time setup (per developer):**
+
+```sh
+# 1. Generate the handoff secret and paste the SAME value into BOTH files:
+openssl rand -base64 32
+#    → apps/web/.dev.vars    ADMIN_HANDOFF_SECRET=...
+#    → apps/admin/.dev.vars  ADMIN_HANDOFF_SECRET=...   (cp .dev.vars.example .dev.vars first)
+
+# 2. Deploy web first (picks up vars.ADMIN_APP_URL + the new secret), then admin:
+pnpm --filter @baseout/web run deploy
+pnpm --filter @baseout/admin run deploy
+
+# 3. Sanity check:
+curl -sI https://baseout-admin-dev.openside.workers.dev | head -1   # → HTTP/2 403 (gate live, not an open worker)
+```
+
+**Secret-parity rule:** `web.ADMIN_HANDOFF_SECRET ≡ admin.ADMIN_HANDOFF_SECRET`
+(web mints the login→admin handoff token, admin opens it — a mismatch shows as
+a sign-in loop on the deployed console; see `oauth-setup.md` §8). Both deploy
+scripts bulk-sync their app's `.dev.vars` — never `wrangler secret put` by hand.
+
+**When to redeploy:** any `apps/admin` source change; plus redeploy **web**
+whenever `ADMIN_APP_URL` or the handoff secret changes.
+
 ---
 
 ## 2. DigitalOcean — Postgres per env

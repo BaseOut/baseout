@@ -10,6 +10,7 @@ import {
 } from "./lib/session-cache";
 import { rewriteLocalhostTrapUrl } from "./lib/oauth/canonical-dev-origin";
 import { sanitizeReturnTo } from "./lib/airtable/return-to";
+import { resolveLoginCallback } from "./lib/return-to";
 
 const PUBLIC_PATHS = new Set(['/login', '/register']);
 
@@ -66,6 +67,25 @@ export function buildLoginRedirect(pathname: string, search: string): string {
   const target = sanitizeReturnTo(`${pathname}${search}`);
   if (!target || target === '/') return '/login';
   return `/login?returnTo=${encodeURIComponent(target)}`;
+}
+
+// Where a signed-in user landing on /login (or /register) with a ?returnTo=
+// should be sent. Same resolution as login.astro's magic-link callbackURL:
+// relative paths continue in-app; a baseout.local origin (dev) redirects
+// directly; an allowlisted cross-origin target (the deployed admin console)
+// goes via /api/admin/handoff — the session cookie can't follow to a
+// workers.dev sibling, so redirecting there directly would just bounce the
+// staffer straight back here in a loop. Pinned by src/middleware.test.ts.
+export function resolveLoginBounceTarget(
+  rawReturnTo: string | null,
+  opts: { dev: boolean; adminAppUrl?: string },
+): string {
+  return (
+    resolveLoginCallback(rawReturnTo, {
+      dev: opts.dev,
+      allowedOrigins: opts.adminAppUrl ? [opts.adminAppUrl] : undefined,
+    }) ?? '/'
+  );
 }
 
 function buildAuthEnv(): Parameters<typeof createAppAuth>[1] {
@@ -189,11 +209,16 @@ export const onRequest = defineMiddleware(async (context, next) => {
     if (gate) return gate;
 
     if (session && (context.url.pathname === '/login' || context.url.pathname === '/register')) {
-      // Honor a validated same-app returnTo so a user whose session cookie
-      // reappears by the time they land on /login (transient withholding)
-      // continues to their original destination instead of the root.
-      const returnTo = sanitizeReturnTo(context.url.searchParams.get('returnTo'));
-      return context.redirect(returnTo ?? '/');
+      // Honor a validated returnTo so a user whose session cookie reappears by
+      // the time they land on /login (transient withholding) — or a signed-in
+      // staffer bounced here from the admin console — continues to their
+      // destination instead of stranding at the root.
+      return context.redirect(
+        resolveLoginBounceTarget(context.url.searchParams.get('returnTo'), {
+          dev: import.meta.env.DEV,
+          adminAppUrl: (env as unknown as { ADMIN_APP_URL?: string }).ADMIN_APP_URL,
+        }),
+      );
     }
 
     return await next();

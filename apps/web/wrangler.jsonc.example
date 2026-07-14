@@ -62,7 +62,14 @@
     // its own HMAC + email-pattern checks; this var is the outermost
     // build-time switch. Absence in staging/prod = the route 401s at
     // the middleware (route is not bypassed → auth required → no session).
-    "E2E_TEST_MODE": "true"
+    "E2E_TEST_MODE": "true",
+    // dev-only — DO NOT replicate to env.staging or env.production until the
+    // admin console deploys there (the `admin` umbrella change). Allowlists
+    // the deployed staff-console origin for /login's ?returnTo= and gates the
+    // /api/admin/handoff mint. Absence = no cross-origin handoff possible.
+    // Pairs with the ADMIN_HANDOFF_SECRET secret in .dev.vars (must equal
+    // apps/admin's). See openspec/changes/shared-admin-dev-deploy.
+    "ADMIN_APP_URL": "https://baseout-admin-dev.openside.workers.dev"
   },
   "hyperdrive": [
     {

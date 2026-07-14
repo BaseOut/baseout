@@ -72,6 +72,14 @@ export const onRequest = defineMiddleware(async (context, next) => {
   context.locals.db = db
 
   try {
+    // The handoff landing route is the one path a visitor reaches WITHOUT an
+    // admin-readable cookie (it's what sets one). It re-runs the same session
+    // + role checks itself, read-only, before setting the cookie.
+    if (context.url.pathname === '/auth/handoff') {
+      context.locals.user = null
+      return await next()
+    }
+
     const cookieHeader = context.request.headers.get('cookie') ?? ''
     const cookieValue = extractSessionTokenCookie(cookieHeader)
 

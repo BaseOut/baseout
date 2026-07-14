@@ -5,8 +5,10 @@
   "type": "module",
   "description": "Internal Astro SSR admin app. See openspec/changes/admin-foundation/proposal.md (tracer slice) and openspec/changes/admin/proposal.md (full console, deferred).",
   "scripts": {
-    "dev": "node --env-file-if-exists=.env scripts/dev.mjs",
-    "build": "astro build",
+    "dev": "node --env-file-if-exists=.env scripts/launch.mjs dev",
+    "build": "node --env-file-if-exists=.env scripts/launch.mjs build",
+    "deploy": "node --env-file-if-exists=.env scripts/launch.mjs build && wrangler deploy --config dist/server/wrangler.json && pnpm run secrets:sync",
+    "secrets:sync": "node scripts/sync-secrets.mjs --config dist/server/wrangler.json",
     "preview": "astro preview",
     "astro": "astro",
     "typecheck": "astro check",

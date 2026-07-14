@@ -25,6 +25,18 @@ The browser-facing origin is what `PUBLIC_AUTH_BASE_URL` resolves to in each
 env (set via wrangler config `vars` for deployed envs, via `--var` flag on the
 local `dev` npm script for local — see [§5.1](#51-public_auth_base_url)).
 
+The **staff console** (`apps/admin`) rides alongside web in local + dev only
+(staging/prod deploys stay in the `admin` umbrella change). It registers **no
+OAuth redirect URIs with any provider** — it has no OAuth flows of its own;
+sign-in round-trips through web's `/login` (magic link) and, when deployed, a
+handoff token (see the workers.dev-cookie row in
+[§8](#8-failure-modes-so-you-dont-re-learn-them)):
+
+| Env       | Admin origin                                          | Worker name         | How code reaches it                  |
+|-----------|-------------------------------------------------------|---------------------|--------------------------------------|
+| local     | `http://baseout.local:4332`                           | (no deploy)         | `pnpm --filter @baseout/admin dev`   |
+| dev       | `https://baseout-admin-dev.openside.workers.dev`      | `baseout-admin-dev` | `pnpm --filter @baseout/admin run deploy` |
+
 ---
 
 ## 2. Required redirect URIs per provider
@@ -516,6 +528,7 @@ Reproduced here for convenience; canonical script defs live in
 | `pnpm --filter @baseout/web run deploy:staging`    | `https://baseout-staging.openside.workers.dev` | `baseout-staging`  |
 | `pnpm --filter @baseout/web run deploy:production` | `https://console.baseout.dev`                  | `baseout`          |
 | `pnpm --filter @baseout/server deploy:dev`         | `https://baseout-server-dev.openside.workers.dev` | `baseout-server-dev` |
+| `pnpm --filter @baseout/admin run deploy`          | `https://baseout-admin-dev.openside.workers.dev` | `baseout-admin-dev` |
 
 > ⚠️ For the web scripts use `pnpm ... run deploy` (not `pnpm ... deploy`).
 > pnpm intercepts the bare `deploy` keyword as its own builtin and fails
@@ -530,6 +543,8 @@ plaintext `vars` in `wrangler.jsonc`). This makes `apps/{web,server}/.dev.vars`
 the single source of truth for deployed secrets — manual
 `wrangler secret put` calls are no longer required and should not be used
 (they reintroduce drift, see [§8](#8-failure-modes-so-you-dont-re-learn-them)).
+The admin deploy chains the same sync from `apps/admin/.dev.vars` (currently
+one key: `ADMIN_HANDOFF_SECRET`, which must be byte-identical to web's copy).
 
 Local `pnpm --filter @baseout/web dev` is **not** a deploy — it runs the
 local code in a Cloudflare edge sandbox accessed at `https://baseout.local:4331`.
@@ -568,6 +583,7 @@ explicitly run a `deploy` command.
 | Symptom                                                          | Likely cause                                                                              | Where to look |
 |------------------------------------------------------------------|-------------------------------------------------------------------------------------------|---------------|
 | Airtable redirects to "invalid client_id or mismatched redirect_uri" | Current env's URI isn't in [§3.1](#31-airtable-oauth-app-client_id1ae05093-12f2-48f0-b451-6d2ce3f2530a) | URL bar — decode the `redirect_uri=...` query param, compare against §3.1 |
+| Deployed staff console (`baseout-admin-dev`) loops on its "Sign in" page after a successful web login | Admin on `workers.dev` can NEVER receive web's better-auth session cookie: the cookie is host-only and `workers.dev` is on the [public suffix list](https://publicsuffix.org/), so a `Domain=` cookie spanning the two Workers is impossible. The deployed flow therefore rides a **handoff token**: web's `/login` (and the signed-in `/login` bounce) resolves an allowlisted admin returnTo to the parameter-less `/api/admin/handoff` (target = web's `vars.ADMIN_APP_URL`; a `?to=<encoded origin>` param was dropped 2026-07-13 — better-auth's verify endpoint double-decodes the callbackURL and its relative-path regex rejects the revealed `https://` with INVALID_CALLBACK_URL), which mints a 60s AES-GCM token; admin's `/auth/handoff` opens it and sets its own host-only `baseout_admin_session` cookie. A loop means the handoff chain is broken: web's `vars.ADMIN_APP_URL` missing/wrong (nothing allowlisted → `returnTo` silently dropped), or `ADMIN_HANDOFF_SECRET` missing/mismatched between `apps/web/.dev.vars` and `apps/admin/.dev.vars` (admin fails `undecryptable`), or the token expired (>60s between mint and landing). Local dev (`baseout.local:4331`/`4332`) shares the host and never uses the handoff. | [apps/web/src/pages/api/admin/handoff.ts](../../apps/web/src/pages/api/admin/handoff.ts); [apps/admin/src/pages/auth/handoff.ts](../../apps/admin/src/pages/auth/handoff.ts); `vars.ADMIN_APP_URL` in [apps/web/wrangler.jsonc.example](../../apps/web/wrangler.jsonc.example); openspec/changes/shared-admin-dev-deploy |
 | Google redirects to "Error 400: redirect_uri_mismatch"           | Current env's URI isn't in [§3.2](#32-google-drive-oauth-app-client_id28341262794) | URL bar — same drill |
 | Google "Access blocked: Authorization Error — Error 400: `invalid_request`" / "doesn't comply with Google's OAuth 2.0 policy" | **Different from `redirect_uri_mismatch`.** The `redirect_uri` host is `baseout.local` (or any non-public-suffix TLD). Google requires the host TLD be on the [public suffix list](https://publicsuffix.org/); `.local` is not, so Google rejects it outright. Caused by `PUBLIC_AUTH_BASE_URL=https://baseout.local:4331` in local dev (2026-06-03 migration, `60a9a01`/`c420667`). **Not fixable by registering a URI** — `.local` can't be registered (§3.2). | Decode the `redirect_uri=` in the URL bar; if the host is `baseout.local`, you're on the local origin — Drive Connect only runs on a deployed env ([§5.4](#54-drive-deployed-only-never-local)). |
 | Microsoft redirects to `AADSTS50011: redirect_uri ... does not match` | Current env's URI isn't in [§3.5](#35-microsoft-onedrive-oauth-app-client_id72f34ac4-a827-4a86-949e-57ccb7154f7f) — or `MICROSOFT_REDIRECT_URI` in `.dev.vars` points to a host the Azure App hasn't registered yet | URL bar — decode the `redirect_uri=...` query param, compare against §3.5 + `apps/web/.dev.vars` |

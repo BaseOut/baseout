@@ -91,3 +91,12 @@ DEV_SKIP_STRIPE=
 # bearer those routes check. Leave unset for normal dev. Never set in production.
 E2E_TEST_MODE=
 E2E_TEST_TOKEN=
+
+# ─── Staff-console handoff (optional in dev) ──────────────────────────────────
+# Shared secret keying the login → admin handoff token (AES-256-GCM). MUST be
+# byte-identical to apps/admin's ADMIN_HANDOFF_SECRET — web mints the token,
+# admin opens it. Only needed for the DEPLOYED staff console (local admin on
+# baseout.local:4332 shares the session cookie directly). Generate once and
+# paste into both files:  openssl rand -base64 32
+# See openspec/changes/shared-admin-dev-deploy + shared/internal/oauth-setup.md §8.
+ADMIN_HANDOFF_SECRET=

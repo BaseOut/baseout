@@ -27,6 +27,28 @@ describe('extractSessionTokenCookie', () => {
   it('returns null when absent', () => {
     expect(extractSessionTokenCookie('foo=bar')).toBeNull()
   })
+
+  // The deployed-admin cookie, set by /auth/handoff (the better-auth cookie
+  // cannot cross from web's workers.dev origin). Same value shape.
+  it('reads the baseout_admin_session handoff cookie', () => {
+    expect(
+      extractSessionTokenCookie('baseout_admin_session=tok.sig; other=1'),
+    ).toBe('tok.sig')
+  })
+
+  it('prefers the better-auth cookie when both are present (local dev)', () => {
+    expect(
+      extractSessionTokenCookie(
+        'baseout_admin_session=stale.sig; better-auth.session_token=fresh.sig',
+      ),
+    ).toBe('fresh.sig')
+  })
+
+  it('does not match a lookalike handoff cookie name', () => {
+    expect(
+      extractSessionTokenCookie('x-baseout_admin_session=nope'),
+    ).toBeNull()
+  })
 })
 
 describe('sessionTokenCandidates', () => {

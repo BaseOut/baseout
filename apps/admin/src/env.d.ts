@@ -1,11 +1,14 @@
 /// <reference types="astro/client" />
 
 // Minimal typing for the workerd virtual module. apps/web gets the full Env
-// from `wrangler types` (worker-configuration.d.ts); the admin slice only
-// reads the Hyperdrive binding on the deployed path, so we declare just that.
+// from `wrangler types` (worker-configuration.d.ts); admin declares only what
+// it reads: the Hyperdrive binding, the WEB_APP_URL var, and the handoff
+// secret (deployed path only — see src/pages/auth/handoff.ts).
 declare module 'cloudflare:workers' {
   export const env: {
     HYPERDRIVE: { connectionString: string };
+    WEB_APP_URL?: string;
+    ADMIN_HANDOFF_SECRET?: string;
   };
 }
 

@@ -1,17 +1,22 @@
 ---
+import { env } from 'cloudflare:workers';
 import AuthLayout from '../layouts/AuthLayout.astro';
 import TextInput from '../components/ui/TextInput.astro';
 import Button from '../components/ui/Button.astro';
 import { getProductName } from '../lib/config';
-import { validateReturnTo } from '../lib/return-to';
+import { resolveLoginCallback } from '../lib/return-to';
 
 const productName = getProductName();
 
 // Optional cross-app return target (e.g. the admin console sends staff here to
 // authenticate). Validated against an allowlist to prevent open redirects; the
-// safe value is handed to the magic-link flow as its callbackURL.
-const returnTo = validateReturnTo(Astro.url.searchParams.get('returnTo'), {
+// safe value is handed to the magic-link flow as its callbackURL. A deployed
+// admin origin (vars.ADMIN_APP_URL) resolves to the relative
+// /api/admin/handoff wrapper — see resolveLoginCallback for why.
+const adminAppUrl = (env as unknown as { ADMIN_APP_URL?: string }).ADMIN_APP_URL;
+const returnTo = resolveLoginCallback(Astro.url.searchParams.get('returnTo'), {
   dev: import.meta.env.DEV,
+  allowedOrigins: adminAppUrl ? [adminAppUrl] : undefined,
 });
 ---
 
