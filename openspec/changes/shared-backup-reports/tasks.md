@@ -23,7 +23,7 @@
 ## 5. API
 
 - [ ] 5.1 Engine routes (INTERNAL_TOKEN): report list/detail (JSON document), generate-now (window override → ad_hoc), schedule CRUD (server-side recipient email validation, cap), artifact URL resolution. Integration tests against real Postgres + Miniflare.
-- [ ] 5.2 File `web-reports-page` follow-up when the ui-only `reports-page` UI ports (proxy routes, capability gating via the resolver, download authorization).
+- [x] 5.2 File `web-reports-page` follow-up when the ui-only `reports-page` UI ports (proxy routes, capability gating via the resolver, download authorization). Filed 2026-07-13: [`web-reports-page`](../web-reports-page/).
 
 ## 6. Verification
 

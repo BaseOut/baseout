@@ -25,7 +25,7 @@
 ## 4. Data-chat context (decision resolved: allowed, policy-gated)
 
 - [ ] 4.1 After `shared-ai-controls` enforcement lands: data-scope context assembler (scoped/filtered rows, capped e.g. 200 × visible fields; policy `all` required at route guard + re-asserted in the assembler) + file `workflows-data-chat` for the model call. Unit tests: cap honored, policy `schema_only`/`off` throws in the assembler.
-- [ ] 4.2 `web-data-page` follow-up filed when the ui-only `data-page` UI ports (proxy routes, capability gating, nav).
+- [x] 4.2 `web-data-page` follow-up filed when the ui-only `data-page` UI ports (proxy routes, capability gating, nav). Filed 2026-07-13: [`web-data-page`](../web-data-page/).
 
 ## 5. Verification
 
