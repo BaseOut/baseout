@@ -59,7 +59,10 @@
     }
   ],
 
-  // Cron triggers — TODO(phase-2): one per background service.
+  // Cron triggers: LIVE in env.dev below (env blocks need their own triggers).
+  // Top-level stays off until staging/production env blocks are real
+  // (server-oauth-refresh-cron-health design; enable alongside
+  // shared-server-service-binding-staging-prod).
   // "triggers": {
   //   "crons": [
   //     "0 6 * * *",     // webhook renewal — daily at 06:00 UTC
@@ -93,6 +96,14 @@
   "env": {
     "dev": {
       "name": "baseout-server-dev",
+      // Cron dispatch: src/index.ts scheduled() routes by event.cron via
+      // lib/cron/dispatch.ts (server-oauth-refresh-cron-health). Keep these
+      // strings byte-identical to the dispatch map.
+      "triggers": {
+        "crons": [
+          "*/15 * * * *" // OAuth token refresh sweep
+        ]
+      },
       "ai": { "binding": "AI" },
       "hyperdrive": [
         {

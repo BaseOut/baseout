@@ -1,3 +1,11 @@
+> **2026-07-14 — the clock lives elsewhere:** this change built the refresh
+> primitives + on-demand DO path, but no cron trigger was ever enabled and
+> `scheduled()` stayed a stub — tokens rotted for days (incident 2026-07-14).
+> The cron wiring, `event.cron` dispatch router, batch sweep (via the DO
+> `/token` path), and stale-token gauge landed in
+> [`server-oauth-refresh-cron-health`](../server-oauth-refresh-cron-health/).
+> This change's remaining tasks (prod gating, §7 follow-ups) are unaffected.
+
 ## 1. Schema mirror + crypto
 
 - [x] 1.1 Extend [apps/server/src/db/schema/connections.ts](../../../apps/server/src/db/schema/connections.ts) to declare the columns the cron writes: `modifiedAt` + `invalidatedAt`. Header comment updated to note the cron is now a writer.

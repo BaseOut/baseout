@@ -82,7 +82,9 @@ export interface ResolveAirtableTokenInput {
   refreshEnabled: boolean;
 }
 
-const REFRESH_LOOKAHEAD_MS = 5 * 60_000;
+// Exported so the cron sweep's SQL selection window matches this resolver's
+// shouldRefresh() exactly (server-oauth-refresh-cron-health design Decision 3).
+export const REFRESH_LOOKAHEAD_MS = 5 * 60_000;
 const CLAIM_STALE_MS = 2 * 60_000;
 
 function shouldRefresh(

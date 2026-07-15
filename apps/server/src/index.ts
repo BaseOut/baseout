@@ -59,6 +59,9 @@ import {
   attachmentsLookupHandler,
   attachmentsRecordHandler,
 } from "./pages/api/internal/attachments/lookup";
+import { connectionsTokenHealthHandler } from "./pages/api/internal/connections/token-health";
+import { resolveCronJobs } from "./lib/cron/dispatch";
+import { runScheduledOauthRefresh } from "./lib/cron/oauth-refresh-deps";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
@@ -199,6 +202,10 @@ export default {
       }
       if (url.pathname === "/api/internal/cleanup-complete") {
         return await cleanupCompleteHandler(request, env, ctx, locals);
+      }
+
+      if (url.pathname === "/api/internal/connections/token-health") {
+        return await connectionsTokenHealthHandler(request, env, ctx, locals);
       }
 
       // PoC-only DO smoke test: forwards to ConnectionDO by stable name.
@@ -563,10 +570,23 @@ export default {
   },
 
   async scheduled(
-    _event: ScheduledEvent,
-    _env: Env,
+    event: ScheduledEvent,
+    env: Env,
     _ctx: ExecutionContext,
   ): Promise<void> {
-    // TODO(phase-2): dispatch background jobs by event.cron.
+    // Cron dispatch (server-oauth-refresh-cron-health). Each background
+    // service owns one entry in resolveCronJobs; an unmapped cron string is
+    // logged so a config/env drift never fails silently.
+    const jobs = resolveCronJobs(event.cron);
+    if (jobs.length === 0) {
+      // eslint-disable-next-line no-console -- cron observability; an unmapped firing is a config bug
+      console.log(JSON.stringify({ event: "cron_unmapped", cron: event.cron }));
+      return;
+    }
+    for (const job of jobs) {
+      if (job === "oauth-refresh-sweep") {
+        await runScheduledOauthRefresh(env);
+      }
+    }
   },
 };
