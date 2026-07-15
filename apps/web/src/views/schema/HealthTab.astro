@@ -61,6 +61,7 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
       )}
 
 <script>
+  import { setButtonLoading } from '../../lib/ui'
   // Health tab (web-health-tab): lazy-load a base's grade + per-metric breakdown
   // + issues from the engine when the tab is first opened (one round-trip), and
   // refetch on base change. Read-only here; the Pro+ prompt editor is deferred.
@@ -204,7 +205,7 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
     rerunBtn?.addEventListener('click', async () => {
       if (!select) return
       const baseId = select.value
-      rerunBtn.disabled = true
+      setButtonLoading(rerunBtn, true)
       if (rerunStatus) rerunStatus.textContent = 'Starting…'
       try {
         const res = await fetch(`/api/spaces/${spaceId}/health-rerun`, {
@@ -224,7 +225,7 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
             : 'No metrics enabled to score.'
         if (data.enqueued) pollAfterRerun()
       } finally {
-        rerunBtn.disabled = false
+        setButtonLoading(rerunBtn, false)
       }
     })
 
@@ -294,12 +295,18 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
       if (!save && !reset) return
       const prompt = reset ? null : (row.querySelector('[data-cfg-prompt]') as HTMLTextAreaElement)?.value ?? ''
       if (!reset && (prompt as string).trim() === '') return
-      const res = await fetch(`/api/spaces/${spaceId}/health-prompt`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ruleId, level: 'space', prompt }),
-      })
-      if (res.ok) loadConfig()
+      const btn = (save ?? reset) as HTMLButtonElement
+      setButtonLoading(btn, true)
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/health-prompt`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ ruleId, level: 'space', prompt }),
+        })
+        if (res.ok) loadConfig()
+      } finally {
+        setButtonLoading(btn, false)
+      }
     })
 
     configPanel?.addEventListener('change', async (e) => {

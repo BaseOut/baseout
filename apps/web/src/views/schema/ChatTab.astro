@@ -76,6 +76,7 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
       )}
 
 <script>
+  import { setButtonLoading } from '../../lib/ui'
   // Chat tab (web-chat-tab): thread list + conversation + composer. The AI reply
   // is generated async (workflows chat-respond) and written back; the assistant
   // message starts `pending`, so after sending we poll the thread until it
@@ -221,7 +222,7 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
     })
 
     newBtn.addEventListener('click', async () => {
-      newBtn.disabled = true
+      setButtonLoading(newBtn, true)
       try {
         const res = await fetch(`/api/spaces/${spaceId}/chat/threads`, { method: 'POST' })
         if (!res.ok) return
@@ -231,7 +232,7 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
         await selectThread(id, threads)
         input.focus()
       } finally {
-        newBtn.disabled = false
+        setButtonLoading(newBtn, false)
       }
     })
 

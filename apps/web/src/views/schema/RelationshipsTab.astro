@@ -79,6 +79,7 @@ const { hasSchema, healthBases } = Astro.props
       )}
 
 <script>
+  import { setButtonLoading } from '../../lib/ui'
   // Relationships tab (web-relationships-tab): lazy-load a base's relationships
   // (API-derived, grouped by type, + synced-view candidates) when first opened;
   // refetch on base change / include-removed toggle. Inferred synced views get
@@ -251,7 +252,7 @@ const { hasSchema, healthBases } = Astro.props
       const action = btn.dataset.relAction
       const id = btn.dataset.relId
       if (!action || !id) return
-      btn.disabled = true
+      setButtonLoading(btn, true)
       try {
         const res = await fetch(`/api/spaces/${spaceId}/relationship-mutate`, {
           method: 'POST',
@@ -259,9 +260,9 @@ const { hasSchema, healthBases } = Astro.props
           body: JSON.stringify({ action, id }),
         })
         if (res.ok) await load()
-        else btn.disabled = false
+        else setButtonLoading(btn, false)
       } catch {
-        btn.disabled = false
+        setButtonLoading(btn, false)
       }
     })
 
@@ -321,18 +322,24 @@ const { hasSchema, healthBases } = Astro.props
         return
       }
       if (createStatus) createStatus.textContent = 'Creating…'
-      const res = await fetch(`/api/spaces/${spaceId}/relationship-mutate`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'create', baseId: select.value, sourceTableId, destTableId }),
-      })
-      if (res.ok) {
-        if (createStatus) createStatus.textContent = ''
-        createForm.classList.add('hidden')
-        createForm.classList.remove('flex')
-        await load()
-      } else {
-        if (createStatus) createStatus.textContent = 'Could not create synced view.'
+      const submitBtn = createForm.querySelector<HTMLButtonElement>('button[type="submit"]')
+      if (submitBtn) setButtonLoading(submitBtn, true)
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/relationship-mutate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'create', baseId: select.value, sourceTableId, destTableId }),
+        })
+        if (res.ok) {
+          if (createStatus) createStatus.textContent = ''
+          createForm.classList.add('hidden')
+          createForm.classList.remove('flex')
+          await load()
+        } else {
+          if (createStatus) createStatus.textContent = 'Could not create synced view.'
+        }
+      } finally {
+        if (submitBtn) setButtonLoading(submitBtn, false)
       }
     })
   }
