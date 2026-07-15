@@ -58,6 +58,9 @@ export const backupRuns = baseout.table("backup_runs", {
   tableCount: integer("table_count"),
   attachmentCount: integer("attachment_count"),
   startedAt: timestamp("started_at", { withTimezone: true }),
+  // Read by the reconciliation sweep as the age anchor for never-started rows
+  // (server-run-reconciliation). Canonical column: apps/web drizzle 0006.
+  createdAt: timestamp("created_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   errorMessage: text("error_message"),
   triggerRunIds: jsonb("trigger_run_ids").$type<string[]>(),

@@ -62,6 +62,7 @@ import {
 import { connectionsTokenHealthHandler } from "./pages/api/internal/connections/token-health";
 import { resolveCronJobs } from "./lib/cron/dispatch";
 import { runScheduledOauthRefresh } from "./lib/cron/oauth-refresh-deps";
+import { runScheduledRunReconciliation } from "./lib/runs/reconcile-deps";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
@@ -586,6 +587,8 @@ export default {
     for (const job of jobs) {
       if (job === "oauth-refresh-sweep") {
         await runScheduledOauthRefresh(env);
+      } else if (job === "run-reconciliation") {
+        await runScheduledRunReconciliation(env);
       }
     }
   },

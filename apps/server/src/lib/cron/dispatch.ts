@@ -8,10 +8,10 @@
 
 export const OAUTH_REFRESH_CRON = "*/15 * * * *";
 
-export type CronJob = "oauth-refresh-sweep";
+export type CronJob = "oauth-refresh-sweep" | "run-reconciliation";
 
 const CRON_JOBS: Record<string, CronJob[]> = {
-  [OAUTH_REFRESH_CRON]: ["oauth-refresh-sweep"],
+  [OAUTH_REFRESH_CRON]: ["oauth-refresh-sweep", "run-reconciliation"],
 };
 
 export function resolveCronJobs(cron: string): CronJob[] {

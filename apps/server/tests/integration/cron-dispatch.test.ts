@@ -11,8 +11,11 @@ import {
 } from "../../src/lib/cron/oauth-refresh-sweep";
 
 describe("resolveCronJobs", () => {
-  it("maps the */15 cron to the oauth refresh sweep", () => {
-    expect(resolveCronJobs(OAUTH_REFRESH_CRON)).toEqual(["oauth-refresh-sweep"]);
+  it("maps the */15 cron to the oauth refresh sweep + run reconciliation", () => {
+    expect(resolveCronJobs(OAUTH_REFRESH_CRON)).toEqual([
+      "oauth-refresh-sweep",
+      "run-reconciliation",
+    ]);
   });
 
   it("unknown cron strings resolve to no jobs (logged no-op at the call site)", () => {

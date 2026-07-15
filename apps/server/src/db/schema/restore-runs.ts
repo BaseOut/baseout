@@ -50,6 +50,9 @@ export const restoreRuns = baseout.table("restore_runs", {
   // 'user_manual' | 'admin_override'
   isTrial: boolean("is_trial").notNull().default(false),
   startedAt: timestamp("started_at", { withTimezone: true }),
+  // Read by the reconciliation sweep as the age anchor for never-started rows
+  // (server-run-reconciliation). Canonical migration owns the column.
+  createdAt: timestamp("created_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
   errorMessage: text("error_message"),
