@@ -15,6 +15,7 @@ import type { AppDb } from "../../db/worker";
 import { spacePg } from "@baseout/db-schema/space";
 import { schemaNameForSpace } from "../provisioning/posture";
 import type { LifecycleOp, PriorWorkingSet, SchemaDiffResult } from "./schema-diff";
+import type { InterfaceDiffResult, PriorInterfaceRow } from "./interfaces-sync";
 import type { PriorCell, PriorRecord, RecordDiffResult } from "./record-diff";
 import { extractFieldConfig, type FieldConfig } from "./schema-enrich";
 
@@ -269,6 +270,111 @@ export async function applySchemaDiff(
   }
 
   return { schemaVersionId };
+}
+
+// ───────────────────────── interfaces (MCP capture) ─────────────────────────
+// server-mcp-interface-pages. MCP diffing reads/writes ONLY submitted_via='mcp'
+// rows — manually-submitted rows for the same airtable_entity_id are parallel
+// and never touched (change spec "Manual submissions are never clobbered").
+// bo_at_interfaces has no unique (base_id, airtable_entity_id) index yet (that
+// ships with server-automations-interfaces-manual-crud), so writes target row
+// ids carried on the diff ops instead of upserting.
+
+export async function readInterfaceWorkingSet(
+  tx: SpaceTx,
+  baseId: string,
+): Promise<PriorInterfaceRow[]> {
+  const rows = await tx
+    .select({
+      id: spacePg.interfaces.id,
+      airtableEntityId: spacePg.interfaces.airtableEntityId,
+      name: spacePg.interfaces.name,
+      type: spacePg.interfaces.type,
+      definition: spacePg.interfaces.definition,
+      status: spacePg.interfaces.status,
+    })
+    .from(spacePg.interfaces)
+    .where(and(eq(spacePg.interfaces.baseId, baseId), eq(spacePg.interfaces.submittedVia, "mcp")));
+  return rows;
+}
+
+export async function applyInterfaceDiff(
+  tx: SpaceTx,
+  args: { baseId: string; baseRunId: string; capturedAt: Date; diff: InterfaceDiffResult },
+): Promise<void> {
+  const { baseId, baseRunId, capturedAt, diff } = args;
+
+  if (diff.unchanged) {
+    // Identical capture: the hash short-circuits diffing but freshness is
+    // still stamped (change spec: "while still stamping last_seen_at").
+    await tx
+      .update(spacePg.interfaces)
+      .set({ lastSeenAt: capturedAt })
+      .where(
+        and(
+          eq(spacePg.interfaces.baseId, baseId),
+          eq(spacePg.interfaces.submittedVia, "mcp"),
+          eq(spacePg.interfaces.status, "active"),
+        ),
+      );
+    return;
+  }
+
+  if (diff.inserts.length) {
+    await tx.insert(spacePg.interfaces).values(
+      diff.inserts.map((e) => ({
+        baseId,
+        airtableEntityId: e.airtableEntityId,
+        name: e.name,
+        type: e.kind,
+        definition: e.definition,
+        status: "active",
+        submittedVia: "mcp",
+        firstSeenAt: capturedAt,
+        lastSeenAt: capturedAt,
+      })),
+    );
+  }
+
+  for (const { rowId, entity } of diff.seen) {
+    await tx
+      .update(spacePg.interfaces)
+      .set({
+        name: entity.name,
+        type: entity.kind,
+        definition: entity.definition,
+        status: "active", // reappearance flips removed → active
+        lastSeenAt: capturedAt,
+      })
+      .where(eq(spacePg.interfaces.id, rowId));
+  }
+
+  for (const { rowId } of diff.removals) {
+    // No first_unseen_run column here — last_seen_at doubles as the
+    // removal-detected timestamp (change spec scenario "Page deleted in
+    // Airtable": "marked removed with last_seen_at at this run").
+    await tx
+      .update(spacePg.interfaces)
+      .set({ status: "removed", lastSeenAt: capturedAt })
+      .where(eq(spacePg.interfaces.id, rowId));
+  }
+
+  if (diff.updates.length) {
+    await tx.insert(spacePg.schemaUpdates).values(
+      diff.updates.map((u) => ({
+        runId: baseRunId,
+        entityType: "interface",
+        entityId: u.entityId,
+        baseId,
+        tableId: null,
+        changeType: u.changeType,
+        changeTypeName: null,
+        beforeValue: u.beforeValue,
+        afterValue: u.afterValue,
+        breaksData: false,
+      })),
+    );
+  }
 }
 
 // ───────────────────────── records (EAV) ─────────────────────────

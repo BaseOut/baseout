@@ -7,15 +7,29 @@
 // whether to follow up with /records-sync. Runs regardless of records_enabled —
 // the per-Space DB always holds schema.
 //
+// Optional `interfacePages` field (server-mcp-interface-pages): the raw MCP
+// list_pages_for_base capture + capturedAt. When present, interface entities
+// are extracted, diffed against the prior MCP-sourced working set, and
+// persisted in the SAME transaction/run association as the schema diff. An
+// absent field means no interface processing whatsoever (old workflows,
+// skipped captures — never "all interfaces deleted"). Extraction/validation
+// failures are reported per-section on the response and never fail the sync.
+//
 // Token gate is applied by middleware (path begins /api/internal/).
 
 import type { AppLocals, Env } from "../../../../env";
 import { createMasterDb } from "../../../../db/worker";
 import { diffSchema, type CapturedBase } from "../../../../lib/per-space/schema-diff";
+import {
+  diffInterfaces,
+  parseInterfacePagesField,
+} from "../../../../lib/per-space/interfaces-sync";
 import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import {
+  applyInterfaceDiff,
   applySchemaDiff,
   ensureBaseRun,
+  readInterfaceWorkingSet,
   readSchemaWorkingSet,
   withSpaceSchema,
 } from "../../../../lib/per-space/space-db-pg";
@@ -55,7 +69,12 @@ export async function spacesSchemaSyncHandler(
   } catch {
     return jsonResponse({ error: "invalid_request" }, 400);
   }
-  const body = raw as { backupRunId?: unknown; captured?: unknown; confident?: unknown };
+  const body = raw as {
+    backupRunId?: unknown;
+    captured?: unknown;
+    confident?: unknown;
+    interfacePages?: unknown;
+  };
   if (!UUID_RE.test(String(body.backupRunId))) return jsonResponse({ error: "invalid_request" }, 400);
   const captured = body.captured as CapturedBase | undefined;
   if (!captured || typeof captured.baseId !== "string" || !Array.isArray(captured.tables)) {
@@ -63,6 +82,19 @@ export async function spacesSchemaSyncHandler(
   }
   const backupRunId = String(body.backupRunId);
   const confident = body.confident !== false; // default true (full schema capture)
+
+  // Optional interface-pages capture — validated + extracted (pure) up front
+  // so a malformed capture is reported without touching the transaction.
+  // `undefined` summary = field absent = no interface processing at all.
+  let interfaceSync:
+    | { ok: true; added: number; removed: number; updates: number; unchanged: boolean }
+    | { ok: false; reason: string }
+    | undefined;
+  const parsedCapture = parseInterfacePagesField(body.interfacePages);
+  const interfaceCapture = parsedCapture.kind === "ok" ? parsedCapture : null;
+  if (parsedCapture.kind === "invalid") {
+    interfaceSync = { ok: false, reason: parsedCapture.reason };
+  }
 
   const { db: masterDb, sql } = locals.getMasterDb();
   const space = await resolveSpaceDb(masterDb, spaceId);
@@ -89,6 +121,37 @@ export async function spacesSchemaSyncHandler(
       const prior = await readSchemaWorkingSet(tx, captured.baseId);
       const result = diffSchema({ captured, prior, runId: baseRunId, confident });
       await applySchemaDiff(tx, { baseId: captured.baseId, baseRunId, result, schemaJson: captured });
+
+      // Interface entities ride the same transaction + run association as the
+      // schema diff (design Decision 4). The pure diff is guarded so an
+      // interface-side computation failure reports per-section instead of
+      // failing the schema sync; DB write failures abort the whole tx, same
+      // as the schema writes above.
+      if (interfaceCapture) {
+        let interfaceDiff: ReturnType<typeof diffInterfaces> | null = null;
+        try {
+          const priorInterfaces = await readInterfaceWorkingSet(tx, captured.baseId);
+          interfaceDiff = diffInterfaces({ prior: priorInterfaces, next: interfaceCapture.entities });
+        } catch {
+          interfaceSync = { ok: false, reason: "diff_failed" };
+        }
+        if (interfaceDiff) {
+          await applyInterfaceDiff(tx, {
+            baseId: captured.baseId,
+            baseRunId,
+            capturedAt: interfaceCapture.capturedAt,
+            diff: interfaceDiff,
+          });
+          interfaceSync = {
+            ok: true,
+            added: interfaceDiff.inserts.length,
+            removed: interfaceDiff.removals.length,
+            updates: interfaceDiff.updates.length,
+            unchanged: interfaceDiff.unchanged,
+          };
+        }
+      }
+
       return { baseRunId, result };
     });
 
@@ -161,6 +224,9 @@ export async function spacesSchemaSyncHandler(
         schemaChanged: result.schemaChanged,
         lifecycle: result.lifecycle.length,
         updates: result.schemaUpdates.length,
+        // Present only when the request carried `interfacePages` — lets the
+        // workflows task report the interface section in run progress.
+        ...(interfaceSync !== undefined ? { interfaceSync } : {}),
       },
       200,
     );

@@ -85,6 +85,7 @@ interface DepsBag {
   updateRunStarted: ReturnType<typeof vi.fn>;
   updateRunTriggerIds: ReturnType<typeof vi.fn>;
   enqueueBackupBase: ReturnType<typeof vi.fn>;
+  resolveInterfacesEnabled: ReturnType<typeof vi.fn>;
 }
 
 function makeDeps(): DepsBag {
@@ -99,6 +100,7 @@ function makeDeps(): DepsBag {
     updateRunStarted: vi.fn(async () => {}),
     updateRunTriggerIds: vi.fn(async () => {}),
     enqueueBackupBase: vi.fn(async (_p: unknown) => ({ id: `run_${Date.now()}` })),
+    resolveInterfacesEnabled: vi.fn(async () => false),
   };
 }
 
@@ -186,6 +188,7 @@ describe("processRunStart — happy path", () => {
       storageType: "r2_managed",
       spaceId: SPACE_ID,
       kind: "full",
+      interfacesEnabled: false,
     });
     expect(second?.[0]).toEqual({
       runId: RUN_ID,
@@ -200,6 +203,7 @@ describe("processRunStart — happy path", () => {
       storageType: "r2_managed",
       spaceId: SPACE_ID,
       kind: "full",
+      interfacesEnabled: false,
     });
   });
 
@@ -375,5 +379,41 @@ describe("processRunStart — validation failures", () => {
 
     expect(deps.updateRunStarted).not.toHaveBeenCalled();
     expect(deps.updateRunTriggerIds).not.toHaveBeenCalled();
+  });
+});
+
+describe("processRunStart — interfaces_enabled tier gate (server-mcp-interface-pages)", () => {
+  it("stamps interfacesEnabled: true on every task payload for a Growth+ org", async () => {
+    const deps = makeDeps();
+    deps.resolveInterfacesEnabled = vi.fn(async () => true);
+
+    const result = await processRunStart({ runId: RUN_ID }, { ...deps, now: () => NOW });
+
+    expect(result.ok).toBe(true);
+    expect(deps.resolveInterfacesEnabled).toHaveBeenCalledWith(ORG_ID);
+    expect(deps.enqueueBackupBase).toHaveBeenCalledTimes(2);
+    for (const call of deps.enqueueBackupBase.mock.calls) {
+      expect(call[0]).toMatchObject({ interfacesEnabled: true });
+    }
+  });
+
+  it("stamps interfacesEnabled: false for a below-Growth org", async () => {
+    const deps = makeDeps();
+    deps.resolveInterfacesEnabled = vi.fn(async () => false);
+
+    await processRunStart({ runId: RUN_ID }, { ...deps, now: () => NOW });
+
+    for (const call of deps.enqueueBackupBase.mock.calls) {
+      expect(call[0]).toMatchObject({ interfacesEnabled: false });
+    }
+  });
+
+  it("resolves the gate once per run, not per base", async () => {
+    const deps = makeDeps();
+
+    await processRunStart({ runId: RUN_ID }, { ...deps, now: () => NOW });
+
+    expect(deps.enqueueBackupBase).toHaveBeenCalledTimes(2);
+    expect(deps.resolveInterfacesEnabled).toHaveBeenCalledTimes(1);
   });
 });

@@ -84,6 +84,14 @@ export interface BackupBaseTaskPayload {
    * (server-backup-scope / workflows-schema-only-backup).
    */
   kind: "full" | "schema";
+  /**
+   * Gates the MCP interface-pages capture step on the workflows side
+   * (server-mcp-interface-pages / workflows-mcp-interface-pages). True only
+   * when the Org's resolved tier includes interface backup (Growth+, per
+   * lib/capabilities/interface-backup.ts). Below tier the task makes zero
+   * MCP requests.
+   */
+  interfacesEnabled: boolean;
 }
 
 const ACCEPTED_STORAGE_TYPES = new Set([
@@ -107,6 +115,12 @@ export interface ProcessRunStartDeps {
   enqueueBackupBase: (
     payload: BackupBaseTaskPayload,
   ) => Promise<{ id: string }>;
+  /**
+   * Tier gate for the MCP interface-pages capture (Growth+). Resolved once
+   * per run from the Connection's Org; production wiring is
+   * resolveCapabilities + interfaceBackupEnabled in start-deps.ts.
+   */
+  resolveInterfacesEnabled: (organizationId: string) => Promise<boolean>;
   /** Test seam — defaults to () => new Date() in production. */
   now?: () => Date;
 }
@@ -172,6 +186,11 @@ export async function processRunStart(
   //    (rather than Promise.all) keeps trigger_run_ids ordering deterministic
   //    and matches the order at_bases / backup_configuration_bases were
   //    selected in. At MVP-scale (~5 bases) the latency cost is negligible.
+  //    The interface-backup tier gate is per-Org, so it resolves once for
+  //    the whole fan-out.
+  const interfacesEnabled = await deps.resolveInterfacesEnabled(
+    connection.organizationId,
+  );
   const triggerRunIds: string[] = [];
   const runStartedAtIso = startedAt.toISOString();
   for (const base of bases) {
@@ -192,6 +211,7 @@ export async function processRunStart(
       // defaults to 'full' (manual + data-scheduled); the SpaceDO stamps
       // 'schema' on schema-scheduled runs (server-backup-scope).
       kind: run.kind === "schema" ? "schema" : "full",
+      interfacesEnabled,
     });
     triggerRunIds.push(handle.id);
   }

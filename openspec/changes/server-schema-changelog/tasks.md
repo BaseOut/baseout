@@ -39,6 +39,17 @@ capability key — reuses the readiness/IDOR guards of `relationships-overview`.
 > auto-capture (Phase F); the near-term path is emitting app-layer `schema_updates` rows
 > from the manual **mutate** routes (create/update/remove → added/config/removed events) —
 > do that after the manual-crud slice lands. §3 and §5 are NOT blocked either way.
+>
+> **Update 2026-07-14 ([`server-mcp-interface-pages`](../server-mcp-interface-pages/tasks.md)):**
+> interface `schema_updates` rows (`entityType='interface'`, `changeType='name'|'config'`)
+> are now EMITTED by the MCP capture path in schema-sync — 4.1/4.2's emit half is done for
+> interfaces (automations still pending). They already reach the feed because
+> `readSchemaChangelog` applies no entity-type filter; 4.3's remaining work is widening the
+> `ChangelogEntityType` union (currently a type-level lie for these rows) and adding
+> interface **added/removed** feed entries. Caveat for that work: `bo_at_interfaces` has no
+> `first_seen_run`/`first_unseen_run` columns — lifecycle is `first_seen_at`/`last_seen_at`
+> timestamps (+`status`), with `last_seen_at` doubling as the removal-detected timestamp on
+> `status='removed'` rows, so the added/removed reads join on timestamps, not runs.
 
 - [ ] 4.1 RED: test that a status transition (active→removed) + a config change on an automation/interface during `schema-sync` reconcile writes a `schema_updates` row with `entityType='automation'|'interface'` and correct before/after — and that a failure to write it does NOT fail the sync (best-effort/advisory).
 - [ ] 4.2 GREEN: extend `schema-sync.ts`'s automation/interface reconcile to best-effort emit those `schema_updates` rows. No change to base/table/field/view diffing (already emits).
