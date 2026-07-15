@@ -41,6 +41,10 @@ import {
   type AttachmentDownloader,
   type AttachmentRecordEntry,
 } from "./_lib/attachment-downloader";
+import {
+  fetchInterfacePages,
+  type FetchInterfacePagesResult,
+} from "./_lib/mcp-client";
 
 // Airtable's field type for an attachments cell. Mirrors the constant in
 // field-normalizer.ts (kept local so the downloader branch is self-contained).
@@ -77,6 +81,13 @@ export interface BackupBaseInput {
    * run-start from backup_runs.kind (server-backup-scope).
    */
   kind?: "full" | "schema";
+  /**
+   * Gates the MCP interface-pages capture (workflows-mcp-interface-pages).
+   * Stamped by the engine run-start from the Org's resolved tier (Growth+ —
+   * server-mcp-interface-pages). Default false: below tier (or an older
+   * engine) makes ZERO MCP requests, silently.
+   */
+  interfacesEnabled?: boolean;
 }
 
 interface AirtableClientShape {
@@ -210,6 +221,14 @@ export interface BackupBaseDeps {
   syncSchema?: (
     captured: CapturedBaseWire,
     confident: boolean,
+    /**
+     * Optional MCP interface-pages capture riding the schema-sync POST
+     * (workflows-mcp-interface-pages). Shape owned by the server change's
+     * `InterfacePagesCapture` (apps/server/src/lib/per-space/interfaces-sync.ts).
+     * Only attached on a successful capture — a skipped capture omits the
+     * field entirely (absent ≠ "all interfaces deleted").
+     */
+    interfacePages?: { capturedAt: string; raw: unknown },
   ) => Promise<{ recordsEnabled: boolean; baseRunId: string } | null>;
   syncRecords?: (args: {
     baseId: string;
@@ -217,6 +236,17 @@ export interface BackupBaseDeps {
     records: CapturedRecordWire[];
     confident: boolean;
   }) => Promise<void>;
+  /**
+   * MCP interface-pages fetcher (workflows-mcp-interface-pages). Defaults to
+   * the real client against https://mcp.airtable.com/mcp (endpoint overridable
+   * via AIRTABLE_MCP_URL in the wrapper, for tests/failure drills). Tests
+   * inject a fake. Only invoked when input.interfacesEnabled AND syncSchema is
+   * wired (the capture has nowhere to land otherwise).
+   */
+  fetchInterfacePages?: (args: {
+    baseId: string;
+    accessToken: string;
+  }) => Promise<FetchInterfacePagesResult>;
 }
 
 export type BackupBaseStatus =
@@ -243,6 +273,16 @@ export interface BackupBaseResult {
    * succeeded / trial_truncated / trial_complete; absent on early-exit
    * failed paths (lock_unavailable, missing_r2_creds, etc.). */
   tableDetail?: BackupTableDetail[];
+  /**
+   * MCP interface-pages capture outcome (workflows-mcp-interface-pages).
+   * Present only when the capture was attempted (interfacesEnabled + sync
+   * wired). `skipped` NEVER affects `status` — failure isolation is the spec's
+   * hard rule. `notice: 'connection_scope'` flags a token the MCP server
+   * rejected (401/403) so support can spot scope problems on the run.
+   */
+  interfacePages?:
+    | { status: "captured" }
+    | { status: "skipped"; reason: string; notice?: "connection_scope" };
 }
 
 const TRIAL_TABLE_CAP = 5;
@@ -412,6 +452,29 @@ export async function runBackupBase(
     }
     const { accessToken } = (await tokenRes.json()) as { accessToken: string };
 
+    // 2b. MCP interface-pages capture (workflows-mcp-interface-pages) —
+    // kicked off here so it runs CONCURRENTLY with the Airtable schema fetch
+    // below (it needs only the token + baseId), and awaited right before the
+    // schema-sync POST it rides on. Happy path adds ~0s of wall-clock; the
+    // worst failing path adds the client's 30s timeout before schema-sync.
+    // Gated on the tier flag AND on syncSchema being wired (without the sync
+    // the capture has nowhere to land). The client never throws, and the
+    // defensive .catch keeps an injected fake from failing the run either —
+    // no MCP failure mode may touch the backup outcome.
+    const captureInterfaces =
+      input.interfacesEnabled === true && !!deps.syncSchema;
+    const interfaceCapturePromise: Promise<FetchInterfacePagesResult> | null =
+      captureInterfaces
+        ? (deps.fetchInterfacePages ??
+            ((a: { baseId: string; accessToken: string }) =>
+              fetchInterfacePages({ ...a, fetchImpl: fetchFn })))({
+            baseId: input.atBaseId,
+            accessToken,
+          }).catch(
+            (): FetchInterfacePagesResult => ({ ok: false, reason: "transport" }),
+          )
+        : null;
+
     // 3. Schema.
     const client: AirtableClientShape =
       deps.airtableClient ??
@@ -431,6 +494,25 @@ export async function runBackupBase(
     // /records-sync per table. Skipped when the dep is absent (static-only).
     let recordsEnabled = false;
     let perSpaceBaseRunId: string | null = null;
+    // Await the concurrent MCP capture just before the schema-sync it rides.
+    // Success → the raw envelope is attached as the optional `interfacePages`
+    // field; any failure → the field is OMITTED (never partial, never empty)
+    // and the outcome is reported on the task result instead.
+    let interfacePagesField: { capturedAt: string; raw: unknown } | undefined;
+    let interfacePagesOutcome: BackupBaseResult["interfacePages"];
+    if (interfaceCapturePromise) {
+      const capture = await interfaceCapturePromise;
+      if (capture.ok) {
+        interfacePagesField = { capturedAt: capture.capturedAt, raw: capture.raw };
+        interfacePagesOutcome = { status: "captured" };
+      } else {
+        interfacePagesOutcome = {
+          status: "skipped",
+          reason: capture.reason,
+          ...(capture.reason === "auth" ? { notice: "connection_scope" as const } : {}),
+        };
+      }
+    }
     if (deps.syncSchema) {
       const captured: CapturedBaseWire = {
         baseId: input.atBaseId,
@@ -458,7 +540,7 @@ export async function runBackupBase(
           })),
         })),
       };
-      const sync = await deps.syncSchema(captured, true);
+      const sync = await deps.syncSchema(captured, true, interfacePagesField);
       if (sync) {
         recordsEnabled = sync.recordsEnabled;
         perSpaceBaseRunId = sync.baseRunId;
@@ -482,6 +564,7 @@ export async function runBackupBase(
           fieldCount: t.fields.length,
           attachmentCount: 0,
         })),
+        ...(interfacePagesOutcome ? { interfacePages: interfacePagesOutcome } : {}),
       };
     }
 
@@ -636,6 +719,7 @@ export async function runBackupBase(
       recordsProcessed,
       attachmentsProcessed,
       tableDetail,
+      ...(interfacePagesOutcome ? { interfacePages: interfacePagesOutcome } : {}),
     };
   } finally {
     if (locked) {

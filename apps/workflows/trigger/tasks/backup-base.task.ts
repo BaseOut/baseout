@@ -25,6 +25,7 @@ import {
   type CapturedRecordWire,
 } from "./backup-base";
 import type { AttachmentRecordEntry } from "./_lib/attachment-downloader";
+import { fetchInterfacePages } from "./_lib/mcp-client";
 
 export interface BackupBaseTaskPayload {
   runId: string;
@@ -60,6 +61,13 @@ export interface BackupBaseTaskPayload {
    * backup_runs.kind here; flows into runBackupBase via the payload spread.
    */
   kind?: "full" | "schema";
+  /**
+   * Gates the MCP interface-pages capture (workflows-mcp-interface-pages).
+   * Stamped by the engine run-start from the Org's resolved tier (Growth+,
+   * server-mcp-interface-pages). Optional so payloads from an older engine
+   * default to false — zero MCP requests.
+   */
+  interfacesEnabled?: boolean;
 }
 
 function trimSlash(s: string): string {
@@ -194,12 +202,21 @@ async function syncSchema(
   backupRunId: string,
   captured: CapturedBaseWire,
   confident: boolean,
+  // Optional MCP interface-pages capture (workflows-mcp-interface-pages) —
+  // attached only on a successful capture; the engine treats an absent field
+  // as "no interface processing", never as a deletion.
+  interfacePages?: { capturedAt: string; raw: unknown },
 ): Promise<{ recordsEnabled: boolean; baseRunId: string } | null> {
   const url = `${trimSlash(engineUrl)}/api/internal/spaces/${encodeURIComponent(spaceId)}/schema-sync`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "x-internal-token": internalToken, "content-type": "application/json" },
-    body: JSON.stringify({ backupRunId, captured, confident }),
+    body: JSON.stringify({
+      backupRunId,
+      captured,
+      confident,
+      ...(interfacePages !== undefined ? { interfacePages } : {}),
+    }),
   });
   if (res.status === 409 || res.status === 501) return null;
   if (!res.ok) throw new Error(`schema-sync ${res.status}`);
@@ -244,6 +261,10 @@ async function postCompletion(
     recordsProcessed: result.recordsProcessed,
     attachmentsProcessed: result.attachmentsProcessed,
     ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
+    // Interface-capture outcome (workflows-mcp-interface-pages): additive —
+    // today it lands in Trigger.dev run output + this POST body (engine
+    // ignores unknown fields); engine-side persistence is a flagged follow-up.
+    ...(result.interfacePages ? { interfacePages: result.interfacePages } : {}),
   };
   // workflows-run-detail: include per-table detail when the pure function
   // accumulated it (succeeded / trial_* paths). The server handler treats
@@ -330,7 +351,7 @@ export const backupBaseTask = task({
               event.recordsAppended,
               event.tableCompleted,
             ),
-          syncSchema: (captured, confident) =>
+          syncSchema: (captured, confident, interfacePages) =>
             syncSchema(
               engineUrl,
               internalToken,
@@ -338,7 +359,16 @@ export const backupBaseTask = task({
               payload.runId,
               captured,
               confident,
+              interfacePages,
             ),
+          // MCP endpoint override (AIRTABLE_MCP_URL) exists for the staging
+          // failure drill (point it at a black hole) and tests; production
+          // leaves it unset for the client's built-in mcp.airtable.com.
+          fetchInterfacePages: (a) =>
+            fetchInterfacePages({
+              ...a,
+              endpoint: process.env.AIRTABLE_MCP_URL || undefined,
+            }),
           syncRecords: (args) =>
             syncRecords(
               engineUrl,
