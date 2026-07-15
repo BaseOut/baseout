@@ -155,9 +155,22 @@ export const onRequest = defineMiddleware(async (context, next) => {
   }
 
   try {
-    const session = await auth.api.getSession({
+    // returnHeaders: better-auth's daily updateAge slide re-issues the
+    // session cookie with a fresh Max-Age on THIS internal call — for page
+    // loads, the only place that ever happens. Discarding these headers (the
+    // pre-2026-07-14 behavior) meant the browser cookie kept its login-time
+    // Max-Age and hard-died `expiresIn` after login even for daily-active
+    // users — the recurring forced re-login of Jun–Jul 2026 (the 21ce401
+    // 30-day window only stretched the death clock). Every response returned
+    // below must pass through withAuthCookies. oauth-setup.md §8 has the
+    // failure-mode entry.
+    const sessionResult = await auth.api.getSession({
       headers: context.request.headers,
+      returnHeaders: true,
     });
+    const session = sessionResult.response;
+    const withAuthCookies = (res: Response): Response =>
+      appendSetCookies(res, sessionResult.headers.getSetCookie?.() ?? []);
 
     if (session) {
       const sessionUser = session.user as typeof session.user & {
@@ -206,26 +219,45 @@ export const onRequest = defineMiddleware(async (context, next) => {
     }
 
     const gate = applyOnboardingGate(context);
-    if (gate) return gate;
+    if (gate) return withAuthCookies(gate);
 
     if (session && (context.url.pathname === '/login' || context.url.pathname === '/register')) {
       // Honor a validated returnTo so a user whose session cookie reappears by
       // the time they land on /login (transient withholding) — or a signed-in
       // staffer bounced here from the admin console — continues to their
       // destination instead of stranding at the root.
-      return context.redirect(
+      return withAuthCookies(context.redirect(
         resolveLoginBounceTarget(context.url.searchParams.get('returnTo'), {
           dev: import.meta.env.DEV,
           adminAppUrl: (env as unknown as { ADMIN_APP_URL?: string }).ADMIN_APP_URL,
         }),
-      );
+      ));
     }
 
-    return await next();
+    return withAuthCookies(await next());
   } finally {
     context.locals.cfContext.waitUntil(sql.end({ timeout: 5 }));
   }
 });
+
+/**
+ * Append better-auth Set-Cookie headers onto an outgoing response — the
+ * transport for the sliding-session cookie refresh (see the getSession call
+ * in onRequest). Falls back to cloning when the response's headers are
+ * immutable (workerd marks some responses immutable; Astro's next() response
+ * is normally mutable).
+ */
+export function appendSetCookies(res: Response, cookies: string[]): Response {
+  if (!cookies.length) return res;
+  try {
+    for (const cookie of cookies) res.headers.append('set-cookie', cookie);
+    return res;
+  } catch {
+    const out = new Response(res.body, res);
+    for (const cookie of cookies) out.headers.append('set-cookie', cookie);
+    return out;
+  }
+}
 
 // If the user is authed but has never accepted terms, force them to /welcome.
 // Once accepted, block access to /welcome. Auth API routes are always exempt.

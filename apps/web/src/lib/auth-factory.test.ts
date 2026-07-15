@@ -70,4 +70,5 @@ describe('createAuth — session lifetime', () => {
     expect(session.expiresIn).toBe(60 * 60 * 24 * 30)
     expect(session.updateAge).toBe(60 * 60 * 24)
   })
+
 })

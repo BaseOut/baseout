@@ -174,3 +174,45 @@ describe('resolveLoginBounceTarget', () => {
     ).toBe('/')
   })
 })
+
+describe('appendSetCookies — sliding-session cookie forwarding (2026-07-14)', () => {
+  // The middleware's internal getSession is the ONLY place better-auth's
+  // daily updateAge slide re-issues the session cookie for page loads.
+  // Dropping these headers made every browser cookie hard-die `expiresIn`
+  // after login regardless of activity — the recurring forced re-login of
+  // Jun–Jul 2026. See oauth-setup.md §8.
+  it('appends every forwarded set-cookie header', async () => {
+    const { appendSetCookies } = await import('./middleware')
+    const res = appendSetCookies(new Response('ok'), [
+      'better-auth.session_token=tok.sig; Max-Age=2592000; Path=/; HttpOnly; SameSite=Lax',
+      'better-auth.session_data=abc; Max-Age=300; Path=/; HttpOnly; SameSite=Lax',
+    ])
+    const cookies = res.headers.getSetCookie()
+    expect(cookies).toHaveLength(2)
+    expect(cookies[0]).toContain('better-auth.session_token=')
+    expect(cookies[1]).toContain('better-auth.session_data=')
+  })
+
+  it('returns the response unchanged when there is nothing to forward', async () => {
+    const { appendSetCookies } = await import('./middleware')
+    const res = new Response('ok')
+    expect(appendSetCookies(res, [])).toBe(res)
+    expect(res.headers.getSetCookie()).toHaveLength(0)
+  })
+
+  it('clones when the response headers are immutable', async () => {
+    const { appendSetCookies } = await import('./middleware')
+    const immutable = new Response('ok')
+    Object.defineProperty(immutable, 'headers', {
+      value: new Proxy(new Headers(), {
+        get(target, prop) {
+          if (prop === 'append') return () => { throw new TypeError('immutable') }
+          const v = Reflect.get(target, prop)
+          return typeof v === 'function' ? v.bind(target) : v
+        },
+      }),
+    })
+    const res = appendSetCookies(immutable, ['a=b; Path=/'])
+    expect(res.headers.getSetCookie()).toEqual(['a=b; Path=/'])
+  })
+})
