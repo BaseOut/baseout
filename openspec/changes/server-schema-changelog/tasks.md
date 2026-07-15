@@ -53,7 +53,7 @@ capability key — reuses the readiness/IDOR guards of `relationships-overview`.
 
 - [ ] 4.1 RED: test that a status transition (active→removed) + a config change on an automation/interface during `schema-sync` reconcile writes a `schema_updates` row with `entityType='automation'|'interface'` and correct before/after — and that a failure to write it does NOT fail the sync (best-effort/advisory).
 - [ ] 4.2 GREEN: extend `schema-sync.ts`'s automation/interface reconcile to best-effort emit those `schema_updates` rows. No change to base/table/field/view diffing (already emits).
-- [ ] 4.3 Extend `readSchemaChangelog` to include `entityType in (automation, interface)` rows in the feed (the assembler already passes `entityType` through; widen the type union).
+- [x] 4.3 Extend `readSchemaChangelog` to include `entityType in (automation, interface)` rows in the feed (the assembler already passes `entityType` through; widen the type union). → DONE 2026-07-15: union widened (+automation/interface), interface + automation REMOVAL entries added to the io read (timestamp lifecycle — status='removed' + last_seen_at as the date, runId null), 3 new assembler tests. Interface `added` events deliberately deferred to §3 (needs the same baseline-flood guard, timestamp variant). Web tab renders new types safely today (entityName ?? entityId fallback in changelog-view.ts); proper labels land with web-automations-interfaces-tabs. 4.1/4.2's automations emit half remains blocked on server-automations-interfaces-manual-crud (interfaces emit half shipped via server-mcp-interface-pages).
 
 ## 5. Remaining — `since` / `kinds` / `includeRemoved` filters — TDD
 

@@ -103,3 +103,43 @@ describe("assembleChangelog", () => {
     ]);
   });
 });
+
+describe("assembleChangelog — interface/automation entries (§4.3, server-mcp-interface-pages feed)", () => {
+  it("an interface name modification assembles with entityType 'interface'", () => {
+    const { entries } = assembleChangelog(
+      [mod({ entityType: "interface", entityId: "pagX", tableId: null, changeType: "name", beforeValue: "Page A", afterValue: "Page A v2" })],
+      [],
+    );
+    expect(entries[0]).toMatchObject({
+      kind: "modified",
+      entityType: "interface",
+      changeType: "name",
+      before: "Page A",
+      after: "Page A v2",
+    });
+  });
+
+  it("an interface removal (timestamp lifecycle — no run id) assembles and sorts by its date", () => {
+    const { entries } = assembleChangelog(
+      [mod({ at: "2026-07-01T00:00:00.000Z" })],
+      [
+        removal({ entityType: "interface", entityId: "pagGone", tableId: null, name: "Old page", runId: null, at: "2026-07-14T00:00:00.000Z" }),
+      ],
+    );
+    expect(entries[0]).toMatchObject({
+      kind: "removed",
+      entityType: "interface",
+      entityName: "Old page",
+      runId: null,
+      at: "2026-07-14T00:00:00.000Z",
+    });
+  });
+
+  it("an automation removal assembles with entityType 'automation'", () => {
+    const { entries } = assembleChangelog(
+      [],
+      [removal({ entityType: "automation", entityId: "atmX", tableId: null, name: "Notify Slack" })],
+    );
+    expect(entries[0]).toMatchObject({ kind: "removed", entityType: "automation" });
+  });
+});

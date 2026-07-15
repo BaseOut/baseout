@@ -4,8 +4,11 @@
 //   - MODIFICATIONS come from bo_at_schema_updates (name/description/type/config/
 //     options/primary_field changes, with before/after + breaks_data), stamped
 //     with their run's date.
-//   - REMOVALS come from the entity lifecycle columns (status='removed' +
-//     first_unseen_run), stamped with the unseen run's date.
+//   - REMOVALS come from the entity lifecycle columns — schema entities use
+//     status='removed' + first_unseen_run (stamped with the unseen run's
+//     date); automation/interface entities use the TIMESTAMP lifecycle
+//     (status='removed' + last_seen_at doubling as removal-detected, no run
+//     columns — see server-mcp-interface-pages), so their runId is null.
 // This module is the PURE assembler: it takes already-fetched rows and produces
 // the sorted, limited feed. The DB query lives in schema-changelog-io.ts so this
 // stays unit-testable without a database.
@@ -15,7 +18,13 @@
 // baseline capture. Emitting genuine post-baseline additions needs the base's
 // earliest run to filter against — a documented follow-up.
 
-export type ChangelogEntityType = "base" | "table" | "field" | "view";
+export type ChangelogEntityType =
+  | "base"
+  | "table"
+  | "field"
+  | "view"
+  | "automation"
+  | "interface";
 export type ChangelogKind = "modified" | "removed";
 
 export interface ChangelogModificationRow {

@@ -161,5 +161,61 @@ export async function readSchemaChangelog(
     });
   }
 
+  // Automation/interface removals use the TIMESTAMP lifecycle — these tables
+  // have no run columns; status='removed' + last_seen_at is the removal-
+  // detected stamp (server-mcp-interface-pages writes it for MCP-captured
+  // interfaces; the manual-crud slice will for automations). runId stays null.
+  const interfaceRemovals = await tx
+    .select({
+      entityId: spacePg.interfaces.airtableEntityId,
+      name: spacePg.interfaces.name,
+      lastSeenAt: spacePg.interfaces.lastSeenAt,
+    })
+    .from(spacePg.interfaces)
+    .where(
+      and(
+        eq(spacePg.interfaces.baseId, baseId),
+        eq(spacePg.interfaces.status, "removed"),
+        isNotNull(spacePg.interfaces.lastSeenAt),
+      ),
+    );
+  for (const r of interfaceRemovals) {
+    removals.push({
+      runId: null,
+      entityType: "interface",
+      entityId: r.entityId ?? "",
+      baseId,
+      tableId: null,
+      name: r.name ?? "",
+      at: r.lastSeenAt ? r.lastSeenAt.toISOString() : null,
+    });
+  }
+
+  const automationRemovals = await tx
+    .select({
+      entityId: spacePg.automations.airtableEntityId,
+      name: spacePg.automations.name,
+      lastSeenAt: spacePg.automations.lastSeenAt,
+    })
+    .from(spacePg.automations)
+    .where(
+      and(
+        eq(spacePg.automations.baseId, baseId),
+        eq(spacePg.automations.status, "removed"),
+        isNotNull(spacePg.automations.lastSeenAt),
+      ),
+    );
+  for (const r of automationRemovals) {
+    removals.push({
+      runId: null,
+      entityType: "automation",
+      entityId: r.entityId ?? "",
+      baseId,
+      tableId: null,
+      name: r.name ?? "",
+      at: r.lastSeenAt ? r.lastSeenAt.toISOString() : null,
+    });
+  }
+
   return assembleChangelog(modifications, removals, { limit: opts?.limit ?? 200 });
 }
