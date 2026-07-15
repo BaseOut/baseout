@@ -1,5 +1,13 @@
 ## Status
 
+> **2026-07-15 (web-interfaces-source-badge):** the Interfaces tab's read path
+> MUST render through `mergeInterfaceSources` + `provenanceBadges`
+> (`apps/web/src/lib/interfaces/merge-sources.ts`) — one entity per
+> `airtable_entity_id`, MCP row authoritative, manual payload as detail,
+> Auto/Manual provenance via the `Badge` primitive. This is the dedupe
+> requirement flagged in `server-mcp-interface-pages` task 3.2.
+
+
 PROPOSED — not yet implemented.
 
 **Blocked on** [`server-automations-interfaces-manual-crud`](../server-automations-interfaces-manual-crud/tasks.md)
