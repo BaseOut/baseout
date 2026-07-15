@@ -3,6 +3,7 @@ import {
   extractSessionTokenCookie,
   sessionTokenCandidates,
   decideAccess,
+  isStaff,
 } from './admin-session'
 
 describe('extractSessionTokenCookie', () => {
@@ -71,6 +72,37 @@ describe('sessionTokenCandidates', () => {
   })
 })
 
+describe('isStaff', () => {
+  it('grants an explicit super role regardless of email', () => {
+    expect(isStaff({ role: 'super', email: 'anyone@example.com' })).toBe(true)
+  })
+
+  it('grants a verified @openside.com email without a super role', () => {
+    expect(isStaff({ role: 'customer', email: 'dan@openside.com' })).toBe(true)
+  })
+
+  it('is case-insensitive on the domain', () => {
+    expect(isStaff({ role: 'customer', email: 'Dan@OpenSide.com' })).toBe(true)
+  })
+
+  // The `@` anchor is the security-critical part: a substring match would let
+  // a lookalike domain through. These MUST stay denied.
+  it('denies a lookalike or nested domain', () => {
+    expect(isStaff({ role: 'customer', email: 'attacker@evil-openside.com' })).toBe(false)
+    expect(isStaff({ role: 'customer', email: 'attacker@openside.com.evil.net' })).toBe(false)
+    expect(isStaff({ role: 'customer', email: 'attacker@sub.openside.com' })).toBe(false)
+  })
+
+  it('denies an external domain', () => {
+    expect(isStaff({ role: 'customer', email: 'user@gmail.com' })).toBe(false)
+  })
+
+  it('denies when email is null/absent and role is not super', () => {
+    expect(isStaff({ role: 'customer', email: null })).toBe(false)
+    expect(isStaff({ role: 'customer' })).toBe(false)
+  })
+})
+
 describe('decideAccess', () => {
   const now = new Date('2026-06-09T12:00:00Z')
   const future = new Date('2026-06-09T13:00:00Z')
@@ -82,14 +114,38 @@ describe('decideAccess', () => {
     })
   })
 
-  it('rejects a customer role', () => {
+  it('allows a customer-role @openside.com user (staff by domain)', () => {
+    expect(
+      decideAccess(
+        { role: 'customer', email: 'dan@openside.com', expiresAt: future },
+        now,
+      ),
+    ).toEqual({ ok: true })
+  })
+
+  it('rejects a customer role with a non-staff email', () => {
+    expect(
+      decideAccess(
+        { role: 'customer', email: 'x@gmail.com', expiresAt: future },
+        now,
+      ),
+    ).toEqual({ ok: false, reason: 'not-staff' })
+  })
+
+  it('rejects a customer role with no email', () => {
     expect(decideAccess({ role: 'customer', expiresAt: future }, now)).toEqual({
       ok: false,
-      reason: 'not-super',
+      reason: 'not-staff',
     })
   })
 
-  it('rejects an expired session even for a super user', () => {
+  it('rejects an expired session even for a staff user', () => {
+    expect(
+      decideAccess(
+        { role: 'customer', email: 'dan@openside.com', expiresAt: past },
+        now,
+      ),
+    ).toEqual({ ok: false, reason: 'expired' })
     expect(decideAccess({ role: 'super', expiresAt: past }, now)).toEqual({
       ok: false,
       reason: 'expired',

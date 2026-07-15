@@ -28,6 +28,17 @@ export function isInternalEmail(email: string | null | undefined): boolean {
   return INTERNAL_EMAIL_DOMAINS.some((domain) => e.endsWith(domain))
 }
 
+/**
+ * Staff-access predicate for the admin console + handoff gate
+ * (openspec/changes/shared-staff-domain-access): an explicit `role === 'super'`
+ * OR a verified @openside.com email (magic-link proves ownership). Additive —
+ * it only ever grants. apps/admin keeps a lockstep copy in
+ * src/lib/admin-session.ts (admin cannot import web); keep them in step.
+ */
+export function isStaff(input: { role?: string | null; email?: string | null }): boolean {
+  return input.role === 'super' || isInternalEmail(input.email)
+}
+
 export interface ResolvedCapabilities {
   tier: Tier | null
   hasSubscription: boolean

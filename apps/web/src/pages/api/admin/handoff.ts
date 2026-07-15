@@ -29,6 +29,7 @@ import { eq } from 'drizzle-orm'
 import { users } from '../../../db/schema'
 import { extractSessionTokenCookie } from '../../../lib/session-cache'
 import { encryptToken } from '../../../lib/crypto'
+import { isStaff, isInternalEmail } from '../../../lib/capabilities/internal-access'
 
 export const HANDOFF_TTL_MS = 60_000
 
@@ -43,13 +44,17 @@ export interface HandoffDeps {
   adminAppUrl: string | undefined
   secret: string | undefined
   sessionCookieValue: string | null
-  fetchRole: () => Promise<string | null>
+  fetchStaff: () => Promise<{ role: string; email: string | null } | null>
+  // Best-effort persist of role='super' for a staff-by-domain user
+  // (openspec/changes/shared-staff-domain-access, approach b). A failure here
+  // must NOT block the handoff — the domain gate already granted access.
+  promoteToStaff: () => Promise<void>
   now: Date
 }
 
 // Pure handler — the GET wrapper below adapts the Astro context.
 export async function handleAdminHandoff(deps: HandoffDeps): Promise<Response> {
-  const { adminAppUrl, secret, sessionCookieValue, fetchRole, now } = deps
+  const { adminAppUrl, secret, sessionCookieValue, fetchStaff, promoteToStaff, now } = deps
 
   if (!secret) {
     return json(500, { error: 'Handoff is not configured (ADMIN_HANDOFF_SECRET missing)' })
@@ -70,9 +75,21 @@ export async function handleAdminHandoff(deps: HandoffDeps): Promise<Response> {
     return json(401, { error: 'Not authenticated' })
   }
 
-  const role = await fetchRole()
-  if (role !== 'super') {
+  const user = await fetchStaff()
+  if (!user || !isStaff(user)) {
     return json(403, { error: 'Staff only' })
+  }
+
+  // Approach (b): persist role='super' for a user who is staff purely by their
+  // @openside.com domain, so every other `super`-gated surface (e.g. web /ops)
+  // reflects it. Best-effort — a failed write never blocks the handoff.
+  if (user.role !== 'super' && isInternalEmail(user.email)) {
+    try {
+      await promoteToStaff()
+    } catch {
+      // Access is already granted by the domain gate; the promotion retries on
+      // the next handoff. Swallow rather than lock a staff member out.
+    }
   }
 
   const payload: HandoffPayload = {
@@ -105,15 +122,22 @@ export const GET: APIRoute = async ({ request, locals }) => {
     adminAppUrl: (env as unknown as { ADMIN_APP_URL?: string }).ADMIN_APP_URL,
     secret: (env as unknown as { ADMIN_HANDOFF_SECRET?: string }).ADMIN_HANDOFF_SECRET,
     sessionCookieValue: extractSessionTokenCookie(request.headers.get('cookie') ?? ''),
-    fetchRole: async () => {
-      // locals.user doesn't carry role — one narrow read of users.role.
+    fetchStaff: async () => {
+      // locals.user doesn't carry role/email — one narrow read.
       if (!userId) return null
       const rows = await locals.db
-        .select({ role: users.role })
+        .select({ role: users.role, email: users.email })
         .from(users)
         .where(eq(users.id, userId))
         .limit(1)
-      return rows[0]?.role ?? null
+      return rows[0] ?? null
+    },
+    promoteToStaff: async () => {
+      if (!userId) return
+      await locals.db
+        .update(users)
+        .set({ role: 'super' })
+        .where(eq(users.id, userId))
     },
     now: new Date(),
   })

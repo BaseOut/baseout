@@ -21,7 +21,8 @@ const base = {
   adminAppUrl: ADMIN_ORIGIN,
   secret: SECRET,
   sessionCookieValue: 'tok123.sig456',
-  fetchRole: vi.fn(async () => 'super'),
+  fetchStaff: vi.fn(async () => ({ role: 'super', email: 'staff@openside.com' })),
+  promoteToStaff: vi.fn(async () => {}),
   now: NOW,
 }
 
@@ -56,9 +57,58 @@ describe('handleAdminHandoff', () => {
     expect((await handleAdminHandoff({ ...base, adminAppUrl: 'not a url' })).status).toBe(500)
   })
 
-  it('403s for a non-staff user', async () => {
-    const res = await handleAdminHandoff({ ...base, fetchRole: async () => 'customer' })
+  it('403s for a non-staff user (customer, external email)', async () => {
+    const res = await handleAdminHandoff({
+      ...base,
+      fetchStaff: async () => ({ role: 'customer', email: 'user@gmail.com' }),
+    })
     expect(res.status).toBe(403)
+  })
+
+  it('403s when no user row is found', async () => {
+    const res = await handleAdminHandoff({ ...base, fetchStaff: async () => null })
+    expect(res.status).toBe(403)
+  })
+
+  it('mints for an @openside.com customer (staff by domain) and persists the super promotion', async () => {
+    const promoteToStaff = vi.fn(async () => {})
+    const res = await handleAdminHandoff({
+      ...base,
+      fetchStaff: async () => ({ role: 'customer', email: 'dan@openside.com' }),
+      promoteToStaff,
+    })
+    expect(res.status).toBe(302)
+    expect(promoteToStaff).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not re-promote a user who is already super', async () => {
+    const promoteToStaff = vi.fn(async () => {})
+    const res = await handleAdminHandoff({
+      ...base,
+      fetchStaff: async () => ({ role: 'super', email: 'staff@openside.com' }),
+      promoteToStaff,
+    })
+    expect(res.status).toBe(302)
+    expect(promoteToStaff).not.toHaveBeenCalled()
+  })
+
+  it('denies a lookalike domain (the @ anchor matters)', async () => {
+    const res = await handleAdminHandoff({
+      ...base,
+      fetchStaff: async () => ({ role: 'customer', email: 'attacker@evil-openside.com' }),
+    })
+    expect(res.status).toBe(403)
+  })
+
+  it('still grants access if the promotion write fails (best-effort persist)', async () => {
+    const res = await handleAdminHandoff({
+      ...base,
+      fetchStaff: async () => ({ role: 'customer', email: 'dan@openside.com' }),
+      promoteToStaff: async () => {
+        throw new Error('db write failed')
+      },
+    })
+    expect(res.status).toBe(302)
   })
 
   it('401s without a session cookie', async () => {

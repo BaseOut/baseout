@@ -83,7 +83,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
     const cookieHeader = context.request.headers.get('cookie') ?? ''
     const cookieValue = extractSessionTokenCookie(cookieHeader)
 
-    let row: { role: string; expiresAt: Date } | null = null
+    let row: { role: string; email?: string | null; expiresAt: Date } | null = null
     if (cookieValue) {
       const candidates = sessionTokenCandidates(cookieValue)
       const found = await db
@@ -93,7 +93,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
         .where(inArray(sessions.token, candidates))
         .limit(1)
       if (found[0]) {
-        row = { role: found[0].role, expiresAt: found[0].expiresAt }
+        row = { role: found[0].role, email: found[0].email, expiresAt: found[0].expiresAt }
         context.locals.user = {
           id: found[0].userId,
           email: found[0].email,
@@ -104,9 +104,9 @@ export const onRequest = defineMiddleware(async (context, next) => {
 
     const decision = decideAccess(row, new Date())
     if (!decision.ok) {
-      // 'not-super' means they ARE signed in (just not staff) — don't bounce
+      // 'not-staff' means they ARE signed in (just not staff) — don't bounce
       // them to login. 'no-session' / 'expired' route into web's login.
-      if (decision.reason === 'not-super') {
+      if (decision.reason === 'not-staff') {
         return renderNotStaff()
       }
       context.locals.user = null
