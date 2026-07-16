@@ -64,6 +64,7 @@ import { resolveCronJobs } from "./lib/cron/dispatch";
 import {
   runScheduledOauthRefresh,
   runScheduledKeepalive,
+  runScheduledConnectionInvalidation,
 } from "./lib/cron/oauth-refresh-deps";
 import { runScheduledRunReconciliation } from "./lib/runs/reconcile-deps";
 
@@ -594,6 +595,8 @@ export default {
         await runScheduledRunReconciliation(env);
       } else if (job === "oauth-keepalive") {
         await runScheduledKeepalive(env);
+      } else if (job === "connection-auto-invalidate") {
+        await runScheduledConnectionInvalidation(env);
       }
     }
   },

@@ -17,10 +17,11 @@
 // scheduled() has no request-scoped locals, so the master DB client is created
 // and torn down per firing (CLAUDE.md §5.1).
 
-import { and, eq, isNotNull, lte, or, isNull, asc, sql } from "drizzle-orm";
+import { and, eq, isNotNull, lte, or, isNull, asc, sql, inArray } from "drizzle-orm";
 import { createMasterDb } from "../../db/worker";
 import { connections, platforms } from "../../db/schema";
 import { REFRESH_LOOKAHEAD_MS } from "../connections/resolve-airtable-token";
+import { runConnectionAutoInvalidate } from "../connections/auto-invalidate";
 import {
   runOauthRefreshSweep,
   type OauthRefreshSweepResult,
@@ -190,6 +191,47 @@ export async function runScheduledKeepalive(
       refreshConnection: (connectionId) =>
         refreshConnectionViaDO(env, connectionId),
       log: (event) => logEvent({ ...event, event: "oauth_keepalive", mode }),
+    });
+  } finally {
+    await pg.end({ timeout: 5 }).catch(() => {});
+  }
+}
+
+// Dead-connection auto-invalidation (Phase 4): flip Airtable connections stuck
+// in 'pending_reauth' past the ~10-day grace window to 'invalid'. Runs on the
+// daily keep-alive cron. Independent of AIRTABLE_KEEPALIVE_MODE — the grace
+// clock (pending_reauth_at) advances regardless of which refresh model is live.
+export async function runScheduledConnectionInvalidation(
+  env: Env,
+): Promise<{ invalidated: number } | null> {
+  const { db, sql: pg } = createMasterDb(env);
+  try {
+    return await runConnectionAutoInvalidate({
+      now: () => new Date(),
+      invalidateStale: async (cutoff) => {
+        const airtablePlatforms = db
+          .select({ id: platforms.id })
+          .from(platforms)
+          .where(eq(platforms.slug, "airtable"));
+        const rows = await db
+          .update(connections)
+          .set({
+            status: "invalid",
+            invalidatedAt: new Date(),
+            modifiedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(connections.status, "pending_reauth"),
+              isNotNull(connections.pendingReauthAt),
+              lte(connections.pendingReauthAt, cutoff),
+              inArray(connections.platformId, airtablePlatforms),
+            ),
+          )
+          .returning({ id: connections.id });
+        return rows.length;
+      },
+      log: logEvent,
     });
   } finally {
     await pg.end({ timeout: 5 }).catch(() => {});

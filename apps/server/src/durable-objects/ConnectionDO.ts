@@ -183,6 +183,12 @@ export class ConnectionDO {
               .update(connections)
               .set({
                 status: "pending_reauth",
+                // Stamp the start of the dead-connection grace window — the
+                // auto-invalidation job flips pending_reauth → invalid after it
+                // elapses. Only set on the active→pending_reauth transition
+                // (claimRefresh requires status='active'), so it isn't reset by
+                // a re-mark.
+                pendingReauthAt: new Date(),
                 oauthRefreshClaimId: null,
                 oauthRefreshClaimedAt: null,
                 oauthRefreshLastError: reason,

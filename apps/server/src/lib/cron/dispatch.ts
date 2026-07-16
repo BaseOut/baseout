@@ -15,11 +15,12 @@ export const KEEPALIVE_CRON = "0 13 * * *";
 export type CronJob =
   | "oauth-refresh-sweep"
   | "run-reconciliation"
-  | "oauth-keepalive";
+  | "oauth-keepalive"
+  | "connection-auto-invalidate";
 
 const CRON_JOBS: Record<string, CronJob[]> = {
   [OAUTH_REFRESH_CRON]: ["oauth-refresh-sweep", "run-reconciliation"],
-  [KEEPALIVE_CRON]: ["oauth-keepalive"],
+  [KEEPALIVE_CRON]: ["oauth-keepalive", "connection-auto-invalidate"],
 };
 
 export function resolveCronJobs(cron: string): CronJob[] {

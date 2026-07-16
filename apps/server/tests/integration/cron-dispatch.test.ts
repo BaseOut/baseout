@@ -22,8 +22,11 @@ describe("resolveCronJobs", () => {
     ]);
   });
 
-  it("maps the daily keep-alive cron to the oauth-keepalive job", () => {
-    expect(resolveCronJobs(KEEPALIVE_CRON)).toEqual(["oauth-keepalive"]);
+  it("maps the daily keep-alive cron to the keep-alive + auto-invalidate jobs", () => {
+    expect(resolveCronJobs(KEEPALIVE_CRON)).toEqual([
+      "oauth-keepalive",
+      "connection-auto-invalidate",
+    ]);
   });
 
   it("the two crons are distinct strings (no accidental collision)", () => {
