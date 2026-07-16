@@ -88,6 +88,22 @@ describe("refreshAirtableAccessToken", () => {
     }
   });
 
+  it("maps 409 (recently refreshed) to transient, not invalid", async () => {
+    // Airtable returns 409 when a refresh token was just rotated by a
+    // concurrent refresher ("recently refreshing a token"). It is benign —
+    // the connection is healthy — so it must NOT be classified as invalid
+    // (which fails the refresh) but as transient (retry on the next tick).
+    const fetchImpl = makeFetchMock(
+      new Response(
+        JSON.stringify({ error: "conflict", error_description: "recently refreshed" }),
+        { status: 409 },
+      ),
+    );
+
+    const result = await refreshAirtableAccessToken(defaultInput({ fetchImpl }));
+    expect(result.kind).toBe("transient");
+  });
+
   it("maps 429 and 5xx to transient", async () => {
     const rateLimited = await refreshAirtableAccessToken(
       defaultInput({

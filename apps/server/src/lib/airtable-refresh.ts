@@ -80,7 +80,12 @@ export async function refreshAirtableAccessToken(
     };
   }
 
-  if (res.status === 429 || res.status >= 500) {
+  // 409 = Airtable rejects a refresh because the token was "recently
+  // refreshed" — a concurrent refresher already rotated it. Benign (the
+  // connection is healthy); treat as transient so the next tick succeeds
+  // rather than failing the refresh. See Airtable OAuth reference (409 on
+  // recent refresh) and the double-refresh race the DO serialization guards.
+  if (res.status === 429 || res.status === 409 || res.status >= 500) {
     return {
       kind: "transient",
       reason: `http_${res.status}`,

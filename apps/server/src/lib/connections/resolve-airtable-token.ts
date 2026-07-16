@@ -85,7 +85,13 @@ export interface ResolveAirtableTokenInput {
 // Exported so the cron sweep's SQL selection window matches this resolver's
 // shouldRefresh() exactly (server-oauth-refresh-cron-health design Decision 3).
 export const REFRESH_LOOKAHEAD_MS = 5 * 60_000;
-const CLAIM_STALE_MS = 2 * 60_000;
+// A claim is considered abandoned only after 5 min — comfortably longer than
+// any realistic Airtable refresh POST + persist. Combined with the DO-side
+// blockConcurrencyWhile serialization (ConnectionDO.getToken), this keeps a
+// concurrent refresher from stealing the claim mid-flight and replaying a
+// consumed refresh token (the cas_lost class). This is the cross-eviction
+// backstop for when the DO is evicted mid-refresh.
+const CLAIM_STALE_MS = 5 * 60_000;
 
 function shouldRefresh(
   tokenExpiresAt: Date | null,

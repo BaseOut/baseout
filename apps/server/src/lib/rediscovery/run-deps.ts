@@ -15,6 +15,7 @@
 
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { AppDb } from "../../db/worker";
+import type { Env } from "../../env";
 import {
   atBases,
   backupConfigurationBases,
@@ -24,7 +25,6 @@ import {
   spaceEvents,
   spaces,
 } from "../../db/schema";
-import { decryptToken } from "../crypto";
 import { resolveCapabilities } from "../capabilities/resolve";
 import {
   createAirtableClient,
@@ -43,7 +43,12 @@ export interface BuildRediscoveryDepsInput {
   db: AppDb;
   spaceId: string;
   triggeredBy: RediscoveryTrigger;
-  encryptionKey: string;
+  // The Airtable access token is obtained through this ConnectionDO namespace
+  // (the /token gate: single decrypt owner + refresh-if-needed), not by
+  // decrypting access_token_enc here — so an idle connection's expired access
+  // token is refreshed before rediscovery lists bases (Phase 2 of the on-demand
+  // keep-alive reshape).
+  connectionDO: Env["CONNECTION_DO"];
 }
 
 export interface RediscoveryContext {
@@ -67,7 +72,7 @@ export type BuildRediscoveryDepsResult =
 export async function buildRediscoveryDeps(
   input: BuildRediscoveryDepsInput,
 ): Promise<BuildRediscoveryDepsResult> {
-  const { db, spaceId, encryptionKey } = input;
+  const { db, spaceId, connectionDO } = input;
 
   const [space] = await db
     .select({ id: spaces.id, organizationId: spaces.organizationId })
@@ -103,10 +108,28 @@ export async function buildRediscoveryDeps(
     return { ok: false, error: "connection_not_found" };
   }
 
-  const accessToken = await decryptToken(
-    connectionRow.accessTokenEnc,
-    encryptionKey,
-  );
+  // Route through the ConnectionDO /token gate (refresh-if-needed) instead of
+  // decrypting the stored token directly. connectionId drives the on-demand
+  // refresh path; encryptedToken is the legacy decrypt-only fallback when
+  // on-demand refresh is disabled. A non-200 (reauth_required / transient)
+  // means the connection can't be used for this run — surface it as
+  // connection_not_found (the route maps that to 409); the connection-broken
+  // inbox item + refresh cron drive the reconnect, and rediscovery retries on
+  // the next trigger.
+  const stub = connectionDO.get(connectionDO.idFromName(connectionRow.id));
+  const tokenRes = await stub.fetch("http://do/token", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      connectionId: connectionRow.id,
+      encryptedToken: connectionRow.accessTokenEnc,
+    }),
+  });
+  if (tokenRes.status !== 200) {
+    await tokenRes.body?.cancel?.();
+    return { ok: false, error: "connection_not_found" };
+  }
+  const { accessToken } = (await tokenRes.json()) as { accessToken: string };
   const airtable = createAirtableClient({ accessToken });
 
   return {

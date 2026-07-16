@@ -9,12 +9,19 @@
 //   400 invalid_connection_id      — `:id` did not parse as a UUID
 //   401 unauthorized                — middleware rejected the request
 //   404 connection_not_found        — no row with that id
-//   409 connection_status           — row exists but status !== 'active'
+//   409 connection_status           — row exists but status !== 'active', OR the
+//                                      on-demand refresh returned reauth_required
 //   500 server_misconfigured        — BASEOUT_ENCRYPTION_KEY missing
-//   500 decrypt_failed              — ciphertext / key mismatch
+//   502 token_unavailable           — ConnectionDO /token gate returned non-200
+//                                      (transient refresh failure / decrypt error)
 //   502 airtable_token_rejected     — Airtable returned 401
 //   502 airtable_upstream           — Airtable returned 4xx/5xx other than 401
 //   200 success                     — `{ connectionId, airtable: { id, scopes, email? } }`
+//
+// The access token is obtained via the ConnectionDO /token gate (single decrypt
+// owner + refresh-if-needed), NOT by decrypting access_token_enc here — so an
+// idle connection's expired access token is refreshed before we call Airtable
+// (Phase 2 of the on-demand keep-alive reshape).
 //
 // Per CLAUDE.md §3.3: don't leak internal failure details (token bytes,
 // Airtable response bodies) to the caller. Status code + opaque code is
@@ -23,7 +30,6 @@
 import { eq } from "drizzle-orm";
 import type { AppLocals, Env } from "../../../../env";
 import { connections } from "../../../../db/schema";
-import { decryptToken } from "../../../../lib/crypto";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -75,15 +81,29 @@ export async function whoamiHandler(
     return json({ error: "connection_status", status: row.status }, 409);
   }
 
-  let accessToken: string;
-  try {
-    accessToken = await decryptToken(
-      row.accessTokenEnc,
-      env.BASEOUT_ENCRYPTION_KEY,
-    );
-  } catch {
-    return json({ error: "decrypt_failed" }, 500);
+  // Obtain the access token through the ConnectionDO /token gate rather than
+  // decrypting here — the DO is the single decrypt owner and refreshes a
+  // near/at-expiry token before returning it. Send both connectionId (the
+  // on-demand refresh path) and encryptedToken (the legacy decrypt-only path)
+  // so this works whether or not on-demand refresh is enabled.
+  const stub = env.CONNECTION_DO.get(env.CONNECTION_DO.idFromName(connectionId));
+  const tokenRes = await stub.fetch("http://do/token", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      connectionId,
+      encryptedToken: row.accessTokenEnc,
+    }),
+  });
+  if (tokenRes.status === 409) {
+    // reauth_required — the refresh token is dead; the connection needs reconnecting.
+    return json({ error: "connection_status", status: "pending_reauth" }, 409);
   }
+  if (tokenRes.status !== 200) {
+    await tokenRes.body?.cancel?.();
+    return json({ error: "token_unavailable" }, 502);
+  }
+  const { accessToken } = (await tokenRes.json()) as { accessToken: string };
 
   const upstream = await fetch(AIRTABLE_WHOAMI_URL, {
     headers: {

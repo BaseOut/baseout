@@ -57,6 +57,7 @@ function depsFor(
     deleteRun: vi.fn(async () => undefined),
     runStart: vi.fn(async () => ({ ok: true })),
     updateNextScheduled: vi.fn(async () => undefined),
+    recordSkippedFire: vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -263,6 +264,50 @@ describe("SpaceDO alarm() — error gates", () => {
 
     expect(deps.insertScheduledRun).not.toHaveBeenCalled();
     expect(deps.runStart).not.toHaveBeenCalled();
+    expect(deps.recordSkippedFire).toHaveBeenCalledWith({
+      spaceId,
+      organizationId: ORG_ID,
+      connectionId: null,
+      connectionStatus: null,
+      kinds: ["full"],
+    });
+    expect(deps.updateNextScheduled).toHaveBeenCalledWith(CONFIG_ID, {
+      dataNextFire: computeNextFire("daily", FIXED_NOW),
+      schemaNextFire: null,
+    });
+  });
+
+  it("records a skipped fire (and still advances) when the connection is pending_reauth", async () => {
+    const spaceId = `reauth-${crypto.randomUUID()}`;
+    const stub = getStub(spaceId);
+    const deps = depsFor(spaceId, {
+      fetchActiveAirtableConnection: vi.fn(async () => ({
+        id: CONN_ID,
+        status: "pending_reauth",
+      })),
+    });
+
+    await runInDurableObject(stub, async (inst, state) => {
+      inst.setSchedulerDepsForTests(deps);
+      await inst.alarm();
+      expect(await state.storage.getAlarm()).toBe(
+        computeNextFire("daily", FIXED_NOW),
+      );
+    });
+
+    // No doomed run enqueued...
+    expect(deps.insertScheduledRun).not.toHaveBeenCalled();
+    expect(deps.runStart).not.toHaveBeenCalled();
+    // ...but the skip is recorded (not silent)...
+    expect(deps.recordSkippedFire).toHaveBeenCalledOnce();
+    expect(deps.recordSkippedFire).toHaveBeenCalledWith({
+      spaceId,
+      organizationId: ORG_ID,
+      connectionId: CONN_ID,
+      connectionStatus: "pending_reauth",
+      kinds: ["full"],
+    });
+    // ...and the schedule still advances so it resumes on reconnect.
     expect(deps.updateNextScheduled).toHaveBeenCalledWith(CONFIG_ID, {
       dataNextFire: computeNextFire("daily", FIXED_NOW),
       schemaNextFire: null,

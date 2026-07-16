@@ -82,6 +82,39 @@ describe("ConnectionDO /token", () => {
     expect(decryptSpy).toHaveBeenNthCalledWith(2, "cipher-Y", expect.any(String));
   });
 
+  it("serializes concurrent on-demand refreshes for one connection (no interleave)", async () => {
+    // Two backup/keep-alive callers can hit the same Connection's /token at
+    // once (same DO via idFromName). The refresh MUST run one-at-a-time — an
+    // interleaved second refresh replays the not-yet-rotated refresh token,
+    // which Airtable rejects (invalid_grant/409), the cas_lost class. Assert
+    // the resolver never runs two refreshes concurrently.
+    const stub = getStub(`serialize-${crypto.randomUUID()}`);
+    let inFlight = 0;
+    let peak = 0;
+    const resolverSpy = vi.fn(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      inFlight -= 1;
+      return { ok: true as const, accessToken: "fresh", refreshed: true };
+    });
+
+    await runInDurableObject(stub, async (instance) => {
+      instance.setResolveAirtableTokenImplForTests(resolverSpy);
+      instance.setOnDemandRefreshEnabledForTests(true);
+    });
+
+    const body = JSON.stringify({ connectionId: "conn-race" });
+    const [r1, r2] = await Promise.all([
+      stub.fetch("http://do/token", { method: "POST", body }),
+      stub.fetch("http://do/token", { method: "POST", body }),
+    ]);
+
+    expect(r1.status).toBe(200);
+    expect(r2.status).toBe(200);
+    expect(peak).toBe(1);
+  });
+
   it("returns 400 when encryptedToken is missing or empty", async () => {
     const stub = getStub(`bad-${crypto.randomUUID()}`);
 

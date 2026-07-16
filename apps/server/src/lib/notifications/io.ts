@@ -28,8 +28,18 @@ import {
 /** Feed window — the most recent 30 days (design.md §Alert kinds). */
 export const INBOX_WINDOW_DAYS = 30;
 
-/** Connection statuses derived as connection-broken (design.md kind table). */
-const BROKEN_CONNECTION_STATUSES = ["invalid", "expired", "revoked"];
+/**
+ * Connection statuses surfaced as `connection-broken` in the inbox. Must be a
+ * subset of the canonical `connections.status` enum
+ * (`active | invalid | refreshing | pending_reauth`, see
+ * apps/server/src/db/schema/connections.ts). `pending_reauth` is the state a
+ * failed refresh lands in (ConnectionDO.markPendingReauth) — the common
+ * dead-connection failure mode a scheduled backup hits — so it MUST be here or
+ * the user gets no "reconnect" alert. Exported so the set is regression-tested
+ * (a prior value listed non-enum `expired`/`revoked` and omitted
+ * `pending_reauth`, silently suppressing the alert).
+ */
+export const BROKEN_CONNECTION_STATUSES = ["pending_reauth", "invalid"];
 
 // ───────────────────────── feed orchestration ─────────────────────────
 

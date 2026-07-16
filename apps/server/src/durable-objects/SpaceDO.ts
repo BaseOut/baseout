@@ -81,6 +81,21 @@ export interface SpaceDOAlarmDeps {
   deleteRun: (runId: string) => Promise<void>;
   runStart: (runId: string) => Promise<{ ok: boolean; code?: string }>;
   updateNextScheduled: (configId: string, fires: ScheduleFires) => Promise<void>;
+  /**
+   * Record that a due scheduled fire was skipped because the Space's Airtable
+   * Connection isn't active (missing / pending_reauth / invalid / refreshing).
+   * The schedule still advances afterwards, so without this signal the pause is
+   * invisible (next_scheduled_at keeps ticking as if healthy). The user-facing
+   * "reconnect" prompt is the notifications-inbox connection-broken item; this
+   * is operator/audit observability of the skipped tick.
+   */
+  recordSkippedFire: (input: {
+    spaceId: string;
+    organizationId: string;
+    connectionId: string | null;
+    connectionStatus: string | null;
+    kinds: RunKind[];
+  }) => Promise<void>;
 }
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -175,6 +190,19 @@ export class SpaceDO {
               await deps.deleteRun(runId);
             }
           }
+        } else {
+          // Connection missing or not active (pending_reauth / invalid /
+          // refreshing): skip the fire, but record it so the paused schedule
+          // isn't invisible. The schedule still advances + re-arms below, so it
+          // resumes once the user reconnects; the notifications-inbox
+          // connection-broken item is the user-facing reconnect prompt.
+          await deps.recordSkippedFire({
+            spaceId,
+            organizationId: space.organizationId,
+            connectionId: connection?.id ?? null,
+            connectionStatus: connection?.status ?? null,
+            kinds,
+          });
         }
       }
     }
@@ -254,6 +282,25 @@ export class SpaceDO {
 function productionDeps(env: Env): SpaceDOAlarmDeps {
   return {
     now: () => new Date(),
+    recordSkippedFire: async ({
+      spaceId,
+      organizationId,
+      connectionId,
+      connectionStatus,
+      kinds,
+    }) => {
+      // eslint-disable-next-line no-console -- background scheduler observability; a silently-paused schedule (next_scheduled_at advancing while backups don't run) is the failure mode this surfaces. Structured, matches the cron sweep's log contract.
+      console.log(
+        JSON.stringify({
+          event: "scheduled_fire_skipped",
+          spaceId,
+          organizationId,
+          connectionId,
+          connectionStatus,
+          kinds,
+        }),
+      );
+    },
     fetchConfig: async (spaceId) => {
       const { db, sql } = createMasterDb(env);
       try {

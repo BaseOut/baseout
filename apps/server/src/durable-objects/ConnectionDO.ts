@@ -300,16 +300,25 @@ export class ConnectionDO {
           headers: { "content-type": "application/json" },
         });
       }
-      const result = await resolver({ connectionId });
-      if (result.ok) {
-        return new Response(JSON.stringify({ accessToken: result.accessToken }), {
-          status: 200,
+      // Serialize the refresh per Connection. Every /token call for a
+      // Connection routes to one DO instance (idFromName), so
+      // blockConcurrencyWhile defers a concurrent caller until the in-flight
+      // refresh completes — the second caller then reads the freshly-rotated
+      // token instead of replaying the not-yet-persisted refresh token and
+      // tripping Airtable's invalid_grant/409 (the cas_lost class). The DB
+      // claim in resolveAirtableToken remains the cross-eviction backstop.
+      return this.state.blockConcurrencyWhile(async () => {
+        const result = await resolver({ connectionId });
+        if (result.ok) {
+          return new Response(
+            JSON.stringify({ accessToken: result.accessToken }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+        return new Response(JSON.stringify({ error: result.error }), {
+          status: result.error === "reauth_required" ? 409 : 503,
           headers: { "content-type": "application/json" },
         });
-      }
-      return new Response(JSON.stringify({ error: result.error }), {
-        status: result.error === "reauth_required" ? 409 : 503,
-        headers: { "content-type": "application/json" },
       });
     }
 

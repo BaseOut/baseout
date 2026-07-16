@@ -113,7 +113,7 @@ describe("resolveAirtableToken", () => {
     expect(deps.claimRefresh).toHaveBeenCalledWith({
       connectionId: CONNECTION_ID,
       claimId: CLAIM_ID,
-      staleBefore: new Date(NOW.getTime() - 2 * 60_000),
+      staleBefore: new Date(NOW.getTime() - 5 * 60_000),
     });
     expect(deps.refresh).toHaveBeenCalledWith({ refreshToken: "plain:refresh-old-enc" });
     expect(deps.persistRefreshSuccess).toHaveBeenCalledWith({

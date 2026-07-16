@@ -52,7 +52,7 @@ export async function spacesRescanBasesHandler(
     db,
     spaceId,
     triggeredBy: "manual",
-    encryptionKey: env.BASEOUT_ENCRYPTION_KEY,
+    connectionDO: env.CONNECTION_DO,
   });
 
   if (!deps.ok) {

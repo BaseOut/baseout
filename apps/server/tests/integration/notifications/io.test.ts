@@ -10,12 +10,22 @@ import {
   triagePatch,
   InvalidTriageError,
   StateBackedDoneError,
+  BROKEN_CONNECTION_STATUSES,
   type InboxFeedSourcesMaster,
   type InboxFeedSourcesSpace,
 } from "../../../src/lib/notifications/io";
 
 const NOW = new Date("2026-07-10T12:00:00.000Z");
 const DAY = 24 * 60 * 60 * 1000;
+
+// Canonical connections.status enum — apps/server/src/db/schema/connections.ts:27
+// (mirror of apps/web core.ts). The inbox "broken" set must be a subset.
+const CANONICAL_CONNECTION_STATUSES = [
+  "active",
+  "invalid",
+  "refreshing",
+  "pending_reauth",
+];
 
 const masterSources = (over?: Partial<InboxFeedSourcesMaster>): InboxFeedSourcesMaster => ({
   runs: [
@@ -61,7 +71,49 @@ const spaceSources = (over?: Partial<InboxFeedSourcesSpace>): InboxFeedSourcesSp
   ...over,
 });
 
+describe("BROKEN_CONNECTION_STATUSES", () => {
+  it("surfaces pending_reauth (the failed-refresh state) and invalid as broken", () => {
+    expect(BROKEN_CONNECTION_STATUSES).toContain("pending_reauth");
+    expect(BROKEN_CONNECTION_STATUSES).toContain("invalid");
+  });
+
+  it("does not surface healthy/transient statuses", () => {
+    expect(BROKEN_CONNECTION_STATUSES).not.toContain("active");
+    expect(BROKEN_CONNECTION_STATUSES).not.toContain("refreshing");
+  });
+
+  it("contains only real connection-status enum values (guards phantom statuses)", () => {
+    // A prior value listed "expired"/"revoked", which are not in the enum, so
+    // they matched nothing and the filter silently under-surfaced.
+    for (const status of BROKEN_CONNECTION_STATUSES) {
+      expect(CANONICAL_CONNECTION_STATUSES).toContain(status);
+    }
+  });
+});
+
 describe("loadInboxFeed", () => {
+  it("derives a connection-broken item for a pending_reauth connection", async () => {
+    const items = await loadInboxFeed({
+      now: NOW,
+      loadMasterSources: async () =>
+        masterSources({
+          runs: [],
+          connections: [
+            {
+              connectionId: "c-reauth",
+              displayName: "Main",
+              status: "pending_reauth",
+              at: "2026-07-07T10:00:00.000Z",
+            },
+          ],
+        }),
+      loadSpaceSources: async () => spaceSources({ schemaUpdates: [] }),
+    });
+    expect(items.find((i) => i.id === "conn:c-reauth")?.kind).toBe(
+      "connection-broken",
+    );
+  });
+
   it("loads both source halves with the 30-day window and derives the merged feed", async () => {
     const sinces: Date[] = [];
     const items = await loadInboxFeed({
