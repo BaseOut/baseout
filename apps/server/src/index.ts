@@ -61,7 +61,10 @@ import {
 } from "./pages/api/internal/attachments/lookup";
 import { connectionsTokenHealthHandler } from "./pages/api/internal/connections/token-health";
 import { resolveCronJobs } from "./lib/cron/dispatch";
-import { runScheduledOauthRefresh } from "./lib/cron/oauth-refresh-deps";
+import {
+  runScheduledOauthRefresh,
+  runScheduledKeepalive,
+} from "./lib/cron/oauth-refresh-deps";
 import { runScheduledRunReconciliation } from "./lib/runs/reconcile-deps";
 
 const CONNECTIONS_WHOAMI_RE =
@@ -589,6 +592,8 @@ export default {
         await runScheduledOauthRefresh(env);
       } else if (job === "run-reconciliation") {
         await runScheduledRunReconciliation(env);
+      } else if (job === "oauth-keepalive") {
+        await runScheduledKeepalive(env);
       }
     }
   },

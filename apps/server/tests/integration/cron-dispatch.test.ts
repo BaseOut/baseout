@@ -4,7 +4,11 @@
 // server test runner picks it up.
 
 import { describe, expect, it, vi } from "vitest";
-import { OAUTH_REFRESH_CRON, resolveCronJobs } from "../../src/lib/cron/dispatch";
+import {
+  OAUTH_REFRESH_CRON,
+  KEEPALIVE_CRON,
+  resolveCronJobs,
+} from "../../src/lib/cron/dispatch";
 import {
   runOauthRefreshSweep,
   type OauthRefreshSweepDeps,
@@ -16,6 +20,14 @@ describe("resolveCronJobs", () => {
       "oauth-refresh-sweep",
       "run-reconciliation",
     ]);
+  });
+
+  it("maps the daily keep-alive cron to the oauth-keepalive job", () => {
+    expect(resolveCronJobs(KEEPALIVE_CRON)).toEqual(["oauth-keepalive"]);
+  });
+
+  it("the two crons are distinct strings (no accidental collision)", () => {
+    expect(KEEPALIVE_CRON).not.toBe(OAUTH_REFRESH_CRON);
   });
 
   it("unknown cron strings resolve to no jobs (logged no-op at the call site)", () => {

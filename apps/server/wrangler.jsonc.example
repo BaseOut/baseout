@@ -101,7 +101,8 @@
       // strings byte-identical to the dispatch map.
       "triggers": {
         "crons": [
-          "*/15 * * * *" // OAuth token refresh sweep
+          "*/15 * * * *", // OAuth token refresh sweep + run reconciliation
+          "0 13 * * *" // OAuth idle keep-alive (shared-oauth-refresh-keepalive)
         ]
       },
       "ai": { "binding": "AI" },

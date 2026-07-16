@@ -21,6 +21,21 @@ export interface Env {
    * off when unset so deployed behavior remains decrypt-only.
    */
   AIRTABLE_ON_DEMAND_REFRESH_ENABLED?: string;
+  /**
+   * Refresh model selector (shadow-first migration to idle keep-alive):
+   *   'sweep'     (default/unset) — the 15-minute access-token sweep refreshes;
+   *                                 the daily keep-alive job no-ops.
+   *   'shadow'    — the sweep still refreshes; the daily keep-alive job runs its
+   *                 refresh-idle SELECTION and logs what it WOULD refresh (no
+   *                 writes) for comparison before cutover.
+   *   'keepalive' — the daily keep-alive job refreshes idle-expiring tokens; the
+   *                 15-minute sweep no-ops. On-demand at backup time is the
+   *                 primary liveness path. Flip only after the gauge is re-keyed
+   *                 to refresh-token staleness (else it false-alarms on idle
+   *                 tokens).
+   * Rollback is `sweep`. See resolveKeepaliveMode in lib/cron/keepalive-mode.ts.
+   */
+  AIRTABLE_KEEPALIVE_MODE?: string;
   /** Airtable OAuth app client_id (must match apps/web). Used only by on-demand refresh when enabled. */
   AIRTABLE_OAUTH_CLIENT_ID?: string;
   /** Airtable OAuth app client_secret (must match apps/web). Used only by on-demand refresh when enabled. */

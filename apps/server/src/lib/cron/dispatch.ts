@@ -7,11 +7,19 @@
 // — the call site logs the no-op so a config/env drift is visible.
 
 export const OAUTH_REFRESH_CRON = "*/15 * * * *";
+// Daily keep-alive (shared-oauth-refresh-keepalive): refreshes connections
+// approaching the 60-day refresh-token idle-expiry. Runs at a fixed off-peak
+// hour; per-connection cadence is ~monthly, so daily granularity is ample.
+export const KEEPALIVE_CRON = "0 13 * * *";
 
-export type CronJob = "oauth-refresh-sweep" | "run-reconciliation";
+export type CronJob =
+  | "oauth-refresh-sweep"
+  | "run-reconciliation"
+  | "oauth-keepalive";
 
 const CRON_JOBS: Record<string, CronJob[]> = {
   [OAUTH_REFRESH_CRON]: ["oauth-refresh-sweep", "run-reconciliation"],
+  [KEEPALIVE_CRON]: ["oauth-keepalive"],
 };
 
 export function resolveCronJobs(cron: string): CronJob[] {
