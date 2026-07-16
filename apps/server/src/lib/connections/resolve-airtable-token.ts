@@ -15,6 +15,7 @@ export type AirtableRefreshOutcome =
       accessToken: string;
       refreshToken: string;
       expiresAtMs: number;
+      refreshExpiresAtMs: number | null;
       scope: string | null;
     }
   | { kind: "pending_reauth"; reason: string }
@@ -40,6 +41,7 @@ export interface ResolveAirtableTokenDeps {
     accessTokenEnc: string;
     refreshTokenEnc: string;
     tokenExpiresAt: Date;
+    refreshTokenExpiresAt: Date | null;
     scopes: string | null;
   }) => Promise<boolean>;
   markPendingReauth: (input: {
@@ -187,6 +189,10 @@ export async function resolveAirtableToken(
     accessTokenEnc,
     refreshTokenEnc,
     tokenExpiresAt: new Date(outcome.expiresAtMs),
+    refreshTokenExpiresAt:
+      outcome.refreshExpiresAtMs != null
+        ? new Date(outcome.refreshExpiresAtMs)
+        : null,
     scopes: outcome.scope,
   });
 

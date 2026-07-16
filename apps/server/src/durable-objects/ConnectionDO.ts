@@ -153,6 +153,7 @@ export class ConnectionDO {
             accessTokenEnc,
             refreshTokenEnc,
             tokenExpiresAt,
+            refreshTokenExpiresAt,
             scopes,
           }) => {
             const rows = await master.db
@@ -161,6 +162,7 @@ export class ConnectionDO {
                 accessTokenEnc,
                 refreshTokenEnc,
                 tokenExpiresAt,
+                refreshTokenExpiresAt,
                 scopes,
                 oauthRefreshClaimId: null,
                 oauthRefreshClaimedAt: null,

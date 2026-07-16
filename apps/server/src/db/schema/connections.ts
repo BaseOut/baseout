@@ -41,6 +41,14 @@ export const connections = baseout.table("connections", {
     withTimezone: true,
   }),
   oauthRefreshLastError: text("oauth_refresh_last_error"),
+  // Engine-WRITTEN mirror columns (canonical migration: apps/web
+  // drizzle/0026_refresh_token_expiry.sql). refresh_token_expires_at is
+  // written on every refresh persist (idle-expiry clock for keep-alive);
+  // pending_reauth_at is stamped when the refresh fails to pending_reauth.
+  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
+    withTimezone: true,
+  }),
+  pendingReauthAt: timestamp("pending_reauth_at", { withTimezone: true }),
   modifiedAt: timestamp("modified_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   // read by the SpaceDO scheduler (Phase B of

@@ -60,6 +60,14 @@ export async function persistAirtableConnection(
       ? new Date(Date.now() + inputs.tokens.expiresIn * 1000)
       : null
 
+  // Airtable's refresh token expires ~60 days after last use; store the
+  // absolute expiry so the keep-alive clock is known from Connect (the server
+  // re-stamps it on every refresh).
+  const refreshTokenExpiresAt =
+    typeof inputs.tokens.refreshExpiresIn === 'number'
+      ? new Date(Date.now() + inputs.tokens.refreshExpiresIn * 1000)
+      : null
+
   const platformConfig = {
     at_user_id: inputs.whoami.id,
     is_enterprise_scope: (inputs.whoami.scopes ?? []).some((s) =>
@@ -92,6 +100,7 @@ export async function persistAirtableConnection(
         accessTokenEnc,
         refreshTokenEnc,
         tokenExpiresAt,
+        refreshTokenExpiresAt,
         scopes: inputs.tokens.scope,
         platformConfig,
         status: 'active',
@@ -126,6 +135,7 @@ export async function persistAirtableConnection(
         accessTokenEnc,
         refreshTokenEnc,
         tokenExpiresAt,
+        refreshTokenExpiresAt,
         scopes: inputs.tokens.scope,
         platformConfig,
         status: 'active',

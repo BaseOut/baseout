@@ -20,13 +20,14 @@ function defaultInput(
 }
 
 describe("refreshAirtableAccessToken", () => {
-  it("maps 200 with rotated refresh_token to success", async () => {
+  it("maps 200 with rotated refresh_token to success (incl. refresh_expires_in)", async () => {
     const fetchImpl = makeFetchMock(
       new Response(
         JSON.stringify({
           access_token: "access-new",
           refresh_token: "refresh-new",
           expires_in: 3600,
+          refresh_expires_in: 5_184_000, // 60 days
           scope: "data.records:read",
         }),
         { status: 200 },
@@ -40,11 +41,12 @@ describe("refreshAirtableAccessToken", () => {
       accessToken: "access-new",
       refreshToken: "refresh-new",
       expiresAtMs: NOW + 3600 * 1000,
+      refreshExpiresAtMs: NOW + 5_184_000 * 1000,
       scope: "data.records:read",
     });
   });
 
-  it("maps 200 without refresh_token to success preserving submitted grant", async () => {
+  it("maps 200 without refresh_token/refresh_expires_in to success (grant preserved, null expiry)", async () => {
     const fetchImpl = makeFetchMock(
       new Response(
         JSON.stringify({
@@ -62,6 +64,7 @@ describe("refreshAirtableAccessToken", () => {
       accessToken: "access-new",
       refreshToken: "refresh-old",
       expiresAtMs: NOW + 3600 * 1000,
+      refreshExpiresAtMs: null,
       scope: null,
     });
   });

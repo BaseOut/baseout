@@ -183,6 +183,13 @@
       "when": 1784125890694,
       "tag": "0025_admin_audit_log",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1784167294191,
+      "tag": "0026_refresh_token_expiry",
+      "breakpoints": true
     }
   ]
 }

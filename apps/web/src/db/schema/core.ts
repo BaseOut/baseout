@@ -235,6 +235,14 @@ export const connections = baseout.table('connections', {
   oauthRefreshClaimId: text('oauth_refresh_claim_id'),
   oauthRefreshClaimedAt: timestamp('oauth_refresh_claimed_at', { withTimezone: true }),
   oauthRefreshLastError: text('oauth_refresh_last_error'),
+  // Airtable's refresh token expires after 60 days idle (`refresh_expires_in`),
+  // then the authorization is revoked. Captured at Connect + on every refresh so
+  // the idle-expiry clock is predictable (drives the keep-alive selection +
+  // gauge) instead of discovered reactively via invalid_grant.
+  refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+  // Stamped when status flips to 'pending_reauth' — the start of the
+  // dead-connection grace window (auto-invalidation + future reconnect cadence).
+  pendingReauthAt: timestamp('pending_reauth_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

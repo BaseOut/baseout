@@ -100,6 +100,7 @@ describe('exchangeCodeForTokens', () => {
           access_token: 'at_abc',
           refresh_token: 'rt_abc',
           expires_in: 3600,
+          refresh_expires_in: 5_184_000,
           token_type: 'Bearer',
           scope: 'data.records:read schema.bases:read',
         }),
@@ -119,6 +120,7 @@ describe('exchangeCodeForTokens', () => {
       accessToken: 'at_abc',
       refreshToken: 'rt_abc',
       expiresIn: 3600,
+      refreshExpiresIn: 5_184_000,
       scope: 'data.records:read schema.bases:read',
     })
 

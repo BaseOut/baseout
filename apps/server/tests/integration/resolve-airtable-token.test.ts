@@ -45,6 +45,7 @@ function makeDeps(
       accessToken: "access-new",
       refreshToken: "refresh-new",
       expiresAtMs: NOW.getTime() + 60 * 60_000,
+      refreshExpiresAtMs: NOW.getTime() + 60 * 24 * 60 * 60_000, // 60 days
       scope: "data.records:read",
     })),
     log: vi.fn(),
@@ -122,6 +123,7 @@ describe("resolveAirtableToken", () => {
       accessTokenEnc: "enc:access-new",
       refreshTokenEnc: "enc:refresh-new",
       tokenExpiresAt: new Date(NOW.getTime() + 60 * 60_000),
+      refreshTokenExpiresAt: new Date(NOW.getTime() + 60 * 24 * 60 * 60_000),
       scopes: "data.records:read",
     });
   });

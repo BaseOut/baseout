@@ -15,6 +15,10 @@ export type RefreshOutcome =
       accessToken: string;
       refreshToken: string;
       expiresAtMs: number;
+      // Absolute ms when the (rotated) refresh token expires if unused —
+      // derived from Airtable's `refresh_expires_in` (~60 days). null when the
+      // response omits it (older responses / defensive), meaning "unknown".
+      refreshExpiresAtMs: number | null;
       scope: string | null;
     }
   | { kind: "pending_reauth"; reason: string }
@@ -25,6 +29,7 @@ interface RawTokenResponse {
   access_token?: string;
   refresh_token?: string | null;
   expires_in?: number;
+  refresh_expires_in?: number;
   scope?: string;
   error?: string;
   error_description?: string;
@@ -109,12 +114,19 @@ export async function refreshAirtableAccessToken(
       typeof json.expires_in === "number" && Number.isFinite(json.expires_in)
         ? json.expires_in
         : 0;
+    const refreshExpiresIn =
+      typeof json.refresh_expires_in === "number" &&
+      Number.isFinite(json.refresh_expires_in)
+        ? json.refresh_expires_in
+        : null;
 
     return {
       kind: "success",
       accessToken: json.access_token,
       refreshToken,
       expiresAtMs: nowMs() + expiresIn * 1000,
+      refreshExpiresAtMs:
+        refreshExpiresIn != null ? nowMs() + refreshExpiresIn * 1000 : null,
       scope: json.scope ?? null,
     };
   }
