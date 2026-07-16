@@ -3,15 +3,22 @@
 // migration source (apps/web owns master-DB schema + the drizzle/ directory).
 // Keep this in sync; admin owns no migrations.
 //
-// This is a partial mirror: only the columns the read-only staff surfaces
-// read. Foreign-key `.references()` are intentionally omitted — they aren't
-// needed for read-only SELECTs and would force importing the referenced
-// tables. snake_case column names match the live DB exactly.
+// This is a partial mirror: only the columns the staff surfaces touch.
+// Foreign-key `.references()` are intentionally omitted — they aren't
+// needed and would force importing the referenced tables. snake_case
+// column names match the live DB exactly.
+//
+// WRITE SCOPE (shared-admin-actions): this mirror is no longer read-only.
+// Admin may INSERT `admin_audit_log` + `backup_runs`, DELETE the
+// `backup_runs` row it just inserted (engine-4xx orphan cleanup), and
+// UPDATE `connections.status/invalidated_at/modified_at` +
+// `organizations.has_migrated` — nothing else. `admin_audit_log` is
+// append-only: no UPDATE/DELETE call site may exist (guard-tested).
 //
 // NEVER mirror `*_enc` columns (encrypted OAuth tokens, BYODB DSNs) — leaving
 // them out of the mirror guarantees no admin query can ever select them.
 // ─────────────────────────────────────────────────────────────────────────
-import { pgSchema, text, boolean, timestamp, integer } from 'drizzle-orm/pg-core'
+import { pgSchema, text, boolean, timestamp, integer, jsonb } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 
 export const baseout = pgSchema('baseout')
@@ -84,6 +91,7 @@ export const connections = baseout.table('connections', {
   oauthRefreshClaimedAt: timestamp('oauth_refresh_claimed_at', { withTimezone: true }),
   oauthRefreshLastError: text('oauth_refresh_last_error'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 export const connectionSessions = baseout.table('connection_sessions', {
@@ -110,6 +118,33 @@ export const backupRuns = baseout.table('backup_runs', {
   completedAt: timestamp('completed_at', { withTimezone: true }),
   errorMessage: text('error_message'),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const backupConfigurationBases = baseout.table('backup_configuration_bases', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  backupConfigurationId: text('backup_configuration_id').notNull(),
+  atBaseId: text('at_base_id').notNull(),
+  isIncluded: boolean('is_included').notNull().default(true),
+})
+
+// Append-only staff-action audit trail (canonical: apps/web core.ts +
+// drizzle/0025_admin_audit_log.sql). Admin INSERTs intent/result rows via
+// src/lib/audit.ts — never UPDATE or DELETE.
+export const adminAuditLog = baseout.table('admin_audit_log', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  phase: text('phase').notNull().default('intent'),
+  // 'intent' | 'result'
+  intentId: text('intent_id'),
+  actorUserId: text('actor_user_id').notNull(),
+  actorEmail: text('actor_email').notNull(),
+  action: text('action').notNull(),
+  // 'force_backup' | 'invalidate_connection' | 'force_migration'
+  targetType: text('target_type').notNull(),
+  // 'space' | 'connection' | 'organization'
+  targetId: text('target_id').notNull(),
+  organizationId: text('organization_id'),
+  params: jsonb('params'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 

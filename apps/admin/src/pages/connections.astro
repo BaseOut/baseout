@@ -1,10 +1,12 @@
 ---
-// Connection health (PRD §16.1 — "OAuth connections dashboard"). Read-only;
-// gated to role='super' by src/middleware.ts. Webhook renewal state is not
-// instrumented yet (no table, renewal cron unbuilt) — noted below rather than
-// faked.
+// Connection health (PRD §16.1 — "OAuth connections dashboard"). Gated to
+// role='super' by src/middleware.ts. Staff action: "Invalidate" per non-invalid
+// row (POST /api/actions/invalidate-connection, audit-logged, cancels in-flight
+// runs). Webhook renewal state is not instrumented yet (no table, renewal cron
+// unbuilt) — noted below rather than faked.
 import { eq, lt, sql } from 'drizzle-orm';
 import Layout from '../layouts/Layout.astro';
+import ActionConfirm from '../components/ActionConfirm.astro';
 import {
   connections,
   connectionSessions,
@@ -119,6 +121,7 @@ const broken = summary.total - summary.byHealth.healthy;
               <th>Token expires</th>
               <th>Last used</th>
               <th>Last refresh error</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -136,6 +139,16 @@ const broken = summary.total - summary.byHealth.healthy;
                 <td class="font-mono text-xs whitespace-nowrap">{fmt(c.lastUsedAt)}</td>
                 <td class="max-w-xs truncate text-error text-xs" title={c.oauthRefreshLastError ?? ''}>
                   {c.oauthRefreshLastError ?? ''}
+                </td>
+                <td class="text-right">
+                  {c.status !== 'invalid' && (
+                    <button
+                      class="btn btn-outline btn-error btn-xs"
+                      data-action-path="/api/actions/invalidate-connection"
+                      data-action-payload={JSON.stringify({ connectionId: c.id })}
+                      data-action-label={`Invalidate the ${c.platformName ?? ''} connection "${c.displayName ?? c.id}" for ${c.orgName ?? 'unknown org'}. In-flight backup runs are cancelled, new backups are refused, and the customer sees a reconnect banner until they re-authorize.`}
+                    >Invalidate</button>
+                  )}
                 </td>
               </tr>
             ))}
@@ -184,4 +197,6 @@ const broken = summary.total - summary.byHealth.healthy;
       )}
     </div>
   </div>
+
+  <ActionConfirm title="Invalidate connection" />
 </Layout>

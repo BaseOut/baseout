@@ -298,6 +298,43 @@ export const connectionStatusAudit = baseout.table('connection_status_audit', {
 ])
 
 // ———————————————————————————————————————————————————————————————————————————
+// ADMIN AUDIT LOG
+// Append-only trail for staff console actions (apps/admin). Two-row model:
+// an 'intent' row is INSERTed BEFORE the action executes, a 'result' row is
+// appended after (intent_id points back). No code path may UPDATE or DELETE
+// rows — outcome is a second row, never a mutation. Actor fields are
+// denormalized snapshots (no FK) so audit history survives user deletion.
+// params must never contain tokens, secrets, or *_enc values.
+// Owned by openspec/changes/shared-admin-actions; written by apps/admin.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const adminAuditLog = baseout.table('admin_audit_log', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  phase: text('phase').notNull().default('intent'),
+  // 'intent' | 'result'
+  intentId: text('intent_id'),
+  // result rows reference their intent row; no FK — append-only, no cascades
+  actorUserId: text('actor_user_id').notNull(),
+  actorEmail: text('actor_email').notNull(),
+  action: text('action').notNull(),
+  // 'force_backup' | 'invalidate_connection' | 'force_migration'
+  // (reserved: 'reset_trial' | 'adjust_plan' | 'grant_credits')
+  targetType: text('target_type').notNull(),
+  // 'space' | 'connection' | 'organization'
+  targetId: text('target_id').notNull(),
+  organizationId: text('organization_id'),
+  params: jsonb('params'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  dbUser: text('db_user').notNull().default(sql`current_user`),
+  applicationName: text('application_name').default(sql`current_setting('application_name', true)`),
+  txid: bigint('txid', { mode: 'number' }).notNull().default(sql`txid_current()`),
+}, (table) => [
+  index('admin_audit_log_created_idx').on(table.createdAt),
+  index('admin_audit_log_target_idx').on(table.targetType, table.targetId, table.createdAt),
+  index('admin_audit_log_actor_idx').on(table.actorUserId, table.createdAt),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
 // SUBSCRIPTIONS
 // One Stripe subscription per Organization.
 // Created at sign-up as a $0 trial — modified (never replaced) as tiers change.

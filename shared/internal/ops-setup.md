@@ -240,6 +240,19 @@ curl -sI https://baseout-admin-dev.openside.workers.dev | head -1   # → HTTP/2
 a sign-in loop on the deployed console; see `oauth-setup.md` §8). Both deploy
 scripts bulk-sync their app's `.dev.vars` — never `wrangler secret put` by hand.
 
+**Staff actions (shared-admin-actions):** admin also carries a `BACKUP_ENGINE`
+service binding to `baseout-server-dev` (declared in `wrangler.jsonc.example`,
+`remote: true` so local `astro dev` proxies to the deployed dev engine) plus a
+second secret in `apps/admin/.dev.vars`:
+`BACKUP_ENGINE_INTERNAL_TOKEN` — MUST equal apps/web's value (== the server's
+`INTERNAL_TOKEN`); copy it from `apps/web/.dev.vars`. Parity rule matches the
+handoff secret: bulk-synced on deploy, never `wrangler secret put`. Without
+binding+token the console still runs — force-backup returns 503
+`server_misconfigured` and invalidate-connection skips run cancels
+(`skipped_no_engine`). The `admin_audit_log` table these actions write is
+owned by web's migrations (`apps/web/drizzle/0025_admin_audit_log.sql`) — run
+`pnpm --filter @baseout/web db:migrate` before first use in a fresh env.
+
 **When to redeploy:** any `apps/admin` source change; plus redeploy **web**
 whenever `ADMIN_APP_URL` or the handoff secret changes.
 

@@ -2,10 +2,12 @@
 // Organizations → Spaces tracker (admin-foundation tracer surface).
 //
 // PRD §5.4 / §16.1: which provisioned databases (= Spaces in the V1 tier
-// model) belong to which Organizations. Read-only; gated to role='super' by
-// src/middleware.ts.
+// model) belong to which Organizations. Gated to role='super' by
+// src/middleware.ts. Staff action: "Force backup" per Space (POST
+// /api/actions/force-backup, audit-logged, run appears on /backups).
 import { eq } from 'drizzle-orm';
 import Layout from '../layouts/Layout.astro';
+import ActionConfirm from '../components/ActionConfirm.astro';
 import {
   organizations,
   spaces,
@@ -107,6 +109,7 @@ const statusColor: Record<string, string> = {
                         <th>Status</th>
                         <th>Platform</th>
                         <th>Space ID</th>
+                        <th></th>
                       </tr>
                     </thead>
                     <tbody>
@@ -120,6 +123,14 @@ const statusColor: Record<string, string> = {
                           </td>
                           <td>{s.platformName ?? '—'}</td>
                           <td class="font-mono text-xs">{s.id.slice(0, 8)}…</td>
+                          <td class="text-right">
+                            <button
+                              class="btn btn-outline btn-xs"
+                              data-action-path="/api/actions/force-backup"
+                              data-action-payload={JSON.stringify({ spaceId: s.id })}
+                              data-action-label={`Queue a backup run for "${s.name}" (${org.name}). Requires an active Airtable connection and at least one included base; the run appears on the Backups page as triggered-by admin.`}
+                            >Force backup</button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -132,4 +143,6 @@ const statusColor: Record<string, string> = {
       </div>
     )}
   </div>
+
+  <ActionConfirm title="Force backup" />
 </Layout>

@@ -1,8 +1,10 @@
 ---
 // On2Air migration status (PRD §16.1 — "completed vs pending user counts").
-// Read-only; gated to role='super' by src/middleware.ts.
+// Gated to role='super' by src/middleware.ts. Staff action: "Mark migrated"
+// per pending org (POST /api/actions/force-migration, audit-logged).
 import { eq } from 'drizzle-orm';
 import Layout from '../layouts/Layout.astro';
+import ActionConfirm from '../components/ActionConfirm.astro';
 import { organizations, subscriptions } from '../db/schema';
 import { buildMigrationView, type MigrationOrgRow } from '../lib/migration';
 
@@ -68,6 +70,7 @@ const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
               <th>Created</th>
               <th>Dynamic-locked</th>
               <th>Subscription</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -80,6 +83,14 @@ const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
                 <td class="font-mono text-xs">{fmtDate(o.createdAt)}</td>
                 <td>{o.dynamicLocked ? <span class="badge badge-sm badge-warning">locked</span> : '—'}</td>
                 <td>{o.subscriptionStatus ?? <span class="text-base-content/50">none</span>}</td>
+                <td class="text-right">
+                  <button
+                    class="btn btn-outline btn-xs"
+                    data-action-path="/api/actions/force-migration"
+                    data-action-payload={JSON.stringify({ organizationId: o.id })}
+                    data-action-label={`Mark "${o.name}" (${o.slug}) as migrated. The org leaves the pending list and its "Complete Your Migration" screen goes away. Dynamic-locked is not changed.`}
+                  >Mark migrated</button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -87,4 +98,6 @@ const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
       </div>
     )}
   </div>
+
+  <ActionConfirm title="Force migration completion" />
 </Layout>

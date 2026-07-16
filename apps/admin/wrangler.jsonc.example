@@ -62,6 +62,21 @@
     }
   ],
 
+  // Backup engine — staff actions (force backup, invalidate connection) call
+  // the server's INTERNAL_TOKEN-gated /api/internal/runs/:id/{start,cancel}.
+  // Mirrors apps/web's binding: `remote: true` makes local `astro dev` proxy
+  // to the deployed baseout-server-dev Worker (same account, resolves
+  // natively when deployed). Requires BACKUP_ENGINE_INTERNAL_TOKEN in
+  // .dev.vars (same value as web's — see .dev.vars.example). Without the
+  // binding/token, force-backup 503s and invalidate skips run cancels.
+  "services": [
+    {
+      "binding": "BACKUP_ENGINE",
+      "service": "baseout-server-dev",
+      "remote": true
+    }
+  ],
+
   // Routes — intentionally none. Dev serves on workers.dev; admin.baseout.com
   // is wired at production-deploy time in the `admin` umbrella change.
 

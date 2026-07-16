@@ -2,13 +2,16 @@
 
 // Minimal typing for the workerd virtual module. apps/web gets the full Env
 // from `wrangler types` (worker-configuration.d.ts); admin declares only what
-// it reads: the Hyperdrive binding, the WEB_APP_URL var, and the handoff
-// secret (deployed path only — see src/pages/auth/handoff.ts).
+// it reads: the Hyperdrive binding, the WEB_APP_URL var, the handoff secret
+// (deployed path only — see src/pages/auth/handoff.ts), and the backup-engine
+// service binding + token (staff actions — shared-admin-actions).
 declare module 'cloudflare:workers' {
   export const env: {
     HYPERDRIVE: { connectionString: string };
     WEB_APP_URL?: string;
     ADMIN_HANDOFF_SECRET?: string;
+    BACKUP_ENGINE?: { fetch: (input: string, init?: RequestInit) => Promise<Response> };
+    BACKUP_ENGINE_INTERNAL_TOKEN?: string;
   };
 }
 
