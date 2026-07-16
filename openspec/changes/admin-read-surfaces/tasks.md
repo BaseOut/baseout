@@ -15,4 +15,4 @@
 
 - [x] 3.1 `test:unit` + `typecheck` green; `astro build` succeeds.
 - [ ] 3.2 Human smoke: every page renders with real dev-DB rows; empty states clean.
-- [ ] 3.3 Follow-up flagged (not bundled): retire `apps/web/src/pages/ops/`.
+- [x] 3.3 Follow-up flagged (not bundled): retire `apps/web/src/pages/ops/`. Done 2026-07-15: page deleted (its `applyOpsGate` middleware gate had been removed, leaving cross-org backup runs visible to any signed-in customer); regression guard at `apps/web/src/pages/ops-retired.test.ts`; admin `/backups` is the replacement.
