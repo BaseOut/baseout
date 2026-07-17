@@ -5,6 +5,8 @@
 // table. Webhook renewal state is not instrumented yet (no table, renewal
 // cron unbuilt) — the page says so instead of pretending.
 
+import type { BadgeVariant } from './ui'
+
 export interface ConnectionRow {
   id: string
   orgName: string | null
@@ -85,13 +87,33 @@ export function summarizeHealth(
   return { classified, summary: { total: rows.length, byHealth } }
 }
 
-export const HEALTH_BADGE: Record<ConnectionHealth, string> = {
-  healthy: 'badge-success',
-  token_expired: 'badge-warning',
-  refresh_stuck: 'badge-error',
-  refresh_error: 'badge-error',
-  pending_reauth: 'badge-warning',
-  invalid: 'badge-error',
+// null/'' = no filter; otherwise keep rows whose derived health matches.
+// Filtering happens post-classification (health is derived, not a column).
+export function filterByHealth<T extends { health: ConnectionHealth }>(
+  classified: T[],
+  health: string | null,
+): T[] {
+  if (!health) return classified
+  return classified.filter((c) => c.health === health)
+}
+
+export const HEALTH_FILTERS: readonly ConnectionHealth[] = [
+  'invalid',
+  'pending_reauth',
+  'refresh_stuck',
+  'refresh_error',
+  'token_expired',
+  'healthy',
+]
+
+// Shared @web Badge variants (not raw daisyUI classes) — see BadgeVariant.
+export const HEALTH_BADGE: Record<ConnectionHealth, BadgeVariant> = {
+  healthy: 'success',
+  token_expired: 'warning',
+  refresh_stuck: 'error',
+  refresh_error: 'error',
+  pending_reauth: 'warning',
+  invalid: 'error',
 }
 
 // Storage destinations (BYOS OAuth) — a lighter classification: local_fs has

@@ -3,17 +3,20 @@
 // Organizations). Read-only; gated to role='super' by src/middleware.ts.
 // Absorbs the web /ops page, improved with org/space names.
 import { desc, eq } from 'drizzle-orm';
-import Layout from '../layouts/Layout.astro';
-import { backupRuns, spaces, organizations } from '../db/schema';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import { backupRuns, spaces, organizations } from '../../db/schema';
 import {
   summarizeRuns,
   filterByStatus,
   formatDuration,
   RUN_STATUS_BADGE,
   type RunRow,
-} from '../lib/backup-runs';
+} from '../../lib/backup-runs';
 
-const { db, user } = Astro.locals;
+const { db } = Astro.locals;
 
 const rows: RunRow[] = await db
   .select({
@@ -47,27 +50,27 @@ const FILTERS = ['failed', 'running', 'queued', 'succeeded'];
 const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 19) : '—');
 ---
 
-<Layout title="Admin — Backup Runs">
-  <span slot="user">{user?.email}</span>
-
-  <div class="space-y-6">
-    <div class="flex items-baseline justify-between flex-wrap gap-2">
-      <div>
-        <h1 class="text-2xl font-semibold">Backup runs</h1>
-        <p class="text-sm text-base-content/60 mt-1">
-          100 most-recent runs across all organizations (PRD §16.1).
-        </p>
-      </div>
-      <div class="join">
-        <a href="/backups" class={`btn btn-sm join-item ${!statusFilter ? 'btn-active' : ''}`}>all</a>
+<SidebarLayout title="Admin — Backup Runs">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader
+      title="Backup runs"
+      description="100 most-recent runs across all organizations (PRD §16.1)."
+    >
+      {/* Status filter — daisyUI segmented tabs. Kept as <a> links so the SSR
+          ?status filter drives the render (no primitive covers href-tabs; the
+          @web Tabs primitive is radio-based). */}
+      <div slot="actions" role="tablist" class="tabs tabs-box tabs-sm">
+        <a role="tab" href="/backups" aria-selected={!statusFilter} class={`tab ${!statusFilter ? 'tab-active' : ''}`}>all</a>
         {FILTERS.map((s) => (
           <a
+            role="tab"
             href={`/backups?status=${s}`}
-            class={`btn btn-sm join-item ${statusFilter === s ? 'btn-active' : ''}`}
+            aria-selected={statusFilter === s}
+            class={`tab ${statusFilter === s ? 'tab-active' : ''}`}
           >{s}</a>
         ))}
       </div>
-    </div>
+    </PageHeader>
 
     <div class="stats stats-horizontal bg-base-100 border border-base-300">
       {summaries.map((s) => (
@@ -86,11 +89,13 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
     </div>
 
     {visible.length === 0 ? (
-      <div class="alert alert-info">
-        <span>No backup runs{statusFilter ? ` with status “${statusFilter}”` : ''} yet.</span>
-      </div>
+      <EmptyState
+        icon="lucide--database-backup"
+        title="No backup runs"
+        description={`No backup runs${statusFilter ? ` with status “${statusFilter}”` : ''} yet.`}
+      />
     ) : (
-      <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
+      <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
         <table class="table table-zebra table-sm">
           <thead>
             <tr>
@@ -109,13 +114,17 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
           <tbody>
             {visible.map((r) => (
               <tr>
-                <td class="font-mono text-xs whitespace-nowrap">{fmt(r.createdAt)}</td>
+                <td class="font-mono text-xs whitespace-nowrap">
+                  <a href={`/backups/${r.id}`} class="link link-hover">{fmt(r.createdAt)}</a>
+                </td>
                 <td>{r.orgName ?? '—'}</td>
                 <td>{r.spaceName ?? '—'}</td>
                 <td>
-                  <span class={`badge badge-sm ${RUN_STATUS_BADGE[r.status] ?? 'badge-ghost'}`}>{r.status}</span>
-                  {r.isTrial && <span class="badge badge-sm badge-outline ml-1">trial</span>}
-                  {r.deletedAt && <span class="badge badge-sm badge-ghost ml-1">pruned</span>}
+                  <span class="flex items-center gap-1">
+                    <Badge variant={RUN_STATUS_BADGE[r.status] ?? 'default'} size="sm">{r.status}</Badge>
+                    {r.isTrial && <Badge variant="default" size="sm">trial</Badge>}
+                    {r.deletedAt && <Badge variant="default" size="sm">pruned</Badge>}
+                  </span>
                 </td>
                 <td>{r.kind}</td>
                 <td>{r.triggeredBy}</td>
@@ -132,4 +141,4 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
       </div>
     )}
   </div>
-</Layout>
+</SidebarLayout>

@@ -1,22 +1,35 @@
 ---
 // Subscriptions dashboard (PRD §16.1 — "Subscriptions view"). Read-only;
 // gated to role='super' by src/middleware.ts.
-import { eq } from 'drizzle-orm';
-import Layout from '../layouts/Layout.astro';
+import { desc, eq } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
 import {
   organizations,
+  overageRecords,
   subscriptions,
   subscriptionItems,
   platforms,
 } from '../db/schema';
 import {
   buildSubscriptionsView,
+  estimateMrr,
+  filterByStatus,
+  formatCents,
+  stripeCustomerUrl,
+  stripeSubscriptionUrl,
+  summarizeOverages,
   SUB_STATUS_BADGE,
   TRIAL_STATE_BADGE,
+  type OverageRow,
   type SubItemRow,
 } from '../lib/subscriptions';
+import { truncationNote } from '../lib/ui';
 
-const { db, user } = Astro.locals;
+const { db } = Astro.locals;
+const ORG_LIMIT = 200;
 
 const [orgRows, subRows, itemRows] = await Promise.all([
   db
@@ -26,7 +39,9 @@ const [orgRows, subRows, itemRows] = await Promise.all([
       slug: organizations.slug,
       stripeCustomerId: organizations.stripeCustomerId,
     })
-    .from(organizations),
+    .from(organizations)
+    .orderBy(desc(organizations.createdAt))
+    .limit(ORG_LIMIT),
   db
     .select({
       organizationId: subscriptions.organizationId,
@@ -51,20 +66,64 @@ const [orgRows, subRows, itemRows] = await Promise.all([
     .leftJoin(platforms, eq(platforms.id, subscriptionItems.platformId)) as Promise<SubItemRow[]>,
 ]);
 
+const overageRows: OverageRow[] = await db
+  .select({
+    orgName: organizations.name,
+    metric: overageRecords.metric,
+    periodStart: overageRecords.periodStart,
+    periodEnd: overageRecords.periodEnd,
+    includedQuota: overageRecords.includedQuota,
+    usageAmount: overageRecords.usageAmount,
+    overageAmount: overageRecords.overageAmount,
+    totalCostCents: overageRecords.totalCostCents,
+    stripeInvoiceItemId: overageRecords.stripeInvoiceItemId,
+  })
+  .from(overageRecords)
+  .leftJoin(organizations, eq(organizations.id, overageRecords.organizationId))
+  .orderBy(desc(overageRecords.periodStart))
+  .limit(200);
+
 const { rows, summary } = buildSubscriptionsView(orgRows, subRows, itemRows, new Date());
+
+// Estimated MRR over every fetched item (list prices — see TIER_MONTHLY_CENTS).
+const mrr = estimateMrr(
+  rows.flatMap((r) =>
+    r.items.map((i) => ({
+      tier: i.tier,
+      billingPeriod: i.billingPeriod,
+      subscriptionStatus: r.subscriptionStatus,
+      cancelledAt: i.cancelledAt,
+    })),
+  ),
+);
+const overages = summarizeOverages(overageRows);
+
+// ?status= slices the table; the summary stats stay whole-truth.
+const statusFilter = Astro.url.searchParams.get('status');
+const visible = filterByStatus(rows, statusFilter);
+const STATUS_FILTERS = ['trialing', 'active', 'past_due', 'cancelled', 'none'];
+
 const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
 ---
 
-<Layout title="Admin — Subscriptions">
-  <span slot="user">{user?.email}</span>
-
-  <div class="space-y-6">
-    <div>
-      <h1 class="text-2xl font-semibold">Subscriptions</h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        Stripe subscription + trial state per Organization (PRD §16.1).
-      </p>
-    </div>
+<SidebarLayout title="Admin — Subscriptions">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader
+      title="Subscriptions"
+      description={`Stripe subscription + trial state per Organization (PRD §16.1).${truncationNote(orgRows.length, ORG_LIMIT)}`}
+    >
+      <div slot="actions" role="tablist" class="tabs tabs-box tabs-sm">
+        <a role="tab" href="/subscriptions" aria-selected={!statusFilter} class={`tab ${!statusFilter ? 'tab-active' : ''}`}>all</a>
+        {STATUS_FILTERS.map((s) => (
+          <a
+            role="tab"
+            href={`/subscriptions?status=${s}`}
+            aria-selected={statusFilter === s}
+            class={`tab ${statusFilter === s ? 'tab-active' : ''}`}
+          >{s.replace('_', ' ')}</a>
+        ))}
+      </div>
+    </PageHeader>
 
     <div class="stats stats-horizontal bg-base-100 border border-base-300">
       <div class="stat py-3">
@@ -80,6 +139,14 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
         <div class={`stat-value text-2xl ${summary.pastDue > 0 ? 'text-error' : ''}`}>{summary.pastDue}</div>
       </div>
       <div class="stat py-3">
+        <div class="stat-title">Estimated MRR</div>
+        <div class="stat-value text-2xl">{formatCents(mrr.totalCents)}</div>
+        <div class="stat-desc">
+          list prices (Features §3) · {mrr.priced} active item{mrr.priced === 1 ? '' : 's'}
+          {mrr.unpriceable > 0 && ` · excludes ${mrr.unpriceable} enterprise/custom`}
+        </div>
+      </div>
+      <div class="stat py-3">
         <div class="stat-title">By status</div>
         <div class="stat-desc text-sm mt-1">
           {Object.entries(summary.byStatus).map(([status, count]) => (
@@ -89,10 +156,16 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
       </div>
     </div>
 
-    {rows.length === 0 ? (
-      <div class="alert alert-info"><span>No organizations in the master DB yet.</span></div>
+    {visible.length === 0 ? (
+      <EmptyState
+        icon="lucide--credit-card"
+        title={statusFilter ? 'No matches' : 'No subscriptions yet'}
+        description={statusFilter
+          ? `No organizations with subscription status “${statusFilter}”.`
+          : 'No organizations in the master DB yet.'}
+      />
     ) : (
-      <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
+      <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
         <table class="table table-zebra table-sm">
           <thead>
             <tr>
@@ -106,7 +179,7 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
             </tr>
           </thead>
           <tbody>
-            {rows.map((org) => (
+            {visible.map((org) => (
               <tr>
                 <td>
                   <div class="font-medium">{org.name}</div>
@@ -114,32 +187,33 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
                 </td>
                 <td>
                   {org.subscriptionStatus ? (
-                    <span class={`badge badge-sm ${SUB_STATUS_BADGE[org.subscriptionStatus] ?? 'badge-ghost'}`}>
+                    <Badge variant={SUB_STATUS_BADGE[org.subscriptionStatus] ?? 'default'} size="sm">
                       {org.subscriptionStatus}
-                    </span>
+                    </Badge>
                   ) : (
-                    <span class="badge badge-sm badge-ghost">no subscription</span>
+                    <Badge variant="default" size="sm">no subscription</Badge>
                   )}
                 </td>
                 <td>
                   {org.items.length === 0 ? '—' : org.items.map((i) => (
-                    <div class="whitespace-nowrap">
-                      {i.platformName ?? '?'} · <span class="badge badge-primary badge-sm">{i.tier}</span>
-                      <span class="text-xs text-base-content/50 ml-1">{i.billingPeriod}</span>
+                    <div class="whitespace-nowrap flex items-center gap-1">
+                      <span>{i.platformName ?? '?'} ·</span>
+                      <Badge variant="primary" size="sm">{i.tier}</Badge>
+                      <span class="text-xs text-base-content/50">{i.billingPeriod}</span>
                     </div>
                   ))}
                 </td>
                 <td>
                   {org.items.map((i) => (
-                    <div class="whitespace-nowrap">
-                      <span class={`badge badge-sm ${TRIAL_STATE_BADGE[i.trialState]}`}>
+                    <div class="whitespace-nowrap flex items-center gap-1">
+                      <Badge variant={TRIAL_STATE_BADGE[i.trialState]} size="sm">
                         {i.trialState.replace('_', ' ')}
-                      </span>
+                      </Badge>
                       {i.trialDaysLeft !== null && (
-                        <span class="text-xs text-base-content/60 ml-1">{i.trialDaysLeft}d left</span>
+                        <span class="text-xs text-base-content/60">{i.trialDaysLeft}d left</span>
                       )}
                       {i.trialBackupRunUsed && (
-                        <span class="badge badge-sm badge-outline ml-1" title="Trial backup run consumed">run used</span>
+                        <Badge variant="default" size="sm" class="ml-1">run used</Badge>
                       )}
                     </div>
                   ))}
@@ -147,8 +221,28 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
                 <td>{org.items.map((i) => <div>{fmtDate(i.currentPeriodEnd)}</div>)}</td>
                 <td>{org.items.map((i) => <div>{fmtDate(i.cancelledAt)}</div>)}</td>
                 <td class="font-mono text-xs">
-                  <div title={org.stripeCustomerId ?? ''}>{org.stripeCustomerId ? `${org.stripeCustomerId.slice(0, 14)}…` : '—'}</div>
-                  <div title={org.stripeSubscriptionId ?? ''}>{org.stripeSubscriptionId ? `${org.stripeSubscriptionId.slice(0, 14)}…` : ''}</div>
+                  <div title={org.stripeCustomerId ?? ''}>
+                    {org.stripeCustomerId ? (
+                      <a
+                        href={stripeCustomerUrl(org.stripeCustomerId)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="link link-hover"
+                      >{`${org.stripeCustomerId.slice(0, 14)}…`}</a>
+                    ) : (
+                      '—'
+                    )}
+                  </div>
+                  <div title={org.stripeSubscriptionId ?? ''}>
+                    {org.stripeSubscriptionId && (
+                      <a
+                        href={stripeSubscriptionUrl(org.stripeSubscriptionId)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="link link-hover"
+                      >{`${org.stripeSubscriptionId.slice(0, 14)}…`}</a>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -156,5 +250,55 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
         </table>
       </div>
     )}
+
+    <div>
+      <h2 class="text-lg font-semibold">Overage records</h2>
+      <p class="text-sm text-base-content/60 mt-1">
+        Per-metric usage over quota, per billing period. Written by the quota
+        monitor; “billed” once a Stripe invoice item exists.
+        {overages.rows.length > 0 &&
+          ` Total ${formatCents(overages.totalCents)} · unbilled ${formatCents(overages.unbilledCents)}.`}
+      </p>
+      {overages.rows.length === 0 ? (
+        <p class="text-sm text-base-content/50 mt-2">No overage records yet.</p>
+      ) : (
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100 mt-2">
+          <table class="table table-zebra table-sm">
+            <thead>
+              <tr>
+                <th>Organization</th>
+                <th>Metric</th>
+                <th>Period</th>
+                <th class="text-right">Included</th>
+                <th class="text-right">Usage</th>
+                <th class="text-right">Overage</th>
+                <th class="text-right">Cost</th>
+                <th>Billing</th>
+              </tr>
+            </thead>
+            <tbody>
+              {overages.rows.map((o) => (
+                <tr>
+                  <td>{o.orgName ?? '—'}</td>
+                  <td><Badge variant="default" size="sm">{o.metric.replace(/_/g, ' ')}</Badge></td>
+                  <td class="font-mono text-xs whitespace-nowrap">
+                    {fmtDate(o.periodStart)} → {fmtDate(o.periodEnd)}
+                  </td>
+                  <td class="text-right">{o.includedQuota}</td>
+                  <td class="text-right">{o.usageAmount}</td>
+                  <td class={`text-right ${o.overageAmount > 0 ? 'text-warning' : ''}`}>{o.overageAmount}</td>
+                  <td class="text-right font-mono text-xs">{formatCents(o.totalCostCents)}</td>
+                  <td>
+                    {o.stripeInvoiceItemId
+                      ? <Badge variant="success" size="sm">billed</Badge>
+                      : <Badge variant="warning" size="sm">unbilled</Badge>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   </div>
-</Layout>
+</SidebarLayout>

@@ -3,6 +3,8 @@
 // PRD §16.1: "Subscriptions view" — every Organization with its Stripe
 // subscription status, per-platform tier, billing period, and trial state.
 
+import type { BadgeVariant } from './ui'
+
 export interface SubOrgRow {
   id: string
   name: string
@@ -112,18 +114,121 @@ export function buildSubscriptionsView(
   }
 }
 
-export const SUB_STATUS_BADGE: Record<string, string> = {
-  active: 'badge-success',
-  trialing: 'badge-info',
-  past_due: 'badge-error',
-  cancelled: 'badge-neutral',
-  incomplete: 'badge-warning',
-  incomplete_expired: 'badge-warning',
+// ————————————————————————————————————————————————————————————————————————
+// Estimated MRR — Stripe price amounts are NOT synced to the DB (only tier +
+// billing period), so MRR can only be computed from the canonical LIST prices
+// in shared/Baseout_Features.md §3 "Pricing Tiers Overview". Cents per month;
+// `annual` is the annual-equivalent monthly rate. Enterprise is custom-priced
+// → null → counted as unpriceable. ALWAYS present this as "estimated".
+// ————————————————————————————————————————————————————————————————————————
+export const TIER_MONTHLY_CENTS: Record<string, { monthly: number; annual: number } | null> = {
+  starter: { monthly: 2900, annual: 2900 }, // non-public tier — no annual rate published
+  launch: { monthly: 4900, annual: 3900 },
+  growth: { monthly: 9900, annual: 7900 },
+  pro: { monthly: 19900, annual: 15900 },
+  business: { monthly: 39900, annual: 31900 },
+  enterprise: null, // custom — unpriceable
 }
 
-export const TRIAL_STATE_BADGE: Record<TrialState, string> = {
-  trialing: 'badge-info',
-  trial_expired: 'badge-warning',
-  converted: 'badge-success',
-  never_trialed: 'badge-ghost',
+export interface MrrItem {
+  tier: string
+  billingPeriod: string
+  subscriptionStatus: string | null
+  cancelledAt: Date | null
+}
+
+export interface MrrEstimate {
+  totalCents: number
+  priced: number
+  unpriceable: number // enterprise/unknown tiers on active subs
+}
+
+/**
+ * Conservative list-price MRR: counts only items whose parent subscription is
+ * 'active' (not trialing/past_due/cancelled) and that aren't item-cancelled.
+ */
+export function estimateMrr(items: MrrItem[]): MrrEstimate {
+  let totalCents = 0
+  let priced = 0
+  let unpriceable = 0
+  for (const item of items) {
+    if (item.subscriptionStatus !== 'active' || item.cancelledAt !== null) continue
+    const price = TIER_MONTHLY_CENTS[item.tier]
+    if (!price) {
+      unpriceable++
+      continue
+    }
+    totalCents += item.billingPeriod === 'annual' ? price.annual : price.monthly
+    priced++
+  }
+  return { totalCents, priced, unpriceable }
+}
+
+export interface OverageRow {
+  orgName: string | null
+  metric: string
+  periodStart: Date
+  periodEnd: Date
+  includedQuota: number
+  usageAmount: number
+  overageAmount: number
+  totalCostCents: number
+  stripeInvoiceItemId: string | null
+}
+
+export interface OverageSummary {
+  rows: OverageRow[] // newest period first
+  totalCents: number
+  unbilledCents: number // no stripe_invoice_item_id yet
+}
+
+export function summarizeOverages(rows: OverageRow[]): OverageSummary {
+  const sorted = [...rows].sort((a, b) => b.periodStart.getTime() - a.periodStart.getTime())
+  let totalCents = 0
+  let unbilledCents = 0
+  for (const r of rows) {
+    totalCents += r.totalCostCents
+    if (!r.stripeInvoiceItemId) unbilledCents += r.totalCostCents
+  }
+  return { rows: sorted, totalCents, unbilledCents }
+}
+
+export function formatCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+// null/'' status = no filter; otherwise keep orgs whose subscription status
+// matches ('none' selects orgs without a subscription). Summary stats stay
+// computed over the unfiltered set — the tabs slice the table, not the truth.
+export function filterByStatus(rows: OrgSubscriptionView[], status: string | null): OrgSubscriptionView[] {
+  if (!status) return rows
+  if (status === 'none') return rows.filter((r) => r.subscriptionStatus === null)
+  return rows.filter((r) => r.subscriptionStatus === status)
+}
+
+// Stripe dashboard deep links. Production URLs per spec — test-mode objects
+// live under dashboard.stripe.com/test/..., and the dashboard prompts a mode
+// switch when a live URL names a test object; acceptable dev friction.
+export function stripeCustomerUrl(id: string): string {
+  return `https://dashboard.stripe.com/customers/${id}`
+}
+export function stripeSubscriptionUrl(id: string): string {
+  return `https://dashboard.stripe.com/subscriptions/${id}`
+}
+
+// Shared @web Badge variants (not raw daisyUI classes) — see BadgeVariant.
+export const SUB_STATUS_BADGE: Record<string, BadgeVariant> = {
+  active: 'success',
+  trialing: 'primary',
+  past_due: 'error',
+  cancelled: 'default',
+  incomplete: 'warning',
+  incomplete_expired: 'warning',
+}
+
+export const TRIAL_STATE_BADGE: Record<TrialState, BadgeVariant> = {
+  trialing: 'primary',
+  trial_expired: 'warning',
+  converted: 'success',
+  never_trialed: 'default',
 }

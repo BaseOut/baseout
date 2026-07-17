@@ -4,6 +4,8 @@
 // improves on) the web /ops page: runs are joined to spaces + organizations
 // so staff see names instead of raw UUIDs.
 
+import type { BadgeVariant } from './ui'
+
 export interface RunRow {
   id: string
   status: string
@@ -33,16 +35,17 @@ export interface RunSummary {
 const ACTIVE_STATUSES = new Set(['queued', 'running', 'cancelling', 'deleting'])
 const SUCCESS_STATUSES = new Set(['succeeded', 'trial_complete', 'trial_truncated'])
 
-export const RUN_STATUS_BADGE: Record<string, string> = {
-  succeeded: 'badge-success',
-  running: 'badge-info',
-  queued: 'badge-ghost',
-  failed: 'badge-error',
-  cancelled: 'badge-neutral',
-  cancelling: 'badge-warning',
-  deleting: 'badge-warning',
-  trial_complete: 'badge-warning',
-  trial_truncated: 'badge-warning',
+// Shared @web Badge variants (not raw daisyUI classes) — see BadgeVariant.
+export const RUN_STATUS_BADGE: Record<string, BadgeVariant> = {
+  succeeded: 'success',
+  running: 'primary',
+  queued: 'default',
+  failed: 'error',
+  cancelled: 'default',
+  cancelling: 'warning',
+  deleting: 'warning',
+  trial_complete: 'warning',
+  trial_truncated: 'warning',
 }
 
 function summarizeWindow(runs: RunRow[], window: '24h' | '7d', now: Date): RunSummary {

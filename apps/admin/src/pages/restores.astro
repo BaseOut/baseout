@@ -1,0 +1,145 @@
+---
+// Cross-org restore run viewer (PRD §16.1 operational visibility — the
+// restore-side sibling of /backups). Read-only; gated to staff by
+// src/middleware.ts.
+import { desc, eq } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import { restoreRuns, spaces, organizations } from '../db/schema';
+import { formatDuration } from '../lib/backup-runs';
+import {
+  summarizeRestores,
+  filterByStatus,
+  describeScope,
+  RESTORE_STATUS_BADGE,
+  type RestoreRow,
+} from '../lib/restore-runs';
+import { truncationNote } from '../lib/ui';
+
+const { db } = Astro.locals;
+const LIMIT = 100;
+
+const rows: RestoreRow[] = await db
+  .select({
+    id: restoreRuns.id,
+    status: restoreRuns.status,
+    scope: restoreRuns.scope,
+    scopeTarget: restoreRuns.scopeTarget,
+    tablesRestored: restoreRuns.tablesRestored,
+    recordsRestored: restoreRuns.recordsRestored,
+    attachmentsRestored: restoreRuns.attachmentsRestored,
+    triggeredBy: restoreRuns.triggeredBy,
+    isTrial: restoreRuns.isTrial,
+    startedAt: restoreRuns.startedAt,
+    completedAt: restoreRuns.completedAt,
+    errorMessage: restoreRuns.errorMessage,
+    createdAt: restoreRuns.createdAt,
+    spaceName: spaces.name,
+    orgName: organizations.name,
+  })
+  .from(restoreRuns)
+  .leftJoin(spaces, eq(spaces.id, restoreRuns.spaceId))
+  .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
+  .orderBy(desc(restoreRuns.createdAt))
+  .limit(LIMIT);
+
+const statusFilter = Astro.url.searchParams.get('status');
+const summaries = summarizeRestores(rows, new Date());
+const visible = filterByStatus(rows, statusFilter);
+
+const FILTERS = ['failed', 'running', 'queued', 'succeeded', 'cancelled'];
+const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 19) : '—');
+---
+
+<SidebarLayout title="Admin — Restore Runs">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader
+      title="Restore runs"
+      description={`Most-recent restores across all organizations.${truncationNote(rows.length, LIMIT)}`}
+    >
+      <div slot="actions" role="tablist" class="tabs tabs-box tabs-sm">
+        <a role="tab" href="/restores" aria-selected={!statusFilter} class={`tab ${!statusFilter ? 'tab-active' : ''}`}>all</a>
+        {FILTERS.map((s) => (
+          <a
+            role="tab"
+            href={`/restores?status=${s}`}
+            aria-selected={statusFilter === s}
+            class={`tab ${statusFilter === s ? 'tab-active' : ''}`}
+          >{s}</a>
+        ))}
+      </div>
+    </PageHeader>
+
+    <div class="stats stats-horizontal bg-base-100 border border-base-300">
+      {summaries.map((s) => (
+        <>
+          <div class="stat py-3">
+            <div class="stat-title">Restores · {s.window}</div>
+            <div class="stat-value text-2xl">{s.total}</div>
+          </div>
+          <div class="stat py-3">
+            <div class="stat-title">Failed · {s.window}</div>
+            <div class={`stat-value text-2xl ${s.failed > 0 ? 'text-error' : ''}`}>{s.failed}</div>
+            <div class="stat-desc">{s.succeeded} succeeded · {s.active} active</div>
+          </div>
+        </>
+      ))}
+    </div>
+
+    {visible.length === 0 ? (
+      <EmptyState
+        icon="lucide--archive-restore"
+        title={statusFilter ? 'No matches' : 'No restore runs yet'}
+        description={statusFilter
+          ? `No restores with status “${statusFilter}”.`
+          : 'Customer restores appear here the moment they are queued.'}
+      />
+    ) : (
+      <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+        <table class="table table-zebra table-sm">
+          <thead>
+            <tr>
+              <th>Created</th>
+              <th>Organization</th>
+              <th>Space</th>
+              <th>Status</th>
+              <th>Scope</th>
+              <th>Tables</th>
+              <th>Records</th>
+              <th>Attachments</th>
+              <th>Trigger</th>
+              <th>Duration</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((r) => (
+              <tr>
+                <td class="font-mono text-xs whitespace-nowrap">{fmt(r.createdAt)}</td>
+                <td>{r.orgName ?? '—'}</td>
+                <td>{r.spaceName ?? '—'}</td>
+                <td>
+                  <span class="flex items-center gap-1">
+                    <Badge variant={RESTORE_STATUS_BADGE[r.status] ?? 'default'} size="sm">{r.status}</Badge>
+                    {r.isTrial && <Badge variant="default" size="sm">trial</Badge>}
+                  </span>
+                </td>
+                <td class="font-mono text-xs">{describeScope(r.scope, r.scopeTarget)}</td>
+                <td class="text-right">{r.tablesRestored}</td>
+                <td class="text-right">{r.recordsRestored}</td>
+                <td class="text-right">{r.attachmentsRestored}</td>
+                <td>{r.triggeredBy.replace(/_/g, ' ')}</td>
+                <td class="whitespace-nowrap">{formatDuration(r.startedAt, r.completedAt)}</td>
+                <td class="max-w-xs truncate text-error text-xs" title={r.errorMessage ?? ''}>
+                  {r.errorMessage ?? ''}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+</SidebarLayout>

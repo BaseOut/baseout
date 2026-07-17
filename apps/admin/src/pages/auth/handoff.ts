@@ -24,32 +24,31 @@ import { sessionTokenCandidates, decideAccess } from '../../lib/admin-session'
 const COOKIE_NAME = 'baseout_admin_session'
 const COOKIE_MAX_AGE_S = 60 * 60 * 24 * 30 // 30d cap; the per-request DB expiry check is the real gate
 
-function fail(status: number, message: string): Response {
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Handoff failed — Baseout Admin</title></head>
-<body style="font-family:ui-sans-serif,system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#0b0f17;color:#e5e7eb">
-<div style="text-align:center;max-width:32rem;padding:2rem"><h1>Sign-in handoff failed</h1>
-<p style="color:#9ca3af">${message}</p>
-<p><a href="/" style="color:#3b82f6">Try again</a></p></div></body></html>`
-  return new Response(html, {
-    status,
-    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+// Failures land on the on-brand sign-in page with a whitelisted error code
+// (rendered by signInView — see lib/auth-pages.ts). The former per-failure
+// HTTP statuses are traded for the redirect; nothing machine-consumes them,
+// and the destination page communicates the failure.
+function fail(code: 'misconfigured' | 'missing_token' | 'invalid_token' | 'session_invalid'): Response {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: `/auth/sign-in?error=${code}`, 'Cache-Control': 'no-store' },
   })
 }
 
 export const GET: APIRoute = async ({ url, locals, request }) => {
   const secret = (env as unknown as { ADMIN_HANDOFF_SECRET?: string }).ADMIN_HANDOFF_SECRET
   if (!secret) {
-    return fail(500, 'The console is missing its handoff secret (ADMIN_HANDOFF_SECRET).')
+    return fail('misconfigured')
   }
 
   const token = url.searchParams.get('token')
   if (!token) {
-    return fail(400, 'Missing handoff token.')
+    return fail('missing_token')
   }
 
   const opened = await openHandoffToken(token, secret, url.origin, new Date())
   if (!opened.ok) {
-    return fail(400, `The sign-in link is invalid or has expired (${opened.reason}). Handoff tokens last 60 seconds — start again from the console.`)
+    return fail('invalid_token')
   }
 
   // Read-only session validation — identical checks to the middleware gate.
@@ -62,7 +61,7 @@ export const GET: APIRoute = async ({ url, locals, request }) => {
     .limit(1)
   const decision = decideAccess(found[0] ?? null, new Date())
   if (!decision.ok) {
-    return fail(403, `Your session did not validate (${decision.reason}).`)
+    return fail('session_invalid')
   }
 
   // Secure only on https — the deployed path is always https; the (unused)

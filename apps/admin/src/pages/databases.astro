@@ -3,7 +3,10 @@
 // role='super' by src/middleware.ts. Utilization is a proxy from the latest
 // succeeded backup run per Space — real byte metrics are phase-2.
 import { desc, eq } from 'drizzle-orm';
-import Layout from '../layouts/Layout.astro';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
 import { spaceDatabases, spaces, organizations, backupRuns } from '../db/schema';
 import {
   buildDbTracker,
@@ -12,7 +15,7 @@ import {
   type VolumeRow,
 } from '../lib/db-tracker';
 
-const { db, user } = Astro.locals;
+const { db } = Astro.locals;
 
 const [dbRows, recentSucceeded] = await Promise.all([
   db
@@ -34,7 +37,8 @@ const [dbRows, recentSucceeded] = await Promise.all([
     })
     .from(spaceDatabases)
     .leftJoin(spaces, eq(spaces.id, spaceDatabases.spaceId))
-    .leftJoin(organizations, eq(organizations.id, spaces.organizationId)) as Promise<SpaceDbRow[]>,
+    .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
+    .limit(500) as Promise<SpaceDbRow[]>,
   db
     .select({
       spaceId: backupRuns.spaceId,
@@ -62,17 +66,12 @@ const { entries, summary } = buildDbTracker(dbRows, volumes);
 const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 16) : '—');
 ---
 
-<Layout title="Admin — Databases">
-  <span slot="user">{user?.email}</span>
-
-  <div class="space-y-6">
-    <div>
-      <h1 class="text-2xl font-semibold">Database provisioning</h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        Per-Space database backend, lifecycle, and locator (PRD §5.4).
-        Volume = last succeeded backup run per Space; real size metrics are phase-2.
-      </p>
-    </div>
+<SidebarLayout title="Admin — Databases">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader
+      title="Database provisioning"
+      description="Per-Space database backend, lifecycle, and locator (PRD §5.4). Volume = last succeeded backup run per Space; real size metrics are phase-2."
+    />
 
     <div class="stats stats-horizontal bg-base-100 border border-base-300">
       <div class="stat py-3">
@@ -98,11 +97,13 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
     </div>
 
     {entries.length === 0 ? (
-      <div class="alert alert-info">
-        <span>No per-Space databases provisioned yet (rows appear in baseout.space_databases).</span>
-      </div>
+      <EmptyState
+        icon="lucide--database"
+        title="No databases provisioned yet"
+        description="No per-Space databases provisioned yet (rows appear in baseout.space_databases)."
+      />
     ) : (
-      <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
+      <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
         <table class="table table-zebra table-sm">
           <thead>
             <tr>
@@ -124,8 +125,8 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
               <tr>
                 <td>{e.orgName ?? '—'}</td>
                 <td>{e.spaceName ?? '—'}</td>
-                <td><span class="badge badge-sm badge-ghost">{e.backend}</span></td>
-                <td><span class={`badge badge-sm ${DB_STATUS_BADGE[e.status] ?? 'badge-ghost'}`}>{e.status}</span></td>
+                <td><Badge variant="default" size="sm">{e.backend}</Badge></td>
+                <td><Badge variant={DB_STATUS_BADGE[e.status] ?? 'default'} size="sm">{e.status}</Badge></td>
                 <td>{e.recordsEnabled ? 'on' : 'off'}</td>
                 <td class="font-mono text-xs max-w-48 truncate" title={e.locator}>{e.locator}</td>
                 <td class="text-right">{e.schemaVersion ?? '—'}</td>
@@ -146,4 +147,4 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
       </div>
     )}
   </div>
-</Layout>
+</SidebarLayout>

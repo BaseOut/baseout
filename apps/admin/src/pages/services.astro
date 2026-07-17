@@ -7,11 +7,15 @@
 // side-effects. The page labels itself accordingly. A service_runs table is
 // the named phase-2 follow-up.
 import { desc, eq, isNotNull, lt, sql } from 'drizzle-orm';
-import Layout from '../layouts/Layout.astro';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import Alert from '@web/components/ui/Alert.astro';
 import { backupConfigurations, backupRuns, connectionSessions } from '../db/schema';
 import { deriveServiceHealth, SIGNAL_BADGE } from '../lib/service-health';
 
-const { db, user } = Astro.locals;
+const { db } = Astro.locals;
 const now = new Date();
 const nowSql = sql`${now.toISOString()}::timestamptz`;
 
@@ -52,39 +56,32 @@ const signals = deriveServiceHealth(
 );
 ---
 
-<Layout title="Admin — Services">
-  <span slot="user">{user?.email}</span>
-
-  <div class="space-y-6">
-    <div>
-      <h1 class="text-2xl font-semibold">Background services</h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        Health derived from data side-effects — there is no per-service run log yet
-        (server cron work is phase-2; a service_runs table is the follow-up).
-      </p>
-    </div>
+<SidebarLayout title="Admin — Services">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader
+      title="Background services"
+      description="Health derived from data side-effects — there is no per-service run log yet (server cron work is phase-2; a service_runs table is the follow-up)."
+    />
 
     <div class="grid gap-4 md:grid-cols-2">
       {signals.map((s) => (
-        <div class="card bg-base-100 border border-base-300">
-          <div class="card-body gap-2 py-4">
-            <div class="flex items-center justify-between">
-              <h2 class="card-title text-base">{s.label}</h2>
-              <span class={`badge ${SIGNAL_BADGE[s.status]}`}>{s.status}</span>
+        <Card variant="outlined">
+          <div class="flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <h2 class="text-base font-semibold">{s.label}</h2>
+              <Badge variant={SIGNAL_BADGE[s.status]}>{s.status}</Badge>
             </div>
             <p class="text-sm text-base-content/70">{s.detail}</p>
           </div>
-        </div>
+        </Card>
       ))}
     </div>
 
-    <div class="alert">
-      <span class="text-sm">
-        Not yet observable (no data source): webhook renewal, OAuth refresh cron
-        (refresh is lazy on-access — see the Connections page for per-connection
-        refresh errors), trial-expiry monitor, quota monitor, error-log search
-        (needs Logpush — deferred).
-      </span>
-    </div>
+    <Alert variant="info">
+      Not yet observable (no data source): webhook renewal, OAuth refresh cron
+      (refresh is lazy on-access — see the Connections page for per-connection
+      refresh errors), trial-expiry monitor, quota monitor, error-log search
+      (needs Logpush — deferred).
+    </Alert>
   </div>
-</Layout>
+</SidebarLayout>

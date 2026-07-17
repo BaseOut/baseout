@@ -1,4 +1,7 @@
-// Client wiring for the staff-action confirm dialog (ActionConfirm.astro).
+// Client wiring for the staff-action confirm dialog. The dialog itself is now
+// the shared @web ConfirmModal primitive (id="action-confirm") rendered by the
+// pages that need it; this module supplies its behavior and is invoked once
+// from SidebarLayout (a no-op when no dialog is on the page).
 // Pages mark trigger buttons with data attributes:
 //   data-action-path    POST endpoint (/api/actions/…)
 //   data-action-payload JSON body

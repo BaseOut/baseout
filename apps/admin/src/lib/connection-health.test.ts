@@ -3,6 +3,7 @@ import {
   classifyConnection,
   summarizeHealth,
   classifyDestination,
+  filterByHealth,
   REFRESH_STUCK_MS,
   type ConnectionRow,
 } from './connection-health'
@@ -107,5 +108,23 @@ describe('classifyDestination', () => {
 
   it('local_fs has no OAuth to expire', () => {
     expect(classifyDestination({ ...dest, type: 'local_fs', oauthExpiresAt: minutesAgo(1) }, NOW)).toBe('no_oauth')
+  })
+})
+
+describe('filterByHealth', () => {
+  const classified = [
+    { health: 'healthy' as const },
+    { health: 'invalid' as const },
+    { health: 'invalid' as const },
+  ]
+
+  it('passes everything through with no filter', () => {
+    expect(filterByHealth(classified, null)).toHaveLength(3)
+    expect(filterByHealth(classified, '')).toHaveLength(3)
+  })
+
+  it('filters by derived health', () => {
+    expect(filterByHealth(classified, 'invalid')).toHaveLength(2)
+    expect(filterByHealth(classified, 'refresh_stuck')).toHaveLength(0)
   })
 })

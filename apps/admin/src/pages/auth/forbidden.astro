@@ -1,0 +1,35 @@
+---
+// /auth/forbidden — signed in, but not staff (replaces the old inline
+// hardcoded-HTML 403). The gate routes only reason='not-staff' here; the
+// signed-out are redirected to /auth/sign-in instead. Serves a real 403 so
+// probes and humans agree on what happened.
+import Layout from '../../layouts/Layout.astro';
+import Card from '@web/components/ui/Card.astro';
+import Button from '@web/components/ui/Button.astro';
+import { webAppUrl } from '../../lib/web-app-url';
+
+Astro.response.status = 403;
+Astro.response.headers.set('Cache-Control', 'no-store');
+---
+
+<Layout title="Staff only — Baseout Admin">
+  <main class="flex min-h-screen items-center justify-center p-6">
+    <Card variant="outlined" class="w-full max-w-md">
+      <div class="flex flex-col gap-4">
+        <div class="flex items-center gap-2">
+          <span class="text-lg font-semibold">Baseout</span>
+          <span class="badge badge-primary badge-soft badge-sm">staff</span>
+        </div>
+
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">Staff only</h1>
+          <p class="mt-1 text-sm text-base-content/60">
+            You're signed in, but this console is restricted to Baseout staff.
+          </p>
+        </div>
+
+        <Button href={webAppUrl()} variant="outline">Back to Baseout</Button>
+      </div>
+    </Card>
+  </main>
+</Layout>

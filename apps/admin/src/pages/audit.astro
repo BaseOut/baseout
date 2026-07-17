@@ -1,0 +1,221 @@
+---
+// Audit trail viewer (PRD §16.1 — "view and search … audit trail"). Read-only;
+// gated to staff by src/middleware.ts.
+//
+// Section 1: staff actions from admin_audit_log — intent rows paired with
+// their result rows (lib/audit-view.ts) into one entry per action.
+// Section 2: connection status flips from connection_status_audit — the
+// Postgres-trigger-written history of every connections.status change,
+// whichever app flipped it. It lives HERE (audit data), not on /connections.
+import { desc, eq, inArray, and } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import {
+  adminAuditLog,
+  connectionStatusAudit,
+  connections,
+  organizations,
+  platforms,
+} from '../db/schema';
+import {
+  pairAuditRows,
+  AUDIT_ACTIONS,
+  AUDIT_OUTCOME_BADGE,
+  AUDIT_OUTCOME_LABEL,
+  summarizeParams,
+  type AuditIntentRow,
+  type AuditResultRow,
+} from '../lib/audit-view';
+import { truncationNote, type BadgeVariant } from '../lib/ui';
+
+const { db } = Astro.locals;
+const INTENT_LIMIT = 100;
+const FLIP_LIMIT = 50;
+
+const actionFilter = Astro.url.searchParams.get('action');
+
+// Intents first (the filterable, ordered set), then exactly their results —
+// exact pairing instead of a fuzzy time-window join.
+const intentFilter = actionFilter
+  ? and(eq(adminAuditLog.phase, 'intent'), eq(adminAuditLog.action, actionFilter))
+  : eq(adminAuditLog.phase, 'intent');
+const intents: AuditIntentRow[] = await db
+  .select({
+    id: adminAuditLog.id,
+    createdAt: adminAuditLog.createdAt,
+    actorEmail: adminAuditLog.actorEmail,
+    action: adminAuditLog.action,
+    targetType: adminAuditLog.targetType,
+    targetId: adminAuditLog.targetId,
+    organizationId: adminAuditLog.organizationId,
+    orgName: organizations.name,
+    params: adminAuditLog.params,
+  })
+  .from(adminAuditLog)
+  .leftJoin(organizations, eq(organizations.id, adminAuditLog.organizationId))
+  .where(intentFilter)
+  .orderBy(desc(adminAuditLog.createdAt))
+  .limit(INTENT_LIMIT);
+
+const intentIds = intents.map((i) => i.id);
+const results: AuditResultRow[] = intentIds.length === 0
+  ? []
+  : await db
+      .select({
+        intentId: adminAuditLog.intentId,
+        createdAt: adminAuditLog.createdAt,
+        params: adminAuditLog.params,
+      })
+      .from(adminAuditLog)
+      .where(and(eq(adminAuditLog.phase, 'result'), inArray(adminAuditLog.intentId, intentIds)));
+
+const entries = pairAuditRows(intents, results);
+
+// Section 2 — trigger-written connection status flips.
+const flips = await db
+  .select({
+    id: connectionStatusAudit.id,
+    changedAt: connectionStatusAudit.changedAt,
+    oldStatus: connectionStatusAudit.oldStatus,
+    newStatus: connectionStatusAudit.newStatus,
+    applicationName: connectionStatusAudit.applicationName,
+    dbUser: connectionStatusAudit.dbUser,
+    connectionName: connections.displayName,
+    connectionId: connectionStatusAudit.connectionId,
+    orgName: organizations.name,
+    platformName: platforms.name,
+  })
+  .from(connectionStatusAudit)
+  .leftJoin(connections, eq(connections.id, connectionStatusAudit.connectionId))
+  .leftJoin(organizations, eq(organizations.id, connectionStatusAudit.organizationId))
+  .leftJoin(platforms, eq(platforms.id, connectionStatusAudit.platformId))
+  .orderBy(desc(connectionStatusAudit.changedAt))
+  .limit(FLIP_LIMIT);
+
+const statusVariant: Record<string, BadgeVariant> = {
+  active: 'success',
+  refreshing: 'primary',
+  pending_reauth: 'warning',
+  invalid: 'error',
+};
+
+const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 19) : '—');
+---
+
+<SidebarLayout title="Admin — Audit trail">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader
+      title="Audit trail"
+      description={`Every staff action, intent paired with result (PRD §16.1). Rows are append-only — written before the action executes.${truncationNote(intents.length, INTENT_LIMIT)}`}
+    >
+      <div slot="actions" role="tablist" class="tabs tabs-box tabs-sm">
+        <a role="tab" href="/audit" aria-selected={!actionFilter} class={`tab ${!actionFilter ? 'tab-active' : ''}`}>all</a>
+        {AUDIT_ACTIONS.map((a) => (
+          <a
+            role="tab"
+            href={`/audit?action=${a}`}
+            aria-selected={actionFilter === a}
+            class={`tab ${actionFilter === a ? 'tab-active' : ''}`}
+          >{a.replace(/_/g, ' ')}</a>
+        ))}
+      </div>
+    </PageHeader>
+
+    {entries.length === 0 ? (
+      <EmptyState
+        icon="lucide--scroll-text"
+        title={actionFilter ? 'No matches' : 'No staff actions yet'}
+        description={actionFilter
+          ? `No “${actionFilter.replace(/_/g, ' ')}” actions recorded.`
+          : 'Staff actions (force backup, invalidate connection, …) appear here the moment they are attempted.'}
+      />
+    ) : (
+      <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+        <table class="table table-zebra table-sm">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Actor</th>
+              <th>Action</th>
+              <th>Target</th>
+              <th>Organization</th>
+              <th>Outcome</th>
+              <th>Params</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e) => (
+              <tr>
+                <td class="font-mono text-xs whitespace-nowrap">{fmt(e.createdAt)}</td>
+                <td class="text-xs">{e.actorEmail}</td>
+                <td><Badge variant="primary" size="sm">{e.action.replace(/_/g, ' ')}</Badge></td>
+                <td class="text-xs">
+                  <span class="text-base-content/60">{e.targetType}</span>
+                  <span class="font-mono ml-1" title={e.targetId}>{e.targetId.slice(0, 8)}…</span>
+                </td>
+                <td>{e.orgName ?? '—'}</td>
+                <td>
+                  <span class="flex items-center gap-1">
+                    <Badge variant={AUDIT_OUTCOME_BADGE[e.outcome]} size="sm">{AUDIT_OUTCOME_LABEL[e.outcome]}</Badge>
+                    {e.resultCode && <span class="font-mono text-xs text-base-content/60">{e.resultCode}</span>}
+                  </span>
+                </td>
+                <td
+                  class="max-w-xs truncate font-mono text-xs text-base-content/70"
+                  title={summarizeParams(e.params) ? JSON.stringify(e.params) : ''}
+                >{summarizeParams(e.params)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+
+    <div>
+      <h2 class="text-lg font-semibold">Connection status flips</h2>
+      <p class="text-sm text-base-content/60 mt-1">
+        Trigger-written history of every connections.status change, whichever app flipped it.
+      </p>
+      {flips.length === 0 ? (
+        <p class="text-sm text-base-content/50 mt-2">No status changes recorded yet.</p>
+      ) : (
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100 mt-2">
+          <table class="table table-zebra table-sm">
+            <thead>
+              <tr>
+                <th>Changed</th>
+                <th>Organization</th>
+                <th>Platform</th>
+                <th>Connection</th>
+                <th>Transition</th>
+                <th>Application</th>
+                <th>DB user</th>
+              </tr>
+            </thead>
+            <tbody>
+              {flips.map((f) => (
+                <tr>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmt(f.changedAt)}</td>
+                  <td>{f.orgName ?? '—'}</td>
+                  <td>{f.platformName ?? '—'}</td>
+                  <td class="text-xs">{f.connectionName ?? `${f.connectionId.slice(0, 8)}…`}</td>
+                  <td>
+                    <span class="flex items-center gap-1 text-xs">
+                      <span class="text-base-content/60">{f.oldStatus ?? '—'}</span>
+                      <i class="iconify lucide--arrow-right size-3 text-base-content/40"></i>
+                      <Badge variant={statusVariant[f.newStatus] ?? 'default'} size="sm">{f.newStatus}</Badge>
+                    </span>
+                  </td>
+                  <td class="font-mono text-xs">{f.applicationName ?? '—'}</td>
+                  <td class="font-mono text-xs">{f.dbUser}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  </div>
+</SidebarLayout>

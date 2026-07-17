@@ -5,9 +5,14 @@
 // model) belong to which Organizations. Gated to role='super' by
 // src/middleware.ts. Staff action: "Force backup" per Space (POST
 // /api/actions/force-backup, audit-logged, run appears on /backups).
-import { eq } from 'drizzle-orm';
-import Layout from '../layouts/Layout.astro';
-import ActionConfirm from '../components/ActionConfirm.astro';
+import { desc, eq, ilike, inArray, or } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import Button from '@web/components/ui/Button.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import ConfirmModal from '@web/components/ui/ConfirmModal.astro';
 import {
   organizations,
   spaces,
@@ -17,9 +22,17 @@ import {
   subscriptionItems,
 } from '../db/schema';
 import { buildTracker, type SpaceRow, type TierRow } from '../lib/tracker';
+import { truncationNote, type BadgeVariant } from '../lib/ui';
 
-const { db, user } = Astro.locals;
+const { db } = Astro.locals;
 
+// ?q= searches org name/slug (ilike — seq scan is fine at staff scale).
+const q = Astro.url.searchParams.get('q')?.trim() ?? '';
+const ORG_LIMIT = 100;
+
+const orgFilter = q
+  ? or(ilike(organizations.name, `%${q}%`), ilike(organizations.slug, `%${q}%`))
+  : undefined;
 const orgRows = await db
   .select({
     id: organizations.id,
@@ -27,73 +40,98 @@ const orgRows = await db
     slug: organizations.slug,
     hasMigrated: organizations.hasMigrated,
   })
-  .from(organizations);
+  .from(organizations)
+  .where(orgFilter)
+  .orderBy(desc(organizations.createdAt))
+  .limit(ORG_LIMIT);
 
-const spaceRows: SpaceRow[] = await db
-  .select({
-    id: spaces.id,
-    organizationId: spaces.organizationId,
-    name: spaces.name,
-    status: spaces.status,
-    platformName: platforms.name,
-  })
-  .from(spaces)
-  .leftJoin(spacePlatforms, eq(spacePlatforms.spaceId, spaces.id))
-  .leftJoin(platforms, eq(platforms.id, spacePlatforms.platformId));
+// Spaces + tiers only for the orgs on this page (was an unbounded full scan).
+const orgIds = orgRows.map((o) => o.id);
+const spaceRows: SpaceRow[] = orgIds.length === 0
+  ? []
+  : await db
+      .select({
+        id: spaces.id,
+        organizationId: spaces.organizationId,
+        name: spaces.name,
+        status: spaces.status,
+        platformName: platforms.name,
+      })
+      .from(spaces)
+      .leftJoin(spacePlatforms, eq(spacePlatforms.spaceId, spaces.id))
+      .leftJoin(platforms, eq(platforms.id, spacePlatforms.platformId))
+      .where(inArray(spaces.organizationId, orgIds));
 
-const tierRows: TierRow[] = await db
-  .select({
-    organizationId: subscriptions.organizationId,
-    tier: subscriptionItems.tier,
-  })
-  .from(subscriptionItems)
-  .innerJoin(subscriptions, eq(subscriptions.id, subscriptionItems.subscriptionId));
+const tierRows: TierRow[] = orgIds.length === 0
+  ? []
+  : await db
+      .select({
+        organizationId: subscriptions.organizationId,
+        tier: subscriptionItems.tier,
+      })
+      .from(subscriptionItems)
+      .innerJoin(subscriptions, eq(subscriptions.id, subscriptionItems.subscriptionId))
+      .where(inArray(subscriptions.organizationId, orgIds));
 
 const tracker = buildTracker(orgRows, spaceRows, tierRows);
 
-const statusColor: Record<string, string> = {
-  active: 'badge-success',
-  paused: 'badge-warning',
-  error: 'badge-error',
-  setup_incomplete: 'badge-ghost',
+const statusVariant: Record<string, BadgeVariant> = {
+  active: 'success',
+  paused: 'warning',
+  error: 'error',
+  setup_incomplete: 'default',
 };
 ---
 
-<Layout title="Admin — Organizations">
-  <span slot="user">{user?.email}</span>
-
-  <div class="space-y-6">
-    <div class="flex items-baseline justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold">Organizations &amp; Spaces</h1>
-        <p class="text-sm text-base-content/60 mt-1">
-          Every Organization and its provisioned Spaces (PRD §5.4). {tracker.length} organizations.
-        </p>
-      </div>
-    </div>
+<SidebarLayout title="Admin — Organizations">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader
+      title="Organizations & Spaces"
+      description={`Every Organization and its provisioned Spaces (PRD §5.4). ${tracker.length} organizations.${truncationNote(orgRows.length, ORG_LIMIT)}`}
+    >
+      <form slot="actions" method="get" action="/" class="join">
+        <input
+          type="search"
+          name="q"
+          value={q}
+          placeholder="Search name or slug"
+          class="input input-sm join-item w-52"
+          aria-label="Search organizations"
+        />
+        <button type="submit" class="btn btn-sm join-item" aria-label="Search">
+          <i class="iconify lucide--search size-4"></i>
+        </button>
+      </form>
+    </PageHeader>
 
     {tracker.length === 0 ? (
-      <div class="alert alert-info">
-        <span>No organizations in the master DB yet.</span>
-      </div>
+      <EmptyState
+        icon="lucide--building-2"
+        title={q ? 'No matches' : 'No organizations yet'}
+        description={q ? `No organizations match “${q}”.` : 'No organizations in the master DB yet.'}
+        actionHref={q ? '/' : undefined}
+        actionLabel={q ? 'Clear search' : undefined}
+      />
     ) : (
       <div class="space-y-4">
         {tracker.map((org) => (
-          <div class="card bg-base-100 border border-base-300">
-            <div class="card-body gap-3">
+          <Card variant="outlined">
+            <div class="flex flex-col gap-3">
               <div class="flex items-center justify-between flex-wrap gap-2">
                 <div class="flex items-center gap-2">
-                  <h2 class="card-title">{org.name}</h2>
+                  <h2 class="text-lg font-semibold">
+                    <a href={`/organizations/${org.id}`} class="link link-hover">{org.name}</a>
+                  </h2>
                   <span class="font-mono text-xs text-base-content/50">{org.slug}</span>
                   {!org.hasMigrated && (
-                    <span class="badge badge-warning badge-sm">migration pending</span>
+                    <Badge variant="warning" size="sm">migration pending</Badge>
                   )}
                 </div>
                 <div class="flex gap-1">
                   {org.tiers.length === 0 ? (
-                    <span class="badge badge-ghost badge-sm">no subscription</span>
+                    <Badge variant="default" size="sm">no subscription</Badge>
                   ) : (
-                    org.tiers.map((t) => <span class="badge badge-primary badge-sm">{t}</span>)
+                    org.tiers.map((t) => <Badge variant="primary" size="sm">{t}</Badge>)
                   )}
                 </div>
               </div>
@@ -101,7 +139,7 @@ const statusColor: Record<string, string> = {
               {org.spaces.length === 0 ? (
                 <p class="text-sm text-base-content/50">No spaces.</p>
               ) : (
-                <div class="overflow-x-auto rounded-lg border border-base-300">
+                <div class="overflow-x-auto rounded-box border border-base-300">
                   <table class="table table-zebra table-sm">
                     <thead>
                       <tr>
@@ -117,19 +155,20 @@ const statusColor: Record<string, string> = {
                         <tr>
                           <td>{s.name}</td>
                           <td>
-                            <span class={`badge badge-sm ${statusColor[s.status] ?? 'badge-ghost'}`}>
+                            <Badge variant={statusVariant[s.status] ?? 'default'} size="sm">
                               {s.status}
-                            </span>
+                            </Badge>
                           </td>
                           <td>{s.platformName ?? '—'}</td>
                           <td class="font-mono text-xs">{s.id.slice(0, 8)}…</td>
                           <td class="text-right">
-                            <button
-                              class="btn btn-outline btn-xs"
+                            <Button
+                              variant="outline"
+                              size="sm"
                               data-action-path="/api/actions/force-backup"
                               data-action-payload={JSON.stringify({ spaceId: s.id })}
                               data-action-label={`Queue a backup run for "${s.name}" (${org.name}). Requires an active Airtable connection and at least one included base; the run appears on the Backups page as triggered-by admin.`}
-                            >Force backup</button>
+                            >Force backup</Button>
                           </td>
                         </tr>
                       ))}
@@ -138,11 +177,18 @@ const statusColor: Record<string, string> = {
                 </div>
               )}
             </div>
-          </div>
+          </Card>
         ))}
       </div>
     )}
   </div>
 
-  <ActionConfirm title="Force backup" />
-</Layout>
+  <ConfirmModal id="action-confirm" title="Force backup" confirmLabel="Force backup" confirmClass="btn-error">
+    <p class="text-sm" data-confirm-label></p>
+    <p class="mt-2 text-sm text-error hidden" data-confirm-error></p>
+    <p class="mt-2 text-xs text-base-content/50">
+      This action is recorded in the admin audit log before it executes.
+    </p>
+    <button slot="confirm" type="button" class="btn btn-error" data-confirm-button>Confirm</button>
+  </ConfirmModal>
+</SidebarLayout>

@@ -36,6 +36,20 @@ export const organizations = baseout.table('organizations', {
   stripeCustomerId: text('stripe_customer_id'),
   hasMigrated: boolean('has_migrated').notNull().default(true),
   dynamicLocked: boolean('dynamic_locked').notNull().default(false),
+  overageMode: text('overage_mode').notNull().default('cap'), // 'auto' | 'cap'
+  monthlyOverageCap: integer('monthly_overage_cap'), // cents; NULL = no cap
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// Canonical: apps/web core.ts organizationMembers (migration 0000_deep_freak.sql).
+export const organizationMembers = baseout.table('organization_members', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: text('organization_id').notNull(),
+  userId: text('user_id').notNull(),
+  role: text('role').notNull(), // 'owner' | 'admin' | 'member'
+  isDefault: boolean('is_default').notNull().default(false),
+  invitedAt: timestamp('invited_at', { withTimezone: true }),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
@@ -117,6 +131,7 @@ export const backupRuns = baseout.table('backup_runs', {
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   errorMessage: text('error_message'),
+  triggerRunIds: jsonb('trigger_run_ids').$type<string[]>(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
@@ -186,4 +201,95 @@ export const storageDestinations = baseout.table('storage_destinations', {
   oauthAccountEmail: text('oauth_account_email'),
   connectedAt: timestamp('connected_at', { withTimezone: true }).notNull().defaultNow(),
   lastValidatedAt: timestamp('last_validated_at', { withTimezone: true }),
+})
+
+// Postgres-trigger-written connection status-flip history (canonical:
+// apps/web core.ts connectionStatusAudit, migration
+// 0015_connection_status_audit.sql). Partial mirror — the old/new
+// invalidated/token/modified timestamp pairs are omitted (the /audit surface
+// shows the status flip + who did it, not the timestamp deltas). Read-only.
+export const connectionStatusAudit = baseout.table('connection_status_audit', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  connectionId: text('connection_id').notNull(),
+  organizationId: text('organization_id'),
+  platformId: text('platform_id'),
+  oldStatus: text('old_status'),
+  newStatus: text('new_status').notNull(),
+  changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+  dbUser: text('db_user').notNull().default(sql`current_user`),
+  applicationName: text('application_name'),
+})
+
+// Per-metric overage usage per billing period (canonical: apps/web core.ts
+// overageRecords, migration 0000_deep_freak.sql). Read-only.
+export const overageRecords = baseout.table('overage_records', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: text('organization_id').notNull(),
+  subscriptionItemId: text('subscription_item_id').notNull(),
+  metric: text('metric').notNull(),
+  // 'records' | 'attachments' | 'storage_gb' | 'database_gb'
+  // | 'bases' | 'spaces' | 'team_members' | 'manual_runs' | 'api_calls'
+  periodStart: timestamp('period_start', { withTimezone: true }).notNull(),
+  periodEnd: timestamp('period_end', { withTimezone: true }).notNull(),
+  includedQuota: integer('included_quota').notNull(),
+  usageAmount: integer('usage_amount').notNull(),
+  overageAmount: integer('overage_amount').notNull(),
+  unitCostCents: integer('unit_cost_cents').notNull(),
+  totalCostCents: integer('total_cost_cents').notNull(),
+  stripeInvoiceItemId: text('stripe_invoice_item_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// Restore runs (canonical: apps/web core.ts restoreRuns, migration
+// 0019_shallow_mattie_franklin.sql). `trigger_run_ids` (text[]) omitted —
+// engine plumbing, not displayed. Read-only.
+export const restoreRuns = baseout.table('restore_runs', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id').notNull(),
+  connectionId: text('connection_id').notNull(),
+  sourceRunId: text('source_run_id').notNull(),
+  status: text('status').notNull(),
+  // 'queued' | 'running' | 'cancelling' | 'cancelled' | 'succeeded' | 'failed'
+  scope: text('scope').notNull(), // 'base' | 'table' | 'point_in_time'
+  scopeTarget: jsonb('scope_target').notNull(), // { baseId, tableId?, runId? }
+  tablesRestored: integer('tables_restored').notNull().default(0),
+  recordsRestored: integer('records_restored').notNull().default(0),
+  attachmentsRestored: integer('attachments_restored').notNull().default(0),
+  triggeredBy: text('triggered_by').notNull(), // 'user_manual' | 'admin_override'
+  isTrial: boolean('is_trial').notNull().default(false),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// Per-base run snapshot (canonical: apps/web core.ts backupRunBases,
+// migration 0020_backup_run_bases_and_tables.sql). Absent for legacy
+// completions predating workflows-run-detail. Read-only.
+export const backupRunBases = baseout.table('backup_run_bases', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  runId: text('run_id').notNull(),
+  atBaseId: text('at_base_id').notNull(),
+  baseName: text('base_name').notNull(),
+  status: text('status').notNull(),
+  // 'succeeded' | 'failed' | 'trial_complete' | 'trial_truncated'
+  tablesCount: integer('tables_count').notNull().default(0),
+  recordsCount: integer('records_count').notNull().default(0),
+  attachmentsCount: integer('attachments_count').notNull().default(0),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  errorMessage: text('error_message'),
+})
+
+// Per-table run snapshot (canonical: apps/web core.ts backupRunTables, same
+// 0020 migration). Read-only.
+export const backupRunTables = baseout.table('backup_run_tables', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  runBaseId: text('run_base_id').notNull(),
+  tableId: text('table_id').notNull(),
+  tableName: text('table_name').notNull(),
+  recordCount: integer('record_count').notNull().default(0),
+  fieldCount: integer('field_count').notNull().default(0),
+  attachmentCount: integer('attachment_count').notNull().default(0),
 })

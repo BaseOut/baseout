@@ -1,54 +1,56 @@
 ---
+// Document shell for apps/admin — mirrors apps/web/src/layouts/Layout.astro so
+// the staff console renders in the same Baseout brand theme as the customer app.
+// The full @opensided/theme chain + brand themes come from apps/web via the
+// `@web` alias; admin's own global.css only extends Tailwind's content scan.
+import '@web/styles/global.css';
 import '../styles/global.css';
+import '@fortawesome/fontawesome-free/css/fontawesome.min.css';
+import '@fortawesome/fontawesome-free/css/solid.min.css';
+import '@fortawesome/fontawesome-free/css/brands.min.css';
 
 interface Props {
   title?: string;
 }
 const { title = 'Baseout Admin' } = Astro.props;
-
-// Read-only staff surfaces (PRD §16.1). Active state derives from the current
-// pathname — every page uses this layout, so the nav needs no per-page props.
-const NAV = [
-  { href: '/', label: 'Organizations' },
-  { href: '/subscriptions', label: 'Subscriptions' },
-  { href: '/backups', label: 'Backups' },
-  { href: '/connections', label: 'Connections' },
-  { href: '/databases', label: 'Databases' },
-  { href: '/services', label: 'Services' },
-  { href: '/migration', label: 'Migration' },
-];
-const currentPath = Astro.url.pathname.replace(/\/+$/, '') || '/';
 ---
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="baseout-light" data-font-family="urbanist" class="group/html" style="color-scheme: light dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
+      rel="stylesheet"
+    />
     <title>{title}</title>
+    <script is:inline>
+      // First-paint theme: stored preference wins, else OS preference. Mirrors
+      // apps/web so the light/dark choice carries the same semantics ('theme' =
+      // 'dark' | 'light' → baseout / baseout-light). The footer toggle
+      // (wireThemeToggle) owns every subsequent change.
+      function applyTheme() {
+        var stored = null;
+        try { stored = localStorage.getItem('theme'); } catch (e) { /* private mode */ }
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var isDark = stored === 'dark' || (!stored && prefersDark);
+        document.documentElement.setAttribute('data-theme', isDark ? 'baseout' : 'baseout-light');
+      }
+      applyTheme();
+    </script>
   </head>
-  <body class="min-h-screen bg-base-200 text-base-content antialiased">
-    <header class="navbar bg-base-300 border-b border-base-100 px-6 gap-4">
-      <div class="flex items-center gap-3">
-        <span class="text-lg font-semibold whitespace-nowrap">Baseout Admin</span>
-        <span class="badge badge-ghost badge-sm">staff</span>
-      </div>
-      <nav class="flex-1 overflow-x-auto">
-        <ul class="menu menu-horizontal menu-sm flex-nowrap px-1">
-          {NAV.map((item) => (
-            <li>
-              <a href={item.href} class={currentPath === item.href ? 'menu-active' : ''}>
-                {item.label}
-              </a>
-            </li>
-          ))}
-        </ul>
-      </nav>
-      <div class="flex-none text-sm text-base-content/60">
-        <slot name="user" />
-      </div>
-    </header>
-    <main class="p-6">
-      <slot />
-    </main>
+  <body class="font-sans text-base-content antialiased">
+    <slot />
   </body>
 </html>
+
+<style>
+  html, body {
+    margin: 0;
+    width: 100%;
+    min-height: 100%;
+  }
+</style>

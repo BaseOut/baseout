@@ -19,6 +19,8 @@
   "dependencies": {
     "@astrojs/cloudflare": "^13.1.10",
     "@baseout/db-schema": "workspace:*",
+    "@fortawesome/fontawesome-free": "^6.7.2",
+    "@opensided/theme": "file:../web/vendor/@opensided/theme",
     "@tailwindcss/vite": "^4.2.2",
     "astro": "^6.1.2",
     "daisyui": "^5.5.19",
@@ -29,6 +31,8 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.8",
     "@cloudflare/workers-types": "^4.20250906.0",
+    "@iconify-json/lucide": "^1.2.105",
+    "@iconify/tailwind4": "^1.2.3",
     "@types/node": "^25.5.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.5",

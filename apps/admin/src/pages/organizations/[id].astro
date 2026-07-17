@@ -1,0 +1,479 @@
+---
+// Organization drill-in — the per-Org support view (umbrella `admin` spec:
+// "Organization browser … per-Org drill-in"). One page per org: members,
+// spaces (+ database/destinations), subscription, connections, recent backup
+// runs, recent audit entries. READ-ONLY — staff actions stay on their home
+// pages. Gated to staff by src/middleware.ts.
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import {
+  adminAuditLog,
+  backupRuns,
+  connections,
+  organizationMembers,
+  organizations,
+  platforms,
+  spaceDatabases,
+  spacePlatforms,
+  spaces,
+  storageDestinations,
+  subscriptionItems,
+  subscriptions,
+  users,
+} from '../../db/schema';
+import { UUID_RE } from '../../lib/actions/http';
+import { summarizeHealth, HEALTH_BADGE, type ConnectionRow } from '../../lib/connection-health';
+import { RUN_STATUS_BADGE, formatDuration } from '../../lib/backup-runs';
+import { SUB_STATUS_BADGE, stripeCustomerUrl } from '../../lib/subscriptions';
+import { pairAuditRows, AUDIT_OUTCOME_BADGE, AUDIT_OUTCOME_LABEL, type AuditResultRow } from '../../lib/audit-view';
+import { orderMembers, overageLabel, spacesWithAssets } from '../../lib/org-detail';
+import { DB_STATUS_BADGE } from '../../lib/db-tracker';
+import type { BadgeVariant } from '../../lib/ui';
+
+const { db } = Astro.locals;
+const now = new Date();
+
+const id = Astro.params.id;
+if (!id || !UUID_RE.test(id)) {
+  return new Response('Not found', { status: 404 });
+}
+
+const orgRows = await db
+  .select({
+    id: organizations.id,
+    name: organizations.name,
+    slug: organizations.slug,
+    stripeCustomerId: organizations.stripeCustomerId,
+    hasMigrated: organizations.hasMigrated,
+    dynamicLocked: organizations.dynamicLocked,
+    overageMode: organizations.overageMode,
+    monthlyOverageCap: organizations.monthlyOverageCap,
+    createdAt: organizations.createdAt,
+  })
+  .from(organizations)
+  .where(eq(organizations.id, id))
+  .limit(1);
+
+const org = orgRows[0];
+if (!org) {
+  return new Response('Not found', { status: 404 });
+}
+
+const [memberRows, spaceRows, subRows, itemRows, connRows] = await Promise.all([
+  db
+    .select({
+      userId: organizationMembers.userId,
+      name: users.name,
+      email: users.email,
+      role: organizationMembers.role,
+      acceptedAt: organizationMembers.acceptedAt,
+    })
+    .from(organizationMembers)
+    .leftJoin(users, eq(users.id, organizationMembers.userId))
+    .where(eq(organizationMembers.organizationId, id))
+    .limit(50),
+  db
+    .select({
+      id: spaces.id,
+      name: spaces.name,
+      status: spaces.status,
+      platformName: platforms.name,
+    })
+    .from(spaces)
+    .leftJoin(spacePlatforms, eq(spacePlatforms.spaceId, spaces.id))
+    .leftJoin(platforms, eq(platforms.id, spacePlatforms.platformId))
+    .where(eq(spaces.organizationId, id))
+    .limit(100),
+  db
+    .select({
+      id: subscriptions.id,
+      status: subscriptions.status,
+      stripeSubscriptionId: subscriptions.stripeSubscriptionId,
+    })
+    .from(subscriptions)
+    .where(eq(subscriptions.organizationId, id))
+    .limit(1),
+  db
+    .select({
+      platformName: platforms.name,
+      tier: subscriptionItems.tier,
+      billingPeriod: subscriptionItems.billingPeriod,
+      trialEndsAt: subscriptionItems.trialEndsAt,
+      currentPeriodEnd: subscriptionItems.currentPeriodEnd,
+      cancelledAt: subscriptionItems.cancelledAt,
+    })
+    .from(subscriptionItems)
+    .innerJoin(subscriptions, eq(subscriptions.id, subscriptionItems.subscriptionId))
+    .leftJoin(platforms, eq(platforms.id, subscriptionItems.platformId))
+    .where(eq(subscriptions.organizationId, id))
+    .limit(20),
+  db
+    .select({
+      id: connections.id,
+      orgName: organizations.name,
+      platformName: platforms.name,
+      displayName: connections.displayName,
+      scope: connections.scope,
+      status: connections.status,
+      tokenExpiresAt: connections.tokenExpiresAt,
+      invalidatedAt: connections.invalidatedAt,
+      lastUsedAt: connections.lastUsedAt,
+      oauthRefreshClaimId: connections.oauthRefreshClaimId,
+      oauthRefreshClaimedAt: connections.oauthRefreshClaimedAt,
+      oauthRefreshLastError: connections.oauthRefreshLastError,
+      createdAt: connections.createdAt,
+    })
+    .from(connections)
+    .leftJoin(organizations, eq(organizations.id, connections.organizationId))
+    .leftJoin(platforms, eq(platforms.id, connections.platformId))
+    .where(eq(connections.organizationId, id))
+    .limit(50) as Promise<ConnectionRow[]>,
+]);
+
+const spaceIds = spaceRows.map((s) => s.id);
+const [dbRows, destRows, runRows] = await Promise.all([
+  spaceIds.length === 0
+    ? Promise.resolve([])
+    : db
+        .select({
+          spaceId: spaceDatabases.spaceId,
+          backend: spaceDatabases.backend,
+          status: spaceDatabases.status,
+          schemaVersion: spaceDatabases.schemaVersion,
+        })
+        .from(spaceDatabases)
+        .where(inArray(spaceDatabases.spaceId, spaceIds)),
+  spaceIds.length === 0
+    ? Promise.resolve([])
+    : db
+        .select({
+          spaceId: storageDestinations.spaceId,
+          type: storageDestinations.type,
+          oauthAccountEmail: storageDestinations.oauthAccountEmail,
+        })
+        .from(storageDestinations)
+        .where(inArray(storageDestinations.spaceId, spaceIds)),
+  spaceIds.length === 0
+    ? Promise.resolve([])
+    : db
+        .select({
+          id: backupRuns.id,
+          status: backupRuns.status,
+          kind: backupRuns.kind,
+          triggeredBy: backupRuns.triggeredBy,
+          startedAt: backupRuns.startedAt,
+          completedAt: backupRuns.completedAt,
+          createdAt: backupRuns.createdAt,
+          spaceName: spaces.name,
+        })
+        .from(backupRuns)
+        .leftJoin(spaces, eq(spaces.id, backupRuns.spaceId))
+        .where(inArray(backupRuns.spaceId, spaceIds))
+        .orderBy(desc(backupRuns.createdAt))
+        .limit(20),
+]);
+
+// Recent audit entries for this org (paired intent+result, same as /audit).
+const auditIntents = await db
+  .select({
+    id: adminAuditLog.id,
+    createdAt: adminAuditLog.createdAt,
+    actorEmail: adminAuditLog.actorEmail,
+    action: adminAuditLog.action,
+    targetType: adminAuditLog.targetType,
+    targetId: adminAuditLog.targetId,
+    organizationId: adminAuditLog.organizationId,
+    params: adminAuditLog.params,
+  })
+  .from(adminAuditLog)
+  .where(and(eq(adminAuditLog.phase, 'intent'), eq(adminAuditLog.organizationId, id)))
+  .orderBy(desc(adminAuditLog.createdAt))
+  .limit(20);
+const auditResults: AuditResultRow[] = auditIntents.length === 0
+  ? []
+  : await db
+      .select({
+        intentId: adminAuditLog.intentId,
+        createdAt: adminAuditLog.createdAt,
+        params: adminAuditLog.params,
+      })
+      .from(adminAuditLog)
+      .where(and(
+        eq(adminAuditLog.phase, 'result'),
+        inArray(adminAuditLog.intentId, auditIntents.map((i) => i.id)),
+      ));
+const auditEntries = pairAuditRows(auditIntents, auditResults);
+
+const members = orderMembers(memberRows);
+const spaceDetails = spacesWithAssets(spaceRows, dbRows, destRows);
+const { classified, summary: connSummary } = summarizeHealth(connRows, now);
+const subscription = subRows[0] ?? null;
+const needingAttention = connSummary.total - connSummary.byHealth.healthy;
+
+const spaceStatusVariant: Record<string, BadgeVariant> = {
+  active: 'success',
+  paused: 'warning',
+  error: 'error',
+  setup_incomplete: 'default',
+};
+
+const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 16) : '—');
+const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
+---
+
+<SidebarLayout title={`Admin — ${org.name}`}>
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader
+      title={org.name}
+      description={`Created ${fmtDate(org.createdAt)} · overage: ${overageLabel(org.overageMode, org.monthlyOverageCap)}`}
+      backHref="/"
+      backLabel="Organizations"
+    >
+      <Fragment slot="meta">
+        <span class="font-mono text-xs text-base-content/50">{org.slug}</span>
+        {!org.hasMigrated && <Badge variant="warning" size="sm">migration pending</Badge>}
+        {org.dynamicLocked && <Badge variant="warning" size="sm">dynamic-locked</Badge>}
+        {subscription ? (
+          <Badge variant={SUB_STATUS_BADGE[subscription.status] ?? 'default'} size="sm">{subscription.status}</Badge>
+        ) : (
+          <Badge variant="default" size="sm">no subscription</Badge>
+        )}
+      </Fragment>
+    </PageHeader>
+
+    <div class="stats stats-horizontal bg-base-100 border border-base-300">
+      <div class="stat py-3">
+        <div class="stat-title">Spaces</div>
+        <div class="stat-value text-2xl">{spaceDetails.length}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Members</div>
+        <div class="stat-value text-2xl">{members.length}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Connections needing attention</div>
+        <div class={`stat-value text-2xl ${needingAttention > 0 ? 'text-error' : ''}`}>{needingAttention}</div>
+        <div class="stat-desc">{connSummary.total} total</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Last backup run</div>
+        <div class="stat-value text-2xl">{runRows[0] ? fmtDate(runRows[0].createdAt) : '—'}</div>
+        {runRows[0] && <div class="stat-desc">{runRows[0].status}</div>}
+      </div>
+    </div>
+
+    <Card variant="outlined">
+      <div class="flex flex-col gap-3">
+        <h2 class="text-base font-semibold">Members</h2>
+        {members.length === 0 ? (
+          <p class="text-sm text-base-content/50">No members.</p>
+        ) : (
+          <div class="overflow-x-auto rounded-box border border-base-300">
+            <table class="table table-zebra table-sm">
+              <thead>
+                <tr><th>Name</th><th>Email</th><th>Role</th><th>Accepted</th></tr>
+              </thead>
+              <tbody>
+                {members.map((m) => (
+                  <tr>
+                    <td>{m.name ?? '—'}</td>
+                    <td class="text-xs">{m.email ?? '—'}</td>
+                    <td><Badge variant={m.role === 'owner' ? 'primary' : 'default'} size="sm">{m.role}</Badge></td>
+                    <td class="font-mono text-xs">{fmtDate(m.acceptedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Card>
+
+    <Card variant="outlined">
+      <div class="flex flex-col gap-3">
+        <h2 class="text-base font-semibold">Subscription</h2>
+        {!subscription ? (
+          <p class="text-sm text-base-content/50">No subscription.</p>
+        ) : (
+          <div class="flex flex-col gap-2">
+            <div class="flex flex-wrap items-center gap-2 text-sm">
+              <Badge variant={SUB_STATUS_BADGE[subscription.status] ?? 'default'} size="sm">{subscription.status}</Badge>
+              {org.stripeCustomerId && (
+                <a
+                  href={stripeCustomerUrl(org.stripeCustomerId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="link link-hover font-mono text-xs"
+                >{org.stripeCustomerId}</a>
+              )}
+            </div>
+            {itemRows.length > 0 && (
+              <div class="overflow-x-auto rounded-box border border-base-300">
+                <table class="table table-zebra table-sm">
+                  <thead>
+                    <tr><th>Platform</th><th>Tier</th><th>Billing</th><th>Trial ends</th><th>Period ends</th><th>Cancelled</th></tr>
+                  </thead>
+                  <tbody>
+                    {itemRows.map((i) => (
+                      <tr>
+                        <td>{i.platformName ?? '—'}</td>
+                        <td><Badge variant="primary" size="sm">{i.tier}</Badge></td>
+                        <td>{i.billingPeriod}</td>
+                        <td class="font-mono text-xs">{fmtDate(i.trialEndsAt)}</td>
+                        <td class="font-mono text-xs">{fmtDate(i.currentPeriodEnd)}</td>
+                        <td class="font-mono text-xs">{fmtDate(i.cancelledAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </Card>
+
+    <Card variant="outlined">
+      <div class="flex flex-col gap-3">
+        <h2 class="text-base font-semibold">Spaces</h2>
+        {spaceDetails.length === 0 ? (
+          <p class="text-sm text-base-content/50">No spaces.</p>
+        ) : (
+          <div class="overflow-x-auto rounded-box border border-base-300">
+            <table class="table table-zebra table-sm">
+              <thead>
+                <tr><th>Space</th><th>Status</th><th>Platform</th><th>Database</th><th>Destinations</th></tr>
+              </thead>
+              <tbody>
+                {spaceDetails.map((s) => (
+                  <tr>
+                    <td>{s.name}</td>
+                    <td><Badge variant={spaceStatusVariant[s.status] ?? 'default'} size="sm">{s.status}</Badge></td>
+                    <td>{s.platformName ?? '—'}</td>
+                    <td>
+                      {s.database ? (
+                        <span class="flex items-center gap-1 text-xs">
+                          <span>{s.database.backend}</span>
+                          <Badge variant={DB_STATUS_BADGE[s.database.status] ?? 'default'} size="sm">{s.database.status}</Badge>
+                          {s.database.schemaVersion !== null && (
+                            <span class="text-base-content/50">v{s.database.schemaVersion}</span>
+                          )}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td class="text-xs">
+                      {s.destinations.length === 0
+                        ? '—'
+                        : s.destinations.map((d) => d.type).join(', ')}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Card>
+
+    <Card variant="outlined">
+      <div class="flex flex-col gap-3">
+        <h2 class="text-base font-semibold">Connections</h2>
+        {classified.length === 0 ? (
+          <p class="text-sm text-base-content/50">No connections. Actions live on the <a href="/connections" class="link link-hover">Connections</a> page.</p>
+        ) : (
+          <div class="overflow-x-auto rounded-box border border-base-300">
+            <table class="table table-zebra table-sm">
+              <thead>
+                <tr><th>Platform</th><th>Name</th><th>Status</th><th>Health</th><th>Last used</th><th>Last refresh error</th></tr>
+              </thead>
+              <tbody>
+                {classified.map((c) => (
+                  <tr>
+                    <td>{c.platformName ?? '—'}</td>
+                    <td class="text-xs">{c.displayName ?? '—'}</td>
+                    <td><Badge variant="default" size="sm">{c.status}</Badge></td>
+                    <td><Badge variant={HEALTH_BADGE[c.health]} size="sm">{c.health.replace('_', ' ')}</Badge></td>
+                    <td class="font-mono text-xs whitespace-nowrap">{fmt(c.lastUsedAt)}</td>
+                    <td class="max-w-xs truncate text-error text-xs" title={c.oauthRefreshLastError ?? ''}>{c.oauthRefreshLastError ?? ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Card>
+
+    <Card variant="outlined">
+      <div class="flex flex-col gap-3">
+        <h2 class="text-base font-semibold">Recent backup runs</h2>
+        {runRows.length === 0 ? (
+          <p class="text-sm text-base-content/50">No backup runs yet.</p>
+        ) : (
+          <div class="overflow-x-auto rounded-box border border-base-300">
+            <table class="table table-zebra table-sm">
+              <thead>
+                <tr><th>Created</th><th>Space</th><th>Status</th><th>Kind</th><th>Trigger</th><th>Duration</th></tr>
+              </thead>
+              <tbody>
+                {runRows.map((r) => (
+                  <tr>
+                    <td class="font-mono text-xs whitespace-nowrap">
+                      <a href={`/backups/${r.id}`} class="link link-hover">{fmt(r.createdAt)}</a>
+                    </td>
+                    <td>{r.spaceName ?? '—'}</td>
+                    <td><Badge variant={RUN_STATUS_BADGE[r.status] ?? 'default'} size="sm">{r.status}</Badge></td>
+                    <td>{r.kind}</td>
+                    <td>{r.triggeredBy}</td>
+                    <td class="whitespace-nowrap">{formatDuration(r.startedAt, r.completedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Card>
+
+    <Card variant="outlined">
+      <div class="flex flex-col gap-3">
+        <h2 class="text-base font-semibold">Recent staff actions</h2>
+        {auditEntries.length === 0 ? (
+          <p class="text-sm text-base-content/50">No staff actions recorded for this organization. Full trail on <a href="/audit" class="link link-hover">Audit</a>.</p>
+        ) : (
+          <div class="overflow-x-auto rounded-box border border-base-300">
+            <table class="table table-zebra table-sm">
+              <thead>
+                <tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Outcome</th></tr>
+              </thead>
+              <tbody>
+                {auditEntries.map((e) => (
+                  <tr>
+                    <td class="font-mono text-xs whitespace-nowrap">{fmt(e.createdAt)}</td>
+                    <td class="text-xs">{e.actorEmail}</td>
+                    <td><Badge variant="primary" size="sm">{e.action.replace(/_/g, ' ')}</Badge></td>
+                    <td class="text-xs">
+                      <span class="text-base-content/60">{e.targetType}</span>
+                      <span class="font-mono ml-1" title={e.targetId}>{e.targetId.slice(0, 8)}…</span>
+                    </td>
+                    <td>
+                      <span class="flex items-center gap-1">
+                        <Badge variant={AUDIT_OUTCOME_BADGE[e.outcome]} size="sm">{AUDIT_OUTCOME_LABEL[e.outcome]}</Badge>
+                        {e.resultCode && <span class="font-mono text-xs text-base-content/60">{e.resultCode}</span>}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Card>
+  </div>
+</SidebarLayout>

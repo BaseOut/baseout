@@ -6,6 +6,8 @@
 // the "last observed volume" columns proxy it from each Space's most recent
 // succeeded backup run until a phase-2 service writes real size metrics.
 
+import type { BadgeVariant } from './ui'
+
 export interface SpaceDbRow {
   id: string
   spaceId: string
@@ -96,10 +98,11 @@ export function buildDbTracker(
   }
 }
 
-export const DB_STATUS_BADGE: Record<string, string> = {
-  active: 'badge-success',
-  provisioning: 'badge-info',
-  migrating: 'badge-warning',
-  pending: 'badge-ghost',
-  error: 'badge-error',
+// Shared @web Badge variants (not raw daisyUI classes) — see BadgeVariant.
+export const DB_STATUS_BADGE: Record<string, BadgeVariant> = {
+  active: 'success',
+  provisioning: 'primary',
+  migrating: 'warning',
+  pending: 'default',
+  error: 'error',
 }

@@ -9,6 +9,8 @@
 // service_runs table written by server/workflows) is the named phase-2
 // follow-up.
 
+import type { BadgeVariant } from './ui'
+
 export type SignalStatus = 'ok' | 'warning' | 'unknown'
 
 export interface HealthSignal {
@@ -123,8 +125,9 @@ export function deriveServiceHealth(inputs: ServiceHealthInputs, now: Date): Hea
   return signals
 }
 
-export const SIGNAL_BADGE: Record<SignalStatus, string> = {
-  ok: 'badge-success',
-  warning: 'badge-warning',
-  unknown: 'badge-ghost',
+// Shared @web Badge variants (not raw daisyUI classes) — see BadgeVariant.
+export const SIGNAL_BADGE: Record<SignalStatus, BadgeVariant> = {
+  ok: 'success',
+  warning: 'warning',
+  unknown: 'default',
 }

@@ -95,3 +95,44 @@ describe('cancelRun', () => {
     })
   })
 })
+
+describe('tokenHealth', () => {
+  it('GETs the token-health route and returns the counters on 2xx', async () => {
+    const binding = makeBinding(async () =>
+      jsonResponse(200, { activeExpired: 2, refreshExpiringSoon: 1 }),
+    )
+    const engine = createAdminEngine({ binding, internalToken: 'tok' })!
+
+    const result = await engine.tokenHealth()
+
+    expect(result).toEqual({ ok: true, activeExpired: 2, refreshExpiringSoon: 1 })
+    const [url, init] = binding.fetch.mock.calls[0]
+    expect(url).toBe('https://engine/api/internal/connections/token-health')
+    expect(init?.method).toBe('GET')
+    expect((init?.headers as Record<string, string>)['x-internal-token']).toBe('tok')
+  })
+
+  it('maps unauthorized and collapses other failures to engine_error', async () => {
+    const unauthorized = createAdminEngine({
+      binding: makeBinding(async () => jsonResponse(401, { error: 'unauthorized' })),
+      internalToken: 'tok',
+    })!
+    expect(await unauthorized.tokenHealth()).toEqual({ ok: false, code: 'unauthorized', status: 401 })
+
+    const broken = createAdminEngine({
+      binding: makeBinding(async () => new Response('boom', { status: 500 })),
+      internalToken: 'tok',
+    })!
+    expect(await broken.tokenHealth()).toEqual({ ok: false, code: 'engine_error', status: 500 })
+  })
+
+  it('returns engine_unreachable when the binding throws', async () => {
+    const engine = createAdminEngine({
+      binding: makeBinding(async () => {
+        throw new Error('network')
+      }),
+      internalToken: 'tok',
+    })!
+    expect(await engine.tokenHealth()).toEqual({ ok: false, code: 'engine_unreachable', status: 0 })
+  })
+})

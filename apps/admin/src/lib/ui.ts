@@ -4,6 +4,24 @@
 // the JSON POST + spinner + error extraction the three action pages share.
 
 /**
+ * Variants of the shared @web Badge primitive used by admin's status maps —
+ * the subset of Badge's full variant union that the staff surfaces need. The
+ * status maps (RUN_STATUS_BADGE, HEALTH_BADGE, …) resolve to these so pages can
+ * render `<Badge variant={MAP[key]}>` exactly like apps/web's statusMeta idiom.
+ * daisyUI's info/neutral collapse onto the brand palette here (primary/default).
+ */
+export type BadgeVariant = 'default' | 'primary' | 'success' | 'warning' | 'error'
+
+/**
+ * Appended to a list page's description when a bounded query came back full —
+ * the honest "there may be more" signal (no pagination at staff scale).
+ * Returns '' below the limit so callers can always concatenate.
+ */
+export function truncationNote(count: number, limit: number): string {
+  return count >= limit ? ` Showing the most recent ${limit}.` : ''
+}
+
+/**
  * Toggle a daisyUI loading spinner inside a submit button while waiting on
  * the server. Idempotent; call from a `finally` so it always clears.
  */

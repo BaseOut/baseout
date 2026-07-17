@@ -1,0 +1,164 @@
+---
+// App chrome for apps/admin — the staff-console sidebar shell.
+//
+// It reproduces apps/web's sidebar DOM scaffold (the #layout-sidebar /
+// #layout-content structure + toggle checkboxes styled by
+// @opensided/theme/styles/pages/layout.css), so the chrome looks identical to
+// the customer app, but WITHOUT importing apps/web's SidebarLayout — that one
+// pulls in cloudflare:workers, better-auth, the space switcher, the inbox feed,
+// and nanostores, none of which belong in a read-only staff console. The nav is
+// the flat staff surface list; the footer shows the gated user + a light/dark
+// toggle (the same wireThemeToggle apps/web uses).
+//
+// The `group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:*` classes
+// (the desktop rail-collapse variant, mirroring apps/web's AppShellSidebar) are
+// written out in full — Tailwind only emits classes it finds as complete
+// literals, so they can't be built from a template variable.
+import Layout from './Layout.astro';
+
+interface Props {
+  title?: string;
+}
+const { title = 'Baseout Admin' } = Astro.props;
+
+const { user } = Astro.locals;
+
+// Read-only staff surfaces (PRD §16.1). Icons use the shared iconify/lucide set.
+const NAV = [
+  { href: '/', label: 'Organizations', icon: 'iconify lucide--building-2' },
+  { href: '/subscriptions', label: 'Subscriptions', icon: 'iconify lucide--credit-card' },
+  { href: '/backups', label: 'Backups', icon: 'iconify lucide--database-backup' },
+  { href: '/restores', label: 'Restores', icon: 'iconify lucide--archive-restore' },
+  { href: '/connections', label: 'Connections', icon: 'iconify lucide--plug' },
+  { href: '/databases', label: 'Databases', icon: 'iconify lucide--database' },
+  { href: '/services', label: 'Services', icon: 'iconify lucide--activity' },
+  { href: '/migration', label: 'Migration', icon: 'iconify lucide--arrow-right-left' },
+  { href: '/audit', label: 'Audit', icon: 'iconify lucide--scroll-text' },
+];
+
+const currentPath = Astro.url.pathname.replace(/\/+$/, '') || '/';
+function isActive(href: string): boolean {
+  return currentPath === href || (href !== '/' && currentPath.startsWith(href));
+}
+
+const userInitial = (user?.email?.charAt(0) ?? 'S').toUpperCase();
+---
+
+<Layout title={title}>
+  <div class="flex min-h-screen relative">
+    <input type="checkbox" id="layout-sidebar-toggle-trigger" class="hidden" aria-label="Toggle sidebar" />
+    <input type="checkbox" id="layout-sidebar-hover-trigger" class="hidden" aria-label="Collapse sidebar to rail" />
+    <div id="layout-sidebar-hover" class="bg-base-300 h-screen w-1"></div>
+
+    <div id="layout-sidebar" class="sidebar-menu flex flex-col">
+      <!-- Brand -->
+      <div class="flex h-16 min-h-16 items-center justify-between gap-3 ps-5 pe-4 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:ps-0 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:pe-0">
+        <a href="/" class="flex items-center gap-2 grow min-w-0 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden" aria-label="Baseout Admin">
+          <span class="text-lg font-semibold whitespace-nowrap">Baseout</span>
+          <span class="badge badge-primary badge-soft badge-sm">staff</span>
+        </a>
+        <a href="/" class="hidden items-center justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:flex" aria-label="Baseout Admin">
+          <i class="iconify lucide--shield-check size-6 text-primary"></i>
+        </a>
+      </div>
+
+      <!-- Floating rail toggle — desktop only -->
+      <label
+        for="layout-sidebar-hover-trigger"
+        title="Toggle sidebar"
+        class="absolute top-[18px] left-[242px] group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:left-[52px] z-[100] flex size-7 cursor-pointer items-center justify-center rounded-full border border-base-content/15 bg-base-100 text-base-content/65 hover:text-base-content hover:border-base-content/30 transition-all duration-300 max-lg:hidden"
+      >
+        <i class="iconify lucide--panel-left-close size-3.5 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden"></i>
+        <i class="iconify lucide--panel-left-open size-3.5 hidden group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:block"></i>
+      </label>
+
+      <!-- Navigation -->
+      <div class="relative min-h-0 grow">
+        <div class="size-full overflow-y-auto">
+          <div class="mt-1 mb-3 space-y-0.5 px-2.5 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-1">
+            {NAV.map((item) => {
+              const active = isActive(item.href);
+              return (
+                <a
+                  href={item.href}
+                  class={`menu-item sidebar-tip ${active ? 'active' : ''} group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0`}
+                  aria-current={active ? 'page' : undefined}
+                  data-tip={item.label}
+                >
+                  <i class={`${item.icon} size-4 shrink-0`}></i>
+                  <span class="grow group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">{item.label}</span>
+                </a>
+              );
+            })}
+          </div>
+        </div>
+        <div class="from-base-100/60 pointer-events-none absolute start-0 end-0 bottom-0 h-7 bg-linear-to-t to-transparent"></div>
+      </div>
+
+      <!-- Footer: user + theme toggle -->
+      <div class="mb-2 mt-2">
+        <hr class="border-base-300 my-2 border-dashed" />
+
+        <div class="mx-2 flex items-center gap-2.5 rounded-box bg-base-200 px-3 py-2 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:mx-1 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0">
+          <div class="avatar shrink-0">
+            <div class="bg-base-200 mask mask-squircle w-8">
+              <div class="w-full h-full flex items-center justify-center bg-primary/15 text-primary">
+                <span class="text-xs font-bold">{userInitial}</span>
+              </div>
+            </div>
+          </div>
+          <div class="grow -space-y-0.5 min-w-0 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
+            <p class="text-sm font-medium truncate">{user?.email ?? 'Staff'}</p>
+            <p class="text-base-content/60 text-xs truncate">{user?.role ?? 'staff'}</p>
+          </div>
+        </div>
+
+        <div class="mt-2 flex items-center justify-between gap-2 px-4 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
+          <div class="flex items-center gap-2">
+            <i class="iconify lucide--sun text-base-content/60 size-3.5"></i>
+            <input type="checkbox" id="admin-theme-toggle" class="toggle toggle-xs" aria-label="Toggle theme" />
+            <i class="iconify lucide--moon text-base-content/60 size-3.5"></i>
+          </div>
+          {/* Same-origin form POST carries the Origin header — checkOrigin
+              CSRF-gates the route without any client JS. Cookie-only sign-out;
+              see lib/sign-out.ts. */}
+          <form method="post" action="/api/auth/sign-out">
+            <button type="submit" class="btn btn-ghost btn-xs gap-1 text-base-content/60 hover:text-error">
+              <i class="iconify lucide--log-out size-3.5"></i>
+              Sign out
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <label for="layout-sidebar-toggle-trigger" id="layout-sidebar-backdrop"></label>
+
+    <div class="relative flex flex-1 flex-col min-w-0">
+      <!-- Mobile topbar — the only way to reach the off-canvas sidebar on <lg. -->
+      <div role="navigation" aria-label="Navbar" class="flex items-center justify-between px-3 lg:hidden" id="layout-topbar">
+        <label class="btn btn-square btn-ghost btn-sm" aria-label="Toggle sidebar" for="layout-sidebar-toggle-trigger">
+          <span class="iconify lucide--menu icon-xl" aria-hidden="true"></span>
+        </label>
+        <span class="text-sm font-semibold">Baseout Admin</span>
+        <span class="w-8"></span>
+      </div>
+
+      <main id="layout-content" class="flex-1 p-6 md:p-8">
+        <slot />
+      </main>
+    </div>
+  </div>
+</Layout>
+
+<script>
+  import { wireThemeToggle } from '@web/lib/theme';
+  import { initActionConfirm } from '../lib/action-confirm';
+
+  document
+    .querySelectorAll<HTMLInputElement>('#admin-theme-toggle')
+    .forEach(wireThemeToggle);
+
+  // No-op on pages without a confirm dialog (initActionConfirm early-returns).
+  initActionConfirm();
+</script>

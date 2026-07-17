@@ -32,6 +32,12 @@ importers:
       '@baseout/db-schema':
         specifier: workspace:*
         version: link:../../packages/db-schema
+      '@fortawesome/fontawesome-free':
+        specifier: ^6.7.2
+        version: 6.7.2
+      '@opensided/theme':
+        specifier: file:../web/vendor/@opensided/theme
+        version: file:apps/web/vendor/@opensided/theme(@tailwindcss/vite@4.2.4(vite@8.1.0(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)))(daisyui@5.5.19)(react-dom@19.2.7(react@19.2.7))(react-router@7.15.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)(simplebar-react@3.3.2(react@19.2.7))(tailwindcss@4.2.4)
       '@tailwindcss/vite':
         specifier: ^4.2.2
         version: 4.2.4(vite@8.1.0(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4))
@@ -57,6 +63,12 @@ importers:
       '@cloudflare/workers-types':
         specifier: ^4.20250906.0
         version: 4.20260504.1
+      '@iconify-json/lucide':
+        specifier: ^1.2.105
+        version: 1.2.105
+      '@iconify/tailwind4':
+        specifier: ^1.2.3
+        version: 1.2.3(tailwindcss@4.2.4)
       '@types/node':
         specifier: ^25.5.0
         version: 25.6.0
@@ -8109,6 +8121,17 @@ snapshots:
   '@opensided/theme@file:apps/web/vendor/@opensided/theme(@tailwindcss/vite@4.2.4(vite@8.1.0(@types/node@22.19.17)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)))(daisyui@5.5.19)(react-dom@19.2.7(react@19.2.7))(react-router@7.15.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)(simplebar-react@3.3.2(react@19.2.7))(tailwindcss@4.2.4)':
     dependencies:
       '@tailwindcss/vite': 4.2.4(vite@8.1.0(@types/node@22.19.17)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4))
+      daisyui: 5.5.19
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
+      react-router: 7.15.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      simplebar-react: 3.3.2(react@19.2.7)
+      tailwindcss: 4.2.4
+      tailwindcss-motion: 1.1.1(tailwindcss@4.2.4)
+
+  '@opensided/theme@file:apps/web/vendor/@opensided/theme(@tailwindcss/vite@4.2.4(vite@8.1.0(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4)))(daisyui@5.5.19)(react-dom@19.2.7(react@19.2.7))(react-router@7.15.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react@19.2.7)(simplebar-react@3.3.2(react@19.2.7))(tailwindcss@4.2.4)':
+    dependencies:
+      '@tailwindcss/vite': 4.2.4(vite@8.1.0(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4))
       daisyui: 5.5.19
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)

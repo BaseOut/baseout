@@ -1,0 +1,242 @@
+---
+// Backup run drill-in — full run row + per-base/per-table breakdown.
+// Reads backup_run_bases/_tables directly from the master DB (the engine's
+// runs/:id/detail route reads the same tables; no engine call needed).
+// Read-only; gated to staff by src/middleware.ts.
+import { eq, inArray } from 'drizzle-orm';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import Alert from '@web/components/ui/Alert.astro';
+import {
+  backupRuns,
+  backupRunBases,
+  backupRunTables,
+  spaces,
+  organizations,
+  connections,
+} from '../../db/schema';
+import { formatDuration, RUN_STATUS_BADGE } from '../../lib/backup-runs';
+import { buildRunDetail, BASE_STATUS_BADGE, type RunTableRow } from '../../lib/run-detail';
+import { UUID_RE } from '../../lib/actions/http';
+
+const { db } = Astro.locals;
+
+const id = Astro.params.id;
+if (!id || !UUID_RE.test(id)) {
+  return new Response('Not found', { status: 404 });
+}
+
+const runRows = await db
+  .select({
+    id: backupRuns.id,
+    status: backupRuns.status,
+    kind: backupRuns.kind,
+    isTrial: backupRuns.isTrial,
+    triggeredBy: backupRuns.triggeredBy,
+    recordCount: backupRuns.recordCount,
+    tableCount: backupRuns.tableCount,
+    attachmentCount: backupRuns.attachmentCount,
+    startedAt: backupRuns.startedAt,
+    completedAt: backupRuns.completedAt,
+    errorMessage: backupRuns.errorMessage,
+    triggerRunIds: backupRuns.triggerRunIds,
+    deletedAt: backupRuns.deletedAt,
+    createdAt: backupRuns.createdAt,
+    spaceId: backupRuns.spaceId,
+    spaceName: spaces.name,
+    orgId: organizations.id,
+    orgName: organizations.name,
+    connectionName: connections.displayName,
+  })
+  .from(backupRuns)
+  .leftJoin(spaces, eq(spaces.id, backupRuns.spaceId))
+  .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
+  .leftJoin(connections, eq(connections.id, backupRuns.connectionId))
+  .where(eq(backupRuns.id, id))
+  .limit(1);
+
+const run = runRows[0];
+if (!run) {
+  return new Response('Not found', { status: 404 });
+}
+
+const baseRows = await db
+  .select({
+    id: backupRunBases.id,
+    atBaseId: backupRunBases.atBaseId,
+    baseName: backupRunBases.baseName,
+    status: backupRunBases.status,
+    tablesCount: backupRunBases.tablesCount,
+    recordsCount: backupRunBases.recordsCount,
+    attachmentsCount: backupRunBases.attachmentsCount,
+    startedAt: backupRunBases.startedAt,
+    completedAt: backupRunBases.completedAt,
+    errorMessage: backupRunBases.errorMessage,
+  })
+  .from(backupRunBases)
+  .where(eq(backupRunBases.runId, id));
+
+const baseIds = baseRows.map((b) => b.id);
+const tableRows: RunTableRow[] = baseIds.length === 0
+  ? []
+  : await db
+      .select({
+        runBaseId: backupRunTables.runBaseId,
+        tableId: backupRunTables.tableId,
+        tableName: backupRunTables.tableName,
+        recordCount: backupRunTables.recordCount,
+        fieldCount: backupRunTables.fieldCount,
+        attachmentCount: backupRunTables.attachmentCount,
+      })
+      .from(backupRunTables)
+      .where(inArray(backupRunTables.runBaseId, baseIds));
+
+const bases = buildRunDetail(baseRows, tableRows);
+const triggerRunIds = run.triggerRunIds ?? [];
+
+const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 19) : '—');
+---
+
+<SidebarLayout title={`Admin — Run ${run.id.slice(0, 8)}`}>
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader
+      title={`Backup run ${run.id.slice(0, 8)}…`}
+      description={`${run.orgName ?? 'Unknown org'} · ${run.spaceName ?? 'unknown space'} · created ${fmt(run.createdAt)}`}
+      backHref="/backups"
+      backLabel="Backup runs"
+    >
+      <Fragment slot="meta">
+        <Badge variant={RUN_STATUS_BADGE[run.status] ?? 'default'}>{run.status}</Badge>
+        <Badge variant="default">{run.kind}</Badge>
+        {run.isTrial && <Badge variant="default">trial</Badge>}
+        {run.deletedAt && <Badge variant="default">pruned</Badge>}
+        <span class="text-xs text-base-content/60">triggered by {run.triggeredBy}</span>
+      </Fragment>
+    </PageHeader>
+
+    <div class="stats stats-horizontal bg-base-100 border border-base-300">
+      <div class="stat py-3">
+        <div class="stat-title">Records</div>
+        <div class="stat-value text-2xl">{run.recordCount ?? '—'}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Tables</div>
+        <div class="stat-value text-2xl">{run.tableCount ?? '—'}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Attachments</div>
+        <div class="stat-value text-2xl">{run.attachmentCount ?? '—'}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Duration</div>
+        <div class="stat-value text-2xl">{formatDuration(run.startedAt, run.completedAt)}</div>
+        <div class="stat-desc">{fmt(run.startedAt)} → {fmt(run.completedAt)}</div>
+      </div>
+    </div>
+
+    {run.errorMessage && (
+      <Alert variant="error" title="Run error">{run.errorMessage}</Alert>
+    )}
+
+    <Card variant="outlined">
+      <div class="flex flex-col gap-2">
+        <h2 class="text-base font-semibold">Run metadata</h2>
+        <div class="grid gap-x-8 gap-y-1 text-sm sm:grid-cols-2">
+          <div class="flex justify-between gap-4">
+            <span class="text-base-content/60">Run ID</span>
+            <span class="font-mono text-xs">{run.id}</span>
+          </div>
+          <div class="flex justify-between gap-4">
+            <span class="text-base-content/60">Organization</span>
+            <span>
+              {run.orgId ? (
+                <a href={`/organizations/${run.orgId}`} class="link link-hover">{run.orgName}</a>
+              ) : (
+                run.orgName ?? '—'
+              )}
+            </span>
+          </div>
+          <div class="flex justify-between gap-4">
+            <span class="text-base-content/60">Space</span>
+            <span>{run.spaceName ?? '—'}</span>
+          </div>
+          <div class="flex justify-between gap-4">
+            <span class="text-base-content/60">Connection</span>
+            <span>{run.connectionName ?? '—'}</span>
+          </div>
+          <div class="flex justify-between gap-4">
+            <span class="text-base-content/60">Soft-deleted (pruned)</span>
+            <span class="font-mono text-xs">{fmt(run.deletedAt)}</span>
+          </div>
+        </div>
+        {triggerRunIds.length > 0 && (
+          <div class="mt-2">
+            <p class="text-sm text-base-content/60">Pending Trigger.dev run IDs</p>
+            <p class="font-mono text-xs break-all">{triggerRunIds.join(', ')}</p>
+          </div>
+        )}
+      </div>
+    </Card>
+
+    <div>
+      <h2 class="text-lg font-semibold">Per-base breakdown</h2>
+      {bases.length === 0 ? (
+        <p class="text-sm text-base-content/50 mt-2">
+          No per-base detail was recorded for this run (completions predating the
+          run-detail snapshot don't have one).
+        </p>
+      ) : (
+        <div class="mt-2 space-y-4">
+          {bases.map((b) => (
+            <Card variant="outlined">
+              <div class="flex flex-col gap-3">
+                <div class="flex items-center justify-between flex-wrap gap-2">
+                  <div class="flex items-center gap-2">
+                    <h3 class="text-base font-semibold">{b.baseName}</h3>
+                    <span class="font-mono text-xs text-base-content/50">{b.atBaseId}</span>
+                    <Badge variant={BASE_STATUS_BADGE[b.status] ?? 'default'} size="sm">{b.status}</Badge>
+                  </div>
+                  <span class="text-xs text-base-content/60">
+                    {b.tablesCount} tables · {b.recordsCount} records · {b.attachmentsCount} attachments
+                    · {formatDuration(b.startedAt, b.completedAt)}
+                  </span>
+                </div>
+                {b.errorMessage && (
+                  <p class="text-sm text-error">{b.errorMessage}</p>
+                )}
+                {b.tables.length > 0 && (
+                  <div class="overflow-x-auto rounded-box border border-base-300">
+                    <table class="table table-zebra table-sm">
+                      <thead>
+                        <tr>
+                          <th>Table</th>
+                          <th>Table ID</th>
+                          <th class="text-right">Records</th>
+                          <th class="text-right">Fields</th>
+                          <th class="text-right">Attachments</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {b.tables.map((t) => (
+                          <tr>
+                            <td>{t.tableName}</td>
+                            <td class="font-mono text-xs">{t.tableId}</td>
+                            <td class="text-right">{t.recordCount}</td>
+                            <td class="text-right">{t.fieldCount}</td>
+                            <td class="text-right">{t.attachmentCount}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+</SidebarLayout>

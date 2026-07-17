@@ -4,9 +4,14 @@
 // row (POST /api/actions/invalidate-connection, audit-logged, cancels in-flight
 // runs). Webhook renewal state is not instrumented yet (no table, renewal cron
 // unbuilt) — noted below rather than faked.
-import { eq, lt, sql } from 'drizzle-orm';
-import Layout from '../layouts/Layout.astro';
-import ActionConfirm from '../components/ActionConfirm.astro';
+import { desc, eq, lt, sql } from 'drizzle-orm';
+import { env } from 'cloudflare:workers';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import Button from '@web/components/ui/Button.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import ConfirmModal from '@web/components/ui/ConfirmModal.astro';
 import {
   connections,
   connectionSessions,
@@ -18,13 +23,33 @@ import {
 import {
   summarizeHealth,
   classifyDestination,
+  filterByHealth,
+  HEALTH_FILTERS,
   HEALTH_BADGE,
   type ConnectionRow,
   type DestinationRow,
 } from '../lib/connection-health';
+import { createAdminEngine, type EngineTokenHealthResult } from '../lib/backup-engine';
+import { truncationNote } from '../lib/ui';
 
-const { db, user } = Astro.locals;
+const { db } = Astro.locals;
 const now = new Date();
+const CONN_LIMIT = 500;
+const DEST_LIMIT = 200;
+
+// Engine token-health snapshot — best-effort (web's banner idiom): a dead or
+// unconfigured engine degrades to a quiet note, never a broken page.
+let tokenHealth: EngineTokenHealthResult | null = null;
+try {
+  const engine = createAdminEngine({
+    binding: env.BACKUP_ENGINE,
+    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+  });
+  tokenHealth = engine ? await engine.tokenHealth() : null;
+} catch {
+  tokenHealth = null;
+}
+const tokenHealthOk = tokenHealth?.ok === true ? tokenHealth : null;
 
 const [connRows, staleSessions, destRows] = await Promise.all([
   db
@@ -45,7 +70,9 @@ const [connRows, staleSessions, destRows] = await Promise.all([
     })
     .from(connections)
     .leftJoin(organizations, eq(organizations.id, connections.organizationId))
-    .leftJoin(platforms, eq(platforms.id, connections.platformId)) as Promise<ConnectionRow[]>,
+    .leftJoin(platforms, eq(platforms.id, connections.platformId))
+    .orderBy(desc(connections.createdAt))
+    .limit(CONN_LIMIT) as Promise<ConnectionRow[]>,
   db
     .select({ count: sql<number>`count(*)::int` })
     .from(connectionSessions)
@@ -62,10 +89,16 @@ const [connRows, staleSessions, destRows] = await Promise.all([
     })
     .from(storageDestinations)
     .leftJoin(spaces, eq(spaces.id, storageDestinations.spaceId))
-    .leftJoin(organizations, eq(organizations.id, spaces.organizationId)) as Promise<DestinationRow[]>,
+    .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
+    .limit(DEST_LIMIT) as Promise<DestinationRow[]>,
 ]);
 
 const { classified, summary } = summarizeHealth(connRows, now);
+
+// ?health= slices the table (post-classification — health is derived); the
+// summary stats stay computed over everything fetched.
+const healthFilter = Astro.url.searchParams.get('health');
+const visibleConnections = filterByHealth(classified, healthFilter);
 const staleSessionCount = staleSessions[0]?.count ?? 0;
 const destinations = destRows.map((d) => ({ ...d, health: classifyDestination(d, now) }));
 
@@ -73,17 +106,24 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
 const broken = summary.total - summary.byHealth.healthy;
 ---
 
-<Layout title="Admin — Connections">
-  <span slot="user">{user?.email}</span>
-
-  <div class="space-y-6">
-    <div>
-      <h1 class="text-2xl font-semibold">Connection health</h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        OAuth connection status across all organizations (PRD §16.1).
-        Webhook renewal state is not yet instrumented — no renewal cron or table exists (phase-2).
-      </p>
-    </div>
+<SidebarLayout title="Admin — Connections">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader
+      title="Connection health"
+      description={`OAuth connection status across all organizations (PRD §16.1). Webhook renewal state is not yet instrumented — no renewal cron or table exists (phase-2).${truncationNote(connRows.length, CONN_LIMIT)}`}
+    >
+      <div slot="actions" role="tablist" class="tabs tabs-box tabs-sm">
+        <a role="tab" href="/connections" aria-selected={!healthFilter} class={`tab ${!healthFilter ? 'tab-active' : ''}`}>all</a>
+        {HEALTH_FILTERS.map((h) => (
+          <a
+            role="tab"
+            href={`/connections?health=${h}`}
+            aria-selected={healthFilter === h}
+            class={`tab ${healthFilter === h ? 'tab-active' : ''}`}
+          >{h.replace('_', ' ')}</a>
+        ))}
+      </div>
+    </PageHeader>
 
     <div class="stats stats-horizontal bg-base-100 border border-base-300">
       <div class="stat py-3">
@@ -104,12 +144,38 @@ const broken = summary.total - summary.byHealth.healthy;
         <div class={`stat-value text-2xl ${staleSessionCount > 0 ? 'text-warning' : ''}`}>{staleSessionCount}</div>
         <div class="stat-desc">connection_sessions past expires_at</div>
       </div>
+      {tokenHealthOk ? (
+        <>
+          <div class="stat py-3">
+            <div class="stat-title">Expired access tokens</div>
+            <div class={`stat-value text-2xl ${tokenHealthOk.activeExpired > 0 ? 'text-error' : ''}`}>{tokenHealthOk.activeExpired}</div>
+            <div class="stat-desc">active connections, per engine</div>
+          </div>
+          <div class="stat py-3">
+            <div class="stat-title">Refresh tokens expiring soon</div>
+            <div class={`stat-value text-2xl ${tokenHealthOk.refreshExpiringSoon > 0 ? 'text-warning' : ''}`}>{tokenHealthOk.refreshExpiringSoon}</div>
+            <div class="stat-desc">per engine token-health probe</div>
+          </div>
+        </>
+      ) : (
+        <div class="stat py-3">
+          <div class="stat-title">Engine token health</div>
+          <div class="stat-value text-2xl text-base-content/40">—</div>
+          <div class="stat-desc">engine token-health unavailable</div>
+        </div>
+      )}
     </div>
 
-    {classified.length === 0 ? (
-      <div class="alert alert-info"><span>No connections yet.</span></div>
+    {visibleConnections.length === 0 ? (
+      <EmptyState
+        icon="lucide--plug"
+        title={healthFilter ? 'No matches' : 'No connections yet'}
+        description={healthFilter
+          ? `No connections with health “${healthFilter.replace('_', ' ')}”.`
+          : 'No OAuth connections across any organization.'}
+      />
     ) : (
-      <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
+      <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
         <table class="table table-zebra table-sm">
           <thead>
             <tr>
@@ -125,7 +191,7 @@ const broken = summary.total - summary.byHealth.healthy;
             </tr>
           </thead>
           <tbody>
-            {classified.map((c) => (
+            {visibleConnections.map((c) => (
               <tr>
                 <td>{c.orgName ?? '—'}</td>
                 <td>{c.platformName ?? '—'}</td>
@@ -133,8 +199,8 @@ const broken = summary.total - summary.byHealth.healthy;
                   <div>{c.displayName ?? '—'}</div>
                   <div class="text-xs text-base-content/50">{c.scope}</div>
                 </td>
-                <td><span class="badge badge-sm badge-ghost">{c.status}</span></td>
-                <td><span class={`badge badge-sm ${HEALTH_BADGE[c.health]}`}>{c.health.replace('_', ' ')}</span></td>
+                <td><Badge variant="default" size="sm">{c.status}</Badge></td>
+                <td><Badge variant={HEALTH_BADGE[c.health]} size="sm">{c.health.replace('_', ' ')}</Badge></td>
                 <td class="font-mono text-xs whitespace-nowrap">{fmt(c.tokenExpiresAt)}</td>
                 <td class="font-mono text-xs whitespace-nowrap">{fmt(c.lastUsedAt)}</td>
                 <td class="max-w-xs truncate text-error text-xs" title={c.oauthRefreshLastError ?? ''}>
@@ -142,12 +208,14 @@ const broken = summary.total - summary.byHealth.healthy;
                 </td>
                 <td class="text-right">
                   {c.status !== 'invalid' && (
-                    <button
-                      class="btn btn-outline btn-error btn-xs"
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      class="text-error"
                       data-action-path="/api/actions/invalidate-connection"
                       data-action-payload={JSON.stringify({ connectionId: c.id })}
                       data-action-label={`Invalidate the ${c.platformName ?? ''} connection "${c.displayName ?? c.id}" for ${c.orgName ?? 'unknown org'}. In-flight backup runs are cancelled, new backups are refused, and the customer sees a reconnect banner until they re-authorize.`}
-                    >Invalidate</button>
+                    >Invalidate</Button>
                   )}
                 </td>
               </tr>
@@ -162,7 +230,7 @@ const broken = summary.total - summary.byHealth.healthy;
       {destinations.length === 0 ? (
         <p class="text-sm text-base-content/50 mt-2">No storage destinations yet.</p>
       ) : (
-        <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100 mt-2">
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100 mt-2">
           <table class="table table-zebra table-sm">
             <thead>
               <tr>
@@ -180,12 +248,15 @@ const broken = summary.total - summary.byHealth.healthy;
                 <tr>
                   <td>{d.orgName ?? '—'}</td>
                   <td>{d.spaceName ?? '—'}</td>
-                  <td><span class="badge badge-sm badge-ghost">{d.type}</span></td>
+                  <td><Badge variant="default" size="sm">{d.type}</Badge></td>
                   <td class="text-xs">{d.oauthAccountEmail ?? '—'}</td>
                   <td>
-                    <span class={`badge badge-sm ${d.health === 'token_expired' ? 'badge-warning' : d.health === 'ok' ? 'badge-success' : 'badge-ghost'}`}>
+                    <Badge
+                      variant={d.health === 'token_expired' ? 'warning' : d.health === 'ok' ? 'success' : 'default'}
+                      size="sm"
+                    >
                       {d.health === 'no_oauth' ? 'n/a' : d.health.replace('_', ' ')}
-                    </span>
+                    </Badge>
                   </td>
                   <td class="font-mono text-xs whitespace-nowrap">{fmt(d.connectedAt)}</td>
                   <td class="font-mono text-xs whitespace-nowrap">{fmt(d.lastValidatedAt)}</td>
@@ -198,5 +269,12 @@ const broken = summary.total - summary.byHealth.healthy;
     </div>
   </div>
 
-  <ActionConfirm title="Invalidate connection" />
-</Layout>
+  <ConfirmModal id="action-confirm" title="Invalidate connection" confirmLabel="Invalidate" confirmClass="btn-error">
+    <p class="text-sm" data-confirm-label></p>
+    <p class="mt-2 text-sm text-error hidden" data-confirm-error></p>
+    <p class="mt-2 text-xs text-base-content/50">
+      This action is recorded in the admin audit log before it executes.
+    </p>
+    <button slot="confirm" type="button" class="btn btn-error" data-confirm-button>Confirm</button>
+  </ConfirmModal>
+</SidebarLayout>

@@ -3,12 +3,16 @@
 // Gated to role='super' by src/middleware.ts. Staff action: "Mark migrated"
 // per pending org (POST /api/actions/force-migration, audit-logged).
 import { eq } from 'drizzle-orm';
-import Layout from '../layouts/Layout.astro';
-import ActionConfirm from '../components/ActionConfirm.astro';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import Button from '@web/components/ui/Button.astro';
+import Alert from '@web/components/ui/Alert.astro';
+import ConfirmModal from '@web/components/ui/ConfirmModal.astro';
 import { organizations, subscriptions } from '../db/schema';
 import { buildMigrationView, type MigrationOrgRow } from '../lib/migration';
 
-const { db, user } = Astro.locals;
+const { db } = Astro.locals;
 
 const orgRows: MigrationOrgRow[] = await db
   .select({
@@ -21,22 +25,19 @@ const orgRows: MigrationOrgRow[] = await db
     subscriptionStatus: subscriptions.status,
   })
   .from(organizations)
-  .leftJoin(subscriptions, eq(subscriptions.organizationId, organizations.id));
+  .leftJoin(subscriptions, eq(subscriptions.organizationId, organizations.id))
+  .limit(1000);
 
 const view = buildMigrationView(orgRows);
 const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
 ---
 
-<Layout title="Admin — Migration">
-  <span slot="user">{user?.email}</span>
-
-  <div class="space-y-6">
-    <div>
-      <h1 class="text-2xl font-semibold">On2Air migration</h1>
-      <p class="text-sm text-base-content/60 mt-1">
-        Completed vs pending migrations (PRD §16.1). Pending = organizations.has_migrated is false.
-      </p>
-    </div>
+<SidebarLayout title="Admin — Migration">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader
+      title="On2Air migration"
+      description="Completed vs pending migrations (PRD §16.1). Pending = organizations.has_migrated is false."
+    />
 
     <div class="stats stats-horizontal bg-base-100 border border-base-300">
       <div class="stat py-3">
@@ -60,9 +61,9 @@ const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
     </div>
 
     {view.pendingOrgs.length === 0 ? (
-      <div class="alert alert-success"><span>No pending migrations. 🎉</span></div>
+      <Alert variant="success">No pending migrations. 🎉</Alert>
     ) : (
-      <div class="overflow-x-auto rounded-lg border border-base-300 bg-base-100">
+      <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
         <table class="table table-zebra table-sm">
           <thead>
             <tr>
@@ -81,15 +82,16 @@ const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
                   <div class="font-mono text-xs text-base-content/50">{o.slug}</div>
                 </td>
                 <td class="font-mono text-xs">{fmtDate(o.createdAt)}</td>
-                <td>{o.dynamicLocked ? <span class="badge badge-sm badge-warning">locked</span> : '—'}</td>
+                <td>{o.dynamicLocked ? <Badge variant="warning" size="sm">locked</Badge> : '—'}</td>
                 <td>{o.subscriptionStatus ?? <span class="text-base-content/50">none</span>}</td>
                 <td class="text-right">
-                  <button
-                    class="btn btn-outline btn-xs"
+                  <Button
+                    variant="outline"
+                    size="sm"
                     data-action-path="/api/actions/force-migration"
                     data-action-payload={JSON.stringify({ organizationId: o.id })}
                     data-action-label={`Mark "${o.name}" (${o.slug}) as migrated. The org leaves the pending list and its "Complete Your Migration" screen goes away. Dynamic-locked is not changed.`}
-                  >Mark migrated</button>
+                  >Mark migrated</Button>
                 </td>
               </tr>
             ))}
@@ -99,5 +101,12 @@ const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
     )}
   </div>
 
-  <ActionConfirm title="Force migration completion" />
-</Layout>
+  <ConfirmModal id="action-confirm" title="Force migration completion" confirmLabel="Mark migrated" confirmClass="btn-error">
+    <p class="text-sm" data-confirm-label></p>
+    <p class="mt-2 text-sm text-error hidden" data-confirm-error></p>
+    <p class="mt-2 text-xs text-base-content/50">
+      This action is recorded in the admin audit log before it executes.
+    </p>
+    <button slot="confirm" type="button" class="btn btn-error" data-confirm-button>Confirm</button>
+  </ConfirmModal>
+</SidebarLayout>
