@@ -54,6 +54,11 @@ Stakeholders: `server` (writes the per-Space DB + brokers reads + provisions/mig
 - **`bo_at_views`**: **included**, but capture is **gated to Airtable Enterprise customers** (the plan at which view metadata is available); empty otherwise.
 - **`managed_pg`**: **schema-per-Space** on a shared cluster (allows multiple Spaces' schemas in one database; cheaper at scale). `space_databases` stores a generic locator (database + schema name).
 
+**Resolved 2026-07-18 (webhook-payload application — see `workflows-instant-webhook`):**
+- **`bo_at_base_runs.run_type`** (`full | incremental`). Lifecycle derivation splits by run type: only `full` runs may derive absence (`removed`/`unknown` from enumeration); `incremental` runs touch lifecycle only for entities their payloads mention.
+- **Explicit destroy events are a second confident removal source.** `destroyedTableIds` / `destroyedFieldIds` / `destroyedRecordIds` in a verified webhook payload set `status='removed'` directly (`first_unseen_run` = the incremental run) — the "full enumeration only" rule exists to prevent inference-based false deletes, and payload destroys are declarations, not inferences.
+- **Attribution columns** `action_source` + `actor` (nullable JSON) on `bo_at_schema_updates` and `bo_at_record_updates`, populated only from webhook payloads' `actionMetadata` (who changed what, via UI/API/form/automation). Snapshot diffing leaves them null; payloads purge after 7 days, so this is capture-now-or-never data.
+
 **Still open:**
 - **Health tables** (`bo_at_health_scores` / `bo_at_health_issues`) and the health rule taxonomy — **deferred**; focusing on documentation first. Current draft (scores append per run, issues replace per run, rules in core `health_score_rules`) stands until revisited.
 

@@ -51,6 +51,7 @@ export const baseRuns = sqliteTable('bo_at_base_runs', {
   id: text('id').primaryKey(),
   backupRunId: text('backup_run_id').notNull(),
   baseId: text('base_id').notNull(),
+  runType: text('run_type').notNull().default('full'), // full|incremental — only full runs may derive absence
   status: text('status').notNull().default('queued'),
   currStep: text('curr_step'),
   schemaVersionId: text('schema_version_id'),
@@ -131,6 +132,8 @@ export const schemaUpdates = sqliteTable('bo_at_schema_updates', {
   beforeValue: text('before_value', { mode: 'json' }),
   afterValue: text('after_value', { mode: 'json' }),
   breaksData: integer('breaks_data', { mode: 'boolean' }).notNull().default(false),
+  actionSource: text('action_source'),                // webhook-derived only: client|publicApi|formSubmission|automation|…
+  actor: text('actor', { mode: 'json' }),             // webhook-derived only: {id, email, name} from actionMetadata
 }, (t) => ({
   byRun: index('bo_at_schema_updates_run_idx').on(t.runId),
   byEntity: index('bo_at_schema_updates_entity_idx').on(t.entityType, t.entityId),
@@ -168,6 +171,8 @@ export const recordUpdates = sqliteTable('bo_at_record_updates', {
   tableId: text('table_id').notNull(),
   runId: text('run_id').notNull(),
   oldValue: text('old_value'),
+  actionSource: text('action_source'),                // webhook-derived only (see bo_at_schema_updates)
+  actor: text('actor', { mode: 'json' }),             // webhook-derived only
 }, (t) => ({
   byCell: index('bo_at_record_updates_cell_idx').on(t.recordId, t.fieldId),
   byRun: index('bo_at_record_updates_run_idx').on(t.runId),

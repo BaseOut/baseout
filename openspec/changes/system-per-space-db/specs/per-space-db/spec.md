@@ -66,7 +66,7 @@ All canonical per-Space tables SHALL use the `bo_at_` prefix (`bo_` = Baseout-ow
 
 ### Requirement: Schema capture with lifecycle
 
-For each run, the engine SHALL upsert the current relational schema into `bo_at_bases`, `bo_at_tables`, `bo_at_fields`, and `bo_at_views`, each carrying lifecycle columns `status` (`active | removed | unknown`), `first_seen_run`, `first_unseen_run`, `last_seen_run` (run UUIDs; timestamps derived from `bo_at_base_runs`). An entity SHALL be marked `removed` only when its parent was fully and successfully enumerated; a failed or partial run SHALL leave entities `unknown` and SHALL NOT mark them removed.
+For each run, the engine SHALL upsert the current relational schema into `bo_at_bases`, `bo_at_tables`, `bo_at_fields`, and `bo_at_views`, each carrying lifecycle columns `status` (`active | removed | unknown`), `first_seen_run`, `first_unseen_run`, `last_seen_run` (run UUIDs; timestamps derived from `bo_at_base_runs`). `bo_at_base_runs` SHALL carry a `run_type` (`full | incremental`). An entity SHALL be marked `removed` only from one of two confident sources: (a) a full and successful parent enumeration in which it was absent, or (b) an explicit destroy event (`destroyedTableIds`, `destroyedFieldIds`, `destroyedRecordIds`) in a verified Airtable webhook payload applied by an incremental run. A failed or partial enumeration SHALL leave entities `unknown` and SHALL NOT mark them removed. Incremental runs SHALL update lifecycle columns only for entities their payloads touched, and absence from an incremental run SHALL NOT contribute to any removal or `unknown` derivation.
 
 #### Scenario: New field detected
 
@@ -77,6 +77,16 @@ For each run, the engine SHALL upsert the current relational schema into `bo_at_
 
 - **WHEN** a run fails to fully enumerate a base's tables
 - **THEN** the affected entities are set to `status = unknown`, not `removed`, and no removal appears in the changelog
+
+#### Scenario: Payload destroy event removes confidently
+
+- **WHEN** an incremental run applies a webhook payload listing a field in `destroyedFieldIds`
+- **THEN** the `bo_at_fields` row is set `status = removed` with `first_unseen_run` = the incremental run, without requiring a full enumeration
+
+#### Scenario: Absence from an incremental run means nothing
+
+- **WHEN** an incremental run's payloads never mention an existing table
+- **THEN** that table's lifecycle columns are untouched — only `run_type = full` runs may derive absence
 
 ### Requirement: View capture (Airtable Enterprise only)
 
@@ -98,12 +108,17 @@ The engine SHALL maintain `bo_at_schema_versions` holding the full base schema a
 
 ### Requirement: Schema change log
 
-Schema modifications (not additions/removals, which are lifecycle) SHALL be recorded in `bo_at_schema_updates` with `before_value` and `after_value`, `change_type`, optional `change_type_name`, and a `breaks_data` flag. Schema changes SHALL NOT be written to the master `audit_history`.
+Schema modifications (not additions/removals, which are lifecycle) SHALL be recorded in `bo_at_schema_updates` with `before_value` and `after_value`, `change_type`, optional `change_type_name`, and a `breaks_data` flag. The table SHALL also carry nullable attribution columns `action_source` and `actor` (JSON: id/email/name as captured), populated ONLY by webhook-payload-derived writes from Airtable's `actionMetadata` — snapshot diffing cannot know attribution and SHALL leave them null. Schema changes SHALL NOT be written to the master `audit_history`.
 
 #### Scenario: Field retype flagged as breaking
 
 - **WHEN** a field changes type in a way that may invalidate existing values (e.g., single-select → number)
 - **THEN** a `bo_at_schema_updates` row is written with before/after types and `breaks_data = true`, which the Changelog renders with a warning
+
+#### Scenario: Webhook-derived change carries attribution
+
+- **WHEN** an incremental run applies a payload whose `actionMetadata` identifies the acting user and source
+- **THEN** the `bo_at_schema_updates` row records `action_source` (e.g., client, publicApi, formSubmission, automation) and `actor`, and the Changelog can render "changed by X via Y"
 
 ### Requirement: Generic record storage
 
@@ -130,7 +145,7 @@ For Spaces with `records_enabled`, the system SHALL expose one query view per Ai
 
 ### Requirement: Record change history (superseded-value log)
 
-Record cell changes SHALL be recorded in `bo_at_record_updates`, storing the superseded (old) value and the run; the new value SHALL live only in `bo_at_record_field_data`. First population SHALL NOT produce a log row. This log SHALL be prunable by simple deletion (retention-based), with history rendered as a timeline whose earliest retained point is the earliest known value.
+Record cell changes SHALL be recorded in `bo_at_record_updates`, storing the superseded (old) value and the run; the new value SHALL live only in `bo_at_record_field_data`. First population SHALL NOT produce a log row. The table SHALL carry the same nullable `action_source` and `actor` attribution columns as `bo_at_schema_updates`, populated only by webhook-payload-derived writes. This log SHALL be prunable by simple deletion (retention-based), with history rendered as a timeline whose earliest retained point is the earliest known value.
 
 #### Scenario: Value change logs the old value
 

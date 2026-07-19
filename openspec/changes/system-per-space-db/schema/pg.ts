@@ -59,6 +59,7 @@ export const baseRuns = pgTable('bo_at_base_runs', {
   id: uuid('id').defaultRandom().primaryKey(),
   backupRunId: uuid('backup_run_id').notNull(),     // → master backup_runs.id (cross-DB)
   baseId: text('base_id').notNull(),
+  runType: text('run_type').notNull().default('full'), // full|incremental — only full runs may derive absence
   status: text('status').notNull().default('queued'), // queued|running|succeeded|failed|unknown
   currStep: text('curr_step'),
   schemaVersionId: uuid('schema_version_id'),         // → bo_at_schema_versions.id
@@ -145,6 +146,8 @@ export const schemaUpdates = pgTable('bo_at_schema_updates', {
   beforeValue: jsonb('before_value'),
   afterValue: jsonb('after_value'),
   breaksData: boolean('breaks_data').notNull().default(false),
+  actionSource: text('action_source'),                // webhook-derived only: client|publicApi|formSubmission|automation|…
+  actor: jsonb('actor'),                              // webhook-derived only: {id, email, name} from actionMetadata
 }, (t) => ({
   byRun: index('bo_at_schema_updates_run_idx').on(t.runId),
   byEntity: index('bo_at_schema_updates_entity_idx').on(t.entityType, t.entityId),
@@ -188,6 +191,8 @@ export const recordUpdates = pgTable('bo_at_record_updates', {
   tableId: text('table_id').notNull(),
   runId: uuid('run_id').notNull(),                    // → bo_at_base_runs.id
   oldValue: text('old_value'),                        // superseded value (JSON-encoded)
+  actionSource: text('action_source'),                // webhook-derived only (see bo_at_schema_updates)
+  actor: jsonb('actor'),                              // webhook-derived only
 }, (t) => ({
   byCell: index('bo_at_record_updates_cell_idx').on(t.recordId, t.fieldId),
   byRun: index('bo_at_record_updates_run_idx').on(t.runId),
