@@ -4,131 +4,125 @@
 
 > Scheduled backups — Monthly (all tiers), Weekly (Launch+), Daily (Pro+), **Instant (Pro+)**
 
-The `server-schedule-and-cancel` change explicitly defers Instant to this follow-up by name. The `FrequencyPicker` UI already shows it as an option but throws "not supported" if a Pro+ Space tries to select it. The cron-based scheduler ignores `frequency='instant'`. The engine has no webhook ingestion path.
+The `server-schedule-and-cancel` change explicitly defers Instant to this follow-up by name. The `FrequencyPicker` UI already shows it as an option but throws "not supported" if a Pro+ Space tries to select it. The cron-based scheduler ignores `frequency='instant'`. The engine has no webhook-driven change-detection path.
 
-[PRD §2.5](../../../shared/Baseout_PRD.md) describes the architecture:
+**Architecture (settled 2026-07-18; supersedes the prior receive→forward→DO-coalesce design in this change and the PRD §2.5 debounce description):** Airtable notification pings carry no data — changes are pulled via the cursor-based payloads API, and payloads are retained 7 days with client-held cursors. So the pipeline is **pull-based on a per-Space cadence**:
 
-> Airtable webhooks fire on record changes. A per-Space Durable Object coalesces events (debounce threshold: configurable, default 5 minutes or 100 events) and triggers an incremental backup run. Webhook payloads are signed; verify via HMAC before processing.
+1. `apps/hooks` verifies each ping and bumps `last_ping_at` on a central org-level webhook registry (change `hooks`).
+2. Each Space's DO wakes on its own configurable poll interval (the tier knob: "Instant" = short interval), queries the registry for its subscribed bases with `last_ping_at` newer than the Space's own watermark, and enqueues an incremental run per dirty base.
+3. The incremental Trigger.dev task (change `workflows-instant-webhook`) pulls payloads from the Space's own cursor and applies them to the per-space DB.
 
-[openspec/changes/server/specs/airtable-webhook-coalescing/spec.md](../server/specs/airtable-webhook-coalescing/spec.md) already specs the coalescing contract. This change is its implementation.
+Webhooks are registered **once per (Organization, base)** and shared by all of that org's Spaces via a subscription table — Airtable caps webhooks at 2 per base per OAuth integration, so per-Space webhooks don't scale. Each subscription carries its own payload cursor; Airtable cursors are client-held transaction numbers, so N Spaces can read the same webhook's payload stream independently.
 
-**Conflict to flag** per CLAUDE.md "PRD authoritative when it disagrees with Features":
+**Tier conflict (unchanged ruling):** PRD §2.2 says Instant = Pro+; Features §6.1 says Business+. This change commits to **Pro+**, matching the PRD.
 
-- [PRD §2.2](../../../shared/Baseout_PRD.md): Instant = Pro+.
-- [Features §6.1](../../../shared/Baseout_Features.md): Instant = Business+ (requires full dynamic DB).
-
-This change commits to **Pro+**, matching the PRD. The "full dynamic DB" reading in Features is consistent — Pro has full dynamic via Shared PG per Features §4.3, so the constraint holds either way.
-
-**Dependency**: this change depends on `server-dynamic-mode` because Instant runs are append-only incremental writes to the dynamic DB. If dynamic mode hasn't shipped, this change is blocked.
+**Dependency**: `server-dynamic-mode` — incremental runs are append-only writes to the per-space dynamic DB. If dynamic mode hasn't shipped, this change is blocked.
 
 ## What Changes
 
-### Phase A — Schema
+### Phase A — Schema (canonical migration owned by `apps/web` per CLAUDE.md)
 
-- **New table `airtable_webhooks`** in master DB:
-  - `id uuid PK`
-  - `connection_id uuid FK → connections.id`
+- **New table `airtable_webhooks`** in master DB — the org-level registry:
+  - `id uuid PK` — also the public path token in the `notificationUrl` (`hooks.baseout.com/webhooks/airtable/{id}`)
+  - `organization_id uuid NOT NULL FK → organizations.id`
+  - `connection_id uuid NOT NULL FK → connections.id` — the Connection whose OAuth token created the webhook (used for refresh + payload polling)
   - `base_id text NOT NULL` — Airtable base ID (`app...`)
-  - `space_id uuid NULL FK → spaces.id` — which Space's Instant backup this feeds (NULL if base not yet selected for backup)
   - `airtable_webhook_id text NOT NULL UNIQUE` — Airtable's webhook ID (returned on create)
-  - `mac_secret_base64_enc text NOT NULL` — AES-256-GCM ciphertext of the webhook's MAC secret (issued by Airtable on create)
-  - `cursor bigint NOT NULL DEFAULT 0` — last-seen payload cursor; advanced after each successful poll
-  - `last_event_at timestamp with time zone`
+  - `mac_secret_base64_enc text NOT NULL` — AES-256-GCM ciphertext of the MAC secret (returned ONLY at creation; persist immediately)
+  - `status text NOT NULL DEFAULT 'active'` — `active | notifications_disabled | pending_reauth | inactive`
+  - `expires_at timestamptz` — Airtable webhooks expire 7 days after creation; extended by refresh AND by listing payloads
+  - `last_ping_at timestamptz` — the dirty flag; written by `apps/hooks`
+  - `last_ping_source_ip text`
+  - `last_renewed_at timestamptz`
   - `created_at`, `modified_at`
-- **New table `webhook_events`** in master DB (transient — short retention):
+  - `UNIQUE (organization_id, base_id)` — the dedupe guard: one webhook per base per org
+- **New table `airtable_webhook_subscriptions`** in master DB — which Spaces consume which webhook, each with independent progress:
   - `id uuid PK`
-  - `webhook_id uuid FK → airtable_webhooks.id`
-  - `payload_cursor bigint NOT NULL` — Airtable's payload cursor (monotonic)
-  - `received_at timestamp with time zone DEFAULT now()`
-  - `processed_at timestamp with time zone NULL`
+  - `webhook_id uuid NOT NULL FK → airtable_webhooks.id ON DELETE CASCADE`
+  - `space_id uuid NOT NULL FK → spaces.id ON DELETE CASCADE`
+  - `payload_cursor bigint NOT NULL DEFAULT 1` — this Space's position in the webhook's payload stream (Airtable cursors start at 1)
+  - `last_polled_at timestamptz` — the Space's dirty-check watermark
+  - `last_reconciled_at timestamptz` — last `modifiedTime` reconciliation / full re-read anchor
+  - `created_at`, `modified_at`
+  - `UNIQUE (webhook_id, space_id)`
+- **`backup_configurations`**: new column `webhook_poll_interval_seconds int NOT NULL DEFAULT 900`. Replaces the previously-planned `webhook_debounce_seconds` + `webhook_event_threshold` (never shipped). Tier-gated platform minimums (values land in Features §6.1 as part of Phase G).
+- The previously-planned `webhook_events` table is **dropped from the design** — no per-event rows anywhere.
 
-### Phase B — Webhook receiver (apps/hooks)
+### Phase B — Registry access + engine mirror
 
-- **New route** `apps/hooks/src/pages/api/airtable.ts`. Receives POST with body `{ base, webhook, timestamp, ... }`.
-- **HMAC verify** — header `X-Airtable-Content-MAC` against `mac_secret`. Reject on mismatch.
-- **Dedup** — Airtable sends "notification ping" payloads, not the full events. The receiver INSERTs a `webhook_events` row keyed on `(webhook_id, payload_cursor)` (UNIQUE constraint) — duplicate ping is a no-op.
-- **Forward** — POST to `apps/server`'s new `/api/internal/webhooks/notify` route (service binding). Engine handles the rest.
+- Engine-side schema mirrors `apps/server/src/db/schema/airtable-webhooks.ts` + `airtable-webhook-subscriptions.ts` (header comments naming the canonical `apps/web` migration).
+- No receiver work in this change — `apps/hooks` owns the receiver (change `hooks`). There is **no** `/api/internal/webhooks/notify` route and **no** hooks→server service binding.
 
-### Phase C — SpaceDO event coalescing
+### Phase C — SpaceDO cadence polling
 
-- **Extend SpaceDO** (already implemented for cron scheduling in `server-schedule-and-cancel`):
-  - New method `POST /webhook-tick` — called by the engine's notify route. Increments an internal counter; sets a 5-minute alarm if not already set.
-  - On alarm fire: if counter > 0 (events seen since last fire), trigger an incremental backup run.
-- **Configurable thresholds** — store in `backup_configurations.webhook_debounce_seconds` (default 300) and `webhook_event_threshold` (default 100). Tier-gated.
+- **Extend SpaceDO** (cron scheduling already implemented in `server-schedule-and-cancel`):
+  - A webhook-poll alarm at `webhook_poll_interval_seconds` (+ jitter), coexisting with the cron-snapshot alarm via the established single-alarm min-dispatch pattern.
+  - On fire: query master DB for this Space's subscriptions where `last_ping_at > last_polled_at` **OR** `last_polled_at` older than the 24h safety sweep. For each dirty base: skip if a run is already in-flight for that (space, base), else insert a `backup_runs` row (`triggered_by='webhook'`) and enqueue the `incremental-backup` task. Set `last_polled_at = now()` on enqueue.
+  - The safety sweep makes ping loss harmless: every subscription is polled unconditionally at least daily.
 
-### Phase D — Incremental run path
+### Phase D — Incremental run plumbing (server side)
 
-- **New Trigger.dev task** `apps/workflows/trigger/tasks/incremental-backup.task.ts`:
-  - Reads the webhook's `cursor` from `airtable_webhooks`.
-  - Polls Airtable's `GET /v0/bases/<baseId>/webhooks/<webhookId>/payloads?cursor=<cursor>` repeatedly until `mightHaveMore=false`.
-  - Each payload contains `actions` (create / update / delete records).
-  - Applies each action to the dynamic DB:
-    - `record.created` → UPSERT.
-    - `record.updated` → UPDATE (or UPSERT for safety).
-    - `record.deleted` → DELETE.
-  - Advances `cursor` after each batch.
-  - At end: INSERT a `backup_runs` row with `triggered_by='webhook'`, `status='succeeded'`. Aggregate counts (records updated, etc.).
+- Engine route `POST /api/internal/webhook-subscriptions/:id/cursor` — the task's cursor-advance callback.
+- Engine route `POST /api/internal/webhook-subscriptions/:id/fallback` — the task's gap signal; enqueues a full `backup-base` run for the affected base and stamps `last_reconciled_at`.
+- Task body itself is owned by [`workflows-instant-webhook`](../workflows-instant-webhook/proposal.md): payloads-API-primary with a records-API `modifiedTime` reconciliation path (both supported; payloads can miss things).
 
 ### Phase E — Webhook lifecycle
 
-- **On Space connect** (after OAuth completes for a Connection): registration is deferred — webhooks are per-base, and Spaces select bases later.
-- **On `backup_configurations.frequency` set to `'instant'`**: for each base in the Space's `backup_configuration_bases`, call Airtable's `POST /v0/bases/<baseId>/webhooks` to create a webhook. Persist `airtable_webhook_id` + `mac_secret`. URL: `https://hooks.baseout.com/api/airtable`.
-- **On base removal from Space**: delete the webhook via `DELETE /v0/bases/<baseId>/webhooks/<webhookId>`.
-- **On Connection rotation / disconnect**: same.
-- **On frequency change away from Instant**: delete all webhooks for the Space's bases.
+- **On enabling webhook-driven backups for a Space's base** (`frequency='instant'` today; any sub-daily interval later): **find-or-create** — if an active `airtable_webhooks` row exists for `(organization_id, base_id)`, only insert a subscription row; else call Airtable `POST /v0/bases/{baseId}/webhooks` with:
+  - `notificationUrl: https://hooks.baseout.com/webhooks/airtable/{pre-generated row uuid}`
+  - `specification.options`: `dataTypes: ["tableData","tableFields","tableMetadata"]`; `includes: { includeCellValuesInFieldIds: "all", includePreviousCellValues: true, includePreviousFieldDefinitions: true }` (payload-driven processing + schema-intelligence diffing need full context)
+  - Persist `airtable_webhook_id` + encrypted `mac_secret_base64` **immediately** (secret is unrecoverable after the create response).
+- **On disable / base removal / tier downgrade**: delete the Space's subscription row. If it was the webhook's **last** subscription: `DELETE /v0/bases/{baseId}/webhooks/{webhookId}` and set `status='inactive'`.
+- **On Airtable's 2-webhooks-per-base-per-integration cap being hit** (third org connecting the same base): fail gracefully with an actionable error surfaced to the UI; never leave a half-registered state.
+- **On Connection invalid/revoked**: rows created by that Connection → `status='pending_reauth'`; on reconnect (or via another active org Connection with base access), re-create and swap the row. *(Verify during implementation: whether payload polling works with a different same-org Connection's token — docs are ambiguous; if yes, prefer re-pointing `connection_id` over re-creating.)*
+- **On `status='notifications_disabled'`** (Airtable disabled pings after retry exhaustion): re-enable via the toggle-notifications endpoint — owned by `server-cron-webhook-renewal`.
 
 ### Phase F — UI
 
-- The existing `FrequencyPicker.astro` already shows Instant as an option, locked for sub-Pro tiers. Phase D removes the "not supported" error and lights up the option for Pro+ with a dynamic DB.
-- **History widget** distinguishes `triggered_by='webhook'` runs visually — a small lightning-bolt glyph next to the row.
+Moved to [`web-instant-webhook`](../web-instant-webhook/proposal.md) per the change-naming convention (poll-interval picker, ⚡ webhook-run glyph, `pending_reauth` attention state).
 
 ### Phase G — Doc sync
 
-- Update [openspec/changes/server/specs/airtable-webhook-coalescing/spec.md](../server/specs/airtable-webhook-coalescing/spec.md) — link as implementation.
+- Update [openspec/changes/server/specs/airtable-webhook-polling/spec.md](../server/specs/airtable-webhook-polling/spec.md) (renamed from `airtable-webhook-coalescing`) — link as implementation.
 - Update [openspec/changes/server-schedule-and-cancel/proposal.md](../server-schedule-and-cancel/proposal.md) Out-of-Scope — link as resolved.
-- Resolve the PRD-vs-Features tier conflict in writing in [shared/Baseout_Features.md §6.1](../../../shared/Baseout_Features.md): align with PRD's Pro+ reading.
+- Update [shared/Baseout_Features.md §6.1](../../../shared/Baseout_Features.md): Instant = Pro+ per PRD; document per-tier `webhook_poll_interval_seconds` minimums.
+- Note in the PRD change-log that §2.5's DO-coalescing description is superseded by cadence polling (dirty-flag registry + per-Space pull).
 
 ## Out of Scope
 
 | Deferred to | Item |
 |---|---|
-| Future change `server-instant-conflict-resolution` | Conflict handling for cases where Airtable's webhook payload disagrees with the engine's last-known state (e.g. record deleted in source but updated in our dynamic DB). MVP: last-write-wins. |
-| Future change `server-instant-snapshot-rollup` | Periodic "consolidation snapshot" — after N incremental runs, run a full backup to re-anchor the dynamic DB. Today: incremental forever; drift risk over time. |
-| Future change `server-instant-multi-base-coalesce` | Optimization: a single Space with N webhook-Instant bases could coalesce across bases. MVP: one DO alarm per Space, one run per fire covering all changed bases. |
-| Future change `server-webhook-replay` | If webhook events are missed (network partition, queue overflow), replay from the Airtable payload cursor up to the latest. Today: cursor advance only after successful processing, so missed events are retried on next webhook ping. |
-| Bundled with `server-dynamic-mode` | The dynamic-DB write path. This change uses it but doesn't define it. |
-| Bundled with `server-manual-quota-and-credits` | Credit charge for webhook-driven runs. Default: same record/attachment per-credit costs as scheduled runs. |
+| `server-instant-conflict-resolution` | Payload-vs-dynamic-DB conflict handling. MVP: last-write-wins. |
+| `server-instant-snapshot-rollup` | Periodic consolidation snapshot after N incrementals to re-anchor drift. |
+| `server-webhook-cursor-monitoring` | Alerting when a subscription's cursor lags near the 7-day payload-retention edge. |
+| `server-manual-quota-and-credits` | Credit charge for webhook-driven runs (same per-record/attachment costs as scheduled). |
+| `server-dynamic-mode` | The per-space dynamic-DB write path. Used here, defined there. |
+| `hooks` | The public receiver. |
+| `server-cron-webhook-renewal` | Expiry refresh + notification re-enable cron. |
+| `web-instant-webhook` | All UI. |
 
 ## Capabilities
 
 ### New capabilities
 
-- `airtable-webhook-receiver` — HMAC-verified webhook ingestion in `apps/hooks`. Forwards verified notifications to engine.
-- `airtable-webhook-coalescing` — per-Space DO event coalescer with configurable debounce. Owned by `apps/server`.
-- `backup-incremental-run` — append-only incremental write path that consumes Airtable's webhook payloads and applies them to the dynamic DB. Owned by `apps/server`.
+- `airtable-webhook-polling` — org-level webhook registry + per-Space subscriptions with independent cursors; SpaceDO cadence polling of the dirty-flag registry; webhook registration lifecycle (find-or-create, unsubscribe, delete-on-last, cap handling, reauth states). Replaces the never-implemented `airtable-webhook-coalescing` capability.
+- `backup-incremental-run` — engine-side plumbing (run rows, cursor/fallback callbacks) for the incremental task.
 
 ### Modified capabilities
 
-- `backup-engine` — `triggered_by='webhook'` becomes a real value. Existing `backup_runs.status` machine accepts these rows.
-- `backup-config-policy` — `frequency='instant'` becomes valid for Pro+.
-- `space-do` — gains `POST /webhook-tick` + a parallel alarm to the cron alarm. Care: don't interleave the two alarms; the cron alarm is for full snapshots, the webhook alarm is for incrementals.
+- `backup-engine` — `triggered_by='webhook'` becomes a real value in the existing `backup_runs` state machine.
+- `backup-config-policy` — `frequency='instant'` valid for Pro+; `webhook_poll_interval_seconds` with tier-gated minimums.
+- `space-do` — gains the webhook-poll alarm alongside the cron alarm (single-alarm min-dispatch).
 
 ## Impact
 
-- **Master DB**: two additive tables (`airtable_webhooks`, `webhook_events`).
-- **Airtable API quota**: webhook payload polls consume the same REST quota as record fetches. The per-Connection lock in ConnectionDO already serializes; webhook incrementals share the budget. Operational concern only if a Space's Connection is shared with multiple high-frequency bases.
-- **apps/hooks**: new app surface. Wrangler config + DNS for `hooks.baseout.com`.
-- **HMAC secret rotation**: Airtable rotates the webhook MAC secret on webhook re-creation. Engine handles by deleting + re-creating on configuration change.
-- **Security**: HMAC-verify every incoming webhook. Reject on signature mismatch. Replay-protect via the UNIQUE constraint on `(webhook_id, payload_cursor)`.
-- **Cross-app contract**:
-  - apps/hooks → engine: `POST /api/internal/webhooks/notify` body `{ webhookId, payloadCursor }`. Returns 200 always (engine acks; failures handled async via cursor mismatch on next ping).
-  - engine ← Airtable: outbound calls to `https://api.airtable.com/v0/bases/<>/webhooks` for create/delete; polls for payloads.
+- **Master DB**: two additive tables + one `backup_configurations` column (canonical migrations in `apps/web`).
+- **Airtable API quota**: payload polling shares the same 5 rps per-base REST budget as everything else; all calls route through the per-Connection ConnectionDO gateway. Multiple Spaces polling one busy base share that budget — the per-Space interval floor needs a per-base guard.
+- **Security**: MAC secrets encrypted at rest, never logged; registry holds no customer record data (base IDs, webhook IDs, timestamps only) — actual changes flow Airtable → Trigger.dev task → per-space DB.
+- **Cross-app contract**: hooks writes `last_ping_at`/`last_ping_source_ip`; server reads them. Workflows task ↔ engine: cursor + fallback callbacks above.
 
 ## Reversibility
 
-- **Phase A** (schema): additive.
-- **Phase B–C–D**: feature-flag-gated on `backup_configurations.frequency='instant'`. Reverting means flipping all such configs to a non-Instant frequency; existing webhooks remain registered on Airtable's side until explicitly deleted.
-- **Phase E**: webhook deletion calls are best-effort; an orphaned webhook on Airtable's side keeps sending POSTs to our receiver, which 200s + drops them. Cleanup is operational.
-- **Phase F–G**: pure roll-forward.
-
-The forward-only state is `airtable_webhooks.cursor` advancing. If we revert, the cursor stays where it is and the next Instant activation picks up from there.
+- **Phase A**: additive.
+- **Phase C–E**: gated on `frequency='instant'`. Reverting = flipping configs to a non-instant frequency; orphaned Airtable-side webhooks keep pinging hooks, which dirty-marks rows nobody polls — harmless; cleanup operational.
+- Forward-only state: per-subscription `payload_cursor`. On revert it freezes; next activation resumes from it (or falls back to full re-read if > 7 days stale).

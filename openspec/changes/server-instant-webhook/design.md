@@ -1,276 +1,156 @@
 ## Overview
 
-Seven phases. The critical-path chain: A (schema) → B (receiver in apps/hooks) → C (SpaceDO coalescing) → D (incremental run path) → E (webhook lifecycle). F (UI) + G (docs) layer on top.
+Pull-based change detection on a per-Space cadence. The chain: A (schema) → C (SpaceDO polling) → D (run plumbing) → E (lifecycle). The receiver lives in `apps/hooks` (change `hooks`); the task body lives in `apps/workflows` (change `workflows-instant-webhook`); UI lives in `apps/web` (change `web-instant-webhook`).
 
-Architectural call: **the webhook flow uses two separate apps** — `apps/hooks` receives + verifies + dedupes; `apps/server` coalesces + runs the incremental backup. This matches the existing repo layout and lets the hooks app stay narrow (HMAC + forward; never touches the dynamic DB).
+Two architectural calls anchor everything:
 
-The other architectural call: **SpaceDO gets two parallel alarm states** — one for cron-fire (scheduled snapshots, owned by `server-schedule-and-cancel`) and one for webhook-debounce-fire (this change). They're stored as different alarm keys via the DO's storage. Care needed: Cloudflare DO supports only one alarm at a time per DO. So either:
+1. **Dirty-flag registry, not event delivery.** Airtable pings carry no data; payloads are pulled from a client-held cursor and retained 7 days. So hooks records "changes waiting" as one timestamp (`airtable_webhooks.last_ping_at`) and each Space discovers dirty bases by comparing that against its own `last_polled_at` watermark. There is no per-event row, no queue, no forward hop. A lost ping is recovered by the next ping or the daily safety sweep; nothing is lost permanently because the cursor replays the payload log.
 
-1. **Single alarm, dispatch on fire**: store both `next_cron_fire_ms` and `next_webhook_fire_ms`; set the alarm to `min(cron, webhook)`; on fire, check which condition triggered.
-2. **Two DOs per Space**: split into `SpaceCronDO` + `SpaceWebhookDO`.
-
-Recommended: **option 1**. Simpler topology; the alarm-handler branches based on which condition fired (its own state). Both states are stored in DO storage; alarm-fire logic reads both, decides which to process, then resets the alarm to the minimum of any remaining fires.
+2. **Org-level webhooks, per-Space subscriptions.** Airtable allows 2 webhooks per base per OAuth integration — Baseout is one integration, so per-Space webhooks can't work. One webhook per `(organization, base)` (UNIQUE constraint), fan-out via `airtable_webhook_subscriptions`, each subscription holding its own `payload_cursor`. Airtable cursors are plain transaction numbers passed on each list call, so N Spaces read one payload stream independently at different cadences. **No shared "processed" flag exists** — processed-ness is per-Space (watermark + cursor).
 
 ## Phase A — Schema
 
 ```sql
 CREATE TABLE baseout.airtable_webhooks (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  connection_id uuid NOT NULL REFERENCES baseout.connections(id) ON DELETE CASCADE,
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),        -- also the notificationUrl path token
+  organization_id uuid NOT NULL REFERENCES baseout.organizations(id) ON DELETE CASCADE,
+  connection_id uuid NOT NULL REFERENCES baseout.connections(id),
   base_id text NOT NULL,
-  space_id uuid NULL REFERENCES baseout.spaces(id) ON DELETE SET NULL,
   airtable_webhook_id text NOT NULL UNIQUE,
   mac_secret_base64_enc text NOT NULL,
-  cursor bigint NOT NULL DEFAULT 0,
-  last_event_at timestamp with time zone,
+  status text NOT NULL DEFAULT 'active',                -- active | notifications_disabled | pending_reauth | inactive
+  expires_at timestamp with time zone,
+  last_ping_at timestamp with time zone,
+  last_ping_source_ip text,
+  last_renewed_at timestamp with time zone,
   created_at timestamp with time zone DEFAULT now(),
-  modified_at timestamp with time zone DEFAULT now()
+  modified_at timestamp with time zone DEFAULT now(),
+  UNIQUE (organization_id, base_id)
 );
-CREATE INDEX airtable_webhooks_space_id_idx ON baseout.airtable_webhooks (space_id);
+CREATE INDEX airtable_webhooks_last_ping_idx ON baseout.airtable_webhooks (last_ping_at);
+CREATE INDEX airtable_webhooks_expiry_idx ON baseout.airtable_webhooks (expires_at) WHERE status = 'active';
 
-CREATE TABLE baseout.webhook_events (
+CREATE TABLE baseout.airtable_webhook_subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   webhook_id uuid NOT NULL REFERENCES baseout.airtable_webhooks(id) ON DELETE CASCADE,
-  payload_cursor bigint NOT NULL,
-  received_at timestamp with time zone DEFAULT now(),
-  processed_at timestamp with time zone NULL,
-  UNIQUE (webhook_id, payload_cursor)
+  space_id uuid NOT NULL REFERENCES baseout.spaces(id) ON DELETE CASCADE,
+  payload_cursor bigint NOT NULL DEFAULT 1,
+  last_polled_at timestamp with time zone,
+  last_reconciled_at timestamp with time zone,
+  created_at timestamp with time zone DEFAULT now(),
+  modified_at timestamp with time zone DEFAULT now(),
+  UNIQUE (webhook_id, space_id)
 );
-CREATE INDEX webhook_events_unprocessed_idx
-  ON baseout.webhook_events (webhook_id, payload_cursor)
-  WHERE processed_at IS NULL;
+CREATE INDEX airtable_webhook_subscriptions_space_idx ON baseout.airtable_webhook_subscriptions (space_id);
+
+ALTER TABLE baseout.backup_configurations
+  ADD COLUMN webhook_poll_interval_seconds integer NOT NULL DEFAULT 900;
 ```
 
-The UNIQUE on `(webhook_id, payload_cursor)` is the dedup guard.
+Canonical migration lands in `apps/web/drizzle/` (master-DB schema is web-owned); engine mirrors in `apps/server/src/db/schema/` with header comments naming the source. The previously-planned `webhook_events` table is dropped from the design entirely.
 
-## Phase B — Receiver (apps/hooks)
+## Phase C — SpaceDO cadence polling
 
-```ts
-// apps/hooks/src/pages/api/airtable.ts
-export const POST: APIRoute = async ({ request, locals }) => {
-  const body = await request.text()
-  const mac = request.headers.get('x-airtable-content-mac')
-  const webhookId = JSON.parse(body).webhook?.id
+The dirty-check query, run by the SpaceDO alarm handler against the master DB (the DO already holds master-DB access; **no new endpoint anywhere** — hooks writes the table, server reads it):
 
-  const webhook = await locals.db.select(...).from(airtableWebhooks).where(eq(..., webhookId))
-  if (!webhook) return new Response('webhook_not_found', { status: 404 })
-
-  const macSecret = decrypt(webhook.mac_secret_base64_enc, locals.masterKey)
-  if (!verifyHmac(body, mac, macSecret)) return new Response('mac_mismatch', { status: 401 })
-
-  const payloadCursor = JSON.parse(body).timestamp /* or whatever Airtable supplies */
-  try {
-    await locals.db.insert(webhookEvents).values({ webhook_id: webhook.id, payload_cursor: payloadCursor })
-  } catch (e) {
-    // UNIQUE violation = dedup hit. Return 200 idempotently.
-    if (e.code === '23505') return new Response('ok', { status: 200 })
-    throw e
-  }
-
-  // Forward to engine via service binding
-  await locals.env.BACKUP_ENGINE.fetch('https://engine/api/internal/webhooks/notify', {
-    method: 'POST',
-    headers: { 'x-internal-token': locals.env.INTERNAL_TOKEN },
-    body: JSON.stringify({ webhookId: webhook.id, payloadCursor }),
-  })
-
-  return new Response('ok', { status: 200 })
-}
+```sql
+SELECT s.id AS subscription_id, s.payload_cursor, s.last_reconciled_at,
+       w.id AS webhook_id, w.base_id, w.connection_id, w.status
+FROM baseout.airtable_webhook_subscriptions s
+JOIN baseout.airtable_webhooks w ON w.id = s.webhook_id
+WHERE s.space_id = $spaceId
+  AND (
+    w.last_ping_at > COALESCE(s.last_polled_at, 'epoch')                  -- dirty
+    OR COALESCE(s.last_polled_at, 'epoch') < now() - interval '24 hours'  -- safety sweep
+  );
 ```
 
-The HMAC verify uses the same `verifyHmac` helper as Stripe webhooks (already in `@baseout/shared`).
+Alarm handling reuses the single-alarm min-dispatch pattern from `server-schedule-and-cancel`:
 
-## Phase C — SpaceDO coalescing
-
-Add to `apps/server/src/durable-objects/SpaceDO.ts`:
-
-```ts
-// state.storage shape:
-// {
-//   next_cron_fire_ms: number | null
-//   webhook_debounce_until_ms: number | null
-//   webhook_events_since_last_fire: number
-//   webhook_threshold: number  (default 100, configurable)
-//   webhook_debounce_seconds: number  (default 300, configurable)
-// }
-
-async fetch(req) {
-  const url = new URL(req.url)
-  if (url.pathname === '/webhook-tick') {
-    const events = (await this.state.storage.get('webhook_events_since_last_fire')) ?? 0
-    await this.state.storage.put('webhook_events_since_last_fire', events + 1)
-    const threshold = (await this.state.storage.get('webhook_threshold')) ?? 100
-
-    if (events + 1 >= threshold) {
-      // Burst trigger — fire immediately
-      await this.fireWebhookRun()
-    } else {
-      // Debounce — set/extend alarm
-      const debounceSec = (await this.state.storage.get('webhook_debounce_seconds')) ?? 300
-      const newFireAt = Date.now() + debounceSec * 1000
-      const cronFireAt = (await this.state.storage.get('next_cron_fire_ms')) ?? Infinity
-      await this.state.storage.put('webhook_debounce_until_ms', newFireAt)
-      await this.state.storage.setAlarm(Math.min(newFireAt, cronFireAt))
-    }
-    return new Response('ok')
-  }
-  // ... existing /set-frequency etc.
-}
-
-async alarm() {
-  const now = Date.now()
-  const cronAt = await this.state.storage.get('next_cron_fire_ms')
-  const webhookAt = await this.state.storage.get('webhook_debounce_until_ms')
-
-  if (cronAt && now >= cronAt) {
-    await this.fireCronRun()
-  }
-  if (webhookAt && now >= webhookAt) {
-    await this.fireWebhookRun()
-  }
-
-  // Reschedule alarm to the next pending fire
-  const nextCron = await this.computeNextCronFire()
-  const nextWebhook = await this.state.storage.get('webhook_debounce_until_ms')  // re-read
-  const nextFire = Math.min(nextCron ?? Infinity, nextWebhook ?? Infinity)
-  if (nextFire !== Infinity) await this.state.storage.setAlarm(nextFire)
-}
-
-private async fireWebhookRun() {
-  await this.state.storage.delete('webhook_debounce_until_ms')
-  await this.state.storage.put('webhook_events_since_last_fire', 0)
-  // Enqueue incremental run
-  await this.env.SELF.fetch('https://engine/api/internal/spaces/<spaceId>/incremental-run-start', {
-    method: 'POST',
-    headers: { 'x-internal-token': this.env.INTERNAL_TOKEN },
-  })
-}
+```
+storage: { next_cron_fire_ms, next_webhook_poll_ms }
+setAlarm(min(next_cron_fire_ms, next_webhook_poll_ms))
+alarm(): fire whichever is due; recompute; re-set to the new min.
+next_webhook_poll_ms = now + webhook_poll_interval_seconds*1000 + jitter(0..10% of interval)
 ```
 
-## Phase D — Incremental run
+Jitter prevents thundering-herd on the master DB when thousands of Spaces share an interval. Per dirty subscription: skip if a webhook-triggered run for that (space, base) is already in-flight (`backup_runs` check), else INSERT `backup_runs (triggered_by='webhook', status='queued')` and enqueue `incremental-backup` with `{ runId, spaceId, subscriptionId, baseId, connectionId, cursor, reconcile: <bool> }`. `reconcile=true` when `last_reconciled_at` is older than the reconciliation cadence (default 7 days) — the task then runs the `modifiedTime` catch-all after the payload pass. Set `last_polled_at = now()` at enqueue; a ping racing in during processing lands `last_ping_at > last_polled_at`, so the next tick re-polls — nothing is missed.
 
-`apps/workflows/trigger/tasks/incremental-backup.task.ts`:
+**Watermark semantics**: `last_polled_at` answers "have I looked since the last ping?" — it does NOT track processing success. Processing progress is the cursor, advanced only after payload batches durably apply. A failed run leaves the cursor put; the next poll re-reads the same payloads idempotently.
 
-```ts
-export const incrementalBackup = task({
-  id: 'incremental-backup',
-  retry: { maxAttempts: 3 },
-  run: async (payload: { spaceId: string }, { ctx }) => {
-    const db = createMasterDb()
-    const webhooks = await db.select(...).from(airtableWebhooks).where(eq(airtableWebhooks.spaceId, payload.spaceId))
-    const runId = crypto.randomUUID()
+**Escape hatch if per-Space polling ever gets heavy**: invert to one central scanner cron reading dirty rows once a minute and ticking only due SpaceDOs — one query instead of N. No schema or receiver change required; deferred until load says otherwise.
 
-    await db.insert(backupRuns).values({
-      id: runId, spaceId: payload.spaceId, connectionId: ..., status: 'running',
-      triggeredBy: 'webhook', createdAt: new Date(), startedAt: new Date(),
-    })
+## Phase D — Run plumbing
 
-    let totalCreated = 0, totalUpdated = 0, totalDeleted = 0
+- `POST /api/internal/webhook-subscriptions/:id/cursor` `{ cursor }` — task callback; sets `payload_cursor` (monotonic guard: never decrease).
+- `POST /api/internal/webhook-subscriptions/:id/fallback` `{ reason }` — task gap signal; enqueues a full `backup-base` run for the base, stamps `last_reconciled_at`, resets `payload_cursor` to the latest cursor returned by Airtable.
+- Both `INTERNAL_TOKEN`-gated per CLAUDE.md §5.2.
 
-    for (const webhook of webhooks) {
-      let cursor = webhook.cursor
-      let mightHaveMore = true
-      while (mightHaveMore) {
-        const resp = await fetchAirtablePayloads(webhook.base_id, webhook.airtable_webhook_id, cursor, deps)
-        for (const payload of resp.payloads) {
-          for (const action of payload.actions) {
-            await applyActionToDynamicDb(action, deps)
-            if (action.type === 'record.created') totalCreated++
-            if (action.type === 'record.updated') totalUpdated++
-            if (action.type === 'record.deleted') totalDeleted++
-          }
-          cursor = payload.cursor
-        }
-        mightHaveMore = resp.mightHaveMore
-      }
-      await db.update(airtableWebhooks).set({ cursor, lastEventAt: new Date() }).where(eq(airtableWebhooks.id, webhook.id))
-    }
+## Phase E — Lifecycle
 
-    await db.update(backupRuns).set({
-      status: 'succeeded',
-      completedAt: new Date(),
-      recordCount: totalCreated + totalUpdated,
-      // attachments count if applicable
-    }).where(eq(backupRuns.id, runId))
+**Enable (find-or-create):**
 
-    return { runId, totalCreated, totalUpdated, totalDeleted }
-  },
-})
+```
+row = SELECT ... WHERE organization_id=$org AND base_id=$base AND status != 'inactive'
+if row: INSERT subscription (webhook_id=row.id, space_id) ON CONFLICT DO NOTHING
+else:
+  id = gen uuid
+  resp = POST /v0/bases/$base/webhooks {
+    notificationUrl: "https://hooks.baseout.com/webhooks/airtable/" + id,
+    specification: { options: {
+      filters: { dataTypes: ["tableData","tableFields","tableMetadata"] },
+      includes: { includeCellValuesInFieldIds: "all",
+                  includePreviousCellValues: true,
+                  includePreviousFieldDefinitions: true } } }
+  INSERT airtable_webhooks (id, ..., mac_secret_base64_enc = encrypt(resp.macSecretBase64),
+                            airtable_webhook_id = resp.id, expires_at = resp.expirationTime)
+  INSERT subscription
 ```
 
-`applyActionToDynamicDb`:
+The MAC secret is returned **only** in the create response — encrypt and persist before anything else can fail. If the Airtable create succeeds but our INSERT fails, delete the Airtable webhook (compensating action) rather than leaking an orphan we can't verify.
 
-- `record.created` → INSERT into dynamic DB's `<table>` table.
-- `record.updated` → UPSERT (created might have been missed).
-- `record.deleted` → DELETE.
-- Schema changes (`table.created`, `field.created`, etc.) → trigger a full schema sync via `upsertSchemaToDynamic`.
+**Disable**: DELETE subscription; if none remain for the webhook → Airtable DELETE + `status='inactive'` (row retained for audit; receiver 410s its pings).
 
-## Phase E — Webhook lifecycle
+**Cap hit**: Airtable enforces 2 webhooks per base per OAuth integration (10 per base overall). On the create failing with the cap error, surface `{ error: 'airtable_webhook_cap_reached' }` — the UI explains that this base is already webhook-connected by the maximum number of organizations.
 
-### Register on Instant activation
+**Connection invalid/revoked**: registry rows with that `connection_id` → `status='pending_reauth'`. On reconnect, attempt refresh with the new token; if Airtable 404s the webhook, re-create (new row id, new URL, new secret) and re-point subscriptions. **Implementation-time verification**: whether a different same-org Connection's token can refresh/poll a webhook created by another token (docs ambiguous — webhook management is scoped to the OAuth integration + base access). If yes, prefer re-pointing `connection_id` to an active Connection over re-creating.
 
-In the apps/web PATCH route for `frequency='instant'`:
-
-```ts
-if (newFrequency === 'instant' && oldFrequency !== 'instant') {
-  for (const baseId of space.includedBaseIds) {
-    await env.BACKUP_ENGINE.fetch('/api/internal/spaces/<id>/register-webhooks', { method: 'POST' })
-  }
-}
-```
-
-Engine route calls Airtable's `POST /v0/bases/<baseId>/webhooks`. Persists result to `airtable_webhooks`.
-
-### Delete on deactivation
-
-Symmetric: PATCH to non-Instant frequency → engine deletes webhooks. Engine route + Airtable DELETE call.
-
-### Connection rotation
-
-If a Connection rotates its OAuth token, the webhook MAC secret is unaffected (different lifecycle). But if the Connection is fully disconnected, the engine MUST delete the webhooks (else they keep pinging hooks.baseout.com).
-
-## Phase F — UI
-
-- `FrequencyPicker.astro` — remove the "not supported" error for Instant when tier ≥ Pro AND dynamic DB exists.
-- History widget — runs with `triggered_by='webhook'` get a `⚡` glyph next to the timestamp. Inside the accordion, "Source: Webhook · 47 created · 12 updated · 3 deleted".
+**Rate limits**: every Airtable call (create, delete, refresh, payload polls) goes through the per-Connection ConnectionDO gateway; the shared 5 rps per-base budget covers payload polling AND snapshot backups AND schema reads together.
 
 ## Wire shapes
 
 | Direction | Path | Verb | Body | Notes |
 |---|---|---|---|---|
-| Airtable → apps/hooks | `/api/airtable` | POST | Airtable webhook notif | HMAC-verified |
-| apps/hooks → engine | `/api/internal/webhooks/notify` | POST | `{ webhookId, payloadCursor }` | service binding |
-| engine internal | `/api/internal/spaces/:id/register-webhooks` | POST | `{ baseIds[] }` | calls Airtable API |
-| engine internal | `/api/internal/spaces/:id/incremental-run-start` | POST | `{}` | enqueues Trigger.dev task |
-| engine ↔ DO | `/webhook-tick` | POST | `{}` | per-Space DO method |
+| Airtable → apps/hooks | `/webhooks/airtable/{row_id}` | POST | ping `{base, webhook, timestamp}` | HMAC-verified; `hooks` change |
+| hooks → master DB | `airtable_webhooks` upsert | — | `last_ping_at`, `last_ping_source_ip` | the cross-app contract is the table shape |
+| SpaceDO → master DB | dirty-check query | — | see Phase C | direct read; no HTTP hop |
+| SpaceDO → Trigger.dev | `incremental-backup` enqueue | — | `{runId, spaceId, subscriptionId, baseId, connectionId, cursor, reconcile}` | |
+| task → engine | `/api/internal/webhook-subscriptions/:id/cursor` | POST | `{cursor}` | monotonic |
+| task → engine | `/api/internal/webhook-subscriptions/:id/fallback` | POST | `{reason}` | enqueues full backup-base |
+| engine → Airtable | `/v0/bases/:b/webhooks[...]` | POST/DELETE | create/delete/refresh | via ConnectionDO gateway |
 
 ## Testing strategy
 
 | Layer | Coverage |
 |---|---|
-| Pure | `verifyHmac` (already in `@baseout/shared`). |
-| Pure | `applyActionToDynamicDb(action, dynamicDb)` per action type. |
-| Integration | apps/hooks receiver — HMAC match / mismatch / dedup hit / forward success. |
-| Integration | SpaceDO `/webhook-tick` — debounce path + burst-trigger path. |
-| Integration | Incremental run task — fixture payloads with create/update/delete; assert dynamic DB ends in expected state. |
-| Smoke | Real Airtable webhook in a dev base. Change a record. Verify Instant run fires within 5 minutes. |
-
-## Master DB migration
-
-`apps/web/drizzle/0013_airtable_webhooks.sql` per Phase A. Engine mirror in `apps/server/src/db/schema/airtable-webhooks.ts`.
+| Pure | Dirty-check predicate (dirty / clean / safety-sweep-due / never-polled). |
+| Pure | Find-or-create decision (existing row, inactive row, no row, cap error mapping). |
+| Integration | SpaceDO poll alarm: dirty subscription → run row + enqueue; in-flight skip; watermark race (ping during processing → re-poll next tick). Use `runInDurableObject`. |
+| Integration | Lifecycle routes: enable creates webhook + subscription; second Space enabling same base reuses; disable of last subscription deletes; cap error surfaced; compensating delete on INSERT failure. |
+| Integration | Cursor callback monotonic guard; fallback callback enqueues full run. |
+| Smoke | Real Airtable webhook in a dev base: change a record → ping dirty-marks → next poll tick enqueues → incremental run applies the change. |
 
 ## Operational concerns
 
-- **Airtable webhook quota**: 50 webhooks per base per integration. Plenty for MVP.
-- **Webhook deletion race**: if a Space is deleted while webhooks are still registered, future pings 404 in our receiver — handled gracefully. The Connection-disconnect path should still call Airtable's DELETE to be clean.
-- **HMAC secret persistence**: encrypted in `mac_secret_base64_enc`. Never logged.
-- **Cursor drift**: if processing fails partway, the cursor advances only after a successful payload batch. Re-processing on retry is safe because `applyActionToDynamicDb` operations are idempotent (UPSERT / DELETE).
-- **PRD-vs-Features conflict**: pinned to PRD's Pro+ reading. Update Features in Phase G.
-- **Cost**: Pro+ pricing factors in Instant compute. Webhook polls + dynamic-DB writes are credit-counted per `server-manual-quota-and-credits` schedule.
+- **Ping-loss tolerance**: safety sweep polls every subscription at least daily regardless of dirty state; gap detection (cursor beyond 7-day payload retention) falls back to full re-read. The ping chain is never the only line of defense.
+- **`notifications_disabled` recovery**: owned by `server-cron-webhook-renewal` (toggle-notifications endpoint; catch-up rides the cursors, not the pings).
+- **Registry data residency**: master DB holds base IDs, webhook IDs, timestamps, encrypted secret — no customer record data. Payload content flows Airtable → task → per-space DB directly.
+- **Cursor drift**: cursor advances only after a payload batch durably applies; retries are idempotent (UPSERT/DELETE semantics in the task).
+- **PRD sync**: PRD §2.5's "coalesce + debounce 5 minutes or 100 events" description is superseded by cadence polling; note in Phase G doc sync.
 
 ## What this design deliberately doesn't change
 
-- The static / scheduled backup path. Continues unchanged.
-- The cron alarm fire logic in SpaceDO. New webhook alarm coexists.
-- The dynamic-DB write path. Reuses `upsertRecordsToDynamic` from `server-dynamic-mode`.
-- The OAuth Connection model. Webhooks live alongside; Connection state unchanged.
+- The scheduled snapshot path and its cron alarm logic (the webhook poll is a second alarm state in the same min-dispatch).
+- The dynamic-DB write path (`server-dynamic-mode` owns it).
+- The OAuth Connection model (webhooks reference a Connection; Connection state machine unchanged).
+- The run state machine (`backup_runs`) — webhook runs are ordinary rows with `triggered_by='webhook'`.

@@ -1,70 +1,59 @@
 ## Phase A — Schema
 
-- [ ] A.1 Generate `apps/web/drizzle/0013_airtable_webhooks.sql` per design.md §Phase A.
+- [ ] A.1 Generate the canonical migration in `apps/web/drizzle/` per design.md §Phase A: `airtable_webhooks` (org-level registry, UNIQUE (organization_id, base_id)), `airtable_webhook_subscriptions` (per-Space cursor + watermark), `backup_configurations.webhook_poll_interval_seconds`.
 - [ ] A.2 Apply migration; verify tables landed.
-- [ ] A.3 Update `apps/web/src/db/schema/core.ts` with `airtableWebhooks` + `webhookEvents`.
-- [ ] A.4 Engine mirror `apps/server/src/db/schema/airtable-webhooks.ts`.
+- [ ] A.3 Update `apps/web/src/db/schema/core.ts` with `airtableWebhooks` + `airtableWebhookSubscriptions`.
+- [ ] A.4 Engine mirrors `apps/server/src/db/schema/airtable-webhooks.ts` + `airtable-webhook-subscriptions.ts` (header comments name the canonical migration).
+- [ ] A.5 Publish via `@baseout/db-schema` so `apps/hooks` can consume the registry table.
 
-## Phase B — apps/hooks receiver
+## Phase C — SpaceDO cadence polling
 
-- [ ] B.1 New route `apps/hooks/src/pages/api/airtable.ts` per design.md §Phase B.
-- [ ] B.2 HMAC verify against `mac_secret_base64_enc` (decrypted per-request).
-- [ ] B.3 Dedup via UNIQUE constraint on `(webhook_id, payload_cursor)`.
-- [ ] B.4 Service-binding forward to engine's `/api/internal/webhooks/notify`.
-- [ ] B.5 TDD: 401 mac mismatch; 404 unknown webhook; 200 dedup hit; 200 happy + forward called.
+- [ ] C.1 Update `apps/server/src/durable-objects/SpaceDO.ts`:
+  - Add `next_webhook_poll_ms` alarm state; extend the single-alarm min-dispatch (cron fire vs webhook poll) per design.md §Phase C.
+  - Poll interval from `backup_configurations.webhook_poll_interval_seconds` + 0–10% jitter.
+- [ ] C.2 Implement the dirty-check query (dirty OR 24h safety sweep) against the master DB from the alarm handler.
+- [ ] C.3 Per dirty subscription: in-flight guard → `backup_runs` INSERT (`triggered_by='webhook'`) → enqueue `incremental-backup` task → `last_polled_at = now()`.
+- [ ] C.4 Set `reconcile=true` in the task payload when `last_reconciled_at` older than 7 days.
+- [ ] C.5 Tests (TDD red first, `runInDurableObject`): dirty → enqueue; clean → no-op; safety-sweep fires with no ping; in-flight skip; ping-during-processing re-polls next tick; alarm coexistence with cron fire.
 
-## Phase C — Engine notify route + DO tick
+## Phase D — Run plumbing
 
-- [ ] C.1 New route `apps/server/src/pages/api/internal/webhooks/notify.ts`. Calls `env.SPACE_DO.get(idFromName(spaceId)).fetch('/webhook-tick')`.
-- [ ] C.2 Update `apps/server/src/durable-objects/SpaceDO.ts`:
-  - Add `/webhook-tick` POST handler.
-  - Add webhook-debounce alarm storage state per design.md §Phase C.
-  - Refactor `alarm()` to handle both cron AND webhook fires via min-alarm-dispatch.
-- [ ] C.3 Tests: TDD red on the burst-trigger path + the debounce-extends path. Use `runInDurableObject`.
-
-## Phase D — Incremental run task
-
-- [ ] D.1 Incremental-backup task itself owned by [`workflows-instant-webhook`](../workflows-instant-webhook/tasks.md).
-- [ ] D.2 New module `apps/server/src/lib/instant/apply-action-to-dynamic-db.ts` — pure-ish; per-action-type handlers.
-- [ ] D.3 New module `apps/server/src/lib/instant/fetch-airtable-payloads.ts` — wraps Airtable's payloads API with retry + cursor advance.
-- [ ] D.4 New engine route `POST /api/internal/spaces/:id/incremental-run-start`. Inserts `backup_runs` row + enqueues task.
-- [ ] D.5 Tests: pure handlers per action type; integration test against fixture payloads.
+- [ ] D.1 `POST /api/internal/webhook-subscriptions/:id/cursor` — monotonic cursor advance (reject decreases).
+- [ ] D.2 `POST /api/internal/webhook-subscriptions/:id/fallback` — enqueue full `backup-base` for the base, stamp `last_reconciled_at`, reset cursor to Airtable's latest.
+- [ ] D.3 Tests: cursor monotonic guard; fallback enqueues full run; both routes `INTERNAL_TOKEN`-gated.
 
 ## Phase E — Webhook lifecycle
 
-- [ ] E.1 New engine route `POST /api/internal/spaces/:id/register-webhooks`. Iterates the Space's included bases; calls Airtable API; persists rows.
-- [ ] E.2 New engine route `POST /api/internal/spaces/:id/unregister-webhooks`. Symmetric delete.
-- [ ] E.3 Update apps/web's PATCH `/api/spaces/:id/backup-config`: on `frequency='instant'` transition, call register; on transition away, call unregister.
-- [ ] E.4 Connection-disconnect path: call unregister for every Space using this Connection.
-- [ ] E.5 Tests for register/unregister routes + the PATCH integration.
-
-## Phase F — UI
-
-- [ ] F.1 Update [FrequencyPicker.astro](../../../apps/web/src/components/backups/FrequencyPicker.astro) — enable Instant when tier ≥ Pro and `space_databases.status='ready'`.
-- [ ] F.2 Update BackupHistoryWidget to show `⚡` glyph for `triggered_by='webhook'` rows.
-- [ ] F.3 Accordion detail panel shows `created / updated / deleted` counts for webhook runs.
+- [ ] E.1 Engine route `POST /api/internal/spaces/:id/register-webhooks` — find-or-create per included base: reuse active `(org, base)` row (subscription-only INSERT) or Airtable create with the full specification (dataTypes: tableData/tableFields/tableMetadata; includes: cell values "all", previous cell values, previous field definitions) and `notificationUrl` embedding the pre-generated row uuid.
+- [ ] E.2 Encrypt + persist `macSecretBase64` immediately (unrecoverable later); compensating Airtable DELETE if the row INSERT fails.
+- [ ] E.3 Engine route `POST /api/internal/spaces/:id/unregister-webhooks` — delete subscriptions; Airtable DELETE + `status='inactive'` when the last subscription goes.
+- [ ] E.4 Map Airtable's 2-per-base-per-integration cap error to `{ error: 'airtable_webhook_cap_reached' }`.
+- [ ] E.5 Wire apps/web's backup-config PATCH: transition to `instant` → register; away → unregister (route calls only; UI in `web-instant-webhook`).
+- [ ] E.6 Connection-disconnect path: subscriptions' webhooks with that `connection_id` → `pending_reauth`; reconnect path re-creates or re-points per design.md §Phase E.
+- [ ] E.7 Implementation-time verification: can a different same-org Connection's token refresh/poll a webhook created by another token? Record the answer in design.md and adjust E.6.
+- [ ] E.8 Tests: find-or-create both branches; second Space reuses; last-unsubscribe deletes; cap error; compensating delete; reauth transitions.
 
 ## Phase G — Doc sync
 
-- [ ] G.1 Update [openspec/changes/server/specs/airtable-webhook-coalescing/spec.md](../server/specs/airtable-webhook-coalescing/spec.md) — link this change.
-- [ ] G.2 Update [openspec/changes/server-schedule-and-cancel/proposal.md](../server-schedule-and-cancel/proposal.md) Out-of-Scope.
-- [ ] G.3 Update [shared/Baseout_Features.md §6.1](../../../shared/Baseout_Features.md) — Instant tier corrected to Pro+ per PRD.
+- [ ] G.1 Confirm [openspec/changes/server/specs/airtable-webhook-polling/spec.md](../server/specs/airtable-webhook-polling/spec.md) matches the shipped behavior; link this change.
+- [ ] G.2 Update [openspec/changes/server-schedule-and-cancel/proposal.md](../server-schedule-and-cancel/proposal.md) Out-of-Scope — link as resolved.
+- [ ] G.3 Update [shared/Baseout_Features.md §6.1](../../../shared/Baseout_Features.md): Instant = Pro+ per PRD; document per-tier `webhook_poll_interval_seconds` minimums.
+- [ ] G.4 PRD change-log note: §2.5 DO-coalescing description superseded by dirty-flag registry + per-Space cadence polling.
 
 ## Phase H — Final verification
 
-- [ ] H.1 `pnpm --filter @baseout/hooks typecheck && pnpm --filter @baseout/hooks test` — all green.
-- [ ] H.2 `pnpm --filter @baseout/server typecheck && pnpm --filter @baseout/server test` — all green.
-- [ ] H.3 `pnpm --filter @baseout/web typecheck && pnpm --filter @baseout/web test:unit` — all green.
-- [ ] H.4 Human checkpoint smoke:
-  - Pro Space with dynamic DB ready. PATCH frequency=instant. Confirm `airtable_webhooks` row + Airtable webhook visible in their developer console.
-  - Add a record in the source base. Within ~5 minutes, a `triggered_by='webhook'` run appears with `recordCount=1`. Dynamic DB has the new row.
-  - PATCH frequency back to monthly. Confirm webhook deleted on Airtable side + `airtable_webhooks` row deleted.
-- [ ] H.5 On approval: stage by name, commit locally.
+- [ ] H.1 `pnpm --filter @baseout/server typecheck && pnpm --filter @baseout/server test` — green.
+- [ ] H.2 `pnpm --filter @baseout/web typecheck && pnpm --filter @baseout/web test:unit` — green (migration + schema only; UI is `web-instant-webhook`).
+- [ ] H.3 Human checkpoint smoke:
+  - Pro Space with dynamic DB ready. PATCH frequency=instant. Confirm `airtable_webhooks` + subscription rows and the webhook visible in Airtable's developer console.
+  - Second Space (same org) enables the same base → no new Airtable webhook; new subscription row only.
+  - Add a record in the source base. Within one poll interval, a `triggered_by='webhook'` run appears; per-space DB has the change.
+  - PATCH both Spaces away from instant → Airtable webhook deleted; row `status='inactive'`.
+- [ ] H.4 On approval: stage by name, commit locally.
 
 ## Out of this change (follow-ups, file separately)
 
-- [ ] OUT-1 `server-instant-conflict-resolution` — Handling cases where webhook payload disagrees with dynamic-DB state.
-- [ ] OUT-2 `server-instant-snapshot-rollup` — Periodic consolidation snapshots after N incrementals.
-- [ ] OUT-3 `server-instant-multi-base-coalesce` — Cross-base coalesce optimization.
-- [ ] OUT-4 `server-webhook-replay` — Replay-from-cursor recovery.
-- [ ] OUT-5 `server-instant-cursor-monitoring` — Alert when cursor falls behind (real-time backup latency).
+- [ ] OUT-1 `server-instant-conflict-resolution` — payload-vs-dynamic-DB conflict handling (MVP: last-write-wins).
+- [ ] OUT-2 `server-instant-snapshot-rollup` — periodic consolidation snapshots after N incrementals.
+- [ ] OUT-3 `server-webhook-cursor-monitoring` — alert when a subscription's cursor nears the 7-day payload-retention edge.
+- [ ] OUT-4 Central scanner cron (single dirty-scan ticking due SpaceDOs) — only if per-Space polling load demands.
