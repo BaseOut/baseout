@@ -43,6 +43,7 @@
     "@astrojs/cloudflare": "^13.1.10",
     "@astrojs/react": "^5.0.7",
     "@baseout/db-schema": "workspace:*",
+    "@baseout/embed-protocol": "workspace:*",
     "@dagrejs/dagre": "^3.0.0",
     "@opensided/theme": "file:./vendor/@opensided/theme",
     "@platejs/basic-nodes": "^53.0.0",

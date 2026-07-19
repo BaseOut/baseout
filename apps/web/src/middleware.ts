@@ -1,5 +1,6 @@
-import { defineMiddleware } from "astro:middleware";
+import { defineMiddleware, sequence } from "astro:middleware";
 import { env } from "cloudflare:workers";
+import { applyFrameAncestors, buildFrameAncestors } from "./lib/embed/frame-headers";
 import { createDb } from "./db";
 import { createAppAuth } from "./lib/auth";
 import { getAccountContext } from "./lib/account";
@@ -12,7 +13,11 @@ import { rewriteLocalhostTrapUrl } from "./lib/oauth/canonical-dev-origin";
 import { sanitizeReturnTo } from "./lib/airtable/return-to";
 import { resolveLoginCallback } from "./lib/return-to";
 
-const PUBLIC_PATHS = new Set(['/login', '/register']);
+// /embed is public by design (shared-embed-protocol): an unauthenticated
+// embed renders its own minimal sign-in prompt (sign-in happens top-level via
+// the host, never inside the iframe) — a /login redirect inside the frame
+// would strand the user.
+const PUBLIC_PATHS = new Set(['/login', '/register', '/embed']);
 
 export function isPublicRoute(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
@@ -120,7 +125,18 @@ function resolveDbUrl(): string {
   return env.HYPERDRIVE.connectionString
 }
 
-export const onRequest = defineMiddleware(async (context, next) => {
+// frame-ancestors on EVERY HTML response, not just /embed — once framed,
+// every in-iframe navigation response needs it or the browser blanks the
+// frame mid-session; and with no header at all (the pre-embed state) any
+// site could frame any Baseout page. shared-embed-protocol design Decision 7.
+const embedFrameHeaders = defineMiddleware(async (_context, next) => {
+  const res = await next();
+  const raw = (env as unknown as { PUBLIC_EMBED_ALLOWED_ANCESTORS?: string })
+    .PUBLIC_EMBED_ALLOWED_ANCESTORS;
+  return applyFrameAncestors(res, buildFrameAncestors(raw));
+});
+
+const handleRequest = defineMiddleware(async (context, next) => {
   const trapRewrite = rewriteLocalhostTrapUrl(new URL(context.url));
   if (trapRewrite) {
     return context.redirect(trapRewrite.href);
@@ -239,6 +255,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
     context.locals.cfContext.waitUntil(sql.end({ timeout: 5 }));
   }
 });
+
+export const onRequest = sequence(embedFrameHeaders, handleRequest);
 
 /**
  * Append better-auth Set-Cookie headers onto an outgoing response — the

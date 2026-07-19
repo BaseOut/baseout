@@ -73,6 +73,20 @@ export function resolveUseSecureCookies(baseUrl: string | undefined): false | un
   }
 }
 
+// SameSite=None so the session flows inside embedded iframes on Chromium
+// (shared-embed-protocol design Decision 9; Safari/Firefox block third-party
+// cookies regardless — the /embed sign-in fallback covers them). None is only
+// valid WITH Secure, so the local-dev plain-cookie mode stays at better-auth's
+// Lax default — browsers silently drop None-without-Secure cookies. CSRF
+// posture: better-auth's CSRF protection does not rely on SameSite, and every
+// mutating route passes through it (web CLAUDE.md §2).
+export function resolveCookieAttributes(
+  baseUrl: string | undefined,
+): { sameSite: 'none'; secure: true; partitioned: boolean } | undefined {
+  if (resolveUseSecureCookies(baseUrl) === false) return undefined
+  return { sameSite: 'none', secure: true, partitioned: false }
+}
+
 export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
   return betterAuth({
     secret: env.secret,
@@ -135,6 +149,7 @@ export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
     },
     advanced: {
       useSecureCookies: resolveUseSecureCookies(env.baseUrl),
+      defaultCookieAttributes: resolveCookieAttributes(env.baseUrl),
       database: {
         generateId: 'uuid',
       },

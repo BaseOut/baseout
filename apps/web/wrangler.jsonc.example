@@ -56,6 +56,11 @@
   "vars": {
     "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
     "PUBLIC_AUTH_BASE_URL": "https://baseout-dev.openside.workers.dev",
+    // Embedding hosts allowed to frame the app AND to complete the embed
+    // handshake (shared-embed-protocol; one list feeds both frame-ancestors
+    // and the child bridge). Dev allows any Chrome extension; production
+    // pins the published extension id + observed Airtable extension origins.
+    "PUBLIC_EMBED_ALLOWED_ANCESTORS": "https://airtable.com, https://*.airtableblocks.com, chrome-extension://*",
     // dev-only — DO NOT replicate to env.staging or env.production.
     // Gates the /api/internal/test/last-verification endpoint that
     // Playwright uses to fetch magic-link tokens. The endpoint enforces

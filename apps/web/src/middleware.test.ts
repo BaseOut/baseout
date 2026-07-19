@@ -20,6 +20,10 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('astro:middleware', () => ({
   defineMiddleware: (fn: unknown) => fn,
+  sequence:
+    (...fns: unknown[]) =>
+    (...args: unknown[]) =>
+      (fns[0] as (...a: unknown[]) => unknown)(...args),
 }))
 
 vi.mock('cloudflare:workers', () => ({

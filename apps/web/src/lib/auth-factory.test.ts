@@ -57,6 +57,39 @@ describe('createAuth — local-dev secure-cookie decision', () => {
   })
 })
 
+// shared-embed-protocol Decision 9: SameSite=None; Secure so the session
+// flows in embedded iframes on Chromium. Local dev (plain-cookie mode) must
+// stay at the Lax default — None without Secure is dropped by browsers.
+describe('createAuth — embedded-iframe cookie attributes', () => {
+  function cookieAttributes(auth: ReturnType<typeof build>) {
+    return (auth.options as { advanced: { defaultCookieAttributes?: unknown } })
+      .advanced.defaultCookieAttributes
+  }
+
+  it.each([
+    'https://baseout.dev',
+    'https://baseout-dev.openside.workers.dev',
+  ])('sets SameSite=None; Secure for deployed baseURL %s', (baseUrl) => {
+    expect(cookieAttributes(build(baseUrl))).toEqual({
+      sameSite: 'none',
+      secure: true,
+      partitioned: false,
+    })
+  })
+
+  it('sets SameSite=None; Secure when baseURL is unset (deployed Host-header mode)', () => {
+    expect(cookieAttributes(build(undefined))).toEqual({
+      sameSite: 'none',
+      secure: true,
+      partitioned: false,
+    })
+  })
+
+  it('keeps the Lax default in local-dev plain-cookie mode', () => {
+    expect(cookieAttributes(build('https://baseout.local:4331'))).toBeUndefined()
+  })
+})
+
 describe('createAuth — session lifetime', () => {
   // 30-day sliding sessions (product decision 2026-07-09): better-auth's 7-day
   // default forced monthly-active users back through the magic-link flow. With

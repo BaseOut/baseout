@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Baseout",
+  "version": "0.1.0",
+  "description": "Baseout backups and schema intelligence alongside your Airtable bases.",
+  "permissions": ["sidePanel", "tabs"],
+  "host_permissions": ["https://airtable.com/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "action": { "default_title": "Open Baseout" }
+}

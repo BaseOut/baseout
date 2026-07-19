@@ -1,5 +1,13 @@
 packages:
   - "apps/*"
+  # apps/embed is an umbrella of per-host packages (embed change, design
+  # Decision 1). The two Airtable extension hosts are EXCLUDED on purpose:
+  # the Airtable blocks CLI owns their install/run lifecycle and their React
+  # peer set must not constrain the monorepo — they consume @baseout/embed-core
+  # via a file: dependency instead.
+  - "apps/embed/*"
+  - "!apps/embed/airtable-data"
+  - "!apps/embed/airtable-interface"
   - "packages/*"
 
 # Native-binary / postinstall builds we trust under pnpm 11's

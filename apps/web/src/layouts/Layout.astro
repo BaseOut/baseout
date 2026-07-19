@@ -4,6 +4,7 @@ import '@fortawesome/fontawesome-free/css/fontawesome.min.css';
 import '@fortawesome/fontawesome-free/css/solid.min.css';
 import '@fortawesome/fontawesome-free/css/brands.min.css';
 import { ClientRouter } from 'astro:transitions';
+import { env } from 'cloudflare:workers';
 
 interface Props {
   title?: string;
@@ -14,6 +15,16 @@ const {
   title = 'OpenSide UI',
   description = 'Admin dashboard template built with Astro and Tailwind CSS',
 } = Astro.props;
+
+// Embedded-mode re-boot payload (shared-embed-protocol): after a full-page
+// navigation inside a host iframe, the page must re-handshake with the host.
+// The client no-ops instantly when embed mode isn't active (sessionStorage).
+const embedBoot = {
+  allowedAncestors:
+    (env as unknown as { PUBLIC_EMBED_ALLOWED_ANCESTORS?: string })
+      .PUBLIC_EMBED_ALLOWED_ANCESTORS ?? '',
+  authenticated: !!Astro.locals.user,
+};
 ---
 <!doctype html>
 <html lang="en" data-theme="baseout-light" data-font-family="urbanist" class="group/html" style="color-scheme: light dark" transition:animate="none">
@@ -49,6 +60,15 @@ const {
   </head>
   <body class="font-sans text-base-content antialiased">
     <slot />
+    <script type="application/json" id="embed-reboot" set:html={JSON.stringify(embedBoot)} />
+    <script>
+      import { initEmbedClient } from '../lib/embed/client'
+      const el = document.getElementById('embed-reboot')
+      if (el?.textContent) {
+        const cfg = JSON.parse(el.textContent) as { allowedAncestors: string; authenticated: boolean }
+        initEmbedClient(cfg)
+      }
+    </script>
   </body>
 </html>
 
