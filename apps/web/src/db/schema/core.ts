@@ -902,3 +902,30 @@ export const healthScoreRules = baseout.table('health_score_rules', {
   unique('health_score_rules_org_code_unique').on(table.organizationId, table.code),
   index('health_score_rules_organization_id_idx').on(table.organizationId),
 ])
+
+// Public API tokens (api-rest-read). Bearer tokens for api.baseout.com: the
+// plaintext (`bo_live_<random>`) is shown ONCE at creation; only its SHA-256 hash
+// is stored (PRD §21.3 — hashes, never plaintext). Org-owned, optionally
+// Space-bound (NULL space_id = all Spaces in the Org). Scopes are read-only in v1
+// (`org:read` | `backups:read` | `schema:read`; write scopes reserved). apps/api
+// mirrors this table read-only; web owns CRUD + this migration.
+export const apiTokens = baseout.table('api_tokens', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: text('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  spaceId: text('space_id').references(() => spaces.id, { onDelete: 'cascade' }), // NULL = all Spaces in the Org
+  name: text('name').notNull(),                       // human label
+  tokenPrefix: text('token_prefix').notNull(),        // e.g. "bo_live_ab12cd" — display/identification only
+  tokenHash: text('token_hash').notNull().unique(),   // SHA-256 hex of the full token
+  scopes: text('scopes').array().notNull().default(sql`ARRAY[]::text[]`),
+  isActive: boolean('is_active').notNull().default(true),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('api_tokens_organization_id_idx').on(table.organizationId),
+  index('api_tokens_token_hash_idx').on(table.tokenHash),
+])
