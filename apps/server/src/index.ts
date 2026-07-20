@@ -63,6 +63,7 @@ import {
 } from "./pages/api/internal/attachments/lookup";
 import { connectionsTokenHealthHandler } from "./pages/api/internal/connections/token-health";
 import { resolveCronJobs } from "./lib/cron/dispatch";
+import { withServiceRun, numericCounts, pruneServiceRuns } from "./lib/service-runs";
 import {
   runScheduledOauthRefresh,
   runScheduledKeepalive,
@@ -593,7 +594,7 @@ export default {
   async scheduled(
     event: ScheduledEvent,
     env: Env,
-    _ctx: ExecutionContext,
+    ctx: ExecutionContext,
   ): Promise<void> {
     // Cron dispatch (server-oauth-refresh-cron-health). Each background
     // service owns one entry in resolveCronJobs; an unmapped cron string is
@@ -604,16 +605,29 @@ export default {
       console.log(JSON.stringify({ event: "cron_unmapped", cron: event.cron }));
       return;
     }
-    for (const job of jobs) {
-      if (job === "oauth-refresh-sweep") {
-        await runScheduledOauthRefresh(env);
-      } else if (job === "run-reconciliation") {
-        await runScheduledRunReconciliation(env);
-      } else if (job === "oauth-keepalive") {
-        await runScheduledKeepalive(env);
-      } else if (job === "connection-auto-invalidate") {
-        await runScheduledConnectionInvalidation(env);
+    // shared-service-runs: each job runs under withServiceRun, which records one
+    // service_runs row (started → succeeded|failed) from the job's returned
+    // counters. A separate telemetry DB client is used for the rows + prune (the
+    // OAuth jobs manage their own client internally; a brief second short-lived
+    // client per firing is negligible for a 15-min/daily cron). Record-keeping
+    // failures are swallowed, so job behavior is unchanged.
+    const { db, sql } = createMasterDb(env);
+    try {
+      for (const job of jobs) {
+        if (job === "oauth-refresh-sweep") {
+          await withServiceRun(db, "oauth_refresh_sweep", async () => ({ counts: numericCounts(await runScheduledOauthRefresh(env)) }));
+        } else if (job === "run-reconciliation") {
+          await withServiceRun(db, "run_reconciliation", async () => ({ counts: numericCounts(await runScheduledRunReconciliation(env)) }));
+        } else if (job === "oauth-keepalive") {
+          await withServiceRun(db, "oauth_keepalive", async () => ({ counts: numericCounts(await runScheduledKeepalive(env)) }));
+        } else if (job === "connection-auto-invalidate") {
+          await withServiceRun(db, "connection_auto_invalidate", async () => ({ counts: numericCounts(await runScheduledConnectionInvalidation(env)) }));
+        } else if (job === "service-runs-prune") {
+          await withServiceRun(db, "service_runs_prune", () => pruneServiceRuns(db));
+        }
       }
+    } finally {
+      ctx.waitUntil(sql.end({ timeout: 5 }));
     }
   },
 };

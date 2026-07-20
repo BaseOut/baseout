@@ -929,3 +929,25 @@ export const apiTokens = baseout.table('api_tokens', {
   index('api_tokens_organization_id_idx').on(table.organizationId),
   index('api_tokens_token_hash_idx').on(table.tokenHash),
 ])
+
+// Background-service run log (shared-service-runs). One row per execution of a
+// scheduled/cron/engine-mediated background service, written `started` and
+// finalized `succeeded`/`failed`. Operational telemetry (single-row lifecycle,
+// not audit pairs) — a dangling `started` row past its staleness window is the
+// crash signal. `counts` is jsonb because per-service counter shapes differ.
+// apps/server writes via withServiceRun(); apps/admin mirrors it read-only.
+export const serviceRuns = baseout.table('service_runs', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  service: text('service').notNull(),                 // e.g. oauth_refresh_sweep | retention_cleanup
+  status: text('status').notNull().default('started'), // started | succeeded | failed (app-enforced)
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  durationMs: integer('duration_ms'),
+  counts: jsonb('counts'),                            // per-service counters (schemaless)
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('service_runs_service_started_idx').on(table.service, table.startedAt.desc()),
+  index('service_runs_status_idx').on(table.status),
+])

@@ -19,6 +19,7 @@
 import { and, inArray, sql } from "drizzle-orm";
 import type { AppLocals, Env } from "../../../env";
 import { backupRuns } from "../../../db/schema";
+import { finalizeServiceRun } from "../../../lib/service-runs";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -32,6 +33,8 @@ function jsonResponse(body: unknown, status: number): Response {
 
 interface CleanupCompleteBody {
   completed: Array<{ runId: string; ok: boolean }>;
+  /** shared-service-runs: echoed from the plan response; finalizes that run row. */
+  serviceRunId?: string | null;
 }
 
 function isCleanupCompleteBody(x: unknown): x is CleanupCompleteBody {
@@ -69,25 +72,39 @@ export async function cleanupCompleteHandler(
     .filter((c) => c.ok && UUID_RE.test(c.runId))
     .map((c) => c.runId);
 
-  // Short-circuit before touching the DB when nothing succeeded.
-  if (okIds.length === 0) {
+  // Need the DB if anything soft-deletes OR a retention_cleanup run must finalize.
+  if (okIds.length === 0 && !body.serviceRunId) {
     return jsonResponse({ updated: 0 }, 200);
   }
 
   const { db } = locals.getMasterDb();
   const now = new Date();
-  const rows = await db
-    .update(backupRuns)
-    .set({ deletedAt: now, modifiedAt: now })
-    .where(
-      and(
-        inArray(backupRuns.id, okIds),
-        sql`${backupRuns.deletedAt} IS NULL`,
-      ),
-    )
-    .returning({ id: backupRuns.id });
+  let updated = 0;
+  if (okIds.length > 0) {
+    const rows = await db
+      .update(backupRuns)
+      .set({ deletedAt: now, modifiedAt: now })
+      .where(
+        and(
+          inArray(backupRuns.id, okIds),
+          sql`${backupRuns.deletedAt} IS NULL`,
+        ),
+      )
+      .returning({ id: backupRuns.id });
+    updated = rows.length;
+  }
+
+  // shared-service-runs: finalize the retention_cleanup row opened by
+  // /cleanup-plan (missing/unknown id → no-op; forward/backward compatible during
+  // deploy skew). Record-keeping failures are swallowed by finalizeServiceRun.
+  if (body.serviceRunId) {
+    await finalizeServiceRun(db, body.serviceRunId, {
+      status: "succeeded",
+      counts: { deleted: updated, attempted: body.completed.length },
+    });
+  }
 
   // event: 'backup_cleanup_pass' (structured log lands with the observability
   // surface; no raw console per CLAUDE.md §3.5).
-  return jsonResponse({ updated: rows.length }, 200);
+  return jsonResponse({ updated }, 200);
 }

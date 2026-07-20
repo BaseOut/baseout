@@ -293,3 +293,20 @@ export const backupRunTables = baseout.table('backup_run_tables', {
   fieldCount: integer('field_count').notNull().default(0),
   attachmentCount: integer('attachment_count').notNull().default(0),
 })
+
+// Background-service run log (canonical: apps/web core.ts serviceRuns, migration
+// 0028_service_runs.sql; written by apps/server via withServiceRun). READ-ONLY
+// here — the /services surface reads it; no admin code path writes it
+// (guard-tested in service-runs-guard.test.ts). All columns are safe (no *_enc).
+export const serviceRuns = baseout.table('service_runs', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  service: text('service').notNull(),
+  status: text('status').notNull().default('started'),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  durationMs: integer('duration_ms'),
+  counts: jsonb('counts'),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+})

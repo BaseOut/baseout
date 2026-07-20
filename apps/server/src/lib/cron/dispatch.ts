@@ -16,11 +16,14 @@ export type CronJob =
   | "oauth-refresh-sweep"
   | "run-reconciliation"
   | "oauth-keepalive"
-  | "connection-auto-invalidate";
+  | "connection-auto-invalidate"
+  // shared-service-runs: 90-day self-prune of the service_runs log; piggybacks
+  // the daily cron rather than adding a third expression (design D4/D6).
+  | "service-runs-prune";
 
 const CRON_JOBS: Record<string, CronJob[]> = {
   [OAUTH_REFRESH_CRON]: ["oauth-refresh-sweep", "run-reconciliation"],
-  [KEEPALIVE_CRON]: ["oauth-keepalive", "connection-auto-invalidate"],
+  [KEEPALIVE_CRON]: ["oauth-keepalive", "connection-auto-invalidate", "service-runs-prune"],
 };
 
 export function resolveCronJobs(cron: string): CronJob[] {

@@ -29,6 +29,9 @@ export interface CleanupRunPlanItem {
 
 export interface CleanupPlan {
   runs: CleanupRunPlanItem[];
+  /** shared-service-runs: the retention_cleanup run row id opened by the engine;
+   *  echoed back on completion so the engine finalizes it. Opaque here. */
+  serviceRunId?: string | null;
 }
 
 export interface CleanupCompletion {
@@ -41,9 +44,11 @@ export interface RunCleanupSweepDeps {
   fetchPlan: () => Promise<CleanupPlan>;
   /** Resolve a StorageWriter for a run's storage_type. */
   resolveWriter: (storageType: string) => StorageWriter;
-  /** Report per-run outcomes so the engine soft-deletes the ok rows. */
+  /** Report per-run outcomes (+ echo the serviceRunId) so the engine
+   *  soft-deletes the ok rows and finalizes the retention_cleanup run. */
   postComplete: (
     completed: CleanupCompletion[],
+    serviceRunId?: string | null,
   ) => Promise<{ updated: number } | void>;
 }
 
@@ -81,8 +86,11 @@ export async function runCleanupSweep(
     completed.push({ runId: run.runId, ok });
   }
 
-  if (completed.length > 0) {
-    await deps.postComplete(completed);
+  // Call postComplete when there's anything to soft-delete OR a service run to
+  // finalize — else a plan that opened a retention_cleanup row but planned zero
+  // runs would leave that row dangling (admin would render it "stuck").
+  if (completed.length > 0 || plan.serviceRunId) {
+    await deps.postComplete(completed, plan.serviceRunId);
   }
 
   return { planned: plan.runs.length, deleted, failed };
