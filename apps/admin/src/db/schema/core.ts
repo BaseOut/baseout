@@ -168,6 +168,7 @@ export const backupConfigurations = baseout.table('backup_configurations', {
   spaceId: text('space_id').notNull(),
   frequency: text('frequency').notNull().default('monthly'),
   scope: text('scope').notNull().default('schema_and_data'),
+  mode: text('mode').notNull().default('static'), // static | dynamic — config summary (admin-entity-directories)
   schemaFrequency: text('schema_frequency'),
   schemaNextScheduledAt: timestamp('schema_next_scheduled_at', { withTimezone: true }),
   storageType: text('storage_type').notNull().default('r2_managed'),

@@ -39,6 +39,18 @@ export function setButtonLoading(btn: HTMLButtonElement, loading: boolean): void
   }
 }
 
+/**
+ * Link target for an entity from a directory row. Orgs always link to their
+ * drill-in; space/user targets fall back to the owning org's drill-in until the
+ * dedicated detail routes exist (admin-entity-linking flips those to
+ * `/spaces/[id]` / `/users/[id]` — a one-line change, guard-tested there). Kept
+ * here so the fallback rule isn't scattered across the directory pages.
+ */
+export function entityHref(kind: 'org' | 'space' | 'user', id: string, orgId?: string | null): string {
+  if (kind === 'org') return `/organizations/${id}`
+  return orgId ? `/organizations/${orgId}` : '/'
+}
+
 export type PostActionResult =
   | { ok: true; body: Record<string, unknown> }
   | { ok: false; error: string }

@@ -26,6 +26,11 @@ const { user } = Astro.locals;
 // Read-only staff surfaces (PRD §16.1). Icons use the shared iconify/lucide set.
 const NAV = [
   { href: '/', label: 'Organizations', icon: 'iconify lucide--building-2' },
+  // Directory (admin-entity-directories) — global entity lists, ahead of the
+  // operational surfaces. (The ops-overview change formalizes group headings.)
+  { href: '/customers', label: 'Customers', icon: 'iconify lucide--users-round' },
+  { href: '/users', label: 'Users', icon: 'iconify lucide--user' },
+  { href: '/spaces', label: 'Spaces', icon: 'iconify lucide--layers' },
   { href: '/subscriptions', label: 'Subscriptions', icon: 'iconify lucide--credit-card' },
   { href: '/backups', label: 'Backups', icon: 'iconify lucide--database-backup' },
   { href: '/restores', label: 'Restores', icon: 'iconify lucide--archive-restore' },
