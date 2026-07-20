@@ -90,13 +90,34 @@ importers:
       '@baseout/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@cloudflare/workers-types@4.20260504.1)(@opentelemetry/api@1.9.1)(kysely@0.28.17)(postgres@3.4.9)
+      postgres:
+        specifier: ^3.4.9
+        version: 3.4.9
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20240924.0
         version: 4.20260504.1
+      tsup:
+        specifier: ^8.3.0
+        version: 8.5.1(jiti@2.6.1)(postcss@8.5.16)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.4)
+      tsx:
+        specifier: ^4.21.0
+        version: 4.21.0
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.5
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.0)(@vitest/coverage-v8@4.1.5)(happy-dom@20.9.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.3(@types/node@25.6.0)(typescript@5.9.3))(vite@8.1.0(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4))
       wrangler:
-        specifier: ^3.78.0
-        version: 3.114.17(@cloudflare/workers-types@4.20260504.1)
+        specifier: ^4.61.1
+        version: 4.88.0(@cloudflare/workers-types@4.20260504.1)
 
   apps/design:
     dependencies:
@@ -484,6 +505,9 @@ importers:
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.16)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.8.4)
+      vitest:
+        specifier: ^4.1.5
+        version: 4.1.5(@opentelemetry/api@1.9.1)(@types/node@25.6.0)(@vitest/coverage-v8@4.1.5)(happy-dom@20.9.0)(jsdom@29.1.1(@noble/hashes@2.2.0))(msw@2.14.3(@types/node@25.6.0)(typescript@5.9.3))(vite@8.1.0(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.4))
 
   packages/ui:
     dependencies:

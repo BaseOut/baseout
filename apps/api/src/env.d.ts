@@ -1,0 +1,36 @@
+// Worker bindings for apps/api (public read REST API — api-rest-read).
+//
+// Master DB is read in-Worker (org/space/backup resources + api_tokens auth);
+// per-Space schema is read ONLY through apps/server via the SERVER service
+// binding (design D3). Analytics Engine + Rate Limiting are optional so the
+// Worker runs locally / in tests without them (metering + shadow limiting are
+// failure-isolated no-ops when unbound).
+
+export interface Env {
+  /** Master Postgres URL — local wrangler dev only; deployed envs use HYPERDRIVE. */
+  DATABASE_URL?: string;
+  /** Hyperdrive binding — deployed envs (production / staging). */
+  HYPERDRIVE?: Hyperdrive;
+
+  /** Service binding to baseout-server (internal schema read/search/versions/changelog). */
+  SERVER?: Fetcher;
+  /**
+   * Shared secret gating apps/server's /api/internal/* (its INTERNAL_TOKEN).
+   * apps/api sends it as `x-internal-token` over the SERVER binding. (The design
+   * names an HMAC service token; the deployed server gate is the header token —
+   * matched here, HMAC can supersede uniformly later.)
+   */
+  INTERNAL_TOKEN?: string;
+
+  /** Workers Analytics Engine dataset for per-request usage metering (baseout_api_requests). */
+  API_USAGE?: AnalyticsEngineDataset;
+  /** Workers Rate Limiting binding — evaluated in shadow mode (see RATE_LIMIT_ENFORCE). */
+  RATE_LIMITER?: RateLimit;
+  /** "true" flips shadow rate limiting to enforcing (429). Default (unset/anything else) = shadow. */
+  RATE_LIMIT_ENFORCE?: string;
+}
+
+/** Workers Rate Limiting binding shape (beta) — minimal typing. */
+export interface RateLimit {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
+}

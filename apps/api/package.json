@@ -3,21 +3,29 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Public versioned ingestion API at api.baseout.com. See openspec/changes/api/proposal.md.",
+  "description": "Public read-only REST API at api.baseout.com. See openspec/changes/api-rest-read/proposal.md.",
   "scripts": {
     "dev": "wrangler dev",
     "build": "tsup src/index.ts --format esm --dts",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "lint": "eslint .",
     "openapi:generate": "tsx scripts/generate-openapi.ts"
   },
   "dependencies": {
     "@baseout/db-schema": "workspace:*",
-    "@baseout/shared": "workspace:*"
+    "@baseout/shared": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240924.0",
-    "wrangler": "^3.78.0"
+    "tsup": "^8.3.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.6.0",
+    "vitest": "^4.1.5",
+    "wrangler": "^4.61.1"
   }
 }
