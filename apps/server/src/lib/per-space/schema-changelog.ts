@@ -24,7 +24,11 @@ export type ChangelogEntityType =
   | "field"
   | "view"
   | "automation"
-  | "interface";
+  | "interface"
+  // server-interfaces-normalize split the single interface table into apps
+  // (interface), pages (page), and forms (form); each surfaces its own type.
+  | "page"
+  | "form";
 export type ChangelogKind = "modified" | "removed";
 
 export interface ChangelogModificationRow {

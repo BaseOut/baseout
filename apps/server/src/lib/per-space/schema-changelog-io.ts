@@ -161,33 +161,94 @@ export async function readSchemaChangelog(
     });
   }
 
-  // Automation/interface removals use the TIMESTAMP lifecycle — these tables
-  // have no run columns; status='removed' + last_seen_at is the removal-
-  // detected stamp (server-mcp-interface-pages writes it for MCP-captured
-  // interfaces; the manual-crud slice will for automations). runId stays null.
-  const interfaceRemovals = await tx
+  // Interface apps/pages/forms removals — RUN-based lifecycle since
+  // server-interfaces-normalize (firstUnseenRun → that base run's completed_at,
+  // like the schema-table removals above). The old single bo_at_interfaces was
+  // split into three entity tables; each surfaces its own entity_type.
+  const interfaceAppRemovals = await tx
     .select({
+      runId: spacePg.interfaces.firstUnseenRun,
       entityId: spacePg.interfaces.airtableEntityId,
       name: spacePg.interfaces.name,
-      lastSeenAt: spacePg.interfaces.lastSeenAt,
+      startedAt: spacePg.baseRuns.startedAt,
+      completedAt: spacePg.baseRuns.completedAt,
     })
     .from(spacePg.interfaces)
+    .leftJoin(spacePg.baseRuns, eq(spacePg.interfaces.firstUnseenRun, spacePg.baseRuns.id))
     .where(
       and(
         eq(spacePg.interfaces.baseId, baseId),
         eq(spacePg.interfaces.status, "removed"),
-        isNotNull(spacePg.interfaces.lastSeenAt),
+        isNotNull(spacePg.interfaces.firstUnseenRun),
       ),
     );
-  for (const r of interfaceRemovals) {
+  for (const r of interfaceAppRemovals) {
     removals.push({
-      runId: null,
+      runId: r.runId,
       entityType: "interface",
       entityId: r.entityId ?? "",
       baseId,
       tableId: null,
       name: r.name ?? "",
-      at: r.lastSeenAt ? r.lastSeenAt.toISOString() : null,
+      at: iso(r.completedAt, r.startedAt),
+    });
+  }
+
+  const pageRemovals = await tx
+    .select({
+      runId: spacePg.pages.firstUnseenRun,
+      entityId: spacePg.pages.airtableEntityId,
+      name: spacePg.pages.name,
+      startedAt: spacePg.baseRuns.startedAt,
+      completedAt: spacePg.baseRuns.completedAt,
+    })
+    .from(spacePg.pages)
+    .leftJoin(spacePg.baseRuns, eq(spacePg.pages.firstUnseenRun, spacePg.baseRuns.id))
+    .where(
+      and(
+        eq(spacePg.pages.baseId, baseId),
+        eq(spacePg.pages.status, "removed"),
+        isNotNull(spacePg.pages.firstUnseenRun),
+      ),
+    );
+  for (const r of pageRemovals) {
+    removals.push({
+      runId: r.runId,
+      entityType: "page",
+      entityId: r.entityId ?? "",
+      baseId,
+      tableId: null,
+      name: r.name ?? "",
+      at: iso(r.completedAt, r.startedAt),
+    });
+  }
+
+  const formRemovals = await tx
+    .select({
+      runId: spacePg.forms.firstUnseenRun,
+      entityId: spacePg.forms.airtableEntityId,
+      name: spacePg.forms.name,
+      startedAt: spacePg.baseRuns.startedAt,
+      completedAt: spacePg.baseRuns.completedAt,
+    })
+    .from(spacePg.forms)
+    .leftJoin(spacePg.baseRuns, eq(spacePg.forms.firstUnseenRun, spacePg.baseRuns.id))
+    .where(
+      and(
+        eq(spacePg.forms.baseId, baseId),
+        eq(spacePg.forms.status, "removed"),
+        isNotNull(spacePg.forms.firstUnseenRun),
+      ),
+    );
+  for (const r of formRemovals) {
+    removals.push({
+      runId: r.runId,
+      entityType: "form",
+      entityId: r.entityId ?? "",
+      baseId,
+      tableId: null,
+      name: r.name ?? "",
+      at: iso(r.completedAt, r.startedAt),
     });
   }
 

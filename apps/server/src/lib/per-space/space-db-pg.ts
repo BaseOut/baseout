@@ -15,7 +15,7 @@ import type { AppDb } from "../../db/worker";
 import { spacePg } from "@baseout/db-schema/space";
 import { schemaNameForSpace } from "../provisioning/posture";
 import type { LifecycleOp, PriorWorkingSet, SchemaDiffResult } from "./schema-diff";
-import type { InterfaceDiffResult, PriorInterfaceRow } from "./interfaces-sync";
+import type { InterfaceDiffResult, PriorInterfaceWorkingSet } from "./interfaces-sync";
 import type { PriorCell, PriorRecord, RecordDiffResult } from "./record-diff";
 import { extractFieldConfig, type FieldConfig } from "./schema-enrich";
 
@@ -273,97 +273,256 @@ export async function applySchemaDiff(
 }
 
 // ───────────────────────── interfaces (MCP capture) ─────────────────────────
-// server-mcp-interface-pages. MCP diffing reads/writes ONLY submitted_via='mcp'
-// rows — manually-submitted rows for the same airtable_entity_id are parallel
-// and never touched (change spec "Manual submissions are never clobbered").
-// bo_at_interfaces has no unique (base_id, airtable_entity_id) index yet (that
-// ships with server-automations-interfaces-manual-crud), so writes target row
-// ids carried on the diff ops instead of upserting.
+// server-interfaces-normalize. MCP diffing reads/writes ONLY submitted_via='mcp'
+// entity rows — manually-submitted rows for the same airtable_entity_id are
+// parallel and never touched (change spec "manual rows are never touched"). The
+// six normalized tables: entity tables (interfaces/pages/forms) have no unique
+// (base_id, airtable_entity_id) index yet (deferred to the manual-crud change),
+// so entity writes target the row ids carried on the diff ops. Link tables
+// (page_tables/page_fields) DO have a natural unique index, so they upsert by
+// key; they carry no submitted_via (MCP-only today) and are scoped by base_id.
+// bo_at_form_fields is never written here (empty until get_form_schema exists).
 
 export async function readInterfaceWorkingSet(
   tx: SpaceTx,
   baseId: string,
-): Promise<PriorInterfaceRow[]> {
-  const rows = await tx
+): Promise<PriorInterfaceWorkingSet> {
+  const interfaces = await tx
     .select({
       id: spacePg.interfaces.id,
       airtableEntityId: spacePg.interfaces.airtableEntityId,
       name: spacePg.interfaces.name,
-      type: spacePg.interfaces.type,
       definition: spacePg.interfaces.definition,
       status: spacePg.interfaces.status,
     })
     .from(spacePg.interfaces)
     .where(and(eq(spacePg.interfaces.baseId, baseId), eq(spacePg.interfaces.submittedVia, "mcp")));
-  return rows;
+
+  const pages = await tx
+    .select({
+      id: spacePg.pages.id,
+      airtableEntityId: spacePg.pages.airtableEntityId,
+      interfaceId: spacePg.pages.interfaceId,
+      name: spacePg.pages.name,
+      pageType: spacePg.pages.pageType,
+      sourceTableId: spacePg.pages.sourceTableId,
+      definition: spacePg.pages.definition,
+      status: spacePg.pages.status,
+    })
+    .from(spacePg.pages)
+    .where(and(eq(spacePg.pages.baseId, baseId), eq(spacePg.pages.submittedVia, "mcp")));
+
+  const forms = await tx
+    .select({
+      id: spacePg.forms.id,
+      airtableEntityId: spacePg.forms.airtableEntityId,
+      interfaceId: spacePg.forms.interfaceId,
+      name: spacePg.forms.name,
+      sourceTableId: spacePg.forms.sourceTableId,
+      definition: spacePg.forms.definition,
+      status: spacePg.forms.status,
+    })
+    .from(spacePg.forms)
+    .where(and(eq(spacePg.forms.baseId, baseId), eq(spacePg.forms.submittedVia, "mcp")));
+
+  const pageTables = await tx
+    .select({
+      pageId: spacePg.pageTables.pageId,
+      tableId: spacePg.pageTables.tableId,
+      status: spacePg.pageTables.status,
+    })
+    .from(spacePg.pageTables)
+    .where(eq(spacePg.pageTables.baseId, baseId));
+
+  const pageFields = await tx
+    .select({
+      pageId: spacePg.pageFields.pageId,
+      tableId: spacePg.pageFields.tableId,
+      fieldId: spacePg.pageFields.fieldId,
+      isEditable: spacePg.pageFields.isEditable,
+      status: spacePg.pageFields.status,
+    })
+    .from(spacePg.pageFields)
+    .where(eq(spacePg.pageFields.baseId, baseId));
+
+  return { interfaces, pages, forms, pageTables, pageFields };
 }
 
 export async function applyInterfaceDiff(
   tx: SpaceTx,
-  args: { baseId: string; baseRunId: string; capturedAt: Date; diff: InterfaceDiffResult },
+  args: { baseId: string; baseRunId: string; diff: InterfaceDiffResult },
 ): Promise<void> {
-  const { baseId, baseRunId, capturedAt, diff } = args;
+  const { baseId, baseRunId: runId, diff } = args;
 
   if (diff.unchanged) {
-    // Identical capture: the hash short-circuits diffing but freshness is
-    // still stamped (change spec: "while still stamping last_seen_at").
-    await tx
-      .update(spacePg.interfaces)
-      .set({ lastSeenAt: capturedAt })
-      .where(
-        and(
-          eq(spacePg.interfaces.baseId, baseId),
-          eq(spacePg.interfaces.submittedVia, "mcp"),
-          eq(spacePg.interfaces.status, "active"),
-        ),
-      );
+    // Identical capture: the hash short-circuits diffing but freshness is still
+    // stamped on every active row across the five tracked tables (form_fields
+    // is always empty). change spec: "still stamping last_seen_run".
+    for (const table of [spacePg.interfaces, spacePg.pages, spacePg.forms] as const) {
+      await tx
+        .update(table)
+        .set({ lastSeenRun: runId })
+        .where(and(eq(table.baseId, baseId), eq(table.submittedVia, "mcp"), eq(table.status, "active")));
+    }
+    for (const table of [spacePg.pageTables, spacePg.pageFields] as const) {
+      await tx
+        .update(table)
+        .set({ lastSeenRun: runId })
+        .where(and(eq(table.baseId, baseId), eq(table.status, "active")));
+    }
     return;
   }
 
-  if (diff.inserts.length) {
+  // ── entity tables: insert / seen-refresh / remove (targeted by row id) ──
+  if (diff.interfaces.inserts.length) {
     await tx.insert(spacePg.interfaces).values(
-      diff.inserts.map((e) => ({
+      diff.interfaces.inserts.map((e) => ({
         baseId,
         airtableEntityId: e.airtableEntityId,
         name: e.name,
-        type: e.kind,
         definition: e.definition,
         status: "active",
         submittedVia: "mcp",
-        firstSeenAt: capturedAt,
-        lastSeenAt: capturedAt,
+        firstSeenRun: runId,
+        lastSeenRun: runId,
       })),
     );
   }
-
-  for (const { rowId, entity } of diff.seen) {
+  for (const { rowId, entity } of diff.interfaces.seen) {
     await tx
       .update(spacePg.interfaces)
+      .set({ name: entity.name, definition: entity.definition, status: "active", lastSeenRun: runId })
+      .where(eq(spacePg.interfaces.id, rowId));
+  }
+  for (const { rowId } of diff.interfaces.removals) {
+    await tx
+      .update(spacePg.interfaces)
+      .set({ status: "removed", firstUnseenRun: sql`coalesce(${spacePg.interfaces.firstUnseenRun}, ${runId})` })
+      .where(eq(spacePg.interfaces.id, rowId));
+  }
+
+  if (diff.pages.inserts.length) {
+    await tx.insert(spacePg.pages).values(
+      diff.pages.inserts.map((e) => ({
+        baseId,
+        airtableEntityId: e.airtableEntityId,
+        interfaceId: e.interfaceId,
+        name: e.name,
+        pageType: e.pageType,
+        sourceTableId: e.sourceTableId,
+        definition: e.definition,
+        status: "active",
+        submittedVia: "mcp",
+        firstSeenRun: runId,
+        lastSeenRun: runId,
+      })),
+    );
+  }
+  for (const { rowId, entity } of diff.pages.seen) {
+    await tx
+      .update(spacePg.pages)
       .set({
+        interfaceId: entity.interfaceId,
         name: entity.name,
-        type: entity.kind,
+        pageType: entity.pageType,
+        sourceTableId: entity.sourceTableId,
         definition: entity.definition,
-        status: "active", // reappearance flips removed → active
-        lastSeenAt: capturedAt,
+        status: "active",
+        lastSeenRun: runId,
       })
-      .where(eq(spacePg.interfaces.id, rowId));
+      .where(eq(spacePg.pages.id, rowId));
   }
-
-  for (const { rowId } of diff.removals) {
-    // No first_unseen_run column here — last_seen_at doubles as the
-    // removal-detected timestamp (change spec scenario "Page deleted in
-    // Airtable": "marked removed with last_seen_at at this run").
+  for (const { rowId } of diff.pages.removals) {
     await tx
-      .update(spacePg.interfaces)
-      .set({ status: "removed", lastSeenAt: capturedAt })
-      .where(eq(spacePg.interfaces.id, rowId));
+      .update(spacePg.pages)
+      .set({ status: "removed", firstUnseenRun: sql`coalesce(${spacePg.pages.firstUnseenRun}, ${runId})` })
+      .where(eq(spacePg.pages.id, rowId));
   }
 
+  if (diff.forms.inserts.length) {
+    await tx.insert(spacePg.forms).values(
+      diff.forms.inserts.map((e) => ({
+        baseId,
+        airtableEntityId: e.airtableEntityId,
+        interfaceId: e.interfaceId,
+        name: e.name,
+        sourceTableId: e.sourceTableId,
+        definition: e.definition,
+        status: "active",
+        submittedVia: "mcp",
+        firstSeenRun: runId,
+        lastSeenRun: runId,
+      })),
+    );
+  }
+  for (const { rowId, entity } of diff.forms.seen) {
+    await tx
+      .update(spacePg.forms)
+      .set({
+        interfaceId: entity.interfaceId,
+        name: entity.name,
+        sourceTableId: entity.sourceTableId,
+        definition: entity.definition,
+        status: "active",
+        lastSeenRun: runId,
+      })
+      .where(eq(spacePg.forms.id, rowId));
+  }
+  for (const { rowId } of diff.forms.removals) {
+    await tx
+      .update(spacePg.forms)
+      .set({ status: "removed", firstUnseenRun: sql`coalesce(${spacePg.forms.firstUnseenRun}, ${runId})` })
+      .where(eq(spacePg.forms.id, rowId));
+  }
+
+  // ── link tables: upsert-by-natural-key / remove-by-natural-key ──
+  for (const l of diff.pageTables.upserts) {
+    await tx
+      .insert(spacePg.pageTables)
+      .values({ baseId, pageId: l.pageId, tableId: l.tableId, status: "active", firstSeenRun: runId, lastSeenRun: runId })
+      .onConflictDoUpdate({
+        target: [spacePg.pageTables.pageId, spacePg.pageTables.tableId],
+        set: { status: "active", lastSeenRun: runId },
+      });
+  }
+  for (const k of diff.pageTables.removals) {
+    await tx
+      .update(spacePg.pageTables)
+      .set({ status: "removed", firstUnseenRun: sql`coalesce(${spacePg.pageTables.firstUnseenRun}, ${runId})` })
+      .where(and(eq(spacePg.pageTables.pageId, k.pageId), eq(spacePg.pageTables.tableId, k.tableId)));
+  }
+
+  for (const l of diff.pageFields.upserts) {
+    await tx
+      .insert(spacePg.pageFields)
+      .values({
+        baseId,
+        pageId: l.pageId,
+        tableId: l.tableId,
+        fieldId: l.fieldId,
+        isEditable: l.isEditable,
+        status: "active",
+        firstSeenRun: runId,
+        lastSeenRun: runId,
+      })
+      .onConflictDoUpdate({
+        target: [spacePg.pageFields.pageId, spacePg.pageFields.fieldId],
+        set: { tableId: l.tableId, isEditable: l.isEditable, status: "active", lastSeenRun: runId },
+      });
+  }
+  for (const k of diff.pageFields.removals) {
+    await tx
+      .update(spacePg.pageFields)
+      .set({ status: "removed", firstUnseenRun: sql`coalesce(${spacePg.pageFields.firstUnseenRun}, ${runId})` })
+      .where(and(eq(spacePg.pageFields.pageId, k.pageId), eq(spacePg.pageFields.fieldId, k.fieldId)));
+  }
+
+  // ── changelog rows (entity_type widened to interface|page|form) ──
   if (diff.updates.length) {
     await tx.insert(spacePg.schemaUpdates).values(
       diff.updates.map((u) => ({
-        runId: baseRunId,
-        entityType: "interface",
+        runId,
+        entityType: u.entityType,
         entityId: u.entityId,
         baseId,
         tableId: null,

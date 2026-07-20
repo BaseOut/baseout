@@ -267,18 +267,90 @@ export const automations = sqliteTable('bo_at_automations', {
   lastSeenAt: text('last_seen_at'),
 }, (t) => ({ byBase: index('bo_at_automations_base_idx').on(t.baseId) }))
 
+// Interface apps only (pbd… containers) — server-interfaces-normalize. Mirror of pg.ts.
 export const interfaces = sqliteTable('bo_at_interfaces', {
   id: text('id').primaryKey(),
   baseId: text('base_id').notNull(),
   airtableEntityId: text('airtable_entity_id'),
   name: text('name'),
-  type: text('type'),
   definition: text('definition', { mode: 'json' }),
-  status: text('status').notNull().default('active'),
   submittedVia: text('submitted_via'),
-  firstSeenAt: text('first_seen_at'),
-  lastSeenAt: text('last_seen_at'),
+  ...lifecycle,
 }, (t) => ({ byBase: index('bo_at_interfaces_base_idx').on(t.baseId) }))
+
+// Interface pages (pag…) — non-form pages. Mirror of pg.ts.
+export const pages = sqliteTable('bo_at_pages', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  airtableEntityId: text('airtable_entity_id'),
+  interfaceId: text('interface_id'),
+  name: text('name'),
+  pageType: text('page_type'),
+  sourceTableId: text('source_table_id'),
+  definition: text('definition', { mode: 'json' }),
+  submittedVia: text('submitted_via'),
+  ...lifecycle,
+}, (t) => ({
+  byBase: index('bo_at_pages_base_idx').on(t.baseId),
+  byInterface: index('bo_at_pages_interface_idx').on(t.interfaceId),
+}))
+
+// Forms (pag…, pageType='form') — standalone or interface-owned. Mirror of pg.ts.
+export const forms = sqliteTable('bo_at_forms', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  airtableEntityId: text('airtable_entity_id'),
+  interfaceId: text('interface_id'),
+  name: text('name'),
+  sourceTableId: text('source_table_id'),
+  definition: text('definition', { mode: 'json' }),
+  submittedVia: text('submitted_via'),
+  ...lifecycle,
+}, (t) => ({
+  byBase: index('bo_at_forms_base_idx').on(t.baseId),
+  byInterface: index('bo_at_forms_interface_idx').on(t.interfaceId),
+}))
+
+// ---- Interface link tables (IDs only) — mirror of pg.ts ----
+export const pageTables = sqliteTable('bo_at_page_tables', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  pageId: text('page_id').notNull(),
+  tableId: text('table_id').notNull(),
+  ...lifecycle,
+}, (t) => ({
+  byPage: index('bo_at_page_tables_page_idx').on(t.pageId),
+  byTable: index('bo_at_page_tables_table_idx').on(t.tableId),
+  uniq: uniqueIndex('bo_at_page_tables_uq').on(t.pageId, t.tableId),
+}))
+
+export const pageFields = sqliteTable('bo_at_page_fields', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  pageId: text('page_id').notNull(),
+  tableId: text('table_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  isEditable: integer('is_editable', { mode: 'boolean' }),
+  ...lifecycle,
+}, (t) => ({
+  byPage: index('bo_at_page_fields_page_idx').on(t.pageId),
+  byField: index('bo_at_page_fields_field_idx').on(t.fieldId),
+  uniq: uniqueIndex('bo_at_page_fields_uq').on(t.pageId, t.fieldId),
+}))
+
+export const formFields = sqliteTable('bo_at_form_fields', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  formId: text('form_id').notNull(),
+  tableId: text('table_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  isEditable: integer('is_editable', { mode: 'boolean' }),
+  ...lifecycle,
+}, (t) => ({
+  byForm: index('bo_at_form_fields_form_idx').on(t.formId),
+  byField: index('bo_at_form_fields_field_idx').on(t.fieldId),
+  uniq: uniqueIndex('bo_at_form_fields_uq').on(t.formId, t.fieldId),
+}))
 
 // ---- Documentation feature: user-authored docs about the schema ----
 // Mirror of pg.ts. A document tags any number of entities; tags surface on the

@@ -1,23 +1,27 @@
 // Pure-logic tests for extractInterfaceEntities + diffInterfaces
-// (server-mcp-interface-pages). No DB — the drizzle read/apply live in
-// space-db-pg.ts and are exercised by the staging smoke, mirroring the
-// schema-diff / describe-schema-io test split. Placed under
-// tests/integration/** so the server test runner picks it up.
+// (server-interfaces-normalize). No DB — the drizzle read/apply live in
+// space-db-pg.ts and are exercised by the deployed smoke, mirroring the
+// schema-diff test split. Placed under tests/integration/** so the server test
+// runner picks it up.
 //
-// Fixture is the owner-verified MCP envelope from the workflows change's
-// design.md (interfaces[] → pages[] → tablesByTableId, standaloneForms[]).
+// Fixture is the owner-verified MCP envelope (interfaces[] → pages[] →
+// tablesByTableId, standaloneForms[]).
 
 import { describe, expect, it } from "vitest";
 import {
   diffInterfaces,
   extractInterfaceEntities,
   parseInterfacePagesField,
+  type ExtractedCapture,
   type InterfaceDiffResult,
-  type InterfaceEntity,
-  type PriorInterfaceRow,
+  type PriorInterfaceWorkingSet,
 } from "../../../src/lib/per-space/interfaces-sync";
 
 // ───────────────────────── fixtures ─────────────────────────
+
+const IF_ID = "pbdXECeOl94vHbpLi";
+const PAGE_ID = "pagDbJfEBPEsMIqI6";
+const TBL_ID = "tblHr3WJrQiMJu4P5";
 
 const field = (id: string, name: string, isEditable = false) => ({
   id,
@@ -28,14 +32,14 @@ const field = (id: string, name: string, isEditable = false) => ({
 });
 
 const page = (over: Record<string, unknown> = {}) => ({
-  id: "pagDbJfEBPEsMIqI6",
-  interfaceId: "pbdXECeOl94vHbpLi",
+  id: PAGE_ID,
+  interfaceId: IF_ID,
   name: "Podcast Roundup 2",
   pageType: "list",
-  sourceTableId: "tblHr3WJrQiMJu4P5",
+  sourceTableId: TBL_ID,
   tablesByTableId: {
-    tblHr3WJrQiMJu4P5: {
-      id: "tblHr3WJrQiMJu4P5",
+    [TBL_ID]: {
+      id: TBL_ID,
       name: "Podcast Roundup",
       fields: [field("fldStatus", "Status"), field("fldName", "Name", true)],
     },
@@ -44,7 +48,7 @@ const page = (over: Record<string, unknown> = {}) => ({
 });
 
 const app = (over: Record<string, unknown> = {}) => ({
-  id: "pbdXECeOl94vHbpLi",
+  id: IF_ID,
   name: "Interface",
   pages: [page()],
   ...over,
@@ -56,96 +60,156 @@ const envelope = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-function extractOk(raw: unknown): InterfaceEntity[] {
+function extractOk(raw: unknown): ExtractedCapture {
   const result = extractInterfaceEntities(raw);
   if (!result.ok) throw new Error(`expected ok extraction, got ${result.reason}`);
-  return result.entities;
+  return result.capture;
 }
 
-/** Prior rows as space-db-pg's readInterfaceWorkingSet would return them. */
-function priorFrom(entities: InterfaceEntity[]): PriorInterfaceRow[] {
-  return entities.map((e, i) => ({
-    id: `row-${i}`,
-    airtableEntityId: e.airtableEntityId,
-    name: e.name,
-    type: e.kind,
-    definition: e.definition,
-    status: "active",
-  }));
+const emptyPrior = (): PriorInterfaceWorkingSet => ({
+  interfaces: [],
+  pages: [],
+  forms: [],
+  pageTables: [],
+  pageFields: [],
+});
+
+/** Prior working set as readInterfaceWorkingSet would return it after a first insert. */
+function priorFrom(cap: ExtractedCapture, status = "active"): PriorInterfaceWorkingSet {
+  return {
+    interfaces: cap.apps.map((a, i) => ({
+      id: `if-${i}`,
+      airtableEntityId: a.airtableEntityId,
+      name: a.name,
+      definition: a.definition,
+      status,
+    })),
+    pages: cap.pages.map((p, i) => ({
+      id: `pg-${i}`,
+      airtableEntityId: p.airtableEntityId,
+      interfaceId: p.interfaceId,
+      name: p.name,
+      pageType: p.pageType,
+      sourceTableId: p.sourceTableId,
+      definition: p.definition,
+      status,
+    })),
+    forms: cap.forms.map((f, i) => ({
+      id: `fm-${i}`,
+      airtableEntityId: f.airtableEntityId,
+      interfaceId: f.interfaceId,
+      name: f.name,
+      sourceTableId: f.sourceTableId,
+      definition: f.definition,
+      status,
+    })),
+    pageTables: cap.pageTables.map((l) => ({ pageId: l.pageId, tableId: l.tableId, status })),
+    pageFields: cap.pageFields.map((l) => ({
+      pageId: l.pageId,
+      tableId: l.tableId,
+      fieldId: l.fieldId,
+      isEditable: l.isEditable,
+      status,
+    })),
+  };
 }
 
-// ───────────────────────── extraction (task 1.2/1.3) ─────────────────────────
+// ───────────────────────── extraction (task 2.1/2.2) ─────────────────────────
 
 describe("extractInterfaceEntities", () => {
-  it("extracts one app entity and one page entity from the sample envelope", () => {
-    const entities = extractOk(envelope());
-    expect(entities).toHaveLength(2);
+  it("splits the sample envelope into one app + one page (no form)", () => {
+    const c = extractOk(envelope());
+    expect(c.apps).toHaveLength(1);
+    expect(c.pages).toHaveLength(1);
+    expect(c.forms).toHaveLength(0);
 
-    const appEntity = entities.find((e) => e.kind === "app")!;
-    expect(appEntity.airtableEntityId).toBe("pbdXECeOl94vHbpLi");
-    expect(appEntity.name).toBe("Interface");
+    expect(c.apps[0]).toMatchObject({ airtableEntityId: IF_ID, name: "Interface" });
+    expect(c.pages[0]).toMatchObject({
+      airtableEntityId: PAGE_ID,
+      interfaceId: IF_ID,
+      name: "Podcast Roundup 2",
+      pageType: "list",
+      sourceTableId: TBL_ID,
+    });
+  });
 
-    const pageEntity = entities.find((e) => e.kind === "page")!;
-    expect(pageEntity.airtableEntityId).toBe("pagDbJfEBPEsMIqI6");
-    expect(pageEntity.name).toBe("Podcast Roundup 2");
-    const def = pageEntity.definition as Record<string, unknown>;
-    expect(def.pageType).toBe("list");
-    expect(def.sourceTableId).toBe("tblHr3WJrQiMJu4P5");
-    expect(def.tablesByTableId).toBeDefined();
-    expect(def.interfaceId).toBe("pbdXECeOl94vHbpLi");
+  it("normalizes page columns OUT of the stored definition (no schema detail)", () => {
+    const c = extractOk(envelope());
+    const def = c.pages[0]!.definition;
+    expect(def).not.toHaveProperty("tablesByTableId");
+    expect(def).not.toHaveProperty("pageType");
+    expect(def).not.toHaveProperty("sourceTableId");
+    expect(def).not.toHaveProperty("interfaceId");
+    // and no field names/types survive anywhere in the slimmed definition
+    expect(JSON.stringify(def)).not.toContain("Status");
+    // app definition drops its `pages` array
+    expect(c.apps[0]!.definition).not.toHaveProperty("pages");
+  });
+
+  it("extracts page↔table and page↔field links (ids + isEditable only)", () => {
+    const c = extractOk(envelope());
+    expect(c.pageTables).toEqual([{ pageId: PAGE_ID, tableId: TBL_ID }]);
+    expect(c.pageFields).toEqual([
+      { pageId: PAGE_ID, tableId: TBL_ID, fieldId: "fldStatus", isEditable: false },
+      { pageId: PAGE_ID, tableId: TBL_ID, fieldId: "fldName", isEditable: true },
+    ]);
+  });
+
+  it("keeps a page↔table row even when the table lists zero fields", () => {
+    const c = extractOk(
+      envelope({
+        interfaces: [
+          app({
+            pages: [page({ tablesByTableId: { tblEmpty: { id: "tblEmpty", name: "Empty", fields: [] } } })],
+          }),
+        ],
+      }),
+    );
+    expect(c.pageTables).toEqual([{ pageId: PAGE_ID, tableId: "tblEmpty" }]);
+    expect(c.pageFields).toEqual([]);
+  });
+
+  it("routes a standalone form (interfaceId null) to forms, not pages", () => {
+    const c = extractOk(
+      envelope({ standaloneForms: [{ id: "pagFormXYZ", name: "Intake", interfaceId: null, pageType: "form", sourceTableId: "tblForm" }] }),
+    );
+    expect(c.forms).toHaveLength(1);
+    expect(c.forms[0]).toMatchObject({ airtableEntityId: "pagFormXYZ", interfaceId: null, sourceTableId: "tblForm" });
+    expect(c.pages.find((p) => p.airtableEntityId === "pagFormXYZ")).toBeUndefined();
+  });
+
+  it("routes an interface-owned form page (pageType 'form') to forms with interface_id set", () => {
+    const formPage = { id: "pagFormOwned", name: "Owned form", pageType: "form", sourceTableId: "tblOwned" };
+    const c = extractOk(envelope({ interfaces: [app({ pages: [page(), formPage] })] }));
+    expect(c.forms).toHaveLength(1);
+    expect(c.forms[0]).toMatchObject({ airtableEntityId: "pagFormOwned", interfaceId: IF_ID });
+    expect(c.pages.map((p) => p.airtableEntityId)).toEqual([PAGE_ID]); // form is NOT a page
   });
 
   it("stamps parent interfaceId onto pages that omit it", () => {
-    const raw = envelope({ interfaces: [app({ pages: [page({ interfaceId: undefined })] })] });
-    const pageEntity = extractOk(raw).find((e) => e.kind === "page")!;
-    expect((pageEntity.definition as Record<string, unknown>).interfaceId).toBe(
-      "pbdXECeOl94vHbpLi",
-    );
-  });
-
-  it("treats standalone forms as pages with pageType 'form'", () => {
-    const raw = envelope({
-      standaloneForms: [{ id: "pagFormXYZ", name: "Intake form" }],
-    });
-    const form = extractOk(raw).find((e) => e.kind === "form")!;
-    expect(form.airtableEntityId).toBe("pagFormXYZ");
-    expect((form.definition as Record<string, unknown>).pageType).toBe("form");
-  });
-
-  it("preserves an explicit pageType on standalone forms", () => {
-    const raw = envelope({
-      standaloneForms: [{ id: "pagFormXYZ", name: "Intake", pageType: "customForm" }],
-    });
-    const form = extractOk(raw).find((e) => e.kind === "form")!;
-    expect((form.definition as Record<string, unknown>).pageType).toBe("customForm");
+    const c = extractOk(envelope({ interfaces: [app({ pages: [page({ interfaceId: undefined })] })] }));
+    expect(c.pages[0]!.interfaceId).toBe(IF_ID);
   });
 
   it("drops entities without id+name, keeps valid siblings, and counts drops", () => {
-    const raw = envelope({
-      interfaces: [
-        app(),
-        { name: "No id here" }, // dropped app
-        app({ id: "pbdSecond", name: "Second", pages: [{ pageType: "list" }] }), // dropped page
-      ],
-    });
-    const result = extractInterfaceEntities(raw);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.dropped).toBe(2);
-    const ids = result.entities.map((e) => e.airtableEntityId);
-    expect(ids).toContain("pbdXECeOl94vHbpLi");
-    expect(ids).toContain("pagDbJfEBPEsMIqI6");
-    expect(ids).toContain("pbdSecond");
+    const c = extractOk(
+      envelope({
+        interfaces: [
+          app(),
+          { name: "No id here" }, // dropped app
+          app({ id: "pbdSecond", name: "Second", pages: [{ pageType: "list" }] }), // dropped page
+        ],
+        standaloneForms: [{ name: "no id form" }], // dropped form
+      }),
+    );
+    expect(c.dropped).toBe(3);
+    expect(c.apps.map((a) => a.airtableEntityId)).toEqual([IF_ID, "pbdSecond"]);
+    expect(c.pages.map((p) => p.airtableEntityId)).toEqual([PAGE_ID]);
   });
 
-  it("passes unknown keys through into the definition", () => {
-    const raw = envelope({
-      interfaces: [app({ futureFlag: { nested: true } })],
-    });
-    const appEntity = extractOk(raw).find((e) => e.kind === "app")!;
-    expect((appEntity.definition as Record<string, unknown>).futureFlag).toEqual({
-      nested: true,
-    });
+  it("passes unknown keys through into slimmed definitions", () => {
+    const c = extractOk(envelope({ interfaces: [app({ futureFlag: { nested: true } })] }));
+    expect((c.apps[0]!.definition as Record<string, unknown>).futureFlag).toEqual({ nested: true });
   });
 
   it.each([
@@ -158,24 +222,27 @@ describe("extractInterfaceEntities", () => {
   });
 });
 
-// ───────────────────────── diff (task 2.1/2.2) ─────────────────────────
+// ───────────────────────── diff (task 3.1/3.2/3.3) ─────────────────────────
 
 describe("diffInterfaces", () => {
-  it("first capture: everything is an insert, no updates", () => {
-    const next = extractOk(envelope());
-    const d = diffInterfaces({ prior: [], next });
+  it("first capture: every entity + link is an insert/upsert, no updates", () => {
+    const d = diffInterfaces({ prior: emptyPrior(), next: extractOk(envelope()) });
     expect(d.unchanged).toBe(false);
-    expect(d.inserts).toHaveLength(2);
-    expect(d.seen).toEqual([]);
-    expect(d.removals).toEqual([]);
+    expect(d.interfaces.inserts).toHaveLength(1);
+    expect(d.pages.inserts).toHaveLength(1);
+    expect(d.forms.inserts).toHaveLength(0);
+    expect(d.pageTables.upserts).toHaveLength(1);
+    expect(d.pageFields.upserts).toHaveLength(2);
     expect(d.updates).toEqual([]);
+    expect(d.pages.removals).toEqual([]);
   });
 
   it("identical capture short-circuits via the capture hash", () => {
-    const next = extractOk(envelope());
-    const d = diffInterfaces({ prior: priorFrom(next), next });
+    const cap = extractOk(envelope());
+    const d = diffInterfaces({ prior: priorFrom(cap), next: cap });
     expect(d.unchanged).toBe(true);
-    expect(d.inserts).toEqual([]);
+    expect(d.pages.inserts).toEqual([]);
+    expect(d.pageFields.upserts).toEqual([]);
     expect(d.updates).toEqual([]);
   });
 
@@ -184,183 +251,168 @@ describe("diffInterfaces", () => {
       interfaces: [app(), app({ id: "pbdSecond", name: "Second", pages: [] })],
     });
     const prior = priorFrom(extractOk(twoApps));
-    // Reversed array order + re-keyed definition objects (JSONB canonicalizes
-    // key order; a textual compare would spuriously re-diff every run).
     const reordered = envelope({
-      interfaces: [
-        { name: "Second", id: "pbdSecond", pages: [] },
-        app(),
-      ],
+      interfaces: [{ name: "Second", id: "pbdSecond", pages: [] }, app()],
     });
-    const d = diffInterfaces({ prior, next: extractOk(reordered) });
-    expect(d.unchanged).toBe(true);
+    expect(diffInterfaces({ prior, next: extractOk(reordered) }).unchanged).toBe(true);
   });
 
-  it("a page missing from the capture is removed; survivors are seen", () => {
+  it("a schema-side field RENAME does not break the short-circuit (ids/isEditable unchanged)", () => {
     const prior = priorFrom(extractOk(envelope()));
-    const next = extractOk(envelope({ interfaces: [app({ pages: [] })] }));
-    const d = diffInterfaces({ prior, next });
-    expect(d.removals).toHaveLength(1);
-    expect(d.removals[0]).toMatchObject({ entityId: "pagDbJfEBPEsMIqI6" });
-    expect(d.seen.map((s) => s.entity.airtableEntityId)).toEqual(["pbdXECeOl94vHbpLi"]);
-    expect(d.inserts).toEqual([]);
-  });
-
-  it("an empty successful capture removes every prior MCP entity", () => {
-    const prior = priorFrom(extractOk(envelope()));
-    const d = diffInterfaces({ prior, next: [] });
-    expect(d.removals).toHaveLength(2);
-  });
-
-  it("an already-removed row absent again is NOT re-removed", () => {
-    const prior = priorFrom(extractOk(envelope()));
-    prior[1] = { ...prior[1]!, status: "removed" };
-    const next = extractOk(envelope({ interfaces: [app({ pages: [] })] }));
-    const d = diffInterfaces({ prior, next });
-    expect(d.removals).toEqual([]);
-  });
-
-  it("a reappearing removed row is seen again, not re-inserted", () => {
-    const prior = priorFrom(extractOk(envelope()));
-    prior[1] = { ...prior[1]!, status: "removed" };
-    const d = diffInterfaces({ prior, next: extractOk(envelope()) });
-    expect(d.inserts).toEqual([]);
-    expect(d.seen.map((s) => s.entity.airtableEntityId)).toContain("pagDbJfEBPEsMIqI6");
-  });
-
-  it("a rename writes one name update with before/after", () => {
-    const prior = priorFrom(extractOk(envelope()));
-    const next = extractOk(envelope({ interfaces: [app({ pages: [page({ name: "Roundup v3" })] })] }));
-    const d = diffInterfaces({ prior, next });
-    expect(d.updates).toEqual([
-      {
-        entityId: "pagDbJfEBPEsMIqI6",
-        changeType: "name",
-        beforeValue: "Podcast Roundup 2",
-        afterValue: "Roundup v3",
-      },
-    ]);
-  });
-
-  it("a field id added to a page's tablesByTableId writes one config delta row", () => {
-    const prior = priorFrom(extractOk(envelope()));
-    const withExtraField = page();
-    (withExtraField.tablesByTableId.tblHr3WJrQiMJu4P5.fields as unknown[]).push(
-      field("fldNew", "Priority"),
-    );
-    const next = extractOk(envelope({ interfaces: [app({ pages: [withExtraField] })] }));
-    const d = diffInterfaces({ prior, next });
-    expect(d.updates).toHaveLength(1);
-    const u = d.updates[0]!;
-    expect(u.changeType).toBe("config");
-    expect(u.entityId).toBe("pagDbJfEBPEsMIqI6");
-    const after = u.afterValue as { fieldUsage: { added: unknown[] } };
-    expect(after.fieldUsage.added).toEqual([
-      { tableId: "tblHr3WJrQiMJu4P5", fieldIds: ["fldNew"] },
-    ]);
-  });
-
-  it("a schema-side field RENAME does not echo into interface config rows", () => {
-    const prior = priorFrom(extractOk(envelope()));
-    const renamedField = page({
+    const renamed = page({
       tablesByTableId: {
-        tblHr3WJrQiMJu4P5: {
-          id: "tblHr3WJrQiMJu4P5",
+        [TBL_ID]: {
+          id: TBL_ID,
           name: "Podcast Roundup",
           fields: [field("fldStatus", "Status RENAMED"), field("fldName", "Name", true)],
         },
       },
     });
-    const next = extractOk(envelope({ interfaces: [app({ pages: [renamedField] })] }));
-    const d = diffInterfaces({ prior, next });
-    expect(d.unchanged).toBe(false); // definition changed → rows refresh…
-    expect(d.updates).toEqual([]); // …but no changelog noise (ids unchanged)
+    const d = diffInterfaces({ prior, next: extractOk(envelope({ interfaces: [app({ pages: [renamed] })] })) });
+    expect(d.unchanged).toBe(true);
+    expect(d.updates).toEqual([]);
+  });
+
+  it("a page missing from the capture is removed WITH its link rows (cascade); survivors seen", () => {
+    const prior = priorFrom(extractOk(envelope()));
+    const d = diffInterfaces({ prior, next: extractOk(envelope({ interfaces: [app({ pages: [] })] })) });
+    expect(d.pages.removals.map((r) => r.entityId)).toEqual([PAGE_ID]);
+    expect(d.interfaces.seen.map((s) => s.entity.airtableEntityId)).toEqual([IF_ID]);
+    // the removed page's link rows cascade to removed (not upserted)
+    expect(d.pageTables.upserts).toEqual([]);
+    expect(d.pageFields.upserts).toEqual([]);
+    expect(d.pageTables.removals).toEqual([{ pageId: PAGE_ID, tableId: TBL_ID }]);
+    expect(d.pageFields.removals).toEqual([
+      { pageId: PAGE_ID, fieldId: "fldStatus" },
+      { pageId: PAGE_ID, fieldId: "fldName" },
+    ]);
+  });
+
+  it("removing the interface cascades to its pages AND their links in the same run", () => {
+    const prior = priorFrom(extractOk(envelope()));
+    const d = diffInterfaces({ prior, next: extractOk(envelope({ interfaces: [] })) });
+    expect(d.interfaces.removals.map((r) => r.entityId)).toEqual([IF_ID]);
+    expect(d.pages.removals.map((r) => r.entityId)).toEqual([PAGE_ID]);
+    expect(d.pageFields.removals).toHaveLength(2);
+    expect(d.pageTables.removals).toHaveLength(1);
+  });
+
+  it("an empty successful capture removes every prior MCP entity", () => {
+    const prior = priorFrom(extractOk(envelope()));
+    const d = diffInterfaces({ prior, next: extractOk(envelope({ interfaces: [], standaloneForms: [] })) });
+    expect(d.interfaces.removals).toHaveLength(1);
+    expect(d.pages.removals).toHaveLength(1);
+  });
+
+  it("an already-removed page absent again is NOT re-removed", () => {
+    const prior = priorFrom(extractOk(envelope()));
+    prior.pages[0]!.status = "removed";
+    prior.pageTables[0]!.status = "removed";
+    for (const l of prior.pageFields) l.status = "removed";
+    const d = diffInterfaces({ prior, next: extractOk(envelope({ interfaces: [app({ pages: [] })] })) });
+    expect(d.pages.removals).toEqual([]);
+    expect(d.pageFields.removals).toEqual([]);
+  });
+
+  it("a reappearing removed page is seen (not re-inserted) and its links upsert (resurrect)", () => {
+    const prior = priorFrom(extractOk(envelope()));
+    prior.pages[0]!.status = "removed";
+    for (const l of prior.pageFields) l.status = "removed";
+    const d = diffInterfaces({ prior, next: extractOk(envelope()) });
+    expect(d.pages.inserts).toEqual([]);
+    expect(d.pages.seen.map((s) => s.entity.airtableEntityId)).toContain(PAGE_ID);
+    expect(d.pages.seen[0]!.rowId).toBe("pg-0"); // same row → first_seen_run preserved on UPDATE
+    expect(d.pageFields.upserts).toHaveLength(2); // resurrected via upsert
+  });
+
+  it("a page rename writes one name update (entity_type page)", () => {
+    const prior = priorFrom(extractOk(envelope()));
+    const d = diffInterfaces({
+      prior,
+      next: extractOk(envelope({ interfaces: [app({ pages: [page({ name: "Roundup v3" })] })] })),
+    });
+    expect(d.updates).toEqual([
+      { entityType: "page", entityId: PAGE_ID, changeType: "name", beforeValue: "Podcast Roundup 2", afterValue: "Roundup v3" },
+    ]);
+  });
+
+  it("an app rename writes one name update (entity_type interface); page membership is lifecycle", () => {
+    const prior = priorFrom(extractOk(envelope()));
+    const d = diffInterfaces({
+      prior,
+      next: extractOk(
+        envelope({ interfaces: [app({ name: "Renamed", pages: [page(), page({ id: "pagNew", name: "New" })] })] }),
+      ),
+    });
+    expect(d.updates).toEqual([
+      { entityType: "interface", entityId: IF_ID, changeType: "name", beforeValue: "Interface", afterValue: "Renamed" },
+    ]);
+    expect(d.pages.inserts.map((e) => e.airtableEntityId)).toEqual(["pagNew"]);
+  });
+
+  it("a form rename writes one name update (entity_type form)", () => {
+    const base = envelope({ standaloneForms: [{ id: "pagF", name: "Intake", interfaceId: null, pageType: "form" }] });
+    const prior = priorFrom(extractOk(base));
+    const d = diffInterfaces({
+      prior,
+      next: extractOk(envelope({ standaloneForms: [{ id: "pagF", name: "Intake v2", interfaceId: null, pageType: "form" }] })),
+    });
+    const formUpdate = d.updates.find((u) => u.entityType === "form");
+    expect(formUpdate).toMatchObject({ entityId: "pagF", changeType: "name", beforeValue: "Intake", afterValue: "Intake v2" });
+  });
+
+  it("a field id added to a page writes one config delta + a link upsert", () => {
+    const prior = priorFrom(extractOk(envelope()));
+    const withExtra = page();
+    (withExtra.tablesByTableId[TBL_ID].fields as unknown[]).push(field("fldNew", "Priority"));
+    const d = diffInterfaces({ prior, next: extractOk(envelope({ interfaces: [app({ pages: [withExtra] })] })) });
+    const config = d.updates.filter((u) => u.changeType === "config");
+    expect(config).toHaveLength(1);
+    expect(config[0]!.entityType).toBe("page");
+    const after = config[0]!.afterValue as { fieldUsage: { added: unknown[] } };
+    expect(after.fieldUsage.added).toEqual([{ tableId: TBL_ID, fieldIds: ["fldNew"] }]);
+    expect(d.pageFields.upserts.map((l) => l.fieldId)).toContain("fldNew");
   });
 
   it("an isEditable flip writes a config delta", () => {
     const prior = priorFrom(extractOk(envelope()));
     const flipped = page({
       tablesByTableId: {
-        tblHr3WJrQiMJu4P5: {
-          id: "tblHr3WJrQiMJu4P5",
-          name: "Podcast Roundup",
-          fields: [field("fldStatus", "Status", true), field("fldName", "Name", true)],
-        },
+        [TBL_ID]: { id: TBL_ID, name: "Podcast Roundup", fields: [field("fldStatus", "Status", true), field("fldName", "Name", true)] },
       },
     });
-    const next = extractOk(envelope({ interfaces: [app({ pages: [flipped] })] }));
-    const d = diffInterfaces({ prior, next });
-    expect(d.updates).toHaveLength(1);
-    const after = d.updates[0]!.afterValue as {
-      fieldUsage: { editableFlips: unknown[] };
-    };
-    expect(after.fieldUsage.editableFlips).toEqual([
-      { tableId: "tblHr3WJrQiMJu4P5", fieldId: "fldStatus", isEditable: true },
-    ]);
+    const d = diffInterfaces({ prior, next: extractOk(envelope({ interfaces: [app({ pages: [flipped] })] })) });
+    const config = d.updates.find((u) => u.changeType === "config")!;
+    const after = config.afterValue as { fieldUsage: { editableFlips: unknown[] } };
+    expect(after.fieldUsage.editableFlips).toEqual([{ tableId: TBL_ID, fieldId: "fldStatus", isEditable: true }]);
   });
 
   it("pageType and sourceTableId changes write a config row with before/after", () => {
     const prior = priorFrom(extractOk(envelope()));
-    const next = extractOk(
-      envelope({
-        interfaces: [app({ pages: [page({ pageType: "record", sourceTableId: "tblOther" })] })],
-      }),
-    );
-    const d = diffInterfaces({ prior, next });
+    const d = diffInterfaces({
+      prior,
+      next: extractOk(envelope({ interfaces: [app({ pages: [page({ pageType: "record", sourceTableId: "tblOther" })] })] })),
+    });
     const config = d.updates.filter((u) => u.changeType === "config");
     expect(config).toHaveLength(1);
-    expect(config[0]!.beforeValue).toMatchObject({
-      pageType: "list",
-      sourceTableId: "tblHr3WJrQiMJu4P5",
-    });
-    expect(config[0]!.afterValue).toMatchObject({
-      pageType: "record",
-      sourceTableId: "tblOther",
-    });
+    expect(config[0]!.beforeValue).toMatchObject({ pageType: "list", sourceTableId: TBL_ID });
+    expect(config[0]!.afterValue).toMatchObject({ pageType: "record", sourceTableId: "tblOther" });
   });
 
-  it("app entities only diff on name — page membership is lifecycle, not config", () => {
-    const prior = priorFrom(extractOk(envelope()));
-    const next = extractOk(
-      envelope({
-        interfaces: [
-          app({ name: "Renamed App", pages: [page(), page({ id: "pagNew", name: "New page" })] }),
-        ],
-      }),
-    );
-    const d = diffInterfaces({ prior, next });
-    expect(d.updates).toEqual([
-      {
-        entityId: "pbdXECeOl94vHbpLi",
-        changeType: "name",
-        beforeValue: "Interface",
-        afterValue: "Renamed App",
-      },
-    ]);
-    expect(d.inserts.map((e) => e.airtableEntityId)).toEqual(["pagNew"]);
-  });
-
-  it("never touches rows it was not given (manual rows stay parallel)", () => {
-    // A manual submission for the SAME entity id lives in a separate row that
-    // readInterfaceWorkingSet never returns (submitted_via filter). The diff
-    // therefore inserts a fresh MCP row instead of updating anything.
-    const next = extractOk(envelope());
-    const d = diffInterfaces({ prior: [], next });
-    expect(d.inserts.map((e) => e.airtableEntityId)).toContain("pagDbJfEBPEsMIqI6");
-    expect(d.seen).toEqual([]);
+  it("never touches rows it was not given (manual rows stay parallel: empty prior → all inserts)", () => {
+    const d = diffInterfaces({ prior: emptyPrior(), next: extractOk(envelope()) });
+    expect(d.pages.inserts.map((e) => e.airtableEntityId)).toEqual([PAGE_ID]);
+    expect(d.pages.seen).toEqual([]);
     expect(d.updates).toEqual([]);
-    expect(d.removals).toEqual([]);
   });
 
-  it("ignores prior rows with a null airtable_entity_id (defensive)", () => {
-    const next = extractOk(envelope());
-    const prior: PriorInterfaceRow[] = [
-      { id: "row-x", airtableEntityId: null, name: "??", type: "page", definition: {}, status: "active" },
-      ...priorFrom(next),
-    ];
-    const d = diffInterfaces({ prior, next });
+  it("ignores prior entity rows with a null airtable_entity_id (defensive)", () => {
+    const cap = extractOk(envelope());
+    const prior = priorFrom(cap);
+    prior.interfaces.unshift({ id: "row-x", airtableEntityId: null, name: "??", definition: {}, status: "active" });
+    const d = diffInterfaces({ prior, next: cap });
     expect(d.unchanged).toBe(true);
-    expect(d.removals).toEqual([]);
+    expect(d.interfaces.removals).toEqual([]);
   });
 });
 
@@ -376,10 +428,7 @@ describe("parseInterfacePagesField", () => {
     ["missing capturedAt", { raw: envelope() }],
     ["unparseable capturedAt", { capturedAt: "not-a-date", raw: envelope() }],
   ])("malformed capture is reported, never thrown: %s", (_label, field) => {
-    expect(parseInterfacePagesField(field)).toEqual({
-      kind: "invalid",
-      reason: "invalid_capture",
-    });
+    expect(parseInterfacePagesField(field)).toEqual({ kind: "invalid", reason: "invalid_capture" });
   });
 
   it("bad envelope inside a well-formed capture → invalid_envelope", () => {
@@ -388,104 +437,103 @@ describe("parseInterfacePagesField", () => {
     ).toEqual({ kind: "invalid", reason: "invalid_envelope" });
   });
 
-  it("valid capture → parsed Date + extracted entities", () => {
-    const parsed = parseInterfacePagesField({
-      capturedAt: "2026-07-14T10:00:00.000Z",
-      raw: envelope(),
-    });
+  it("valid capture → parsed Date + extracted capture", () => {
+    const parsed = parseInterfacePagesField({ capturedAt: "2026-07-14T10:00:00.000Z", raw: envelope() });
     expect(parsed.kind).toBe("ok");
     if (parsed.kind !== "ok") return;
     expect(parsed.capturedAt.toISOString()).toBe("2026-07-14T10:00:00.000Z");
-    expect(parsed.entities).toHaveLength(2);
+    expect(parsed.capture.apps).toHaveLength(1);
+    expect(parsed.capture.pages).toHaveLength(1);
   });
 });
 
-// ───────────────── full sync cycle (task 4.1, pure twin of applyInterfaceDiff) ─────────────────
+// ───────────────── full sync cycle (pure twin of applyInterfaceDiff) ─────────────────
 
-/**
- * Fold a diff into an in-memory row store using exactly the write semantics of
- * space-db-pg's applyInterfaceDiff (insert / seen-refresh / removed+stamp).
- * The real SQL is a thin mapper over these ops, exercised by the staging
- * hand-POST (task 4.2) — the run-over-run sequencing lives here.
- */
-function foldDiff(
-  store: PriorInterfaceRow[],
-  diff: InterfaceDiffResult,
-  seq: number,
-): PriorInterfaceRow[] {
-  if (diff.unchanged) return store;
-  const next = store.map((row) => {
-    const seen = diff.seen.find((s) => s.rowId === row.id);
-    if (seen) {
-      return {
-        ...row,
-        name: seen.entity.name,
-        type: seen.entity.kind,
-        definition: seen.entity.definition,
-        status: "active",
-      };
-    }
-    if (diff.removals.some((r) => r.rowId === row.id)) return { ...row, status: "removed" };
-    return row;
-  });
-  return [
-    ...next,
-    ...diff.inserts.map((e, i) => ({
-      id: `row-${seq}-${i}`,
-      airtableEntityId: e.airtableEntityId,
-      name: e.name,
-      type: e.kind,
-      definition: e.definition,
-      status: "active",
-    })),
-  ];
+type StoreWS = PriorInterfaceWorkingSet & {
+  interfaces: (PriorInterfaceWorkingSet["interfaces"][number] & { firstSeenRun: string })[];
+  pages: (PriorInterfaceWorkingSet["pages"][number] & { firstSeenRun: string })[];
+  pageTables: (PriorInterfaceWorkingSet["pageTables"][number] & { firstSeenRun: string })[];
+  pageFields: (PriorInterfaceWorkingSet["pageFields"][number] & { firstSeenRun: string })[];
+};
+
+function emptyStore(): StoreWS {
+  return { interfaces: [], pages: [], forms: [], pageTables: [], pageFields: [] };
 }
 
-describe("full sync cycle: capture → mutate → absent → identical", () => {
-  it("sequences lifecycle + updates across runs and leaves state untouched on absent/identical", () => {
-    // Run 1 — first capture: app + page inserted.
-    const first = extractOk(envelope());
-    const d1 = diffInterfaces({ prior: [], next: first });
-    expect(d1.inserts).toHaveLength(2);
-    let store = foldDiff([], d1, 1);
+/** Fold a diff into an in-memory store with exactly applyInterfaceDiff semantics. */
+function foldDiff(store: StoreWS, diff: InterfaceDiffResult, runId: string): void {
+  if (diff.unchanged) return; // stamp-only; irrelevant to these assertions
+  for (const e of diff.interfaces.inserts)
+    store.interfaces.push({ id: `if-${runId}-${e.airtableEntityId}`, airtableEntityId: e.airtableEntityId, name: e.name, definition: e.definition, status: "active", firstSeenRun: runId });
+  for (const s of diff.interfaces.seen) {
+    const row = store.interfaces.find((r) => r.id === s.rowId)!;
+    row.name = s.entity.name;
+    row.definition = s.entity.definition;
+    row.status = "active";
+  }
+  for (const rm of diff.interfaces.removals) store.interfaces.find((r) => r.id === rm.rowId)!.status = "removed";
 
-    // Run 2 — page renamed AND a new page appears.
-    const second = extractOk(
-      envelope({
-        interfaces: [
-          app({ pages: [page({ name: "Roundup v3" }), page({ id: "pagNew", name: "Fresh" })] }),
-        ],
-      }),
-    );
-    const d2 = diffInterfaces({ prior: store, next: second });
-    expect(d2.inserts.map((e) => e.airtableEntityId)).toEqual(["pagNew"]);
-    expect(d2.updates).toEqual([
-      {
-        entityId: "pagDbJfEBPEsMIqI6",
-        changeType: "name",
-        beforeValue: "Podcast Roundup 2",
-        afterValue: "Roundup v3",
-      },
-    ]);
-    store = foldDiff(store, d2, 2);
+  for (const e of diff.pages.inserts)
+    store.pages.push({ id: `pg-${runId}-${e.airtableEntityId}`, airtableEntityId: e.airtableEntityId, interfaceId: e.interfaceId, name: e.name, pageType: e.pageType, sourceTableId: e.sourceTableId, definition: e.definition, status: "active", firstSeenRun: runId });
+  for (const s of diff.pages.seen) {
+    const row = store.pages.find((r) => r.id === s.rowId)!;
+    Object.assign(row, { name: s.entity.name, pageType: s.entity.pageType, sourceTableId: s.entity.sourceTableId, definition: s.entity.definition, status: "active" });
+  }
+  for (const rm of diff.pages.removals) store.pages.find((r) => r.id === rm.rowId)!.status = "removed";
 
-    // Run 3 — the new page is deleted in Airtable.
-    const third = extractOk(envelope({ interfaces: [app({ pages: [page({ name: "Roundup v3" })] })] }));
-    const d3 = diffInterfaces({ prior: store, next: third });
-    expect(d3.removals.map((r) => r.entityId)).toEqual(["pagNew"]);
-    store = foldDiff(store, d3, 3);
-    expect(store.find((r) => r.airtableEntityId === "pagNew")?.status).toBe("removed");
+  for (const l of diff.pageTables.upserts) {
+    const existing = store.pageTables.find((r) => r.pageId === l.pageId && r.tableId === l.tableId);
+    if (existing) existing.status = "active";
+    else store.pageTables.push({ pageId: l.pageId, tableId: l.tableId, status: "active", firstSeenRun: runId });
+  }
+  for (const k of diff.pageTables.removals)
+    store.pageTables.filter((r) => r.pageId === k.pageId && r.tableId === k.tableId).forEach((r) => (r.status = "removed"));
 
-    // Run 4 — capture skipped (absent field): the route never diffs, so the
-    // store is untouched by construction.
-    expect(parseInterfacePagesField(undefined)).toEqual({ kind: "absent" });
+  for (const l of diff.pageFields.upserts) {
+    const existing = store.pageFields.find((r) => r.pageId === l.pageId && r.fieldId === l.fieldId);
+    if (existing) Object.assign(existing, { tableId: l.tableId, isEditable: l.isEditable, status: "active" });
+    else store.pageFields.push({ pageId: l.pageId, tableId: l.tableId, fieldId: l.fieldId, isEditable: l.isEditable, status: "active", firstSeenRun: runId });
+  }
+  for (const k of diff.pageFields.removals)
+    store.pageFields.filter((r) => r.pageId === k.pageId && r.fieldId === k.fieldId).forEach((r) => (r.status = "removed"));
+}
 
-    // Run 5 — identical capture: hash short-circuit, zero ops, removed row
-    // is NOT resurrected or re-removed.
-    const d5 = diffInterfaces({ prior: store, next: extractOk(
-      envelope({ interfaces: [app({ pages: [page({ name: "Roundup v3" })] })] }),
-    ) });
+describe("full sync cycle: capture → mutate → remove → resurrect → identical", () => {
+  it("sequences lifecycle + preserves first_seen_run on resurrection", () => {
+    const store = emptyStore();
+
+    // Run 1 — first capture inserts app + page + links.
+    foldDiff(store, diffInterfaces({ prior: store, next: extractOk(envelope()) }), "run-1");
+    expect(store.pages).toHaveLength(1);
+    expect(store.pages[0]!.firstSeenRun).toBe("run-1");
+    expect(store.pageFields.filter((f) => f.status === "active")).toHaveLength(2);
+
+    // Run 2 — page renamed AND a new field appears.
+    const withExtra = page({ name: "Roundup v3" });
+    (withExtra.tablesByTableId[TBL_ID].fields as unknown[]).push(field("fldNew", "Priority"));
+    const d2 = diffInterfaces({ prior: store, next: extractOk(envelope({ interfaces: [app({ pages: [withExtra] })] })) });
+    expect(d2.updates.some((u) => u.changeType === "name")).toBe(true);
+    foldDiff(store, d2, "run-2");
+    expect(store.pages[0]!.name).toBe("Roundup v3");
+    expect(store.pageFields.filter((f) => f.status === "active")).toHaveLength(3);
+
+    // Run 3 — page deleted: page + all its links go removed (cascade).
+    const d3 = diffInterfaces({ prior: store, next: extractOk(envelope({ interfaces: [app({ pages: [] })] })) });
+    foldDiff(store, d3, "run-3");
+    expect(store.pages[0]!.status).toBe("removed");
+    expect(store.pageFields.every((f) => f.status === "removed")).toBe(true);
+
+    // Run 4 — page republished: resurrect, first_seen_run preserved.
+    const d4 = diffInterfaces({ prior: store, next: extractOk(envelope()) });
+    expect(d4.pages.inserts).toEqual([]);
+    foldDiff(store, d4, "run-4");
+    expect(store.pages[0]!.status).toBe("active");
+    expect(store.pages[0]!.firstSeenRun).toBe("run-1"); // preserved
+    expect(store.pageFields.filter((f) => f.status === "active")).toHaveLength(2);
+    expect(store.pageFields.find((f) => f.fieldId === "fldStatus")!.firstSeenRun).toBe("run-1");
+
+    // Run 5 — identical capture: hash short-circuit, no ops.
+    const d5 = diffInterfaces({ prior: store, next: extractOk(envelope()) });
     expect(d5.unchanged).toBe(true);
-    expect(foldDiff(store, d5, 5)).toEqual(store);
   });
 });

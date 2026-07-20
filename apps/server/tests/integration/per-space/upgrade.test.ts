@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import { SPACE_SCHEMA_VERSION } from "@baseout/db-schema/space";
-import { needsUpgrade } from "../../../src/lib/provisioning/upgrade";
+import { needsUpgrade, preUpgradeStatements } from "../../../src/lib/provisioning/upgrade";
 
 describe("needsUpgrade", () => {
   it("treats null/undefined (legacy, unrecorded) as behind", () => {
@@ -27,5 +27,24 @@ describe("needsUpgrade", () => {
     expect(needsUpgrade(2, 5)).toBe(true);
     expect(needsUpgrade(5, 5)).toBe(false);
     expect(needsUpgrade(4, 5)).toBe(true);
+  });
+});
+
+describe("preUpgradeStatements (server-interfaces-normalize v7 reshape)", () => {
+  const DROP = 'DROP TABLE IF EXISTS "bo_at_interfaces" CASCADE';
+
+  it("drops bo_at_interfaces when upgrading a pre-v7 Space (reshape can't run via CREATE IF NOT EXISTS)", () => {
+    expect(preUpgradeStatements(6)).toContain(DROP);
+    expect(preUpgradeStatements(2)).toContain(DROP);
+  });
+
+  it("treats null/legacy (unrecorded) as pre-v7", () => {
+    expect(preUpgradeStatements(null)).toContain(DROP);
+    expect(preUpgradeStatements(undefined)).toContain(DROP);
+  });
+
+  it("is empty once a Space is at v7+ (never re-drops)", () => {
+    expect(preUpgradeStatements(7)).toEqual([]);
+    expect(preUpgradeStatements(8)).toEqual([]);
   });
 });

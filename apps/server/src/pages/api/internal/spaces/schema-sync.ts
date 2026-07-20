@@ -131,7 +131,7 @@ export async function spacesSchemaSyncHandler(
         let interfaceDiff: ReturnType<typeof diffInterfaces> | null = null;
         try {
           const priorInterfaces = await readInterfaceWorkingSet(tx, captured.baseId);
-          interfaceDiff = diffInterfaces({ prior: priorInterfaces, next: interfaceCapture.entities });
+          interfaceDiff = diffInterfaces({ prior: priorInterfaces, next: interfaceCapture.capture });
         } catch {
           interfaceSync = { ok: false, reason: "diff_failed" };
         }
@@ -139,15 +139,17 @@ export async function spacesSchemaSyncHandler(
           await applyInterfaceDiff(tx, {
             baseId: captured.baseId,
             baseRunId,
-            capturedAt: interfaceCapture.capturedAt,
             diff: interfaceDiff,
           });
+          const d = interfaceDiff;
           interfaceSync = {
             ok: true,
-            added: interfaceDiff.inserts.length,
-            removed: interfaceDiff.removals.length,
-            updates: interfaceDiff.updates.length,
-            unchanged: interfaceDiff.unchanged,
+            added:
+              d.interfaces.inserts.length + d.pages.inserts.length + d.forms.inserts.length,
+            removed:
+              d.interfaces.removals.length + d.pages.removals.length + d.forms.removals.length,
+            updates: d.updates.length,
+            unchanged: d.unchanged,
           };
         }
       }
