@@ -14,6 +14,7 @@ import { meterRequest, type UsagePoint } from "./lib/metering";
 import { evaluateRateLimit } from "./lib/ratelimit";
 import { buildRouter, type OperationContext } from "./lib/registry";
 import { operations } from "./operations";
+import { handleMcp } from "./mcp/transport";
 import type { Env } from "./env";
 import type { Sql } from "postgres";
 
@@ -40,6 +41,38 @@ export default {
         durationMs: Date.now() - started,
         ...usage,
       });
+
+    // MCP server (api-mcp) — mounted at /mcp on the same Worker, auth-first
+    // (reject before the handshake, §2.2), tools generated from the REST registry
+    // and executed in-process. Handled before the /v1 REST gate.
+    if (url.pathname === "/mcp") {
+      let mcpSql: Sql | null = null;
+      try {
+        const conn = createMasterDb(env);
+        mcpSql = conn.sql;
+        const grant = await authenticate(conn.db, request.headers.get("authorization"), now);
+        if (!grant) {
+          const res = errorResponse(unauthorized(), requestId);
+          meter({ surface: "mcp", routeTemplate: "/mcp", status: 401 });
+          return res;
+        }
+        ctx.waitUntil(touchLastUsed(conn.db, grant.id, now).catch(() => {}));
+        const rl = await evaluateRateLimit(env, grant.id);
+        if (rl.block) {
+          meter({ surface: "mcp", routeTemplate: "/mcp", tokenId: grant.id, orgId: grant.organizationId, status: 429 });
+          return errorResponse(new ApiError("rate_limited", "rate_limited", "Rate limit exceeded.", { headers: rl.headers }), requestId, rl.headers);
+        }
+        const { res, label } = await handleMcp(request, { operations, db: conn.db, sql: conn.sql, env, ctx, grant, now, requestId }, requestId);
+        meter({ surface: "mcp", routeTemplate: label, tokenId: grant.id, orgId: grant.organizationId, status: res.status });
+        return withHeaders(res, rl.headers);
+      } catch (err) {
+        if (!(err instanceof ApiError)) log.error("api.mcp.unhandled", { requestId, err: err instanceof Error ? err.message : String(err) });
+        meter({ surface: "mcp", routeTemplate: "/mcp", status: 500 });
+        return errorResponse(err, requestId);
+      } finally {
+        if (mcpSql) ctx.waitUntil(mcpSql.end({ timeout: 5 }).catch(() => {}));
+      }
+    }
 
     // Version gate — before any DB work.
     if (!url.pathname.startsWith("/v1/")) {
