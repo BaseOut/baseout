@@ -12,6 +12,7 @@ import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import { withSpaceSchema } from "../../../../lib/per-space/space-db-pg";
 import { ensureSpaceSchemaCurrent } from "../../../../lib/provisioning/upgrade";
 import { readSchemaChangelog } from "../../../../lib/per-space/schema-changelog-io";
+import { clampLimit, paginateChangelog } from "../../../../lib/per-space/schema-query";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -34,8 +35,20 @@ export async function spacesSchemaChangelogHandler(
   if (!UUID_RE.test(spaceId)) return jsonResponse({ error: "invalid_request" }, 400);
   const sp = new URL(request.url).searchParams;
   const baseId = sp.get("baseId");
-  if (!baseId) return jsonResponse({ error: "invalid_request" }, 400);
-  const limit = Math.min(Math.max(parseInt(sp.get("limit") ?? "200", 10) || 200, 1), 1000);
+  if (!baseId) return jsonResponse({ error: "invalid_request", param: "baseId" }, 400);
+
+  // Additive public filters (server-rest-read-support). When any is present we
+  // switch to filter+keyset-paginate mode; otherwise the pre-change web contract
+  // (whole list, `limit` slice, no cursor) is preserved exactly.
+  const entityType = sp.get("entityType");
+  const changeType = sp.get("changeType");
+  const breaksDataParam = sp.get("breaksData");
+  const from = sp.get("from");
+  const to = sp.get("to");
+  const cursor = sp.get("cursor");
+  const filtered =
+    entityType !== null || changeType !== null || breaksDataParam !== null ||
+    from !== null || to !== null || cursor !== null;
 
   const { db: masterDb, sql } = locals.getMasterDb();
   const space = await resolveSpaceDb(masterDb, spaceId);
@@ -50,6 +63,24 @@ export async function spacesSchemaChangelogHandler(
       pgLocator: space.pgLocator,
       schemaVersion: space.schemaVersion,
     });
+
+    if (filtered) {
+      const full = await withSpaceSchema(masterDb, space.pgLocator, (tx) =>
+        readSchemaChangelog(tx, baseId), // no slice — assemble the whole base feed
+      );
+      const page = paginateChangelog(full.entries, {
+        entityType: entityType ?? undefined,
+        changeType: changeType ?? undefined,
+        breaksData: breaksDataParam === null ? undefined : breaksDataParam === "true",
+        from: from ?? undefined,
+        to: to ?? undefined,
+        limit: clampLimit(sp.get("limit")),
+        cursor: cursor ?? undefined,
+      });
+      return jsonResponse({ ok: true, entries: page.entries, nextCursor: page.nextCursor }, 200);
+    }
+
+    const limit = Math.min(Math.max(parseInt(sp.get("limit") ?? "200", 10) || 200, 1), 1000);
     const changelog = await withSpaceSchema(masterDb, space.pgLocator, (tx) =>
       readSchemaChangelog(tx, baseId, { limit }),
     );

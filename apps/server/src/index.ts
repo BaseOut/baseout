@@ -50,6 +50,8 @@ import { spacesDocumentHandler } from "./pages/api/internal/spaces/document";
 import { spacesDocsByEntityHandler } from "./pages/api/internal/spaces/docs-by-entity";
 import { spacesSchemaReadHandler } from "./pages/api/internal/spaces/schema-read";
 import { spacesSchemaChangelogHandler } from "./pages/api/internal/spaces/schema-changelog";
+import { spacesSchemaSearchHandler } from "./pages/api/internal/spaces/schema-search";
+import { spacesSchemaVersionsHandler } from "./pages/api/internal/spaces/schema-versions";
 import { spacesNotificationsHandler } from "./pages/api/internal/spaces/notifications";
 import { spacesNotificationsTriageHandler } from "./pages/api/internal/spaces/notifications-triage";
 import { spacesNotificationsMuteHandler } from "./pages/api/internal/spaces/notifications-mute";
@@ -139,6 +141,10 @@ const SPACES_SCHEMA_READ_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/schema$/;
 const SPACES_SCHEMA_CHANGELOG_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/schema-changelog$/;
+const SPACES_SCHEMA_SEARCH_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/schema-search$/;
+const SPACES_SCHEMA_VERSIONS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/schema-versions$/;
 // Inbox notification feed + triage (server-notifications-inbox).
 const SPACES_NOTIFICATIONS_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/notifications$/;
@@ -537,6 +543,16 @@ export default {
       const schemaChangelog = SPACES_SCHEMA_CHANGELOG_RE.exec(url.pathname);
       if (schemaChangelog) {
         return await spacesSchemaChangelogHandler(request, env, ctx, locals, schemaChangelog[1]!);
+      }
+
+      const schemaSearch = SPACES_SCHEMA_SEARCH_RE.exec(url.pathname);
+      if (schemaSearch) {
+        return await spacesSchemaSearchHandler(request, env, ctx, locals, schemaSearch[1]!);
+      }
+
+      const schemaVersions = SPACES_SCHEMA_VERSIONS_RE.exec(url.pathname);
+      if (schemaVersions) {
+        return await spacesSchemaVersionsHandler(request, env, ctx, locals, schemaVersions[1]!);
       }
 
       // Inbox notifications (server-notifications-inbox): derived alert feed
