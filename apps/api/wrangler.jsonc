@@ -31,9 +31,25 @@
     "RATE_LIMIT_ENFORCE": "false"
   },
 
+  // Master-DB access. Direct postgres-js TLS from workerd hangs (~3 min, then
+  // fails) under `wrangler dev` — the same trap apps/server documents — so local
+  // dev MUST go through wrangler's local Hyperdrive simulator: `pnpm dev` runs
+  // scripts/dev.mjs, which feeds .dev.vars DATABASE_URL to the binding via
+  // WRANGLER_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE. The id below is a
+  // local-dev placeholder: deployed envs (production/staging) declare their own
+  // provisioned binding in their env blocks (task 5.3) — bindings are
+  // non-inheritable, so this top-level entry never reaches a deploy.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000000000000000000000000000",
+      "localConnectionString": "postgres://run-via-scripts-dev-mjs.invalid:5432/unset"
+    }
+  ],
+
   // DEPLOY-BLOCKED — provisioned in the ops follow-up (task 5.3):
-  //  - Hyperdrive binding for the master DB (deployed envs read HYPERDRIVE;
-  //    local dev reads DATABASE_URL from .dev.vars):
+  //  - Hyperdrive binding for the master DB in env.production/env.staging
+  //    (deployed envs read HYPERDRIVE; the top-level binding above is local-only):
   //      "hyperdrive": [{ "binding": "HYPERDRIVE", "id": "<PROVISION>" }]
   //  - Public route on the domain:
   //      "routes": [{ "pattern": "api.baseout.com/*", "zone_name": "baseout.com" }]

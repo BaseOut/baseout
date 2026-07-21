@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Public read-only REST API at api.baseout.com. See openspec/changes/api-rest-read/proposal.md.",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "node scripts/dev.mjs",
     "build": "tsup src/index.ts --format esm --dts",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
