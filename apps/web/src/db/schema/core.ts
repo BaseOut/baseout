@@ -951,3 +951,29 @@ export const serviceRuns = baseout.table('service_runs', {
   index('service_runs_service_started_idx').on(table.service, table.startedAt.desc()),
   index('service_runs_status_idx').on(table.status),
 ])
+
+// Staff error-triage acknowledgements (admin-error-triage). APPEND-ONLY like
+// admin_audit_log — effective state = latest `phase` row per (target_type,
+// target_id[, target_state]); no UPDATE/DELETE (guard-tested in apps/admin).
+// Owned by this change; apps/admin mirrors it read+INSERT-only. Ack targets a
+// source-row (backup_run|backup_run_base|restore_run|connection|space_database);
+// `target_state` carries the connection error fingerprint so a differently-broken
+// connection resurfaces. Denormalized actor columns survive user deletion (no FK).
+export const adminErrorAcks = baseout.table('admin_error_acks', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  phase: text('phase').notNull().default('ack'), // 'ack' | 'unack'
+  targetType: text('target_type').notNull(),
+  targetId: text('target_id').notNull(),
+  targetState: text('target_state'), // connection fingerprint; NULL for run/db targets
+  organizationId: text('organization_id'),
+  ackedByUserId: text('acked_by_user_id').notNull(),
+  ackedByEmail: text('acked_by_email').notNull(),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  dbUser: text('db_user').notNull().default(sql`current_user`),
+  applicationName: text('application_name').default(sql`current_setting('application_name', true)`),
+  txid: bigint('txid', { mode: 'number' }).notNull().default(sql`txid_current()`),
+}, (table) => [
+  index('admin_error_acks_target_idx').on(table.targetType, table.targetId, table.createdAt),
+  index('admin_error_acks_org_idx').on(table.organizationId, table.createdAt),
+])
