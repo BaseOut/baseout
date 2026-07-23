@@ -14,3 +14,4 @@ export * from "./hmac";
 export * from "./errors";
 export * from "./logging";
 export * from "./api-tokens";
+export * from "./airtable-mac";

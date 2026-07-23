@@ -27,14 +27,18 @@
       "types": "./dist/logging.d.ts",
       "import": "./dist/logging.js"
     },
+    "./airtable-mac": {
+      "types": "./dist/airtable-mac.d.ts",
+      "import": "./dist/airtable-mac.js"
+    },
     "./api-tokens": {
       "types": "./dist/api-tokens.d.ts",
       "import": "./dist/api-tokens.js"
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/encryption.ts src/hmac.ts src/errors.ts src/logging.ts src/api-tokens.ts --format esm --dts --clean",
-    "dev": "tsup src/index.ts src/encryption.ts src/hmac.ts src/errors.ts src/logging.ts src/api-tokens.ts --format esm --dts --watch",
+    "build": "tsup src/index.ts src/encryption.ts src/hmac.ts src/errors.ts src/logging.ts src/api-tokens.ts src/airtable-mac.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts src/encryption.ts src/hmac.ts src/errors.ts src/logging.ts src/api-tokens.ts src/airtable-mac.ts --format esm --dts --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint ."
