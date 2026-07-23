@@ -1,10 +1,10 @@
 ## Phase A — Schema
 
-- [ ] A.1 Generate the canonical migration in `apps/web/drizzle/` per design.md §Phase A: `airtable_webhooks` (org-level registry, UNIQUE (organization_id, base_id)), `airtable_webhook_subscriptions` (per-Space cursor + watermark), `backup_configurations.webhook_poll_interval_seconds`.
-- [ ] A.2 Apply migration; verify tables landed.
-- [ ] A.3 Update `apps/web/src/db/schema/core.ts` with `airtableWebhooks` + `airtableWebhookSubscriptions`.
-- [ ] A.4 Engine mirrors `apps/server/src/db/schema/airtable-webhooks.ts` + `airtable-webhook-subscriptions.ts` (header comments name the canonical migration).
-- [ ] A.5 Publish via `@baseout/db-schema` so `apps/hooks` can consume the registry table.
+- [x] A.1 Generate the canonical migration in `apps/web/drizzle/` per design.md §Phase A: `airtable_webhooks` (org-level registry, UNIQUE (organization_id, base_id)), `airtable_webhook_subscriptions` (per-Space cursor + watermark), `backup_configurations.webhook_poll_interval_seconds`. → Canonical migration is `apps/web/drizzle/0030_airtable_webhooks.sql` (both tables + the poll-interval column, UNIQUEs + partial expiry index included).
+- [x] A.2 Apply migration; verify tables landed. → 0030 applied to the dev DB.
+- [x] A.3 Update `apps/web/src/db/schema/core.ts` with `airtableWebhooks` + `airtableWebhookSubscriptions`. → Landed at the bottom of `core.ts` (`airtableWebhooks` at :991, `airtableWebhookSubscriptions` at :1025) plus `backupConfigurations.webhookPollIntervalSeconds` (:530).
+- [x] A.4 Engine mirrors `apps/server/src/db/schema/airtable-webhooks.ts` + `airtable-webhook-subscriptions.ts` (header comments name the canonical migration). → Done per the `backup-runs.ts` house convention (header names `core.ts:991` / `core.ts:1025` + migration `0030_airtable_webhooks.sql`; engine-needed columns only — `created_at` / `last_ping_source_ip` omitted; never migrated from this side). Also added `webhookPollIntervalSeconds` (integer, notNull, default 900) to the existing `backup-configurations.ts` mirror and exported both new mirrors from the barrel `apps/server/src/db/schema/index.ts`.
+- [ ] A.5 Publish via `@baseout/db-schema` so `apps/hooks` can consume the registry table. → Superseded: following the `api_tokens` precedent instead — canonical stays in `apps/web/src/db/schema/core.ts`, each consumer mirrors locally. `apps/hooks` will carry its own mirror (read + `last_ping_at` stamp) when it lands; no `@baseout/db-schema` publish.
 
 ## Phase C — SpaceDO cadence polling
 

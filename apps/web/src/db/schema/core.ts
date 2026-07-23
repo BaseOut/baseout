@@ -525,6 +525,9 @@ export const backupConfigurations = baseout.table('backup_configurations', {
   storageType: text('storage_type').notNull().default('r2_managed'),
   // 'r2_managed' | 'google_drive' | 'dropbox' | 'box' | 'onedrive' | 's3' | 'frame_io' | 'byos'
   autoAddFutureBases: boolean('auto_add_future_bases').notNull().default(false),
+  // Instant mode: how often the Space's DO polls for webhook-dirty bases
+  // (server-instant-webhook Phase A; tier minimums in Features §6.1).
+  webhookPollIntervalSeconds: integer('webhook_poll_interval_seconds').notNull().default(900),
   // When true, bases discovered via rediscovery (alarm or manual rescan) are
   // included in the next backup run automatically — subject to the tier
   // `basesPerSpace` cap. See workspace-rediscovery change.
@@ -976,4 +979,63 @@ export const adminErrorAcks = baseout.table('admin_error_acks', {
 }, (table) => [
   index('admin_error_acks_target_idx').on(table.targetType, table.targetId, table.createdAt),
   index('admin_error_acks_org_idx').on(table.organizationId, table.createdAt),
+])
+
+// ── Airtable webhooks (hooks + server-instant-webhook Phase A) ──────────────
+// Pull-based pipeline: Airtable pings hooks.baseout.com (payload-free); the
+// receiver stamps last_ping_at ("changes waiting"); each subscribed Space's DO
+// polls on its own cadence and pulls payloads via the cursor API. One webhook
+// per (org, base) — Airtable caps 2/base/integration — with per-Space
+// subscription cursors. No event rows, no queue (webhook_events was dropped
+// from the design). Canonical migration: apps/web/drizzle/0030.
+export const airtableWebhooks = baseout.table('airtable_webhooks', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  // ^ pre-generated and embedded in the notificationUrl path — NOT Airtable's id.
+  organizationId: text('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  connectionId: text('connection_id')
+    .notNull()
+    .references(() => connections.id, { onDelete: 'restrict' }),
+  // ^ the OAuth token that created the webhook (create/refresh/poll auth).
+  baseId: text('base_id').notNull(),                    // Airtable app…
+  airtableWebhookId: text('airtable_webhook_id').notNull().unique(),
+  macSecretBase64Enc: text('mac_secret_base64_enc').notNull(),
+  // ^ AES-256-GCM ciphertext; Airtable returns the secret ONLY at create.
+  status: text('status').notNull().default('active'),
+  // 'active' | 'notifications_disabled' | 'pending_reauth' | 'inactive'
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  lastPingAt: timestamp('last_ping_at', { withTimezone: true }),      // written by apps/hooks
+  lastPingSourceIp: text('last_ping_source_ip'),                       // written by apps/hooks
+  lastRenewedAt: timestamp('last_renewed_at', { withTimezone: true }), // written by the renewal cron
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique('airtable_webhooks_org_base_unique').on(table.organizationId, table.baseId),
+  index('airtable_webhooks_last_ping_idx').on(table.lastPingAt),
+  index('airtable_webhooks_expiry_idx')
+    .on(table.expiresAt)
+    .where(sql`${table.status} = 'active'`),
+])
+
+// Per-Space fan-out: which Spaces consume a webhook, each with its own payload
+// cursor (Airtable cursors start at 1) and polling watermark. last_polled_at
+// answers "have I looked since the last ping?" — NOT processing success; the
+// cursor tracks durable progress.
+export const airtableWebhookSubscriptions = baseout.table('airtable_webhook_subscriptions', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  webhookId: text('webhook_id')
+    .notNull()
+    .references(() => airtableWebhooks.id, { onDelete: 'cascade' }),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  payloadCursor: bigint('payload_cursor', { mode: 'number' }).notNull().default(1),
+  lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+  lastReconciledAt: timestamp('last_reconciled_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique('airtable_webhook_subscriptions_webhook_space_unique').on(table.webhookId, table.spaceId),
+  index('airtable_webhook_subscriptions_space_idx').on(table.spaceId),
 ])

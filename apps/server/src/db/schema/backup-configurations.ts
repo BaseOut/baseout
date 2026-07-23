@@ -8,6 +8,9 @@
 //             (adds scope / schema_frequency / schema_next_scheduled_at — the
 //              schema schedule; read by SpaceDO.alarm(), schema_next written by
 //              the DO. server-backup-scope.)
+//             apps/web/drizzle/0030_airtable_webhooks.sql
+//             (adds webhook_poll_interval_seconds — read by SpaceDO webhook
+//              cadence polling. server-instant-webhook.)
 //
 // apps/web INSERTs/UPDATEs frequency / mode / storage_type / auto_add_future_bases
 // when the user picks bases / frequency / storage destination (and later
@@ -22,7 +25,13 @@
 //
 // Per CLAUDE.md §5.3.
 
-import { boolean, pgSchema, text, timestamp } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  integer,
+  pgSchema,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 
 const baseout = pgSchema("baseout");
 
@@ -56,6 +65,13 @@ export const backupConfigurations = baseout.table("backup_configurations", {
   }),
   // Engine-owned (SpaceDO writes it on alarm set/fire) — the schema schedule's
   // next fire, mirror of next_scheduled_at.
+  webhookPollIntervalSeconds: integer("webhook_poll_interval_seconds")
+    .notNull()
+    .default(900),
+  // How often a Space's DO polls its webhook subscriptions for waiting
+  // payloads when frequency='instant' (server-instant-webhook Phase C);
+  // per-tier minimums gated in apps/web. .default(900) mirrors the canonical
+  // DB default (migration 0030) — this file is never migrated from.
 });
 
 export type BackupConfigurationRow = typeof backupConfigurations.$inferSelect;
