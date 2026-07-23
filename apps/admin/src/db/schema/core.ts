@@ -104,6 +104,7 @@ export const connections = baseout.table('connections', {
   oauthRefreshClaimId: text('oauth_refresh_claim_id'),
   oauthRefreshClaimedAt: timestamp('oauth_refresh_claimed_at', { withTimezone: true }),
   oauthRefreshLastError: text('oauth_refresh_last_error'),
+  pendingReauthAt: timestamp('pending_reauth_at', { withTimezone: true }), // error-triage occurrence time (migration 0026)
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 })
@@ -190,6 +191,7 @@ export const spaceDatabases = baseout.table('space_databases', {
   lastRecordsSyncAt: timestamp('last_records_sync_at', { withTimezone: true }),
   provisionedAt: timestamp('provisioned_at', { withTimezone: true }),
   errorMessage: text('error_message'),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }), // DB-error occurrence time (admin-error-triage)
 })
 
 // OAuth token `*_enc` columns deliberately NOT mirrored (see header).
@@ -310,4 +312,21 @@ export const serviceRuns = baseout.table('service_runs', {
   errorMessage: text('error_message'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// Staff error-triage acks (canonical: apps/web core.ts adminErrorAcks, migration
+// 0029_admin_error_acks.sql). APPEND-ONLY: read + INSERT only, no UPDATE/DELETE
+// (guard-tested in error-acks-guard.test.ts). Effective state = latest `phase`
+// row per (target_type, target_id[, target_state]). No FKs; no *_enc.
+export const adminErrorAcks = baseout.table('admin_error_acks', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  phase: text('phase').notNull().default('ack'),
+  targetType: text('target_type').notNull(),
+  targetId: text('target_id').notNull(),
+  targetState: text('target_state'),
+  organizationId: text('organization_id'),
+  ackedByUserId: text('acked_by_user_id').notNull(),
+  ackedByEmail: text('acked_by_email').notNull(),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })

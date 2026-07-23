@@ -9,8 +9,22 @@
 export const RATE_LIMIT_MAX = 10
 export const RATE_LIMIT_WINDOW_MS = 60_000
 
-export type AdminAction = 'force_backup' | 'invalidate_connection' | 'force_migration'
-export type AuditTargetType = 'space' | 'connection' | 'organization'
+export type AdminAction =
+  | 'force_backup'
+  | 'invalidate_connection'
+  | 'force_migration'
+  // admin-error-triage: acknowledge / un-acknowledge a triage-queue error.
+  | 'acknowledge_error'
+  | 'unacknowledge_error'
+export type AuditTargetType =
+  | 'space'
+  | 'connection'
+  | 'organization'
+  // admin-error-triage ack targets (a source-row of the error queue).
+  | 'backup_run'
+  | 'backup_run_base'
+  | 'restore_run'
+  | 'space_database'
 
 export interface AuditIntent {
   actor: { id: string; email: string }
