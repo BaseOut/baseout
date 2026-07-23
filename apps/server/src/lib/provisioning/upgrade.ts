@@ -32,6 +32,9 @@ export function needsUpgrade(
 
 // Version at which server-interfaces-normalize reshaped bo_at_interfaces.
 const INTERFACES_NORMALIZE_VERSION = 7;
+// Version at which system-per-space-db (task 1.6) added the webhook-application
+// columns (bo_at_base_runs.run_type; action_source/actor on the update tables).
+const WEBHOOK_COLUMNS_VERSION = 8;
 
 /**
  * Destructive statements that MUST run before the idempotent DDL when bringing a
@@ -49,6 +52,17 @@ export function preUpgradeStatements(from: number | null | undefined): string[] 
   const stmts: string[] = [];
   if ((from ?? 0) < INTERFACES_NORMALIZE_VERSION) {
     stmts.push('DROP TABLE IF EXISTS "bo_at_interfaces" CASCADE');
+  }
+  if ((from ?? 0) < WEBHOOK_COLUMNS_VERSION) {
+    // v8: additive COLUMNS on existing tables — the idempotent DDL only
+    // CREATEs, so column additions need explicit ADD COLUMN IF NOT EXISTS.
+    stmts.push(
+      'ALTER TABLE "bo_at_base_runs" ADD COLUMN IF NOT EXISTS "run_type" text DEFAULT \'full\' NOT NULL',
+      'ALTER TABLE "bo_at_schema_updates" ADD COLUMN IF NOT EXISTS "action_source" text',
+      'ALTER TABLE "bo_at_schema_updates" ADD COLUMN IF NOT EXISTS "actor" text',
+      'ALTER TABLE "bo_at_record_updates" ADD COLUMN IF NOT EXISTS "action_source" text',
+      'ALTER TABLE "bo_at_record_updates" ADD COLUMN IF NOT EXISTS "actor" text',
+    );
   }
   return stmts;
 }

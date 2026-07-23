@@ -32,6 +32,7 @@ CREATE TABLE "bo_at_base_runs" (
 	"backup_run_id" uuid NOT NULL,
 	"base_id" text NOT NULL,
 	"status" text DEFAULT 'queued' NOT NULL,
+	"run_type" text DEFAULT 'full' NOT NULL,
 	"curr_step" text,
 	"schema_version_id" uuid,
 	"schema_hash" text,
@@ -303,7 +304,9 @@ CREATE TABLE "bo_at_record_updates" (
 	"field_id" text NOT NULL,
 	"table_id" text NOT NULL,
 	"run_id" uuid NOT NULL,
-	"old_value" text
+	"old_value" text,
+	"action_source" text,
+	"actor" text
 );
 --> statement-breakpoint
 CREATE TABLE "bo_at_records" (
@@ -332,7 +335,9 @@ CREATE TABLE "bo_at_schema_updates" (
 	"change_type_name" text,
 	"before_value" jsonb,
 	"after_value" jsonb,
-	"breaks_data" boolean DEFAULT false NOT NULL
+	"breaks_data" boolean DEFAULT false NOT NULL,
+	"action_source" text,
+	"actor" text
 );
 --> statement-breakpoint
 CREATE TABLE "bo_at_schema_versions" (

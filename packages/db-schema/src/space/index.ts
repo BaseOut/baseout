@@ -40,4 +40,4 @@ export { spacePgDdlStatementsIdempotent } from './pg-ddl-upgrade'
 // apps/server/src/lib/provisioning/upgrade.ts (the idempotent DDL alone can't
 // alter an existing table). Pre-launch, interface rows are dropped and repopulate
 // on the next capture (design Decision 10).
-export const SPACE_SCHEMA_VERSION = 7
+export const SPACE_SCHEMA_VERSION = 8

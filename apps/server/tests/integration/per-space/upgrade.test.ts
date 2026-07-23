@@ -43,8 +43,32 @@ describe("preUpgradeStatements (server-interfaces-normalize v7 reshape)", () => 
     expect(preUpgradeStatements(undefined)).toContain(DROP);
   });
 
-  it("is empty once a Space is at v7+ (never re-drops)", () => {
-    expect(preUpgradeStatements(7)).toEqual([]);
+  it("no longer drops bo_at_interfaces once a Space is at v7+", () => {
+    expect(preUpgradeStatements(7)).not.toContain(DROP);
+    expect(preUpgradeStatements(8)).not.toContain(DROP);
+  });
+});
+
+describe("preUpgradeStatements (system-per-space-db v8 webhook columns)", () => {
+  // Additive COLUMNS on existing tables — CREATE TABLE IF NOT EXISTS skips
+  // them, so they need explicit ADD COLUMN IF NOT EXISTS steps.
+  const V8_ALTERS = [
+    'ALTER TABLE "bo_at_base_runs" ADD COLUMN IF NOT EXISTS "run_type" text DEFAULT \'full\' NOT NULL',
+    'ALTER TABLE "bo_at_schema_updates" ADD COLUMN IF NOT EXISTS "action_source" text',
+    'ALTER TABLE "bo_at_schema_updates" ADD COLUMN IF NOT EXISTS "actor" text',
+    'ALTER TABLE "bo_at_record_updates" ADD COLUMN IF NOT EXISTS "action_source" text',
+    'ALTER TABLE "bo_at_record_updates" ADD COLUMN IF NOT EXISTS "actor" text',
+  ];
+
+  it("adds the webhook-attribution columns when upgrading a pre-v8 Space", () => {
+    for (const stmt of V8_ALTERS) {
+      expect(preUpgradeStatements(7)).toContain(stmt);
+      expect(preUpgradeStatements(null)).toContain(stmt);
+    }
+  });
+
+  it("is empty once a Space is at v8+", () => {
     expect(preUpgradeStatements(8)).toEqual([]);
+    expect(preUpgradeStatements(9)).toEqual([]);
   });
 });

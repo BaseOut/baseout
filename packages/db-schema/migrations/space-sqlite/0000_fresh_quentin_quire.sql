@@ -35,6 +35,7 @@ CREATE TABLE `bo_at_base_runs` (
 	`backup_run_id` text NOT NULL,
 	`base_id` text NOT NULL,
 	`status` text DEFAULT 'queued' NOT NULL,
+	`run_type` text DEFAULT 'full' NOT NULL,
 	`curr_step` text,
 	`schema_version_id` text,
 	`schema_hash` text,
@@ -336,7 +337,9 @@ CREATE TABLE `bo_at_record_updates` (
 	`field_id` text NOT NULL,
 	`table_id` text NOT NULL,
 	`run_id` text NOT NULL,
-	`old_value` text
+	`old_value` text,
+	`action_source` text,
+	`actor` text
 );
 --> statement-breakpoint
 CREATE INDEX `bo_at_record_updates_cell_idx` ON `bo_at_record_updates` (`record_id`,`field_id`);--> statement-breakpoint
@@ -368,7 +371,9 @@ CREATE TABLE `bo_at_schema_updates` (
 	`change_type_name` text,
 	`before_value` text,
 	`after_value` text,
-	`breaks_data` integer DEFAULT false NOT NULL
+	`breaks_data` integer DEFAULT false NOT NULL,
+	`action_source` text,
+	`actor` text
 );
 --> statement-breakpoint
 CREATE INDEX `bo_at_schema_updates_run_idx` ON `bo_at_schema_updates` (`run_id`);--> statement-breakpoint

@@ -52,6 +52,8 @@ export const baseRuns = sqliteTable('bo_at_base_runs', {
   backupRunId: text('backup_run_id').notNull(),
   baseId: text('base_id').notNull(),
   status: text('status').notNull().default('queued'),
+  // full = backup pass; incremental = webhook payload application (task 1.6).
+  runType: text('run_type').notNull().default('full'),
   currStep: text('curr_step'),
   schemaVersionId: text('schema_version_id'),
   schemaHash: text('schema_hash'),
@@ -131,6 +133,9 @@ export const schemaUpdates = sqliteTable('bo_at_schema_updates', {
   beforeValue: text('before_value', { mode: 'json' }),
   afterValue: text('after_value', { mode: 'json' }),
   breaksData: integer('breaks_data', { mode: 'boolean' }).notNull().default(false),
+  // Webhook-derived attribution (task 1.6) — NULL on backup-derived rows.
+  actionSource: text('action_source'),
+  actor: text('actor'),
 }, (t) => ({
   byRun: index('bo_at_schema_updates_run_idx').on(t.runId),
   byEntity: index('bo_at_schema_updates_entity_idx').on(t.entityType, t.entityId),
@@ -168,6 +173,9 @@ export const recordUpdates = sqliteTable('bo_at_record_updates', {
   tableId: text('table_id').notNull(),
   runId: text('run_id').notNull(),
   oldValue: text('old_value'),
+  // Webhook-derived attribution (task 1.6) — NULL on backup-derived rows.
+  actionSource: text('action_source'),
+  actor: text('actor'),
 }, (t) => ({
   byCell: index('bo_at_record_updates_cell_idx').on(t.recordId, t.fieldId),
   byRun: index('bo_at_record_updates_run_idx').on(t.runId),

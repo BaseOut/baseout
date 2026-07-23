@@ -61,6 +61,9 @@ export const baseRuns = pgTable('bo_at_base_runs', {
   backupRunId: uuid('backup_run_id').notNull(),     // → master backup_runs.id (cross-DB)
   baseId: text('base_id').notNull(),
   status: text('status').notNull().default('queued'), // queued|running|succeeded|failed|unknown
+  // full = scheduled/manual backup pass; incremental = webhook-driven payload
+  // application (workflows-instant-webhook). system-per-space-db task 1.6.
+  runType: text('run_type').notNull().default('full'), // full|incremental
   currStep: text('curr_step'),
   schemaVersionId: uuid('schema_version_id'),         // → bo_at_schema_versions.id
   schemaHash: text('schema_hash'),
@@ -146,6 +149,12 @@ export const schemaUpdates = pgTable('bo_at_schema_updates', {
   beforeValue: jsonb('before_value'),
   afterValue: jsonb('after_value'),
   breaksData: boolean('breaks_data').notNull().default(false),
+  // Webhook-derived attribution (system-per-space-db 1.6) — NULL on
+  // backup-derived rows. action_source: Airtable's originating-action kind
+  // (e.g. client|publicApi|formSubmission|automation|sync…); actor: the
+  // originating user/collaborator id when the payload carries one.
+  actionSource: text('action_source'),
+  actor: text('actor'),
 }, (t) => ({
   byRun: index('bo_at_schema_updates_run_idx').on(t.runId),
   byEntity: index('bo_at_schema_updates_entity_idx').on(t.entityType, t.entityId),
@@ -189,6 +198,10 @@ export const recordUpdates = pgTable('bo_at_record_updates', {
   tableId: text('table_id').notNull(),
   runId: uuid('run_id').notNull(),                    // → bo_at_base_runs.id
   oldValue: text('old_value'),                        // superseded value (JSON-encoded)
+  // Webhook-derived attribution (system-per-space-db 1.6) — NULL on
+  // backup-derived rows; see bo_at_schema_updates for semantics.
+  actionSource: text('action_source'),
+  actor: text('actor'),
 }, (t) => ({
   byCell: index('bo_at_record_updates_cell_idx').on(t.recordId, t.fieldId),
   byRun: index('bo_at_record_updates_run_idx').on(t.runId),

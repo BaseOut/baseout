@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e89fb717-5094-4ffc-8612-53782bbe5cfc",
+  "id": "e9ffe005-4c83-494a-807a-95a3d222c199",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "bo_at_attachments": {
@@ -241,6 +241,14 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'queued'"
+        },
+        "run_type": {
+          "name": "run_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'full'"
         },
         "curr_step": {
           "name": "curr_step",
@@ -2127,6 +2135,20 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "action_source": {
+          "name": "action_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {
@@ -2334,6 +2356,20 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
+        },
+        "action_source": {
+          "name": "action_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         }
       },
       "indexes": {

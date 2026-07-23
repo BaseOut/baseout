@@ -1,5 +1,5 @@
 {
-  "id": "fbdc29d5-c135-4459-afe5-63bc1b226c16",
+  "id": "e4fce89f-8998-4660-a584-043648ce38b6",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -247,6 +247,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'queued'"
+        },
+        "run_type": {
+          "name": "run_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'full'"
         },
         "curr_step": {
           "name": "curr_step",
@@ -2306,6 +2313,18 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "action_source": {
+          "name": "action_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -2526,6 +2545,18 @@
           "primaryKey": false,
           "notNull": true,
           "default": false
+        },
+        "action_source": {
+          "name": "action_source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
