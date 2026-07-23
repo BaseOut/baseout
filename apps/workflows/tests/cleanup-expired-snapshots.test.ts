@@ -14,6 +14,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { StorageWriter } from "../trigger/tasks/_lib/storage-writer";
 import {
+  parseCleanupPlan,
   runCleanupSweep,
   type CleanupPlan,
 } from "../trigger/tasks/cleanup-expired-snapshots";
@@ -155,5 +156,29 @@ describe("runCleanupSweep", () => {
 
     expect(resolveWriter).toHaveBeenCalledWith("r2_managed");
     expect(resolveWriter).toHaveBeenCalledWith("google_drive");
+  });
+});
+
+describe("parseCleanupPlan", () => {
+  // The engine's 200 body is validated at the IO boundary: a drifted body must
+  // throw a descriptive error (visible failed Trigger.dev run) rather than
+  // TypeError-ing at `for (const run of plan.runs)` or silently planning 0.
+  it("passes a well-formed body through, keeping serviceRunId and tolerating extra keys", () => {
+    const body = { runs: [run("r1", ["A/"])], serviceRunId: "svc_1", futureKey: true };
+    const plan = parseCleanupPlan(body);
+    expect(plan.runs).toEqual([run("r1", ["A/"])]);
+    expect(plan.serviceRunId).toBe("svc_1");
+  });
+
+  it("accepts an empty runs array", () => {
+    expect(parseCleanupPlan({ runs: [] }).runs).toEqual([]);
+  });
+
+  it.each([
+    ["missing runs", {}],
+    ["null body", null],
+    ["non-array runs", { runs: "nope" }],
+  ])("throws a descriptive error on a malformed 200 body (%s)", (_label, body) => {
+    expect(() => parseCleanupPlan(body)).toThrowError(/cleanup-plan.*runs/);
   });
 });

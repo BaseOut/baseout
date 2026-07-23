@@ -39,6 +39,21 @@ export interface CleanupCompletion {
   ok: boolean;
 }
 
+/**
+ * Validate the engine's cleanup-plan 200 body at the IO boundary. A drifted
+ * body (error envelope surfaced as 200, JSON null, future producer change)
+ * must fail the pass with a descriptive error — visible in the Trigger.dev run
+ * log and retried — rather than TypeError-ing at `for (const run of plan.runs)`
+ * or silently planning zero runs (which would hide a total retention stall).
+ */
+export function parseCleanupPlan(body: unknown): CleanupPlan {
+  const candidate = body as Partial<CleanupPlan> | null;
+  if (!candidate || !Array.isArray(candidate.runs)) {
+    throw new Error("cleanup-plan returned a malformed body: missing runs[]");
+  }
+  return { runs: candidate.runs, serviceRunId: candidate.serviceRunId ?? undefined };
+}
+
 export interface RunCleanupSweepDeps {
   /** GET the delete plan from the engine. */
   fetchPlan: () => Promise<CleanupPlan>;

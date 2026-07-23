@@ -21,6 +21,7 @@
 import { schedules } from "@trigger.dev/sdk";
 import { resolveStorageWriter } from "./_lib/storage-writers";
 import {
+  parseCleanupPlan,
   runCleanupSweep,
   type CleanupCompletion,
   type CleanupPlan,
@@ -44,7 +45,7 @@ async function fetchPlan(
   if (!res.ok) {
     throw new Error(`cleanup-plan returned ${res.status}`);
   }
-  return (await res.json()) as CleanupPlan;
+  return parseCleanupPlan(await res.json());
 }
 
 async function postComplete(
