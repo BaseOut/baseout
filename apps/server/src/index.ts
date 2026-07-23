@@ -43,6 +43,7 @@ import { spacesHealthPromptHandler } from "./pages/api/internal/spaces/health-pr
 import { spacesHealthEnableHandler } from "./pages/api/internal/spaces/health-enable";
 import { spacesHealthConfigHandler } from "./pages/api/internal/spaces/health-config";
 import { spacesRecordsSyncHandler } from "./pages/api/internal/spaces/records-sync";
+import { spacesIncrementalApplyHandler } from "./pages/api/internal/spaces/incremental-apply";
 import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
 import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
 import { spacesDocumentsHandler } from "./pages/api/internal/spaces/documents";
@@ -132,6 +133,9 @@ const SPACES_MIGRATE_SCHEMA_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/migrate-schema$/;
 const SPACES_RECORDS_SYNC_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/records-sync$/;
+// Incremental (webhook-driven) per-space apply seam (server-dynamic-mode).
+const SPACES_INCREMENTAL_APPLY_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/incremental-apply$/;
 const SPACES_RESCAN_BASES_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/rescan-bases$/;
 const SPACES_STORAGE_DESTINATION_RE =
@@ -434,6 +438,14 @@ export default {
       const recordsSync = SPACES_RECORDS_SYNC_RE.exec(url.pathname);
       if (recordsSync) {
         return await spacesRecordsSyncHandler(request, env, ctx, locals, recordsSync[1]!);
+      }
+
+      // Incremental (webhook-driven) apply seam — the workflows
+      // incremental-backup task's engine-brokered IncrementalDb transport
+      // (server-dynamic-mode, re-scoped).
+      const incrementalApply = SPACES_INCREMENTAL_APPLY_RE.exec(url.pathname);
+      if (incrementalApply) {
+        return await spacesIncrementalApplyHandler(request, env, ctx, locals, incrementalApply[1]!);
       }
 
       const healthSync = SPACES_HEALTH_SYNC_RE.exec(url.pathname);
