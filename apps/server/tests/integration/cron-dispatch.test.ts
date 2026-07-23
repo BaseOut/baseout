@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   OAUTH_REFRESH_CRON,
   KEEPALIVE_CRON,
+  WEBHOOK_RENEWAL_CRON,
   resolveCronJobs,
 } from "../../src/lib/cron/dispatch";
 import {
@@ -22,15 +23,22 @@ describe("resolveCronJobs", () => {
     ]);
   });
 
-  it("maps the daily keep-alive cron to the keep-alive + auto-invalidate jobs", () => {
+  it("maps the daily keep-alive cron to keep-alive + auto-invalidate + service-runs-prune", () => {
     expect(resolveCronJobs(KEEPALIVE_CRON)).toEqual([
       "oauth-keepalive",
       "connection-auto-invalidate",
+      "service-runs-prune",
     ]);
   });
 
-  it("the two crons are distinct strings (no accidental collision)", () => {
-    expect(KEEPALIVE_CRON).not.toBe(OAUTH_REFRESH_CRON);
+  it("maps the hourly cron to webhook renewal (server-cron-webhook-renewal)", () => {
+    expect(WEBHOOK_RENEWAL_CRON).toBe("0 * * * *");
+    expect(resolveCronJobs(WEBHOOK_RENEWAL_CRON)).toEqual(["webhook-renewal"]);
+  });
+
+  it("the crons are distinct strings (no accidental collision)", () => {
+    const crons = [OAUTH_REFRESH_CRON, KEEPALIVE_CRON, WEBHOOK_RENEWAL_CRON];
+    expect(new Set(crons).size).toBe(crons.length);
   });
 
   it("unknown cron strings resolve to no jobs (logged no-op at the call site)", () => {

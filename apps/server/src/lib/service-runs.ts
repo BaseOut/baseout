@@ -17,8 +17,9 @@ import { serviceRuns } from "../db/schema";
 //   run_reconciliation         { swept, requeued, failed }
 //   oauth_keepalive            { scanned, refreshed, failed }
 //   connection_auto_invalidate { invalidated }
-//   retention_cleanup          { planned, deleted }
+//   retention_cleanup          { deleted, attempted }
 //   service_runs_prune         { deleted }
+//   webhook_renewal            { scanned, refreshed, reenabled, pendingReauth, transientFailures }
 export const SERVICE_IDS = {
   live: [
     "oauth_refresh_sweep",
@@ -27,9 +28,9 @@ export const SERVICE_IDS = {
     "connection_auto_invalidate",
     "retention_cleanup",
     "service_runs_prune",
+    "webhook_renewal",
   ],
   reserved: [
-    "webhook_renewal",
     "connection_lock_sweep",
     "dead_connection_check",
     "rediscovery",

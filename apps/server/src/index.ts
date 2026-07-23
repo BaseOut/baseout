@@ -70,6 +70,7 @@ import {
   runScheduledConnectionInvalidation,
 } from "./lib/cron/oauth-refresh-deps";
 import { runScheduledRunReconciliation } from "./lib/runs/reconcile-deps";
+import { runScheduledWebhookRenewal } from "./lib/cron/webhook-renewal-deps";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
@@ -624,6 +625,8 @@ export default {
           await withServiceRun(db, "connection_auto_invalidate", async () => ({ counts: numericCounts(await runScheduledConnectionInvalidation(env)) }));
         } else if (job === "service-runs-prune") {
           await withServiceRun(db, "service_runs_prune", () => pruneServiceRuns(db));
+        } else if (job === "webhook-renewal") {
+          await withServiceRun(db, "webhook_renewal", async () => ({ counts: numericCounts(await runScheduledWebhookRenewal(env)) }));
         }
       }
     } finally {

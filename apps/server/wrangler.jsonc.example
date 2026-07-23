@@ -65,7 +65,7 @@
   // shared-server-service-binding-staging-prod).
   // "triggers": {
   //   "crons": [
-  //     "0 6 * * *",     // webhook renewal — daily at 06:00 UTC
+  //     "0 * * * *",     // webhook renewal — hourly (server-cron-webhook-renewal)
   //     "*/15 * * * *",  // OAuth token refresh — every 15 minutes
   //     "0 * * * *",     // trial-expiry monitor — hourly
   //     "0 * * * *",     // quota-usage monitor — hourly
@@ -102,7 +102,8 @@
       "triggers": {
         "crons": [
           "*/15 * * * *", // OAuth token refresh sweep + run reconciliation
-          "0 13 * * *" // OAuth idle keep-alive (shared-oauth-refresh-keepalive)
+          "0 13 * * *", // OAuth idle keep-alive (shared-oauth-refresh-keepalive)
+          "0 * * * *" // Airtable webhook renewal (server-cron-webhook-renewal)
         ]
       },
       "ai": { "binding": "AI" },

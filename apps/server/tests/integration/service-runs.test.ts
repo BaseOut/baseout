@@ -23,11 +23,13 @@ function fakeWriter(over: Partial<ServiceRunWriter> = {}): ServiceRunWriter & { 
 }
 
 describe("SERVICE_IDS", () => {
-  it("lists the six live services + reserved future ones", () => {
+  it("lists the live services + reserved future ones", () => {
     expect(SERVICE_IDS.live).toContain("oauth_refresh_sweep");
     expect(SERVICE_IDS.live).toContain("retention_cleanup");
     expect(SERVICE_IDS.live).toContain("service_runs_prune");
-    expect(SERVICE_IDS.reserved).toContain("webhook_renewal");
+    // webhook_renewal went live with server-cron-webhook-renewal.
+    expect(SERVICE_IDS.live).toContain("webhook_renewal");
+    expect(SERVICE_IDS.reserved).toContain("rediscovery");
   });
 });
 
