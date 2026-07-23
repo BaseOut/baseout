@@ -15,6 +15,7 @@
 // written out in full — Tailwind only emits classes it finds as complete
 // literals, so they can't be built from a template variable.
 import Layout from './Layout.astro';
+import PeekSidebar from '../components/PeekSidebar.astro';
 
 interface Props {
   title?: string;
@@ -155,6 +156,7 @@ const userInitial = (user?.email?.charAt(0) ?? 'S').toUpperCase();
       </main>
     </div>
   </div>
+  <PeekSidebar />
 </Layout>
 
 <script>

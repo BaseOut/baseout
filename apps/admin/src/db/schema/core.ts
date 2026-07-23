@@ -57,6 +57,7 @@ export const spaces = baseout.table('spaces', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()`),
   organizationId: text('organization_id').notNull(),
   name: text('name').notNull(),
+  spaceType: text('space_type'), // 'single_platform' | 'multi_platform' (space detail — admin-entity-linking)
   status: text('status').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
@@ -94,6 +95,8 @@ export const connections = baseout.table('connections', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()`),
   organizationId: text('organization_id').notNull(),
   platformId: text('platform_id').notNull(),
+  createdByUserId: text('created_by_user_id'), // user detail: connections created by a user (admin-entity-linking)
+  spaceId: text('space_id'),                   // space-scoped connections (scope='space')
   scope: text('scope').notNull().default('organization'),
   displayName: text('display_name'),
   tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
@@ -139,6 +142,7 @@ export const backupRuns = baseout.table('backup_runs', {
 
 export const backupConfigurationBases = baseout.table('backup_configuration_bases', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  isAutoDiscovered: boolean('is_auto_discovered').notNull().default(false), // space detail (admin-entity-linking)
   backupConfigurationId: text('backup_configuration_id').notNull(),
   atBaseId: text('at_base_id').notNull(),
   isIncluded: boolean('is_included').notNull().default(true),
@@ -170,6 +174,7 @@ export const backupConfigurations = baseout.table('backup_configurations', {
   frequency: text('frequency').notNull().default('monthly'),
   scope: text('scope').notNull().default('schema_and_data'),
   mode: text('mode').notNull().default('static'), // static | dynamic — config summary (admin-entity-directories)
+  autoAddFutureBases: boolean('auto_add_future_bases').notNull().default(false), // space detail (admin-entity-linking)
   schemaFrequency: text('schema_frequency'),
   schemaNextScheduledAt: timestamp('schema_next_scheduled_at', { withTimezone: true }),
   storageType: text('storage_type').notNull().default('r2_managed'),
@@ -329,4 +334,29 @@ export const adminErrorAcks = baseout.table('admin_error_acks', {
   ackedByEmail: text('acked_by_email').notNull(),
   note: text('note'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// Airtable base registry (canonical: apps/web core.ts atBases). Read-only.
+// Space detail lists a Space's bases + inclusion flags (joined to
+// backup_configuration_bases). Per CLAUDE.md §5.3.
+export const atBases = baseout.table('at_bases', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id').notNull(),
+  atBaseId: text('at_base_id').notNull(),
+  name: text('name').notNull(),
+  discoveredVia: text('discovered_via').notNull().default('oauth_callback'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+})
+
+// Backup retention policy (canonical: apps/web core.ts backupRetentionPolicies).
+// Read-only; space detail shows the effective policy. Per CLAUDE.md §5.3.
+export const backupRetentionPolicies = baseout.table('backup_retention_policies', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id').notNull(),
+  policyTier: text('policy_tier').notNull(),
+  keepLastN: integer('keep_last_n'),
+  dailyWindowDays: integer('daily_window_days'),
+  weeklyWindowDays: integer('weekly_window_days'),
+  monthlyIndefinite: boolean('monthly_indefinite').notNull().default(false),
 })

@@ -8,6 +8,7 @@ import PageHeader from '@web/components/ui/PageHeader.astro';
 import Card from '@web/components/ui/Card.astro';
 import Badge from '@web/components/ui/Badge.astro';
 import EmptyState from '@web/components/ui/EmptyState.astro';
+import EntityLink from '../components/EntityLink.astro';
 import { backupConfigurations, backupRuns, organizations, platforms, spaceDatabases, spacePlatforms, spaces } from '../db/schema';
 import { buildSpacesDirectory } from '../lib/spaces-directory';
 import { entityHref, truncationNote } from '../lib/ui';
@@ -81,7 +82,7 @@ const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : '�
               {rows.map((r) => (
                 <tr class={`border-b border-base-200/60 ${r.attention ? 'bg-error/5' : ''}`}>
                   <td class="py-2 pr-4">
-                    <div class="font-medium">{r.name}</div>
+                    <div class="font-medium"><EntityLink type="space" id={r.id} label={r.name} /></div>
                     <div class="text-xs text-base-content/50">
                       {r.organizationId ? <a href={entityHref('org', r.organizationId)} class="link link-hover">{r.organizationName}</a> : '—'}
                       {r.platformCodes.length > 0 && ` · ${r.platformCodes.join(', ')}`}
