@@ -140,6 +140,45 @@ export function formatTriggeredBy(value: string): string {
 }
 
 /**
+ * Whether a run was webhook-triggered (web-instant-webhook). The engine's
+ * `triggered_by` is free-text; the webhook pipeline writes values starting
+ * with 'webhook' (mirrors triggerKey in ./list-row).
+ */
+export function isWebhookRun(triggeredBy: string): boolean {
+  return triggeredBy.startsWith('webhook')
+}
+
+/**
+ * Detail line for webhook-triggered runs: "Source: Webhook · N created ·
+ * N updated · N deleted", plus "· N reconciled" when a reconciliation pass
+ * contributed. Returns null for non-webhook runs.
+ *
+ * The change counts are optional on BackupRunSummary — `backup_runs` doesn't
+ * persist them yet (they arrive with the engine's incremental-run completion
+ * payload in server-instant-webhook), so the line degrades to "Source:
+ * Webhook" until they land.
+ */
+export function webhookSourceLine(run: BackupRunSummary): string | null {
+  if (!isWebhookRun(run.triggeredBy)) return null
+  const parts = ['Source: Webhook']
+  if (
+    run.createdCount != null &&
+    run.updatedCount != null &&
+    run.deletedCount != null
+  ) {
+    parts.push(
+      `${run.createdCount} created`,
+      `${run.updatedCount} updated`,
+      `${run.deletedCount} deleted`,
+    )
+    if (run.reconciledRecords != null && run.reconciledRecords > 0) {
+      parts.push(`${run.reconciledRecords} reconciled`)
+    }
+  }
+  return parts.join(' · ')
+}
+
+/**
  * Format the IntegrationsView "Next backup: <date>" line. Reads
  * backup_configurations.next_scheduled_at — the unix-ms timestamp the
  * SpaceDO scheduled. NULL is rendered as "Not yet scheduled" (no schedule

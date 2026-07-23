@@ -38,15 +38,27 @@ export interface TierCapabilitySet {
   frequencies: Frequency[]
   /** Schema Docs authoring level. Per Features §7 (Schema Documentation). */
   schemaDocs: SchemaDocsLevel
+  /**
+   * Platform minimum for `backup_configurations.webhook_poll_interval_seconds`
+   * (Instant mode's per-Space poll cadence, web-instant-webhook). Values are
+   * provisional until the Features §6.1 doc update lands (server-instant-webhook
+   * Phase G.3); the column default is 900. Tiers without Instant keep the
+   * default as a moot floor.
+   */
+  webhookPollMinSeconds: number
 }
 
+// Instant = Pro+ per PRD §2.2 — the ruling recorded in
+// openspec/changes/server-instant-webhook/proposal.md ("Tier conflict
+// (unchanged ruling): PRD wins"). Features §6.1 still reads Business+; its
+// update is that change's Phase G.3.
 export const TIER_CAPABILITIES: Record<Tier, TierCapabilitySet> = {
-  starter:    { basesPerSpace: 5,    frequencies: ['monthly'], schemaDocs: 'none' },
-  launch:     { basesPerSpace: 10,   frequencies: ['monthly', 'weekly'], schemaDocs: 'manual' },
-  growth:     { basesPerSpace: 15,   frequencies: ['monthly', 'weekly'], schemaDocs: 'manual' },
-  pro:        { basesPerSpace: 25,   frequencies: ['monthly', 'weekly', 'daily'], schemaDocs: 'manual_ai' },
-  business:   { basesPerSpace: 50,   frequencies: ['monthly', 'weekly', 'daily', 'instant'], schemaDocs: 'manual_ai' },
-  enterprise: { basesPerSpace: null, frequencies: ['monthly', 'weekly', 'daily', 'instant'], schemaDocs: 'manual_ai' },
+  starter:    { basesPerSpace: 5,    frequencies: ['monthly'], schemaDocs: 'none', webhookPollMinSeconds: 900 },
+  launch:     { basesPerSpace: 10,   frequencies: ['monthly', 'weekly'], schemaDocs: 'manual', webhookPollMinSeconds: 900 },
+  growth:     { basesPerSpace: 15,   frequencies: ['monthly', 'weekly'], schemaDocs: 'manual', webhookPollMinSeconds: 900 },
+  pro:        { basesPerSpace: 25,   frequencies: ['monthly', 'weekly', 'daily', 'instant'], schemaDocs: 'manual_ai', webhookPollMinSeconds: 900 },
+  business:   { basesPerSpace: 50,   frequencies: ['monthly', 'weekly', 'daily', 'instant'], schemaDocs: 'manual_ai', webhookPollMinSeconds: 300 },
+  enterprise: { basesPerSpace: null, frequencies: ['monthly', 'weekly', 'daily', 'instant'], schemaDocs: 'manual_ai', webhookPollMinSeconds: 60 },
 }
 
 /**

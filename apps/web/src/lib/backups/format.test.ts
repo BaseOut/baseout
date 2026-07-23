@@ -8,10 +8,12 @@ import {
   formatTriggeredBy,
   healthBadgeClass,
   healthStatus,
+  isWebhookRun,
   kindBadgeClass,
   kindLabel,
   statusBadgeClass,
   statusLabel,
+  webhookSourceLine,
 } from './format'
 import type { BackupRunSummary } from '../backup-runs/types'
 
@@ -372,5 +374,72 @@ describe('formatDeletedAt', () => {
     const out = formatDeletedAt('2026-06-01T00:00:00.000Z')
     expect(out).toMatch(/^Pruned /)
     expect(out).toMatch(/2026/)
+  })
+})
+
+// ── web-instant-webhook: ⚡ webhook-run affordances ──────────────────────────
+
+describe('isWebhookRun', () => {
+  it('matches the engine trigger vocabulary', () => {
+    expect(isWebhookRun('webhook')).toBe(true)
+    expect(isWebhookRun('webhook_poll')).toBe(true)
+    expect(isWebhookRun('manual')).toBe(false)
+    expect(isWebhookRun('scheduled')).toBe(false)
+    expect(isWebhookRun('')).toBe(false)
+  })
+})
+
+describe('webhookSourceLine', () => {
+  it('returns null for non-webhook runs', () => {
+    expect(webhookSourceLine(run({ triggeredBy: 'manual' }))).toBeNull()
+  })
+
+  it('renders the full counts line when change counts are present', () => {
+    const line = webhookSourceLine(
+      run({
+        triggeredBy: 'webhook',
+        createdCount: 3,
+        updatedCount: 12,
+        deletedCount: 0,
+      }),
+    )
+    expect(line).toBe('Source: Webhook · 3 created · 12 updated · 0 deleted')
+  })
+
+  it('appends reconciled records when a reconciliation pass contributed', () => {
+    const line = webhookSourceLine(
+      run({
+        triggeredBy: 'webhook_poll',
+        createdCount: 1,
+        updatedCount: 0,
+        deletedCount: 2,
+        reconciledRecords: 4,
+      }),
+    )
+    expect(line).toBe(
+      'Source: Webhook · 1 created · 0 updated · 2 deleted · 4 reconciled',
+    )
+  })
+
+  it('omits a zero reconciled count', () => {
+    const line = webhookSourceLine(
+      run({
+        triggeredBy: 'webhook',
+        createdCount: 1,
+        updatedCount: 1,
+        deletedCount: 1,
+        reconciledRecords: 0,
+      }),
+    )
+    expect(line).toBe('Source: Webhook · 1 created · 1 updated · 1 deleted')
+  })
+
+  it('falls back to "Source: Webhook" while counts are not yet persisted', () => {
+    // backup_runs has no created/updated/deleted columns yet — the engine's
+    // completion payload will persist them in server-instant-webhook. Until
+    // then the line renders from what exists.
+    expect(webhookSourceLine(run({ triggeredBy: 'webhook' }))).toBe(
+      'Source: Webhook',
+    )
   })
 })

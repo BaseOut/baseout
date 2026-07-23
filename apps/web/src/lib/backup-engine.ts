@@ -222,6 +222,29 @@ export type EngineSetSpaceFrequencyResult =
   | EngineSetSpaceFrequencySuccess
   | EngineSetSpaceFrequencyError;
 
+/**
+ * Webhook registration lifecycle (web-instant-webhook; engine routes are
+ * server-instant-webhook Phase E.1/E.3). `airtable_webhook_cap_reached` maps
+ * Airtable's 2-webhooks-per-base-per-integration cap — the base is already
+ * webhook-connected by the maximum number of organizations.
+ */
+export interface EngineWebhookLifecycleError {
+  ok: false;
+  code:
+    | "unauthorized"
+    | "invalid_request"
+    | "space_not_found"
+    | "connection_not_found"
+    | "airtable_webhook_cap_reached"
+    | "engine_unreachable"
+    | "engine_error";
+  status: number;
+}
+
+export type EngineWebhookLifecycleResult =
+  | { ok: true }
+  | EngineWebhookLifecycleError;
+
 export interface EngineRescanBasesSuccess {
   ok: true;
   discovered: number;
@@ -725,6 +748,10 @@ export interface BackupEngineClient {
     spaceId: string,
     schedule: SpaceScheduleInput,
   ): Promise<EngineSetSpaceFrequencyResult>;
+  /** Register webhooks for every included base (transition TO instant). */
+  registerWebhooks(spaceId: string): Promise<EngineWebhookLifecycleResult>;
+  /** Drop this Space's webhook subscriptions (transition AWAY from instant). */
+  unregisterWebhooks(spaceId: string): Promise<EngineWebhookLifecycleResult>;
   rescanBases(spaceId: string): Promise<EngineRescanBasesResult>;
   provisionDatabase(
     spaceId: string,
@@ -892,6 +919,61 @@ const KNOWN_SET_FREQUENCY_ERROR_CODES: ReadonlySet<
   "invalid_frequency",
   "space_do_error",
 ]);
+
+const KNOWN_WEBHOOK_LIFECYCLE_ERROR_CODES: ReadonlySet<
+  EngineWebhookLifecycleError["code"]
+> = new Set([
+  "unauthorized",
+  "invalid_request",
+  "space_not_found",
+  "connection_not_found",
+  "airtable_webhook_cap_reached",
+]);
+
+/**
+ * Shared POST for the two webhook-lifecycle routes (web-instant-webhook;
+ * engine side is server-instant-webhook Phase E). Same transport + error
+ * mapping shape as setSpaceFrequency.
+ */
+async function webhookLifecycleCall(
+  options: BackupEngineOptions,
+  spaceId: string,
+  action: "register-webhooks" | "unregister-webhooks",
+): Promise<EngineWebhookLifecycleResult> {
+  const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/${action}`;
+  let res: Response;
+  try {
+    res = await options.binding.fetch(`https://engine${path}`, {
+      method: "POST",
+      headers: {
+        "x-internal-token": options.internalToken,
+        "content-type": "application/json",
+        accept: "application/json",
+      },
+      body: "{}",
+    });
+  } catch {
+    return { ok: false, code: "engine_unreachable", status: 0 };
+  }
+
+  if (res.ok) return { ok: true };
+
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await res.json()) as Record<string, unknown>;
+  } catch {
+    // engine returned non-JSON (rare); fall through with empty body
+  }
+  const rawCode = typeof body.error === "string" ? body.error : undefined;
+  const code: EngineWebhookLifecycleError["code"] =
+    rawCode &&
+    KNOWN_WEBHOOK_LIFECYCLE_ERROR_CODES.has(
+      rawCode as EngineWebhookLifecycleError["code"],
+    )
+      ? (rawCode as EngineWebhookLifecycleError["code"])
+      : "engine_error";
+  return { ok: false, code, status: res.status };
+}
 
 const KNOWN_RESCAN_BASES_ERROR_CODES: ReadonlySet<
   EngineRescanBasesError["code"]
@@ -1139,6 +1221,14 @@ export function createBackupEngine(
           ? (rawCode as EngineSetSpaceFrequencyError["code"])
           : "engine_error";
       return { ok: false, code, status: res.status };
+    },
+
+    async registerWebhooks(spaceId) {
+      return webhookLifecycleCall(options, spaceId, "register-webhooks");
+    },
+
+    async unregisterWebhooks(spaceId) {
+      return webhookLifecycleCall(options, spaceId, "unregister-webhooks");
     },
 
     async rescanBases(spaceId) {

@@ -57,6 +57,13 @@ function makeDeps(
     // Multi-destination: swap-primary validation. Defaults to "connected"
     // so existing tests pass unchanged; the swap tests override.
     hasConnectedDestination: vi.fn(async () => true),
+    // web-instant-webhook: Instant needs the Space's dynamic DB. Defaults
+    // ready so pre-existing tests pass unchanged.
+    isDynamicDbReady: vi.fn(async () => true),
+    // web-instant-webhook: engine webhook lifecycle (server E.5 wiring).
+    // Null mirrors onScheduledFrequencyChange — engine binding may be absent.
+    registerWebhooks: null,
+    unregisterWebhooks: null,
     ...overrides,
   }
 }
@@ -409,5 +416,245 @@ describe('handlePatch', () => {
       expect(res.status).toBe(200)
       expect(hasConnectedDestination).not.toHaveBeenCalled()
     }
+  })
+})
+
+// ── web-instant-webhook ─────────────────────────────────────────────────────
+
+describe('handlePatch — instant frequency (web-instant-webhook)', () => {
+  it("accepts frequency='instant' for pro (PRD §2.2 ruling)", async () => {
+    const d = makeDeps({ resolveTier: vi.fn(async () => 'pro' as const) })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'instant' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('rejects instant when the dynamic DB is not ready (422 dynamic_db_not_ready)', async () => {
+    const d = makeDeps({ isDynamicDbReady: vi.fn(async () => false) })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'instant' },
+      ...d,
+    })
+    expect(res.status).toBe(422)
+    expect(await readJson(res)).toEqual({ error: 'dynamic_db_not_ready' })
+    expect(d.upsertConfig).not.toHaveBeenCalled()
+  })
+
+  it('skips the dynamic-DB check for non-instant frequencies', async () => {
+    const isDynamicDbReady = vi.fn(async () => false)
+    const d = makeDeps({ isDynamicDbReady })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'daily' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+    expect(isDynamicDbReady).not.toHaveBeenCalled()
+  })
+
+  it('rejects a below-minimum poll interval with the tier minimum echoed', async () => {
+    const d = makeDeps({ resolveTier: vi.fn(async () => 'pro' as const) })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { webhookPollIntervalSeconds: 60 },
+      ...d,
+    })
+    expect(res.status).toBe(422)
+    expect(await readJson(res)).toEqual({
+      error: 'webhook_poll_interval_below_minimum',
+      minimum: 900,
+    })
+    expect(d.upsertConfig).not.toHaveBeenCalled()
+  })
+
+  it('upserts frequency + interval together on the happy path', async () => {
+    const d = makeDeps({ resolveTier: vi.fn(async () => 'business' as const) })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'instant', webhookPollIntervalSeconds: 300 },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+    expect(d.upsertConfig).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      frequency: 'instant',
+      webhookPollIntervalSeconds: 300,
+    })
+  })
+})
+
+describe('handlePatch — webhook registration handoff (server E.5 wiring)', () => {
+  it('registers webhooks on the transition TO instant', async () => {
+    const registerWebhooks = vi.fn(async () => ({ ok: true as const }))
+    const d = makeDeps({
+      registerWebhooks,
+      fetchScheduleForSpace: vi.fn(async () => ({
+        scope: 'schema_and_data',
+        dataFrequency: 'daily',
+        schemaFrequency: null,
+      })),
+    })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'instant' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+    expect(registerWebhooks).toHaveBeenCalledWith(SPACE_ID)
+  })
+
+  it('does NOT register when the Space is already on instant', async () => {
+    const registerWebhooks = vi.fn(async () => ({ ok: true as const }))
+    const d = makeDeps({
+      registerWebhooks,
+      fetchScheduleForSpace: vi.fn(async () => ({
+        scope: 'schema_and_data',
+        dataFrequency: 'instant',
+        schemaFrequency: null,
+      })),
+    })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'instant', webhookPollIntervalSeconds: 900 },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+    expect(registerWebhooks).not.toHaveBeenCalled()
+  })
+
+  it('unregisters webhooks on the transition AWAY from instant', async () => {
+    const unregisterWebhooks = vi.fn(async () => ({ ok: true as const }))
+    const d = makeDeps({
+      unregisterWebhooks,
+      fetchScheduleForSpace: vi.fn(async () => ({
+        scope: 'schema_and_data',
+        dataFrequency: 'instant',
+        schemaFrequency: null,
+      })),
+    })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'daily' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+    expect(unregisterWebhooks).toHaveBeenCalledWith(SPACE_ID)
+  })
+
+  it('cap reached ⇒ reverts the frequency and returns 409 airtable_webhook_cap_reached', async () => {
+    const registerWebhooks = vi.fn(async () => ({
+      ok: false as const,
+      code: 'airtable_webhook_cap_reached' as const,
+      status: 409,
+    }))
+    const onScheduledFrequencyChange = vi.fn(async () => undefined)
+    const d = makeDeps({
+      registerWebhooks,
+      onScheduledFrequencyChange,
+      fetchScheduleForSpace: vi.fn(async () => ({
+        scope: 'schema_and_data',
+        dataFrequency: 'daily',
+        schemaFrequency: null,
+      })),
+    })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'instant' },
+      ...d,
+    })
+    expect(res.status).toBe(409)
+    expect(await readJson(res)).toEqual({ error: 'airtable_webhook_cap_reached' })
+    // First upsert wrote instant; the compensating upsert restored the
+    // previous cadence so config and (absent) webhook rows can't drift.
+    expect(d.upsertConfig).toHaveBeenLastCalledWith({
+      spaceId: SPACE_ID,
+      frequency: 'daily',
+    })
+    // No schedule handoff for a reverted save.
+    expect(onScheduledFrequencyChange).not.toHaveBeenCalled()
+  })
+
+  it('cap revert falls back to monthly when no config existed before', async () => {
+    const registerWebhooks = vi.fn(async () => ({
+      ok: false as const,
+      code: 'airtable_webhook_cap_reached' as const,
+      status: 409,
+    }))
+    const d = makeDeps({
+      registerWebhooks,
+      fetchScheduleForSpace: vi.fn(async () => null),
+    })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'instant' },
+      ...d,
+    })
+    expect(res.status).toBe(409)
+    expect(d.upsertConfig).toHaveBeenLastCalledWith({
+      spaceId: SPACE_ID,
+      frequency: 'monthly',
+    })
+  })
+
+  it('other registration failures stay best-effort (200; daily safety sweep covers data)', async () => {
+    const registerWebhooks = vi.fn(async () => ({
+      ok: false as const,
+      code: 'engine_unreachable' as const,
+      status: 0,
+    }))
+    const d = makeDeps({ registerWebhooks })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'instant' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('unregister failures stay best-effort (200)', async () => {
+    const unregisterWebhooks = vi.fn(async () => {
+      throw new Error('engine down')
+    })
+    const d = makeDeps({
+      unregisterWebhooks,
+      fetchScheduleForSpace: vi.fn(async () => ({
+        scope: 'schema_and_data',
+        dataFrequency: 'instant',
+        schemaFrequency: null,
+      })),
+    })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'monthly' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
+  })
+
+  it('handles null register/unregister deps (engine binding not wired)', async () => {
+    const d = makeDeps({ registerWebhooks: null, unregisterWebhooks: null })
+    const res = await handlePatch({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      body: { frequency: 'instant' },
+      ...d,
+    })
+    expect(res.status).toBe(200)
   })
 })
