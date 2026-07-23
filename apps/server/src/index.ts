@@ -55,6 +55,10 @@ import { spacesSchemaVersionsHandler } from "./pages/api/internal/spaces/schema-
 import { spacesNotificationsHandler } from "./pages/api/internal/spaces/notifications";
 import { spacesNotificationsTriageHandler } from "./pages/api/internal/spaces/notifications-triage";
 import { spacesNotificationsMuteHandler } from "./pages/api/internal/spaces/notifications-mute";
+import { webhookSubscriptionsCursorHandler } from "./pages/api/internal/webhook-subscriptions/cursor";
+import { webhookSubscriptionsFallbackHandler } from "./pages/api/internal/webhook-subscriptions/fallback";
+import { spacesRegisterWebhooksHandler } from "./pages/api/internal/spaces/register-webhooks";
+import { spacesUnregisterWebhooksHandler } from "./pages/api/internal/spaces/unregister-webhooks";
 import { cleanupPlanHandler } from "./pages/api/internal/cleanup-plan";
 import { cleanupCompleteHandler } from "./pages/api/internal/cleanup-complete";
 import {
@@ -147,6 +151,16 @@ const SPACES_SCHEMA_SEARCH_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/schema-search$/;
 const SPACES_SCHEMA_VERSIONS_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/schema-versions$/;
+// Webhook lifecycle + incremental-run callbacks (server-instant-webhook
+// Phases D + E).
+const WEBHOOK_SUBSCRIPTIONS_CURSOR_RE =
+  /^\/api\/internal\/webhook-subscriptions\/([^/]+)\/cursor$/;
+const WEBHOOK_SUBSCRIPTIONS_FALLBACK_RE =
+  /^\/api\/internal\/webhook-subscriptions\/([^/]+)\/fallback$/;
+const SPACES_REGISTER_WEBHOOKS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/register-webhooks$/;
+const SPACES_UNREGISTER_WEBHOOKS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/unregister-webhooks$/;
 // Inbox notification feed + triage (server-notifications-inbox).
 const SPACES_NOTIFICATIONS_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/notifications$/;
@@ -571,6 +585,54 @@ export default {
       const notifications = SPACES_NOTIFICATIONS_RE.exec(url.pathname);
       if (notifications) {
         return await spacesNotificationsHandler(request, env, ctx, locals, notifications[1]!);
+      }
+
+      // Incremental-run callbacks (server-instant-webhook Phase D): the
+      // incremental-backup task advances its subscription's payload cursor
+      // (monotonic) and signals payload-stream gaps (fallback → full re-read).
+      const wsCursor = WEBHOOK_SUBSCRIPTIONS_CURSOR_RE.exec(url.pathname);
+      if (wsCursor) {
+        return await webhookSubscriptionsCursorHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          wsCursor[1]!,
+        );
+      }
+      const wsFallback = WEBHOOK_SUBSCRIPTIONS_FALLBACK_RE.exec(url.pathname);
+      if (wsFallback) {
+        return await webhookSubscriptionsFallbackHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          wsFallback[1]!,
+        );
+      }
+
+      // Webhook lifecycle (server-instant-webhook Phase E): find-or-create
+      // the org-level (organization, base) webhooks + per-Space subscriptions
+      // on enable; unsubscribe + delete-on-last on disable.
+      const registerWebhooks = SPACES_REGISTER_WEBHOOKS_RE.exec(url.pathname);
+      if (registerWebhooks) {
+        return await spacesRegisterWebhooksHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          registerWebhooks[1]!,
+        );
+      }
+      const unregisterWebhooks = SPACES_UNREGISTER_WEBHOOKS_RE.exec(url.pathname);
+      if (unregisterWebhooks) {
+        return await spacesUnregisterWebhooksHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          unregisterWebhooks[1]!,
+        );
       }
 
       // Attachment dedup (openspec/changes/server-attachments). The workflows

@@ -10,7 +10,8 @@
 
 import { and, eq, isNotNull, lte } from "drizzle-orm";
 import { createMasterDb } from "../../db/worker";
-import { airtableWebhooks, connections } from "../../db/schema";
+import { airtableWebhooks } from "../../db/schema";
+import { getConnectionTokenViaDO } from "../connections/token-via-do";
 import {
   refreshAirtableWebhook,
   toggleAirtableWebhookNotifications,
@@ -37,35 +38,8 @@ function logEvent(event: Record<string, unknown>): void {
   console.log(JSON.stringify(event));
 }
 
-/** Valid access token for a Connection via the ConnectionDO /token gate. */
-async function getConnectionTokenViaDO(
-  env: Env,
-  db: ReturnType<typeof createMasterDb>["db"],
-  connectionId: string,
-): Promise<string | null> {
-  const [row] = await db
-    .select({ accessTokenEnc: connections.accessTokenEnc })
-    .from(connections)
-    .where(eq(connections.id, connectionId))
-    .limit(1);
-  if (!row) return null;
-
-  const stub = env.CONNECTION_DO.get(env.CONNECTION_DO.idFromName(connectionId));
-  const res = await stub.fetch("http://do/token", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      connectionId,
-      encryptedToken: row.accessTokenEnc,
-    }),
-  });
-  if (res.status !== 200) {
-    await res.body?.cancel?.();
-    return null;
-  }
-  const { accessToken } = (await res.json()) as { accessToken: string };
-  return accessToken;
-}
+// Token access lives in lib/connections/token-via-do.ts (extracted when the
+// Phase E lifecycle routes became the second consumer).
 
 export async function runScheduledWebhookRenewal(
   env: Env,

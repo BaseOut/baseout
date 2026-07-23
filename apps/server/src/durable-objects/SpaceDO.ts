@@ -19,12 +19,20 @@
 //     kind), drives processRunStart, recomputes the fired schedule(s), re-arms,
 //     and writes next_scheduled_at + schema_next_scheduled_at.
 //
+// server-instant-webhook Phase C adds a THIRD lane on the same alarm: when the
+// Space's config is frequency='instant', a webhook-poll fire wakes the DO
+// every webhook_poll_interval_seconds (+0–10% jitter), runs the dirty-check
+// against the org-level webhook registry, and enqueues one incremental-backup
+// task per dirty base. Pure decisions live in ../lib/webhooks/poll.ts.
+//
 // All side effects flow through SpaceDOAlarmDeps; productionDeps(env) wires the
 // real DB/processRunStart, tests inject vi.fn() shapes.
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { createMasterDb } from "../db/worker";
 import {
+  airtableWebhookSubscriptions,
+  airtableWebhooks,
   backupConfigurations,
   backupRuns,
   connections,
@@ -43,10 +51,27 @@ import {
   type ScheduleConfig,
   type ScheduleFires,
 } from "../lib/scheduling/dual-schedule";
+import {
+  DEFAULT_WEBHOOK_POLL_INTERVAL_SECONDS,
+  IN_FLIGHT_RUN_STATUSES,
+  SAFETY_SWEEP_MS,
+  computeNextWebhookPollMs,
+  decideWebhookPolls,
+  type PollSubscription,
+} from "../lib/webhooks/poll";
+import {
+  enqueueIncrementalBackup as enqueueIncrementalBackupTask,
+} from "../lib/trigger-client";
 import type { Env } from "../env";
 
 // DO storage key for the two next-fire timestamps.
 const FIRES_KEY = "schedule_fires";
+// DO storage key for the webhook-poll next-fire (unix-ms), present only while
+// the Space's config is frequency='instant' (server-instant-webhook Phase C).
+const WEBHOOK_POLL_KEY = "webhook_poll_fire";
+// DO storage key for the in-flight guard: { [baseId]: runId } of webhook runs
+// this DO enqueued whose terminal state hasn't been observed yet.
+const WEBHOOK_INFLIGHT_KEY = "webhook_inflight";
 
 interface SpaceLike {
   id: string;
@@ -64,6 +89,23 @@ interface ConfigLike {
   /** `backup_configurations.frequency` — the data (full) cadence. */
   dataFrequency: string | null;
   schemaFrequency: string | null;
+  /**
+   * `backup_configurations.webhook_poll_interval_seconds` — the webhook-poll
+   * cadence when dataFrequency='instant'. Optional so pre-Phase-C dep shapes
+   * keep working; the DO falls back to the canonical 900s default.
+   */
+  webhookPollIntervalSeconds?: number | null;
+}
+
+/** Payload for the incremental-backup Trigger.dev task (workflows contract). */
+export interface IncrementalBackupEnqueueInput {
+  runId: string;
+  spaceId: string;
+  subscriptionId: string;
+  baseId: string;
+  connectionId: string;
+  cursor: number;
+  reconcile: boolean;
 }
 
 export interface SpaceDOAlarmDeps {
@@ -96,6 +138,42 @@ export interface SpaceDOAlarmDeps {
     connectionStatus: string | null;
     kinds: RunKind[];
   }) => Promise<void>;
+
+  // --- webhook cadence polling (server-instant-webhook Phase C) ---
+
+  /** [0, 1) — jitter source for computeNextWebhookPollMs. */
+  random: () => number;
+  /**
+   * The Space's subscriptions joined to airtable_webhooks, filtered by the
+   * dirty-check WHERE (last_ping_at > COALESCE(last_polled_at, 'epoch') OR
+   * the 24h safety sweep is due). decideWebhookPolls re-applies the predicate
+   * defensively.
+   */
+  fetchDueWebhookSubscriptions: (
+    spaceId: string,
+    now: Date,
+  ) => Promise<PollSubscription[]>;
+  /** backup_runs.status by id for the in-flight guard's tracked runs. */
+  fetchRunStatuses: (runIds: string[]) => Promise<Record<string, string>>;
+  /** INSERT backup_runs (status='queued', triggered_by='webhook', kind='incremental'). */
+  insertWebhookRun: (input: {
+    spaceId: string;
+    connectionId: string;
+  }) => Promise<string>;
+  /** Flip the run to 'running' + persist the single-task trigger_run_ids. */
+  markWebhookRunStarted: (
+    runId: string,
+    triggerRunId: string,
+    startedAt: Date,
+  ) => Promise<void>;
+  enqueueIncrementalBackup: (
+    payload: IncrementalBackupEnqueueInput,
+  ) => Promise<{ id: string }>;
+  /** Stamp the subscription's last_polled_at watermark. */
+  updateSubscriptionPolledAt: (
+    subscriptionId: string,
+    polledAt: Date,
+  ) => Promise<void>;
 }
 
 function jsonResponse(body: unknown, status: number): Response {
@@ -103,6 +181,12 @@ function jsonResponse(body: unknown, status: number): Response {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+/** Min of the non-null candidates, or null when none — single-alarm dispatch. */
+function minDefined(...candidates: Array<number | null>): number | null {
+  const defined = candidates.filter((t): t is number => t != null);
+  return defined.length > 0 ? Math.min(...defined) : null;
 }
 
 function configToScheduleConfig(config: ConfigLike): ScheduleConfig {
@@ -135,6 +219,17 @@ export class SpaceDO {
         return jsonResponse({ error: "method_not_allowed" }, 405);
       }
       return this.handleSetSchedule(request);
+    }
+
+    // Arm/disarm the webhook-poll lane (server-instant-webhook Phase C). The
+    // register-webhooks / unregister-webhooks engine routes call this after a
+    // successful Phase E lifecycle pass; alarm() also self-arms on any tick
+    // while the config says frequency='instant' (storage-drift self-heal).
+    if (url.pathname === "/set-webhook-polling") {
+      if (request.method !== "POST") {
+        return jsonResponse({ error: "method_not_allowed" }, 405);
+      }
+      return this.handleSetWebhookPolling(request);
     }
 
     return jsonResponse({ error: "not_found" }, 404);
@@ -219,13 +314,142 @@ export class SpaceDO {
     };
 
     await this.state.storage.put(FIRES_KEY, nextFires);
-    const next = nextAlarm(nextFires);
+
+    // Webhook-poll lane (server-instant-webhook Phase C): fires/arms only when
+    // the config is frequency='instant'; drops its state otherwise. Runs after
+    // the cron lane so a shared tick dispatches both.
+    const nextWebhookPoll = await this.dispatchWebhookPoll(
+      spaceId,
+      config,
+      now,
+      deps,
+    );
+
+    const next = minDefined(nextAlarm(nextFires), nextWebhookPoll);
     if (next != null) {
       await this.state.storage.setAlarm(next);
     } else {
       await this.state.storage.deleteAlarm();
     }
     await deps.updateNextScheduled(config.id, nextFires);
+  }
+
+  /**
+   * Fire the webhook-poll lane if due; return the lane's next fire (unix-ms)
+   * or null when the lane is inert (config not instant). Poll-pass failures
+   * are contained so the alarm always re-arms — the next interval retries.
+   */
+  private async dispatchWebhookPoll(
+    spaceId: string,
+    config: ConfigLike,
+    now: Date,
+    deps: SpaceDOAlarmDeps,
+  ): Promise<number | null> {
+    const stored =
+      (await this.state.storage.get<number>(WEBHOOK_POLL_KEY)) ?? null;
+
+    if (config.dataFrequency !== "instant") {
+      // Lane disabled (config moved off instant): drop the poll state. The
+      // in-flight map is kept — an unregister/re-register cycle shouldn't
+      // double-enqueue a still-running incremental.
+      if (stored != null) await this.state.storage.delete(WEBHOOK_POLL_KEY);
+      return null;
+    }
+
+    const nowMs = now.getTime();
+    if (stored != null && stored > nowMs) {
+      return stored; // armed but not due this tick
+    }
+
+    // Due (stored <= now) — or instant-but-never-armed (self-heal: DO storage
+    // predates Phase C or was lost): poll now, then arm the next interval.
+    try {
+      await this.runWebhookPollPass(spaceId, now, deps);
+    } catch (err) {
+      // eslint-disable-next-line no-console -- background poll observability; a silently-failing poll lane means instant backups stop while last_ping_at keeps advancing. Structured, matches the scheduler's log contract. The re-arm below is the retry.
+      console.log(
+        JSON.stringify({
+          event: "webhook_poll_pass_failed",
+          spaceId,
+          reason: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+    const nextPoll = computeNextWebhookPollMs(
+      config.webhookPollIntervalSeconds ?? DEFAULT_WEBHOOK_POLL_INTERVAL_SECONDS,
+      nowMs,
+      deps.random,
+    );
+    await this.state.storage.put(WEBHOOK_POLL_KEY, nextPoll);
+    return nextPoll;
+  }
+
+  /**
+   * One webhook-poll pass: dirty-check → in-flight guard → per dirty base
+   * INSERT backup_runs (triggered_by='webhook') → enqueue incremental-backup
+   * → stamp last_polled_at. Skips (in-flight / paused) do NOT stamp the
+   * watermark, so the next tick re-checks them.
+   */
+  private async runWebhookPollPass(
+    spaceId: string,
+    now: Date,
+    deps: SpaceDOAlarmDeps,
+  ): Promise<void> {
+    const subscriptions = await deps.fetchDueWebhookSubscriptions(spaceId, now);
+
+    // Reconcile the in-flight map against the run rows: keep only runs still
+    // in a non-terminal state.
+    const inflight =
+      (await this.state.storage.get<Record<string, string>>(
+        WEBHOOK_INFLIGHT_KEY,
+      )) ?? {};
+    const trackedRunIds = Object.values(inflight);
+    const statuses =
+      trackedRunIds.length > 0 ? await deps.fetchRunStatuses(trackedRunIds) : {};
+    const nextInflight: Record<string, string> = {};
+    for (const [baseId, runId] of Object.entries(inflight)) {
+      const status = statuses[runId];
+      if (status != null && IN_FLIGHT_RUN_STATUSES.has(status)) {
+        nextInflight[baseId] = runId;
+      }
+    }
+
+    const decisions = decideWebhookPolls({
+      subscriptions,
+      inFlightBaseIds: new Set(Object.keys(nextInflight)),
+      now,
+    });
+
+    for (const decision of decisions) {
+      if (decision.action !== "enqueue") continue;
+      const sub = decision.subscription;
+      const runId = await deps.insertWebhookRun({
+        spaceId,
+        connectionId: sub.connectionId,
+      });
+      let handle: { id: string };
+      try {
+        handle = await deps.enqueueIncrementalBackup({
+          runId,
+          spaceId,
+          subscriptionId: sub.subscriptionId,
+          baseId: sub.baseId,
+          connectionId: sub.connectionId,
+          cursor: sub.payloadCursor,
+          reconcile: decision.reconcile,
+        });
+      } catch {
+        // Roll back the orphaned queued row; the un-stamped watermark makes
+        // the next tick retry this base.
+        await deps.deleteRun(runId);
+        continue;
+      }
+      await deps.markWebhookRunStarted(runId, handle.id, now);
+      nextInflight[sub.baseId] = runId;
+      await deps.updateSubscriptionPolledAt(sub.subscriptionId, now);
+    }
+
+    await this.state.storage.put(WEBHOOK_INFLIGHT_KEY, nextInflight);
   }
 
   private async handleSetSchedule(request: Request): Promise<Response> {
@@ -242,7 +466,11 @@ export class SpaceDO {
     const deps = this.getDeps();
     const fires = computeScheduleFires(parsed, deps.now());
     await this.state.storage.put(FIRES_KEY, fires);
-    const next = nextAlarm(fires);
+    // A webhook-poll fire may be armed alongside the cron fires — never let a
+    // schedule change push the alarm past (or clear) a pending poll.
+    const storedPoll =
+      (await this.state.storage.get<number>(WEBHOOK_POLL_KEY)) ?? null;
+    const next = minDefined(nextAlarm(fires), storedPoll);
     if (next != null) {
       await this.state.storage.setAlarm(next);
     } else {
@@ -256,6 +484,57 @@ export class SpaceDO {
       },
       200,
     );
+  }
+
+  /**
+   * POST /set-webhook-polling { enabled } (server-instant-webhook Phase C).
+   * enabled=true arms the jittered poll fire (interval from the Space's
+   * config); enabled=false drops it. Either way the single alarm is re-armed
+   * to the min of the surviving fires.
+   */
+  private async handleSetWebhookPolling(request: Request): Promise<Response> {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ error: "invalid_request" }, 400);
+    }
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      typeof (body as Record<string, unknown>).enabled !== "boolean"
+    ) {
+      return jsonResponse({ error: "invalid_request" }, 400);
+    }
+    const enabled = (body as { enabled: boolean }).enabled;
+    const deps = this.getDeps();
+
+    let nextPollAt: number | null = null;
+    if (enabled) {
+      const config = await deps.fetchConfig(this.spaceId());
+      if (!config) {
+        return jsonResponse({ error: "config_not_found" }, 404);
+      }
+      nextPollAt = computeNextWebhookPollMs(
+        config.webhookPollIntervalSeconds ??
+          DEFAULT_WEBHOOK_POLL_INTERVAL_SECONDS,
+        deps.now().getTime(),
+        deps.random,
+      );
+      await this.state.storage.put(WEBHOOK_POLL_KEY, nextPollAt);
+    } else {
+      await this.state.storage.delete(WEBHOOK_POLL_KEY);
+    }
+
+    const fires =
+      (await this.state.storage.get<ScheduleFires>(FIRES_KEY)) ?? null;
+    const next = minDefined(fires ? nextAlarm(fires) : null, nextPollAt);
+    if (next != null) {
+      await this.state.storage.setAlarm(next);
+    } else {
+      await this.state.storage.deleteAlarm();
+    }
+    return jsonResponse({ ok: true, nextPollAt }, 200);
   }
 
   private getDeps(): SpaceDOAlarmDeps {
@@ -282,6 +561,7 @@ export class SpaceDO {
 function productionDeps(env: Env): SpaceDOAlarmDeps {
   return {
     now: () => new Date(),
+    random: () => Math.random(),
     recordSkippedFire: async ({
       spaceId,
       organizationId,
@@ -310,6 +590,8 @@ function productionDeps(env: Env): SpaceDOAlarmDeps {
             scope: backupConfigurations.scope,
             dataFrequency: backupConfigurations.frequency,
             schemaFrequency: backupConfigurations.schemaFrequency,
+            webhookPollIntervalSeconds:
+              backupConfigurations.webhookPollIntervalSeconds,
           })
           .from(backupConfigurations)
           .where(eq(backupConfigurations.spaceId, spaceId))
@@ -411,6 +693,113 @@ function productionDeps(env: Env): SpaceDOAlarmDeps {
           .where(eq(backupConfigurations.id, configId));
       } finally {
         await sql.end({ timeout: 5 });
+      }
+    },
+
+    // --- webhook cadence polling (server-instant-webhook Phase C) ---
+
+    fetchDueWebhookSubscriptions: async (spaceId, now) => {
+      const { db, sql: pg } = createMasterDb(env);
+      try {
+        // The design's dirty-check WHERE: dirty (ping since the watermark) OR
+        // the 24h safety sweep. COALESCE-to-epoch makes never-polled rows
+        // always due. Dates in raw fragments go over as ISO strings —
+        // postgres-js serializes a bare Date via toString(), which PG rejects.
+        const sweepCutoffIso = new Date(
+          now.getTime() - SAFETY_SWEEP_MS,
+        ).toISOString();
+        return await db
+          .select({
+            subscriptionId: airtableWebhookSubscriptions.id,
+            webhookId: airtableWebhooks.id,
+            baseId: airtableWebhooks.baseId,
+            connectionId: airtableWebhooks.connectionId,
+            webhookStatus: airtableWebhooks.status,
+            payloadCursor: airtableWebhookSubscriptions.payloadCursor,
+            lastPingAt: airtableWebhooks.lastPingAt,
+            lastPolledAt: airtableWebhookSubscriptions.lastPolledAt,
+            lastReconciledAt: airtableWebhookSubscriptions.lastReconciledAt,
+          })
+          .from(airtableWebhookSubscriptions)
+          .innerJoin(
+            airtableWebhooks,
+            eq(airtableWebhooks.id, airtableWebhookSubscriptions.webhookId),
+          )
+          .where(
+            and(
+              eq(airtableWebhookSubscriptions.spaceId, spaceId),
+              or(
+                sql`${airtableWebhooks.lastPingAt} > coalesce(${airtableWebhookSubscriptions.lastPolledAt}, 'epoch'::timestamptz)`,
+                sql`coalesce(${airtableWebhookSubscriptions.lastPolledAt}, 'epoch'::timestamptz) < ${sweepCutoffIso}::timestamptz`,
+              ),
+            ),
+          );
+      } finally {
+        await pg.end({ timeout: 5 });
+      }
+    },
+    fetchRunStatuses: async (runIds) => {
+      const { db, sql: pg } = createMasterDb(env);
+      try {
+        const rows = await db
+          .select({ id: backupRuns.id, status: backupRuns.status })
+          .from(backupRuns)
+          .where(inArray(backupRuns.id, runIds));
+        return Object.fromEntries(rows.map((r) => [r.id, r.status]));
+      } finally {
+        await pg.end({ timeout: 5 });
+      }
+    },
+    insertWebhookRun: async ({ spaceId, connectionId }) => {
+      const { db, sql: pg } = createMasterDb(env);
+      try {
+        const [row] = await db
+          .insert(backupRuns)
+          .values({
+            spaceId,
+            connectionId,
+            status: "queued",
+            triggeredBy: "webhook",
+            // Webhook runs are cursor-driven payload applies, not full
+            // snapshots and not schema-only captures — a third kind value.
+            // The Phase D fallback route inserts kind='full' for its re-read.
+            kind: "incremental",
+            isTrial: false,
+          })
+          .returning({ id: backupRuns.id });
+        if (!row) throw new Error("insert_webhook_run_returned_no_row");
+        return row.id;
+      } finally {
+        await pg.end({ timeout: 5 });
+      }
+    },
+    markWebhookRunStarted: async (runId, triggerRunId, startedAt) => {
+      const { db, sql: pg } = createMasterDb(env);
+      try {
+        await db
+          .update(backupRuns)
+          .set({
+            status: "running",
+            startedAt,
+            triggerRunIds: [triggerRunId],
+            modifiedAt: startedAt,
+          })
+          .where(eq(backupRuns.id, runId));
+      } finally {
+        await pg.end({ timeout: 5 });
+      }
+    },
+    enqueueIncrementalBackup: (payload) =>
+      enqueueIncrementalBackupTask(env, payload),
+    updateSubscriptionPolledAt: async (subscriptionId, polledAt) => {
+      const { db, sql: pg } = createMasterDb(env);
+      try {
+        await db
+          .update(airtableWebhookSubscriptions)
+          .set({ lastPolledAt: polledAt, modifiedAt: polledAt })
+          .where(eq(airtableWebhookSubscriptions.id, subscriptionId));
+      } finally {
+        await pg.end({ timeout: 5 });
       }
     },
   };

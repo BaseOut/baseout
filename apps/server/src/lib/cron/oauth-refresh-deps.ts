@@ -17,9 +17,9 @@
 // scheduled() has no request-scoped locals, so the master DB client is created
 // and torn down per firing (CLAUDE.md §5.1).
 
-import { and, eq, isNotNull, lte, or, isNull, asc, sql, inArray } from "drizzle-orm";
+import { and, eq, isNotNull, lte, or, isNull, asc, sql, inArray, ne } from "drizzle-orm";
 import { createMasterDb } from "../../db/worker";
-import { connections, platforms } from "../../db/schema";
+import { airtableWebhooks, connections, platforms } from "../../db/schema";
 import { REFRESH_LOOKAHEAD_MS } from "../connections/resolve-airtable-token";
 import { runConnectionAutoInvalidate } from "../connections/auto-invalidate";
 import {
@@ -229,6 +229,25 @@ export async function runScheduledConnectionInvalidation(
             ),
           )
           .returning({ id: connections.id });
+        // Connection-disconnect hook (server-instant-webhook Phase E.6): a
+        // dead Connection can no longer create/refresh/poll its webhooks —
+        // park the registry rows in 'pending_reauth' so the SpaceDO poll lane
+        // pauses them and reconnect re-creates/re-points. ('inactive' rows
+        // are already retired; leave them for audit.)
+        if (rows.length > 0) {
+          await db
+            .update(airtableWebhooks)
+            .set({ status: "pending_reauth", modifiedAt: new Date() })
+            .where(
+              and(
+                inArray(
+                  airtableWebhooks.connectionId,
+                  rows.map((r) => r.id),
+                ),
+                ne(airtableWebhooks.status, "inactive"),
+              ),
+            );
+        }
         return rows.length;
       },
       log: logEvent,
