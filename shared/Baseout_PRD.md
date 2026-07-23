@@ -189,6 +189,8 @@ Basic verification is included in V1:
 - Fall back to full-table re-read if webhook gap is detected
 - Instant updates on higher plans; polling on lower plans
 
+> **Implementation note (2026-07-23, `server-instant-webhook` Phase G):** the mechanism shipped differently from the sketch above — and from earlier coalesce/debounce descriptions of DO-side event handling. Airtable webhook pings carry no change data, so there is **no per-client change-log table of stored events and no forwarding/debounce hop**: pings dirty-mark one timestamp on an org-level `airtable_webhooks` registry row, each Space polls on its own cadence (`backup_configurations.webhook_poll_interval_seconds`, tier-floored per Features §6.1), and an incremental run pulls the actual changes from Airtable's payloads API via a per-Space cursor (7-day replay retention). The full-re-read gap fallback stands as specced. Canonical design: `openspec/changes/server-instant-webhook/design.md`.
+
 ### 2.8 Attachment Handling ✅
 
 - Composite unique ID per attachment: `{base_id}_{table_id}_{record_id}_{field_id}_{attachment_id}`

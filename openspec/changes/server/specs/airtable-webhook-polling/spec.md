@@ -25,7 +25,7 @@ Each (webhook, Space) subscription SHALL maintain its own `payload_cursor`, adva
 
 ### Requirement: Gap detection and full re-read fallback
 
-When a subscription's cursor falls outside Airtable's 7-day payload retention, or the payload stream signals an error, or a `modifiedTime` reconciliation pass finds changes the payload stream missed, the engine SHALL fall back to a full re-read of the affected base and reset the subscription's cursor to the latest.
+When a subscription's cursor falls outside Airtable's 7-day payload retention, or the payload stream signals that the webhook itself is broken (`INVALID_HOOK`/`INVALID_FILTERS`), the engine SHALL fall back to a full re-read of the affected base and reset the subscription's cursor to the latest. Softer payload-stream misses (drift against stored values, an `INTERNAL_ERROR` payload, an end-of-pass schema-verification mismatch) are corrected in-task by a `modifiedTime` reconciliation pass — no full re-read. As shipped: fallback = the [`server-instant-webhook`](../../server-instant-webhook/proposal.md) Phase D `/fallback` route; reconciliation = the incremental task's catch-all ([`workflows-instant-webhook`](../../workflows-instant-webhook/proposal.md) task 1.8).
 
 #### Scenario: Cursor older than payload retention
 

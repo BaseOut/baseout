@@ -21,6 +21,8 @@ import {
 import {
   runIncrementalBackup,
   createEngineCallbacks,
+  createIncrementalDbTransport,
+  fetchSubscriptionContext,
   schemaHashOf,
   type AppliedSchemaState,
   type IncrementalBackupDeps,
@@ -929,6 +931,202 @@ describe("createEngineCallbacks", () => {
       "https://engine.example.com/api/internal/webhook-subscriptions/sub-1/fallback",
     );
     expect(JSON.parse(String(init.body))).toEqual({ reason: "cursor_expired" });
+  });
+});
+
+// ── Payloads-auth context resolution (wrapper transport, pure) ──────────────
+
+describe("fetchSubscriptionContext", () => {
+  const ARGS = {
+    engineUrl: "https://engine.example.com/",
+    internalToken: "tok",
+    subscriptionId: "sub-1",
+  };
+  const CONTEXT = {
+    airtableWebhookId: "achWebhook1",
+    baseId: "appBase1",
+    accessToken: "at-secret",
+    lastReconciledAt: "2026-07-16T00:00:00.000Z",
+    cursor: 17,
+  };
+
+  it("POSTs to /api/internal/webhook-subscriptions/:id/context and maps the response", async () => {
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify(CONTEXT), { status: 200 }),
+    );
+    const ctx = await fetchSubscriptionContext({
+      ...ARGS,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(
+      "https://engine.example.com/api/internal/webhook-subscriptions/sub-1/context",
+    );
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>)["x-internal-token"]).toBe("tok");
+    expect(ctx).toEqual(CONTEXT);
+  });
+
+  it("throws with the status on non-2xx (409 token_unavailable → task retries next tick)", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: "token_unavailable" }), { status: 409 }),
+    );
+    await expect(
+      fetchSubscriptionContext({ ...ARGS, fetchImpl: fetchMock as unknown as typeof fetch }),
+    ).rejects.toThrowError(/context.*409/);
+  });
+});
+
+// ── Engine-brokered per-space DB transport (wrapper transport, pure) ─────────
+
+describe("createIncrementalDbTransport", () => {
+  const ARGS = {
+    engineUrl: "https://engine.example.com/",
+    internalToken: "tok",
+    spaceId: "space-1",
+    baseId: "appBase1",
+  };
+  const APPLY_URL =
+    "https://engine.example.com/api/internal/spaces/space-1/incremental-apply";
+
+  function mockOk(body: Record<string, unknown>) {
+    return vi.fn(async () => new Response(JSON.stringify(body), { status: 200 }));
+  }
+  function lastCall(fetchMock: ReturnType<typeof vi.fn>) {
+    const [url, init] = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
+    return { url, init, body: JSON.parse(String(init.body)) as Record<string, unknown> };
+  }
+
+  it("openBaseRun POSTs op open-base-run and returns the baseRunId", async () => {
+    const fetchMock = mockOk({ ok: true, baseRunId: "br-1" });
+    const db = createIncrementalDbTransport({
+      ...ARGS,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+    const out = await db.openBaseRun({
+      backupRunId: "run-1",
+      baseId: "appBase1",
+      runType: "incremental",
+    });
+    const { url, init, body } = lastCall(fetchMock);
+    expect(url).toBe(APPLY_URL);
+    expect((init.headers as Record<string, string>)["x-internal-token"]).toBe("tok");
+    expect(body).toEqual({ op: "open-base-run", backupRunId: "run-1", baseId: "appBase1" });
+    expect(out).toEqual({ baseRunId: "br-1" });
+  });
+
+  it("applySchemaEvents / applyRecordEvents / insertSchemaVersion add the wrapper's baseId", async () => {
+    const fetchMock = mockOk({ ok: true, inserted: true });
+    const db = createIncrementalDbTransport({
+      ...ARGS,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    const schemaWrites: SchemaWrite[] = [
+      { kind: "destroyTable", tableId: "tbl9", status: "removed", cascade: true },
+    ];
+    await db.applySchemaEvents("br-1", schemaWrites);
+    expect(lastCall(fetchMock).body).toEqual({
+      op: "apply-schema-events",
+      baseRunId: "br-1",
+      baseId: "appBase1",
+      writes: schemaWrites,
+    });
+
+    const recordWrites: RecordWrite[] = [
+      { kind: "destroyRecord", tableId: "tbl9", recordId: "rec9", status: "deleted" },
+    ];
+    await db.applyRecordEvents("br-1", recordWrites);
+    expect(lastCall(fetchMock).body).toEqual({
+      op: "apply-record-events",
+      baseRunId: "br-1",
+      baseId: "appBase1",
+      writes: recordWrites,
+    });
+
+    const out = await db.insertSchemaVersion({
+      baseRunId: "br-1",
+      schemaHash: "hash",
+      schemaJson: { tables: [] },
+    });
+    expect(lastCall(fetchMock).body).toEqual({
+      op: "insert-schema-version",
+      baseRunId: "br-1",
+      baseId: "appBase1",
+      schemaHash: "hash",
+      schemaJson: { tables: [] },
+    });
+    expect(out).toEqual({ inserted: true });
+  });
+
+  it("read seams map op bodies and unwrap their result keys", async () => {
+    const records = { rec1: { cells: { fld1: "v" } } };
+    const state: AppliedSchemaState = { tables: { tbl1: { fields: { fld1: { type: "text" } } } } };
+    const responses = [
+      { ok: true, records },
+      { ok: true, state },
+      { ok: true, recordIds: ["rec1"] },
+      { ok: true, tableIds: ["tbl1"] },
+      { ok: true, regenerated: false, reason: "views_not_generated" },
+      { ok: true },
+    ];
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify(responses.shift()), { status: 200 }),
+    );
+    const db = createIncrementalDbTransport({
+      ...ARGS,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+
+    expect(await db.getStoredRecords("tbl1", ["rec1"])).toEqual(records);
+    expect(lastCall(fetchMock).body).toEqual({
+      op: "get-stored-records",
+      tableId: "tbl1",
+      recordIds: ["rec1"],
+    });
+
+    expect(await db.getAppliedSchemaState()).toEqual(state);
+    expect(lastCall(fetchMock).body).toEqual({
+      op: "get-applied-schema-state",
+      baseId: "appBase1",
+    });
+
+    expect(await db.listStoredRecordIds("tbl1")).toEqual(["rec1"]);
+    expect(lastCall(fetchMock).body).toEqual({
+      op: "list-stored-record-ids",
+      tableId: "tbl1",
+    });
+
+    expect(await db.listTableIds()).toEqual(["tbl1"]);
+    expect(lastCall(fetchMock).body).toEqual({ op: "list-table-ids", baseId: "appBase1" });
+
+    await db.regenerateViews(["tbl1"]);
+    expect(lastCall(fetchMock).body).toEqual({ op: "regenerate-views", tableIds: ["tbl1"] });
+
+    await db.completeBaseRun({
+      baseRunId: "br-1",
+      status: "succeeded",
+      counts: { created: 1, updated: 2, deleted: 0, reconciledRecords: 0 },
+    });
+    expect(lastCall(fetchMock).body).toEqual({
+      op: "complete-base-run",
+      baseRunId: "br-1",
+      status: "succeeded",
+      counts: { created: 1, updated: 2, deleted: 0, reconciledRecords: 0 },
+    });
+  });
+
+  it("throws with op + status on non-2xx so the task retries loudly", async () => {
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ error: "space_db_not_ready" }), { status: 409 }),
+    );
+    const db = createIncrementalDbTransport({
+      ...ARGS,
+      fetchImpl: fetchMock as unknown as typeof fetch,
+    });
+    await expect(db.listTableIds()).rejects.toThrowError(/list-table-ids.*409/);
   });
 });
 

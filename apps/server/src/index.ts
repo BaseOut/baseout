@@ -58,6 +58,7 @@ import { spacesNotificationsTriageHandler } from "./pages/api/internal/spaces/no
 import { spacesNotificationsMuteHandler } from "./pages/api/internal/spaces/notifications-mute";
 import { webhookSubscriptionsCursorHandler } from "./pages/api/internal/webhook-subscriptions/cursor";
 import { webhookSubscriptionsFallbackHandler } from "./pages/api/internal/webhook-subscriptions/fallback";
+import { webhookSubscriptionsContextHandler } from "./pages/api/internal/webhook-subscriptions/context";
 import { spacesRegisterWebhooksHandler } from "./pages/api/internal/spaces/register-webhooks";
 import { spacesUnregisterWebhooksHandler } from "./pages/api/internal/spaces/unregister-webhooks";
 import { cleanupPlanHandler } from "./pages/api/internal/cleanup-plan";
@@ -161,6 +162,9 @@ const WEBHOOK_SUBSCRIPTIONS_CURSOR_RE =
   /^\/api\/internal\/webhook-subscriptions\/([^/]+)\/cursor$/;
 const WEBHOOK_SUBSCRIPTIONS_FALLBACK_RE =
   /^\/api\/internal\/webhook-subscriptions\/([^/]+)\/fallback$/;
+// Payloads-auth resolution for the incremental task (server-dynamic-mode 4.1).
+const WEBHOOK_SUBSCRIPTIONS_CONTEXT_RE =
+  /^\/api\/internal\/webhook-subscriptions\/([^/]+)\/context$/;
 const SPACES_REGISTER_WEBHOOKS_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/register-webhooks$/;
 const SPACES_UNREGISTER_WEBHOOKS_RE =
@@ -620,6 +624,19 @@ export default {
           ctx,
           locals,
           wsFallback[1]!,
+        );
+      }
+      // Payloads-auth resolution (server-dynamic-mode Phase 4.1): the task
+      // resolves the Airtable webhook id + a fresh Connection token + the
+      // reconciliation anchor at run start — none ride the task payload.
+      const wsContext = WEBHOOK_SUBSCRIPTIONS_CONTEXT_RE.exec(url.pathname);
+      if (wsContext) {
+        return await webhookSubscriptionsContextHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          wsContext[1]!,
         );
       }
 

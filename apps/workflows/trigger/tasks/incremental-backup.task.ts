@@ -7,38 +7,37 @@
 // SpaceDO poll tick — server-instant-webhook Phase C) into the pure module's
 // deps and reads BACKUP_ENGINE_URL + INTERNAL_TOKEN from process.env.
 //
-// WIRED TODAY (contractually fixed routes):
+// WIRED (contractually fixed engine routes):
+//   - POST /api/internal/webhook-subscriptions/:id/context  (payloads auth:
+//     Airtable webhook id ach…, decrypted Connection token, lastReconciledAt
+//     anchor — none ride the task payload; payloads are logged in Trigger.dev
+//     run history and tokens must never appear there)
+//   - POST /api/internal/spaces/:spaceId/incremental-apply  (engine-brokered
+//     per-space writes, op-dispatched — createIncrementalDbTransport)
 //   - POST /api/internal/webhook-subscriptions/:id/cursor   (monotonic; 409 = replay, OK)
 //   - POST /api/internal/webhook-subscriptions/:id/fallback (full-backup fallback)
 //   - POST /api/internal/runs/:runId/complete               (standard run contract,
 //     fire-and-forget, aggregating created/updated/deleted/reconciled counts)
 //
-// TODO(server-instant-webhook Phase D): the engine-brokered per-space write
-// transport and the payloads-poll auth are NOT wired yet —
-//   - IncrementalDb (openBaseRun / applySchemaEvents / applyRecordEvents /
-//     getStoredRecords / insertSchemaVersion / getAppliedSchemaState /
-//     regenerateViews / listStoredRecordIds / listTableIds) needs the engine's
-//     incremental-apply internal routes (the engine brokers per-space writes,
-//     Option B of system-per-space-db §3).
-//   - IncrementalAirtable needs (a) the Airtable webhook id (ach…) for the
-//     subscription and (b) a decrypted access token for the Connection — both
-//     resolved via an engine internal route, since the task payload carries
-//     neither (payloads are logged in Trigger.dev run history; tokens must
-//     never ride in them). Payload polls + reconciliation paging must then go
-//     through the per-Connection gateway (shared 5 rps per-base budget).
-//   - The reconciliation anchor (subscription.last_reconciled_at) also comes
-//     from that resolution step (deps.lastReconciledAt).
-// Until Phase D lands, invoking any of those deps throws a descriptive error;
-// the catch below posts a failed completion so the run never silently hangs.
+// STILL OPEN (server-dynamic-mode 4.3–4.5 / design follow-ups):
+//   - Payload polls + reconciliation paging hit Airtable directly with the
+//     resolved token (the airtable client's own 429 backoff applies); routing
+//     them through the per-Connection ConnectionDO gateway (shared 5 rps
+//     per-base budget with snapshot backups) is not wired yet.
+//   - viewCaptureEnabled stays default-false — the Enterprise view-capture
+//     gate isn't enforced anywhere yet (system-per-space-db 8.2).
 
 import { logger, task } from "@trigger.dev/sdk";
 import {
   createEngineCallbacks,
+  createIncrementalDbTransport,
+  fetchSubscriptionContext,
   runIncrementalBackup,
   type IncrementalAirtable,
   type IncrementalBackupResult,
-  type IncrementalDb,
 } from "./incremental-backup";
+import { fetchPayloadsPage } from "./_lib/airtable-payloads";
+import { createAirtableClient } from "./_lib/airtable-client";
 
 export interface IncrementalBackupTaskPayload {
   runId: string;
@@ -55,34 +54,6 @@ export interface IncrementalBackupTaskPayload {
 function trimSlash(s: string): string {
   return s.endsWith("/") ? s.slice(0, -1) : s;
 }
-
-// TODO(server-instant-webhook Phase D): replace with the real engine-brokered
-// transports (see module header). Throwing keeps the failure loud + descriptive
-// instead of silently writing nowhere.
-function notYetWired(dep: string): never {
-  throw new Error(
-    `incremental-backup: ${dep} transport is not wired yet — lands with server-instant-webhook Phase D (engine-brokered per-space writes + payloads auth)`,
-  );
-}
-
-const unwiredDb: IncrementalDb = {
-  openBaseRun: async () => notYetWired("db.openBaseRun"),
-  completeBaseRun: async () => notYetWired("db.completeBaseRun"),
-  applySchemaEvents: async () => notYetWired("db.applySchemaEvents"),
-  applyRecordEvents: async () => notYetWired("db.applyRecordEvents"),
-  getStoredRecords: async () => notYetWired("db.getStoredRecords"),
-  insertSchemaVersion: async () => notYetWired("db.insertSchemaVersion"),
-  getAppliedSchemaState: async () => notYetWired("db.getAppliedSchemaState"),
-  regenerateViews: async () => notYetWired("db.regenerateViews"),
-  listStoredRecordIds: async () => notYetWired("db.listStoredRecordIds"),
-  listTableIds: async () => notYetWired("db.listTableIds"),
-};
-
-const unwiredAirtable: IncrementalAirtable = {
-  fetchPayloadsPage: async () => notYetWired("airtable.fetchPayloadsPage"),
-  getBaseSchema: async () => notYetWired("airtable.getBaseSchema"),
-  listRecordsPage: async () => notYetWired("airtable.listRecordsPage"),
-};
 
 // Standard run-contract completion (mirrors backup-base.task.ts postCompletion):
 // fire-and-forget — the run-row state machine + run reconciliation are the
@@ -143,8 +114,46 @@ export const incrementalBackupTask = task({
       subscriptionId: payload.subscriptionId,
     });
 
+    const log = (event: Record<string, unknown>) =>
+      logger.info("incremental-backup", event);
+
     let result: IncrementalBackupResult;
     try {
+      // Payloads auth + reconciliation anchor — resolved per run, never
+      // carried in the task payload. Throws on 409 token_unavailable (dead /
+      // pending_reauth Connection): the catch below posts a failed completion
+      // and the next poll tick retries.
+      const context = await fetchSubscriptionContext({
+        engineUrl,
+        internalToken,
+        subscriptionId: payload.subscriptionId,
+      });
+
+      const db = createIncrementalDbTransport({
+        engineUrl,
+        internalToken,
+        spaceId: payload.spaceId,
+        baseId: payload.baseId,
+      });
+
+      // Direct Airtable access with the resolved token. The shared client
+      // owns 429/5xx backoff; ConnectionDO-gateway routing is a flagged
+      // follow-up (see module header).
+      const client = createAirtableClient({ accessToken: context.accessToken });
+      const airtable: IncrementalAirtable = {
+        fetchPayloadsPage: (cursor) =>
+          fetchPayloadsPage({
+            baseId: payload.baseId,
+            webhookId: context.airtableWebhookId,
+            cursor,
+            accessToken: context.accessToken,
+            log,
+          }),
+        getBaseSchema: () => client.getBaseSchema(payload.baseId),
+        listRecordsPage: (tableId, opts) =>
+          client.listRecords(payload.baseId, tableId, opts),
+      };
+
       result = await runIncrementalBackup(
         {
           runId: payload.runId,
@@ -156,12 +165,11 @@ export const incrementalBackupTask = task({
           reconcile: payload.reconcile,
         },
         {
-          airtable: unwiredAirtable,
-          db: unwiredDb,
+          airtable,
+          db,
           engine,
-          log: (event) => logger.info("incremental-backup", event),
-          // TODO(server-instant-webhook Phase D): lastReconciledAt +
-          // viewCaptureEnabled resolved alongside the webhook id / token.
+          log,
+          lastReconciledAt: context.lastReconciledAt,
         },
       );
     } catch (err) {

@@ -939,3 +939,168 @@ export function createEngineCallbacks(
     },
   };
 }
+
+// ── Payloads-auth context transport (pure; used by the task wrapper) ─────────
+
+/** Per-subscription auth + anchors the task payload deliberately omits
+ *  (tokens must never ride Trigger.dev run history). Resolved at run start
+ *  from POST /api/internal/webhook-subscriptions/:id/context
+ *  (server-dynamic-mode Phase 4.1). */
+export interface SubscriptionContext {
+  /** Airtable's webhook id (ach…) — NOT our registry row uuid. */
+  airtableWebhookId: string;
+  baseId: string;
+  /** Decrypted Connection access token (ConnectionDO /token gate, refresh-if-needed). */
+  accessToken: string;
+  /** Reconciliation anchor (subscription.last_reconciled_at, ISO) or null. */
+  lastReconciledAt: string | null;
+  /** The subscription's current payload_cursor. */
+  cursor: number;
+}
+
+export interface FetchSubscriptionContextArgs {
+  engineUrl: string;
+  internalToken: string;
+  subscriptionId: string;
+  fetchImpl?: typeof fetch;
+}
+
+/** Throws on any non-2xx (409 token_unavailable included) — the wrapper's
+ *  catch posts a failed completion and the next poll tick retries. */
+export async function fetchSubscriptionContext(
+  args: FetchSubscriptionContextArgs,
+): Promise<SubscriptionContext> {
+  const fetchFn = args.fetchImpl ?? fetch;
+  const url = `${trimSlash(args.engineUrl)}/api/internal/webhook-subscriptions/${encodeURIComponent(args.subscriptionId)}/context`;
+  const res = await fetchFn(url, {
+    method: "POST",
+    headers: {
+      "x-internal-token": args.internalToken,
+      "content-type": "application/json",
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`webhook-subscription context resolution returned ${res.status}`);
+  }
+  const body = (await res.json()) as SubscriptionContext;
+  return {
+    airtableWebhookId: body.airtableWebhookId,
+    baseId: body.baseId,
+    accessToken: body.accessToken,
+    lastReconciledAt: body.lastReconciledAt ?? null,
+    cursor: body.cursor,
+  };
+}
+
+// ── Engine-brokered per-space DB transport (pure; used by the task wrapper) ──
+
+export interface CreateIncrementalDbTransportArgs {
+  engineUrl: string;
+  internalToken: string;
+  spaceId: string;
+  /** The pass's base — the IncrementalDb methods don't carry it, but the
+   *  engine's op bodies scope schema/version/table reads+writes per base. */
+  baseId: string;
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Real HTTP transport for the IncrementalDb seam: every method maps to one
+ * `op` on POST /api/internal/spaces/:spaceId/incremental-apply (the
+ * engine-brokered per-space write route, server-dynamic-mode Phase 3 —
+ * op mapping documented in that route's header; wire shapes mirrored in
+ * apps/server/src/lib/per-space/incremental-apply.ts). Non-2xx throws with
+ * op + status so failures surface loudly in the run.
+ */
+export function createIncrementalDbTransport(
+  args: CreateIncrementalDbTransportArgs,
+): IncrementalDb {
+  const fetchFn = args.fetchImpl ?? fetch;
+  const url = `${trimSlash(args.engineUrl)}/api/internal/spaces/${encodeURIComponent(args.spaceId)}/incremental-apply`;
+  const headers = {
+    "x-internal-token": args.internalToken,
+    "content-type": "application/json",
+  };
+
+  async function post<T>(body: Record<string, unknown>): Promise<T> {
+    const res = await fetchFn(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      throw new Error(`incremental-apply op ${String(body.op)} returned ${res.status}`);
+    }
+    return (await res.json()) as T;
+  }
+
+  return {
+    async openBaseRun({ backupRunId, baseId }) {
+      const out = await post<{ baseRunId: string }>({
+        op: "open-base-run",
+        backupRunId,
+        baseId,
+      });
+      return { baseRunId: out.baseRunId };
+    },
+    async completeBaseRun({ baseRunId, status, counts, errorMessage }) {
+      await post({
+        op: "complete-base-run",
+        baseRunId,
+        status,
+        counts,
+        ...(errorMessage !== undefined ? { errorMessage } : {}),
+      });
+    },
+    async applySchemaEvents(baseRunId, writes) {
+      await post({ op: "apply-schema-events", baseRunId, baseId: args.baseId, writes });
+    },
+    async applyRecordEvents(baseRunId, writes) {
+      await post({ op: "apply-record-events", baseRunId, baseId: args.baseId, writes });
+    },
+    async getStoredRecords(tableId, recordIds) {
+      const out = await post<{ records: Record<string, StoredRecordState | undefined> }>({
+        op: "get-stored-records",
+        tableId,
+        recordIds,
+      });
+      return out.records;
+    },
+    async insertSchemaVersion({ baseRunId, schemaHash, schemaJson }) {
+      const out = await post<{ inserted: boolean }>({
+        op: "insert-schema-version",
+        baseRunId,
+        baseId: args.baseId,
+        schemaHash,
+        schemaJson,
+      });
+      return { inserted: out.inserted };
+    },
+    async getAppliedSchemaState() {
+      const out = await post<{ state: AppliedSchemaState }>({
+        op: "get-applied-schema-state",
+        baseId: args.baseId,
+      });
+      return out.state;
+    },
+    async regenerateViews(tableIds) {
+      // Honest no-op server-side today (views_not_generated) — the op still
+      // rides so the gap stays observable in the engine's response.
+      await post({ op: "regenerate-views", tableIds });
+    },
+    async listStoredRecordIds(tableId) {
+      const out = await post<{ recordIds: string[] }>({
+        op: "list-stored-record-ids",
+        tableId,
+      });
+      return out.recordIds;
+    },
+    async listTableIds() {
+      const out = await post<{ tableIds: string[] }>({
+        op: "list-table-ids",
+        baseId: args.baseId,
+      });
+      return out.tableIds;
+    },
+  };
+}

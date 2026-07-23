@@ -191,7 +191,12 @@ The MAC secret is returned **only** in the create response — encrypt and persi
   access to the base is expected to refresh/poll another Connection's webhook,
   favoring re-pointing `connection_id` over re-creating on reconnect. NOT yet
   smoke-verified with two live Connections; the reconnect re-point automation
-  waits on that.
+  waits on that. **Probe attempt 2026-07-23**: the dev org
+  (`e9ae1e3f-71f2-4fc4-8724-4a6c0a470433`) holds exactly ONE active Airtable
+  Connection, so the two-Connection visibility probe (create webhook with
+  token A → list/refresh with token B → delete in finally) could not run —
+  it needs a second dev Connection (second Airtable account/OAuth grant with
+  access to a shared base) before the docs-based answer can be confirmed.
 - **Known cross-change gap**: `incremental-backup.task.ts`'s completion POST
   (`created/updated/deleted/reconciledRecords/...`) doesn't parse against the
   current `/runs/:runId/complete` body validator (`tablesProcessed/...`
