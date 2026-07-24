@@ -1,194 +1,125 @@
 ---
-// Organizations → Spaces tracker (admin-foundation tracer surface).
-//
-// PRD §5.4 / §16.1: which provisioned databases (= Spaces in the V1 tier
-// model) belong to which Organizations. Gated to role='super' by
-// src/middleware.ts. Staff action: "Force backup" per Space (POST
-// /api/actions/force-backup, audit-logged, run appears on /backups).
-import { desc, eq, ilike, inArray, or } from 'drizzle-orm';
+// / — Operations dashboard (admin-operations-overview). Read-only; role='super'
+// gated by middleware. Bounded queries → pure dashboard assembly → Active runs /
+// KPI tiles / Attention items. The Organizations→Spaces tracker is superseded by
+// the /customers directory (admin-entity-directories) + this dashboard;
+// force-backup remains on /errors + the /api/actions/force-backup route. Every
+// Space/Org/run renders as a link.
+import { and, count, desc, eq, gte, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import PageHeader from '@web/components/ui/PageHeader.astro';
 import Card from '@web/components/ui/Card.astro';
 import Badge from '@web/components/ui/Badge.astro';
-import Button from '@web/components/ui/Button.astro';
 import EmptyState from '@web/components/ui/EmptyState.astro';
-import ConfirmModal from '@web/components/ui/ConfirmModal.astro';
-import {
-  organizations,
-  spaces,
-  spacePlatforms,
-  platforms,
-  subscriptions,
-  subscriptionItems,
-} from '../db/schema';
-import { buildTracker, type SpaceRow, type TierRow } from '../lib/tracker';
-import { truncationNote, type BadgeVariant } from '../lib/ui';
+import EntityLink from '../components/EntityLink.astro';
+import { backupConfigurations, backupRuns, connections, organizations, restoreRuns, spaceDatabases, spaces } from '../db/schema';
+import { assembleActiveRuns, attentionGroups, successRate, type ActiveRunInput, type AttentionItem } from '../lib/dashboard';
+import { RUN_STATUS_BADGE } from '../lib/backup-runs';
 
 const { db } = Astro.locals;
+const now = new Date();
+const nowSql = sql`${now.toISOString()}::timestamptz`;
+const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+const ACTIVE = ['queued', 'running', 'cancelling'];
+const LIM = 25;
 
-// ?q= searches org name/slug (ilike — seq scan is fine at staff scale).
-const q = Astro.url.searchParams.get('q')?.trim() ?? '';
-const ORG_LIMIT = 100;
+const runOrg = { spaceId: backupRuns.spaceId, spaceName: spaces.name, orgId: spaces.organizationId, orgName: organizations.name };
+const [activeBackups, activeRestores, windowRows, overdue, overdueN, unhealthy, unhealthyN, dbErr, dbErrN, failures, failuresN] = await Promise.all([
+  db.select({ id: backupRuns.id, status: backupRuns.status, startedAt: backupRuns.startedAt, createdAt: backupRuns.createdAt, ...runOrg })
+    .from(backupRuns).leftJoin(spaces, eq(backupRuns.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(and(sql`${backupRuns.status} = any(${ACTIVE})`, isNull(backupRuns.deletedAt))).limit(50),
+  db.select({ id: restoreRuns.id, status: restoreRuns.status, startedAt: restoreRuns.startedAt, createdAt: restoreRuns.createdAt, spaceId: restoreRuns.spaceId, spaceName: spaces.name, orgId: spaces.organizationId, orgName: organizations.name })
+    .from(restoreRuns).leftJoin(spaces, eq(restoreRuns.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(sql`${restoreRuns.status} = any(${ACTIVE})`).limit(20),
+  db.select({ status: backupRuns.status }).from(backupRuns).where(and(gte(backupRuns.createdAt, weekAgo), isNull(backupRuns.deletedAt))).limit(5000),
+  db.select({ spaceId: spaces.id, spaceName: spaces.name, orgId: spaces.organizationId, orgName: organizations.name })
+    .from(backupConfigurations).innerJoin(spaces, and(eq(backupConfigurations.spaceId, spaces.id), eq(spaces.status, 'active'))).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(or(lt(backupConfigurations.nextScheduledAt, nowSql), lt(backupConfigurations.schemaNextScheduledAt, nowSql))).limit(LIM),
+  db.select({ n: count() }).from(backupConfigurations).innerJoin(spaces, and(eq(backupConfigurations.spaceId, spaces.id), eq(spaces.status, 'active'))).where(or(lt(backupConfigurations.nextScheduledAt, nowSql), lt(backupConfigurations.schemaNextScheduledAt, nowSql))),
+  db.select({ id: connections.id, displayName: connections.displayName, status: connections.status, orgId: connections.organizationId, orgName: organizations.name })
+    .from(connections).leftJoin(organizations, eq(connections.organizationId, organizations.id)).where(ne(connections.status, 'active')).limit(LIM),
+  db.select({ n: count() }).from(connections).where(ne(connections.status, 'active')),
+  db.select({ spaceId: spaceDatabases.spaceId, spaceName: spaces.name, orgId: spaces.organizationId, orgName: organizations.name })
+    .from(spaceDatabases).leftJoin(spaces, eq(spaceDatabases.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id)).where(eq(spaceDatabases.status, 'error')).limit(LIM),
+  db.select({ n: count() }).from(spaceDatabases).where(eq(spaceDatabases.status, 'error')),
+  db.select({ id: backupRuns.id, spaceName: spaces.name, orgId: spaces.organizationId, orgName: organizations.name, createdAt: backupRuns.createdAt })
+    .from(backupRuns).leftJoin(spaces, eq(backupRuns.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(and(eq(backupRuns.status, 'failed'), isNull(backupRuns.deletedAt))).orderBy(desc(backupRuns.createdAt)).limit(10),
+  db.select({ n: count() }).from(backupRuns).where(and(eq(backupRuns.status, 'failed'), isNull(backupRuns.deletedAt))),
+]);
 
-const orgFilter = q
-  ? or(ilike(organizations.name, `%${q}%`), ilike(organizations.slug, `%${q}%`))
-  : undefined;
-const orgRows = await db
-  .select({
-    id: organizations.id,
-    name: organizations.name,
-    slug: organizations.slug,
-    hasMigrated: organizations.hasMigrated,
-  })
-  .from(organizations)
-  .where(orgFilter)
-  .orderBy(desc(organizations.createdAt))
-  .limit(ORG_LIMIT);
-
-// Spaces + tiers only for the orgs on this page (was an unbounded full scan).
-const orgIds = orgRows.map((o) => o.id);
-const spaceRows: SpaceRow[] = orgIds.length === 0
-  ? []
-  : await db
-      .select({
-        id: spaces.id,
-        organizationId: spaces.organizationId,
-        name: spaces.name,
-        status: spaces.status,
-        platformName: platforms.name,
-      })
-      .from(spaces)
-      .leftJoin(spacePlatforms, eq(spacePlatforms.spaceId, spaces.id))
-      .leftJoin(platforms, eq(platforms.id, spacePlatforms.platformId))
-      .where(inArray(spaces.organizationId, orgIds));
-
-const tierRows: TierRow[] = orgIds.length === 0
-  ? []
-  : await db
-      .select({
-        organizationId: subscriptions.organizationId,
-        tier: subscriptionItems.tier,
-      })
-      .from(subscriptionItems)
-      .innerJoin(subscriptions, eq(subscriptions.id, subscriptionItems.subscriptionId))
-      .where(inArray(subscriptions.organizationId, orgIds));
-
-const tracker = buildTracker(orgRows, spaceRows, tierRows);
-
-const statusVariant: Record<string, BadgeVariant> = {
-  active: 'success',
-  paused: 'warning',
-  error: 'error',
-  setup_incomplete: 'default',
-};
+const active = assembleActiveRuns(
+  [
+    ...activeBackups.map((r): ActiveRunInput => ({ ...r, kind: 'backup' })),
+    ...activeRestores.map((r): ActiveRunInput => ({ ...r, kind: 'restore' })),
+  ],
+  now,
+);
+const rate = successRate(windowRows.map((r) => r.status));
+const spaceItem = (r: { spaceId: string | null; spaceName: string | null; orgName: string | null }): AttentionItem => ({ label: r.spaceName ?? r.spaceId ?? '—', sublabel: r.orgName, href: r.spaceId ? `/spaces/${r.spaceId}` : '/errors' });
+const groups = attentionGroups({
+  overdueSchedules: { count: Number(overdueN[0]?.n ?? 0), items: overdue.map(spaceItem) },
+  unhealthyConnections: { count: Number(unhealthyN[0]?.n ?? 0), items: unhealthy.map((c) => ({ label: c.displayName ?? c.id, sublabel: `${c.orgName ?? ''} · ${c.status}`, href: `/connections#${c.id}` })) },
+  dbErrors: { count: Number(dbErrN[0]?.n ?? 0), items: dbErr.map(spaceItem) },
+  recentFailures: { count: Number(failuresN[0]?.n ?? 0), items: failures.map((f) => ({ label: f.spaceName ?? '—', sublabel: f.orgName, href: `/backups/${f.id}` })) },
+});
 ---
 
-<SidebarLayout title="Admin — Organizations">
+<SidebarLayout title="Admin — Overview">
   <div class="mx-auto max-w-[1200px] space-y-6">
-    <PageHeader
-      title="Organizations & Spaces"
-      description={`Every Organization and its provisioned Spaces (PRD §5.4). ${tracker.length} organizations.${truncationNote(orgRows.length, ORG_LIMIT)}`}
-    >
-      <form slot="actions" method="get" action="/" class="join">
-        <input
-          type="search"
-          name="q"
-          value={q}
-          placeholder="Search name or slug"
-          class="input input-sm join-item w-52"
-          aria-label="Search organizations"
-        />
-        <button type="submit" class="btn btn-sm join-item" aria-label="Search">
-          <i class="iconify lucide--search size-4"></i>
-        </button>
-      </form>
-    </PageHeader>
+    <PageHeader title="Operations" description="Fleet health at a glance — active work, 7-day success, and what needs attention." />
 
-    {tracker.length === 0 ? (
-      <EmptyState
-        icon="lucide--building-2"
-        title={q ? 'No matches' : 'No organizations yet'}
-        description={q ? `No organizations match “${q}”.` : 'No organizations in the master DB yet.'}
-        actionHref={q ? '/' : undefined}
-        actionLabel={q ? 'Clear search' : undefined}
-      />
-    ) : (
-      <div class="space-y-4">
-        {tracker.map((org) => (
-          <Card variant="outlined">
-            <div class="flex flex-col gap-3">
-              <div class="flex items-center justify-between flex-wrap gap-2">
-                <div class="flex items-center gap-2">
-                  <h2 class="text-lg font-semibold">
-                    <a href={`/organizations/${org.id}`} class="link link-hover">{org.name}</a>
-                  </h2>
-                  <span class="font-mono text-xs text-base-content/50">{org.slug}</span>
-                  {!org.hasMigrated && (
-                    <Badge variant="warning" size="sm">migration pending</Badge>
-                  )}
-                </div>
-                <div class="flex gap-1">
-                  {org.tiers.length === 0 ? (
-                    <Badge variant="default" size="sm">no subscription</Badge>
-                  ) : (
-                    org.tiers.map((t) => <Badge variant="primary" size="sm">{t}</Badge>)
-                  )}
-                </div>
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <Card variant="outlined"><div class="text-xs uppercase text-base-content/50">Active runs</div><div class="mt-1 text-2xl font-semibold">{active.length}</div></Card>
+      <Card variant="outlined"><div class="text-xs uppercase text-base-content/50">7-day success</div><div class="mt-1 text-2xl font-semibold">{rate.rate === null ? '—' : `${rate.rate}%`}</div><div class="text-xs text-base-content/50">{rate.terminal} terminal runs</div></Card>
+      <Card variant="outlined"><div class="text-xs uppercase text-base-content/50">Attention items</div><div class="mt-1 text-2xl font-semibold">{groups.reduce((n, g) => n + g.count, 0)}</div></Card>
+      <Card variant="outlined"><div class="text-xs uppercase text-base-content/50">Recent failures</div><div class="mt-1 text-2xl font-semibold">{Number(failuresN[0]?.n ?? 0)}</div></Card>
+    </div>
+
+    <Card variant="outlined">
+      <h2 class="mb-3 text-base font-semibold">Active runs</h2>
+      {active.length === 0 ? <EmptyState title="Nothing running" description="No backup or restore is in flight." /> : (
+        <table class="w-full text-sm">
+          <tbody>
+            {active.map((r) => (
+              <tr class="border-b border-base-200/60">
+                <td class="py-1"><Badge variant={RUN_STATUS_BADGE[r.status] ?? 'default'}>{r.status}</Badge></td>
+                <td class="py-1">{r.kind}</td>
+                <td class="py-1">{r.spaceId ? <EntityLink type="space" id={r.spaceId} label={r.spaceName ?? r.spaceId} /> : '—'}</td>
+                <td class="py-1 text-base-content/60">{r.orgId ? <EntityLink type="org" id={r.orgId} label={r.orgName ?? r.orgId} peek={false} /> : '—'}</td>
+                <td class="py-1 text-right text-base-content/60">{r.elapsed}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
+
+    <div>
+      <h2 class="mb-3 text-base font-semibold">Attention items</h2>
+      {groups.length === 0 ? (
+        <Card variant="outlined"><EmptyState title="All clear" description="Nothing needs attention right now." /></Card>
+      ) : (
+        <div class="grid gap-4 md:grid-cols-2">
+          {groups.map((g) => (
+            <Card variant="outlined">
+              <div class="mb-2 flex items-center justify-between">
+                <h3 class="text-sm font-semibold">{g.label} <Badge variant="warning">{g.count}</Badge></h3>
+                <a href={g.href} class="text-xs link link-hover">View all →</a>
               </div>
-
-              {org.spaces.length === 0 ? (
-                <p class="text-sm text-base-content/50">No spaces.</p>
-              ) : (
-                <div class="overflow-x-auto rounded-box border border-base-300">
-                  <table class="table table-zebra table-sm">
-                    <thead>
-                      <tr>
-                        <th>Space</th>
-                        <th>Status</th>
-                        <th>Platform</th>
-                        <th>Space ID</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {org.spaces.map((s) => (
-                        <tr>
-                          <td>{s.name}</td>
-                          <td>
-                            <Badge variant={statusVariant[s.status] ?? 'default'} size="sm">
-                              {s.status}
-                            </Badge>
-                          </td>
-                          <td>{s.platformName ?? '—'}</td>
-                          <td class="font-mono text-xs">{s.id.slice(0, 8)}…</td>
-                          <td class="text-right">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              data-action-path="/api/actions/force-backup"
-                              data-action-payload={JSON.stringify({ spaceId: s.id })}
-                              data-action-label={`Queue a backup run for "${s.name}" (${org.name}). Requires an active Airtable connection and at least one included base; the run appears on the Backups page as triggered-by admin.`}
-                            >Force backup</Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </Card>
-        ))}
-      </div>
-    )}
+              <ul class="space-y-1 text-sm">
+                {g.items.slice(0, 5).map((it) => (
+                  <li class="flex items-center justify-between">
+                    <a href={it.href} class="link link-hover truncate">{it.label}</a>
+                    {it.sublabel && <span class="ml-2 shrink-0 text-xs text-base-content/50">{it.sublabel}</span>}
+                  </li>
+                ))}
+              </ul>
+              {g.count > g.items.length && <p class="mt-2 text-xs text-base-content/40">+{g.count - g.items.length} more</p>}
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
   </div>
-
-  <ConfirmModal id="action-confirm" title="Force backup" confirmLabel="Force backup" confirmClass="btn-error">
-    <p class="text-sm" data-confirm-label></p>
-    <p class="mt-2 text-sm text-error hidden" data-confirm-error></p>
-    <p class="mt-2 text-xs text-base-content/50">
-      This action is recorded in the admin audit log before it executes.
-    </p>
-    <button slot="confirm" type="button" class="btn btn-error" data-confirm-button>Confirm</button>
-  </ConfirmModal>
 </SidebarLayout>
