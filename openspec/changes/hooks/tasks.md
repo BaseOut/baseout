@@ -23,25 +23,29 @@
 
 ## 4. Phase 3 — Observability
 
-- [x] 4.1 Structured log per callback: `webhook_row_id`, `base_id`, timestamp, source IP, outcome → structured JSON events: webhook_ping_recorded / mac_rejected / body_row_mismatch / record_failed / secret_decrypt_failed.
-- [ ] 4.2 Metrics: callback rate, rejection rate by reason, upsert latency
-- [ ] 4.3 Alert: rejection-rate spike above threshold
-- [ ] 4.4 Alert: sustained 503s > 15 minutes (must fire well inside Airtable's ~1-day retry window; exhaustion disables notifications)
-- [ ] 4.5 Wire Logpush + tail Workers
+- [x] 4.1 Structured log per callback: `webhook_row_id`, `base_id`, timestamp, source IP, outcome → structured JSON events: webhook_ping_recorded / mac_rejected / body_row_mismatch / record_failed / secret_decrypt_failed. Plus `webhook_receiver_misconfigured` / `webhook_receiver_error` on the wire layer.
+- [ ] 4.2 Metrics: callback rate, rejection rate by reason, upsert latency — **DEFERRED (ops):** the 4.1 structured events already carry outcome + reason per ping, so the metrics are derivable via Logpush/Analytics once the pipeline exists. A dedicated Analytics Engine binding is deferred to the ops rollout (needs the binding provisioned) rather than added as a dead no-op seam.
+- [ ] 4.3 Alert: rejection-rate spike above threshold — **DEFERRED (ops):** Cloudflare dashboard alert config; no dashboard access in this env.
+- [ ] 4.4 Alert: sustained 503s > 15 minutes (must fire well inside Airtable's ~1-day retry window; exhaustion disables notifications) — **DEFERRED (ops):** dashboard alert config.
+- [ ] 4.5 Wire Logpush + tail Workers — **DEFERRED (ops):** account-level Logpush config.
 
 ## 5. Phase 4 — Pre-Launch Hardening
 
-- [ ] 5.1 Load test at projected V1 callback rate (remember: pings are ~100 bytes and pre-coalesced by Airtable)
-- [ ] 5.2 Security review: signature bypass attempts, malformed/oversized payloads, path-id enumeration
-- [ ] 5.3 Simulate master-DB outage; verify 503s, alerting, and clean recovery when DB returns
-- [ ] 5.4 Optional (only if load test demands): KV cache for webhook rows; Cloudflare Queue write buffer
+- [ ] 5.1 Load test at projected V1 callback rate (remember: pings are ~100 bytes and pre-coalesced by Airtable) — **DEFERRED (needs deployed env).**
+- [x] 5.2 Security review: signature bypass attempts, malformed/oversized payloads, path-id enumeration → reviewed + regression-tested in `tests/index.test.ts` (9 cases) alongside the existing `receive.test.ts` MAC/verification-order matrix. Findings:
+  - **Signature bypass** — no dirty-mark occurs without a passing MAC: verification order (cap → row → decrypt → MAC → body cross-check → upsert) short-circuits to 401/410 with `recordPing` never called (asserted). Undecryptable secret is indistinguishable from a bad MAC (401). MAC compare is constant-time (`@baseout/shared`).
+  - **Malformed/oversized** — >64KB → 401 before any crypto/DB (asserted, `fetchWebhookRow` not called); post-MAC non-JSON → 401; body `webhook.id`/`base.id` ≠ row → 401 (blocks cross-webhook replay).
+  - **Path-id enumeration/traversal** — route is `^/webhooks/airtable/<36 hex/-chars>$`; non-matching/short/non-hex/traversal (`..` is URL-normalized away) → 404 before any DB. The 410(unknown/inactive) vs 401(bad-MAC) split is a theoretical existence oracle, but the id is an unguessable UUID and lookups are parameterized (Drizzle `eq`), so enumeration is infeasible — behavior pinned by tests rather than tightened (working contract, per §3.2).
+  - **Method/misconfig** — non-POST → 405; missing `MASTER_ENCRYPTION_KEY` → 503 fail-closed with an empty body, before the DB is constructed (asserted).
+- [ ] 5.3 Simulate master-DB outage; verify 503s, alerting, and clean recovery when DB returns → **partially covered in unit tests** (`recordPing` throw → 503; misconfig → 503 before DB). **Live-outage sim + alerting + recovery DEFERRED (ops/deployed env).**
+- [ ] 5.4 Optional (only if load test demands): KV cache for webhook rows; Cloudflare Queue write buffer — **DEFERRED (conditional on 5.1).**
 
 ## 6. Definition of Done — `apps/hooks` V1 Launch
 
-- [ ] 6.1 Receiver verifies HMAC and rejects invalid signatures cleanly
-- [ ] 6.2 Verified pings dirty-mark the registry row; nothing else is written or called
-- [ ] 6.3 Success responses are 200 + empty body; DB failures produce 503 + alert
-- [ ] 6.4 No row is dirty-marked without HMAC verification
-- [ ] 6.5 Receiver operates normally during a `server` deploy/outage (no runtime dependency)
-- [ ] 6.6 Observability + alerting wired
-- [ ] 6.7 Independent deploy verified — hooks redeploys without touching any other app and vice versa
+- [x] 6.1 Receiver verifies HMAC and rejects invalid signatures cleanly → receive.test.ts (401 missing/malformed/mismatch/undecryptable).
+- [x] 6.2 Verified pings dirty-mark the registry row; nothing else is written or called → recordPing is the only write; app declares no service bindings.
+- [ ] 6.3 Success responses are 200 + empty body; DB failures produce 503 + alert → **response half done** (200/empty + 503 on write-fail/misconfig, asserted); **alert DEFERRED (ops, 4.4).**
+- [x] 6.4 No row is dirty-marked without HMAC verification → verification-order tests assert `recordPing` is never called on any 401/410 path.
+- [x] 6.5 Receiver operates normally during a `server` deploy/outage (no runtime dependency) → structural: zero service bindings, master-DB only (env.ts, index.ts).
+- [ ] 6.6 Observability + alerting wired → **DEFERRED (ops, 4.2–4.5).**
+- [ ] 6.7 Independent deploy verified — hooks redeploys without touching any other app and vice versa → **DEFERRED (deploy; blocked on 1.4 route binding — no Cloudflare dashboard access in this env).**
