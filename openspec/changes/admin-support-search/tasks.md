@@ -2,22 +2,22 @@
 
 ## 1. Schema mirror
 
-- [ ] 1.1 Mirror `at_bases` (id, space_id, at_base_id, name) into `apps/admin/src/db/schema/core.ts` with the canonical-source header comment; export from `src/db/schema/index.ts`. No FKs, no `*_enc` columns, no migrations.
+- [x] 1.1 `at_bases` (id, space_id, at_base_id, name, +discovered_via/seen timestamps) already mirrored into `apps/admin/src/db/schema/core.ts` with the canonical-source header comment and barrel export (landed in admin-entity-linking). No FKs, no `*_enc`, no migrations. No new mirror needed.
 
 ## 2. Pure search lib (TDD)
 
-- [ ] 2.1 Write `src/lib/search.test.ts` first: `detectQuery` shape table (UUID, `cus_`, `sub_`, `app…`, email exact/prefix, free text, trim/case/ILIKE-escape, <2-char and empty inputs → no lookups).
-- [ ] 2.2 Implement `detectQuery(q): QueryPlan` in `src/lib/search.ts` per design D1 (precedence-ordered shape tests, normalized query, planned lookups).
-- [ ] 2.3 Extend tests then implement `linkFor(entity)` with the D3 fallback matrix (spaces/users → owning-org detail until `admin-entity-linking` lands; membership-less user unlinked).
-- [ ] 2.4 Extend tests then implement the redirect decision (exact-shape single match → target URL; exact multi-match and free-text → grouped list) and the LIMIT-11 truncation flag.
-- [ ] 2.5 Implement `runSearch(db, plan)`: per-shape Drizzle queries (PK probes via `Promise.all`, joined context per group per D6, per-group LIMIT 10+1). Keep it thin; all branching lives in the tested pure functions.
+- [x] 2.1 `src/lib/search.test.ts` first: `detectQuery` precedence table (UUID w/ whitespace+case, `cus_`, `sub_`, `app…`, too-short `app`, email, free text, empty, `<2`-char), `escapeLike`, `linkFor` matrix (+ base→space, base-without-space→null), `decideRedirect` (exact-single / exact-multi / text / none), `finalizeGroup` truncation, `orgContext`, `membershipContext`.
+- [x] 2.2 `detectQuery(q): QueryPlan` per D1 (precedence-ordered shape tests, trimmed `normalized`, `exact` flag, shape-relevant `lookups`). 25 tests green.
+- [x] 2.3 `linkFor(ref)` over the single route authority `entityHref` (admin-entity-linking landed → the D3 fallback matrix is moot; documented). Base → owning Space; base with no Space → unlinked.
+- [x] 2.4 Redirect decision `decideRedirect(plan, exactMatches)` (exact-shape single → target; exact-multi + free-text → list) + `finalizeGroup` LIMIT-10 slice with the +1-probe truncation flag.
+- [x] 2.5 `runSearch(db, plan)`: per-shape Drizzle (5 concurrent UUID PK probes via `Promise.all`; exact `cus_`/`sub_`/`app`/email; ILIKE free-text; per-group `LIMIT 11`). Context (org tier+status, user memberships, owning org/space) via one bounded query per group keyed by matched IDs (D6). All branching delegated to the tested pure fns.
 
 ## 3. Page + chrome
 
-- [ ] 3.1 Add `src/pages/search.astro`: trim `q`; empty → guidance state listing accepted shapes; else `detectQuery` → `runSearch` → 302 on redirect decision, otherwise grouped results (labeled groups, disambiguating context columns, truncation notice, no-results state). Read-only, existing middleware gate.
-- [ ] 3.2 Add the GET search form to `SidebarLayout.astro` under the brand block (hidden in rail-collapsed mode; present in the mobile off-canvas sidebar).
+- [x] 3.1 `src/pages/search.astro`: trims `q`; empty → guidance state listing accepted shapes; else `detectQuery` → `runSearch` → 302 on the redirect decision, otherwise grouped results (labeled groups, disambiguating context column, per-group truncation notice, no-results state that re-lists accepted shapes). Read-only; existing middleware gate.
+- [x] 3.2 GET search form added to `SidebarLayout.astro` under the brand block (`role="search"`, `action="/search"`), hidden on the collapsed rail; present in the mobile off-canvas sidebar (it IS the sidebar on <lg).
 
 ## 4. Verify
 
-- [ ] 4.1 `pnpm --filter @baseout/admin test` green; `npm run typecheck` + build green for apps/admin.
-- [ ] 4.2 Human smoke on baseout.local:4332: paste a run UUID (→ direct redirect to `/backups/[id]`), an org name fragment (→ grouped list), a `cus_` ID, an `appXXX` base ID, a user email, an empty query, and a garbage query; confirm non-staff still 403s on `/search`.
+- [x] 4.1 `pnpm --filter @baseout/admin test` green (273; search 25 new); admin `astro check` 0 errors (126 files).
+- [ ] 4.2 **DEFERRED (human smoke, baseout.local:4332):** run UUID → 302 to `/backups/[id]`; org name fragment → grouped list; `cus_`/`app…`/user email; empty + garbage queries; confirm non-staff still 403s on `/search`.

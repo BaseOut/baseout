@@ -54,6 +54,19 @@ const userInitial = (user?.email?.charAt(0) ?? 'S').toUpperCase();
         </a>
       </div>
 
+      <!-- Support omnisearch (admin-support-search D4). Plain GET → /search, so
+           no CSRF surface + shareable URLs. Hidden on the collapsed rail; on
+           mobile it rides the off-canvas sidebar. -->
+      <form method="get" action="/search" role="search" class="px-3 pb-1 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
+        <input
+          type="search"
+          name="q"
+          placeholder="Search ID, email, name…"
+          aria-label="Search the admin console"
+          class="input input-bordered input-sm w-full"
+        />
+      </form>
+
       <!-- Floating rail toggle — desktop only -->
       <label
         for="layout-sidebar-hover-trigger"
