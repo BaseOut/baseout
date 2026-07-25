@@ -18,7 +18,10 @@ interface Props {
   disabled?: boolean;
   readonly?: boolean;
   autocomplete?: string;
+  /** Wrapper (`<fieldset>`) classes. */
   class?: string;
+  /** Extra classes for the `<input>` element itself (e.g. `font-mono text-sm`). */
+  inputClass?: string;
   [key: string]: unknown;
 }
 
@@ -40,6 +43,7 @@ const {
   readonly: isReadonly = false,
   autocomplete,
   class: className = '',
+  inputClass = '',
   ...rest
 } = Astro.props;
 
@@ -87,13 +91,13 @@ const inputAttrs = {
       {icon && (
         <span class={`iconify lucide--${icon} icon-md opacity-50`} aria-hidden="true"></span>
       )}
-      <input class="grow" {...inputAttrs} />
+      <input class={cn('grow', inputClass)} {...inputAttrs} />
       {iconRight && (
         <span class={`iconify lucide--${iconRight} icon-md opacity-50 cursor-pointer`} aria-hidden="true"></span>
       )}
     </label>
   ) : (
-    <input class={inputClasses} {...inputAttrs} />
+    <input class={cn(inputClasses, inputClass)} {...inputAttrs} />
   )}
 
   {error && (

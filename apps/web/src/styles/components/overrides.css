@@ -257,3 +257,23 @@
   .avatar-status-offline { @apply bg-neutral; }
 
 }
+
+/* ── Form field labels: daisyUI fieldset, styled to match the designs ──
+   TextInput / Select render daisyUI <fieldset><legend>; the theme default
+   legend is text-sm / font-normal. The promoted designs label fields at
+   .8125rem / 600 with a .72rem muted hint. Restyle daisyUI's own legend +
+   label so every field (auth pages, Add forms, future adoptions) matches the
+   design language. Unlayered + `.fieldset …` specificity so it beats the
+   vendored theme rule, which is imported earlier. */
+.fieldset .fieldset-legend {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-base-content);
+}
+.fieldset .fieldset-label {
+  font-size: 0.72rem;
+}
+/* Hint colour only — leave error labels (.text-error) their red. */
+.fieldset .fieldset-label:not(.text-error) {
+  color: oklch(from var(--color-base-content) l c h / 0.5);
+}
