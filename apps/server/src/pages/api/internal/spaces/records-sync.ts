@@ -10,6 +10,7 @@
 
 import type { AppLocals, Env } from "../../../../env";
 import { diffRecords, type CapturedRecord } from "../../../../lib/per-space/record-diff";
+import { regenerateQueryViews } from "../../../../lib/per-space/query-views-io";
 import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import {
   applyRecordDiff,
@@ -79,12 +80,29 @@ export async function spacesRecordsSyncHandler(
       await applyRecordDiff(tx, { tableId, baseId, baseRunId, result: diff });
       return diff;
     });
+
+    // Rebuild this table's query matview off the freshly-written cells
+    // (system-per-space-db §4.2 — "refreshed per run"). Best-effort in its own
+    // tx: a view failure must not fail record capture; the next sync (or the
+    // post-schema-sync full regeneration) retries. Also self-heals a view the
+    // schema-sync pass failed to create (DROP IF EXISTS + CREATE).
+    let queryViews: "regenerated" | "failed" = "failed";
+    try {
+      await withSpaceSchema(masterDb, space.pgLocator, (tx) =>
+        regenerateQueryViews(tx, { tableIds: [tableId] }),
+      );
+      queryViews = "regenerated";
+    } catch {
+      // ignored — advisory; surfaced via the response field below.
+    }
+
     return jsonResponse(
       {
         ok: true,
         records: result.records.length,
         cells: result.cells.length,
         updates: result.recordUpdates.length,
+        queryViews,
       },
       200,
     );
