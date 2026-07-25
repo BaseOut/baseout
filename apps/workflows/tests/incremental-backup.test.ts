@@ -675,15 +675,18 @@ describe("runIncrementalBackup — end-of-pass schema snapshot", () => {
     ],
   };
 
-  it("record-only pass makes ZERO extra Airtable API calls (no meta fetch, no view regen)", async () => {
+  it("record-only pass makes ZERO extra Airtable API calls (no meta fetch) but regenerates the touched views", async () => {
     const h = makeDeps({
       pages: [page([cellChangePayload({ txn: 11 })], 12)],
       stored: { tbl1: { rec1: { fld1: "old" } } },
     });
     await runIncrementalBackup(INPUT, h.deps);
     expect(h.deps.airtable.getBaseSchema).not.toHaveBeenCalled();
-    expect(h.deps.db.regenerateViews).not.toHaveBeenCalled();
     expect(h.deps.db.insertSchemaVersion).not.toHaveBeenCalled();
+    // regenerateViews is an ENGINE call, not an Airtable API call — record
+    // freshness needs it on record passes too (workflows-incremental-view-refresh).
+    expect(h.deps.db.regenerateViews).toHaveBeenCalledTimes(1);
+    expect(h.deps.db.regenerateViews).toHaveBeenCalledWith(["tbl1"]);
   });
 
   it("schema pass fetches meta once, inserts a hash-deduped schema version, regenerates affected views", async () => {
@@ -712,6 +715,102 @@ describe("runIncrementalBackup — end-of-pass schema snapshot", () => {
     });
     const result = await runIncrementalBackup(INPUT, h.deps);
     expect(result.reconcileRan).toBe(true);
+  });
+});
+
+// ── End-of-pass view regeneration ────────────────────────────────────────────
+// workflows-incremental-view-refresh: one unified regenerateViews call after
+// reconciliation with the union of schema-affected ∪ record-affected tables;
+// best-effort (a failure never fails an otherwise-successful pass).
+
+describe("runIncrementalBackup — end-of-pass view regeneration", () => {
+  const schemaPayload: WebhookPayload = {
+    baseTransactionNumber: 11,
+    changedTablesById: {
+      tbl1: {
+        changedFieldsById: {
+          fld1: { current: { type: "number" }, previous: { type: "singleLineText" } },
+        },
+      },
+    },
+  };
+  const META = {
+    tables: [
+      { id: "tbl1", name: "T1", primaryFieldId: "fld1", fields: [{ id: "fld1", name: "F", type: "number" }] },
+    ],
+  };
+
+  it("schema + record pass regenerates once with the deduped union of touched tables", async () => {
+    const h = makeDeps({
+      pages: [
+        page(
+          [
+            schemaPayload, // schema-affects tbl1
+            cellChangePayload({ txn: 12 }), // record-affects tbl1 (dupe with schema)
+            cellChangePayload({ txn: 13, tableId: "tbl2", recordId: "rec2" }), // record-affects tbl2
+          ],
+          14,
+        ),
+      ],
+      stored: { tbl1: { rec1: { fld1: "old" } }, tbl2: { rec2: { fld1: "old" } } },
+      meta: META,
+    });
+    await runIncrementalBackup(INPUT, h.deps);
+    expect(h.deps.db.regenerateViews).toHaveBeenCalledTimes(1);
+    const [tables] = (h.deps.db.regenerateViews as ReturnType<typeof vi.fn>).mock
+      .calls[0] as [string[]];
+    expect([...tables].sort()).toEqual(["tbl1", "tbl2"]);
+  });
+
+  it("reconciliation-applied record writes are included in the end-of-pass regeneration", async () => {
+    const h = makeDeps({
+      pages: [page([], 10)],
+      stored: { tbl3: { recStale: { fld1: "db-value" } } },
+      tableIds: ["tbl3"],
+      recordsPages: (tableId, o) => {
+        if (tableId !== "tbl3") return { records: [] };
+        // Upsert page (filtered) and id-sweep page both list recStale — the
+        // sweep finds no deletions; only the upsert write lands.
+        return {
+          records: [
+            {
+              id: "recStale",
+              createdTime: "2026-07-01T00:00:00.000Z",
+              fields: o.fields ? {} : { fld1: "source-value" },
+            },
+          ],
+        };
+      },
+    });
+    await runIncrementalBackup({ ...INPUT, reconcile: true }, h.deps);
+    expect(h.deps.db.regenerateViews).toHaveBeenCalledTimes(1);
+    expect(h.deps.db.regenerateViews).toHaveBeenCalledWith(["tbl3"]);
+  });
+
+  it("nothing applied → regenerateViews not called", async () => {
+    const h = makeDeps({ pages: [page([], 10)] });
+    await runIncrementalBackup(INPUT, h.deps);
+    expect(h.deps.db.regenerateViews).not.toHaveBeenCalled();
+  });
+
+  it("regenerateViews failure is best-effort: pass still succeeds, structured log emitted", async () => {
+    const h = makeDeps({
+      pages: [page([cellChangePayload({ txn: 11 })], 12)],
+      stored: { tbl1: { rec1: { fld1: "old" } } },
+    });
+    (h.deps.db.regenerateViews as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("engine 500"),
+    );
+    const result = await runIncrementalBackup(INPUT, h.deps);
+    expect(result.status).toBe("succeeded");
+    expect(result.updated).toBe(1);
+    expect(h.postCursor).toHaveBeenCalledWith(12);
+    expect(h.deps.db.completeBaseRun).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "succeeded" }),
+    );
+    expect(h.deps.log).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "regenerate_views_failed" }),
+    );
   });
 });
 

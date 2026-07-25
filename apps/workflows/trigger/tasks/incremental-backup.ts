@@ -599,6 +599,7 @@ async function reconcileTable(
   tableId: string,
   anchorIso: string | null,
   counters: Counters,
+  recordAffectedTables: Set<string>,
 ): Promise<void> {
   const { airtable, db } = deps;
 
@@ -666,7 +667,10 @@ async function reconcileTable(
       }
       if (touched) counters.reconciledRecords += 1;
     }
-    if (writes.length > 0) await db.applyRecordEvents(baseRunId, writes);
+    if (writes.length > 0) {
+      await db.applyRecordEvents(baseRunId, writes);
+      recordAffectedTables.add(tableId);
+    }
     offset = page.offset;
   } while (offset);
 
@@ -689,6 +693,7 @@ async function reconcileTable(
     .map((recordId) => ({ kind: "destroyRecord", tableId, recordId, status: "deleted" }));
   if (deletions.length > 0) {
     await db.applyRecordEvents(baseRunId, deletions);
+    recordAffectedTables.add(tableId);
     counters.reconciledRecords += deletions.length;
   }
 }
@@ -721,6 +726,10 @@ export async function runIncrementalBackup(
   let schemaEventsApplied = false;
   const createdTables = new Set<string>();
   const affectedTables = new Set<string>();
+  // Tables that received applied record writes (payload or reconciliation) —
+  // unioned with schema-affected tables for the end-of-pass view regeneration
+  // (workflows-incremental-view-refresh).
+  const recordAffectedTables = new Set<string>();
 
   const finish = async (
     status: IncrementalBackupStatus,
@@ -814,6 +823,7 @@ export async function runIncrementalBackup(
         );
         if (recordWrites.length > 0) {
           await deps.db.applyRecordEvents(baseRunId, recordWrites);
+          for (const w of recordWrites) recordAffectedTables.add(w.tableId);
         }
 
         payloadsApplied += 1;
@@ -847,7 +857,6 @@ export async function runIncrementalBackup(
         log({ event: "schema_verification_mismatch" });
         reconcileNeeded = true;
       }
-      await deps.db.regenerateViews([...affectedTables]);
     }
 
     // ── Reconciliation catch-all ────────────────────────────────────────────
@@ -859,7 +868,27 @@ export async function runIncrementalBackup(
         // Created-this-pass tables get a full fill regardless of the anchor —
         // their payload recordsById may be partial for large pasted-in tables.
         const tableAnchor = createdTables.has(tableId) ? null : anchor;
-        await reconcileTable(deps, baseRunId, tableId, tableAnchor, counters);
+        await reconcileTable(deps, baseRunId, tableId, tableAnchor, counters, recordAffectedTables);
+      }
+    }
+
+    // ── End-of-pass view regeneration ───────────────────────────────────────
+    // One unified call with schema-affected ∪ record-affected tables, AFTER
+    // reconciliation so reconciliation-applied cells are included
+    // (workflows-incremental-view-refresh). Best-effort: views are derived +
+    // self-healing (the next pass or full run rebuilds them), so a transient
+    // engine failure after records were durably applied and the cursor
+    // advanced must not fail an otherwise-successful pass.
+    const regenTables = new Set([...affectedTables, ...recordAffectedTables]);
+    if (regenTables.size > 0) {
+      try {
+        await deps.db.regenerateViews([...regenTables]);
+      } catch (err) {
+        log({
+          event: "regenerate_views_failed",
+          tables: regenTables.size,
+          message: err instanceof Error ? err.message : String(err),
+        });
       }
     }
 
