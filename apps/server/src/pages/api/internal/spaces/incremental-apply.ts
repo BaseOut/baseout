@@ -13,13 +13,15 @@
 //   getStoredRecords       → op: get-stored-records       { tableId, recordIds }
 //   insertSchemaVersion    → op: insert-schema-version    { baseRunId, baseId, schemaHash, schemaJson }
 //   getAppliedSchemaState  → op: get-applied-schema-state { baseId }
-//   regenerateViews        → op: regenerate-views         { tableIds }   (honest no-op today)
+//   regenerateViews        → op: regenerate-views         { tableIds }
 //   listStoredRecordIds    → op: list-stored-record-ids   { tableId }
 //   listTableIds           → op: list-table-ids           { baseId }
 //
-// regenerate-views acknowledges without work: per-table query views are not
-// generated yet (system-per-space-db §4.1–4.3 deferred); the response carries
-// `regenerated:false, reason:'views_not_generated'` so the caller sees the gap.
+// regenerate-views rebuilds the per-table query matviews (system-per-space-db
+// §4.2, query-views-io.ts) for the affected tables — retypes change the
+// safe-casts, renames change the view name. Records-disabled Spaces get an
+// early `regenerated:false, reason:'records_disabled'` ack (views pivot record
+// cells; a schema-only Space has nothing to project).
 //
 // Token gate is applied by middleware (path begins /api/internal/).
 
@@ -40,6 +42,7 @@ import {
   listTableIds,
   openIncrementalBaseRun,
 } from "../../../../lib/per-space/incremental-io";
+import { regenerateQueryViews } from "../../../../lib/per-space/query-views-io";
 import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import { withSpaceSchema } from "../../../../lib/per-space/space-db-pg";
 import { ensureSpaceSchemaCurrent } from "../../../../lib/provisioning/upgrade";
@@ -82,9 +85,9 @@ export async function spacesIncrementalApplyHandler(
   }
   const pgLocator = space.pgLocator;
 
-  // regenerate-views is DB-free today — acknowledge before opening a tx.
-  if (req.op === "regenerate-views") {
-    return jsonResponse({ ok: true, regenerated: false, reason: "views_not_generated" }, 200);
+  // Query views project record cells — nothing to (re)build without records.
+  if (req.op === "regenerate-views" && !space.recordsEnabled) {
+    return jsonResponse({ ok: true, regenerated: false, reason: "records_disabled" }, 200);
   }
 
   // Best-effort lazy upgrade once per pass, at the pass's opening op — the
@@ -150,6 +153,12 @@ export async function spacesIncrementalApplyHandler(
         }
         case "get-applied-schema-state":
           return { ok: true, state: await getAppliedSchemaState(tx, req.baseId) };
+        case "regenerate-views": {
+          const { regenerated, dropped } = await regenerateQueryViews(tx, {
+            tableIds: req.tableIds,
+          });
+          return { ok: true, regenerated: true, views: regenerated, dropped };
+        }
         case "list-stored-record-ids":
           return { ok: true, recordIds: await listStoredRecordIds(tx, req.tableId) };
         case "list-table-ids":
