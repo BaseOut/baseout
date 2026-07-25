@@ -197,8 +197,15 @@ export function diffSchema(args: {
   /** Was the schema fully + successfully enumerated? If false, absent ⇒ unknown. */
   confident: boolean;
   priorSchemaHash?: string | null;
+  /**
+   * Enterprise view-capture gate (system-per-space-db §8.2). Default true.
+   * When false the caller has stripped views from `captured` (see
+   * view-capture.ts) and the whole views block is skipped — prior view rows
+   * are left untouched rather than confidently "removed" by their absence.
+   */
+  includeViews?: boolean;
 }): SchemaDiffResult {
-  const { captured, prior, confident, priorSchemaHash } = args;
+  const { captured, prior, confident, priorSchemaHash, includeViews = true } = args;
   const lifecycle: LifecycleOp[] = [];
   const schemaUpdates: SchemaUpdateOp[] = [];
 
@@ -319,25 +326,27 @@ export function diffSchema(args: {
     }
   }
 
-  // ---- Views ----
-  const capViews = new Map<string, { v: CapturedView; tableId: string }>();
-  for (const t of captured.tables) for (const v of t.views) capViews.set(v.viewId, { v, tableId: t.tableId });
-  const priorViews = new Map(prior.views.map((v) => [v.viewId, v]));
-  for (const [viewId, { v, tableId }] of capViews) {
-    const p = priorViews.get(viewId);
-    const attrs = { tableId, name: v.name, type: v.type ?? null };
-    if (!p) {
-      lifecycle.push({ entity: "view", id: viewId, action: "insert", baseId, tableId, attrs });
-    } else {
-      lifecycle.push({ entity: "view", id: viewId, action: "seen", baseId, tableId, attrs });
-      if (p.name !== v.name) addUpdate("view", viewId, tableId, "name", p.name, v.name);
-      if ((p.type ?? null) !== (v.type ?? null))
-        addUpdate("view", viewId, tableId, "type", p.type, v.type ?? null);
+  // ---- Views (skipped entirely when the §8.2 Enterprise gate is closed) ----
+  if (includeViews) {
+    const capViews = new Map<string, { v: CapturedView; tableId: string }>();
+    for (const t of captured.tables) for (const v of t.views) capViews.set(v.viewId, { v, tableId: t.tableId });
+    const priorViews = new Map(prior.views.map((v) => [v.viewId, v]));
+    for (const [viewId, { v, tableId }] of capViews) {
+      const p = priorViews.get(viewId);
+      const attrs = { tableId, name: v.name, type: v.type ?? null };
+      if (!p) {
+        lifecycle.push({ entity: "view", id: viewId, action: "insert", baseId, tableId, attrs });
+      } else {
+        lifecycle.push({ entity: "view", id: viewId, action: "seen", baseId, tableId, attrs });
+        if (p.name !== v.name) addUpdate("view", viewId, tableId, "name", p.name, v.name);
+        if ((p.type ?? null) !== (v.type ?? null))
+          addUpdate("view", viewId, tableId, "type", p.type, v.type ?? null);
+      }
     }
-  }
-  for (const p of prior.views) {
-    if (!capViews.has(p.viewId) && p.status !== "removed") {
-      absent(absentAction, "view", p.viewId, p.tableId);
+    for (const p of prior.views) {
+      if (!capViews.has(p.viewId) && p.status !== "removed") {
+        absent(absentAction, "view", p.viewId, p.tableId);
+      }
     }
   }
 

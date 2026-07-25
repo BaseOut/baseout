@@ -20,9 +20,12 @@
 //     diff), attribution (action_source/actor) rides every payload-derived log.
 //   - updateField/updateTableMetadata patch ONLY the keys present — a
 //     description-only change never touches ai_description/description_override.
-//   - updateView is SKIPPED (counted) until the Enterprise view-capture gate
-//     exists (system-per-space-db 8.2); the workflows side doesn't emit it by
-//     default (viewCaptureEnabled defaults false).
+//   - updateView is SKIPPED (counted): view capture is owned by the full-backup
+//     path, where the §8.2 Enterprise gate is enforced (schema-sync +
+//     view-capture.ts) — a payload's view `change` is opaque, and the next full
+//     run captures authoritative view state for Enterprise connections. The
+//     workflows side doesn't emit it by default (viewCaptureEnabled defaults
+//     false).
 //   - name/type NOT NULL fallbacks: a null created-entity name coalesces to ''
 //     and a null field type to 'unknown' (bo_at_tables.name / bo_at_fields.type
 //     are NOT NULL; payloads normally always carry them).
@@ -305,7 +308,7 @@ export type SchemaPlanOp =
 
 export interface SchemaPlan {
   ops: SchemaPlanOp[];
-  /** updateView writes skipped (Enterprise view capture not enforced yet). */
+  /** updateView writes skipped (view capture rides the full-backup path — see header). */
   skippedViews: number;
 }
 

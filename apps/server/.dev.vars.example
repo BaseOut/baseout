@@ -74,3 +74,8 @@ MICROSOFT_OAUTH_CLIENT_ID=
 # Set DRIZZLE_SSL=false ONLY if connecting to a local Postgres without TLS.
 # Leave unset / "require" for any DigitalOcean managed DB.
 # DRIZZLE_SSL=require
+
+# === Optional: dev/demo view-capture override (server-view-capture-override) ===
+# "1" makes /schema-sync treat every connection as view-capture-enabled
+# (response viewCapture:"override"). Dev Worker ONLY — never staging/production.
+# VIEW_CAPTURE_OVERRIDE=1

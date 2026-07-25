@@ -252,3 +252,29 @@ describe("diffSchema — additions + removals", () => {
     expect(r.lifecycle.find((o) => o.id === "fld2")).toBeUndefined();
   });
 });
+
+describe("diffSchema — includeViews=false (Enterprise view-capture gate, §8.2)", () => {
+  it("emits NO view lifecycle or view updates, and leaves prior views untouched", () => {
+    const b = base();
+    const prior = priorFrom(b);
+    // Route strips views for gated spaces; prior views (ungated-era rows) remain.
+    const stripped = { ...b, tables: b.tables.map((t) => ({ ...t, views: [] })) };
+    const r = diffSchema({ captured: stripped, prior, runId: RUN, confident: true, includeViews: false });
+    expect(r.lifecycle.filter((o) => o.entity === "view")).toEqual([]);
+    expect(r.schemaUpdates.filter((u) => u.entityType === "view")).toEqual([]);
+  });
+
+  it("without the flag, a stripped capture would confidently remove prior views (why the flag exists)", () => {
+    const b = base();
+    const prior = priorFrom(b);
+    const stripped = { ...b, tables: b.tables.map((t) => ({ ...t, views: [] })) };
+    const r = diffSchema({ captured: stripped, prior, runId: RUN, confident: true });
+    expect(actionFor(r, "view", "viwA")).toBe("removed");
+  });
+
+  it("defaults to true — existing callers keep capturing views", () => {
+    const b = base();
+    const r = diffSchema({ captured: b, prior: EMPTY_PRIOR, runId: RUN, confident: true });
+    expect(actionFor(r, "view", "viwA")).toBe("insert");
+  });
+});

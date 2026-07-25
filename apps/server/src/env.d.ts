@@ -95,6 +95,13 @@ export interface Env {
   AI_DESCRIPTIONS_ENABLED?: string;
   /** Workers AI model id override for descriptions. */
   AI_DESCRIPTIONS_MODEL?: string;
+  /**
+   * Dev/demo override for the Enterprise view-capture gate
+   * (server-view-capture-override): exactly "1" makes /schema-sync treat every
+   * connection as view-capture-enabled (response viewCapture: "override").
+   * Set in .dev.vars for the dev Worker ONLY — never staging/production.
+   */
+  VIEW_CAPTURE_OVERRIDE?: string;
 }
 
 export interface AppLocals {
