@@ -8,6 +8,12 @@ Request `recordMetadata=commentCount` on the record-listing pass the task alread
 
 **Fallbacks if unavailable:** (a) full per-record sweep capped at a record-count ceiling (skip with `skipped(too_large)` above it — documented limitation); (b) comments only on records touched by the current run (incremental signal). Prefer (a)+(b) combined over silently partial data.
 
+## Decision 1b — Count-delta skip via comments-plan (added 2026-07-25, founder direction)
+
+After the listing pass collects `{recordId, tableId, commentCount}` for commented records, the task POSTs them to `POST /api/internal/spaces/comments-plan` and fetches comments only for the returned `refresh` list. For each returned `zeroCandidate` the task actually saw listed with `commentCount = 0`, it sends `{recordId, complete: true, comments: []}` on the first comments-sync batch — deletion resolves through the server's existing per-record rule with no fetch. Candidates not seen in the listing are ignored (unvisited/deleted records — not this feature's job). **Plan-call failure degrades to the pre-optimization behavior** (refresh every observed commented record) — the optimization can only reduce work, never correctness. The task keeps the listing counts in memory for the run; nothing new is persisted workflows-side.
+
+Why this shape: the engine owns the stored state, so it makes the skip decision; workflows sends only the observed-commented subset (small), and the zeroCandidates handshake covers count-to-zero drops without an O(records) payload of zeros.
+
 ## Decision 2 — Stream batches to comments-sync during the fan-out
 
 POST comment batches (e.g. every N records or M comments) to `POST /api/internal/spaces/comments-sync` as the fan-out progresses — no buffering a run's worth of comments. Each batch entry carries `complete: true` per record only when that record's pagination finished, so the server's per-record deletion rule stays safe under mid-run failures.

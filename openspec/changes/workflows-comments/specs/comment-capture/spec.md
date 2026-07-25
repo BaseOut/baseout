@@ -4,12 +4,22 @@
 
 ### Requirement: Record comments are captured during backup for enabled Spaces
 
-For every backup run of a Base whose payload carries `commentsEnabled: true`, the backup task SHALL identify records bearing comments (comment-count metadata on the record-listing pass, or the documented fallback), fetch each such record's comments via the Airtable REST comments endpoint with pagination, and deliver them to the engine's comments-sync route in batches during the fan-out, marking a record `complete` only when its pagination finished.
+For every backup run of a Base whose payload carries `commentsEnabled: true`, the backup task SHALL identify records bearing comments (comment-count metadata on the record-listing pass, or the documented fallback), SHALL submit the observed counts to the engine's comments-plan route, and SHALL fetch comments via the Airtable REST comments endpoint (paginated) **only for records the plan marks as needing refresh**, delivering them to the comments-sync route in batches during the fan-out, marking a record `complete` only when its pagination finished. Zero-candidates returned by the plan that were observed with `commentCount = 0` SHALL be delivered as empty `complete` captures without a fetch. If the plan call fails, the task SHALL fall back to fetching all observed commented records.
 
-#### Scenario: Commented records are captured
+#### Scenario: Only changed records are fetched
 
-- **WHEN** a backup run executes for an enabled Space over a base where 40 of 5,000 records have comments
-- **THEN** comment fetches occur only for those 40 records and every fetched comment reaches comments-sync with its record marked `complete`
+- **WHEN** a backup run executes over a base where 40 of 5,000 records have comments and the plan reports 6 of them changed since the last capture
+- **THEN** comment fetches occur only for those 6 records, every fetched comment reaches comments-sync with its record marked `complete`, and the other 34 records get no comments-endpoint call
+
+#### Scenario: Dropped-to-zero record resolves without a fetch
+
+- **WHEN** the plan returns a zeroCandidate that the listing pass observed with `commentCount = 0`
+- **THEN** the task sends that record as `complete: true` with an empty comment list and makes no comments-endpoint call for it
+
+#### Scenario: Plan failure degrades to full refresh
+
+- **WHEN** the comments-plan call fails during a run
+- **THEN** the task fetches comments for every observed commented record (pre-optimization behavior) and the run proceeds normally
 
 #### Scenario: Disabled Space makes no comment requests
 

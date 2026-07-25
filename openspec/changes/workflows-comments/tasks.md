@@ -16,9 +16,10 @@
 ## 3. Task integration
 
 - [ ] 3.1 Thread `commentsEnabled` through `BackupBaseTaskPayload` + `BackupBaseInput` (default false).
-- [ ] 3.2 Record-listing pass collects commented record ids (Decision 1); fan-out sequenced after records/attachments (Decision 3).
-- [ ] 3.3 Batch POSTs to comments-sync during fan-out with per-record `complete` flags (Decision 2); run-progress `comments` entry per Decision 4.
-- [ ] 3.4 Orchestration tests: happy path; partial failure mid-fan-out reports `partial` and only complete records were sent as `complete`; below-tier makes zero comment requests; records/attachments unaffected by comment failures.
+- [ ] 3.2 Record-listing pass collects commented record ids + counts (Decision 1); fan-out sequenced after records/attachments (Decision 3).
+- [ ] 3.2b Comments-plan call before the fan-out (Decision 1b): fetch only the `refresh` list; zeroCandidates observed at count 0 sent as empty `complete` captures; plan failure falls back to refreshing all observed commented records.
+- [ ] 3.3 Batch POSTs to comments-sync during fan-out with per-record `complete` flags (Decision 2); run-progress `comments` entry per Decision 4 (include skipped-by-plan count).
+- [ ] 3.4 Orchestration tests: happy path; unchanged counts make zero comment fetches; zero-drop path makes zero fetches; plan-failure fallback; partial failure mid-fan-out reports `partial` and only complete records were sent as `complete`; below-tier makes zero comment requests; records/attachments unaffected by comment failures.
 - [ ] 3.5 Incremental runs: only visited records re-capture comments (coordinate with the in-flight incremental-backup machinery).
 
 ## 4. Contract + docs
