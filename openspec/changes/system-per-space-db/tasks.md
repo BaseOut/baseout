@@ -43,7 +43,7 @@
 ## 4. Read path — DEFERRED (UI-gated; Schema/data-intelligence UI are placeholders)
 
 - [ ] 4.1 Engine internal read endpoints for the Schema page (broker per-Space reads).
-- [ ] 4.2 Generate per-table query views over `bo_at_record_field_data`.
+- [x] 4.2 Generate per-table query views over `bo_at_record_field_data`. _(DONE 2026-07-23, managed_pg: `apps/server/src/lib/per-space/query-views.ts` (pure SQL builders — clean raw Airtable view names sanitized/deduped Space-wide, jsonb_object_agg cell pivot, safe-casts: jsonb_typeof-guarded numeric/boolean + plpgsql `bo_at_try_{jsonb,timestamptz,date}` NULL-on-failure) + `query-views-io.ts` applier (drop+create matviews per run, stale-view cleanup via pg_matviews). Wired: `regenerate-views` op now real (records-disabled Spaces ack `records_disabled`), schema-sync regenerates all tables best-effort post-sync, records-sync rebuilds the synced table's matview per run. Gated on `records_enabled`. D1 live pivot views ride the deferred `d1` backend. Gap CLOSED by follow-up `workflows-incremental-view-refresh` (2026-07-24): the incremental pass now regenerates once at end-of-pass, after reconciliation, with the union of schema-affected ∪ record-affected tables, best-effort (record-only passes no longer leave matviews stale).)_
 - [ ] 4.3 SQL REST API queries the generated views read-only (reconcile with `sql`).
 
 ## 5. Restore — DEFERRED
@@ -67,7 +67,7 @@
 
 Resolved 2026-06-22 (authoritative design):
 - [x] 8.1 Documentation = inline `ai_description` / `ai_overview` / `description_override` columns on bases/tables/fields/records (imported stays as `description`); no `bo_at_documentation` table. Data Dictionary = V2. _(IMPL: matches — inline columns shipped, `bo_at_documentation` gone (1e21300).)_
-- [x] 8.2 `bo_at_views` included, capture gated to Airtable Enterprise customers. _(IMPL: `bo_at_views` shipped; the Enterprise capture-gate is not yet enforced.)_
+- [x] 8.2 `bo_at_views` included, capture gated to Airtable Enterprise customers. _(IMPL: `bo_at_views` shipped; gate ENFORCED 2026-07-23 via `apps/server/src/lib/per-space/view-capture.ts` — signal is `connections.platform_config.is_enterprise_scope` (OAuth `enterprise.*` scopes, stamped by web at Connect), resolved per run via `backup_runs.connection_id`, default CLOSED. Non-Enterprise schema-sync strips views before hash/diff/store (`stripCapturedViews` + `diffSchema includeViews:false` — prior ungated-era view rows left untouched, never false-removed); incremental `updateView` stays skipped (full runs own view capture). NOTE: non-Enterprise dev connections stop capturing views — spec-correct "empty otherwise"; SHIPPED follow-up `server-view-capture-override` (2026-07-24) adds the dev-Worker-only `VIEW_CAPTURE_OVERRIDE=1` env override (response `viewCapture:"override"`) + gated-sync sweep of stale-`active` view rows to `unknown` (`markViewsUnknownForBase`).)_
 - [x] 8.4 `managed_pg` = schema-per-Space (multiple Spaces' schemas per database). _(IMPL: matches.)_
 
 Still open:
