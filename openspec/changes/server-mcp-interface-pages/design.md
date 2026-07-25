@@ -19,6 +19,8 @@ schema-sync (`/api/internal/spaces/:spaceId/schema-sync`) already: receives one 
 
 ## Decisions
 
+> **SUPERSEDED (2026-07-20) — Decision 1 reversed by [`server-interfaces-normalize`](../server-interfaces-normalize/).** The owner confirmed the capture format (2026-07-18) and, pre-launch, chose normalization: `bo_at_interfaces` is now apps-only, with new `bo_at_pages` / `bo_at_forms` entity tables and `bo_at_page_tables` / `bo_at_page_fields` / `bo_at_form_fields` ID-link tables. The "one table + definition blob" rationale (fleet-wide migration cost) no longer applies pre-launch. The wire contract and envelope-tolerance invariants below still hold; only the persistence target and diff granularity changed. Read the new change's design for the current model.
+
 1. **Entity model: three kinds, one table.** Rows in `bo_at_interfaces` with `type` distinguishing `'app'` (the `pbd…` Interface container), `'page'` (`pag…`, definition = full page payload; `definition.interfaceId` carries parentage), `'form'` (standalone forms, treated as pages with `pageType:'form'` until a real sample says otherwise). Alternative — a new `bo_at_interface_pages` table with a parent FK — rejected: the existing table's shape fits, per-Space migrations are expensive across the fleet, and parentage-by-definition matches this schema's plain-columns convention.
 2. **Diff granularity.** Per entity (keyed `airtable_entity_id`, MCP-sourced rows only):
    - **added/removed** = lifecycle stamps (`first_seen_at`, `status='removed'` + `last_seen_at`), removal ONLY on a successful capture in the same run — an absent/skipped `interfacePages` field never removes anything (mirrors the "confident full capture" invariant from `schema-diff.ts`).

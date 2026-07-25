@@ -43,6 +43,7 @@ import { spacesHealthPromptHandler } from "./pages/api/internal/spaces/health-pr
 import { spacesHealthEnableHandler } from "./pages/api/internal/spaces/health-enable";
 import { spacesHealthConfigHandler } from "./pages/api/internal/spaces/health-config";
 import { spacesRecordsSyncHandler } from "./pages/api/internal/spaces/records-sync";
+import { spacesIncrementalApplyHandler } from "./pages/api/internal/spaces/incremental-apply";
 import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
 import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
 import { spacesDocumentsHandler } from "./pages/api/internal/spaces/documents";
@@ -50,9 +51,16 @@ import { spacesDocumentHandler } from "./pages/api/internal/spaces/document";
 import { spacesDocsByEntityHandler } from "./pages/api/internal/spaces/docs-by-entity";
 import { spacesSchemaReadHandler } from "./pages/api/internal/spaces/schema-read";
 import { spacesSchemaChangelogHandler } from "./pages/api/internal/spaces/schema-changelog";
+import { spacesSchemaSearchHandler } from "./pages/api/internal/spaces/schema-search";
+import { spacesSchemaVersionsHandler } from "./pages/api/internal/spaces/schema-versions";
 import { spacesNotificationsHandler } from "./pages/api/internal/spaces/notifications";
 import { spacesNotificationsTriageHandler } from "./pages/api/internal/spaces/notifications-triage";
 import { spacesNotificationsMuteHandler } from "./pages/api/internal/spaces/notifications-mute";
+import { webhookSubscriptionsCursorHandler } from "./pages/api/internal/webhook-subscriptions/cursor";
+import { webhookSubscriptionsFallbackHandler } from "./pages/api/internal/webhook-subscriptions/fallback";
+import { webhookSubscriptionsContextHandler } from "./pages/api/internal/webhook-subscriptions/context";
+import { spacesRegisterWebhooksHandler } from "./pages/api/internal/spaces/register-webhooks";
+import { spacesUnregisterWebhooksHandler } from "./pages/api/internal/spaces/unregister-webhooks";
 import { cleanupPlanHandler } from "./pages/api/internal/cleanup-plan";
 import { cleanupCompleteHandler } from "./pages/api/internal/cleanup-complete";
 import {
@@ -61,12 +69,14 @@ import {
 } from "./pages/api/internal/attachments/lookup";
 import { connectionsTokenHealthHandler } from "./pages/api/internal/connections/token-health";
 import { resolveCronJobs } from "./lib/cron/dispatch";
+import { withServiceRun, numericCounts, pruneServiceRuns } from "./lib/service-runs";
 import {
   runScheduledOauthRefresh,
   runScheduledKeepalive,
   runScheduledConnectionInvalidation,
 } from "./lib/cron/oauth-refresh-deps";
 import { runScheduledRunReconciliation } from "./lib/runs/reconcile-deps";
+import { runScheduledWebhookRenewal } from "./lib/cron/webhook-renewal-deps";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
@@ -124,6 +134,9 @@ const SPACES_MIGRATE_SCHEMA_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/migrate-schema$/;
 const SPACES_RECORDS_SYNC_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/records-sync$/;
+// Incremental (webhook-driven) per-space apply seam (server-dynamic-mode).
+const SPACES_INCREMENTAL_APPLY_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/incremental-apply$/;
 const SPACES_RESCAN_BASES_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/rescan-bases$/;
 const SPACES_STORAGE_DESTINATION_RE =
@@ -139,6 +152,23 @@ const SPACES_SCHEMA_READ_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/schema$/;
 const SPACES_SCHEMA_CHANGELOG_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/schema-changelog$/;
+const SPACES_SCHEMA_SEARCH_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/schema-search$/;
+const SPACES_SCHEMA_VERSIONS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/schema-versions$/;
+// Webhook lifecycle + incremental-run callbacks (server-instant-webhook
+// Phases D + E).
+const WEBHOOK_SUBSCRIPTIONS_CURSOR_RE =
+  /^\/api\/internal\/webhook-subscriptions\/([^/]+)\/cursor$/;
+const WEBHOOK_SUBSCRIPTIONS_FALLBACK_RE =
+  /^\/api\/internal\/webhook-subscriptions\/([^/]+)\/fallback$/;
+// Payloads-auth resolution for the incremental task (server-dynamic-mode 4.1).
+const WEBHOOK_SUBSCRIPTIONS_CONTEXT_RE =
+  /^\/api\/internal\/webhook-subscriptions\/([^/]+)\/context$/;
+const SPACES_REGISTER_WEBHOOKS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/register-webhooks$/;
+const SPACES_UNREGISTER_WEBHOOKS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/unregister-webhooks$/;
 // Inbox notification feed + triage (server-notifications-inbox).
 const SPACES_NOTIFICATIONS_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/notifications$/;
@@ -414,6 +444,14 @@ export default {
         return await spacesRecordsSyncHandler(request, env, ctx, locals, recordsSync[1]!);
       }
 
+      // Incremental (webhook-driven) apply seam — the workflows
+      // incremental-backup task's engine-brokered IncrementalDb transport
+      // (server-dynamic-mode, re-scoped).
+      const incrementalApply = SPACES_INCREMENTAL_APPLY_RE.exec(url.pathname);
+      if (incrementalApply) {
+        return await spacesIncrementalApplyHandler(request, env, ctx, locals, incrementalApply[1]!);
+      }
+
       const healthSync = SPACES_HEALTH_SYNC_RE.exec(url.pathname);
       if (healthSync) {
         return await spacesHealthSyncHandler(request, env, ctx, locals, healthSync[1]!);
@@ -539,6 +577,16 @@ export default {
         return await spacesSchemaChangelogHandler(request, env, ctx, locals, schemaChangelog[1]!);
       }
 
+      const schemaSearch = SPACES_SCHEMA_SEARCH_RE.exec(url.pathname);
+      if (schemaSearch) {
+        return await spacesSchemaSearchHandler(request, env, ctx, locals, schemaSearch[1]!);
+      }
+
+      const schemaVersions = SPACES_SCHEMA_VERSIONS_RE.exec(url.pathname);
+      if (schemaVersions) {
+        return await spacesSchemaVersionsHandler(request, env, ctx, locals, schemaVersions[1]!);
+      }
+
       // Inbox notifications (server-notifications-inbox): derived alert feed
       // + idempotent triage/mute. The two sub-routes are checked before the
       // bare feed route (all three are $-anchored, so order is cosmetic).
@@ -553,6 +601,67 @@ export default {
       const notifications = SPACES_NOTIFICATIONS_RE.exec(url.pathname);
       if (notifications) {
         return await spacesNotificationsHandler(request, env, ctx, locals, notifications[1]!);
+      }
+
+      // Incremental-run callbacks (server-instant-webhook Phase D): the
+      // incremental-backup task advances its subscription's payload cursor
+      // (monotonic) and signals payload-stream gaps (fallback → full re-read).
+      const wsCursor = WEBHOOK_SUBSCRIPTIONS_CURSOR_RE.exec(url.pathname);
+      if (wsCursor) {
+        return await webhookSubscriptionsCursorHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          wsCursor[1]!,
+        );
+      }
+      const wsFallback = WEBHOOK_SUBSCRIPTIONS_FALLBACK_RE.exec(url.pathname);
+      if (wsFallback) {
+        return await webhookSubscriptionsFallbackHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          wsFallback[1]!,
+        );
+      }
+      // Payloads-auth resolution (server-dynamic-mode Phase 4.1): the task
+      // resolves the Airtable webhook id + a fresh Connection token + the
+      // reconciliation anchor at run start — none ride the task payload.
+      const wsContext = WEBHOOK_SUBSCRIPTIONS_CONTEXT_RE.exec(url.pathname);
+      if (wsContext) {
+        return await webhookSubscriptionsContextHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          wsContext[1]!,
+        );
+      }
+
+      // Webhook lifecycle (server-instant-webhook Phase E): find-or-create
+      // the org-level (organization, base) webhooks + per-Space subscriptions
+      // on enable; unsubscribe + delete-on-last on disable.
+      const registerWebhooks = SPACES_REGISTER_WEBHOOKS_RE.exec(url.pathname);
+      if (registerWebhooks) {
+        return await spacesRegisterWebhooksHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          registerWebhooks[1]!,
+        );
+      }
+      const unregisterWebhooks = SPACES_UNREGISTER_WEBHOOKS_RE.exec(url.pathname);
+      if (unregisterWebhooks) {
+        return await spacesUnregisterWebhooksHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          unregisterWebhooks[1]!,
+        );
       }
 
       // Attachment dedup (openspec/changes/server-attachments). The workflows
@@ -577,7 +686,7 @@ export default {
   async scheduled(
     event: ScheduledEvent,
     env: Env,
-    _ctx: ExecutionContext,
+    ctx: ExecutionContext,
   ): Promise<void> {
     // Cron dispatch (server-oauth-refresh-cron-health). Each background
     // service owns one entry in resolveCronJobs; an unmapped cron string is
@@ -588,16 +697,31 @@ export default {
       console.log(JSON.stringify({ event: "cron_unmapped", cron: event.cron }));
       return;
     }
-    for (const job of jobs) {
-      if (job === "oauth-refresh-sweep") {
-        await runScheduledOauthRefresh(env);
-      } else if (job === "run-reconciliation") {
-        await runScheduledRunReconciliation(env);
-      } else if (job === "oauth-keepalive") {
-        await runScheduledKeepalive(env);
-      } else if (job === "connection-auto-invalidate") {
-        await runScheduledConnectionInvalidation(env);
+    // shared-service-runs: each job runs under withServiceRun, which records one
+    // service_runs row (started → succeeded|failed) from the job's returned
+    // counters. A separate telemetry DB client is used for the rows + prune (the
+    // OAuth jobs manage their own client internally; a brief second short-lived
+    // client per firing is negligible for a 15-min/daily cron). Record-keeping
+    // failures are swallowed, so job behavior is unchanged.
+    const { db, sql } = createMasterDb(env);
+    try {
+      for (const job of jobs) {
+        if (job === "oauth-refresh-sweep") {
+          await withServiceRun(db, "oauth_refresh_sweep", async () => ({ counts: numericCounts(await runScheduledOauthRefresh(env)) }));
+        } else if (job === "run-reconciliation") {
+          await withServiceRun(db, "run_reconciliation", async () => ({ counts: numericCounts(await runScheduledRunReconciliation(env)) }));
+        } else if (job === "oauth-keepalive") {
+          await withServiceRun(db, "oauth_keepalive", async () => ({ counts: numericCounts(await runScheduledKeepalive(env)) }));
+        } else if (job === "connection-auto-invalidate") {
+          await withServiceRun(db, "connection_auto_invalidate", async () => ({ counts: numericCounts(await runScheduledConnectionInvalidation(env)) }));
+        } else if (job === "service-runs-prune") {
+          await withServiceRun(db, "service_runs_prune", () => pruneServiceRuns(db));
+        } else if (job === "webhook-renewal") {
+          await withServiceRun(db, "webhook_renewal", async () => ({ counts: numericCounts(await runScheduledWebhookRenewal(env)) }));
+        }
       }
+    } finally {
+      ctx.waitUntil(sql.end({ timeout: 5 }));
     }
   },
 };

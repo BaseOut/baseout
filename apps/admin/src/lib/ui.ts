@@ -39,6 +39,12 @@ export function setButtonLoading(btn: HTMLButtonElement, loading: boolean): void
   }
 }
 
+// entityHref now lives in entity-link.ts (the single route authority — it gained
+// real /spaces/[id] + /users/[id] targets in admin-entity-linking). Re-exported
+// here for the directory pages that imported it from ui during
+// admin-entity-directories.
+export { entityHref } from './entity-link'
+
 export type PostActionResult =
   | { ok: true; body: Record<string, unknown> }
   | { ok: false; error: string }

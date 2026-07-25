@@ -11,10 +11,10 @@
 
 import {
   saveBackupConfig,
-  type SaveConfigError,
   type SaveConfigInput,
   type SaveConfigResult,
 } from './save-config'
+import { formatIntervalSeconds } from './frequency-picker'
 import {
   describeRunBackupError,
   runBackup,
@@ -43,8 +43,10 @@ export interface ConfigureSaveDeps {
   runBackupImpl?: (spaceId: string) => Promise<RunBackupResult>
 }
 
-function describeSaveConfigError(error: SaveConfigError): string {
-  switch (error) {
+function describeSaveConfigError(
+  failed: Extract<SaveConfigResult, { ok: false }>,
+): string {
+  switch (failed.error) {
     case 'frequency_not_allowed':
       return 'That schedule is not available on your plan.'
     case 'unauthenticated':
@@ -53,6 +55,15 @@ function describeSaveConfigError(error: SaveConfigError): string {
       return 'Network error — check your connection and try again.'
     case 'destination_not_connected':
       return 'Connect that destination before making it the primary.'
+    // web-instant-webhook (Instant frequency + poll interval):
+    case 'airtable_webhook_cap_reached':
+      return 'This base is already webhook-connected by the maximum number of organizations, so Instant is unavailable for it.'
+    case 'dynamic_db_not_ready':
+      return "This Space's dynamic database isn't ready yet — Instant unlocks once provisioning completes."
+    case 'webhook_poll_interval_below_minimum':
+      return failed.minimum !== undefined
+        ? `Your plan's minimum is every ${formatIntervalSeconds(failed.minimum)} — pick a longer interval.`
+        : "That interval is below your plan's minimum — pick a longer one."
     default:
       return 'Could not save changes. Please try again.'
   }
@@ -79,7 +90,7 @@ export async function saveConfigureForm(
       storageType: input.storageType,
     })
     if (!saved.ok) {
-      return { ok: false, message: describeSaveConfigError(saved.error) }
+      return { ok: false, message: describeSaveConfigError(saved) }
     }
   }
 

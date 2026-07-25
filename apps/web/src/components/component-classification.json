@@ -205,5 +205,9 @@
   "backups/RunBackupNowModal.astro": {
     "classification": "daisyui-direct-styleguide",
     "rationale": "Thin product configuration of the ConfirmModal primitive — the credits-warning confirm for an on-demand backup. Documented via the confirm-modal styleguide entry; not a standalone pattern."
+  },
+  "backups/FrequencyPicker.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Backup-cadence control (web-instant-webhook) composed from daisyUI radio rows (the wizard's schedule pattern) plus the Select and Button primitives; the Instant tier/dynamic-DB gating and save-error mapping live in lib/backups/frequency-picker.ts."
   }
 }

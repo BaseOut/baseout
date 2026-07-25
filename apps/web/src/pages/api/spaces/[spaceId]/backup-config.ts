@@ -20,6 +20,7 @@ import { env } from 'cloudflare:workers'
 import { and, eq, sql } from 'drizzle-orm'
 import {
   backupConfigurations,
+  spaceDatabases,
   spaces,
   storageDestinations,
 } from '../../../../db/schema'
@@ -95,6 +96,31 @@ export interface HandlePatchInput {
    * load-bearing write, the status flip is presentation.
    */
   promoteSpaceIfReady: (spaceId: string) => Promise<void>
+  /**
+   * web-instant-webhook: whether the Space's dynamic DB is ready
+   * (space_databases.status = 'active' — the schema's provisioned-terminal
+   * status; the spec's shorthand "ready"). Instant is rejected without it:
+   * webhook-driven incremental runs apply payloads onto the per-Space model.
+   * Consulted only when the body requests frequency='instant'.
+   */
+  isDynamicDbReady: (spaceId: string) => Promise<boolean>
+  /**
+   * web-instant-webhook / server-instant-webhook E.5: engine webhook
+   * lifecycle, fired on cadence transitions. `registerWebhooks` runs on the
+   * transition TO instant; a cap failure (`airtable_webhook_cap_reached`)
+   * triggers a compensating upsert back to the previous cadence so config
+   * and webhook rows can't drift. Other failures are best-effort — the
+   * daily safety sweep keeps data flowing until registration succeeds.
+   * `unregisterWebhooks` runs on the transition AWAY (best-effort; the
+   * renewal cron reaps orphans). Both null when the engine binding isn't
+   * wired (mirrors onScheduledFrequencyChange).
+   */
+  registerWebhooks:
+    | ((spaceId: string) => Promise<{ ok: true } | { ok: false; code: string; status: number }>)
+    | null
+  unregisterWebhooks:
+    | ((spaceId: string) => Promise<{ ok: true } | { ok: false; code: string; status: number }>)
+    | null
 }
 
 export async function handlePatch(input: HandlePatchInput): Promise<Response> {
@@ -135,12 +161,76 @@ export async function handlePatch(input: HandlePatchInput): Promise<Response> {
     }
   }
 
+  // Instant needs the Space's dynamic DB (web-instant-webhook): incremental
+  // webhook runs apply payloads onto the per-Space model, so without a ready
+  // DB there is nothing to apply onto. UI locks the option; this is the
+  // server-side authority.
+  const requestedFrequency =
+    typeof input.body.frequency === 'string' ? input.body.frequency : undefined
+  if (requestedFrequency === 'instant') {
+    const ready = await input.isDynamicDbReady(input.spaceId)
+    if (!ready) {
+      return jsonResponse({ error: 'dynamic_db_not_ready' }, 422)
+    }
+  }
+
+  // Previous cadence, read BEFORE the upsert so instant transitions can be
+  // detected (and reverted on a webhook-cap failure). Null when no config
+  // row exists yet.
+  let previousFrequency: string | null = null
+  if ('frequency' in input.body) {
+    try {
+      previousFrequency =
+        (await input.fetchScheduleForSpace(input.spaceId))?.dataFrequency ?? null
+    } catch {
+      // Treated as "no previous config" — the transition handling below
+      // degrades to register-on-instant only.
+    }
+  }
+
   const result = await persistBackupConfigPolicy(
     { spaceId: input.spaceId, body: input.body, tier },
     { upsertConfig: input.upsertConfig },
   )
 
   if (result.ok) {
+    // Webhook lifecycle on cadence transitions (server-instant-webhook E.5).
+    if (requestedFrequency !== undefined) {
+      const toInstant =
+        requestedFrequency === 'instant' && previousFrequency !== 'instant'
+      const awayFromInstant =
+        previousFrequency === 'instant' && requestedFrequency !== 'instant'
+      if (toInstant && input.registerWebhooks) {
+        let registration: { ok: true } | { ok: false; code: string; status: number }
+        try {
+          registration = await input.registerWebhooks(input.spaceId)
+        } catch {
+          // Transport-level throw: best-effort, same stance as the engine
+          // error branch below.
+          registration = { ok: false, code: 'engine_unreachable', status: 0 }
+        }
+        if (!registration.ok) {
+          if (registration.code === 'airtable_webhook_cap_reached') {
+            // Compensating upsert: the base is already webhook-connected by
+            // the maximum number of organizations, so instant must not stick.
+            // Revert to the previous cadence (column default when none).
+            await input.upsertConfig({
+              spaceId: input.spaceId,
+              frequency: (previousFrequency ?? 'monthly') as UpsertConfigInput['frequency'],
+            })
+            return jsonResponse({ error: 'airtable_webhook_cap_reached' }, 409)
+          }
+          // Other failures (engine unreachable, etc.): keep the config —
+          // the daily safety sweep covers data until registration succeeds.
+        }
+      } else if (awayFromInstant && input.unregisterWebhooks) {
+        try {
+          await input.unregisterWebhooks(input.spaceId)
+        } catch {
+          // Best-effort — the renewal cron reaps orphaned webhooks.
+        }
+      }
+    }
     // After a successful upsert, hand off to the SpaceDO via the engine proxy
     // when the body touched any schedule field. We send the FULL post-upsert
     // schedule (scope + both cadences) so the engine computes both fires
@@ -177,6 +267,13 @@ export async function handlePatch(input: HandlePatchInput): Promise<Response> {
       return jsonResponse({ error: 'frequency_not_allowed' }, 422)
     case 'unsupported_storage_type':
       return jsonResponse({ error: 'unsupported_storage_type' }, 422)
+    case 'webhook_poll_interval_below_minimum':
+      // Echo the tier minimum so the picker renders it inline
+      // (web-instant-webhook).
+      return jsonResponse(
+        { error: 'webhook_poll_interval_below_minimum', minimum: result.minimum },
+        422,
+      )
   }
 }
 
@@ -201,6 +298,9 @@ function buildUpsert(db: AppDb): (input: UpsertConfigInput) => Promise<void> {
     if (upsert.schemaFrequency !== undefined) {
       insertValues.schemaFrequency = upsert.schemaFrequency
     }
+    if (upsert.webhookPollIntervalSeconds !== undefined) {
+      insertValues.webhookPollIntervalSeconds = upsert.webhookPollIntervalSeconds
+    }
 
     await db
       .insert(backupConfigurations)
@@ -216,6 +316,9 @@ function buildUpsert(db: AppDb): (input: UpsertConfigInput) => Promise<void> {
           ...(upsert.scope !== undefined && { scope: upsert.scope }),
           ...(upsert.schemaFrequency !== undefined && {
             schemaFrequency: upsert.schemaFrequency,
+          }),
+          ...(upsert.webhookPollIntervalSeconds !== undefined && {
+            webhookPollIntervalSeconds: upsert.webhookPollIntervalSeconds,
           }),
           modifiedAt: now,
         },
@@ -285,6 +388,19 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
         : null
     },
     promoteSpaceIfReady: (spaceId) => promoteSpaceIfSetupIncomplete(db, spaceId),
+    // web-instant-webhook: dynamic-DB readiness gate for Instant.
+    // 'active' is the provisioned-terminal status in space_databases'
+    // vocabulary (pending | provisioning | active | migrating | error).
+    isDynamicDbReady: async (spaceId) => {
+      const [row] = await db
+        .select({ status: spaceDatabases.status })
+        .from(spaceDatabases)
+        .where(eq(spaceDatabases.spaceId, spaceId))
+        .limit(1)
+      return row?.status === 'active'
+    },
+    registerWebhooks: buildWebhookLifecycleHandoff('register'),
+    unregisterWebhooks: buildWebhookLifecycleHandoff('unregister'),
   })
 }
 
@@ -305,6 +421,27 @@ function buildScheduledFrequencyHandoff():
   return async (spaceId, schedule) => {
     await engine.setSpaceFrequency(spaceId, schedule)
   }
+}
+
+/**
+ * Build the engine handoff for the webhook registration lifecycle
+ * (web-instant-webhook; engine routes are server-instant-webhook Phase E).
+ * Returns null when the BACKUP_ENGINE binding or INTERNAL_TOKEN is missing —
+ * in that environment instant transitions persist config only, and the daily
+ * safety sweep covers data until the wiring exists.
+ */
+function buildWebhookLifecycleHandoff(
+  action: 'register' | 'unregister',
+): ((spaceId: string) => Promise<{ ok: true } | { ok: false; code: string; status: number }>) | null {
+  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  const engine = createBackupEngine({
+    binding: env.BACKUP_ENGINE,
+    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+  })
+  return (spaceId) =>
+    action === 'register'
+      ? engine.registerWebhooks(spaceId)
+      : engine.unregisterWebhooks(spaceId)
 }
 
 export const POST: APIRoute = async () =>

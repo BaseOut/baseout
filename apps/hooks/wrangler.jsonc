@@ -5,20 +5,30 @@
   "compatibility_date": "2025-01-01",
   "compatibility_flags": ["nodejs_compat"],
 
-  // Routes
-  // "routes": [
-  //   { "pattern": "webhooks.baseout.com/webhooks/airtable/*", "zone_name": "baseout.com" }
-  // ],
+  // Master-DB access (registry lookup + last_ping_at upsert — the only I/O).
+  // Direct postgres-js TLS from workerd hangs under `wrangler dev`, so local
+  // dev goes through wrangler's Hyperdrive simulator: `pnpm dev` runs
+  // scripts/dev.mjs, which feeds .dev.vars DATABASE_URL to this binding via
+  // CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE (same shim as
+  // apps/api). The id is a local-dev placeholder — deployed envs declare their
+  // provisioned binding in their env blocks (bindings don't inherit).
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000000000000000000000000000",
+      "localConnectionString": "postgres://run-via-scripts-dev-mjs.invalid:5432/unset"
+    }
+  ],
 
-  // Service bindings — outgoing to baseout-server
-  // "services": [
-  //   { "binding": "SERVER", "service": "baseout-server" }
-  // ],
-
-  // Secrets (set via `wrangler secret put`):
-  //   DATABASE_URL
-  //   MASTER_ENCRYPTION_KEY
-  //   SERVICE_HMAC_TO_SERVER
+  // DEPLOY-BLOCKED — provisioned with the public rollout:
+  //  - "routes": [{ "pattern": "hooks.baseout.com/webhooks/airtable/*", "zone_name": "baseout.com" }]
+  //  - env-block Hyperdrive bindings; Logpush + rejection/503 alerting
+  //    (sustained 503 > 15 min pages before Airtable's ~1-day retry exhaustion
+  //    disables notifications).
+  // Secrets (via `wrangler secret bulk .dev.vars` on deploy, per the house
+  // pipeline): DATABASE_URL, MASTER_ENCRYPTION_KEY. Deliberately NO service
+  // token and NO SERVER binding — hooks never talks to the engine (settled
+  // 2026-07-18 pull-based design; receiver works during a server outage).
 
   "env": {
     "production": {

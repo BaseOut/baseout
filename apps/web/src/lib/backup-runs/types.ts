@@ -103,4 +103,17 @@ export interface BackupRunSummary {
    * as "Currently selected bases" with a caveat note.
    */
   includedBases: { id: string; name: string }[];
+  /**
+   * web-instant-webhook: per-run change counts for webhook-triggered runs
+   * ("Source: Webhook · N created · N updated · N deleted"). OPTIONAL and
+   * currently never populated — `backup_runs` has no created/updated/deleted
+   * columns yet; the engine's incremental-run completion payload persists
+   * them as part of server-instant-webhook. The history UI falls back to
+   * "Source: Webhook" until they land (webhookSourceLine in lib/backups/format).
+   */
+  createdCount?: number | null;
+  updatedCount?: number | null;
+  deletedCount?: number | null;
+  /** Records touched by the reconciliation pass, when one contributed. */
+  reconciledRecords?: number | null;
 }

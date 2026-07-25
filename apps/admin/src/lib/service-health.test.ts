@@ -9,7 +9,6 @@ function inputs(overrides: Partial<ServiceHealthInputs>): ServiceHealthInputs {
     overdueScheduleCount: 0,
     scheduleCount: 5,
     lastScheduledRunAt: hoursAgo(6),
-    lastCleanupAt: hoursAgo(1),
     staleSessionCount: 0,
     ...overrides,
   }
@@ -24,7 +23,9 @@ function byKey(signals: ReturnType<typeof deriveServiceHealth>, key: string) {
 describe('deriveServiceHealth', () => {
   it('reports all-ok when nothing is overdue or stale', () => {
     const signals = deriveServiceHealth(inputs({}), NOW)
-    expect(signals).toHaveLength(4)
+    // Cleanup signal moved to real service_runs rows — scheduler, scheduled-runs,
+    // session-sweep remain the derived set (shared-service-runs 5.3).
+    expect(signals).toHaveLength(3)
     expect(signals.every((s) => s.status === 'ok')).toBe(true)
   })
 
@@ -42,13 +43,9 @@ describe('deriveServiceHealth', () => {
     expect(s.status).toBe('unknown')
   })
 
-  it('is unknown when no scheduled run or prune has ever happened (young install ≠ broken)', () => {
-    const signals = deriveServiceHealth(
-      inputs({ lastScheduledRunAt: null, lastCleanupAt: null }),
-      NOW,
-    )
+  it('is unknown when no scheduled run has ever happened (young install ≠ broken)', () => {
+    const signals = deriveServiceHealth(inputs({ lastScheduledRunAt: null }), NOW)
     expect(byKey(signals, 'scheduled-runs').status).toBe('unknown')
-    expect(byKey(signals, 'cleanup').status).toBe('unknown')
   })
 
   it('warns on stale connection-session locks', () => {

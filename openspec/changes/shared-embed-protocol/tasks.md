@@ -1,9 +1,15 @@
 # Tasks
 
-> **Status 2026-07-18:** built (§1, §2.1/2.3, §3). Remaining: 2.2's forged-POST
-> CSRF integration test, 4.1 framed-harness smoke (needs the running app —
-> human loop), 4.2 full `astro check` (blocked by the checkout's pre-existing
-> ungenerated-wrangler-types errors, which also hit untouched files).
+> **Status 2026-07-18:** built (§1, §2.1/2.3, §3). Remaining: 4.1 framed-harness
+> smoke (needs the running app — human loop), 4.2 full `astro check` (blocked by
+> the checkout's pre-existing ungenerated-wrangler-types errors, which also hit
+> untouched files).
+>
+> **Update:** 2.2's forged-POST CSRF integration test is now written
+> (`tests/integration/auth-csrf-origin.test.ts`). It exercises the real
+> better-auth stack via `seedAuthedUser`. It could NOT be run in the authoring
+> environment (no Docker/local Postgres) — run it on the human loop:
+> `pnpm --filter @baseout/web test:db:up && pnpm --filter @baseout/web test:integration`.
 
 ## 1. Protocol package (packages/embed-protocol)
 
@@ -16,7 +22,7 @@
 ## 2. Web: headers + cookies
 
 - [x] 2.1 Middleware: `frame-ancestors 'self' <allowlist>` on HTML responses from `PUBLIC_EMBED_ALLOWED_ANCESTORS` (protocol parser); no `X-Frame-Options`. → `src/lib/embed/frame-headers.ts` applied via `sequence()` wrapper in middleware.ts (all return paths covered, immutable-response clone fallback, never clobbers an existing CSP). Tests: frame-headers.test.ts + middleware suite (28) green.
-- [x] 2.2 better-auth cookie attributes → `SameSite=None; Secure` via `resolveCookieAttributes` in `auth-factory.ts` (local-dev plain-cookie mode stays Lax — None-without-Secure is browser-dropped). Unit tests added. **Remaining:** the forged cross-site POST CSRF regression test belongs in the integration suite (real better-auth stack) — not yet written. §3.3 security-review points recorded in the design (Decision 9).
+- [x] 2.2 better-auth cookie attributes → `SameSite=None; Secure` via `resolveCookieAttributes` in `auth-factory.ts` (local-dev plain-cookie mode stays Lax — None-without-Secure is browser-dropped). Unit tests added. Forged cross-site POST CSRF regression test added in the integration suite (real better-auth stack): `tests/integration/auth-csrf-origin.test.ts` — asserts a cookie-bearing sign-out POST from an untrusted origin (and one with no Origin header) is rejected 403 with the session row intact, while the trusted first-party origin succeeds (session revoked). Pins `defaultCookieAttributes` to SameSite=None so the guard can't silently lose its subject. **Run on the human loop — no Docker/PG in the authoring env** (`pnpm --filter @baseout/web test:db:up && test:integration`). §3.3 security-review points recorded in the design (Decision 9).
 - [x] 2.3 Documented `PUBLIC_EMBED_ALLOWED_ANCESTORS` in `wrangler.jsonc.example` vars (dev value: airtable.com + *.airtableblocks.com + chrome-extension://*). It is a var, not a secret — `.dev.vars` intentionally untouched.
 
 ## 3. Web: embed entry + context

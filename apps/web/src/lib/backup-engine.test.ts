@@ -864,3 +864,79 @@ describe('createBackupEngine inbox methods (web-notifications-inbox §5.1)', () 
     })
   })
 })
+
+// ── web-instant-webhook: webhook registration lifecycle (server E.1/E.3) ────
+
+describe('createBackupEngine.registerWebhooks', () => {
+  const SPACE_ID = '99999999-8888-7777-6666-555555555555'
+
+  it('POSTs the canonical /api/internal/spaces/:id/register-webhooks path with the token', async () => {
+    const binding = fetcherStub(() => jsonResponse({ ok: true }))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.registerWebhooks(SPACE_ID)
+    expect(result).toEqual({ ok: true })
+    const [rawUrl, init] = binding.fetch.mock.calls[0]!
+    const url = new URL(rawUrl as string)
+    expect(url.pathname).toBe(
+      `/api/internal/spaces/${SPACE_ID}/register-webhooks`,
+    )
+    expect((init as RequestInit).method).toBe('POST')
+    const headers = (init as RequestInit).headers as Record<string, string>
+    expect(headers['x-internal-token']).toBe(TOKEN)
+  })
+
+  it("maps Airtable's per-base cap to airtable_webhook_cap_reached", async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'airtable_webhook_cap_reached' }, 409),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.registerWebhooks(SPACE_ID)
+    expect(result).toEqual({
+      ok: false,
+      code: 'airtable_webhook_cap_reached',
+      status: 409,
+    })
+  })
+
+  it('maps a transport throw to engine_unreachable', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.registerWebhooks(SPACE_ID)
+    expect(result).toEqual({ ok: false, code: 'engine_unreachable', status: 0 })
+  })
+
+  it('maps unknown error bodies to engine_error', async () => {
+    const binding = fetcherStub(() => jsonResponse({ error: 'boom' }, 500))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.registerWebhooks(SPACE_ID)
+    expect(result).toEqual({ ok: false, code: 'engine_error', status: 500 })
+  })
+})
+
+describe('createBackupEngine.unregisterWebhooks', () => {
+  const SPACE_ID = '99999999-8888-7777-6666-555555555555'
+
+  it('POSTs the canonical /api/internal/spaces/:id/unregister-webhooks path', async () => {
+    const binding = fetcherStub(() => jsonResponse({ ok: true }))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.unregisterWebhooks(SPACE_ID)
+    expect(result).toEqual({ ok: true })
+    const [rawUrl, init] = binding.fetch.mock.calls[0]!
+    const url = new URL(rawUrl as string)
+    expect(url.pathname).toBe(
+      `/api/internal/spaces/${SPACE_ID}/unregister-webhooks`,
+    )
+    expect((init as RequestInit).method).toBe('POST')
+  })
+
+  it('maps a transport throw to engine_unreachable', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.unregisterWebhooks(SPACE_ID)
+    expect(result).toEqual({ ok: false, code: 'engine_unreachable', status: 0 })
+  })
+})

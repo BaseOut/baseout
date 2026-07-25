@@ -69,6 +69,16 @@ export function triggerLabel(triggeredBy: string): string {
   return 'Manual'
 }
 
+/**
+ * Display form of the trigger cell: webhook-triggered runs carry a ⚡ glyph
+ * (web-instant-webhook); everything else matches triggerLabel. Kept separate
+ * from triggerLabel so the facet-filter option text ("Webhook") stays plain.
+ */
+export function triggerDisplayLabel(triggeredBy: string): string {
+  const label = triggerLabel(triggeredBy)
+  return label === 'Webhook' ? `⚡ ${label}` : label
+}
+
 /** Normalised key matching the trigger facet-filter values (data-trigger). */
 export function triggerKey(triggeredBy: string): string {
   if (triggeredBy.startsWith('schedule')) return 'scheduled'
@@ -145,7 +155,7 @@ export function backupRowHtml(run: BackupRunSummary): string {
     ` data-search="${search}" onclick="window.location='${href}'">` +
     `<td><span class="badge ${badgeClass[sm.variant]}">${spinner}${esc(sm.label)}</span> <span class="badge badge-sm ${kindBadgeClass(run.kind)}">${esc(kindLabel(run.kind))}</span></td>` +
     `<td>${whenCell}</td>` +
-    `<td class="text-base-content/64">${esc(triggerLabel(run.triggeredBy))}</td>` +
+    `<td class="text-base-content/64">${esc(triggerDisplayLabel(run.triggeredBy))}</td>` +
     `<td class="text-right tabular-nums">${run.includedBases.length}</td>` +
     `<td class="text-right tabular-nums">${records}</td>` +
     `<td class="text-right tabular-nums">${attachments}</td>` +

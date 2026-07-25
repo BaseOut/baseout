@@ -1,0 +1,111 @@
+---
+// /spaces — global spaces directory (admin-entity-directories). Read-only;
+// role='super' gated by middleware. Attention-first ordering + config/db/last-run
+// summary in the pure lib. DB locators rendered inert (plain text, no links).
+import { and, desc, eq, ilike, or } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import EntityLink from '../components/EntityLink.astro';
+import { backupConfigurations, backupRuns, organizations, platforms, spaceDatabases, spacePlatforms, spaces } from '../db/schema';
+import { buildSpacesDirectory } from '../lib/spaces-directory';
+import { entityHref, truncationNote } from '../lib/ui';
+
+const LIMIT = 200;
+const url = new URL(Astro.request.url);
+const q = (url.searchParams.get('q') ?? '').trim();
+const status = (url.searchParams.get('status') ?? '').trim() || null;
+const { db } = Astro.locals;
+
+const filters = [] as ReturnType<typeof eq>[];
+if (q) filters.push(or(ilike(spaces.name, `%${q}%`), ilike(organizations.name, `%${q}%`))!);
+if (status) filters.push(eq(spaces.status, status));
+
+const spaceRows = await db
+  .select({ id: spaces.id, name: spaces.name, status: spaces.status, organizationId: spaces.organizationId, organizationName: organizations.name })
+  .from(spaces)
+  .leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+  .where(filters.length ? and(...filters) : undefined)
+  .orderBy(spaces.name)
+  .limit(LIMIT);
+
+const [platformRows, configs, dbs, latestRuns] = await Promise.all([
+  db.select({ spaceId: spacePlatforms.spaceId, code: platforms.slug }).from(spacePlatforms).innerJoin(platforms, eq(spacePlatforms.platformId, platforms.id)),
+  db.select({ spaceId: backupConfigurations.spaceId, frequency: backupConfigurations.frequency, scope: backupConfigurations.scope, mode: backupConfigurations.mode }).from(backupConfigurations),
+  db.select({ spaceId: spaceDatabases.spaceId, backend: spaceDatabases.backend, status: spaceDatabases.status }).from(spaceDatabases),
+  db.selectDistinctOn([backupRuns.spaceId], { spaceId: backupRuns.spaceId, status: backupRuns.status, errorMessage: backupRuns.errorMessage, createdAt: backupRuns.createdAt })
+    .from(backupRuns).orderBy(backupRuns.spaceId, desc(backupRuns.createdAt)),
+]);
+
+const rows = buildSpacesDirectory({
+  spaces: spaceRows,
+  platforms: platformRows,
+  configs,
+  dbs,
+  latestRuns: latestRuns.filter((r): r is { spaceId: string; status: string; errorMessage: string | null; createdAt: Date } => !!r.spaceId && !!r.createdAt),
+});
+
+const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
+---
+
+<SidebarLayout title="Admin — Spaces">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader title="Spaces" description={`Every Space with config, DB posture, and last-run outcome (needs-attention first).${truncationNote(spaceRows.length, LIMIT)}`} />
+
+    <form method="get" class="flex flex-wrap items-center gap-2">
+      <input type="search" name="q" value={q} placeholder="Search space or org…" class="input input-bordered input-sm w-64" />
+      <select name="status" class="select select-bordered select-sm">
+        <option value="" selected={!status}>All statuses</option>
+        {['active', 'setup_incomplete', 'error', 'paused'].map((s) => (<option value={s} selected={status === s}>{s}</option>))}
+      </select>
+      <button class="btn btn-sm btn-primary" type="submit">Apply</button>
+    </form>
+
+    <Card variant="outlined">
+      {rows.length === 0 ? (
+        <EmptyState title="No spaces match" description="Try a different search or status." />
+      ) : (
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-base-300 text-left text-xs uppercase text-base-content/60">
+                <th class="py-2 pr-4 font-medium">Space</th>
+                <th class="py-2 pr-4 font-medium">Status</th>
+                <th class="py-2 pr-4 font-medium">Config</th>
+                <th class="py-2 pr-4 font-medium">Database</th>
+                <th class="py-2 pr-4 font-medium">Last run</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr class={`border-b border-base-200/60 ${r.attention ? 'bg-error/5' : ''}`}>
+                  <td class="py-2 pr-4">
+                    <div class="font-medium"><EntityLink type="space" id={r.id} label={r.name} /></div>
+                    <div class="text-xs text-base-content/50">
+                      {r.organizationId ? <a href={entityHref('org', r.organizationId)} class="link link-hover">{r.organizationName}</a> : '—'}
+                      {r.platformCodes.length > 0 && ` · ${r.platformCodes.join(', ')}`}
+                    </div>
+                  </td>
+                  <td class="py-2 pr-4"><Badge variant={r.status === 'active' ? 'success' : r.status === 'error' ? 'error' : 'default'}>{r.status}</Badge></td>
+                  <td class="py-2 pr-4 text-base-content/70">{r.config ? `${r.config.frequency} · ${r.config.mode} · ${r.config.scope}` : <span class="text-base-content/40">not configured</span>}</td>
+                  <td class="py-2 pr-4 text-base-content/70">{r.db.backend ? `${r.db.backend} (${r.db.status})` : <span class="text-base-content/40">not provisioned</span>}</td>
+                  <td class="py-2 pr-4">
+                    {r.lastRun ? (
+                      <div>
+                        <Badge variant={r.lastRun.status === 'succeeded' ? 'success' : r.lastRun.status === 'failed' ? 'error' : 'default'}>{r.lastRun.status}</Badge>
+                        <span class="ml-1 text-xs text-base-content/50">{fmt(r.lastRun.at)}</span>
+                        {r.lastRun.errorMessage && <div class="text-xs text-error/80">{r.lastRun.errorMessage}</div>}
+                      </div>
+                    ) : <span class="text-base-content/40">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  </div>
+</SidebarLayout>

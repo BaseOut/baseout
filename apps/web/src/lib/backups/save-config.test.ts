@@ -121,6 +121,67 @@ describe('saveBackupConfig', () => {
     expect(result).toEqual({ ok: false, error: 'network', status: 0 })
   })
 
+  // ── web-instant-webhook ─────────────────────────────────────────────────
+
+  it('includes webhookPollIntervalSeconds when set', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse({ ok: true }))
+    await saveBackupConfig(
+      { spaceId: SPACE_ID, frequency: 'instant', webhookPollIntervalSeconds: 300 },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    )
+    const init = fetchImpl.mock.calls[0]![1]
+    expect(JSON.parse(init?.body as string)).toEqual({
+      frequency: 'instant',
+      webhookPollIntervalSeconds: 300,
+    })
+  })
+
+  it('maps webhook_poll_interval_below_minimum and carries the tier minimum', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ error: 'webhook_poll_interval_below_minimum', minimum: 900 }, 422),
+    )
+    const result = await saveBackupConfig(
+      { spaceId: SPACE_ID, webhookPollIntervalSeconds: 60 },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    )
+    expect(result).toEqual({
+      ok: false,
+      error: 'webhook_poll_interval_below_minimum',
+      status: 422,
+      minimum: 900,
+    })
+  })
+
+  it('maps airtable_webhook_cap_reached', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ error: 'airtable_webhook_cap_reached' }, 409),
+    )
+    const result = await saveBackupConfig(
+      { spaceId: SPACE_ID, frequency: 'instant' },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    )
+    expect(result).toEqual({
+      ok: false,
+      error: 'airtable_webhook_cap_reached',
+      status: 409,
+    })
+  })
+
+  it('maps dynamic_db_not_ready', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ error: 'dynamic_db_not_ready' }, 422),
+    )
+    const result = await saveBackupConfig(
+      { spaceId: SPACE_ID, frequency: 'instant' },
+      { fetchImpl: fetchImpl as unknown as typeof fetch },
+    )
+    expect(result).toEqual({
+      ok: false,
+      error: 'dynamic_db_not_ready',
+      status: 422,
+    })
+  })
+
   it('maps unknown error codes to "unknown"', async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       jsonResponse({ error: 'something_we_dont_handle' }, 418),

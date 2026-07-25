@@ -20,6 +20,7 @@ import {
   isActiveStatus,
   isOkStatus,
   statusMetaFor,
+  triggerDisplayLabel,
   triggerKey,
   triggerLabel,
 } from './list-row'
@@ -109,6 +110,19 @@ describe('triggerLabel / triggerKey', () => {
   })
 })
 
+describe('triggerDisplayLabel (web-instant-webhook ⚡)', () => {
+  it('prefixes webhook-triggered runs with the ⚡ glyph', () => {
+    expect(triggerDisplayLabel('webhook')).toBe('⚡ Webhook')
+    expect(triggerDisplayLabel('webhook_poll')).toBe('⚡ Webhook')
+  })
+
+  it('matches triggerLabel for everything else', () => {
+    expect(triggerDisplayLabel('manual')).toBe('Manual')
+    expect(triggerDisplayLabel('schedule_daily')).toBe('Scheduled')
+    expect(triggerDisplayLabel('onboarding')).toBe('Trial')
+  })
+})
+
 describe('durationStr', () => {
   it('returns — when either bound is missing', () => {
     expect(durationStr(null, '2026-06-24T10:00:30.000Z')).toBe('—')
@@ -175,5 +189,20 @@ describe('backupRowHtml', () => {
     )
     expect(html).not.toContain('<img')
     expect(html).toContain('&lt;img')
+  })
+})
+
+describe('backupRowHtml webhook rows (web-instant-webhook)', () => {
+  it('carries the ⚡ glyph in the trigger cell for webhook runs', () => {
+    const html = backupRowHtml(
+      makeRun({ id: 'r_wh', status: 'succeeded', triggeredBy: 'webhook' }),
+    )
+    expect(html).toContain('⚡ Webhook')
+    expect(html).toContain('data-trigger="webhook"')
+  })
+
+  it('keeps non-webhook trigger cells glyph-free', () => {
+    const html = backupRowHtml(makeRun({ id: 'r_m', triggeredBy: 'manual' }))
+    expect(html).not.toContain('⚡')
   })
 })

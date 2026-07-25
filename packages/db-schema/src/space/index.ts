@@ -32,4 +32,12 @@ export { spacePgDdlStatementsIdempotent } from './pg-ddl-upgrade'
 // relationships are derived on read from bo_at_fields, so no table for those.
 // v5: Chat — bo_at_chat_threads + bo_at_chat_messages (server-schema-chat).
 // v6: Inbox — bo_at_inbox_state + bo_at_inbox_mutes (server-notifications-inbox).
-export const SPACE_SCHEMA_VERSION = 6
+// v7: Interfaces normalized (server-interfaces-normalize) — bo_at_interfaces
+// reshaped to apps-only (drops `type`/`first_seen_at`/`last_seen_at`, adds the
+// run-based lifecycle set) + new bo_at_pages, bo_at_forms, bo_at_page_tables,
+// bo_at_page_fields, bo_at_form_fields. First per-Space change that is NOT purely
+// additive: the reshape needs the version-gated destructive step in
+// apps/server/src/lib/provisioning/upgrade.ts (the idempotent DDL alone can't
+// alter an existing table). Pre-launch, interface rows are dropped and repopulate
+// on the next capture (design Decision 10).
+export const SPACE_SCHEMA_VERSION = 8

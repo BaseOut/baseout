@@ -1,13 +1,12 @@
 // Derived background-service health (pure; testable without a DB).
 //
-// PRD §16.1 asks for "last run time + success/failure per background service"
-// — but NO service-run log exists yet: apps/server's scheduled() is a phase-2
-// TODO stub and its cron triggers are commented out. The only live scheduled
-// job is Trigger.dev's hourly cleanup task, whose sole DB footprint is
-// backup_runs.deleted_at. So this page derives health signals from data
-// side-effects and says so honestly. A real per-service run log (a
-// service_runs table written by server/workflows) is the named phase-2
-// follow-up.
+// The real per-service run log (service_runs, written by apps/server's cron
+// dispatch — shared-service-runs) now covers the four cron jobs + the cleanup
+// pass + the prune; /services reads those rows directly (see service-runs-view).
+// This file is trimmed to the signals that still have NO run-log row: the SpaceDO
+// backup scheduler (per-space alarms, deliberately not instrumented — high
+// cardinality) and the connection-session sweep (phase-2). Both remain honestly
+// labelled "derived". The retention-cleanup signal moved to real rows.
 
 import type { BadgeVariant } from './ui'
 
@@ -28,10 +27,6 @@ export interface ServiceHealthInputs {
   scheduleCount: number
   // Most recent backup_runs.created_at where triggered_by = 'scheduled'.
   lastScheduledRunAt: Date | null
-  // Most recent backup_runs.deleted_at — heartbeat of the hourly Trigger.dev
-  // cleanup task. Null when nothing has ever been pruned (which is ALSO the
-  // healthy state for a young install — hence 'unknown', not 'warning').
-  lastCleanupAt: Date | null
   // connection_sessions rows past expires_at — the sweep service isn't
   // running (it's phase-2), so these accumulate until swept.
   staleSessionCount: number
@@ -90,21 +85,8 @@ export function deriveServiceHealth(inputs: ServiceHealthInputs, now: Date): Hea
         },
   )
 
-  signals.push(
-    inputs.lastCleanupAt
-      ? {
-          key: 'cleanup',
-          label: 'Retention cleanup (Trigger.dev hourly)',
-          status: 'ok',
-          detail: `Last prune ${ago(inputs.lastCleanupAt, now)} (backup_runs.deleted_at). Silence can also mean nothing was eligible.`,
-        }
-      : {
-          key: 'cleanup',
-          label: 'Retention cleanup (Trigger.dev hourly)',
-          status: 'unknown',
-          detail: 'No pruned runs yet — either nothing is expired or the cleanup task is not running.',
-        },
-  )
+  // Retention-cleanup health moved to real service_runs rows (shared-service-runs)
+  // — rendered from summarizeServiceRuns on /services, not derived here.
 
   signals.push(
     inputs.staleSessionCount > 0

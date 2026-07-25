@@ -73,7 +73,7 @@
 | **Database Tier** | The type and hosting arrangement of the database used for Dynamic Backups. | DB Level, Database Plan, DB Type | Tiers: D1 (SQLite), Shared PostgreSQL, Dedicated PostgreSQL, BYODB. |
 | **BYOS** | Bring Your Own Storage — customer provides their own Storage Destination. | Custom Storage, External Storage | Available on Pro and above for fully custom destinations. |
 | **BYODB** | Bring Your Own Database — customer provides their own PostgreSQL database. Baseout writes to it. | Custom Database, External Database | Enterprise tier only. |
-| **Instant Backup** | Webhook-driven backup that captures changes in real-time as they occur in Airtable. | Webhook Backup, Real-time Backup, Live Sync | Available on Business tier and above. Uses Airtable webhooks. |
+| **Instant Backup** | Webhook-driven backup that captures changes in real-time as they occur in Airtable. | Webhook Backup, Real-time Backup, Live Sync | Available on Pro tier and above (PRD ruling — see §6.1). Uses Airtable webhooks. |
 
 ### Capability Terms
 
@@ -186,8 +186,8 @@ Organization (Billing Entity)
 | **Onboarding Credits** | 500 | 5,000 | 10,000 | 25,000 | 75,000 | Custom |
 | **Credit Overage Rate** | None (pauses) | $0.007/cr | $0.006/cr | $0.005/cr | $0.004/cr | Negotiated |
 | **Backup Mode** | Static + Dynamic (Schema Only) | Static + Dynamic | Static + Dynamic | Static + Dynamic | Static + Dynamic | Static + Dynamic |
-| **Backup Frequency** | Monthly | Weekly | Weekly | Daily | Daily + Instant | Daily + Instant |
-| **Instant Backup** | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
+| **Backup Frequency** | Monthly | Weekly | Weekly | Daily + Instant | Daily + Instant | Daily + Instant |
+| **Instant Backup** | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ |
 | **Database** | D1 (schema only) | D1 (full) | D1 (full) | Shared PostgreSQL | Dedicated PostgreSQL | BYODB |
 | **R2 File Storage** | 250 MB | 5 GB | 20 GB | 75 GB | 250 GB | Custom |
 | **Database Storage** | 100 MB | 1 GB | 5 GB | 25 GB | 100 GB | Custom |
@@ -238,7 +238,7 @@ Not featured on the public pricing page. Discoverable for users who seek it out 
 | Configuration | Trial | Starter | Launch | Growth | Pro | Business | Enterprise |
 |---|---|---|---|---|---|---|---|
 | **Frequency** | Monthly | Monthly | Weekly | Weekly | Daily | Daily | Daily |
-| **Instant (Webhook)** | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
+| **Instant (Webhook)** | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ |
 | **Manual (On-Demand)** | ✗ | ✗ | ✓ (2/mo) | ✓ (5/mo) | ✓ (Unlimited) | ✓ (Unlimited) | ✓ (Unlimited) |
 | **Backup Mode** | Static + Dynamic (Schema Only) | Static + Dynamic (Schema Only) | Static + Dynamic | Static + Dynamic | Static + Dynamic | Static + Dynamic | Static + Dynamic |
 | **What's Backed Up** | Schema, Records, Attachments | Schema, Records, Attachments | Schema, Records, Attachments, Automations, Interfaces | Same | Same | Same | Same + Custom metadata |
@@ -451,7 +451,21 @@ The Backup capability is the core of Baseout. It is **always enabled** on all ti
 | **Monthly** | One scheduled backup per month | All |
 | **Weekly** | One scheduled backup per week | Launch+ |
 | **Daily** | One scheduled backup per day | Pro+ |
-| **Instant** | Webhook-driven — captures changes as they occur in Airtable | Business+ |
+| **Instant** | Webhook-driven — captures changes as they occur in Airtable | Pro+ |
+
+> **Instant = Pro+** per [PRD §2.2/§9](Baseout_PRD.md) — the PRD is authoritative where the two documents disagreed (this table previously read Business+; ruling recorded in `openspec/changes/server-schedule-and-cancel/proposal.md` and synced here by `server-instant-webhook` Phase G.3).
+
+#### Webhook poll-interval minimums (provisional)
+
+Instant is pull-based: Airtable pings dirty-mark a registry and each Space polls for changes on its own cadence, `backup_configurations.webhook_poll_interval_seconds` (column default 900). Per-tier floors, as shipped in the `apps/web` capability resolver (`TIER_CAPABILITIES.webhookPollMinSeconds`) — provisional pending pricing review:
+
+| Tier | Minimum poll interval |
+|---|---|
+| Pro | 900 s (15 min) |
+| Business | 300 s (5 min) |
+| Enterprise | 60 s (1 min) |
+
+Tiers without Instant keep the 900 s default as a moot floor. A config PATCH below the tier floor is rejected with `webhook_poll_interval_below_minimum`.
 
 ### 6.2 Backup Mode
 

@@ -125,4 +125,52 @@ describe('saveConfigureForm', () => {
       message: 'Connect that destination before making it the primary.',
     })
   })
+
+  // ── web-instant-webhook error copy ──────────────────────────────────────
+
+  it('describes airtable_webhook_cap_reached (org cap on the base)', async () => {
+    const saveConfigImpl = vi.fn(
+      async (): Promise<SaveConfigResult> =>
+        ({ ok: false, error: 'airtable_webhook_cap_reached', status: 409 }),
+    )
+    const result = await saveConfigureForm(
+      { spaceId: SPACE_ID, frequency: 'instant', runFirstBackup: false },
+      { saveConfigImpl, runBackupImpl: okRun },
+    )
+    expect(result.ok).toBe(false)
+    expect((result as { message: string }).message).toMatch(
+      /maximum number of organizations/i,
+    )
+  })
+
+  it('describes dynamic_db_not_ready', async () => {
+    const saveConfigImpl = vi.fn(
+      async (): Promise<SaveConfigResult> =>
+        ({ ok: false, error: 'dynamic_db_not_ready', status: 422 }),
+    )
+    const result = await saveConfigureForm(
+      { spaceId: SPACE_ID, frequency: 'instant', runFirstBackup: false },
+      { saveConfigImpl, runBackupImpl: okRun },
+    )
+    expect(result.ok).toBe(false)
+    expect((result as { message: string }).message).toMatch(/dynamic database/i)
+  })
+
+  it('describes webhook_poll_interval_below_minimum with the echoed minimum', async () => {
+    const saveConfigImpl = vi.fn(
+      async (): Promise<SaveConfigResult> =>
+        ({
+          ok: false,
+          error: 'webhook_poll_interval_below_minimum',
+          status: 422,
+          minimum: 900,
+        }),
+    )
+    const result = await saveConfigureForm(
+      { spaceId: SPACE_ID, frequency: 'instant', runFirstBackup: false },
+      { saveConfigImpl, runBackupImpl: okRun },
+    )
+    expect(result.ok).toBe(false)
+    expect((result as { message: string }).message).toMatch(/15 minutes/)
+  })
 })

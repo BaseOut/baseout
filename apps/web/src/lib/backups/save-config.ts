@@ -16,6 +16,12 @@ export type SaveConfigError =
   | 'space_org_mismatch'
   | 'unauthenticated'
   | 'invalid_json'
+  // web-instant-webhook: interval below the tier's platform minimum (the
+  // response carries `minimum`), Space's dynamic DB not ready for Instant,
+  // and Airtable's 2-webhooks-per-base-per-integration cap.
+  | 'webhook_poll_interval_below_minimum'
+  | 'dynamic_db_not_ready'
+  | 'airtable_webhook_cap_reached'
   | 'network'
   | 'unknown'
 
@@ -29,11 +35,19 @@ export interface SaveConfigInput {
   schemaFrequency?: 'monthly' | 'weekly' | 'daily' | 'instant' | null
   storageType?: string
   autoAddFutureBases?: boolean
+  /** web-instant-webhook: Instant-mode poll cadence (seconds, tier-gated minimum). */
+  webhookPollIntervalSeconds?: number
 }
 
 export type SaveConfigResult =
   | { ok: true }
-  | { ok: false; error: SaveConfigError; status: number }
+  | {
+      ok: false
+      error: SaveConfigError
+      status: number
+      /** Tier minimum, present on `webhook_poll_interval_below_minimum`. */
+      minimum?: number
+    }
 
 const KNOWN_ERRORS: ReadonlySet<SaveConfigError> = new Set([
   'frequency_not_allowed',
@@ -44,6 +58,9 @@ const KNOWN_ERRORS: ReadonlySet<SaveConfigError> = new Set([
   'space_org_mismatch',
   'unauthenticated',
   'invalid_json',
+  'webhook_poll_interval_below_minimum',
+  'dynamic_db_not_ready',
+  'airtable_webhook_cap_reached',
 ])
 
 export interface SaveConfigDeps {
@@ -64,6 +81,9 @@ export async function saveBackupConfig(
   if (input.schemaFrequency !== undefined) body.schemaFrequency = input.schemaFrequency
   if (input.storageType !== undefined) body.storageType = input.storageType
   if (input.autoAddFutureBases !== undefined) body.autoAddFutureBases = input.autoAddFutureBases
+  if (input.webhookPollIntervalSeconds !== undefined) {
+    body.webhookPollIntervalSeconds = input.webhookPollIntervalSeconds
+  }
 
   let res: Response
   try {
@@ -94,5 +114,14 @@ export async function saveBackupConfig(
   const error: SaveConfigError = KNOWN_ERRORS.has(raw as SaveConfigError)
     ? (raw as SaveConfigError)
     : 'unknown'
-  return { ok: false, error, status: res.status }
+  const out: SaveConfigResult = { ok: false, error, status: res.status }
+  // Below-minimum rejections carry the tier's platform minimum so the UI can
+  // render it inline without a second lookup.
+  if (
+    error === 'webhook_poll_interval_below_minimum' &&
+    typeof payload.minimum === 'number'
+  ) {
+    out.minimum = payload.minimum
+  }
+  return out
 }

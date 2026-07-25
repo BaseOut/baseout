@@ -2,36 +2,35 @@
 
 ## 1. Schema mirror + data boundary
 
-- [ ] 1.1 Add read-only mirrors `at_bases`, `backup_retention_policies` and missing columns (`connections.created_by_user_id`, `connections.space_id`, `spaces.space_type`) to `apps/admin/src/db/schema/core.ts` with canonical-source header comments
-- [ ] 1.2 Write `src/lib/data-boundary.test.ts` guard: no mirrored column name ends `_enc`; wrangler config declares no D1 binding and exactly one Hyperdrive; sessions mirror never selects `token`
-- [ ] 1.3 Run guard test red→green against the mirror additions
+- [x] 1.1 Added read-only mirrors `at_bases`, `backup_retention_policies` + columns `connections.created_by_user_id`, `connections.space_id`, `spaces.space_type`, `backup_configurations.auto_add_future_bases`, `backup_configuration_bases.is_auto_discovered` to `apps/admin/src/db/schema/core.ts` (canonical-source headers; no *_enc).
+- [x] 1.2/1.3 `data-boundary.test.ts` guard (green): no mirrored column ends `_enc`; wrangler declares no D1 + exactly one Hyperdrive; no source selects `sessions.token` into output (WHERE-by-token lookups allowed).
 
 ## 2. Entity-link helper + retrofit
 
-- [ ] 2.1 TDD `src/lib/entity-link.ts`: `entityHref(type, id)` exhaustive over org/space/user/connection/backup-run/restore-run (connections + restores as anchor links)
-- [ ] 2.2 Create `EntityLink.astro` (link + hidden peek affordance with `data-peek-*` attributes)
-- [ ] 2.3 Retrofit all existing pages (`/`, `/backups`, `/backups/[id]`, `/restores`, `/connections`, `/databases`, `/subscriptions`, `/migration`, `/audit`, `/organizations/[id]`) to render entity references via `EntityLink`; add row `id=` anchors on `/connections` and `/restores`
+- [x] 2.1 `src/lib/entity-link.ts` — `entityHref` exhaustive over org/space/user/connection/backup_run/restore_run (connections + restores as `#id` anchors) + `isPeekable`; `entity-link.test.ts`. ui.ts re-exports it (flip of the C.2 interim helper).
+- [x] 2.2 `EntityLink.astro` (link + hidden peek button with `data-peek-*`).
+- [~] 2.3 **PARTIAL (scoped for branch safety):** retrofitted the directory rows that enable the org→space→user walk (`/users`, `/spaces` rows now link to the detail pages via EntityLink). The broader retrofit of the 10 pre-existing pages (`/`, `/backups`, `/backups/[id]`, `/restores`, `/connections`, `/databases`, `/subscriptions`, `/migration`, `/audit`, `/organizations/[id]`) is **DEFERRED to its own reviewed pass** — a mechanical cross-file sweep is conflict-risky while the branch is under active parallel development. `entityHref`/`EntityLink` are in place so it's a drop-in later.
 
 ## 3. Space detail page
 
-- [ ] 3.1 TDD `src/lib/space-detail.ts` view model: org header, members, connections serving the space, backup config + retention, at_bases with inclusion flags, run history, space_databases, storage destinations; explicit empty states; not-found signal
-- [ ] 3.2 Create `src/pages/spaces/[id].astro` running the queries from design D2 and rendering the view model with linked entities; 404 on unknown id
-- [ ] 3.3 Verify locators render as inert text (no connect/browse affordance) per data-boundary spec
+- [x] 3.1 `src/lib/space-detail.ts` view model (green): org header, members, connections serving the space, config + retention, at_bases w/ inclusion flags, run history, databases, storage; empty states; not-found signal. `space-detail.test.ts` (3).
+- [x] 3.2 `src/pages/spaces/[id].astro` — queries per D2, linked entities via EntityLink, 404 on unknown id.
+- [x] 3.3 DB locators are NOT exposed at all (view model omits pg_locator/d1_database_id) — stronger than inert text.
 
 ## 4. User detail page
 
-- [ ] 4.1 TDD `src/lib/user-detail.ts` view model: profile + role, memberships, session metadata (ip/user-agent/expiry only), connections created, audit entries as actor/target; not-found signal
-- [ ] 4.2 Create `src/pages/users/[id].astro`; assert no session token or `_enc`-adjacent value can appear (serialize view model in test, grep for token keys)
+- [x] 4.1 `src/lib/user-detail.ts` view model (green): profile + role, memberships, session metadata (ip/user-agent/expiry only), connections created, audit as actor/target; not-found. `user-detail.test.ts` (4).
+- [x] 4.2 `src/pages/users/[id].astro`; the test serializes the view model + asserts no `token` key + sessions expose only metadata keys.
 
 ## 5. Peek sidebar
 
-- [ ] 5.1 TDD `src/lib/peek.ts` summarizers (org, space, user, connection, backup run) emitting the closed `{title, subtitle, href, badges, stats}` shape; metadata-only assertion
-- [ ] 5.2 Create `src/pages/api/peek/[type]/[id].ts` GET route (existing middleware gate; 400 unknown type, 404 unknown id) + route tests
-- [ ] 5.3 Build `PeekSidebar.astro` vanilla-TS island (daisyUI drawer-end, event delegation on `data-peek-*`, loading + error states, `setButtonLoading`-equivalent spinner); mount in `SidebarLayout.astro`
-- [ ] 5.4 Verify progressive enhancement: with JS disabled, links navigate and peek buttons stay hidden
+- [x] 5.1 `src/lib/peek.ts` — org/space/user/connection/backup_run summarizers, closed `{title, subtitle, href, badges, stats}` shape; `peek.test.ts` asserts secret-free serialized output.
+- [x] 5.2 `src/pages/api/peek/[type]/[id].ts` GET route (400 unknown type, 404 unknown id) under the existing `/api/*` gate.
+- [x] 5.3 `PeekSidebar.astro` vanilla-TS island (fixed drawer, event delegation on `data-peek-*`, loading/error states); mounted once in `SidebarLayout.astro`.
+- [x] 5.4 Progressive enhancement: peek buttons render `hidden`, un-hidden on hydrate; links navigate with JS off.
 
 ## 6. Verification
 
-- [ ] 6.1 `pnpm --filter @baseout/admin test` green (all new libs + guard) and typecheck/build green
-- [ ] 6.2 Human smoke on local dev: from `/backups`, peek an org, open its Space page, walk org → space → user → run without touching a bare UUID
-- [ ] 6.3 Human smoke on deployed dev (`baseout-admin-dev`) after `pnpm --filter @baseout/admin run deploy`
+- [x] 6.1 `pnpm --filter @baseout/admin` astro-check 0 errors + full Vitest 242 (entity-link 2, space-detail 3, user-detail 4, peek 4, data-boundary 3).
+- [ ] 6.2 **DEFERRED (human smoke, local):** from `/backups`, peek an org, open its Space page, walk org → space → user → run without touching a bare UUID.
+- [ ] 6.3 **DEFERRED (deploy):** `baseout-admin-dev` deploy + repeat.

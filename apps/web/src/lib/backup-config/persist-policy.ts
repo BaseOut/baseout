@@ -33,6 +33,8 @@ const ALLOWED_BODY_KEYS = new Set([
   // server-backup-scope: what to back up + the schema schedule.
   'scope',
   'schemaFrequency',
+  // web-instant-webhook: Instant-mode poll cadence (tier-gated minimum).
+  'webhookPollIntervalSeconds',
 ])
 const ALLOWED_SCOPES = new Set(['schema_only', 'schema_and_data'])
 const ALL_FREQUENCIES: ReadonlySet<Frequency> = new Set([
@@ -75,6 +77,8 @@ export interface UpsertConfigInput {
   scope?: string
   /** server-backup-scope: the schema schedule cadence, or null to clear it. */
   schemaFrequency?: Frequency | null
+  /** web-instant-webhook: Instant-mode poll cadence in seconds. */
+  webhookPollIntervalSeconds?: number
 }
 
 export interface PersistBackupConfigPolicyDeps {
@@ -86,6 +90,12 @@ export type PersistBackupConfigPolicyResult =
   | {
       ok: false
       error: 'invalid_request' | 'frequency_not_allowed' | 'unsupported_storage_type'
+    }
+  | {
+      ok: false
+      error: 'webhook_poll_interval_below_minimum'
+      /** The tier's platform minimum, echoed for inline rendering. */
+      minimum: number
     }
 
 export async function persistBackupConfigPolicy(
@@ -158,13 +168,25 @@ export async function persistBackupConfigPolicy(
     }
   }
 
+  // 3e. Validate webhookPollIntervalSeconds shape (web-instant-webhook).
+  //     Positive integers only; the tier minimum is enforced in step 5b.
+  let webhookPollIntervalSeconds: number | undefined
+  if ('webhookPollIntervalSeconds' in input.body) {
+    const v = input.body.webhookPollIntervalSeconds
+    if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) {
+      return { ok: false, error: 'invalid_request' }
+    }
+    webhookPollIntervalSeconds = v
+  }
+
   // 4. Reject empty bodies (no-op upsert).
   if (
     frequency === undefined &&
     storageType === undefined &&
     autoAddFutureBases === undefined &&
     scope === undefined &&
-    schemaFrequency === undefined
+    schemaFrequency === undefined &&
+    webhookPollIntervalSeconds === undefined
   ) {
     return { ok: false, error: 'invalid_request' }
   }
@@ -181,6 +203,20 @@ export async function persistBackupConfigPolicy(
     return { ok: false, error: 'frequency_not_allowed' }
   }
 
+  // 5b. Tier-gate the poll interval against the platform minimum
+  //     (web-instant-webhook; provisional values pending Features §6.1).
+  //     The rejection echoes the minimum so the UI renders it inline.
+  if (
+    webhookPollIntervalSeconds !== undefined &&
+    webhookPollIntervalSeconds < caps.webhookPollMinSeconds
+  ) {
+    return {
+      ok: false,
+      error: 'webhook_poll_interval_below_minimum',
+      minimum: caps.webhookPollMinSeconds,
+    }
+  }
+
   // 6. Dispatch the upsert. Only include the fields actually present in
   //    the body; the route's upsert dep does the partial UPDATE/INSERT.
   const upsertInput: UpsertConfigInput = { spaceId: input.spaceId }
@@ -191,6 +227,9 @@ export async function persistBackupConfigPolicy(
   }
   if (scope !== undefined) upsertInput.scope = scope
   if (schemaFrequency !== undefined) upsertInput.schemaFrequency = schemaFrequency
+  if (webhookPollIntervalSeconds !== undefined) {
+    upsertInput.webhookPollIntervalSeconds = webhookPollIntervalSeconds
+  }
   await deps.upsertConfig(upsertInput)
 
   return { ok: true }

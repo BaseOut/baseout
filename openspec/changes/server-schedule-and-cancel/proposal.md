@@ -48,7 +48,7 @@ This change commits to PRD's `Pro+` reading. Instant is out of scope for THIS ch
 | Deferred to | Item |
 |---|---|
 | `server-attachments` (new openspec change) | Real attachment download + R2 upload. PRD §6.3 lists attachments as Must-Have for all tiers; the engine currently emits a `[N attachments]` placeholder per [field-normalizer.ts](../../../apps/workflows/trigger/tasks/_lib/field-normalizer.ts). Genuine MVP gap, separate concern. |
-| `server-instant-webhook` (new) | Airtable webhook → instant backup pipeline. Features §6.1 says Business+, PRD §6 says Pro+; tier resolution + the webhook ingestion shape are non-trivial. |
+| [`server-instant-webhook`](../server-instant-webhook/proposal.md) — **RESOLVED 2026-07-23** | Airtable webhook → instant backup pipeline. Shipped as pull-based cadence polling (Phases A/C/D/E; see its design.md) with the task body in [`workflows-instant-webhook`](../workflows-instant-webhook/proposal.md). The tier conflict resolved to PRD's `Pro+` reading, as this proposal recorded; Features §6.1 updated to match (its Phase G.3). |
 | `server-per-table-selection` (new) | Wizard step 2.5: pick specific tables within a base. Not mandated by PRD/Features; users who want a subset back up the whole base and ignore the extras. |
 | `server-dynamic-mode` (new) | Dynamic backup (Launch+) per Features §6.2: schema-only D1, full D1, Shared PG, Dedicated PG. Currently every backup is static (CSV → R2). Big architectural lift. |
 | `server-restore` (new) | Restore from a snapshot. PRD §6 lists Restore as Must-Have; entirely separate engine work. |

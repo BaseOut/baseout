@@ -18,6 +18,7 @@
 import type { AppLocals, Env } from "../../../env";
 import { buildCleanupPlan } from "../../../lib/retention/build-cleanup-plan";
 import { buildCleanupPlanDeps } from "../../../lib/retention/cleanup-deps";
+import { openServiceRun } from "../../../lib/service-runs";
 
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -38,5 +39,9 @@ export async function cleanupPlanHandler(
 
   const { db } = locals.getMasterDb();
   const plan = await buildCleanupPlan(buildCleanupPlanDeps(db), new Date());
-  return jsonResponse(plan, 200);
+  // shared-service-runs: open a retention_cleanup run row and echo its id; the
+  // workflows cron carries it back to /cleanup-complete for finalize. Null when
+  // the insert failed (logged) — the pass still runs; the id is just omitted.
+  const serviceRunId = await openServiceRun(db, "retention_cleanup");
+  return jsonResponse({ ...plan, serviceRunId }, 200);
 }

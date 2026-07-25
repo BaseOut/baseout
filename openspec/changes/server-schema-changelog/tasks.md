@@ -72,3 +72,7 @@ capability key — reuses the readiness/IDOR guards of `relationships-overview`.
 - [ ] AI `aiSummary` per event (plain-language explanation) — deferred to the Schema-chat/insights track.
 - [ ] Cross-link a breaks-data (⚠️) event to its Health-tab issue.
 - [ ] Snapshot A↔B comparator (two-point diff UI) — explicitly out of scope (possible V2).
+
+## Cross-change dependency (server-interfaces-normalize, 2026-07-20)
+
+- `ChangelogEntityType` was widened from `…|interface` to add `page` and `form` (interface capture is now three entity tables — apps/pages/forms). Changelog removals + modification rows for `bo_at_pages`/`bo_at_forms` flow through with `entity_type` `page`/`form`. When this change is archived, reconcile the widened union into the archived `schema-changelog` spec. Any web-side changelog rendering that switches on `entity_type` must handle `page`/`form` (fall back to a generic label until it does).

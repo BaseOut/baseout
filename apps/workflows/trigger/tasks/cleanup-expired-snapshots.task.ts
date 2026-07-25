@@ -21,6 +21,7 @@
 import { schedules } from "@trigger.dev/sdk";
 import { resolveStorageWriter } from "./_lib/storage-writers";
 import {
+  parseCleanupPlan,
   runCleanupSweep,
   type CleanupCompletion,
   type CleanupPlan,
@@ -44,13 +45,14 @@ async function fetchPlan(
   if (!res.ok) {
     throw new Error(`cleanup-plan returned ${res.status}`);
   }
-  return (await res.json()) as CleanupPlan;
+  return parseCleanupPlan(await res.json());
 }
 
 async function postComplete(
   engineUrl: string,
   internalToken: string,
   completed: CleanupCompletion[],
+  serviceRunId?: string | null,
 ): Promise<void> {
   const res = await fetch(
     `${trimSlash(engineUrl)}/api/internal/cleanup-complete`,
@@ -60,7 +62,9 @@ async function postComplete(
         "x-internal-token": internalToken,
         "content-type": "application/json",
       },
-      body: JSON.stringify({ completed }),
+      // serviceRunId echoed back so the engine finalizes the retention_cleanup
+      // run row (shared-service-runs); omitted-when-null is tolerated engine-side.
+      body: JSON.stringify({ completed, ...(serviceRunId ? { serviceRunId } : {}) }),
     },
   );
   if (!res.ok) {
@@ -84,8 +88,8 @@ export const cleanupExpiredSnapshotsTask = schedules.task({
     return runCleanupSweep({
       fetchPlan: () => fetchPlan(engineUrl, internalToken),
       resolveWriter: (storageType) => resolveStorageWriter(storageType),
-      postComplete: (completed) =>
-        postComplete(engineUrl, internalToken, completed),
+      postComplete: (completed, serviceRunId) =>
+        postComplete(engineUrl, internalToken, completed, serviceRunId),
     });
   },
 });

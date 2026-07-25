@@ -26,6 +26,8 @@ import type {
   ChatRespondPayload,
   healthScoreBaseTask,
   HealthScoreBasePayload,
+  incrementalBackupTask,
+  IncrementalBackupTaskPayload,
 } from "@baseout/workflows";
 import type { BackupBaseTaskPayload } from "./runs/start";
 
@@ -120,6 +122,25 @@ export async function enqueueHealthScoreBase(
   configureFromEnv(env);
   const handle = await tasks.trigger<typeof healthScoreBaseTask>(
     "health-score-base",
+    payload,
+  );
+  return { id: handle.id };
+}
+
+/**
+ * Enqueue one incremental (webhook-driven) backup pass for a dirty base
+ * (server-instant-webhook Phase C). The SpaceDO's webhook-poll alarm calls
+ * this once per dirty subscription; the task pulls Airtable payloads from the
+ * subscription's cursor and reports back via the Phase D cursor/fallback
+ * routes + the standard /runs/:runId/complete contract.
+ */
+export async function enqueueIncrementalBackup(
+  env: Env,
+  payload: IncrementalBackupTaskPayload,
+): Promise<TriggerHandle> {
+  configureFromEnv(env);
+  const handle = await tasks.trigger<typeof incrementalBackupTask>(
+    "incremental-backup",
     payload,
   );
   return { id: handle.id };

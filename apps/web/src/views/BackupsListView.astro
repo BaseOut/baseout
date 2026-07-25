@@ -20,8 +20,8 @@ import {
   isOkStatus,
   sinceLabel,
   statusMetaFor,
+  triggerDisplayLabel,
   triggerKey,
-  triggerLabel,
 } from '../lib/backups/list-row';
 import { kindBadgeClass, kindLabel } from '../lib/backups/format';
 import Button from '../components/ui/Button.astro';
@@ -157,7 +157,8 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
                 >
                   <td><Badge variant={sm.variant}>{r.status === 'running' && <span class="loading loading-spinner loading-xs"></span>}{sm.label}</Badge> <span class={`badge badge-sm ${kindBadgeClass(r.kind)}`}>{kindLabel(r.kind)}</span></td>
                   <td>{active ? <span class="text-base-content/64">{r.status === 'running' ? 'in progress' : 'queued'}</span> : sinceLabel(r.completedAt)}</td>
-                  <td class="text-base-content/64">{triggerLabel(r.triggeredBy)}</td>
+                  {/* ⚡ on webhook-triggered rows (web-instant-webhook) */}
+                  <td class="text-base-content/64">{triggerDisplayLabel(r.triggeredBy)}</td>
                   <td class="text-right tabular-nums">{r.includedBases.length}</td>
                   <td class="text-right tabular-nums">{ok ? nf.format(r.recordCount ?? 0) : '—'}</td>
                   <td class="text-right tabular-nums">{ok ? nf.format(r.attachmentCount ?? 0) : '—'}</td>

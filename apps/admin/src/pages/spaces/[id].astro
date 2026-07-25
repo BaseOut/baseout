@@ -1,0 +1,171 @@
+---
+// /spaces/[id] — Space detail (admin-entity-linking). Read-only; role='super'
+// gated by middleware. ~8 queries keyed on the space id → pure view model →
+// linked entities (org/user/connection/run via EntityLink). DB locators are NOT
+// exposed (data boundary). 404 on unknown id.
+import { and, desc, eq, or } from 'drizzle-orm';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import EntityLink from '../../components/EntityLink.astro';
+import { users } from '@baseout/db-schema';
+import { atBases, backupConfigurationBases, backupConfigurations, backupRetentionPolicies, backupRuns, connections, organizations, organizationMembers, spaceDatabases, spaces, storageDestinations } from '../../db/schema';
+import { buildSpaceDetail } from '../../lib/space-detail';
+
+const id = Astro.params.id!;
+const { db } = Astro.locals;
+
+const spaceRows = await db
+  .select({ id: spaces.id, name: spaces.name, status: spaces.status, spaceType: spaces.spaceType, organizationId: spaces.organizationId, organizationName: organizations.name, createdAt: spaces.createdAt })
+  .from(spaces).leftJoin(organizations, eq(spaces.organizationId, organizations.id)).where(eq(spaces.id, id)).limit(1);
+const space = spaceRows[0] ?? null;
+
+if (!space) {
+  return new Response(null, { status: 404, headers: { 'Content-Type': 'text/html' } });
+}
+const orgId = space.organizationId;
+
+const [members, conns, cfgRows, retRows, runs, dbs, storage] = await Promise.all([
+  orgId
+    ? db.select({ userId: organizationMembers.userId, email: users.email, name: users.name, role: organizationMembers.role })
+        .from(organizationMembers).innerJoin(users, eq(organizationMembers.userId, users.id)).where(eq(organizationMembers.organizationId, orgId))
+    : Promise.resolve([]),
+  orgId
+    ? db.select({ id: connections.id, displayName: connections.displayName, status: connections.status, scope: connections.scope })
+        .from(connections).where(and(eq(connections.organizationId, orgId), or(eq(connections.scope, 'organization'), eq(connections.spaceId, id))))
+    : Promise.resolve([]),
+  db.select({ id: backupConfigurations.id, frequency: backupConfigurations.frequency, scope: backupConfigurations.scope, mode: backupConfigurations.mode, storageType: backupConfigurations.storageType, autoAddFutureBases: backupConfigurations.autoAddFutureBases, nextScheduledAt: backupConfigurations.nextScheduledAt }).from(backupConfigurations).where(eq(backupConfigurations.spaceId, id)).limit(1),
+  db.select({ policyTier: backupRetentionPolicies.policyTier, keepLastN: backupRetentionPolicies.keepLastN, dailyWindowDays: backupRetentionPolicies.dailyWindowDays, weeklyWindowDays: backupRetentionPolicies.weeklyWindowDays, monthlyIndefinite: backupRetentionPolicies.monthlyIndefinite }).from(backupRetentionPolicies).where(eq(backupRetentionPolicies.spaceId, id)).limit(1),
+  db.select({ id: backupRuns.id, status: backupRuns.status, kind: backupRuns.kind, startedAt: backupRuns.startedAt, completedAt: backupRuns.completedAt, recordCount: backupRuns.recordCount }).from(backupRuns).where(eq(backupRuns.spaceId, id)).orderBy(desc(backupRuns.createdAt)).limit(25),
+  db.select({ backend: spaceDatabases.backend, status: spaceDatabases.status, schemaVersion: spaceDatabases.schemaVersion }).from(spaceDatabases).where(eq(spaceDatabases.spaceId, id)),
+  db.select({ type: storageDestinations.type, email: storageDestinations.oauthAccountEmail, connectedAt: storageDestinations.connectedAt }).from(storageDestinations).where(eq(storageDestinations.spaceId, id)),
+]);
+
+const cfg = cfgRows[0] ?? null;
+const basesRaw = await db
+  .select({ atBaseId: atBases.atBaseId, name: atBases.name, isIncluded: backupConfigurationBases.isIncluded, isAutoDiscovered: backupConfigurationBases.isAutoDiscovered })
+  .from(atBases)
+  .leftJoin(backupConfigurationBases, and(eq(backupConfigurationBases.atBaseId, atBases.atBaseId), cfg ? eq(backupConfigurationBases.backupConfigurationId, cfg.id) : eq(backupConfigurationBases.backupConfigurationId, '')))
+  .where(eq(atBases.spaceId, id));
+
+const view = buildSpaceDetail({
+  space,
+  members,
+  connections: conns,
+  config: cfg ? { frequency: cfg.frequency, scope: cfg.scope, mode: cfg.mode, storageType: cfg.storageType, autoAddFutureBases: cfg.autoAddFutureBases, nextScheduledAt: cfg.nextScheduledAt } : null,
+  retention: retRows[0] ?? null,
+  bases: basesRaw.map((b) => ({ atBaseId: b.atBaseId, name: b.name, included: b.isIncluded ?? false, autoDiscovered: b.isAutoDiscovered ?? false })),
+  runs,
+  databases: dbs,
+  storage,
+});
+
+const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 16).replace('T', ' ') : '—');
+---
+
+<SidebarLayout title={`Admin — ${view.space!.name}`}>
+  <div class="mx-auto max-w-[1100px] space-y-6">
+    <PageHeader title={view.space!.name} description={`Space · ${view.space!.spaceType ?? 'single_platform'}`}>
+      <Badge variant={view.space!.status === 'active' ? 'success' : view.space!.status === 'error' ? 'error' : 'default'}>{view.space!.status}</Badge>
+    </PageHeader>
+
+    <Card variant="outlined">
+      <dl class="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+        <div><dt class="text-base-content/50">Organization</dt><dd>{view.space!.organizationId ? <EntityLink type="org" id={view.space!.organizationId} label={view.space!.organizationName ?? view.space!.organizationId} /> : '—'}</dd></div>
+        <div><dt class="text-base-content/50">Created</dt><dd>{fmt(view.space!.createdAt)}</dd></div>
+        <div><dt class="text-base-content/50">Members</dt><dd>{view.members.length}</dd></div>
+        <div><dt class="text-base-content/50">Bases</dt><dd>{view.bases.length}</dd></div>
+      </dl>
+    </Card>
+
+    <div class="grid gap-6 md:grid-cols-2">
+      <Card variant="outlined">
+        <h2 class="mb-3 text-base font-semibold">Backup configuration</h2>
+        {view.config ? (
+          <dl class="space-y-1 text-sm">
+            <div class="flex justify-between"><dt class="text-base-content/50">Frequency</dt><dd>{view.config.frequency}</dd></div>
+            <div class="flex justify-between"><dt class="text-base-content/50">Mode / scope</dt><dd>{view.config.mode} · {view.config.scope}</dd></div>
+            <div class="flex justify-between"><dt class="text-base-content/50">Storage</dt><dd>{view.config.storageType}</dd></div>
+            <div class="flex justify-between"><dt class="text-base-content/50">Auto-add bases</dt><dd>{view.config.autoAddFutureBases ? 'yes' : 'no'}</dd></div>
+            <div class="flex justify-between"><dt class="text-base-content/50">Next scheduled</dt><dd>{fmt(view.config.nextScheduledAt)}</dd></div>
+          </dl>
+        ) : <EmptyState title="Not configured" description="No backup configuration yet." />}
+      </Card>
+
+      <Card variant="outlined">
+        <h2 class="mb-3 text-base font-semibold">Retention</h2>
+        {view.retention ? (
+          <dl class="space-y-1 text-sm">
+            <div class="flex justify-between"><dt class="text-base-content/50">Tier</dt><dd>{view.retention.policyTier}</dd></div>
+            <div class="flex justify-between"><dt class="text-base-content/50">Keep last N</dt><dd>{view.retention.keepLastN ?? '—'}</dd></div>
+            <div class="flex justify-between"><dt class="text-base-content/50">Daily / weekly window</dt><dd>{view.retention.dailyWindowDays ?? '—'}d / {view.retention.weeklyWindowDays ?? '—'}d</dd></div>
+            <div class="flex justify-between"><dt class="text-base-content/50">Monthly indefinite</dt><dd>{view.retention.monthlyIndefinite ? 'yes' : 'no'}</dd></div>
+          </dl>
+        ) : <EmptyState title="Default retention" description="No custom policy." />}
+      </Card>
+    </div>
+
+    <Card variant="outlined">
+      <h2 class="mb-3 text-base font-semibold">Connections</h2>
+      {view.connections.length === 0 ? <EmptyState title="No connections" description="No connection serves this Space." /> : (
+        <ul class="space-y-1 text-sm">
+          {view.connections.map((c) => (
+            <li class="flex items-center justify-between">
+              <EntityLink type="connection" id={c.id} label={c.displayName ?? c.id} />
+              <span class="flex items-center gap-2"><span class="text-xs text-base-content/50">{c.scope}</span><Badge variant={c.status === 'active' ? 'success' : c.status === 'invalid' ? 'error' : 'warning'}>{c.status}</Badge></span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+
+    <Card variant="outlined">
+      <h2 class="mb-3 text-base font-semibold">Bases ({view.bases.length})</h2>
+      {view.bases.length === 0 ? <EmptyState title="No bases" description="None discovered yet." /> : (
+        <ul class="grid gap-1 text-sm md:grid-cols-2">
+          {view.bases.map((b) => (
+            <li class="flex items-center justify-between">
+              <span>{b.name} <span class="text-xs text-base-content/40">{b.atBaseId}</span></span>
+              <span class="flex gap-1">{b.included ? <Badge variant="success">included</Badge> : <Badge variant="default">excluded</Badge>}{b.autoDiscovered && <Badge variant="default">auto</Badge>}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+
+    <Card variant="outlined">
+      <h2 class="mb-3 text-base font-semibold">Recent backup runs</h2>
+      {view.runs.length === 0 ? <EmptyState title="No runs" description="No backup has run for this Space." /> : (
+        <table class="w-full text-sm">
+          <tbody>
+            {view.runs.map((r) => (
+              <tr class="border-b border-base-200/60">
+                <td class="py-1"><EntityLink type="backup_run" id={r.id} label={r.kind} /></td>
+                <td class="py-1"><Badge variant={r.status === 'succeeded' ? 'success' : r.status === 'failed' ? 'error' : 'default'}>{r.status}</Badge></td>
+                <td class="py-1 text-base-content/60">{fmt(r.completedAt ?? r.startedAt)}</td>
+                <td class="py-1 text-right text-base-content/60">{r.recordCount ?? '—'} rec</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
+
+    <div class="grid gap-6 md:grid-cols-2">
+      <Card variant="outlined">
+        <h2 class="mb-3 text-base font-semibold">Database</h2>
+        {view.databases.length === 0 ? <EmptyState title="Not provisioned" description="No per-Space database." /> : view.databases.map((d) => (
+          <p class="text-sm">{d.backend} · <Badge variant={d.status === 'active' ? 'success' : d.status === 'error' ? 'error' : 'default'}>{d.status}</Badge> · schema v{d.schemaVersion ?? '—'}</p>
+        ))}
+      </Card>
+      <Card variant="outlined">
+        <h2 class="mb-3 text-base font-semibold">Storage destinations</h2>
+        {view.storage.length === 0 ? <EmptyState title="None" description="No storage destinations." /> : (
+          <ul class="space-y-1 text-sm">{view.storage.map((s) => (<li class="flex justify-between"><span>{s.type}{s.email && <span class="text-xs text-base-content/40"> · {s.email}</span>}</span><span class="text-xs text-base-content/50">{fmt(s.connectedAt)}</span></li>))}</ul>
+        )}
+      </Card>
+    </div>
+  </div>
+</SidebarLayout>

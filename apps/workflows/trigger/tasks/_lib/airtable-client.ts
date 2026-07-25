@@ -71,6 +71,14 @@ export interface ListRecordsOptions {
   offset?: string;
   /** 1-100; defaults to 100 (Airtable's max). */
   pageSize?: number;
+  /** Airtable formula filter — e.g. LAST_MODIFIED_TIME() paging for the
+   * incremental-backup reconciliation pass (workflows-instant-webhook). */
+  filterByFormula?: string;
+  /** Restrict returned cell values to these fields (ids or names). Used by
+   * the reconciliation deletion sweep to page record ids cheaply. */
+  fields?: string[];
+  /** Key each record's cells by field id instead of field name. */
+  returnFieldsByFieldId?: boolean;
 }
 
 export interface AirtableClientOptions {
@@ -191,6 +199,15 @@ export function createAirtableClient(
       const params = new URLSearchParams();
       params.set("pageSize", String(pageSize));
       if (listOpts?.offset) params.set("offset", listOpts.offset);
+      if (listOpts?.filterByFormula) {
+        params.set("filterByFormula", listOpts.filterByFormula);
+      }
+      if (listOpts?.returnFieldsByFieldId) {
+        params.set("returnFieldsByFieldId", "true");
+      }
+      for (const field of listOpts?.fields ?? []) {
+        params.append("fields[]", field);
+      }
       return getJson<AirtableRecordsPage>(
         `${AIRTABLE_BASE_URL}/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(tableIdOrName)}?${params.toString()}`,
       );

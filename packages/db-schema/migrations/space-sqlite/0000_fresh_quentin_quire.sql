@@ -35,6 +35,7 @@ CREATE TABLE `bo_at_base_runs` (
 	`backup_run_id` text NOT NULL,
 	`base_id` text NOT NULL,
 	`status` text DEFAULT 'queued' NOT NULL,
+	`run_type` text DEFAULT 'full' NOT NULL,
 	`curr_step` text,
 	`schema_version_id` text,
 	`schema_hash` text,
@@ -140,6 +141,39 @@ CREATE TABLE `bo_at_fields` (
 );
 --> statement-breakpoint
 CREATE INDEX `bo_at_fields_table_idx` ON `bo_at_fields` (`table_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_form_fields` (
+	`id` text PRIMARY KEY NOT NULL,
+	`base_id` text NOT NULL,
+	`form_id` text NOT NULL,
+	`table_id` text NOT NULL,
+	`field_id` text NOT NULL,
+	`is_editable` integer,
+	`status` text DEFAULT 'active' NOT NULL,
+	`first_seen_run` text,
+	`first_unseen_run` text,
+	`last_seen_run` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_form_fields_form_idx` ON `bo_at_form_fields` (`form_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_form_fields_field_idx` ON `bo_at_form_fields` (`field_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_form_fields_uq` ON `bo_at_form_fields` (`form_id`,`field_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_forms` (
+	`id` text PRIMARY KEY NOT NULL,
+	`base_id` text NOT NULL,
+	`airtable_entity_id` text,
+	`interface_id` text,
+	`name` text,
+	`source_table_id` text,
+	`definition` text,
+	`submitted_via` text,
+	`status` text DEFAULT 'active' NOT NULL,
+	`first_seen_run` text,
+	`first_unseen_run` text,
+	`last_seen_run` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_forms_base_idx` ON `bo_at_forms` (`base_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_forms_interface_idx` ON `bo_at_forms` (`interface_id`);--> statement-breakpoint
 CREATE TABLE `bo_at_health_issues` (
 	`id` text PRIMARY KEY NOT NULL,
 	`base_id` text NOT NULL,
@@ -219,12 +253,12 @@ CREATE TABLE `bo_at_interfaces` (
 	`base_id` text NOT NULL,
 	`airtable_entity_id` text,
 	`name` text,
-	`type` text,
 	`definition` text,
-	`status` text DEFAULT 'active' NOT NULL,
 	`submitted_via` text,
-	`first_seen_at` text,
-	`last_seen_at` text
+	`status` text DEFAULT 'active' NOT NULL,
+	`first_seen_run` text,
+	`first_unseen_run` text,
+	`last_seen_run` text
 );
 --> statement-breakpoint
 CREATE INDEX `bo_at_interfaces_base_idx` ON `bo_at_interfaces` (`base_id`);--> statement-breakpoint
@@ -238,6 +272,54 @@ CREATE TABLE `bo_at_meta` (
 	`last_migrated_at` text
 );
 --> statement-breakpoint
+CREATE TABLE `bo_at_page_fields` (
+	`id` text PRIMARY KEY NOT NULL,
+	`base_id` text NOT NULL,
+	`page_id` text NOT NULL,
+	`table_id` text NOT NULL,
+	`field_id` text NOT NULL,
+	`is_editable` integer,
+	`status` text DEFAULT 'active' NOT NULL,
+	`first_seen_run` text,
+	`first_unseen_run` text,
+	`last_seen_run` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_page_fields_page_idx` ON `bo_at_page_fields` (`page_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_page_fields_field_idx` ON `bo_at_page_fields` (`field_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_page_fields_uq` ON `bo_at_page_fields` (`page_id`,`field_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_page_tables` (
+	`id` text PRIMARY KEY NOT NULL,
+	`base_id` text NOT NULL,
+	`page_id` text NOT NULL,
+	`table_id` text NOT NULL,
+	`status` text DEFAULT 'active' NOT NULL,
+	`first_seen_run` text,
+	`first_unseen_run` text,
+	`last_seen_run` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_page_tables_page_idx` ON `bo_at_page_tables` (`page_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_page_tables_table_idx` ON `bo_at_page_tables` (`table_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_page_tables_uq` ON `bo_at_page_tables` (`page_id`,`table_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_pages` (
+	`id` text PRIMARY KEY NOT NULL,
+	`base_id` text NOT NULL,
+	`airtable_entity_id` text,
+	`interface_id` text,
+	`name` text,
+	`page_type` text,
+	`source_table_id` text,
+	`definition` text,
+	`submitted_via` text,
+	`status` text DEFAULT 'active' NOT NULL,
+	`first_seen_run` text,
+	`first_unseen_run` text,
+	`last_seen_run` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_pages_base_idx` ON `bo_at_pages` (`base_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_pages_interface_idx` ON `bo_at_pages` (`interface_id`);--> statement-breakpoint
 CREATE TABLE `bo_at_record_field_data` (
 	`record_id` text NOT NULL,
 	`field_id` text NOT NULL,
@@ -255,7 +337,9 @@ CREATE TABLE `bo_at_record_updates` (
 	`field_id` text NOT NULL,
 	`table_id` text NOT NULL,
 	`run_id` text NOT NULL,
-	`old_value` text
+	`old_value` text,
+	`action_source` text,
+	`actor` text
 );
 --> statement-breakpoint
 CREATE INDEX `bo_at_record_updates_cell_idx` ON `bo_at_record_updates` (`record_id`,`field_id`);--> statement-breakpoint
@@ -287,7 +371,9 @@ CREATE TABLE `bo_at_schema_updates` (
 	`change_type_name` text,
 	`before_value` text,
 	`after_value` text,
-	`breaks_data` integer DEFAULT false NOT NULL
+	`breaks_data` integer DEFAULT false NOT NULL,
+	`action_source` text,
+	`actor` text
 );
 --> statement-breakpoint
 CREATE INDEX `bo_at_schema_updates_run_idx` ON `bo_at_schema_updates` (`run_id`);--> statement-breakpoint

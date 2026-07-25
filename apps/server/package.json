@@ -24,7 +24,7 @@
     "@baseout/db-schema": "workspace:*",
     "@baseout/shared": "workspace:*",
     "@baseout/workflows": "workspace:*",
-    "@trigger.dev/sdk": "4.5.1",
+    "@trigger.dev/sdk": "4.5.7",
     "drizzle-orm": "^0.45.2",
     "postgres": "^3.4.9"
   },

@@ -58,6 +58,15 @@ function depsFor(
     runStart: vi.fn(async () => ({ ok: true })),
     updateNextScheduled: vi.fn(async () => undefined),
     recordSkippedFire: vi.fn(async () => undefined),
+    // Webhook-poll lane (server-instant-webhook Phase C) — inert defaults;
+    // dedicated coverage lives in space-do-webhook-poll.test.ts.
+    random: () => 0,
+    fetchDueWebhookSubscriptions: vi.fn(async () => []),
+    fetchRunStatuses: vi.fn(async () => ({})),
+    insertWebhookRun: vi.fn(async () => RUN_ID),
+    markWebhookRunStarted: vi.fn(async () => undefined),
+    enqueueIncrementalBackup: vi.fn(async () => ({ id: "run_trigger_x" })),
+    updateSubscriptionPolledAt: vi.fn(async () => undefined),
     ...overrides,
   };
 }
@@ -226,7 +235,7 @@ describe("SpaceDO alarm() — error gates", () => {
     });
   });
 
-  it("does not fire and clears the alarm when the data cadence is instant", async () => {
+  it("does not fire a cron run when the data cadence is instant (webhook poll lane owns the alarm)", async () => {
     const spaceId = `instant-alarm-${crypto.randomUUID()}`;
     const stub = getStub(spaceId);
     const deps = depsFor(spaceId, {
@@ -241,7 +250,12 @@ describe("SpaceDO alarm() — error gates", () => {
     await runInDurableObject(stub, async (inst, state) => {
       inst.setSchedulerDepsForTests(deps);
       await inst.alarm();
-      expect(await state.storage.getAlarm()).toBeNull();
+      // No cron fire is scheduled, but the instant config self-arms the
+      // webhook-poll lane (server-instant-webhook Phase C; random()=0 →
+      // exactly the default 900s interval out).
+      expect(await state.storage.getAlarm()).toBe(
+        FIXED_NOW.getTime() + 900_000,
+      );
     });
 
     expect(deps.insertScheduledRun).not.toHaveBeenCalled();

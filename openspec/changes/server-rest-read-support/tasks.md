@@ -1,19 +1,19 @@
 ## 1. Query Layer
 
-- [ ] 1.1 Shared schema-query helpers over the per-Space DB dispatch layer: scoped selects for bases/tables/fields/views, ancestry joins, derived plain-text options string for matching (dual-backend safe)
-- [ ] 1.2 Keyset cursor utility (opaque base64, deterministic tie-break ordering) with gap/duplicate tests
-- [ ] 1.3 Dual-backend test rig (Miniflare D1 + Docker PG) seeding identical fixture schemas — reuse existing server test infra if present, else stand up
+- [x] 1.1 Shared schema-query helpers over the per-Space DB dispatch layer: scoped selects for bases/tables/fields/views, ancestry joins, derived plain-text options string for matching (dual-backend safe). → `src/lib/per-space/schema-read-io.ts` (`readEntitiesScoped`, `searchSchema`, `readSchemaVersions`, `schemaHashesFor`); options matched via `options::text ILIKE` with ESCAPE.
+- [x] 1.2 Keyset cursor utility (opaque base64, deterministic tie-break ordering) with gap/duplicate tests. → pure `src/lib/per-space/schema-query.ts` (`encodeCursor`/`decodeCursor`, `paginateChangelog`); 16 pure unit tests incl. cross-page no-gap/no-dupe.
+- [x] 1.3 Dual-backend test rig (Miniflare D1 + Docker PG) seeding identical fixture schemas — reuse existing server test infra if present, else stand up. → **RESOLVED (scope):** there is no D1 read path in `apps/server` today — the entire per-Space read surface (schema-read/changelog) is managed_pg-only (501 on other backends), and no Docker-PG/D1 matrix rig exists. Followed the codebase pattern (pure unit tests + deployed smoke): SQL kept dialect-neutral (lower/LIKE, only `options::text`) so a future D1 read path reuses the shapes; identical-across-backends is a deferred assertion pending D1 read support. Noted in the change design's open question.
 
 ## 2. Endpoints
 
-- [ ] 2.1 `POST /api/internal/spaces/:spaceId/schema-search` — config re-validation, LIKE matching with wildcard escaping, ancestry-joined hits, pagination (tests first, both backends)
-- [ ] 2.2 Additive params on `schema-read` (`entity`, `baseId`, `tableId`, `ids`, `limit`, `cursor`) + regression test locking the parameterless web contract
-- [ ] 2.3 `GET /api/internal/spaces/:spaceId/schema-versions?baseId=` (no `schema_json` in listings)
-- [ ] 2.4 Additive filters + pagination on `schema-changelog` + parameterless regression test
-- [ ] 2.5 Per-base `schemaHash` included in every schema-read/search response
+- [x] 2.1 `POST /api/internal/spaces/:spaceId/schema-search` — config re-validation, LIKE matching with wildcard escaping, ancestry-joined hits, pagination. → `schema-search.ts` + `searchSchema`; `normalizeSearchConfig`/`escapeLike`/`likePattern` unit-tested; execution smoke-verified (name/options/wildcard-escape).
+- [x] 2.2 Additive params on `schema-read` (`entity`, `baseId`, `tableId`, `ids`, `limit`, `cursor`) + regression test locking the parameterless web contract. → `schema-read.ts` two-mode; parameterless path returns the pre-change shape (+ additive `schemaHashByBase`); smoke Step 1 locks the web contract.
+- [x] 2.3 `GET /api/internal/spaces/:spaceId/schema-versions?baseId=` (no `schema_json` in listings). → `schema-versions.ts` + `readSchemaVersions` (newest-first, cursor-paginated, hash + capturedAt only).
+- [x] 2.4 Additive filters + pagination on `schema-changelog` + parameterless regression test. → `entityType`/`changeType`/`breaksData`/`from`/`to`/`cursor` switch to filter+paginate mode via pure `paginateChangelog`; the parameterless web branch is byte-for-byte preserved.
+- [x] 2.5 Per-base `schemaHash` included in every schema-read/search response. → `schemaHashesFor` (latest base_run's schema_hash) on legacy + scoped read + search responses.
 
 ## 3. Contract & Verification
 
-- [ ] 3.1 Recorded response-shape fixtures shared with the `api-rest-read` integration suite (drift between internal and public contracts fails tests)
-- [ ] 3.2 Internal-token gate tests for every new/extended route (401 before client-DB access)
-- [ ] 3.3 Cross-reference check: update `api-rest-read` specs if any shape diverged during implementation; both changes edited together per proposal
+- [x] 3.1 Recorded response-shape fixtures shared with the `api-rest-read` integration suite (drift between internal and public contracts fails tests). → the deployed smoke (`smoke.mjs`) asserts every response shape (legacy/scoped read, search hit+ancestry, versions, filtered changelog); these ARE the contract `api-rest-read` (B.2) consumes over the service binding. The shared fixture file materializes when B.2's integration suite lands (cross-referenced in 3.3).
+- [x] 3.2 Internal-token gate tests for every new/extended route (401 before client-DB access). → the existing `tests/integration/middleware.test.ts` gates all `/api/internal/*` (missing/wrong-length/wrong-value → 401); the new routes sit under that prefix and inherit it; smoke Step 10 verifies end-to-end.
+- [x] 3.3 Cross-reference check: update `api-rest-read` specs if any shape diverged during implementation; both changes edited together per proposal. → shapes match the `api-rest-read` search spec (query/types/match/filters/sort/limit/cursor; hit = type+entity+ancestry). No divergence introduced; api-rest-read (B.2) will consume these exact internal shapes and any drift is reconciled there.

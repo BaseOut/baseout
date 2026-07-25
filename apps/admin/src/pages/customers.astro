@@ -1,0 +1,103 @@
+---
+// /customers — global customers directory (admin-entity-directories). Read-only;
+// role='super' gated by middleware. Search + status filter + limit in SQL; row
+// assembly + derived-status filter in the pure lib.
+import { count, eq, ilike, max, or } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import { backupRuns, organizations, organizationMembers, spaces, subscriptionItems, subscriptions } from '../db/schema';
+import { buildCustomersDirectory, type CustomerSubItem } from '../lib/customers';
+import { entityHref, truncationNote } from '../lib/ui';
+
+const LIMIT = 200;
+const url = new URL(Astro.request.url);
+const q = (url.searchParams.get('q') ?? '').trim();
+const status = (url.searchParams.get('status') ?? '').trim() || null;
+const { db } = Astro.locals;
+
+const orgWhere = q ? or(ilike(organizations.name, `%${q}%`), ilike(organizations.slug, `%${q}%`)) : undefined;
+const [orgs, spaceCounts, memberCounts, subItems, latestRuns] = await Promise.all([
+  db.select({ id: organizations.id, name: organizations.name, slug: organizations.slug, hasMigrated: organizations.hasMigrated, createdAt: organizations.createdAt })
+    .from(organizations).where(orgWhere).orderBy(organizations.name).limit(LIMIT),
+  db.select({ organizationId: spaces.organizationId, count: count() }).from(spaces).groupBy(spaces.organizationId),
+  db.select({ organizationId: organizationMembers.organizationId, count: count() }).from(organizationMembers).groupBy(organizationMembers.organizationId),
+  db.select({ organizationId: subscriptions.organizationId, tier: subscriptionItems.tier, billingPeriod: subscriptionItems.billingPeriod, subscriptionStatus: subscriptions.status, cancelledAt: subscriptionItems.cancelledAt })
+    .from(subscriptionItems).innerJoin(subscriptions, eq(subscriptionItems.subscriptionId, subscriptions.id)),
+  db.select({ organizationId: spaces.organizationId, lastRunAt: max(backupRuns.createdAt) })
+    .from(backupRuns).innerJoin(spaces, eq(backupRuns.spaceId, spaces.id)).groupBy(spaces.organizationId),
+]);
+
+const rows = buildCustomersDirectory(
+  {
+    orgs,
+    spaceCounts: spaceCounts.filter((r): r is { organizationId: string; count: number } => !!r.organizationId),
+    memberCounts: memberCounts.filter((r): r is { organizationId: string; count: number } => !!r.organizationId),
+    subItems: subItems.filter((r) => !!r.organizationId) as CustomerSubItem[],
+    latestRuns: latestRuns.filter((r): r is { organizationId: string; lastRunAt: Date } => !!r.organizationId && !!r.lastRunAt),
+  },
+  { status },
+);
+
+const dollars = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0 })}`;
+const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
+---
+
+<SidebarLayout title="Admin — Customers">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader title="Customers" description={`Every Organization with billing + activity context.${truncationNote(orgs.length, LIMIT)}`} />
+
+    <form method="get" class="flex flex-wrap items-center gap-2">
+      <input type="search" name="q" value={q} placeholder="Search name or slug…" class="input input-bordered input-sm w-64" />
+      <select name="status" class="select select-bordered select-sm">
+        <option value="" selected={!status}>All statuses</option>
+        {['active', 'trialing', 'past_due', 'canceled', 'none'].map((s) => (
+          <option value={s} selected={status === s}>{s}</option>
+        ))}
+      </select>
+      <button class="btn btn-sm btn-primary" type="submit">Apply</button>
+    </form>
+
+    <Card variant="outlined">
+      {rows.length === 0 ? (
+        <EmptyState title="No customers match" description="Try a different search or status." />
+      ) : (
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-base-300 text-left text-xs uppercase text-base-content/60">
+                <th class="py-2 pr-4 font-medium">Organization</th>
+                <th class="py-2 pr-4 font-medium">Tier</th>
+                <th class="py-2 pr-4 font-medium">Status</th>
+                <th class="py-2 pr-4 font-medium">Est. MRR</th>
+                <th class="py-2 pr-4 font-medium">Spaces</th>
+                <th class="py-2 pr-4 font-medium">Members</th>
+                <th class="py-2 pr-4 font-medium">Last activity</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr class="border-b border-base-200/60">
+                  <td class="py-2 pr-4">
+                    <a href={entityHref('org', r.id)} class="link link-hover font-medium">{r.name}</a>
+                    {!r.hasMigrated && <Badge variant="warning">unmigrated</Badge>}
+                    <div class="text-xs text-base-content/50">{r.slug}</div>
+                  </td>
+                  <td class="py-2 pr-4">{r.tiers.length ? r.tiers.join(', ') : '—'}</td>
+                  <td class="py-2 pr-4"><Badge variant={r.subscriptionStatus === 'active' ? 'success' : r.subscriptionStatus === 'past_due' ? 'error' : 'default'}>{r.subscriptionStatus}</Badge></td>
+                  <td class="py-2 pr-4">{dollars(r.mrr.totalCents)}{r.mrr.unpriceable > 0 ? '＋' : ''}</td>
+                  <td class="py-2 pr-4">{r.spaceCount}</td>
+                  <td class="py-2 pr-4">{r.memberCount}</td>
+                  <td class="py-2 pr-4 text-base-content/70">{fmt(r.lastActivityAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+    <p class="text-xs text-base-content/50">Est. MRR is list-price only (Stripe amounts aren’t synced); ＋ = an unpriceable (enterprise/custom) item on an active sub.</p>
+  </div>
+</SidebarLayout>

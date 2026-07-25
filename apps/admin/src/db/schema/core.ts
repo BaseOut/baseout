@@ -57,6 +57,7 @@ export const spaces = baseout.table('spaces', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()`),
   organizationId: text('organization_id').notNull(),
   name: text('name').notNull(),
+  spaceType: text('space_type'), // 'single_platform' | 'multi_platform' (space detail — admin-entity-linking)
   status: text('status').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
@@ -94,6 +95,8 @@ export const connections = baseout.table('connections', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()`),
   organizationId: text('organization_id').notNull(),
   platformId: text('platform_id').notNull(),
+  createdByUserId: text('created_by_user_id'), // user detail: connections created by a user (admin-entity-linking)
+  spaceId: text('space_id'),                   // space-scoped connections (scope='space')
   scope: text('scope').notNull().default('organization'),
   displayName: text('display_name'),
   tokenExpiresAt: timestamp('token_expires_at', { withTimezone: true }),
@@ -104,6 +107,7 @@ export const connections = baseout.table('connections', {
   oauthRefreshClaimId: text('oauth_refresh_claim_id'),
   oauthRefreshClaimedAt: timestamp('oauth_refresh_claimed_at', { withTimezone: true }),
   oauthRefreshLastError: text('oauth_refresh_last_error'),
+  pendingReauthAt: timestamp('pending_reauth_at', { withTimezone: true }), // error-triage occurrence time (migration 0026)
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 })
@@ -138,6 +142,7 @@ export const backupRuns = baseout.table('backup_runs', {
 
 export const backupConfigurationBases = baseout.table('backup_configuration_bases', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  isAutoDiscovered: boolean('is_auto_discovered').notNull().default(false), // space detail (admin-entity-linking)
   backupConfigurationId: text('backup_configuration_id').notNull(),
   atBaseId: text('at_base_id').notNull(),
   isIncluded: boolean('is_included').notNull().default(true),
@@ -168,6 +173,8 @@ export const backupConfigurations = baseout.table('backup_configurations', {
   spaceId: text('space_id').notNull(),
   frequency: text('frequency').notNull().default('monthly'),
   scope: text('scope').notNull().default('schema_and_data'),
+  mode: text('mode').notNull().default('static'), // static | dynamic — config summary (admin-entity-directories)
+  autoAddFutureBases: boolean('auto_add_future_bases').notNull().default(false), // space detail (admin-entity-linking)
   schemaFrequency: text('schema_frequency'),
   schemaNextScheduledAt: timestamp('schema_next_scheduled_at', { withTimezone: true }),
   storageType: text('storage_type').notNull().default('r2_managed'),
@@ -189,6 +196,7 @@ export const spaceDatabases = baseout.table('space_databases', {
   lastRecordsSyncAt: timestamp('last_records_sync_at', { withTimezone: true }),
   provisionedAt: timestamp('provisioned_at', { withTimezone: true }),
   errorMessage: text('error_message'),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }), // DB-error occurrence time (admin-error-triage)
 })
 
 // OAuth token `*_enc` columns deliberately NOT mirrored (see header).
@@ -292,4 +300,63 @@ export const backupRunTables = baseout.table('backup_run_tables', {
   recordCount: integer('record_count').notNull().default(0),
   fieldCount: integer('field_count').notNull().default(0),
   attachmentCount: integer('attachment_count').notNull().default(0),
+})
+
+// Background-service run log (canonical: apps/web core.ts serviceRuns, migration
+// 0028_service_runs.sql; written by apps/server via withServiceRun). READ-ONLY
+// here — the /services surface reads it; no admin code path writes it
+// (guard-tested in service-runs-guard.test.ts). All columns are safe (no *_enc).
+export const serviceRuns = baseout.table('service_runs', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  service: text('service').notNull(),
+  status: text('status').notNull().default('started'),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  durationMs: integer('duration_ms'),
+  counts: jsonb('counts'),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// Staff error-triage acks (canonical: apps/web core.ts adminErrorAcks, migration
+// 0029_admin_error_acks.sql). APPEND-ONLY: read + INSERT only, no UPDATE/DELETE
+// (guard-tested in error-acks-guard.test.ts). Effective state = latest `phase`
+// row per (target_type, target_id[, target_state]). No FKs; no *_enc.
+export const adminErrorAcks = baseout.table('admin_error_acks', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  phase: text('phase').notNull().default('ack'),
+  targetType: text('target_type').notNull(),
+  targetId: text('target_id').notNull(),
+  targetState: text('target_state'),
+  organizationId: text('organization_id'),
+  ackedByUserId: text('acked_by_user_id').notNull(),
+  ackedByEmail: text('acked_by_email').notNull(),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+// Airtable base registry (canonical: apps/web core.ts atBases). Read-only.
+// Space detail lists a Space's bases + inclusion flags (joined to
+// backup_configuration_bases). Per CLAUDE.md §5.3.
+export const atBases = baseout.table('at_bases', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id').notNull(),
+  atBaseId: text('at_base_id').notNull(),
+  name: text('name').notNull(),
+  discoveredVia: text('discovered_via').notNull().default('oauth_callback'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+})
+
+// Backup retention policy (canonical: apps/web core.ts backupRetentionPolicies).
+// Read-only; space detail shows the effective policy. Per CLAUDE.md §5.3.
+export const backupRetentionPolicies = baseout.table('backup_retention_policies', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id').notNull(),
+  policyTier: text('policy_tier').notNull(),
+  keepLastN: integer('keep_last_n'),
+  dailyWindowDays: integer('daily_window_days'),
+  weeklyWindowDays: integer('weekly_window_days'),
+  monthlyIndefinite: boolean('monthly_indefinite').notNull().default(false),
 })

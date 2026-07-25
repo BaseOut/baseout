@@ -21,6 +21,7 @@ import {
 } from "../../db/schema";
 import { enqueueBackupBase } from "../trigger-client";
 import { interfaceBackupEnabled } from "../capabilities/interface-backup";
+import { automationBackupEnabled } from "../capabilities/automation-backup";
 import { resolveCapabilities } from "../capabilities/resolve";
 import type { Env } from "../../env";
 import type { ProcessRunStartDeps, IncludedBase } from "./start";
@@ -91,6 +92,10 @@ export function buildRunStartDeps(db: MasterDb, env: Env): ProcessRunStartDeps {
     resolveInterfacesEnabled: async (organizationId) => {
       const { tier } = await resolveCapabilities(db, organizationId, "airtable");
       return interfaceBackupEnabled(tier);
+    },
+    resolveAutomationsEnabled: async (organizationId) => {
+      const { tier } = await resolveCapabilities(db, organizationId, "airtable");
+      return automationBackupEnabled(tier);
     },
   };
 }

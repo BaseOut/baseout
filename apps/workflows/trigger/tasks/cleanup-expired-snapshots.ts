@@ -29,6 +29,9 @@ export interface CleanupRunPlanItem {
 
 export interface CleanupPlan {
   runs: CleanupRunPlanItem[];
+  /** shared-service-runs: the retention_cleanup run row id opened by the engine;
+   *  echoed back on completion so the engine finalizes it. Opaque here. */
+  serviceRunId?: string | null;
 }
 
 export interface CleanupCompletion {
@@ -36,14 +39,31 @@ export interface CleanupCompletion {
   ok: boolean;
 }
 
+/**
+ * Validate the engine's cleanup-plan 200 body at the IO boundary. A drifted
+ * body (error envelope surfaced as 200, JSON null, future producer change)
+ * must fail the pass with a descriptive error — visible in the Trigger.dev run
+ * log and retried — rather than TypeError-ing at `for (const run of plan.runs)`
+ * or silently planning zero runs (which would hide a total retention stall).
+ */
+export function parseCleanupPlan(body: unknown): CleanupPlan {
+  const candidate = body as Partial<CleanupPlan> | null;
+  if (!candidate || !Array.isArray(candidate.runs)) {
+    throw new Error("cleanup-plan returned a malformed body: missing runs[]");
+  }
+  return { runs: candidate.runs, serviceRunId: candidate.serviceRunId ?? undefined };
+}
+
 export interface RunCleanupSweepDeps {
   /** GET the delete plan from the engine. */
   fetchPlan: () => Promise<CleanupPlan>;
   /** Resolve a StorageWriter for a run's storage_type. */
   resolveWriter: (storageType: string) => StorageWriter;
-  /** Report per-run outcomes so the engine soft-deletes the ok rows. */
+  /** Report per-run outcomes (+ echo the serviceRunId) so the engine
+   *  soft-deletes the ok rows and finalizes the retention_cleanup run. */
   postComplete: (
     completed: CleanupCompletion[],
+    serviceRunId?: string | null,
   ) => Promise<{ updated: number } | void>;
 }
 
@@ -81,8 +101,11 @@ export async function runCleanupSweep(
     completed.push({ runId: run.runId, ok });
   }
 
-  if (completed.length > 0) {
-    await deps.postComplete(completed);
+  // Call postComplete when there's anything to soft-delete OR a service run to
+  // finalize — else a plan that opened a retention_cleanup row but planned zero
+  // runs would leave that row dangling (admin would render it "stuck").
+  if (completed.length > 0 || plan.serviceRunId) {
+    await deps.postComplete(completed, plan.serviceRunId);
   }
 
   return { planned: plan.runs.length, deleted, failed };

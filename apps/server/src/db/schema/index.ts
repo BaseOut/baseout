@@ -22,3 +22,6 @@ export * from "./backup-run-bases";
 export * from "./backup-run-tables";
 export * from "./backup-retention-policies";
 export * from "./health-score-rules";
+export * from "./service-runs";
+export * from "./airtable-webhooks";
+export * from "./airtable-webhook-subscriptions";

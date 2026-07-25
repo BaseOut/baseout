@@ -12,3 +12,6 @@ describe('truncationNote', () => {
     expect(truncationNote(101, 100)).toBe(' Showing the most recent 100.')
   })
 })
+
+// entityHref moved to entity-link.ts (with real space/user routes) — see
+// entity-link.test.ts.

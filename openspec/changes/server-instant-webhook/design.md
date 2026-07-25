@@ -148,6 +148,60 @@ The MAC secret is returned **only** in the create response — encrypt and persi
 - **Cursor drift**: cursor advances only after a payload batch durably applies; retries are idempotent (UPSERT/DELETE semantics in the task).
 - **PRD sync**: PRD §2.5's "coalesce + debounce 5 minutes or 100 events" description is superseded by cadence polling; note in Phase G doc sync.
 
+## Implementation notes — Phases C–E as built (2026-07-23)
+
+- **Run kind**: webhook poll runs INSERT with **`kind='incremental'`** (not the
+  `full` default) — a cursor-driven payload apply is neither a full snapshot
+  nor a schema-only capture, and the Phase D fallback needs to insert a
+  distinguishable **`kind='full'`** re-read for the same base. `kind` is plain
+  text with app-level values, so this is additive; the ⚡ badge handling lands
+  in `web-instant-webhook`. The SpaceDO also flips the row to `running` +
+  `trigger_run_ids=[<task handle>]` at enqueue so the standard `/complete`
+  idempotency and the reconciliation sweep cover incremental runs unchanged.
+- **In-flight guard**: implemented as DO storage (`webhook_inflight`:
+  `{baseId: runId}`) reconciled against `backup_runs.status` each tick —
+  master `backup_runs` has no base column and `backup_run_bases` rows only
+  exist at completion, so a pure-DB per-(space, base) check wasn't possible.
+  The DO is the only writer of webhook runs for its Space, so the map is
+  authoritative; queued/running = in flight, terminal/missing = pruned.
+- **Arming**: new DO surface `POST /set-webhook-polling { enabled }` (called
+  by the Phase E register/unregister routes). `alarm()` additionally
+  self-arms whenever the config says `frequency='instant'` and drops the poll
+  state when it doesn't — DO-storage drift can pause polling for at most one
+  tick. `/set-frequency` re-arming now mins against a stored poll fire.
+- **Paused webhooks**: the poll lane skips subscriptions whose webhook row is
+  `pending_reauth`/`inactive` (dead token / retired) without stamping the
+  watermark; `notifications_disabled` still polls — Airtable keeps generating
+  payloads while pings are muted and the renewal cron re-enables them.
+- **Fallback's "Airtable's latest cursor"**: `cursorForNextPayload` from the
+  list-webhooks endpoint (`GET /v0/bases/:b/webhooks`), fetched with the
+  webhook's Connection token via the ConnectionDO `/token` gate. Best-effort:
+  when it can't be fetched the full re-read + `last_reconciled_at` stamp still
+  land and the response says `cursorReset:false`; the next poll re-signals if
+  the stream is still unreadable.
+- **Inactive-row recreate**: an `inactive` row still holds the UNIQUE
+  (organization, base) slot, so re-enable DELETEs the dead row (its
+  subscriptions are gone by definition — inactive is set on last-unsubscribe)
+  and creates fresh, rather than mutating the PK that doubles as the
+  notificationUrl token.
+- **E.7 (cross-Connection webhook management), docs-based answer**: Airtable
+  scopes webhook visibility/management to the **OAuth integration** ("webhooks
+  are only manageable by tokens of the integration that created them"), not to
+  the individual authorizing token — so any same-org Baseout Connection with
+  access to the base is expected to refresh/poll another Connection's webhook,
+  favoring re-pointing `connection_id` over re-creating on reconnect. NOT yet
+  smoke-verified with two live Connections; the reconnect re-point automation
+  waits on that. **Probe attempt 2026-07-23**: the dev org
+  (`e9ae1e3f-71f2-4fc4-8724-4a6c0a470433`) holds exactly ONE active Airtable
+  Connection, so the two-Connection visibility probe (create webhook with
+  token A → list/refresh with token B → delete in finally) could not run —
+  it needs a second dev Connection (second Airtable account/OAuth grant with
+  access to a shared base) before the docs-based answer can be confirmed.
+- **Known cross-change gap**: `incremental-backup.task.ts`'s completion POST
+  (`created/updated/deleted/reconciledRecords/...`) doesn't parse against the
+  current `/runs/:runId/complete` body validator (`tablesProcessed/...`
+  required) — widening that contract is `workflows-instant-webhook` territory.
+
 ## What this design deliberately doesn't change
 
 - The scheduled snapshot path and its cron alarm logic (the webhook poll is a second alarm state in the same min-dispatch).

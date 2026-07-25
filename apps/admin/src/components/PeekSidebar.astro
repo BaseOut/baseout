@@ -1,0 +1,68 @@
+---
+// Peek sidebar island (admin-entity-linking D4). Vanilla TS (admin's zero-island
+// status quo) — un-hides EntityLink peek buttons on hydrate (progressive
+// enhancement: links work with JS off), event-delegates on [data-peek-type],
+// fetches /api/peek/<type>/<id>, and renders the closed summary shape. Mounted
+// once in SidebarLayout.
+---
+
+<aside
+  id="peek-panel"
+  class="fixed inset-y-0 right-0 z-[200] hidden w-[340px] translate-x-full flex-col border-l border-base-300 bg-base-100 shadow-xl transition-transform duration-200 data-[open]:translate-x-0"
+  aria-live="polite"
+>
+  <div class="flex items-center justify-between border-b border-base-300 px-4 py-3">
+    <span class="text-sm font-semibold" data-peek-heading>Details</span>
+    <button type="button" data-peek-close class="text-base-content/50 hover:text-base-content" aria-label="Close">
+      <i class="iconify lucide--x size-4"></i>
+    </button>
+  </div>
+  <div class="grow overflow-y-auto p-4" data-peek-body></div>
+</aside>
+
+<script>
+  type Badge = { label: string; tone: string }
+  type Stat = { label: string; value: string }
+  interface Summary { title: string; subtitle: string | null; href: string; badges: Badge[]; stats: Stat[] }
+
+  const panel = document.getElementById('peek-panel')
+  const body = panel?.querySelector<HTMLElement>('[data-peek-body]')
+  const heading = panel?.querySelector<HTMLElement>('[data-peek-heading]')
+  if (panel && body && heading) {
+    const TONE: Record<string, string> = { success: 'badge-success', warning: 'badge-warning', error: 'badge-error', default: 'badge-ghost' }
+    const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!))
+    const open = () => { panel.classList.remove('hidden'); panel.style.display = 'flex'; requestAnimationFrame(() => panel.setAttribute('data-open', '')) }
+    const close = () => { panel.removeAttribute('data-open'); setTimeout(() => { panel.classList.add('hidden'); panel.style.display = 'none' }, 200) }
+
+    // Progressive enhancement: reveal the peek affordances now that JS is live.
+    document.querySelectorAll<HTMLElement>('.peek-btn').forEach((b) => b.classList.remove('hidden'))
+
+    panel.querySelector('[data-peek-close]')?.addEventListener('click', close)
+
+    document.addEventListener('click', async (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-peek-type]')
+      if (!btn) return
+      e.preventDefault()
+      const type = btn.dataset.peekType!
+      const id = btn.dataset.peekId!
+      heading.textContent = 'Loading…'
+      body.innerHTML = '<div class="loading loading-spinner loading-sm"></div>'
+      open()
+      try {
+        const res = await fetch(`/api/peek/${encodeURIComponent(type)}/${encodeURIComponent(id)}`)
+        if (!res.ok) throw new Error(`http_${res.status}`)
+        const s = (await res.json()) as Summary
+        heading.textContent = s.title
+        body.innerHTML = `
+          <a href="${esc(s.href)}" class="link link-hover text-base font-semibold">${esc(s.title)}</a>
+          ${s.subtitle ? `<p class="mt-0.5 text-sm text-base-content/60">${esc(s.subtitle)}</p>` : ''}
+          ${s.badges.length ? `<div class="mt-2 flex flex-wrap gap-1">${s.badges.map((b) => `<span class="badge badge-sm ${TONE[b.tone] ?? 'badge-ghost'}">${esc(b.label)}</span>`).join('')}</div>` : ''}
+          ${s.stats.length ? `<dl class="mt-4 space-y-1 text-sm">${s.stats.map((x) => `<div class="flex justify-between"><dt class="text-base-content/50">${esc(x.label)}</dt><dd>${esc(x.value)}</dd></div>`).join('')}</dl>` : ''}
+          <a href="${esc(s.href)}" class="btn btn-sm btn-primary mt-4 w-full">Open</a>`
+      } catch {
+        heading.textContent = 'Error'
+        body.innerHTML = '<p class="text-sm text-error/80">Could not load this item.</p>'
+      }
+    })
+  }
+</script>

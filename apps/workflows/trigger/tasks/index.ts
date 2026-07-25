@@ -32,3 +32,11 @@ export type {
 } from "./relationship-inference";
 export type { chatRespondTask, ChatRespondPayload } from "./chat-respond.task";
 export type { ChatRespondResult, ChatRespondInput, ChatTurn } from "./chat-respond";
+export type {
+  incrementalBackupTask,
+  IncrementalBackupTaskPayload,
+} from "./incremental-backup.task";
+export type {
+  IncrementalBackupResult,
+  IncrementalBackupInput,
+} from "./incremental-backup";

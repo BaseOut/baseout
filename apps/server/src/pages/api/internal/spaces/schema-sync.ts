@@ -7,6 +7,15 @@
 // whether to follow up with /records-sync. Runs regardless of records_enabled —
 // the per-Space DB always holds schema.
 //
+// bo_at_views capture is gated to Airtable-Enterprise connections
+// (system-per-space-db §8.2, view-capture.ts): non-Enterprise captures have
+// views stripped up front and the diff skips the views block, while the
+// base's still-active view rows are swept to `unknown` in the same
+// transaction. VIEW_CAPTURE_OVERRIDE="1" (dev Worker only) opens the gate for
+// every connection (server-view-capture-override). After the sync,
+// the per-table query matviews are regenerated best-effort when records are
+// enabled (§4.2, query-views-io.ts).
+//
 // Optional `interfacePages` field (server-mcp-interface-pages): the raw MCP
 // list_pages_for_base capture + capturedAt. When present, interface entities
 // are extracted, diffed against the prior MCP-sourced working set, and
@@ -14,6 +23,12 @@
 // absent field means no interface processing whatsoever (old workflows,
 // skipped captures — never "all interfaces deleted"). Extraction/validation
 // failures are reported per-section on the response and never fail the sync.
+//
+// Optional `automations` field (server-mcp-automations): the raw MCP
+// list_automations capture + capturedAt, with the same contract — extracted,
+// diffed against the prior submitted_via='mcp' rows of the EXISTING
+// bo_at_automations table, persisted in the same transaction; absent field =
+// no automation processing (never "all automations deleted").
 //
 // Token gate is applied by middleware (path begins /api/internal/).
 
@@ -24,11 +39,18 @@ import {
   diffInterfaces,
   parseInterfacePagesField,
 } from "../../../../lib/per-space/interfaces-sync";
+import {
+  diffAutomations,
+  parseAutomationsField,
+} from "../../../../lib/per-space/automations-sync";
 import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import {
+  applyAutomationDiff,
   applyInterfaceDiff,
   applySchemaDiff,
   ensureBaseRun,
+  markViewsUnknownForBase,
+  readAutomationWorkingSet,
   readInterfaceWorkingSet,
   readSchemaWorkingSet,
   withSpaceSchema,
@@ -41,6 +63,13 @@ import {
 } from "../../../../lib/per-space/describe-schema-io";
 import { runEngineHealthScore, workersAiScoreMetric } from "../../../../lib/per-space/health-score-run";
 import { inferAndWriteSyncedViews } from "../../../../lib/per-space/relationships-io";
+import { regenerateQueryViews } from "../../../../lib/per-space/query-views-io";
+import {
+  resolveViewCaptureForRun,
+  resolveViewCaptureSetting,
+  shouldSweepUnknownViews,
+  stripCapturedViews,
+} from "../../../../lib/per-space/view-capture";
 import { ensureSpaceSchemaCurrent } from "../../../../lib/provisioning/upgrade";
 
 const UUID_RE =
@@ -74,6 +103,7 @@ export async function spacesSchemaSyncHandler(
     captured?: unknown;
     confident?: unknown;
     interfacePages?: unknown;
+    automations?: unknown;
   };
   if (!UUID_RE.test(String(body.backupRunId))) return jsonResponse({ error: "invalid_request" }, 400);
   const captured = body.captured as CapturedBase | undefined;
@@ -96,12 +126,38 @@ export async function spacesSchemaSyncHandler(
     interfaceSync = { ok: false, reason: parsedCapture.reason };
   }
 
+  // Optional automations capture — same parse-up-front contract
+  // (server-mcp-automations). `undefined` summary = field absent = no
+  // automation processing at all.
+  let automationSync:
+    | { ok: true; added: number; removed: number; updates: number; unchanged: boolean }
+    | { ok: false; reason: string }
+    | undefined;
+  const parsedAutomations = parseAutomationsField(body.automations);
+  const automationCapture = parsedAutomations.kind === "ok" ? parsedAutomations : null;
+  if (parsedAutomations.kind === "invalid") {
+    automationSync = { ok: false, reason: parsedAutomations.reason };
+  }
+
   const { db: masterDb, sql } = locals.getMasterDb();
   const space = await resolveSpaceDb(masterDb, spaceId);
   if (!space || space.status !== "active") return jsonResponse({ error: "space_db_not_ready" }, 409);
   if (space.backend !== "managed_pg" || !space.pgLocator) {
     return jsonResponse({ error: "backend_not_implemented" }, 501);
   }
+
+  // Enterprise view-capture gate (system-per-space-db §8.2): non-Enterprise
+  // connections get views stripped BEFORE hashing/diffing/storing — neither
+  // bo_at_views, the schema hash, nor the schema_versions JSON carries view
+  // metadata. includeViews=false keeps the diff from confidently "removing"
+  // prior view rows captured before the gate existed; instead a closed gate
+  // sweeps still-active rows to `unknown` inside the sync transaction below.
+  // VIEW_CAPTURE_OVERRIDE="1" (dev Worker only, server-view-capture-override)
+  // opens the gate for every connection without the DB resolution.
+  const viewCapture = await resolveViewCaptureSetting(env.VIEW_CAPTURE_OVERRIDE, () =>
+    resolveViewCaptureForRun(masterDb, backupRunId),
+  );
+  const capturedGated = viewCapture ? captured : stripCapturedViews(captured);
 
   // Best-effort: bring an older Space to the current per-Space schema before the
   // write + inference below (system-per-space-upgrade). Must not fail the sync.
@@ -119,8 +175,22 @@ export async function spacesSchemaSyncHandler(
     const { baseRunId, result } = await withSpaceSchema(masterDb, space.pgLocator, async (tx) => {
       const baseRunId = await ensureBaseRun(tx, backupRunId, captured.baseId);
       const prior = await readSchemaWorkingSet(tx, captured.baseId);
-      const result = diffSchema({ captured, prior, runId: baseRunId, confident });
-      await applySchemaDiff(tx, { baseId: captured.baseId, baseRunId, result, schemaJson: captured });
+      const result = diffSchema({
+        captured: capturedGated,
+        prior,
+        runId: baseRunId,
+        confident,
+        includeViews: Boolean(viewCapture),
+      });
+      await applySchemaDiff(tx, { baseId: captured.baseId, baseRunId, result, schemaJson: capturedGated });
+
+      // Closed gate ⇒ this sync could not observe views: flip the base's
+      // still-active bo_at_views rows to `unknown` in the same transaction
+      // (server-view-capture-override). Idempotent; reappearance on a later
+      // gate-open sync is handled by the normal insert/seen upsert.
+      if (shouldSweepUnknownViews(viewCapture)) {
+        await markViewsUnknownForBase(tx, captured.baseId);
+      }
 
       // Interface entities ride the same transaction + run association as the
       // schema diff (design Decision 4). The pure diff is guarded so an
@@ -131,7 +201,7 @@ export async function spacesSchemaSyncHandler(
         let interfaceDiff: ReturnType<typeof diffInterfaces> | null = null;
         try {
           const priorInterfaces = await readInterfaceWorkingSet(tx, captured.baseId);
-          interfaceDiff = diffInterfaces({ prior: priorInterfaces, next: interfaceCapture.entities });
+          interfaceDiff = diffInterfaces({ prior: priorInterfaces, next: interfaceCapture.capture });
         } catch {
           interfaceSync = { ok: false, reason: "diff_failed" };
         }
@@ -139,15 +209,44 @@ export async function spacesSchemaSyncHandler(
           await applyInterfaceDiff(tx, {
             baseId: captured.baseId,
             baseRunId,
-            capturedAt: interfaceCapture.capturedAt,
             diff: interfaceDiff,
           });
+          const d = interfaceDiff;
           interfaceSync = {
             ok: true,
-            added: interfaceDiff.inserts.length,
-            removed: interfaceDiff.removals.length,
-            updates: interfaceDiff.updates.length,
-            unchanged: interfaceDiff.unchanged,
+            added:
+              d.interfaces.inserts.length + d.pages.inserts.length + d.forms.inserts.length,
+            removed:
+              d.interfaces.removals.length + d.pages.removals.length + d.forms.removals.length,
+            updates: d.updates.length,
+            unchanged: d.unchanged,
+          };
+        }
+      }
+
+      // Automation entities — same transaction/run association, same guarded
+      // pure-diff pattern as interfaces above (server-mcp-automations).
+      if (automationCapture) {
+        let automationDiff: ReturnType<typeof diffAutomations> | null = null;
+        try {
+          const priorAutomations = await readAutomationWorkingSet(tx, captured.baseId);
+          automationDiff = diffAutomations({ prior: priorAutomations, next: automationCapture.capture });
+        } catch {
+          automationSync = { ok: false, reason: "diff_failed" };
+        }
+        if (automationDiff) {
+          await applyAutomationDiff(tx, {
+            baseId: captured.baseId,
+            baseRunId,
+            capturedAt: automationCapture.capturedAt,
+            diff: automationDiff,
+          });
+          automationSync = {
+            ok: true,
+            added: automationDiff.automations.inserts.length,
+            removed: automationDiff.automations.removals.length,
+            updates: automationDiff.updates.length,
+            unchanged: automationDiff.unchanged,
           };
         }
       }
@@ -165,6 +264,19 @@ export async function spacesSchemaSyncHandler(
       );
     } catch {
       // ignored — the next schema capture re-runs inference.
+    }
+
+    // Best-effort per-table query-view regeneration (system-per-space-db
+    // §4.2): renames/retypes/removals change view names + safe-casts, so the
+    // full set is rebuilt off the freshly-written schema. Same own-tx +
+    // swallow pattern as the inference above — records-sync repopulates each
+    // table's view again after its records land, and the next sync retries.
+    if (space.recordsEnabled) {
+      try {
+        await withSpaceSchema(masterDb, space.pgLocator, (tx) => regenerateQueryViews(tx, {}));
+      } catch {
+        // ignored — records-sync / the next schema sync regenerates.
+      }
     }
 
     // Best-effort AI descriptions for undescribed entities of this base
@@ -221,12 +333,19 @@ export async function spacesSchemaSyncHandler(
         ok: true,
         baseRunId,
         recordsEnabled: space.recordsEnabled,
+        // §8.2 — false = the Airtable connection is not Enterprise-scoped and
+        // view metadata was stripped from this capture (still-active view rows
+        // swept to `unknown`). "override" = VIEW_CAPTURE_OVERRIDE opened the
+        // gate (server-view-capture-override), true = Enterprise-scoped.
+        viewCapture,
         schemaChanged: result.schemaChanged,
         lifecycle: result.lifecycle.length,
         updates: result.schemaUpdates.length,
         // Present only when the request carried `interfacePages` — lets the
         // workflows task report the interface section in run progress.
         ...(interfaceSync !== undefined ? { interfaceSync } : {}),
+        // Same contract for the optional `automations` field.
+        ...(automationSync !== undefined ? { automationSync } : {}),
       },
       200,
     );

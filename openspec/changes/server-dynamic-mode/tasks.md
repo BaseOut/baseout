@@ -1,108 +1,50 @@
-## Phase A — Schema
+> ⚠️ **STALE — superseded by [`system-per-space-db`](../system-per-space-db/tasks.md) (see the banner on this change's proposal.md).** The 0/47 count below overstates remaining work: Phase A (the `space_databases` table + engine mirror) and much of the provisioning/data model shipped through `system-per-space-db` under its refined design (`backend` × `records_enabled`, generic `bo_at_*` tables). Do NOT plan or implement from this list — work the per-Space data model from `system-per-space-db/tasks.md`, and re-scope whatever genuinely remains of this change (if anything) against it before checking boxes here. Noted 2026-07-21 while sequencing the instant-webhook suite, whose "dynamic mode" dependency reduces to `system-per-space-db` task 1.6.
+>
+> **RE-SCOPED 2026-07-23** per the banner above. The original Phase A–I list is retired
+> (disposition table at the bottom). What genuinely remains of "dynamic mode" is the
+> **engine-brokered incremental-apply seam**: the server half of the `IncrementalDb`
+> contract injected by `apps/workflows/trigger/tasks/incremental-backup.ts`
+> (`openBaseRun` / `completeBaseRun` / `applySchemaEvents` / `applyRecordEvents` /
+> `getStoredRecords` / `insertSchemaVersion` / `getAppliedSchemaState` /
+> `regenerateViews` / `listStoredRecordIds` / `listTableIds`) — every method of which
+> is currently a `notYetWired` stub in `incremental-backup.task.ts`. Per-Space schema
+> v8 (`bo_at_base_runs.run_type`, `action_source`/`actor` on `bo_at_schema_updates` +
+> `bo_at_record_updates`) shipped 2026-07-21 specifically to receive these writes.
 
-- [ ] A.1 Generate `apps/web/drizzle/0012_space_databases.sql` per design.md §Phase A.
-- [ ] A.2 Apply via `pnpm --filter @baseout/web db:migrate`.
-- [ ] A.3 Update [apps/web/src/db/schema/core.ts](../../../apps/web/src/db/schema/core.ts) — add `spaceDatabases` table + literal types.
-- [ ] A.4 New engine mirror `apps/server/src/db/schema/space-databases.ts`. Header comment names canonical migration.
+## Re-scoped task list
 
-## Phase B — Provisioner (incremental, one tier at a time)
+### Phase 1 — Pure incremental-apply module (FOUNDATION)
 
-### B.1 — D1 Schema Only (smallest surface, ship first)
+- [x] 1.1 TDD red: `tests/integration/per-space/incremental-apply.test.ts` — wire-shape parsing (`SchemaWrite`/`RecordWrite` unions mirrored from `apps/workflows/trigger/tasks/incremental-backup.ts`), schema-write planning (createTable expands to table+field upserts; destroys plan confident `removed` + cascade, records cascade to `deleted`; updateField patches only present keys; updateTableMetadata logs ride attribution; updateView skipped un-gated), record-write planning (createRecord cells sparse-encoded, no logs; updateCell encodes value + superseded-value log with attribution; cleared cell = null value with log; destroyRecord → `deleted`), stored-cell decode + applied-schema-state builders. → DONE 2026-07-23: 21 tests, watched red (missing module) → green.
+- [x] 1.2 New `apps/server/src/lib/per-space/incremental-apply.ts` (PURE, no I/O): request/op parsing + `planSchemaWrites` / `planRecordWrites` emitting ordered typed plan-ops, `decodeStoredCells`, `buildAppliedSchemaState`. Reuses `encodeCellValue` from `record-diff.ts`. Header names the workflows module as the canonical wire-shape source. → DONE. Semantics pinned: order-preserving plans; NOT-NULL fallbacks (null name → `''`, null field type → `'unknown'`); empty `set` emits log-only; `logSchemaUpdate` rows carry `tableId` = the table for both table and field entities (matches `schema-diff.ts` convention); stored-cell decode passes unparsable values through raw; orphan fields dropped from applied-schema-state.
 
-- [ ] B.1.1 Create the shared D1 database (`shared-schema-only`) via Cloudflare dashboard. Capture `database_id` to env.
-- [ ] B.1.2 New file `apps/server/src/lib/dynamic/provisioner.ts` with the dispatch + `provisionD1SchemaOnly` function. UPSERTs `space_databases` row with `tier='d1_schema_only'` + `status='ready'`.
-- [ ] B.1.3 Run the schema-only DDL once against the shared D1 to create `_baseout_tables`, `_baseout_fields`. Script under `apps/server/scripts/bootstrap-d1-schema-only.mjs`.
-- [ ] B.1.4 TDD: provisioner test.
+### Phase 2 — Per-space IO appliers (FOUNDATION)
 
-### B.2 — D1 Full
+- [x] 2.1 New `apps/server/src/lib/per-space/incremental-io.ts` (thin drizzle appliers, `space-db-pg.ts` style, all take the `withSpaceSchema` tx): `openIncrementalBaseRun` (select-or-insert `bo_at_base_runs` with `run_type='incremental'`), `completeIncrementalBaseRun` (status + counts→`records_count` + `completed_at` + `error_message`), `applyIncrementalSchemaPlan`, `applyIncrementalRecordPlan`, `insertSchemaVersionDeduped` (hash-dedup + stamps `base_runs.schema_version_id`/`schema_hash`), read seams `getStoredRecords` / `getAppliedSchemaState` / `listStoredRecordIds` / `listTableIds`. Drizzle bodies are smoke-verified per house pattern (`describe-schema-io` precedent); decisions live in Phase 1's pure module. → DONE. Cascade on `removeTableCascade` flips child fields/views `removed` + records `deleted` (rfd rows persist for history); `upsertCell` also stamps `records.modified_time` + `last_seen_run`; `open-base-run` is select-or-insert so task retries replay to the same `baseRunId`. Counts note: `records_count` aggregates created+updated+deleted+reconciled (no per-category columns on `bo_at_base_runs` — granularity rides the master `/runs/:id/complete` POST). Live-PG paths ride the 4.5 smoke.
 
-- [ ] B.2.1 `provisionD1Full(spaceId, deps)` — calls Cloudflare D1 create-database API. Wires the new database ID into `space_databases`.
-- [ ] B.2.2 Schema DDL runs against the new D1 immediately after creation.
-- [ ] B.2.3 TDD: mock the Cloudflare API; assert correct request + retry on 5xx.
+### Phase 3 — Internal route (FOUNDATION)
 
-### B.3 — Shared PG
+- [x] 3.1 New `POST /api/internal/spaces/:spaceId/incremental-apply` — single op-dispatch route (`op` discriminator, one URL for the wrapper to wire): `open-base-run` | `complete-base-run` | `apply-schema-events` | `apply-record-events` | `get-stored-records` | `insert-schema-version` | `get-applied-schema-state` | `regenerate-views` (honest no-op — per-table views deferred, system-per-space-db §4.2) | `list-stored-record-ids` | `list-table-ids`. Mirrors `records-sync.ts` guards (405 / UUID 400 / `space_db_not_ready` 409 / `backend_not_implemented` 501); `ensureSpaceSchemaCurrent` best-effort on `open-base-run`. Registered in `src/index.ts` beside the schema-sync/records-sync block. → DONE. `pages/api/internal/spaces/incremental-apply.ts` + `SPACES_INCREMENTAL_APPLY_RE`; the handler header documents the full IncrementalDb-method → op mapping; `regenerate-views` answers `{ok, regenerated:false, reason:'views_not_generated'}` (after the not-ready/backend guards, before any tx); each op runs in one `withSpaceSchema` transaction; errors → 500 `{error:'apply_failed'}`.
+- [x] 3.2 Route-shape tests `tests/integration/spaces-incremental-apply-route.test.ts` (401 token gate / 405 / 400 bad UUID / 400 bad body + unknown op) per the `spaces-migrate-schema-route` pattern. → DONE: 6 tests, watched red (404 pre-registration) → green; also pins the 400 `reason` passthrough (`unknown_op`, `bad_backup_run_id`). DB happy paths need live PG → 4.5 smoke, per house pattern.
 
-- [ ] B.3.1 `provisionSharedPg(spaceId, deps)` — connects with admin creds, creates schema + role + grants. Builds + encrypts the connection string.
-- [ ] B.3.2 Tests: provisioner runs SQL via a dockerized PG; assert schema + role exist.
+### Phase 4 — Remaining wiring (NOT foundation — follow-ups)
 
-### B.4 — Dedicated PG
+- [x] 4.1 Payloads-auth resolution route (Airtable webhook id `ach…` + decrypted Connection token + `last_reconciled_at` + `viewCaptureEnabled` for a subscription) — pairs with `server-instant-webhook`; the task payload deliberately carries none of these. → DONE 2026-07-23: `POST /api/internal/webhook-subscriptions/:id/context` (`pages/api/internal/webhook-subscriptions/context.ts` + `WEBHOOK_SUBSCRIPTIONS_CONTEXT_RE`). Subscription→webhook join, token via the ConnectionDO `/token` gate (`lib/connections/token-via-do.ts`); returns `{airtableWebhookId, baseId, accessToken, lastReconciledAt, cursor}`; 404 `subscription_not_found`, 409 `token_unavailable` (caller retries next tick). Route-shape tests `tests/integration/webhook-subscriptions-context-route.test.ts` (401/405/400, watched red→green); DB/DO happy paths ride the 4.5 smoke per house pattern. `viewCaptureEnabled` deliberately NOT in the response — the Enterprise view-capture gate isn't enforced anywhere yet (4.4); the workflows deps default it false.
+- [x] 4.2 Workflows-side wrapper wiring: replace the `notYetWired` stubs in `incremental-backup.task.ts` with an HTTP transport onto 3.1 + route payload polls through the per-Connection gateway (owned by a `workflows-instant-webhook` follow-up). → DONE 2026-07-23 (transport half): stubs gone — `createIncrementalDbTransport` (op-dispatch onto 3.1, wrapper's `baseId` added to schema/record/version/table-scope ops) + `fetchSubscriptionContext` (4.1 route) live in `incremental-backup.ts` beside `createEngineCallbacks`; wrapper builds the Airtable surface from the resolved token (`fetchPayloadsPage` + shared `airtable-client` for meta/records) and threads `lastReconciledAt`. Tests: +6 transport-mapping tests in `tests/incremental-backup.test.ts` (red→green; 273 total, typecheck clean). Per-Connection **gateway routing is NOT wired** — polls hit Airtable directly with the client's own 429 backoff; flagged in the wrapper header as the open follow-up.
+- [x] 4.3 `regenerate-views` real implementation — blocked on the per-table query views (system-per-space-db §4.1–4.3, deferred). → UNBLOCKED + DONE 2026-07-24: per-table query matviews shipped (`8cf249a` builders/applier, `c79c23e` wires the `regenerate-views` op real — records-disabled Spaces ack `records_disabled`); incremental end-of-pass regeneration rides `workflows-incremental-view-refresh` (7/7, `21e6836`).
+- [x] 4.4 `updateView` apply under the Enterprise view-capture gate (system-per-space-db 8.2 — gate not yet enforced anywhere). → RESOLVED 2026-07-24: gate ENFORCED via `lib/per-space/view-capture.ts` (`8aad8cf`, signal `platform_config.is_enterprise_scope`, default closed, dev `VIEW_CAPTURE_OVERRIDE`); incremental `updateView` apply intentionally STAYS SKIPPED — full runs own view capture (per system-per-space-db 8.2 note), so there is no gated incremental apply to build.
+- [ ] 4.5 Live smoke: deployed dev engine + `trigger.dev dev`, webhook-driven run populates `bo_at_*` with `run_type='incremental'` + attribution. → PARTIAL 2026-07-24 (evening drive): engine deployed + `trigger.dev@4.5.7 dev` worker up; register-webhooks → 3 × `recreated`, `pollingArmed:true`; context route (4.1) live-verified (200, decrypted token + cursor); real ping (02:09Z) → poll → `bo_at_base_runs` row `run_type='incremental'` status `succeeded` (02:10Z, pers Space) confirms the ping→poll→apply loop. REMAINING: an attributed record payload — every dev connection token is read-only by design (`data.records:read`, no write scope), so the record edit must be made by a human in the Airtable UI (bases armed: flashcards / DevHire Tracker / Inventory Tracker); after one edit, verify `bo_at_record_updates.action_source/actor` populate.
+- [x] 4.6 On approval: stage by name, commit locally. → DONE 2026-07-24: shipped across `8cf249a`/`8aad8cf`/`3624197`/`bd88e88`/`21e6836`/`c79c23e` (+ earlier `f482f73` wiring), pushed to origin on `autumn/june-ui-refactor` at user request.
 
-- [ ] B.4.1 `provisionDedicatedPg(spaceId, deps)` — calls Neon or Supabase API per env config.
-- [ ] B.4.2 Schema DDL.
-- [ ] B.4.3 Tests against mock provider API.
+## Disposition of the original Phase A–I list (retired 2026-07-23)
 
-### B.5 — BYODB
-
-- [ ] B.5.1 `provisionByodb(spaceId, connectionString, deps)` — validates with probe + runs DDL.
-- [ ] B.5.2 New apps/web route `POST /api/spaces/:id/byodb-connect` that accepts a connection string from the user, persists encrypted, enqueues provisioner.
-- [ ] B.5.3 Tests.
-
-### B.6 — Trigger.dev task (moved to workflows sibling)
-
-Owned by [`workflows-dynamic-mode`](../workflows-dynamic-mode/tasks.md). Server side owns the dispatcher endpoint the task hits.
-
-- [ ] B.6.1 New `apps/server/src/pages/api/internal/spaces/:id/provision-database.ts`. POST → dispatches per-tier provisioning. INTERNAL_TOKEN-gated. Idempotent on `space_databases.status` (no-op if already `ready`).
-
-## Phase C — Engine write path
-
-### C.1 — Dynamic-write helpers
-
-- [ ] C.1.1 New module `apps/server/src/lib/dynamic/upsert-records.ts` — pure-ish; injectable client per tier (D1/PG). Builds upsert SQL per dialect.
-- [ ] C.1.2 New module `apps/server/src/lib/dynamic/upsert-schema.ts` — UPSERTs the `_baseout_tables` + `_baseout_fields` metadata.
-- [ ] C.1.3 TDD red: per-dialect upsert tests against Miniflare D1 and dockerized PG.
-
-### C.2 — Wire into backup-base.task.ts (workflows sibling)
-
-Owned by [`workflows-dynamic-mode`](../workflows-dynamic-mode/tasks.md). Server side guarantees `upsert-records` + `upsert-schema` module API stability.
-
-### C.3 — Tests (workflows sibling)
-
-Dynamic-mode integration test for the backup-base task lives in workflows-side tests.
-
-## Phase D — Schema diff
-
-- [ ] D.1 New module `apps/server/src/lib/dynamic/schema-differ.ts` per design.md §Phase D.
-- [ ] D.2 Tests: added field, removed field, renamed field, retyped field.
-- [ ] D.3 Workflows-side wiring (compute diff per table, POST `audit_history` row) — owned by [`workflows-dynamic-mode`](../workflows-dynamic-mode/tasks.md). Server side owns the diff helper module + the `audit_history` route handler.
-
-## Phase E — Capability resolver
-
-- [ ] E.1 TDD red: `resolveBackupMode(tier)` + `resolveDatabaseTier(tier)` — all seven tiers per [Features §4.3](../../../shared/Baseout_Features.md).
-- [ ] E.2 Implement in `apps/web/src/lib/billing/capabilities.ts`.
-- [ ] E.3 Update PATCH validation in `apps/web/src/pages/api/spaces/[spaceId]/backup-config.ts`. Auto-flip `dynamic` to schema-only for lower tiers.
-
-## Phase F — Provisioning triggers
-
-- [ ] F.1 Stripe webhook handler (`subscription.updated`): enqueue provisioner for each Space in the Org when tier upgrades to dynamic-supporting.
-- [ ] F.2 Defensive fallback in `apps/server/src/lib/runs/start.ts`: if `space_databases` missing and config.mode='dynamic', enqueue inline.
-- [ ] F.3 Downgrade handler: `status='suspended'` on tier downgrade.
-
-## Phase G — Dashboard
-
-- [ ] G.1 Per-Space card showing `space_databases.status`, tier, last_sync timestamps.
-- [ ] G.2 Re-provision button for `status='error'` rows.
-- [ ] G.3 BYODB connect-form for `status='provisioning'` Enterprise Spaces.
-
-## Phase H — Doc sync
-
-- [ ] H.1 Update [openspec/changes/server/specs/backup-engine/spec.md](../server/specs/backup-engine/spec.md).
-- [ ] H.2 Update [openspec/changes/server-schedule-and-cancel/proposal.md](../server-schedule-and-cancel/proposal.md) Out-of-Scope.
-- [ ] H.3 Update [shared/Baseout_Backlog_MVP.md](../../../shared/Baseout_Backlog_MVP.md).
-
-## Phase I — Final verification
-
-- [ ] I.1 `pnpm --filter @baseout/server typecheck && pnpm --filter @baseout/server test` — all green.
-- [ ] I.2 `pnpm --filter @baseout/web typecheck && pnpm --filter @baseout/web test:unit` — all green.
-- [ ] I.3 Human checkpoint smoke per tier (one D1, one PG):
-  - Upgrade a Trial Space to Launch (Stripe webhook). Watch `space_databases` progress provisioning → ready.
-  - Run a backup. Confirm dynamic DB has expected schema + record tables.
-  - Make a schema change in the source Airtable. Run again. Confirm `audit_history` row.
-- [ ] I.4 On approval: stage by name, commit locally.
-
-## Out of this change (follow-ups, file separately)
-
-- [ ] OUT-1 `direct-sql-api` — sql.baseout.com read endpoint (already in `openspec/changes/sql`).
-- [ ] OUT-2 `schema-changelog-ui` — Diff browser UI.
-- [ ] OUT-3 `dynamic-db-decommission` — Hard-delete suspended dynamic DBs after retention.
-- [ ] OUT-4 `restore-engine` — Reads from dynamic DB and writes back to Airtable.
-- [ ] OUT-5 `server-byodb-validation` — Connection-string allowlist + cert pinning for Enterprise BYODB.
+| Original | Disposition |
+|---|---|
+| A `space_databases` schema | SHIPPED via system-per-space-db 1.4 (refined: `backend` × `records_enabled`, migration 0017). |
+| B provisioner (D1/PG/BYODB tiers) | `managed_pg` SHIPPED via system-per-space-db 2.1 (`lib/provisioning/`, `/provision-database` route); `d1`/`byodb` DEFERRED there (`backend_not_implemented`). |
+| C engine write path | Full-backup path SHIPPED via system-per-space-db §3 (`schema-sync`/`records-sync` routes + `space-db-pg.ts`); the incremental path is the re-scoped Phases 1–3 above. |
+| D schema differ + master `audit_history` | SHIPPED as `lib/per-space/schema-diff.ts` → `bo_at_schema_updates` (per-Space, NOT master `audit_history` — see system-per-space-db 7.2/7.3). |
+| E capability resolver (`resolveBackupMode`/`resolveDatabaseTier`) | Superseded by `backend` × `records_enabled` posture (`lib/provisioning/posture.ts` + web-side provisioning call); tier→mode gating is web scope, out of this change. |
+| F provisioning triggers (Stripe/downgrade) | Web/billing scope — out of this change (engine's defensive path exists via `/provision-database` idempotency). |
+| G dashboard | Web scope — out of this change. |
+| H/I doc sync + verification | Folded into the re-scoped phases + 4.5/4.6. |

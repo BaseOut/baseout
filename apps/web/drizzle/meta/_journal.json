@@ -190,6 +190,34 @@
       "when": 1784167294191,
       "tag": "0026_refresh_token_expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1784575883775,
+      "tag": "0027_api_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1784579462271,
+      "tag": "0028_service_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1784586588538,
+      "tag": "0029_admin_error_acks",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1784693576453,
+      "tag": "0030_airtable_webhooks",
+      "breakpoints": true
     }
   ]
 }

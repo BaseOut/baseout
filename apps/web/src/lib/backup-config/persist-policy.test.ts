@@ -312,4 +312,95 @@ describe('persistBackupConfigPolicy', () => {
     )
     expect(result).toEqual({ ok: false, error: 'invalid_request' })
   })
+
+  // ── web-instant-webhook: frequency='instant' + poll interval ────────────
+
+  it("accepts frequency='instant' for pro (PRD §2.2 ruling: Instant = Pro+)", async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      { spaceId: SPACE_ID, body: { frequency: 'instant' }, tier: 'pro' },
+      d,
+    )
+    expect(result).toEqual({ ok: true })
+    expect(d.upsertConfig).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      frequency: 'instant',
+    })
+  })
+
+  it("rejects frequency='instant' below pro with frequency_not_allowed", async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      { spaceId: SPACE_ID, body: { frequency: 'instant' }, tier: 'growth' },
+      d,
+    )
+    expect(result).toEqual({ ok: false, error: 'frequency_not_allowed' })
+    expect(d.upsertConfig).not.toHaveBeenCalled()
+  })
+
+  it('accepts webhookPollIntervalSeconds at the tier minimum and forwards it', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      {
+        spaceId: SPACE_ID,
+        body: { frequency: 'instant', webhookPollIntervalSeconds: 900 },
+        tier: 'pro',
+      },
+      d,
+    )
+    expect(result).toEqual({ ok: true })
+    expect(d.upsertConfig).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      frequency: 'instant',
+      webhookPollIntervalSeconds: 900,
+    })
+  })
+
+  it('accepts webhookPollIntervalSeconds alone (interval-only PATCH)', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      { spaceId: SPACE_ID, body: { webhookPollIntervalSeconds: 300 }, tier: 'business' },
+      d,
+    )
+    expect(result).toEqual({ ok: true })
+    expect(d.upsertConfig).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      webhookPollIntervalSeconds: 300,
+    })
+  })
+
+  it('rejects a below-minimum interval with the tier minimum attached', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      { spaceId: SPACE_ID, body: { webhookPollIntervalSeconds: 60 }, tier: 'pro' },
+      d,
+    )
+    expect(result).toEqual({
+      ok: false,
+      error: 'webhook_poll_interval_below_minimum',
+      minimum: 900,
+    })
+    expect(d.upsertConfig).not.toHaveBeenCalled()
+  })
+
+  it('enterprise minimum is lower — 60s accepted', async () => {
+    const d = deps()
+    const result = await persistBackupConfigPolicy(
+      { spaceId: SPACE_ID, body: { webhookPollIntervalSeconds: 60 }, tier: 'enterprise' },
+      d,
+    )
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('rejects a non-integer interval with invalid_request', async () => {
+    const d = deps()
+    for (const bad of ['900', 900.5, -900, 0, null, true]) {
+      const result = await persistBackupConfigPolicy(
+        { spaceId: SPACE_ID, body: { webhookPollIntervalSeconds: bad }, tier: 'enterprise' },
+        d,
+      )
+      expect(result).toEqual({ ok: false, error: 'invalid_request' })
+    }
+    expect(d.upsertConfig).not.toHaveBeenCalled()
+  })
 })

@@ -5,7 +5,7 @@
  * (workerd, no filesystem), so it cannot read the .sql migration at runtime —
  * it needs the DDL bundled. This module is the bundled copy.
  *
- * GENERATED FROM migrations/space-pg/0000_good_darkhawk.sql by scripts/gen-space-pg-ddl.mjs — DO NOT HAND-EDIT.
+ * GENERATED FROM migrations/space-pg/0000_aberrant_purple_man.sql by scripts/gen-space-pg-ddl.mjs — DO NOT HAND-EDIT.
  * tests/space-pg-ddl-parity.test.ts asserts this stays in lockstep with that
  * migration (drift fails CI). Regenerate after a per-Space schema change:
  *   node packages/db-schema/scripts/gen-space-pg-ddl.mjs
@@ -48,6 +48,7 @@ CREATE TABLE "bo_at_base_runs" (
 	"backup_run_id" uuid NOT NULL,
 	"base_id" text NOT NULL,
 	"status" text DEFAULT 'queued' NOT NULL,
+	"run_type" text DEFAULT 'full' NOT NULL,
 	"curr_step" text,
 	"schema_version_id" uuid,
 	"schema_hash" text,
@@ -144,6 +145,34 @@ CREATE TABLE "bo_at_fields" (
 	"last_seen_run" uuid
 );
 --> statement-breakpoint
+CREATE TABLE "bo_at_form_fields" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"base_id" text NOT NULL,
+	"form_id" text NOT NULL,
+	"table_id" text NOT NULL,
+	"field_id" text NOT NULL,
+	"is_editable" boolean,
+	"status" text DEFAULT 'active' NOT NULL,
+	"first_seen_run" uuid,
+	"first_unseen_run" uuid,
+	"last_seen_run" uuid
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_forms" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"base_id" text NOT NULL,
+	"airtable_entity_id" text,
+	"interface_id" text,
+	"name" text,
+	"source_table_id" text,
+	"definition" jsonb,
+	"submitted_via" text,
+	"status" text DEFAULT 'active' NOT NULL,
+	"first_seen_run" uuid,
+	"first_unseen_run" uuid,
+	"last_seen_run" uuid
+);
+--> statement-breakpoint
 CREATE TABLE "bo_at_health_issues" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"base_id" text NOT NULL,
@@ -217,12 +246,12 @@ CREATE TABLE "bo_at_interfaces" (
 	"base_id" text NOT NULL,
 	"airtable_entity_id" text,
 	"name" text,
-	"type" text,
 	"definition" jsonb,
-	"status" text DEFAULT 'active' NOT NULL,
 	"submitted_via" text,
-	"first_seen_at" timestamp with time zone,
-	"last_seen_at" timestamp with time zone
+	"status" text DEFAULT 'active' NOT NULL,
+	"first_seen_run" uuid,
+	"first_unseen_run" uuid,
+	"last_seen_run" uuid
 );
 --> statement-breakpoint
 CREATE TABLE "bo_at_meta" (
@@ -233,6 +262,46 @@ CREATE TABLE "bo_at_meta" (
 	"platform" text DEFAULT 'airtable' NOT NULL,
 	"provisioned_at" timestamp with time zone,
 	"last_migrated_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_page_fields" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"base_id" text NOT NULL,
+	"page_id" text NOT NULL,
+	"table_id" text NOT NULL,
+	"field_id" text NOT NULL,
+	"is_editable" boolean,
+	"status" text DEFAULT 'active' NOT NULL,
+	"first_seen_run" uuid,
+	"first_unseen_run" uuid,
+	"last_seen_run" uuid
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_page_tables" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"base_id" text NOT NULL,
+	"page_id" text NOT NULL,
+	"table_id" text NOT NULL,
+	"status" text DEFAULT 'active' NOT NULL,
+	"first_seen_run" uuid,
+	"first_unseen_run" uuid,
+	"last_seen_run" uuid
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_pages" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"base_id" text NOT NULL,
+	"airtable_entity_id" text,
+	"interface_id" text,
+	"name" text,
+	"page_type" text,
+	"source_table_id" text,
+	"definition" jsonb,
+	"submitted_via" text,
+	"status" text DEFAULT 'active' NOT NULL,
+	"first_seen_run" uuid,
+	"first_unseen_run" uuid,
+	"last_seen_run" uuid
 );
 --> statement-breakpoint
 CREATE TABLE "bo_at_record_field_data" (
@@ -251,7 +320,9 @@ CREATE TABLE "bo_at_record_updates" (
 	"field_id" text NOT NULL,
 	"table_id" text NOT NULL,
 	"run_id" uuid NOT NULL,
-	"old_value" text
+	"old_value" text,
+	"action_source" text,
+	"actor" text
 );
 --> statement-breakpoint
 CREATE TABLE "bo_at_records" (
@@ -280,7 +351,9 @@ CREATE TABLE "bo_at_schema_updates" (
 	"change_type_name" text,
 	"before_value" jsonb,
 	"after_value" jsonb,
-	"breaks_data" boolean DEFAULT false NOT NULL
+	"breaks_data" boolean DEFAULT false NOT NULL,
+	"action_source" text,
+	"actor" text
 );
 --> statement-breakpoint
 CREATE TABLE "bo_at_schema_versions" (
@@ -350,6 +423,11 @@ CREATE INDEX "bo_at_document_tags_doc_idx" ON "bo_at_document_tags" USING btree 
 CREATE INDEX "bo_at_document_tags_target_idx" ON "bo_at_document_tags" USING btree ("target_type","target_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "bo_at_document_tags_uq" ON "bo_at_document_tags" USING btree ("document_id","target_type","target_id");--> statement-breakpoint
 CREATE INDEX "bo_at_fields_table_idx" ON "bo_at_fields" USING btree ("table_id");--> statement-breakpoint
+CREATE INDEX "bo_at_form_fields_form_idx" ON "bo_at_form_fields" USING btree ("form_id");--> statement-breakpoint
+CREATE INDEX "bo_at_form_fields_field_idx" ON "bo_at_form_fields" USING btree ("field_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_form_fields_uq" ON "bo_at_form_fields" USING btree ("form_id","field_id");--> statement-breakpoint
+CREATE INDEX "bo_at_forms_base_idx" ON "bo_at_forms" USING btree ("base_id");--> statement-breakpoint
+CREATE INDEX "bo_at_forms_interface_idx" ON "bo_at_forms" USING btree ("interface_id");--> statement-breakpoint
 CREATE INDEX "bo_at_health_issues_base_idx" ON "bo_at_health_issues" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_health_metric_overrides_rule_idx" ON "bo_at_health_metric_overrides" USING btree ("rule_id");--> statement-breakpoint
 CREATE INDEX "bo_at_health_metric_prompts_rule_idx" ON "bo_at_health_metric_prompts" USING btree ("rule_id");--> statement-breakpoint
@@ -357,6 +435,14 @@ CREATE INDEX "bo_at_health_metric_scores_base_idx" ON "bo_at_health_metric_score
 CREATE INDEX "bo_at_health_metric_state_base_idx" ON "bo_at_health_metric_state" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_health_scores_base_idx" ON "bo_at_health_scores" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_interfaces_base_idx" ON "bo_at_interfaces" USING btree ("base_id");--> statement-breakpoint
+CREATE INDEX "bo_at_page_fields_page_idx" ON "bo_at_page_fields" USING btree ("page_id");--> statement-breakpoint
+CREATE INDEX "bo_at_page_fields_field_idx" ON "bo_at_page_fields" USING btree ("field_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_page_fields_uq" ON "bo_at_page_fields" USING btree ("page_id","field_id");--> statement-breakpoint
+CREATE INDEX "bo_at_page_tables_page_idx" ON "bo_at_page_tables" USING btree ("page_id");--> statement-breakpoint
+CREATE INDEX "bo_at_page_tables_table_idx" ON "bo_at_page_tables" USING btree ("table_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_page_tables_uq" ON "bo_at_page_tables" USING btree ("page_id","table_id");--> statement-breakpoint
+CREATE INDEX "bo_at_pages_base_idx" ON "bo_at_pages" USING btree ("base_id");--> statement-breakpoint
+CREATE INDEX "bo_at_pages_interface_idx" ON "bo_at_pages" USING btree ("interface_id");--> statement-breakpoint
 CREATE INDEX "bo_at_rfd_table_field_idx" ON "bo_at_record_field_data" USING btree ("table_id","field_id");--> statement-breakpoint
 CREATE INDEX "bo_at_record_updates_cell_idx" ON "bo_at_record_updates" USING btree ("record_id","field_id");--> statement-breakpoint
 CREATE INDEX "bo_at_record_updates_run_idx" ON "bo_at_record_updates" USING btree ("run_id");--> statement-breakpoint

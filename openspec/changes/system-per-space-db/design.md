@@ -51,7 +51,7 @@ Stakeholders: `server` (writes the per-Space DB + brokers reads + provisions/mig
 
 **Resolved 2026-06-22:**
 - **Documentation — inline columns, no separate table.** Airtable's imported description is already captured as the `description` column (and in `bo_at_schema_versions`), so it is not stored twice. Instead `bo_at_bases`/`bo_at_tables`/`bo_at_fields`/`bo_at_records` carry `ai_description`, `ai_overview`, and `description_override`. Effective description = `description_override ?? ai_description ?? description`; provenance is implicit in which column is set; re-import touches only `description` (so AI/manual are never clobbered). Auto-derived structural facts computed on read. Data Dictionary surface/export = **V2**.
-- **`bo_at_views`**: **included**, but capture is **gated to Airtable Enterprise customers** (the plan at which view metadata is available); empty otherwise.
+- **`bo_at_views`**: **included**, but capture is **gated to Airtable Enterprise customers** (the plan at which view metadata is available); empty otherwise. _(Enforced 2026-07-23: engine-side on `/schema-sync` via `connections.platform_config.is_enterprise_scope` — see tasks 8.2.)_
 - **`managed_pg`**: **schema-per-Space** on a shared cluster (allows multiple Spaces' schemas in one database; cheaper at scale). `space_databases` stores a generic locator (database + schema name).
 
 **Resolved 2026-07-18 (webhook-payload application — see `workflows-instant-webhook`):**

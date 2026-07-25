@@ -1,12 +1,12 @@
 ---
-// Background-service monitor — DERIVED signals (PRD §16.1). Read-only; gated
-// to role='super' by src/middleware.ts.
+// Background-service monitor (PRD §16.1). Read-only; gated to role='super' by
+// src/middleware.ts.
 //
-// There is no per-service run log yet (apps/server's scheduled() is a phase-2
-// stub; its cron triggers are commented out), so health is inferred from data
-// side-effects. The page labels itself accordingly. A service_runs table is
-// the named phase-2 follow-up.
-import { desc, eq, isNotNull, lt, sql } from 'drizzle-orm';
+// Real run history now comes from the service_runs log (shared-service-runs):
+// the four cron jobs + the retention-cleanup pass + the log prune each write a
+// row. The remaining DERIVED signals (SpaceDO backup scheduler, connection-session
+// sweep) have no run-log row yet and stay honestly labelled "derived".
+import { desc, eq, lt, sql } from 'drizzle-orm';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import PageHeader from '@web/components/ui/PageHeader.astro';
 import Card from '@web/components/ui/Card.astro';
@@ -14,12 +14,48 @@ import Badge from '@web/components/ui/Badge.astro';
 import Alert from '@web/components/ui/Alert.astro';
 import { backupConfigurations, backupRuns, connectionSessions } from '../db/schema';
 import { deriveServiceHealth, SIGNAL_BADGE } from '../lib/service-health';
+import {
+  recentFailures,
+  summarizeServiceRuns,
+  type ServiceRunRow,
+  type ServiceSummary,
+} from '../lib/service-runs-view';
 
 const { db } = Astro.locals;
 const now = new Date();
 const nowSql = sql`${now.toISOString()}::timestamptz`;
 
-const [scheduleCounts, lastScheduledRun, lastCleanup, staleSessions] = await Promise.all([
+// Newest 50 rows per service (window) — one round trip; small table (≤90d retention).
+const rankedRows = (await db.execute(sql`
+  select service, status, started_at, completed_at, duration_ms, error_message, counts
+  from (
+    select *, row_number() over (partition by service order by started_at desc) as rn
+    from baseout.service_runs
+  ) t
+  where rn <= 50
+  order by started_at desc
+`)) as unknown as Array<{
+  service: string; status: string; started_at: Date; completed_at: Date | null;
+  duration_ms: number | null; error_message: string | null; counts: unknown;
+}>;
+
+const runRows: ServiceRunRow[] = rankedRows.map((r) => ({
+  service: r.service,
+  status: r.status,
+  startedAt: new Date(r.started_at),
+  completedAt: r.completed_at ? new Date(r.completed_at) : null,
+  durationMs: r.duration_ms,
+  errorMessage: r.error_message,
+  counts: r.counts,
+}));
+
+const summaries = summarizeServiceRuns(runRows, now);
+const failures = recentFailures(runRows, 20);
+const live = summaries.filter((s) => !s.reserved);
+const reserved = summaries.filter((s) => s.reserved);
+
+// Remaining derived signals (no run-log row yet).
+const [scheduleCounts, lastScheduledRun, staleSessions] = await Promise.all([
   db
     .select({
       total: sql<number>`count(*)::int`,
@@ -33,12 +69,6 @@ const [scheduleCounts, lastScheduledRun, lastCleanup, staleSessions] = await Pro
     .orderBy(desc(backupRuns.createdAt))
     .limit(1),
   db
-    .select({ deletedAt: backupRuns.deletedAt })
-    .from(backupRuns)
-    .where(isNotNull(backupRuns.deletedAt))
-    .orderBy(desc(backupRuns.deletedAt))
-    .limit(1),
-  db
     .select({ count: sql<number>`count(*)::int` })
     .from(connectionSessions)
     .where(lt(connectionSessions.expiresAt, nowSql)),
@@ -49,39 +79,119 @@ const signals = deriveServiceHealth(
     scheduleCount: scheduleCounts[0]?.total ?? 0,
     overdueScheduleCount: scheduleCounts[0]?.overdue ?? 0,
     lastScheduledRunAt: lastScheduledRun[0]?.createdAt ?? null,
-    lastCleanupAt: lastCleanup[0]?.deletedAt ?? null,
     staleSessionCount: staleSessions[0]?.count ?? 0,
   },
   now,
 );
+
+function ago(d: Date | null): string {
+  if (!d) return '—';
+  const ms = now.getTime() - d.getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 60) return `${Math.max(0, m)}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+function statusBadge(s: ServiceSummary): { variant: 'success' | 'error' | 'warning' | 'secondary' | 'default'; text: string } {
+  if (!s.latest) return { variant: 'default', text: s.reserved ? 'not yet implemented' : 'not yet run' };
+  if (s.stale) return { variant: 'warning', text: 'stuck?' };
+  if (s.latest.status === 'failed') return { variant: 'error', text: 'failed' };
+  if (s.latest.status === 'started') return { variant: 'secondary', text: 'running' };
+  return { variant: 'success', text: 'ok' };
+}
+function medianDuration(ds: number[]): string {
+  if (!ds.length) return '—';
+  const sorted = [...ds].sort((a, b) => a - b);
+  const mid = sorted[Math.floor(sorted.length / 2)];
+  return mid >= 1000 ? `${(mid / 1000).toFixed(1)}s` : `${mid}ms`;
+}
 ---
 
 <SidebarLayout title="Admin — Services">
   <div class="mx-auto max-w-[1200px] space-y-6">
     <PageHeader
       title="Background services"
-      description="Health derived from data side-effects — there is no per-service run log yet (server cron work is phase-2; a service_runs table is the follow-up)."
+      description="Real run history from the service_runs log, plus two signals still derived from data side-effects (no run-log row yet)."
     />
 
-    <div class="grid gap-4 md:grid-cols-2">
-      {signals.map((s) => (
-        <Card variant="outlined">
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between gap-2">
-              <h2 class="text-base font-semibold">{s.label}</h2>
-              <Badge variant={SIGNAL_BADGE[s.status]}>{s.status}</Badge>
+    <Card variant="outlined">
+      <h2 class="mb-3 text-base font-semibold">Scheduled &amp; engine services</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-base-300 text-left text-xs uppercase text-base-content/60">
+              <th class="py-2 pr-4 font-medium">Service</th>
+              <th class="py-2 pr-4 font-medium">Status</th>
+              <th class="py-2 pr-4 font-medium">Last run</th>
+              <th class="py-2 pr-4 font-medium">Last success</th>
+              <th class="py-2 pr-4 font-medium">Fail streak</th>
+              <th class="py-2 pr-4 font-medium">Median</th>
+            </tr>
+          </thead>
+          <tbody>
+            {[...live, ...reserved].map((s) => {
+              const b = statusBadge(s);
+              return (
+                <tr class="border-b border-base-200/60">
+                  <td class="py-2 pr-4">
+                    {s.label}
+                    {s.reserved && <span class="ml-2 text-xs text-base-content/50">(reserved)</span>}
+                  </td>
+                  <td class="py-2 pr-4"><Badge variant={b.variant}>{b.text}</Badge></td>
+                  <td class="py-2 pr-4 text-base-content/70">{ago(s.latest?.startedAt ?? null)}</td>
+                  <td class="py-2 pr-4 text-base-content/70">{ago(s.lastSuccessAt)}</td>
+                  <td class="py-2 pr-4">{s.failureStreak > 0 ? <span class="text-error">{s.failureStreak}</span> : '0'}</td>
+                  <td class="py-2 pr-4 text-base-content/70">{medianDuration(s.recentDurations)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+
+    {failures.length > 0 && (
+      <Card variant="outlined">
+        <h2 class="mb-3 text-base font-semibold">Recent failures</h2>
+        <ul class="space-y-2 text-sm">
+          {failures.map((f) => (
+            <li class="flex flex-col gap-0.5 border-b border-base-200/60 pb-2">
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-medium">{f.service}</span>
+                <span class="text-xs text-base-content/60">{ago(f.startedAt)}</span>
+              </div>
+              {f.errorMessage && <span class="text-error/80">{f.errorMessage}</span>}
+            </li>
+          ))}
+        </ul>
+      </Card>
+    )}
+
+    <div>
+      <h2 class="mb-3 text-base font-semibold">Derived signals</h2>
+      <p class="mb-3 text-sm text-base-content/60">
+        No per-service run log yet for these — health is inferred from data side-effects.
+      </p>
+      <div class="grid gap-4 md:grid-cols-2">
+        {signals.map((s) => (
+          <Card variant="outlined">
+            <div class="flex flex-col gap-2">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-base font-semibold">{s.label}</h3>
+                <Badge variant={SIGNAL_BADGE[s.status]}>{s.status}</Badge>
+              </div>
+              <p class="text-sm text-base-content/70">{s.detail}</p>
             </div>
-            <p class="text-sm text-base-content/70">{s.detail}</p>
-          </div>
-        </Card>
-      ))}
+          </Card>
+        ))}
+      </div>
     </div>
 
     <Alert variant="info">
-      Not yet observable (no data source): webhook renewal, OAuth refresh cron
-      (refresh is lazy on-access — see the Connections page for per-connection
-      refresh errors), trial-expiry monitor, quota monitor, error-log search
-      (needs Logpush — deferred).
+      Reserved services (webhook renewal, connection-lock sweep, dead-connection
+      cadence, rediscovery, trial-expiry / quota monitors) are named but not yet
+      instrumented — they appear above labelled "not yet implemented".
     </Alert>
   </div>
 </SidebarLayout>
