@@ -22,9 +22,13 @@ V1 positions as a best-in-class Airtable backup and admin utility. V2 grows into
 
 ### 1.3 Business context — an established player relaunching, not a cold start
 
-Baseout is the full rebrand and next-generation replacement of **On2Air Backups**, a known name in the Airtable ecosystem with **~200 paying customers** who will migrate to Baseout. This matters for GTM three ways:
+Baseout is the next-generation successor to **On2Air Backups**, a known name in the Airtable ecosystem with **~330 active paying subscriptions** ($11.1K MRR / $132.7K ARR — July 2026 Stripe export, trials excluded; earlier drafts said ~200. Plan mix in `research/pricing/legacy-subscription-analysis.md`).
 
-1. **There is existing brand equity and trust in the Airtable community** to transfer, and an existing customer base to re-onboard with care (their experience must feel like an upgrade, not a rug-pull).
+> **Update (2026-07-24, founder direction):** the launch story is **"a new platform from the creators of On2Air"** — Baseout launches independently and **coexists** with On2Air while the kinks get worked out. Legacy customers do NOT migrate at launch; a sunset announcement + transition plan (with gratitude-framed grandfathering) comes later, confidence-gated. Launch GTM therefore targets **new customers**, with the legacy transition as its own separate GTM moment (§6.4).
+
+This matters for GTM three ways:
+
+1. **There is existing brand equity and trust in the Airtable community** to transfer ("from the creators of On2Air"), and an existing customer base whose eventual transition must feel like an upgrade, not a rug-pull.
 2. **There is real usage history** — we know what actual Airtable admins back up, how often, and how big their estates are (data available on request for ICP work).
 3. **The category is proven but thin** — customers already pay for Airtable backup; the closest competitor went out of business; Airtable's own snapshots are the "do nothing" default.
 
@@ -159,7 +163,7 @@ The static-vs-dynamic tension deserves deliberate handling: the privacy claim (s
 
 ### 4.3 Trust assets and liabilities
 
-**Assets:** ~200 paying customers and years of On2Air operating history; encryption everywhere; the BYOS posture; per-run audit reports (provable backups); Cloudflare + PostgreSQL infrastructure story.
+**Assets:** ~330 active subscriptions and years of On2Air operating history; encryption everywhere; the BYOS posture; per-run audit reports (provable backups); Cloudflare + PostgreSQL infrastructure story.
 **Liabilities to manage:** the rebrand itself (continuity messaging needed so On2Air customers and community don't read "shutdown"); SOC 2 not yet certified; several headline features (restore! ) still in build at time of writing — see §5.3.
 
 ---
@@ -188,7 +192,7 @@ Secondary personas (V2): developers building on the SQL layer; enterprise IT/com
 | RevOps / BizOps at a scale-up | Airtable is business-critical | Data liberation + Insurance | Wants frequency, retention, SQL for BI, Slack alerts |
 | Enterprise IT / compliance | Governance mandates | Governance | Needs SOC 2 (pending), SSO, BYODB; not marketable at scale until certification lands |
 
-### 5.3 What the existing ~200 customers tell us
+### 5.3 What the existing ~330 subscriptions tell us
 
 They bought a **static backup product** (the current feature set they use is scheduled file backups to their own cloud storage), skewing toward the smaller/simpler end. Their plan mix, base counts, and volumes are available on request — that dataset is the single best empirical input for the ICP decision. Two cautions: (a) the legacy base may over-represent the "insurance" job simply because that's all On2Air sold — don't let it cap the ambition; (b) their migration experience is itself a GTM moment (see §6.4).
 
@@ -235,9 +239,11 @@ All copy must use the canonical dictionary; these choices were deliberate:
 - **BYOS / BYODB** = bring your own storage / database. **Storage Destination** = where files land.
 - Brand: **"Baseout"** in prose (capital B, one word); the logo mark is lowercase **"baseout"**.
 
-### 6.4 The legacy-migration narrative (a launch-critical audience of ~200)
+### 6.4 The legacy-transition narrative (a phase-2 GTM moment for ~330 subscriptions)
 
-On2Air customers will be moved to Baseout with a guided re-auth flow. The internal draft messaging emphasizes: *static backups work exactly the same — same destinations, same process*; *no more artificial limits*; *a wave of new capabilities awaits when you're ready*. Pricing commitments for this cohort are part of the pricing engagement — coordinate the two workstreams so the migration email says one coherent thing. The rebrand announcement is also a community moment (ecosystem podcasts, forums) — "On2Air grew up" is a story, not just a notice.
+> **Update (2026-07-24, founder direction):** this is **not a launch moment**. At Baseout's launch, On2Air customers are simply told a new platform exists from the same team and that nothing changes for them. The transition narrative below activates at the later **On2Air sunset announcement**.
+
+At sunset time, On2Air customers will be moved to Baseout with a guided re-auth flow. The internal draft messaging emphasizes: *static backups work exactly the same — same destinations, same process*; *no more artificial limits*; *a wave of new capabilities awaits when you're ready*; and a grandfathering offer framed as **thanks for years of support**. Pricing commitments for this cohort are part of the pricing engagement (phase 2) — coordinate the two workstreams so the sunset email says one coherent thing. The sunset announcement is also a community moment (ecosystem podcasts, forums) — "On2Air grew up" is a story, not just a notice. Two launch-time cautions carry over: the launch announcement must not read as an On2Air shutdown (the opposite — it explicitly is not one, yet), and the coexistence period is an asset: it produces real Baseout usage telemetry from which to design the transition mapping.
 
 ### 6.5 Claim hygiene (legal/accuracy guardrails)
 

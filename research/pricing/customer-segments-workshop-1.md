@@ -2,9 +2,9 @@
 
 **Prepared for:** Pricing consultant engagement, Workshop 1 of 4 (customer segments)
 **Prepared:** July 13, 2026
-**Sources:** State of Airtable DevOps desk research (`research/customers/research-notes.md`), report draft, PRD §1.3–1.5, On2Air Backups customer base (~200 paying orgs), survey instruments currently in field.
+**Sources:** State of Airtable DevOps desk research (`research/customers/research-notes.md`), report draft, PRD §1.3–1.5, On2Air Backups customer base (~330 active subscriptions — corrected 2026-07-25 from "~200"; see `research/pricing/legacy-subscription-analysis.md`), survey instruments (designed; survey not yet live — launching in the coming months).
 
-> **Evidence status:** Desk research findings below are verified (sources in `research-notes.md`). The State of Airtable DevOps *survey* is in field but not yet closed — where a claim depends on survey data it is marked **[SURVEY-PENDING]**. Real-customer examples should be pulled from the On2Air billing list and the survey's interview opt-in (question G3) before the workshop; suggested selection criteria are given per segment.
+> **Evidence status:** Desk research findings below are verified (sources in `research-notes.md`). The State of Airtable DevOps *survey* is **not yet live — it launches in the coming months** (corrected 2026-07-24; earlier drafts said "in field") — where a claim depends on survey data it is marked **[SURVEY-PENDING]**. Real-customer examples should be pulled from the On2Air billing list now, and from the survey's interview opt-in (question G3) once the survey runs; suggested selection criteria are given per segment.
 
 > **Positioning note (owner decision, July 2026):** Data *recovery* is deliberately **not** the lead value proposition. Airtable's API limits mean no third party can restore a base fully — automations and interfaces aren't exportable via the API, and third-party restores don't preserve record IDs — so a recovery-led pitch over-claims. The problems below are framed accordingly, around the two things Baseout genuinely does best: **(1) external backups as a best-practice / governance need** (the external copy Airtable itself tells customers to keep), and **(2) schema intelligence and data browsing/reporting as the real, daily pain of administering Airtable.** Check all pricing and packaging language against this framing.
 
@@ -36,7 +36,7 @@ These segments map cleanly onto the survey's role question (B1), so the merged s
 - **Location:** Predominantly US/UK/EU/AU, English-speaking, remote-friendly companies (mirrors Airtable's install base).
 - **Budget:** Holds or can easily obtain a tool budget in the $25–200/mo band; purchases go on a company card without procurement.
 - **Communication preferences:** Email first; in-app messages; help-doc self-serve. Active in the Airtable Community forum, BuiltOnAir podcast/community, Reddit r/Airtable, and **LinkedIn** (where their job title and "Airtable" skill make them findable). Not reachable by cold calls; face-to-face irrelevant. Webinars and practical content (templates, checklists) perform well.
-- **Real examples:** The core of the ~200 On2Air Backups paying orgs. *Action before workshop: pull 3–5 named accounts from the On2Air billing list matching "Team/Business plan, 4–25 bases, ops-title contact" and any survey G3 interview volunteers in this role.*
+- **Real examples:** The core of the ~330 On2Air Backups subscriptions. *Action before workshop: pull 3–5 named accounts from the On2Air billing list matching "Team/Business plan, 4–25 bases, ops-title contact" and any survey G3 interview volunteers in this role.*
 
 ### 2. What is their problem?
 
@@ -241,4 +241,4 @@ These segments map cleanly onto the survey's role question (B1), so the merged s
 2. **Survey close-out.** The B1×B6×F2/F3 crosstabs will size each segment and its budget band — the single most valuable pricing input in flight. Decide whether Workshop 1 outputs get revised when the survey closes.
 3. **Consultant pricing architecture** (Segment 2): the model is per-Organization billing, and each client requires its own Organization — so the open question is not "agency tier vs. per-client" (per-client is structural) but rather: does a consultant managing N client Orgs get cross-Org volume pricing, partner/reseller margin, or a consolidated invoice? Who is the bill-to per client Org — consultant or client? Flag for Workshop 2+.
 4. **Positioning guardrail for all pricing/packaging language:** recovery is not the promise — no third party can fully restore an Airtable base (automations/interfaces aren't API-exportable; third-party restores don't preserve record IDs). The value story is proactive: best-practice external backups (governance artifact) + the schema/data intelligence layer admins use daily. Review tier names, feature descriptions, and page copy against this.
-5. **Grandfathering constraint:** ~200 On2Air customers migrate at equivalent pricing for a transition period — a boundary condition on any repricing of the lower tiers.
+5. **Grandfathering constraint:** ~330 On2Air subscriptions transition at equivalent pricing for a transition period (at the sunset-triggered migration, not Baseout launch) — a boundary condition on any repricing of the lower tiers.

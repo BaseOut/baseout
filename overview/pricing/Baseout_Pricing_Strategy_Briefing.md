@@ -20,11 +20,15 @@ V1 is Airtable-only. The architecture is deliberately multi-platform: V2 adds pl
 
 ### 1.2 Business context — this is a relaunch, not a cold start
 
-Baseout is the full rebrand and next-generation replacement of **On2Air Backups**, an established Airtable backup product with **~200 paying customers** who will be migrated onto Baseout tiers. This matters for pricing in three ways:
+Baseout is the next-generation successor to **On2Air Backups**, an established Airtable backup product with **~330 active paying subscriptions** ($11.1K MRR / $132.7K ARR — July 2026 Stripe export, trials excluded; earlier drafts said ~200. Full plan mix: `research/pricing/legacy-subscription-analysis.md`).
 
-1. There is an existing revenue base and known price points ($9.99–$79.99/mo) that anchor a portion of the customer base.
+> **Update (2026-07-24, founder direction):** Baseout launches as an independent platform "from the creators of On2Air" and **coexists** with On2Air. Legacy customers are **not** migrated at launch — On2Air keeps running unchanged until a later, confidence-gated sunset announcement with an auto-transition plan and gratitude-framed grandfathering. Point 3 below is therefore a **phase-2 (sunset-time) framework**, not a launch constraint, and point 1's anchors apply to the transition offer only — Baseout's launch pricing is set independently.
+
+This matters for pricing in three ways:
+
+1. There is an existing revenue base and known price points ($9.99–$79.99/mo) that anchor the legacy cohort's *transition* expectations (not the launch ladder).
 2. On2Air was, by the team's own assessment, **historically underpriced relative to value delivered**. Baseout's pricing is intentionally higher and justified by a more capable product.
-3. A detailed migration strategy already exists (year-1 bridge pricing, non-public plans, migration credit grants — see §5.6 and §8.3) that any new pricing must remain compatible with.
+3. A detailed migration strategy already exists (year-1 bridge pricing, non-public plans, migration credit grants — see §5.6 and §8.3) whose mechanics remain valid but whose **trigger is the On2Air sunset date, not Baseout's launch**.
 
 ### 1.3 Primary customer
 
@@ -194,7 +198,9 @@ Decided and documented (`Features` §5.6): one Stripe subscription per Organizat
 
 ### 5.6 On2Air migration pricing
 
-~200 paying customers map as: Basic(free)→Trial; Starter($9.99)→On2Air Bridge at $9.99 yr-1 → Starter $29; Essentials($29.99)→Starter $29 (a price *cut*) or Launch; Professional($49.99)→Launch at $39 annual (cheaper than today); Premium($79.99)→Growth at $79 annual yr-1; Enterprise→negotiated. Each cohort also gets a one-time migration credit grant (2K–80K credits) sized to ~2 months of typical usage. Migration pricing requires signup within a ~90-day window. Legacy users carry a `dynamic_locked` flag — dynamic features render as upgrade CTAs rather than being hidden.
+> **Update (2026-07-24, founder direction):** this mapping activates at the **On2Air sunset announcement** (date TBD, confidence-gated), not at Baseout's launch. During the coexistence period, legacy customers stay on On2Air unchanged; the ~90-day signup window below opens at sunset time. Grandfathering is framed as **gratitude for long-term support**.
+
+~330 active subscriptions map as (July 2026 counts: Starter 57 / Essentials 148 / Professional 108 / Premium 20; no Enterprise subs exist in Stripe): Basic(free)→Trial; Starter($9.99)→On2Air Bridge at $9.99 yr-1 → Starter $29; Essentials($29.99)→Starter $29 (a price *cut*) or Launch; Professional($49.99)→Launch at $39 annual (cheaper than today); Premium($79.99)→Growth at $79 annual yr-1; Enterprise→negotiated. Each cohort also gets a one-time migration credit grant (2K–80K credits) sized to ~2 months of typical usage. Migration pricing requires signup within a ~90-day window. Legacy users carry a `dynamic_locked` flag — dynamic features render as upgrade CTAs rather than being hidden.
 
 ---
 
@@ -248,7 +254,7 @@ Every meterable or gateable dimension in the product, classified by role. "Value
 | **Recurring credit add-ons / one-time blocks / storage add-ons / seat add-ons** | Expansion revenue between tier jumps; each deliberately priced worse per-unit than upgrading |
 | **PAYG packs** | Bottom-of-funnel catch; intentionally unattractive vs plans |
 | **Non-public plans (Starter, Bridge)** | Price-sensitive capture without polluting the public ladder |
-| **Migration pricing + credit grants** | Retention of ~200-customer legacy base |
+| **Migration pricing + credit grants** | Retention of the ~330-subscription legacy base |
 | **Multi-platform discount (V2)** | Expansion incentive when Notion/HubSpot launch |
 | **Trial design** (7 days + 1 run + data caps, no card) | Conversion mechanics; pre-registration schema visualization is the free hook before signup |
 
@@ -302,7 +308,7 @@ Headline: **credits are priced at a large multiple of marginal infrastructure co
 ### 7.3 Fixed and step costs
 
 - **Base platform fixed costs are small:** Workers Paid plan, master DB instance (~$15–60/mo class), Trigger.dev base plan, PostHog/dub.co — low hundreds of dollars per month at launch scale.
-- **The big step cost is Dedicated PostgreSQL at Business tier ($399/mo):** one dedicated instance **per Space**, and Business includes **unlimited Spaces**. A Business customer with 10 Spaces could consume 10 provisioned databases (~$200–600/mo in COGS) against $399 revenue. ⚠️ **This is the single largest structural margin risk in the current design** — recommend either capping included dedicated-DB Spaces, provisioning dedicated PG per-Organization instead of per-Space, or pricing extra dedicated-DB Spaces as an add-on.
+- **The big step cost is Dedicated PostgreSQL at Business tier ($399/mo):** one dedicated instance **per Space**, and Business includes **unlimited Spaces**. A Business customer with 10 Spaces could consume 10 provisioned databases (~$200–600/mo in COGS) against $399 revenue. ⚠️ ~~This is the single largest structural margin risk in the current design~~ **Resolved (2026-07-25):** (a) the risk assumed fixed-price instances — serverless PAYG PostgreSQL (Neon: scale-to-zero, no per-project fee, verified July 2026) puts a typical per-Space dedicated DB at **~$1–5/mo**, see `research/pricing/infrastructure-cost-model.md` §4; (b) **founder decision: Business carries a cap on dedicated-DB Spaces (value TBD); unlimited dedicated-DB Spaces are Enterprise-only via contract.** Gross-margin floor also now on record: ~75% per tier at heavy usage, ~85% blended target.
 - **Shared PG (Pro)** has a milder version of the same dynamic — mitigated by multi-tenancy, but per-Space schema growth needs monitoring.
 - **Support** is the other real step cost: priority chat at Business and CSM+SLA at Enterprise are human costs that should inform those price points.
 - **Enterprise/BYODB is the cheapest tier to serve on infrastructure** (customer hosts the data) — margin there is about support, SLA, SSO, and compliance surface, not COGS.
@@ -328,7 +334,7 @@ Headline: **credits are priced at a large multiple of marginal infrastructure co
 | **Airtable consultant / agency** | Manages many client orgs; may want one Space per client | Unlimited Spaces, multi-org membership, professional artifacts (schema diagrams, docs, health reports they can show clients) | Medium — Growth is designed as their magnet ($99, unlimited Spaces/bases) |
 | **RevOps/BizOps team at a scale-up** | Business-critical Airtable, daily/instant backup, SQL access for BI | Frequency, retention, SQL layer, Slack alerts, API | Medium-low — Pro/Business; value story is downtime/data-loss insurance + unlock of data |
 | **Enterprise IT/compliance** | Governance requirements, SOC 2, SSO, data sovereignty | BYODB (data never leaves their environment), audit trails, SLA, CSM | Low — Enterprise custom; blocked on SOC 2 completion |
-| **Legacy On2Air cohort (~200 paying)** | Known usage patterns, anchored to $9.99–$79.99 | Continuity ("static backups work exactly the same") | Anchored — handled by bridge/migration pricing (§5.6); `dynamic_locked` upsell surface |
+| **Legacy On2Air cohort (~330 active subs)** | Known usage patterns, anchored to $9.99–$79.99; Professional+Premium = 58.5% of legacy ARR | Continuity ("static backups work exactly the same") | Anchored — handled by bridge/migration pricing (§5.6); `dynamic_locked` upsell surface |
 
 ### 8.2 Intent signals encoded in the model
 
@@ -339,7 +345,7 @@ Headline: **credits are priced at a large multiple of marginal infrastructure co
 
 ### 8.3 Open segmentation questions for you
 
-- Is $49 the right public floor, given ~200 legacy customers anchored at $9.99–$29.99 and a hidden $29 plan? (The team's answer so far: hide the low end, don't market it.)
+- Is $49 the right public floor, given that 205 of the 333 legacy subscriptions (61.5%) sit at $9.99–$29.99 and a hidden $29 plan exists? (The team's answer so far: hide the low end, don't market it.)
 - Does the consultant segment need its own packaging (client-count-based) rather than riding the Growth tier?
 - Should "unlimited Spaces at $99" survive contact with the dedicated-DB cost exposure at higher tiers (§7.3)?
 

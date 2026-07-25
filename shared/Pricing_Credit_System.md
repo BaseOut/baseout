@@ -273,13 +273,15 @@ Assumes ~200 KB average attachment size, users near their plan limits:
 
 ## 6. On2Air Migration Strategy
 
+> **Update (2026-07-24, founder direction — governs the timing of everything in this section):** BaseOut launches as an independent platform "from the creators of On2Air" and **coexists** with On2Air. This migration strategy does **not** activate at BaseOut's launch — it activates at the later, confidence-gated **On2Air sunset announcement**. Until then, On2Air customers stay on On2Air unchanged (they may adopt BaseOut voluntarily as new customers). All "year 1" and windowed pricing below is measured **from the sunset-triggered transition date**, and the grandfathering is framed as gratitude for long-term support.
+
 ### Approach
 
 BaseOut pricing is higher than On2Air but reflects a meaningfully more capable product. The migration strategy is designed to minimize price shock: On2Air Essentials customers actually land on a cheaper plan (Starter at $29 vs. their current $29.99), and mid/upper-tier customers receive year-1 discounts that match or closely approximate their existing price before stepping up to standard rates.
 
 ### Year-1 Migration Pricing
 
-Annual billing only for discounted rates. After year 1, accounts move to standard annual pricing automatically with 60-day advance notice.
+Annual billing only for discounted rates. After year 1 (counted from the sunset-triggered transition), accounts move to standard annual pricing automatically with 60-day advance notice.
 
 | On2Air Plan | Old Price | -> BaseOut Plan | Standard Price | Migration Price (Yr 1) | After Yr 1 |
 |-------------|-----------|----------------|---------------|------------------------|------------|
@@ -312,7 +314,7 @@ Key points to communicate to On2Air users:
 2. **Most customers pay the same or less in year 1** -- Essentials customers actually get a price cut at launch
 3. **No more artificial limits** -- no caps on records, attachments, or bases; credits reflect actual usage
 4. **Dynamic backups are now available** -- store your data in a BaseOut-managed database for SQL access, instant restore, and advanced capabilities
-5. **Migrate within 90 days to lock in your rate** -- migration pricing and credit grants require signing up before the window closes
+5. **Transition within 90 days of the sunset announcement to lock in your rate** -- migration pricing and credit grants require signing up before the window closes (window opens at sunset, not at BaseOut launch)
 
 ---
 
@@ -321,7 +323,8 @@ Key points to communicate to On2Air users:
 - [ ] **Incremental sync threshold**: For dynamic backups, what counts as a "changed" record? Full field-level diff, or row-level change detection? This affects transfer credit accuracy.
 - [ ] **Attachment metering**: How is attachment MB measured for static backups -- via Airtable metadata at schedule time, or measured during actual download?
 - [ ] **Overage cap**: Consider a monthly overage cap (e.g., 2x monthly plan credits) to protect users from runaway costs from a misconfigured high-frequency backup.
-- [ ] **Migration window**: Recommend a 90-day window after BaseOut launch for On2Air users to claim migration pricing.
+- [ ] **Migration window**: Recommend a 90-day window after the **On2Air sunset announcement** (not BaseOut launch — see §6 update note) for On2Air users to claim migration pricing.
+- [ ] **Sunset trigger criteria**: Define what "confident that things are well" means concretely (uptime/restore-success thresholds, support-load, feature parity for static backups) so the coexistence→sunset decision is data-driven.
 - [ ] **On2Air Bridge auto-transition**: After year 1, auto-move to Starter annual or require action? Auto-move with 60-day notice is recommended to avoid churn from bill shock.
 - [ ] **Enterprise floor**: Define the minimum credit volume or use case that qualifies for Enterprise vs. Business.
 - [ ] **First backup attachment rate**: Decide whether to apply a reduced credit rate for the initial attachment transfer of a newly-added base, or rely solely on the onboarding credit bucket to absorb the cost.

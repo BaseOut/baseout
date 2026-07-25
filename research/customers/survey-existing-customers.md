@@ -1,6 +1,6 @@
 # Baseout Survey — Existing On2Air Customers
 
-**Audience:** Current + recent On2Air Backups customers (~200 paying orgs) and On2Air users of deprecated non-backup products.
+**Audience:** Current + recent On2Air Backups customers (~330 active subscriptions) and On2Air users of deprecated non-backup products.
 **Goal:** Validate that Baseout's roadmap (backup/restore core + Schema & Data intelligence) matches what these customers actually need; surface migration risks; recruit beta users.
 **Incentive:** Early access to *The State of Airtable DevOps* report + a sneak peek at Baseout.
 **Target length:** 8–10 minutes. Questions marked ⭑ are required; everything else optional.

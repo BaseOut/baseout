@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>On2Air Active Subscriptions — Analysis</title>
+<style>
+body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #202124; max-width: 8in; margin: 40px auto; padding: 0 24px; }
+h1 { font-size: 20pt; } h2 { font-size: 16pt; border-bottom: 2px solid #202124; padding-bottom: 4px; margin-top: 28px; }
+h3 { font-size: 13pt; margin-top: 22px; } h4 { font-size: 11.5pt; margin-top: 18px; }
+table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+th, td { border: 1px solid #999; padding: 5px 8px; font-size: 10pt; text-align: left; vertical-align: top; }
+th { background: #eee; }
+blockquote { border-left: 4px solid #f4b400; background: #fef7e0; margin: 10px 0; padding: 8px 14px; }
+code { font-family: 'Courier New', monospace; font-size: 10pt; background: #f1f3f4; padding: 0 3px; }
+hr { border: none; border-top: 1px solid #ccc; margin: 24px 0; }
+li { margin: 3px 0; }
+</style></head><body>
+<h1>On2Air Active Subscriptions — Analysis</h1>
+<p><strong>Source:</strong> Stripe export <code>On2Air Subscriptions-Active.csv</code> (provided July 25, 2026). 334 rows: 333 plan subscriptions + 1 add-on subscription (extra capacity; single instance, ignored per founder instruction). <strong>All 333 are paying, non-trial subscriptions</strong> — the founder confirmed (July 25, 2026) that trial subscriptions were excluded from the export before delivery. One apparent test account (<code>line1@line1.com</code>, holding the lone add-on plus one Essentials monthly) is included in totals; material impact is negligible (~$360 ARR).</p>
+<p>Plans were decoded from price points (no plan-name column): $9.99/$8.33 = Starter (monthly/annual), $29.99/$25.00 = Essentials, $49.99/$41.67 = Professional, $79.99/$66.67 = Premium. Every row decoded cleanly; no Enterprise/custom-priced subscriptions appear in this export.</p>
+<h2>Headline numbers</h2>
+<table>
+<thead>
+<tr>
+<th>Metric</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Active paying subscriptions (ex add-on; trials excluded from export)</td>
+<td><strong>333</strong></td>
+</tr>
+<tr>
+<td>MRR</td>
+<td><strong>$11,056.74</strong></td>
+</tr>
+<tr>
+<td>ARR (annualized)</td>
+<td><strong>$132,678.08</strong></td>
+</tr>
+<tr>
+<td>Average revenue per account</td>
+<td><strong>$33.20/mo · $398.43/yr</strong></td>
+</tr>
+<tr>
+<td>Billing mix</td>
+<td><strong>49% annual / 51% monthly</strong></td>
+</tr>
+<tr>
+<td>Effective annual discount (all plans)</td>
+<td><strong>~16.6–16.7%</strong></td>
+</tr>
+</tbody></table>
+<blockquote>
+<p>⚠️ <strong>Corrects the &quot;~200 paying customers&quot; figure used throughout the spec/GTM docs</strong> — the paying base is 333 subscriptions (≈332 unique customers), roughly two-thirds larger.</p>
+</blockquote>
+<h2>Plan mix</h2>
+<table>
+<thead>
+<tr>
+<th>Plan</th>
+<th>Price (mo / eff. annual)</th>
+<th>Subs</th>
+<th>% of subs</th>
+<th>Monthly-billed</th>
+<th>Annual-billed</th>
+<th>MRR</th>
+<th>ARR</th>
+<th>% of ARR</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Starter</td>
+<td>$9.99 / $8.33</td>
+<td>57</td>
+<td>17.1%</td>
+<td>27</td>
+<td>30</td>
+<td>$519.63</td>
+<td>$6,236.46</td>
+<td>4.7%</td>
+</tr>
+<tr>
+<td>Essentials</td>
+<td>$29.99 / $25.00</td>
+<td>148</td>
+<td>44.4%</td>
+<td>73</td>
+<td>75</td>
+<td>$4,064.27</td>
+<td>$48,770.49</td>
+<td>36.8%</td>
+</tr>
+<tr>
+<td>Professional</td>
+<td>$49.99 / $41.67</td>
+<td>108</td>
+<td>32.4%</td>
+<td>56</td>
+<td>52</td>
+<td>$4,966.28</td>
+<td>$59,592.76</td>
+<td>44.9%</td>
+</tr>
+<tr>
+<td>Premium</td>
+<td>$79.99 / $66.67</td>
+<td>20</td>
+<td>6.0%</td>
+<td>13</td>
+<td>7</td>
+<td>$1,506.56</td>
+<td>$18,078.37</td>
+<td>13.6%</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td></td>
+<td><strong>333</strong></td>
+<td>100%</td>
+<td>169</td>
+<td>164</td>
+<td><strong>$11,056.74</strong></td>
+<td><strong>$132,678.08</strong></td>
+<td>100%</td>
+</tr>
+</tbody></table>
+<p>(Excluded: 1 × $24.99/mo add-on subscription.)</p>
+<h2>What this changes for the pricing engagement</h2>
+<ol>
+<li><strong>The base skews higher than the docs assumed.</strong> Prior framing (&quot;skews toward the smaller/simpler end&quot;) is only half right: Essentials is the modal plan (44%), but <strong>Professional + Premium = 38.4% of subscriptions and 58.5% of ARR ($77,671)</strong>. The revenue center of gravity is the $49.99 Professional tier, not the low end.</li>
+<li><strong>Heavy-power-user exposure is bounded at ~58.5% of ARR</strong> (the Professional+Premium pool — the plans whose at-limit usage maps to Baseout Pro-tier/enterprise-scale consumption per <code>Pricing_Credit_System.md</code> §5). How much of that pool <em>actually</em> runs at limits requires joining run telemetry; this export gives the ceiling.</li>
+<li><strong>Premium is thin (20 subs, 13.6% of ARR)</strong> — the hourly-frequency cohort that would be most disruptive to migrate is small. The Professional cohort (108 subs, 44.9% of ARR) is the one to model carefully at sunset time.</li>
+<li><strong>Annual billing is already normal here (49%)</strong> at a ~16.6% discount — Baseout&#39;s planned ~20% annual discount is consistent with what this base already accepts.</li>
+<li><strong>Transition-plan revenue math (per the sunset-triggered mapping in <code>Pricing_Credit_System.md</code> §6):</strong> Starter→Bridge holds $9.99 (no change yr-1); Essentials→Baseout Starter $29 is a slight cut; Professional→Launch $39-annual is a cut from $49.99 (but a raise vs. the $41.67 annual-billed majority... note: 52 of 108 Professionals already pay $41.67 effective — Launch at $39 annual is still marginally cheaper); Premium→Growth $79-annual ≈ current price. Net: year-1 transition revenue is roughly ARR-neutral-to-slightly-negative on the low three cohorts, with upside coming from Bridge→Starter step-ups ($9.99→$29, +$1.1K MRR potential across 57 subs) and from any Professional/Premium usage-based upgrades once real consumption is visible.</li>
+<li><strong>No Enterprise subscriptions exist in Stripe</strong> — any Enterprise/custom deals are either invoiced outside this export or don&#39;t exist; confirm before modeling an Enterprise legacy cohort.</li>
+<li><strong>Consultant-detection via email domain found nothing</strong> (only gmail/hotmail repeat) — multi-workspace consultant accounts can&#39;t be identified from this export alone; needs the workspace/usage join.</li>
+</ol>
+<h2>Caveats</h2>
+<ul>
+<li>Trials: none — the export was pre-filtered to paying subscriptions only (founder-confirmed, July 25, 2026). 333 is the true paying count.</li>
+<li>This is subscriptions, not usage — the WTP/underpayment analysis still needs the per-run telemetry join (bases, records, attachment volumes, frequency per customer).</li>
+<li>One duplicate email (<code>line1@line1.com</code>, apparent test account) holds 2 of the 334 rows.</li>
+</ul>
+
+</body></html>

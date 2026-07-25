@@ -51,7 +51,7 @@ V1 positions as a best-in-class Airtable backup and admin utility. V2 grows into
 Baseout is a **full rebrand and next-generation replacement** of the On2Air backup product — not a parallel product. The On2Air brand is retired; Baseout becomes the single unified product.
 
 - Non-backup On2Air products deprecated effective **April 1, 2026**
-- ~200 paying backup customers mapped to equivalent new tiers (Starter/Launch/Growth) based on usage
+- ~330 active backup subscriptions (July 2026) mapped to equivalent new tiers (Starter/Launch/Growth) based on usage
 - Legacy users receive a `dynamic_locked: true` flag — dynamic features shown as upgrade CTAs, preserving static backup without disruption
 - Customers grandfathered at equivalent pricing for a defined transition period
 

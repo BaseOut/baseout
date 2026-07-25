@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Baseout — Infrastructure Cost Model</title>
+<style>
+body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #202124; max-width: 8in; margin: 40px auto; padding: 0 24px; }
+h1 { font-size: 20pt; } h2 { font-size: 16pt; border-bottom: 2px solid #202124; padding-bottom: 4px; margin-top: 28px; }
+h3 { font-size: 13pt; margin-top: 22px; } h4 { font-size: 11.5pt; margin-top: 18px; }
+table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+th, td { border: 1px solid #999; padding: 5px 8px; font-size: 10pt; text-align: left; vertical-align: top; }
+th { background: #eee; }
+blockquote { border-left: 4px solid #f4b400; background: #fef7e0; margin: 10px 0; padding: 8px 14px; }
+code { font-family: 'Courier New', monospace; font-size: 10pt; background: #f1f3f4; padding: 0 3px; }
+hr { border: none; border-top: 1px solid #ccc; margin: 24px 0; }
+li { margin: 3px 0; }
+</style></head><body>
+<h1>Baseout Infrastructure Cost Model — Per-Usage COGS &amp; Margin Estimates</h1>
+<p><strong>Prepared:</strong> July 25, 2026, at founder request (&quot;we&#39;re moving to per-usage pricing... storage in R2 and D1 or Postgres databases have variable costs and need to be factored into our margins&quot;).
+<strong>Basis:</strong> all unit prices verified against official vendor pricing pages on <strong>2026-07-25</strong> (list prices; no negotiated discounts assumed). Customer profiles are illustrative; treat margins as directional estimates, not accounting.</p>
+<hr>
+<h2>1. Verified unit prices (July 2026)</h2>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Price</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>R2 storage (Standard)</strong></td>
+<td>$0.015/GB-mo</td>
+<td>Infrequent Access: $0.010/GB-mo (+$0.01/GB retrieval, 30-day min) — candidate for old snapshots</td>
+</tr>
+<tr>
+<td><strong>R2 writes (Class A)</strong></td>
+<td>$4.50/M ops</td>
+<td>Reads (Class B) $0.36/M; <strong>egress $0 — confirmed</strong></td>
+</tr>
+<tr>
+<td><strong>D1 storage</strong></td>
+<td>$0.75/GB-mo</td>
+<td>5 GB included on Workers Paid; rows written $1.00/M after 50M/mo; rows read $0.001/M after 25B/mo</td>
+</tr>
+<tr>
+<td><strong>Workers Paid</strong></td>
+<td>$5/mo base</td>
+<td>10M requests + 30M CPU-ms included; DO requests $0.15/M, duration $12.50/M GB-s after allowances</td>
+</tr>
+<tr>
+<td><strong>DigitalOcean Managed PG</strong></td>
+<td>$15.15/mo (1 vCPU/1 GiB) · $60.90/mo (2 vCPU/4 GiB)</td>
+<td>Fixed per-instance floors</td>
+</tr>
+<tr>
+<td><strong>Neon PG</strong></td>
+<td><strong>Pure pay-as-you-go — no base fee</strong></td>
+<td>Compute $0.106/CU-hr (Launch) / $0.222 (Scale); storage $0.35/GB-mo; <strong>scales to zero when idle</strong></td>
+</tr>
+<tr>
+<td><strong>Supabase Pro</strong></td>
+<td>$25/mo (incl. $10 compute credit)</td>
+<td><strong>Each additional project = $10/mo minimum</strong> — hard per-project floor</td>
+</tr>
+<tr>
+<td><strong>Trigger.dev</strong></td>
+<td>Pro $50/mo (incl. $50 usage)</td>
+<td>Compute: Small 1x $0.0000338/s · Medium 1x $0.000085/s; $0.000025/run invocation</td>
+</tr>
+<tr>
+<td><strong>Workers AI (LLM)</strong></td>
+<td>Llama 3.1 8B: $0.152/M in + $0.287/M out tokens</td>
+<td>Typical doc-generation call (~2K in / 500 out) ≈ <strong>$0.0005</strong>; 70B model ≈ $0.0017</td>
+</tr>
+<tr>
+<td><strong>Stripe</strong></td>
+<td>~2.9% + $0.30/txn</td>
+<td>~3–4% of revenue at these price points</td>
+</tr>
+</tbody></table>
+<h2>2. Cost primitives (what one unit of activity costs us)</h2>
+<table>
+<thead>
+<tr>
+<th>Activity</th>
+<th>Estimated COGS</th>
+<th>Working</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>One base backup run (static, small base: 10K records, 500 MB attachments to BYOS)</td>
+<td><strong>~$0.02–0.05</strong></td>
+<td>~10 min Trigger.dev Small 1x ($0.02) + API/Worker overhead; nothing stored at rest</td>
+</tr>
+<tr>
+<td>One base backup run (large: 1M records, 20 GB attachments, first run)</td>
+<td><strong>~$0.50–1.50</strong></td>
+<td>1–3 hrs Medium 1x compute ($0.31–0.92) + R2 Class A writes (~10K ops ≈ $0.05) + row writes</td>
+</tr>
+<tr>
+<td>Steady-state dynamic (incremental) run</td>
+<td><strong>~$0.005–0.02</strong></td>
+<td>Deltas only; minutes of compute</td>
+</tr>
+<tr>
+<td>Storing 1 GB in R2 for a month</td>
+<td><strong>$0.015</strong> (Standard) / $0.010 (IA)</td>
+<td>vs. billed overage $0.50/GB → 33–50×</td>
+</tr>
+<tr>
+<td>Storing 1 GB in D1 for a month</td>
+<td><strong>$0.75</strong></td>
+<td>vs. billed $1.00/GB → 1.3× ⚠️ thinnest margin in the product</td>
+</tr>
+<tr>
+<td>Dedicated PG, one Space, typical (Neon PAYG)</td>
+<td><strong>~$1–5/mo</strong></td>
+<td>Scale-to-zero: ~15 min compute/day ≈ $0.80/mo + $0.35/GB-mo storage. <strong>Not $19–60/mo</strong> — see §4</td>
+</tr>
+<tr>
+<td>Shared PG slice (Pro tier, DO 2vCPU/4GiB ÷ 20–40 tenants)</td>
+<td><strong>~$1.50–3/mo</strong></td>
+<td>Instance $60.90 amortized</td>
+</tr>
+<tr>
+<td>One AI doc generation</td>
+<td><strong>~$0.0005–0.002</strong></td>
+<td>vs. 10 credits ≈ $0.04–0.07 effective revenue → 20–100×</td>
+</tr>
+<tr>
+<td>One restore (reverse transfer)</td>
+<td><strong>~$0.05–0.50</strong></td>
+<td>Compute-dominated; R2 egress genuinely $0</td>
+</tr>
+<tr>
+<td>Email / API call / SQL query</td>
+<td>~$0</td>
+<td>Within Worker allowances at launch scale</td>
+</tr>
+</tbody></table>
+<p><strong>Fixed platform base:</strong> Workers Paid $5 + master DB (DO $15–61) + Trigger.dev Pro $50 + analytics ~$50–100 ≈ <strong>$150–250/mo</strong> — under 1% of revenue at the $41.7K MRR target.</p>
+<h2>3. Per-tier margin estimates (typical usage profiles)</h2>
+<p>Profiles assume the Features-spec limits used at moderate (not maximal) intensity; dedicated PG assumes <strong>Neon PAYG</strong> (see §4). Stripe fees excluded from COGS rows, shown in the margin line.</p>
+<table>
+<thead>
+<tr>
+<th>Tier (mo. price)</th>
+<th>Illustrative profile</th>
+<th>Est. infra COGS/mo</th>
+<th>Gross margin (infra)</th>
+<th>Margin incl. ~3.5% Stripe</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Trial ($0)</strong></td>
+<td>1 base, monthly, schema-only D1, 250 MB R2</td>
+<td>$0.01–0.05</td>
+<td>— (CAC, not margin)</td>
+<td>—</td>
+</tr>
+<tr>
+<td><strong>Starter ($29)</strong></td>
+<td>3 bases, monthly static, schema-only D1</td>
+<td>$0.10–0.30</td>
+<td>~99%</td>
+<td>~96%</td>
+</tr>
+<tr>
+<td><strong>Launch ($49)</strong></td>
+<td>9 bases, weekly, D1 full ~0.5–1 GB, 5 GB R2</td>
+<td>$1.50–2.50</td>
+<td>~95–97%</td>
+<td>~92–93%</td>
+</tr>
+<tr>
+<td><strong>Growth ($99)</strong></td>
+<td>15 bases, weekly, D1 ~3 GB, 20 GB R2</td>
+<td>$4–7</td>
+<td>~93–96%</td>
+<td>~90–92%</td>
+</tr>
+<tr>
+<td><strong>Pro ($199)</strong></td>
+<td>20 bases, daily incremental, shared-PG slice, 75 GB R2</td>
+<td>$10–25</td>
+<td>~87–95%</td>
+<td>~84–91%</td>
+</tr>
+<tr>
+<td><strong>Business ($399), 3 Spaces</strong></td>
+<td>Daily+instant, 3 × dedicated PG (Neon), 250 GB R2</td>
+<td>$15–35</td>
+<td>~91–96%</td>
+<td>~88–93%</td>
+</tr>
+<tr>
+<td><strong>Business ($399), 10 Spaces</strong></td>
+<td>Same, 10 × dedicated PG (Neon)</td>
+<td>$30–70</td>
+<td>~82–92%</td>
+<td>~79–89%</td>
+</tr>
+<tr>
+<td><strong>Enterprise (custom)</strong></td>
+<td>BYODB — customer hosts the data</td>
+<td>~$5–20 + support</td>
+<td>~95%+ infra</td>
+<td>Margin is support/SLA, not COGS</td>
+</tr>
+</tbody></table>
+<p><strong>Heavy/adverse cases:</strong> a static-mode customer running daily full re-transfers of a 1M-record estate to BYOS costs ~$15–45/mo in pure compute — exactly what the credit meter is designed to charge for. A retention-maximal Business customer (250 GB × 24 months accumulating) approaches $4–8/mo in R2 alone — contained if Smart Cleanup ships and old snapshots move to R2 Infrequent Access (−33%).</p>
+<h2>4. ⚠️ Finding that changes a known risk: the Business-tier &quot;margin hole&quot; is a <strong>provider choice</strong>, not a structural flaw</h2>
+<p>The internal docs flag dedicated-PG-per-Space × unlimited Spaces at Business ($399) as &quot;the single largest structural margin risk&quot; (~$19–60+/mo hard cost per Space, so 10 Spaces ≈ $200–600 COGS vs. $399 revenue). <strong>That math assumed fixed-price instances (DigitalOcean) or per-project floors (Supabase $10/mo).</strong> As of July 2026, <strong>Neon&#39;s paid plans are pure pay-as-you-go with scale-to-zero and no per-project fee</strong> — a mostly-idle per-Space database costs ~$0 compute + $0.35/GB-mo storage, i.e., <strong>$1–5/mo per typical Space</strong>, not $19–60.</p>
+<ul>
+<li>10-Space Business customer on Neon: ~$30–70/mo COGS against $399 → 82–92% margin. On DO minimum instances: $150+ → the documented hole.</li>
+<li><strong>Recommendation:</strong> provision per-Space dedicated PG on Neon (or equivalent serverless PG); reserve fixed instances for customers who demand a named provider.</li>
+<li><strong>Decision (founder, July 25, 2026):</strong> Business carries a <strong>hard cap on dedicated-DB Spaces</strong> (value TBD — the cost curve here supports 5–10 comfortably) as belt-and-braces even with PAYG provisioning; <strong>unlimited dedicated-DB Spaces are Enterprise-only, via contract</strong>. Also on record: <strong>gross-margin floor ~75% per tier at heavy usage, ~85% blended target.</strong></li>
+<li>Residual real risks: Neon <em>storage</em> still accumulates with retention (cleanup matters); very-high-write Spaces don&#39;t scale to zero (compute grows with instant-backup frequency); Neon repricing risk — revisit before GA commitment.</li>
+</ul>
+<h2>5. Blended picture vs. the founder&#39;s targets</h2>
+<p>At the target mix ($500K ARR ≈ $41.7K MRR, average customer $100–200/mo ⇒ ~210–420 customers centered on Growth/Pro):</p>
+<ul>
+<li><strong>Blended infra COGS ≈ 4–8% of revenue</strong> (~$1.7–3.3K/mo at target scale) + ~3.5% payment processing + ~$200/mo fixed ⇒ <strong>blended gross margin ≈ 88–92%</strong> before support/staff costs.</li>
+<li>The margin-shaping levers, in order of impact: (1) dedicated-DB provider choice (§4); (2) retention promises vs. Smart Cleanup shipping (storage is the only cost that <em>accumulates</em>); (3) D1 storage overage pricing ($1.00 billed vs. $0.75 cost — consider repricing to $1.50–2.00/GB or steering big estates to PG tiers); (4) static-mode frequency, already metered by credits.</li>
+<li><strong>A ≥80% gross-margin floor per tier at typical usage appears comfortably achievable on every tier, including Business — no tier needs to be a structural loss-leader.</strong> Suggested framing for the workshops: target ~85% blended gross margin, floor 75% per-tier at P90 usage, revisit after real telemetry.</li>
+</ul>
+<h2>6. Caveats</h2>
+<ul>
+<li>Profiles are assumptions, not telemetry — replace with real per-run counts (shipped telemetry exists) as Baseout customers accumulate.</li>
+<li>List prices, July 2026; Cloudflare/Neon reprice periodically (Neon&#39;s move to pure PAYG happened within the last year — verify before contracts).</li>
+<li>Excludes: support/CSM headcount (the real cost at Business/Enterprise), SOC 2 audit costs, engineering. This is <em>infrastructure</em> gross margin only.</li>
+<li>Trigger.dev machine sizing per task is a real tuning lever (Small 1x vs Medium 1x is 2.5×); the model assumes right-sizing.</li>
+</ul>
+
+</body></html>

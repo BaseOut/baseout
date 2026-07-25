@@ -69,11 +69,15 @@ Any pricing model has to decide how these two modes relate: separate products? m
 | Airtable consultant / agency | Manages many client orgs; wants per-client separation | Multiple isolated workspaces, professional artifacts (diagrams, health reports, docs) to show clients | May multi-home one subscription across clients or want per-client billing — packaging question |
 | RevOps/BizOps team at a scale-up | Airtable is business-critical; wants frequent backup + SQL for BI | Recovery speed (frequency), retention, SQL access, Slack alerts, API | The "data liberation" buyer overlaps here |
 | Enterprise IT / compliance | Governance mandates | BYODB (data never leaves their environment), audit trails, SSO, SLA, CSM | Gated by our SOC 2 timeline (§6.4) |
-| Legacy On2Air customer | ~200 paying users of the predecessor product | Continuity — "static backups work exactly the same" | Anchored to old prices; see §2.3 |
+| Legacy On2Air customer | ~330 active subscriptions on the predecessor product | Continuity — "static backups work exactly the same" | Anchored to old prices; see §2.3 |
 
 ### 2.3 The existing customer base and its price anchors
 
-Baseout is the rebrand/replacement of **On2Air Backups** (~200 paying customers migrating). Their current pricing — i.e., what our existing customers pay **today** — is a key market anchor:
+Baseout is the next-generation successor to **On2Air Backups** (**~330 active paying subscriptions** — July 2026 Stripe export, trials excluded; earlier drafts said ~200. Plan mix: Starter 57 / Essentials 148 / Professional 108 / Premium 20; $11.1K MRR / $132.7K ARR; 49% annual-billed; Professional+Premium = 58.5% of ARR. Full analysis: `research/pricing/legacy-subscription-analysis.md`).
+
+> **Update (2026-07-24, founder direction):** Baseout launches as an independent platform "from the creators of On2Air" and **coexists** with On2Air; the sunset + transition plan comes later, confidence-gated. Consequently the table below is **context for the eventual transition plan, not an anchor on Baseout's launch pricing** — design the launch ladder for the market on its own merits.
+
+Their current pricing — i.e., what On2Air customers pay **today**:
 
 | On2Air plan | Price/mo | Bases | Records | Attachments | Restores | Max frequency |
 |---|---|---|---|---|---|---|
@@ -86,7 +90,7 @@ Baseout is the rebrand/replacement of **On2Air Backups** (~200 paying customers 
 
 Observations the team has made about this legacy model (treat as inputs, not conclusions):
 
-- Flat monthly fee regardless of actual usage — a customer using 1 base pays the same as one at plan maximums.
+- Tiers scale with *allowed* usage (record/attachment/base caps step up per tier), but within a tier the fee is flat — a customer using 1 base pays the same as one at plan maximums. **Founder framing (2026-07-25):** the deeper issues are that the model under-captures value, the per-tier allowances are more generous than customers at that price typically need, and the structure is too simple to support Baseout's feature breadth and usage variability.
 - Frequency was hard-gated by tier; count-based caps (records, attachment *count* not size) did the limiting.
 - The team believes On2Air was **historically underpriced relative to the value delivered**, and Baseout is a substantially more capable product.
 - Migration sensitivity is real: these customers chose a cheap, simple product. Whatever model we adopt needs a migration story that doesn't shock them (grandfathering, bridge pricing, and usage-based mapping have all been discussed internally).
@@ -279,7 +283,9 @@ Implication: a launch model can only *enforce* what's built. If the recommended 
 
 ### 6.3 Migration constraint
 
-~200 On2Air customers must land somewhere. Constraints we believe are real: (a) their current prices are the anchor (§2.3); (b) their product experience must not regress ("static backups work the same"); (c) legacy customers can be flagged to see new capabilities as upgrade prompts rather than losing anything. Grandfathering duration, bridge pricing, and tier mapping are all open — internal sketches exist if useful.
+> **Update (2026-07-24, founder direction):** migration is **decoupled from launch**. Baseout and On2Air coexist after launch; the ~330 On2Air subscriptions stay on On2Air unchanged until a later, confidence-gated **sunset announcement** with an auto-transition plan and a gratitude-framed grandfathering effort. Migration is therefore a **phase-2 workstream** — it must not constrain launch pricing.
+
+When the sunset does trigger, constraints we believe are real: (a) their then-current prices are the anchor for the *transition* offer (§2.3); (b) their product experience must not regress ("static backups work the same"); (c) legacy customers can be flagged to see new capabilities as upgrade prompts rather than losing anything. Grandfathering duration, bridge pricing, and tier mapping are all open — internal sketches exist if useful.
 
 ### 6.4 Timeline & roadmap constraints
 
@@ -305,12 +311,12 @@ Positions the team holds that interact with pricing — challenge them if the st
 3. **Price levels.** Against the anchors available: legacy On2Air prices, Airtable's own per-seat spend, competitor pricing, our cost floors (§5.4), and the "underpriced historically" belief.
 4. **Free motion.** Free tier vs. trial-only; trial shape (time, runs, data caps); what the pre-registration hook feeds into.
 5. **Expansion & overage philosophy.** How customers grow spend: upgrades only? metered overage? add-on packs? seats? What defaults protect against bill shock?
-6. **Migration mapping.** Where each On2Air cohort lands, what's grandfathered, for how long, and the messaging.
+6. **Migration mapping (phase 2 — not launch-gating).** Where each On2Air cohort lands at sunset time, what's grandfathered, for how long, and the messaging. Per §6.3, this is designed after launch pricing, on real coexistence-period telemetry.
 7. **Enterprise definition.** What qualifies a deal as custom-priced; the floor; what's reserved for it (BYODB, SSO, SLA, CSM).
 8. **Sequencing.** What model launches given §6.2 enforcement reality, and what it evolves into as metering ships.
 9. **Multi-platform readiness.** How the model extends when Notion/HubSpot arrive (per-platform pricing? bundles? discounts?).
 
-**Success criteria (from the founders):** easy to understand · captures customers' different intents · sound against the cost structure · gives the ~200 legacy customers a respectful path · leaves room for the V2 roadmap.
+**Success criteria (from the founders):** easy to understand · captures customers' different intents · sound against the cost structure · gives the ~330 legacy subscriptions a respectful path · leaves room for the V2 roadmap.
 
 ---
 

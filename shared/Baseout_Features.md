@@ -211,7 +211,7 @@ Not featured on the public pricing page. Discoverable for users who seek it out 
 | **Starter** | $29 | 5,000 | Static + Dynamic (Schema Only) | D1 (schema only) | 3 | 3 | Monthly | 2 |
 | **On2Air Bridge** | $9.99 | 2,000 | Static + Dynamic (Schema Only) | D1 (schema only) | 1 | 3 | Monthly | 1 |
 
-> **Starter** is for users who genuinely cannot afford Launch but need more than the free Trial — more spaces, more credits, and schema-level dynamic access. It is not marketed or featured. The **On2Air Bridge** is for On2Air Basic/Starter customers migrating at their existing price point — see §5 and §6 of Pricing_Credit_System.md for the full migration strategy.
+> **Starter** is for users who genuinely cannot afford Launch but need more than the free Trial — more spaces, more credits, and schema-level dynamic access. It is not marketed or featured. The **On2Air Bridge** is for On2Air Basic/Starter customers transitioning at their existing price point — it activates at the **On2Air sunset announcement, not at Baseout's launch** (Baseout and On2Air coexist until then; founder direction 2026-07-24). See §5 and §6 of Pricing_Credit_System.md for the full transition strategy.
 
 ---
 
@@ -505,6 +505,8 @@ All plans include Static backup. Dynamic database backup is available from Launc
 | **Shared PostgreSQL** | Multi-tenant PostgreSQL on DigitalOcean. Schema-level isolation. | Pro |
 | **Dedicated PostgreSQL** | Single-tenant PostgreSQL on Neon, Supabase, or DigitalOcean. Full instance isolation. | Business |
 | **BYODB (Bring Your Own Database)** | Customer provides a PostgreSQL 13+ instance. Baseout writes to it. Customer controls infrastructure, backups, and keys. | Enterprise |
+
+> **Decision (2026-07-25, founder):** Business includes **a capped number of dedicated-PG Spaces** (cap value TBD — margin guardrail); **unlimited dedicated-DB Spaces are Enterprise-only, via contract**. The §3/§4.1 "Unlimited Spaces" figures for Business refer to Spaces generally — the dedicated-database entitlement within them is what the cap governs. Provisioning recommendation: serverless PAYG PostgreSQL (Neon-class, scale-to-zero) per `research/pricing/infrastructure-cost-model.md` §4.
 
 ### 6.6 Storage Destination Options
 
