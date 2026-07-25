@@ -16,6 +16,7 @@ import { spacePg } from "@baseout/db-schema/space";
 import { schemaNameForSpace } from "../provisioning/posture";
 import type { LifecycleOp, PriorWorkingSet, SchemaDiffResult } from "./schema-diff";
 import type { InterfaceDiffResult, PriorInterfaceWorkingSet } from "./interfaces-sync";
+import type { AutomationDiffResult, PriorAutomationWorkingSet } from "./automations-sync";
 import type { PriorCell, PriorRecord, RecordDiffResult } from "./record-diff";
 import { extractFieldConfig, type FieldConfig } from "./schema-enrich";
 
@@ -224,6 +225,21 @@ async function applyLifecycleOp(
       await tx.update(spacePg.views).set(status === "removed" ? { status, firstUnseenRun: sql`coalesce(${spacePg.views.firstUnseenRun}, ${runId})` } : { status }).where(eq(spacePg.views.viewId, op.id));
       return;
   }
+}
+
+/**
+ * Gated-sync unknown-sweep (server-view-capture-override): a sync that ran
+ * with view capture CLOSED can no longer observe this base's views, so its
+ * still-`active` bo_at_views rows flip to the honest lifecycle state
+ * `unknown`. No first_unseen_run stamp — that is reserved for confident
+ * removals (see applyLifecycleOp's unknown branch). Idempotent; a later
+ * gate-open sync's insert/seen upsert returns reappearing rows to `active`.
+ */
+export async function markViewsUnknownForBase(tx: SpaceTx, baseId: string): Promise<void> {
+  await tx
+    .update(spacePg.views)
+    .set({ status: "unknown" })
+    .where(and(eq(spacePg.views.baseId, baseId), eq(spacePg.views.status, "active")));
 }
 
 export async function applySchemaDiff(
@@ -518,6 +534,102 @@ export async function applyInterfaceDiff(
   }
 
   // ── changelog rows (entity_type widened to interface|page|form) ──
+  if (diff.updates.length) {
+    await tx.insert(spacePg.schemaUpdates).values(
+      diff.updates.map((u) => ({
+        runId,
+        entityType: u.entityType,
+        entityId: u.entityId,
+        baseId,
+        tableId: null,
+        changeType: u.changeType,
+        changeTypeName: null,
+        beforeValue: u.beforeValue,
+        afterValue: u.afterValue,
+        breaksData: false,
+      })),
+    );
+  }
+}
+
+// ───────────────────────── automations (MCP capture) ─────────────────────────
+// server-mcp-automations. MCP diffing reads/writes ONLY submitted_via='mcp'
+// rows in the EXISTING bo_at_automations table — manually-submitted rows for
+// the same airtable_entity_id are parallel and never touched. Unlike the
+// interface tables, bo_at_automations keeps its submission-driven TIMESTAMP
+// lifecycle (first_seen_at / last_seen_at + status): the changelog's
+// automation-removals reader (schema-changelog-io.ts) already consumes exactly
+// that shape, so no migration and no new changelog reader are needed. The
+// capture time (capturedAt from the wire field) is the stamp source, not the
+// run id.
+
+export async function readAutomationWorkingSet(
+  tx: SpaceTx,
+  baseId: string,
+): Promise<PriorAutomationWorkingSet> {
+  const automations = await tx
+    .select({
+      id: spacePg.automations.id,
+      airtableEntityId: spacePg.automations.airtableEntityId,
+      name: spacePg.automations.name,
+      definition: spacePg.automations.definition,
+      status: spacePg.automations.status,
+    })
+    .from(spacePg.automations)
+    .where(and(eq(spacePg.automations.baseId, baseId), eq(spacePg.automations.submittedVia, "mcp")));
+  return { automations };
+}
+
+export async function applyAutomationDiff(
+  tx: SpaceTx,
+  args: { baseId: string; baseRunId: string; capturedAt: Date; diff: AutomationDiffResult },
+): Promise<void> {
+  const { baseId, baseRunId: runId, capturedAt, diff } = args;
+
+  if (diff.unchanged) {
+    // Identical capture: freshness is still stamped on every active MCP row.
+    await tx
+      .update(spacePg.automations)
+      .set({ lastSeenAt: capturedAt })
+      .where(
+        and(
+          eq(spacePg.automations.baseId, baseId),
+          eq(spacePg.automations.submittedVia, "mcp"),
+          eq(spacePg.automations.status, "active"),
+        ),
+      );
+    return;
+  }
+
+  if (diff.automations.inserts.length) {
+    await tx.insert(spacePg.automations).values(
+      diff.automations.inserts.map((e) => ({
+        baseId,
+        airtableEntityId: e.airtableEntityId,
+        name: e.name,
+        definition: e.definition,
+        status: "active",
+        submittedVia: "mcp",
+        firstSeenAt: capturedAt,
+        lastSeenAt: capturedAt,
+      })),
+    );
+  }
+  for (const { rowId, entity } of diff.automations.seen) {
+    await tx
+      .update(spacePg.automations)
+      .set({ name: entity.name, definition: entity.definition, status: "active", lastSeenAt: capturedAt })
+      .where(eq(spacePg.automations.id, rowId));
+  }
+  for (const { rowId } of diff.automations.removals) {
+    // last_seen_at stays at the last sighting — the changelog removals reader
+    // uses it as the removal timestamp.
+    await tx
+      .update(spacePg.automations)
+      .set({ status: "removed" })
+      .where(eq(spacePg.automations.id, rowId));
+  }
+
   if (diff.updates.length) {
     await tx.insert(spacePg.schemaUpdates).values(
       diff.updates.map((u) => ({
