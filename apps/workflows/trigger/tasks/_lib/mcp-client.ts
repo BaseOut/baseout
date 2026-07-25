@@ -1,12 +1,17 @@
-// Airtable MCP client — one-shot `list_pages_for_base` tool call
-// (workflows-mcp-interface-pages, design Decision 1).
+// Airtable MCP client — one-shot tool calls over the MCP Streamable HTTP
+// transport (workflows-mcp-interface-pages; generalized for
+// workflows-mcp-automations).
 //
-// Hand-rolled JSON-RPC 2.0 over the MCP Streamable HTTP transport instead of
-// the MCP SDK: the exchange is three POSTs (initialize →
-// notifications/initialized → tools/call), we control the timeout with a
-// single AbortController, and tests inject fetchImpl (house convention).
+// Hand-rolled JSON-RPC 2.0 instead of the MCP SDK: the exchange is three POSTs
+// (initialize → notifications/initialized → tools/call), we control the
+// timeout with a single AbortController, and tests inject fetchImpl (house
+// convention). `callMcpTool` owns the transport; the exported per-tool
+// wrappers (`fetchInterfacePages`, `fetchAutomations`) own envelope validation
+// and MUST NOT diverge in behavior from the pre-refactor client — the
+// interface-pages test matrix pins this.
 //
-// Transport facts pinned by the 2026-07-14 spike (change README):
+// Transport facts pinned by the 2026-07-14 spike (workflows-mcp-interface-pages
+// README) and re-confirmed 2026-07-24 (workflows-mcp-automations README):
 //   - ANY response may arrive as `text/event-stream` — even a single message
 //     — so SSE parsing is the primary path: read the stream to completion,
 //     discard notification frames, resolve on the message whose `id` matches.
@@ -14,20 +19,19 @@
 //   - Tool results carry BOTH `structuredContent` (parsed) and
 //     `content[0].text` (same JSON as a string) — prefer the former.
 //
-// Failure isolation contract (change spec): this function NEVER throws — every
-// failure mode maps to `{ ok: false, reason }` so the backup run's outcome is
-// untouched. Envelope validation is deliberately shallow (`interfaces[]` /
-// `standaloneForms[]` exist); the engine owns entity extraction and deep
-// tolerance (apps/server/src/lib/per-space/interfaces-sync.ts).
+// Failure isolation contract (both change specs): these functions NEVER throw —
+// every failure mode maps to `{ ok: false, reason }` so the backup run's
+// outcome is untouched. Envelope validation is deliberately shallow; the
+// engine owns entity extraction and deep tolerance
+// (apps/server/src/lib/per-space/{interfaces,automations}-sync.ts).
 
 const DEFAULT_ENDPOINT = "https://mcp.airtable.com/mcp";
 const DEFAULT_TIMEOUT_MS = 30_000;
 /** Envelope cap before forwarding to the engine — observed sizes are KBs. */
 const MAX_PAYLOAD_CHARS = 2 * 1024 * 1024;
-const TOOL_NAME = "list_pages_for_base";
 const INITIAL_PROTOCOL_VERSION = "2025-06-18";
 
-export type InterfacePagesSkipReason =
+export type McpSkipReason =
   | "timeout"
   | "auth"
   | "transport"
@@ -37,6 +41,9 @@ export type InterfacePagesSkipReason =
   | "no_result"
   | `http_${number}`;
 
+/** Back-compat alias — the interface-pages change exported this name. */
+export type InterfacePagesSkipReason = McpSkipReason;
+
 export interface InterfacePagesEnvelope extends Record<string, unknown> {
   interfaces: unknown[];
   standaloneForms: unknown[];
@@ -44,7 +51,15 @@ export interface InterfacePagesEnvelope extends Record<string, unknown> {
 
 export type FetchInterfacePagesResult =
   | { ok: true; raw: InterfacePagesEnvelope; capturedAt: string }
-  | { ok: false; reason: InterfacePagesSkipReason };
+  | { ok: false; reason: McpSkipReason };
+
+export interface AutomationsEnvelope extends Record<string, unknown> {
+  automations: unknown[];
+}
+
+export type FetchAutomationsResult =
+  | { ok: true; raw: AutomationsEnvelope; capturedAt: string }
+  | { ok: false; reason: McpSkipReason };
 
 interface JsonRpcMessage {
   jsonrpc?: string;
@@ -64,13 +79,6 @@ class HttpStatusError extends Error {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
 
-function validateEnvelope(raw: unknown): InterfacePagesEnvelope | null {
-  if (!isRecord(raw) || !Array.isArray(raw.interfaces) || !Array.isArray(raw.standaloneForms)) {
-    return null;
-  }
-  return raw as InterfacePagesEnvelope;
-}
-
 /** Parse an SSE body: collect `data:` frames as JSON-RPC messages. */
 function parseSseMessages(text: string): JsonRpcMessage[] {
   const messages: JsonRpcMessage[] = [];
@@ -87,14 +95,27 @@ function parseSseMessages(text: string): JsonRpcMessage[] {
   return messages;
 }
 
-export async function fetchInterfacePages(args: {
-  baseId: string;
+export interface CallMcpToolArgs {
+  tool: string;
+  toolArgs: Record<string, unknown>;
   accessToken: string;
   /** Override for tests / failure drills; production uses the constant. */
   endpoint?: string;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
-}): Promise<FetchInterfacePagesResult> {
+}
+
+export type CallMcpToolResult =
+  | { ok: true; raw: unknown }
+  | { ok: false; reason: McpSkipReason };
+
+/**
+ * One-shot MCP exchange: initialize → notifications/initialized → tools/call.
+ * Returns the tool result's raw envelope (structuredContent, falling back to
+ * parsing content[0].text) WITHOUT shape validation — each tool wrapper owns
+ * its envelope. Never throws.
+ */
+export async function callMcpTool(args: CallMcpToolArgs): Promise<CallMcpToolResult> {
   const endpoint = args.endpoint ?? DEFAULT_ENDPOINT;
   const fetchFn = args.fetchImpl ?? fetch;
   const controller = new AbortController();
@@ -177,14 +198,14 @@ export async function fetchInterfacePages(args: {
     // 2. notifications/initialized — no id, no response body expected (202).
     await post({ jsonrpc: "2.0", method: "notifications/initialized" }, null);
 
-    // 3. tools/call list_pages_for_base.
+    // 3. tools/call.
     const callId = ++nextId;
     const call = await post(
       {
         jsonrpc: "2.0",
         id: callId,
         method: "tools/call",
-        params: { name: TOOL_NAME, arguments: { baseId: args.baseId } },
+        params: { name: args.tool, arguments: args.toolArgs },
       },
       callId,
     );
@@ -208,10 +229,8 @@ export async function fetchInterfacePages(args: {
         }
       }
     }
-
-    const envelope = validateEnvelope(rawEnvelope);
-    if (!envelope) return { ok: false, reason: "invalid_envelope" };
-    return { ok: true, raw: envelope, capturedAt: new Date().toISOString() };
+    if (rawEnvelope === undefined) return { ok: false, reason: "invalid_envelope" };
+    return { ok: true, raw: rawEnvelope };
   } catch (err) {
     if (err instanceof PayloadTooLargeError) return { ok: false, reason: "payload_too_large" };
     if (err instanceof HttpStatusError) {
@@ -223,4 +242,63 @@ export async function fetchInterfacePages(args: {
   } finally {
     clearTimeout(timer);
   }
+}
+
+function validateInterfacePagesEnvelope(raw: unknown): InterfacePagesEnvelope | null {
+  if (!isRecord(raw) || !Array.isArray(raw.interfaces) || !Array.isArray(raw.standaloneForms)) {
+    return null;
+  }
+  return raw as InterfacePagesEnvelope;
+}
+
+export async function fetchInterfacePages(args: {
+  baseId: string;
+  accessToken: string;
+  endpoint?: string;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<FetchInterfacePagesResult> {
+  const result = await callMcpTool({
+    tool: "list_pages_for_base",
+    toolArgs: { baseId: args.baseId },
+    accessToken: args.accessToken,
+    endpoint: args.endpoint,
+    timeoutMs: args.timeoutMs,
+    fetchImpl: args.fetchImpl,
+  });
+  if (!result.ok) return result;
+  const envelope = validateInterfacePagesEnvelope(result.raw);
+  if (!envelope) return { ok: false, reason: "invalid_envelope" };
+  return { ok: true, raw: envelope, capturedAt: new Date().toISOString() };
+}
+
+function validateAutomationsEnvelope(raw: unknown): AutomationsEnvelope | null {
+  if (!isRecord(raw) || !Array.isArray(raw.automations)) return null;
+  return raw as AutomationsEnvelope;
+}
+
+/**
+ * Fetch a base's automations via the MCP `list_automations` tool
+ * (workflows-mcp-automations, spike 2026-07-24). Top-level envelope shape:
+ * `{ automations: [] }`; per-entry shape is engine-side territory.
+ */
+export async function fetchAutomations(args: {
+  baseId: string;
+  accessToken: string;
+  endpoint?: string;
+  timeoutMs?: number;
+  fetchImpl?: typeof fetch;
+}): Promise<FetchAutomationsResult> {
+  const result = await callMcpTool({
+    tool: "list_automations",
+    toolArgs: { baseId: args.baseId },
+    accessToken: args.accessToken,
+    endpoint: args.endpoint,
+    timeoutMs: args.timeoutMs,
+    fetchImpl: args.fetchImpl,
+  });
+  if (!result.ok) return result;
+  const envelope = validateAutomationsEnvelope(result.raw);
+  if (!envelope) return { ok: false, reason: "invalid_envelope" };
+  return { ok: true, raw: envelope, capturedAt: new Date().toISOString() };
 }

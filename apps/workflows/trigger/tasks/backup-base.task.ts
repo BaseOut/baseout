@@ -25,7 +25,7 @@ import {
   type CapturedRecordWire,
 } from "./backup-base";
 import type { AttachmentRecordEntry } from "./_lib/attachment-downloader";
-import { fetchInterfacePages } from "./_lib/mcp-client";
+import { fetchAutomations, fetchInterfacePages } from "./_lib/mcp-client";
 
 export interface BackupBaseTaskPayload {
   runId: string;
@@ -68,6 +68,12 @@ export interface BackupBaseTaskPayload {
    * default to false — zero MCP requests.
    */
   interfacesEnabled?: boolean;
+  /**
+   * Gates the MCP automations capture (workflows-mcp-automations). Same
+   * contract as interfacesEnabled: stamped by the engine run-start (Growth+,
+   * server-mcp-automations); absent/false = zero automation MCP requests.
+   */
+  automationsEnabled?: boolean;
 }
 
 function trimSlash(s: string): string {
@@ -206,6 +212,9 @@ async function syncSchema(
   // attached only on a successful capture; the engine treats an absent field
   // as "no interface processing", never as a deletion.
   interfacePages?: { capturedAt: string; raw: unknown },
+  // Optional MCP automations capture (workflows-mcp-automations) — same
+  // attach-only-on-success / absent-is-not-deletion contract.
+  automations?: { capturedAt: string; raw: unknown },
 ): Promise<{ recordsEnabled: boolean; baseRunId: string } | null> {
   const url = `${trimSlash(engineUrl)}/api/internal/spaces/${encodeURIComponent(spaceId)}/schema-sync`;
   const res = await fetch(url, {
@@ -216,6 +225,7 @@ async function syncSchema(
       captured,
       confident,
       ...(interfacePages !== undefined ? { interfacePages } : {}),
+      ...(automations !== undefined ? { automations } : {}),
     }),
   });
   if (res.status === 409 || res.status === 501) return null;
@@ -265,6 +275,9 @@ async function postCompletion(
     // today it lands in Trigger.dev run output + this POST body (engine
     // ignores unknown fields); engine-side persistence is a flagged follow-up.
     ...(result.interfacePages ? { interfacePages: result.interfacePages } : {}),
+    // Automation-capture outcome (workflows-mcp-automations): same additive
+    // contract as interfacePages.
+    ...(result.automations ? { automations: result.automations } : {}),
   };
   // workflows-run-detail: include per-table detail when the pure function
   // accumulated it (succeeded / trial_* paths). The server handler treats
@@ -351,7 +364,7 @@ export const backupBaseTask = task({
               event.recordsAppended,
               event.tableCompleted,
             ),
-          syncSchema: (captured, confident, interfacePages) =>
+          syncSchema: (captured, confident, interfacePages, automations) =>
             syncSchema(
               engineUrl,
               internalToken,
@@ -360,12 +373,18 @@ export const backupBaseTask = task({
               captured,
               confident,
               interfacePages,
+              automations,
             ),
           // MCP endpoint override (AIRTABLE_MCP_URL) exists for the staging
           // failure drill (point it at a black hole) and tests; production
           // leaves it unset for the client's built-in mcp.airtable.com.
           fetchInterfacePages: (a) =>
             fetchInterfacePages({
+              ...a,
+              endpoint: process.env.AIRTABLE_MCP_URL || undefined,
+            }),
+          fetchAutomations: (a) =>
+            fetchAutomations({
               ...a,
               endpoint: process.env.AIRTABLE_MCP_URL || undefined,
             }),

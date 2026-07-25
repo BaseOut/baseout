@@ -42,7 +42,9 @@ import {
   type AttachmentRecordEntry,
 } from "./_lib/attachment-downloader";
 import {
+  fetchAutomations,
   fetchInterfacePages,
+  type FetchAutomationsResult,
   type FetchInterfacePagesResult,
 } from "./_lib/mcp-client";
 
@@ -88,6 +90,12 @@ export interface BackupBaseInput {
    * engine) makes ZERO MCP requests, silently.
    */
   interfacesEnabled?: boolean;
+  /**
+   * Gates the MCP automations capture (workflows-mcp-automations). Same
+   * contract as interfacesEnabled: stamped by the engine run-start (Growth+ —
+   * server-mcp-automations); default false = zero automation MCP requests.
+   */
+  automationsEnabled?: boolean;
 }
 
 interface AirtableClientShape {
@@ -229,6 +237,9 @@ export interface BackupBaseDeps {
      * field entirely (absent ≠ "all interfaces deleted").
      */
     interfacePages?: { capturedAt: string; raw: unknown },
+    // Optional MCP automations capture (workflows-mcp-automations) — same
+    // attach-only-on-success contract as interfacePages.
+    automations?: { capturedAt: string; raw: unknown },
   ) => Promise<{ recordsEnabled: boolean; baseRunId: string } | null>;
   syncRecords?: (args: {
     baseId: string;
@@ -247,6 +258,15 @@ export interface BackupBaseDeps {
     baseId: string;
     accessToken: string;
   }) => Promise<FetchInterfacePagesResult>;
+  /**
+   * MCP automations fetcher (workflows-mcp-automations). Same contract as
+   * fetchInterfacePages: defaults to the real client, tests inject a fake,
+   * only invoked when input.automationsEnabled AND syncSchema is wired.
+   */
+  fetchAutomations?: (args: {
+    baseId: string;
+    accessToken: string;
+  }) => Promise<FetchAutomationsResult>;
 }
 
 export type BackupBaseStatus =
@@ -281,6 +301,14 @@ export interface BackupBaseResult {
    * rejected (401/403) so support can spot scope problems on the run.
    */
   interfacePages?:
+    | { status: "captured" }
+    | { status: "skipped"; reason: string; notice?: "connection_scope" };
+  /**
+   * MCP automations capture outcome (workflows-mcp-automations). Identical
+   * contract to interfacePages: present only when attempted, `skipped` NEVER
+   * affects `status`, 401/403 carries the connection-scope notice.
+   */
+  automations?:
     | { status: "captured" }
     | { status: "skipped"; reason: string; notice?: "connection_scope" };
 }
@@ -475,6 +503,24 @@ export async function runBackupBase(
           )
         : null;
 
+    // 2c. MCP automations capture (workflows-mcp-automations) — the automation
+    // twin of 2b: same concurrency, same gating shape, same failure isolation.
+    // The two captures are independent — either can fail without touching the
+    // other or the run.
+    const captureAutomations =
+      input.automationsEnabled === true && !!deps.syncSchema;
+    const automationCapturePromise: Promise<FetchAutomationsResult> | null =
+      captureAutomations
+        ? (deps.fetchAutomations ??
+            ((a: { baseId: string; accessToken: string }) =>
+              fetchAutomations({ ...a, fetchImpl: fetchFn })))({
+            baseId: input.atBaseId,
+            accessToken,
+          }).catch(
+            (): FetchAutomationsResult => ({ ok: false, reason: "transport" }),
+          )
+        : null;
+
     // 3. Schema.
     const client: AirtableClientShape =
       deps.airtableClient ??
@@ -513,6 +559,21 @@ export async function runBackupBase(
         };
       }
     }
+    let automationsField: { capturedAt: string; raw: unknown } | undefined;
+    let automationsOutcome: BackupBaseResult["automations"];
+    if (automationCapturePromise) {
+      const capture = await automationCapturePromise;
+      if (capture.ok) {
+        automationsField = { capturedAt: capture.capturedAt, raw: capture.raw };
+        automationsOutcome = { status: "captured" };
+      } else {
+        automationsOutcome = {
+          status: "skipped",
+          reason: capture.reason,
+          ...(capture.reason === "auth" ? { notice: "connection_scope" as const } : {}),
+        };
+      }
+    }
     if (deps.syncSchema) {
       const captured: CapturedBaseWire = {
         baseId: input.atBaseId,
@@ -540,7 +601,7 @@ export async function runBackupBase(
           })),
         })),
       };
-      const sync = await deps.syncSchema(captured, true, interfacePagesField);
+      const sync = await deps.syncSchema(captured, true, interfacePagesField, automationsField);
       if (sync) {
         recordsEnabled = sync.recordsEnabled;
         perSpaceBaseRunId = sync.baseRunId;
@@ -565,6 +626,7 @@ export async function runBackupBase(
           attachmentCount: 0,
         })),
         ...(interfacePagesOutcome ? { interfacePages: interfacePagesOutcome } : {}),
+        ...(automationsOutcome ? { automations: automationsOutcome } : {}),
       };
     }
 
@@ -720,6 +782,7 @@ export async function runBackupBase(
       attachmentsProcessed,
       tableDetail,
       ...(interfacePagesOutcome ? { interfacePages: interfacePagesOutcome } : {}),
+      ...(automationsOutcome ? { automations: automationsOutcome } : {}),
     };
   } finally {
     if (locked) {

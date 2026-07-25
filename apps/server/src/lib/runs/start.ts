@@ -92,6 +92,12 @@ export interface BackupBaseTaskPayload {
    * MCP requests.
    */
   interfacesEnabled: boolean;
+  /**
+   * Gates the MCP automations capture step on the workflows side
+   * (server-mcp-automations / workflows-mcp-automations). Same contract as
+   * interfacesEnabled (Growth+, lib/capabilities/automation-backup.ts).
+   */
+  automationsEnabled: boolean;
 }
 
 const ACCEPTED_STORAGE_TYPES = new Set([
@@ -121,6 +127,12 @@ export interface ProcessRunStartDeps {
    * resolveCapabilities + interfaceBackupEnabled in start-deps.ts.
    */
   resolveInterfacesEnabled: (organizationId: string) => Promise<boolean>;
+  /**
+   * Tier gate for the MCP automations capture (Growth+). Same shape as
+   * resolveInterfacesEnabled; production wiring is resolveCapabilities +
+   * automationBackupEnabled in start-deps.ts.
+   */
+  resolveAutomationsEnabled: (organizationId: string) => Promise<boolean>;
   /** Test seam — defaults to () => new Date() in production. */
   now?: () => Date;
 }
@@ -191,6 +203,9 @@ export async function processRunStart(
   const interfacesEnabled = await deps.resolveInterfacesEnabled(
     connection.organizationId,
   );
+  const automationsEnabled = await deps.resolveAutomationsEnabled(
+    connection.organizationId,
+  );
   const triggerRunIds: string[] = [];
   const runStartedAtIso = startedAt.toISOString();
   for (const base of bases) {
@@ -212,6 +227,7 @@ export async function processRunStart(
       // 'schema' on schema-scheduled runs (server-backup-scope).
       kind: run.kind === "schema" ? "schema" : "full",
       interfacesEnabled,
+      automationsEnabled,
     });
     triggerRunIds.push(handle.id);
   }
