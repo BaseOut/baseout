@@ -1,0 +1,2525 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Baseout — Product Requirements (PRD)</title>
+<style>
+body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #202124; max-width: 8in; margin: 40px auto; padding: 0 24px; }
+h1 { font-size: 20pt; } h2 { font-size: 16pt; border-bottom: 2px solid #202124; padding-bottom: 4px; margin-top: 28px; }
+h3 { font-size: 13pt; margin-top: 22px; } h4 { font-size: 11.5pt; margin-top: 18px; }
+table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+th, td { border: 1px solid #999; padding: 5px 8px; font-size: 10pt; text-align: left; vertical-align: top; }
+th { background: #eee; }
+blockquote { border-left: 4px solid #f4b400; background: #fef7e0; margin: 10px 0; padding: 8px 14px; }
+code { font-family: 'Courier New', monospace; font-size: 10pt; background: #f1f3f4; padding: 0 3px; }
+pre { background: #f1f3f4; padding: 10px; overflow-x: auto; }
+hr { border: none; border-top: 1px solid #ccc; margin: 24px 0; }
+li { margin: 3px 0; }
+</style></head><body>
+<h1>Product Requirements Document: Baseout</h1>
+<p><strong>Version:</strong> 1.1 (V1 Scope)
+<strong>Date:</strong> March 25, 2026
+<strong>Status:</strong> Draft — Scope Largely Locked; Remaining Open Questions Noted
+<strong>Source:</strong> Meeting transcript (Mar 24, 2026) + Brainstorming Agenda + Stakeholder Q&amp;A (Mar 25, 2026)</p>
+<blockquote>
+<p><strong>Legend:</strong></p>
+<ul>
+<li>✅ Answered / decided</li>
+<li>⚠️ Partially answered — needs elaboration</li>
+<li>❓ Still open — requires follow-up</li>
+<li>🚫 Out of scope / explicitly deferred</li>
+</ul>
+</blockquote>
+<hr>
+<h2>Table of Contents</h2>
+<ol>
+<li><a href="#1-vision--positioning">Vision &amp; Positioning</a></li>
+<li><a href="#2-backup--restore-core">Backup &amp; Restore Core</a></li>
+<li><a href="#3-data-intelligence-features">Data Intelligence Features</a></li>
+<li><a href="#4-architecture--technology-stack">Architecture &amp; Technology Stack</a></li>
+<li><a href="#5-data-model--storage-architecture">Data Model &amp; Storage Architecture</a></li>
+<li><a href="#6-user-experience--design">User Experience &amp; Design</a></li>
+<li><a href="#7-integrations--extensibility">Integrations &amp; Extensibility</a></li>
+<li><a href="#8-business-operations--launch">Business, Operations &amp; Launch</a></li>
+<li><a href="#9-moscow-prioritization">MoSCoW Prioritization</a></li>
+<li><a href="#10-feature-capability-scope--v1">Feature Capability Scope — V1</a></li>
+<li><a href="#11-open-questions-master-list">Open Questions Master List</a></li>
+<li><a href="#12-action-items">Action Items</a></li>
+<li><a href="#13-authentication-">Authentication</a></li>
+<li><a href="#14-testing-strategy-">Testing Strategy</a></li>
+<li><a href="#15-in-app-help--documentation-">In-App Help &amp; Documentation</a></li>
+<li><a href="#16-admin--observability-system-">Admin &amp; Observability System</a></li>
+<li><a href="#17-third-party-services--integrations-">Third-Party Services &amp; Integrations</a></li>
+<li><a href="#18-git-branching-environments--cicd-">Git Branching, Environments &amp; CI/CD</a></li>
+<li><a href="#19-email-templates-">Email Templates</a></li>
+<li><a href="#20-security-secrets--encryption-">Security, Secrets &amp; Encryption</a></li>
+<li><a href="#21-database-schema-orm--conventions-">Database Schema, ORM &amp; Conventions</a></li>
+</ol>
+<hr>
+<h2>1. Vision &amp; Positioning</h2>
+<h3>1.1 One-Sentence Pitch ✅</h3>
+<blockquote>
+<p><strong>&quot;Baseout is the backup, restore, and data intelligence layer for Airtable — giving platform admins real-time protection, schema visibility, and direct SQL access to their own data.&quot;</strong></p>
+</blockquote>
+<p>V1 positions as a best-in-class Airtable backup and admin utility. V2 grows into a full multi-platform data management solution.</p>
+<h3>1.2 Relationship to On2Air Backups ✅ <em>(revised 2026-07-27, founder direction)</em></h3>
+<p>Baseout launches as a <strong>new, independent platform &quot;from the creators of On2Air&quot;</strong> — the two products <strong>coexist</strong> at launch, not a day-one replacement. On2Air Backups keeps running unchanged while Baseout proves itself with new customers; once confidence criteria are met, On2Air is <strong>sunset</strong> with an announced transition plan and customers are moved over. The On2Air brand retires at sunset, not at Baseout&#39;s launch.</p>
+<ul>
+<li>Non-backup On2Air products deprecated effective <strong>April 1, 2026</strong> (Backups continues through the coexistence period)</li>
+<li>~330 active paying backup subscriptions (July 2026 Stripe export) transition <strong>at sunset time</strong>, mapped to equivalent new tiers based on usage — an increase from today&#39;s prices with a <strong>grandfathered discount off Baseout list</strong> (gratitude framing), per the pricing engagement</li>
+<li>Legacy users receive a <code>dynamic_locked: true</code> flag at transition — dynamic features shown as upgrade CTAs, preserving static backup without disruption</li>
+<li>Baseout launch pricing is set independently of On2Air&#39;s price points; legacy anchors inform only the transition offer (see <code>overview/pricing/</code> docs)</li>
+</ul>
+<h3>1.3 Primary User ✅</h3>
+<p>Baseout is a <strong>utility admin tool</strong> targeting <strong>Airtable platform admins</strong> — the people responsible for building, managing, and protecting their organization&#39;s Airtable infrastructure. This includes internal IT managers and RevOps/BizOps owners.</p>
+<p><strong>Primary persona: The Airtable Platform Admin</strong></p>
+<ul>
+<li>Manages one or more Airtable workspaces on behalf of an organization</li>
+<li>Needs reliable, auditable, low-maintenance backup infrastructure</li>
+<li>Cares about data integrity, schema visibility, and fast recovery when something breaks</li>
+<li>Technically capable — comfortable with OAuth, storage config, and SQL access</li>
+<li>As Baseout expands to other platforms (V2+), this persona extends to admins of Notion, HubSpot, Salesforce, etc.</li>
+</ul>
+<p><strong>Secondary persona (V1 — before platform expansion, revised 2026-07-27): The Partner (consultant / agency)</strong></p>
+<ul>
+<li>Implements and administers Airtable for many clients; interacts <strong>across multiple client accounts</strong> (multi-account admin membership + account switching — each client organization holds its own paid subscription; there is no umbrella plan)</li>
+<li>A <strong>revenue channel, not just a user type</strong>: partners earn <strong>affiliate/referral commissions</strong> for signing clients up on their own subscriptions</li>
+<li>Wants professional artifacts to show clients (schema diagrams, health reports, backup audit reports)</li>
+<li>Community amplifier (BuiltOnAir, forums, consultant directories) — the partner program monetizes that channel rather than discounting it away</li>
+</ul>
+<p><strong>Additional personas (V2 expansion):</strong></p>
+<ul>
+<li>Developer building on top of the SQL database layer (Business / BYODB tier)</li>
+<li>Enterprise IT/compliance officer requiring SOC 2, SSO, and data sovereignty controls</li>
+</ul>
+<blockquote>
+<p><strong>Design implication:</strong> The UI should feel like a professional admin utility — functional, information-dense, trustworthy. Think operations console, not lifestyle product.</p>
+</blockquote>
+<h3>1.4 Top Pain Points Solved ✅</h3>
+<ol>
+<li><strong>Fear of data loss / accidental deletion</strong> — Scheduled backups with full restore pipeline</li>
+<li><strong>No external, governed copy of data</strong> — Best practice is to store data <em>outside</em> Airtable; Airtable&#39;s own native snapshots do not satisfy data governance requirements</li>
+<li><strong>No visibility into schema complexity and health</strong> — Schema visualization, history tracking, and health scoring give admins a live picture of their Airtable architecture</li>
+<li><strong>Data locked in Airtable&#39;s proprietary format</strong> — Dedicated SQL database per Space gives users direct, portable access to query and act on their own data</li>
+</ol>
+<h3>1.5 Competitive Landscape ✅</h3>
+<table>
+<thead>
+<tr>
+<th>Competitor</th>
+<th>Status</th>
+<th>Where Baseout Wins</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Airtable native snapshots</strong></td>
+<td>Active</td>
+<td>Native snapshots do not satisfy external data governance / best-practice backup requirements. Baseout stores data <em>outside</em> Airtable.</td>
+</tr>
+<tr>
+<td><strong>Sync Inc</strong></td>
+<td>⚠️ Out of business</td>
+<td>No longer a factor.</td>
+</tr>
+<tr>
+<td><strong>Whalesync</strong></td>
+<td>Active but narrowing</td>
+<td>Pivoting to a specific marketing niche; losing general-purpose positioning. Baseout remains general-purpose.</td>
+</tr>
+<tr>
+<td><strong>Coefficient</strong></td>
+<td>Active</td>
+<td>Focused on spreadsheet sync, not deep Airtable backup or schema intelligence.</td>
+</tr>
+<tr>
+<td><strong>Custom scripts</strong></td>
+<td>DIY</td>
+<td>Baseout is far more convenient, maintained, and feature-rich than homebuilt solutions.</td>
+</tr>
+</tbody></table>
+<p><strong>Static backup differentiation:</strong></p>
+<ul>
+<li>Only backup solution focused exclusively on Airtable — deepest product understanding</li>
+<li>Most storage destinations in the market, including the <strong>only solution supporting OneDrive</strong></li>
+<li>Competitively priced for the static backup segment</li>
+<li>On static plans, customer record data is <strong>never stored on Baseout servers</strong> — data streams directly to the customer&#39;s own storage destination, a key privacy differentiator vs. competitors who store all data in their own databases</li>
+</ul>
+<p><strong>Dynamic differentiation:</strong></p>
+<ul>
+<li>Only solution going deep into <strong>unlocking data stored in Airtable</strong> as a live SQL layer</li>
+<li>Supports multiple storage backends <em>and</em> multiple database backends</li>
+<li><strong>Bring Your Own Storage (BYOS) and Bring Your Own Database (BYODB)</strong> — unique in the market; competitors are moving away from this</li>
+<li>On dynamic plans, Baseout <strong>does store customer record data</strong> in a provisioned database — this is the explicit value exchange for SQL access, real-time sync, and data intelligence features. Customers on these plans are opting in to hosted storage in exchange for a live, queryable data layer. BYODB tier gives enterprise customers full control by hosting in their own environment.</li>
+</ul>
+<h3>1.6 Monetization Model ✅ <em>(See §8 for full tier table)</em></h3>
+<p>Tiered SaaS. <strong>No free tier</strong> — free trial only. Trial is:</p>
+<ul>
+<li><strong>Run-limited:</strong> One successful backup run included</li>
+<li><strong>Time-limited:</strong> 7 days from sign-up; subscription ends at day 7 with upgrade prompt</li>
+<li><strong>Data-capped:</strong> Max 1,000 records, 5 tables, 100 attachments. Backup completes successfully at the cap and notifies the user it was a limited trial preview</li>
+<li><strong>No credit card required</strong> for trial. Stripe subscription created automatically at $0 on sign-up</li>
+<li>On upgrade: credit card collected, existing Stripe subscription price is swapped to the selected paid plan</li>
+</ul>
+<p>Schema visualization available before full registration as a pre-conversion hook.</p>
+<hr>
+<h2>2. Backup &amp; Restore Core</h2>
+<h3>2.1 Existing Capabilities — Carry-Forward Decisions</h3>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Status</th>
+<th>Decision</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Scheduled backups (interval-based)</td>
+<td>✅ Exists</td>
+<td><strong>Keep + extend</strong> with event-driven/webhook model</td>
+</tr>
+<tr>
+<td>Multi-base Spaces</td>
+<td>✅ Exists</td>
+<td><strong>Keep</strong> — Space abstraction is valid</td>
+</tr>
+<tr>
+<td>Dynamic base discovery (OAuth meta scan)</td>
+<td>✅ Exists</td>
+<td><strong>Keep</strong> — surface auto-add events to user via notification</td>
+</tr>
+<tr>
+<td>Table &amp; record export (CSV)</td>
+<td>✅ Exists</td>
+<td><strong>Keep CSV</strong>; JSON optional; Parquet/DB-native are V2</td>
+</tr>
+<tr>
+<td>Attachment backup (dedup + retry)</td>
+<td>✅ Exists</td>
+<td><strong>Keep</strong> — full-fidelity default</td>
+</tr>
+<tr>
+<td>Cloud storage destinations</td>
+<td>✅ Exists</td>
+<td><strong>Keep all</strong> + launch S3 (dev-complete) + add Cloudflare R2</td>
+</tr>
+<tr>
+<td>Full restore pipeline</td>
+<td>✅ Exists</td>
+<td><strong>Keep</strong>: tables → records → linked records → attachments</td>
+</tr>
+<tr>
+<td>Backup history &amp; metrics</td>
+<td>✅ Exists</td>
+<td><strong>Keep + expand</strong> into user-facing dashboard</td>
+</tr>
+</tbody></table>
+<h3>2.2 Backup Schedules ✅</h3>
+<ul>
+<li><strong>Monthly</strong> — all tiers (Starter+)</li>
+<li><strong>Weekly</strong> — Launch and above</li>
+<li><strong>Daily</strong> — Pro and above</li>
+<li><strong>Instant (Webhook-driven)</strong> — Pro and above</li>
+</ul>
+<blockquote>
+<p><strong>Note:</strong> The &quot;Continuous&quot; backup schedule offered in On2Air is <strong>not carried forward</strong> into Baseout. Webhook-based incremental backup on dynamic plans replaces the need for continuous polling-style runs.</p>
+</blockquote>
+<p>Higher-tier plans with webhooks receive <strong>instant updates</strong>; lower plans use <strong>polling-based</strong> updates.</p>
+<h3>2.3 Restore — V1 Scope ✅</h3>
+<p>Restore in V1 is intentionally simple. Airtable&#39;s own API limitations constrain what is feasible.</p>
+<p><strong>What V1 restore supports:</strong></p>
+<ul>
+<li><strong>Base-level restore</strong> — restore an entire Base from any snapshot (all tiers)</li>
+<li><strong>Point-in-time restore at the table level</strong> — any backup snapshot in history can be used as the restore point (all tiers)</li>
+<li><strong>Restore always creates new data</strong> — never overwrites live data; restores into a new base, or as a new table in an existing base</li>
+<li><strong>Basic post-restore verification</strong> — record count validation and error audit at completion (Growth+)</li>
+<li><strong>Audit error notifications</strong> during the restore process</li>
+<li><strong>Community Restore Tooling</strong> (Pro+) — for entities that cannot be automatically restored (Automations, Interfaces), Baseout provides curated prompts and instructions for using AI coding assistants to reconstruct configurations via the Airtable API</li>
+<li><strong>AI-Assisted Restore Prompts</strong> (Pro+) — AI-generated step-by-step instructions for manual restoration of complex entities</li>
+</ul>
+<p><strong>What V1 restore does NOT support:</strong></p>
+<ul>
+<li>Restore preview / dry run — not needed given the new-data-only approach</li>
+<li>Record-level restore — deferred; revisit if user demand warrants it</li>
+<li>Cross-base restore (Table A from Base X into Base Y) — deferred to V1.1 or V2</li>
+</ul>
+<h3>2.4 Backup Encryption ✅</h3>
+<table>
+<thead>
+<tr>
+<th>Storage Location</th>
+<th>Encryption Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Baseout managed database (internal tiers)</td>
+<td>✅ Encrypted at rest — always</td>
+</tr>
+<tr>
+<td>Baseout managed file storage (Cloudflare R2)</td>
+<td>✅ Encrypted at rest — always</td>
+</tr>
+<tr>
+<td>External customer storage (Google Drive, Dropbox, Box, OneDrive, S3)</td>
+<td>⚠️ Dependent on the storage provider — Baseout does not control this</td>
+</tr>
+</tbody></table>
+<p>Key ownership: platform-managed encryption for Baseout hosted tiers. Enterprise/BYODB Organizations host their own environment and manage their own keys.</p>
+<h3>2.5 Real-Time Failure Alerting ✅</h3>
+<ul>
+<li><strong>Email</strong> — V1 for all plans (monthly audit + per-failure alerts)</li>
+<li><strong>Slack / other channels</strong> — V1 for higher-tier plans</li>
+<li><strong>In-app notifications</strong> — surfaced on dashboard as top-of-mind items</li>
+</ul>
+<h3>2.6 Backup Verification ✅</h3>
+<p>Basic verification is included in V1:</p>
+<ul>
+<li>Record count validation at end of restore</li>
+<li>Audit error log generated during restore</li>
+<li>Backup run health status surfaced in history dashboard (good / warning / failure)</li>
+</ul>
+<h3>2.7 New Backup Feature — Webhook-Based Incremental ✅</h3>
+<ul>
+<li>Ingest Airtable webhooks for record create, update, and delete events</li>
+<li>Store change events in per-client change log table</li>
+<li>Scheduled job syncs change log to determine what needs updating</li>
+<li>Fall back to full-table re-read if webhook gap is detected</li>
+<li>Instant updates on higher plans; polling on lower plans</li>
+</ul>
+<blockquote>
+<p><strong>Implementation note (2026-07-23, <code>server-instant-webhook</code> Phase G):</strong> the mechanism shipped differently from the sketch above — and from earlier coalesce/debounce descriptions of DO-side event handling. Airtable webhook pings carry no change data, so there is <strong>no per-client change-log table of stored events and no forwarding/debounce hop</strong>: pings dirty-mark one timestamp on an org-level <code>airtable_webhooks</code> registry row, each Space polls on its own cadence (<code>backup_configurations.webhook_poll_interval_seconds</code>, tier-floored per Features §6.1), and an incremental run pulls the actual changes from Airtable&#39;s payloads API via a per-Space cursor (7-day replay retention). The full-re-read gap fallback stands as specced. Canonical design: <code>openspec/changes/server-instant-webhook/design.md</code>.</p>
+</blockquote>
+<h3>2.8 Attachment Handling ✅</h3>
+<ul>
+<li>Composite unique ID per attachment: <code>{base_id}_{table_id}_{record_id}_{field_id}_{attachment_id}</code></li>
+<li>Deduplication check before processing</li>
+<li>Proxy streaming for destinations that require it (Box, Dropbox)</li>
+<li>Airtable URL expiry (~1–2 hrs) handled by refresh process</li>
+<li>Attachment data → primary <strong>storage</strong> destination; relational data → <strong>database</strong> tier</li>
+</ul>
+<h3>2.9 What Gets Backed Up ✅</h3>
+<blockquote>
+<p><strong>⚠️</strong> Automations, Interfaces, and Custom Documentation are <strong>not available via the Airtable REST API</strong> and cannot be automatically backed up. They must be submitted by the user through a Baseout intake method (Inbound API, Airtable Scripts, Airtable Automations, or Manual Forms).</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Entity</th>
+<th>Collection Method</th>
+<th>Min Tier</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Schema</strong> (Tables, Fields, Views)</td>
+<td>Automatic (REST API)</td>
+<td>Starter</td>
+</tr>
+<tr>
+<td><strong>Records</strong></td>
+<td>Automatic (REST API)</td>
+<td>Starter</td>
+</tr>
+<tr>
+<td><strong>Attachments</strong></td>
+<td>Automatic (REST API)</td>
+<td>Starter</td>
+</tr>
+<tr>
+<td><strong>Automations</strong> ⚠️</td>
+<td>Manual (user-submitted via intake)</td>
+<td>Growth</td>
+</tr>
+<tr>
+<td><strong>Interfaces</strong> ⚠️</td>
+<td>Manual (user-submitted via intake)</td>
+<td>Growth</td>
+</tr>
+<tr>
+<td><strong>Custom Documentation</strong> ⚠️</td>
+<td>Manual (user-submitted via intake)</td>
+<td>Pro</td>
+</tr>
+</tbody></table>
+<h3>2.10 Backup Auditing ✅</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>All Tiers</th>
+<th>Launch+</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Backup Audit Report</strong></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>Per-Entity Verification</strong></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>Issue Notifications</strong></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>Monthly Backup Summary</strong></td>
+<td>✅</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>Detailed Audit Logs</strong></td>
+<td>❌</td>
+<td>✅</td>
+</tr>
+<tr>
+<td><strong>Audit History Retention</strong></td>
+<td>—</td>
+<td>90 days (Launch) → 6 mo (Growth) → 12 mo (Pro) → 24 mo (Business) → Custom (Enterprise)</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>3. Data Intelligence Features</h2>
+<h3>3.1 Schema Visualization ✅</h3>
+<p>V1 includes <strong>schema visualization</strong> — not a schema builder. The scope is read-only visualization of existing schema, auto-generated from backup/schema metadata.</p>
+<ul>
+<li>Diagrams auto-generate from schema data collected during backup runs and via API submissions</li>
+<li>No manual import required</li>
+<li>V2 consideration: allow admins to experiment with proposed schema changes and simulate the result</li>
+</ul>
+<blockquote>
+<p>❓ <strong>Open Question #1:</strong> Diagram export formats — PNG, SVG, PDF, interactive HTML, embeddable widget? TBD for V1 scope lock.</p>
+</blockquote>
+<h3>3.2 Schema History &amp; Change Log ✅</h3>
+<ul>
+<li>Track all schema changes at the <strong>field and table level</strong> — names, types, additions, deletions</li>
+<li>Human-readable change log: e.g. &quot;Field X was deleted on March 12&quot; — <strong>V1</strong></li>
+<li>Powered by webhook integration for instant schema change detection</li>
+<li>Schema history stored without requiring record-level data (available on schema-only plans)</li>
+<li>Foundation for V2 AI-driven schema monitoring and cleanup suggestions</li>
+</ul>
+<h3>3.3 Base Health Scoring ✅</h3>
+<p>V1 includes base-level and table-level health evaluation:</p>
+<ul>
+<li><strong>Audit score / grade</strong> for base cleanliness — surfaces orphaned tables, unused fields, circular lookups, missing descriptions, formula errors</li>
+<li><strong>Configurable rules</strong> — admins can define what matters to them and set custom evaluation criteria</li>
+<li>Score displayed on dashboard per base/Space</li>
+</ul>
+<h3>3.4 Baseout Inbound API ✅</h3>
+<p>Baseout exposes a <strong>documented public API for data submission</strong> — V1.</p>
+<p><strong>Purpose:</strong> Airtable&#39;s REST API does not expose everything (automations, interfaces, synced tables, etc.). Admins or agents can submit this data to Baseout via the inbound API, and Baseout will store and track history for it.</p>
+<ul>
+<li>Secure, authorized API access</li>
+<li>Designed to be agent/AI-accessible: browsers, scripts, or AI agents can inspect and post data</li>
+<li>Enables schema history for elements not covered by the Airtable REST API</li>
+<li>Lays the groundwork for MCP integration (V2)</li>
+</ul>
+<h3>3.5 SQL REST API ✅</h3>
+<p>For plans that include a hosted database, Baseout exposes a <strong>SQL REST API</strong> (via PG REST) allowing admins to query their database directly without a SQL client.</p>
+<ul>
+<li>Available on plans that include database access</li>
+<li>Not available on static-only plans</li>
+</ul>
+<h3>3.6 Analytics ✅</h3>
+<ul>
+<li><strong>V1:</strong> Basic usage metrics from backup metadata — record count trends, storage growth, table size over time, backup run history</li>
+<li><strong>V2:</strong> Richer reporting — AI-assisted analysis, cross-base comparisons, anomaly detection</li>
+</ul>
+<h3>3.7 Schema Documentation &amp; Data Dictionary</h3>
+<p><strong>User-authored Schema Docs — ✅ V1.</strong> Customers can write rich-text Documents about their Airtable schema, Tag them to Bases/Tables/Fields/Views (tags surface on each entity&#39;s detail panel in the Schema → Browse tab), attach external Links, and save mini-Diagrams. Gated by tier per Features §7: manual authoring on Launch+, AI-assisted generation on Pro+. The rich-text editor and diagram canvas are sanctioned third-party React islands (Plate + React Flow), hydrated client-side only — daisyUI provides no rich-text editor or node graph, so they are a documented carve-out from the Storybook/daisyUI component governance (see the <code>apps/web</code> component-governance rule). Storage is the per-Space <code>bo_at_documents</code> / <code>bo_at_document_tags</code> / <code>bo_at_document_links</code> / <code>bo_at_document_diagrams</code> tables.</p>
+<p><strong>Auto-generated data dictionaries &amp; documentation exports — 🚫 V2.</strong> Auto-generating a data dictionary from the schema, and exporting documentation (Markdown, PDF, Confluence, Notion), remain deferred to V2.</p>
+<h3>3.8 Migration &amp; Cloning 🚫 V2</h3>
+<p>Schema-only cloning, cross-workspace migration, and template generation are V2.</p>
+<hr>
+<h2>4. Architecture &amp; Technology Stack</h2>
+<h3>4.1 Confirmed Technology Stack ✅</h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Decision</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Frontend framework</strong></td>
+<td>Astro.js</td>
+</tr>
+<tr>
+<td><strong>CSS / UI</strong></td>
+<td>Tailwind + DaisyUI</td>
+</tr>
+<tr>
+<td><strong>Backend / API</strong></td>
+<td>Cloudflare Workers (microservices)</td>
+</tr>
+<tr>
+<td><strong>Real-time / stateful</strong></td>
+<td>Cloudflare Durable Objects</td>
+</tr>
+<tr>
+<td><strong>Job queue / workflows</strong></td>
+<td>Trigger.dev</td>
+</tr>
+<tr>
+<td><strong>Authentication</strong></td>
+<td>better-auth (open source)</td>
+</tr>
+<tr>
+<td><strong>CI/CD</strong></td>
+<td>GitHub + Cloudflare Pages auto-deploy</td>
+</tr>
+<tr>
+<td><strong>Hosting</strong></td>
+<td>Cloudflare (Workers + Pages)</td>
+</tr>
+<tr>
+<td><strong>Master database</strong></td>
+<td>PostgreSQL on Digital Ocean</td>
+</tr>
+<tr>
+<td><strong>Client DB — entry</strong></td>
+<td>Cloudflare D1 (SQLite)</td>
+</tr>
+<tr>
+<td><strong>Client DB — mid</strong></td>
+<td>Shared PostgreSQL on Digital Ocean</td>
+</tr>
+<tr>
+<td><strong>Client DB — dedicated</strong></td>
+<td>Neon / Prisma / Supabase (per-Space)</td>
+</tr>
+<tr>
+<td><strong>Client DB — enterprise</strong></td>
+<td>Amazon RDS or any Postgres (BYODB)</td>
+</tr>
+<tr>
+<td><strong>File storage (internal)</strong></td>
+<td>Cloudflare R2</td>
+</tr>
+<tr>
+<td><strong>Monitoring</strong></td>
+<td>Cloudflare built-in; additional tooling TBD post-build</td>
+</tr>
+</tbody></table>
+<h3>4.2 Service Architecture ✅</h3>
+<p>Baseout is a <strong>microservices architecture</strong>:</p>
+<ul>
+<li><strong>Web application</strong> — Astro.js + Cloudflare Workers (frontend + API layer)</li>
+<li><strong>Backup engine</strong> — separate service; Durable Objects + Trigger.dev workflows</li>
+<li><strong>Durable Object per connection</strong> — each Airtable (or future platform) connection gets its own Durable Object; supports multiple connections per Organization</li>
+<li><strong>Durable Object per Space</strong> — manages backup state, acts as rate-limit gateway for Airtable API calls</li>
+<li>Multiple connections supported: users can connect to multiple Airtable Organizations or storage locations</li>
+</ul>
+<h3>4.3 Architecture Diagram ✅</h3>
+<pre><code>[Airtable REST API + Webhooks]
+        |
+[Cloudflare Durable Object — per Connection]
+        |   Rate-limit gateway; queues API calls
+        |
+[Cloudflare Durable Object — per Space]
+        |   Backup state; cron-like controller
+        |
+[Trigger.dev Workflows] ← One per base backup; unlimited simultaneous; no time limits
+        |
+[Astro.js / Cloudflare Workers — Web + API Layer]
+        |
+[Master Organization DB — Digital Ocean PostgreSQL]
+        |   Maps Organizations → Durable Object IDs
+        |
+        ├── [Cloudflare R2] → Attachment / file storage
+        ├── [Cloudflare D1] → SQLite (entry tier)
+        ├── [Shared PostgreSQL] → Digital Ocean (mid tier)
+        ├── [Dedicated PostgreSQL] → Neon / Prisma / Supabase (dedicated tier)
+        └── [Customer DB + Storage] → BYODB (enterprise tier)
+</code></pre>
+<h3>4.4 Real-Time Progress ✅</h3>
+<ul>
+<li>WebSockets implemented via Cloudflare Durable Objects — V1</li>
+<li>Client connects to Durable Object directly for live backup status and progress</li>
+<li>Enables real-time dashboard updates without polling</li>
+</ul>
+<h3>4.5 CI/CD &amp; Testing ✅</h3>
+<ul>
+<li><strong>CI/CD:</strong> GitHub + Cloudflare Pages auto-deploy</li>
+<li><strong>Testing:</strong> Unit tests required for every pipeline release; testing environment to be set up</li>
+<li>Integration / E2E testing: scoped post-V1 based on coverage needs</li>
+</ul>
+<h3>4.6 Monitoring &amp; Observability ✅</h3>
+<ul>
+<li><strong>V1:</strong> Cloudflare built-in observability (Workers Analytics, Durable Object metrics)</li>
+<li><strong>Post-launch:</strong> Additional tooling evaluated after application is built and usage patterns are understood</li>
+</ul>
+<hr>
+<h2>5. Data Model &amp; Storage Architecture</h2>
+<h3>5.1 Plan-Based Data Storage Model ✅</h3>
+<p>A core distinction across plan types is <strong>whether Baseout stores customer record data</strong> on its own infrastructure:</p>
+<table>
+<thead>
+<tr>
+<th>Plan Type</th>
+<th>Baseout Stores Record Data?</th>
+<th>Where Data Lives</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Starter</strong> (Static only)</td>
+<td>❌ No — never when using BYOS</td>
+<td>Streams directly to customer&#39;s own storage (Google Drive, Dropbox, Box, OneDrive, S3); Baseout holds only metadata and IDs. If using managed R2, files are stored on Baseout servers subject to storage limits.</td>
+</tr>
+<tr>
+<td><strong>Launch</strong> (Static + Schema DB)</td>
+<td>⚠️ No record data</td>
+<td>Baseout stores schema only (field names, types, table structure) in D1 — no record-level content</td>
+</tr>
+<tr>
+<td><strong>Growth / Pro / Business</strong> (Static + Full Dynamic)</td>
+<td>✅ Yes — opt-in</td>
+<td>Customer record data stored in Baseout-provisioned database (D1, Shared PG, or Dedicated PG); explicit value exchange for SQL access and real-time sync</td>
+</tr>
+<tr>
+<td><strong>Enterprise / BYODB</strong></td>
+<td>✅ Yes — customer-controlled</td>
+<td>Record data stored in the customer&#39;s own database; Baseout is granted write access only — data never passes through Baseout infrastructure</td>
+</tr>
+</tbody></table>
+<p><strong>On2Air legacy behavior is preserved on static plans:</strong> No record data ever written to disk on Baseout servers — read into memory, converted to CSV, streamed to destination. This remains a privacy differentiator for static-tier customers.</p>
+<p><strong>Dynamic plans represent an intentional pivot:</strong> Customers opting into dynamic plans accept that Baseout stores their record data in exchange for a live, queryable SQL layer, real-time sync, and data intelligence features. This must be clearly disclosed in pricing pages and terms of service.</p>
+<h3>5.2 Per-Space Database Contents ✅</h3>
+<p>Each provisioned Space database contains normalized tables for:</p>
+<ul>
+<li>Bases</li>
+<li>Tables</li>
+<li>Fields</li>
+<li>Views</li>
+<li>Automations</li>
+<li>Interfaces</li>
+<li>Synced tables</li>
+<li>Change log (webhook events)</li>
+<li>Schema snapshots / diffs</li>
+</ul>
+<p>All entities linked back to the parent base and Space.</p>
+<h3>5.3 Database Tier Progression ✅</h3>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Plan(s)</th>
+<th>Database</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Schema-only D1</td>
+<td>Launch</td>
+<td>Cloudflare D1 (SQLite)</td>
+<td>Schema data only; no record data</td>
+</tr>
+<tr>
+<td>Full D1</td>
+<td>Growth</td>
+<td>Cloudflare D1 (SQLite)</td>
+<td>Full data; cheap; SQL-accessible</td>
+</tr>
+<tr>
+<td>Shared PostgreSQL</td>
+<td>Pro</td>
+<td>Shared PG on DigitalOcean</td>
+<td>Multiple Spaces per server; schema-level isolation</td>
+</tr>
+<tr>
+<td>Dedicated PostgreSQL</td>
+<td>Business</td>
+<td>Neon / Supabase / DigitalOcean</td>
+<td>One DB per Space; provisioned on demand</td>
+</tr>
+<tr>
+<td>Enterprise / BYODB</td>
+<td>Enterprise</td>
+<td>Amazon RDS or any PostgreSQL</td>
+<td>Customer-provided; Baseout writes to it</td>
+</tr>
+</tbody></table>
+<p><strong>Migration between tiers must be supported</strong> — when a customer upgrades, their data must migrate from D1 (SQLite) to PostgreSQL cleanly. A migration process and tooling is a V1 engineering requirement.</p>
+<h3>5.4 Database Admin Area ✅</h3>
+<p>An <strong>internal admin panel</strong> is required to:</p>
+<ul>
+<li>Track all provisioned databases across all customers and tiers</li>
+<li>Monitor utilization and storage per database</li>
+<li>Identify which databases belong to which Organizations</li>
+<li>Support operational management (migrations, health checks, decommissioning)</li>
+</ul>
+<h3>5.5 Storage Architecture ✅</h3>
+<table>
+<thead>
+<tr>
+<th>Storage Type</th>
+<th>Used For</th>
+<th>Encryption</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Cloudflare R2 (internal)</td>
+<td>Attachments, CSV file backups on managed plans</td>
+<td>✅ At rest</td>
+</tr>
+<tr>
+<td>Customer external storage (Google Drive, Dropbox, Box, OneDrive, S3)</td>
+<td>CSV file backups on static plans</td>
+<td>⚠️ Provider-dependent</td>
+</tr>
+<tr>
+<td>Per-Space database (D1 / PostgreSQL)</td>
+<td>Relational data on dynamic plans</td>
+<td>✅ At rest</td>
+</tr>
+</tbody></table>
+<h3>5.6 Data Retention ✅</h3>
+<ul>
+<li>Retain all backups for the tier&#39;s changelog retention period (30 days on Starter, up to 24 months on Business, Custom on Enterprise)</li>
+<li>Beyond the retention period: prune every 6th interval (plan-dependent)</li>
+<li>Smart cleanup exposed as user-configurable settings in V1 dashboard</li>
+</ul>
+<h3>5.7 Plan Limits ✅ (defined in Features spec)</h3>
+<p>Each plan enforces limits on:</p>
+<ul>
+<li>Storage (GB cap with paid overage)</li>
+<li>Number of Bases per Space</li>
+<li>Backup frequency</li>
+<li>Database size</li>
+<li>Number of Spaces per Organization</li>
+</ul>
+<blockquote>
+<p>✅ <strong>Resolved:</strong> Specific per-tier limits, record caps, and overage rates are defined in the Baseout Features spec §3–§5. See that document for the authoritative tier limit tables.</p>
+</blockquote>
+<h3>5.8 Offline / Local Mode 🚫</h3>
+<p>Not applicable. Backend runs on Cloudflare servers. A front-end offline mode for the web app is technically feasible but not in scope for V1.</p>
+<hr>
+<h2>6. User Experience &amp; Design</h2>
+<h3>6.0 Design Direction ✅</h3>
+<p>Baseout is a <strong>utility admin tool</strong>. UX principles:</p>
+<ul>
+<li><strong>Functional over decorative</strong> — information density, clear status indicators, fast access to controls</li>
+<li><strong>Trust signals first</strong> — backup status, last run time, success/failure state, and storage health immediately visible</li>
+<li><strong>Power over simplicity</strong> — expose configuration rather than hide it; this audience can handle it</li>
+<li><strong>Airtable-aware but distinct</strong> — use Airtable field type iconography and terminology where it aids recognition; establish a distinct Baseout visual brand identity rather than mimicking Airtable&#39;s consumer aesthetic</li>
+<li><strong>Platform-agnostic foundation</strong> — even though V1 is Airtable-only, the UI framework must be built to support multiple platforms (Notion, HubSpot, etc.) so switching context is built into the architecture from day one</li>
+</ul>
+<h3>6.1 User Journey ✅</h3>
+<pre><code>Pre-auth: OAuth → instant schema visualization → CTA to sign up
+                           ↓
+Sign up → Free trial (one backup run, limited data to explore)
+                           ↓
+Onboarding wizard → Connect Airtable → Configure storage/DB → First full backup
+                           ↓
+Dashboard → Space view → [Backups | Schema | Data | Automations | Interfaces | AI | Analytics | Governance | Integrations | Settings]
+                           ↓
+Upgrade prompt when trial limits hit
+</code></pre>
+<p><strong>Key principle:</strong> Users should be able to visualize their Airtable schema <em>before</em> completing full registration — give value immediately, use it as the conversion hook.</p>
+<h3>6.2 Dashboard ✅</h3>
+<p>The dashboard is the entry point for every session:</p>
+<ul>
+<li><strong>Space selector</strong> in sidebar or top menu — defaults to last viewed Space per user (persisted per-user)</li>
+<li>Most users will have one Space; multi-Space users can switch seamlessly</li>
+<li><strong>Current backup status</strong> — live progress if running, last run time and result if idle</li>
+<li><strong>Backup history</strong> — quick access to recent run logs</li>
+<li><strong>Storage summary</strong> — where data is stored (storage destination + database tier), current usage</li>
+<li><strong>Notifications / action items</strong> — failures, schema changes, health alerts surfaced prominently</li>
+<li><strong>Entry points</strong> to: Schema visualizer, Health scoring, Database access, Settings</li>
+</ul>
+<h3>6.3 Navigation Model ✅</h3>
+<pre><code>[Space Selector — sidebar or top nav]
+Dashboard
+  ├── Backups (history, status, run now, restore, auditing)
+  ├── Schema (visualization, history, change log, health score)
+  ├── Data (record metrics, alerts, insights)
+  ├── Automations (backup, changelog, insights)
+  ├── Interfaces (backup, changelog, insights)
+  ├── AI (documentation, MCP, RAG — higher tiers)
+  ├── Analytics (usage metrics, reports, dashboards)
+  ├── Governance (rules, compliance — Business+)
+  ├── Integrations (API access, SQL, connectors)
+  └── Settings (schedule, storage, connections, notifications, team)
+</code></pre>
+<h3>6.4 Organization &amp; Space Hierarchy ✅</h3>
+<ul>
+<li><strong>Organizations</strong> sit at the top level (maps to a company or client — the billing entity)</li>
+<li><strong>Spaces</strong> belong to an Organization; each Space is bound to a single Platform (Airtable in V1) and has its own backup configuration, database, and storage settings</li>
+<li><strong>Space Type</strong> defines whether a Space is Single-Platform (V1) or Multi-Platform (V2+)</li>
+<li><strong>Bases</strong> live within a Space; a Space maps to one or more Airtable Bases</li>
+<li><strong>Users</strong> can be associated with multiple Organizations (e.g., a consultant managing multiple client orgs)</li>
+<li>Last viewed Space is remembered per user on login</li>
+<li>&quot;Workspace&quot; is intentionally not used — it collides with Airtable&#39;s own terminology</li>
+</ul>
+<blockquote>
+<p>✅ <strong>Resolved:</strong> &quot;Space&quot; confirmed as the top-level container name. No &quot;Workspace&quot; layer. See Baseout Features spec §1–§2 for full naming conventions and hierarchy diagrams.</p>
+</blockquote>
+<h3>6.5 Mobile ✅</h3>
+<ul>
+<li>Full mobile support required — responsive web app</li>
+<li>V1 is web-only (no native iOS/Android app)</li>
+<li>Backup status, notifications, and dashboard views must be fully functional on mobile</li>
+</ul>
+<h3>6.6 Onboarding ✅</h3>
+<ul>
+<li>Schema visualization accessible via OAuth <strong>before full registration</strong> — no payment required</li>
+<li>Full registration triggered by CTA after schema visualization (&quot;Start backing up your data&quot;)</li>
+<li>Post-registration: guided wizard to connect Airtable, configure storage/DB destination, run first backup</li>
+<li>Free trial: one backup run with enough data to explore features (visualize, schema history, health score)</li>
+<li>No free tier — trial converts to paid plan</li>
+</ul>
+<h3>6.7 Airtable Extension Embedding ✅</h3>
+<p>Baseout must support being embedded as an <strong>Airtable interface/extension</strong>:</p>
+<ul>
+<li>Web app detects when it is running in an embedded context</li>
+<li>Implements a <strong>window messaging framework</strong> to communicate with a thin wrapper running in the Airtable extension</li>
+<li>The wrapper embeds the Baseout URL and passes context (current base, table, view) to Baseout</li>
+<li>Baseout responds to context and surfaces relevant information for the current location</li>
+<li>Embedded mode behaves differently from standalone mode (compact layout, context-aware)</li>
+</ul>
+<hr>
+<h2>7. Integrations &amp; Extensibility</h2>
+<h3>7.1 Airtable Integration Depth ✅</h3>
+<table>
+<thead>
+<tr>
+<th>API</th>
+<th>Usage</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>REST API (Metadata + Records)</strong></td>
+<td>✅ Primary — schema discovery, record export</td>
+</tr>
+<tr>
+<td><strong>Webhooks</strong></td>
+<td>✅ V1 — instant schema and record change notifications</td>
+</tr>
+<tr>
+<td><strong>Enterprise API features</strong></td>
+<td>✅ V1 — detect Enterprise users and extract additional data available only to Enterprise accounts</td>
+</tr>
+<tr>
+<td><strong>Scripts API / Extensions API</strong></td>
+<td>🚫 Not used — Baseout relies exclusively on the external REST API</td>
+</tr>
+</tbody></table>
+<h3>7.2 Storage Destination Connectors ✅</h3>
+<table>
+<thead>
+<tr>
+<th>Destination</th>
+<th>V1 Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Google Drive</td>
+<td>✅ V1 (existing)</td>
+</tr>
+<tr>
+<td>Dropbox</td>
+<td>✅ V1 (existing; proxy stream required)</td>
+</tr>
+<tr>
+<td>Box</td>
+<td>✅ V1 (existing; proxy stream required)</td>
+</tr>
+<tr>
+<td>OneDrive</td>
+<td>✅ V1 (existing)</td>
+</tr>
+<tr>
+<td>Amazon S3</td>
+<td>✅ V1 (dev-complete; launching in V1)</td>
+</tr>
+<tr>
+<td>Cloudflare R2</td>
+<td>✅ V1 (new — internal managed storage)</td>
+</tr>
+<tr>
+<td>Frame.io (Adobe)</td>
+<td>✅ V1 — Growth+</td>
+</tr>
+</tbody></table>
+<h3>7.3 Baseout Inbound API ✅</h3>
+<p>A <strong>documented public API</strong> for data submission — V1. Allows admins and agents to POST data to Baseout that cannot be retrieved via Airtable&#39;s REST API (automations, interfaces, etc.).</p>
+<ul>
+<li>Secure, token-authorized access</li>
+<li>Baseout stores and versions all submitted data</li>
+<li>Enables AI agents and browser-based automation to feed data into Baseout&#39;s schema history</li>
+</ul>
+<h3>7.4 SQL REST API ✅</h3>
+<ul>
+<li>Available on plans with a hosted database</li>
+<li>Powered by PG REST — allows direct database queries without a SQL client</li>
+<li>Not available on static-only plans</li>
+</ul>
+<h3>7.5 Notification Channels ✅</h3>
+<table>
+<thead>
+<tr>
+<th>Channel</th>
+<th>V1 Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Email</td>
+<td>✅ All plans</td>
+</tr>
+<tr>
+<td>In-app (dashboard)</td>
+<td>✅ All plans</td>
+</tr>
+<tr>
+<td>Slack</td>
+<td>✅ Higher-tier plans</td>
+</tr>
+<tr>
+<td>Other (Teams, PagerDuty)</td>
+<td>✅ TBD</td>
+</tr>
+</tbody></table>
+<h3>7.6 WebSockets ✅</h3>
+<p>Implemented via Cloudflare Durable Objects — V1. Used for live backup progress and real-time status on dashboard.</p>
+<h3>7.7 MCP Integration 🚫 V2</h3>
+<p>Connecting the Baseout database to AI clients via MCP (Model Context Protocol) is a V2 feature. The inbound API (§7.3) lays the groundwork.</p>
+<h3>7.8 CLI Tool 🚫 Deferred</h3>
+<p>No CLI tool for V1. Potentially added in future based on demand.</p>
+<h3>7.9 Plugin Architecture 🚫 Out of Scope</h3>
+<p>No third-party plugin system. May reconsider in future.</p>
+<h3>7.10 Outbound Webhook / Event System 🚫 V2</h3>
+<p>External subscriptions to &quot;backup completed&quot; or &quot;schema changed&quot; events deferred to V2.</p>
+<h3>7.11 Data Intake Methods ✅</h3>
+<p>Baseout collects data from Airtable through multiple intake channels. This is required because Airtable&#39;s REST API does not expose all data types (notably Automations, Interfaces, and Synced Tables).</p>
+<table>
+<thead>
+<tr>
+<th>Intake Method</th>
+<th>Description</th>
+<th>Min Tier</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Airtable REST API</strong></td>
+<td>Primary data collection — schema discovery, record export, metadata retrieval</td>
+<td>Starter</td>
+</tr>
+<tr>
+<td><strong>Airtable Webhooks</strong></td>
+<td>Real-time change notifications for records and schema. Enables instant backup.</td>
+<td>Pro</td>
+</tr>
+<tr>
+<td><strong>Baseout Inbound API</strong></td>
+<td>Public API for submitting data not available via Airtable REST API (Automations, Interfaces, Synced Tables, custom metadata)</td>
+<td>Growth</td>
+</tr>
+<tr>
+<td><strong>Manual Forms</strong></td>
+<td>Web-based forms within Baseout for entering documentation, annotations, and metadata</td>
+<td>Launch</td>
+</tr>
+<tr>
+<td><strong>Airtable Scripts</strong></td>
+<td>Baseout-provided scripts that run inside Airtable&#39;s Scripting Extension to extract data not available via REST API</td>
+<td>Growth</td>
+</tr>
+<tr>
+<td><strong>Airtable Automations</strong></td>
+<td>Baseout-provided automation templates that send data to the Baseout Inbound API on a schedule</td>
+<td>Growth</td>
+</tr>
+<tr>
+<td><strong>Custom Interface Extensions</strong></td>
+<td>Baseout-provided Airtable extensions that extract and submit data from within the Airtable interface</td>
+<td>Pro</td>
+</tr>
+<tr>
+<td><strong>Airtable Enterprise API</strong></td>
+<td>Additional extraction available only to Airtable Enterprise accounts (org-level metadata, user management)</td>
+<td>Enterprise</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>8. Business, Operations &amp; Launch</h2>
+<h3>8.1 Pricing Tier Structure ✅</h3>
+<p>All tiers include <strong>Static backup</strong> (CSV/JSON to storage destination). Dynamic database backup is an upgrade layer available from Launch onward. Tiers use progressive marketing names — static/dynamic terminology is an implementation detail, not the tier name.</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Price</th>
+<th>Backup Mode</th>
+<th>Database</th>
+<th>Key Capabilities</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Starter</strong></td>
+<td>$15/mo</td>
+<td>Static</td>
+<td>None (BYOS)</td>
+<td>Backup + restore; managed R2 or BYOS; monthly backup</td>
+</tr>
+<tr>
+<td><strong>Launch</strong></td>
+<td>$29/mo</td>
+<td>Static + Dynamic (Schema DB)</td>
+<td>D1 (schema only)</td>
+<td>+ Schema visualization, changelog, health score; weekly backup</td>
+</tr>
+<tr>
+<td><strong>Growth</strong></td>
+<td>$49/mo</td>
+<td>Static + Dynamic (Full DB)</td>
+<td>D1 (full)</td>
+<td>+ Automations &amp; Interface backup; Data capability; weekly backup</td>
+</tr>
+<tr>
+<td><strong>Pro</strong></td>
+<td>$99/mo</td>
+<td>Static + Dynamic</td>
+<td>Shared PostgreSQL</td>
+<td>+ Instant backup; SQL REST API; Slack alerts; daily backup</td>
+</tr>
+<tr>
+<td><strong>Business</strong></td>
+<td>$249/mo</td>
+<td>Static + Dynamic</td>
+<td>Dedicated PostgreSQL</td>
+<td>+ Dedicated DB; Governance; AI; Analytics; daily backup</td>
+</tr>
+<tr>
+<td><strong>Enterprise</strong></td>
+<td>Custom</td>
+<td>Static + Dynamic</td>
+<td>BYODB</td>
+<td>+ BYODB; SOC 2; SSO; SLA; dedicated CSM</td>
+</tr>
+</tbody></table>
+<p>Annual pricing offers approximately 20% discount (billed annually). See Baseout Features spec §3 for full limit tables and §5.5 for Stripe billing architecture.</p>
+<blockquote>
+<p>✅ <strong>Resolved:</strong> Tier names finalized as Starter / Launch / Growth / Pro / Business / Enterprise. Static/dynamic is a capability within tiers, not a tier category.</p>
+</blockquote>
+<h3>8.2 On2Air Customer Migration ✅ <em>(revised 2026-07-27 — sunset-triggered, not launch-coupled; see §1.2)</em></h3>
+<p><strong>Backend migration (run once, at the On2Air sunset — NOT before Baseout launch):</strong></p>
+<ul>
+<li>One-time scripted process maps existing On2Air customers to appropriate new tiers based on current usage (record count, bases); during the coexistence period On2Air customers stay on On2Air unchanged (they may adopt Baseout voluntarily as new customers)</li>
+<li>Must complete before the sunset&#39;s customer-facing transition begins — individual user UI steps happen after, at their own pace</li>
+<li>Legacy users receive a <code>dynamic_locked: true</code> flag on their Organization — dynamic features shown as upgrade CTAs, not hidden</li>
+</ul>
+<p><strong>User-facing migration flow (post-sunset-announcement):</strong></p>
+<ul>
+<li>When a migrated user logs into Baseout for the first time, they are shown a <strong>&quot;Complete Your Migration&quot;</strong> screen</li>
+<li><code>has_migrated</code> flag stored on the Organization record; screen shown until flag is set to true</li>
+<li>The screen guides them through re-authenticating their Airtable OAuth connection and storage destinations under the Baseout brand</li>
+<li>Until migration is complete, backup cannot run (connection is not yet established under Baseout)</li>
+<li><strong>Migration incentive:</strong> a grandfathered <strong>discount off Baseout list pricing</strong> for a defined transition period (an increase from legacy prices, framed as thanks for long-term support — per the pricing engagement)</li>
+</ul>
+<h3>8.3 Support Model ✅</h3>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Support</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>All plans</td>
+<td>Knowledge base (self-serve docs) + AI-driven support chatbot</td>
+</tr>
+<tr>
+<td>Higher plans</td>
+<td>Email support</td>
+</tr>
+<tr>
+<td>Business / Enterprise</td>
+<td>Slack support + dedicated CSM</td>
+</tr>
+</tbody></table>
+<blockquote>
+<p><strong>Note:</strong> AI-driven support chatbot will be a home-built solution integrated as a plug-and-play module when ready. Not in initial V1 build scope — KB only at launch.</p>
+</blockquote>
+<h3>8.4 Launch Strategy ✅</h3>
+<ol>
+<li><strong>Private beta</strong> — internal testing</li>
+<li><strong>Public launch</strong> — Baseout opens to new customers as an independent platform &quot;from the creators of On2Air&quot;; On2Air continues running in parallel (coexistence)</li>
+<li><strong>Airtable Marketplace listing</strong> — get Baseout listed to capture organic discovery</li>
+<li><strong>On2Air sunset (confidence-gated, date TBD)</strong> — sunset announcement + scripted customer migration + &quot;Complete Your Migration&quot; flow (§8.2)</li>
+</ol>
+<blockquote>
+<p>🚫 <strong>Deferred:</strong> Product Hunt launch timing and all go-to-market planning is handled in a separate Marketing &amp; Rollout PRD.</p>
+</blockquote>
+<h3>8.5 SOC 2 &amp; GDPR Compliance ✅</h3>
+<ul>
+<li><strong>SOC 2 vendor research begins:</strong> April 2026. Vendor selection and requirements review first — audit clock does not start until vendor is engaged and scope is set</li>
+<li><strong>Target SOC 2 certification:</strong> ~6 months after audit period begins (date TBD pending vendor selection)</li>
+<li><strong>During certification period:</strong> Disclose &quot;SOC 2 in progress&quot; on dynamic tiers</li>
+<li><strong>GDPR:</strong> Compliance from day one — data processing agreements (DPAs) in place before dynamic plans launch</li>
+<li>SOC 2 is required before Business/Enterprise tier can be broadly marketed; static plans and lower dynamic tiers can launch while it is in progress</li>
+</ul>
+<h3>8.6 Billing Architecture &amp; Stripe Integration ✅</h3>
+<p><em>Full specification in Baseout Features spec §5.5. Summary:</em></p>
+<ul>
+<li><strong>Stripe subscription created at sign-up</strong> — $0 free trial subscription, no credit card required. On upgrade, credit card collected and subscription price swapped to paid plan on the existing subscription object</li>
+<li><strong>One Stripe subscription per Organization</strong> — created at sign-up, modified as platforms/tiers change; never replaced</li>
+<li><strong>One subscription item per Platform</strong> — each active platform occupies one item within the Organization&#39;s subscription</li>
+<li><strong>Stripe product naming:</strong> <code>Baseout — [Platform] — [Tier]</code> (e.g., <code>Baseout — Airtable — Pro</code>)</li>
+<li><strong>Capability resolution</strong> — always read from Stripe product metadata (<code>platform</code> + <code>tier</code>), never from product name strings</li>
+<li><strong>Per-platform trials</strong> — 7 days + 1 backup run limit; one trial per platform per Organization, ever</li>
+<li><strong>Multi-platform discount</strong> — rate TBD when second platform launches</li>
+<li><strong>Legacy migration</strong> — <code>dynamic_locked: true</code> flag on the Organization; dynamic features shown as CTAs, not hidden</li>
+</ul>
+<hr>
+<h2>9. MoSCoW Prioritization</h2>
+<table>
+<thead>
+<tr>
+<th>Priority</th>
+<th>Feature</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Must Have</strong></td>
+<td>OAuth reauthentication flow + On2Air customer migration (<code>dynamic_locked</code> flag)</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Scheduled backups — Monthly (all tiers), Weekly (Launch+), Daily (Pro+), Instant (Pro+)</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Full restore pipeline — base-level + table-level, point-in-time, restores to new base/table only</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Post-restore verification (record count + audit log) — Growth+</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Backup auditing — audit report, per-entity verification, issue notifications, monthly summary (all tiers); detailed audit logs (Launch+)</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Webhook-based incremental backup + change log</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>All existing storage destinations + S3 (Growth+) + Cloudflare R2 (all) + Frame.io (Growth+)</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>better-auth for all auth flows</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Schema history tracking (field + table level, V1) — Launch+</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Schema visualization (auto-generated, read-only) — Launch+</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Base health scoring + configurable audit rules — Launch+</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Backup history dashboard with per-run metrics</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Monthly audit email + per-failure alerts (email)</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Retention / smart cleanup (user-configurable)</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Database provisioning per tier (D1 schema → D1 full → Shared PG → Dedicated PG → BYODB)</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Database tier migration tooling</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Internal admin panel for database tracking</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Baseout Inbound API (documented, authorized) — Growth+</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Data intake: Manual form UI within Baseout for Automations/Interfaces — Growth+</td>
+</tr>
+<tr>
+<td><strong>Should Have</strong></td>
+<td>Data intake: Inbound REST API endpoint for programmatic submission (Airtable Scripts, agents) — quick follow after launch</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Airtable extension embedding (window messaging framework)</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Pre-registration schema visualization (conversion hook)</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Mobile-responsive web app</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>WebSockets for real-time backup progress</td>
+</tr>
+<tr>
+<td><strong>Must Have</strong></td>
+<td>Stripe billing integration — per-platform subscription items, metadata-driven capability resolution</td>
+</tr>
+<tr>
+<td><strong>Should Have</strong></td>
+<td>SQL REST API (PG REST) for database-tier plans — Pro+</td>
+</tr>
+<tr>
+<td><strong>Should Have</strong></td>
+<td>Slack notification integration — Pro+</td>
+</tr>
+<tr>
+<td><strong>Should Have</strong></td>
+<td>Basic analytics (record count trends, storage growth)</td>
+</tr>
+<tr>
+<td><strong>Should Have</strong></td>
+<td>Human-readable schema change log</td>
+</tr>
+<tr>
+<td><strong>Should Have</strong></td>
+<td>Storage management UI (user-facing cleanup config)</td>
+</tr>
+<tr>
+<td><strong>Should Have</strong></td>
+<td>Community Restore Tooling (AI prompt guides for Automations/Interfaces restore) — Pro+</td>
+</tr>
+<tr>
+<td><strong>Could Have</strong></td>
+<td>Diagram export formats (PNG on Growth, SVG on Pro, PDF on Business, embed widget on Enterprise)</td>
+</tr>
+<tr>
+<td><strong>Could Have</strong></td>
+<td>Record-level restore (if user demand warrants)</td>
+</tr>
+<tr>
+<td><strong>Could Have</strong></td>
+<td>Airtable Enterprise API feature detection and extraction</td>
+</tr>
+<tr>
+<td><strong>Won&#39;t Have (yet)</strong></td>
+<td>AI MCP Server and RAG/Chatbot/Vector DB</td>
+</tr>
+<tr>
+<td><strong>Won&#39;t Have (yet)</strong></td>
+<td>Governance Capability (entire capability is V2)</td>
+</tr>
+<tr>
+<td><strong>Won&#39;t Have (yet)</strong></td>
+<td>Third-party connectors (Zapier, Make.com)</td>
+</tr>
+<tr>
+<td><strong>Won&#39;t Have (yet)</strong></td>
+<td>Richer AI-driven analytics, custom dashboards</td>
+</tr>
+<tr>
+<td><strong>Won&#39;t Have (yet)</strong></td>
+<td>Cross-Space migration and cloning tools</td>
+</tr>
+<tr>
+<td><strong>Won&#39;t Have (yet)</strong></td>
+<td>Multi-platform Spaces (V2+)</td>
+</tr>
+<tr>
+<td><strong>Won&#39;t Have (yet)</strong></td>
+<td>Multi-platform integrations (Notion, Coda, HubSpot, Salesforce)</td>
+</tr>
+<tr>
+<td><strong>Won&#39;t Have (yet)</strong></td>
+<td>Outbound webhook / event system</td>
+</tr>
+<tr>
+<td><strong>Won&#39;t Have (yet)</strong></td>
+<td>CLI tool</td>
+</tr>
+<tr>
+<td><strong>Won&#39;t Have (yet)</strong></td>
+<td>Plugin / extension architecture</td>
+</tr>
+<tr>
+<td><strong>Won&#39;t Have (yet)</strong></td>
+<td>White-label</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>10. Feature Capability Scope — V1</h2>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>V1 Status</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Backup</strong> — Scheduled (monthly/weekly/daily/instant)</td>
+<td>✅ In V1</td>
+<td>Full rebuild on Durable Objects + Trigger.dev</td>
+</tr>
+<tr>
+<td><strong>Backup</strong> — Auditing (audit report, verification, notifications)</td>
+<td>✅ In V1</td>
+<td>All tiers; detailed logs on Launch+</td>
+</tr>
+<tr>
+<td><strong>Backup</strong> — Cloud Storage Destinations</td>
+<td>✅ In V1</td>
+<td>All existing + S3 (Growth+) + R2 (all) + Frame.io (Growth+)</td>
+</tr>
+<tr>
+<td><strong>Backup</strong> — Restore Pipeline (base + table level, point-in-time)</td>
+<td>✅ In V1</td>
+<td>Always restores to new data; community restore tooling Pro+</td>
+</tr>
+<tr>
+<td><strong>Backup</strong> — Backup History &amp; Dashboard</td>
+<td>✅ In V1</td>
+<td>Expanded metrics with real-time WebSocket updates</td>
+</tr>
+<tr>
+<td><strong>Schema</strong> — History &amp; Change Log</td>
+<td>✅ In V1</td>
+<td>Field + table level; webhook-powered; Launch+</td>
+</tr>
+<tr>
+<td><strong>Schema</strong> — Visualization</td>
+<td>✅ In V1</td>
+<td>Auto-generated, read-only; diagram export varies by tier</td>
+</tr>
+<tr>
+<td><strong>Schema</strong> — Health Scoring</td>
+<td>✅ In V1</td>
+<td>Audit grade; configurable rules on Pro+</td>
+</tr>
+<tr>
+<td><strong>Schema</strong> — Management Actions (rename, describe)</td>
+<td>❌ V2</td>
+<td>Write-back to Airtable</td>
+</tr>
+<tr>
+<td><strong>Data</strong> — Record Metrics, Changelog, Growth Trends</td>
+<td>✅ In V1</td>
+<td>Growth+; requires dynamic backup</td>
+</tr>
+<tr>
+<td><strong>Data</strong> — Alerts, Insights, PII Detection, Reports</td>
+<td>❌ V2</td>
+<td>Complex; lower priority</td>
+</tr>
+<tr>
+<td><strong>Automations</strong> — Backup + Changelog</td>
+<td>✅ In V1</td>
+<td>Growth+; via Inbound API / intake methods</td>
+</tr>
+<tr>
+<td><strong>Automations</strong> — Visualization, Alerts</td>
+<td>❌ V2</td>
+<td>Complex</td>
+</tr>
+<tr>
+<td><strong>Interfaces</strong> — Backup + Changelog</td>
+<td>✅ In V1</td>
+<td>Growth+; via Inbound API / intake methods</td>
+</tr>
+<tr>
+<td><strong>Interfaces</strong> — Visualization, Alerts</td>
+<td>❌ V2</td>
+<td>Complex</td>
+</tr>
+<tr>
+<td><strong>AI</strong> — AI-Assisted Documentation</td>
+<td>✅ In V1</td>
+<td>Pro+; analyzes schema → generates summary, field/table descriptions. Powered by Cloudflare AI (open source model)</td>
+</tr>
+<tr>
+<td><strong>AI</strong> — MCP Server, RAG, Chatbot, Vector DB</td>
+<td>❌ V2</td>
+<td>Significant infrastructure; per PRD</td>
+</tr>
+<tr>
+<td><strong>Analytics</strong> — Basic (usage, record trends, storage growth)</td>
+<td>✅ In V1</td>
+<td>Placeholder &quot;coming soon&quot; UI for V1; metrics collected from day one for future rendering</td>
+</tr>
+<tr>
+<td><strong>Analytics</strong> — Custom Dashboards, Scheduled Reports</td>
+<td>❌ V2</td>
+<td>Complex UI</td>
+</tr>
+<tr>
+<td><strong>Governance</strong> — Entire capability</td>
+<td>❌ V2</td>
+<td>Business+ only; large engineering effort</td>
+</tr>
+<tr>
+<td><strong>Integrations</strong> — Baseout Inbound API</td>
+<td>✅ In V1</td>
+<td>Documented, authorized; agent-friendly; Growth+</td>
+</tr>
+<tr>
+<td><strong>Integrations</strong> — SQL REST API</td>
+<td>✅ In V1</td>
+<td>Pro+ only; custom Cloudflare Worker (not PostgREST) — bearer token auth, parameterized queries, read-only</td>
+</tr>
+<tr>
+<td><strong>Integrations</strong> — Direct SQL Access</td>
+<td>✅ In V1</td>
+<td>Business+ only; connection string exposed in Space settings UI; read-only by default</td>
+</tr>
+<tr>
+<td><strong>Integrations</strong> — Third-Party (Zapier, Make.com)</td>
+<td>❌ V2</td>
+<td>Partnership required</td>
+</tr>
+<tr>
+<td>Data Intake — Manual Forms (Automations/Interfaces)</td>
+<td>✅ In V1</td>
+<td>Growth+; form UI within Baseout to submit automation/interface data</td>
+</tr>
+<tr>
+<td>Data Intake — Inbound REST API</td>
+<td>✅ V1 (quick follow)</td>
+<td>Growth+; programmatic submission for scripts and agents; versioned per entity ID</td>
+</tr>
+<tr>
+<td>Database Provisioning &amp; Migration</td>
+<td>✅ In V1</td>
+<td>D1 schema → D1 full → Shared PG → Dedicated → BYODB</td>
+</tr>
+<tr>
+<td>Alerts &amp; Notifications (Email + Slack + Teams + PagerDuty)</td>
+<td>✅ In V1</td>
+<td>Email/in-app: all; Slack: Pro+; Teams/PagerDuty: Enterprise</td>
+</tr>
+<tr>
+<td>Airtable Extension Embedding</td>
+<td>✅ In V1</td>
+<td>Window messaging framework</td>
+</tr>
+<tr>
+<td>Pre-registration Schema Visualization</td>
+<td>✅ In V1</td>
+<td>Conversion hook before sign-up</td>
+</tr>
+<tr>
+<td>Internal Admin Panel (DB management)</td>
+<td>✅ In V1</td>
+<td>Operational tooling for the Baseout team</td>
+</tr>
+<tr>
+<td>Multi-Platform Spaces</td>
+<td>❌ V2</td>
+<td>Requires multiple active platform subscriptions</td>
+</tr>
+<tr>
+<td>Multi-Platform Integrations (Notion, HubSpot, Salesforce)</td>
+<td>❌ V2</td>
+<td>After Airtable V1 launch</td>
+</tr>
+<tr>
+<td>Outbound Webhooks / Event System</td>
+<td>❌ V2</td>
+<td></td>
+</tr>
+<tr>
+<td>CLI Tool</td>
+<td>🚫 Deferred</td>
+<td></td>
+</tr>
+<tr>
+<td>Plugin Architecture</td>
+<td>🚫 Out of scope</td>
+<td></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>11. Open Questions Master List</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Question</th>
+<th>Status</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Diagram export formats for schema visualization — PNG, SVG, PDF, interactive HTML, embeddable widget? Which are V1?</td>
+<td>✅ Resolved: PNG on Growth, SVG on Pro, PDF on Business, embed widget on Enterprise</td>
+<td>Dan Fellars</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Specific per-tier storage caps, record limits, and overage pricing rates</td>
+<td>✅ Resolved: Defined in Features spec §3–§5</td>
+<td>Dan Fellars</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Workspace / project tier limits — how many workspaces per plan? Naming conventions for all tiers?</td>
+<td>✅ Resolved: &quot;Space&quot; confirmed; no Workspace layer; Space limits in Features spec §4.1</td>
+<td>Dan Fellars</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Finalize tier names and full pricing structure across all six plan types</td>
+<td>✅ Resolved: Starter ($15) / Launch ($29) / Growth ($49) / Pro ($99) / Business ($249) / Enterprise (Custom)</td>
+<td>Dan Fellars</td>
+</tr>
+<tr>
+<td>5</td>
+<td>OAuth dead connection notification cadence</td>
+<td>✅ Resolved: Send → wait 2 days → Send → wait 3 days → Send → wait 5 days → Final send (4 total). Then stop and mark connection invalidated.</td>
+<td>Dan Fellars</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Product Hunt launch — timing and preparation plan?</td>
+<td>🚫 Deferred to separate Marketing &amp; Rollout PRD</td>
+<td>Dan Fellars</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Additional notification channels beyond email and Slack — Teams, PagerDuty?</td>
+<td>✅ Resolved: Teams on Enterprise, PagerDuty on Enterprise, Outbound Webhook on Business+</td>
+<td>Dan Fellars</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Trial duration per platform</td>
+<td>✅ Resolved: 7-day time limit AND 1 backup run limit. Subscription ends at day 7 with upgrade prompt.</td>
+<td>Dan Fellars</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Multi-platform discount percentage</td>
+<td>✅ Resolved: TBD when second platform is added. Deferred.</td>
+<td>Dan Fellars</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Brand spelling</td>
+<td>✅ Resolved: <strong>Baseout</strong> (capital B, rest lowercase) in all written text. Logo/brand mark: <strong>baseout</strong> (all lowercase).</td>
+<td>Dan Fellars</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>12. Action Items</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Action Item</th>
+<th>Owner</th>
+<th>Due</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Finalize Baseout brand spelling (BaseOut / Base Out / Baseout)</td>
+<td>Dan Fellars</td>
+<td>ASAP</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Share and select final logo candidate</td>
+<td>Dan Fellars</td>
+<td>ASAP</td>
+</tr>
+<tr>
+<td>3</td>
+<td><del>Finalize pricing tier names, storage caps, limits, overage rates</del> <strong>DONE</strong> — See Features spec §3–§5</td>
+<td>Dan Fellars</td>
+<td>—</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Define OAuth reauthentication notification cadence and cutover timeline</td>
+<td>Dan Fellars</td>
+<td>+1 wk</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Architecture decision record (ADR): confirm Durable Object-per-connection model and microservices split</td>
+<td>Engineering</td>
+<td>+1 wk</td>
+</tr>
+<tr>
+<td>6</td>
+<td>better-auth integration spike — Airtable OAuth + platform auth flows</td>
+<td>Engineering</td>
+<td>+1 wk</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Database migration tooling design — D1 (SQLite) → PostgreSQL migration process</td>
+<td>Engineering</td>
+<td>+1 wk</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Internal admin panel spec — database tracking, utilization monitoring, Organization mapping</td>
+<td>Engineering</td>
+<td>+1 wk</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Begin AI-assisted frontend exploration — 2–3 design variations with fake data</td>
+<td>Dan Fellars</td>
+<td>+1 wk</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Wireframes for core flows: pre-auth schema viz, onboarding wizard, dashboard, restore, embedding</td>
+<td>Design</td>
+<td>+1 wk</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Airtable API capability audit — webhooks, Enterprise API features, rate limits, attachment URL behavior</td>
+<td>Engineering</td>
+<td>+1 wk</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Set up Baseout project repo and CI/CD (GitHub + Cloudflare Pages)</td>
+<td>Engineering</td>
+<td>+1 wk</td>
+</tr>
+<tr>
+<td>13</td>
+<td>On2Air customer migration plan — notification strategy, <code>dynamic_locked</code> flag implementation, reauthentication flow</td>
+<td>Dan Fellars</td>
+<td>+2 wks</td>
+</tr>
+<tr>
+<td>14</td>
+<td>Stripe billing integration spec — per-platform subscription items, metadata schema, trial logic, multi-platform discount</td>
+<td>Engineering</td>
+<td>+2 wks</td>
+</tr>
+<tr>
+<td>15</td>
+<td>Initiate SOC 2 process — target start April / May 2026</td>
+<td>Dan Fellars</td>
+<td>+2 wks</td>
+</tr>
+<tr>
+<td>16</td>
+<td>GDPR compliance review — DPAs drafted before dynamic plans launch</td>
+<td>Legal / Dan Fellars</td>
+<td>+2 wks</td>
+</tr>
+<tr>
+<td>17</td>
+<td>Airtable Marketplace listing — submission requirements and timeline</td>
+<td>Dan Fellars</td>
+<td>+2 wks</td>
+</tr>
+<tr>
+<td>18</td>
+<td><del>Schema visualization diagram export formats decision</del> <strong>DONE</strong> — PNG: Growth, SVG: Pro, PDF: Business, Embed: Enterprise</td>
+<td>Dan Fellars</td>
+<td>—</td>
+</tr>
+<tr>
+<td>19</td>
+<td>Inbound API documentation spec — endpoints, auth model, schema for submissions</td>
+<td>Engineering</td>
+<td>+2 wks</td>
+</tr>
+<tr>
+<td>20</td>
+<td>Window messaging framework spec for Airtable extension embedding</td>
+<td>Engineering</td>
+<td>+2 wks</td>
+</tr>
+<tr>
+<td>21</td>
+<td><del>Define trial duration</del> <strong>DONE</strong> — 7 days + 1 backup run; caps: 1,000 records, 5 tables, 100 attachments</td>
+<td>Dan Fellars</td>
+<td>—</td>
+</tr>
+<tr>
+<td>22</td>
+<td><del>Finalize multi-platform discount</del> <strong>DEFERRED</strong> — to be defined when second platform launches</td>
+<td>Dan Fellars</td>
+<td>—</td>
+</tr>
+<tr>
+<td>23</td>
+<td>Background service spec — webhook renewal (6-day threshold), OAuth token refresh, dead connection notifications (4-touch cadence), connection lock management</td>
+<td>Engineering</td>
+<td>+2 wks</td>
+</tr>
+<tr>
+<td>24</td>
+<td>On2Air migration script spec — tier mapping logic, <code>dynamic_locked</code> flag, <code>has_migrated</code> flag, &quot;Complete Your Migration&quot; UI flow</td>
+<td>Engineering</td>
+<td>+2 wks</td>
+</tr>
+<tr>
+<td>25</td>
+<td>Health score algorithm design — weighted 0–100 scale, rule weights, Green/Yellow/Red thresholds</td>
+<td>Dan Fellars + Engineering</td>
+<td>+2 wks</td>
+</tr>
+<tr>
+<td>26</td>
+<td>Schema visualization library selection — React-based node graph + ERD hybrid (e.g., React Flow, Cytoscape.js)</td>
+<td>Engineering</td>
+<td>+1 wk</td>
+</tr>
+</tbody></table>
+<hr>
+<hr>
+<h2>13. Authentication ✅</h2>
+<p>Baseout uses <strong>better-auth</strong> for all authentication flows.</p>
+<h3>13.1 Launch Authentication (V1)</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Status</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Magic Link</strong></td>
+<td>✅ V1 launch — sole primary method</td>
+<td>Passwordless — user enters email, receives a one-time sign-in link. Powered by <code>better-auth</code>&#39;s <code>magicLink</code> plugin. Default token TTL 5 min, single use. Delivery via Cloudflare Email Service (see §19).</td>
+</tr>
+<tr>
+<td><strong>Email + Password</strong></td>
+<td>❌ Removed pre-launch</td>
+<td>Dropped in favor of passwordless. <code>accounts.password</code> column removed; <code>/forgot-password</code> and <code>/reset-password</code> deleted.</td>
+</tr>
+<tr>
+<td><strong>SSO (SAML)</strong></td>
+<td>✅ V1 (Enterprise tier only)</td>
+<td>better-auth SSO plugin. Required before Enterprise can be sold. Deferred until after magic-link launch.</td>
+</tr>
+<tr>
+<td><strong>2FA (TOTP)</strong></td>
+<td>✅ V1 (pre-launch addition)</td>
+<td>Deferred until after magic-link launch. Authenticator app support via better-auth 2FA plugin.</td>
+</tr>
+<tr>
+<td><strong>Airtable OAuth</strong></td>
+<td>🚫 Not used for login</td>
+<td>Airtable OAuth is exclusively for connecting a Space to Airtable data — never for Baseout account authentication.</td>
+</tr>
+<tr>
+<td><strong>Google OAuth</strong></td>
+<td>❓ Evaluate pre-launch</td>
+<td>Deferred until after magic-link launch. better-auth supports it natively; decision before public launch.</td>
+</tr>
+</tbody></table>
+<h3>13.2 Session Management</h3>
+<ul>
+<li>Sessions managed by better-auth — JWT or database-backed sessions (to be confirmed during better-auth integration spike)</li>
+<li>Pre-registration schema visualization uses a <strong>temporary session</strong> with a client-side session ID. Discarded on tab close. On registration, the session is claimed and linked to the new Organization.</li>
+<li>All auth flows go through the main web app repo</li>
+</ul>
+<hr>
+<h2>14. Testing Strategy ✅</h2>
+<p>All repos follow the same testing philosophy: <strong>test as you build</strong>, not after. Every PR requires passing tests before merge. Testing covers both frontend UI and all backend logic — Workers, jobs, services, and API handlers are all unit and integration tested.</p>
+<h3>14.1 Testing Tools</h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Tool</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Unit + integration (all repos)</strong></td>
+<td><a href="https://vitest.dev">Vitest</a></td>
+<td>Single test runner used across all repos — frontend components, backend Workers, API handlers, Trigger.dev jobs, and background services. Vite-native; fast watch mode.</td>
+</tr>
+<tr>
+<td><strong>Cloudflare Workers runtime</strong></td>
+<td><a href="https://miniflare.dev">Miniflare</a> via <code>@cloudflare/vitest-pool-workers</code></td>
+<td>Simulates the full Cloudflare runtime locally inside Vitest. Required for testing Durable Objects, KV, R2, D1, and cron triggers without deploying. All Worker tests run through this pool.</td>
+</tr>
+<tr>
+<td><strong>Database (Drizzle + PostgreSQL)</strong></td>
+<td>Local PostgreSQL via Docker + Drizzle test client</td>
+<td>Integration tests run against a real local PG instance (not mocked). D1 tests use Miniflare&#39;s in-process D1. DB state is reset between test runs via Drizzle migrations on a test schema.</td>
+</tr>
+<tr>
+<td><strong>API handler testing</strong></td>
+<td>Vitest + <code>Request</code>/<code>Response</code> mocks</td>
+<td>Each Cloudflare Worker API handler is tested in isolation: given a <code>Request</code> object, assert on the <code>Response</code>. No HTTP server needed — Workers are just functions.</td>
+</tr>
+<tr>
+<td><strong>Trigger.dev job testing</strong></td>
+<td>Vitest + Trigger.dev test utilities</td>
+<td>Jobs are unit tested with mocked Airtable API responses and mocked storage clients. Integration tests run against the Trigger.dev dev server locally.</td>
+</tr>
+<tr>
+<td><strong>UI component testing</strong></td>
+<td>Vitest + <a href="https://testing-library.com">@testing-library/dom</a></td>
+<td>Astro/UI components tested in isolation. Tests assert on rendered HTML and user interactions.</td>
+</tr>
+<tr>
+<td><strong>E2E testing</strong></td>
+<td><a href="https://playwright.dev">Playwright</a></td>
+<td>Full browser automation against the staging environment. Tests critical end-to-end user flows. Lives in <code>baseout-web</code>.</td>
+</tr>
+</tbody></table>
+<h3>14.2 What Gets Unit Tested (Backend)</h3>
+<p>Backend unit testing covers the logic layer — not the Cloudflare runtime plumbing. Each of the following is tested independently with mocked dependencies:</p>
+<table>
+<thead>
+<tr>
+<th>Backend Area</th>
+<th>What Is Tested</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Backup engine — backup logic</strong></td>
+<td>File path construction, CSV generation, attachment dedup ID generation, trial cap enforcement, per-entity status tracking</td>
+</tr>
+<tr>
+<td><strong>Backup engine — restore logic</strong></td>
+<td>Snapshot selection, table write ordering (tables → records → linked records → attachments), error handling</td>
+</tr>
+<tr>
+<td><strong>Backup engine — Airtable API client</strong></td>
+<td>Rate limit handling, retry logic, pagination, error responses, Enterprise vs standard scope differences</td>
+</tr>
+<tr>
+<td><strong>Backup engine — storage clients</strong></td>
+<td>R2 write, Google Drive write, Dropbox proxy stream, Box proxy stream, OneDrive write, S3 write — each tested with mocked provider responses</td>
+</tr>
+<tr>
+<td><strong>Backup engine — Durable Object state</strong></td>
+<td>Backup state transitions (<code>idle → running → success/failed</code>), lock acquisition and release, cron scheduling logic</td>
+</tr>
+<tr>
+<td><strong>Background services — webhook renewal</strong></td>
+<td>Threshold detection (6-day), renewal API call, state update — tested with mocked Airtable webhook API</td>
+</tr>
+<tr>
+<td><strong>Background services — OAuth refresh</strong></td>
+<td>Expiry detection, refresh token exchange, encrypted token update — tested with mocked provider OAuth endpoints</td>
+</tr>
+<tr>
+<td><strong>Background services — dead connection notifier</strong></td>
+<td>Notification cadence logic (send → 2d → send → 3d → send → 5d → final), sent count tracking, invalidation trigger</td>
+</tr>
+<tr>
+<td><strong>Background services — connection lock</strong></td>
+<td>Lock acquisition, lock timeout (5s retry), concurrent access prevention</td>
+</tr>
+<tr>
+<td><strong>Web API — all route handlers</strong></td>
+<td>Given a <code>Request</code>, assert correct <code>Response</code> status + body. Auth middleware tested separately.</td>
+</tr>
+<tr>
+<td><strong>Web API — Stripe webhook handler</strong></td>
+<td>Each Stripe event type (<code>invoice.paid</code>, <code>customer.subscription.updated</code>, etc.) tested with fixture payloads</td>
+</tr>
+<tr>
+<td><strong>Web API — capability resolver</strong></td>
+<td>Given Stripe metadata (<code>platform</code> + <code>tier</code>), assert correct capability set returned</td>
+</tr>
+<tr>
+<td><strong>Web API — trial enforcement</strong></td>
+<td>Trial cap logic, trial expiry detection, upgrade gate</td>
+</tr>
+<tr>
+<td><strong>Drizzle queries</strong></td>
+<td>Critical queries tested against local PG — not mocked. Ensures schema + query correctness together.</td>
+</tr>
+</tbody></table>
+<h3>14.3 What Gets Integration Tested</h3>
+<p>Integration tests run multiple real components together. Database is real (local Docker PG or Miniflare D1); external APIs are mocked at the HTTP boundary using <a href="https://mswjs.io">msw</a> (Mock Service Worker for Node).</p>
+<table>
+<thead>
+<tr>
+<th>Integration Test</th>
+<th>Components Involved</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Full backup run (static)</td>
+<td>Backup engine + Airtable mock API + R2 mock + master DB</td>
+</tr>
+<tr>
+<td>Full backup run (dynamic)</td>
+<td>Backup engine + Airtable mock API + D1 (Miniflare) + master DB</td>
+</tr>
+<tr>
+<td>Restore to new base</td>
+<td>Restore engine + Airtable write mock + snapshot from DB</td>
+</tr>
+<tr>
+<td>Webhook renewal cycle</td>
+<td>Background service + Airtable webhook mock + DB state</td>
+</tr>
+<tr>
+<td>OAuth refresh cycle</td>
+<td>Background service + provider OAuth mock + encrypted token DB update</td>
+</tr>
+<tr>
+<td>Stripe upgrade flow</td>
+<td>Web API + Stripe mock + DB subscription update + capability resolution</td>
+</tr>
+<tr>
+<td>On2Air migration script</td>
+<td>Migration script + source data fixtures + master DB</td>
+</tr>
+</tbody></table>
+<h3>14.4 Test Coverage Requirements</h3>
+<table>
+<thead>
+<tr>
+<th>Repo</th>
+<th>Unit Coverage Target</th>
+<th>Integration</th>
+<th>E2E</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>baseout-backup-engine</code></td>
+<td>80%</td>
+<td>Required for all backup/restore paths</td>
+<td>Via Playwright staging</td>
+</tr>
+<tr>
+<td><code>baseout-background-services</code></td>
+<td>80%</td>
+<td>Required for all service loops</td>
+<td>Via Playwright staging</td>
+</tr>
+<tr>
+<td><code>baseout-web</code> (API handlers)</td>
+<td>75%</td>
+<td>Required for Stripe webhook, auth, capability resolution</td>
+<td>Via Playwright</td>
+</tr>
+<tr>
+<td><code>baseout-web</code> (UI components)</td>
+<td>60%</td>
+<td>—</td>
+<td>Via Playwright</td>
+</tr>
+<tr>
+<td><code>baseout-admin</code></td>
+<td>60%</td>
+<td>—</td>
+<td>Manual</td>
+</tr>
+</tbody></table>
+<h3>14.5 E2E Test Scenarios (Playwright — minimum V1)</h3>
+<p>All run against the staging environment:</p>
+<ul>
+<li>Full signup → magic link → onboarding wizard → first backup run (trial capped)</li>
+<li>Trial cap hit → upgrade prompt → credit card entry → plan upgrade → full backup runs</li>
+<li>Backup run → restore to new base (workspace ID input flow)</li>
+<li>On2Air migration → &quot;Complete Your Migration&quot; screen → re-auth Airtable → backup resumes</li>
+<li>Dead connection → notification email sent → user re-authenticates → connection restored</li>
+<li>Schema visualization loads + node graph renders for a multi-base Space</li>
+</ul>
+<h3>14.6 Test Environments</h3>
+<table>
+<thead>
+<tr>
+<th>Environment</th>
+<th>Used For</th>
+<th>DB</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Local (developer machine)</td>
+<td>Unit + integration tests</td>
+<td>Docker PG + Miniflare D1</td>
+</tr>
+<tr>
+<td>CI (GitHub Actions)</td>
+<td>All unit + integration on every PR</td>
+<td>Docker PG + Miniflare D1 spun up in CI</td>
+</tr>
+<tr>
+<td>Staging (separate Cloudflare account)</td>
+<td>E2E Playwright tests; full system validation</td>
+<td>Staging DB (real PG instance)</td>
+</tr>
+<tr>
+<td>Production</td>
+<td>No test runs</td>
+<td>Production DB</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>15. In-App Help &amp; Documentation ✅</h2>
+<h3>15.1 Tooltips &amp; Guided Tours (V1)</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Tool</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Tooltips</strong></td>
+<td><a href="https://floating-ui.com">Floating UI</a></td>
+<td>Lightweight, accessible positioning library. Used for contextual tooltip overlays on individual UI elements.</td>
+</tr>
+<tr>
+<td><strong>Guided Tours</strong></td>
+<td><a href="https://shepherdjs.dev">Shepherd.js</a></td>
+<td>Step-by-step tour overlays triggered on first use of a feature or from a &quot;Take a tour&quot; button. Tours defined per page/capability.</td>
+</tr>
+</tbody></table>
+<p><strong>V1 guided tours to implement:</strong></p>
+<ul>
+<li>Onboarding wizard (first-time setup)</li>
+<li>First backup run</li>
+<li>Schema visualization</li>
+<li>Restore flow</li>
+<li>Space settings</li>
+</ul>
+<h3>15.2 In-App Support Chatbot (Deferred)</h3>
+<ul>
+<li>Placeholder chat button visible in V1 UI (bottom-right corner)</li>
+<li>V1: placeholder only — clicking opens a &quot;Coming soon / contact us via email&quot; fallback</li>
+<li>Full chatbot implementation deferred — will connect to the documentation site via a separate project</li>
+<li>Chatbot will be home-built; plug-and-play integration when ready</li>
+</ul>
+<h3>15.3 Documentation Site</h3>
+<ul>
+<li>Separate project (not in this repo)</li>
+<li>Connected to the in-app chatbot when built</li>
+<li>URL: <code>docs.baseout.com</code> (planned)</li>
+</ul>
+<hr>
+<h2>16. Admin &amp; Observability System ✅</h2>
+<h3>16.1 Super-Admin Application</h3>
+<p>A <strong>separate Astro application</strong> with its own repo. Accessible only to super-admin logins — not reachable by regular Baseout users. Deployed to a separate Cloudflare Pages project.</p>
+<p><strong>Capabilities:</strong></p>
+<ul>
+<li>View all Organizations, Spaces, subscriptions, and backup run status</li>
+<li>Database provisioning tracker — all D1/PG instances, utilization, health</li>
+<li>Connection health dashboard — OAuth connections, webhook status, renewal state</li>
+<li>Background service monitor — last run time, success/failure for each background process</li>
+<li>On2Air migration status — how many users have completed migration vs pending</li>
+<li>Trigger manual admin actions: force backup, invalidate connection, reset trial, adjust plan</li>
+<li>View and search error logs and audit trail</li>
+</ul>
+<p><strong>Shared UI library:</strong> Uses the same component library being built for the main Baseout app. Both apps consume from a shared internal package.</p>
+<h3>16.2 Observability Stack</h3>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Tool</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Workers + Durable Objects</strong></td>
+<td>Cloudflare built-in observability</td>
+<td>Workers Analytics, DO metrics, tail workers for log streaming</td>
+</tr>
+<tr>
+<td><strong>Error tracking</strong></td>
+<td>Cloudflare Logpush + tail Workers</td>
+<td>Errors streamed to a log destination (R2 or external). Evaluated for Sentry if Cloudflare built-in proves insufficient post-launch</td>
+</tr>
+<tr>
+<td><strong>Backup engine jobs</strong></td>
+<td>Trigger.dev dashboard</td>
+<td>Job run history, retry status, error details per Trigger.dev run</td>
+</tr>
+<tr>
+<td><strong>Database metrics</strong></td>
+<td>DigitalOcean / Neon / Supabase built-in</td>
+<td>Per-instance metrics for Shared PG and Dedicated PG</td>
+</tr>
+<tr>
+<td><strong>Uptime monitoring</strong></td>
+<td>Cloudflare Health Checks</td>
+<td>Per-endpoint uptime alerting</td>
+</tr>
+</tbody></table>
+<h3>16.3 Error Notification</h3>
+<ul>
+<li>Critical errors (backup engine failure, DB provisioning failure, background service failure) → email alert to engineering on-call</li>
+<li>Super-admin dashboard surfaces all errors in real time</li>
+<li>Error rate thresholds trigger alerts before users notice</li>
+</ul>
+<hr>
+<h2>17. Third-Party Services &amp; Integrations ✅</h2>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Service</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Transactional email</strong></td>
+<td><a href="https://developers.cloudflare.com/email-service/">Cloudflare Email Service</a></td>
+<td>All system emails: magic links, audit reports, error notifications, trial expiry, upgrade prompts. Sent from the verified <code>mail.baseout.com</code> domain via the <code>EMAIL</code> Workers binding. React Email templates are a post-V1 follow-up (currently inline HTML + text fallbacks).</td>
+</tr>
+<tr>
+<td><strong>Email list / marketing</strong></td>
+<td>V2 / TBD</td>
+<td>Provider decision deferred until marketing email is actually built. Cloudflare Email Service is transactional-focused.</td>
+</tr>
+<tr>
+<td><strong>Error monitoring</strong></td>
+<td>Cloudflare built-in</td>
+<td>Tail Workers + Logpush. Re-evaluate post-launch.</td>
+</tr>
+<tr>
+<td><strong>Web analytics / product analytics</strong></td>
+<td><a href="https://posthog.com">PostHog</a></td>
+<td>Replaces GA4. Covers: web analytics, product analytics (funnels, retention, user paths), session replay, and feature flags. Single SDK installed in <code>baseout-web</code>. Self-hosted on PostHog Cloud (EU region for GDPR).</td>
+</tr>
+<tr>
+<td><strong>Referral tracking</strong></td>
+<td><a href="https://dub.co">dub.co</a></td>
+<td>Replacing Rewardful. Migration path: export Rewardful affiliate data → import to dub.co. Need to support existing Rewardful affiliate links during transition period (redirect or alias).</td>
+</tr>
+<tr>
+<td><strong>Customer support (V1)</strong></td>
+<td>Email-based ticketing</td>
+<td>Simple email-to-ticket for V1. Custom chatbot added when ready (see §15.2).</td>
+</tr>
+<tr>
+<td><strong>Payments</strong></td>
+<td>Stripe</td>
+<td>See §8.6</td>
+</tr>
+<tr>
+<td><strong>Background jobs</strong></td>
+<td>Trigger.dev V3 (cloud)</td>
+<td>See §4</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>18. Git Branching, Environments &amp; CI/CD ✅</h2>
+<h3>18.1 Branch Strategy</h3>
+<table>
+<thead>
+<tr>
+<th>Branch</th>
+<th>Environment</th>
+<th>Cloudflare Account</th>
+<th>Database</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>main</code></td>
+<td>Production</td>
+<td>Production Cloudflare account</td>
+<td>Production DB</td>
+</tr>
+<tr>
+<td><code>staging</code></td>
+<td>Staging</td>
+<td>Separate staging Cloudflare account</td>
+<td>Staging DB (separate instance)</td>
+</tr>
+<tr>
+<td><code>feature/*</code></td>
+<td>Preview</td>
+<td>Production Cloudflare account (preview URLs)</td>
+<td>Staging DB (shared across previews)</td>
+</tr>
+</tbody></table>
+<ul>
+<li><strong><code>main</code></strong> — protected branch. Merges only via PR. Triggers automatic production deploy via Cloudflare Pages.</li>
+<li><strong><code>staging</code></strong> — integration branch. All feature branches merge here before <code>main</code>. Triggers auto-deploy to staging environment.</li>
+<li><strong><code>feature/*</code></strong> — per-ticket branches. Cloudflare Pages generates a unique preview URL per branch automatically.</li>
+<li><strong>Hotfixes</strong> — <code>hotfix/*</code> branches cut from <code>main</code>, merged back to both <code>main</code> and <code>staging</code>.</li>
+</ul>
+<h3>18.2 Environment Separation</h3>
+<ul>
+<li>Staging and production use <strong>separate Cloudflare accounts</strong> — no risk of API key crossover</li>
+<li>Each environment has its own: Cloudflare Workers, D1 instances, R2 buckets, KV namespaces, Durable Objects, Secrets</li>
+<li>Switching between accounts is handled at the CI/CD level via environment-specific GitHub secrets</li>
+</ul>
+<h3>18.3 CI/CD Pipeline (GitHub Actions)</h3>
+<table>
+<thead>
+<tr>
+<th>Trigger</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>PR opened against <code>staging</code> or <code>main</code></td>
+<td>Run Vitest + Playwright; block merge if failing</td>
+</tr>
+<tr>
+<td>Merge to <code>staging</code></td>
+<td>Deploy all repos to staging Cloudflare account</td>
+</tr>
+<tr>
+<td>Merge to <code>main</code></td>
+<td>Deploy all repos to production Cloudflare account</td>
+</tr>
+<tr>
+<td>New feature branch pushed</td>
+<td>Cloudflare Pages generates preview URL automatically</td>
+</tr>
+</tbody></table>
+<h3>18.4 Repo List</h3>
+<table>
+<thead>
+<tr>
+<th>Repo</th>
+<th>Description</th>
+<th>Primary Deploy Target</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>baseout-web</code></td>
+<td>Astro SSR app — frontend + web API layer</td>
+<td>Cloudflare Pages + Workers</td>
+</tr>
+<tr>
+<td><code>baseout-backup-engine</code></td>
+<td>Backup/restore engine — Durable Objects + Trigger.dev</td>
+<td>Cloudflare Workers</td>
+</tr>
+<tr>
+<td><code>baseout-background-services</code></td>
+<td>Webhook renewal, OAuth refresh, connection locks, notification dispatch</td>
+<td>Cloudflare Workers (cron)</td>
+</tr>
+<tr>
+<td><code>baseout-admin</code></td>
+<td>Super-admin Astro app</td>
+<td>Cloudflare Pages + Workers (separate project)</td>
+</tr>
+<tr>
+<td><code>baseout-ui</code></td>
+<td>Shared component library consumed by <code>baseout-web</code> and <code>baseout-admin</code></td>
+<td>npm package (internal)</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>19. Email Templates ✅</h2>
+<p>All email templates built with inline HTML + text fallbacks and sent via <strong><a href="https://developers.cloudflare.com/email-service/">Cloudflare Email Service</a></strong> for V1 through the <code>EMAIL</code> Workers binding. The <code>sendEmail()</code> abstraction in <code>src/lib/email/send.ts</code> remains the single seam for outbound mail so the provider can be swapped in future without touching call sites. React Email scaffolding remains a post-V1 follow-up.</p>
+<h3>19.1 Template Inventory (V1)</h3>
+<table>
+<thead>
+<tr>
+<th>Template</th>
+<th>Trigger</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Magic Link</strong></td>
+<td>User requests sign-in or registers</td>
+<td>Contains one-time link with expiry (5 min — better-auth default). Primary auth method in V1.</td>
+</tr>
+<tr>
+<td><strong>Trial Welcome</strong></td>
+<td>User completes sign-up</td>
+<td>Introduces Baseout, links to onboarding</td>
+</tr>
+<tr>
+<td><strong>Trial Expiry Warning</strong></td>
+<td>Day 5 of 7-day trial</td>
+<td>Prompts upgrade before trial ends</td>
+</tr>
+<tr>
+<td><strong>Trial Expired</strong></td>
+<td>Day 7 — backup run blocked</td>
+<td>Upgrade CTA</td>
+</tr>
+<tr>
+<td><strong>Backup Audit Report</strong></td>
+<td>Per audit run (configurable frequency)</td>
+<td>Space-level summary; see §2.10</td>
+</tr>
+<tr>
+<td><strong>Monthly Backup Summary</strong></td>
+<td>Monthly, all tiers</td>
+<td>Space-level health and storage digest</td>
+</tr>
+<tr>
+<td><strong>Backup Failure Alert</strong></td>
+<td>Backup run fails</td>
+<td>Immediate; links to run log</td>
+</tr>
+<tr>
+<td><strong>Backup Warning Alert</strong></td>
+<td>Backup run completes with warnings</td>
+<td>Immediate</td>
+</tr>
+<tr>
+<td><strong>Dead Connection Warning (×4)</strong></td>
+<td>Connection auth fails</td>
+<td>Cadence: send → 2d → send → 3d → send → 5d → final. See §7.11</td>
+</tr>
+<tr>
+<td><strong>Quota Warning</strong></td>
+<td>75%, 90%, 100% of any tier limit hit</td>
+<td>Overage alert</td>
+</tr>
+<tr>
+<td><strong>Upgrade Confirmation</strong></td>
+<td>User upgrades plan</td>
+<td>Receipt + what&#39;s now unlocked</td>
+</tr>
+<tr>
+<td><strong>Migration Welcome</strong></td>
+<td>Legacy On2Air user first login</td>
+<td>Directs to &quot;Complete Your Migration&quot; flow</td>
+</tr>
+<tr>
+<td><del>Password Reset</del></td>
+<td><del>User requests password reset</del></td>
+<td>Obsolete — password auth removed pre-launch (see §13.1).</td>
+</tr>
+</tbody></table>
+<h3>19.2 Sending Infrastructure</h3>
+<ul>
+<li><strong>Transactional domain:</strong> <code>mail.baseout.com</code> — verified in the Cloudflare Email Service dashboard (DKIM/SPF/DMARC configured). A separate domain will be chosen for marketing if/when V2 adds that surface.</li>
+<li><strong>V1 provider:</strong> Cloudflare Email Service (Workers binding), accessed only through the <code>sendEmail()</code> abstraction in <code>src/lib/email/send.ts</code></li>
+<li><strong>Dev mode:</strong> <code>sendEmail()</code> detects <code>import.meta.env.DEV</code> and logs the rendered payload (including the magic-link URL) to the worker console instead of calling the <code>EMAIL</code> binding, so local magic-link flows work without external dependencies</li>
+<li>No runtime API key — auth is handled by the <code>EMAIL</code> binding itself. <code>EMAIL_FROM</code> (the verified sender header) is a <code>vars</code> entry in <code>wrangler.jsonc</code>; the <code>send_email</code> binding is declared in the wrangler config.</li>
+</ul>
+<hr>
+<h2>20. Security, Secrets &amp; Encryption ✅</h2>
+<h3>20.1 Secrets Management</h3>
+<ul>
+<li><strong>All secrets stored in Cloudflare Secrets</strong> — never hardcoded, never in environment variable files committed to git</li>
+<li>Each repo maintains its own Cloudflare Secrets namespace</li>
+<li>Secrets rotated via Cloudflare dashboard; rotation does not require redeployment for KV-stored secrets</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>Secret</th>
+<th>Where Stored</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Stripe API keys</td>
+<td>Cloudflare Secrets</td>
+<td>Separate keys per environment</td>
+</tr>
+<tr>
+<td>Master encryption key</td>
+<td>Cloudflare Secrets</td>
+<td>Used for encrypting OAuth tokens + API keys at rest in master DB</td>
+</tr>
+<tr>
+<td>Airtable OAuth client secret</td>
+<td>Cloudflare Secrets</td>
+<td></td>
+</tr>
+<tr>
+<td>Storage provider OAuth secrets</td>
+<td>Cloudflare Secrets</td>
+<td>Google, Dropbox, Box, OneDrive</td>
+</tr>
+<tr>
+<td>Database connection strings</td>
+<td>Cloudflare Secrets</td>
+<td>Per-environment; never in code</td>
+</tr>
+<tr>
+<td>Trigger.dev API key</td>
+<td>Cloudflare Secrets</td>
+<td></td>
+</tr>
+<tr>
+<td>better-auth secret</td>
+<td>Cloudflare Secrets</td>
+<td>Session signing key</td>
+</tr>
+</tbody></table>
+<h3>20.2 Encryption Strategy</h3>
+<table>
+<thead>
+<tr>
+<th>Data</th>
+<th>Method</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>OAuth tokens (Airtable, storage destinations)</td>
+<td>AES-256-GCM</td>
+<td>Encrypted before writing to master DB; decrypted at runtime via Cloudflare Secrets key</td>
+</tr>
+<tr>
+<td>API keys (Inbound API, SQL REST)</td>
+<td>AES-256-GCM</td>
+<td>Same approach as OAuth tokens</td>
+</tr>
+<tr>
+<td>Backup files (R2 managed)</td>
+<td>Cloudflare R2 server-side encryption</td>
+<td>At-rest encryption, platform-managed</td>
+</tr>
+<tr>
+<td>Customer databases (D1, Shared PG, Dedicated PG)</td>
+<td>Provider-managed at-rest encryption</td>
+<td>DigitalOcean, Neon, Supabase all encrypt at rest</td>
+</tr>
+<tr>
+<td>Passwords (once email+password auth is added)</td>
+<td>bcrypt (via better-auth)</td>
+<td>better-auth handles this natively</td>
+</tr>
+</tbody></table>
+<h3>20.3 On2Air Encryption Compatibility</h3>
+<ul>
+<li>On2Air uses <strong>bcrypt</strong> for password hashing (exact library version TBD — inspect On2Air codebase before migration)</li>
+<li>For <strong>backup data encryption</strong>: On2Air encryption keys are available and will be used to decrypt any legacy backup metadata during migration</li>
+<li>Baseout does <strong>not</strong> need to match On2Air&#39;s encryption scheme going forward — new data uses AES-256-GCM</li>
+<li>Migration script must: (1) decrypt On2Air data using legacy keys, (2) re-encrypt under new AES-256-GCM scheme, (3) store new key reference</li>
+</ul>
+<hr>
+<h2>21. Database Schema, ORM &amp; Conventions ✅</h2>
+<h3>21.1 ORM: Drizzle</h3>
+<ul>
+<li><strong><a href="https://orm.drizzle.team">Drizzle ORM</a></strong> for all database interactions</li>
+<li>Schema defined in TypeScript — single source of truth</li>
+<li>Migrations generated via <code>drizzle-kit generate</code> and applied via <code>drizzle-kit migrate</code></li>
+<li>Migration files committed to the repo alongside schema changes — never auto-applied in production without review</li>
+<li>Separate Drizzle configs per environment (master DB, client DBs)</li>
+</ul>
+<h3>21.2 Naming Conventions</h3>
+<table>
+<thead>
+<tr>
+<th>Convention</th>
+<th>Rule</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Table names</strong></td>
+<td>Plural, snake_case</td>
+<td><code>organizations</code>, <code>spaces</code>, <code>backup_runs</code></td>
+</tr>
+<tr>
+<td><strong>Column names</strong></td>
+<td>Singular, lowercase, snake_case</td>
+<td><code>organization_id</code>, <code>created_at</code>, <code>is_active</code></td>
+</tr>
+<tr>
+<td><strong>Primary keys</strong></td>
+<td><code>id</code>, UUID format</td>
+<td><code>id uuid primary key default gen_random_uuid()</code></td>
+</tr>
+<tr>
+<td><strong>Foreign keys</strong></td>
+<td><code>{referenced_table_singular}_id</code></td>
+<td><code>organization_id</code>, <code>space_id</code>, <code>backup_run_id</code></td>
+</tr>
+<tr>
+<td><strong>Timestamps</strong></td>
+<td><code>created_at</code>, <code>modified_at</code> — auto-managed</td>
+<td>Set on insert; <code>modified_at</code> updated on every row change via trigger or ORM hook</td>
+</tr>
+<tr>
+<td><strong>Boolean fields</strong></td>
+<td><code>is_</code> or <code>has_</code> prefix</td>
+<td><code>is_active</code>, <code>has_migrated</code>, <code>is_trial</code></td>
+</tr>
+<tr>
+<td><strong>Enum-like status fields</strong></td>
+<td>snake_case string values</td>
+<td><code>status: &#39;pending&#39; | &#39;running&#39; | &#39;success&#39; | &#39;failed&#39;</code></td>
+</tr>
+</tbody></table>
+<h3>21.3 Core Master DB Tables (indicative — full schema in separate schema spec)</h3>
+<table>
+<thead>
+<tr>
+<th>Table</th>
+<th>Key Fields</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>organizations</code></td>
+<td><code>id</code>, <code>name</code>, <code>has_migrated</code>, <code>dynamic_locked</code>, <code>stripe_customer_id</code>, <code>created_at</code>, <code>modified_at</code></td>
+<td>Top-level billing entity</td>
+</tr>
+<tr>
+<td><code>users</code></td>
+<td><code>id</code>, <code>organization_id</code>, <code>email</code>, <code>role</code>, <code>created_at</code>, <code>modified_at</code></td>
+<td><code>role</code>: <code>owner</code>, <code>admin</code>, <code>member</code></td>
+</tr>
+<tr>
+<td><code>spaces</code></td>
+<td><code>id</code>, <code>organization_id</code>, <code>name</code>, <code>platform</code>, <code>space_type</code>, <code>status</code>, <code>created_at</code>, <code>modified_at</code></td>
+<td>One per Airtable connection group</td>
+</tr>
+<tr>
+<td><code>connections</code></td>
+<td><code>id</code>, <code>organization_id</code>, <code>platform</code>, <code>access_token_enc</code>, <code>refresh_token_enc</code>, <code>token_expires_at</code>, <code>status</code>, <code>created_at</code>, <code>modified_at</code></td>
+<td>Encrypted tokens</td>
+</tr>
+<tr>
+<td><code>backup_runs</code></td>
+<td><code>id</code>, <code>space_id</code>, <code>status</code>, <code>started_at</code>, <code>completed_at</code>, <code>is_trial</code>, <code>record_count</code>, <code>table_count</code>, <code>attachment_count</code></td>
+<td>Master record; metrics in client DB</td>
+</tr>
+<tr>
+<td><code>subscriptions</code></td>
+<td><code>id</code>, <code>organization_id</code>, <code>stripe_subscription_id</code>, <code>platform</code>, <code>tier</code>, <code>status</code>, <code>trial_ends_at</code>, <code>created_at</code>, <code>modified_at</code></td>
+<td>One row per platform per org</td>
+</tr>
+<tr>
+<td><code>api_tokens</code></td>
+<td><code>id</code>, <code>space_id</code>, <code>user_id</code>, <code>token_hash</code>, <code>last_used_at</code>, <code>created_at</code></td>
+<td>Inbound API tokens; store hash not plaintext</td>
+</tr>
+<tr>
+<td><code>notification_log</code></td>
+<td><code>id</code>, <code>organization_id</code>, <code>connection_id</code>, <code>notification_type</code>, <code>sent_count</code>, <code>last_sent_at</code></td>
+<td>Tracks dead-connection notification cadence</td>
+</tr>
+</tbody></table>
+<h3>21.4 Migration Workflow</h3>
+<pre><code>1. Edit schema in Drizzle schema file
+2. Run: drizzle-kit generate  →  creates migration SQL file
+3. Review migration file in PR
+4. On merge to staging: drizzle-kit migrate (staging DB)
+5. On merge to main: drizzle-kit migrate (production DB) — manual approval step
+</code></pre>
+<ul>
+<li>Breaking migrations (column drops, renames) require a two-phase approach: add new → backfill → remove old</li>
+<li>All migrations are versioned and never deleted from the repo</li>
+</ul>
+<p><em>Version 1.4 — Updated March 31, 2026. Added §13 Authentication, §14 Testing Strategy, §15 In-App Help, §16 Admin &amp; Observability, §17 Third-Party Services, §18 Git Branching &amp; CI/CD, §19 Email Templates, §20 Security &amp; Encryption, §21 Database Schema &amp; Conventions. PRD is now feature-complete for V1 build. See separate Implementation Plan document for phased build order and repo sequencing.</em></p>
+
+</body></html>

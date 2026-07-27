@@ -46,27 +46,33 @@
 
 V1 positions as a best-in-class Airtable backup and admin utility. V2 grows into a full multi-platform data management solution.
 
-### 1.2 Relationship to On2Air Backups ✅
+### 1.2 Relationship to On2Air Backups ✅ *(revised 2026-07-27, founder direction)*
 
-Baseout is a **full rebrand and next-generation replacement** of the On2Air backup product — not a parallel product. The On2Air brand is retired; Baseout becomes the single unified product.
+Baseout launches as a **new, independent platform "from the creators of On2Air"** — the two products **coexist** at launch, not a day-one replacement. On2Air Backups keeps running unchanged while Baseout proves itself with new customers; once confidence criteria are met, On2Air is **sunset** with an announced transition plan and customers are moved over. The On2Air brand retires at sunset, not at Baseout's launch.
 
-- Non-backup On2Air products deprecated effective **April 1, 2026**
-- ~330 active backup subscriptions (July 2026) mapped to equivalent new tiers (Starter/Launch/Growth) based on usage
-- Legacy users receive a `dynamic_locked: true` flag — dynamic features shown as upgrade CTAs, preserving static backup without disruption
-- Customers grandfathered at equivalent pricing for a defined transition period
+- Non-backup On2Air products deprecated effective **April 1, 2026** (Backups continues through the coexistence period)
+- ~330 active paying backup subscriptions (July 2026 Stripe export) transition **at sunset time**, mapped to equivalent new tiers based on usage — an increase from today's prices with a **grandfathered discount off Baseout list** (gratitude framing), per the pricing engagement
+- Legacy users receive a `dynamic_locked: true` flag at transition — dynamic features shown as upgrade CTAs, preserving static backup without disruption
+- Baseout launch pricing is set independently of On2Air's price points; legacy anchors inform only the transition offer (see `overview/pricing/` docs)
 
 ### 1.3 Primary User ✅
 
-Baseout is a **utility admin tool** targeting **Airtable platform admins** — the people responsible for building, managing, and protecting their organization's Airtable infrastructure. This includes internal IT managers, RevOps/BizOps owners, and Airtable consultants managing multiple client accounts.
+Baseout is a **utility admin tool** targeting **Airtable platform admins** — the people responsible for building, managing, and protecting their organization's Airtable infrastructure. This includes internal IT managers and RevOps/BizOps owners.
 
 **Primary persona: The Airtable Platform Admin**
-- Manages one or more Airtable workspaces on behalf of an organization or clients
+- Manages one or more Airtable workspaces on behalf of an organization
 - Needs reliable, auditable, low-maintenance backup infrastructure
 - Cares about data integrity, schema visibility, and fast recovery when something breaks
 - Technically capable — comfortable with OAuth, storage config, and SQL access
 - As Baseout expands to other platforms (V2+), this persona extends to admins of Notion, HubSpot, Salesforce, etc.
 
-**Secondary personas (V2 expansion):**
+**Secondary persona (V1 — before platform expansion, revised 2026-07-27): The Partner (consultant / agency)**
+- Implements and administers Airtable for many clients; interacts **across multiple client accounts** (multi-account admin membership + account switching — each client organization holds its own paid subscription; there is no umbrella plan)
+- A **revenue channel, not just a user type**: partners earn **affiliate/referral commissions** for signing clients up on their own subscriptions
+- Wants professional artifacts to show clients (schema diagrams, health reports, backup audit reports)
+- Community amplifier (BuiltOnAir, forums, consultant directories) — the partner program monetizes that channel rather than discounting it away
+
+**Additional personas (V2 expansion):**
 - Developer building on top of the SQL database layer (Business / BYODB tier)
 - Enterprise IT/compliance officer requiring SOC 2, SSO, and data sovereignty controls
 
@@ -641,19 +647,19 @@ Annual pricing offers approximately 20% discount (billed annually). See Baseout 
 
 > ✅ **Resolved:** Tier names finalized as Starter / Launch / Growth / Pro / Business / Enterprise. Static/dynamic is a capability within tiers, not a tier category.
 
-### 8.2 On2Air Customer Migration ✅
+### 8.2 On2Air Customer Migration ✅ *(revised 2026-07-27 — sunset-triggered, not launch-coupled; see §1.2)*
 
-**Backend migration (pre-launch, run once):**
-- One-time scripted process maps existing On2Air customers to appropriate new tiers (Starter/Launch/Growth) based on current usage (record count, bases)
-- Must complete before public launch — individual user UI steps can happen after launch
+**Backend migration (run once, at the On2Air sunset — NOT before Baseout launch):**
+- One-time scripted process maps existing On2Air customers to appropriate new tiers based on current usage (record count, bases); during the coexistence period On2Air customers stay on On2Air unchanged (they may adopt Baseout voluntarily as new customers)
+- Must complete before the sunset's customer-facing transition begins — individual user UI steps happen after, at their own pace
 - Legacy users receive a `dynamic_locked: true` flag on their Organization — dynamic features shown as upgrade CTAs, not hidden
 
-**User-facing migration flow (post-launch):**
+**User-facing migration flow (post-sunset-announcement):**
 - When a migrated user logs into Baseout for the first time, they are shown a **"Complete Your Migration"** screen
 - `has_migrated` flag stored on the Organization record; screen shown until flag is set to true
 - The screen guides them through re-authenticating their Airtable OAuth connection and storage destinations under the Baseout brand
 - Until migration is complete, backup cannot run (connection is not yet established under Baseout)
-- **Migration incentive:** Grandfathered pricing at their equivalent tier for a defined transition period
+- **Migration incentive:** a grandfathered **discount off Baseout list pricing** for a defined transition period (an increase from legacy prices, framed as thanks for long-term support — per the pricing engagement)
 
 ### 8.3 Support Model ✅
 
@@ -668,9 +674,9 @@ Annual pricing offers approximately 20% discount (billed annually). See Baseout 
 ### 8.4 Launch Strategy ✅
 
 1. **Private beta** — internal testing
-2. **Backend database migration** — one-time scripted migration of On2Air customers must complete before step 3
-3. **Public launch** — open to new customers; On2Air users complete their UI migration steps post-launch at their own pace
-4. **Airtable Marketplace listing** — get Baseout listed to capture organic discovery
+2. **Public launch** — Baseout opens to new customers as an independent platform "from the creators of On2Air"; On2Air continues running in parallel (coexistence)
+3. **Airtable Marketplace listing** — get Baseout listed to capture organic discovery
+4. **On2Air sunset (confidence-gated, date TBD)** — sunset announcement + scripted customer migration + "Complete Your Migration" flow (§8.2)
 
 > 🚫 **Deferred:** Product Hunt launch timing and all go-to-market planning is handled in a separate Marketing & Rollout PRD.
 
