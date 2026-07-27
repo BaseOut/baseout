@@ -34,6 +34,7 @@
     "test:unit:watch": "vitest",
     "test:unit:coverage": "vitest run --coverage",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:harness": "vitest run --config vitest.harness.config.ts",
     "test:db:up": "docker compose -f docker-compose.test.yml up -d",
     "test:db:down": "docker compose -f docker-compose.test.yml down -v",
     "test:e2e": "playwright test",
@@ -78,6 +79,7 @@
     "@vitest/coverage-v8": "^4.1.5",
     "daisyui": "^5.5.19",
     "drizzle-kit": "^0.31.10",
+    "embedded-postgres": "16.14.0-beta.17",
     "eslint": "^10.2.1",
     "eslint-plugin-astro": "^1.7.0",
     "happy-dom": "^20.9.0",
@@ -89,7 +91,7 @@
     "typescript-eslint": "^8.59.1",
     "vite": "7.3.2",
     "vitest": "^4.1.5",
-    "wrangler": "^4.61.1"
+    "wrangler": "^4.112.0"
   },
   "overrides": {
     "vite": "~7.3.1"
