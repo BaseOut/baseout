@@ -1,8 +1,23 @@
 // POST /api/internal/runs/:runId/complete
 //
-// Internal callback the Trigger.dev backup-base task wrapper hits after
-// runBackupBase returns. Wires the per-base completion into the masterDb
-// row owned by Phase 8a's runs/start.
+// Internal callback the Trigger.dev task wrappers hit after a task returns.
+// Wires the per-base completion into the masterDb row owned by Phase 8a's
+// runs/start. TWO body shapes (workflows-instant-webhook 4.2, the flagged
+// server-instant-webhook D.3 cross-app gap):
+//
+//   - snapshot (backup-base.task.ts): the original contract —
+//     tablesProcessed/recordsProcessed/attachmentsProcessed + four statuses.
+//   - incremental (incremental-backup.task.ts, `kind: "incremental"`):
+//     created/updated/deleted/reconciledRecords/driftCount/finalCursor +
+//     status succeeded|fallback_to_full|failed. Counters map to
+//     recordsProcessed = created+updated+deleted+reconciledRecords (tables/
+//     attachments 0); `fallback_to_full` finalizes the run as FAILED with a
+//     composed errorMessage (`fallback_to_full: <reason>`) — the incremental
+//     run yielded; the fallback full run the task already enqueued carries
+//     the recovery. On a succeeded completion whose `reconcileRan` is true,
+//     the subscription's last_reconciled_at is stamped (that stamp previously
+//     had no writer on the success path — only the fallback route stamped it
+//     — which forced a FULL reconcile on every dirty poll).
 //
 // Token gate is applied by middleware (path begins /api/internal/). This
 // handler validates URL shape (UUID) + JSON body, then delegates to
@@ -10,8 +25,9 @@
 //
 // Idempotency: the atomic UPDATE removes triggerRunId from
 // trigger_run_ids if present. A second callback with the same triggerRunId
-// matches no rows → null return → 200 noop. See complete.ts header for the
-// design rationale (Option J — no schema change).
+// matches no rows → null return → 200 noop (the reconcile stamp is skipped
+// on noop replays). See complete.ts header for the design rationale
+// (Option J — no schema change).
 //
 // Result-code → HTTP-status mapping:
 //   ok / kind=noop|partial|finalized → 200  { ok: true, kind, ... }
@@ -20,7 +36,12 @@
 
 import { eq, sql } from "drizzle-orm";
 import type { AppLocals, Env } from "../../../../env";
-import { backupRuns, backupRunBases, backupRunTables } from "../../../../db/schema";
+import {
+  airtableWebhookSubscriptions,
+  backupRuns,
+  backupRunBases,
+  backupRunTables,
+} from "../../../../db/schema";
 import {
   processRunComplete,
   type PerTableDetail,
@@ -83,9 +104,80 @@ function parseTableDetail(item: unknown): PerTableDetail | null {
   };
 }
 
-function parseBody(raw: unknown): ProcessRunCompleteInput | null {
+/** Incremental-completion metadata the handler acts on after the run update. */
+export interface IncrementalCompletionMeta {
+  status: "succeeded" | "fallback_to_full" | "failed";
+  /** Present when the wrapper knows its subscription — enables the reconcile stamp. */
+  subscriptionId?: string;
+  reconcileRan?: boolean;
+}
+
+export interface ParsedRunCompleteBody {
+  input: ProcessRunCompleteInput;
+  /** Present only for `kind: "incremental"` bodies. */
+  incremental?: IncrementalCompletionMeta;
+}
+
+const INCREMENTAL_STATUSES = new Set(["succeeded", "fallback_to_full", "failed"]);
+
+/** The incremental shape (workflows-instant-webhook 4.2) — kind-discriminated. */
+function parseIncrementalBody(r: Record<string, unknown>): ParsedRunCompleteBody | null {
+  if (!isNonEmptyString(r.triggerRunId)) return null;
+  if (!isNonEmptyString(r.atBaseId)) return null;
+  if (typeof r.status !== "string" || !INCREMENTAL_STATUSES.has(r.status)) return null;
+  for (const key of ["created", "updated", "deleted", "reconciledRecords", "driftCount", "finalCursor"]) {
+    if (!isNonNegativeInt(r[key])) return null;
+  }
+  if (r.errorMessage !== undefined && typeof r.errorMessage !== "string") return null;
+  if (r.fallbackReason !== undefined && typeof r.fallbackReason !== "string") return null;
+  if (r.subscriptionId !== undefined && !isNonEmptyString(r.subscriptionId)) return null;
+  if (r.reconcileRan !== undefined && typeof r.reconcileRan !== "boolean") return null;
+
+  const status = r.status as IncrementalCompletionMeta["status"];
+  // fallback_to_full: the incremental run yielded to the full re-read the
+  // task already enqueued via /webhook-subscriptions/:id/fallback — finalize
+  // this row as failed with a composed, greppable message (an explicit
+  // errorMessage wins).
+  const errorMessage =
+    typeof r.errorMessage === "string"
+      ? r.errorMessage
+      : status === "fallback_to_full"
+        ? `fallback_to_full: ${typeof r.fallbackReason === "string" ? r.fallbackReason : "unknown"}`
+        : undefined;
+
+  return {
+    input: {
+      runId: "", // overwritten by caller from URL
+      triggerRunId: r.triggerRunId as string,
+      atBaseId: r.atBaseId as string,
+      status: status === "succeeded" ? "succeeded" : "failed",
+      tablesProcessed: 0,
+      recordsProcessed:
+        (r.created as number) +
+        (r.updated as number) +
+        (r.deleted as number) +
+        (r.reconciledRecords as number),
+      attachmentsProcessed: 0,
+      ...(errorMessage !== undefined ? { errorMessage } : {}),
+    },
+    incremental: {
+      status,
+      ...(isNonEmptyString(r.subscriptionId) ? { subscriptionId: r.subscriptionId } : {}),
+      ...(typeof r.reconcileRan === "boolean" ? { reconcileRan: r.reconcileRan } : {}),
+    },
+  };
+}
+
+/** Exported for unit tests (runs-complete-route.test.ts) — handler-internal otherwise. */
+export function parseRunCompleteBody(raw: unknown): ParsedRunCompleteBody | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
+  if (r.kind === "incremental") return parseIncrementalBody(r);
+  const input = parseSnapshotBody(r);
+  return input ? { input } : null;
+}
+
+function parseSnapshotBody(r: Record<string, unknown>): ProcessRunCompleteInput | null {
   if (!isNonEmptyString(r.triggerRunId)) return null;
   if (!isNonEmptyString(r.atBaseId)) return null;
   if (typeof r.status !== "string" || !ALLOWED_STATUSES.has(r.status)) {
@@ -152,11 +244,11 @@ export async function runsCompleteHandler(
     return jsonResponse({ error: "invalid_request" }, 400);
   }
 
-  const parsed = parseBody(raw);
+  const parsed = parseRunCompleteBody(raw);
   if (!parsed) {
     return jsonResponse({ error: "invalid_request" }, 400);
   }
-  const input: ProcessRunCompleteInput = { ...parsed, runId };
+  const input: ProcessRunCompleteInput = { ...parsed.input, runId };
 
   // Production wiring uses the per-request masterDb; tests cover the routing
   // layer (this file) and the pure function (complete.ts) separately —
@@ -257,6 +349,27 @@ export async function runsCompleteHandler(
   });
 
   if (result.ok) {
+    // Success-path reconcile stamp (workflows-instant-webhook 4.2): a
+    // succeeded incremental completion whose reconcile pass ran resets the
+    // 7-day reconcile cadence — previously only the FALLBACK route stamped
+    // this, so a healthy stream re-ran a full reconcile on every dirty poll.
+    // Skipped on noop (idempotent replay). Best-effort: a stamp failure must
+    // not turn a recorded completion into a wire error.
+    if (
+      result.kind !== "noop" &&
+      parsed.incremental?.status === "succeeded" &&
+      parsed.incremental.reconcileRan === true &&
+      parsed.incremental.subscriptionId
+    ) {
+      try {
+        await db
+          .update(airtableWebhookSubscriptions)
+          .set({ lastReconciledAt: new Date(), modifiedAt: new Date() })
+          .where(eq(airtableWebhookSubscriptions.id, parsed.incremental.subscriptionId));
+      } catch {
+        // ignored — the next reconcile-cadence check simply fires again.
+      }
+    }
     if (result.kind === "noop") {
       return jsonResponse({ ok: true, kind: "noop" }, statusFor(result));
     }

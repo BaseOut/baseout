@@ -22,6 +22,8 @@ import {
 import { enqueueBackupBase } from "../trigger-client";
 import { interfaceBackupEnabled } from "../capabilities/interface-backup";
 import { automationBackupEnabled } from "../capabilities/automation-backup";
+import { commentBackupEnabled } from "../capabilities/comment-backup";
+import { buildWorkspaceAutoEnrollDep } from "../workspaces/auto-enroll-io";
 import { resolveCapabilities } from "../capabilities/resolve";
 import type { Env } from "../../env";
 import type { ProcessRunStartDeps, IncludedBase } from "./start";
@@ -97,5 +99,17 @@ export function buildRunStartDeps(db: MasterDb, env: Env): ProcessRunStartDeps {
       const { tier } = await resolveCapabilities(db, organizationId, "airtable");
       return automationBackupEnabled(tier);
     },
+    resolveCommentsEnabled: async (organizationId) => {
+      const { tier } = await resolveCapabilities(db, organizationId, "airtable");
+      return commentBackupEnabled(tier);
+    },
+    // server-mcp-views: "1" stamps viewCaptureMode 'rest' for every
+    // connection (the legacy dev escape); otherwise the connection's
+    // platform_config decides ('rest' enterprise / 'mcp' everyone else).
+    viewCaptureOverride: env.VIEW_CAPTURE_OVERRIDE,
+    // server-mcp-workspaces: run-start auto-enroll check (failure-isolated in
+    // processRunStart; 403-degraded until the workspacesAndBases:read scope
+    // decision lands).
+    runWorkspaceAutoEnroll: buildWorkspaceAutoEnrollDep(db, env),
   };
 }

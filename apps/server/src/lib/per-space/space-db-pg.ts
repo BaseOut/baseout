@@ -8,14 +8,17 @@
 // master connection inside one transaction (atomic per sync), the same pattern
 // provisioning uses. The pure diff modules decide WHAT changes; this applies it.
 
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Sql } from "postgres";
 import type { AppDb } from "../../db/worker";
 import { spacePg } from "@baseout/db-schema/space";
 import { schemaNameForSpace } from "../provisioning/posture";
-import type { LifecycleOp, PriorWorkingSet, SchemaDiffResult } from "./schema-diff";
+import type { LifecycleOp, PriorView, PriorWorkingSet, SchemaDiffResult } from "./schema-diff";
 import type { InterfaceDiffResult, PriorInterfaceWorkingSet } from "./interfaces-sync";
+import type { ViewsDiffResult } from "./views-sync";
+import type { CommentDiffResult, PriorComment } from "./comments-sync";
+import type { MediaDiffResult, PriorAssetRef } from "./media-sync";
 import type { AutomationDiffResult, PriorAutomationWorkingSet } from "./automations-sync";
 import type { PriorCell, PriorRecord, RecordDiffResult } from "./record-diff";
 import { extractFieldConfig, type FieldConfig } from "./schema-enrich";
@@ -240,6 +243,460 @@ export async function markViewsUnknownForBase(tx: SpaceTx, baseId: string): Prom
     .update(spacePg.views)
     .set({ status: "unknown" })
     .where(and(eq(spacePg.views.baseId, baseId), eq(spacePg.views.status, "active")));
+}
+
+// ───────────────────────── views (MCP capture) ─────────────────────────
+// server-mcp-views: the MCP path reads/writes the SAME bo_at_views rows as the
+// REST enterprise path (one table, two sources, no per-row provenance —
+// design Decision 1). The pure diff lives in views-sync.ts.
+
+/** The base's bo_at_views rows in the PriorView shape views-sync diffs against. */
+export async function readViewWorkingSet(tx: SpaceTx, baseId: string): Promise<PriorView[]> {
+  const views = await tx.select().from(spacePg.views).where(eq(spacePg.views.baseId, baseId));
+  return views.map((v) => ({
+    viewId: v.viewId,
+    tableId: v.tableId,
+    name: v.name,
+    type: v.type,
+    status: v.status,
+  }));
+}
+
+/**
+ * Write a views diff: lifecycle ops through the same writer the schema diff
+ * uses (byte-identical row semantics to the REST path) + name/type rows into
+ * bo_at_schema_updates.
+ */
+export async function applyViewDiff(
+  tx: SpaceTx,
+  args: { baseRunId: string; diff: ViewsDiffResult },
+): Promise<void> {
+  const { baseRunId, diff } = args;
+  for (const op of diff.lifecycle) await applyLifecycleOp(tx, baseRunId, op);
+  if (diff.schemaUpdates.length) {
+    await tx.insert(spacePg.schemaUpdates).values(
+      diff.schemaUpdates.map((u) => ({
+        runId: baseRunId,
+        entityType: u.entityType,
+        entityId: u.entityId,
+        baseId: u.baseId,
+        tableId: u.tableId,
+        changeType: u.changeType,
+        changeTypeName: u.changeTypeName,
+        beforeValue: u.beforeValue,
+        afterValue: u.afterValue,
+        breaksData: u.breaksData,
+      })),
+    );
+  }
+}
+
+/**
+ * Identical-capture short-circuit's write half: an unchanged MCP capture still
+ * sights every active view — stamp last_seen_run in one UPDATE.
+ */
+export async function stampViewsSeenForBase(
+  tx: SpaceTx,
+  baseId: string,
+  runId: string,
+): Promise<void> {
+  await tx
+    .update(spacePg.views)
+    .set({ lastSeenRun: runId })
+    .where(and(eq(spacePg.views.baseId, baseId), eq(spacePg.views.status, "active")));
+}
+
+// ───────────────────────── comments (server-comments) ─────────────────────────
+// Update-in-place with soft deletion; deletion scope is per `complete` record
+// capture (comments-sync.ts owns the pure diff + wire types).
+
+/** Prior rows for the batch's record ids — the diff's whole scope (Decision 3). */
+export async function readCommentWorkingSet(
+  tx: SpaceTx,
+  recordIds: string[],
+): Promise<PriorComment[]> {
+  if (recordIds.length === 0) return [];
+  const rows = await tx
+    .select()
+    .from(spacePg.comments)
+    .where(inArray(spacePg.comments.recordId, recordIds));
+  return rows.map((r) => ({
+    commentId: r.airtableCommentId,
+    recordId: r.recordId,
+    text: r.text,
+    airtableLastUpdatedAt: r.airtableLastUpdatedAt,
+    status: r.status,
+  }));
+}
+
+/**
+ * Write a comment diff: upserts keyed by airtable_comment_id (re-captured
+ * deleted ids resurrect to active; last-seen stamps always advance) + soft
+ * deletions.
+ */
+export async function applyCommentBatch(
+  tx: SpaceTx,
+  args: { baseId: string; baseRunId: string; diff: CommentDiffResult; now?: Date },
+): Promise<void> {
+  const { baseId, baseRunId, diff } = args;
+  const now = args.now ?? new Date();
+  for (const u of diff.upserts) {
+    await tx
+      .insert(spacePg.comments)
+      .values({
+        airtableCommentId: u.commentId,
+        baseId,
+        tableId: u.tableId,
+        recordId: u.recordId,
+        author: u.author ?? null,
+        text: u.text,
+        airtableCreatedAt: u.airtableCreatedAt,
+        airtableLastUpdatedAt: u.airtableLastUpdatedAt,
+        raw: u.raw ?? null,
+        status: "active",
+        firstSeenRun: baseRunId,
+        lastSeenRun: baseRunId,
+        firstSeenAt: now,
+        lastSeenAt: now,
+      })
+      .onConflictDoUpdate({
+        target: spacePg.comments.airtableCommentId,
+        set: {
+          author: u.author ?? null,
+          text: u.text,
+          airtableCreatedAt: u.airtableCreatedAt,
+          airtableLastUpdatedAt: u.airtableLastUpdatedAt,
+          raw: u.raw ?? null,
+          status: "active",
+          lastSeenRun: baseRunId,
+          lastSeenAt: now,
+        },
+      });
+  }
+  if (diff.deletions.length) {
+    await tx
+      .update(spacePg.comments)
+      .set({ status: "deleted" })
+      .where(inArray(spacePg.comments.airtableCommentId, diff.deletions));
+  }
+}
+
+// ───────────────────────── media index (server-media-index) ─────────────────
+// Asset/ref split keyed by the writer's content checksum (media-sync.ts owns
+// the pure diff + wire types). Assets are never deleted by sync — refs
+// dropping to zero stamps zero_ref_since for the retention machinery.
+
+/** Prior ref rows for the batch's record ids — the diff's deletion scope. */
+export async function readMediaWorkingSet(
+  tx: SpaceTx,
+  recordIds: string[],
+): Promise<PriorAssetRef[]> {
+  if (recordIds.length === 0) return [];
+  const rows = await tx
+    .select({
+      attachmentId: spacePg.assetRefs.airtableAttachmentId,
+      recordId: spacePg.assetRefs.recordId,
+      status: spacePg.assetRefs.status,
+    })
+    .from(spacePg.assetRefs)
+    .where(inArray(spacePg.assetRefs.recordId, recordIds));
+  return rows;
+}
+
+/**
+ * Write a media diff: asset upserts by checksum (metadata refreshed, id
+ * captured for refs), ref upserts by attachment id (resurrects removed), ref
+ * removals, then zero-ref maintenance — assets whose live refs vanished get
+ * zero_ref_since stamped; assets that (re)gained an active ref get it cleared.
+ */
+export async function applyMediaBatch(
+  tx: SpaceTx,
+  args: { baseRunId: string; diff: MediaDiffResult; now?: Date },
+): Promise<void> {
+  const { baseRunId, diff } = args;
+  const now = args.now ?? new Date();
+
+  const assetIdByChecksum = new Map<string, string>();
+  for (const a of diff.assetUpserts) {
+    const [row] = await tx
+      .insert(spacePg.assets)
+      .values({
+        checksum: a.checksum,
+        contentType: a.contentType,
+        contentClass: a.contentClass,
+        sizeBytes: a.sizeBytes,
+        storageKind: a.storageKind,
+        storageProvider: a.storageProvider,
+        storageRef: a.storageRef,
+        zeroRefSince: null,
+        firstSeenRun: baseRunId,
+        lastSeenRun: baseRunId,
+        firstSeenAt: now,
+        lastSeenAt: now,
+      })
+      .onConflictDoUpdate({
+        target: spacePg.assets.checksum,
+        set: {
+          contentType: a.contentType,
+          contentClass: a.contentClass,
+          sizeBytes: a.sizeBytes,
+          storageKind: a.storageKind,
+          storageProvider: a.storageProvider,
+          storageRef: a.storageRef,
+          zeroRefSince: null,
+          lastSeenRun: baseRunId,
+          lastSeenAt: now,
+        },
+      })
+      .returning({ id: spacePg.assets.id });
+    if (row) assetIdByChecksum.set(a.checksum, row.id);
+  }
+
+  for (const r of diff.refUpserts) {
+    const assetId = assetIdByChecksum.get(r.checksum);
+    if (!assetId) continue; // asset entry was dropped in extraction — skip its ref
+    await tx
+      .insert(spacePg.assetRefs)
+      .values({
+        assetId,
+        airtableAttachmentId: r.attachmentId,
+        baseId: r.baseId,
+        tableId: r.tableId,
+        recordId: r.recordId,
+        fieldId: r.fieldId,
+        filename: r.filename,
+        status: "active",
+        firstSeenRun: baseRunId,
+        lastSeenRun: baseRunId,
+        firstSeenAt: now,
+        lastSeenAt: now,
+      })
+      .onConflictDoUpdate({
+        target: spacePg.assetRefs.airtableAttachmentId,
+        set: {
+          assetId,
+          baseId: r.baseId,
+          tableId: r.tableId,
+          recordId: r.recordId,
+          fieldId: r.fieldId,
+          filename: r.filename,
+          status: "active",
+          lastSeenRun: baseRunId,
+          lastSeenAt: now,
+        },
+      });
+  }
+
+  if (diff.refRemovals.length) {
+    await tx
+      .update(spacePg.assetRefs)
+      .set({ status: "removed" })
+      .where(inArray(spacePg.assetRefs.airtableAttachmentId, diff.refRemovals));
+  }
+
+  // Zero-ref maintenance: stamp assets with no live refs (removal candidates
+  // for retention — never deleted here); clear the stamp when refs live again.
+  await tx.execute(sql`
+    UPDATE ${spacePg.assets} a SET zero_ref_since = ${now.toISOString()}::timestamptz
+    WHERE a.zero_ref_since IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM ${spacePg.assetRefs} r
+        WHERE r.asset_id = a.id AND r.status = 'active'
+      )`);
+  await tx.execute(sql`
+    UPDATE ${spacePg.assets} a SET zero_ref_since = NULL
+    WHERE a.zero_ref_since IS NOT NULL
+      AND EXISTS (
+        SELECT 1 FROM ${spacePg.assetRefs} r
+        WHERE r.asset_id = a.id AND r.status = 'active'
+      )`);
+}
+
+/** Filters shared by the list + totals reads. */
+export interface MediaFilters {
+  classes?: string[];
+  baseId?: string;
+  tableId?: string;
+  minSize?: number;
+  maxSize?: number;
+  capturedAfter?: Date;
+  capturedBefore?: Date;
+}
+
+function mediaFilterConditions(f: MediaFilters) {
+  const conds = [];
+  if (f.classes?.length) conds.push(inArray(spacePg.assets.contentClass, f.classes));
+  if (f.minSize !== undefined) conds.push(sql`${spacePg.assets.sizeBytes} >= ${f.minSize}`);
+  if (f.maxSize !== undefined) conds.push(sql`${spacePg.assets.sizeBytes} <= ${f.maxSize}`);
+  if (f.capturedAfter) conds.push(sql`${spacePg.assets.firstSeenAt} >= ${f.capturedAfter.toISOString()}::timestamptz`);
+  if (f.capturedBefore) conds.push(sql`${spacePg.assets.firstSeenAt} <= ${f.capturedBefore.toISOString()}::timestamptz`);
+  if (f.baseId || f.tableId) {
+    conds.push(sql`EXISTS (
+      SELECT 1 FROM ${spacePg.assetRefs} fr
+      WHERE fr.asset_id = ${spacePg.assets.id} AND fr.status = 'active'
+      ${f.baseId ? sql`AND fr.base_id = ${f.baseId}` : sql``}
+      ${f.tableId ? sql`AND fr.table_id = ${f.tableId}` : sql``}
+    )`);
+  }
+  return conds;
+}
+
+export interface MediaAssetRow {
+  id: string;
+  checksum: string;
+  contentType: string | null;
+  contentClass: string;
+  sizeBytes: number | null;
+  storageKind: string | null;
+  storageProvider: string | null;
+  storageRef: string | null;
+  thumbnailStatus: string;
+  thumbnailKey: string | null;
+  firstSeenAt: Date | null;
+  lastSeenAt: Date | null;
+  refs: {
+    attachmentId: string;
+    baseId: string;
+    tableId: string;
+    recordId: string;
+    fieldId: string;
+    filename: string | null;
+    status: string;
+  }[];
+}
+
+/**
+ * Media Library list read: newest-first keyset pagination on
+ * (first_seen_at DESC, id DESC); each item carries its refs.
+ */
+export async function listMediaAssets(
+  tx: SpaceTx,
+  args: MediaFilters & { cursor?: { firstSeenAt: Date; id: string }; limit: number },
+): Promise<{ items: MediaAssetRow[]; nextCursor: { firstSeenAt: Date; id: string } | null }> {
+  const conds = mediaFilterConditions(args);
+  if (args.cursor) {
+    conds.push(
+      sql`(${spacePg.assets.firstSeenAt}, ${spacePg.assets.id}) < (${args.cursor.firstSeenAt.toISOString()}::timestamptz, ${args.cursor.id}::uuid)`,
+    );
+  }
+  const rows = await tx
+    .select()
+    .from(spacePg.assets)
+    .where(conds.length ? and(...conds) : undefined)
+    .orderBy(sql`${spacePg.assets.firstSeenAt} DESC NULLS LAST`, sql`${spacePg.assets.id} DESC`)
+    .limit(args.limit + 1);
+
+  const page = rows.slice(0, args.limit);
+  const refs = page.length
+    ? await tx
+        .select()
+        .from(spacePg.assetRefs)
+        .where(inArray(spacePg.assetRefs.assetId, page.map((r) => r.id)))
+    : [];
+  const refsByAsset = new Map<string, MediaAssetRow["refs"]>();
+  for (const r of refs) {
+    const list = refsByAsset.get(r.assetId) ?? [];
+    list.push({
+      attachmentId: r.airtableAttachmentId,
+      baseId: r.baseId,
+      tableId: r.tableId,
+      recordId: r.recordId,
+      fieldId: r.fieldId,
+      filename: r.filename,
+      status: r.status,
+    });
+    refsByAsset.set(r.assetId, list);
+  }
+  const items = page.map((r) => ({
+    id: r.id,
+    checksum: r.checksum,
+    contentType: r.contentType,
+    contentClass: r.contentClass,
+    sizeBytes: r.sizeBytes,
+    storageKind: r.storageKind,
+    storageProvider: r.storageProvider,
+    storageRef: r.storageRef,
+    thumbnailStatus: r.thumbnailStatus,
+    thumbnailKey: r.thumbnailKey,
+    firstSeenAt: r.firstSeenAt,
+    lastSeenAt: r.lastSeenAt,
+    refs: refsByAsset.get(r.id) ?? [],
+  }));
+  const last = page[page.length - 1];
+  const nextCursor =
+    rows.length > args.limit && last?.firstSeenAt ? { firstSeenAt: last.firstSeenAt, id: last.id } : null;
+  return { items, nextCursor };
+}
+
+/** Count + summed size for the current filter — the storage-bill lens. */
+export async function mediaTotals(
+  tx: SpaceTx,
+  filters: MediaFilters,
+): Promise<{ count: number; sizeBytes: number }> {
+  const conds = mediaFilterConditions(filters);
+  const [row] = await tx
+    .select({
+      count: sql<number>`count(*)::int`,
+      sizeBytes: sql<number>`coalesce(sum(${spacePg.assets.sizeBytes}), 0)::bigint`,
+    })
+    .from(spacePg.assets)
+    .where(conds.length ? and(...conds) : undefined);
+  return { count: row?.count ?? 0, sizeBytes: Number(row?.sizeBytes ?? 0) };
+}
+
+/** Detail read: the asset + all refs (capture history = the run/at stamps). */
+export async function getMediaAsset(tx: SpaceTx, assetId: string): Promise<
+  | (MediaAssetRow & { firstSeenRun: string | null; lastSeenRun: string | null; zeroRefSince: Date | null })
+  | null
+> {
+  const [r] = await tx.select().from(spacePg.assets).where(eq(spacePg.assets.id, assetId)).limit(1);
+  if (!r) return null;
+  const refs = await tx.select().from(spacePg.assetRefs).where(eq(spacePg.assetRefs.assetId, assetId));
+  return {
+    id: r.id,
+    checksum: r.checksum,
+    contentType: r.contentType,
+    contentClass: r.contentClass,
+    sizeBytes: r.sizeBytes,
+    storageKind: r.storageKind,
+    storageProvider: r.storageProvider,
+    storageRef: r.storageRef,
+    thumbnailStatus: r.thumbnailStatus,
+    thumbnailKey: r.thumbnailKey,
+    firstSeenAt: r.firstSeenAt,
+    lastSeenAt: r.lastSeenAt,
+    firstSeenRun: r.firstSeenRun,
+    lastSeenRun: r.lastSeenRun,
+    zeroRefSince: r.zeroRefSince,
+    refs: refs.map((ref) => ({
+      attachmentId: ref.airtableAttachmentId,
+      baseId: ref.baseId,
+      tableId: ref.tableId,
+      recordId: ref.recordId,
+      fieldId: ref.fieldId,
+      filename: ref.filename,
+      status: ref.status,
+    })),
+  };
+}
+
+/**
+ * The comments-plan counts read (design Decision 5): recordId → active-comment
+ * count, grouped over bo_at_comments — no stored count column to drift.
+ */
+export async function readActiveCommentCounts(
+  tx: SpaceTx,
+  baseId: string,
+): Promise<Map<string, number>> {
+  const rows = await tx
+    .select({
+      recordId: spacePg.comments.recordId,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(spacePg.comments)
+    .where(and(eq(spacePg.comments.baseId, baseId), eq(spacePg.comments.status, "active")))
+    .groupBy(spacePg.comments.recordId);
+  return new Map(rows.map((r) => [r.recordId, r.count]));
 }
 
 export async function applySchemaDiff(

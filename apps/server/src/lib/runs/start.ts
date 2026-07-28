@@ -29,6 +29,10 @@ import type {
   BackupRunRow,
   ConnectionRow,
 } from "../../db/schema";
+import {
+  viewCaptureModeFromConnection,
+  type ViewCaptureMode,
+} from "../per-space/view-capture";
 
 export interface ProcessRunStartInput {
   runId: string;
@@ -98,6 +102,24 @@ export interface BackupBaseTaskPayload {
    * interfacesEnabled (Growth+, lib/capabilities/automation-backup.ts).
    */
   automationsEnabled: boolean;
+  /**
+   * Gates the REST comment capture step on the workflows side
+   * (server-comments / workflows-comments). Rides the record-backup tier
+   * (recommended stance, ⚠ tier pending Dan — lib/capabilities/
+   * comment-backup.ts). Below tier the task makes zero comments-endpoint or
+   * comments-plan requests.
+   */
+  commentsEnabled: boolean;
+  /**
+   * How this run captures views (server-mcp-views / workflows-mcp-views):
+   * 'rest' — enterprise-scope connection (or dev override), views ride the
+   * REST schema payload as before, no MCP call; 'mcp' — the task captures
+   * views via the Airtable MCP server and forwards them on schema-sync's
+   * optional `views` field; 'off' — no view capture. Resolved from the
+   * connection's platform_config at run start; the schema-sync route
+   * re-resolves authoritatively at persist time.
+   */
+  viewCaptureMode: ViewCaptureMode;
 }
 
 const ACCEPTED_STORAGE_TYPES = new Set([
@@ -133,6 +155,34 @@ export interface ProcessRunStartDeps {
    * automationBackupEnabled in start-deps.ts.
    */
   resolveAutomationsEnabled: (organizationId: string) => Promise<boolean>;
+  /**
+   * Tier gate for the REST comment capture (server-comments; rides the
+   * record-backup tier pending Dan). Same shape as the two above; production
+   * wiring is resolveCapabilities + commentBackupEnabled in start-deps.ts.
+   */
+  resolveCommentsEnabled: (organizationId: string) => Promise<boolean>;
+  /**
+   * Workspace auto-enroll pre-step (server-mcp-workspaces): runs BEFORE
+   * fetchIncludedBases so freshly-added bases join THIS run. Optional +
+   * failure-isolated — any rejection/throw is swallowed and the run proceeds
+   * on the configured base set (the spec's hard rule: the check SHALL never
+   * fail or delay the run). On today's OAuth grant the MCP listing 403s, so
+   * production resolves `{ok:false, reason:'auth'}` until the scope decision
+   * (Features §17 Q20) lands.
+   */
+  runWorkspaceAutoEnroll?: (args: {
+    spaceId: string;
+    connectionId: string;
+    organizationId: string;
+    configId: string;
+  }) => Promise<unknown>;
+  /**
+   * VIEW_CAPTURE_OVERRIDE passthrough (server-view-capture-override): exactly
+   * "1" stamps viewCaptureMode 'rest' for every connection — the legacy dev
+   * escape that opened the REST gate. Unset/other values resolve from the
+   * connection's platform_config (server-mcp-views).
+   */
+  viewCaptureOverride?: string;
   /** Test seam — defaults to () => new Date() in production. */
   now?: () => Date;
 }
@@ -182,6 +232,25 @@ export async function processRunStart(
     return { ok: false, error: "unsupported_storage_type" };
   }
 
+  // 3b. Workspace auto-enroll pre-step (server-mcp-workspaces): detect new
+  //     workspaces/bases in enrolled workspaces and add them BEFORE the base
+  //     fetch below, so they join this very run (design Decision 2 — "the new
+  //     bases join the very run that discovered them"). Failure-isolated: any
+  //     rejection is swallowed and the run proceeds unchanged. Manual runs get
+  //     the same check (no hidden mode split).
+  if (deps.runWorkspaceAutoEnroll) {
+    try {
+      await deps.runWorkspaceAutoEnroll({
+        spaceId: run.spaceId,
+        connectionId: run.connectionId,
+        organizationId: connection.organizationId,
+        configId: config.id,
+      });
+    } catch {
+      // Skipped with no signal to the run — the spec's failure-isolation rule.
+    }
+  }
+
   // 4. At least one base must be marked is_included=true.
   const bases = await deps.fetchIncludedBases(config.id);
   if (bases.length === 0) {
@@ -206,6 +275,16 @@ export async function processRunStart(
   const automationsEnabled = await deps.resolveAutomationsEnabled(
     connection.organizationId,
   );
+  const commentsEnabled = await deps.resolveCommentsEnabled(
+    connection.organizationId,
+  );
+  // server-mcp-views: 'rest' for enterprise scope (or the dev override),
+  // 'mcp' for everyone else — tells the task whether to run the MCP view
+  // capture. Per-connection, so it resolves once for the whole fan-out.
+  const viewCaptureMode: ViewCaptureMode =
+    deps.viewCaptureOverride === "1"
+      ? "rest"
+      : viewCaptureModeFromConnection(connection.platformConfig);
   const triggerRunIds: string[] = [];
   const runStartedAtIso = startedAt.toISOString();
   for (const base of bases) {
@@ -228,6 +307,8 @@ export async function processRunStart(
       kind: run.kind === "schema" ? "schema" : "full",
       interfacesEnabled,
       automationsEnabled,
+      commentsEnabled,
+      viewCaptureMode,
     });
     triggerRunIds.push(handle.id);
   }
