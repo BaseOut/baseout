@@ -41,6 +41,11 @@ import {
   type WebhookPayload,
 } from "./_lib/airtable-payloads";
 import type { AirtableRecordsPage, AirtableSchema } from "./_lib/airtable-client";
+import {
+  captureCommentsForRecords,
+  type CommentRecordCaptureWire,
+  type FetchRecordCommentsResult,
+} from "./_lib/record-comments";
 
 // ── Input / result ───────────────────────────────────────────────────────────
 
@@ -80,6 +85,16 @@ export interface IncrementalBackupResult {
   /** Set when status = fallback_to_full: cursor_expired | INVALID_HOOK | INVALID_FILTERS. */
   fallbackReason?: string;
   errorMessage?: string;
+  /**
+   * Visited-record comment capture outcome (workflows-comments task 3.5).
+   * Present only when attempted (commentsEnabled + both comment deps wired +
+   * ≥1 visited record). NEVER affects `status` — best-effort, like the full
+   * run's capture.
+   */
+  comments?:
+    | { status: "captured"; records: number; comments: number }
+    | { status: "partial"; reason: string; records: number; comments: number }
+    | { status: "skipped"; reason: string };
 }
 
 // ── Injected write shapes (engine-brokered per-space writes) ────────────────
@@ -252,6 +267,25 @@ export interface IncrementalBackupDeps {
   /** Reconciliation anchor (subscription's last_reconciled_at, ISO). Null/absent
    *  → reconciliation pages without a modifiedTime filter (full sweep). */
   lastReconciledAt?: string | null;
+  /**
+   * Comment capture for visited records (workflows-comments task 3.5) —
+   * stamped by the server's context route from the org tier (same resolver
+   * as full runs). Capture runs only when true AND both comment deps below
+   * are wired; absent ⇒ off, zero behavior change.
+   */
+  commentsEnabled?: boolean;
+  /** Streams one comment batch to the engine's comments-sync route. Throws on
+   *  engine errors — mapped to a `partial` outcome, never the run. */
+  syncComments?: (args: {
+    baseId: string;
+    records: CommentRecordCaptureWire[];
+  }) => Promise<void>;
+  /** Per-record comments fetcher, already bound to the base + access token by
+   *  the wrapper (the pure module never sees the token). */
+  fetchRecordComments?: (ref: {
+    tableId: string;
+    recordId: string;
+  }) => Promise<FetchRecordCommentsResult>;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -600,6 +634,7 @@ async function reconcileTable(
   anchorIso: string | null,
   counters: Counters,
   recordAffectedTables: Set<string>,
+  noteVisited: (writes: RecordWrite[]) => void,
 ): Promise<void> {
   const { airtable, db } = deps;
 
@@ -670,6 +705,7 @@ async function reconcileTable(
     if (writes.length > 0) {
       await db.applyRecordEvents(baseRunId, writes);
       recordAffectedTables.add(tableId);
+      noteVisited(writes);
     }
     offset = page.offset;
   } while (offset);
@@ -695,6 +731,7 @@ async function reconcileTable(
     await db.applyRecordEvents(baseRunId, deletions);
     recordAffectedTables.add(tableId);
     counters.reconciledRecords += deletions.length;
+    noteVisited(deletions);
   }
 }
 
@@ -730,6 +767,25 @@ export async function runIncrementalBackup(
   // unioned with schema-affected tables for the end-of-pass view regeneration
   // (workflows-incremental-view-refresh).
   const recordAffectedTables = new Set<string>();
+  // Visited records (workflows-comments task 3.5): every record with an
+  // applied create/update write this pass — the bounded set whose comments
+  // get re-captured. destroyRecord REMOVES: a destroyed record needs no
+  // comment fetch (it would 404), even if touched earlier in the pass.
+  const visitedRecords = new Map<string, Set<string>>();
+  const noteVisited = (writes: RecordWrite[]): void => {
+    for (const w of writes) {
+      if (w.kind === "destroyRecord") {
+        visitedRecords.get(w.tableId)?.delete(w.recordId);
+        continue;
+      }
+      let set = visitedRecords.get(w.tableId);
+      if (!set) {
+        set = new Set();
+        visitedRecords.set(w.tableId, set);
+      }
+      set.add(w.recordId);
+    }
+  };
 
   const finish = async (
     status: IncrementalBackupStatus,
@@ -824,6 +880,7 @@ export async function runIncrementalBackup(
         if (recordWrites.length > 0) {
           await deps.db.applyRecordEvents(baseRunId, recordWrites);
           for (const w of recordWrites) recordAffectedTables.add(w.tableId);
+          noteVisited(recordWrites);
         }
 
         payloadsApplied += 1;
@@ -868,7 +925,7 @@ export async function runIncrementalBackup(
         // Created-this-pass tables get a full fill regardless of the anchor —
         // their payload recordsById may be partial for large pasted-in tables.
         const tableAnchor = createdTables.has(tableId) ? null : anchor;
-        await reconcileTable(deps, baseRunId, tableId, tableAnchor, counters, recordAffectedTables);
+        await reconcileTable(deps, baseRunId, tableId, tableAnchor, counters, recordAffectedTables, noteVisited);
       }
     }
 
@@ -892,7 +949,42 @@ export async function runIncrementalBackup(
       }
     }
 
-    return await finish("succeeded", { reconcileRan });
+    // ── Visited-record comment capture (workflows-comments task 3.5) ────────
+    // The visited set IS the refresh list — webhook payloads carry no
+    // commentCount, so there is no count-delta plan step; the set is already
+    // bounded by what actually changed. Sequenced last (core writes never
+    // queue behind comment chatter) and best-effort: the outcome never
+    // affects the pass status.
+    let commentsOutcome: IncrementalBackupResult["comments"];
+    const visitedRefs: { recordId: string; tableId: string }[] = [];
+    for (const [tableId, ids] of visitedRecords) {
+      for (const recordId of ids) visitedRefs.push({ recordId, tableId });
+    }
+    if (
+      deps.commentsEnabled === true &&
+      deps.syncComments &&
+      deps.fetchRecordComments &&
+      visitedRefs.length > 0
+    ) {
+      const syncComments = deps.syncComments;
+      const fetchComments = deps.fetchRecordComments;
+      try {
+        commentsOutcome = await captureCommentsForRecords({
+          toFetch: visitedRefs,
+          fetchComments: (ref) => fetchComments({ tableId: ref.tableId, recordId: ref.recordId }),
+          syncComments: (records) => syncComments({ baseId: input.baseId, records }),
+        });
+      } catch {
+        // Belt-and-braces — the helper never throws by construction.
+        commentsOutcome = { status: "skipped", reason: "transport" };
+      }
+      log({ event: "comment_capture", ...commentsOutcome });
+    }
+
+    return await finish("succeeded", {
+      reconcileRan,
+      ...(commentsOutcome ? { comments: commentsOutcome } : {}),
+    });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     try {
@@ -985,6 +1077,9 @@ export interface SubscriptionContext {
   lastReconciledAt: string | null;
   /** The subscription's current payload_cursor. */
   cursor: number;
+  /** Comment capture for visited records (workflows-comments task 3.5) —
+   *  resolved from the org tier server-side. Absent on older engines ⇒ off. */
+  commentsEnabled?: boolean;
 }
 
 export interface FetchSubscriptionContextArgs {
@@ -1018,6 +1113,7 @@ export async function fetchSubscriptionContext(
     accessToken: body.accessToken,
     lastReconciledAt: body.lastReconciledAt ?? null,
     cursor: body.cursor,
+    commentsEnabled: body.commentsEnabled === true,
   };
 }
 

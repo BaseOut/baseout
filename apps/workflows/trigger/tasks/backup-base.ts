@@ -55,9 +55,16 @@ import {
   type McpCaptureOutcome,
 } from "./_lib/mcp-capture-common";
 import {
+  captureCommentsForRecords,
   fetchRecordComments,
+  type CommentRecordCaptureWire,
   type FetchRecordCommentsResult,
 } from "./_lib/record-comments";
+
+// Re-export for existing consumers (backup-base.task.ts, tests) — the type
+// moved to _lib/record-comments.ts when the incremental capture step became
+// its second call site (workflows-comments task 3.5).
+export type { CommentRecordCaptureWire } from "./_lib/record-comments";
 import {
   createMediaEmitter,
   type MediaAttachmentEntryWire,
@@ -184,22 +191,6 @@ export interface CapturedRecordWire {
   modifiedTime?: string | null;
   /** fieldId → raw Airtable value. Only populated fields (Airtable omits empties). */
   cells: Record<string, unknown>;
-}
-
-/**
- * One record's comment capture on a comments-sync batch (workflows-comments).
- * MIRROR of the canonical `CommentRecordCapture` in
- * apps/server/src/lib/per-space/comments-sync.ts (server-comments owns it) —
- * do not import across apps. `complete: true` ONLY when the record's comment
- * pagination finished (enables the server's per-record deletion rule); a
- * zero-candidate confirmation is an empty `complete: true` capture.
- */
-export interface CommentRecordCaptureWire {
-  recordId: string;
-  tableId: string;
-  complete?: boolean;
-  /** Raw Airtable comment objects, forwarded verbatim. */
-  comments: unknown[];
 }
 
 export interface BackupBaseDeps {
@@ -452,11 +443,6 @@ const TRIAL_TABLE_CAP = 5;
 const TRIAL_RECORD_CAP = 1000;
 const LOCK_RETRY_INTERVAL_MS = 5_000;
 const LOCK_MAX_TOTAL_MS = 60_000;
-
-// Comment-batch thresholds (workflows-comments design Decision 2): stream a
-// batch to comments-sync whenever either fills — never buffer a run's worth.
-const COMMENT_BATCH_MAX_RECORDS = 50;
-const COMMENT_BATCH_MAX_COMMENTS = 500;
 
 // BYOS provider storage types whose media locator is the relative storage key
 // under the connected destination folder (workflows-media-metadata; see the
@@ -1179,84 +1165,28 @@ async function runCommentCapture(args: {
     refreshIds = new Set(args.observedCommented.map((r) => r.recordId));
   }
 
-  // 2. Streamed fan-out (Decision 2). Zero-confirms ride the FIRST batch.
-  let batch: CommentRecordCaptureWire[] = zeroConfirms.map(
-    ({ recordId, tableId }) => ({ recordId, tableId, complete: true, comments: [] }),
-  );
-  let batchComments = 0;
-  let deliveredRecords = 0;
-  let deliveredComments = 0;
-
-  const flush = async (): Promise<void> => {
-    if (batch.length === 0) return;
-    const records = batch;
-    const commentsInBatch = batchComments;
-    batch = [];
-    batchComments = 0;
-    await args.syncComments({ baseId: args.baseId, records });
-    deliveredRecords += records.length;
-    deliveredComments += commentsInBatch;
-  };
-
+  // 2. Streamed fan-out (Decision 2) — shared with the incremental capture
+  // step (_lib/record-comments.ts). Zero-confirms ride the FIRST batch.
   const toFetch = args.observedCommented.filter((r) => refreshIds.has(r.recordId));
-  try {
-    for (const rec of toFetch) {
-      let fetched: FetchRecordCommentsResult;
-      try {
-        fetched = await args.fetchComments({
-          baseId: args.baseId,
-          tableId: rec.tableId,
-          recordId: rec.recordId,
-          accessToken: args.accessToken,
-        });
-      } catch {
-        fetched = { ok: false, reason: "transport" };
-      }
-      if (!fetched.ok) {
-        // Deliver the already-finished records best-effort, then report
-        // honestly: records whose pagination didn't finish are never sent.
-        try {
-          await flush();
-        } catch {
-          // swallow — partial is partial either way
-        }
-        return {
-          status: "partial",
-          reason: fetched.reason,
-          records: deliveredRecords,
-          comments: deliveredComments,
-          skippedByPlan,
-        };
-      }
-      batch.push({
-        recordId: rec.recordId,
-        tableId: rec.tableId,
-        complete: true,
-        comments: fetched.comments,
-      });
-      batchComments += fetched.comments.length;
-      if (
-        batch.length >= COMMENT_BATCH_MAX_RECORDS ||
-        batchComments >= COMMENT_BATCH_MAX_COMMENTS
-      ) {
-        await flush();
-      }
-    }
-    await flush();
-  } catch {
-    // comments-sync failure — records already delivered stay delivered.
-    return {
-      status: "partial",
-      reason: "sync_failed",
-      records: deliveredRecords,
-      comments: deliveredComments,
-      skippedByPlan,
-    };
-  }
+  const outcome = await captureCommentsForRecords({
+    toFetch: toFetch.map(({ recordId, tableId }) => ({ recordId, tableId })),
+    seed: zeroConfirms.map(({ recordId, tableId }) => ({
+      recordId,
+      tableId,
+      complete: true,
+      comments: [],
+    })),
+    fetchComments: (ref) =>
+      args.fetchComments({
+        baseId: args.baseId,
+        tableId: ref.tableId,
+        recordId: ref.recordId,
+        accessToken: args.accessToken,
+      }),
+    syncComments: (records) => args.syncComments({ baseId: args.baseId, records }),
+  });
   return {
-    status: "captured",
-    records: deliveredRecords,
-    comments: deliveredComments,
+    ...outcome,
     skippedByPlan,
   };
 }

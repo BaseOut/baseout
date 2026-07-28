@@ -35,6 +35,25 @@ export type FetchRecordCommentsResult =
   | { ok: true; comments: unknown[] }
   | { ok: false; reason: FetchRecordCommentsReason };
 
+/**
+ * One record's comment capture on a comments-sync batch (workflows-comments).
+ * MIRROR of the canonical `CommentRecordCapture` in
+ * apps/server/src/lib/per-space/comments-sync.ts (server-comments owns it) —
+ * do not import across apps. `complete: true` ONLY when the record's comment
+ * pagination finished (enables the server's per-record deletion rule); a
+ * zero-candidate confirmation is an empty `complete: true` capture.
+ */
+export interface CommentRecordCaptureWire {
+  recordId: string;
+  tableId: string;
+  complete?: boolean;
+  /** Raw Airtable comment objects, forwarded verbatim. */
+  comments: unknown[];
+}
+
+export const COMMENT_BATCH_MAX_RECORDS = 50;
+export const COMMENT_BATCH_MAX_COMMENTS = 500;
+
 export interface FetchRecordCommentsArgs {
   baseId: string;
   tableId: string;
@@ -132,4 +151,108 @@ export async function fetchRecordComments(
     if (!offset) break;
   }
   return { ok: true, comments };
+}
+
+// ── Shared fetch → batch → flush fan-out ─────────────────────────────────────
+
+export interface CommentCaptureRecordRef {
+  recordId: string;
+  tableId: string;
+}
+
+export type CommentCaptureFanoutOutcome =
+  | { status: "captured"; records: number; comments: number }
+  | { status: "partial"; reason: string; records: number; comments: number };
+
+export interface CaptureCommentsForRecordsArgs {
+  /** Records whose comments to fetch (pagination to completion, per record). */
+  toFetch: CommentCaptureRecordRef[];
+  /** Pre-built captures that ride the FIRST batch (e.g. the full run's
+   *  zero-candidate confirmations). Counted as delivered records, not
+   *  delivered comments. */
+  seed?: CommentRecordCaptureWire[];
+  fetchComments: (ref: CommentCaptureRecordRef) => Promise<FetchRecordCommentsResult>;
+  /** One streamed batch to the engine's comments-sync route. Throws on engine
+   *  errors — mapped to `partial`, never thrown out of this helper. */
+  syncComments: (records: CommentRecordCaptureWire[]) => Promise<void>;
+}
+
+/**
+ * The streamed comment fan-out (workflows-comments design Decision 2),
+ * shared by the full-backup capture step (which plans first) and the
+ * incremental capture step (whose visited set IS the refresh list — task
+ * 3.5). Fetches each record's comments to pagination completion, streams
+ * batches to comments-sync as it goes, and marks records `complete: true`
+ * only when their pagination finished. Never throws.
+ *
+ * Mid-fan-out failure flushes the already-finished records best-effort and
+ * reports `partial` — delivered counts only reflect successful sync POSTs.
+ */
+export async function captureCommentsForRecords(
+  args: CaptureCommentsForRecordsArgs,
+): Promise<CommentCaptureFanoutOutcome> {
+  let batch: CommentRecordCaptureWire[] = [...(args.seed ?? [])];
+  let batchComments = 0;
+  let deliveredRecords = 0;
+  let deliveredComments = 0;
+
+  const flush = async (): Promise<void> => {
+    if (batch.length === 0) return;
+    const records = batch;
+    const commentsInBatch = batchComments;
+    batch = [];
+    batchComments = 0;
+    await args.syncComments(records);
+    deliveredRecords += records.length;
+    deliveredComments += commentsInBatch;
+  };
+
+  try {
+    for (const ref of args.toFetch) {
+      let fetched: FetchRecordCommentsResult;
+      try {
+        fetched = await args.fetchComments(ref);
+      } catch {
+        fetched = { ok: false, reason: "transport" };
+      }
+      if (!fetched.ok) {
+        // Deliver the already-finished records best-effort, then report
+        // honestly: records whose pagination didn't finish are never sent.
+        try {
+          await flush();
+        } catch {
+          // swallow — partial is partial either way
+        }
+        return {
+          status: "partial",
+          reason: fetched.reason,
+          records: deliveredRecords,
+          comments: deliveredComments,
+        };
+      }
+      batch.push({
+        recordId: ref.recordId,
+        tableId: ref.tableId,
+        complete: true,
+        comments: fetched.comments,
+      });
+      batchComments += fetched.comments.length;
+      if (
+        batch.length >= COMMENT_BATCH_MAX_RECORDS ||
+        batchComments >= COMMENT_BATCH_MAX_COMMENTS
+      ) {
+        await flush();
+      }
+    }
+    await flush();
+  } catch {
+    // comments-sync failure — records already delivered stay delivered.
+    return {
+      status: "partial",
+      reason: "sync_failed",
+      records: deliveredRecords,
+      comments: deliveredComments,
+    };
+  }
+  return { status: "captured", records: deliveredRecords, comments: deliveredComments };
 }

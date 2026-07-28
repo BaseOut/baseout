@@ -1063,7 +1063,9 @@ describe("fetchSubscriptionContext", () => {
     );
     expect(init.method).toBe("POST");
     expect((init.headers as Record<string, string>)["x-internal-token"]).toBe("tok");
-    expect(ctx).toEqual(CONTEXT);
+    // commentsEnabled defaults false when the engine omits it (older engine —
+    // workflows-comments task 3.5 rides the context contract additively).
+    expect(ctx).toEqual({ ...CONTEXT, commentsEnabled: false });
   });
 
   it("throws with the status on non-2xx (409 token_unavailable → task retries next tick)", async () => {
