@@ -528,3 +528,88 @@ export const inboxMutes = pgTable('bo_at_inbox_mutes', {
   baseId: text('base_id').primaryKey(),
   createdAt: timestamp('created_at', { withTimezone: true }),
 })
+
+// ---- Record comments (server-comments) ----
+// Customer-authored comments on records, captured via the Airtable REST
+// comments endpoint during backup runs (workflows-comments). Update-in-place
+// with soft deletion (status 'deleted' — deleted-comment visibility is the
+// product value; full text-version history deliberately rejected, design
+// Decision 2). Deletion scope is PER RECORD: ids absent from a successful
+// `complete` re-capture of their record flip to 'deleted'; unvisited records
+// are never touched. Indexed by record id for the read path and the
+// comments-plan grouped count (count-delta refresh planning, design
+// Decision 5 — no stored count column, derived from these rows).
+export const comments = pgTable('bo_at_comments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  airtableCommentId: text('airtable_comment_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('airtable_table_id').notNull(),
+  recordId: text('airtable_record_id').notNull(),
+  author: jsonb('author'),                            // {id, email, name} as provided
+  text: text('text'),
+  airtableCreatedAt: timestamp('airtable_created_at', { withTimezone: true }),
+  airtableLastUpdatedAt: timestamp('airtable_last_updated_at', { withTimezone: true }),
+  raw: jsonb('raw'),                                  // reactions, mentions — stored verbatim
+  status: text('status').notNull().default('active'), // active | deleted
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({
+  byRecord: index('bo_at_comments_record_idx').on(t.recordId),
+  byBase: index('bo_at_comments_base_idx').on(t.baseId),
+  uniqComment: uniqueIndex('bo_at_comments_comment_uq').on(t.airtableCommentId),
+}))
+
+// ---- Media index (server-media-index) ----
+// The digital-asset index over captured attachments: one bo_at_assets row per
+// unique content checksum per Space (the dedup identity the attachment writer
+// already computes), one bo_at_asset_refs row per appearance in a record
+// (design Decision 1 — dedup = one asset, N refs). Fed by the batched
+// media-sync ingest (workflows-media-metadata); read by the Media Library API.
+// NOTE: bo_at_attachments (above) remains the writer's upload/dedup working
+// set — this pair is the curated index with lifecycle + read-path indexes.
+// Assets are NEVER hard-deleted by sync: refs dropping to zero stamps
+// zero_ref_since (the retention machinery's removal-candidate flag).
+export const assets = pgTable('bo_at_assets', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  checksum: text('checksum').notNull(),               // content identity (writer's dedup hash)
+  contentType: text('content_type'),
+  contentClass: text('content_class').notNull().default('other'), // image|video|audio|document|other — written at ingest, indexed for filters
+  sizeBytes: bigint('size_bytes', { mode: 'number' }),
+  storageKind: text('storage_kind'),                  // 'r2_managed' | 'destination'
+  storageProvider: text('storage_provider'),          // BYOS provider when kind='destination'
+  storageRef: text('storage_ref'),                    // R2 object key, or provider locator
+  thumbnailStatus: text('thumbnail_status').notNull().default('none'), // none|pending|ready — generation is a follow-up change
+  thumbnailKey: text('thumbnail_key'),
+  zeroRefSince: timestamp('zero_ref_since', { withTimezone: true }),
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({
+  uniqChecksum: uniqueIndex('bo_at_assets_checksum_uq').on(t.checksum),
+  byClass: index('bo_at_assets_class_idx').on(t.contentClass),
+  keyset: index('bo_at_assets_keyset_idx').on(t.firstSeenAt, t.id), // newest-first keyset pagination + totals scans
+}))
+
+export const assetRefs = pgTable('bo_at_asset_refs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  assetId: uuid('asset_id').notNull(),                // → bo_at_assets.id
+  airtableAttachmentId: text('airtable_attachment_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('table_id').notNull(),
+  recordId: text('record_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  filename: text('filename'),                         // as named in THAT record (same bytes, different names)
+  status: text('status').notNull().default('active'), // active | removed
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({
+  uniqAttachment: uniqueIndex('bo_at_asset_refs_attachment_uq').on(t.airtableAttachmentId),
+  byAsset: index('bo_at_asset_refs_asset_idx').on(t.assetId),
+  byRecord: index('bo_at_asset_refs_record_idx').on(t.recordId),
+  byBase: index('bo_at_asset_refs_base_idx').on(t.baseId),
+}))

@@ -1,3 +1,44 @@
+CREATE TABLE `bo_at_asset_refs` (
+	`id` text PRIMARY KEY NOT NULL,
+	`asset_id` text NOT NULL,
+	`airtable_attachment_id` text NOT NULL,
+	`base_id` text NOT NULL,
+	`table_id` text NOT NULL,
+	`record_id` text NOT NULL,
+	`field_id` text NOT NULL,
+	`filename` text,
+	`status` text DEFAULT 'active' NOT NULL,
+	`first_seen_run` text,
+	`last_seen_run` text,
+	`first_seen_at` text,
+	`last_seen_at` text
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_asset_refs_attachment_uq` ON `bo_at_asset_refs` (`airtable_attachment_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_asset_refs_asset_idx` ON `bo_at_asset_refs` (`asset_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_asset_refs_record_idx` ON `bo_at_asset_refs` (`record_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_asset_refs_base_idx` ON `bo_at_asset_refs` (`base_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_assets` (
+	`id` text PRIMARY KEY NOT NULL,
+	`checksum` text NOT NULL,
+	`content_type` text,
+	`content_class` text DEFAULT 'other' NOT NULL,
+	`size_bytes` integer,
+	`storage_kind` text,
+	`storage_provider` text,
+	`storage_ref` text,
+	`thumbnail_status` text DEFAULT 'none' NOT NULL,
+	`thumbnail_key` text,
+	`zero_ref_since` text,
+	`first_seen_run` text,
+	`last_seen_run` text,
+	`first_seen_at` text,
+	`last_seen_at` text
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_assets_checksum_uq` ON `bo_at_assets` (`checksum`);--> statement-breakpoint
+CREATE INDEX `bo_at_assets_class_idx` ON `bo_at_assets` (`content_class`);--> statement-breakpoint
+CREATE INDEX `bo_at_assets_keyset_idx` ON `bo_at_assets` (`first_seen_at`,`id`);--> statement-breakpoint
 CREATE TABLE `bo_at_attachments` (
 	`composite_id` text PRIMARY KEY NOT NULL,
 	`table_id` text NOT NULL,
@@ -83,6 +124,27 @@ CREATE TABLE `bo_at_chat_threads` (
 	`updated_at` text
 );
 --> statement-breakpoint
+CREATE TABLE `bo_at_comments` (
+	`id` text PRIMARY KEY NOT NULL,
+	`airtable_comment_id` text NOT NULL,
+	`base_id` text NOT NULL,
+	`airtable_table_id` text NOT NULL,
+	`airtable_record_id` text NOT NULL,
+	`author` text,
+	`text` text,
+	`airtable_created_at` text,
+	`airtable_last_updated_at` text,
+	`raw` text,
+	`status` text DEFAULT 'active' NOT NULL,
+	`first_seen_run` text,
+	`last_seen_run` text,
+	`first_seen_at` text,
+	`last_seen_at` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_comments_record_idx` ON `bo_at_comments` (`airtable_record_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_comments_base_idx` ON `bo_at_comments` (`base_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_comments_comment_uq` ON `bo_at_comments` (`airtable_comment_id`);--> statement-breakpoint
 CREATE TABLE `bo_at_document_diagrams` (
 	`id` text PRIMARY KEY NOT NULL,
 	`document_id` text NOT NULL,

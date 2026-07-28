@@ -5,7 +5,7 @@
  * (workerd, no filesystem), so it cannot read the .sql migration at runtime —
  * it needs the DDL bundled. This module is the bundled copy.
  *
- * GENERATED FROM migrations/space-pg/0000_aberrant_purple_man.sql by scripts/gen-space-pg-ddl.mjs — DO NOT HAND-EDIT.
+ * GENERATED FROM migrations/space-pg/0000_secret_hercules.sql by scripts/gen-space-pg-ddl.mjs — DO NOT HAND-EDIT.
  * tests/space-pg-ddl-parity.test.ts asserts this stays in lockstep with that
  * migration (drift fails CI). Regenerate after a per-Space schema change:
  *   node packages/db-schema/scripts/gen-space-pg-ddl.mjs
@@ -14,7 +14,41 @@
  * weight. Statements are separated by drizzle's `--> statement-breakpoint`.
  */
 
-export const SPACE_PG_DDL = `CREATE TABLE "bo_at_attachments" (
+export const SPACE_PG_DDL = `CREATE TABLE "bo_at_asset_refs" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"asset_id" uuid NOT NULL,
+	"airtable_attachment_id" text NOT NULL,
+	"base_id" text NOT NULL,
+	"table_id" text NOT NULL,
+	"record_id" text NOT NULL,
+	"field_id" text NOT NULL,
+	"filename" text,
+	"status" text DEFAULT 'active' NOT NULL,
+	"first_seen_run" uuid,
+	"last_seen_run" uuid,
+	"first_seen_at" timestamp with time zone,
+	"last_seen_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_assets" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"checksum" text NOT NULL,
+	"content_type" text,
+	"content_class" text DEFAULT 'other' NOT NULL,
+	"size_bytes" bigint,
+	"storage_kind" text,
+	"storage_provider" text,
+	"storage_ref" text,
+	"thumbnail_status" text DEFAULT 'none' NOT NULL,
+	"thumbnail_key" text,
+	"zero_ref_since" timestamp with time zone,
+	"first_seen_run" uuid,
+	"last_seen_run" uuid,
+	"first_seen_at" timestamp with time zone,
+	"last_seen_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_attachments" (
 	"composite_id" text PRIMARY KEY NOT NULL,
 	"table_id" text NOT NULL,
 	"field_id" text NOT NULL,
@@ -91,6 +125,24 @@ CREATE TABLE "bo_at_chat_threads" (
 	"created_by_user_id" uuid,
 	"created_at" timestamp with time zone,
 	"updated_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "bo_at_comments" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"airtable_comment_id" text NOT NULL,
+	"base_id" text NOT NULL,
+	"airtable_table_id" text NOT NULL,
+	"airtable_record_id" text NOT NULL,
+	"author" jsonb,
+	"text" text,
+	"airtable_created_at" timestamp with time zone,
+	"airtable_last_updated_at" timestamp with time zone,
+	"raw" jsonb,
+	"status" text DEFAULT 'active' NOT NULL,
+	"first_seen_run" uuid,
+	"last_seen_run" uuid,
+	"first_seen_at" timestamp with time zone,
+	"last_seen_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE "bo_at_document_diagrams" (
@@ -411,12 +463,22 @@ CREATE TABLE "bo_at_views" (
 	"last_seen_run" uuid
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_asset_refs_attachment_uq" ON "bo_at_asset_refs" USING btree ("airtable_attachment_id");--> statement-breakpoint
+CREATE INDEX "bo_at_asset_refs_asset_idx" ON "bo_at_asset_refs" USING btree ("asset_id");--> statement-breakpoint
+CREATE INDEX "bo_at_asset_refs_record_idx" ON "bo_at_asset_refs" USING btree ("record_id");--> statement-breakpoint
+CREATE INDEX "bo_at_asset_refs_base_idx" ON "bo_at_asset_refs" USING btree ("base_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_assets_checksum_uq" ON "bo_at_assets" USING btree ("checksum");--> statement-breakpoint
+CREATE INDEX "bo_at_assets_class_idx" ON "bo_at_assets" USING btree ("content_class");--> statement-breakpoint
+CREATE INDEX "bo_at_assets_keyset_idx" ON "bo_at_assets" USING btree ("first_seen_at","id");--> statement-breakpoint
 CREATE INDEX "bo_at_attachments_record_idx" ON "bo_at_attachments" USING btree ("record_id");--> statement-breakpoint
 CREATE INDEX "bo_at_attachments_hash_idx" ON "bo_at_attachments" USING btree ("content_hash");--> statement-breakpoint
 CREATE INDEX "bo_at_automations_base_idx" ON "bo_at_automations" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_base_runs_backup_run_idx" ON "bo_at_base_runs" USING btree ("backup_run_id");--> statement-breakpoint
 CREATE INDEX "bo_at_base_runs_base_idx" ON "bo_at_base_runs" USING btree ("base_id");--> statement-breakpoint
 CREATE INDEX "bo_at_chat_messages_thread_idx" ON "bo_at_chat_messages" USING btree ("thread_id");--> statement-breakpoint
+CREATE INDEX "bo_at_comments_record_idx" ON "bo_at_comments" USING btree ("airtable_record_id");--> statement-breakpoint
+CREATE INDEX "bo_at_comments_base_idx" ON "bo_at_comments" USING btree ("base_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_comments_comment_uq" ON "bo_at_comments" USING btree ("airtable_comment_id");--> statement-breakpoint
 CREATE INDEX "bo_at_document_diagrams_doc_idx" ON "bo_at_document_diagrams" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "bo_at_document_links_doc_idx" ON "bo_at_document_links" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "bo_at_document_tags_doc_idx" ON "bo_at_document_tags" USING btree ("document_id");--> statement-breakpoint
