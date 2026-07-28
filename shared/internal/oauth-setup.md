@@ -81,16 +81,19 @@ gap checklist in §4 lists the removals.
 | `https://baseout-staging.openside.workers.dev/api/connections/airtable/callback`   | ❌ MISSING  | same                  |
 | `https://console.baseout.dev/api/connections/airtable/callback`                    | ❌ MISSING  | same                  |
 
-> ⚠️ **Scope set changed 2026-07-28** (Features §17 Q20 resolved): the code
+> **Scope set changed 2026-07-28** (Features §17 Q20 resolved): the code
 > grant in `apps/web/src/lib/airtable/config.ts` now requests
-> `workspacesAndBases:read` in addition to the original four scopes. Airtable
-> rejects authorize requests for scopes not enabled on the integration, so the
-> scope **must be checked in this integration's settings BEFORE the next
-> `baseout-dev` web deploy** — otherwise every new Connect fails at the
-> authorize step (§4.2 checklist). Existing Connections keep working and
-> degrade to the flat base picker (no workspace grouping/auto-enroll) until
-> reconnected — by design, never blocking (`web-workspace-bases` Decision 5).
-> After the first reconsented Connection exists, re-run
+> `workspacesAndBases:read` in addition to the original four scopes.
+> **Deploy gate CLEARED 2026-07-28 per Autumn's direction** — treated as
+> non-blocking. Empirical probe (curl of `/oauth2/v1/authorize` with the
+> five-scope set): no pre-login rejection; Airtable defers scope validation
+> to the consent render, so the definitive check is the **first real Connect
+> after the next deploy** — if that consent page errors on scope, check
+> `workspacesAndBases:read` on the integration at airtable.com/create/oauth
+> (§4.2) and retry. Existing Connections keep working and degrade to the
+> flat base picker (no workspace grouping/auto-enroll) until reconnected —
+> by design, never blocking (`web-workspace-bases` Decision 5). After the
+> first reconsented Connection exists, re-run
 > `openspec/changes/server-mcp-workspaces/spike.mjs` to capture the
 > `list_workspaces` envelope (design open Q1).
 
@@ -268,7 +271,7 @@ In the Airtable OAuth integration management UI for integration
 
 - [ ] Add `https://baseout-staging.openside.workers.dev/api/connections/airtable/callback`
 - [ ] Add `https://console.baseout.dev/api/connections/airtable/callback`
-- [ ] **⚠ URGENT before the next web deploy:** check the **`workspacesAndBases:read`** scope on the integration (Scopes section of the same UI). The code grant requests it as of 2026-07-28; an unchecked scope breaks every new Connect at the authorize step (§3.1).
+- [ ] Verify the **`workspacesAndBases:read`** scope on the integration (Scopes section of the same UI) **when the first post-2026-07-28 Connect is smoked** — the deploy gate was cleared per direction (§3.1); only needed if that consent screen errors on scope.
 
 **Blocker:** the Airtable account that owns this integration is not the
 team's company account — ownership is currently unclear. Once located,

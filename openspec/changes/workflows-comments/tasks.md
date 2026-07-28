@@ -2,7 +2,7 @@
 
 ## 0. Blockers
 
-- [ ] 0.1 PRD/Features amendment + tier decision (shared blocker — see `server-comments` task 0.1). → Doc edits drafted 2026-07-27; tier confirmation (Dan) still pending.
+- [x] 0.1 PRD/Features amendment + tier decision (shared blocker — see `server-comments` task 0.1). → Doc edits drafted 2026-07-27; **tier CONFIRMED 2026-07-28** (rides the record-backup tier — see `server-comments` task 0.1 for the full resolution).
 
 ## 1. Spike
 

@@ -24,4 +24,4 @@
 ## 4. Verification
 
 - [x] 4.1 Suites + `tsc --noEmit` green; contract cross-check with `workflows-mcp-views` (land THIS first). → 71 tests across the four touched suites + tsc green (2026-07-27); this half landed first, workflows half consumes `ViewsCapture`/`viewCaptureMode` shapes.
-- [ ] 4.2 Dev E2E: non-enterprise connection gains view rows + changelog events; ui-only `view-schema-details` fixture names aligned with the envelope.
+- [ ] 4.2 Dev E2E: non-enterprise connection gains view rows + changelog events; ui-only `view-schema-details` fixture names aligned with the envelope. → **View-rows leg VERIFIED 2026-07-28** (fresh run `855a94ad…`: `bo_at_views` = 4 rows via MCP on the non-enterprise dev connection, stable across runs). Remaining legs: changelog-events assertion + ui-only fixture-name alignment.

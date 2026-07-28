@@ -19,4 +19,4 @@
 ## 3. Verification
 
 - [x] 3.1 `pnpm --filter @baseout/workflows test` + typecheck green. → 2026-07-27: 34 files / 322 tests passed; `npx tsc --noEmit` clean.
-- [ ] 3.2 Dev E2E with server half: non-enterprise connection backup → `bo_at_views` rows appear (previously empty); enterprise connection unchanged. → BLOCKED on human smoke: needs a deployed dev engine + `npx trigger.dev dev` worker + a real non-enterprise connection.
+- [x] 3.2 Dev E2E with server half: non-enterprise connection backup → `bo_at_views` rows appear (previously empty); enterprise connection unchanged. → **VERIFIED 2026-07-28** (and 2026-07-27): fresh run `855a94ad…` on the pers Space via deployed dev engine + local `trigger.dev@4.5.7 dev` worker, 3/3 base tasks succeeded, `bo_at_views` = 4 rows via MCP mode on the non-enterprise dev connection; counts stable across runs (idempotent). No enterprise connection exists in dev to exercise the unchanged-path leg. NOTE: CLI must be 4.5.7 to match the SDK — the package.json `dev` script still pins 4.5.1, which aborts on version mismatch.
