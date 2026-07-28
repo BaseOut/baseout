@@ -193,3 +193,73 @@ describe('handlePost — engine forwarding', () => {
     expect((await readJson(res)).error).toBe('engine_unreachable')
   })
 })
+
+// web-workspace-bases task 2.2: the rescan route refreshes workspace data
+// best-effort — success surfaces the listing + stamps last_checked_at;
+// ANY failure (degraded engine, throw) leaves the rescan response unchanged.
+describe('handlePost — workspace listing refresh (web-workspace-bases)', () => {
+  const okRescan = vi.fn(async (): Promise<EngineRescanBasesResult> => ({
+    ok: true,
+    discovered: 1,
+    autoAdded: 0,
+    blockedByTier: 0,
+  }))
+  const fetchSpaceById = vi.fn(async () => ({
+    id: SPACE_ID,
+    organizationId: ORG_ID,
+  }))
+
+  it('includes workspaces and stamps checks when the listing succeeds', async () => {
+    const stampWorkspaceChecks = vi.fn(async () => {})
+    const res = await handlePost({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      fetchSpaceById,
+      engineRescan: okRescan,
+      listWorkspaces: async () => ({
+        ok: true,
+        workspaces: [{ id: 'wspA', name: 'Ops' }],
+        capturedAt: null,
+      }),
+      stampWorkspaceChecks,
+    })
+    expect(res.status).toBe(200)
+    const body = await readJson(res)
+    expect(body.workspaces).toEqual([{ id: 'wspA', name: 'Ops' }])
+    expect(stampWorkspaceChecks).toHaveBeenCalledWith([{ id: 'wspA', name: 'Ops' }])
+  })
+
+  it('proceeds without workspace data when the engine degrades (e.g. 404 pre-server-mcp-workspaces)', async () => {
+    const res = await handlePost({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      fetchSpaceById,
+      engineRescan: okRescan,
+      listWorkspaces: async () => ({
+        ok: false,
+        degraded: true,
+        reason: 'engine_error',
+        status: 404,
+      }),
+      stampWorkspaceChecks: vi.fn(),
+    })
+    expect(res.status).toBe(200)
+    const body = await readJson(res)
+    expect(body.ok).toBe(true)
+    expect('workspaces' in body).toBe(false)
+  })
+
+  it('proceeds when the listing THROWS', async () => {
+    const res = await handlePost({
+      account: makeAccount(),
+      spaceId: SPACE_ID,
+      fetchSpaceById,
+      engineRescan: okRescan,
+      listWorkspaces: async () => {
+        throw new Error('boom')
+      },
+    })
+    expect(res.status).toBe(200)
+    expect((await readJson(res)).ok).toBe(true)
+  })
+})

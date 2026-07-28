@@ -12,12 +12,19 @@ import {
 import { rewriteLocalhostTrapUrl } from "./lib/oauth/canonical-dev-origin";
 import { sanitizeReturnTo } from "./lib/airtable/return-to";
 import { resolveLoginCallback } from "./lib/return-to";
+import { handleAccountCreated } from "./lib/signup/account-created";
+import { handleTwoFactorEvent } from "./lib/two-factor/events";
+import { handleSsoAccountLinked } from "./lib/airtable/sso-linked";
 
 // /embed is public by design (shared-embed-protocol): an unauthenticated
 // embed renders its own minimal sign-in prompt (sign-in happens top-level via
 // the host, never inside the iframe) — a /login redirect inside the frame
 // would strand the user.
-const PUBLIC_PATHS = new Set(['/login', '/register', '/embed']);
+// /2fa is public by design (web-auth-2fa): the challenge page renders while
+// NO session exists — the sign-in hook revoked the fresh session and armed
+// the two_factor challenge cookie; /api/auth/two-factor/verify-* mints the
+// real session only after a valid code.
+const PUBLIC_PATHS = new Set(['/login', '/register', '/embed', '/2fa']);
 
 export function isPublicRoute(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
@@ -143,7 +150,32 @@ const handleRequest = defineMiddleware(async (context, next) => {
   }
 
   const { db, sql } = createDb(resolveDbUrl());
-  const auth = createAppAuth(db, buildAuthEnv());
+  const authEnv = buildAuthEnv();
+  const auth = createAppAuth(db, {
+    ...authEnv,
+    // signup-domain-association fork hook — records known-domain matches at
+    // account creation so /welcome can offer join-or-create (never blocks).
+    onAccountCreated: (user) => handleAccountCreated(db, user),
+    // web-auth-2fa: master-key layer for TOTP secrets + the audit/email sink.
+    encryptionKey: (env as unknown as { BASEOUT_ENCRYPTION_KEY?: string })
+      .BASEOUT_ENCRYPTION_KEY,
+    onTwoFactorEvent: (event) =>
+      handleTwoFactorEvent(
+        db,
+        { email: authEnv.email, from: authEnv.from, dev: authEnv.dev },
+        event,
+      ),
+    // web-auth-airtable-sso: the dedicated LOGIN app's credentials (not the
+    // Connect integration). Absent until the app is registered — SSO stays
+    // off with zero behavior change.
+    airtableLoginClientId: (env as unknown as {
+      AIRTABLE_LOGIN_OAUTH_CLIENT_ID?: string;
+    }).AIRTABLE_LOGIN_OAUTH_CLIENT_ID,
+    airtableLoginClientSecret: (env as unknown as {
+      AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET?: string;
+    }).AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET,
+    onSsoAccountLinked: (account) => handleSsoAccountLinked(db, account),
+  });
   context.locals.db = db;
   context.locals.auth = auth;
 
@@ -289,6 +321,10 @@ function applyOnboardingGate(context: Parameters<Parameters<typeof defineMiddlew
   if (!user.termsAcceptedAt) {
     if (pathname === '/welcome') return null;
     if (pathname === '/api/onboarding/complete') return null;
+    // signup-domain-association fork endpoints — consumed by /welcome BEFORE
+    // terms are accepted (join-or-create offer + join-request creation).
+    if (pathname === '/api/onboarding/domain-association') return null;
+    if (pathname === '/api/onboarding/join-request') return null;
     if (pathname.startsWith('/api/')) {
       return new Response(JSON.stringify({ error: 'Onboarding incomplete' }), {
         status: 403,

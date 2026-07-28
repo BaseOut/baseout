@@ -278,6 +278,41 @@ export type EngineRescanBasesResult =
   | EngineRescanBasesSuccess
   | EngineRescanBasesError;
 
+// ── Workspace listing (web-workspace-bases; engine side server-mcp-workspaces) ──
+
+export interface EngineWorkspaceSummary {
+  id: string;
+  name: string;
+  permissionLevel?: string;
+}
+
+export interface EngineListWorkspacesSuccess {
+  ok: true;
+  workspaces: EngineWorkspaceSummary[];
+  /** ISO timestamp of the engine's capture (short-TTL cache upstream). */
+  capturedAt: string | null;
+}
+
+/**
+ * Degraded outcome from GET /api/internal/connections/:connectionId/
+ * workspaces. Contract (agreed with server-mcp-workspaces): the engine
+ * returns `{ ok: true, workspaces: [{ id, name, permissionLevel? }],
+ * capturedAt }` or `{ ok: false, degraded: true, reason }`. Web treats ANY
+ * failure — transport, 404 while the engine half is unbuilt, non-2xx, or a
+ * `degraded: true` payload — as "no workspace data" and proceeds without it
+ * (design Decision 4: grouping is a progressive enhancement).
+ */
+export interface EngineListWorkspacesDegraded {
+  ok: false;
+  degraded: true;
+  reason: string;
+  status: number;
+}
+
+export type EngineListWorkspacesResult =
+  | EngineListWorkspacesSuccess
+  | EngineListWorkspacesDegraded;
+
 export interface EngineProvisionDatabaseSuccess {
   ok: true;
   /** 'active' = provisioned now; 'already_active' = idempotent no-op. */
@@ -753,6 +788,11 @@ export interface BackupEngineClient {
   /** Drop this Space's webhook subscriptions (transition AWAY from instant). */
   unregisterWebhooks(spaceId: string): Promise<EngineWebhookLifecycleResult>;
   rescanBases(spaceId: string): Promise<EngineRescanBasesResult>;
+  /** Workspace listing for a Connection (web-workspace-bases). NEVER throws
+   * — every failure shape collapses to `{ ok:false, degraded:true }`. */
+  listConnectionWorkspaces(
+    connectionId: string,
+  ): Promise<EngineListWorkspacesResult>;
   provisionDatabase(
     spaceId: string,
     opts?: ProvisionDatabaseOptions,
@@ -1279,6 +1319,52 @@ export function createBackupEngine(
         out.upstreamStatus = body.upstream_status;
       }
       return out;
+    },
+
+    async listConnectionWorkspaces(connectionId) {
+      const path = `/api/internal/connections/${encodeURIComponent(connectionId)}/workspaces`;
+      let res: Response;
+      try {
+        res = await options.binding.fetch(`https://engine${path}`, {
+          method: "GET",
+          headers: {
+            "x-internal-token": options.internalToken,
+            accept: "application/json",
+          },
+        });
+      } catch {
+        return { ok: false, degraded: true, reason: "engine_unreachable", status: 0 };
+      }
+
+      let body: Record<string, unknown> = {};
+      try {
+        body = (await res.json()) as Record<string, unknown>;
+      } catch {
+        // engine returned non-JSON (rare); fall through with empty body
+      }
+
+      // Any non-2xx (including 404 while server-mcp-workspaces is unbuilt)
+      // and any `ok:false` / `degraded:true` payload = no workspace data.
+      if (!res.ok || body.ok === false || body.degraded === true) {
+        const reason =
+          typeof body.reason === "string"
+            ? body.reason
+            : typeof body.error === "string"
+              ? body.error
+              : "engine_error";
+        return { ok: false, degraded: true, reason, status: res.status };
+      }
+
+      const workspaces = Array.isArray(body.workspaces)
+        ? (body.workspaces as EngineWorkspaceSummary[]).filter(
+            (w) => typeof w?.id === "string" && typeof w?.name === "string",
+          )
+        : [];
+      return {
+        ok: true,
+        workspaces,
+        capturedAt: typeof body.capturedAt === "string" ? body.capturedAt : null,
+      };
     },
 
     async deleteRun(runId) {

@@ -36,6 +36,13 @@ export interface AirtableBaseSummary {
   id: string
   name: string
   permissionLevel: string
+  // Airtable workspace identity (web-workspace-bases) — the Meta bases
+  // listing does not carry these; callers that ALSO hold workspace data
+  // (engine MCP listing via server-mcp-workspaces) may attach them so
+  // persist stamps at_bases.workspace_id/_name. Optional + null-tolerant:
+  // absence never blocks persistence (design Decision 5).
+  workspaceId?: string | null
+  workspaceName?: string | null
 }
 
 interface ListBasesResponse {

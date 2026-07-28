@@ -25,6 +25,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { baseout, users } from './auth'
@@ -151,6 +152,10 @@ export const spacePlatforms = baseout.table('space_platforms', {
 // Pure registry of Airtable bases known within a Space.
 // Backup-specific flags (is_included, is_auto_discovered) live in
 // backup_configuration_bases, not here.
+// MIRROR NOTE (web-workspace-bases): the engine (apps/server) READS the
+// workspace_id / workspace_name columns for the per-run auto-enroll check
+// (server-mcp-workspaces) — canonical migration is
+// apps/web/drizzle/0033_workspace_bases.sql (CLAUDE.md §2 mirror rule).
 // ———————————————————————————————————————————————————————————————————————————
 
 export const atBases = baseout.table('at_bases', {
@@ -164,6 +169,12 @@ export const atBases = baseout.table('at_bases', {
   // 'oauth_callback' | 'rediscovery_scheduled' | 'rediscovery_manual'
   // Set on INSERT only — `onConflictDoUpdate` omits this column from the set-list
   // so the original discovery source is preserved across rediscoveries.
+  // Airtable workspace identity (web-workspace-bases, design Decision 1):
+  // denormalized, NULLABLE, stamped whenever workspace data is available at
+  // persist/rescan/rediscovery time; absence never blocks base persistence.
+  // Airtable-side identity only — never Baseout structure (Features §1).
+  workspaceId: text('workspace_id'),
+  workspaceName: text('workspace_name'),
   firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -171,6 +182,45 @@ export const atBases = baseout.table('at_bases', {
 }, (table) => [
   unique('at_bases_space_base_unique').on(table.spaceId, table.atBaseId),
   index('at_bases_space_id_idx').on(table.spaceId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// SPACE WORKSPACES (web-workspace-bases)
+// Per-Space Airtable-workspace ENROLLMENT — intent, not membership (design
+// Decision 2): a row means "this Space auto-adds bases from this workspace
+// when auto_enroll_future_bases is on". Which base belongs to which
+// workspace lives on at_bases.workspace_id. Un-enrolling removes future
+// auto-adds but never touches already-configured bases. A Space may enroll
+// MULTIPLE workspaces. `enrolled_via='auto'` rows are materialized by the
+// engine when backup_configurations.auto_enroll_new_workspaces is true and
+// a new workspace first appears (design Decision 2b).
+// MIRROR NOTE: the engine (apps/server) reads AND inserts ('auto') rows —
+// canonical migration is apps/web/drizzle/0033_workspace_bases.sql
+// (CLAUDE.md §2 mirror rule; paired change server-mcp-workspaces).
+// ———————————————————————————————————————————————————————————————————————————
+
+export const spaceWorkspaces = baseout.table('space_workspaces', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  workspaceId: text('workspace_id').notNull(),   // Airtable workspace id e.g. "wspXXXX"
+  workspaceName: text('workspace_name'),
+  autoEnrollFutureBases: boolean('auto_enroll_future_bases').notNull().default(false),
+  enrolledVia: text('enrolled_via').notNull().default('manual'),
+  // 'manual' | 'auto' — 'auto' rows are engine-materialized (Decision 2b).
+  // Stamped by the engine's per-run workspace check so the settings UI can
+  // show freshness (design Decision 2).
+  lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check(
+    'space_workspaces_enrolled_via_check',
+    sql`${table.enrolledVia} IN ('manual', 'auto')`,
+  ),
+  unique('space_workspaces_space_workspace_unique').on(table.spaceId, table.workspaceId),
+  index('space_workspaces_space_id_idx').on(table.spaceId),
 ])
 
 // ———————————————————————————————————————————————————————————————————————————
@@ -525,6 +575,15 @@ export const backupConfigurations = baseout.table('backup_configurations', {
   storageType: text('storage_type').notNull().default('r2_managed'),
   // 'r2_managed' | 'google_drive' | 'dropbox' | 'box' | 'onedrive' | 's3' | 'frame_io' | 'byos'
   autoAddFutureBases: boolean('auto_add_future_bases').notNull().default(false),
+  // Standing flag for workspaces that DO NOT EXIST YET (web-workspace-bases
+  // design Decision 2b): when true, a workspace newly observed on the
+  // connection is auto-enrolled by the engine as a space_workspaces row
+  // (enrolled_via='auto', auto_enroll_future_bases=true). Governs only the
+  // unknown→known transition; existing rows are never modified by it.
+  // Legacy precedence (Decision 3): with NO space_workspaces rows,
+  // auto_add_future_bases keeps its connection-wide meaning; once any row
+  // exists, rows + this flag are authoritative and the legacy flag is inert.
+  autoEnrollNewWorkspaces: boolean('auto_enroll_new_workspaces').notNull().default(false),
   // Instant mode: how often the Space's DO polls for webhook-dirty bases
   // (server-instant-webhook Phase A; tier minimums in Features §6.1).
   webhookPollIntervalSeconds: integer('webhook_poll_interval_seconds').notNull().default(900),
@@ -1016,6 +1075,107 @@ export const airtableWebhooks = baseout.table('airtable_webhooks', {
   index('airtable_webhooks_expiry_idx')
     .on(table.expiresAt)
     .where(sql`${table.status} = 'active'`),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// ORGANIZATION DOMAINS (web-signup-domain-association)
+// Explicit overrides on top of DERIVED known domains (an org "has" a domain
+// when a verified member uses it, public providers excluded — see
+// src/lib/signup/domain-association.ts). mode='add' claims a domain a young
+// org hasn't populated yet; mode='suppress' stops a domain from matching
+// (e.g. a consultant's client domain appearing via a guest member).
+// ———————————————————————————————————————————————————————————————————————————
+
+export const organizationDomains = baseout.table('organization_domains', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: text('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  domain: text('domain').notNull(),            // lowercase, e.g. "acme.com"
+  mode: text('mode').notNull(),                // 'add' | 'suppress'
+  createdByUserId: text('created_by_user_id')
+    .references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check('organization_domains_mode_check', sql`${table.mode} IN ('add', 'suppress')`),
+  unique('organization_domains_org_domain_unique').on(table.organizationId, table.domain),
+  index('organization_domains_domain_idx').on(table.domain),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// ORGANIZATION JOIN REQUESTS (web-signup-domain-association)
+// Inbound "request to join" lifecycle: pending → approved | declined |
+// expired (~7 days). One OPEN request per (org, user) — partial unique index
+// below. Decline stamps a re-request cool-down (~30 days). Approval creates
+// the organization_members row via the existing team-member machinery
+// (src/lib/signup/join-requests.ts). Suggest-never-auto-join: a pending
+// request never blocks the requester, who proceeds in their own account.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const organizationJoinRequests = baseout.table('organization_join_requests', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: text('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  requesterUserId: text('requester_user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('pending'),
+  // 'pending' | 'approved' | 'declined' | 'expired'
+  /** Domain that matched at request time — audit context, not authorization. */
+  domain: text('domain'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decidedByUserId: text('decided_by_user_id')
+    .references(() => users.id, { onDelete: 'set null' }),
+  /** Set on decline: the requester may not re-request this org until then. */
+  declineCooldownUntil: timestamp('decline_cooldown_until', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check(
+    'organization_join_requests_status_check',
+    sql`${table.status} IN ('pending', 'approved', 'declined', 'expired')`,
+  ),
+  // One open request per (org, user); decided rows don't block a re-request.
+  uniqueIndex('organization_join_requests_open_unique')
+    .on(table.organizationId, table.requesterUserId)
+    .where(sql`${table.status} = 'pending'`),
+  index('organization_join_requests_org_status_idx').on(table.organizationId, table.status),
+  index('organization_join_requests_requester_idx').on(table.requesterUserId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// AUTH AUDIT LOG (web-signup-domain-association; consumed by web-auth-2fa +
+// web-auth-airtable-sso). Append-only auth-event trail following the
+// admin_audit_log posture: single event rows, denormalized actor snapshot
+// (no FK — history survives user deletion), no UPDATE/DELETE ever. metadata
+// must never contain tokens, secrets, TOTP material, or *_enc values.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const authAuditLog = baseout.table('auth_audit_log', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  kind: text('kind').notNull(),
+  // 'signup_domain_matched' | 'join_request_created' | 'join_request_approved'
+  // | 'join_request_declined' | 'join_request_expired'
+  // | 'sso_account_linked' | 'sso_user_created'
+  // | '2fa_enroll_started' | '2fa_enabled' | '2fa_disabled'
+  // | '2fa_backup_code_consumed' | '2fa_challenge_failed' — additive.
+  actorUserId: text('actor_user_id'),
+  actorEmail: text('actor_email'),
+  organizationId: text('organization_id'),
+  targetType: text('target_type'),
+  targetId: text('target_id'),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  dbUser: text('db_user').notNull().default(sql`current_user`),
+  applicationName: text('application_name').default(sql`current_setting('application_name', true)`),
+  txid: bigint('txid', { mode: 'number' }).notNull().default(sql`txid_current()`),
+}, (table) => [
+  index('auth_audit_log_kind_created_idx').on(table.kind, table.createdAt),
+  index('auth_audit_log_actor_idx').on(table.actorUserId, table.createdAt),
+  index('auth_audit_log_org_idx').on(table.organizationId, table.createdAt),
 ])
 
 // Per-Space fan-out: which Spaces consume a webhook, each with its own payload
