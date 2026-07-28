@@ -14,10 +14,28 @@ Related: [oauth-setup.md](./oauth-setup.md) (per-provider OAuth state — parall
 runbook for the BYOS providers), [ops-setup.md](./ops-setup.md)
 (Cloudflare/DigitalOcean/GitHub provisioning).
 
-Architecture rationale (why S3-API and not a Worker R2 binding) lives in
+Architecture rationale (why the WRITE path uses the S3 API and not a Worker R2
+binding) lives in
 [`openspec/changes/system-r2-revive/proposal.md`](../../openspec/changes/system-r2-revive/proposal.md).
 The implementation/launch plan this file backs lives in
 [`openspec/changes/system-r2-launch/`](../../openspec/changes/system-r2-launch/).
+
+**READ-path amendment (2026-07-27, `server-media-index`):** the engine Worker
+now carries a **native, credential-less `r2_buckets` binding** — `BACKUPS_R2`
+in `apps/server/wrangler.jsonc(.example)` (top-level + `env.dev`) — used ONLY
+by the Media Library download route
+(`GET /api/internal/spaces/:spaceId/media/:assetId/download`, `.get()` only:
+read-only by discipline). This does NOT touch the write-path stance: all
+writes stay on the Trigger.dev Node runner via S3 creds, and every rule in
+§2.4 about `R2_*` credentials stands unchanged — a native binding carries no
+credentials. Staging/prod env blocks gain the binding when those envs are
+provisioned (§3.2/§3.3).
+
+| Env     | Worker binding | Bucket bound               | Status |
+|---------|----------------|----------------------------|--------|
+| dev     | `BACKUPS_R2`   | `baseout-backups-dev`      | LIVE — bucket auto-created 2026-07-27 by wrangler resource provisioning during the `baseout-server-dev` deploy (empty; the write-path S3 token per §3.1 is still pending, so nothing lands in it until Trigger.dev creds exist) |
+| staging | `BACKUPS_R2`   | `baseout-backups-staging`  | pending env block (shared-server-service-binding-staging-prod) |
+| prod    | `BACKUPS_R2`   | `baseout-backups-prod`     | pending env block |
 
 ---
 
@@ -111,9 +129,12 @@ bucket-scoped surface like this.
   dev-token compromise must not blast-radius into staging/prod.
 - **No shared token across envs.** Each env's `R2_ACCESS_KEY_ID` /
   `R2_SECRET_ACCESS_KEY` pair must be unique to that env.
-- **No R2 binding in any `wrangler.jsonc`.** The architecture decision in
+- **No R2 binding for the WRITE path in any `wrangler.jsonc`.** The
+  architecture decision in
   [`system-r2-revive`](../../openspec/changes/system-r2-revive/proposal.md)
-  invalidated that path.
+  invalidated Worker-side writes. *(Amended 2026-07-27, `server-media-index`:
+  a READ-ONLY native binding — `BACKUPS_R2`, download streaming only — now
+  exists on apps/server; see §1. Credential rules above are unaffected.)*
 
 ---
 
