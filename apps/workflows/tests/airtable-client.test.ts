@@ -158,6 +158,41 @@ describe("createAirtableClient.listRecords", () => {
     expect(page.offset).toBe("next-page-cursor");
   });
 
+  it("appends recordMetadata[] (array form) and surfaces zero-inclusive commentCount", async () => {
+    // Param encoding + zero-inclusive commentCount pinned by the 2026-07-27
+    // workflows-comments spike (openspec/changes/workflows-comments/README.md).
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse({
+        records: [
+          { id: "rec1", createdTime: "2026-05-01T00:00:00Z", commentCount: 3, fields: { Name: "A" } },
+          { id: "rec2", createdTime: "2026-05-02T00:00:00Z", commentCount: 0, fields: { Name: "B" } },
+        ],
+      }),
+    );
+    const client = createAirtableClient({ accessToken: TOKEN, fetchImpl });
+    const page = await client.listRecords("app123", "tbl1", {
+      recordMetadata: ["commentCount"],
+    });
+
+    const [url] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toBe(
+      "https://api.airtable.com/v0/app123/tbl1?pageSize=100&recordMetadata%5B%5D=commentCount",
+    );
+    expect(page.records[0]!.commentCount).toBe(3);
+    expect(page.records[1]!.commentCount).toBe(0);
+  });
+
+  it("omits recordMetadata entirely when the option is absent (normal listing untouched)", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse({ records: [] }));
+    const client = createAirtableClient({ accessToken: TOKEN, fetchImpl });
+    await client.listRecords("app123", "tbl1");
+
+    const [url] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).not.toContain("recordMetadata");
+  });
+
   it("respects an explicit pageSize override", async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()

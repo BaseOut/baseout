@@ -70,6 +70,13 @@ async function postCompletion(
     payload.runId,
   )}/complete`;
   const body = {
+    // Discriminator for the widened engine contract (workflows-instant-webhook
+    // 4.2): the engine maps these counters into the run row
+    // (recordsProcessed = created+updated+deleted+reconciledRecords),
+    // finalizes fallback_to_full as failed with a composed message, and — on
+    // a succeeded completion with reconcileRan — stamps the subscription's
+    // last_reconciled_at (resetting the 7-day reconcile cadence).
+    kind: "incremental",
     triggerRunId,
     atBaseId: payload.baseId,
     status: result.status,
@@ -79,6 +86,8 @@ async function postCompletion(
     reconciledRecords: result.reconciledRecords,
     driftCount: result.driftCount,
     finalCursor: result.finalCursor,
+    subscriptionId: payload.subscriptionId,
+    reconcileRan: result.reconcileRan,
     ...(result.fallbackReason ? { fallbackReason: result.fallbackReason } : {}),
     ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
   };

@@ -106,6 +106,9 @@ describe("attachment-downloader.processCell", () => {
         storageKey: expectedKey,
         sizeBytes: 5,
         mimeType: "image/png",
+        // workflows-media-metadata: writes hash their bytes and stamp the
+        // dedup row so future lookups can return the stored hash.
+        contentHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         filename: "attA.png",
         uploadStatus: "uploaded",
       },
@@ -128,6 +131,7 @@ describe("attachment-downloader.processCell", () => {
         storageKey: "space-1/att/appB_tblT_recR_fldF_attA/attA.png",
         sizeBytes: 5,
         mimeType: "image/png",
+        contentHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
         filename: "attA.png",
         uploadStatus: "ready",
       },
@@ -210,7 +214,113 @@ describe("attachment-downloader.processCell", () => {
 
     const result = await downloader.processCell([], CTX);
 
-    expect(result).toEqual({ keys: [], downloaded: 0 });
+    expect(result).toEqual({ keys: [], downloaded: 0, attachments: [] });
     expect(deps.lookup).not.toHaveBeenCalled();
+  });
+});
+
+// workflows-media-metadata task 1.1 — the export-path tap. processCell now
+// surfaces per-attachment metadata for writes AND dedup-skips so the backup
+// task can emit it to media-sync without re-deriving anything.
+describe("attachment-downloader.processCell — media metadata tap", () => {
+  async function sha256Hex(bytes: Uint8Array): Promise<string> {
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  it("a write emits metadata with the sha256 of the downloaded bytes", async () => {
+    const { deps, recorded } = makeDeps();
+    const downloader = createAttachmentDownloader(deps);
+
+    const result = await downloader.processCell([ATT("attA")], CTX);
+
+    const expectedChecksum = `sha256:${await sha256Hex(new Uint8Array([1, 2, 3, 4, 5]))}`;
+    expect(result.attachments).toEqual([
+      {
+        attachmentId: "attA",
+        filename: "attA.png",
+        storageKey: "space-1/att/appB_tblT_recR_fldF_attA/attA.png",
+        checksum: expectedChecksum,
+        contentType: "image/png",
+        sizeBytes: 5,
+        dedupSkipped: false,
+      },
+    ]);
+    // The same hash lands on the dedup record entry (engine persists it).
+    expect(
+      (recorded[0]!.entries[0] as { contentHash?: string }).contentHash,
+    ).toBe(expectedChecksum);
+  });
+
+  it("a dedup-skip emits metadata with the engine-stored hash when the lookup returns one", async () => {
+    const existingKey = "space-1/att/appB_tblT_recR_fldF_attA/old.png";
+    const { deps } = makeDeps({
+      lookup: vi.fn(async () => ({
+        appB_tblT_recR_fldF_attA: {
+          storageKey: existingKey,
+          uploadStatus: "uploaded",
+          contentHash: "sha256:feedbead",
+        },
+      })),
+    });
+    const downloader = createAttachmentDownloader(deps);
+
+    const result = await downloader.processCell([ATT("attA")], CTX);
+
+    expect(result.attachments).toEqual([
+      {
+        attachmentId: "attA",
+        filename: "attA.png",
+        storageKey: existingKey,
+        checksum: "sha256:feedbead",
+        contentType: "image/png",
+        sizeBytes: 5,
+        dedupSkipped: true,
+      },
+    ]);
+  });
+
+  it("a dedup-skip without a stored hash falls back to the att:<id> surrogate", async () => {
+    const existingKey = "space-1/att/appB_tblT_recR_fldF_attA/old.png";
+    const { deps } = makeDeps({
+      lookup: vi.fn(async () => ({
+        appB_tblT_recR_fldF_attA: {
+          storageKey: existingKey,
+          uploadStatus: "uploaded",
+        },
+      })),
+    });
+    const downloader = createAttachmentDownloader(deps);
+
+    const result = await downloader.processCell([ATT("attA")], CTX);
+
+    expect(result.attachments![0]!.checksum).toBe("att:attA");
+    expect(result.attachments![0]!.dedupSkipped).toBe(true);
+  });
+
+  it("mixed hit + miss keeps metadata in field order", async () => {
+    const hitKey = "space-1/att/appB_tblT_recR_fldF_attHit/h.png";
+    const { deps } = makeDeps({
+      lookup: vi.fn(async () => ({
+        appB_tblT_recR_fldF_attHit: {
+          storageKey: hitKey,
+          uploadStatus: "uploaded",
+        },
+      })),
+    });
+    const downloader = createAttachmentDownloader(deps);
+
+    const result = await downloader.processCell(
+      [ATT("attHit"), ATT("attMiss")],
+      CTX,
+    );
+
+    expect(result.attachments!.map((a) => [a.attachmentId, a.dedupSkipped])).toEqual([
+      ["attHit", true],
+      ["attMiss", false],
+    ]);
+    expect(result.attachments![1]!.checksum).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 });

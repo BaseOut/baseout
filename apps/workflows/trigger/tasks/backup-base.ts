@@ -44,9 +44,26 @@ import {
 import {
   fetchAutomations,
   fetchInterfacePages,
+  fetchViews,
   type FetchAutomationsResult,
   type FetchInterfacePagesResult,
+  type FetchViewsResult,
+  type ViewsCapture,
 } from "./_lib/mcp-client";
+import {
+  mcpCaptureOutcome,
+  type McpCaptureOutcome,
+} from "./_lib/mcp-capture-common";
+import {
+  fetchRecordComments,
+  type FetchRecordCommentsResult,
+} from "./_lib/record-comments";
+import {
+  createMediaEmitter,
+  type MediaAttachmentEntryWire,
+  type MediaCaptureOutcome,
+  type MediaRecordCaptureWire,
+} from "./_lib/media-emitter";
 
 // Airtable's field type for an attachments cell. Mirrors the constant in
 // field-normalizer.ts (kept local so the downloader branch is self-contained).
@@ -96,6 +113,22 @@ export interface BackupBaseInput {
    * server-mcp-automations); default false = zero automation MCP requests.
    */
   automationsEnabled?: boolean;
+  /**
+   * How this run captures views (workflows-mcp-views, stamped by the engine
+   * run-start — server-mcp-views): 'rest' (enterprise-scope connection) keeps
+   * today's behavior exactly (views ride the REST schema; no MCP call);
+   * 'mcp' captures views via the Airtable MCP server per table and attaches
+   * them to schema-sync's optional `views` field; 'off' captures nothing.
+   * Absent (older engine payload) behaves like 'rest' — zero MCP view calls.
+   */
+  viewCaptureMode?: "rest" | "mcp" | "off";
+  /**
+   * Gates the REST comment capture (workflows-comments). Stamped by the
+   * engine run-start from the Org's resolved tier (server-comments); absent /
+   * false = zero comments-plan or comments-endpoint requests, and no
+   * commentCount metadata on the record listing.
+   */
+  commentsEnabled?: boolean;
 }
 
 interface AirtableClientShape {
@@ -103,7 +136,7 @@ interface AirtableClientShape {
   listRecords: (
     baseId: string,
     tableIdOrName: string,
-    opts?: { offset?: string; pageSize?: number },
+    opts?: { offset?: string; pageSize?: number; recordMetadata?: string[] },
   ) => Promise<AirtableRecordsPage>;
 }
 
@@ -151,6 +184,22 @@ export interface CapturedRecordWire {
   modifiedTime?: string | null;
   /** fieldId → raw Airtable value. Only populated fields (Airtable omits empties). */
   cells: Record<string, unknown>;
+}
+
+/**
+ * One record's comment capture on a comments-sync batch (workflows-comments).
+ * MIRROR of the canonical `CommentRecordCapture` in
+ * apps/server/src/lib/per-space/comments-sync.ts (server-comments owns it) —
+ * do not import across apps. `complete: true` ONLY when the record's comment
+ * pagination finished (enables the server's per-record deletion rule); a
+ * zero-candidate confirmation is an empty `complete: true` capture.
+ */
+export interface CommentRecordCaptureWire {
+  recordId: string;
+  tableId: string;
+  complete?: boolean;
+  /** Raw Airtable comment objects, forwarded verbatim. */
+  comments: unknown[];
 }
 
 export interface BackupBaseDeps {
@@ -201,7 +250,9 @@ export interface BackupBaseDeps {
   attachmentLookup?: (
     spaceId: string,
     compositeIds: string[],
-  ) => Promise<Record<string, { storageKey: string; uploadStatus: string }>>;
+  ) => Promise<
+    Record<string, { storageKey: string; uploadStatus: string; contentHash?: string }>
+  >;
   attachmentRecord?: (
     spaceId: string,
     entries: AttachmentRecordEntry[],
@@ -240,6 +291,11 @@ export interface BackupBaseDeps {
     // Optional MCP automations capture (workflows-mcp-automations) — same
     // attach-only-on-success contract as interfacePages.
     automations?: { capturedAt: string; raw: unknown },
+    // Optional MCP views capture (workflows-mcp-views) — the per-table
+    // aggregation of list_views_for_table envelopes. Same attach-only-on-
+    // success contract; wire shape owned by the server change's ViewsCapture
+    // (apps/server/src/lib/per-space/views-sync.ts).
+    views?: ViewsCapture,
   ) => Promise<{ recordsEnabled: boolean; baseRunId: string } | null>;
   syncRecords?: (args: {
     baseId: string;
@@ -267,6 +323,61 @@ export interface BackupBaseDeps {
     baseId: string;
     accessToken: string;
   }) => Promise<FetchAutomationsResult>;
+  /**
+   * MCP views fetcher (workflows-mcp-views). Same contract as the other two:
+   * defaults to the real client, tests inject a fake, only invoked when
+   * input.viewCaptureMode === 'mcp' AND syncSchema is wired. Takes the run's
+   * table ids (from the schema fetch) — the MCP view tool is per-table.
+   */
+  fetchViews?: (args: {
+    baseId: string;
+    tableIds: string[];
+    accessToken: string;
+  }) => Promise<FetchViewsResult>;
+  /**
+   * Count-delta refresh planning (workflows-comments design Decision 1b).
+   * POSTs the observed commented subset to the engine's comments-plan route.
+   * Returns the plan, or `null` when the per-Space DB isn't ready (409/501 —
+   * the capture is skipped entirely). A THROW degrades to the pre-optimization
+   * behavior: every observed commented record is refreshed.
+   */
+  planComments?: (args: {
+    baseId: string;
+    records: { recordId: string; commentCount: number }[];
+  }) => Promise<{ refresh: string[]; zeroCandidates: string[] } | null>;
+  /**
+   * Streams one comment batch to the engine's comments-sync route
+   * (workflows-comments design Decision 2). Comment capture only runs when
+   * this is wired (the capture has nowhere to land otherwise). Throws on
+   * engine errors — the capture step maps that to `partial`, never the run.
+   */
+  syncComments?: (args: {
+    baseId: string;
+    records: CommentRecordCaptureWire[];
+  }) => Promise<void>;
+  /**
+   * Per-record comments fetcher (workflows-comments). Defaults to the real
+   * REST client (_lib/record-comments.ts) with the run's injected fetch/sleep;
+   * tests inject a fake. Only invoked for records the plan marks `refresh`.
+   */
+  fetchRecordComments?: (args: {
+    baseId: string;
+    tableId: string;
+    recordId: string;
+    accessToken: string;
+  }) => Promise<FetchRecordCommentsResult>;
+  /**
+   * Streams one attachment-metadata batch to the engine's media-sync route
+   * (workflows-media-metadata). Emission is active only when attachments are
+   * being exported (the downloader is wired) AND this dep is present — no
+   * payload flag; the index follows whatever attachment export already does.
+   * Throws on engine errors — the emitter maps that to `partial`/`skipped`,
+   * never the run.
+   */
+  syncMedia?: (args: {
+    baseId: string;
+    records: MediaRecordCaptureWire[];
+  }) => Promise<void>;
 }
 
 export type BackupBaseStatus =
@@ -300,23 +411,80 @@ export interface BackupBaseResult {
    * hard rule. `notice: 'connection_scope'` flags a token the MCP server
    * rejected (401/403) so support can spot scope problems on the run.
    */
-  interfacePages?:
-    | { status: "captured" }
-    | { status: "skipped"; reason: string; notice?: "connection_scope" };
+  interfacePages?: McpCaptureOutcome;
   /**
    * MCP automations capture outcome (workflows-mcp-automations). Identical
    * contract to interfacePages: present only when attempted, `skipped` NEVER
    * affects `status`, 401/403 carries the connection-scope notice.
    */
-  automations?:
-    | { status: "captured" }
-    | { status: "skipped"; reason: string; notice?: "connection_scope" };
+  automations?: McpCaptureOutcome;
+  /**
+   * MCP views capture outcome (workflows-mcp-views). Identical contract to
+   * the other two: present only when attempted (viewCaptureMode 'mcp' + sync
+   * wired), `skipped` NEVER affects `status`.
+   */
+  views?: McpCaptureOutcome;
+  /**
+   * REST comment capture outcome (workflows-comments design Decision 4).
+   * Present only when attempted (commentsEnabled + syncComments wired + a
+   * full run). NEVER affects `status` — comment capture is best-effort.
+   * `captured`/`partial` counts are record captures DELIVERED to comments-sync
+   * (fetched + zero-confirms) and comments delivered; `skippedByPlan` counts
+   * observed commented records the count-delta plan let us skip. `partial` is
+   * honest under mid-fan-out failure: only records whose pagination finished
+   * were delivered `complete`.
+   */
+  comments?:
+    | { status: "captured"; records: number; comments: number; skippedByPlan: number }
+    | { status: "partial"; reason: string; records: number; comments: number; skippedByPlan: number }
+    | { status: "skipped"; reason: string };
+  /**
+   * Media-metadata emission outcome (workflows-media-metadata). Present only
+   * when attempted (attachment export active + syncMedia wired). NEVER
+   * affects `status` — bytes are the product, the index is a view; gaps heal
+   * idempotently on the next run. `assets` = distinct checksums delivered,
+   * `refs` = attachment entries delivered.
+   */
+  media?: MediaCaptureOutcome;
 }
 
 const TRIAL_TABLE_CAP = 5;
 const TRIAL_RECORD_CAP = 1000;
 const LOCK_RETRY_INTERVAL_MS = 5_000;
 const LOCK_MAX_TOTAL_MS = 60_000;
+
+// Comment-batch thresholds (workflows-comments design Decision 2): stream a
+// batch to comments-sync whenever either fills — never buffer a run's worth.
+const COMMENT_BATCH_MAX_RECORDS = 50;
+const COMMENT_BATCH_MAX_COMMENTS = 500;
+
+// BYOS provider storage types whose media locator is the relative storage key
+// under the connected destination folder (workflows-media-metadata; see the
+// change's tasks.md for per-provider locator-stability notes).
+const BYOS_PROVIDER_TYPES = new Set([
+  "google_drive",
+  "box",
+  "dropbox",
+  "onedrive",
+]);
+
+/**
+ * Map the run's storage type + the writer's storage key onto the media-sync
+ * `storage` locator (workflows-media-metadata design Decision 1: only what's
+ * in hand — the relative key IS what the dedup table stores and what every
+ * writer addressed). local_fs (and unknown types) omit storage entirely: the
+ * bytes are only staged on the runner's disk, but the index still fills.
+ */
+function mediaStorageFor(
+  storageType: string,
+  key: string,
+): MediaAttachmentEntryWire["storage"] {
+  if (storageType === "r2_managed") return { kind: "r2_managed", key };
+  if (BYOS_PROVIDER_TYPES.has(storageType)) {
+    return { kind: "destination", provider: storageType, locator: key };
+  }
+  return undefined;
+}
 
 function trimSlash(s: string): string {
   return s.endsWith("/") ? s.slice(0, -1) : s;
@@ -401,6 +569,18 @@ export async function runBackupBase(
   let recordsProcessed = 0;
   let trialComplete = false;
   const tableDetail: BackupTableDetail[] = [];
+
+  // Comment capture (workflows-comments) — gated on the tier flag, a FULL run
+  // (schema-only runs have no listing pass to observe counts on), and
+  // syncComments being wired (the capture has nowhere to land otherwise).
+  // When active, the EXISTING record-listing pass requests commentCount
+  // metadata (Decision 1 — no second pass) and these accumulators collect the
+  // observed commented subset + the zero-count sightings the plan's
+  // zeroCandidates handshake needs.
+  const captureComments =
+    input.commentsEnabled === true && !isSchemaOnly && !!deps.syncComments;
+  const observedCommented: { recordId: string; tableId: string; commentCount: number }[] = [];
+  const observedZero = new Map<string, string>(); // recordId → tableId
   // Resolve cloud-storage credentials before constructing the writer. The
   // engine internal route decrypts + lazy-refreshes the access token; we
   // pass a refresh closure that re-hits the same route with `?refresh=1`
@@ -467,6 +647,20 @@ export async function runBackupBase(
         })
       : null);
 
+  // Media-metadata emitter (workflows-media-metadata): report what the
+  // attachment export already knows to the engine's media index. Active only
+  // when attachments are exported (downloader wired) AND syncMedia is present
+  // — no payload flag, emission follows the export. Fire-and-forget by
+  // construction: the emitter never throws and the outcome never touches the
+  // run status.
+  const mediaEmitter =
+    attachmentDownloader && deps.syncMedia
+      ? createMediaEmitter({
+          syncMedia: (records) =>
+            deps.syncMedia!({ baseId: input.atBaseId, records }),
+        })
+      : null;
+
   try {
     // 2. Token.
     const tokenRes = await postInternal(
@@ -527,6 +721,29 @@ export async function runBackupBase(
       createAirtableClient({ accessToken, fetchImpl: fetchFn });
     const schema = await client.getBaseSchema(input.atBaseId);
 
+    // 3b. MCP views capture (workflows-mcp-views) — the third capture kind.
+    // Unlike 2b/2c it needs the table ids, so it starts right AFTER the schema
+    // fetch (the MCP view tool is per-table — spike 2026-07-27) and runs
+    // concurrently with the interface/automation awaits below, landing before
+    // the schema-sync POST it rides. Table ids are the FULL schema's tables —
+    // matching the schema-sync body (which also sends all tables) so a
+    // successful capture is a full sighting server-side. Same gating shape
+    // ('mcp' mode + syncSchema wired) and the same failure isolation: the
+    // client never throws, the defensive .catch covers injected fakes, and no
+    // failure mode may touch the backup outcome. 'rest'/'off'/absent → zero
+    // MCP view calls ('rest' runs behave exactly as before this change).
+    const captureViews =
+      input.viewCaptureMode === "mcp" && !!deps.syncSchema;
+    const viewsCapturePromise: Promise<FetchViewsResult> | null = captureViews
+      ? (deps.fetchViews ??
+          ((a: { baseId: string; tableIds: string[]; accessToken: string }) =>
+            fetchViews({ ...a, fetchImpl: fetchFn })))({
+          baseId: input.atBaseId,
+          tableIds: schema.tables.map((t) => t.id),
+          accessToken,
+        }).catch((): FetchViewsResult => ({ ok: false, reason: "transport" }))
+      : null;
+
     // 4. Trial gate on table count.
     const trialTruncated =
       input.isTrial && schema.tables.length > TRIAL_TABLE_CAP;
@@ -550,14 +767,8 @@ export async function runBackupBase(
       const capture = await interfaceCapturePromise;
       if (capture.ok) {
         interfacePagesField = { capturedAt: capture.capturedAt, raw: capture.raw };
-        interfacePagesOutcome = { status: "captured" };
-      } else {
-        interfacePagesOutcome = {
-          status: "skipped",
-          reason: capture.reason,
-          ...(capture.reason === "auth" ? { notice: "connection_scope" as const } : {}),
-        };
       }
+      interfacePagesOutcome = mcpCaptureOutcome(capture);
     }
     let automationsField: { capturedAt: string; raw: unknown } | undefined;
     let automationsOutcome: BackupBaseResult["automations"];
@@ -565,14 +776,17 @@ export async function runBackupBase(
       const capture = await automationCapturePromise;
       if (capture.ok) {
         automationsField = { capturedAt: capture.capturedAt, raw: capture.raw };
-        automationsOutcome = { status: "captured" };
-      } else {
-        automationsOutcome = {
-          status: "skipped",
-          reason: capture.reason,
-          ...(capture.reason === "auth" ? { notice: "connection_scope" as const } : {}),
-        };
       }
+      automationsOutcome = mcpCaptureOutcome(capture);
+    }
+    let viewsField: ViewsCapture | undefined;
+    let viewsOutcome: BackupBaseResult["views"];
+    if (viewsCapturePromise) {
+      const capture = await viewsCapturePromise;
+      if (capture.ok) {
+        viewsField = capture.capture;
+      }
+      viewsOutcome = mcpCaptureOutcome(capture);
     }
     if (deps.syncSchema) {
       const captured: CapturedBaseWire = {
@@ -601,7 +815,13 @@ export async function runBackupBase(
           })),
         })),
       };
-      const sync = await deps.syncSchema(captured, true, interfacePagesField, automationsField);
+      const sync = await deps.syncSchema(
+        captured,
+        true,
+        interfacePagesField,
+        automationsField,
+        viewsField,
+      );
       if (sync) {
         recordsEnabled = sync.recordsEnabled;
         perSpaceBaseRunId = sync.baseRunId;
@@ -627,6 +847,7 @@ export async function runBackupBase(
         })),
         ...(interfacePagesOutcome ? { interfacePages: interfacePagesOutcome } : {}),
         ...(automationsOutcome ? { automations: automationsOutcome } : {}),
+        ...(viewsOutcome ? { views: viewsOutcome } : {}),
       };
     }
 
@@ -650,6 +871,10 @@ export async function runBackupBase(
       for (;;) {
         const page = await client.listRecords(input.atBaseId, table.id, {
           offset,
+          // Decision 1: commentCount rides the existing listing pass — array
+          // form, zero-inclusive (workflows-comments spike 2026-07-27).
+          // Disabled runs request NO comment metadata (spec scenario).
+          ...(captureComments ? { recordMetadata: ["commentCount"] } : {}),
         });
         collected.push(...page.records);
 
@@ -670,6 +895,17 @@ export async function runBackupBase(
 
       const rows: Record<string, unknown>[] = [];
       for (const rec of collected) {
+        // Collect the observed comment counts during the existing pass —
+        // trial-trimmed records were spliced out of `collected` above, so
+        // only records this run actually captured are observed.
+        if (captureComments) {
+          const count = typeof rec.commentCount === "number" ? rec.commentCount : 0;
+          if (count > 0) {
+            observedCommented.push({ recordId: rec.id, tableId: table.id, commentCount: count });
+          } else {
+            observedZero.set(rec.id, table.id);
+          }
+        }
         const out: Record<string, unknown> = {};
         for (const name of fieldNames) {
           const type = fieldTypes.get(name) ?? "";
@@ -681,7 +917,7 @@ export async function runBackupBase(
           ) {
             // Download (or dedup-skip) each attachment; the cell holds the
             // semicolon-joined storage keys instead of "[N attachments]".
-            const { keys, downloaded } = await attachmentDownloader.processCell(
+            const cellResult = await attachmentDownloader.processCell(
               value as AirtableAttachment[],
               {
                 baseId: input.atBaseId,
@@ -690,13 +926,39 @@ export async function runBackupBase(
                 fieldId: fieldIds.get(name) ?? "",
               },
             );
-            out[name] = keys.join(";");
-            attachmentsProcessed += downloaded;
+            out[name] = cellResult.keys.join(";");
+            attachmentsProcessed += cellResult.downloaded;
+            // Media-metadata tap (workflows-media-metadata Decision 1):
+            // emission fires per processed attachment — writes AND
+            // dedup-skips (a skip is a new ref on an existing asset).
+            // Injected downloader fakes without metadata emit nothing.
+            if (mediaEmitter && cellResult.attachments) {
+              for (const m of cellResult.attachments) {
+                const storage = mediaStorageFor(input.storageType, m.storageKey);
+                mediaEmitter.attachment(
+                  { recordId: rec.id, tableId: table.id },
+                  {
+                    attachmentId: m.attachmentId,
+                    fieldId: fieldIds.get(name) ?? "",
+                    filename: m.filename,
+                    checksum: m.checksum,
+                    ...(m.contentType !== undefined ? { contentType: m.contentType } : {}),
+                    ...(m.sizeBytes !== undefined ? { sizeBytes: m.sizeBytes } : {}),
+                    ...(storage ? { storage } : {}),
+                  },
+                );
+              }
+            }
           } else {
             out[name] = normalizeFieldValue(value, type);
           }
         }
         rows.push(out);
+        // This record's attachment cells are all processed — mark it complete
+        // for the media batcher (deletion safety: `complete` only after ALL
+        // of the record's attachments finished). No-op for records that
+        // emitted nothing. Never throws.
+        if (mediaEmitter) await mediaEmitter.recordDone(rec.id);
       }
 
       const csv = pageToCsv({ fields: fieldNames, rows });
@@ -770,6 +1032,39 @@ export async function runBackupBase(
       if (trialComplete) break;
     }
 
+    // 5a. Media-metadata finish (workflows-media-metadata): flush the batch
+    // remainder and settle the outcome. finish() never throws; the outcome
+    // never touches the run status.
+    const mediaOutcome: MediaCaptureOutcome | undefined = mediaEmitter
+      ? await mediaEmitter.finish()
+      : undefined;
+
+    // 5b. Comment capture (workflows-comments) — sequenced AFTER the record /
+    // attachment loop for the base (design Decision 3: core backup content
+    // never queues behind comment chatter). Best-effort: runCommentCapture
+    // never throws by construction, and the belt-and-braces catch keeps an
+    // unexpected throw from an injected fake off the run outcome too.
+    let commentsOutcome: BackupBaseResult["comments"];
+    if (captureComments && deps.syncComments) {
+      const fetchComments = deps.fetchRecordComments
+        ? deps.fetchRecordComments
+        : (a: { baseId: string; tableId: string; recordId: string; accessToken: string }) =>
+            fetchRecordComments({ ...a, fetchImpl: fetchFn, sleepImpl: deps.sleepImpl });
+      try {
+        commentsOutcome = await runCommentCapture({
+          baseId: input.atBaseId,
+          accessToken,
+          observedCommented,
+          observedZero,
+          planComments: deps.planComments,
+          syncComments: deps.syncComments,
+          fetchComments,
+        });
+      } catch {
+        commentsOutcome = { status: "skipped", reason: "transport" };
+      }
+    }
+
     let status: BackupBaseStatus;
     if (trialComplete) status = "trial_complete";
     else if (trialTruncated) status = "trial_truncated";
@@ -783,6 +1078,9 @@ export async function runBackupBase(
       tableDetail,
       ...(interfacePagesOutcome ? { interfacePages: interfacePagesOutcome } : {}),
       ...(automationsOutcome ? { automations: automationsOutcome } : {}),
+      ...(viewsOutcome ? { views: viewsOutcome } : {}),
+      ...(commentsOutcome ? { comments: commentsOutcome } : {}),
+      ...(mediaOutcome ? { media: mediaOutcome } : {}),
     };
   } finally {
     if (locked) {
@@ -814,6 +1112,153 @@ export async function runBackupBase(
       errorMessage,
     };
   }
+}
+
+type CommentCaptureOutcome = NonNullable<BackupBaseResult["comments"]>;
+
+/**
+ * The comment capture step (workflows-comments Decisions 1b/2/4), extracted
+ * from runBackupBase for readability. Never throws.
+ *
+ * Flow: POST the observed counts to comments-plan → fetch ONLY the `refresh`
+ * list → confirm zeroCandidates observed at count 0 as empty `complete`
+ * captures (no fetch) → stream batches to comments-sync as the fan-out
+ * progresses, marking each record `complete: true` only when its pagination
+ * finished. Plan failure (throw) falls back to refreshing ALL observed
+ * commented records; a plan `null` (space DB not ready) skips the capture.
+ * Mid-fan-out failure flushes the already-finished records best-effort and
+ * reports `partial` — delivered counts only reflect successful sync POSTs.
+ */
+async function runCommentCapture(args: {
+  baseId: string;
+  accessToken: string;
+  observedCommented: { recordId: string; tableId: string; commentCount: number }[];
+  observedZero: Map<string, string>;
+  planComments: BackupBaseDeps["planComments"];
+  syncComments: NonNullable<BackupBaseDeps["syncComments"]>;
+  fetchComments: (a: {
+    baseId: string;
+    tableId: string;
+    recordId: string;
+    accessToken: string;
+  }) => Promise<FetchRecordCommentsResult>;
+}): Promise<CommentCaptureOutcome> {
+  // 1. Plan (Decision 1b — count-delta skip). Equal counts cost zero fetches.
+  let refreshIds: Set<string>;
+  const zeroConfirms: { recordId: string; tableId: string }[] = [];
+  let skippedByPlan = 0;
+  if (args.planComments) {
+    try {
+      const plan = await args.planComments({
+        baseId: args.baseId,
+        records: args.observedCommented.map(({ recordId, commentCount }) => ({
+          recordId,
+          commentCount,
+        })),
+      });
+      if (plan === null) {
+        // Per-Space DB not ready (409/501) — comments-sync would fail too.
+        return { status: "skipped", reason: "space_db_not_ready" };
+      }
+      refreshIds = new Set(plan.refresh);
+      // Confirm only zeroCandidates this run actually saw listed at count 0;
+      // unvisited/deleted records are not this feature's job.
+      for (const recordId of plan.zeroCandidates) {
+        const tableId = args.observedZero.get(recordId);
+        if (tableId !== undefined) zeroConfirms.push({ recordId, tableId });
+      }
+      skippedByPlan = args.observedCommented.filter(
+        (r) => !refreshIds.has(r.recordId),
+      ).length;
+    } catch {
+      // Plan failure degrades to the pre-optimization behavior: refresh every
+      // observed commented record. The optimization only ever reduces work.
+      refreshIds = new Set(args.observedCommented.map((r) => r.recordId));
+    }
+  } else {
+    refreshIds = new Set(args.observedCommented.map((r) => r.recordId));
+  }
+
+  // 2. Streamed fan-out (Decision 2). Zero-confirms ride the FIRST batch.
+  let batch: CommentRecordCaptureWire[] = zeroConfirms.map(
+    ({ recordId, tableId }) => ({ recordId, tableId, complete: true, comments: [] }),
+  );
+  let batchComments = 0;
+  let deliveredRecords = 0;
+  let deliveredComments = 0;
+
+  const flush = async (): Promise<void> => {
+    if (batch.length === 0) return;
+    const records = batch;
+    const commentsInBatch = batchComments;
+    batch = [];
+    batchComments = 0;
+    await args.syncComments({ baseId: args.baseId, records });
+    deliveredRecords += records.length;
+    deliveredComments += commentsInBatch;
+  };
+
+  const toFetch = args.observedCommented.filter((r) => refreshIds.has(r.recordId));
+  try {
+    for (const rec of toFetch) {
+      let fetched: FetchRecordCommentsResult;
+      try {
+        fetched = await args.fetchComments({
+          baseId: args.baseId,
+          tableId: rec.tableId,
+          recordId: rec.recordId,
+          accessToken: args.accessToken,
+        });
+      } catch {
+        fetched = { ok: false, reason: "transport" };
+      }
+      if (!fetched.ok) {
+        // Deliver the already-finished records best-effort, then report
+        // honestly: records whose pagination didn't finish are never sent.
+        try {
+          await flush();
+        } catch {
+          // swallow — partial is partial either way
+        }
+        return {
+          status: "partial",
+          reason: fetched.reason,
+          records: deliveredRecords,
+          comments: deliveredComments,
+          skippedByPlan,
+        };
+      }
+      batch.push({
+        recordId: rec.recordId,
+        tableId: rec.tableId,
+        complete: true,
+        comments: fetched.comments,
+      });
+      batchComments += fetched.comments.length;
+      if (
+        batch.length >= COMMENT_BATCH_MAX_RECORDS ||
+        batchComments >= COMMENT_BATCH_MAX_COMMENTS
+      ) {
+        await flush();
+      }
+    }
+    await flush();
+  } catch {
+    // comments-sync failure — records already delivered stay delivered.
+    return {
+      status: "partial",
+      reason: "sync_failed",
+      records: deliveredRecords,
+      comments: deliveredComments,
+      skippedByPlan,
+    };
+  }
+  return {
+    status: "captured",
+    records: deliveredRecords,
+    comments: deliveredComments,
+    skippedByPlan,
+  };
 }
 
 interface StorageDestinationResponse {

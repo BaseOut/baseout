@@ -23,9 +23,16 @@ import {
   type BackupTableDetail,
   type CapturedBaseWire,
   type CapturedRecordWire,
+  type CommentRecordCaptureWire,
 } from "./backup-base";
+import type { MediaRecordCaptureWire } from "./_lib/media-emitter";
 import type { AttachmentRecordEntry } from "./_lib/attachment-downloader";
-import { fetchAutomations, fetchInterfacePages } from "./_lib/mcp-client";
+import {
+  fetchAutomations,
+  fetchInterfacePages,
+  fetchViews,
+  type ViewsCapture,
+} from "./_lib/mcp-client";
 
 export interface BackupBaseTaskPayload {
   runId: string;
@@ -74,6 +81,22 @@ export interface BackupBaseTaskPayload {
    * server-mcp-automations); absent/false = zero automation MCP requests.
    */
   automationsEnabled?: boolean;
+  /**
+   * How this run captures views (workflows-mcp-views). Stamped by the engine
+   * run-start from the connection's platform_config (server-mcp-views):
+   * 'rest' = enterprise scope, views ride the REST schema as before (no MCP
+   * call); 'mcp' = capture views via the Airtable MCP server; 'off' = none.
+   * Optional so payloads from an older engine (absent) behave like 'rest' —
+   * zero MCP view requests.
+   */
+  viewCaptureMode?: "rest" | "mcp" | "off";
+  /**
+   * Gates the REST comment capture (workflows-comments). Stamped by the
+   * engine run-start from the Org's resolved tier (server-comments);
+   * absent/false = zero comments-plan / comments-endpoint requests and no
+   * commentCount metadata on the record listing.
+   */
+  commentsEnabled?: boolean;
 }
 
 function trimSlash(s: string): string {
@@ -215,6 +238,10 @@ async function syncSchema(
   // Optional MCP automations capture (workflows-mcp-automations) — same
   // attach-only-on-success / absent-is-not-deletion contract.
   automations?: { capturedAt: string; raw: unknown },
+  // Optional MCP views capture (workflows-mcp-views) — same contract again;
+  // wire shape owned by the server change's ViewsCapture
+  // (apps/server/src/lib/per-space/views-sync.ts).
+  views?: ViewsCapture,
 ): Promise<{ recordsEnabled: boolean; baseRunId: string } | null> {
   const url = `${trimSlash(engineUrl)}/api/internal/spaces/${encodeURIComponent(spaceId)}/schema-sync`;
   const res = await fetch(url, {
@@ -226,6 +253,7 @@ async function syncSchema(
       confident,
       ...(interfacePages !== undefined ? { interfacePages } : {}),
       ...(automations !== undefined ? { automations } : {}),
+      ...(views !== undefined ? { views } : {}),
     }),
   });
   if (res.status === 409 || res.status === 501) return null;
@@ -249,6 +277,68 @@ async function syncRecords(
   });
   if (res.status === 409 || res.status === 501) return;
   if (!res.ok) throw new Error(`records-sync ${res.status}`);
+}
+
+// Comment capture engine callbacks (workflows-comments). Both are per-Space
+// internal routes owned by server-comments. planComments maps 409/501 (space
+// DB not provisioned / not managed_pg) to null — the pure function skips the
+// capture; any other non-2xx throws, which the pure function treats as
+// plan-failure and degrades to refreshing every observed commented record.
+async function planComments(
+  engineUrl: string,
+  internalToken: string,
+  spaceId: string,
+  args: { baseId: string; records: { recordId: string; commentCount: number }[] },
+): Promise<{ refresh: string[]; zeroCandidates: string[] } | null> {
+  const url = `${trimSlash(engineUrl)}/api/internal/spaces/${encodeURIComponent(spaceId)}/comments-plan`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-internal-token": internalToken, "content-type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  if (res.status === 409 || res.status === 501) return null;
+  if (!res.ok) throw new Error(`comments-plan ${res.status}`);
+  const json = (await res.json()) as { refresh?: string[]; zeroCandidates?: string[] };
+  return { refresh: json.refresh ?? [], zeroCandidates: json.zeroCandidates ?? [] };
+}
+
+// One streamed batch to comments-sync. Throws on any non-2xx — the pure
+// function's capture step maps that to a `partial` outcome, never the run.
+async function syncComments(
+  engineUrl: string,
+  internalToken: string,
+  spaceId: string,
+  backupRunId: string,
+  args: { baseId: string; records: CommentRecordCaptureWire[] },
+): Promise<void> {
+  const url = `${trimSlash(engineUrl)}/api/internal/spaces/${encodeURIComponent(spaceId)}/comments-sync`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-internal-token": internalToken, "content-type": "application/json" },
+    body: JSON.stringify({ backupRunId, baseId: args.baseId, records: args.records }),
+  });
+  if (!res.ok) throw new Error(`comments-sync ${res.status}`);
+}
+
+// Media-metadata engine callback (workflows-media-metadata). One streamed
+// batch to the per-Space media-sync route (owned by server-media-index).
+// Throws on any non-2xx (including 409/501) — the pure function's emitter
+// maps the first failure to `partial`/`skipped` and stops delivering; the
+// index self-heals next run (idempotent upserts by checksum/attachment id).
+async function syncMedia(
+  engineUrl: string,
+  internalToken: string,
+  spaceId: string,
+  backupRunId: string,
+  args: { baseId: string; records: MediaRecordCaptureWire[] },
+): Promise<void> {
+  const url = `${trimSlash(engineUrl)}/api/internal/spaces/${encodeURIComponent(spaceId)}/media-sync`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-internal-token": internalToken, "content-type": "application/json" },
+    body: JSON.stringify({ backupRunId, baseId: args.baseId, records: args.records }),
+  });
+  if (!res.ok) throw new Error(`media-sync ${res.status}`);
 }
 
 async function postCompletion(
@@ -278,6 +368,12 @@ async function postCompletion(
     // Automation-capture outcome (workflows-mcp-automations): same additive
     // contract as interfacePages.
     ...(result.automations ? { automations: result.automations } : {}),
+    // View-capture outcome (workflows-mcp-views): same additive contract.
+    ...(result.views ? { views: result.views } : {}),
+    // Comment-capture outcome (workflows-comments): same additive contract.
+    ...(result.comments ? { comments: result.comments } : {}),
+    // Media-emission outcome (workflows-media-metadata): same additive contract.
+    ...(result.media ? { media: result.media } : {}),
   };
   // workflows-run-detail: include per-table detail when the pure function
   // accumulated it (succeeded / trial_* paths). The server handler treats
@@ -364,7 +460,7 @@ export const backupBaseTask = task({
               event.recordsAppended,
               event.tableCompleted,
             ),
-          syncSchema: (captured, confident, interfacePages, automations) =>
+          syncSchema: (captured, confident, interfacePages, automations, views) =>
             syncSchema(
               engineUrl,
               internalToken,
@@ -374,6 +470,7 @@ export const backupBaseTask = task({
               confident,
               interfacePages,
               automations,
+              views,
             ),
           // MCP endpoint override (AIRTABLE_MCP_URL) exists for the staging
           // failure drill (point it at a black hole) and tests; production
@@ -388,6 +485,29 @@ export const backupBaseTask = task({
               ...a,
               endpoint: process.env.AIRTABLE_MCP_URL || undefined,
             }),
+          fetchViews: (a) =>
+            fetchViews({
+              ...a,
+              endpoint: process.env.AIRTABLE_MCP_URL || undefined,
+            }),
+          planComments: (args) =>
+            planComments(engineUrl, internalToken, payload.spaceId, args),
+          syncMedia: (args) =>
+            syncMedia(
+              engineUrl,
+              internalToken,
+              payload.spaceId,
+              payload.runId,
+              args,
+            ),
+          syncComments: (args) =>
+            syncComments(
+              engineUrl,
+              internalToken,
+              payload.spaceId,
+              payload.runId,
+              args,
+            ),
           syncRecords: (args) =>
             syncRecords(
               engineUrl,
