@@ -2,32 +2,32 @@
 
 ## 0. Blockers
 
-- [ ] 0.1 PRD/Features amendment + tier decision (shared blocker — see `server-comments` task 0.1).
+- [ ] 0.1 PRD/Features amendment + tier decision (shared blocker — see `server-comments` task 0.1). → Doc edits drafted 2026-07-27; tier confirmation (Dan) still pending.
 
 ## 1. Spike
 
-- [ ] 1.1 Against a dev base with commented records: verify `recordMetadata=commentCount` on the list-records call (name, shape, interaction with existing streaming); document the comments endpoint's pagination + page size; record scrubbed fixtures in this change's README.
+- [x] 1.1 Against a dev base with commented records: verify `recordMetadata=commentCount` on the list-records call (name, shape, interaction with existing streaming); document the comments endpoint's pagination + page size; record scrubbed fixtures in this change's README. → **RAN 2026-07-27 — verified** (`spike.mjs` + README.md): all three param encodings accepted; every record row gains top-level `commentCount` (zero-inclusive); pagination unaffected; comments endpoint 200 on the existing `data.recordComments:read` grant (`{comments:[], offset:null}`). ONE gap: no dev record has comments and the grant is read-only (create probe 403'd, correctly) — a human adds one comment in the Airtable UI (flashcards `rec7vu1m9EGfgJrEj`), re-run `spike.mjs` for the populated envelope fixture.
 
 ## 2. Comments client
 
-- [ ] 2.1 `_lib/` helper: `fetchRecordComments({ baseId, tableId, recordId, accessToken })` — pagination loop, typed result, 429/backoff via the existing client pacing.
-- [ ] 2.2 Vitest (node, injected `fetchImpl`): single page, multi-page, 429 retry, 4xx/5xx failure shapes.
+- [x] 2.1 `_lib/` helper: `fetchRecordComments({ baseId, tableId, recordId, accessToken })` — pagination loop, typed result, 429/backoff via the existing client pacing. → Done 2026-07-27 (`_lib/record-comments.ts`): offset-cursor loop per the README's spike envelope (`{comments, offset}`, offset null on final page), same pacing constants as airtable-client (3 attempts on 429/5xx, Retry-After honored, 200ms×4^n backoff, non-retriable 4xx immediate). NEVER throws — `{ok:false, reason: transport|invalid_response|http_<n>}`; mid-pagination failure loses the whole record so only fully-paginated records are ever delivered `complete`.
+- [x] 2.2 Vitest (node, injected `fetchImpl`): single page, multi-page, 429 retry, 4xx/5xx failure shapes. → Done: tests/record-comments.test.ts (10 tests) — single/multi/empty page, Retry-After 429 retry, 429 exhausted + backoff-timing pin, 5xx exhausted, immediate 403, mid-pagination 404, transport throw, malformed body.
 
 ## 3. Task integration
 
-- [ ] 3.1 Thread `commentsEnabled` through `BackupBaseTaskPayload` + `BackupBaseInput` (default false).
-- [ ] 3.2 Record-listing pass collects commented record ids + counts (Decision 1); fan-out sequenced after records/attachments (Decision 3).
-- [ ] 3.2b Comments-plan call before the fan-out (Decision 1b): fetch only the `refresh` list; zeroCandidates observed at count 0 sent as empty `complete` captures; plan failure falls back to refreshing all observed commented records.
-- [ ] 3.3 Batch POSTs to comments-sync during fan-out with per-record `complete` flags (Decision 2); run-progress `comments` entry per Decision 4 (include skipped-by-plan count).
-- [ ] 3.4 Orchestration tests: happy path; unchanged counts make zero comment fetches; zero-drop path makes zero fetches; plan-failure fallback; partial failure mid-fan-out reports `partial` and only complete records were sent as `complete`; below-tier makes zero comment requests; records/attachments unaffected by comment failures.
-- [ ] 3.5 Incremental runs: only visited records re-capture comments (coordinate with the in-flight incremental-backup machinery).
+- [x] 3.1 Thread `commentsEnabled` through `BackupBaseTaskPayload` + `BackupBaseInput` (default false). → Done: optional flag on both; absent/false = zero plan/comments requests AND no `recordMetadata` on the listing. Engine stamps it unconditionally since server-comments (apps/server/src/lib/runs/start.ts).
+- [x] 3.2 Record-listing pass collects commented record ids + counts (Decision 1); fan-out sequenced after records/attachments (Decision 3). → Done: `recordMetadata: ["commentCount"]` (array form per the README spike) rides the EXISTING listing pass only when capture is active; `airtable-client.ts` gained the `recordMetadata` option + zero-inclusive `AirtableRecord.commentCount`. Observed commented subset + zero-count sightings collected during the existing per-record CSV pass (no second listing). Capture step runs after the whole table loop (step 5b in backup-base.ts).
+- [x] 3.2b Comments-plan call before the fan-out (Decision 1b): fetch only the `refresh` list; zeroCandidates observed at count 0 sent as empty `complete` captures; plan failure falls back to refreshing all observed commented records. → Done (`runCommentCapture` in backup-base.ts). One extra disposition beyond the spec text: a plan response of 409/501 (space DB not provisioned / not managed_pg) maps to `skipped(space_db_not_ready)` with zero fetches — comments-sync would fail identically, so fetching first would be waste; only a plan THROW (transport/5xx) triggers the full-refresh fallback.
+- [x] 3.3 Batch POSTs to comments-sync during fan-out with per-record `complete` flags (Decision 2); run-progress `comments` entry per Decision 4 (include skipped-by-plan count). → Done: batches flush at 50 records / 500 comments; zero-confirms ride the FIRST batch; `complete: true` only for fully-paginated records (the helper never returns partial pagination). Outcome `captured{records, comments, skippedByPlan} | partial{reason, …counts} | skipped(reason)` on BackupBaseResult + forwarded on the /complete POST body (additive). Delivered counts reflect successful sync POSTs only.
+- [x] 3.4 Orchestration tests: happy path; unchanged counts make zero comment fetches; zero-drop path makes zero fetches; plan-failure fallback; partial failure mid-fan-out reports `partial` and only complete records were sent as `complete`; below-tier makes zero comment requests; records/attachments unaffected by comment failures. → Done: tests/backup-base-comment-capture.test.ts (13 tests) — all listed scenarios plus sequencing pin (csv before plan), unobserved zeroCandidate ignored, sync-failure partial, throwing fake isolation, no-syncComments gate, schema-only zero requests. +2 tests in tests/airtable-client.test.ts for the recordMetadata param encoding / absence.
+- [ ] 3.5 Incremental runs: only visited records re-capture comments (coordinate with the in-flight incremental-backup machinery). → NOT WIRED, deliberately (per build direction 2026-07-27): comment capture lives in the full-backup task only; incremental-backup.ts is another change's surface (workflows-incremental-view-refresh / workflows-instant-webhook) and its listRecordsPage abstraction was left untouched. The server's per-record `complete` contract already keeps unvisited records safe, so incremental wiring is a follow-up, not a correctness gap.
 
 ## 4. Contract + docs
 
-- [ ] 4.1 Cross-check the batch body against `server-comments` (single source: that change's spec); land server-first.
-- [ ] 4.2 README: spike findings, fan-out strategy, fallback ceiling if commentCount is unavailable.
+- [x] 4.1 Cross-check the batch body against `server-comments` (single source: that change's spec); land server-first. → Verified 2026-07-27: server half is landed (apps/server/src/lib/per-space/comments-sync.ts `CommentsSyncBody`/`CommentsPlanBody`, routes comments-plan.ts + comments-sync.ts, plan response `{ok, refresh, zeroCandidates}`). Workflows mirrors `CommentRecordCapture` locally as `CommentRecordCaptureWire` (backup-base.ts, header comment names the canonical source) — no cross-app import.
+- [x] 4.2 README: spike findings, fan-out strategy, fallback ceiling if commentCount is unavailable. → Spike findings already in README (task 1.1); build-notes section appended 2026-07-27 (fan-out strategy + why no fallback ceiling shipped: commentCount verified available, so the full-sweep ceiling path was never needed).
 
 ## 5. Verification
 
-- [ ] 5.1 `pnpm --filter @baseout/workflows test` + typecheck green.
-- [ ] 5.2 Dev E2E with the server half: base with commented records → rows appear; edit + delete a comment, re-run, see update + soft delete; run wall-clock impact recorded.
+- [x] 5.1 `pnpm --filter @baseout/workflows test` + typecheck green. → 2026-07-27: 36 files / 347 tests passed; `npx tsc --noEmit` clean.
+- [ ] 5.2 Dev E2E with the server half: base with commented records → rows appear; edit + delete a comment, re-run, see update + soft delete; run wall-clock impact recorded. → BLOCKED on human smoke: needs the populated-comment fixture (a human adds a comment in the Airtable UI — see task 1.1 note), a deployed dev engine, and an `npx trigger.dev dev` worker.

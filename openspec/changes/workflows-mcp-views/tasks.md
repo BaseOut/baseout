@@ -2,21 +2,21 @@
 
 ## 0. Sequencing + spike
 
-- [ ] 0.1 `server-mcp-views` contract landed (owns `views` field + `viewCaptureMode` flag).
-- [ ] 0.2 Spike: `tools/list` + view tool call against a real Connection; scrubbed fixture + envelope depth (config or id/name/type) in README; scope check (new scope → STOP); 2 MB cap sanity on a view-heavy base; one-handshake-three-calls check.
+- [x] 0.1 `server-mcp-views` contract landed (owns `views` field + `viewCaptureMode` flag). → Verified 2026-07-27: `ViewsCapture` in apps/server/src/lib/per-space/views-sync.ts, `viewCaptureMode` stamped in apps/server/src/lib/runs/start.ts, schema-sync route consumes the optional `views` field. Workflows mirrors the type locally (mcp-client.ts) — no cross-app import.
+- [x] 0.2 Spike: `tools/list` + view tool call against a real Connection; scrubbed fixture + envelope depth (config or id/name/type) in README; scope check (new scope → STOP); 2 MB cap sanity on a view-heavy base; one-handshake-three-calls check. → **RAN 2026-07-27 — build proceeds.** Tool is `list_views_for_table` (PER-TABLE: requires `baseId` + `tableId`; no per-base tool exists — capture fans out per table). Envelope inventory-grade: `{views:[{id,name,type}]}` — no config, so `server-mcp-views` Decision 4 takes the NO-migration branch. Standard grant suffices (no STOP). ~180 bytes/table — 2 MB cap a non-issue. 11 `tools/call`s on one handshake all succeeded. Fixture + capture-shape consequence (per-table fan-out, all-or-skip aggregation suggestion) in README.md.
 
 ## 1. Client
 
-- [ ] 1.1 `fetchViews` wrapper on `callMcpTool` per spike envelope; Vitest ok/timeout/auth/invalid-envelope/oversized.
-- [ ] 1.2 Extract `_lib/mcp-capture-common.ts` (skip reasons + progress helper); interface/automation wrappers consume it; their tests pass unmodified.
+- [x] 1.1 `fetchViews` wrapper on `callMcpTool` per spike envelope; Vitest ok/timeout/auth/invalid-envelope/oversized. → Done 2026-07-27 (`_lib/mcp-client.ts`). Per the README's capture-shape consequence, the one-shot core was generalized to `runMcpSession` (one handshake, N sequential `tools/call`s — spike-confirmed) so `fetchViews({baseId, tableIds, …})` fans out `list_views_for_table` per table on a SINGLE session; per-table top-level validation (`views` array); ALL-OR-SKIP aggregation (any per-table failure skips the whole capture); default timeout scales with table count (30s + 2s/table, 120s cap); empty tableIds → ok with zero network. 11 tests in tests/mcp-client-views.test.ts (incl. partial-table failure + single-handshake pin).
+- [x] 1.2 Extract `_lib/mcp-capture-common.ts` (skip reasons + progress helper); interface/automation wrappers consume it; their tests pass unmodified. → Done 2026-07-27: `McpSkipReason` union + `McpCaptureOutcome`/`mcpCaptureOutcome` progress helper live in mcp-capture-common.ts; mcp-client.ts re-exports `McpSkipReason` for back-compat; backup-base.ts maps all three captures through `mcpCaptureOutcome`. Pre-existing tests/mcp-client.test.ts (15) + tests/mcp-client-automations.test.ts (10) + both capture orchestration suites pass byte-unmodified.
 
 ## 2. Task integration
 
-- [ ] 2.1 Thread `viewCaptureMode` through payload types (default `'rest'`-compatible absence handling).
-- [ ] 2.2 Capture step concurrent with schema fetch; attach `views` on ok only; progress entry.
-- [ ] 2.3 Orchestration tests: mcp-mode happy path; rest-mode untouched; off-mode; isolation from other captures.
+- [x] 2.1 Thread `viewCaptureMode` through payload types (default `'rest'`-compatible absence handling). → Done: `viewCaptureMode?: 'rest'|'mcp'|'off'` on `BackupBaseTaskPayload` (backup-base.task.ts) + `BackupBaseInput` (backup-base.ts); absent behaves like 'rest' (zero MCP view calls) — gate is `=== 'mcp'`.
+- [x] 2.2 Capture step concurrent with schema fetch; attach `views` on ok only; progress entry. → Done, with one placement deviation the README's per-table finding forces: the capture needs table ids, so it starts immediately AFTER `getBaseSchema` resolves (step 3b) — concurrent with the interface/automation awaits, landing before the schema-sync POST — not before the schema fetch like 2b/2c. Table ids = the FULL schema's tables (matching the schema-sync body, so a capture is a full sighting). `views` attached as syncSchema's 5th arg on ok only; skipped → field omitted; `views: captured|skipped(reason)` on BackupBaseResult + the /complete POST body, same as interfacePages.
+- [x] 2.3 Orchestration tests: mcp-mode happy path; rest-mode untouched; off-mode; isolation from other captures. → Done: tests/backup-base-view-capture.test.ts (13 tests) — mcp happy path (tableIds + 5th-arg pin), rest/off/absent zero-call paths, no-syncSchema, skipped-reason matrix, auth notice, throwing fake, views-fail-while-interfaces+automations-succeed isolation, schema-only run, trial-truncated full-table-set pin.
 
 ## 3. Verification
 
-- [ ] 3.1 `pnpm --filter @baseout/workflows test` + typecheck green.
-- [ ] 3.2 Dev E2E with server half: non-enterprise connection backup → `bo_at_views` rows appear (previously empty); enterprise connection unchanged.
+- [x] 3.1 `pnpm --filter @baseout/workflows test` + typecheck green. → 2026-07-27: 34 files / 322 tests passed; `npx tsc --noEmit` clean.
+- [ ] 3.2 Dev E2E with server half: non-enterprise connection backup → `bo_at_views` rows appear (previously empty); enterprise connection unchanged. → BLOCKED on human smoke: needs a deployed dev engine + `npx trigger.dev dev` worker + a real non-enterprise connection.
