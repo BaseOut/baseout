@@ -174,6 +174,9 @@ const handleRequest = defineMiddleware(async (context, next) => {
     airtableLoginClientSecret: (env as unknown as {
       AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET?: string;
     }).AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET,
+    airtableStubsEnabled: (env as unknown as {
+      AIRTABLE_STUBS_ENABLED?: string;
+    }).AIRTABLE_STUBS_ENABLED === '1',
     onSsoAccountLinked: (account) => handleSsoAccountLinked(db, account),
   });
   context.locals.db = db;

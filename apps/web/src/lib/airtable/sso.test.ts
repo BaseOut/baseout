@@ -9,7 +9,11 @@ import {
   isAirtableSsoConfigured,
   mapWhoamiToUserInfo,
 } from './sso'
-import { AIRTABLE_AUTHORIZE_URL, AIRTABLE_TOKEN_URL } from './config'
+import {
+  AIRTABLE_AUTHORIZE_URL,
+  AIRTABLE_TOKEN_URL,
+  resolveAirtableUrls,
+} from './config'
 import { createAuth } from '../auth-factory'
 
 const CREDS = { clientId: 'login-app-id', clientSecret: 'login-app-secret' }
@@ -126,5 +130,57 @@ describe('createAuth — conditional SSO registration', () => {
     expect(
       typeof (auth.api as Record<string, unknown>).signInWithOAuth2,
     ).toBe('function')
+  })
+
+  it('stub mode ⇒ generic-oauth registered WITHOUT creds (local smoke path)', () => {
+    const auth = createAuth({} as never, {
+      secret: 'test-secret',
+      email: undefined,
+      from: undefined,
+      dev: false,
+      baseUrl: 'https://baseout.local:4331',
+      airtableStubsEnabled: true,
+    })
+    expect(pluginIds(auth)).toContain('generic-oauth')
+  })
+})
+
+describe('buildAirtableSsoProvider — stub-mode URLs', () => {
+  const STUB_URLS = resolveAirtableUrls(
+    { AIRTABLE_STUBS_ENABLED: '1' },
+    'https://baseout.local:4331',
+  )
+
+  it('accepts resolved stub URLs for authorize/token', () => {
+    const provider = buildAirtableSsoProvider(
+      CREDS,
+      fetch,
+      STUB_URLS,
+    )
+    expect(provider.authorizationUrl).toBe(
+      'https://baseout.local:4331/api/stub/airtable/authorize',
+    )
+    expect(provider.tokenUrl).toBe(
+      'https://baseout.local:4331/api/stub/airtable/token',
+    )
+  })
+
+  it('getUserInfo hits the stub whoami when stub URLs are supplied', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ id: 'usrSTUB1', email: 'stub@baseout.dev' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    )
+    const provider = buildAirtableSsoProvider(
+      CREDS,
+      fetchImpl as typeof fetch,
+      STUB_URLS,
+    )
+    const info = await provider.getUserInfo!({ accessToken: 'tok' } as never)
+    expect(info).toMatchObject({ id: 'usrSTUB1', email: 'stub@baseout.dev' })
+    expect(String(fetchImpl.mock.calls[0][0])).toBe(
+      'https://baseout.local:4331/api/stub/airtable/v0/meta/whoami',
+    )
   })
 })

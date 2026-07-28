@@ -20,6 +20,7 @@ import {
   AIRTABLE_API_BASE,
   AIRTABLE_AUTHORIZE_URL,
   AIRTABLE_TOKEN_URL,
+  type AirtableUrls,
 } from './config'
 
 /** Minimal consent: identity + dormant schema preview scope. Never data scopes. */
@@ -85,13 +86,21 @@ export interface AirtableSsoCredentials {
 export function buildAirtableSsoProvider(
   creds: AirtableSsoCredentials,
   fetchImpl: typeof fetch = fetch,
+  // Stub mode (AIRTABLE_STUBS_ENABLED): pass resolveAirtableUrls(...) so the
+  // whole login flow runs against /api/stub/airtable/* — same pattern as the
+  // Connect flow. Defaults to the real Airtable endpoints.
+  urls: AirtableUrls = {
+    authorizeUrl: AIRTABLE_AUTHORIZE_URL,
+    tokenUrl: AIRTABLE_TOKEN_URL,
+    apiBase: AIRTABLE_API_BASE,
+  },
 ): GenericOAuthConfig {
   return {
     providerId: 'airtable',
     clientId: creds.clientId,
     clientSecret: creds.clientSecret,
-    authorizationUrl: AIRTABLE_AUTHORIZE_URL,
-    tokenUrl: AIRTABLE_TOKEN_URL,
+    authorizationUrl: urls.authorizeUrl,
+    tokenUrl: urls.tokenUrl,
     scopes: [...AIRTABLE_LOGIN_SCOPES],
     pkce: true,
     // Airtable's token endpoint accepts client_secret_basic only.
@@ -101,7 +110,7 @@ export function buildAirtableSsoProvider(
       if (!accessToken) return null
       let res: Response
       try {
-        res = await fetchImpl(`${AIRTABLE_API_BASE}/v0/meta/whoami`, {
+        res = await fetchImpl(`${urls.apiBase}/v0/meta/whoami`, {
           headers: {
             authorization: `Bearer ${accessToken}`,
             accept: 'application/json',

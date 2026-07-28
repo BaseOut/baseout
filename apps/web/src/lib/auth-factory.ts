@@ -5,6 +5,7 @@ import {
   buildAirtableSsoProvider,
   isAirtableSsoConfigured,
 } from './airtable/sso'
+import { resolveAirtableUrls } from './airtable/config'
 import { renderMagicLinkEmail } from './email/templates/magic-link'
 import { sendEmail, type SendEmailEnv } from './email/send'
 import { isLocalDevHost } from './oauth/local-dev-secure'
@@ -46,6 +47,10 @@ export interface AuthFactoryEnv extends SendEmailEnv {
   // "Continue with Airtable" stays hidden and behavior is unchanged.
   airtableLoginClientId?: string
   airtableLoginClientSecret?: string
+  // AIRTABLE_STUBS_ENABLED === '1': register SSO against the local
+  // /api/stub/airtable/* routes with placeholder creds so the login flow is
+  // smokable before the real login app exists (mirrors the Connect stubs).
+  airtableStubsEnabled?: boolean
   // Audit hook fired when better-auth links an OAuth identity (accounts row
   // creation) — SSO link/sign-up audit + at_user_id corroboration note.
   onSsoAccountLinked?: (account: {
@@ -124,17 +129,26 @@ export function resolveCookieAttributes(
 
 export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
   const plugins: BetterAuthPlugin[] = []
-  // "Continue with Airtable" (web-auth-airtable-sso): conditional — the
-  // dedicated login OAuth app is not yet registered; until its credentials
-  // exist per env, SSO is absent and nothing changes.
-  if (env.airtableLoginClientId && env.airtableLoginClientSecret) {
+  // "Continue with Airtable" (web-auth-airtable-sso): conditional — real
+  // login-app credentials enable it against Airtable; stub mode enables it
+  // against the local /api/stub/airtable/* routes with placeholder creds
+  // (the stub token endpoint never validates them). Neither ⇒ SSO absent,
+  // zero behavior change.
+  const ssoStubbed = env.airtableStubsEnabled === true && !!env.baseUrl
+  if ((env.airtableLoginClientId && env.airtableLoginClientSecret) || ssoStubbed) {
     plugins.push(
       genericOAuth({
         config: [
-          buildAirtableSsoProvider({
-            clientId: env.airtableLoginClientId,
-            clientSecret: env.airtableLoginClientSecret,
-          }),
+          buildAirtableSsoProvider(
+            {
+              clientId: env.airtableLoginClientId ?? 'stub-login-app',
+              clientSecret: env.airtableLoginClientSecret ?? 'stub-login-secret',
+            },
+            fetch,
+            ssoStubbed
+              ? resolveAirtableUrls({ AIRTABLE_STUBS_ENABLED: '1' }, env.baseUrl!)
+              : undefined,
+          ),
         ],
       }),
     )

@@ -58,13 +58,13 @@ export function getClientCredentials(
  *
  * When `AIRTABLE_STUBS_ENABLED === '1'` (set only in `.dev.vars` — never in
  * wrangler.jsonc or prod secrets), redirect every hop to the local stub routes
- * under `/api/_stub/airtable/*` on the current request origin. This lets the
+ * under `/api/stub/airtable/*` on the current request origin. This lets the
  * real OAuth code paths (PKCE, cookie seal, token exchange, Meta API client)
  * run end-to-end against an impersonated Airtable before real OAuth creds land.
  *
  * TODO(oauth): when real `AIRTABLE_OAUTH_CLIENT_ID/SECRET` are provisioned,
  * remove `AIRTABLE_STUBS_ENABLED` from `.dev.vars` and delete
- * `src/pages/api/_stub/`. This resolver then always returns the real URLs.
+ * `src/pages/api/stub/`. This resolver then always returns the real URLs.
  */
 export interface AirtableStubsEnv {
   AIRTABLE_STUBS_ENABLED?: string
@@ -83,9 +83,9 @@ export function resolveAirtableUrls(
   if (env.AIRTABLE_STUBS_ENABLED === '1') {
     const base = origin.replace(/\/$/, '')
     return {
-      authorizeUrl: `${base}/api/_stub/airtable/authorize`,
-      tokenUrl: `${base}/api/_stub/airtable/token`,
-      apiBase: `${base}/api/_stub/airtable`,
+      authorizeUrl: `${base}/api/stub/airtable/authorize`,
+      tokenUrl: `${base}/api/stub/airtable/token`,
+      apiBase: `${base}/api/stub/airtable`,
     }
   }
   return {
