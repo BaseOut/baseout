@@ -18,7 +18,7 @@
 //
 // Result-code → HTTP-status mapping:
 //   resolved              → 200  { airtableWebhookId, baseId, accessToken,
-//                                  lastReconciledAt, cursor }
+//                                  lastReconciledAt, cursor, commentsEnabled }
 //   unknown subscription  → 404  { error: 'subscription_not_found' }
 //   token can't be minted → 409  { error: 'token_unavailable' }
 //                                (connection row missing / pending_reauth /
@@ -32,7 +32,10 @@ import type { AppLocals, Env } from "../../../../env";
 import {
   airtableWebhookSubscriptions,
   airtableWebhooks,
+  connections,
 } from "../../../../db/schema";
+import { commentBackupEnabled } from "../../../../lib/capabilities/comment-backup";
+import { resolveCapabilities } from "../../../../lib/capabilities/resolve";
 import { getConnectionTokenViaDO } from "../../../../lib/connections/token-via-do";
 
 const UUID_RE =
@@ -66,6 +69,7 @@ export async function webhookSubscriptionsContextHandler(
       airtableWebhookId: airtableWebhooks.airtableWebhookId,
       baseId: airtableWebhooks.baseId,
       connectionId: airtableWebhooks.connectionId,
+      organizationId: connections.organizationId,
       lastReconciledAt: airtableWebhookSubscriptions.lastReconciledAt,
       payloadCursor: airtableWebhookSubscriptions.payloadCursor,
     })
@@ -74,6 +78,7 @@ export async function webhookSubscriptionsContextHandler(
       airtableWebhooks,
       eq(airtableWebhooks.id, airtableWebhookSubscriptions.webhookId),
     )
+    .innerJoin(connections, eq(connections.id, airtableWebhooks.connectionId))
     .where(eq(airtableWebhookSubscriptions.id, subscriptionId))
     .limit(1);
   const sub = rows[0];
@@ -86,6 +91,19 @@ export async function webhookSubscriptionsContextHandler(
     return jsonResponse({ error: "token_unavailable" }, 409);
   }
 
+  // Visited-record comment capture flag (workflows-comments task 3.5) — the
+  // same tier resolution full runs use (runs/start-deps
+  // resolveCommentsEnabled). Failure-isolated: a resolver error must not
+  // block payloads processing, so it degrades to false (comments skip this
+  // pass and self-heal on the next full run).
+  let commentsEnabled = false;
+  try {
+    const { tier } = await resolveCapabilities(db, sub.organizationId, "airtable");
+    commentsEnabled = commentBackupEnabled(tier);
+  } catch {
+    commentsEnabled = false;
+  }
+
   return jsonResponse(
     {
       airtableWebhookId: sub.airtableWebhookId,
@@ -93,6 +111,7 @@ export async function webhookSubscriptionsContextHandler(
       accessToken,
       lastReconciledAt: sub.lastReconciledAt?.toISOString() ?? null,
       cursor: sub.payloadCursor,
+      commentsEnabled,
     },
     200,
   );
