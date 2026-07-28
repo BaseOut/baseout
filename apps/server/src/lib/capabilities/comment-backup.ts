@@ -1,12 +1,9 @@
 // Comment-backup tier gate (server-comments).
 //
-// Recommended stance (design Decision 4, drafted into Features §6.3 + §17 Q18
-// on 2026-07-27): comments RIDE THE RECORD-BACKUP TIER — they're record data,
-// so every tier with an active subscription captures them. ⚠ Dan has not yet
-// confirmed the tier (the alternative is Growth+ alignment with the other
-// premium-entity backups) — if Growth+ wins, swap the implementation to the
-// AUTOMATION_BACKUP_TIERS shape in automation-backup.ts; the call sites are
-// tier-agnostic. Kept as its own module for exactly that reason.
+// Comments RIDE THE RECORD-BACKUP TIER — they're record data, so every tier
+// with an active subscription captures them (design Decision 4, Features §6.3
+// + §17 Q18, confirmed 2026-07-28). Kept as its own module so a future tier
+// split only touches this file — the call sites are tier-agnostic.
 
 import type { Tier } from "./tier-capabilities";
 

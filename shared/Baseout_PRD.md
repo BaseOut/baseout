@@ -214,7 +214,7 @@ Basic verification is included in V1:
 | **Schema** (Tables, Fields, Views) | Automatic (REST API; Views for **all** connections via MCP as of 2026-07 — previously enterprise-scope REST only) | Starter |
 | **Records** | Automatic (REST API) | Starter |
 | **Attachments** | Automatic (REST API) | Starter |
-| **Comments** *(added 2026-07-27)* | Automatic (REST API — comment-count-planned fan-out; unchanged counts are skipped, so same-count edits surface only when a record's count next changes: documented product behavior) | ⚠ **Dan to confirm** (recommended: rides the record-backup tier, i.e. same as Records; requires Dynamic mode — comments persist to the per-Space DB) |
+| **Comments** *(added 2026-07-27)* | Automatic (REST API — comment-count-planned fan-out; unchanged counts are skipped, so same-count edits surface only when a record's count next changes: documented product behavior) | Rides the record-backup tier, i.e. same as Records (*confirmed 2026-07-28*); requires Dynamic mode — comments persist to the per-Space DB |
 | **Automations** | Automatic (MCP capture) + manual intake | Growth ⚠ *(discrepancy re-flagged: Features §4.2/§6.3/§9.1 say Launch — Dan to reconcile; first flagged in `server-automations-interfaces-docs`)* |
 | **Interfaces** | Automatic (MCP capture) + manual intake | Growth ⚠ *(same Launch-vs-Growth discrepancy as Automations)* |
 | **Custom Documentation** ⚠️ | Manual (user-submitted via intake) | Pro |

@@ -47,6 +47,7 @@ OAuth provider the app uses. The path component is provider-specific:
 | Provider     | Callback path on THIS branch (`autumn/backup-fix-local`) |
 |--------------|----------------------------------------------------------|
 | Airtable     | `/api/connections/airtable/callback`                     |
+| Airtable Login (SSO — separate app, §3.6) | `/api/auth/oauth2/callback/airtable` (better-auth genericOAuth) |
 | Google Drive | `/api/connections/storage/google-drive/callback`         |
 | Box          | `/api/connections/storage/box/callback`                  |
 | Dropbox      | `/api/connections/storage/dropbox/callback`              |
@@ -79,6 +80,19 @@ gap checklist in §4 lists the removals.
 | `https://baseout-dev.openside.workers.dev/api/connections/airtable/callback`       | ✅ done     | same                  |
 | `https://baseout-staging.openside.workers.dev/api/connections/airtable/callback`   | ❌ MISSING  | same                  |
 | `https://console.baseout.dev/api/connections/airtable/callback`                    | ❌ MISSING  | same                  |
+
+> ⚠️ **Scope set changed 2026-07-28** (Features §17 Q20 resolved): the code
+> grant in `apps/web/src/lib/airtable/config.ts` now requests
+> `workspacesAndBases:read` in addition to the original four scopes. Airtable
+> rejects authorize requests for scopes not enabled on the integration, so the
+> scope **must be checked in this integration's settings BEFORE the next
+> `baseout-dev` web deploy** — otherwise every new Connect fails at the
+> authorize step (§4.2 checklist). Existing Connections keep working and
+> degrade to the flat base picker (no workspace grouping/auto-enroll) until
+> reconnected — by design, never blocking (`web-workspace-bases` Decision 5).
+> After the first reconsented Connection exists, re-run
+> `openspec/changes/server-mcp-workspaces/spike.mjs` to capture the
+> `list_workspaces` envelope (design open Q1).
 
 ### 3.2 Google Drive OAuth app (`client_id=283412627943-orknp1mdb...`)
 
@@ -210,6 +224,25 @@ gap checklist in §4 lists the removals.
 > as the broader `Files.ReadWrite` scope — only the API root differs
 > (`/me/drive/special/approot` instead of `/me/drive/root`).
 
+### 3.6 Airtable **Login** OAuth app (SSO) — ❌ NOT YET REGISTERED
+
+"Continue with Airtable" (`web-auth-airtable-sso`) uses a **dedicated
+minimal-scope login app**, deliberately NOT the Connect integration of §3.1
+(design Decision 1): scopes `user.email:read` + `schema.bases:read` only,
+PKCE, better-auth genericOAuth `providerId: 'airtable'`. The code ships
+env-gated — the provider registers only when both
+`AIRTABLE_LOGIN_OAUTH_CLIENT_ID` and `AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET` are
+present; absent vars ⇒ the SSO button is hidden and nothing changes.
+
+| Required URI                                                                    | Registered? | Owner of registration |
+|----------------------------------------------------------------------------------|-------------|-----------------------|
+| `https://baseout.local:4331/api/auth/oauth2/callback/airtable`                    | ❌ app not created | team Airtable account (registration recipe: §4.6) |
+| `https://baseout-dev.openside.workers.dev/api/auth/oauth2/callback/airtable`      | ❌ app not created | same                  |
+
+Rollout once creds exist: paste both values into `apps/web/.dev.vars`
+(house rule — never `wrangler secret put` by hand) and deploy; that is the
+entire rollout (`web-auth-airtable-sso` task 0.2).
+
 ---
 
 ## 4. Gap checklist
@@ -235,6 +268,7 @@ In the Airtable OAuth integration management UI for integration
 
 - [ ] Add `https://baseout-staging.openside.workers.dev/api/connections/airtable/callback`
 - [ ] Add `https://console.baseout.dev/api/connections/airtable/callback`
+- [ ] **⚠ URGENT before the next web deploy:** check the **`workspacesAndBases:read`** scope on the integration (Scopes section of the same UI). The code grant requests it as of 2026-07-28; an unchecked scope breaks every new Connect at the authorize step (§3.1).
 
 **Blocker:** the Airtable account that owns this integration is not the
 team's company account — ownership is currently unclear. Once located,
@@ -354,6 +388,17 @@ App registrations → the Baseout app (Application ID
 > value to whichever baseout-local / baseout-dev URI the boss has
 > registered. Any pre-existing localhost override should be replaced —
 > §5.5 marks `localhost:4331` as unsupported.
+
+### 4.6 Airtable **Login** app — CREATE from scratch (team-account action, `airtable.com/create/oauth`)
+
+The SSO login app (§3.6) does not exist yet. Create it under the **team's**
+Airtable account (avoid repeating the §4.2 unclear-ownership problem):
+
+- [ ] At `airtable.com/create/oauth`, create a new OAuth integration named for login (e.g. "Baseout Login")
+- [ ] Scopes: check **only** `user.email:read` and `schema.bases:read` — never data scopes (design Decision 1: minimal consent)
+- [ ] Redirect URLs: add `https://baseout.local:4331/api/auth/oauth2/callback/airtable` and `https://baseout-dev.openside.workers.dev/api/auth/oauth2/callback/airtable`
+- [ ] Paste the client id/secret into `apps/web/.dev.vars` as `AIRTABLE_LOGIN_OAUTH_CLIENT_ID` / `AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET` (never `wrangler secret put` by hand), then `pnpm --filter @baseout/web run deploy`
+- [ ] Update §3.6 status + tick `web-auth-airtable-sso` tasks 0.1/0.2; smoke per its task 3.2 (consent screen sanity)
 
 ---
 

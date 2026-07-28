@@ -486,7 +486,7 @@ All plans include Static backup. Dynamic database backup is available from Launc
 
 > † These entities are not available via the Airtable REST API and are not automatically backed up. They must be submitted by the user through a Baseout intake method (Inbound API, Airtable Scripts, Airtable Automations, or Manual Forms). *Amended 2026-07-27:* Automations and Interfaces are now captured **automatically via Airtable's MCP server**; intake remains a supplement.
 >
-> ‡ Comments persist to the per-Space DB and therefore require Dynamic backup mode. Tier row below is the recommendation (ride the record-backup tier) — **⚠ Dan to confirm** (`server-comments` design Decision 4).
+> ‡ Comments persist to the per-Space DB and therefore require Dynamic backup mode. Tier: comments **ride the record-backup tier** (`server-comments` design Decision 4 — *confirmed 2026-07-28*).
 
 | Entity | Trial | Starter | Launch | Growth | Pro | Business | Enterprise | Collection Method |
 |---|---|---|---|---|---|---|---|---|
@@ -670,7 +670,7 @@ The Data capability provides insights, monitoring, and governance tools for the 
 | **Data Visualization** | ✗ | ✗ | ✗ | ✗ | ✓* (basic) | ✓* (advanced) | ✓* (advanced) |
 | **PII Detection** | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✓* |
 | **Data Growth Trends** | ✗ | ✗ | ✓* | ✓* | ✓* | ✓* | ✓* |
-| **Media Library** *(added 2026-07-27; ⚠ tier: Dan to confirm — recommended: rides the Data capability, no new gate)* | ✗ | ✗ | ✓* | ✓* | ✓* | ✓* | ✓* |
+| **Media Library** *(added 2026-07-27; tier confirmed 2026-07-28: rides the Data capability, no new gate)* | ✗ | ✗ | ✓* | ✓* | ✓* | ✓* | ✓* |
 
 ### 8.2 Alert Types
 
@@ -928,9 +928,9 @@ The following questions need to be resolved before this specification can be fin
 | 12 | **Governance Capability: Is this V1 or V2?** It's a large capability with significant engineering effort. | Engineering scope, timeline | Recommend **V2**. PII Detection in the Data capability could be V1 as a preview. |
 | 13 | **Integration Capability: Which third-party connectors are V1?** Zapier, Make.com, HyperDB? | Partnership requirements, engineering scope | Recommend **V2** for all third-party connectors. SQL REST API and Inbound API are V1. |
 | 14 | **Should we offer monthly-only pricing or require annual commitment for discounts?** | Cash flow, churn | Recommend **offering both** with ~20% discount for annual. |
-| 18 | *(added 2026-07-27)* **Comment backup tier?** Comments are captured via REST (§6.3) and persist to the per-Space DB (Dynamic mode). | Capability matrix, Stripe metadata, task-payload gating (`commentsEnabled`) | Recommend **ride the record-backup tier** (comments are record data; a separate gate adds matrix surface for marginal revenue) — `server-comments` design Decision 4. **Dan to confirm.** |
-| 19 | *(added 2026-07-27)* **Media Library tier?** The read surface over captured attachments (§8.1). | Capability matrix, read-API gating | Recommend **rides the Data capability** (requires Dynamic mode; no new top-level gate) — `server-media-index` task 0.1. Also confirm the forward-only index stance ("coverage begins {date}"; backfill of pre-index backups as optional follow-up). **Dan to confirm.** |
-| 20 | *(added 2026-07-27)* **Add `workspacesAndBases:read` to the Airtable Connect OAuth grant?** The 2026-07-27 spike showed MCP `list_workspaces` 403s on the current grant; the scope is basic (non-enterprise) but was never requested, and no workspace-identity path exists without it. Adding it requires **re-consent** — existing Connections degrade (flat picker, no workspace auto-enroll) until reconnected. | Workspace grouping + auto-enroll (`web-workspace-bases`, `server-mcp-workspaces`), OAuth consent screen, reconnect comms | Recommend **add the scope** + per-connection degradation with a "reconnect to enable" affordance; de-risk first with a PAT probe (see `server-mcp-workspaces/README.md`). **Dan to decide.** |
+| 18 | *(added 2026-07-27)* **Comment backup tier?** Comments are captured via REST (§6.3) and persist to the per-Space DB (Dynamic mode). | Capability matrix, Stripe metadata, task-payload gating (`commentsEnabled`) | Recommend **ride the record-backup tier** (comments are record data; a separate gate adds matrix surface for marginal revenue) — `server-comments` design Decision 4. **RESOLVED 2026-07-28: ride the record-backup tier** (as recommended; implementation in `apps/server/src/lib/capabilities/comment-backup.ts` already matches). |
+| 19 | *(added 2026-07-27)* **Media Library tier?** The read surface over captured attachments (§8.1). | Capability matrix, read-API gating | Recommend **rides the Data capability** (requires Dynamic mode; no new top-level gate) — `server-media-index` task 0.1. **RESOLVED 2026-07-28: rides the Data capability** (as recommended; no new gate). Forward-only index stance stands ("coverage begins {date}"); backfill of pre-index backups stays an optional follow-up. |
+| 20 | *(added 2026-07-27)* **Add `workspacesAndBases:read` to the Airtable Connect OAuth grant?** The 2026-07-27 spike showed MCP `list_workspaces` 403s on the current grant; the scope is basic (non-enterprise) but was never requested, and no workspace-identity path exists without it. Adding it requires **re-consent** — existing Connections degrade (flat picker, no workspace auto-enroll) until reconnected. | Workspace grouping + auto-enroll (`web-workspace-bases`, `server-mcp-workspaces`), OAuth consent screen, reconnect comms | Recommend **add the scope** + per-connection degradation with a "reconnect to enable" affordance; de-risk first with a PAT probe (see `server-mcp-workspaces/README.md`). **RESOLVED 2026-07-28: scope ADDED to the code grant** (`apps/web/src/lib/airtable/config.ts`). ⚠ Rollout gate: the scope must be checked on the integration at airtable.com/create/oauth **before the next web deploy**, or new Connects fail at authorize (oauth-setup.md §3.1). Existing Connections degrade to the flat picker until reconnected. |
 
 ### Technical
 

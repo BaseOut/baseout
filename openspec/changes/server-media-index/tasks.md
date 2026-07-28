@@ -2,7 +2,7 @@
 
 ## 0. Blockers
 
-- [ ] 0.1 PRD/Features amendment: media-library capability row + tier (recommend: rides the Data capability / dynamic mode — Dan confirms). → **Doc edits DRAFTED 2026-07-27** (Features §1 "Media Library" term + §8.1 row + §17 Q19, recommended tier ⚠-flagged) — **still blocked on Dan's tier + backfill-stance confirmation**, then tick.
+- [x] 0.1 PRD/Features amendment: media-library capability row + tier (recommend: rides the Data capability / dynamic mode — Dan confirms). → Doc edits drafted 2026-07-27; **CONFIRMED 2026-07-28: rides the Data capability, forward-only index stance stands** (Features §17 Q19 marked resolved, §8.1 row de-flagged; backfill stays an optional follow-up).
 - [x] 0.2 Per-Space migration sequencing behind `system-per-space-db`. → sequenced as v10 (after server-comments' v9); purely additive, lazy upgrade covers existing Spaces.
 
 ## 1. Contract + schema

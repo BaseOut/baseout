@@ -16,6 +16,13 @@ export const AIRTABLE_SCOPES = [
   'data.recordComments:read',
   'schema.bases:read',
   'webhook:manage',
+  // Workspace identity for grouping + auto-enroll (Features §17 Q20, resolved
+  // 2026-07-28). The scope must ALSO be checked on the integration at
+  // airtable.com/create/oauth BEFORE this deploys, or every new Connect fails
+  // at the authorize step (oauth-setup.md §3.1). Existing Connections degrade
+  // to the flat picker until reconnected — never blocking (web-workspace-bases
+  // Decision 5).
+  'workspacesAndBases:read',
 ] as const
 
 export function getRedirectUri(origin: string): string {

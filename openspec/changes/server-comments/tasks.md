@@ -2,7 +2,7 @@
 
 ## 0. Blockers (before implementation)
 
-- [ ] 0.1 PRD §2.9 + Features capability-matrix rows for comment backup exist (entity, collection method = REST API, canonical capability name, tier) — action-plan §6 owns the doc edit; Dan resolves the tier (design Decision 4). → **Doc edits DRAFTED 2026-07-27** (PRD §2.9 Comments row; Features §1 "Comment" term + §6.3 row + §17 Q18) with the recommended tier ⚠-flagged inline — **still blocked on Dan's tier confirmation**, then tick.
+- [x] 0.1 PRD §2.9 + Features capability-matrix rows for comment backup exist (entity, collection method = REST API, canonical capability name, tier) — action-plan §6 owns the doc edit; Dan resolves the tier (design Decision 4). → Doc edits drafted 2026-07-27; **tier CONFIRMED 2026-07-28: rides the record-backup tier** (Features §17 Q18 marked resolved; PRD §2.9 ⚠ removed). Implementation already matched the recommendation — no code change.
 
 ## 1. Contract + schema
 
@@ -23,7 +23,7 @@
 - [x] 3.1 `space-db-pg.ts`: `readCommentWorkingSet(recordIds)` / `applyCommentBatch` / `readActiveCommentCounts(baseId)` (grouped count over `bo_at_comments`, no schema change). → done; upsert keyed on the airtable_comment_id unique index; soft delete via status flip.
 - [x] 3.2 `POST /api/internal/spaces/comments-sync` route (INTERNAL_TOKEN-gated, per-request masterDb + per-Space DB resolution like records-sync). → registered in index.ts; response reports records/comments/added/updated/deleted/dropped.
 - [x] 3.2b `POST /api/internal/spaces/comments-plan` route (same gating/resolution; wraps 2b.1 + 3.1 counts read). → registered; malformed observed entries silently skipped (plan degrades to smaller skip set, never fails the run — workflows falls back on ANY failure).
-- [x] 3.3 Stamp `commentsEnabled` on the backup task payload once 0.1 resolves the tier. → stamped via `resolveCommentsEnabled` dep + `lib/capabilities/comment-backup.ts` implementing the RECOMMENDED stance (rides the record-backup tier — every active subscription). ⚠ tier still pending Dan; if Growth+ wins, only comment-backup.ts changes.
+- [x] 3.3 Stamp `commentsEnabled` on the backup task payload once 0.1 resolves the tier. → stamped via `resolveCommentsEnabled` dep + `lib/capabilities/comment-backup.ts` implementing the RECOMMENDED stance (rides the record-backup tier — every active subscription). Tier confirmed 2026-07-28 (rides the record-backup tier) — stance is final.
 - [x] 3.4 Integration tests (`tests/integration/per-space/comments-sync.test.ts`): first capture; edit; delete; incremental batch leaves unvisited records untouched; plan returns refresh only for changed counts; zero-drop via empty complete capture; same-count edit produces no refresh (accepted-miss scenario). → 13 tests + 2 commentsEnabled-stamp tests in runs-start.test.ts; all green.
 
 ## 4. Retention + docs

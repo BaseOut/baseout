@@ -3,7 +3,7 @@
 ## 0. OAuth app + runbook
 
 - [ ] 0.1 Register the NEW login OAuth app under the team account (scopes `user.email:read` + `schema.bases:read`); confirm any Airtable app-review friction (design open question 3). → blocked: app registration pending (Dan).
-- [ ] 0.2 Register `/api/auth/oauth2/callback/airtable` for local + dev; secrets `AIRTABLE_LOGIN_OAUTH_CLIENT_ID/SECRET` into `.dev.vars` (house rule — no hand `secret put`); **update oauth-setup.md (new §3.6 + §2 row + checklist) in this change** (CLAUDE.md §3.7). → blocked: app registration pending (Dan). Code side is ready: the provider registers ONLY when both env vars are present (absent ⇒ SSO hidden, zero behavior change), so dropping the creds into `.dev.vars` + registering the callback URI is the whole rollout.
+- [ ] 0.2 Register `/api/auth/oauth2/callback/airtable` for local + dev; secrets `AIRTABLE_LOGIN_OAUTH_CLIENT_ID/SECRET` into `.dev.vars` (house rule — no hand `secret put`); **update oauth-setup.md (new §3.6 + §2 row + checklist) in this change** (CLAUDE.md §3.7). → runbook side DONE 2026-07-28 (oauth-setup.md §3.6 status table + §2 callback row + §4.6 create-from-scratch checklist). App registration itself still pending — it's the ONLY remaining step: follow §4.6, paste creds into `apps/web/.dev.vars`, deploy. Code side is ready: the provider registers ONLY when both env vars are present (absent ⇒ SSO hidden, zero behavior change).
 
 ## 1. Schema
 
