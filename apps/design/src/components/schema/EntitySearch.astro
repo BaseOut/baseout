@@ -1,30 +1,69 @@
 ---
 /**
- * EntitySearch — the shared entity typeahead. A daisyUI search input + a dropdown
- * of matches grouped by kind (Bases / Tables / Fields), each row = type icon +
- * name + parent path + health dot. Keyboard: ↑/↓ move, Enter jumps, Esc clears.
+ * EntitySearch — the shared typeahead. A daisyUI search input + a dropdown of
+ * matches grouped by kind, each row = icon + name + a muted context line (+ an
+ * optional health dot). Keyboard: ↑/↓ move, Enter picks, Esc clears.
  *
- * Reused three ways: Browse global search / jump-to (here), the Docs "add tag"
- * control, and (future) the Visualize add-entity picker. It emits two events so a
- * host list can react: `schema:searchInput` ({ name, query }) on every keystroke
- * for filter-in-place, and the pick event (default `schema:openEntity`, { id }).
+ * Reused four ways: Browse global search / jump-to, the Docs "add tag" control,
+ * the Visualize add-entity picker, and the base picker's search
+ * (`integrations/BaseSelectionTable.astro`). It emits two events so a host list
+ * can react: `schema:searchInput` ({ name, query }) on every keystroke for
+ * filter-in-place, and the pick event (default `schema:openEntity`, { id }).
+ *
+ * GENERIC since 2026-07-29. Pass `index` (SchemaEntity[]) for the schema
+ * surfaces, or pre-built `items` + `groups` for anything else. Everything
+ * schema-specific — icon, path, haystack — lives in `typeaheadItems.ts` and is
+ * computed server-side, so the client script below knows nothing about bases,
+ * fields or workspaces.
+ *
+ * PICKING IS THE HOST'S DECISION. This component clears the field, fires a real
+ * `input` event (so a host filtering in place un-filters in the same tick) and
+ * dispatches `pickEvent`. Browse opens a panel; the base picker ticks a row.
  */
 import type { SchemaEntity } from './schemaEntities';
+import type { TypeaheadGroups, TypeaheadItem } from './typeaheadItems';
+import { entityToTypeaheadItem, SCHEMA_TYPEAHEAD_GROUPS } from './typeaheadItems';
 
 interface Props {
-  index: SchemaEntity[];
+  /** Schema hosts: the entity index, adapted to rows here. */
+  index?: SchemaEntity[];
+  /** Non-schema hosts: rows built by the host. Wins over `index`. */
+  items?: TypeaheadItem[];
+  /** Kind → heading label. Order IS the heading + arrow-key order. */
+  groups?: TypeaheadGroups;
   name?: string;
   placeholder?: string;
   /** Event dispatched on pick. Browse → opens the panel; Docs → inserts a tag. */
   pickEvent?: string;
+  /** The verb after ↵ in the footer. Hosts that open nothing say something else. */
+  pickHint?: string;
+  emptyText?: string;
   /** Narrow the input (toolbar vs full width). */
   size?: 'sm' | 'md';
 }
-const { index, name = 'schema', placeholder = 'Search bases, tables, fields…', pickEvent = 'schema:openEntity', size = 'sm' } = Astro.props;
-const lite = index.map((e) => ({ id: e.id, kind: e.kind, name: e.name, baseName: e.baseName, tableName: e.tableName, fieldType: e.fieldType, health: e.health, isPrimary: e.isPrimary }));
+const {
+  index = [],
+  items,
+  groups,
+  name = 'schema',
+  placeholder = 'Search bases, tables, fields, views…',
+  pickEvent = 'schema:openEntity',
+  pickHint = 'open',
+  emptyText = 'No matching entities',
+  size = 'sm',
+} = Astro.props;
+const lite: TypeaheadItem[] = items ?? index.map(entityToTypeaheadItem);
+const groupList: TypeaheadGroups = groups ?? SCHEMA_TYPEAHEAD_GROUPS;
 ---
 
-<div class="es" data-entity-search data-es-name={name} data-es-pick={pickEvent}>
+<div
+  class="es"
+  data-entity-search
+  data-es-name={name}
+  data-es-pick={pickEvent}
+  data-es-groups={JSON.stringify(groupList)}
+  data-es-empty={emptyText}
+>
   <label class={`input ${size === 'sm' ? 'input-sm' : ''} es-input`}>
     <span class="iconify lucide--search size-4 opacity-55" aria-hidden="true"></span>
     <input type="search" placeholder={placeholder} data-es-field data-sch-search aria-label={placeholder} autocomplete="off" spellcheck="false" />
@@ -34,7 +73,7 @@ const lite = index.map((e) => ({ id: e.id, kind: e.kind, name: e.name, baseName:
     <div class="es-list" data-es-listbox role="listbox"></div>
     <div class="es-foot">
       <span><kbd class="kbd kbd-xs">↑</kbd><kbd class="kbd kbd-xs">↓</kbd> navigate</span>
-      <span><kbd class="kbd kbd-xs">↵</kbd> open</span>
+      <span><kbd class="kbd kbd-xs">↵</kbd> {pickHint}</span>
       <span><kbd class="kbd kbd-xs">esc</kbd> clear</span>
     </div>
   </div>
@@ -73,9 +112,10 @@ const lite = index.map((e) => ({ id: e.id, kind: e.kind, name: e.name, baseName:
 </style>
 
 <script>
-  import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
-
-  type Lite = { id: string; kind: 'base' | 'table' | 'field'; name: string; baseName: string; tableName?: string; fieldType?: string; health: string; isPrimary?: boolean };
+  type Item = {
+    id: string; kind: string; name: string;
+    path?: string; icon?: string; health?: string; hay?: string; scopeKey?: string;
+  };
 
   function wireEntitySearch() {
     document.querySelectorAll<HTMLElement>('[data-entity-search]').forEach((root) => {
@@ -83,55 +123,69 @@ const lite = index.map((e) => ({ id: e.id, kind: e.kind, name: e.name, baseName:
       root.dataset.esWired = '1';
       const name = root.dataset.esName!;
       const pickEvent = root.dataset.esPick || 'schema:openEntity';
+      const emptyText = root.dataset.esEmpty || 'No matching entities';
       const dataEl = document.querySelector(`[data-es-index="${name}"]`);
-      const index: Lite[] = dataEl ? JSON.parse(dataEl.textContent || '[]') : [];
+      const index: Item[] = dataEl ? JSON.parse(dataEl.textContent || '[]') : [];
+      // ONE group list, used by BOTH the rendered markup and the keyboard-nav re-order
+      // below. Order here IS the visual + arrow-key order. When the two lists were
+      // written out separately, adding a kind to one silently desynced every arrow-key
+      // index in the other — hence one constant, read once, from the host's prop.
+      const GROUPS: Array<[string, string]> = JSON.parse(root.dataset.esGroups || '[]');
       const field = root.querySelector<HTMLInputElement>('[data-es-field]')!;
       const pop = root.querySelector<HTMLElement>('[data-es-pop]')!;
       const listbox = root.querySelector<HTMLElement>('[data-es-listbox]')!;
 
       const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
-      const dot = (h: string) => `<span class="es-opt-dot es-dot-${h === 'green' ? 'green' : h === 'red' ? 'red' : 'amber'}"></span>`;
-      const fieldIcon = (type?: string) => { const k = type ? airtableIconKey(type) : null; return k ? `<svg viewBox="0 0 16 16">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '<span class="iconify lucide--circle size-3.5"></span>'; };
-      const icon = (e: Lite) => e.kind === 'base' ? '<span class="iconify lucide--database concept-ic-base"></span>' : e.kind === 'table' ? '<span class="iconify lucide--table-2"></span>' : fieldIcon(e.fieldType);
-      const path = (e: Lite) => e.kind === 'field' ? `${e.baseName} ▸ ${e.tableName}` : e.kind === 'table' ? e.baseName : 'Base';
+      const dot = (h?: string) => (h ? `<span class="es-opt-dot es-dot-${h === 'green' ? 'green' : h === 'red' ? 'red' : 'amber'}"></span>` : '');
 
       // Substring OR initials match (DataGrip-style abbreviation).
-      function matches(e: Lite, q: string): boolean {
-        const hay = `${e.name} ${e.tableName || ''} ${e.baseName}`.toLowerCase();
-        if (hay.includes(q)) return true;
+      function matches(e: Item, q: string): boolean {
+        if ((e.hay || e.name.toLowerCase()).includes(q)) return true;
         const initials = e.name.split(/[\s_]+/).map((w) => w[0]).join('').toLowerCase();
         return initials.includes(q);
       }
 
-      let results: Lite[] = [];
+      let results: Item[] = [];
       let active = -1;
 
       function close() { pop.hidden = true; active = -1; }
-      // Optional base-scope: a host sets root.dataset.esScopeBase = "<baseName>" to restrict results to
-      // that base (the multi-panel "Compare with…" picker uses this); empty = all bases.
-      const inScope = (e: Lite) => { const s = root.dataset.esScopeBase || ''; return !s || (e.kind === 'base' ? e.name === s : e.baseName === s); };
+      // Optional base-scope: a host sets root.dataset.esScopeBase = "<scopeKey>" to restrict
+      // results (the multi-panel "Compare with…" picker uses this); empty = everything.
+      const inScope = (e: Item) => { const s = root.dataset.esScopeBase || ''; return !s || e.scopeKey === s; };
+      // Optional kind filter, set at RUNTIME by the host: a comma list of the kinds that
+      // are currently meaningful. The base picker drops 'workspace' while its table is
+      // ungrouped — there is nothing to scroll to, so the group must be ABSENT rather
+      // than present and empty.
+      const inKind = (e: Item) => {
+        const raw = (root.dataset.esKinds || '').trim();
+        if (!raw) return true;
+        return raw.split(',').map((s) => s.trim()).filter(Boolean).includes(e.kind);
+      };
+      const hits = (q: string) => index.filter((e) => inScope(e) && inKind(e) && matches(e, q)).slice(0, 40);
+
       function render(q: string) {
         if (!q) { close(); return; }
-        results = index.filter((e) => inScope(e) && matches(e, q)).slice(0, 40);
-        if (!results.length) { pop.hidden = false; listbox.innerHTML = '<div class="es-empty">No matching entities</div>'; return; }
-        const groups: Array<[string, string]> = [['base', 'Bases'], ['table', 'Tables'], ['field', 'Fields']];
+        results = hits(q);
+        if (!results.length) { pop.hidden = false; listbox.innerHTML = `<div class="es-empty">${esc(emptyText)}</div>`; return; }
         let html = '';
         let flat = 0;
-        for (const [kind, label] of groups) {
-          const items = results.filter((e) => e.kind === kind);
-          if (!items.length) continue;
-          html += `<div class="es-group">${label}</div>`;
-          for (const e of items) {
-            html += `<div class="es-opt" role="option" data-es-i="${flat}" data-es-id="${e.id}">
-              <span class="es-opt-ic">${icon(e)}</span>
-              <span class="es-opt-main"><div class="es-opt-name">${esc(e.name)}</div><div class="es-opt-path">${esc(path(e))}</div></span>
+        for (const [kind, label] of GROUPS) {
+          const group = results.filter((e) => e.kind === kind);
+          if (!group.length) continue;
+          html += `<div class="es-group">${esc(label)}</div>`;
+          for (const e of group) {
+            html += `<div class="es-opt" role="option" data-es-i="${flat}" data-es-id="${esc(e.id)}">
+              <span class="es-opt-ic">${e.icon || ''}</span>
+              <span class="es-opt-main"><div class="es-opt-name">${esc(e.name)}</div><div class="es-opt-path">${esc(e.path || '')}</div></span>
               ${dot(e.health)}
             </div>`;
             flat++;
           }
         }
-        // Re-order results to match the grouped DOM order for keyboard nav.
-        results = groups.flatMap(([kind]) => index.filter((e) => inScope(e) && matches(e, q)).slice(0, 40).filter((e) => e.kind === kind));
+        // Re-order results to match the grouped DOM order for keyboard nav, off the SAME
+        // GROUPS constant the markup above iterated.
+        const found = results;
+        results = GROUPS.flatMap(([kind]) => found.filter((e) => e.kind === kind));
         listbox.innerHTML = html;
         pop.hidden = false;
         active = -1;
@@ -144,8 +198,12 @@ const lite = index.map((e) => ({ id: e.id, kind: e.kind, name: e.name, baseName:
         opts[active]?.scrollIntoView({ block: 'nearest' });
       }
       function pick(id: string) {
-        field.value = ''; close();
-        document.dispatchEvent(new CustomEvent('schema:searchInput', { detail: { name, query: '' } }));
+        // A REAL input event, not just the synthetic `schema:searchInput`: a host that
+        // filters its own list on `input` (the base picker) would otherwise be left
+        // filtered by a query that is no longer in the box.
+        field.value = '';
+        close();
+        field.dispatchEvent(new Event('input', { bubbles: true }));
         document.dispatchEvent(new CustomEvent(pickEvent, { detail: { id } }));
       }
 

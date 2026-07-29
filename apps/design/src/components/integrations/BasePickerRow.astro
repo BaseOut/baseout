@@ -1,0 +1,49 @@
+---
+/**
+ * One base row of the BaseSelectionTable.
+ *
+ * Extracted so the SAME row markup can be rendered in either home the picker
+ * has — the flat container (`[data-bst-flatrows]`) or a workspace group's
+ * `[data-bst-grows]` — without the template growing a second copy that could
+ * drift. Which home it starts in is decided once, by the picker, from the
+ * user's remembered grouping choice; after that the row only ever MOVES, on a
+ * click, never on data arriving.
+ *
+ * The row always renders the `.c-auto` cell even though only grouped mode has
+ * an Auto-add column: the single `[data-grouped]` switch on the root picks the
+ * grid template AND the cell's visibility together, so a row is never half in
+ * one layout and half in the other.
+ */
+import type { BaseSummary } from '../../stores/connections';
+
+interface Props {
+  base: BaseSummary;
+  tables: number;
+  /** Pre-formatted (thousands-separated) field count — formatting stays with the picker. */
+  fieldsText: string;
+  fields: number;
+  /** Workspace group this row belongs to; the id JS uses to re-home it on grouping. */
+  groupId: string;
+  /** Lowercased workspace name for the "search in Workspaces" scope; '' when there is none. */
+  wsName: string;
+}
+const { base: b, tables, fieldsText, fields, groupId, wsName } = Astro.props;
+---
+
+<label
+  class="bst-row"
+  data-bst-row
+  data-name={b.name.toLowerCase()}
+  data-wsname={wsName}
+  data-group={groupId}
+  data-tables={tables}
+  data-fields={fields}
+  data-new={b.isNew ? '1' : undefined}
+  role="row"
+>
+  <span class="c-check"><input type="checkbox" name="atBaseIds" value={b.id} checked={b.isIncluded} class="checkbox checkbox-sm" data-base-checkbox /></span>
+  <span class="c-name">{b.name}{b.isNew && <span class="badge badge-soft badge-primary badge-sm ml-1.5 align-middle tooltip" data-tip="Appeared in Airtable since your last backup">New</span>}{b.isAutoDiscovered && <span class="badge badge-ghost badge-sm ml-1.5 align-middle tooltip" data-tip="Added automatically since your last backup — this note clears after the next run">Auto-added</span>}</span>
+  <span class="c-auto"></span>
+  <span class="c-num">{tables}</span>
+  <span class="c-num">{fieldsText}</span>
+</label>

@@ -1400,6 +1400,124 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
+    id: 'pattern-base-picker',
+    group: 'Patterns',
+    name: 'Base picker (progressive workspace grouping)',
+    summary:
+      'The "choose bases" table is usable from the first paint and GROUPS ITSELF by workspace the moment the per-base lookup finishes — one determinate bar on the card edge explains the wait, one named toggle above the table sets whether auto-add is decided per workspace or per connection.',
+    description:
+      'The picker (<code>components/integrations/BaseSelectionTable.astro</code>) is the dense, capped, searchable table used by the setup wizard\'s <em>Bases</em> step and the standalone <a href="/integrations/configure/bases">Manage bases</a> screen. <strong>Why it changed (Dan, 2026-07-28):</strong> Airtable gives us a list of bases cheaply, but a base\'s WORKSPACE costs <strong>one extra API call per base</strong> — <em>"it just may take a long time to get for a long list of bases"</em>. Every earlier version assumed that map was free and switched grouping on unconditionally (<code>const grouped = groups.length &gt; 1</code>), which meant the page could not be drawn at all until the slow part finished. <strong>So grouping stopped being the frame of the page and became an enhancement that arrives.</strong> The flat table is therefore the complete product: search, sort, select-all-to-cap, show-selected, save — nothing is skeletoned, nothing is disabled, nothing waits.<br><br><strong>V2 — grouped is the DEFAULT, and the toggle says what it is FOR (Oleh, 2026-07-29).</strong> V1 optimised for "let them work immediately, offer grouping later". Reviewed live, that premise lost: <em>the user did not come for an ungrouped list, they came for a finished result and will wait ~10s if they can see the work happening.</em> So grouping is no longer an offer — <strong>the table groups itself the moment matching completes</strong>. The API cost is unchanged (one call per base, so workspaces still cannot be known at T0); what changed is that "grouped by default" now means "group automatically on completion", not "ask first". The remembered preference still wins: a user who switches it off (<code>bst-wsgroup:&lt;spaceId&gt;</code> / the <code>groupByWorkspace</code> prop in production) stays off, and every later visit renders grouped from the server with <em>no</em> movement at all. This whole design costs exactly ONE reflow, once per connection.<br><br><strong>The grouping control is not a view option — it sets the granularity of a standing decision.</strong> Grouped, auto-add is decided <em>per workspace</em>; ungrouped it is one switch for the whole connection. That consequence is why the control left the toolbar (where it sat among search and sort, as if it were cosmetic) and now has its own band directly above the table: a labelled <a href="#checkbox-toggle">toggle</a> — <strong>on by default</strong> — whose label NEVER changes (<code>Group by workspace</code>), one sentence naming the consequence, and the boundary of the change. V1 had the same binary under two names, <em>Group by workspace</em> in the toolbar and <em>Ungroup</em> in the selection strip; one setting gets one name. <strong>The band replaces, it does not join</strong>: the toolbar\'s status line leaves (the progress bar takes over that job), and the standing <em>Auto-enroll new workspaces</em> rule folds INTO this band rather than sitting as a second plate — same subject (future bases and future workspaces), one surface.<br><br><strong>Copy, verbatim.</strong> <code>Group by workspace</code> · <code>Grouped, you set auto-add per workspace. Ungrouped, it\'s one switch for the whole connection.</code> · <code>Affects this picker only — Schema and Data keep their own workspace grouping.</code> The boundary sentence is not padding: the user\'s real fear with a default-on grouping switch is invisible consequences on other screens.<br><br><strong>A determinate bar pinned to the card\'s top edge — never a spinner, never over the rows.</strong> The <a href="#progress">progress</a> entry already rules this: a bar is for known percentages, a spinner for unknown-duration work. We know the percentage (<code>31 / 50</code>), so the spinner was simply the wrong primitive and is gone. The bar is a <strong>thin catalog <code>progress</code> absolutely positioned on the top edge of the table card</strong> (<code>.bst-prog</code>, 3px, inside the card\'s clip so it follows the radius) — the browser-loading-bar idiom, which reads as "loading, the page still works". A bar drawn <em>across the rows</em> was deliberately rejected: it reads as "table unavailable", which is exactly the overlay misread this pattern exists to avoid. <strong>Keep the number beside it</strong> — the bar says how far, the number says what is being counted, and only the number explains the wait; it sits in the selection strip immediately under the bar (<code>.bst-wsstatus</code>). <strong>Do not flash it:</strong> render only after the wait exceeds ~500ms, so a five-base account never gets a blink of progress. <strong>On failure the bar stops and goes NEUTRAL, never red</strong> (drop <code>progress-primary</code>, keep <code>progress</code>) — failing to group is not a page error; the bases are still selectable and the flow continues, with <code>Retry</code> beside it.<br><br><strong>Honest copy while it runs.</strong> <code>Organising your bases by workspace… 31 / 50</code> — never "syncing your bases". The bases are already loaded and already selectable; saying otherwise teaches the user the list is incomplete and that they should wait before choosing, which is false and costs them the whole point of the flat-table-is-complete rule.<br><br><strong>Re-grouping animates, it does not fake a load.</strong> A skeleton/placeholder on re-group was proposed and REJECTED: the first grouping waits on the network, but toggling afterwards is a local DOM move that takes ~0ms, and a skeleton over an instant operation is invented latency. The honest answer to "don\'t let it jump" is an <strong>animated reflow</strong> — a FLIP pass measures each visible row before the move and transitions it from its old position, so rows travel rather than teleport (~180ms). Under <code>prefers-reduced-motion: reduce</code> the move is instant with no transform. Across that one automatic reflow, <strong>scroll position and every ticked base are preserved</strong> — selection survives free (the same DOM nodes are moved, never re-rendered) and <code>.bst-table</code>\'s <code>scrollTop</code> is captured and restored around the move.<br><br><strong>One workspace ⇒ no grouping UI at all</strong> — one group is not grouping, so neither the band nor the bar appears. Rows live in a flat container (<code>[data-bst-flatrows]</code>) or inside their group\'s <code>[data-bst-grows]</code>, never half of each.<br><br><strong>"Still matching" is not "No workspace".</strong> Two different facts, two buckets, two code paths, and they must never be merged: <em>No workspace</em> means the base has no workspace id (we asked and there is nothing to attribute), while <em>Still matching</em> means its per-base lookup has not returned yet (<code>BaseSummary.workspacePending</code>). Collapsing the second into the first states something untrue about the user\'s Airtable. The pending group carries no auto-add switch — there is nothing yet to watch — and empties itself as answers land.<br><br><strong>Progress survives a reload.</strong> The counter RESUMES from where the work got to; it never restarts at 0. There is no backend in this repo, so the harness simulates a resumed run (<code>?wsresolve=resumed</code> starts part-way), but the design assumes the work is never thrown away.<br><br><strong>Limited access moved into the header (2026-07-28).</strong> Airtable returns the workspace <em>id</em> on every base regardless of scope but the <em>name</em> only with full-environment access, so a group can be real-but-unnamed. That used to be explained by a full-width <code>alert-soft alert-warning</code> band above the whole table. The band is deleted; the fact is now stated where it applies — the group header reads <strong>Workspace 1</strong> <span class="opacity-60">· name unavailable</span> with the existing inline <strong>Rename</strong> pencil beside it. An explanation belongs next to the thing it explains, not stacked above 180 rows that are not affected by it. The route out (reconnect with full access) is not lost: it stays on the <em>Auto-enroll new workspaces</em> rule, the capability limited access actually blocks. The suffix is <code>white-space: nowrap; flex: none</code> so the NAME is still the first thing to truncate — the group header was already fixed once for truncation (<code>.bst-gname { min-width: 5rem }</code>) and must not regress.<br><br><strong>The alias swap — dual display is EARNED, not default (Oleh 2026-07-28).</strong> A user can name a placeholder workspace, and until now the real Airtable name simply overwrote theirs when it arrived. An alias is therefore stored with the REASON it was typed (<code>WorkspaceAlias.kind</code>): <code>placeholder-fill</code> (typed only because the name was missing — every alias starts here, including the ones the inline pencil writes) versus <code>custom</code> (a deliberate different name). When a real name lands on a <code>placeholder-fill</code>, Airtable\'s name takes over — theirs was a stand-in — and <strong>one</strong> reversible prompt appears, attached under that group\'s header: <em>"Now using its Airtable name: Growth. You called it Marketing."</em> with <strong>Keep mine</strong>. Pressing it promotes the alias to <code>custom</code>, and <strong>only then</strong> are both names shown — the user\'s leading, Airtable\'s muted beside it. Never show both by default: the group header truncated once already and a permanent second name re-breaks precisely that. The prompt sits on its own attached line rather than inside the sticky header row for the same reason.<br><br><strong>Copy, verbatim (rest of the surface).</strong> <code>Organising your bases by workspace… 31 / 50</code> · <code>Group by workspace</code> · <code>Still matching</code> · <code>Couldn\'t organise by workspace</code> + <code>Retry</code> · <code>Workspace 1 · name unavailable</code> + <code>Rename</code>. No exclamation marks, no apologies, no "Oops" — a failed lookup is a fact about the connection, never the user\'s mistake. The V1 strings <code>Matching workspaces…</code>, <code>Workspaces matched</code> and <code>Ungroup</code> are RETIRED: the first two described a background job the progress bar now shows, and the third was a second name for a setting that has one.<br><br><strong>The wizard\'s gate is an instruction, not a standing accusation.</strong> The picker is the <em>Bases</em> step of the setup wizard, whose gate used to render a permanent amber <code>alert-soft alert-warning</code> band above the page heading on <em>every</em> incomplete step — telling the user they were in violation before they had done anything, on all four steps. The requirement now lives in the <strong>step subtitle</strong> ("Pick the bases this Space protects — at least one to continue"), and the amber band appears <strong>only after the user attempts Next</strong> with the gate unsatisfied, then clears the moment it is satisfied. Consequently <strong>Next is no longer disabled by a gate</strong>: a disabled button cannot be attempted, and an attempt is what earns the message. This is the wizard\'s generic mechanism, so it removes a permanent band from every step, not just this one.<br><br><strong>Structural contracts.</strong> <code>.bst[data-grouped]</code> is the single switch: it selects the five-column grid (<code>2.4rem · 16rem · Auto-add · 6rem · 6rem</code>) shared by <code>.bst-head</code>, <code>.bst-ghead</code> and <code>.bst-row</code>, reveals the group shells, and reveals the <code>.c-auto</code> cell that every row renders but flat mode hides — so "flat" and "grouped" are one template each, chosen deliberately, never inherited half-and-half. <code>.bst-head { min-height: 2.4rem }</code> and <code>.bst-ghead { top: 2.4rem }</code> are a matched sticky pair. The wizard reads the picker directly (<code>[data-base-checkbox]:checked</code> for the count, <code>[data-bst-ws-autoadd]:checked</code> for the review line), so the per-workspace auto-add switches are <strong>disabled and cleared while flat</strong> and restored from <code>data-ws-autoadd-saved</code> on grouping — a hidden checked switch would otherwise make the review step claim an auto-add the user can neither see nor have chosen.<br><br><strong>ONE search field, no scope switch (Oleh, 2026-07-29).</strong> The search used to sit beside a scope <code>&lt;select&gt;</code> docked inside the input — <em>in Bases</em> / <em>in Workspaces</em> — so the user had to decide WHERE to look before they had typed a character. That select is <strong>deleted</strong>, not hidden. The picker now uses the shared <a href="#pattern-entity-typeahead">entity typeahead</a>, exactly as Schema Browse does: one field that searches everything and groups what it finds. Typing does two things at once — it <strong>filters the table in place</strong>, matching base names AND workspace names simultaneously (the picker\'s loop is narrow → <em>Select all</em> → continue, so filtering is never replaced by jump-to-result), and it <strong>opens a grouped dropdown</strong> with <em>WORKSPACES</em> above <em>BASES</em>, each row = concept icon + name + a muted context line (a base shows its workspace, a workspace shows its base count). ↑/↓ move, ↵ picks, Esc clears, and <code>/</code> focuses the field. Workspace names are matched in BOTH modes, grouped or flat — the workspace is a property of the base whether or not the table is currently grouped, and the dropdown row names the workspace it matched on, so the match explains itself. What is mode-dependent is the WORKSPACES group: ungrouped there are no workspace rows to scroll to, so the whole group is absent (via <code>esKinds</code>) rather than present and empty.<br><br><strong>Picking is not "opening" — a picker has nothing to open.</strong> Browse\'s pick semantics must not be copied here. Picking a <strong>base</strong> clears the query, pages/expands to that row, scrolls it into view and <strong>ticks its checkbox</strong>; at the plan cap it does exactly what the row itself does — the tick is refused and the existing amber cap note explains why, never a second cap behaviour invented for the dropdown. Picking a <strong>workspace</strong> scrolls to that group and expands it if collapsed, and <strong>selects nothing</strong> — the user asked to look, not to commit 40 bases.',
+    reference: 'design:components/integrations/BaseSelectionTable.astro + BasePickerRow.astro',
+    showCode: false,
+    usageDo: [
+      'Ship the flat table as a complete product — search, sort, select, save — and let grouping arrive on top of it without ever blocking it.',
+      'Group automatically the moment the lookup completes, and preserve scroll position and every ticked base across that one reflow.',
+      'Give the grouping toggle ONE name that never changes, and state its consequence (auto-add per workspace vs per connection) plus its boundary (this picker only) beside it.',
+      'Pay for a new band with a removal: the toolbar status line left, the auto-enroll rule folded in, and the wizard gate band became conditional.',
+      'Use a determinate catalog progress bar pinned to the CARD EDGE for known-percentage waits, and keep the raw count beside it.',
+      'Hold the bar back ~500ms so a small account never sees a blink of progress, and go NEUTRAL (not red) if the lookup fails.',
+      'Animate a local re-group with a FLIP reflow, honouring prefers-reduced-motion — an instant operation gets movement, never a skeleton.',
+      'Remember the answer per connection, so a user who turned grouping off stays off.',
+      'Keep "Still matching" and "No workspace" as separate buckets with separate copy — an unfinished lookup is not an absent workspace.',
+      'Resume a progress counter where it left off after a reload; restarting at 0 tells the user their wait was thrown away.',
+      'State a limited-access caveat in the header of the group it applies to, not in a band above rows it does not apply to.',
+      'Suppress the whole grouping UI when only one group exists — one group is not grouping.',
+      'Show a wizard gate as an instruction in the step subtitle, and raise the amber band only after a failed attempt to advance.',
+      'Store a user-typed name with the REASON it was typed, and let the real name take over a stand-in — once, reversibly, with "Keep mine".',
+      'Give the picker ONE search field that matches bases and workspaces at once and groups the results — the shared entity typeahead, never a second hand-rolled one.',
+      'Keep typing a FILTER on the table; the dropdown is an extra way in, not a replacement for narrowing then selecting all.',
+      'Make picking mean what a picker means: a base scrolls into view and gets ticked (refused at the cap, same as the row), a workspace scrolls to its group and expands it, selecting nothing.',
+    ],
+    usageDont: [
+      "Don't make the user click to get the result they came for — grouping is the finished state, not an offer, once the data is in.",
+      "Don't ask the user to choose a search SCOPE before they have typed. One field searches everything; the grouped results say what was found where.",
+      "Don't skeleton, disable or block the table while workspaces resolve; the flat table is already usable and blocking it buys nothing.",
+      "Don't fake a load when re-grouping. Toggling is local and instant; a placeholder there is invented latency.",
+      "Don't draw the progress bar across the rows or over the table — a bar on top of content reads as \"table unavailable\", and it is not.",
+      "Don't use a spinner for this: the percentage is known, so the catalog says bar. And don't turn the bar red on failure — nothing the user did broke.",
+      "Don't say \"syncing your bases\": they are already loaded. Say what is actually happening — organising them by workspace.",
+      "Don't give one setting two names. \"Group by workspace\" and \"Ungroup\" were the same binary wearing two labels in two places.",
+      "Don't park bases whose lookup is still running in the \"No workspace\" bucket — that asserts a fact about their Airtable that we have not established.",
+      "Don't leave per-workspace auto-add switches live (or checked) while the table is flat — the wizard counts them, and it would report a choice the user cannot see.",
+      "Don't render a gate message before the user has had a chance to satisfy it, and don't disable the button that would earn it.",
+      "Don't show a user's name and Airtable's name side by side by default — dual display is earned by answering \"Keep mine\", and an unearned second string re-breaks the header truncation.",
+      "Don't silently overwrite a name the user typed when the real one arrives, and don't silently keep theirs either — say which one is now in use, once, with a way back.",
+    ],
+    examples: [
+      {
+        label: 'The toggle band (one name, its consequence, its boundary, auto-enroll folded in) + the card-edge progress bar — running · failed (neutral, never red)',
+        html: `
+<div class="flex flex-col gap-4" style="padding:1rem">
+  <div class="rounded-box border border-base-300 bg-base-100" style="padding:.75rem">
+    <label class="flex items-start gap-3" style="cursor:pointer">
+      <input type="checkbox" class="toggle toggle-sm toggle-primary" checked style="flex:none;margin-top:.1rem" />
+      <span class="min-w-0">
+        <span class="block text-sm font-bold">Group by workspace</span>
+        <span class="block text-xs opacity-65" style="margin-top:.125rem">Grouped, you set auto-add per workspace. Ungrouped, it's one switch for the whole connection. Affects this picker only — Schema and Data keep their own workspace grouping.</span>
+      </span>
+    </label>
+    <label class="flex items-start gap-3" style="cursor:pointer;margin-top:.75rem;padding-top:.75rem;border-top:1px dashed var(--color-base-300)">
+      <input type="checkbox" class="toggle toggle-sm toggle-primary" style="flex:none;margin-top:.1rem" />
+      <span class="min-w-0">
+        <span class="block text-sm font-bold">Auto-enroll new workspaces</span>
+        <span class="block text-xs opacity-65" style="margin-top:.125rem">Workspaces created in Airtable later are enrolled automatically at the next backup run.</span>
+      </span>
+    </label>
+  </div>
+  <div class="rounded-box border border-base-300 bg-base-100 overflow-hidden" style="position:relative">
+    <progress class="progress progress-primary" value="31" max="50" style="position:absolute;inset-inline:0;top:0;height:3px;border-radius:0"></progress>
+    <div class="flex items-center gap-2 border-b border-base-300 px-3 py-2 text-sm">
+      <span class="font-semibold opacity-70">Selected 12 of 50</span>
+      <span class="flex-1"></span>
+      <span class="text-xs opacity-60">Organising your bases by workspace… <span class="tabular-nums">31 / 50</span></span>
+    </div>
+    <div class="px-3 py-2 text-sm opacity-60">Bases stay selectable the whole time.</div>
+  </div>
+  <div class="rounded-box border border-base-300 bg-base-100 overflow-hidden" style="position:relative">
+    <progress class="progress" value="18" max="50" style="position:absolute;inset-inline:0;top:0;height:3px;border-radius:0"></progress>
+    <div class="flex items-center gap-2 border-b border-base-300 px-3 py-2 text-sm">
+      <span class="font-semibold opacity-70">Selected 12 of 50</span>
+      <span class="flex-1"></span>
+      <span class="text-xs opacity-60">Couldn't organise by workspace</span>
+      <button class="btn btn-sm btn-ghost text-primary gap-1.5"><span class="iconify lucide--rotate-ccw size-4"></span>Retry</button>
+    </div>
+    <div class="px-3 py-2 text-sm opacity-60">Not an error state — the bar stops and goes neutral, the table keeps working.</div>
+  </div>
+</div>`,
+      },
+      {
+        label: 'Group headers — placeholder name carries its own caveat · "Still matching" is its own bucket, distinct from "No workspace"',
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100 overflow-hidden" style="max-width:34rem">
+  <div class="flex items-center gap-2 bg-base-200 px-3 py-2 text-sm font-bold">
+    <span class="iconify lucide--chevron-down size-4 opacity-60"></span>
+    <input type="checkbox" class="checkbox checkbox-sm" checked />
+    <span>Workspace 1</span>
+    <span class="text-xs font-normal opacity-60 whitespace-nowrap">· name unavailable</span>
+    <span class="iconify lucide--pencil size-4 opacity-55"></span>
+    <span class="flex-1"></span>
+    <span class="text-xs font-normal opacity-60 tabular-nums">4 of 4</span>
+  </div>
+  <div class="flex items-center gap-2 bg-base-200 px-3 py-2 text-sm font-bold border-t border-base-300">
+    <span class="iconify lucide--chevron-down size-4 opacity-60"></span>
+    <input type="checkbox" class="checkbox checkbox-sm" />
+    <span class="opacity-70">Still matching</span>
+    <span class="loading loading-spinner loading-sm opacity-50"></span>
+    <span class="flex-1"></span>
+    <span class="text-xs font-normal opacity-60 tabular-nums">0 of 12</span>
+  </div>
+  <div class="flex items-center gap-2 bg-base-200 px-3 py-2 text-sm font-bold border-t border-base-300">
+    <span class="iconify lucide--chevron-down size-4 opacity-60"></span>
+    <input type="checkbox" class="checkbox checkbox-sm" />
+    <span class="opacity-70">No workspace</span>
+    <span class="flex-1"></span>
+    <span class="text-xs font-normal opacity-60 tabular-nums">0 of 3</span>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
     id: 'pattern-export-control',
     group: 'Patterns',
     name: 'Export control',

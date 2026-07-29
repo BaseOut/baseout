@@ -1,0 +1,1033 @@
+---
+/**
+ * IntegrationsSetupWizard — the per-Space backup setup, as a left-to-right
+ * stepper that fits the account-level model (Sources / Destinations are reusable
+ * account objects; this Space references them).
+ *
+ * Steps: Source → Bases → Destination → Options (depth + schedule) → Review.
+ *
+ * Empty-first: when the account has no Sources / Destinations yet, the Source and
+ * Destination steps open on a "connect your first…" card whose button opens a
+ * right-hand DRAWER to create one inline — the wizard never unmounts, and the new
+ * object is auto-selected on success (prototype simulates the create client-side).
+ *
+ * Decisions baked in (founder + our edge analysis): one Source per Space; changing
+ * the Source resets the base selection; reconnect happens in-context; no draft of
+ * an abandoned wizard. Destination = 1 file (required) + 1 optional database.
+ */
+import BaseSelectionTable from '../components/integrations/BaseSelectionTable.astro';
+import BackupScheduleScope from '../components/backups/BackupScheduleScope.astro';
+import Drawer from '../components/ui/Drawer.astro';
+import type { IntegrationsState } from '../stores/connections';
+import type { SourceSummary } from '../stores/sources';
+import type { DestinationSummary } from '../stores/destinations';
+
+interface Props {
+  state: IntegrationsState;
+  sources?: SourceSummary[];
+  destinations?: DestinationSummary[];
+  /** 'setup' = first-run gated stepper; 'edit' = free tabs + Save (reached via Configure). */
+  mode?: 'setup' | 'edit';
+}
+const { state, sources = [], destinations = [], mode = 'setup' } = Astro.props;
+const isEdit = mode === 'edit';
+
+const spaceName = Astro.locals.account?.space?.id ? (Astro.locals.account?.space?.name ?? 'this Space') : 'this Space';
+const spaceId = Astro.locals.account?.space?.id ?? '';
+const cap = state.tierBasesPerSpace;
+const bases = state.bases;
+
+const fileDestinations = destinations.filter((d) => d.kind === 'file');
+const dbDestinations = destinations.filter((d) => d.kind === 'database');
+const noSources = sources.length === 0;
+const noFileDest = fileDestinations.length === 0;
+
+// Catalog soft badge for the option's connection status. `opt-chip` stays as a
+// stable JS hook class; the badge-* classes carry the visual + the broken-state
+// signal the wiring below reads (.opt-chip.badge-warning).
+const statusChip = (s: string) =>
+  s === 'connected'
+    ? { cls: 'badge badge-soft badge-success', label: 'Connected' }
+    : { cls: 'badge badge-soft badge-warning', label: s === 'needs_connection' ? 'Needs connection' : 'Lost access' };
+// Action verb for the inline reconnect button on a non-connected row.
+const reconnectLabel = (s: string) => (s === 'needs_connection' ? 'Connect' : 'Reconnect');
+
+// Real service logos for known destination providers (the rest fall back to a Lucide
+// icon — we don't fabricate a logo for our own R2 or for databases we have no mark for).
+const destLogo: Record<string, string> = {
+  google_drive: '/brands/google-drive.svg',
+  dropbox: '/brands/dropbox.svg',
+  s3: '/brands/aws.svg',
+};
+
+// `icon` is only read by the edit-mode tab bar (the Schema tab recipe = leading Lucide
+// glyph + label). Every name below appears here as STATIC markup, so Tailwind's scanner
+// emits the mask — do not move any of them into an innerHTML string.
+const ALL_STEPS = [
+  { key: 'source', label: 'Source', icon: 'lucide--plug' },
+  { key: 'bases', label: 'Bases', icon: 'lucide--table-2' },
+  { key: 'dest', label: 'Destination', icon: 'lucide--hard-drive' },
+  { key: 'options', label: 'Options', icon: 'lucide--sliders-horizontal' },
+  { key: 'review', label: 'Review', icon: 'lucide--clipboard-check' },
+];
+// Edit mode has no Review/Run step — you jump between tabs and Save.
+const STEPS = isEdit ? ALL_STEPS.filter((s) => s.key !== 'review') : ALL_STEPS;
+
+const FREQS = [
+  { value: 'monthly', label: 'Monthly', helper: 'One scheduled backup per month' },
+  { value: 'weekly', label: 'Weekly', helper: 'One scheduled backup per week' },
+  { value: 'daily', label: 'Daily', helper: 'One scheduled backup per day' },
+  { value: 'instant', label: 'Instant', helper: 'Webhook-driven — captures changes as they happen' },
+];
+
+// Cleanup schedule = tiered rolling retention, keyed to the backup frequency (On2Air
+// model). Older versions are progressively thinned (daily→weekly→monthly) so storage
+// stays bounded; whatever is older than the max-retention cutoff is removed.
+const CLEANUP_TIERS: Record<string, string[]> = {
+  monthly: ['Monthly versions kept'],
+  weekly: ['3 months of weekly backups', 'then monthly'],
+  daily: ['30 days of daily backups', 'then 2 months of weekly', 'then monthly'],
+  instant: ['3 days of continuous backups', 'then 27 days of daily', 'then 2 months of weekly', 'then monthly'],
+};
+const freqLabel = (v: string) => FREQS.find((f) => f.value === v)?.label ?? 'Monthly';
+const initialFreq = state.policy.frequency;
+const initialTiers = CLEANUP_TIERS[initialFreq] ?? CLEANUP_TIERS.monthly;
+---
+
+<div class="mx-auto max-w-5xl space-y-6" data-wizard data-mode={mode}>
+  {/* Header */}
+  <div>
+    <a href="/" class="back-link"><span class="iconify lucide--arrow-left"></span> Home</a>
+    <h1 class="text-title mt-3">{isEdit ? "Edit this Space's backup" : "Set up this Space's backup"}</h1>
+    <p class="text-sm text-base-content/60 mt-1">{isEdit ? 'Change the source, bases, destination or schedule — jump between tabs in any order' : 'Pick a source, the bases to protect, and where they go'} — for <span class="font-medium text-base-content/80">{spaceName}</span>.</p>
+  </div>
+
+  <div class="tabs-shell" data-tabs>
+    {/* Nav bar: free tabs (edit) or a gated stepper (setup) + the primary action */}
+    <div class="bar">
+      {isEdit ? (
+        <div class="sch-tabbar flex-1" role="tablist" aria-label="Backup settings sections">
+          <div class="sch-gtabs tabs tabs-border">
+            {STEPS.map((s, i) => (
+              <button type="button" class={`tab${i === 0 ? ' tab-active' : ''}`} role="tab" aria-selected={i === 0 ? 'true' : 'false'} data-tab={s.key}>
+                <span class={`iconify ${s.icon} size-4`} aria-hidden="true"></span>{s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <ol class="stepper" data-stepper>
+          {STEPS.map((s, i) => (
+            <li class="step" data-step-nav={s.key} data-index={i}>
+              <span class="step-dot"><span class="step-num">{i + 1}</span><span class="iconify lucide--check step-check"></span></span>
+              <span class="step-label">{s.label}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+      <div class="bar-actions">
+        {isEdit ? (
+          <>
+            <a href="/" class="btn btn-sm btn-ghost">Cancel</a>
+            <button type="button" class="btn btn-sm btn-primary" data-save-edit><span class="iconify lucide--check size-4" aria-hidden="true"></span>Save changes</button>
+          </>
+        ) : (
+          <>
+            <button type="button" class="btn btn-sm btn-ghost" data-step-back hidden><span class="iconify lucide--arrow-left size-4"></span> Back</button>
+            <button type="button" class="btn btn-sm btn-primary" data-step-next>Next</button>
+          </>
+        )}
+      </div>
+    </div>
+
+    <div class="tab-body">
+      <div class="step-hint alert alert-soft alert-warning" data-step-hint hidden role="status">
+        <span class="iconify lucide--circle-alert size-4 shrink-0" aria-hidden="true"></span>
+        <span class="flex-1" data-step-hint-text></span>
+      </div>
+
+      {/* STEP 1 — SOURCE */}
+      <section class={`tab-panel panel-source${noSources ? ' is-empty' : ''}`} data-step="source" data-picker="source">
+        <div class="panel-head"><h2>Where does this Space back up from?</h2><p>Pick or connect one Airtable source to continue — a Space backs up from exactly one. Connect once on your account, reuse across Spaces.</p></div>
+
+        <div class="picker-empty" data-picker-empty>
+          <span class="picker-empty-ic"><img src="/airtable.svg" alt="" width="26" height="26" /></span>
+          <div class="min-w-0">
+            <p class="picker-empty-title">No Airtable source yet</p>
+            <p class="picker-empty-sub">Baseout reads your bases read-only. Connect an account to continue.</p>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary shrink-0 ml-auto" data-open-drawer="source"><span class="iconify lucide--plug size-4" aria-hidden="true"></span>Connect Airtable</button>
+        </div>
+
+        <fieldset class="opt-options" data-picker-list>
+          <legend class="sr-only">Source</legend>
+          {sources.map((s, i) => {
+            const chip = statusChip(s.status);
+            return (
+              <label class="opt-opt">
+                <input type="radio" name="wz-source" value={s.id} checked={i === 0} class="radio radio-sm radio-primary" data-source-radio />
+                <span class="opt-ic"><img src="/airtable.svg" alt="" width="18" height="18" /></span>
+                <span class="min-w-0 flex-1">
+                  <span class="opt-name">{s.name}</span>
+                  <span class="opt-sub">{s.account} · {s.basesAvailable} bases</span>
+                </span>
+                <span class={`opt-chip ${chip.cls}`}><span class="size-1.5 rounded-full bg-current"></span>{chip.label}</span>
+                {s.status !== 'connected' && (
+                  <button type="button" class="btn btn-sm btn-warning" data-reconnect="source" data-reconnect-auth={s.auth === 'pat' ? 'secret' : 'oauth'} data-reconnect-secret-label="Personal access token"><span class="iconify lucide--rotate-cw size-4"></span>{reconnectLabel(s.status)}</button>
+                )}
+              </label>
+            );
+          })}
+        </fieldset>
+        <button type="button" class="btn btn-sm btn-ghost text-primary self-start mt-1" data-open-drawer="source" data-picker-add><span class="iconify lucide--plus size-4" aria-hidden="true"></span>Add another source</button>
+
+        {/* Heads-up before a source switch clears the base selection (bases belong to a source) */}
+        <div class="switch-confirm" data-switch-confirm hidden>
+          <span class="switch-confirm-ic"><span class="iconify lucide--info"></span></span>
+          <div class="min-w-0 flex-1">
+            <p class="switch-confirm-title">Switch to <span data-switch-name>—</span>?</p>
+            <p class="switch-confirm-sub">Bases belong to a source. Your <span data-switch-count>0</span> selected base<span data-switch-plural></span> will be cleared so you don't back up the wrong ones.</p>
+          </div>
+          <div class="switch-confirm-actions">
+            <button type="button" class="btn btn-ghost btn-sm" data-switch-cancel>Keep current</button>
+            <button type="button" class="btn btn-warning btn-sm" data-switch-go>Switch &amp; clear</button>
+          </div>
+        </div>
+      </section>
+
+      {/* STEP 2 — BASES */}
+      <section class="tab-panel panel-bases" data-step="bases">
+        <div class="panel-head"><h2>Which bases to back up</h2><p>Pick the bases this Space protects — at least one to continue. Search, sort, or select all up to your plan limit.</p></div>
+        <p class="bases-reset-note" data-bases-reset-note hidden><span class="iconify lucide--info"></span> Base selection cleared — these are the bases for <span class="font-medium" data-bases-reset-name>—</span>. Pick the ones to back up.</p>
+        {bases.length > 0 ? (
+          <BaseSelectionTable
+            bases={bases}
+            cap={cap}
+            spaceId={spaceId}
+            embedded={true}
+            enrolledWorkspaces={state.enrolledWorkspaces}
+            autoEnrollNewWorkspaces={state.autoEnrollNewWorkspaces}
+            wsResolve={state.wsResolve}
+            wsResolvedCount={state.wsResolvedCount}
+            wsTotalCount={state.wsTotalCount}
+            groupByWorkspace={state.groupByWorkspace}
+            workspaceAliases={state.workspaceAliases}
+          />
+        ) : (
+          <p class="text-sm text-base-content/60">The selected source didn't reveal any bases. <button type="button" class="link link-hover font-medium" data-open-drawer="source">Pick another source</button>.</p>
+        )}
+      </section>
+
+      {/* STEP 3 — DESTINATION */}
+      <section class={`tab-panel panel-dest${noFileDest ? ' is-empty' : ''}`} data-step="dest" data-picker="dest">
+        <div class="panel-head"><h2>Where do backups go?</h2><p>A file store is required; a database is an optional extra you can add now or later.</p></div>
+
+        <div class="picker-empty" data-picker-empty>
+          <span class="picker-empty-ic"><span class="iconify lucide--square-arrow-right-enter"></span></span>
+          <div class="min-w-0">
+            <p class="picker-empty-title">No destination yet</p>
+            <p class="picker-empty-sub">Pick storage you control — Google Drive, S3, Dropbox, or managed Baseout R2.</p>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary shrink-0 ml-auto" data-open-drawer="dest"><span class="iconify lucide--plug size-4" aria-hidden="true"></span>Add a destination</button>
+        </div>
+
+        <div class="dest-groups" data-picker-list>
+          <div class="dest-group">
+            <div class="dest-group-head"><span class="dest-group-title">File storage</span><span class="badge badge-soft badge-error badge-sm">Required</span></div>
+            <fieldset class="opt-options" data-dest-file>
+              <legend class="sr-only">File destination</legend>
+              {fileDestinations.map((d, i) => {
+                const chip = statusChip(d.status);
+                return (
+                  <label class="opt-opt">
+                    <input type="radio" name="wz-dest-file" value={d.id} checked={i === 0} class="radio radio-sm radio-primary" data-dest-file-radio />
+                    <span class="opt-ic">{destLogo[d.provider] ? <img src={destLogo[d.provider]} alt="" width="18" height="18" /> : <span class="iconify lucide--hard-drive"></span>}</span>
+                    <span class="min-w-0 flex-1">
+                      <span class="opt-name">{d.name}</span>
+                      <span class="opt-sub">{d.providerLabel} · {d.detail}</span>
+                    </span>
+                    <span class={`opt-chip ${chip.cls}`}><span class="size-1.5 rounded-full bg-current"></span>{chip.label}</span>
+                    {d.status !== 'connected' && (
+                      <button type="button" class="btn btn-sm btn-warning" data-reconnect="dest" data-reconnect-auth="oauth"><span class="iconify lucide--rotate-cw size-4"></span>{reconnectLabel(d.status)}</button>
+                    )}
+                  </label>
+                );
+              })}
+            </fieldset>
+          </div>
+
+          <div class="dest-group">
+            <div class="dest-group-head"><span class="dest-group-title">Database</span><span class="badge badge-soft badge-primary badge-sm">Recommended</span></div>
+            <p class="dest-blurb">Query your backup with SQL and power live dashboards. Optional — your file backup runs without it.</p>
+            <fieldset class="opt-options" data-dest-db>
+              <legend class="sr-only">Database destination</legend>
+              {dbDestinations.map((d) => {
+                const chip = statusChip(d.status);
+                return (
+                  <label class="opt-opt">
+                    <input type="radio" name="wz-dest-db" value={d.id} class="radio radio-sm radio-primary" data-dest-db-radio />
+                    <span class="opt-ic opt-ic-db"><span class="iconify lucide--database"></span></span>
+                    <span class="min-w-0 flex-1">
+                      <span class="opt-name">{d.name}</span>
+                      <span class="opt-sub">{d.providerLabel} · {d.detail}</span>
+                    </span>
+                    <span class={`opt-chip ${chip.cls}`}><span class="size-1.5 rounded-full bg-current"></span>{chip.label}</span>
+                    {d.status !== 'connected' && (
+                      <button type="button" class="btn btn-sm btn-warning" data-reconnect="dest" data-reconnect-auth="secret" data-reconnect-secret-label="Connection string"><span class="iconify lucide--rotate-cw size-4"></span>{reconnectLabel(d.status)}</button>
+                    )}
+                  </label>
+                );
+              })}
+              <label class="opt-opt opt-skip">
+                <input type="radio" name="wz-dest-db" value="" checked class="radio radio-sm radio-primary" data-dest-db-radio />
+                <span class="min-w-0 flex-1"><span class="opt-name">Skip for now</span><span class="opt-sub">Add a database later from Destinations.</span></span>
+              </label>
+            </fieldset>
+          </div>
+
+          <button type="button" class="btn btn-sm btn-ghost text-primary self-start mt-1" data-open-drawer="dest"><span class="iconify lucide--plus size-4" aria-hidden="true"></span>Add a custom destination</button>
+        </div>
+        <p class="dest-folder-note" data-dest-folder>Each backup writes to <span class="font-medium">/Baseout/{spaceName}</span> in the destination you pick.</p>
+      </section>
+
+      {/* STEP 4 — OPTIONS (depth + schedule) */}
+      <section class="tab-panel panel-options" data-step="options">
+        <div class="panel-head"><h2>What gets backed up, and how often</h2><p>Choose the depth of each backup and the schedule.</p></div>
+
+        <BackupScheduleScope
+          recordData={state.policy.recordData ?? (state.policy.scope !== 'schema-only')}
+          attachments={state.policy.attachments ?? false}
+          schemaTied={state.policy.schemaTied ?? true}
+          dataFrequency={state.policy.dataFrequency ?? state.policy.frequency}
+          schemaFrequency={state.policy.schemaFrequency ?? 'daily'}
+          availableFrequencies={state.availableFrequencies}
+          nextDataAt={state.policy.nextDataAt ?? state.policy.nextScheduledAt}
+          nextSchemaAt={state.policy.nextSchemaAt ?? null}
+        />
+
+        {/* Cleanup schedule — tiered retention keyed to the frequency above. */}
+        <h3 class="opt-subhead mt-5">Cleanup schedule</h3>
+        <div role="alert" class="alert alert-soft alert-info">
+          <span class="iconify lucide--info size-4" aria-hidden="true"></span>
+          <span>Older backup versions are thinned automatically so storage stays in check — recent backups are kept in full; as they age we keep them less often.</span>
+        </div>
+        <div class="cleanup mt-3" data-cleanup data-tiers={JSON.stringify(CLEANUP_TIERS)}>
+          <p class="cleanup-lead">With <span class="font-semibold text-base-content" data-cleanup-freq>{freqLabel(initialFreq)}</span> backups we keep:</p>
+          <ol class="cleanup-ladder" data-cleanup-ladder>
+            {initialTiers.map((t, i) => (
+              <li class="cleanup-tier"><span class="cleanup-tier-n">{i + 1}</span>{t}</li>
+            ))}
+          </ol>
+          <label class="cleanup-cutoff">
+            <span class="cleanup-cutoff-k">Then remove anything older than</span>
+            <select class="select select-sm w-auto" data-cleanup-cutoff aria-label="Maximum retention">
+              <option value="1">1 year</option>
+              <option value="2">2 years</option>
+              <option value="5" selected>5 years</option>
+              <option value="0">never (keep forever)</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      {/* STEP 5 — REVIEW */}
+      <section class="tab-panel panel-review" data-step="review">
+        <div class="panel-head"><h2>Review and run</h2><p>This is what your Space will back up. We run the first backup right after.</p></div>
+        <div class="review-pipe">
+          <div class="review-node">
+            <span class="review-node-k">Source</span>
+            <span class="review-node-v"><img src="/airtable.svg" alt="" class="review-mark" /><span data-review-source>—</span></span>
+          </div>
+          <span class="review-link" aria-hidden="true"><span class="review-link-badge"><span class="iconify lucide--check"></span></span></span>
+          <div class="review-node">
+            <span class="review-node-k">Backs up</span>
+            <span class="review-node-v"><span class="iconify lucide--table review-mark-ic"></span><span data-review-bases>—</span></span>
+          </div>
+          <span class="review-link" aria-hidden="true"><span class="review-link-badge"><span class="iconify lucide--check"></span></span></span>
+          <div class="review-node">
+            <span class="review-node-k">Destination</span>
+            <span class="review-node-v"><span class="iconify lucide--hard-drive review-mark-ic"></span><span data-review-dest>—</span></span>
+          </div>
+        </div>
+        <div class="review-meta">
+          <div class="review-meta-item"><span class="review-meta-k">Schedule</span><span class="review-meta-v" data-review-schedule>—</span></div>
+          <div class="review-meta-item"><span class="review-meta-k">Depth</span><span class="review-meta-v" data-review-depth>—</span></div>
+          <div class="review-meta-item"><span class="review-meta-k">Folder</span><span class="review-meta-v">/Baseout/{spaceName}</span></div>
+          <div class="review-meta-item"><span class="review-meta-k">Auto-add</span><span class="review-meta-v" data-review-autoadd>—</span></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <p class="text-xs hidden mt-2 text-right" data-save-status role="status" aria-live="polite"></p>
+
+  {/* ───────── DRAWERS (inline create) ───────── */}
+
+  {/* Source drawer */}
+  <Drawer id="wz-drawer-source" title="Add an Airtable source" subtitle="Connect once, reuse across Spaces. Read-only access.">
+    <label class="add-field">
+      <span class="add-label">Name</span>
+      <input type="text" data-src-name placeholder="e.g. Ops Airtable" class="input input-sm input-bordered w-full" />
+      <span class="add-hint">A label to tell this connection apart from other Airtable accounts.</span>
+    </label>
+    <div class="connect" data-src-connect>
+      <span class="add-label">Connection method</span>
+      <div role="tablist" class="method-tabs">
+        <label class="method-tab"><input type="radio" name="wz-src-method" value="oauth" class="sr-only" checked /><span>OAuth</span></label>
+        <label class="method-tab"><input type="radio" name="wz-src-method" value="pat" class="sr-only" /><span>Personal access token</span></label>
+      </div>
+      <div data-src-method="oauth" class="mt-4">
+        <p class="add-hint">You approve read-only access on Airtable in a popup, then return here — the wizard stays open.</p>
+      </div>
+      <div data-src-method="pat" class="mt-4">
+        <label class="block"><span class="add-label">Personal access token</span>
+          <input type="password" data-src-token placeholder="pat••••••••••••••" autocomplete="off" class="input input-sm input-bordered w-full font-mono text-sm mt-2" /></label>
+        <p class="add-hint mt-2">A read-only token with <code>data.records:read</code> and <code>schema.bases:read</code> scopes.</p>
+      </div>
+    </div>
+    <Fragment slot="footer">
+      <label for="wz-drawer-source" class="btn btn-sm btn-ghost">Cancel</label>
+      <button type="button" class="btn btn-sm btn-primary" data-src-create><span class="iconify lucide--plug size-4" aria-hidden="true"></span>Test &amp; create</button>
+    </Fragment>
+  </Drawer>
+
+  {/* Destination drawer (pick type → configure). Title/sub are updated by JS via
+      the panel's .sb-drawer-title / .sb-drawer-sub once a type is picked. */}
+  <Drawer id="wz-drawer-dest" title="Add a destination" subtitle="Pick where backups go. Reusable across Spaces.">
+    {/* type picker */}
+    <div data-dest-pick>
+      <p class="add-label mb-2">File storage <span class="badge badge-soft badge-error badge-sm">Required</span></p>
+      <div class="dtype-grid">
+        <button type="button" class="dtype" data-dtype="r2" data-kind="file" data-label="Baseout R2" data-managed="1"><span class="dtype-ic"><span class="iconify lucide--box"></span></span><span class="min-w-0"><span class="dtype-name">Baseout R2 <span class="badge badge-soft badge-success badge-sm">Managed</span></span><span class="dtype-note">Zero setup</span></span></button>
+        <button type="button" class="dtype" data-dtype="google_drive" data-kind="file" data-label="Google Drive"><span class="dtype-ic"><img src="/brands/google-drive.svg" alt="" width="18" height="18" /></span><span class="min-w-0"><span class="dtype-name">Google Drive</span><span class="dtype-note">Your own Drive</span></span></button>
+        <button type="button" class="dtype" data-dtype="dropbox" data-kind="file" data-label="Dropbox"><span class="dtype-ic"><img src="/brands/dropbox.svg" alt="" width="18" height="18" /></span><span class="min-w-0"><span class="dtype-name">Dropbox</span><span class="dtype-note">Your own Dropbox</span></span></button>
+        <button type="button" class="dtype" data-dtype="s3" data-kind="file" data-label="Amazon S3"><span class="dtype-ic"><img src="/brands/aws.svg" alt="" width="18" height="18" /></span><span class="min-w-0"><span class="dtype-name">Amazon S3</span><span class="dtype-note">Your own bucket</span></span></button>
+      </div>
+      <p class="add-label mb-2 mt-4">Database <span class="badge badge-soft badge-primary badge-sm">Recommended</span></p>
+      <div class="dtype-grid">
+        <button type="button" class="dtype" data-dtype="postgres" data-kind="database" data-label="Postgres"><span class="dtype-ic dtype-ic-db"><span class="iconify lucide--database"></span></span><span class="min-w-0"><span class="dtype-name">Postgres</span><span class="dtype-note">Self-hosted or cloud</span></span></button>
+        <button type="button" class="dtype" data-dtype="neon" data-kind="database" data-label="Neon"><span class="dtype-ic dtype-ic-db"><span class="iconify lucide--database"></span></span><span class="min-w-0"><span class="dtype-name">Neon</span><span class="dtype-note">Serverless Postgres</span></span></button>
+      </div>
+    </div>
+    {/* configure (after type pick) */}
+    <div data-dest-config hidden>
+      <button type="button" class="back-link mb-3" data-dest-back><span class="iconify lucide--arrow-left"></span> Pick a different type</button>
+      <label class="add-field">
+        <span class="add-label">Name</span>
+        <input type="text" data-dest-name placeholder="Backup storage" class="input input-sm input-bordered w-full" />
+      </label>
+      <div data-dest-field-folder class="add-field mt-3">
+        <span class="add-label">Folder</span>
+        <input type="text" data-dest-folder-input placeholder="/Baseout" class="input input-sm input-bordered w-full font-mono text-sm" />
+        <span class="add-hint">You authorize the account in a popup after saving. Each Space writes to its own subfolder.</span>
+      </div>
+      <div data-dest-field-conn class="add-field mt-3" hidden>
+        <span class="add-label">Connection string</span>
+        <input type="password" data-dest-conn-input placeholder="postgres://user:••••@host:5432/db" autocomplete="off" class="input input-sm input-bordered w-full font-mono text-sm" />
+        <span class="add-hint">Stored encrypted. Baseout writes one schema per Space.</span>
+      </div>
+      <div role="alert" data-dest-field-managed class="alert alert-soft alert-success mt-3" hidden><span class="iconify lucide--shield-check size-4" aria-hidden="true"></span><span>Managed by Baseout — no account to connect or folder to choose.</span></div>
+    </div>
+    <Fragment slot="footer">
+      <label for="wz-drawer-dest" class="btn btn-sm btn-ghost">Cancel</label>
+      <button type="button" class="btn btn-sm btn-primary" data-dest-create hidden><span class="iconify lucide--check size-4" aria-hidden="true"></span>Save destination</button>
+    </Fragment>
+  </Drawer>
+
+  {/* Reconnect drawer — re-authorize a broken object in place (no kick-out).
+      Title updated by JS via the panel's .sb-drawer-title. */}
+  <Drawer id="wz-drawer-reconnect" title="Reconnect" subtitle="Reauthorize to resume backups — your selection and settings are kept.">
+    <div role="alert" class="alert alert-soft alert-warning">
+      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+      <div class="min-w-0"><p class="font-semibold" data-reconnect-name>—</p><p class="text-sm text-base-content/70">Lost access · backups paused</p></div>
+    </div>
+    <div data-reconnect-oauth class="mt-4">
+      <p class="add-hint">You reauthorize read-only access in a popup, then return here — the wizard stays open.</p>
+    </div>
+    <label data-reconnect-secret-field class="add-field mt-4" hidden>
+      <span class="add-label" data-reconnect-secret-label>Personal access token</span>
+      <input type="password" data-reconnect-secret placeholder="••••••••••••••" autocomplete="off" class="input input-sm input-bordered w-full font-mono text-sm" />
+      <span class="add-hint">Stored encrypted. Re-enter to restore access.</span>
+    </label>
+    <Fragment slot="footer">
+      <label for="wz-drawer-reconnect" class="btn btn-sm btn-ghost">Cancel</label>
+      <button type="button" class="btn btn-sm btn-primary" data-reconnect-confirm><span class="iconify lucide--rotate-cw size-4" aria-hidden="true"></span> Reconnect</button>
+    </Fragment>
+  </Drawer>
+
+  {/* Toast — daisyUI toast pinned to the top-right; JS injects a success alert. */}
+  <div class="toast toast-top toast-end wz-toast" data-toast hidden></div>
+</div>
+
+<style>
+  .back-link { display: inline-flex; align-items: center; gap: .25rem; font-size: .8125rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .6); text-decoration: none; background: none; border: none; cursor: pointer; padding: 0; }
+  .back-link:hover { color: var(--color-base-content); }
+  .back-link .iconify { font-size: .95rem; }
+
+  .tabs-shell { border: 1px solid var(--color-base-300); border-radius: .7rem; background: var(--color-base-100); overflow: hidden; }
+  .bar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: .5rem .75rem .5rem 1rem; border-bottom: 1px solid var(--color-base-300); background: oklch(from var(--color-base-200) l c h / .45); }
+  .bar-actions { margin-left: auto; display: flex; align-items: center; gap: .5rem; flex: none; }
+  /* The step hint is a catalog soft-warning alert; only the bottom margin is bespoke. */
+  .step-hint { margin-bottom: 1rem; }
+  .step-hint[hidden] { display: none; }
+
+  /* Stepper */
+  .stepper { display: flex; align-items: center; gap: 0; margin: 0; padding: 0; list-style: none; flex-wrap: wrap; }
+  .step { display: flex; align-items: center; gap: .5rem; flex: none; }
+  .step:not(:last-child)::after { content: ''; width: clamp(.5rem, 3.5vw, 2.5rem); height: 2px; background: var(--color-base-300); margin: 0 .5rem; }
+  .step.is-done:not(:last-child)::after { background: oklch(from var(--color-primary) l c h / .5); }
+  .step-dot { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border-radius: 999px; flex: none; font-size: .75rem; font-weight: 700; border: 1.5px solid var(--color-base-300); color: oklch(from var(--color-base-content) l c h / .66); background: var(--color-base-100); }
+  .step-check { display: none; font-size: .9rem; }
+  .step.is-current .step-dot { border-color: var(--color-primary); color: var(--color-primary); }
+  .step.is-done .step-dot { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-primary-content); }
+  .step.is-done .step-num { display: none; }
+  .step.is-done .step-check { display: inline; }
+  .step.is-done, .step.is-current { cursor: pointer; }
+  .step.is-locked { cursor: default; }
+  .step-label { font-size: .75rem; font-weight: 600; white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .64); }
+  .step.is-current .step-label { color: var(--color-base-content); }
+  .step.is-locked .step-label { opacity: .5; }
+
+  /* Free tabs (edit mode) — the canonical Schema recipe: .sch-tabbar / .sch-gtabs live
+     in global.css, so nothing about the tabs themselves is styled here.
+     On /schema the tab row owns the full width, so ITS border is the divider. Here the
+     row shares the strip with Cancel / Save, so borrowing that border stopped the rule
+     dead under the buttons. The BAR keeps the divider instead — it spans the whole
+     container — and the tab row's own border is switched off so the two don't stack into
+     a doubled hairline. Tabs still sit flush on it: align-items: flex-end + no bottom
+     padding on the bar. */
+  .bar:has(.sch-tabbar) { align-items: flex-end; padding-bottom: 0; }
+  .bar:has(.sch-tabbar) .sch-tabbar { border-bottom: 0; }
+  .bar:has(.sch-tabbar) .bar-actions { padding-bottom: .5rem; }
+
+  .tab-body { padding: 1.25rem; }
+  .tab-panel { display: none; }
+  .tab-panel.is-active { display: block; }
+  .panel-head { margin-bottom: 1rem; }
+  .panel-head h2 { font-size: 1rem; font-weight: 650; }
+  .panel-head p { font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .6); margin-top: .125rem; }
+
+  /* Empty-state CTA card (shown when picker has no options) */
+  .picker-empty { display: none; align-items: center; gap: .75rem; padding: 1rem; border: 1px dashed var(--color-base-300); border-radius: .7rem; background: oklch(from var(--color-base-200) l c h / .35); }
+  .panel-source.is-empty .picker-empty, .panel-dest.is-empty .picker-empty { display: flex; }
+  .panel-source.is-empty [data-picker-list], .panel-source.is-empty [data-picker-add],
+  .panel-dest.is-empty [data-picker-list], .panel-dest.is-empty [data-dest-folder] { display: none; }
+  .picker-empty-ic { width: 2.5rem; height: 2.5rem; border-radius: .6rem; display: grid; place-items: center; background: var(--color-base-100); border: 1px solid var(--color-base-300); flex: none; }
+  .picker-empty-ic .iconify { font-size: 1.3rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .picker-empty-title { font-size: .9rem; font-weight: 650; }
+  .picker-empty-sub { font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .6); margin-top: .1rem; }
+
+  /* Radio option rows (source + destination pickers) */
+  .opt-options { display: grid; gap: .5rem; }
+  .opt-opt { display: flex; align-items: center; gap: .75rem; padding: .5rem .75rem; border: 1px solid var(--color-base-300); border-radius: .55rem; cursor: pointer; transition: border-color .12s ease, background .12s ease; }
+  .opt-opt:hover { background: oklch(from var(--color-base-200) l c h / .5); }
+  .opt-opt:has(input:checked) { border-color: oklch(from var(--color-primary) l c h / .55); background: oklch(from var(--color-primary) l c h / .05); }
+  .opt-ic { width: 2rem; height: 2rem; border-radius: .5rem; display: grid; place-items: center; background: oklch(from var(--color-base-200) l c h / .8); flex: none; }
+  .opt-ic .iconify { font-size: 1rem; color: oklch(from var(--color-base-content) l c h / .65); }
+  .opt-ic-db { background: oklch(from var(--color-primary) l c h / .1); }
+  .opt-ic-db .iconify { color: var(--color-primary); }
+  .opt-name { font-size: .85rem; font-weight: 600; }
+  .opt-sub { display: block; font-size: 0.75rem; color: oklch(from var(--color-base-content) l c h / .64); margin-top: .05rem; }
+  .opt-skip .opt-name { color: oklch(from var(--color-base-content) l c h / .7); }
+  /* .opt-chip is a JS hook only; the visual is a catalog soft badge (pushed right by .opt-name's flex-1 parent). The Add-source/destination links + the row reconnect are catalog buttons. */
+
+  .dest-group { border: 1px solid var(--color-base-300); border-radius: .7rem; background: var(--color-base-100); padding: .75rem 1rem; }
+  .dest-group + .dest-group { margin-top: .75rem; }
+  .dest-group-head { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+  .dest-group-title { font-size: .875rem; font-weight: 650; }
+  /* "Required" (error soft) + "Recommended" (primary soft) are catalog badges now. */
+  .dest-blurb { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .6); margin: -.25rem 0 .5rem; }
+  .dest-folder-note { font-size: 0.75rem; color: oklch(from var(--color-base-content) l c h / .64); margin-top: .75rem; }
+
+  /* Options step */
+  .opt-subhead { font-size: .8rem; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: oklch(from var(--color-base-content) l c h / .64); margin-bottom: .5rem; }
+  .opt-list { border: 1px solid var(--color-base-300); border-radius: .7rem; overflow: hidden; background: var(--color-base-100); }
+  .opt-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .75rem; }
+  .opt-row + .opt-row { border-top: 1px solid oklch(from var(--color-base-300) l c h / .6); }
+  .opt-check { display: flex; align-items: center; gap: .75rem; flex: 1; min-width: 0; cursor: pointer; }
+  .opt-row-name { display: block; font-weight: 500; font-size: .875rem; }
+  .opt-row-sub { display: block; font-size: 0.75rem; color: oklch(from var(--color-base-content) l c h / .66); margin-top: .05rem; }
+
+  /* Cleanup schedule — the retention ladder for the selected frequency */
+  .cleanup { border: 1px solid var(--color-base-300); border-radius: .7rem; background: var(--color-base-100); padding: .75rem 1rem 1rem; }
+  .cleanup-lead { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .7); }
+  .cleanup-ladder { display: flex; flex-direction: column; gap: .25rem; margin-top: .5rem; }
+  .cleanup-tier { display: flex; align-items: center; gap: .5rem; font-size: .85rem; font-weight: 500; }
+  .cleanup-tier-n { width: 1.5rem; height: 1.5rem; border-radius: 999px; display: grid; place-items: center; flex: none; font-size: .72rem; font-weight: 700; background: oklch(from var(--color-primary) l c h / .14); color: var(--color-primary); }
+  .cleanup-cutoff { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-top: .75rem; padding-top: .75rem; border-top: 1px solid oklch(from var(--color-base-300) l c h / .6); }
+  .cleanup-cutoff-k { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .7); }
+
+  /* Review step */
+  .review-pipe { display: flex; align-items: stretch; gap: .25rem; }
+  .review-node { flex: 1; border: 1px solid var(--color-base-300); border-radius: .65rem; padding: .75rem; background: var(--color-base-100); min-width: 0; }
+  .review-node-k { display: block; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .66); }
+  .review-node-v { display: flex; align-items: center; gap: .5rem; font-size: .9rem; font-weight: 600; margin-top: .25rem; overflow-wrap: anywhere; }
+  .review-mark { width: 18px; height: 18px; border-radius: 4px; flex: none; }
+  .review-mark-ic { font-size: 1rem; color: oklch(from var(--color-base-content) l c h / .6); flex: none; }
+  /* connector: a green "linked & healthy" line + check badge, matching the Home pipeline */
+  .review-link { align-self: center; position: relative; width: 1.75rem; height: 2px; border-radius: 2px; background: oklch(from var(--color-success) l c h / .5); flex: none; display: grid; place-items: center; }
+  .review-link-badge { position: relative; z-index: 1; width: 1.1rem; height: 1.1rem; border-radius: 999px; display: grid; place-items: center; background: var(--color-success); color: var(--color-success-content); box-shadow: 0 0 0 3px var(--color-base-100); }
+  .review-link-badge .iconify { font-size: .72rem; }
+  .review-meta { display: flex; gap: 2.25rem; flex-wrap: wrap; margin-top: 1rem; padding: .75rem 1rem; border: 1px solid var(--color-base-300); border-radius: .65rem; background: oklch(from var(--color-base-200) l c h / .35); }
+  .review-meta-item { display: flex; flex-direction: column; gap: .25rem; }
+  .review-meta-k { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .66); }
+  .review-meta-v { font-size: .85rem; font-weight: 600; }
+
+  /* Drawer chrome now lives in the catalog Drawer component (components/ui/Drawer.astro).
+     The fields below style the slotted drawer CONTENT, which stays in this wizard. */
+  .add-field { display: flex; flex-direction: column; gap: .25rem; }
+  .add-label { font-size: .8125rem; font-weight: 600; }
+  .add-hint { font-size: 0.75rem; color: oklch(from var(--color-base-content) l c h / .66); }
+  .add-hint code { font-size: 0.75rem; padding: .05rem .25rem; border-radius: 4px; background: oklch(from var(--color-base-content) l c h / .07); }
+  /* "Required" / "Recommended" / "Managed" + the managed note are catalog badges / alerts now. */
+  .method-tabs { display: flex; gap: .25rem; padding: .25rem; border-radius: .6rem; background: oklch(from var(--color-base-200) l c h / .7); margin-top: .5rem; }
+  .method-tab { flex: 1; cursor: pointer; }
+  .method-tab > span { display: block; padding: .5rem .75rem; border-radius: .45rem; text-align: center; font-size: .8125rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .6); transition: background .15s ease, color .15s ease; }
+  .method-tab:has(input:checked) > span { background: var(--color-base-100); color: var(--color-base-content); box-shadow: 0 1px 2px oklch(from var(--color-base-content) l c h / .08); }
+  .connect:has(input[value="oauth"]:checked) [data-src-method="pat"] { display: none; }
+  .connect:has(input[value="pat"]:checked) [data-src-method="oauth"] { display: none; }
+
+  .dtype-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+  .dtype { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border: 1px solid var(--color-base-300); border-radius: .6rem; background: var(--color-base-100); cursor: pointer; text-align: left; transition: border-color .12s ease, background .12s ease; }
+  .dtype:hover { border-color: oklch(from var(--color-primary) l c h / .5); background: oklch(from var(--color-primary) l c h / .04); }
+  .dtype-ic { width: 2rem; height: 2rem; border-radius: .5rem; display: grid; place-items: center; background: oklch(from var(--color-base-200) l c h / .8); flex: none; }
+  .dtype-ic .iconify { font-size: 1rem; color: oklch(from var(--color-base-content) l c h / .7); }
+  .dtype-ic-db { background: oklch(from var(--color-primary) l c h / .1); }
+  .dtype-ic-db .iconify { color: var(--color-primary); }
+  .dtype-name { display: flex; align-items: center; gap: .25rem; font-size: .82rem; font-weight: 600; }
+  .dtype-note { display: block; font-size: 0.75rem; color: oklch(from var(--color-base-content) l c h / .66); }
+
+  /* Inline reconnect (broken row → reconnect in place) is a catalog btn-sm btn-warning;
+     the reconnect drawer's broken-object card is a catalog alert. */
+
+  /* Source-change → base-reset heads-up */
+  .switch-confirm { display: flex; align-items: flex-start; gap: .75rem; margin-top: .75rem; padding: .75rem; border: 1px solid oklch(from var(--color-warning) l c h / .35); border-radius: .6rem; background: oklch(from var(--color-warning) l c h / .08); }
+  .switch-confirm[hidden] { display: none; }
+  .switch-confirm-ic { width: 2rem; height: 2rem; border-radius: .45rem; display: grid; place-items: center; background: oklch(from var(--color-warning) l c h / .15); flex: none; }
+  .switch-confirm-ic .iconify { font-size: 1rem; color: var(--color-warning); }
+  .switch-confirm-title { font-size: .85rem; font-weight: 650; }
+  .switch-confirm-sub { font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .65); margin-top: .1rem; }
+  .switch-confirm-actions { display: flex; gap: .5rem; flex: none; align-self: center; }
+  .bases-reset-note { display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; padding: .5rem .75rem; font-size: .78rem; border-radius: .5rem; color: oklch(from var(--color-base-content) l c h / .8); background: oklch(from var(--color-primary) l c h / .08); border: 1px solid oklch(from var(--color-primary) l c h / .22); }
+  .bases-reset-note[hidden] { display: none; }
+  .bases-reset-note .iconify { font-size: .95rem; flex: none; color: var(--color-primary); }
+
+  /* Positioning is daisyUI's toast (toast-top toast-end); we only lift it above the drawer. */
+  .wz-toast { z-index: 500; }
+  .wz-toast[hidden] { display: none; }
+</style>
+
+<script>
+  import { setButtonLoading } from '../lib/ui';
+
+  function wizard() {
+    const root = document.querySelector<HTMLElement>('[data-wizard]');
+    if (!root) return;
+    const isEdit = root.dataset.mode === 'edit';
+
+    const STEP_KEYS = ['source', 'bases', 'dest', 'options', 'review'];
+    let current = 0;
+
+    const $ = <T extends HTMLElement = HTMLElement>(s: string, r: ParentNode = root) => r.querySelector<T>(s);
+    const $$ = <T extends HTMLElement = HTMLElement>(s: string, r: ParentNode = root) => Array.from(r.querySelectorAll<T>(s));
+    const steps = $$('[data-step-nav]');
+    // Edit-mode tabs are the Schema recipe: real <button role="tab" data-tab="…"> with
+    // `.tab-active` as the ONE source of truth for which panel shows. (They replaced a
+    // radio group whose `:checked` state used to carry that; every reader below — render,
+    // the ?step= deep link, and the change wiring — now goes through these three helpers,
+    // so there is still exactly one place that knows what "active" means.)
+    const tabBtns = $$<HTMLButtonElement>('.sch-gtabs .tab[data-tab]');
+    const activeTab = () => tabBtns.find((b) => b.classList.contains('tab-active'))?.dataset.tab || 'source';
+    const setActiveTab = (key: string) => tabBtns.forEach((b) => {
+      const on = b.dataset.tab === key;
+      b.classList.toggle('tab-active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    const panelFor = (k: string) => $(`.tab-panel[data-step="${k}"]`);
+    const backBtn = $<HTMLButtonElement>('[data-step-back]');
+    const nextBtn = $<HTMLButtonElement>('[data-step-next]');
+    const hint = $('[data-step-hint]');
+    const hintText = $('[data-step-hint-text]');
+    // Has the user tried to leave THIS step while its gate was unsatisfied? Only
+    // then does the amber band earn its place. Reset on every step change and the
+    // moment the gate is cleared.
+    let attempted = false;
+    // The step hint is a catalog soft-warning alert; show it only when there's a
+    // message (a gate to clear, or the last-step heads-up), hide it otherwise.
+    const setHint = (msg: string | null) => {
+      if (hintText) hintText.textContent = msg ?? '';
+      if (hint) hint.hidden = !msg;
+    };
+
+    // Astro scopes styles via a data-astro-cid-* attr; JS-injected nodes lack it,
+    // so stamp the component's cid onto created options to inherit the scoped CSS.
+    const cidAttr = Array.from(root.attributes).find((a) => a.name.startsWith('data-astro-cid-'))?.name;
+    const stamp = (el: HTMLElement) => { if (!cidAttr) return; el.setAttribute(cidAttr, ''); el.querySelectorAll<HTMLElement>('*').forEach((c) => c.setAttribute(cidAttr, '')); };
+
+    const basesChosen = () => $$('[data-base-checkbox]:checked').length;
+    const nameOf = (input?: HTMLElement | null) => input?.closest('.opt-opt')?.querySelector('.opt-name')?.childNodes[0]?.textContent?.trim() ?? 'this connection';
+    // A row is "broken" when its status chip is the amber warn variant (lost access / needs connection).
+    const rowBroken = (input?: HTMLElement | null) => !!input?.closest('.opt-opt')?.querySelector('.opt-chip.badge-warning');
+
+    function gateFor(key: string): string | null {
+      if (key === 'source') {
+        const src = $<HTMLInputElement>('[data-source-radio]:checked');
+        if (!src) return 'Pick or connect an Airtable source to continue.';
+        if (rowBroken(src)) return `Reconnect ${nameOf(src)} to continue — this source has lost access.`;
+      }
+      if (key === 'bases' && basesChosen() === 0) return 'Pick at least one base to continue.';
+      if (key === 'dest') {
+        const file = $<HTMLInputElement>('[data-dest-file-radio]:checked');
+        if (!file) return 'Pick or add a file destination to continue.';
+        if (rowBroken(file)) return `Reconnect ${nameOf(file)} to continue — this destination has lost access.`;
+        const db = $<HTMLInputElement>('[data-dest-db-radio]:checked');
+        if (db && db.value && rowBroken(db)) return `Reconnect ${nameOf(db)} to continue.`;
+      }
+      if (key === 'review') {
+        const broken = [$<HTMLInputElement>('[data-source-radio]:checked'), $<HTMLInputElement>('[data-dest-file-radio]:checked')].find((el) => rowBroken(el));
+        if (broken) return `Reconnect ${nameOf(broken)} before running the first backup.`;
+        const db = $<HTMLInputElement>('[data-dest-db-radio]:checked');
+        if (db && db.value && rowBroken(db)) return `Reconnect ${nameOf(db)} before running the first backup.`;
+      }
+      return null;
+    }
+
+    function fillReview() {
+      const src = $<HTMLInputElement>('[data-source-radio]:checked');
+      const srcName = src?.closest('.opt-opt')?.querySelector('.opt-name')?.childNodes[0]?.textContent?.trim() ?? '—';
+      $('[data-review-source]')!.textContent = srcName;
+      $('[data-review-bases]')!.textContent = `${basesChosen()} base${basesChosen() === 1 ? '' : 's'}`;
+      const file = $<HTMLInputElement>('[data-dest-file-radio]:checked');
+      const fileName = file?.closest('.opt-opt')?.querySelector('.opt-name')?.childNodes[0]?.textContent?.trim() ?? '—';
+      const db = $<HTMLInputElement>('[data-dest-db-radio]:checked');
+      const dbName = db && db.value ? db.closest('.opt-opt')?.querySelector('.opt-name')?.childNodes[0]?.textContent?.trim() : '';
+      $('[data-review-dest]')!.textContent = dbName ? `${fileName} + ${dbName}` : fileName;
+      const freq = $<HTMLInputElement>('[data-frequency]:checked');
+      $('[data-review-schedule]')!.textContent = freq ? freq.value.charAt(0).toUpperCase() + freq.value.slice(1) : 'Monthly';
+      const depth = ['Schema'];
+      if ($<HTMLInputElement>('[data-depth="recordData"]')?.checked) depth.push('Record data');
+      if ($<HTMLInputElement>('[data-depth="attachments"]')?.checked) depth.push('Attachments');
+      $('[data-review-depth]')!.textContent = depth.join(' · ');
+      // Workspaces whose per-workspace auto-add checkbox is currently ON —
+      // read straight off the picker's own group headers so review always
+      // mirrors whatever the Bases step is showing (no separate state to drift).
+      const wsAutoAddOn = $$<HTMLInputElement>('[data-bst-ws-autoadd]:checked').length;
+      $('[data-review-autoadd]')!.textContent = wsAutoAddOn === 0 ? 'None' : `Auto-adding future bases from ${wsAutoAddOn} workspace${wsAutoAddOn === 1 ? '' : 's'}`;
+    }
+
+    function render() {
+      if (isEdit) {
+        const key = activeTab();
+        STEP_KEYS.forEach((k) => panelFor(k)?.classList.toggle('is-active', k === key));
+        // Block Save while a selected object is broken — reconnect in place first.
+        const broken = [$<HTMLInputElement>('[data-source-radio]:checked'), $<HTMLInputElement>('[data-dest-file-radio]:checked')].find((el) => rowBroken(el));
+        const db = $<HTMLInputElement>('[data-dest-db-radio]:checked');
+        const g = broken ? `Reconnect ${nameOf(broken)} to save — it has lost access.`
+          : (db && db.value && rowBroken(db)) ? `Reconnect ${nameOf(db)} to save — it has lost access.` : null;
+        setHint(g ?? null);
+        $<HTMLButtonElement>('[data-save-edit]')?.toggleAttribute('disabled', !!g);
+        return;
+      }
+      steps.forEach((s, i) => {
+        s.classList.toggle('is-current', i === current);
+        s.classList.toggle('is-done', i < current);
+        s.classList.toggle('is-locked', i > current);
+      });
+      STEP_KEYS.forEach((k, i) => panelFor(k)?.classList.toggle('is-active', i === current));
+      const key = STEP_KEYS[current];
+      const last = current === STEP_KEYS.length - 1;
+      if (backBtn) backBtn.hidden = current === 0;
+      const gate = gateFor(key);
+      // An unsatisfied gate stops being an accusation. It used to render as a
+      // permanent amber band above the page heading on EVERY incomplete step,
+      // telling the user they were in violation before they had done anything —
+      // and that band is where most of "there is too much on this screen" came
+      // from. The requirement now lives in the step's own subtitle; the band
+      // appears only once the user has ATTEMPTED to advance, and clears the
+      // instant the gate is satisfied (Oleh 2026-07-29).
+      if (!gate) attempted = false;
+      // Last step's CTA is the prominent "Run first backup" — give it a leading play
+      // icon (lucide--play is already scanned from other views' static markup, so the
+      // mask renders even though we set it via innerHTML). "Next" stays plain.
+      if (nextBtn) {
+        nextBtn.innerHTML = last ? '<span class="iconify lucide--play size-4" aria-hidden="true"></span>Run first backup' : 'Next';
+        // NOT disabled by a gate any more: a disabled button cannot be attempted,
+        // and an attempt is exactly what earns the message. It carries the
+        // unsatisfied state instead, for anyone reading the accessibility tree.
+        nextBtn.removeAttribute('disabled');
+        nextBtn.setAttribute('aria-disabled', gate ? 'true' : 'false');
+      }
+      setHint((attempted && gate ? gate : null) ?? (last ? 'We run your first backup right after this — it can take a moment.' : null));
+      if (key === 'review') fillReview();
+    }
+
+    function go(i: number) { attempted = false; current = Math.max(0, Math.min(STEP_KEYS.length - 1, i)); render(); }
+
+    // Deep-link to a tab (?step=bases) so a shared link lands on the surface it is
+    // about instead of always on Source. EDIT mode only — the setup stepper is
+    // gated, and opening a later step would show one whose gate isn't satisfied.
+    // Edit mode drives the active panel from the active TAB BUTTON, not from `current`.
+    const wantedStep = new URLSearchParams(window.location.search).get('step');
+    if (isEdit) {
+      // Only honour a key that actually has a tab — edit mode drops `review`, so
+      // ?step=review would otherwise clear every tab and show an empty shell.
+      if (wantedStep && tabBtns.some((b) => b.dataset.tab === wantedStep)) setActiveTab(wantedStep);
+    } else if (wantedStep) {
+      // First-run honours it too, by MOVING the stepper rather than bypassing it: `go()`
+      // sets `current`, so every gate, Back/Next state and validation behaves exactly as
+      // if the user had clicked through. Nothing is unlocked — the link only saves the
+      // clicking, which is what makes a step-by-step walkthrough of the setup possible
+      // at all (Oleh 2026-07-29: "хочеться потестити прямо з нуля, крок за кроком").
+      const i = STEP_KEYS.indexOf(wantedStep);
+      if (i > -1) go(i);
+    }
+
+    steps.forEach((s, i) => s.addEventListener('click', () => { if (i <= current) go(i); }));
+    backBtn?.addEventListener('click', () => go(current - 1));
+    nextBtn?.addEventListener('click', () => {
+      // The attempt IS the trigger for the message. Nothing is announced before it.
+      if (gateFor(STEP_KEYS[current])) { attempted = true; render(); hint?.scrollIntoView({ block: 'nearest' }); return; }
+      if (current < STEP_KEYS.length - 1) { go(current + 1); return; }
+      const saveStatus = $<HTMLParagraphElement>('[data-save-status]');
+      setButtonLoading(nextBtn, true);
+      if (saveStatus) { saveStatus.textContent = 'Saving and starting your first backup…'; saveStatus.classList.remove('hidden'); }
+      fetch('/api/spaces/current/backup-config/bases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ atBaseIds: $$('[data-base-checkbox]:checked').map((el) => (el as HTMLInputElement).value) }) }).catch(() => {});
+      // Pass the just-created names + count so the running Home reflects this setup (harness has no persistence).
+      const nameOf = (sel: string) => $<HTMLInputElement>(sel)?.closest('.opt-opt')?.querySelector('.opt-name')?.childNodes[0]?.textContent?.trim();
+      const params = new URLSearchParams({ status: 'running', src: nameOf('[data-source-radio]:checked') || 'Airtable', dest: nameOf('[data-dest-file-radio]:checked') || 'storage', bases: String($$('[data-base-checkbox]:checked').length) });
+      setTimeout(() => { window.location.href = `/?${params.toString()}`; }, 1100);
+    });
+
+    // Cleanup schedule — rebuild the retention ladder for the chosen frequency.
+    const cleanup = $<HTMLElement>('[data-cleanup]');
+    const cleanupTiers: Record<string, string[]> = cleanup ? JSON.parse(cleanup.dataset.tiers || '{}') : {};
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+    function updateCleanup(freq: string) {
+      const ladder = $<HTMLOListElement>('[data-cleanup-ladder]');
+      const freqEl = $<HTMLElement>('[data-cleanup-freq]');
+      const tiers = cleanupTiers[freq] ?? cleanupTiers.monthly ?? [];
+      if (freqEl) freqEl.textContent = cap(freq);
+      if (ladder) ladder.innerHTML = tiers
+        .map((t, i) => `<li class="cleanup-tier"><span class="cleanup-tier-n">${i + 1}</span>${t}</li>`)
+        .join('');
+    }
+
+    // Re-evaluate gates as selections change.
+    root.addEventListener('change', (e) => {
+      const t = e.target as HTMLElement;
+      if (t?.matches?.('[data-source-radio]')) { onSourceChange(t as HTMLInputElement); return; }
+      if (t?.matches?.('[data-base-checkbox]')) { hideBasesResetNote(); render(); return; }
+      if (t?.matches?.('[data-dest-file-radio], [data-dest-db-radio]')) render();
+      if (t?.matches?.('[data-frequency]')) updateCleanup((t as HTMLInputElement).value);
+    });
+
+    // Edit mode: free tabs (jump anywhere) + Save changes.
+    if (isEdit) {
+      tabBtns.forEach((b) => b.addEventListener('click', () => { setActiveTab(b.dataset.tab!); render(); }));
+      $('[data-save-edit]')?.addEventListener('click', () => {
+        const btn = $<HTMLButtonElement>('[data-save-edit]')!;
+        setButtonLoading(btn, true);
+        fetch('/api/spaces/current/backup-config/bases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ atBaseIds: $$('[data-base-checkbox]:checked').map((el) => (el as HTMLInputElement).value) }) }).catch(() => {});
+        setTimeout(() => { window.location.href = '/?status=saved'; }, 800);
+      });
+    }
+
+    // ── Toast ──
+    let toastTimer = 0;
+    const toast = (msg: string) => {
+      const el = $('[data-toast]'); if (!el) return;
+      // daisyUI toast wrapper holds a success alert; aria-live announces it.
+      el.innerHTML = `<div role="status" aria-live="polite" class="alert alert-success shadow-lg"><span class="iconify lucide--circle-check size-4" aria-hidden="true"></span><span>${msg}</span></div>`;
+      el.hidden = false;
+      window.clearTimeout(toastTimer);
+      toastTimer = window.setTimeout(() => { el.hidden = true; }, 2600);
+    };
+
+    // ── Drawers ──
+    // Drawers are the catalog daisyUI Drawer (components/ui/Drawer.astro): open/close
+    // by toggling the panel's checkbox (#wz-drawer-<name>). The overlay, the × and the
+    // Cancel labels close it natively; Esc is wired inside the component.
+    const drawerToggle = (name: string) => document.getElementById(`wz-drawer-${name}`) as HTMLInputElement | null;
+    const openDrawer = (name: string) => { const cb = drawerToggle(name); if (cb) cb.checked = true; };
+    const closeDrawer = (name: string) => { const cb = drawerToggle(name); if (cb) cb.checked = false; };
+    $$('[data-open-drawer]').forEach((b) => b.addEventListener('click', () => openDrawer(b.dataset.openDrawer!)));
+
+    // ── Source create (simulated) ──
+    function injectSourceOption(name: string, method: string) {
+      const panel = $('.panel-source')!;
+      const list = $<HTMLElement>('[data-picker-list]', panel)!;
+      // the Space uses one source at a time → keep the options, just move the selection
+      $$('[data-source-radio]', list).forEach((r) => ((r as HTMLInputElement).checked = false));
+      const baseCount = $$('[data-base-checkbox]').length;
+      const label = document.createElement('label');
+      label.className = 'opt-opt';
+      label.innerHTML = `<input type="radio" name="wz-source" value="src-new" checked class="radio radio-sm radio-primary" data-source-radio />
+        <span class="opt-ic"><img src="/airtable.svg" alt="" width="18" height="18" /></span>
+        <span class="min-w-0 flex-1"><span class="opt-name">${name}</span>
+        <span class="opt-sub">${method === 'pat' ? 'Personal access token' : 'OAuth'} · ${baseCount} bases</span></span>
+        <span class="opt-chip badge badge-soft badge-success"><span class="size-1.5 rounded-full bg-current"></span>Connected</span>`;
+      stamp(label);
+      list.prepend(label);
+      panel.classList.remove('is-empty');
+      // A newly-created source is a fresh base scope — clear any prior selection.
+      const hadBases = $$('[data-base-checkbox]:checked').length;
+      lastSourceId = 'src-new';
+      if (hadBases) { $<HTMLButtonElement>('[data-bst-clear]')?.click(); showBasesResetNote(name); }
+    }
+    $('[data-src-create]')?.addEventListener('click', () => {
+      const btn = $<HTMLButtonElement>('[data-src-create]')!;
+      const nameInput = $<HTMLInputElement>('[data-src-name]');
+      const method = $<HTMLInputElement>('[data-src-connect] input[name="wz-src-method"]:checked')?.value ?? 'oauth';
+      const name = (nameInput?.value || '').trim() || 'Airtable';
+      setButtonLoading(btn, true);
+      setTimeout(() => {
+        setButtonLoading(btn, false);
+        injectSourceOption(name, method);
+        closeDrawer('source');
+        toast(method === 'oauth' ? 'Airtable connected.' : 'Source created.');
+        render();
+      }, 850);
+    });
+
+    // ── Destination create (simulated, type → configure) ──
+    const destPick = $('[data-dest-pick]')!, destConfig = $('[data-dest-config]')!;
+    const destCreateBtn = $<HTMLButtonElement>('[data-dest-create]')!;
+    let pendingDest: { type: string; kind: string; label: string; managed: boolean } | null = null;
+
+    $$('[data-dtype]').forEach((b) => b.addEventListener('click', () => {
+      pendingDest = { type: b.dataset.dtype!, kind: b.dataset.kind!, label: b.dataset.label!, managed: b.dataset.managed === '1' };
+      destPick.hidden = true; destConfig.hidden = false; destCreateBtn.hidden = false;
+      const destPanel = drawerToggle('dest')?.closest('.sb-drawer');
+      const destTitleEl = destPanel?.querySelector('.sb-drawer-title');
+      const destSubEl = destPanel?.querySelector('.sb-drawer-sub');
+      if (destTitleEl) destTitleEl.textContent = `Connect ${pendingDest.label}`;
+      if (destSubEl) destSubEl.textContent = pendingDest.kind === 'database' ? 'Database destination' : 'File storage destination';
+      ($<HTMLInputElement>('[data-dest-name]')!).value = '';
+      ($<HTMLInputElement>('[data-dest-name]')!).placeholder = `${pendingDest.label} backup`;
+      $('[data-dest-field-folder]')!.hidden = !(pendingDest.kind === 'file' && !pendingDest.managed);
+      $('[data-dest-field-conn]')!.hidden = pendingDest.kind !== 'database';
+      $('[data-dest-field-managed]')!.hidden = !pendingDest.managed;
+    }));
+    $('[data-dest-back]')?.addEventListener('click', () => { destPick.hidden = false; destConfig.hidden = true; destCreateBtn.hidden = true; pendingDest = null; });
+
+    // Real service logos for known providers (mirrors the server-side destLogo map).
+    const DEST_LOGO: Record<string, string> = { google_drive: '/brands/google-drive.svg', dropbox: '/brands/dropbox.svg', s3: '/brands/aws.svg' };
+    function injectDestOption(kind: string, name: string, label: string, detail: string, provider: string) {
+      const groupSel = kind === 'database' ? '[data-dest-db]' : '[data-dest-file]';
+      const list = $<HTMLElement>(groupSel)!;
+      const radioName = kind === 'database' ? 'wz-dest-db' : 'wz-dest-file';
+      const dataAttr = kind === 'database' ? 'data-dest-db-radio' : 'data-dest-file-radio';
+      // uncheck siblings
+      $$(`input[name="${radioName}"]`, list).forEach((r) => ((r as HTMLInputElement).checked = false));
+      const logo = DEST_LOGO[provider];
+      const icHtml = kind === 'database'
+        ? '<span class="iconify lucide--database"></span>'
+        : (logo ? `<img src="${logo}" alt="" width="18" height="18" />` : '<span class="iconify lucide--hard-drive"></span>');
+      const el = document.createElement('label');
+      el.className = 'opt-opt';
+      el.innerHTML = `<input type="radio" name="${radioName}" value="dest-new-${kind}" checked class="radio radio-sm radio-primary" ${dataAttr} />
+        <span class="opt-ic ${kind === 'database' ? 'opt-ic-db' : ''}">${icHtml}</span>
+        <span class="min-w-0 flex-1"><span class="opt-name">${name}</span>
+        <span class="opt-sub">${label} · ${detail}</span></span>
+        <span class="opt-chip badge badge-soft badge-success"><span class="size-1.5 rounded-full bg-current"></span>Connected</span>`;
+      stamp(el);
+      list.prepend(el);
+      $('.panel-dest')!.classList.remove('is-empty');
+    }
+    destCreateBtn.addEventListener('click', () => {
+      if (!pendingDest) return;
+      const name = ($<HTMLInputElement>('[data-dest-name]')?.value || '').trim() || `${pendingDest.label} backup`;
+      const detail = pendingDest.kind === 'database'
+        ? 'database ops_mirror'
+        : (pendingDest.managed ? 'managed' : (($<HTMLInputElement>('[data-dest-folder-input]')?.value || '/Baseout').trim()));
+      setButtonLoading(destCreateBtn, true);
+      setTimeout(() => {
+        setButtonLoading(destCreateBtn, false);
+        injectDestOption(pendingDest!.kind, name, pendingDest!.label, detail, pendingDest!.type);
+        closeDrawer('dest');
+        // reset drawer to type-pick for next time
+        destPick.hidden = false; destConfig.hidden = true; destCreateBtn.hidden = true; pendingDest = null;
+        toast('Destination added.');
+        render();
+      }, 850);
+    });
+
+    // ── Reconnect a broken object in place (no kick-out) ──
+    let reconnectingRow: HTMLElement | null = null;
+    $$('[data-reconnect]').forEach((b) => b.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      reconnectingRow = b.closest<HTMLElement>('.opt-opt');
+      const isSecret = b.dataset.reconnectAuth === 'secret';
+      const rowName = reconnectingRow?.querySelector('.opt-name')?.childNodes[0]?.textContent?.trim() || 'this connection';
+      const titleEl = drawerToggle('reconnect')?.closest('.sb-drawer')?.querySelector('.sb-drawer-title'); if (titleEl) titleEl.textContent = `Reconnect ${rowName}`;
+      const nameEl = $('[data-reconnect-name]'); if (nameEl) nameEl.textContent = rowName;
+      const oauth = $<HTMLElement>('[data-reconnect-oauth]'); if (oauth) oauth.hidden = isSecret;
+      const secretField = $<HTMLElement>('[data-reconnect-secret-field]'); if (secretField) secretField.hidden = !isSecret;
+      if (isSecret) { const lbl = $('[data-reconnect-secret-label]'); if (lbl) lbl.textContent = b.dataset.reconnectSecretLabel || 'Secret'; }
+      openDrawer('reconnect');
+    }));
+    $('[data-reconnect-confirm]')?.addEventListener('click', () => {
+      const btn = $<HTMLButtonElement>('[data-reconnect-confirm]')!;
+      setButtonLoading(btn, true);
+      setTimeout(() => {
+        setButtonLoading(btn, false);
+        if (reconnectingRow) {
+          const chip = reconnectingRow.querySelector('.opt-chip');
+          if (chip) { chip.className = 'opt-chip badge badge-soft badge-success'; chip.innerHTML = '<span class="size-1.5 rounded-full bg-current"></span>Connected'; }
+          reconnectingRow.querySelector('[data-reconnect]')?.remove();
+        }
+        closeDrawer('reconnect');
+        reconnectingRow = null;
+        toast('Reconnected.');
+        render();
+      }, 850);
+    });
+
+    // ── Source change resets the base selection (bases belong to a source) ──
+    let lastSourceId = $<HTMLInputElement>('[data-source-radio]:checked')?.value ?? '';
+    let pendingSourceId: string | null = null;
+    const switchConfirm = $<HTMLElement>('[data-switch-confirm]');
+    const sourceRadioByValue = (v: string) => $<HTMLInputElement>(`[data-source-radio][value="${(window.CSS && CSS.escape) ? CSS.escape(v) : v}"]`);
+    const sourceNameByValue = (v: string) => nameOf(sourceRadioByValue(v));
+    function showBasesResetNote(name: string) {
+      const note = $<HTMLElement>('[data-bases-reset-note]'); if (!note) return;
+      const n = $('[data-bases-reset-name]'); if (n) n.textContent = name;
+      note.hidden = false;
+    }
+    function hideBasesResetNote() { const n = $<HTMLElement>('[data-bases-reset-note]'); if (n) n.hidden = true; }
+    function showSwitchConfirm(name: string, count: number) {
+      if (!switchConfirm) return;
+      const nm = $('[data-switch-name]'); if (nm) nm.textContent = name;
+      const ct = $('[data-switch-count]'); if (ct) ct.textContent = String(count);
+      const pl = $('[data-switch-plural]'); if (pl) pl.textContent = count === 1 ? '' : 's';
+      switchConfirm.hidden = false;
+    }
+    function hideSwitchConfirm() { if (switchConfirm) switchConfirm.hidden = true; pendingSourceId = null; }
+    function onSourceChange(radio: HTMLInputElement) {
+      const newId = radio.value;
+      if (newId === lastSourceId) { render(); return; }
+      const n = basesChosen();
+      if (n === 0) { lastSourceId = newId; hideSwitchConfirm(); render(); return; }
+      // bases are at stake — confirm before clearing (keeps the new radio checked meanwhile)
+      pendingSourceId = newId;
+      showSwitchConfirm(sourceNameByValue(newId), n);
+      render();
+    }
+    $('[data-switch-cancel]')?.addEventListener('click', () => {
+      const prev = sourceRadioByValue(lastSourceId); if (prev) prev.checked = true;
+      hideSwitchConfirm(); render();
+    });
+    $('[data-switch-go]')?.addEventListener('click', () => {
+      if (pendingSourceId) lastSourceId = pendingSourceId;
+      $<HTMLButtonElement>('[data-bst-clear]')?.click(); // resets the table count / cap / view too
+      showBasesResetNote(sourceNameByValue(lastSourceId));
+      hideSwitchConfirm();
+      toast('Base selection cleared.');
+      render();
+    });
+
+    render();
+  }
+  wizard();
+  document.addEventListener('astro:after-swap', wizard);
+</script>

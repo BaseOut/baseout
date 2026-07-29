@@ -2,9 +2,15 @@
 import SidebarLayout from '../../layouts/SidebarLayout.astro';
 import IntegrationsSetupWizard from '@web/views/IntegrationsSetupWizard.astro';
 import { getBreadcrumbs } from '@web/lib/config';
-import { FIXTURE_INTEGRATIONS_STATE_SETUP_MANY } from '../../fixtures/integrations';
+import {
+  FIXTURE_INTEGRATIONS_STATE_SETUP_MANY,
+  FIXTURE_INTEGRATIONS_STATE_WS_SINGLE,
+  FIXTURE_INTEGRATIONS_STATE_WS_DENSE,
+  FIXTURE_INTEGRATIONS_STATE_WS_UNKNOWN,
+} from '../../fixtures/integrations';
 import { FIXTURE_SOURCES } from '../../fixtures/sources';
 import { FIXTURE_DESTINATIONS } from '../../fixtures/destinations';
+import { readWsResolveKey, wsResolveProps, markPending, readWsAliasKey, wsAliases } from '../../lib/wsResolve';
 
 const breadcrumbs = getBreadcrumbs('/integrations');
 // ?first=1 (the empty-Overview CTA) = first-run SETUP: no account Sources/Destinations
@@ -36,18 +42,107 @@ const destinations = isFirst
       return { ...d, status: breakDbDest ? ('reconnect' as const) : ('connected' as const) };
     });
 // ?newbases=N marks the last N bases as "discovered since the last backup" (edit mode)
-// to demo the new-bases notify surface. They are unincluded + tagged New.
+// to demo the new-bases notify surface. Half stay unincluded + tagged New (pending
+// review); the other half arrive already isAutoDiscovered + isIncluded — the
+// workspace-auto-enroll outcome of a workspace whose auto-add was already on, so the
+// "Auto-added" badge-ghost has something to render without the user doing anything.
 const newBases = Number(Astro.url.searchParams.get('newbases') ?? '0') || 0;
-const state = isFirst
-  ? FIXTURE_INTEGRATIONS_STATE_SETUP_MANY
+// ?capblocked=1 marks the Operations workspace's auto-add as blocked by the tier cap
+// (mirrors the ?ws= / ?grouped=0 switch pattern below) — demos the cap-blocked chip
+// + adjacent Upgrade link on a workspace header, while auto-add stays operable.
+const capBlockedParam = Astro.url.searchParams.get('capblocked') === '1';
+// Workspace-grouping demo (base-picker-workspace-grouping):
+//   default        → multi-workspace estate (3 workspaces, one large) → grouped
+//   ?ws=single     → single workspace → group headers suppressed (flat)
+//   ?ws=dense      → 12 workspaces → density sanity-check
+//   ?ws=unknown    → some bases lack workspace identity → "Workspace unknown" group
+//   ?grouped=0     → strip workspace identity entirely → today's flat table
+const wsParam = (Astro.url.searchParams.get('ws') ?? '').toLowerCase();
+const wsFixture =
+  wsParam === 'single'
+    ? FIXTURE_INTEGRATIONS_STATE_WS_SINGLE
+    : wsParam === 'dense'
+      ? FIXTURE_INTEGRATIONS_STATE_WS_DENSE
+      : wsParam === 'unknown'
+        ? FIXTURE_INTEGRATIONS_STATE_WS_UNKNOWN
+        : FIXTURE_INTEGRATIONS_STATE_SETUP_MANY;
+const groupingOff = Astro.url.searchParams.get('grouped') === '0';
+const baseState = isFirst
+  ? wsFixture
   : {
-      ...FIXTURE_INTEGRATIONS_STATE_SETUP_MANY,
-      bases: FIXTURE_INTEGRATIONS_STATE_SETUP_MANY.bases.map((b, i, arr) => ({
-        ...b,
-        isIncluded: i < 2,
-        isNew: newBases > 0 && i >= arr.length - newBases,
-      })),
+      ...wsFixture,
+      bases: wsFixture.bases.map((b, i, arr) => {
+        const isNewArrival = newBases > 0 && i >= arr.length - newBases;
+        // Split the new-arrivals cohort: even offsets were auto-added already
+        // (workspace auto-add was on) — included + badged, not "New" anymore;
+        // odd offsets are still pending manual review.
+        const autoAdded = isNewArrival && (i - (arr.length - newBases)) % 2 === 0;
+        return {
+          ...b,
+          isIncluded: i < 2 || autoAdded,
+          isNew: isNewArrival && !autoAdded,
+          isAutoDiscovered: autoAdded,
+        };
+      }),
+      ...(capBlockedParam && wsFixture.enrolledWorkspaces
+        ? {
+            enrolledWorkspaces: wsFixture.enrolledWorkspaces.map((w, i) =>
+              i === 1 ? { ...w, capBlocked: true } : w,
+            ),
+          }
+        : {}),
     };
+// ?wsnames=none — limited-access simulation. Airtable returns the workspace ID on
+// every base regardless of scope, but the workspace NAME only comes with full
+// access. This strips the names (keeping the ids) so the picker renders
+// placeholder "Workspace N" groups + inline rename + the consolidated note.
+// Names are ALL-OR-NOTHING per connection (Oleh 2026-07-28): a connection has one
+// access scope, so there is no half-named state to simulate — every workspace
+// either has its real name or does not. Pending Dan's confirmation.
+const namesWithheld = (Astro.url.searchParams.get('wsnames') ?? '').toLowerCase() === 'none';
+const namedState = namesWithheld
+  ? {
+      ...baseState,
+      bases: baseState.bases.map((b) => (b.workspaceId ? { ...b, workspaceName: undefined } : b)),
+      // Keep the simulated world self-consistent: without full access the standing
+      // "auto-enroll new workspaces" rule cannot run at all (a workspace we were
+      // never granted is invisible to us), so nothing here can have arrived that
+      // way. Leaving enrolledVia:'auto' would render an "Auto-enrolled" badge
+      // asserting something this access level makes impossible.
+      autoEnrollNewWorkspaces: false,
+      ...(baseState.enrolledWorkspaces
+        ? { enrolledWorkspaces: baseState.enrolledWorkspaces.map((w) => ({ ...w, enrolledVia: 'manual' as const })) }
+        : {}),
+    }
+  : baseState;
+// ?wsresolve=flat|resolving|offered|grouped|partial|failed|resumed — the base
+// picker's progressive workspace grouping (see lib/wsResolve.ts). Default is
+// `resolving`, because that is what a real connection actually does on arrival:
+// the flat table is usable immediately and the workspace map catches up.
+const wsKey = readWsResolveKey(Astro.url);
+const wsProps = wsResolveProps(wsKey, namedState.bases.length);
+// ?wsalias=arrived|custom — item 6, the alias swap (see lib/wsResolve.ts).
+const resolvedState = {
+  ...namedState,
+  ...wsProps,
+  bases: markPending(namedState.bases, wsKey),
+  workspaceAliases: wsAliases(readWsAliasKey(Astro.url), namedState.bases),
+};
+const state = groupingOff
+  ? {
+      ...resolvedState,
+      // Strip workspace identity so every base falls into one "unknown" group →
+      // headers suppress → the picker renders today's flat table (the escape hatch).
+      bases: resolvedState.bases.map((b) => ({
+        id: b.id,
+        atBaseId: b.atBaseId,
+        name: b.name,
+        isIncluded: b.isIncluded,
+        isNew: b.isNew,
+        isAutoDiscovered: b.isAutoDiscovered,
+      })),
+    }
+  : resolvedState;
 ---
 
 <SidebarLayout pageTitle={isFirst ? 'Set up backup' : 'Configure backup'} breadcrumbs={breadcrumbs} spaceScoped={true}>
