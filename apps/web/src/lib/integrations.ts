@@ -15,6 +15,7 @@ import {
   connections,
   platforms,
   spaceEvents,
+  spaceWorkspaces,
   storageDestinations,
 } from '../db/schema'
 import { resolveCapabilities } from './capabilities/resolve'
@@ -26,7 +27,50 @@ import type {
   IntegrationsState,
   SpaceEventSummary,
   StorageDestinationSummary,
+  WorkspaceEnrollment,
 } from '../stores/connections'
+
+/**
+ * Map persisted space_workspaces rows onto the picker's enrollment model
+ * (web-workspace-bases). Pure — includedBaseCount is derived from the bases
+ * the state already carries, so the picker's per-workspace counts always
+ * agree with the table beneath them. Workspaces are name-ordered; unnamed
+ * ones sort last (the picker renders them as placeholder "Workspace N").
+ */
+export function deriveWorkspaceEnrollments(
+  rows: {
+    workspaceId: string
+    workspaceName: string | null
+    autoEnrollFutureBases: boolean
+    enrolledVia: string
+    lastCheckedAt: Date | null
+  }[],
+  bases: Pick<BaseSummary, 'workspaceId' | 'isIncluded'>[],
+): WorkspaceEnrollment[] {
+  const includedByWorkspace = new Map<string, number>()
+  for (const b of bases) {
+    if (!b.workspaceId || !b.isIncluded) continue
+    includedByWorkspace.set(b.workspaceId, (includedByWorkspace.get(b.workspaceId) ?? 0) + 1)
+  }
+  return rows
+    .map((r) => ({
+      workspaceId: r.workspaceId,
+      workspaceName: r.workspaceName ?? '',
+      autoAdd: r.autoEnrollFutureBases,
+      enrolledVia: (r.enrolledVia === 'auto' ? 'auto' : 'manual') as 'auto' | 'manual',
+      includedBaseCount: includedByWorkspace.get(r.workspaceId) ?? 0,
+      lastCheckedAt: r.lastCheckedAt?.toISOString() ?? null,
+    }))
+    .sort((a, b) =>
+      a.workspaceName && b.workspaceName
+        ? a.workspaceName.localeCompare(b.workspaceName)
+        : a.workspaceName
+          ? -1
+          : b.workspaceName
+            ? 1
+            : a.workspaceId.localeCompare(b.workspaceId),
+    )
+}
 
 const VALID_FREQUENCIES: ReadonlySet<Frequency> = new Set([
   'monthly',
@@ -105,7 +149,7 @@ export async function getIntegrationsState(
 ): Promise<IntegrationsState> {
   // Stage A — six independent reads fire in parallel. postgres-js queues
   // them on the per-request connection, so we stay within budget.
-  const [connectionRows, baseRows, configRows, caps, eventRows, destinationRows] =
+  const [connectionRows, baseRows, configRows, caps, eventRows, destinationRows, workspaceRows] =
     await Promise.all([
     db
       .select({
@@ -145,6 +189,7 @@ export async function getIntegrationsState(
         storageType: backupConfigurations.storageType,
         nextScheduledAt: backupConfigurations.nextScheduledAt,
         autoAddFutureBases: backupConfigurations.autoAddFutureBases,
+        autoEnrollNewWorkspaces: backupConfigurations.autoEnrollNewWorkspaces,
       })
       .from(backupConfigurations)
       .where(eq(backupConfigurations.spaceId, spaceId))
@@ -177,6 +222,18 @@ export async function getIntegrationsState(
       .from(storageDestinations)
       .where(eq(storageDestinations.spaceId, spaceId))
       .orderBy(desc(storageDestinations.connectedAt)),
+    // Per-workspace enrollment posture (web-workspace-bases) — drives the
+    // picker's workspace auto-add column + the standing auto-enroll card.
+    db
+      .select({
+        workspaceId: spaceWorkspaces.workspaceId,
+        workspaceName: spaceWorkspaces.workspaceName,
+        autoEnrollFutureBases: spaceWorkspaces.autoEnrollFutureBases,
+        enrolledVia: spaceWorkspaces.enrolledVia,
+        lastCheckedAt: spaceWorkspaces.lastCheckedAt,
+      })
+      .from(spaceWorkspaces)
+      .where(eq(spaceWorkspaces.spaceId, spaceId)),
   ])
 
   const [config] = configRows
@@ -309,5 +366,16 @@ export async function getIntegrationsState(
     policy,
     storageDestinations: storageDestinationSummaries,
     unreadEvents,
+    // Workspace-grouped picker (web-workspace-bases promotion, 2026-07-29).
+    // Server-persisted stamping means there is nothing to progressively
+    // resolve — wsResolve stays 'off' and the picker groups from SSR data.
+    // groupByWorkspace default-on; the client remembers an opt-out per Space.
+    // workspaceAliases: persistence follow-up — rename lands via the
+    // workspaces route's workspaceName update, aliases-with-provenance later.
+    enrolledWorkspaces: deriveWorkspaceEnrollments(workspaceRows, bases),
+    autoEnrollNewWorkspaces: config?.autoEnrollNewWorkspaces ?? false,
+    wsResolve: 'off',
+    groupByWorkspace: true,
+    workspaceAliases: [],
   }
 }

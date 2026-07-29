@@ -29,6 +29,20 @@ export interface BaseSummary {
    * back to flat when absent. */
   workspaceId?: string | null
   workspaceName?: string | null
+  /**
+   * True when this base was pulled in automatically (workspace auto-add or a
+   * newly auto-enrolled workspace) during the most recent rediscovery — a
+   * RECENCY flag (same window as `isNew`), cleared by the engine on the next
+   * run. Permanent provenance lives in Settings. (base-picker fork model.)
+   */
+  isAutoDiscovered?: boolean
+  /**
+   * The per-base workspace lookup has not returned YET (progressive
+   * resolution) — a THIRD state, never folded into "no workspaceId"
+   * ("Still matching" bucket vs "No workspace" bucket). Server-persisted
+   * workspace stamping leaves this false/absent.
+   */
+  workspacePending?: boolean
 }
 
 export interface BackupPolicy {
@@ -105,6 +119,50 @@ export interface SpaceEventSummary {
   }
 }
 
+/**
+ * One Airtable workspace's auto-add posture, as tracked by the picker's
+ * per-workspace macro (workspace-auto-enroll). Distinct from `BackupPolicy.
+ * autoAddFutureBases`, which is the legacy single-workspace fallback used
+ * when a connection has no workspace grouping at all.
+ */
+export interface WorkspaceEnrollment {
+  workspaceId: string
+  workspaceName: string
+  /** Whether future bases discovered in this workspace are auto-added, up to the tier cap. */
+  autoAdd: boolean
+  /** How the workspace entered the Space's config — picked by hand, or pulled in by the standing "Auto-enroll new workspaces" rule. */
+  enrolledVia: 'manual' | 'auto'
+  /** Bases from this workspace currently included in the backup. */
+  includedBaseCount: number
+  /** ISO-8601 timestamp of the last rediscovery check, or null if never checked. */
+  lastCheckedAt: string | null
+  /** True when this workspace's auto-add is blocked by the tier's bases-per-Space cap. */
+  capBlocked?: boolean
+}
+
+/**
+ * 'off'       → nothing to say; flat table, no toolbar line.
+ * 'resolving' → the counter line; the table does not move while it ticks.
+ * 'ready'     → the OFFER line; still flat until the user clicks.
+ * 'failed'    → the retry line; flat, and the flat table is still complete.
+ * Server-persisted workspace stamping renders as 'off' — the data is
+ * already there at SSR time, so there is nothing to progressively resolve.
+ */
+export type WorkspaceResolveState = 'off' | 'resolving' | 'ready' | 'failed'
+
+/**
+ * A name the USER typed for an Airtable workspace, stored against the
+ * workspace id with the REASON they typed it: 'placeholder-fill' (typed only
+ * because Airtable withheld the name; the real name takes over when it lands)
+ * vs 'custom' (deliberate; never overridden). Promotion to 'custom' happens
+ * only via the one "Keep mine" prompt.
+ */
+export interface WorkspaceAlias {
+  workspaceId: string
+  alias: string
+  kind: 'placeholder-fill' | 'custom'
+}
+
 export interface IntegrationsState {
   connections: ConnectionSummary[]
   bases: BaseSummary[]
@@ -130,6 +188,33 @@ export interface IntegrationsState {
    * workspace rediscovery; the UI dismisses them via the dismiss route.
    */
   unreadEvents: SpaceEventSummary[]
+  /**
+   * Per-workspace auto-add posture for this Space's connection
+   * (workspace-auto-enroll). Optional — connections without workspace
+   * grouping omit it and the picker falls back to the legacy
+   * `policy.autoAddFutureBases` single toggle.
+   */
+  enrolledWorkspaces?: WorkspaceEnrollment[]
+  /**
+   * Standing rule: a workspace created in Airtable AFTER setup is enrolled
+   * automatically (`enrolledVia: 'auto'`) at the next backup run. Optional,
+   * defaults to false (opt-in). Persisted on
+   * `backup_configurations.auto_enroll_new_workspaces`.
+   */
+  autoEnrollNewWorkspaces?: boolean
+  /** Progressive workspace-lookup state — 'off' under server-persisted stamping. */
+  wsResolve?: WorkspaceResolveState
+  /** Bases whose workspace is known so far (progressive mode only). */
+  wsResolvedCount?: number
+  /** Bases the lookup has to get through in total (progressive mode only). */
+  wsTotalCount?: number
+  /**
+   * The user's remembered answer to "Group by workspace?" for this
+   * connection. Grouped by default; a user who switches it off stays off.
+   */
+  groupByWorkspace?: boolean
+  /** Names the user typed for workspaces, with the reason they typed them. */
+  workspaceAliases?: WorkspaceAlias[]
 }
 
 export const $integrations = atom<IntegrationsState | null>(null)

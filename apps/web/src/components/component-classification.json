@@ -1,21 +1,29 @@
 {
+  "backups/FrequencyPicker.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Backup-cadence control (web-instant-webhook) composed from daisyUI radio rows (the wizard's schedule pattern) plus the Select and Button primitives; the Instant tier/dynamic-DB gating and save-error mapping live in lib/backups/frequency-picker.ts."
+  },
+  "backups/RunBackupNowModal.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Thin product configuration of the ConfirmModal primitive \u2014 the credits-warning confirm for an on-demand backup. Documented via the confirm-modal styleguide entry; not a standalone pattern."
+  },
+  "integrations/BasePickerRow.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-base-picker",
+    "designHarnessPath": "pages/integrations/configure.astro",
+    "rationale": "One base row of the workspace-grouped picker (checkbox leaf + provenance badges); split from BaseSelectionTable so the grid template is shared by head/group/row."
+  },
+  "integrations/BaseSelectionTable.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-base-picker",
+    "designHarnessPath": "pages/integrations/configure.astro",
+    "rationale": "Workspace-grouped base picker (ui-only@9a8b448 promotion) composed from daisyUI checkbox/toggle/progress/badge and the shared entity typeahead; groups bases by Airtable workspace from SSR-persisted identity, flat-table fallback, styles in global.css per governance."
+  },
   "layout/Inbox.astro": {
     "classification": "storybook-pattern",
     "styleguideId": "pattern-inbox",
     "designHarnessPath": "pages/index.astro",
     "rationale": "Notification-center side panel composed from daisyUI tabs (tabs-border lane switcher), badge (counts, Space and Handled chips), btn (row actions, Mark all read, Clear), and dropdown (the ff-trigger/ff-panel filter menu from the shared facet-filter stylesheet); Storybook documents structure and the zero-states, apps/design drives the fixture feed and triage behaviour."
-  },
-  "patterns/ConnectionHealthBanner.astro": {
-    "classification": "storybook-pattern",
-    "styleguideId": "pattern-connection-health",
-    "designHarnessPath": "pages/connection-banner.astro",
-    "rationale": "App-shell connection-health warning bar composed from daisyUI alert-soft, the Button primitive, and Lucide icons; Storybook documents the state matrix, apps/design validates the collapse↔pill behavior."
-  },
-  "patterns/ConnectionHealthPill.astro": {
-    "classification": "storybook-pattern",
-    "styleguideId": "pattern-connection-health",
-    "designHarnessPath": "pages/connection-banner.astro",
-    "rationale": "Compact topbar form of the connection-health banner (daisyUI alert-soft pill); shares getBannerConfig with the bar and re-expands it."
   },
   "patterns/AppShellHeader.astro": {
     "classification": "storybook-pattern",
@@ -41,11 +49,23 @@
     "designHarnessPath": "pages/index.astro",
     "rationale": "Product-specific Source to Bases to Destination pipeline, backed by Badge primitives."
   },
-  "patterns/BaseSelectionTable.astro": {
+  "patterns/BaseSelectionTable.legacy.astro": {
     "classification": "storybook-pattern",
     "styleguideId": "pattern-table-toolbar",
     "designHarnessPath": "pages/integrations/configure/bases.astro",
-    "rationale": "Large Airtable base selection table composed from daisyUI checkbox, input, and pagination controls."
+    "rationale": "LEGACY rollback target for the workspace-grouped picker promotion (2026-07-29) \u2014 superseded by integrations/BaseSelectionTable.astro; unrouted, kept per the ui-sync promotion convention."
+  },
+  "patterns/ConnectionHealthBanner.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-connection-health",
+    "designHarnessPath": "pages/connection-banner.astro",
+    "rationale": "App-shell connection-health warning bar composed from daisyUI alert-soft, the Button primitive, and Lucide icons; Storybook documents the state matrix, apps/design validates the collapse\u2194pill behavior."
+  },
+  "patterns/ConnectionHealthPill.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-connection-health",
+    "designHarnessPath": "pages/connection-banner.astro",
+    "rationale": "Compact topbar form of the connection-health banner (daisyUI alert-soft pill); shares getBannerConfig with the bar and re-expands it."
   },
   "patterns/DefinitionList.astro": {
     "classification": "storybook-pattern",
@@ -63,7 +83,7 @@
     "classification": "storybook-pattern",
     "styleguideId": "pattern-export-control",
     "designHarnessPath": "pages/schema.astro",
-    "rationale": "One export affordance per Schema tab, repurposing catalog primitives — the daisyUI dropdown/join/btn set plus the shared ff-trigger/ff-panel facet language — and replacing the per-tab divergent format pickers with a single scope-aware, format-named control."
+    "rationale": "One export affordance per Schema tab, repurposing catalog primitives \u2014 the daisyUI dropdown/join/btn set plus the shared ff-trigger/ff-panel facet language \u2014 and replacing the per-tab divergent format pickers with a single scope-aware, format-named control."
   },
   "patterns/MetaBlock.astro": {
     "classification": "storybook-pattern",
@@ -100,6 +120,12 @@
     "styleguideId": "pattern-setup-stepper",
     "designHarnessPath": "pages/welcome.astro",
     "rationale": "Setup flow stepper chrome for gated wizard surfaces."
+  },
+  "schema/EntitySearch.astro": {
+    "classification": "storybook-pattern",
+    "styleguideId": "pattern-entity-typeahead",
+    "designHarnessPath": "pages/schema.astro",
+    "rationale": "Shared entity typeahead (ui-only@9a8b448) \u2014 one search field that filters in place and offers a grouped dropdown; reused by the base picker and Schema Browse; styles in global.css."
   },
   "ui/Alert.astro": {
     "classification": "ui-primitive-storybook",
@@ -140,6 +166,11 @@
     "classification": "ui-primitive-storybook",
     "styleguideId": "checkbox-toggle",
     "rationale": "Reusable boolean input primitive backed by daisyUI checkbox styling."
+  },
+  "ui/ConfirmModal.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "confirm-modal",
+    "rationale": "Reusable confirmation-dialog primitive built on the Modal primitive (daisyUI dialog) \u2014 Cancel + a confirm action with an optional consequence Alert."
   },
   "ui/CreateSpaceModal.astro": {
     "classification": "storybook-pattern",
@@ -196,18 +227,5 @@
     "classification": "ui-primitive-storybook",
     "styleguideId": "checkbox-toggle",
     "rationale": "Reusable boolean switch primitive backed by daisyUI toggle styling."
-  },
-  "ui/ConfirmModal.astro": {
-    "classification": "ui-primitive-storybook",
-    "styleguideId": "confirm-modal",
-    "rationale": "Reusable confirmation-dialog primitive built on the Modal primitive (daisyUI dialog) — Cancel + a confirm action with an optional consequence Alert."
-  },
-  "backups/RunBackupNowModal.astro": {
-    "classification": "daisyui-direct-styleguide",
-    "rationale": "Thin product configuration of the ConfirmModal primitive — the credits-warning confirm for an on-demand backup. Documented via the confirm-modal styleguide entry; not a standalone pattern."
-  },
-  "backups/FrequencyPicker.astro": {
-    "classification": "daisyui-direct-styleguide",
-    "rationale": "Backup-cadence control (web-instant-webhook) composed from daisyUI radio rows (the wizard's schedule pattern) plus the Select and Button primitives; the Instant tier/dynamic-DB gating and save-error mapping live in lib/backups/frequency-picker.ts."
   }
 }

@@ -8,7 +8,7 @@
  * the shared BaseSelectionTable. "Done" returns to the setup flow.
  */
 import Button from '../components/ui/Button.astro';
-import BaseSelectionTable from '../components/patterns/BaseSelectionTable.astro';
+import BaseSelectionTable from '../components/integrations/BaseSelectionTable.astro';
 import type { IntegrationsState } from '../stores/connections';
 
 interface Props {
@@ -41,7 +41,16 @@ const backHref = `/integrations/configure${isFirstSetup ? '?first=1' : ''}`;
     </div>
   </div>
 
-  <BaseSelectionTable bases={bases} cap={cap} spaceId={spaceId} autoAdd={state.policy.autoAddFutureBases} />
+  <BaseSelectionTable
+    bases={bases}
+    cap={cap}
+    spaceId={spaceId}
+    enrolledWorkspaces={state.enrolledWorkspaces}
+    autoEnrollNewWorkspaces={state.autoEnrollNewWorkspaces}
+    wsResolve={state.wsResolve}
+    groupByWorkspace={state.groupByWorkspace}
+    workspaceAliases={state.workspaceAliases}
+  />
 </div>
 
 <style>

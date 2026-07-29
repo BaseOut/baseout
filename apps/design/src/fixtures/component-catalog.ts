@@ -173,3 +173,46 @@ export const exportControlVariants = [
 // fixture module (fixtures/inbox.ts) so the design harness and the Storybook
 // story render the same feed.
 export { inboxItems as inboxFixture, inboxEmpty as inboxEmptyFixture } from './inbox';
+
+/** Workspace-grouped variant of the base picker (integrations/BaseSelectionTable). */
+export const baseSelectionGroupedFixture = {
+  bases: [
+    { id: 'base-1', atBaseId: 'appMkt1', name: 'Marketing', isIncluded: true, workspaceId: 'wspMkt', workspaceName: 'Marketing' },
+    { id: 'base-2', atBaseId: 'appMkt2', name: 'Campaign calendar', isIncluded: false, workspaceId: 'wspMkt', workspaceName: 'Marketing' },
+    { id: 'base-3', atBaseId: 'appOps1', name: 'Inventory', isIncluded: true, workspaceId: 'wspOps', workspaceName: 'Operations' },
+    { id: 'base-4', atBaseId: 'appNone', name: 'Scratch', isIncluded: false, workspaceId: null, workspaceName: null },
+  ],
+  cap: 5,
+  spaceId: '00000000-0000-4000-8000-000000000001',
+  embedded: true,
+  enrolledWorkspaces: [
+    { workspaceId: 'wspMkt', workspaceName: 'Marketing', autoAdd: true, enrolledVia: 'manual', includedBaseCount: 1, lastCheckedAt: null },
+    { workspaceId: 'wspOps', workspaceName: 'Operations', autoAdd: false, enrolledVia: 'auto', includedBaseCount: 1, lastCheckedAt: null },
+  ],
+  autoEnrollNewWorkspaces: false,
+  wsResolve: 'off',
+  groupByWorkspace: true,
+  workspaceAliases: [],
+};
+
+/** One base row of the grouped picker (integrations/BasePickerRow). */
+export const basePickerRowFixture = {
+  base: { id: 'base-1', atBaseId: 'appMkt1', name: 'Marketing', isIncluded: true, workspaceId: 'wspMkt', workspaceName: 'Marketing' },
+  tables: 12,
+  fieldsText: '1,204',
+  fields: 1204,
+  groupId: 'wspMkt',
+  wsName: 'marketing',
+};
+
+/** Shared entity typeahead (schema/EntitySearch) on host-built rows. */
+export const entitySearchFixture = {
+  items: [
+    { kind: 'workspace', id: 'wspMkt', label: 'Marketing', context: '2 bases' },
+    { kind: 'base', id: 'appMkt1', label: 'Marketing', context: 'Marketing workspace' },
+    { kind: 'base', id: 'appOps1', label: 'Inventory', context: 'Operations workspace' },
+  ],
+  groups: { workspace: 'Workspaces', base: 'Bases' },
+  placeholder: 'Search bases and workspaces',
+  pickHint: 'select',
+};

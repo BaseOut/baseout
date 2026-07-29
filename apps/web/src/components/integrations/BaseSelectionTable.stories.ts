@@ -1,11 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/html-vite';
 import BaseSelectionTable from './BaseSelectionTable.astro';
 import { renderAstro } from '../../../.storybook/render-astro';
-import { baseSelectionFixture } from '../../../../design/src/fixtures/component-catalog';
+import { baseSelectionGroupedFixture } from '../../../../design/src/fixtures/component-catalog';
 
 const meta: Meta = {
   title: 'Patterns/BaseSelectionTable',
-  loaders: [async () => ({ html: await renderAstro(BaseSelectionTable, { props: baseSelectionFixture }) })],
+  loaders: [async () => ({ html: await renderAstro(BaseSelectionTable, { props: baseSelectionGroupedFixture }) })],
   render: (_args, { loaded }) => loaded.html,
 };
 export default meta;

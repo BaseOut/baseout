@@ -15,7 +15,7 @@
  * the Source resets the base selection; reconnect happens in-context; no draft of
  * an abandoned wizard. Destination = 1 file (required) + 1 optional database.
  */
-import BaseSelectionTable from '../components/patterns/BaseSelectionTable.astro';
+import BaseSelectionTable from '../components/integrations/BaseSelectionTable.astro';
 import BackLink from '../components/ui/BackLink.astro';
 import Button from '../components/ui/Button.astro';
 import Badge from '../components/ui/Badge.astro';
@@ -194,7 +194,19 @@ const initialSchemaFreq = state.policy.schemaFrequency ?? state.policy.frequency
         <div class="panel-head"><h2>Which bases to back up</h2><p>Pick the bases this Space protects. Search, sort, or select all up to your plan limit.</p></div>
         <p class="bases-reset-note" data-bases-reset-note hidden><span class="iconify lucide--info"></span> Base selection cleared — these are the bases for <span class="font-medium" data-bases-reset-name>—</span>. Pick the ones to back up.</p>
         {bases.length > 0 ? (
-          <BaseSelectionTable bases={bases} cap={cap} spaceId={spaceId} embedded={true} />
+          <BaseSelectionTable
+            bases={bases}
+            cap={cap}
+            spaceId={spaceId}
+            embedded={true}
+            enrolledWorkspaces={state.enrolledWorkspaces}
+            autoEnrollNewWorkspaces={state.autoEnrollNewWorkspaces}
+            wsResolve={state.wsResolve}
+            wsResolvedCount={state.wsResolvedCount}
+            wsTotalCount={state.wsTotalCount}
+            groupByWorkspace={state.groupByWorkspace}
+            workspaceAliases={state.workspaceAliases}
+          />
         ) : (
           <p class="text-sm text-base-content/60">The selected source didn't reveal any bases. <button type="button" class="link link-hover font-medium" data-open-drawer="source">Pick another source</button>.</p>
         )}
