@@ -1061,7 +1061,25 @@ const initialSchemaFreq = state.policy.schemaFrequency ?? state.policy.frequency
       openDrawer('reconnect');
     }));
     $('[data-reconnect-confirm]')?.addEventListener('click', () => {
-      if (isProd) { toast('Reconnecting here is coming soon — reconnect from the Integrations page.'); return; }
+      if (isProd) {
+        // Real Airtable OAuth re-consent: same POST-form pattern as the
+        // source-create drawer above. The callback upserts fresh tokens onto
+        // the SAME Connection (persistAirtableConnection keys on the Airtable
+        // user id) and returns into this wizard.
+        const btn = $<HTMLButtonElement>('[data-reconnect-confirm]')!;
+        setButtonLoading(btn, true);
+        const f = document.createElement('form');
+        f.method = 'POST';
+        f.action = '/api/connections/airtable/start';
+        const rt = document.createElement('input');
+        rt.type = 'hidden';
+        rt.name = 'returnTo';
+        rt.value = window.location.pathname + window.location.search;
+        f.appendChild(rt);
+        document.body.appendChild(f);
+        f.submit();
+        return;
+      }
       const btn = $<HTMLButtonElement>('[data-reconnect-confirm]')!;
       setButtonLoading(btn, true);
       setTimeout(() => {
