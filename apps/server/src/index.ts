@@ -10,6 +10,7 @@ import { internalPingHandler } from "./pages/api/internal/ping";
 import { dbSmokeHandler } from "./pages/api/internal/db-smoke";
 import { triggerSmokeHandler } from "./pages/api/internal/trigger-smoke";
 import { whoamiHandler } from "./pages/api/internal/connections/whoami";
+import { connectionsWorkspacesHandler } from "./pages/api/internal/connections/workspaces";
 import {
   connectionDOProxyHandler,
   type ConnectionDOProxyAction,
@@ -43,6 +44,10 @@ import { spacesHealthPromptHandler } from "./pages/api/internal/spaces/health-pr
 import { spacesHealthEnableHandler } from "./pages/api/internal/spaces/health-enable";
 import { spacesHealthConfigHandler } from "./pages/api/internal/spaces/health-config";
 import { spacesRecordsSyncHandler } from "./pages/api/internal/spaces/records-sync";
+import { spacesCommentsSyncHandler } from "./pages/api/internal/spaces/comments-sync";
+import { spacesCommentsPlanHandler } from "./pages/api/internal/spaces/comments-plan";
+import { spacesMediaSyncHandler } from "./pages/api/internal/spaces/media-sync";
+import { spacesMediaHandler } from "./pages/api/internal/spaces/media";
 import { spacesIncrementalApplyHandler } from "./pages/api/internal/spaces/incremental-apply";
 import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
 import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
@@ -80,6 +85,8 @@ import { runScheduledWebhookRenewal } from "./lib/cron/webhook-renewal-deps";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
+const CONNECTIONS_WORKSPACES_RE =
+  /^\/api\/internal\/connections\/([^/]+)\/workspaces$/;
 const CONNECTIONS_DO_PROXY_RE =
   /^\/api\/internal\/connections\/([^/]+)\/(lock|unlock|token)$/;
 const RUNS_START_RE = /^\/api\/internal\/runs\/([^/]+)\/start$/;
@@ -134,6 +141,17 @@ const SPACES_MIGRATE_SCHEMA_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/migrate-schema$/;
 const SPACES_RECORDS_SYNC_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/records-sync$/;
+// Batched comment captures + count-delta refresh planning (server-comments).
+const SPACES_COMMENTS_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/comments-sync$/;
+const SPACES_COMMENTS_PLAN_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/comments-plan$/;
+// Media index: batched metadata ingest + the Media Library read API
+// (server-media-index). The read regex captures the subpath after /media.
+const SPACES_MEDIA_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/media-sync$/;
+const SPACES_MEDIA_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/media(?:\/(.*))?$/;
 // Incremental (webhook-driven) per-space apply seam (server-dynamic-mode).
 const SPACES_INCREMENTAL_APPLY_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/incremental-apply$/;
@@ -248,6 +266,14 @@ export default {
       if (url.pathname === "/api/internal/__do-smoke") {
         const id = env.CONNECTION_DO.idFromName("smoke-test");
         return await env.CONNECTION_DO.get(id).fetch(request);
+      }
+
+      // MCP workspace listing for the picker's grouping (server-mcp-workspaces).
+      if (request.method === "GET") {
+        const workspaces = CONNECTIONS_WORKSPACES_RE.exec(url.pathname);
+        if (workspaces) {
+          return await connectionsWorkspacesHandler(request, env, ctx, locals, workspaces[1]!);
+        }
       }
 
       if (request.method === "POST") {
@@ -442,6 +468,22 @@ export default {
       const recordsSync = SPACES_RECORDS_SYNC_RE.exec(url.pathname);
       if (recordsSync) {
         return await spacesRecordsSyncHandler(request, env, ctx, locals, recordsSync[1]!);
+      }
+      const commentsSync = SPACES_COMMENTS_SYNC_RE.exec(url.pathname);
+      if (commentsSync) {
+        return await spacesCommentsSyncHandler(request, env, ctx, locals, commentsSync[1]!);
+      }
+      const commentsPlan = SPACES_COMMENTS_PLAN_RE.exec(url.pathname);
+      if (commentsPlan) {
+        return await spacesCommentsPlanHandler(request, env, ctx, locals, commentsPlan[1]!);
+      }
+      const mediaSync = SPACES_MEDIA_SYNC_RE.exec(url.pathname);
+      if (mediaSync) {
+        return await spacesMediaSyncHandler(request, env, ctx, locals, mediaSync[1]!);
+      }
+      const media = SPACES_MEDIA_RE.exec(url.pathname);
+      if (media) {
+        return await spacesMediaHandler(request, env, ctx, locals, media[1]!, media[2] ?? "");
       }
 
       // Incremental (webhook-driven) apply seam — the workflows

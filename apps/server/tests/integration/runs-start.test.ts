@@ -103,6 +103,7 @@ function makeDeps(): DepsBag {
     enqueueBackupBase: vi.fn(async (_p: unknown) => ({ id: `run_${Date.now()}` })),
     resolveInterfacesEnabled: vi.fn(async () => false),
     resolveAutomationsEnabled: vi.fn(async () => false),
+    resolveCommentsEnabled: vi.fn(async () => false),
   };
 }
 
@@ -192,6 +193,8 @@ describe("processRunStart — happy path", () => {
       kind: "full",
       interfacesEnabled: false,
       automationsEnabled: false,
+      commentsEnabled: false,
+      viewCaptureMode: "mcp", // fixture connection is non-enterprise (server-mcp-views)
     });
     expect(second?.[0]).toEqual({
       runId: RUN_ID,
@@ -208,6 +211,8 @@ describe("processRunStart — happy path", () => {
       kind: "full",
       interfacesEnabled: false,
       automationsEnabled: false,
+      commentsEnabled: false,
+      viewCaptureMode: "mcp",
     });
   });
 
@@ -467,5 +472,125 @@ describe("processRunStart — automations_enabled tier gate (server-mcp-automati
 
     expect(deps.enqueueBackupBase).toHaveBeenCalledTimes(2);
     expect(deps.resolveAutomationsEnabled).toHaveBeenCalledTimes(1);
+  });
+});
+
+// server-mcp-workspaces: the run-start auto-enroll pre-step is optional and
+// failure-isolated — it may never fail or delay the run.
+describe("processRunStart — workspace auto-enroll pre-step", () => {
+  it("calls the dep BEFORE fetchIncludedBases with the run's identifiers", async () => {
+    const deps = makeDeps();
+    const order: string[] = [];
+    const runWorkspaceAutoEnroll = vi.fn(async () => {
+      order.push("auto-enroll");
+      return { ok: true, enrolledWorkspaces: 0, added: 0, skipped: 0 };
+    });
+    deps.fetchIncludedBases = vi.fn(async () => {
+      order.push("fetch-bases");
+      return [{ atBaseId: "appAAA111", name: "Tasks" }];
+    });
+
+    const result = await processRunStart(
+      { runId: RUN_ID },
+      { ...deps, runWorkspaceAutoEnroll, now: () => NOW },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(order).toEqual(["auto-enroll", "fetch-bases"]);
+    expect(runWorkspaceAutoEnroll).toHaveBeenCalledWith({
+      spaceId: SPACE_ID,
+      connectionId: CONNECTION_ID,
+      organizationId: ORG_ID,
+      configId: CONFIG_ID,
+    });
+  });
+
+  it("a rejecting dep never fails the run (failure isolation)", async () => {
+    const deps = makeDeps();
+    const runWorkspaceAutoEnroll = vi.fn(async () => {
+      throw new Error("mcp exploded");
+    });
+
+    const result = await processRunStart(
+      { runId: RUN_ID },
+      { ...deps, runWorkspaceAutoEnroll, now: () => NOW },
+    );
+
+    expect(result.ok).toBe(true);
+    expect(deps.enqueueBackupBase).toHaveBeenCalledTimes(2);
+  });
+
+  it("absent dep = pre-change behavior exactly", async () => {
+    const deps = makeDeps();
+    const result = await processRunStart({ runId: RUN_ID }, { ...deps, now: () => NOW });
+    expect(result.ok).toBe(true);
+  });
+});
+
+// server-comments: commentsEnabled stamped per run (rides the record-backup
+// tier — recommended stance pending Dan).
+describe("processRunStart — commentsEnabled stamp", () => {
+  it("stamps commentsEnabled: true when the tier gate resolves open", async () => {
+    const deps = makeDeps();
+    deps.resolveCommentsEnabled = vi.fn(async () => true);
+
+    await processRunStart({ runId: RUN_ID }, { ...deps, now: () => NOW });
+
+    for (const call of deps.enqueueBackupBase.mock.calls) {
+      expect(call[0]).toMatchObject({ commentsEnabled: true });
+    }
+    expect(deps.resolveCommentsEnabled).toHaveBeenCalledTimes(1); // once per run
+  });
+
+  it("gates independently of the other capture flags", async () => {
+    const deps = makeDeps();
+    deps.resolveCommentsEnabled = vi.fn(async () => true);
+    deps.resolveInterfacesEnabled = vi.fn(async () => false);
+
+    await processRunStart({ runId: RUN_ID }, { ...deps, now: () => NOW });
+
+    for (const call of deps.enqueueBackupBase.mock.calls) {
+      expect(call[0]).toMatchObject({ commentsEnabled: true, interfacesEnabled: false });
+    }
+  });
+});
+
+// server-mcp-views: viewCaptureMode stamped per run from the connection's
+// enterprise scope, honoring the dev override.
+describe("processRunStart — viewCaptureMode stamp", () => {
+  it("stamps 'rest' for an enterprise-scope connection (today's path)", async () => {
+    const deps = makeDeps();
+    deps.fetchConnectionById = vi.fn(async () =>
+      makeConnection({ platformConfig: { is_enterprise_scope: true } }),
+    );
+
+    await processRunStart({ runId: RUN_ID }, { ...deps, now: () => NOW });
+
+    for (const call of deps.enqueueBackupBase.mock.calls) {
+      expect(call[0]).toMatchObject({ viewCaptureMode: "rest" });
+    }
+  });
+
+  it("stamps 'mcp' for a non-enterprise connection (the widening)", async () => {
+    const deps = makeDeps();
+
+    await processRunStart({ runId: RUN_ID }, { ...deps, now: () => NOW });
+
+    for (const call of deps.enqueueBackupBase.mock.calls) {
+      expect(call[0]).toMatchObject({ viewCaptureMode: "mcp" });
+    }
+  });
+
+  it('viewCaptureOverride "1" stamps \'rest\' regardless of scope (legacy dev escape)', async () => {
+    const deps = makeDeps();
+
+    await processRunStart(
+      { runId: RUN_ID },
+      { ...deps, viewCaptureOverride: "1", now: () => NOW },
+    );
+
+    for (const call of deps.enqueueBackupBase.mock.calls) {
+      expect(call[0]).toMatchObject({ viewCaptureMode: "rest" });
+    }
   });
 });

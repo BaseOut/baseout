@@ -11,8 +11,8 @@ import * as pg from "../src/space/pg";
 import * as sqlite from "../src/space/sqlite";
 
 describe("SPACE_SCHEMA_VERSION", () => {
-  test("bumped to 8 for the webhook deltas", () => {
-    expect(SPACE_SCHEMA_VERSION).toBe(8);
+  test("at 10 (v8 webhook deltas, v9 comments, v10 media index)", () => {
+    expect(SPACE_SCHEMA_VERSION).toBe(10);
   });
 });
 

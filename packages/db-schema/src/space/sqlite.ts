@@ -460,3 +460,70 @@ export const inboxMutes = sqliteTable('bo_at_inbox_mutes', {
   baseId: text('base_id').primaryKey(),
   createdAt: text('created_at'),
 })
+
+// ---- Record comments (server-comments) ---- Mirror of pg.ts comments.
+export const comments = sqliteTable('bo_at_comments', {
+  id: text('id').primaryKey(),
+  airtableCommentId: text('airtable_comment_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('airtable_table_id').notNull(),
+  recordId: text('airtable_record_id').notNull(),
+  author: text('author', { mode: 'json' }),
+  text: text('text'),
+  airtableCreatedAt: text('airtable_created_at'),
+  airtableLastUpdatedAt: text('airtable_last_updated_at'),
+  raw: text('raw', { mode: 'json' }),
+  status: text('status').notNull().default('active'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({
+  byRecord: index('bo_at_comments_record_idx').on(t.recordId),
+  byBase: index('bo_at_comments_base_idx').on(t.baseId),
+  uniqComment: uniqueIndex('bo_at_comments_comment_uq').on(t.airtableCommentId),
+}))
+
+// ---- Media index (server-media-index) ---- Mirror of pg.ts assets/assetRefs.
+export const assets = sqliteTable('bo_at_assets', {
+  id: text('id').primaryKey(),
+  checksum: text('checksum').notNull(),
+  contentType: text('content_type'),
+  contentClass: text('content_class').notNull().default('other'),
+  sizeBytes: integer('size_bytes'),
+  storageKind: text('storage_kind'),
+  storageProvider: text('storage_provider'),
+  storageRef: text('storage_ref'),
+  thumbnailStatus: text('thumbnail_status').notNull().default('none'),
+  thumbnailKey: text('thumbnail_key'),
+  zeroRefSince: text('zero_ref_since'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({
+  uniqChecksum: uniqueIndex('bo_at_assets_checksum_uq').on(t.checksum),
+  byClass: index('bo_at_assets_class_idx').on(t.contentClass),
+  keyset: index('bo_at_assets_keyset_idx').on(t.firstSeenAt, t.id),
+}))
+
+export const assetRefs = sqliteTable('bo_at_asset_refs', {
+  id: text('id').primaryKey(),
+  assetId: text('asset_id').notNull(),
+  airtableAttachmentId: text('airtable_attachment_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('table_id').notNull(),
+  recordId: text('record_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  filename: text('filename'),
+  status: text('status').notNull().default('active'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({
+  uniqAttachment: uniqueIndex('bo_at_asset_refs_attachment_uq').on(t.airtableAttachmentId),
+  byAsset: index('bo_at_asset_refs_asset_idx').on(t.assetId),
+  byRecord: index('bo_at_asset_refs_record_idx').on(t.recordId),
+  byBase: index('bo_at_asset_refs_base_idx').on(t.baseId),
+}))

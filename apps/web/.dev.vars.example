@@ -54,6 +54,14 @@ EMAIL_FROM=
 AIRTABLE_OAUTH_CLIENT_ID=
 AIRTABLE_OAUTH_CLIENT_SECRET=
 
+# ─── Airtable SSO login app (web-auth-airtable-sso) ───────────────────────────
+# SEPARATE minimal-scope OAuth app for "Continue with Airtable" — NOT the
+# Connect integration above. Registration pending (change task 0.1); leaving
+# both blank keeps SSO hidden with zero behavior change. Callback path:
+# /api/auth/oauth2/callback/airtable
+AIRTABLE_LOGIN_OAUTH_CLIENT_ID=
+AIRTABLE_LOGIN_OAUTH_CLIENT_SECRET=
+
 # Dev-only: when "1", impersonate airtable.com via /api/stub/airtable/* so the
 # OAuth round-trip runs without real creds (oauth-setup.md §5.3). Never in prod.
 AIRTABLE_STUBS_ENABLED=

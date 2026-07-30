@@ -7,14 +7,24 @@
 // whether to follow up with /records-sync. Runs regardless of records_enabled —
 // the per-Space DB always holds schema.
 //
-// bo_at_views capture is gated to Airtable-Enterprise connections
-// (system-per-space-db §8.2, view-capture.ts): non-Enterprise captures have
-// views stripped up front and the diff skips the views block, while the
-// base's still-active view rows are swept to `unknown` in the same
-// transaction. VIEW_CAPTURE_OVERRIDE="1" (dev Worker only) opens the gate for
-// every connection (server-view-capture-override). After the sync,
-// the per-table query matviews are regenerated best-effort when records are
-// enabled (§4.2, query-views-io.ts).
+// bo_at_views capture is per-run MODE-resolved (server-mcp-views,
+// view-capture.ts): 'rest' (enterprise-scope connection) keeps views inside
+// the REST schema payload exactly as before; 'mcp' (everyone else) strips
+// REST views and instead persists the optional `views` field below; 'off'
+// (unresolvable run) captures nothing. Still-active view rows are swept to
+// `unknown` only when NO source sighted views this run (design Decision 3).
+// VIEW_CAPTURE_OVERRIDE="1" (dev Worker only) resolves 'rest' for every
+// connection (server-view-capture-override). After the sync, the per-table
+// query matviews are regenerated best-effort when records are enabled
+// (§4.2, query-views-io.ts).
+//
+// Optional `views` field (server-mcp-views): the per-table aggregation of MCP
+// list_views_for_table envelopes + capturedAt (views-sync.ts owns the wire
+// type). When present on a non-'rest' run, view entities are extracted,
+// diffed against the prior bo_at_views working set, and persisted in the SAME
+// transaction as the schema diff. An absent field means no view processing
+// (never "all views deleted"); a 'rest'-mode run ignores the field (REST wins
+// — the sources never race, design Decision 1).
 //
 // Optional `interfacePages` field (server-mcp-interface-pages): the raw MCP
 // list_pages_for_base capture + capturedAt. When present, interface entities
@@ -48,13 +58,17 @@ import {
   applyAutomationDiff,
   applyInterfaceDiff,
   applySchemaDiff,
+  applyViewDiff,
   ensureBaseRun,
   markViewsUnknownForBase,
   readAutomationWorkingSet,
   readInterfaceWorkingSet,
   readSchemaWorkingSet,
+  readViewWorkingSet,
+  stampViewsSeenForBase,
   withSpaceSchema,
 } from "../../../../lib/per-space/space-db-pg";
+import { diffViews, parseViewsField } from "../../../../lib/per-space/views-sync";
 import {
   loadDescribeBaseData,
   runDescribeBase,
@@ -65,8 +79,8 @@ import { runEngineHealthScore, workersAiScoreMetric } from "../../../../lib/per-
 import { inferAndWriteSyncedViews } from "../../../../lib/per-space/relationships-io";
 import { regenerateQueryViews } from "../../../../lib/per-space/query-views-io";
 import {
-  resolveViewCaptureForRun,
-  resolveViewCaptureSetting,
+  resolveViewCaptureMode,
+  resolveViewCaptureModeForRun,
   shouldSweepUnknownViews,
   stripCapturedViews,
 } from "../../../../lib/per-space/view-capture";
@@ -104,6 +118,7 @@ export async function spacesSchemaSyncHandler(
     confident?: unknown;
     interfacePages?: unknown;
     automations?: unknown;
+    views?: unknown;
   };
   if (!UUID_RE.test(String(body.backupRunId))) return jsonResponse({ error: "invalid_request" }, 400);
   const captured = body.captured as CapturedBase | undefined;
@@ -139,6 +154,17 @@ export async function spacesSchemaSyncHandler(
     automationSync = { ok: false, reason: parsedAutomations.reason };
   }
 
+  // Optional MCP views capture — same contract again (server-mcp-views).
+  let viewsSync:
+    | { ok: true; added: number; removed: number; updates: number; unchanged: boolean }
+    | { ok: false; reason: string }
+    | undefined;
+  const parsedViews = parseViewsField(body.views);
+  const viewsCapture = parsedViews.kind === "ok" ? parsedViews : null;
+  if (parsedViews.kind === "invalid") {
+    viewsSync = { ok: false, reason: parsedViews.reason };
+  }
+
   const { db: masterDb, sql } = locals.getMasterDb();
   const space = await resolveSpaceDb(masterDb, spaceId);
   if (!space || space.status !== "active") return jsonResponse({ error: "space_db_not_ready" }, 409);
@@ -146,18 +172,26 @@ export async function spacesSchemaSyncHandler(
     return jsonResponse({ error: "backend_not_implemented" }, 501);
   }
 
-  // Enterprise view-capture gate (system-per-space-db §8.2): non-Enterprise
-  // connections get views stripped BEFORE hashing/diffing/storing — neither
-  // bo_at_views, the schema hash, nor the schema_versions JSON carries view
-  // metadata. includeViews=false keeps the diff from confidently "removing"
-  // prior view rows captured before the gate existed; instead a closed gate
-  // sweeps still-active rows to `unknown` inside the sync transaction below.
-  // VIEW_CAPTURE_OVERRIDE="1" (dev Worker only, server-view-capture-override)
-  // opens the gate for every connection without the DB resolution.
-  const viewCapture = await resolveViewCaptureSetting(env.VIEW_CAPTURE_OVERRIDE, () =>
-    resolveViewCaptureForRun(masterDb, backupRunId),
+  // Per-run view-capture mode (server-mcp-views): 'rest' keeps views inside
+  // the REST payload (enterprise scope / dev override — today's path,
+  // byte-identical); every other mode strips them BEFORE hashing/diffing/
+  // storing — neither the schema hash nor the schema_versions JSON carries
+  // view metadata, and views persist solely via the `views` field above.
+  const viewCaptureMode = await resolveViewCaptureMode(env.VIEW_CAPTURE_OVERRIDE, () =>
+    resolveViewCaptureModeForRun(masterDb, backupRunId),
   );
-  const capturedGated = viewCapture ? captured : stripCapturedViews(captured);
+  const restMode = viewCaptureMode === "rest";
+  const capturedGated = restMode ? captured : stripCapturedViews(captured);
+  // Belt-and-braces sighting signal for the sweep rule: a non-'rest' payload
+  // that unexpectedly carried REST views still proves visibility wasn't lost
+  // (the views are stripped from persistence regardless).
+  const restPayloadHadViews = captured.tables.some(
+    (t) => Array.isArray(t.views) && t.views.length > 0,
+  );
+  // A views field on a 'rest' run is ignored — REST wins, sources never race.
+  if (viewsCapture && restMode) {
+    viewsSync = { ok: false, reason: "rest_mode" };
+  }
 
   // Best-effort: bring an older Space to the current per-Space schema before the
   // write + inference below (system-per-space-upgrade). Must not fail the sync.
@@ -180,15 +214,47 @@ export async function spacesSchemaSyncHandler(
         prior,
         runId: baseRunId,
         confident,
-        includeViews: Boolean(viewCapture),
+        includeViews: restMode,
       });
       await applySchemaDiff(tx, { baseId: captured.baseId, baseRunId, result, schemaJson: capturedGated });
 
-      // Closed gate ⇒ this sync could not observe views: flip the base's
-      // still-active bo_at_views rows to `unknown` in the same transaction
-      // (server-view-capture-override). Idempotent; reappearance on a later
-      // gate-open sync is handled by the normal insert/seen upsert.
-      if (shouldSweepUnknownViews(viewCapture)) {
+      // MCP views ride the same transaction + run association as the schema
+      // diff (server-mcp-views). Guarded pure diff, same pattern as the
+      // interface/automation sections below: a computation failure reports
+      // per-section instead of failing the schema sync.
+      if (viewsCapture && !restMode) {
+        let viewsDiff: ReturnType<typeof diffViews> | null = null;
+        try {
+          const priorViews = await readViewWorkingSet(tx, captured.baseId);
+          viewsDiff = diffViews({ baseId: captured.baseId, prior: priorViews, next: viewsCapture.views });
+        } catch {
+          viewsSync = { ok: false, reason: "diff_failed" };
+        }
+        if (viewsDiff) {
+          if (viewsDiff.unchanged) {
+            await stampViewsSeenForBase(tx, captured.baseId, baseRunId);
+          } else {
+            await applyViewDiff(tx, { baseRunId, diff: viewsDiff });
+          }
+          viewsSync = {
+            ok: true,
+            added: viewsDiff.lifecycle.filter((op) => op.action === "insert").length,
+            removed: viewsDiff.lifecycle.filter((op) => op.action === "removed").length,
+            updates: viewsDiff.schemaUpdates.length,
+            unchanged: viewsDiff.unchanged,
+          };
+        }
+      }
+
+      // No source sighted views this run ⇒ flip the base's still-active
+      // bo_at_views rows to `unknown` in the same transaction (design
+      // Decision 3: a successful MCP capture — or a REST-mode run, or even a
+      // stray views-bearing REST payload — is a sighting; only total loss of
+      // visibility sweeps). Idempotent; reappearance on a later capture is
+      // handled by the normal insert/seen upsert.
+      const viewsSighted =
+        restMode || viewsSync?.ok === true || restPayloadHadViews;
+      if (shouldSweepUnknownViews(viewCaptureMode, viewsSighted)) {
         await markViewsUnknownForBase(tx, captured.baseId);
       }
 
@@ -333,11 +399,10 @@ export async function spacesSchemaSyncHandler(
         ok: true,
         baseRunId,
         recordsEnabled: space.recordsEnabled,
-        // §8.2 — false = the Airtable connection is not Enterprise-scoped and
-        // view metadata was stripped from this capture (still-active view rows
-        // swept to `unknown`). "override" = VIEW_CAPTURE_OVERRIDE opened the
-        // gate (server-view-capture-override), true = Enterprise-scoped.
-        viewCapture,
+        // server-mcp-views: how this sync captured views — 'rest' (enterprise
+        // scope or VIEW_CAPTURE_OVERRIDE, views inside the REST payload),
+        // 'mcp' (views via the optional `views` field), 'off' (nothing).
+        viewCaptureMode,
         schemaChanged: result.schemaChanged,
         lifecycle: result.lifecycle.length,
         updates: result.schemaUpdates.length,
@@ -346,6 +411,8 @@ export async function spacesSchemaSyncHandler(
         ...(interfaceSync !== undefined ? { interfaceSync } : {}),
         // Same contract for the optional `automations` field.
         ...(automationSync !== undefined ? { automationSync } : {}),
+        // Same contract for the optional `views` field (server-mcp-views).
+        ...(viewsSync !== undefined ? { viewsSync } : {}),
       },
       200,
     );

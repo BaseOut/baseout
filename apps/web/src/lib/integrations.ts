@@ -130,6 +130,8 @@ export async function getIntegrationsState(
         id: atBases.id,
         atBaseId: atBases.atBaseId,
         name: atBases.name,
+        workspaceId: atBases.workspaceId,
+        workspaceName: atBases.workspaceName,
       })
       .from(atBases)
       .where(eq(atBases.spaceId, spaceId)),
@@ -203,6 +205,10 @@ export async function getIntegrationsState(
     atBaseId: r.atBaseId,
     name: r.name,
     isIncluded: includedSet.has(r.id),
+    // Workspace grouping (web-workspace-bases): null-tolerant — the picker
+    // falls back to flat when identity is absent.
+    workspaceId: r.workspaceId ?? null,
+    workspaceName: r.workspaceName ?? null,
   }))
 
   // At most one Airtable connection per org — prefer active, then most recent.

@@ -58,27 +58,63 @@ export async function resolveViewCaptureSetting(
 }
 
 /**
- * Gated syncs sweep the base's still-`active` bo_at_views rows to `unknown` —
- * only when the gate resolved CLOSED. An open gate (Enterprise or override)
- * observes views normally and must not sweep.
+ * How a run captures views (server-mcp-views): `'rest'` = enterprise-scope
+ * connection, views ride the REST schema payload exactly as before this
+ * change; `'mcp'` = everyone else — the workflows task captures views via the
+ * Airtable MCP server and forwards them on schema-sync's optional `views`
+ * field; `'off'` = capture disabled (unresolvable run/connection — default
+ * closed).
  */
-export function shouldSweepUnknownViews(setting: ViewCaptureSetting): boolean {
-  return setting === false;
+export type ViewCaptureMode = "rest" | "mcp" | "off";
+
+/** Mode for a connection's platform_config: enterprise → 'rest', else 'mcp'. */
+export function viewCaptureModeFromConnection(platformConfig: unknown): ViewCaptureMode {
+  return isEnterpriseViewCapture(platformConfig) ? "rest" : "mcp";
 }
 
 /**
- * Resolve the gate for a run: backup_runs.connection_id →
- * connections.platform_config. A missing run/connection resolves closed.
+ * Env-var override in front of the per-run mode resolution: exactly `"1"`
+ * resolves `'rest'` without calling `resolveFromDb` at all — the legacy dev
+ * escape (server-view-capture-override) opened the REST gate for every
+ * connection, and `'rest'` is that behavior in mode terms (REST payload views
+ * captured, no MCP call). Any other value defers to the resolver unchanged.
  */
-export async function resolveViewCaptureForRun(
+export async function resolveViewCaptureMode(
+  envValue: string | undefined,
+  resolveFromDb: () => Promise<ViewCaptureMode>,
+): Promise<ViewCaptureMode> {
+  if (envValue === "1") return "rest";
+  return resolveFromDb();
+}
+
+/**
+ * Sweep the base's still-`active` bo_at_views rows to `unknown` only when the
+ * run captured views from NO source (design Decision 3): `unknown` means "we
+ * lost visibility", removal means "it's gone", and a successful MCP capture is
+ * a full sighting. `viewsSighted` = the MCP capture was processed OK, or the
+ * REST payload carried views (belt-and-braces — a non-enterprise payload
+ * shouldn't, but if it did, visibility wasn't lost).
+ */
+export function shouldSweepUnknownViews(mode: ViewCaptureMode, viewsSighted: boolean): boolean {
+  if (mode === "rest") return false;
+  if (mode === "mcp") return !viewsSighted;
+  return true;
+}
+
+/**
+ * Resolve the run's view-capture mode: backup_runs.connection_id →
+ * connections.platform_config. Enterprise scope keeps today's REST path;
+ * everyone else is MCP; a missing run/connection resolves 'off' (closed).
+ */
+export async function resolveViewCaptureModeForRun(
   db: AppDb,
   backupRunId: string,
-): Promise<boolean> {
+): Promise<ViewCaptureMode> {
   const [row] = await db
     .select({ platformConfig: connections.platformConfig })
     .from(backupRuns)
     .innerJoin(connections, eq(connections.id, backupRuns.connectionId))
     .where(eq(backupRuns.id, backupRunId))
     .limit(1);
-  return row ? isEnterpriseViewCapture(row.platformConfig) : false;
+  return row ? viewCaptureModeFromConnection(row.platformConfig) : "off";
 }

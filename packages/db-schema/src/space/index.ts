@@ -40,4 +40,8 @@ export { spacePgDdlStatementsIdempotent } from './pg-ddl-upgrade'
 // apps/server/src/lib/provisioning/upgrade.ts (the idempotent DDL alone can't
 // alter an existing table). Pre-launch, interface rows are dropped and repopulate
 // on the next capture (design Decision 10).
-export const SPACE_SCHEMA_VERSION = 8
+// v9: Record comments (server-comments) — bo_at_comments. Purely additive
+// (new table); the idempotent DDL covers existing Spaces.
+// v10: Media index (server-media-index) — bo_at_assets + bo_at_asset_refs.
+// Purely additive.
+export const SPACE_SCHEMA_VERSION = 10

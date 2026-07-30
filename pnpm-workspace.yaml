@@ -13,11 +13,15 @@ packages:
 # Native-binary / postinstall builds we trust under pnpm 11's
 # strictDepBuilds default. Anything not listed here is silently ignored.
 allowBuilds:
-  esbuild: true     # Vite / Astro bundler — installs platform binary
-  msw: true         # Test mocking — sets up service worker
-  protobufjs: true  # Transitive — codegens long.js descriptors
-  sharp: true       # Astro image optimization — native libvips binding
-  workerd: true     # wrangler dev runtime — backend won't boot without it
+  # Test-only local Postgres for the createTestHarness spike
+  # (openspec/changes/system-test-harness-spike) — unpacks the zonky
+  # PostgreSQL 16 binaries on machines without Docker.
+  '@embedded-postgres/darwin-arm64': true
+  esbuild: true # Vite / Astro bundler — installs platform binary
+  msw: true # Test mocking — sets up service worker
+  protobufjs: true # Transitive — codegens long.js descriptors
+  sharp: true # Astro image optimization — native libvips binding
+  workerd: true # wrangler dev runtime — backend won't boot without it
 
 # Supply-chain protection: only install package versions that have been
 # public for at least 7 days (10080 minutes). Lets newly compromised

@@ -118,11 +118,22 @@ export async function attachmentsLookupHandler(
         compositeId: spacePg.attachments.compositeId,
         storageKey: spacePg.attachments.storageKey,
         uploadStatus: spacePg.attachments.uploadStatus,
+        contentHash: spacePg.attachments.contentHash,
       })
       .from(spacePg.attachments)
       .where(inArray(spacePg.attachments.compositeId, compositeIds as string[]));
-    const h: Record<string, { storageKey: string; uploadStatus: string }> = {};
-    for (const r of rows) h[r.compositeId] = { storageKey: r.storageKey, uploadStatus: r.uploadStatus };
+    // contentHash rides along ADDITIVELY (workflows-media-metadata follow-up):
+    // without it, dedup-skipped attachments had no content identity in hand and
+    // the media index fell back to `att:<id>` surrogate checksums. Rows written
+    // before hash stamping (2026-07-27) have NULL — the field stays optional.
+    const h: Record<string, { storageKey: string; uploadStatus: string; contentHash?: string }> = {};
+    for (const r of rows) {
+      h[r.compositeId] = {
+        storageKey: r.storageKey,
+        uploadStatus: r.uploadStatus,
+        ...(r.contentHash ? { contentHash: r.contentHash } : {}),
+      };
+    }
     return h;
   });
 

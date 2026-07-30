@@ -38,6 +38,12 @@ export const atBases = baseout.table("at_bases", {
   // .defaultNow() mirrors the canonical DB default so INSERTs can omit it.
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   // Engine bumps on every rediscovery upsert.
+  workspaceId: text("workspace_id"),
+  workspaceName: text("workspace_name"),
+  // Airtable workspace identity (web-workspace-bases owns the canonical
+  // migration; server-mcp-workspaces). Nullable-first: stamped by web's
+  // rescan/callback persistence and by engine rediscovery WHEN the MCP
+  // workspace listing is available — absence never blocks anything.
 });
 
 export type AtBaseRow = typeof atBases.$inferSelect;

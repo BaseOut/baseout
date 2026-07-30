@@ -15,6 +15,7 @@ export * from "./platforms";
 export * from "./subscriptions";
 export * from "./subscription-items";
 export * from "./space-events";
+export * from "./space-workspaces";
 export * from "./storage-destinations";
 export * from "./space-databases";
 export * from "./restore-runs";

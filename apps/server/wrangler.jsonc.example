@@ -51,6 +51,17 @@
   // `wrangler login` (expired auth kills the dev server at startup).
   "ai": { "binding": "AI" },
 
+  // R2 — Media Library download streaming (server-media-index). A NATIVE
+  // credential-less bucket binding (workerd-side): the r2-setup.md §2.4 rule
+  // ("no R2_* S3 creds on Workers") is untouched — that rule governs S3-API
+  // credentials, which this is not. Read-only BY DISCIPLINE: the engine only
+  // ever .get()s from it (download route); all writes stay on the Trigger.dev
+  // Node runner. Optional in Env typing — absent binding degrades the
+  // download route to 503, never affects backups.
+  "r2_buckets": [
+    { "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-dev" }
+  ],
+
   "hyperdrive": [
     {
       "binding": "HYPERDRIVE",
@@ -107,6 +118,9 @@
         ]
       },
       "ai": { "binding": "AI" },
+      "r2_buckets": [
+        { "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-dev" }
+      ],
       "hyperdrive": [
         {
           "binding": "HYPERDRIVE",

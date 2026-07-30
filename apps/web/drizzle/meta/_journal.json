@@ -218,6 +218,27 @@
       "when": 1784693576453,
       "tag": "0030_airtable_webhooks",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1785169168070,
+      "tag": "0031_signup_domain_association",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1785169508749,
+      "tag": "0032_two_factor",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1785173020591,
+      "tag": "0033_workspace_bases",
+      "breakpoints": true
     }
   ]
 }

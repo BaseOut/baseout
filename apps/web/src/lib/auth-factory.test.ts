@@ -90,6 +90,53 @@ describe('createAuth — embedded-iframe cookie attributes', () => {
   })
 })
 
+// web-auth-2fa: the twoFactor plugin (passwordless-compatible) plus the
+// all-methods companion must both be registered, with the tighter 2FA
+// rate-limit rules. Baseout stays passwordless — no credential plugin ever.
+describe('createAuth — two-factor registration', () => {
+  function pluginIds(auth: ReturnType<typeof build>) {
+    return ((auth.options as { plugins?: Array<{ id: string }> }).plugins ?? []).map(
+      (p) => p.id,
+    )
+  }
+
+  it('registers twoFactor + the all-methods challenge companion', () => {
+    const ids = pluginIds(build('https://baseout.dev'))
+    expect(ids).toContain('two-factor')
+    expect(ids).toContain('two-factor-all-methods')
+  })
+
+  it('exposes the stock challenge/manage endpoints', () => {
+    const auth = build('https://baseout.dev')
+    const api = auth.api as Record<string, unknown>
+    for (const key of [
+      'enableTwoFactor',
+      'disableTwoFactor',
+      'verifyTOTP',
+      'verifyBackupCode',
+    ]) {
+      expect(typeof api[key], key).toBe('function')
+    }
+  })
+
+  it('rate-limits the 2FA endpoints', () => {
+    const rateLimit = (build('https://baseout.dev').options as {
+      rateLimit?: { enabled?: boolean; customRules?: Record<string, unknown> }
+    }).rateLimit
+    expect(rateLimit?.enabled).toBe(true)
+    expect(rateLimit?.customRules?.['/two-factor/verify-totp']).toEqual({
+      window: 60,
+      max: 5,
+    })
+  })
+
+  it('never registers a password/credential surface (CLAUDE.md §3.3)', () => {
+    const auth = build('https://baseout.dev')
+    const options = auth.options as { emailAndPassword?: { enabled?: boolean } }
+    expect(options.emailAndPassword?.enabled ?? false).toBe(false)
+  })
+})
+
 describe('createAuth — session lifetime', () => {
   // 30-day sliding sessions (product decision 2026-07-09): better-auth's 7-day
   // default forced monthly-active users back through the magic-link flow. With

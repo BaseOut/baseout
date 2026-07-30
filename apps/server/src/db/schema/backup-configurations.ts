@@ -49,7 +49,15 @@ export const backupConfigurations = baseout.table("backup_configurations", {
   autoAddFutureBases: boolean("auto_add_future_bases").notNull(),
   // Engine reads during workspace rediscovery. When true AND under tier
   // basesPerSpace cap, newly discovered bases are inserted into
-  // backup_configuration_bases with is_included=true.
+  // backup_configuration_bases with is_included=true. LEGACY precedence for
+  // the run-start auto-enroll check (server-mcp-workspaces): when a Space has
+  // NO space_workspaces rows this flag means "all workspaces incl. future";
+  // once any row exists it is ignored (web-workspace-bases design Decision 3).
+  autoEnrollNewWorkspaces: boolean("auto_enroll_new_workspaces").notNull().default(false),
+  // Standing new-workspaces flag (web-workspace-bases, canonical migration
+  // owned there): a workspace newly appearing on the connection is
+  // auto-enrolled (enrolled_via='auto') by the engine at run start. Governs
+  // only the unknown→known transition — existing rows are never modified.
   nextScheduledAt: timestamp("next_scheduled_at", { withTimezone: true }),
   // Engine-owned (SpaceDO is the canonical writer). NULL until the first
   // /set-frequency call lands. Surfaced by apps/web's IntegrationsView as

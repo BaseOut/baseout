@@ -148,23 +148,49 @@ export async function persistAirtableConnection(
   if (inputs.bases.length > 0) {
     await db
       .insert(atBases)
-      .values(
-        inputs.bases.map((b) => ({
-          spaceId: inputs.spaceId,
-          atBaseId: b.id,
-          name: b.name,
-          lastSeenAt: now,
-        })),
-      )
+      .values(mapBasesToUpsertRows(inputs.bases, inputs.spaceId, now))
       .onConflictDoUpdate({
         target: [atBases.spaceId, atBases.atBaseId],
         set: {
           name: sql`excluded.name`,
           lastSeenAt: sql`excluded.last_seen_at`,
+          // Workspace identity (web-workspace-bases): stamp when provided,
+          // NULL-TOLERANT — a pass without workspace data (MCP failure,
+          // plain Meta listing) must never clobber previously stamped
+          // values, hence COALESCE against the existing row.
+          workspaceId: sql`coalesce(excluded.workspace_id, ${atBases}.workspace_id)`,
+          workspaceName: sql`coalesce(excluded.workspace_name, ${atBases}.workspace_name)`,
           modifiedAt: now,
         },
       })
   }
 
   return { connectionId, basesPersisted: inputs.bases.length }
+}
+
+/**
+ * Upsert rows for the at_bases insert — exported for unit tests
+ * (web-workspace-bases task 2.1: workspace fields stamped when provided,
+ * null when absent).
+ */
+export function mapBasesToUpsertRows(
+  bases: AirtableBaseSummary[],
+  spaceId: string,
+  now: Date,
+): Array<{
+  spaceId: string
+  atBaseId: string
+  name: string
+  workspaceId: string | null
+  workspaceName: string | null
+  lastSeenAt: Date
+}> {
+  return bases.map((b) => ({
+    spaceId,
+    atBaseId: b.id,
+    name: b.name,
+    workspaceId: b.workspaceId ?? null,
+    workspaceName: b.workspaceName ?? null,
+    lastSeenAt: now,
+  }))
 }

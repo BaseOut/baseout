@@ -91,6 +91,13 @@ export interface Env {
    * so environments without the binding skip generation gracefully.
    */
   AI?: Ai;
+  /**
+   * Managed-R2 backups bucket (server-media-index) — NATIVE credential-less
+   * binding, read-only BY DISCIPLINE (the engine only .get()s for the media
+   * download route; all writes stay on the Trigger.dev Node runner, r2-setup.md
+   * §2.4). Optional: absent binding degrades the download route to 503.
+   */
+  BACKUPS_R2?: R2Bucket;
   /** Kill switch for post-sync AI description generation. Unset/anything-but-"false" = on. */
   AI_DESCRIPTIONS_ENABLED?: string;
   /** Workers AI model id override for descriptions. */

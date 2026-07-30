@@ -207,15 +207,16 @@ Basic verification is included in V1:
 
 ### 2.9 What Gets Backed Up ✅
 
-> **⚠️** Automations, Interfaces, and Custom Documentation are **not available via the Airtable REST API** and cannot be automatically backed up. They must be submitted by the user through a Baseout intake method (Inbound API, Airtable Scripts, Airtable Automations, or Manual Forms).
+> **⚠️** Custom Documentation is **not available via the Airtable REST API** and cannot be automatically backed up — it must be submitted by the user through a Baseout intake method (Inbound API, Airtable Scripts, Airtable Automations, or Manual Forms). *Amended 2026-07-27:* Automations and Interfaces — previously intake-only under the same caveat — are now **captured automatically via Airtable's MCP server** on every backup run; the intake methods remain as a supplement (per-Space reconciliation keeps manually-submitted entries alongside MCP-captured ones).
 
 | Entity | Collection Method | Min Tier |
 |---|---|---|
-| **Schema** (Tables, Fields, Views) | Automatic (REST API) | Starter |
+| **Schema** (Tables, Fields, Views) | Automatic (REST API; Views for **all** connections via MCP as of 2026-07 — previously enterprise-scope REST only) | Starter |
 | **Records** | Automatic (REST API) | Starter |
 | **Attachments** | Automatic (REST API) | Starter |
-| **Automations** ⚠️ | Manual (user-submitted via intake) | Growth |
-| **Interfaces** ⚠️ | Manual (user-submitted via intake) | Growth |
+| **Comments** *(added 2026-07-27)* | Automatic (REST API — comment-count-planned fan-out; unchanged counts are skipped, so same-count edits surface only when a record's count next changes: documented product behavior) | Rides the record-backup tier, i.e. same as Records (*confirmed 2026-07-28*); requires Dynamic mode — comments persist to the per-Space DB |
+| **Automations** | Automatic (MCP capture) + manual intake | Growth ⚠ *(discrepancy re-flagged: Features §4.2/§6.3/§9.1 say Launch — Dan to reconcile; first flagged in `server-automations-interfaces-docs`)* |
+| **Interfaces** | Automatic (MCP capture) + manual intake | Growth ⚠ *(same Launch-vs-Growth discrepancy as Automations)* |
 | **Custom Documentation** ⚠️ | Manual (user-submitted via intake) | Pro |
 
 ### 2.10 Backup Auditing ✅

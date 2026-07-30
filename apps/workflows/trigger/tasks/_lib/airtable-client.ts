@@ -58,6 +58,9 @@ export interface AirtableRecord {
   id: string;
   createdTime: string;
   fields: Record<string, unknown>;
+  /** Present (zero-inclusive) when the listing requested
+   * `recordMetadata[]=commentCount` (workflows-comments, spike 2026-07-27). */
+  commentCount?: number;
 }
 
 export interface AirtableRecordsPage {
@@ -79,6 +82,11 @@ export interface ListRecordsOptions {
   fields?: string[];
   /** Key each record's cells by field id instead of field name. */
   returnFieldsByFieldId?: boolean;
+  /** Per-record metadata keys to widen each listing entry with — array form
+   * (`recordMetadata[]=…`), the documented encoding (workflows-comments spike
+   * 2026-07-27). `["commentCount"]` adds a zero-inclusive `commentCount` to
+   * every record; pagination is unaffected. */
+  recordMetadata?: string[];
 }
 
 export interface AirtableClientOptions {
@@ -207,6 +215,9 @@ export function createAirtableClient(
       }
       for (const field of listOpts?.fields ?? []) {
         params.append("fields[]", field);
+      }
+      for (const key of listOpts?.recordMetadata ?? []) {
+        params.append("recordMetadata[]", key);
       }
       return getJson<AirtableRecordsPage>(
         `${AIRTABLE_BASE_URL}/v0/${encodeURIComponent(baseId)}/${encodeURIComponent(tableIdOrName)}?${params.toString()}`,

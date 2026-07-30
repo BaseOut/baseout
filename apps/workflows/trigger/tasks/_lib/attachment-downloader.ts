@@ -11,10 +11,20 @@
 //   1. Compute each attachment's composite ID.
 //   2. lookup() the batch → existing { compositeId: storageKey } hits.
 //   3. For misses: GET the Airtable CDN URL (one refresh retry on auth
-//      expiry), writeBlob the bytes, collect a record entry.
+//      expiry), sha256 the bytes, writeBlob them, collect a record entry.
 //   4. record() the new entries (idempotent upsert).
 //   5. Return the storage keys (hits + new) in field order — the caller joins
 //      them with ';' into the CSV cell, replacing the old "[N attachments]".
+//
+// Media-metadata tap (workflows-media-metadata design Decision 1): the result
+// also carries per-attachment metadata — emitted for writes AND dedup-skips,
+// in hand at exactly this moment, never re-derived. Writes hash their bytes
+// (sha256, Web Crypto) and stamp the hash on the dedup record entry
+// (contentHash — the engine's record route persists it); dedup-skips reuse
+// the engine-stored hash when the lookup returns one, else fall back to the
+// deterministic `att:<attachmentId>` surrogate (rows recorded before hashing
+// existed have no stored hash; the surrogate keeps emission idempotent and
+// self-heals into a real hash once the engine backfills/returns content_hash).
 //
 // Dedup round-trips are per-cell for MVP simplicity. Batching lookups across a
 // whole record page is a future optimization (see workflows-attachments
@@ -70,12 +80,17 @@ export interface AttachmentDownloaderDeps {
   uploadStatus?: "ready" | "uploaded";
   /**
    * Engine callback — batch dedup read. Returns compositeId →
-   * { storageKey, uploadStatus }.
+   * { storageKey, uploadStatus, contentHash? }. `contentHash` is additive
+   * (workflows-media-metadata): today's engine lookup route omits it, so
+   * dedup-skip metadata falls back to the `att:<id>` surrogate checksum;
+   * when the engine starts returning stored hashes, skips carry them.
    */
   lookup: (
     spaceId: string,
     compositeIds: string[],
-  ) => Promise<Record<string, { storageKey: string; uploadStatus: string }>>;
+  ) => Promise<
+    Record<string, { storageKey: string; uploadStatus: string; contentHash?: string }>
+  >;
   /** Engine callback — batch dedup upsert. */
   record: (
     spaceId: string,
@@ -94,11 +109,39 @@ export interface AttachmentDownloaderDeps {
   ) => Promise<string>;
 }
 
+/**
+ * Per-attachment metadata surfaced by processCell (workflows-media-metadata).
+ * Everything the media index needs, captured at the moment the attachment
+ * finished processing — for writes AND dedup-skips (a skip still yields a new
+ * ref with the existing asset's checksum).
+ */
+export interface ProcessedAttachmentMeta {
+  /** Airtable attachment id (att…). */
+  attachmentId: string;
+  filename: string;
+  storageKey: string;
+  /**
+   * `sha256:<hex>` when bytes were hashed this run; the engine-stored hash on
+   * dedup hits that return one; `att:<attachmentId>` surrogate otherwise.
+   */
+  checksum: string;
+  contentType?: string;
+  sizeBytes?: number;
+  /** True when bytes were NOT transferred this run (dedup hit). */
+  dedupSkipped: boolean;
+}
+
 export interface ProcessCellResult {
   /** Storage keys in field order (dedup hits + newly written). */
   keys: string[];
   /** How many attachments were actually downloaded this call (misses). */
   downloaded: number;
+  /**
+   * Per-attachment metadata in field order (workflows-media-metadata).
+   * Optional so pre-existing injected downloader fakes stay valid — the real
+   * implementation always returns it; absent = no media emission.
+   */
+  attachments?: ProcessedAttachmentMeta[];
 }
 
 export function compositeIdFor(
@@ -113,6 +156,22 @@ export interface AttachmentDownloader {
     attachments: AirtableAttachment[],
     ctx: DownloadContext,
   ): Promise<ProcessCellResult>;
+}
+
+/** sha256 over the attachment bytes — Web Crypto, so the module keeps its
+ * "web APIs only" property (runs in Node ≥18 and workerd alike). */
+async function sha256Checksum(bytes: Uint8Array): Promise<string> {
+  // The cast bridges a lib split between this app's tsc and apps/server's
+  // (which follows the type-only @baseout/workflows import): one types
+  // Uint8Array over ArrayBufferLike and rejects it as a digest source, the
+  // other lacks the BufferSource name entirely. Runtime-safe — Web Crypto
+  // accepts the view, and the buffer is never a SharedArrayBuffer (it comes
+  // from Response bytes).
+  const digest = await crypto.subtle.digest("SHA-256", bytes as unknown as ArrayBuffer);
+  const hex = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `sha256:${hex}`;
 }
 
 export function createAttachmentDownloader(
@@ -144,7 +203,7 @@ export function createAttachmentDownloader(
   return {
     async processCell(attachments, ctx) {
       if (attachments.length === 0) {
-        return { keys: [], downloaded: 0 };
+        return { keys: [], downloaded: 0, attachments: [] };
       }
 
       const composite = attachments.map((a) => ({
@@ -159,6 +218,7 @@ export function createAttachmentDownloader(
 
       const keys: string[] = [];
       const toRecord: AttachmentRecordEntry[] = [];
+      const meta: ProcessedAttachmentMeta[] = [];
 
       const uploadStatus = deps.uploadStatus ?? "uploaded";
 
@@ -166,11 +226,24 @@ export function createAttachmentDownloader(
         const existing = hits[compositeId];
         if (existing) {
           keys.push(existing.storageKey);
+          // Dedup-skip: bytes weren't transferred, so the checksum comes from
+          // the engine's stored hash when available; the att:<id> surrogate
+          // otherwise. Size/type come from Airtable's attachment metadata.
+          meta.push({
+            attachmentId: attachment.id,
+            filename: attachment.filename,
+            storageKey: existing.storageKey,
+            checksum: existing.contentHash || `att:${attachment.id}`,
+            ...(attachment.type ? { contentType: attachment.type } : {}),
+            ...(attachment.size !== undefined ? { sizeBytes: attachment.size } : {}),
+            dedupSkipped: true,
+          });
           continue;
         }
         const storageKey = deps.buildKey(compositeId, attachment.filename);
         const bytes = await downloadBytes(attachment, ctx);
         const mimeType = attachment.type || "application/octet-stream";
+        const checksum = await sha256Checksum(bytes);
         await deps.writer.writeBlob(storageKey, bytes, mimeType);
         keys.push(storageKey);
         toRecord.push({
@@ -181,8 +254,18 @@ export function createAttachmentDownloader(
           storageKey,
           sizeBytes: bytes.byteLength,
           mimeType,
+          contentHash: checksum,
           filename: attachment.filename,
           uploadStatus,
+        });
+        meta.push({
+          attachmentId: attachment.id,
+          filename: attachment.filename,
+          storageKey,
+          checksum,
+          contentType: mimeType,
+          sizeBytes: bytes.byteLength,
+          dedupSkipped: false,
         });
       }
 
@@ -190,7 +273,7 @@ export function createAttachmentDownloader(
         await deps.record(deps.spaceId, toRecord);
       }
 
-      return { keys, downloaded: toRecord.length };
+      return { keys, downloaded: toRecord.length, attachments: meta };
     },
   };
 }

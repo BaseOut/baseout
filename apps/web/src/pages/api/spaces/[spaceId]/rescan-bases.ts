@@ -15,13 +15,21 @@
 
 import type { APIRoute } from 'astro'
 import { env } from 'cloudflare:workers'
-import { eq } from 'drizzle-orm'
-import { spaces } from '../../../../db/schema'
+import { and, desc, eq, inArray } from 'drizzle-orm'
+import {
+  connections,
+  platforms,
+  spaces,
+  spaceWorkspaces,
+} from '../../../../db/schema'
 import type { AccountContext } from '../../../../lib/account'
 import {
   createBackupEngine,
+  type EngineListWorkspacesResult,
   type EngineRescanBasesResult,
+  type EngineWorkspaceSummary,
 } from '../../../../lib/backup-engine'
+import type { AppDb } from '../../../../db'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -50,6 +58,16 @@ export interface HandlePostInput {
   engineRescan:
     | ((spaceId: string) => Promise<EngineRescanBasesResult>)
     | null
+  /**
+   * Best-effort workspace listing refresh (web-workspace-bases task 2.2):
+   * after a successful rescan, fetch the connection's workspace listing
+   * from the engine (server-mcp-workspaces internal route) and stamp
+   * space_workspaces.last_checked_at for enrolled workspaces still present.
+   * ANY failure — null dep, engine 404 while unbuilt, degraded payload,
+   * throw — means "no workspace data": the rescan response is unchanged.
+   */
+  listWorkspaces?: (() => Promise<EngineListWorkspacesResult>) | null
+  stampWorkspaceChecks?: (workspaces: EngineWorkspaceSummary[]) => Promise<void>
 }
 
 function statusForEngineError(code: string): number {
@@ -100,12 +118,27 @@ export async function handlePost(input: HandlePostInput): Promise<Response> {
 
   const result = await input.engineRescan(input.spaceId)
   if (result.ok) {
+    // Progressive enhancement: refresh workspace data alongside the rescan;
+    // failure of ANY kind degrades to the plain rescan response.
+    let workspaces: EngineWorkspaceSummary[] | undefined
+    if (input.listWorkspaces) {
+      try {
+        const listing = await input.listWorkspaces()
+        if (listing.ok) {
+          workspaces = listing.workspaces
+          await input.stampWorkspaceChecks?.(listing.workspaces)
+        }
+      } catch {
+        // proceed without workspace data (design Decision 5)
+      }
+    }
     return jsonResponse(
       {
         ok: true,
         discovered: result.discovered,
         autoAdded: result.autoAdded,
         blockedByTier: result.blockedByTier,
+        ...(workspaces ? { workspaces } : {}),
       },
       200,
     )
@@ -119,6 +152,7 @@ export const POST: APIRoute = async ({ locals, params }) => {
   const db = locals.db
   if (!db) return jsonResponse({ error: 'Database not initialized' }, 500)
 
+  const organizationId = locals.account?.organization?.id ?? null
   return handlePost({
     account: locals.account ?? null,
     spaceId: params.spaceId,
@@ -131,6 +165,24 @@ export const POST: APIRoute = async ({ locals, params }) => {
       return (row as SpaceRowSlim | undefined) ?? null
     },
     engineRescan: buildEngineRescan(),
+    listWorkspaces: organizationId
+      ? buildListWorkspaces(db, organizationId)
+      : null,
+    stampWorkspaceChecks: async (workspaces) => {
+      if (!params.spaceId || workspaces.length === 0) return
+      await db
+        .update(spaceWorkspaces)
+        .set({ lastCheckedAt: new Date(), modifiedAt: new Date() })
+        .where(
+          and(
+            eq(spaceWorkspaces.spaceId, params.spaceId),
+            inArray(
+              spaceWorkspaces.workspaceId,
+              workspaces.map((w) => w.id),
+            ),
+          ),
+        )
+    },
   })
 }
 
@@ -143,6 +195,41 @@ function buildEngineRescan():
     internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
   })
   return (spaceId) => engine.rescanBases(spaceId)
+}
+
+function buildListWorkspaces(
+  db: AppDb,
+  organizationId: string,
+): (() => Promise<EngineListWorkspacesResult>) | null {
+  if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) return null
+  const engine = createBackupEngine({
+    binding: env.BACKUP_ENGINE,
+    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+  })
+  return async () => {
+    const rows = await db
+      .select({ id: connections.id, status: connections.status })
+      .from(connections)
+      .innerJoin(platforms, eq(platforms.id, connections.platformId))
+      .where(
+        and(
+          eq(connections.organizationId, organizationId),
+          eq(platforms.slug, 'airtable'),
+        ),
+      )
+      .orderBy(desc(connections.modifiedAt))
+    const connectionId =
+      (rows.find((r) => r.status === 'active') ?? rows[0])?.id ?? null
+    if (!connectionId) {
+      return {
+        ok: false,
+        degraded: true,
+        reason: 'connection_not_found',
+        status: 0,
+      }
+    }
+    return engine.listConnectionWorkspaces(connectionId)
+  }
 }
 
 export const GET: APIRoute = async () =>

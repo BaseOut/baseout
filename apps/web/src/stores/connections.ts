@@ -24,6 +24,11 @@ export interface BaseSummary {
   isIncluded: boolean
   /** Discovered in Airtable since the Space's last backup (not yet in any config). */
   isNew?: boolean
+  /** Airtable workspace identity (web-workspace-bases) — null until a
+   * workspace-aware pass stamps it; the picker groups by these and falls
+   * back to flat when absent. */
+  workspaceId?: string | null
+  workspaceName?: string | null
 }
 
 export interface BackupPolicy {

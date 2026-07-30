@@ -38,6 +38,10 @@ import {
 } from "./incremental-backup";
 import { fetchPayloadsPage } from "./_lib/airtable-payloads";
 import { createAirtableClient } from "./_lib/airtable-client";
+import {
+  fetchRecordComments,
+  type CommentRecordCaptureWire,
+} from "./_lib/record-comments";
 
 export interface IncrementalBackupTaskPayload {
   runId: string;
@@ -55,6 +59,27 @@ function trimSlash(s: string): string {
   return s.endsWith("/") ? s.slice(0, -1) : s;
 }
 
+// One streamed batch to comments-sync (workflows-comments task 3.5) — same
+// route + body shape as backup-base.task.ts's syncComments. Throws on any
+// non-2xx; the pure module maps that to a `partial` outcome, never the run.
+async function syncComments(
+  engineUrl: string,
+  internalToken: string,
+  spaceId: string,
+  backupRunId: string,
+  args: { baseId: string; records: CommentRecordCaptureWire[] },
+): Promise<void> {
+  const url = `${trimSlash(engineUrl)}/api/internal/spaces/${encodeURIComponent(spaceId)}/comments-sync`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-internal-token": internalToken, "content-type": "application/json" },
+    body: JSON.stringify({ backupRunId, baseId: args.baseId, records: args.records }),
+  });
+  if (!res.ok) {
+    throw new Error(`comments-sync returned ${res.status}`);
+  }
+}
+
 // Standard run-contract completion (mirrors backup-base.task.ts postCompletion):
 // fire-and-forget — the run-row state machine + run reconciliation are the
 // safety nets for a missed POST. Aggregates the incremental counts the spec
@@ -70,6 +95,13 @@ async function postCompletion(
     payload.runId,
   )}/complete`;
   const body = {
+    // Discriminator for the widened engine contract (workflows-instant-webhook
+    // 4.2): the engine maps these counters into the run row
+    // (recordsProcessed = created+updated+deleted+reconciledRecords),
+    // finalizes fallback_to_full as failed with a composed message, and — on
+    // a succeeded completion with reconcileRan — stamps the subscription's
+    // last_reconciled_at (resetting the 7-day reconcile cadence).
+    kind: "incremental",
     triggerRunId,
     atBaseId: payload.baseId,
     status: result.status,
@@ -79,6 +111,8 @@ async function postCompletion(
     reconciledRecords: result.reconciledRecords,
     driftCount: result.driftCount,
     finalCursor: result.finalCursor,
+    subscriptionId: payload.subscriptionId,
+    reconcileRan: result.reconcileRan,
     ...(result.fallbackReason ? { fallbackReason: result.fallbackReason } : {}),
     ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
   };
@@ -170,6 +204,19 @@ export const incrementalBackupTask = task({
           engine,
           log,
           lastReconciledAt: context.lastReconciledAt,
+          // Visited-record comment capture (workflows-comments task 3.5) —
+          // gated server-side via the context route's tier resolution. The
+          // pure module never sees the token; the fetcher closes over it.
+          commentsEnabled: context.commentsEnabled === true,
+          syncComments: (args) =>
+            syncComments(engineUrl, internalToken, payload.spaceId, payload.runId, args),
+          fetchRecordComments: (ref) =>
+            fetchRecordComments({
+              baseId: payload.baseId,
+              tableId: ref.tableId,
+              recordId: ref.recordId,
+              accessToken: context.accessToken,
+            }),
         },
       );
     } catch (err) {
