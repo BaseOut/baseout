@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Baseout — On2Air Usage Distribution Analysis</title>
+<style>
+body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #202124; max-width: 8in; margin: 40px auto; padding: 0 24px; }
+h1 { font-size: 20pt; } h2 { font-size: 16pt; border-bottom: 2px solid #202124; padding-bottom: 4px; margin-top: 28px; }
+h3 { font-size: 13pt; margin-top: 22px; } h4 { font-size: 11.5pt; margin-top: 18px; }
+table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+th, td { border: 1px solid #999; padding: 5px 8px; font-size: 10pt; text-align: left; vertical-align: top; }
+th { background: #eee; }
+blockquote { border-left: 4px solid #f4b400; background: #fef7e0; margin: 10px 0; padding: 8px 14px; }
+code { font-family: 'Courier New', monospace; font-size: 10pt; background: #f1f3f4; padding: 0 3px; }
+hr { border: none; border-top: 1px solid #ccc; margin: 24px 0; }
+li { margin: 3px 0; }
+</style></head><body>
+<h1>On2Air Backups — Usage Distribution Analysis (Draft 1)</h1>
+<p><strong>Source:</strong> production DB extraction 2026-07-29 (<code>sql-output/q1.md</code>, 2,971 accounts).
+<strong>Scope:</strong> this draft covers the per-account distributions (q01). Frequency (q03),
+processing flow (q04), restores timeline (q05), initial-sync spike (q06), and
+destination split (q07) will be folded in as those queries land.
+<strong>Population:</strong> 336 active paying accounts (58 starter, 147 essentials,
+110 professional, 21 premium) + 7 active trials + 2,628 churned/free.</p>
+<hr />
+<h2>1. Usage percentiles by legacy tier (active paying accounts only)</h2>
+<h3>Records under management</h3>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>n</th>
+<th>p50</th>
+<th>p75</th>
+<th>p90</th>
+<th>p95</th>
+<th>max</th>
+<th>mean</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>starter</td>
+<td>58</td>
+<td>8,354</td>
+<td>23K</td>
+<td>49K</td>
+<td>78K</td>
+<td>136K</td>
+<td>21K</td>
+</tr>
+<tr>
+<td>essentials</td>
+<td>147</td>
+<td>25K</td>
+<td>85K</td>
+<td>164K</td>
+<td>237K</td>
+<td>477K</td>
+<td>61K</td>
+</tr>
+<tr>
+<td>professional</td>
+<td>110</td>
+<td>78K</td>
+<td>230K</td>
+<td>556K</td>
+<td>704K</td>
+<td>980K</td>
+<td>170K</td>
+</tr>
+<tr>
+<td>premium</td>
+<td>21</td>
+<td>147K</td>
+<td>507K</td>
+<td>1.16M</td>
+<td>1.23M</td>
+<td>1.36M</td>
+<td>387K</td>
+</tr>
+</tbody>
+</table>
+<h3>Stored attachment GB (all in customers&rsquo; external storage today)</h3>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>n</th>
+<th>p50</th>
+<th>p75</th>
+<th>p90</th>
+<th>p95</th>
+<th>max</th>
+<th>mean</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>starter</td>
+<td>58</td>
+<td>0.6</td>
+<td>2.1</td>
+<td>10.9</td>
+<td>19.5</td>
+<td>32</td>
+<td>3.3</td>
+</tr>
+<tr>
+<td>essentials</td>
+<td>147</td>
+<td>1.9</td>
+<td>18.1</td>
+<td>44.5</td>
+<td>69.3</td>
+<td>406</td>
+<td>18.4</td>
+</tr>
+<tr>
+<td>professional</td>
+<td>110</td>
+<td>10.8</td>
+<td>41.5</td>
+<td>157</td>
+<td>229</td>
+<td><strong>2,767</strong></td>
+<td>89.2</td>
+</tr>
+<tr>
+<td>premium</td>
+<td>21</td>
+<td>23.4</td>
+<td>64.1</td>
+<td>93.6</td>
+<td>152</td>
+<td>520</td>
+<td>60.7</td>
+</tr>
+</tbody>
+</table>
+<h3>Structured-data GB (CSV file sizes — tiny relative to attachments)</h3>
+<p>All tiers p95 ≤ 1.1 GB; max 1.8 GB. Structured data is a rounding error in
+storage cost; attachments dominate by ~100×.</p>
+<h3>Distinct bases backed up</h3>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>p50</th>
+<th>p75</th>
+<th>p90</th>
+<th>p95</th>
+<th>max</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>starter</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>1</td>
+<td>2</td>
+</tr>
+<tr>
+<td>essentials</td>
+<td>4</td>
+<td>7</td>
+<td>12</td>
+<td>15</td>
+<td>34</td>
+</tr>
+<tr>
+<td>professional</td>
+<td>8</td>
+<td>20</td>
+<td>34</td>
+<td>41</td>
+<td>52</td>
+</tr>
+<tr>
+<td>premium</td>
+<td>43</td>
+<td>72</td>
+<td>132</td>
+<td>149</td>
+<td>161</td>
+</tr>
+</tbody>
+</table>
+<h3>Levers that turned out to be non-issues</h3>
+<ul>
+<li><strong>Comments: zero across every active account.</strong> Nobody backs up comments
+  today (feature unused or unavailable). Gating comments to higher tiers
+  costs the migration nothing.</li>
+<li><strong>Restores: near-zero.</strong> p95 = 0 restores/12mo in every tier; max is 10.
+  The monthly timeline (q05) confirms it system-wide: 2–18 restore attempts
+  per month across the ENTIRE customer base, from 1–5 accounts. Restore
+  caps can be modest without touching anyone — and the &ldquo;don&rsquo;t lead with
+  recovery&rdquo; positioning now has hard data behind it.
+  (Side observation, product not pricing: completion rates on restore
+  attempts are low — many months show under half completing. Worth a QA
+  look before Baseout&rsquo;s restore ships.)</li>
+<li><strong>Active jobs: p50 = 1 everywhere.</strong> Most customers run one backup job;
+  premium tail runs up to 10.</li>
+</ul>
+<hr />
+<h2>2. Headline findings</h2>
+<ol>
+<li><strong>Tier usage separates cleanly.</strong> Each legacy tier&rsquo;s records/GB
+   distribution sits roughly 3× the one below it. The straight mapping
+   (Starter/Essentials → Launch, Professional → Growth, Premium → Pro)
+   is empirically comfortable: <strong>Starter fits inside any Launch limit that
+   fits Essentials</strong> (Starter p95 = 78K records vs Essentials p95 = 237K),
+   so no separate landing tier is needed at launch.</li>
+<li><strong>Dormant payers: 83 of 336 (25%).</strong> Active subscription, zero active
+   backup jobs (35 essentials, 31 professional, 13 starter, 4 premium).
+   A quarter of the paying base is paying-but-not-using — the most
+   churn-fragile cohort in the migration. Profile before comms.</li>
+<li><strong>Churned accounts still hold 5.4 TB</strong> (28% of the ~19.4 TB registry
+   total; top single churned account: 1.3 TB, 2M records). Zero storage
+   cost to us today (it&rsquo;s in their drives), but it&rsquo;s 16M+ registry rows of
+   DB weight — and in Baseout-managed storage this class of data WOULD be
+   real COGS. Retention/cleanup policy for departed customers is a launch
+   requirement, not an afterthought.</li>
+<li><strong>Extreme concentration at the top.</strong> Top 5 active accounts hold 46% of
+   stored GB; top 20 hold 70%. One professional account has 2.8 TB.
+   This single-handedly justifies (a) the GB-under-management meter,
+   (b) the initial-sync size threshold, and (c) overage as recurring
+   monthly add-ons on stock levers.</li>
+<li><strong>Pending (tracked-not-uploaded) is small:</strong> 226 GB across active
+   accounts — not a material distortion of the stored numbers.</li>
+</ol>
+<hr />
+<h2>3. First-cut tier limits (fit-the-cohort rule: ≥95% of the mapped legacy</h2>
+<p>cohort fits its reference tier without action)</p>
+<p>Draft numbers for Phase 3 stress-testing — NOT final:</p>
+<table>
+<thead>
+<tr>
+<th>Lever</th>
+<th>Launch $49</th>
+<th>Growth $99</th>
+<th>Pro $199</th>
+<th>Business $399</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Records under management</td>
+<td>250K</td>
+<td>750K</td>
+<td>1.5M</td>
+<td>5M (then custom)</td>
+</tr>
+<tr>
+<td>GB under management</td>
+<td>50</td>
+<td>250</td>
+<td>500</td>
+<td>1,500</td>
+</tr>
+<tr>
+<td>Restores</td>
+<td>3/mo</td>
+<td>10/mo</td>
+<td>30/mo</td>
+<td>unlimited-fair-use</td>
+</tr>
+</tbody>
+</table>
+<p>Rationale:
+- <strong>Launch 250K records</strong> covers Essentials p95 (237K) and all of Starter.
+- <strong>Growth 750K</strong> covers Professional p95 (704K).
+- <strong>Pro 1.5M</strong> covers Premium max (1.36M).
+- <strong>GB:</strong> Launch 50 covers Essentials p90 (44.5); Growth 250 covers
+  Professional p95 (229); Pro 500 covers Premium max except one outlier.
+- The handful of accounts above their reference-tier limits (~5% per
+  cohort) are exactly the upsell conversations the ladder is designed to
+  create — and the migration grace window gives them 30–60 days to see
+  their footprint before deciding.
+- These limits fit <em>current</em> usage; Vaishali should model growth headroom
+  (records grow over time — a limit that fits today pinches in 18 months).</p>
+<p>Open questions feeding into these numbers:
+- q07 destination split confirms 100%-external hypothesis per-account.
+- q04c flow data sizes the initial-sync threshold and per-run compute cost.
+- q03 frequency-by-tier shows who lands on Weekly vs Daily vs Instant gates.</p>
+<hr />
+<h2>4. Backup frequency by tier (q03) — the gate-placement finding</h2>
+<p>Accounts by current schedule (active jobs only; remainder are one-time/blank):</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>monthly</th>
+<th>weekly</th>
+<th>daily</th>
+<th>hourly</th>
+<th>% running daily-or-faster</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>starter</td>
+<td>23</td>
+<td>11</td>
+<td>12</td>
+<td>0</td>
+<td>26%</td>
+</tr>
+<tr>
+<td>essentials</td>
+<td>9</td>
+<td>90</td>
+<td>20</td>
+<td>2</td>
+<td>18%</td>
+</tr>
+<tr>
+<td>professional</td>
+<td>12</td>
+<td>28</td>
+<td>50</td>
+<td>1</td>
+<td>56%</td>
+</tr>
+<tr>
+<td>premium</td>
+<td>1</td>
+<td>3</td>
+<td>12</td>
+<td>2</td>
+<td>78%</td>
+</tr>
+</tbody>
+</table>
+<p><strong>The friction point:</strong> if the gates land as Launch=Weekly / Growth=Daily /
+Pro+=Instant, then ~34 accounts mapped to Launch (12 starter daily +
+20 essentials daily + 2 essentials hourly — roughly a fifth of the Launch
+cohort) currently back up daily or faster. At migration they either pay
+Growth (2× their reference tier) or drop to weekly. Options to model:
+(a) accept it as designed upsell pressure, softened by the grace window;
+(b) include daily in Launch and differentiate on Instant only — cheaper
+migration, but the frequency gate loses most of its ladder power;
+(c) a grandfathered &ldquo;keep your frequency&rdquo; perk for migrated accounts.
+This is a Phase 3 modeling question — it directly trades Year-1 ARPU
+expansion against migration friction.</p>
+<p>Also: legacy <strong>monthly</strong> frequency (45 accounts) doesn&rsquo;t exist in the new
+ladder — those accounts get upgraded to weekly at no cost to us.</p>
+<h2>5. Compute intensity (q04a/b) — cost-model inputs</h2>
+<ul>
+<li>System-wide: ~6–8K backup runs/month; <strong>~448 run-hours of processing per
+  day</strong> across 298 accounts with activity in the last 90 days.</li>
+<li>Run durations are long: monthly avg run 1.2–3.0 hours; p95 was ~11–12
+  hours in 2025, improved to ~3–8 hours in 2026.</li>
+<li><strong>Compute is as concentrated as storage:</strong> top 10 accounts consume 32%
+  of all run-hours; the top two (1,950 h and 1,880 h per 90 days) each
+  average ~21 hours of processing <em>per day</em>. A handful of accounts are,
+  computationally, most of the fleet — reinforcing the frequency gate as
+  a real cost lever and per-account anomaly monitoring as a launch need.</li>
+<li><strong>q04c (processed-volume metrics) returned empty</strong> — the metrics jsonb
+  keys exist on only a subset of historical runs (or under a different
+  structure). Probe pending; initial-sync sizing falls back to the q06
+  attachment-upload timeline if metrics don&rsquo;t pan out.</li>
+</ul>
+<h2>6. Initial-sync spike vs steady state (q06 timeline, 836 accounts / 367 with ≥4 months history)</h2>
+<p>The spike hypothesis is confirmed, dramatically:</p>
+<ul>
+<li><strong>Initial sync</strong> (peak of an account&rsquo;s first two months of attachment
+  uploads): p50 = <strong>1 GB</strong>, p75 = 6.4, p90 = 25, p95 = <strong>50</strong>, p99 = 176,
+  max = 437 GB.</li>
+<li><strong>Steady state</strong> (median monthly volume thereafter): p50 = <strong>0.1 GB</strong>,
+  p90 = 2.0, p95 = 6.4 GB.</li>
+<li>The first month is ~<strong>10× steady state at the median, ~99× at p90</strong> —
+  onboarding IS the processing cost event; everything after is a trickle.</li>
+</ul>
+<p><strong>Threshold recommendation:</strong> &ldquo;free initial sync up to 50 GB&rdquo; covers ~95%
+of historical onboardings (19 of 367 exceeded it; only 4 exceeded 200 GB).
+At 100 GB it&rsquo;s ~97%. The tail cases (max 437 GB) are exactly the
+sales-conversation accounts. Pair with: initial sync counts toward no
+meter; the first bill reflects steady-state GB under management.</p>
+<p><strong>System-wide processing flow</strong> (cost-model input): 300–800 GB and
+250K–690K files uploaded per month across the whole base over the last
+13 months. At R2-class unit costs this is small; per-file API/compute
+overhead (Trigger.dev run-hours, provider API calls) dominates the
+processing cost, not bytes.</p>
+<p>(This supersedes the q04c metrics approach — run-metrics jsonb turned out
+to be unpopulated on recent runs; the attachment timeline gives the same
+answer with better coverage.)</p>
+<h2>7. Storage destinations (q07) — the external-storage picture, per provider</h2>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>Active jobs</th>
+<th>Stored files</th>
+<th>Stored GB</th>
+<th>Accounts w/ data</th>
+<th>Avg GB/acct</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Google Drive</td>
+<td>223</td>
+<td>7.13M</td>
+<td>9,867</td>
+<td>593</td>
+<td>16.6</td>
+</tr>
+<tr>
+<td>Dropbox</td>
+<td>89</td>
+<td>3.65M</td>
+<td>6,274</td>
+<td>143</td>
+<td><strong>43.9</strong></td>
+</tr>
+<tr>
+<td>OneDrive</td>
+<td>34</td>
+<td>0.84M</td>
+<td>1,394</td>
+<td>54</td>
+<td>25.8</td>
+</tr>
+<tr>
+<td>Box</td>
+<td>16</td>
+<td>0.45M</td>
+<td>757</td>
+<td>24</td>
+<td>31.5</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td><strong>362</strong></td>
+<td><strong>12.1M</strong></td>
+<td><strong>18,292</strong></td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Active-job total (362) reconciles exactly with q00b. Stored total (18.3 TB)
+  reconciles with the 20.1 TB registry within unmapped/legacy jobs.</li>
+<li><strong>Google Drive is the volume leader; Dropbox users are the heavy hitters</strong>
+  (2.6× the per-account footprint of Drive users). Destination integrations
+  are not equal-cost either — four provider APIs to maintain, each with its
+  own rate limits and failure modes, supporting the decision to gate
+  multi-destination and price external delivery on the same GB meter.</li>
+<li>q06b system-wide flow confirms the §6 numbers: ~200–215 accounts upload
+  in any given month; 300–800 GB/mo typical (one spike month: 1.8 TB,
+  May 2025).</li>
+</ul>
+<h2>8. Sanity checks</h2>
+<ul>
+<li>Active + churned stored GB (14.0 + 5.4 TB) reconciles with the q00f
+  registry total (~20.1 TB uploaded) within rounding.</li>
+<li>Active paying count (336 + 7 trials) reconciles with q00a (344, one
+  account carrying two subscription rows resolved by latest-row rule).</li>
+<li>Revenue check: 337 paying × $33.20 avg × 12 ≈ $134K ≈ $132.7K ARR baseline.</li>
+</ul>
+</body></html>

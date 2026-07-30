@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Baseout — Tier Cost Analysis</title>
+<style>
+body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #202124; max-width: 8in; margin: 40px auto; padding: 0 24px; }
+h1 { font-size: 20pt; } h2 { font-size: 16pt; border-bottom: 2px solid #202124; padding-bottom: 4px; margin-top: 28px; }
+h3 { font-size: 13pt; margin-top: 22px; } h4 { font-size: 11.5pt; margin-top: 18px; }
+table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+th, td { border: 1px solid #999; padding: 5px 8px; font-size: 10pt; text-align: left; vertical-align: top; }
+th { background: #eee; }
+blockquote { border-left: 4px solid #f4b400; background: #fef7e0; margin: 10px 0; padding: 8px 14px; }
+code { font-family: 'Courier New', monospace; font-size: 10pt; background: #f1f3f4; padding: 0 3px; }
+hr { border: none; border-top: 1px solid #ccc; margin: 24px 0; }
+li { margin: 3px 0; }
+</style></head><body>
+<h1>Baseout Tier Cost Analysis — COGS from Real Usage Telemetry</h1>
+<p><strong>Prepared:</strong> 2026-07-29.
+<strong>Unit prices:</strong> from <code>infrastructure-cost-model.md</code> (verified against vendor pages 2026-07-25). Not re-derived here.
+<strong>Usage inputs:</strong> On2Air production telemetry, 2026-07-29 extraction (<code>usage-analysis.md</code>, <code>sql-output/</code>) — 336 active paying accounts mapped to their Baseout reference tiers (Starter+Essentials → Launch, Professional → Growth, Premium → Pro).
+<strong>What this adds over the 7/25 model:</strong> that model priced <em>illustrative</em> profiles. This one prices the <em>actual</em> usage distributions, and answers the four homework numbers (1M-record cost, initial-sync cost, non-public tier cost, AI credit sizing).</p>
+<hr />
+<h2>1. The headline correction: compute, not storage, is the dominant COGS</h2>
+<p>Measured monthly processing per account (Trigger-equivalent run-hours, from 90-day actuals):</p>
+<table>
+<thead>
+<tr>
+<th>Mapped cohort</th>
+<th>n</th>
+<th>p50 h/mo</th>
+<th>p75</th>
+<th>p90</th>
+<th>p95</th>
+<th>max</th>
+<th>mean</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Launch</td>
+<td>168</td>
+<td>12.6</td>
+<td>29.7</td>
+<td>57.7</td>
+<td>72.8</td>
+<td>389</td>
+<td>25.8</td>
+</tr>
+<tr>
+<td>Growth</td>
+<td>83</td>
+<td>49.6</td>
+<td>76.2</td>
+<td>137</td>
+<td>202</td>
+<td>650</td>
+<td>68.8</td>
+</tr>
+<tr>
+<td>Pro</td>
+<td>17</td>
+<td>123</td>
+<td>224</td>
+<td>501</td>
+<td>585</td>
+<td>627</td>
+<td>182</td>
+</tr>
+</tbody>
+</table>
+<p>At Trigger.dev rates (Small 1x $0.122/h, Medium 1x $0.306/h), the <strong>median Growth account burns $6/mo and the median Pro account $15/mo in compute alone</strong> — an order of magnitude above every other per-account cost line. Storage, by contrast, is trivial (§3).</p>
+<p><strong>Efficiency caveat, both directions:</strong> these hours are the <em>legacy engine&rsquo;s</em> wall-clock. Baseout&rsquo;s streaming architecture should be materially faster (model below shows 1× and 3× efficiency scenarios) — but legacy hours are the only measured number we have, so the 1× column is the honest planning basis until Baseout telemetry exists.</p>
+<h2>2. Per-tier COGS and margin (managed-storage scenario, Small 1x, 1× legacy efficiency)</h2>
+<p>&ldquo;Median&rdquo; = the mapped cohort&rsquo;s p50 on every lever simultaneously; &ldquo;p90&rdquo; likewise (conservative: real accounts don&rsquo;t max every lever at once).</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Revenue</th>
+<th>Median profile COGS</th>
+<th>Margin</th>
+<th>p90 profile COGS</th>
+<th>p90 margin</th>
+<th>p90 margin @3× efficiency</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Launch $49</strong></td>
+<td>$49</td>
+<td>compute $1.55 + R2 (2 GB) $0.03 + D1 (25K rec) ~$0.05 + AI $0.50 + registry $0.30 ≈ <strong>$2.4</strong></td>
+<td><strong>95%</strong></td>
+<td>compute $7.0 + R2 (45 GB) $0.68 + D1 $0.30 + AI $1 ≈ <strong>$9.3</strong></td>
+<td><strong>81%</strong></td>
+<td>89%</td>
+</tr>
+<tr>
+<td><strong>Growth $99</strong></td>
+<td>$99</td>
+<td>compute $6.0 + R2 (11 GB) $0.16 + D1 (78K) $0.15 + AI $1.50 ≈ <strong>$8.2</strong></td>
+<td><strong>92%</strong></td>
+<td>compute $16.8 + R2 (157 GB) $2.35 + D1 writes $2 + AI $3 ≈ <strong>$24</strong></td>
+<td><strong>76%</strong></td>
+<td>87%</td>
+</tr>
+<tr>
+<td><strong>Pro $199</strong></td>
+<td>$199</td>
+<td>compute $15.1 + R2 (23 GB) $0.35 + shared-PG slice $2 + AI $3 ≈ <strong>$21</strong></td>
+<td><strong>90%</strong></td>
+<td>compute $61 + R2 (capped 500 GB) $7.50 + PG $4 + AI $5 ≈ <strong>$78</strong></td>
+<td><strong>61%</strong> ⚠</td>
+<td>79%</td>
+</tr>
+<tr>
+<td><strong>Business $399</strong></td>
+<td>$399</td>
+<td>(modeled from Pro tail) compute $25–70 + R2 (1.5 TB) $22.50 + 3× dedicated Neon $5–15 + AI $5 ≈ <strong>$58–112</strong></td>
+<td><strong>72–85%</strong></td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>Add ~3.5% Stripe on all margin lines. Fixed platform base (~$200/mo) is &lt;1% of target revenue and excluded per the 7/25 model.</p>
+<p><strong>Findings against the founder&rsquo;s margin targets (85% blended, 75% floor at p90):</strong></p>
+<ul>
+<li><strong>Launch and Growth clear the floor comfortably</strong> even at legacy efficiency.</li>
+<li><strong>Pro&rsquo;s p90 is the one pinch point: 61% at legacy efficiency.</strong> It&rsquo;s driven entirely by the compute tail (501 h/mo at p90; the top two accounts run ~650 h/mo ≈ $79/mo on Small, $199 on Medium). Three mitigations, any one sufficient: (a) Baseout engine ≥2× faster than legacy → back over 75%; (b) frequency gating actually binds (the tail is daily/hourly × huge estates — Instant pricing should carry it); (c) per-account anomaly monitoring with a fair-use compute policy at Pro, hard-metered at Business. Recommend all three; (c) is a launch requirement per <code>usage-analysis.md</code> §5.</li>
+<li><strong>The 2.8 TB / 21-h-per-day class of account must be priced into Business+, never Pro.</strong> One such account at Pro is –$0 to –$50/mo gross; at Business with the storage meter it&rsquo;s fine.</li>
+</ul>
+<h2>3. Storage: confirmed trivial; allowances are nearly free to include</h2>
+<table>
+<thead>
+<tr>
+<th>Included allowance</th>
+<th>R2 cost at full utilization</th>
+<th>Reality (cohort median)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Launch 50 GB</td>
+<td>$0.75/mo max</td>
+<td>2 GB → <strong>$0.03/mo</strong></td>
+</tr>
+<tr>
+<td>Growth 250 GB</td>
+<td>$3.75/mo max</td>
+<td>11 GB → $0.16/mo</td>
+</tr>
+<tr>
+<td>Pro 500 GB</td>
+<td>$7.50/mo max</td>
+<td>23 GB → $0.35/mo</td>
+</tr>
+<tr>
+<td>Business 1.5 TB</td>
+<td>$22.50/mo max</td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>Median utilization of included storage will be <strong>~4–5%</strong>. Overage priced anywhere at or above $0.10/GB-mo carries ≥6× margin (list-comparable backup products charge $0.20–0.50). The VP-note question &ldquo;what&rsquo;s the incremental cost to include storage per tier&rdquo; answers itself: <strong>cents at median, single-digit dollars at cap — include it.</strong> The only storage that matters economically is the <em>accumulating</em> kind (retention × churn) — hence the departed-customer cleanup policy and Smart Cleanup / R2 Infrequent Access for old snapshots (−33%).</p>
+<h2>4. Homework number 1: cost of including 1M records managed</h2>
+<p>Measured CSV size: 669 bytes/record median, 2.2 KB p90 → <strong>1M records ≈ 0.7–2.2 GB raw, ~1.5–3 GB in a database with indexes.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Where it lives</th>
+<th>At-rest cost</th>
+<th>Write cost (the real driver)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>D1</td>
+<td>$1.10–2.25/mo</td>
+<td>Full weekly re-sync: 4.3M row-writes/mo ≈ <strong>$4.30/mo</strong>. Full daily: <strong>≈$30/mo</strong> ⚠. Incremental/webhook (1–5% change): <strong>cents</strong></td>
+</tr>
+<tr>
+<td>Neon dedicated PG</td>
+<td>$0.50–1.05/mo storage</td>
+<td>Compute scales with sync minutes; incremental ≈ $1–3/mo</td>
+</tr>
+<tr>
+<td>Shared PG slice</td>
+<td>amortized $1.50–3/mo</td>
+<td>included in slice</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Conclusion:</strong> storing 1M records is a $1–3/mo cost — trivially includable at Pro+. The binding constraint is <strong>write frequency × sync mode on D1 tiers</strong>: a daily full re-sync of 1M records on D1 costs $30/mo, which would erase Launch&rsquo;s margin. This independently confirms the usage-derived limits: Launch (D1) capped at 250K records (daily full re-sync ≈ $7.50/mo worst case, fine), 1M+ records lands on Postgres tiers where writes are cheap. <strong>&ldquo;Up to 1M records managed&rdquo; is safe to advertise on Pro and above; not as a lowest-common-denominator inclusion on Launch unless Launch stays weekly-frequency.</strong> (Frequency gate and record limit protect each other — a coherence worth preserving in packaging.)</p>
+<h2>5. Homework number 2: initial-sync absorption cost (the 50 GB free threshold)</h2>
+<p>From the q06 timeline: median onboarding processes ~1 GB in month one; p95 = 50 GB; max ever = 437 GB.</p>
+<p>Cost of a 50 GB initial sync (the proposed free ceiling): ~31K files → R2 Class A ≈ $0.14; compute 2–6 h Medium ≈ $0.60–1.80; storage first month ≈ $0.75. <strong>Worst case ≈ $2.70 one-time.</strong> Median onboarding: <strong>≈ $0.10–0.30.</strong></p>
+<p><strong>Conclusion:</strong> absorbing initial sync up to 50 GB costs pennies-to-$3 per customer — obviously correct to eat as CAC. Even the 437 GB record-holder would have cost ~$15–25 one-time. The threshold&rsquo;s purpose isn&rsquo;t cost recovery, it&rsquo;s (a) a sales-conversation trigger for whale migrations and (b) abuse protection on self-serve signup.</p>
+<h2>6. Homework number 3: non-public sunset tier COGS</h2>
+<p>Product: backup-to-external-storage + data files only (no managed storage, no new platform features), at legacy-equivalent prices (~$29–39/mo).</p>
+<p>Median legacy-profile account (Launch-cohort usage, external destination): compute $1.55 + zero R2 + data-file registry ~$0.30 + no AI ≈ <strong>$2/mo → 93% margin at $29.</strong> p90 profile ≈ $8–9/mo → 70–72% margin at $29, 77–79% at $39. The heavy tail (daily × large estates) is why the sunset tiers should be priced per legacy tier (Starter-equivalent $29, Essentials-equivalent $39, etc.) rather than one flat price — each cohort&rsquo;s compute profile carries its own price point.</p>
+<p><strong>Conclusion:</strong> the slimmed sunset offering is economically comfortable at legacy prices; Vaishali&rsquo;s &ldquo;overstated margin&rdquo; placeholder can be replaced with ~90% median / ~72% p90.</p>
+<h2>7. Homework number 4: AI credit sizing and cost</h2>
+<p>Cost per AI operation depends on the model class:</p>
+<ul>
+<li><strong>Workers AI (Llama-class, verified 7/25):</strong> ~$0.0005–0.002 per doc-generation call (2K in / 500 out).</li>
+<li><strong>Frontier-model API (Claude-class):</strong> roughly 5–20× that per op depending on model and token volume. ⚠ Verify current per-token rates against the provider&rsquo;s published pricing at AI-feature spec time — do not price credits off this memo.</li>
+</ul>
+<p>Suggested framing that is robust to either backend: denominate <strong>1 AI credit ≈ 1 typical operation</strong>, price credits so effective revenue is ~$0.01–0.02/credit (pack pricing), and bundle allowances per tier:</p>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Bundled AI credits/mo</th>
+<th>COGS at Workers-AI backend</th>
+<th>COGS at frontier backend</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Launch</td>
+<td>200</td>
+<td>~$0.20</td>
+<td>~$2</td>
+</tr>
+<tr>
+<td>Growth</td>
+<td>1,000</td>
+<td>~$1</td>
+<td>~$10</td>
+</tr>
+<tr>
+<td>Pro</td>
+<td>5,000</td>
+<td>~$5</td>
+<td>~$50 ⚠</td>
+</tr>
+<tr>
+<td>Business</td>
+<td>15,000</td>
+<td>~$15</td>
+<td>~$150 ⚠</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Conclusion:</strong> at Workers-AI-class inference, bundled allowances are noise (&lt;2% of revenue at every tier). At frontier-model inference, Pro/Business allowances become real COGS lines — which is precisely Vaishali&rsquo;s V2 RAG concern and the argument that won Option B (dedicated AI SKU): if the backend gets expensive, we resize <em>allowances and packs</em>, not the plan architecture. Recommend: launch allowances sized to the Workers-AI column, revisit at V2 with measured per-conversation token counts.</p>
+<h2>8. Summary for the pricing model</h2>
+<ul>
+<li>Blended infra COGS at target mix, from real usage: <strong>≈ 8–12% of revenue at legacy engine efficiency, ≈ 4–6% at 3× efficiency</strong> (the 7/25 model&rsquo;s 4–8% assumed lighter profiles). Blended gross margin <strong>≈ 85–89%</strong> including Stripe — the 85% blended target holds.</li>
+<li>Per-tier floors hold everywhere except <strong>Pro at p90 under legacy efficiency (61%)</strong> — managed by engine efficiency + Instant-frequency pricing + fair-use compute policy.</li>
+<li>The cost model&rsquo;s three real levers, in order: <strong>(1) compute per account</strong> (engine efficiency, frequency gates, anomaly caps); <strong>(2) accumulating storage</strong> (retention policy, departed-customer cleanup, IA tiering); <strong>(3) D1 row-writes</strong> (bound records × frequency on D1 tiers — already handled by the 250K Launch limit).</li>
+<li>Storage allowances, initial-sync absorption, migration grace windows, and Workers-AI-class AI allowances are all <strong>cheap generosity</strong> — include them and market them.</li>
+</ul>
+<h2>9. Scenario: Cloudflare Workflows instead of Trigger.dev (founder idea, 2026-07-29)</h2>
+<p><strong>The mechanism.</strong> Trigger.dev bills <strong>wall-clock</strong> seconds while a task runs — including every second spent waiting on Airtable API pages, Drive/Dropbox uploads, R2 puts, and DB writes. Cloudflare Workflows bills <strong>CPU time only</strong>: &ldquo;a Workflow that is waiting on a response to an API call, paused, or otherwise idle does not incur CPU time&rdquo; (verified 2026-07-29, developers.cloudflare.com/workflows/reference/pricing). Backup work is overwhelmingly I/O wait — founder estimate ≥80%.</p>
+<p><strong>Verified pricing (2026-07-29):</strong> Workflows = Workers Standard: $0.02 per additional M CPU-ms (30M included), $0.30/M requests, and — <strong>new, billing starts Aug 10, 2026</strong> — steps at $0.80 per additional 100K (500K/mo included) and state storage $0.20/GB-mo (1 GB included). Limits are workable: 10K–25K steps/instance, 10K–10M subrequests, 50K concurrent instances, unlimited wall-clock duration, 30s–5min CPU per step, 1 MiB per step result.</p>
+<p><strong>Per-account compute at 80% I/O wait (CPU = 20% of legacy wall-hours), $0.072/CPU-hour:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Profile</th>
+<th>Wall h/mo</th>
+<th>Trigger Small 1x</th>
+<th>Workflows CPU</th>
+<th>Reduction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Launch p50</td>
+<td>12.6</td>
+<td>$1.53</td>
+<td><strong>$0.18</strong></td>
+<td>8.5×</td>
+</tr>
+<tr>
+<td>Growth p50</td>
+<td>49.6</td>
+<td>$6.05</td>
+<td><strong>$0.71</strong></td>
+<td>8.5×</td>
+</tr>
+<tr>
+<td>Pro p50</td>
+<td>123</td>
+<td>$15.06</td>
+<td><strong>$1.78</strong></td>
+<td>8.5×</td>
+</tr>
+<tr>
+<td>Pro p90</td>
+<td>501</td>
+<td>$61.12</td>
+<td><strong>$7.21</strong></td>
+<td>8.5×</td>
+</tr>
+<tr>
+<td>Fleet (13,440 h/mo)</td>
+<td>—</td>
+<td>~$1,640/mo</td>
+<td><strong>~$193/mo</strong></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>At 90% wait, halve the Workflows column again. Steps add roughly $25–40/mo fleet-wide <em>if</em> runs are structured as ~500 steps each (batch attachments per step; never one step per record — per-record steps at fleet volume would cost more than the CPU). Dropping Trigger.dev also removes its $50/mo Pro base fee.</p>
+<p><strong>Effect on the tier model:</strong> the §2 pinch point disappears — Pro p90 COGS falls from ~$78 to ~$25 (<strong>margin 61% → ~87%</strong>), and blended infra COGS drops from 8–12% of revenue to <strong>≈3–5% even at legacy engine efficiency</strong>. This is a bigger lever than the 3× engine-efficiency scenario, and they compound.</p>
+<p><strong>Costs and risks of the move (engineering + platform):</strong>
+- <code>apps/workflows</code> is currently a Node-only Trigger.dev project by explicit architecture; Workflows runs on workerd — task bodies get rewritten (no Node APIs; provider SDKs must be fetch/REST-based; 128 MB isolate memory makes the already-planned streaming patterns mandatory; pass R2 keys between steps, not data, under the 1 MiB step-result cap).
+- CPU isn&rsquo;t zero: CSV serialization, encryption, and parsing are real CPU — the 80% wait share is an estimate to validate with a spike (instrument one real backup: measure CPU-ms vs wall-clock).
+- Workflows step/storage billing is brand-new (announced 2026-07-07, effective 2026-08-10) — model against the post-August numbers, and note repricing risk on a young product.
+- Observability/retry ergonomics vs Trigger.dev&rsquo;s dashboard; deeper all-Cloudflare vendor concentration.
+- Trigger.dev has no equivalent lever: its waitpoints pause billing for explicit <code>wait.for</code> sleeps, but in-task network I/O bills at wall-clock.</p>
+<p><strong>Recommendation:</strong> run a one-week spike — port the backup-base task to a Workflow, run it against 3 real bases (small/median/whale), measure actual CPU-ms share. If CPU share ≤30%, the migration pays for itself in COGS within months at target scale and removes the only tier-margin pinch point in the model.</p>
+</body></html>
