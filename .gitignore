@@ -57,3 +57,6 @@ coverage/
 .parcel-cache
 .eslintcache
 .npm
+
+# Generated compliance artifacts (rebuild: scratchpad build-pdfs.mjs from repo markdown)
+shared/internal/comp-ai-policies/pdf/
