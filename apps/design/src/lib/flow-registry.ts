@@ -67,42 +67,275 @@ export interface RegistryFlow {
 export const FLOW_REGISTRY: RegistryFlow[] = [
   // ── Space setup ───────────────────────────────────────────────────────────
   {
-    id: 'empty-state-setup',
-    name: 'Empty State',
+    id: 'first-setup-full-access',
+    name: 'First setup · full access',
     feature: 'Space setup',
     status: 'built',
     inSwitcher: true,
-    blurb: 'A blank Space to a running backup — every object created inline.',
+    blurb: 'Zero to a running backup, step by step — the reference journey when Airtable gives us everything.',
     specs: [
       { change: 'space-setup-wizard', capability: 'integrations', scenario: 'Empty Space overview' },
       { change: 'space-setup-wizard', capability: 'integrations', scenario: 'Ordered setup' },
-      { change: 'space-setup-wizard', capability: 'integrations', scenario: 'No account object yet' },
-      { change: 'space-setup-wizard', capability: 'integrations', scenario: 'Created and selected' },
+      { change: 'base-picker-workspace-grouping', capability: 'base-picker-workspace-grouping', scenario: 'Full access shows real workspace names' },
+      { change: 'workspace-auto-enroll', capability: 'workspace-auto-enroll', scenario: 'Enroll one of three workspaces' },
       { change: 'integrations-redesign', capability: 'integrations', scenario: 'First backup running confirmation' },
     ],
     code: [
       'apps/web/src/views/SpaceHomeView.astro',
-      'apps/web/src/components/integrations/SpacePipelineHero.astro',
       'apps/web/src/views/IntegrationsSetupWizard.astro',
+      'apps/web/src/components/integrations/BaseSelectionTable.astro',
     ],
     steps: [
       {
-        label: 'Empty Space',
-        href: '/?fixture=empty',
-        caption: "A brand-new Space's Home — nothing set up yet. Click 'Set up backup' to begin.",
+        label: '1 · Nothing here yet',
+        href: '/?fixture=empty&scenario=reset',
+        caption: 'A brand-new Space. No source, no bases, no history — one way forward: Set up backup.',
       },
       {
-        label: 'Set up (all empty)',
-        href: '/integrations/configure?first=1',
-        caption:
-          'No source or destination on the account yet. Connect a source in the drawer, pick bases, add a destination in its drawer, choose options, then Run — walk it with the wizard step buttons.',
+        label: '2 · Connect Airtable',
+        href: '/integrations/configure?first=1&step=source',
+        caption: 'Step one of the wizard. The account has no source yet, so the panel opens on its empty state and the connect drawer is the only move. Everything after this depends on it, which is why the stepper gates the later steps.',
       },
       {
-        label: 'First backup running',
+        label: '3 · Bases — list first, workspaces still arriving',
+        href: '/integrations/configure?first=1&step=bases&wsresolve=resolving',
+        caption: 'The moment that shapes this whole screen. The base list is ONE call, so it is here immediately and fully usable — search it, tick bases, move on. Workspaces need one call PER BASE, so they arrive behind a quiet counter in the toolbar. Watch it climb for ~15s and select while it runs: nothing is disabled and nothing moves.',
+      },
+      {
+        label: '4 · Workspaces matched — an offer',
+        href: '/integrations/configure?first=1&step=bases&wsresolve=offered',
+        caption: 'The counter becomes "Workspaces matched · Group by workspace". It is an OFFER, not an action: the table has not regrouped, because rearranging rows under someone mid-selection is the thing this design exists to prevent. Ignore it and the flat table is still a complete answer.',
+      },
+      {
+        label: '5 · Grouped, with auto-add',
+        href: '/integrations/configure?first=1&step=bases&wsresolve=grouped',
+        caption: 'Accepted. Real Airtable workspace names, per-group select-all, and the Auto-add column with its master toggle — decide once per workspace what happens to bases created later. The toolbar line goes silent; the user pressed the control a second ago and does not need it narrated.',
+      },
+      {
+        label: '6 · Branch — the lookup fails',
+        href: '/integrations/configure?first=1&step=bases&wsresolve=failed',
+        caption: 'Not every run succeeds. "Couldn\'t match · Retry" — a fact about the connection, not the user\'s mistake, and deliberately not in a warning colour. The table stays flat and fully usable, because failing to group has no bearing on choosing bases. This branch rejoins the flow at step 7.',
+      },
+      {
+        label: '7 · Destination',
+        href: '/integrations/configure?first=1&step=dest',
+        caption: 'Where the backups land. Same empty-state shape as the source step: nothing on the account yet, so the drawer is the way in.',
+      },
+      {
+        label: '8 · Options',
+        href: '/integrations/configure?first=1&step=options',
+        caption: 'Cadence and scope. Defaults are chosen so this step can be passed through without a decision — power stays available, but is not demanded of someone who has been here two minutes.',
+      },
+      {
+        label: '9 · Review and run',
+        href: '/integrations/configure?first=1&step=review',
+        caption: 'Everything just decided, in one list, before anything runs. The final CTA is "Run first backup" — the one moment in the wizard where the button is the point.',
+      },
+      {
+        label: '10 · Protected, first backup running',
         href: '/?status=running',
-        caption: 'Back on Home — the Space is protected and the first backup is running (no completed history yet).',
+        caption: 'Home again, now with a pipeline. The first run is in flight and there is no completed history yet — the state a real user lands in seconds after finishing.',
       },
     ],
+    note:
+      'This is the journey to walk first; the other two first-setup flows change only what happens at the Bases step. `?step=` moves the wizard\'s stepper rather than bypassing it, so every gate behaves as if you had clicked through.',
+  },
+  {
+    id: 'first-setup-limited-access',
+    name: 'First setup · limited access',
+    feature: 'Space setup',
+    status: 'built',
+    inSwitcher: true,
+    blurb: 'The same journey when the user shared only specific bases — Airtable withholds workspace NAMES but still returns their IDs.',
+    specs: [
+      { change: 'base-picker-workspace-grouping', capability: 'base-picker-workspace-grouping', scenario: 'Limited access shows generic workspace names' },
+      { change: 'base-picker-workspace-grouping', capability: 'base-picker-workspace-grouping', scenario: 'Renaming a placeholder workspace' },
+      { change: 'workspace-auto-enroll', capability: 'workspace-auto-enroll', scenario: 'Enroll one of three workspaces' },
+    ],
+    code: [
+      'apps/web/src/components/integrations/BaseSelectionTable.astro',
+      'apps/web/src/stores/connections.ts',
+    ],
+    steps: [
+      {
+        label: '1 · Nothing here yet',
+        href: '/?fixture=empty&wsnames=none',
+        caption: 'Identical start. Nothing about the empty Space hints at which access scope the user is about to grant.',
+      },
+      {
+        label: '2 · Connect Airtable',
+        href: '/integrations/configure?first=1&step=source&wsnames=none',
+        caption: 'The fork happens inside Airtable\'s own consent screen, not ours: the user shares specific bases rather than the whole environment. We find out afterwards, by what comes back.',
+      },
+      {
+        label: '3 · Bases — same wait, same freedom',
+        href: '/integrations/configure?first=1&step=bases&wsnames=none&wsresolve=resolving',
+        caption: 'Indistinguishable from full access at this point, and that is correct — the base list is complete either way. Limited access costs names, not bases.',
+      },
+      {
+        label: '4 · Grouped, but nameless',
+        href: '/integrations/configure?first=1&step=bases&wsnames=none&wsresolve=grouped',
+        caption: 'The IDs came back, so the grouping is real — only the labels are missing. Groups read "Workspace 1 · name unavailable", and the explanation lives in the header itself with the full sentence in its tooltip. There is no warning band above the table: an explanation belongs beside the thing it explains, not stacked over everything.',
+      },
+      {
+        label: '5 · Name them yourself',
+        href: '/integrations/configure?first=1&step=bases&wsnames=none&wsresolve=grouped',
+        caption: 'Same screen, now use it: the pencil on a group header renames it in place. The name is stored against the workspace ID, so it survives a reconnect. The route to real names — reconnect with full access — sits on the auto-enroll rule, the capability that limited access actually blocks.',
+      },
+      {
+        label: '6 · After reconnecting with full access',
+        href: '/integrations/configure?first=1&step=bases&wsresolve=grouped&wsalias=arrived',
+        caption: 'NOTE — access has CHANGED by this step: the user reconnected with full access, so this screen deliberately shows real workspace names, not placeholders. That is the point of the step. Airtable\'s own name has landed for every workspace at once (access is all-or-nothing), and for the one the user had named by hand it now takes over — but not silently: one reversible prompt names both and offers "Keep mine". A label typed only because the field was blank is a workaround, not an opinion, so it yields; but it is never destroyed without a word.',
+      },
+      {
+        label: '7 · Review and run',
+        href: '/integrations/configure?first=1&step=review&wsnames=none',
+        caption: 'From here the journey is identical to full access. Limited access changed how bases were LABELLED, never which ones could be protected.',
+      },
+      {
+        label: '8 · Protected, first backup running',
+        href: '/?status=running&wsnames=none',
+        caption: 'Same destination. Worth noticing: nothing downstream of the picker knows or cares which access scope this connection had.',
+      },
+    ],
+    note:
+      'Access is ALL-OR-NOTHING per connection (founder, 2026-07-28): either every workspace shows its real name or none does, so there is no mixed screen here. The "Still matching" bucket in the picker is about TIME, not permissions — a different fact with a different label.',
+  },
+  {
+    id: 'first-setup-small-account',
+    name: 'First setup · small account',
+    feature: 'Space setup',
+    status: 'built',
+    inSwitcher: true,
+    blurb: 'One workspace, a handful of bases — the most common case, where none of the workspace machinery ever appears.',
+    specs: [
+      { change: 'base-picker-workspace-grouping', capability: 'base-picker-workspace-grouping', scenario: 'Single workspace stays flat' },
+      { change: 'space-setup-wizard', capability: 'integrations', scenario: 'Ordered setup' },
+    ],
+    code: [
+      'apps/web/src/components/integrations/BaseSelectionTable.astro',
+    ],
+    steps: [
+      {
+        label: '1 · Nothing here yet',
+        href: '/?fixture=empty&ws=single',
+        caption: 'Same empty Space.',
+      },
+      {
+        label: '2 · Connect Airtable',
+        href: '/integrations/configure?first=1&step=source&ws=single',
+        caption: 'Same connect step.',
+      },
+      {
+        label: '3 · Bases — and that is all',
+        href: '/integrations/configure?first=1&step=bases&ws=single&wsresolve=offered',
+        caption: 'Everything lives in one workspace, so grouping would add a header and nothing else. No offer is made, no counter appears, no line exists in the toolbar at all — one group is not grouping. This is the point of the whole design: the machinery is invisible to the people who do not need it.',
+      },
+      {
+        label: '4 · Review and run',
+        href: '/integrations/configure?first=1&step=review&ws=single',
+        caption: 'Straight through. For this user the picker was simply a list of bases with checkboxes, which is exactly what it should have been.',
+      },
+      {
+        label: '5 · Protected, first backup running',
+        href: '/?status=running&ws=single',
+        caption: 'Done. Compare the number of decisions this user made with the full-access flow — same product, proportional demands.',
+      },
+    ],
+    note:
+      'Walk this one LAST. Read against the other two it shows the restraint the design is aiming for: the workspace features exist for large estates and cost nothing to everyone else.',
+  },
+  {
+    id: 'workspace-grouped-picker',
+    name: 'Bases picker — every state',
+    feature: 'Space setup',
+    status: 'built',
+    blurb: 'State-by-state reference for the picker — walk this when you need one specific state, not the whole journey.',
+    specs: [
+      { change: 'base-picker-workspace-grouping', capability: 'base-picker-workspace-grouping', scenario: 'Multi-workspace estate' },
+      { change: 'base-picker-workspace-grouping', capability: 'base-picker-workspace-grouping', scenario: 'Full access shows real workspace names' },
+      { change: 'base-picker-workspace-grouping', capability: 'base-picker-workspace-grouping', scenario: 'Limited access shows generic workspace names' },
+      { change: 'base-picker-workspace-grouping', capability: 'base-picker-workspace-grouping', scenario: 'Renaming a placeholder workspace' },
+      { change: 'base-picker-workspace-grouping', capability: 'base-picker-workspace-grouping', scenario: 'Single workspace stays flat' },
+      { change: 'workspace-auto-enroll', capability: 'workspace-auto-enroll', scenario: 'Enroll one of three workspaces' },
+      { change: 'workspace-auto-enroll', capability: 'workspace-auto-enroll', scenario: 'Global toggle as macro' },
+    ],
+    code: [
+      'apps/web/src/components/integrations/BaseSelectionTable.astro',
+      'apps/web/src/components/integrations/BasePickerRow.astro',
+      'apps/web/src/stores/connections.ts',
+      'apps/design/src/lib/wsResolve.ts',
+    ],
+    steps: [
+      {
+        label: '1 · Nothing running',
+        href: '/integrations/configure?wsresolve=flat&step=bases',
+        caption:
+          'The baseline the whole design rests on: a flat table that is COMPLETE on its own. Search, select, save — nothing disabled, no skeleton, and the toolbar says nothing about workspaces at all. A user who picks three bases and presses Next in five seconds never learns grouping exists, and that is a finished path, not a degraded one.',
+      },
+      {
+        label: '2 · Resolving',
+        href: '/integrations/configure?wsresolve=resolving&step=bases',
+        caption:
+          'The workspace lookup is running — one Airtable call per base, so on a large estate this takes a while. A spinner and a counter ("Matching workspaces… 31 / 50") sit INSIDE the toolbar row with no band of their own. Watch the number climb for ~15s, and select bases while it does: the table never moves, never regroups, never blocks.',
+      },
+      {
+        label: '3 · Resumed after a reload',
+        href: '/integrations/configure?wsresolve=resumed&step=bases',
+        caption:
+          'Reload mid-run and the counter picks up around two thirds through, not at zero. Progress is never thrown away — the work already paid for in API calls belongs to the user, not to the page view.',
+      },
+      {
+        label: '4 · Ready — an offer, not an action',
+        href: '/integrations/configure?wsresolve=offered&step=bases',
+        caption:
+          'The line becomes "Workspaces matched · Group by workspace". Nothing has regrouped: rearranging rows under a cursor that is mid-selection is exactly the failure this design exists to avoid. The answer is remembered per connection, so the question is asked once, not every visit.',
+      },
+      {
+        label: '5 · Grouped',
+        href: '/integrations/configure?wsresolve=grouped&step=bases',
+        caption:
+          'Accepted. Groups, the Auto-add column with its master toggle, Ungroup and Collapse all — and the toolbar line goes SILENT. No caption explaining what happened: the user pressed the control a second ago, restating it is noise. Reload and it stays grouped; Ungroup and that sticks too.',
+      },
+      {
+        label: '6 · Partial',
+        href: '/integrations/configure?wsresolve=partial&step=bases',
+        caption:
+          'Matched workspaces group, and the bases still awaiting their own call land in "Still matching" — never in "No workspace". Both groups render at once here, on purpose: a lookup that has not returned and a base that genuinely has no workspace are different facts, so they get different buckets, labels and tooltips.',
+      },
+      {
+        label: '7 · Failed',
+        href: '/integrations/configure?wsresolve=failed&step=bases',
+        caption:
+          '"Couldn\'t match · Retry". Stated as a fact about the connection, never as the user\'s mistake — no apology, no warning colour. The table stays flat and fully usable, because failing to group has no bearing on choosing bases. Retry re-runs the lookup and the counter comes back.',
+      },
+      {
+        label: '8 · Full access',
+        href: '/integrations/configure?wsresolve=grouped&step=bases',
+        caption:
+          'Real Airtable workspace names, each group collapsible with its own select-all and Auto-add switch. Nothing to explain — this is what full-environment access looks like.',
+      },
+      {
+        label: '9 · Limited access',
+        href: '/integrations/configure?wsnames=none&wsresolve=grouped&step=bases',
+        caption:
+          'Airtable withholds the NAMES but still returns the IDs, so grouping survives. Groups read "Workspace 1 · name unavailable", renameable in place. Note where the explanation lives: in the group header itself, with the sentence in its tooltip — the full-width warning band that used to sit above the table is gone, because an explanation belongs next to the thing it explains. The "reconnect with full access" route now sits on the auto-enroll rule, the capability limited access actually blocks.',
+      },
+      {
+        label: '10 · A real name arrives',
+        href: '/integrations/configure?wsresolve=grouped&wsalias=arrived&step=bases',
+        caption:
+          'The user had typed a name for a blank workspace; Airtable\'s real one has now landed. It takes over — but not silently. One reversible prompt says which name is in use and what they had called it, with "Keep mine". A name typed only because the field was empty is a workaround, not an opinion.',
+      },
+      {
+        label: '11 · Both names, earned',
+        href: '/integrations/configure?wsresolve=grouped&wsalias=custom&step=bases',
+        caption:
+          'They pressed "Keep mine", so the alias is now a deliberate choice rather than a placeholder fill — and ONLY now do both names show: theirs leading, Airtable\'s muted beside it. Dual display is earned, never the resting state; showing both by default would assume every typed name was an opinion.',
+      },
+    ],
+    note:
+      'Founder answers, 2026-07-28. Access is ALL-OR-NOTHING per connection — either every workspace shows its real name or none does — so there is deliberately no mixed-ACCESS screen. The pending bucket in step 6 is about TIME, not permissions. Auto-add only ever covers bases inside the access granted, and a workspace enrolled by the standing rule defaults its own Auto-add to ON. Confirmed cost: the workspace ID needs one extra API call per base, which is what turned grouping from the page\'s frame into an enhancement that arrives. Still open with Dan: whether Retry should re-run only the failed bases or the whole sweep (needs the engine to report which failed). Harness states not walked here: ?grouped=0 (no workspace data at all) and ?ws=single (one workspace → no offer is ever made, since one group is not grouping).',
   },
   {
     id: 'edit-config',
@@ -640,6 +873,68 @@ export const FLOW_REGISTRY: RegistryFlow[] = [
   // Tab order: Browse · Visualize · Changelog · Health · Docs (Browse is the landing).
   // No OpenSpec change yet (specs[] empty) — the .md briefs are the contract.
   {
+    id: 'view-fields-depth',
+    name: 'Views — what we can see, and what we cannot',
+    feature: 'Schema',
+    status: 'built',
+    blurb: 'Airtable tells us which fields a view shows only in one case. Both depths ship, and the two silences are worded apart.',
+    specs: [
+      { change: 'view-schema-details', capability: 'view-schema-details', scenario: 'Views are first-class Browse entities' },
+      { change: 'view-schema-details', capability: 'view-schema-details', scenario: 'The view panel is honest about capture depth' },
+      { change: 'view-schema-details', capability: 'view-schema-details', scenario: 'View with captured configuration' },
+      { change: 'view-schema-details', capability: 'view-schema-details', scenario: 'Name/type-only view' },
+    ],
+    code: [
+      'apps/web/src/components/schema/EntityPanel.astro',
+      'apps/web/src/components/schema/SchemaBrowse.astro',
+      'apps/web/src/components/schema/schemaEntities.ts',
+    ],
+    steps: [
+      {
+        label: '1 · Fields captured — the good case',
+        href: '/panels?open=v-co-all&scenario=reset',
+        caption: 'Open the view "All companies" (v-co-all). "Fields shown · 4 of 11" with the fields NAMED as chips, each one drilling to that field. This is what an Airtable ENTERPRISE account returns through the REST API — the only route that carries which fields a view shows.',
+      },
+      {
+        label: '2 · A realistic table',
+        href: '/panels?open=v-co-audit',
+        caption: 'Open "Data audit grid" (v-co-audit) — 8 of 11. Then "Full ledger" (v-dl-full) on the 33-field Deal Log — 26 of 33, so the chip box passes its cap of 20 and offers "+6 more" INSIDE the same box. The cap is 20, not the 5 the row-lists use: chips wrap, so twenty of them cost about what four rows cost.',
+      },
+      {
+        label: '3 · The size that hurts',
+        href: '/panels?open=v-ol-everything',
+        caption: 'Open "Everything" (v-ol-everything) on the 121-field Ops Ledger — 96 of 121. Collapsed: 20 chips + "+76 more", 260px. Expanded: 96 chips in one box, 1099px, which pushes everything below far down. Accepted deliberately (Oleh 2026-07-29): the user asked to see them, and one click closes it again.',
+      },
+      {
+        label: '4 · THE FORK — not an enterprise Airtable account',
+        href: '/panels?open=v-co-forecast',
+        caption: 'Open "Forecast review" (v-co-forecast). A GRID view, so Airtable could supply the fields — but this connection did not read that deep: "This connection didn\'t include which fields this view shows. Airtable returns that only through its REST API on an enterprise Airtable account." The gate is the CUSTOMER\'S Airtable plan, not ours, so there is no Baseout tier language and no upgrade CTA anywhere on this screen.',
+      },
+      {
+        label: '5 · The other silence — not a grid view',
+        href: '/panels?open=v-co-map',
+        caption: 'Open "Account gallery" (v-co-map). Airtable never returns visible fields for a Gallery view, for anybody, on any plan: "…so there is nothing to capture for a Gallery view." Deliberately worded apart from step 4 — one is a permanent fact about the view type, the other is about this connection, and collapsing them into one line would misplace the blame.',
+      },
+      {
+        label: '6 · A view whose table we did not capture',
+        href: '/panels?open=v-co-orphan',
+        caption: 'Open "Untitled view" (v-co-orphan): "We captured this view but not which table it belongs to, so it isn\'t nested under one." Browse gives it its own group beside the tables rather than dropping it. The founder is still researching how views arrive tied to a table (Q7, 2026-07-28) — this is the safe state until that lands.',
+      },
+      {
+        label: '7 · The reverse direction',
+        href: '/panels?open=f-co-name',
+        caption: 'Open the FIELD "Name" (f-co-name) → Referenced by → Views: All companies · Data audit grid · My accounts. This is the half that was missing when the founder said "I believe we already have reverse dependencies" — automations, interfaces, formulas, rollups, lookups and chats were all there, views were not. Then open "Website" (f-co-website): no views show it, so the group is omitted entirely — never "Views 0".',
+      },
+      {
+        label: '8 · Views in Browse',
+        href: '/schema',
+        caption: 'Expand a base: views sit under their table in their own "Views (n)" group, capped independently of the fields so four fields are not buried under a hundred views. Sales CRM also carries the "Views · table not resolved" group from step 6.',
+      },
+    ],
+    note:
+      'Founder answer, Q6 2026-07-28: "If we get the MCP then we just get ID, name, and type. If the account is an Airtable enterprise account then we would be able to get the fields that are visible… we would have to support both scenarios." FILTERS, SORTS, GROUPING AND COLOURING DO NOT EXIST in any Airtable endpoint — not "not captured yet", there is no source — so they must never appear in this UI or in a fixture. Q8 confirmed the enterprise gate is the CUSTOMER\'S Airtable account, not Baseout\'s.',
+  },
+  {
     id: 'schema-browse',
     name: 'Browse — explorer + detail panel',
     feature: 'Schema',
@@ -1174,5 +1469,288 @@ export const FLOW_REGISTRY: RegistryFlow[] = [
       },
     ],
     note: 'RESOLVED + PORTED. Decisions: Oleh 2026-07-02 — keep A + B (drop Neon-pills+More option C), pull Chat out of the tabs, ONE chat surface everywhere (modal drawer that Expands to full page; inset side-panel dropped). Dan CONFIRMED 2026-07-03 — Variant A (groupings = visual labels above the tabs, NOT tabs); keep the global Ask button AND a Chat item under Knowledge that opens the full chat. Variant A was SHIPPED into the live SchemaView 2026-07-03 (commit f0684c0) — see schema-nav. The prototype survives at /schema-nav for the record. STILL OPEN: the fuller mobile treatment (Dan’s "on mobile use the groupings AS tabs" via a media query) — only primitive sideways-scroll shipped. Rationale + competitor evidence: research/schema-navigation/index.html.',
+  },
+
+  // ── Data (browse backed-up data — the /data page, iteration-3) ────────────────
+  {
+    id: 'data-page',
+    name: 'Data page — Browse · Record · Changelog · Docs · Export',
+    feature: 'Data',
+    status: 'built',
+    blurb:
+      'The /data page: browse records a backup captured, open a record drawer (Schema multi-panel parity), read the changelog between runs, document with @/@@ tagging, and export what you see. All five surfaces shipped in iteration-3.',
+    specs: [],
+    code: [
+      'apps/web/src/views/DataView.astro',
+      'apps/web/src/components/data/DataBrowse.astro',
+      'apps/web/src/components/data/RecordPanel.astro',
+      'apps/web/src/components/data/DataChangelog.astro',
+      'apps/web/src/components/schema/SchemaDocs.astro',
+      'apps/web/src/components/schema/ExportControl.astro',
+    ],
+    steps: [
+      { label: 'Browse (default)', href: '/data', caption: 'Fully-onboarded: 3 bases · 13 tables. Presets/tabs, filter builder, Record ID column, column reorder, in-table search. Rows-per-page pager (25/50/100, default 50) below the grid — pattern-table-toolbar, same construction as Backups (Oleh 2026-07-23).' },
+      { label: 'Empty (never backed up)', href: '/data?fixture=empty', caption: 'No tables → the whole page degrades to "Data appears after your first backup" with a link to /backups.' },
+      { label: 'Big table (sample vs. approx)', href: '/data?fixture=big', caption: 'Lands on Events (~1.24M approx rows vs a small shipped sample). Exercises the sample-vs-total honesty band-aids; the pager reads over the loaded sample, not the true 1.24M (a fixture limit, not a product one).' },
+      { label: 'Stale backup', href: '/data?fixture=stale', caption: 'Backup older than the schedule → stale banner.' },
+      { label: 'Static (files-only Space)', href: '/data?fixture=static', caption: 'Browse→StaticImport, Changelog/Chat locked, Docs live, RecordPanel History locked.' },
+    ],
+    note: 'Grounded surface map + edge audit done 2026-07-22. Open frictions are tracked as the "Data · edge cases" group below.',
+  },
+
+  // ── Data · Comments (spec #7 comments-explorer) ──────────────────────────────
+  {
+    id: 'data-comments',
+    name: 'Comments — the stream, the two absences, and the thread',
+    feature: 'Data',
+    status: 'built',
+    blurb:
+      'Every record comment across the Space in one stream. Airtable has no deleted flag, so the surface says exactly as much as the capture can support — and no more.',
+    specs: [
+      { change: 'comments-explorer', capability: 'comments-explorer', scenario: 'Cross-base comment stream' },
+      { change: 'comments-explorer', capability: 'comments-explorer', scenario: 'A comment that left the source' },
+      { change: 'comments-explorer', capability: 'comments-explorer', scenario: 'Comments on a record' },
+    ],
+    code: [
+      'apps/web/src/components/data/DataComments.astro',
+      'apps/web/src/components/data/commentText.ts',
+      'apps/web/src/components/data/recordReadBody.ts',
+      'apps/web/src/components/data/RecordPanel.astro',
+    ],
+    steps: [
+      {
+        label: '1 · The stream',
+        href: '/data?tab=comments',
+        caption:
+          'Every captured comment across every base, newest first, grouped by day — 540 of them here. It is the SAME row grid as the Schema changelog, not a second stream primitive: Location (base › table) · Record · Author · Comment · Status · Time. Airtable can only list comments per record, so this view exists only because we captured them; there is no Airtable screen that shows this.',
+      },
+      {
+        label: '2 · A readable set',
+        href: '/data?tab=comments&fixture=fewcomments',
+        caption:
+          '24 comments instead of 540 — the state to read the ROWS in, while the default is the state to stress the pager in. Every edge below lives in this fixture.',
+      },
+      {
+        label: '3 · Deleted — a fact we can prove',
+        href: '/data?tab=comments&fixture=fewcomments',
+        caption:
+          'July 5 and July 10 carry a red "Deleted" badge. This is a claim, and we only make it because the founder corrected our mechanics (2026-07-30): a capture fetches a record\'s WHOLE comment list, so a record that came back WITHOUT the comment proves the comment is gone. No diffing pass of our own, no inference. Hover the badge for the sentence that explains why we can say it.',
+      },
+      {
+        label: '4 · Last seen — the limit of what we know',
+        href: '/data?tab=comments&fixture=fewcomments',
+        caption:
+          'July 3, the amber badge: the comment is gone AND so is its record. With nothing to re-read, a deletion and a record that left backup scope are indistinguishable — so the row states an OBSERVATION ("Last seen Jun 23"), not a diagnosis. Deliberately worded and coloured apart from step 3: collapsing the two would trade a fact for a guess. Filter Status → the three values are separable.',
+      },
+      {
+        label: '5 · The normal case wears nothing',
+        href: '/data?tab=comments&fixture=fewcomments',
+        caption:
+          'Note what is NOT on the other 21 rows. An earlier cut marked "In Airtable" on every present comment — 18 identical badges in a 20-row view, 526 in the full fixture. A column that shouts on every row stops being read, and the one row that matters loses its contrast (measured, Oleh 2026-07-29). Only exceptions are marked.',
+      },
+      {
+        label: '6 · A record name that is a sentence',
+        href: '/data?tab=comments&fixture=fewcomments',
+        caption:
+          'July 12–14, the Operations › Tickets rows. A primary field is often the subject line, not "ORD-1000" — up to 158 characters here. It truncates, the row stays exactly 40px (a stream is scannable because every row is the same height), and hovering gives the full text back. The tooltip is attached ONLY to cells that are actually clipped — 23 of 60 — because a tooltip repeating text you can already read teaches people to ignore the ones that do not.',
+      },
+      {
+        label: '7 · A comment whose record we do not hold',
+        href: '/data?tab=comments&fixture=fewcomments',
+        caption:
+          'July 4: the Record column shows an unlink glyph and the raw id, because that record is not in this backup. It is not hidden and not silently dropped — clicking it lands on the record panel\'s own "This record isn\'t in this backup" state rather than doing nothing.',
+      },
+      {
+        label: '8 · WITH an enterprise Airtable account → real names',
+        href: '/data?tab=comments&fixture=fewcomments',
+        caption:
+          'Open this and step 9 side by side — they are the SAME comments, and the only difference is what the customer\'s Airtable plan lets us read. Here Airtable returns a name, so the Author column shows "Priya Nair" with an initials chip. There is never an avatar: Airtable ships no profile picture on a comment, which the API settles rather than taste. Exactly ONE row breaks the pattern — July 13 reads "Airtable user" with no chip — and it is deliberate: a person can be unresolvable even WITH enterprise, because they were removed from the workspace after commenting, or because an automation wrote it rather than a person (Airtable\'s own mention model has an `appAgent` kind). That is a different fact from "this plan does not return names", so it is not collapsed into it. Everything else here has a name; the email-only case is what step 9 is for, and used to be mixed in here until it blurred the very comparison these two steps exist to make.',
+      },
+      {
+        label: '9 · WITHOUT enterprise → email addresses, and no chips',
+        href: '/data?tab=comments&fixture=emailcomments',
+        caption:
+          'The same rows, every name stripped. Founder, 2026-07-30: "we will only get the email of the user and the ID… we would display the email unless it\'s an enterprise Airtable account then we can get the names" — so for most customers THIS is the screen, not step 8. Three things to look at. (1) The address is shown IN FULL and truncates with an ellipsis like every other long value in the row; an earlier cut rendered only the local part (priya.nair@example.com → priya.nair) and was rejected — it hid the domain with no ellipsis to admit it, and in an agency\'s Space the domain says which client a person belongs to. (2) The initials chips are GONE, because "PN" derived from an email invents a first and last name we do not have; the chip\'s absence now carries information instead of decorating over its lack. (3) Nothing else moves — same columns, same 40px rows — because the column was sized for the address rather than for the comfortable name. The Author FACET still lists full addresses either way; shortening was only ever a question about a dense row, and a dropdown has room a row does not.',
+      },
+      {
+        label: '10 · The thread lives in the record',
+        href: '/data?tab=comments&fixture=fewcomments',
+        caption:
+          'Click any "Ada Okoye" row. The record panel opens, scrolls to its Comments section AND highlights the exact comment you came from — the highlight fades, because nothing here is selectable and a permanent mark would read as state. The section is a CONVERSATION, not a feed: oldest first, full text (the stream shows one line), replies indented under their parent. Founder, 2026-07-30: "comments are always tied to a Record, so the Record sidepage should have a comments section, and from the Comments listing table we could deep link to that section/comment".',
+      },
+    ],
+    note:
+      'OPEN: retention. The founder settled the MODEL — deleted in Airtable, kept and marked here — but not the LIFETIME. Our backup cleanup is tiered, and a comment lives inside the backups being thinned, so today we mark a deleted comment as worth keeping and then drop it later on a schedule written for record data. Asked 2026-07-30, unanswered. NOT BUILT and deliberately so: the records "with / without comments" filter (its preset membership is unresolved and would break the Save/Discard lock model), reactions (carried in the type, never rendered, nobody has decided they matter), and comment attachments — the founder put those in the media library with a source of Field or Comment, which is spec #8\'s shape, not this one.',
+  },
+
+  // ── Data · Changelog enrichment (make it a trust tool, not just a table) ──────
+  {
+    id: 'data-changelog-enrichment',
+    name: 'Changelog — attention column + change-type segmented control',
+    feature: 'Data',
+    status: 'built',
+    blurb: 'Turning the Changelog into a trust tool: the run table has proper columns — Backup run · Synced · Attention (a "Mass delete" / "Import spike" flag on unusual runs) · Created · Updated · Deleted — and each run drill leads with a big full-width Created/Updated/Deleted segmented control.',
+    specs: [],
+    code: ['apps/web/src/components/data/DataChangelog.astro'],
+    steps: [
+      { label: 'Attention column', href: '/data', caption: 'Changelog: a dedicated Attention column flags unusual runs — a red "Mass delete" or amber "Import spike" badge, computed from the true per-run totals. Reference: ProBackup proactive-alerts.' },
+      { label: 'Columnar run table', href: '/data', caption: 'Backup run (day + id) · Synced (time) · Attention · Created · Updated · Deleted — clean columns instead of everything crammed by the date.' },
+      { label: 'Change-type segmented control', href: '/data', caption: 'Open a run → the Created / Updated / Deleted tabs are a big full-width segmented control below the header (lifted out of it).' },
+      { label: 'Search within a backup', href: '/data', caption: 'The run drill has a search box under the segmented control that filters this backup\'s records by name / table.' },
+      { label: 'Run-list pager', href: '/data', caption: 'The run table (below the list, was unpaginated/scrolling) now carries the same pager as Backups / the record grid — rows-per-page select (10/20/50, default 20) + range/total + prev/next. Filters and search reset it to page 1.' },
+      { label: 'Run-drill pager reconciled', href: '/data', caption: 'Open a run → the record list\'s pager was a bespoke centred "page N of M" with a hardcoded 50/page and no rows control; it now matches the same construction — rows-per-page select (25/50/100, default 25) + range/total + square-ghost prev/next. Page size is a shared preference across every open panel; each panel\'s own page position stays independent.' },
+    ],
+    note: 'SHIPPED 2026-07-22: A (attention flags in their own column) + a column restructure (Synced/Attention split out) + the drill change-type tabs promoted to a big full-width segmented control. REMOVED per Oleh feedback: B (a trend strip over the table — disliked; TrendChart/storybook reverted) and the C2 in-drill breakdown (its summary just duplicated the segment control). NO "Who" column — snapshot-diff backups have no actor (anti-fabrication; ties to open A1). Refs: Fibery/Basecamp/ProBackup. See [[data-changelog-enrichment-2026-07-22]]. Pager standardization (Oleh 2026-07-23): run list gained a pager (was unpaginated); the drill\'s bespoke pager was reconciled onto the shared pattern-table-toolbar construction (own rows-per-page control, own preference key `dcp-pagesize`).',
+  },
+
+  // ── Data · Changelog run drill → record: back-navigation fix ──────────────────
+  {
+    id: 'data-changelog-record-back',
+    name: 'Changelog record drill — back to the run drawer',
+    feature: 'Data',
+    status: 'built',
+    blurb: 'Clicking a record row inside a Changelog run drill opened the RecordPanel drawer (z-62) directly over the run drawer it came from (z-60), same width, both right:0 — the user lost the changelog. The record drawer now carries an `origin` back-link: its Back arrow (previously hidden with nothing to pop) reads "Back to the changelog" and exits to the run drawer once the record\'s own drill stack is exhausted. A record row also grew an explicit ⧉ "open beside" affordance (⌘/Ctrl-click and middle-click already worked) so the run drawer and the record can be compared side by side.',
+    specs: [],
+    code: ['apps/web/src/components/data/DataChangelog.astro', 'apps/web/src/components/data/RecordPanel.astro'],
+    steps: [
+      { label: 'Plain click → Back to the changelog', href: '/data', caption: 'Changelog tab → open a run → click a record row. RecordPanel opens on top; its Back arrow (bottom tooltip) now reads "Back to the changelog" and, clicked, closes the record panel back to the run drawer instead of hiding.' },
+      { label: '⌘/Ctrl-click / middle-click / hover ⧉ → open beside', href: '/data', caption: 'From the same run drill, ⌘/Ctrl-click, middle-click, or the row-hover ⧉ button all open the record in a SECOND coplanar panel beside the run drawer — same 3 entry points as the run-row list.' },
+      { label: 'No back arrow from Browse', href: '/data', caption: 'Browse tab → click a grid row to open a record directly (no changelog origin). The Back arrow stays hidden — RecordPanel\'s own stack has nothing to pop and no `origin` was carried, matching the pre-existing behavior exactly.' },
+    ],
+    note: 'panelStack.ts (the shared stacking controller) is untouched — the whole fix goes through its existing open()/openBeside() `init` callback param, which runs on every open (reused-panel or fresh), unlike loadInto (fresh panels only). Esc mirrors the Back button\'s origin-exit (silent, no "Panel closed" toast) so keyboard and mouse agree.',
+  },
+
+  // ── Data · edge cases (my-edge audit 2026-07-22 — the to-do list) ─────────────
+  {
+    id: 'data-edge-dangling-record',
+    name: 'Dangling record reference opens nothing',
+    feature: 'Data · edge cases',
+    status: 'built',
+    blurb: 'A Changelog run row or a Docs record-chip can point at a record id not in the shipped sample; clicking now surfaces an honest toast instead of silently no-opping.',
+    specs: [],
+    code: ['apps/web/src/components/data/RecordPanel.astro', 'apps/design/src/fixtures/data-lab.ts'],
+    steps: [
+      { label: 'See it', href: '/data', caption: 'Changelog → open the Jul 14 run → Deleted tab → click the recDELETED404 row → toast "This record isn\'t in this backup." appears; no panel opens.' },
+    ],
+    note: '✅ FIXED 2026-07-22. RecordPanel.open() + openBeside() now surface the existing pattern-undo-toast (showToast, info variant) on an unknown id instead of a silent early-return — one funnel covers all entry points (all dispatch data:openRecord). Fixture dc-dangling in data-lab.ts makes it demonstrable. 0 new bespoke UI; ds-lint + typecheck green; Playwright-verified.',
+  },
+  {
+    id: 'data-edge-export-bigtable-count',
+    name: 'Big-table export reports ~50, not the real total',
+    feature: 'Data · edge cases',
+    status: 'built',
+    blurb: 'Browse "This tab" export now reports the true logical row count — the approx table size when unfiltered, the full match count when filtered — instead of the ~50-row DOM window, so a big table trips the heavy "Request full export" path.',
+    specs: [],
+    code: ['apps/web/src/components/schema/ExportControl.astro', 'apps/web/src/components/data/DataBrowse.astro'],
+    steps: [
+      { label: 'See it', href: '/data?fixture=big', caption: 'Open Export on a big unfiltered table → label reads "Request full export" with the real count (e.g. 61,240 / ~1.24M), not "Export 50 records".' },
+    ],
+    note: '✅ FIXED 2026-07-22. DataBrowse.renderBody publishes filtering ? rows.length : t.approx to the export control via data-export-livecount + a data:splitchange recount; ExportControl.currentCount prefers that published count over the DOM window. Shared-safe: tabs that don\'t set the attribute keep the old behavior. ds-lint + typecheck green; Playwright: unfiltered big table → "Request full export" (live=61240), filtered→0 → disabled.',
+  },
+  {
+    id: 'data-edge-linked-synth-rows',
+    name: 'Fabricated linked rows are not clickable',
+    feature: 'Data · edge cases',
+    status: 'built',
+    blurb: 'Past the sampled ids, synthesized linked rows are now muted + visibly inert, with an honest note that they are shown for scale — no more dead clicks. The real sampled rows stay clickable.',
+    specs: [],
+    code: ['apps/web/src/components/data/RecordPanel.astro'],
+    steps: [
+      { label: 'See it', href: '/data', caption: 'Open the Contacts flagship record → Linked orders → Load more past the 12 samples: placeholder rows are dimmed and inert; a note reads "Beyond the first 12, linked records are shown for scale and can\'t be opened in this preview."' },
+    ],
+    note: '✅ FIXED 2026-07-22. Synthesized rows get .rp-provrow-ph (muted 40%, cursor default, no data-rp-open); a .rp-linknote appears ONLY when total > sample (so production with full data never shows it). Playwright: total=2340, 12 real clickable, 188 placeholders inert, note visible. ds-lint + typecheck green.',
+  },
+  {
+    id: 'data-edge-table-switch-wipes-view',
+    name: 'In-place table switching is forbidden on a saved preset',
+    feature: 'Data · edge cases',
+    status: 'built',
+    blurb: 'Superseded by the client\'s Save/Discard/lock/Draft model (Dan 2026-07-23): a Preset\'s Base + Table LOCK the moment it is first saved — the picker renders disabled with a lock glyph + tooltip reason, so there is no silent switch left to wipe anything. To use another table: ＋ New blank preset or Duplicate current, both of which arrive as an UNSAVED Draft with its scope open. Part 2 (2026-07-23): the whole model now survives a reload — a Draft stays a Draft with its edits intact, a saved preset keeps whatever Save last wrote (even if that overwrote the fixture), and any unsaved edits on top of a save reappear as dirty rather than silently vanishing.',
+    specs: [],
+    code: ['apps/web/src/components/data/DataBrowse.astro', 'apps/web/src/components/schema/FacetFilter.astro'],
+    steps: [
+      { label: 'See it', href: '/data', caption: 'Every seeded preset opens saved → Base/Table show locked (disabled + lock icon); hover for "Locked — this preset is saved…". Use the tab-bar "+" → New blank preset → the same pickers unlock so you can pick a table before the first Save.' },
+      { label: 'Reload — survives intact', href: '/data', caption: '＋ New blank preset, set some filters, do NOT save → refresh the page: the Draft, its open tab, and its filters are all still there. Edit a saved preset without saving → refresh: it reopens dirty with the same unsaved edit and Discard still returns to the real saved baseline. Save an edit → refresh: the new baseline sticks, not the fixture\'s original one.' },
+    ],
+    note: '✅ REWORKED 2026-07-23 for the stricter model (was: Option A auto-repoint to a per-table preset, built 2026-07-22). switchToTable() is deleted; repointDraftTable() only ever runs against a Draft (saved:false) and resets the table-bound config (filterTree/sort/hiddenCols/colOrder) since they cannot survive a table change — a saved preset never reaches it, the facetchange handler returns early. FacetFilter gained disabled/lockReason props + a `facetlock` event so the SAME trigger can lock/unlock live as the active preset changes. Part 2 (2026-07-23): persistState() (localStorage key `dg-presets-v2`) is now the single writer, called from renderViews() after every mutating action — it persists openIds/activeId + per-fixture-preset `saved`/`edits` overrides + full-state `drafts` for runtime-only presets, with fieldId-based (not Field-object) filter-tree serialization so a stale field is dropped without flattening a nested group. See DataBrowse.astro\'s "PERSISTENCE BLOCK" comment. ds-lint + typecheck green.',
+  },
+  {
+    id: 'data-edge-empty-vs-filtered',
+    name: 'Truly-empty table shows the wrong empty copy',
+    feature: 'Data · edge cases',
+    status: 'built',
+    blurb: 'A table with zero records now shows "This table has no records in this backup." (database icon, no Clear button); a filter that matched nothing keeps "No records match your filters." (search-x icon + Clear).',
+    specs: [],
+    code: ['apps/web/src/components/data/DataBrowse.astro', 'apps/design/src/fixtures/data-lab.ts'],
+    steps: [
+      { label: 'See it', href: '/data', caption: 'Open the tab-bar "+" → New blank preset (its scope opens unlocked) → pick base Operations, table Archive (0 records) → the true-empty copy shows. Apply a no-match filter on any table → the filtered-empty copy shows instead.' },
+    ],
+    note: '✅ FIXED 2026-07-22; "See it" step re-routed 2026-07-23 — the old caption ("Switch base to Operations → table to Archive") is impossible once a saved preset\'s scope locks, so it now goes through ＋ New blank preset instead. renderBody swaps the empty state\'s icon + message on `filtering`; the Clear button is already gated by the toolbar rule. Fixture: new tblArchive (approxRecordCount 0) + record-gen respects 0 (Array length t.approx===0?0:60). ds-lint + typecheck green.',
+  },
+  {
+    id: 'data-edge-loading-error-states',
+    name: 'Loading skeleton + load error/retry on the Browse grid',
+    feature: 'Data · edge cases',
+    status: 'built',
+    blurb: 'The Browse grid now has a loading skeleton and a load-error state with an in-context Retry — the states production needs when it streams row windows over a cursor. Preview them via ?fixture=loading and ?fixture=error.',
+    specs: [],
+    code: ['apps/web/src/components/data/DataBrowse.astro', 'apps/web/src/views/DataView.astro', 'apps/design/src/pages/data.astro'],
+    steps: [
+      { label: 'Loading skeleton', href: '/data?fixture=loading', caption: 'The grid area shows daisyUI skeleton rows while a row-window fetch is in flight; the shell stays live.' },
+      { label: 'Load error + Retry', href: '/data?fixture=error', caption: 'A failed fetch shows "Couldn\'t load records." with a Retry button that recovers to the real grid.' },
+    ],
+    note: '✅ BUILT 2026-07-22 as Option A (Oleh, Browse only). loadState prop (ready|loading|error) threaded data.astro→DataView→DataBrowse; applyLoadState() toggles a skeleton (catalog `skeleton`) / error block (centered, Retry btn) and hides the count while busy. Retry → renderGrid recovers. Playwright: loading (32 skel bars, grid hidden), error (message+Retry→46 rows), default (ready, no regression). ds-lint + typecheck green; screenshots reviewed. Changelog/RecordPanel can reuse this pattern later if desired.',
+  },
+  {
+    id: 'data-edge-changelog-filter-shrink',
+    name: 'Filtering a run collapses its numbers',
+    feature: 'Data · edge cases',
+    status: 'built',
+    blurb: 'When a base/table/search filter makes the counts fall back to the sampled entries, an honest note explains it — so the drop from the true totals no longer reads as a bug.',
+    specs: [],
+    code: ['apps/web/src/components/data/DataChangelog.astro'],
+    steps: [
+      { label: 'See it', href: '/data', caption: 'Changelog → search or filter by a table → the counts shrink to the sample AND a note appears: "While filtered, counts reflect the sampled changes, not the full run totals." Clear → note gone, true totals return.' },
+    ],
+    note: '✅ BUILT 2026-07-22 as Option B (Oleh). apply() flags sampledShrink when a base/table/search filter is active AND a visible run\'s true total > its shipped sample; a .dc-samplenote then explains it. Self-gating: production ships full entries (no shrink) so the note never shows. Playwright: unfiltered 2,340 / no note → filtered 133 / note → cleared 2,340 / no note. ds-lint + typecheck green.',
+  },
+  {
+    id: 'data-edge-docs-export-scope',
+    name: 'Docs export scope: open doc vs all docs',
+    feature: 'Data · edge cases',
+    status: 'built',
+    blurb: 'Docs export offers "This document" (default, the open doc) or "All documents" (zip of PDFs, when >1). Reviewed on the deployed preview and accepted.',
+    specs: [],
+    code: ['apps/web/src/components/schema/SchemaDocs.astro'],
+    steps: [
+      { label: 'See it', href: '/data', caption: 'Docs tab → Export → choose "This document" or "All documents". The control sits on the document bar, tied to the open doc.' },
+    ],
+    note: '✅ RESOLVED 2026-07-22. The split scope was already built (EXPORT-2); the only open item was Dan\'s blessing on the default (open document) + placement (document bar). Oleh deployed it and Dan reviewed without objection — accepted. Stale "Dan has not answered" code comment updated.',
+  },
+  {
+    id: 'data-edge-timefilter-now',
+    name: 'Changelog Time filter drifts with the wall clock',
+    feature: 'Data · edge cases',
+    status: 'built',
+    blurb: 'The Time filter now measures "last N days" from the backup\'s as-of timestamp (an optional `now` prop) rather than the live clock, so a fixed-date preview stays stable — and production anchors to the data, not the wall clock.',
+    specs: [],
+    code: ['apps/web/src/components/data/DataChangelog.astro', 'apps/web/src/views/DataView.astro'],
+    steps: [
+      { label: 'See it', href: '/data', caption: 'Changelog → Time → 7 days: measured from the last sync (Jul 14 in the fixture), stable regardless of today\'s date.' },
+    ],
+    note: '✅ FIXED 2026-07-22. DataChangelog gained an optional `now` prop (defaults to Date.now()); DataView passes lastSyncedAt. Snapshot carries nowMs; the filter uses NOW = snap.nowMs ?? Date.now(). Production unchanged (real recent sync ≈ now). Playwright: nowMs=Jul14 anchor; Time=7 keeps the Jul 14 run visible (Date.now() would have hidden it, 8>7). ds-lint + typecheck green.',
+  },
+  {
+    id: 'data-edge-valuesasof-partial',
+    name: 'Time-travel restores only "updated" diffs',
+    feature: 'Data · edge cases',
+    status: 'built',
+    blurb: 'Not a defect after review: "view as of" is bounded to the record\'s own history (creation onward), all field changes are captured as updated diffs (which are reverted), and created/deleted show honest tombstone rows. Reconstruction is correct for every selectable run.',
+    specs: [],
+    code: ['apps/web/src/components/data/RecordPanel.astro'],
+    steps: [
+      { label: 'See it', href: '/data', caption: 'Open a record → History → "view as of" any run: field values reconstruct correctly; created = "First captured", deleted = "Record removed from this backup".' },
+    ],
+    note: '✅ ACCEPTED / no change needed 2026-07-22 (Oleh). The as-of selector only offers runs from the record\'s history, so a pre-creation run is unreachable (no misleading values); field changes are all updated diffs (reverted); created/deleted are honest tombstones. The only uncovered case is exotic delete-then-recreate, which the fixture doesn\'t have and V1 doesn\'t need — building it would require fabricated data.',
   },
 ];

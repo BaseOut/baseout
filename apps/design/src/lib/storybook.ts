@@ -60,7 +60,7 @@ export const SB_ENTRIES: SBEntry[] = [
 <li><strong>Props</strong> — every option the component accepts (its API).</li>
 <li><strong>Examples</strong> — the live component above its exact copy-paste markup. What you see is what ships.</li>
 </ul>
-<p><strong>Building a new screen (person or agent):</strong> compose from Primitives, follow each entry’s “When to use” default, and pull color / spacing / radius from Foundations. The non-negotiables: one primary button per surface · <strong>md <code>btn</code> is the default size (~90%)</strong>, sm only for dense clusters · every badge is <strong>soft + semantic</strong> (status, plus Required = error / Recommended = primary / Managed = success) — <strong>never <code>badge-outline</code></strong>, and a standalone status badge gets a leading dot · any user hint is a <strong>soft <code>alert</code> with a leading icon</strong>, not a bare tinted line · a Clear/reset is a <strong>red ghost + ×</strong> shown only when there’s something to clear · real third-party services use their <strong>real logo</strong> · a concept uses <strong>one icon everywhere</strong> · linked-and-healthy connectors are a <strong>green line + check</strong> (the Home pipeline language) · numbers are <code>font-mono</code> + tabular · 12px is the smallest text. If something isn’t a primitive here, it’s a Pattern — keep it bespoke.</p>
+<p><strong>Building a new screen (person or agent):</strong> compose from Primitives, follow each entry’s “When to use” default, and pull color / spacing / radius from Foundations. The non-negotiables: one primary button per surface · <strong><code>btn-sm</code> is the default size</strong> — and <code>input-sm</code> / <code>select-sm</code> / <code>toggle-sm</code> with it — with unsized md reserved for the ONE standing call-to-action in a page header (see Button → Choosing a size; measured from Schema / Data / Reports, not assumed) · every badge is <strong>soft + semantic</strong> (status, plus Required = error / Recommended = primary / Managed = success) — <strong>never <code>badge-outline</code></strong>, and a standalone status badge gets a leading dot · any user hint is a <strong>soft <code>alert</code> with a leading icon</strong>, not a bare tinted line · a Clear/reset is a <strong>red ghost + ×</strong> shown only when there’s something to clear · real third-party services use their <strong>real logo</strong> · a concept uses <strong>one icon everywhere</strong> · linked-and-healthy connectors are a <strong>green line + check</strong> (the Home pipeline language) · numbers are <code>font-mono</code> + tabular · 12px is the smallest text. If something isn’t a primitive here, it’s a Pattern — keep it bespoke.</p>
 <p><strong>Tags:</strong> each component is tagged by provenance — <strong>daisyUI</strong> (a standard component, used as-is), <strong>daisyUI + custom</strong> (daisyUI primitives composed into our own layout / logic), <strong>Custom</strong> (fully ours, no daisyUI core).</p>`,
     showCode: false,
     examples: [],
@@ -441,7 +441,7 @@ export const SB_ENTRIES: SBEntry[] = [
       'Every clickable action uses <code>btn</code> plus a variant. One primary per visible surface; everything else is subordinate. Destructive actions use <code>btn-error</code> and always confirm via a modal.',
     reference: 'components/ui/Button.astro',
     props: [
-      { name: 'variant', type: "'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'warning'", default: "'primary'", description: 'Emphasis level — see the table. secondary = neutral gray; outline / tonal are deprecated.' },
+      { name: 'variant', type: "'primary' | 'secondary' | 'ghost' | 'danger' | 'success' | 'warning'", default: "'primary'", description: 'Emphasis level — see the table. secondary = soft blue (btn-soft btn-primary); tonal is an alias of secondary; outline is deprecated.' },
       { name: 'size', type: "'sm' | 'md' | 'lg'", default: "'md'", description: 'md (default) is the workhorse; sm for dense areas, lg for heroes.' },
       { name: 'icon', type: 'boolean', default: 'false', description: 'Square icon-only button (needs an aria-label).' },
       { name: 'loading', type: 'boolean', default: 'false', description: 'Shows a spinner and disables the button.' },
@@ -451,7 +451,7 @@ export const SB_ENTRIES: SBEntry[] = [
     guides: [
       {
         title: 'Choosing emphasis',
-        note: 'Spend exactly one primary per visible surface — it points at the single thing the user came to do. Everything else steps down: secondary is a neutral gray fill, tertiary is ghost (no fill). Reference: Cloudflare’s blue primary + gray “Edit code” secondary (cf. Linear, Claude). Outline is deprecated — its default border reads heavy; reach for the gray Secondary instead. It survives only as a quieter destructive (btn-outline btn-error).',
+        note: 'Spend exactly one primary per visible surface — it points at the single thing the user came to do. Everything else steps down: secondary is a <strong>soft blue fill (btn-soft btn-primary)</strong>, tertiary is ghost (no fill). The soft tint reads as a real, related action without the weight of a second solid fill, and it stays subordinate to the one solid primary. Outline is deprecated — reach for the soft Secondary instead; it survives only as a quieter destructive (btn-outline btn-error). Watch dense toolbars: many soft secondaries in one row can get loud — keep genuinely low-stakes / repeated actions ghost so the soft fill still means "supporting action", not "everything".',
         rows: [
           {
             token: 'Primary · btn-primary',
@@ -459,9 +459,9 @@ export const SB_ENTRIES: SBEntry[] = [
             why: 'A single cyan fill is the unmistakable focal point. A second primary collapses the hierarchy.',
           },
           {
-            token: 'Secondary · btn-neutral',
-            use: 'A supporting action next to the primary — Edit code, Settings, Cancel, Back.',
-            why: 'A neutral gray fill with white text: clearly a button, but it yields to the primary (the Cloudflare / Linear pattern). Tuned dark-first.',
+            token: 'Secondary · btn-soft btn-primary',
+            use: 'A supporting action next to the primary — Detach, Settings, Cancel, Back, filter triggers.',
+            why: 'A soft blue fill with blue text: clearly a related action, but it yields to the one solid primary. Softer and more on-brand than the old gray fill, without competing for the focal point.',
           },
           {
             token: 'Tertiary · btn-ghost',
@@ -477,18 +477,18 @@ export const SB_ENTRIES: SBEntry[] = [
       },
       {
         title: 'Choosing a size',
-        default: 'Default · btn (40px / 14px)',
-        note: 'daisyUI ships 5 sizes; we standardise on 3 and use daisyUI’s native scale as-is. <strong>Default (md, 40px / 14px) is the size for ~90% of the interface</strong> — every prominent or standalone action: page-header CTAs, empty-state buttons, form submits, modal AND drawer actions, wizard nav. Reach for small ONLY inside genuinely dense clusters (a toolbar, a row of filter chips, table row actions); large is the rare hero. When unsure, use md.',
+        default: 'Default · btn-sm (32px / 12px)',
+        note: '<strong>Small is the default. Reach for <code>btn-sm</code> unless you can name the reason not to.</strong> This rule was rewritten 2026-07-28 to match the surfaces Oleh actually approved rather than the theory that preceded them: a census of Schema, Data and Reports — every view and component — found <strong>165 <code>btn-sm</code> against 2 unsized <code>btn</code></strong>, and those two are the single page-header CTA on Schema and its twin on Data. Every other control tells the same story there (input 35 sm / 4 md, select 18 / 0, checkbox 8 / 0, radio 19 / 5, toggle 14 / 4). The old text here claimed md was "the size for ~90% of the interface"; the app it describes does not exist, and agents kept building oversized surfaces by following it. Density is the house style — Linear / Vercel / Plaid — and this is a utility admin tool, not a marketing page. <strong>md is the exception:</strong> the ONE standing call-to-action in a page header, and nothing else by default. If you want md somewhere new, that is a design decision to raise, not a default to assume.',
         rows: [
           {
-            token: 'Default · btn (40px / 14px)',
-            use: 'The default for ~90% of buttons — page-header CTAs (Run backup now), empty-state actions (Connect Airtable), form submits, modal + drawer footers, wizard Next / Save. Whenever you want a 14px label, this is it.',
-            why: 'Its 14px label matches the app’s body text and gives an action the presence it needs. Small reads as a secondary, dense-context control — wrong for a standalone action.',
+            token: 'Small · btn-sm (32px / 12px)',
+            use: 'The default — toolbars, filter chips, table row actions, panel and drawer footers, form submits, empty-state actions, wizard nav, icon-only buttons. If you are not sure, this is the answer.',
+            why: 'daisyUI’s native compact size, and what every surface we are happy with actually uses. Density is the point: an admin tool is scanned and operated, not read. (We do not restyle sm’s font — overriding daisyUI’s .btn-sm does not survive the Tailwind v4 / Lightning CSS build.)',
           },
           {
-            token: 'Small · btn-sm (32px / 12px)',
-            use: 'Dense clusters ONLY — a toolbar, filter chips, table row actions, an icon-only close (×) in a header, tight inline groups.',
-            why: 'daisyUI’s native compact size (32px / 12px) for control-packed areas, the Linear / Vercel density default. Don’t reach for it just to make a button smaller — a standalone action wants md. (We do not restyle sm’s font — overriding daisyUI’s .btn-sm doesn’t survive the Tailwind v4 / Lightning CSS build.)',
+            token: 'Default · btn (40px / 14px)',
+            use: 'The single standing call-to-action in a page header (Schema’s and Data’s header CTA are the only two in the app). Not for form submits, not for drawer footers, not for wizard nav — those are sm.',
+            why: 'One md button per page reads as THE action for that page. Used more widely it stops signalling anything and simply makes the surface feel bigger than the rest of the product.',
           },
           {
             token: 'Large · btn-lg (48px / 18px)',
@@ -514,7 +514,7 @@ export const SB_ENTRIES: SBEntry[] = [
         html: `
 <div class="flex flex-wrap items-center gap-3">
   <button class="btn btn-primary">Primary</button>
-  <button class="btn btn-neutral">Secondary</button>
+  <button class="btn btn-soft btn-primary">Secondary</button>
   <button class="btn btn-ghost">Tertiary</button>
   <button class="btn btn-error">Danger</button>
 </div>`,
@@ -584,13 +584,14 @@ export const SB_ENTRIES: SBEntry[] = [
     name: 'Entity chip',
     summary: 'The one soft pill for an inline reference to a schema entity (table / field / doc / chat).',
     description:
-      'A small soft pill that references a schema entity: a leading <strong>type icon</strong> + <strong>name</strong> + optional <strong>muted context</strong> (e.g. "· Deals"). It is the ONE element for every inline entity reference — Automations/Interfaces <em>Touches</em>, Relationships <em>Connects</em> / <em>Linked fields</em> / <em>referenced-by</em>, and the Docs / Chat / Insights entity refs — replacing the per-surface hand-rolled pills (<code>.rl-dchip</code>, <code>.au-chip</code>, <code>.if-chip</code>, <code>.chat-chip</code>, <code>.doc-chip</code>, <code>.ins-chip</code>) that had drifted apart on size, radius and colour. <strong>Neutral by default</strong> (soft <code>base-200</code> fill + <code>1px base-300</code> border, rounded-full, 13px) — the concept icon carries the type, so no per-type colour. Because chips render at runtime via <code>innerHTML</code>, the markup comes from ONE builder (<code>entityChip()</code>) and the CSS from ONE source (<code>styles/global.css</code>, <code>.sb-chip*</code>). <strong>Variants:</strong> <em>clickable</em> (a <code>&lt;button&gt;</code> that opens the entity), <em>static</em> (a <code>&lt;span&gt;</code>), <em>removable</em> (a trailing × — for a manual tag), <em>derived</em> (a quieter/muted pill — an engine-derived tag, never removable; used in the edit form only, read views show plain chips). Live: <a href="/schema">Schema</a> (Relationships / Automations / Interfaces / Docs / Chat).',
+      'A small soft pill that references a schema entity: a leading <strong>type icon</strong> + <strong>name</strong> + optional <strong>muted context</strong> (e.g. "· Deals"). It is the ONE element for every inline entity reference — Automations/Interfaces <em>Touches</em>, Relationships <em>Connects</em> / <em>Linked fields</em> / <em>referenced-by</em>, and the Docs / Chat / Insights entity refs — replacing the per-surface hand-rolled pills (<code>.rl-dchip</code>, <code>.au-chip</code>, <code>.if-chip</code>, <code>.chat-chip</code>, <code>.doc-chip</code>, <code>.ins-chip</code>) that had drifted apart on size, radius and colour. <strong>Neutral by default</strong> (soft <code>base-200</code> fill + <code>1px base-300</code> border, rounded-full, 13px) — the concept icon carries the type, so no per-type colour. Because chips render at runtime via <code>innerHTML</code>, the markup comes from ONE builder (<code>entityChip()</code>) and the CSS from ONE source (<code>styles/global.css</code>, <code>.sb-chip*</code>). <strong>Variants:</strong> <em>clickable</em> (a <code>&lt;button&gt;</code> that opens the entity), <em>static</em> (a <code>&lt;span&gt;</code>), <em>removable</em> (a trailing × — for a manual tag), <em>derived</em> (a quieter/muted pill — an engine-derived tag, never removable; used in the edit form only, read views show plain chips). <strong>Not Schema-only (Oleh 2026-07-23):</strong> this is the chip for <em>any</em> inline entity reference, so the <a href="#pattern-inbox">Inbox</a> uses it for the Space a notification belongs to. A Space is an entity, not a status — a <a href="#badge">Badge</a> was the wrong element there, and being a different SHAPE from a button (rounded-full, bordered, 13px) is what stops it reading as the row\'s action. Live: <a href="/schema">Schema</a> (Relationships / Automations / Interfaces / Docs / Chat), <a href="/">Inbox</a>.',
     reference: 'components/schema/entityChip.ts (markup) + styles/global.css (.sb-chip*)',
     usageDo: [
       'Use entityChip() for EVERY inline reference to a schema entity — never hand-roll a chip pill.',
       'Clickable chip = opens the entity (pass the existing data-* open hook via `attrs`); static chip = a plain span.',
       'Manual tags = the removable variant (× via `remove`); engine/auto-derived tags = the `derived` variant (a quieter muted pill, no ×) — used only in the edit form, read views show plain chips. Never a dashed border.',
       'Keep it neutral — the leading type icon signals the kind; do not re-introduce per-type or per-source colours.',
+      'A chip standing for a FIELD may carry that field\'s Airtable type glyph (<code>AIRTABLE_FIELD_ICONS</code> via <code>airtableIconKey()</code>) as its icon, falling back to the generic kind glyph when the type is unknown — the same mark Browse, Search and the filters already use, so one field reads identically everywhere. It is a sharper icon, not a second chip: never fork a builder to get it, and never tint by type.',
     ],
     usageDont: [
       "Don't hand-roll a bordered pill in a component's own CSS — that is exactly the drift this element removes.",
@@ -641,7 +642,7 @@ export const SB_ENTRIES: SBEntry[] = [
           },
           {
             token: 'Neutral · badge-ghost',
-            use: 'States that carry no alarm — Paused, Draft, Skipped.',
+            use: 'IDLE states that carry neither alarm nor achievement — Paused, Snoozed, Skipped.',
             why: 'No semantic color means no urgency — it reads as "idle", not "wrong".',
           },
           {
@@ -664,12 +665,15 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
     usageDo: [
       'Use badge-soft + a status color for state (Backed up, Failed, Paused).',
+      'Colour-code an OUTCOME, and reserve ghost for the genuinely idle (Oleh 2026-07-23). A finished-well state is `badge-soft badge-success` (Inbox Resolved / Done); work that is unsaved and could be LOST is `badge-soft badge-warning` (a Draft preset) — not ghost, because "you may lose this" is not a calm state; merely deferred is ghost (Snoozed). Ask "does this state want something from the user?" — if yes it earns a hue.',
       'Add a leading dot when the badge stands alone in a row without nearby context.',
       'Make sibling meta tags all badges by meaning (Required = error, Recommended = primary, Managed = success).',
+      'A status badge may pair with an adjacent link for a recoverable cap/limit state (e.g. warning badge + Upgrade link).',
     ],
     usageDont: [
       "Don't use a solid status-colored fill for state — soft tint + colored text reads calmer.",
       "Don't use badge-outline — we standardise on the soft style everywhere.",
+      "Don't pair neutral with soft — `badge-soft badge-neutral` is BANNED (Oleh 2026-07-23, repeatedly). `badge-soft` tints the badge's own colour 8% into base-100, and on the dark theme `--color-neutral` (#2c2c33) over #111 lands at 1.34:1 text and 1.02:1 for the pill itself — the chip is invisible, shape and all. Neutral means `badge-ghost` (17.4:1 in BOTH themes). Soft is for SEMANTIC colours only, where the tint still carries a hue.",
       "Don't roll a custom pill, or mix a plain-text label with a badge for sibling tags.",
     ],
     examples: [
@@ -724,7 +728,7 @@ export const SB_ENTRIES: SBEntry[] = [
     name: 'Tooltip',
     summary: 'daisyUI tooltip — an instant, on-brand hint for icon-only controls.',
     description:
-      'A <code>tooltip</code> wraps a control and shows its <code>data-tip</code> text on hover or focus. Use it to name an icon-only button — never the native <code>title</code> attribute, which waits ~1s, renders unstyled, and ignores the theme (we zero the open-delay in <code>global.css</code> so ours appear instantly). Tooltips are CSS pseudo-elements, so any <code>overflow: hidden</code> or scrolling ancestor clips them: inside a scroll area or against a right edge, use <code>tooltip-left</code>. Keep the tip to a few words, and always keep an <code>aria-label</code> on the button — the tip alone is hover-only, unreachable by keyboard, touch, or screen reader.',
+      'A <code>tooltip</code> wraps a control and shows its <code>data-tip</code> text on hover or focus. Use it to name an icon-only button — never the native <code>title</code> attribute, which waits ~1s, renders unstyled, and ignores the theme (we zero the open-delay in <code>global.css</code> so ours appear instantly). Keep the tip to a few words, and always keep an <code>aria-label</code> on the button — the tip alone is hover-only, unreachable by keyboard, touch, or screen reader.<br><br><strong>Tooltips render in the top layer (2026-07-24).</strong> daisyUI draws the bubble as a CSS pseudo-element on the trigger, so <em>any</em> ancestor with <code>overflow: auto/hidden</code> clips it — and no z-index can escape a clipping box, which is why the same bug kept resurfacing (the toolbar, the locked-scope wrapper, the pin-bar ＋, a tab\'s ✕ inside a scroller) and got patched one site at a time. It is now fixed once: a shared controller (<code>components/ui/tooltip.ts</code>, loaded globally) intercepts every <code>[data-tip]</code> and paints ONE bubble in the browser\'s <strong>top layer</strong> via the Popover API, positioned in JS from the trigger\'s rect. The top layer sits above every stacking context and outside every clipping box by definition, so a tooltip can no longer be cut off or painted under anything. <strong>The call site does not change</strong> — keep writing <code>class="tooltip tooltip-left" data-tip="…"</code>; only where it draws changed, across all ~167 existing usages. daisyUI\'s pseudo-elements are switched off globally so there is never a second bubble. <em>Not</em> CSS anchor positioning: Firefox still lacks it, while the Popover API ships in all three engines.<br><br><strong>A tooltip that repeats a visible label is suppressed (Oleh 2026-07-24).</strong> The rule at the top of this entry — a tooltip <em>names a control that has no visible label</em> — is now enforced, not just written down: if the trigger already shows the same words, no bubble appears. That is what makes the sidebar behave. Expanded, every item renders its label and a hint would merely echo it; collapsed, the label is not drawn, so the tooltip becomes the only thing naming the icon and it appears — <code>tooltip-right</code>, beside the icon rather than above it, which is where the eye already is. No state flag and no sidebar-specific branch: any control anywhere that carries a redundant hint simply stops showing one. A hint that ADDS something — <em>"Open beside · ⌘/Ctrl-click"</em> next to a bare icon — is unaffected. Suppression is an <strong>echo test, not a containment test</strong>: the tip must equal the visible text, or be it followed by the trigger\'s own badge (<em>"Inbox 4"</em>). It was containment at first, which made the behaviour depend on <em>customer data</em> — a button whose tip is <code>Open</code> and whose visible text is an entity name loses its hint the moment someone names a base "Openside CRM", and short tips like Open / Edit / Close / Back are everywhere. <strong>What counts as visible is measured, not read off <code>innerText</code> (Oleh 2026-07-24).</strong> <code>innerText</code> reports visually-hidden text as present, so a label clipped to 1×1 for screen readers still counted as "on screen" — and the three Visualize mode tabs lost their tooltips the moment the a11y fix swapped their <code>display: none</code> label for a clipped one. The two fixes were correct alone and broke each other, because the suppression rule had quietly depended on a hiding TECHNIQUE rather than on visibility. It now walks the trigger\'s own nodes and skips any box of 1px or less, which covers both recipes. <strong>Truncated text is exempt outright:</strong> CSS ellipsis does not shorten the text either, so a value clipped by its column would otherwise have its own tooltip eaten — exactly the case where repeating the label IS the point, so a trigger whose content overflows always keeps its hint.',
     guides: [
       {
         title: 'When to use a tooltip',
@@ -732,7 +736,7 @@ export const SB_ENTRIES: SBEntry[] = [
         note: 'A tooltip names a control that has no visible label. It is a hint, not a home for essential information — anything a user must read belongs on the surface.',
         rows: [
           { token: 'tooltip (top)', use: 'Default. An icon button with room above it.', why: 'Points at the trigger without covering neighbouring rows.' },
-          { token: 'tooltip-left', use: 'Inside a scrolling panel or against the right edge (e.g. the Schema field-row actions).', why: 'A top tooltip gets clipped by the scroll container; left stays within the row.' },
+          { token: 'tooltip-left', use: 'Against the right edge, or on a row where a top tooltip would cover the row above (e.g. the Schema field-row actions).', why: 'Keeps the hint beside its trigger. It is a layout choice now — since 2026-07-24 the bubble renders in the top layer, so no side gets clipped.' },
           { token: 'tooltip-primary / -success / …', use: 'When the hint reinforces a semantic action (rare).', why: 'Colours the bubble to match; default neutral suits most cases.' },
         ],
       },
@@ -740,7 +744,7 @@ export const SB_ENTRIES: SBEntry[] = [
     usageDo: [
       'Wrap the control in a tooltip and set data-tip to a short label.',
       'Keep an aria-label on the button so the action is announced and touch-reachable.',
-      'Use tooltip-left inside scroll areas or against a right edge so it is not clipped.',
+      'Pick the side that reads best — a tooltip is no longer clipped by a scroll area, so the side is a layout choice, not a workaround.',
     ],
     usageDont: [
       "Don't use the native title attribute — it lags ~1s and ignores the theme.",
@@ -808,7 +812,7 @@ export const SB_ENTRIES: SBEntry[] = [
           { token: 'Default · input', use: 'The resting field for any value.', why: 'Bordered and neutral; reads as editable.' },
           { token: 'Error · input-error', use: 'A failed validation — put the reason in the fieldset-label below.', why: 'Red border + message points straight at the field to fix.' },
           { token: 'Success · input-success', use: 'Confirmed values where confirmation genuinely matters (rare).', why: 'Use sparingly; most valid fields need no color.' },
-          { token: 'Small · input-sm', use: 'Dense forms, inline edit, filters.', why: 'Matches the btn-sm density default.' },
+          { token: 'Small · input-sm — the default', use: 'Every field unless you can name a reason not to: forms, inline edit, filters, drawers, wizards.', why: 'Pairs with the btn-sm density default. Measured across Schema / Data / Reports: 35 input-sm to 4 unsized.' },
         ],
       },
     ],
@@ -881,7 +885,7 @@ export const SB_ENTRIES: SBEntry[] = [
         rows: [
           { token: 'Default · select', use: 'One value from a fixed list — frequency, destination type.', why: 'Compact, familiar, native keyboard support.' },
           { token: 'Error · select-error', use: 'A required choice left unmade on submit.', why: 'Matches the input error treatment.' },
-          { token: 'Small · select-sm', use: 'Toolbar filters and inline controls.', why: 'Density default; pairs with btn-sm.' },
+          { token: 'Small · select-sm — the default', use: 'Every select unless you can name a reason not to: toolbars, inline controls, forms, drawers.', why: 'Pairs with the btn-sm density default. Measured across Schema / Data / Reports: 18 select-sm to 0 unsized.' },
         ],
       },
     ],
@@ -937,9 +941,18 @@ export const SB_ENTRIES: SBEntry[] = [
           { token: 'Toggle · toggle', use: 'A setting that takes effect the instant it flips (enable schedule).', why: 'Reads as an on/off switch with immediate effect.' },
         ],
       },
+      {
+        title: 'Indeterminate — a select-all header over a group',
+        note: 'A checkbox that governs a set (a "select all" for a group of rows) has three states, not two. Set the native <code>el.indeterminate = true</code> property (JS only — there is no HTML attribute) to paint the neutral dash. It stays the one neutral checkbox — do not invent a second control or a differently-styled tick.',
+        rows: [
+          { token: 'checked', use: 'Every row in the group is selected.', why: 'The header mirrors a fully-selected set.' },
+          { token: 'indeterminate (dash)', use: 'Some but not all rows are selected — set <code>el.indeterminate = true</code>, leave <code>checked = false</code>.', why: 'The dash reads as "partial", distinct from empty and from full.' },
+          { token: 'unchecked', use: 'No row in the group is selected.', why: 'Empty box = empty set.' },
+        ],
+      },
     ],
-    usageDo: ['Use a toggle only when the effect is immediate.', 'Label the state so on/off is unambiguous.', 'When an option can’t be chosen (at a selection cap, plan-gated), make the item itself read inactive — reduced opacity (~0.4) + cursor-not-allowed + the control disabled — not just a banner. A long list hides the banner; the disabled item carries the reason in place.'],
-    usageDont: ["Don't use a toggle for something that only applies after a Save."],
+    usageDo: ['Use a toggle only when the effect is immediate.', 'Label the state so on/off is unambiguous.', 'When an option can’t be chosen (at a selection cap, plan-gated), make the item itself read inactive — reduced opacity (~0.4) + cursor-not-allowed + the control disabled — not just a banner. A long list hides the banner; the disabled item carries the reason in place.', 'For a group "select all" header, drive the three states from the group’s own rows via <code>el.checked</code> / <code>el.indeterminate</code>. When that select-all shares a tier-cap budget, filling it stops at the cap: the header then lands on <b>indeterminate</b>, not checked — a partial dash is the honest signal that the cap, not the user, ended the selection (a bespoke rule; native indeterminate has no such semantics).'],
+    usageDont: ["Don't use a toggle for something that only applies after a Save.", "Don't fake a partial state with opacity or a custom glyph — use native indeterminate so it matches the one neutral checkbox everywhere.", "Don't fake a mixed state on a master control — set <code>el.indeterminate</code> and let the control paint it. A master over a set of CHECKBOXES is a checkbox (dash); a master over a set of TOGGLES is a toggle (daisyUI paints <code>.toggle:indeterminate</code> natively, knob centred). Matching the master to the children is what makes the two read as one control — corrected 2026-07-28, an earlier note here wrongly claimed a toggle cannot render indeterminate."],
     examples: [
       {
         label: 'Checkbox',
@@ -948,6 +961,15 @@ export const SB_ENTRIES: SBEntry[] = [
   <input type="checkbox" class="checkbox checkbox-primary checkbox-sm" checked />
   <span class="text-sm">Include attachments</span>
 </label>`,
+      },
+      {
+        label: 'Indeterminate (group select-all)',
+        html: `
+<label class="flex items-center gap-2">
+  <input type="checkbox" class="checkbox checkbox-sm" ref="ind" />
+  <span class="text-sm">Marketing workspace · 3 of 12</span>
+</label>
+<script>document.currentScript.previousElementSibling.querySelector('[ref=ind]').indeterminate = true;</script>`,
       },
       {
         label: 'Toggle',
@@ -1091,7 +1113,7 @@ export const SB_ENTRIES: SBEntry[] = [
     name: 'Tabs',
     summary: 'daisyUI tabs — switch views within one context.',
     description:
-      'Tabs switch between sibling views of the same object (Schema / Data / Activity) — not between pages. Default is the underline style (<code>tabs tabs-border</code>); <code>tabs-lift</code> for a card-attached set; <code>tabs-pills</code> for a compact segmented control.',
+      'Tabs switch between sibling views of the same object (Schema / Data / Activity) — not between pages. Default is the underline style (<code>tabs tabs-border</code>); <code>tabs-lift</code> for a card-attached set; <code>tabs-pills</code> for a compact segmented control. The daisyUI <strong>radio-input variant</strong> (<code>&lt;input type="radio" class="tab"&gt;</code>) has no children and therefore cannot carry a leading icon or a count badge, so in-page section switching uses the button recipe documented in <a href="#pattern-section-tabs">Section tabs</a>.',
     reference: 'components/ui/Tabs.astro',
     props: [
       { name: 'tabs', type: 'Tab[]', default: 'required', description: 'The tab items.' },
@@ -1209,7 +1231,7 @@ export const SB_ENTRIES: SBEntry[] = [
     name: 'Progress',
     summary: 'daisyUI progress — determinate work and quota meters.',
     description:
-      'Use <code>progress</code> for a known-percentage bar: a running backup’s completion or a usage/quota meter. Colour by meaning — primary for in-progress, warning as a quota nears its cap. For unknown-duration work use a spinner, not a bar.',
+      'Use <code>progress</code> for a known-percentage bar: a running backup’s completion or a usage/quota meter. Colour by meaning — primary for in-progress, warning as a quota nears its cap. For unknown-duration work use a spinner, not a bar.<br><br><strong>Card-edge variant (base picker, 2026-07-29).</strong> When the work is a background enhancement to a surface that STAYS usable, pin the bar as a 3px line on the <strong>top edge of the card</strong> (<code>position:absolute; inset-inline:0; top:0; height:3px; border-radius:0</code>, inside the card’s <code>overflow:hidden</code> so it follows the radius) — the browser-loading-bar idiom, which reads as "loading, the page still works". Never lay a bar across the content it is loading: that reads as "this table is unavailable", which is the opposite of the truth. Hold it back ~500ms so short work never flashes, keep the raw <code>n / N</code> count beside it (the bar says how far, the number says what is being counted), and if the work FAILS stop the bar and drop to the neutral <code>progress</code> — a failed enhancement is not a page error, so it never turns <code>progress-error</code>.',
     reference: 'components/ui/ProgressBar.astro',
     props: [
       { name: 'value', type: 'number', default: 'required', description: 'Current value (0 to max).' },
@@ -1217,8 +1239,17 @@ export const SB_ENTRIES: SBEntry[] = [
       { name: 'variant', type: "'primary' | 'success' | 'warning' | 'error'", default: "'primary'", description: 'Colour by meaning.' },
       { name: 'label / showValue', type: 'string / boolean', default: '— / false', description: 'Optional label and percentage readout.' },
     ],
-    usageDo: ['Use a determinate bar only when you know the percentage.', 'Turn a quota bar to warning as it approaches the cap.'],
-    usageDont: ["Don't fake progress for unknown-duration work — use a spinner."],
+    usageDo: [
+      'Use a determinate bar only when you know the percentage.',
+      'Turn a quota bar to warning as it approaches the cap.',
+      'Pin a background-work bar to the top EDGE of the card it belongs to, and keep the n / N count beside it.',
+      'Go neutral, not error, when background work fails on a surface that still functions.',
+    ],
+    usageDont: [
+      "Don't fake progress for unknown-duration work — use a spinner.",
+      "Don't use a spinner when you DO know the percentage — that is what this primitive is for.",
+      "Don't draw a bar across the content it is loading; on the edge it means \"still working\", on top it means \"unavailable\".",
+    ],
     examples: [
       {
         label: 'Variants',
@@ -1234,7 +1265,6 @@ export const SB_ENTRIES: SBEntry[] = [
 
   {
     id: 'alert',
-    reference: 'components/ui/Alert.astro',
     group: 'Primitives',
     name: 'Alert',
     summary: 'daisyUI alert — an inline banner for a state the user should notice.',
@@ -1294,7 +1324,7 @@ export const SB_ENTRIES: SBEntry[] = [
     name: 'Tooltip',
     summary: 'daisyUI tooltip — a hover hint for icon-only controls and truncated text.',
     description:
-      'Wrap a control in <code>tooltip</code> and set <code>data-tip</code>; position with <code>tooltip-top/right/bottom/left</code>. Use it for icon-only buttons, truncated values, and provider hints — replacing native <code>title</code> (slow, unstyled).',
+      'Wrap a control in <code>tooltip</code> and set <code>data-tip</code>; position with <code>tooltip-top/right/bottom/left</code>. Use it for icon-only buttons, truncated values, and provider hints — replacing native <code>title</code> (slow, unstyled). Rendered in the top layer by the shared controller, so no scroll container can clip it — see the fuller Tooltip entry above.',
     usageDo: ['Give every icon-only button a tooltip (and an aria-label).', 'Use a tooltip to reveal a truncated value in full.'],
     usageDont: ["Don't hide essential info in a tooltip — it's unreachable on touch.", "Don't put actions inside a tooltip."],
     examples: [
@@ -1400,130 +1430,12 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
-    id: 'pattern-base-picker',
-    group: 'Patterns',
-    name: 'Base picker (progressive workspace grouping)',
-    summary:
-      'The "choose bases" table is usable from the first paint and GROUPS ITSELF by workspace the moment the per-base lookup finishes — one determinate bar on the card edge explains the wait, one named toggle above the table sets whether auto-add is decided per workspace or per connection.',
-    description:
-      'The picker (<code>components/integrations/BaseSelectionTable.astro</code>) is the dense, capped, searchable table used by the setup wizard\'s <em>Bases</em> step and the standalone <a href="/integrations/configure/bases">Manage bases</a> screen. <strong>Why it changed (Dan, 2026-07-28):</strong> Airtable gives us a list of bases cheaply, but a base\'s WORKSPACE costs <strong>one extra API call per base</strong> — <em>"it just may take a long time to get for a long list of bases"</em>. Every earlier version assumed that map was free and switched grouping on unconditionally (<code>const grouped = groups.length &gt; 1</code>), which meant the page could not be drawn at all until the slow part finished. <strong>So grouping stopped being the frame of the page and became an enhancement that arrives.</strong> The flat table is therefore the complete product: search, sort, select-all-to-cap, show-selected, save — nothing is skeletoned, nothing is disabled, nothing waits.<br><br><strong>V2 — grouped is the DEFAULT, and the toggle says what it is FOR (Oleh, 2026-07-29).</strong> V1 optimised for "let them work immediately, offer grouping later". Reviewed live, that premise lost: <em>the user did not come for an ungrouped list, they came for a finished result and will wait ~10s if they can see the work happening.</em> So grouping is no longer an offer — <strong>the table groups itself the moment matching completes</strong>. The API cost is unchanged (one call per base, so workspaces still cannot be known at T0); what changed is that "grouped by default" now means "group automatically on completion", not "ask first". The remembered preference still wins: a user who switches it off (<code>bst-wsgroup:&lt;spaceId&gt;</code> / the <code>groupByWorkspace</code> prop in production) stays off, and every later visit renders grouped from the server with <em>no</em> movement at all. This whole design costs exactly ONE reflow, once per connection.<br><br><strong>The grouping control is not a view option — it sets the granularity of a standing decision.</strong> Grouped, auto-add is decided <em>per workspace</em>; ungrouped it is one switch for the whole connection. That consequence is why the control left the toolbar (where it sat among search and sort, as if it were cosmetic) and now has its own band directly above the table: a labelled <a href="#checkbox-toggle">toggle</a> — <strong>on by default</strong> — whose label NEVER changes (<code>Group by workspace</code>), one sentence naming the consequence, and the boundary of the change. V1 had the same binary under two names, <em>Group by workspace</em> in the toolbar and <em>Ungroup</em> in the selection strip; one setting gets one name. <strong>The band replaces, it does not join</strong>: the toolbar\'s status line leaves (the progress bar takes over that job), and the standing <em>Auto-enroll new workspaces</em> rule folds INTO this band rather than sitting as a second plate — same subject (future bases and future workspaces), one surface.<br><br><strong>Copy, verbatim.</strong> <code>Group by workspace</code> · <code>Grouped, you set auto-add per workspace. Ungrouped, it\'s one switch for the whole connection.</code> · <code>Affects this picker only — Schema and Data keep their own workspace grouping.</code> The boundary sentence is not padding: the user\'s real fear with a default-on grouping switch is invisible consequences on other screens.<br><br><strong>A determinate bar pinned to the card\'s top edge — never a spinner, never over the rows.</strong> The <a href="#progress">progress</a> entry already rules this: a bar is for known percentages, a spinner for unknown-duration work. We know the percentage (<code>31 / 50</code>), so the spinner was simply the wrong primitive and is gone. The bar is a <strong>thin catalog <code>progress</code> absolutely positioned on the top edge of the table card</strong> (<code>.bst-prog</code>, 3px, inside the card\'s clip so it follows the radius) — the browser-loading-bar idiom, which reads as "loading, the page still works". A bar drawn <em>across the rows</em> was deliberately rejected: it reads as "table unavailable", which is exactly the overlay misread this pattern exists to avoid. <strong>Keep the number beside it</strong> — the bar says how far, the number says what is being counted, and only the number explains the wait; it sits in the selection strip immediately under the bar (<code>.bst-wsstatus</code>). <strong>Do not flash it:</strong> render only after the wait exceeds ~500ms, so a five-base account never gets a blink of progress. <strong>On failure the bar stops and goes NEUTRAL, never red</strong> (drop <code>progress-primary</code>, keep <code>progress</code>) — failing to group is not a page error; the bases are still selectable and the flow continues, with <code>Retry</code> beside it.<br><br><strong>Honest copy while it runs.</strong> <code>Organising your bases by workspace… 31 / 50</code> — never "syncing your bases". The bases are already loaded and already selectable; saying otherwise teaches the user the list is incomplete and that they should wait before choosing, which is false and costs them the whole point of the flat-table-is-complete rule.<br><br><strong>Re-grouping animates, it does not fake a load.</strong> A skeleton/placeholder on re-group was proposed and REJECTED: the first grouping waits on the network, but toggling afterwards is a local DOM move that takes ~0ms, and a skeleton over an instant operation is invented latency. The honest answer to "don\'t let it jump" is an <strong>animated reflow</strong> — a FLIP pass measures each visible row before the move and transitions it from its old position, so rows travel rather than teleport (~180ms). Under <code>prefers-reduced-motion: reduce</code> the move is instant with no transform. Across that one automatic reflow, <strong>scroll position and every ticked base are preserved</strong> — selection survives free (the same DOM nodes are moved, never re-rendered) and <code>.bst-table</code>\'s <code>scrollTop</code> is captured and restored around the move.<br><br><strong>One workspace ⇒ no grouping UI at all</strong> — one group is not grouping, so neither the band nor the bar appears. Rows live in a flat container (<code>[data-bst-flatrows]</code>) or inside their group\'s <code>[data-bst-grows]</code>, never half of each.<br><br><strong>"Still matching" is not "No workspace".</strong> Two different facts, two buckets, two code paths, and they must never be merged: <em>No workspace</em> means the base has no workspace id (we asked and there is nothing to attribute), while <em>Still matching</em> means its per-base lookup has not returned yet (<code>BaseSummary.workspacePending</code>). Collapsing the second into the first states something untrue about the user\'s Airtable. The pending group carries no auto-add switch — there is nothing yet to watch — and empties itself as answers land.<br><br><strong>Progress survives a reload.</strong> The counter RESUMES from where the work got to; it never restarts at 0. There is no backend in this repo, so the harness simulates a resumed run (<code>?wsresolve=resumed</code> starts part-way), but the design assumes the work is never thrown away.<br><br><strong>Limited access moved into the header (2026-07-28).</strong> Airtable returns the workspace <em>id</em> on every base regardless of scope but the <em>name</em> only with full-environment access, so a group can be real-but-unnamed. That used to be explained by a full-width <code>alert-soft alert-warning</code> band above the whole table. The band is deleted; the fact is now stated where it applies — the group header reads <strong>Workspace 1</strong> <span class="opacity-60">· name unavailable</span> with the existing inline <strong>Rename</strong> pencil beside it. An explanation belongs next to the thing it explains, not stacked above 180 rows that are not affected by it. The route out (reconnect with full access) is not lost: it stays on the <em>Auto-enroll new workspaces</em> rule, the capability limited access actually blocks. The suffix is <code>white-space: nowrap; flex: none</code> so the NAME is still the first thing to truncate — the group header was already fixed once for truncation (<code>.bst-gname { min-width: 5rem }</code>) and must not regress.<br><br><strong>The alias swap — dual display is EARNED, not default (Oleh 2026-07-28).</strong> A user can name a placeholder workspace, and until now the real Airtable name simply overwrote theirs when it arrived. An alias is therefore stored with the REASON it was typed (<code>WorkspaceAlias.kind</code>): <code>placeholder-fill</code> (typed only because the name was missing — every alias starts here, including the ones the inline pencil writes) versus <code>custom</code> (a deliberate different name). When a real name lands on a <code>placeholder-fill</code>, Airtable\'s name takes over — theirs was a stand-in — and <strong>one</strong> reversible prompt appears, attached under that group\'s header: <em>"Now using its Airtable name: Growth. You called it Marketing."</em> with <strong>Keep mine</strong>. Pressing it promotes the alias to <code>custom</code>, and <strong>only then</strong> are both names shown — the user\'s leading, Airtable\'s muted beside it. Never show both by default: the group header truncated once already and a permanent second name re-breaks precisely that. The prompt sits on its own attached line rather than inside the sticky header row for the same reason.<br><br><strong>Copy, verbatim (rest of the surface).</strong> <code>Organising your bases by workspace… 31 / 50</code> · <code>Group by workspace</code> · <code>Still matching</code> · <code>Couldn\'t organise by workspace</code> + <code>Retry</code> · <code>Workspace 1 · name unavailable</code> + <code>Rename</code>. No exclamation marks, no apologies, no "Oops" — a failed lookup is a fact about the connection, never the user\'s mistake. The V1 strings <code>Matching workspaces…</code>, <code>Workspaces matched</code> and <code>Ungroup</code> are RETIRED: the first two described a background job the progress bar now shows, and the third was a second name for a setting that has one.<br><br><strong>The wizard\'s gate is an instruction, not a standing accusation.</strong> The picker is the <em>Bases</em> step of the setup wizard, whose gate used to render a permanent amber <code>alert-soft alert-warning</code> band above the page heading on <em>every</em> incomplete step — telling the user they were in violation before they had done anything, on all four steps. The requirement now lives in the <strong>step subtitle</strong> ("Pick the bases this Space protects — at least one to continue"), and the amber band appears <strong>only after the user attempts Next</strong> with the gate unsatisfied, then clears the moment it is satisfied. Consequently <strong>Next is no longer disabled by a gate</strong>: a disabled button cannot be attempted, and an attempt is what earns the message. This is the wizard\'s generic mechanism, so it removes a permanent band from every step, not just this one.<br><br><strong>Structural contracts.</strong> <code>.bst[data-grouped]</code> is the single switch: it selects the five-column grid (<code>2.4rem · 16rem · Auto-add · 6rem · 6rem</code>) shared by <code>.bst-head</code>, <code>.bst-ghead</code> and <code>.bst-row</code>, reveals the group shells, and reveals the <code>.c-auto</code> cell that every row renders but flat mode hides — so "flat" and "grouped" are one template each, chosen deliberately, never inherited half-and-half. <code>.bst-head { min-height: 2.4rem }</code> and <code>.bst-ghead { top: 2.4rem }</code> are a matched sticky pair. The wizard reads the picker directly (<code>[data-base-checkbox]:checked</code> for the count, <code>[data-bst-ws-autoadd]:checked</code> for the review line), so the per-workspace auto-add switches are <strong>disabled and cleared while flat</strong> and restored from <code>data-ws-autoadd-saved</code> on grouping — a hidden checked switch would otherwise make the review step claim an auto-add the user can neither see nor have chosen.<br><br><strong>ONE search field, no scope switch (Oleh, 2026-07-29).</strong> The search used to sit beside a scope <code>&lt;select&gt;</code> docked inside the input — <em>in Bases</em> / <em>in Workspaces</em> — so the user had to decide WHERE to look before they had typed a character. That select is <strong>deleted</strong>, not hidden. The picker now uses the shared <a href="#pattern-entity-typeahead">entity typeahead</a>, exactly as Schema Browse does: one field that searches everything and groups what it finds. Typing does two things at once — it <strong>filters the table in place</strong>, matching base names AND workspace names simultaneously (the picker\'s loop is narrow → <em>Select all</em> → continue, so filtering is never replaced by jump-to-result), and it <strong>opens a grouped dropdown</strong> with <em>WORKSPACES</em> above <em>BASES</em>, each row = concept icon + name + a muted context line (a base shows its workspace, a workspace shows its base count). ↑/↓ move, ↵ picks, Esc clears, and <code>/</code> focuses the field. Workspace names are matched in BOTH modes, grouped or flat — the workspace is a property of the base whether or not the table is currently grouped, and the dropdown row names the workspace it matched on, so the match explains itself. What is mode-dependent is the WORKSPACES group: ungrouped there are no workspace rows to scroll to, so the whole group is absent (via <code>esKinds</code>) rather than present and empty.<br><br><strong>Picking is not "opening" — a picker has nothing to open.</strong> Browse\'s pick semantics must not be copied here. Picking a <strong>base</strong> clears the query, pages/expands to that row, scrolls it into view and <strong>ticks its checkbox</strong>; at the plan cap it does exactly what the row itself does — the tick is refused and the existing amber cap note explains why, never a second cap behaviour invented for the dropdown. Picking a <strong>workspace</strong> scrolls to that group and expands it if collapsed, and <strong>selects nothing</strong> — the user asked to look, not to commit 40 bases.',
-    reference: 'components/integrations/BaseSelectionTable.astro · components/integrations/BasePickerRow.astro',
-    showCode: false,
-    usageDo: [
-      'Ship the flat table as a complete product — search, sort, select, save — and let grouping arrive on top of it without ever blocking it.',
-      'Group automatically the moment the lookup completes, and preserve scroll position and every ticked base across that one reflow.',
-      'Give the grouping toggle ONE name that never changes, and state its consequence (auto-add per workspace vs per connection) plus its boundary (this picker only) beside it.',
-      'Pay for a new band with a removal: the toolbar status line left, the auto-enroll rule folded in, and the wizard gate band became conditional.',
-      'Use a determinate catalog progress bar pinned to the CARD EDGE for known-percentage waits, and keep the raw count beside it.',
-      'Hold the bar back ~500ms so a small account never sees a blink of progress, and go NEUTRAL (not red) if the lookup fails.',
-      'Animate a local re-group with a FLIP reflow, honouring prefers-reduced-motion — an instant operation gets movement, never a skeleton.',
-      'Remember the answer per connection, so a user who turned grouping off stays off.',
-      'Keep "Still matching" and "No workspace" as separate buckets with separate copy — an unfinished lookup is not an absent workspace.',
-      'Resume a progress counter where it left off after a reload; restarting at 0 tells the user their wait was thrown away.',
-      'State a limited-access caveat in the header of the group it applies to, not in a band above rows it does not apply to.',
-      'Suppress the whole grouping UI when only one group exists — one group is not grouping.',
-      'Show a wizard gate as an instruction in the step subtitle, and raise the amber band only after a failed attempt to advance.',
-      'Store a user-typed name with the REASON it was typed, and let the real name take over a stand-in — once, reversibly, with "Keep mine".',
-      'Give the picker ONE search field that matches bases and workspaces at once and groups the results — the shared entity typeahead, never a second hand-rolled one.',
-      'Keep typing a FILTER on the table; the dropdown is an extra way in, not a replacement for narrowing then selecting all.',
-      'Make picking mean what a picker means: a base scrolls into view and gets ticked (refused at the cap, same as the row), a workspace scrolls to its group and expands it, selecting nothing.',
-    ],
-    usageDont: [
-      "Don't make the user click to get the result they came for — grouping is the finished state, not an offer, once the data is in.",
-      "Don't ask the user to choose a search SCOPE before they have typed. One field searches everything; the grouped results say what was found where.",
-      "Don't skeleton, disable or block the table while workspaces resolve; the flat table is already usable and blocking it buys nothing.",
-      "Don't fake a load when re-grouping. Toggling is local and instant; a placeholder there is invented latency.",
-      "Don't draw the progress bar across the rows or over the table — a bar on top of content reads as \"table unavailable\", and it is not.",
-      "Don't use a spinner for this: the percentage is known, so the catalog says bar. And don't turn the bar red on failure — nothing the user did broke.",
-      "Don't say \"syncing your bases\": they are already loaded. Say what is actually happening — organising them by workspace.",
-      "Don't give one setting two names. \"Group by workspace\" and \"Ungroup\" were the same binary wearing two labels in two places.",
-      "Don't park bases whose lookup is still running in the \"No workspace\" bucket — that asserts a fact about their Airtable that we have not established.",
-      "Don't leave per-workspace auto-add switches live (or checked) while the table is flat — the wizard counts them, and it would report a choice the user cannot see.",
-      "Don't render a gate message before the user has had a chance to satisfy it, and don't disable the button that would earn it.",
-      "Don't show a user's name and Airtable's name side by side by default — dual display is earned by answering \"Keep mine\", and an unearned second string re-breaks the header truncation.",
-      "Don't silently overwrite a name the user typed when the real one arrives, and don't silently keep theirs either — say which one is now in use, once, with a way back.",
-    ],
-    examples: [
-      {
-        label: 'The toggle band (one name, its consequence, its boundary, auto-enroll folded in) + the card-edge progress bar — running · failed (neutral, never red)',
-        html: `
-<div class="flex flex-col gap-4" style="padding:1rem">
-  <div class="rounded-box border border-base-300 bg-base-100" style="padding:.75rem">
-    <label class="flex items-start gap-3" style="cursor:pointer">
-      <input type="checkbox" class="toggle toggle-sm toggle-primary" checked style="flex:none;margin-top:.1rem" />
-      <span class="min-w-0">
-        <span class="block text-sm font-bold">Group by workspace</span>
-        <span class="block text-xs opacity-65" style="margin-top:.125rem">Grouped, you set auto-add per workspace. Ungrouped, it's one switch for the whole connection. Affects this picker only — Schema and Data keep their own workspace grouping.</span>
-      </span>
-    </label>
-    <label class="flex items-start gap-3" style="cursor:pointer;margin-top:.75rem;padding-top:.75rem;border-top:1px dashed var(--color-base-300)">
-      <input type="checkbox" class="toggle toggle-sm toggle-primary" style="flex:none;margin-top:.1rem" />
-      <span class="min-w-0">
-        <span class="block text-sm font-bold">Auto-enroll new workspaces</span>
-        <span class="block text-xs opacity-65" style="margin-top:.125rem">Workspaces created in Airtable later are enrolled automatically at the next backup run.</span>
-      </span>
-    </label>
-  </div>
-  <div class="rounded-box border border-base-300 bg-base-100 overflow-hidden" style="position:relative">
-    <progress class="progress progress-primary" value="31" max="50" style="position:absolute;inset-inline:0;top:0;height:3px;border-radius:0"></progress>
-    <div class="flex items-center gap-2 border-b border-base-300 px-3 py-2 text-sm">
-      <span class="font-semibold opacity-70">Selected 12 of 50</span>
-      <span class="flex-1"></span>
-      <span class="text-xs opacity-60">Organising your bases by workspace… <span class="tabular-nums">31 / 50</span></span>
-    </div>
-    <div class="px-3 py-2 text-sm opacity-60">Bases stay selectable the whole time.</div>
-  </div>
-  <div class="rounded-box border border-base-300 bg-base-100 overflow-hidden" style="position:relative">
-    <progress class="progress" value="18" max="50" style="position:absolute;inset-inline:0;top:0;height:3px;border-radius:0"></progress>
-    <div class="flex items-center gap-2 border-b border-base-300 px-3 py-2 text-sm">
-      <span class="font-semibold opacity-70">Selected 12 of 50</span>
-      <span class="flex-1"></span>
-      <span class="text-xs opacity-60">Couldn't organise by workspace</span>
-      <button class="btn btn-sm btn-ghost text-primary gap-1.5"><span class="iconify lucide--rotate-ccw size-4"></span>Retry</button>
-    </div>
-    <div class="px-3 py-2 text-sm opacity-60">Not an error state — the bar stops and goes neutral, the table keeps working.</div>
-  </div>
-</div>`,
-      },
-      {
-        label: 'Group headers — placeholder name carries its own caveat · "Still matching" is its own bucket, distinct from "No workspace"',
-        html: `
-<div class="rounded-box border border-base-300 bg-base-100 overflow-hidden" style="max-width:34rem">
-  <div class="flex items-center gap-2 bg-base-200 px-3 py-2 text-sm font-bold">
-    <span class="iconify lucide--chevron-down size-4 opacity-60"></span>
-    <input type="checkbox" class="checkbox checkbox-sm" checked />
-    <span>Workspace 1</span>
-    <span class="text-xs font-normal opacity-60 whitespace-nowrap">· name unavailable</span>
-    <span class="iconify lucide--pencil size-4 opacity-55"></span>
-    <span class="flex-1"></span>
-    <span class="text-xs font-normal opacity-60 tabular-nums">4 of 4</span>
-  </div>
-  <div class="flex items-center gap-2 bg-base-200 px-3 py-2 text-sm font-bold border-t border-base-300">
-    <span class="iconify lucide--chevron-down size-4 opacity-60"></span>
-    <input type="checkbox" class="checkbox checkbox-sm" />
-    <span class="opacity-70">Still matching</span>
-    <span class="loading loading-spinner loading-sm opacity-50"></span>
-    <span class="flex-1"></span>
-    <span class="text-xs font-normal opacity-60 tabular-nums">0 of 12</span>
-  </div>
-  <div class="flex items-center gap-2 bg-base-200 px-3 py-2 text-sm font-bold border-t border-base-300">
-    <span class="iconify lucide--chevron-down size-4 opacity-60"></span>
-    <input type="checkbox" class="checkbox checkbox-sm" />
-    <span class="opacity-70">No workspace</span>
-    <span class="flex-1"></span>
-    <span class="text-xs font-normal opacity-60 tabular-nums">0 of 3</span>
-  </div>
-</div>`,
-      },
-    ],
-  },
-  {
     id: 'pattern-export-control',
     group: 'Patterns',
     name: 'Export control',
     summary: 'One control per surface. The label names the format, the panel shows both row counts, and the filename says which one you took.',
     description:
-      'Every Schema tab exports, and every tab exports exactly one format — so the <strong>trigger names it</strong>: <code>Export CSV</code>, <code>Export image</code>, <code>Export PDF</code>, never a bare “Export”. (Surveyed products all do this; Metabase is the only one saying “Download”, and only because it truly offers four formats.) The trigger is the catalog <a href="#pattern-faceted-filter">facet</a> trigger — a bordered <code>ff-trigger</code> with a chevron — because an export is a quiet toolbar control, not the loudest button on the page.<br><br><strong>Scope is the whole decision.</strong> The panel offers two radios and shows <strong>both counts at once</strong> — <em>Current view · 24 fields</em> against <em>Everything · 108 fields</em> — so “keeps your filters” is something the user can <em>verify</em> rather than something we promise. The count repeats in the confirm button (<code>Export 24 fields</code>): the last thing read before the click is what lands on disk. Airtable scopes exports to the active view <em>silently</em>, which is a documented source of user confusion; no competitor shows counts at all.<br><br><strong>Zero matches disables the control</strong>, with the reason inline (“No fields match the current filter”). A header-only file reads as a bug, and a bug in an export is indistinguishable from data loss.<br><br><strong>The filename carries the scope</strong> — <code>baseout_core-crm_browse_2026-07-10_filtered.csv</code> vs <code>…_all.csv</code> — so the answer to “what did I actually export?” survives until the day the file is opened. It is shown in the panel before download.<br><br><strong>CSV is escaped, and the panel says so.</strong> Airtable formula fields begin with <code>=</code>; exporting them raw is an OWASP formula-injection vector <em>and</em> silently corrupts the documentation we claim to produce, because the spreadsheet evaluates them instead of showing them. Every cell is quoted, embedded quotes doubled, and any cell opening with <code>= + - @ TAB CR LF</code> is prefixed with an apostrophe. The panel states it quietly: <em>“Formula definitions are exported as text.”</em> UTF-8 without BOM by default; an <em>Excel-compatible</em> checkbox adds the BOM.<br><br><strong>Image export is not a bare button.</strong> A dark-first canvas baked into a PNG lands in a white document — the single most-reported complaint against Excalidraw. So: whole graph fitted with padding (never the viewport, which silently drops off-screen nodes), an explicit background choice (theme / light / transparent), and 2× by default because raster blurs when zoomed.<br><br><strong>Large exports degrade the button, not the user’s patience</strong> (ProBackup’s pattern): when a job is heavy the trigger itself becomes <code>Request full export</code>, runs asynchronously, and the finished file arrives in the <a href="#pattern-inbox">Inbox</a>’s Activity lane. The label change <em>is</em> the warning and the wait-communication, in one affordance. No spinner trapped in a modal.<br><br>Research: <code>research/schema-export/</code>.',
+      'Every Schema tab exports. Most tabs export exactly one format, so the <strong>trigger names it</strong>: <code>Export CSV</code>, <code>Export image</code>, <code>Export PDF</code>. When a tab offers a <strong>choice</strong> (Changelog exports CSV <em>or</em> JSON, for technical-ops users who want machine-readable output beside the spreadsheet), the trigger is a bare <code>Export</code> and a <strong>Format</strong> group in the panel picks the one — the filename, button label and format-specific options follow the selection. The trigger is the catalog <a href="#pattern-faceted-filter">facet</a> trigger — a bordered <code>ff-trigger</code> with a chevron — because an export is a quiet toolbar control, not the loudest button on the page.<br><br><strong>Scope is the whole decision.</strong> The panel offers two radios and shows <strong>both counts at once</strong> — <em>Current view · 24 fields</em> against <em>Everything · 108 fields</em> — so “keeps your filters” is something the user can <em>verify</em> rather than something we promise. The count repeats in the confirm button (<code>Export 24 fields</code>): the last thing read before the click is what lands on disk. Airtable scopes exports to the active view <em>silently</em>, which is a documented source of user confusion; no competitor shows counts at all.<br><br><strong>Zero matches disables the control</strong>, with the reason inline (“No fields match the current filter”). A header-only file reads as a bug, and a bug in an export is indistinguishable from data loss.<br><br><strong>The filename carries the scope</strong> — <code>baseout_core-crm_browse_2026-07-10_filtered.csv</code> vs <code>…_all.csv</code> — so the answer to “what did I actually export?” survives until the day the file is opened. It is shown in the panel before download.<br><br><strong>Standard CSV</strong> (client’s call): the file opens cleanly in Excel and a formula field’s definition is written out <em>verbatim</em> (<code>=…</code> stays <code>=…</code>). RFC-4180 quoting — every cell quoted, embedded quotes doubled — so commas, quotes and newlines survive a round-trip, but formula triggers are <em>not</em> apostrophe-guarded: the user is exporting their own base’s data, and prefixing would corrupt the very formula text the export exists to document. UTF-8 without BOM by default; an <em>Opening in Excel</em> toggle adds the BOM.<br><br><strong>Image export is not a bare button.</strong> Whole graph fitted with padding (never the viewport, which silently drops off-screen nodes); <strong>PNG or SVG</strong> (raster for a quick paste, vector for a diagram that stays crisp when zoomed — scale is PNG-only); background defaults to <strong>light</strong> because a dark canvas baked into a PNG lands in a white document (the single most-reported complaint against Excalidraw), with match-theme and transparent still offered.<br><br><strong>Large exports degrade the button, not the user’s patience</strong> (ProBackup’s pattern): when a job is heavy the trigger itself becomes <code>Request full export</code>, runs asynchronously, and the finished file arrives in the <a href="#pattern-inbox">Inbox</a>’s Activity lane. The label change <em>is</em> the warning and the wait-communication, in one affordance. No spinner trapped in a modal.<br><br><strong>Scope shapes per surface (Dan 2026-07-15):</strong> the old “Current view vs Everything” pair is retired — you export what you can SEE. Three modes: (a) <strong>plain</strong> — a one-line “Exports the current view — N” note, no radios (change the view to export more); (b) <strong>change-type</strong> (Changelog) — All / Created / Updated / Deleted; (c) <strong>split</strong> (Browse preset TABS, Docs DOCUMENTS) — <em>This one</em> vs <em>All, zipped</em>: the group appears only when &gt;1 is open, and “All …” writes <strong>one file per member into a single <code>.zip</code></strong> (Browse: a CSV/JSON per tab; Docs: a PDF per document — never one merged file), counting MEMBERS not rows, with a <code>…_tabs.zip</code> / <code>…_documents.zip</code> name. “This document” is always <strong>1</strong> (the open doc), which is why the old “2 documents” miscount is gone at the root. Driven by <code>splitScope</code> / <code>splitSelector</code> / <code>splitLabel</code>, kept live by a <code>data:tabschange</code> / <code>data:splitchange</code> event.<br><br>Research: <code>research/schema-export/</code>.',
     reference: 'components/patterns/ExportControl.astro · lib/csv.ts (formatCsv, exportFilename)',
     showCode: false,
     usageDo: [
@@ -1570,6 +1482,138 @@ export const SB_ENTRIES: SBEntry[] = [
     <code class="text-[10.5px]">baseout_core-crm_browse_2026-07-10_filtered.csv</code>
   </p>
   <button class="btn btn-sm btn-primary w-full">Export 24 fields</button>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-section-tabs',
+    group: 'Patterns',
+    name: 'Section tabs',
+    summary: 'The underline tab row that switches sibling views inside one page — button tabs with a leading icon, plain-JS panel switching, and one tab-change event.',
+    description:
+      'The canonical <strong>section-tab row</strong>: sibling views of the SAME object inside one page (Schema › Browse / Visualize / Relationships…, Data › Browse / Changelog / Docs / Chat), never page-level navigation. Styling is global — <code>styles/global.css</code>, class prefix <code>sch-</code> — so a new surface gets the row by writing the markup, not by copying CSS. It had been copied into three views and the third copy had already drifted; that is why it lives in one place now.<br><br><strong>The recipe.</strong> A <code>&lt;div class="sch-tabbar" role="tablist" aria-label="…"&gt;</code> wraps a <code>&lt;div class="sch-gtabs tabs tabs-border"&gt;</code> holding <code>&lt;button type="button" class="tab" role="tab" data-tab="key"&gt;</code> — each with a <strong>leading</strong> <code>&lt;span class="iconify lucide--… size-4" aria-hidden="true"&gt;</code> before the label text. Buttons, not links and not radios: the tab is an in-page control, and only a button element can carry an icon (and later a count badge) inside the label.<br><br><strong>The switch is plain JS on the data attributes</strong> — the click handler reads <code>data-tab</code>, toggles <code>tab-active</code>, and shows the matching <code>[data-panel]</code>. Never the daisyUI <code>&lt;input type="radio" class="tab"&gt;</code> variant: a radio input has no children, so it cannot hold the icon, and its checked state is not addressable from the URL or from another tab\'s code.<br><br><strong>The switch itself is ONE shared module: <code>components/ui/sectionTabs.ts</code> (2026-07-30).</strong> The CSS was extracted long ago but the twenty-line click handler was still hand-copied into every host, and the copies had already drifted — Schema\'s carried a "/" shortcut and a React-Flow resize nudge, Data\'s did not, and <strong>neither read the URL</strong>. So a tab was not addressable at all: <code>/data?tab=comments</code> silently opened Browse, which meant nothing outside the page — a handoff step, a spec link, a message to the client — could ever point at a specific tab. The module now owns <strong>activate-on-load from <code>?tab=</code></strong>, <strong>writing the param back on change with <code>history.replaceState</code></strong> (replace, not push: Back must leave the page, not undo a tab), the <code>app:tabchange</code> dispatch, and the "/" search shortcut. Host-specific extras arrive through an <code>onChange</code> hook rather than a fork. An unknown or missing <code>?tab=</code> falls back to the server-rendered landing panel, so a stale link degrades instead of blanking the page.<br><br><strong>Panels</strong> are <code>&lt;div class="sch-panel" data-panel="key" hidden&gt;</code>, one per tab key. The <strong>landing panel omits <code>hidden</code></strong> and its tab carries <code>tab-active</code> in the server-rendered markup, so the correct view is painted before any JS runs.<br><br><strong>Changing tab must fire the app-wide event:</strong> <code>document.dispatchEvent(new CustomEvent(\'app:tabchange\', { detail: { tab } }))</code>. Every stacking drawer controller (<a href="#pattern-entity-panel">EntityPanel</a>, RecordPanel, DataChangelog) listens for it and closes its stack. Omitting the dispatch <strong>orphans open drawers</strong> — they stay pinned over a panel whose rows no longer exist, which reads as a rendering bug.<br><br><strong>Cluster grouping is optional and for ≥6 tabs only.</strong> Wrap each cluster in <code>&lt;div class="sch-group"&gt;</code> with a <code>&lt;span class="sch-glabel"&gt;</code> caption above its own <code>.sch-gtabs</code>, separated by <code>&lt;span class="sch-tabdiv" aria-hidden="true"&gt;</code> hairlines (approved Variant A, live on Schema\'s eight tabs). Below that count the labels are their own grouping and the captions only add noise — the <strong>flat DataView variant is the default</strong>: one <code>.sch-gtabs</code> directly inside <code>.sch-tabbar</code>.<br><br><strong>Two things that must not be "tidied".</strong> The active underline is daisyUI\'s own <code>tab-active</code> indicator (its <code>::before</code>); adding a second <code>border-bottom</code> produces a doubled/offset underline. And the 1px baseline under the whole row is <code>.sch-tabbar</code>\'s own <code>border-bottom</code> — which is why <code>.sch-gtabs.tabs { border: 0 }</code> exists.',
+    reference: 'styles/global.css (.sch-tabbar) — live on SchemaView / DataView',
+    showCode: true,
+    usageDo: [
+      'Use it for sibling views of one object inside a page. Page-level navigation belongs in the sidebar.',
+      'Give every tab a leading Lucide icon at size-4 before the label — the icon is what makes a dense row scannable.',
+      'Render the landing panel without `hidden` and its tab with `tab-active`, so the right view is correct before JS runs.',
+      "Fire `app:tabchange` on every switch. It is what closes the open drawer stacks; without it they hang over the wrong panel.",
+      'Keep the row flat. Reach for `.sch-group` / `.sch-glabel` / `.sch-tabdiv` clusters only once the row passes about six tabs.',
+      'Mark the wrapper `role="tablist"` with an `aria-label` naming the section, and each button `role="tab"`.',
+    ],
+    usageDont: [
+      "Don't use the `<input type=\"radio\" class=\"tab\">` variant — it structurally cannot hold a leading icon or a count badge.",
+      "Don't add a `border-bottom` to the active tab; daisyUI already draws the indicator and you get two offset lines.",
+      "Don't copy the CSS into a view's scoped <style> — the classes are global, and the third copy is how Reports drifted.",
+      "Don't switch panels by re-navigating or by re-rendering the page; toggle `hidden` on the `[data-panel]` siblings.",
+      "Don't use section tabs as primary page navigation, and don't hide a destructive or critical action behind a non-landing tab.",
+    ],
+    examples: [
+      {
+        label: 'Flat row (the default) — DataView’s four tabs',
+        html: `
+<div class="sch-tabbar" role="tablist" aria-label="Data sections">
+  <div class="sch-gtabs tabs tabs-border">
+    <button type="button" class="tab tab-active" role="tab" data-tab="browse"><span class="iconify lucide--table-2 size-4" aria-hidden="true"></span>Browse</button>
+    <button type="button" class="tab" role="tab" data-tab="changelog"><span class="iconify lucide--history size-4" aria-hidden="true"></span>Changelog</button>
+    <button type="button" class="tab" role="tab" data-tab="docs"><span class="iconify lucide--book-text size-4" aria-hidden="true"></span>Docs</button>
+    <button type="button" class="tab" role="tab" data-tab="chat"><span class="iconify lucide--messages-square size-4" aria-hidden="true"></span>Chat</button>
+  </div>
+</div>`,
+      },
+      {
+        label: 'Clustered (≥6 tabs only) — labelled groups with hairline dividers',
+        html: `
+<div class="sch-tabbar" role="tablist" aria-label="Schema sections">
+  <div class="sch-group">
+    <span class="sch-glabel">Explore</span>
+    <div class="sch-gtabs tabs tabs-border">
+      <button type="button" class="tab tab-active" role="tab" data-tab="browse"><span class="iconify lucide--list-tree size-4" aria-hidden="true"></span>Browse</button>
+      <button type="button" class="tab" role="tab" data-tab="visualize"><span class="iconify lucide--workflow size-4" aria-hidden="true"></span>Visualize</button>
+    </div>
+  </div>
+  <span class="sch-tabdiv" aria-hidden="true"></span>
+  <div class="sch-group">
+    <span class="sch-glabel">Monitor</span>
+    <div class="sch-gtabs tabs tabs-border">
+      <button type="button" class="tab" role="tab" data-tab="changelog"><span class="iconify lucide--history size-4" aria-hidden="true"></span>Changelog</button>
+      <button type="button" class="tab" role="tab" data-tab="health"><span class="iconify lucide--activity size-4" aria-hidden="true"></span>Health</button>
+    </div>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-automation-anatomy',
+    group: 'Patterns',
+    name: 'Automation anatomy (trigger → touches)',
+    summary: 'A captured automation or interface answers two questions inside its panel — what fires this, and what does it touch — and nothing else. Actions compress to a typed count; step configuration is deliberately unrenderable.',
+    description:
+      'The detail an <a href="/schema">Automations</a> / <a href="/schema">Interfaces</a> panel gains once the capture carries a definition. Three parts, in this order: a <strong>trigger block</strong> (trigger type + <em>on {table}</em> + the watched fields as <a href="#entity-chip">entity chips</a>), a <strong>touches</strong> section (every table and field the automation reaches, grouped by table), and an <strong>action summary</strong> that is a typed count only — <em>"3 actions: update record · send email · run script"</em>. <strong>The boundary is the design.</strong> Founder direction 2026-07-25: never render step-by-step action configuration — the captured JSON\'s depth is a liability, not a feature. This layout has no slot where step config could go, which is the point; if a future request asks for it, that is a new pattern and a new conversation, not an extra row here. Nor is this a run log: a backup product records what a base <em>is</em>, not what it <em>did</em> (see <a href="#pattern-changelog">Changelog</a> for the history that does belong to us).<br><br><strong>Wording follows Airtable\'s own</strong>, because the user has already learned it there: <em>"When a record is updated — Name, Assignee, Status, and 3 more fields"</em>. Do not invent a second vocabulary for the same concept.<br><br><strong>Degradation is a first-class state, not an error.</strong> Captures arrive at three depths and each has its own rendering: <em>full</em> shows the strip; <em>inventory</em> (id/name/enabled only) shows <strong>nothing at all</strong> — no empty headers, no "—" placeholders, because a section that exists only to say it is empty is noise; <em>unknown</em> (a shape the extractor cannot read) shows one honest line, <strong>"Details not available for this capture"</strong>, with the raw-definition disclosure still available underneath. The three are distinguished by an explicit <code>captureDepth</code>, never by guessing from absent fields — "no touches" and "we could not read it" are different facts and must not collapse into one blank.<br><br><strong>Script honesty.</strong> When an action list contains a script step, the summary says <em>run script</em> and the section carries a soft <a href="#alert">alert</a>: the fields shown are only those declared in configuration. A script can reach anything; silently presenting a partial list as complete would be the one genuinely dangerous thing this pattern could do.<br><br>Interfaces reuse the identical touches grammar, and an interface <em>page</em> adds its page type (list · record detail · dashboard · form) to the identity line. One grammar across all three so the reader learns it once.',
+    reference: 'components/schema/schemaReadBody.ts (automationReadBody / interfaceReadBody) + automationAnatomy.ts',
+    showCode: false,
+    usageDo: [
+      'Answer only "what fires this" and "what does it touch". Actions are a typed count — the boundary is the layout, not a rule someone has to remember.',
+      'Mirror Airtable\'s own phrasing for the trigger ("… and 3 more fields"); the user learned the vocabulary there.',
+      'Group touches by table, one row per table, its fields as chips inside — a flat chip soup loses the structure that makes the answer usable.',
+      'Distinguish the three capture depths explicitly: full renders the strip, inventory renders NOTHING, unknown renders one honest line plus the raw disclosure.',
+      'Say so when a script action exists: the fields listed are those declared in configuration, and may be incomplete.',
+      'Reuse entityChip() with the Airtable field-type glyph, and keep the existing panel push hook so a chip drills to that entity.',
+      'Obey the panel list rules — cap at 5 rows then an inline "+N more", inside the shared row-list container, count badge only from 2 up.',
+      'The strip is CAPTURED FACT, so it renders identically in the panel\'s read and edit modes (<a href="#pattern-panel-edit-mode">Panel Read/Edit mode</a>) — never an input, never disabled, never greyed; edit mode only adds a "from capture" marker to the section label. The one exception is the trigger of a manually registered entry with no capture to contradict: that same slot renders the trigger-type select in edit mode.',
+    ],
+    usageDont: [
+      "Don't render step-by-step action configuration. It is excluded on purpose; adding it back is a new pattern, not a bigger section.",
+      "Don't render an empty section to prove a capture was shallow — inventory-grade shows nothing at all.",
+      "Don't collapse 'nothing to show' and 'we could not read this' into the same blank; they are different facts and only one needs the raw escape hatch.",
+      "Don't dump raw JSON into the primary UI — it stays behind the existing disclosure.",
+      "Don't show a partial field list from a script action without saying it is partial.",
+      "Don't fork a second chip builder for field types — the glyph goes into the existing chip.",
+    ],
+    examples: [
+      {
+        label: 'Trigger → touches → typed action count',
+        html: `
+<div class="max-w-md">
+  <p class="text-xs font-bold uppercase tracking-wide opacity-60 mb-1.5">Trigger</p>
+  <div class="rounded-[11px] border border-base-300 bg-base-200/45 p-3 mb-4">
+    <p class="text-sm font-semibold">When a record is updated <span class="opacity-60">on</span> Orders</p>
+    <div class="flex flex-wrap gap-1.5 mt-2">
+      <span class="sb-chip sb-chip-static"><span class="sb-chip-ic"><span class="iconify lucide--circle-dot size-3.5"></span></span><span class="sb-chip-name">Status</span></span>
+      <span class="sb-chip sb-chip-static"><span class="sb-chip-ic"><span class="iconify lucide--hash size-3.5"></span></span><span class="sb-chip-name">Amount</span></span>
+      <span class="text-xs opacity-60 self-center">and 3 more fields</span>
+    </div>
+  </div>
+  <p class="text-xs font-bold uppercase tracking-wide opacity-60 mb-1.5">Touches <span class="badge badge-sm badge-neutral align-middle">2</span></p>
+  <div class="rounded-[11px] border border-base-300 bg-base-200/45 overflow-hidden mb-4">
+    <div class="p-3 border-b border-base-200">
+      <p class="text-sm font-medium mb-1.5">Invoices</p>
+      <div class="flex flex-wrap gap-1.5">
+        <span class="sb-chip sb-chip-static"><span class="sb-chip-name">Total</span></span>
+        <span class="sb-chip sb-chip-static"><span class="sb-chip-name">Sent at</span></span>
+      </div>
+    </div>
+    <div class="p-3"><p class="text-sm font-medium">Contacts</p></div>
+  </div>
+  <p class="text-sm"><span class="opacity-60">3 actions:</span> update record · send email · run script</p>
+  <div role="note" class="alert alert-soft alert-warning mt-3">
+    <span class="iconify lucide--circle-alert size-4"></span>
+    <span class="flex-1 text-sm">This automation runs a script — the fields shown are those declared in its configuration and may be incomplete.</span>
+  </div>
+</div>`,
+      },
+      {
+        label: 'Unknown shape — one honest line, raw still reachable',
+        html: `
+<div class="max-w-md">
+  <p class="text-sm opacity-60">Details not available for this capture.</p>
+  <details class="mt-2">
+    <summary class="text-sm cursor-pointer">Raw definition (JSON)</summary>
+    <pre class="text-xs mt-2 p-2 rounded-lg bg-base-200 overflow-x-auto">{ "v": 2, "spec": "…" }</pre>
+  </details>
 </div>`,
       },
     ],
@@ -1744,7 +1788,7 @@ export const SB_ENTRIES: SBEntry[] = [
       'Identity meta line = kind · STATUS · trailing note. Keep the kind label everywhere (Interface / Page / Automation / Lookup / Table / relationship type). Render STATUS as a colored DOT + label (never a soft badge — a badge reads as a button): green = Published/Active/Valid/Healthy · amber = Draft/Paused/Could improve · red = Invalid/Not published/At risk/Removed · grey = Inactive/Unknown. Trailing note = "as of last backup" on entity drawers. (Soft badges stay in LISTING table cells; the dot+label is for the detail meta line.)',
       'Location (Base ▸ Table ▸ … / Base ▸ parent-interface) lives ONLY in the crumbs sub-row — never a base chip in the meta line. The catalog Drawer hosts it via [data-sb-drawer-crumbs]. Cardinality (Relationships) shows a readable label ("Many-to-one") with the compact token (m:1) as a daisyUI tooltip.',
       'Any collapsible (e.g. "Raw definition (JSON)") gets a trailing chevron that rotates on [open] (the same affordance as "+N more") so it reads as expandable — never a bare bordered row.',
-      'Footer is read-only by default (no action bar). Where edit/delete genuinely applies (Automations/Interfaces), use ONE standardized footer bar, identical in every file: border-top 1px base-200, Edit = btn btn-sm btn-neutral + lucide--pencil, Delete = btn btn-sm btn-ghost text-error + lucide--trash-2.',
+      'Footer is read-only by default (no action bar). Where edit/delete genuinely applies (Automations/Interfaces), use ONE standardized footer bar, identical in every file: border-top 1px base-200, Delete = btn btn-sm btn-ghost text-error + lucide--trash-2, and in edit mode the same bar carries Save (btn-sm btn-primary) + Cancel (btn-sm btn-ghost). Editing is a MODE of this panel, not a second surface — see <a href="#pattern-panel-edit-mode">Panel Read/Edit mode</a>; the mode switch sits at the end of the identity meta line.',
       'Give each TOP-LEVEL section header a quiet grey concept icon (the same icons the app/tabs use: Relationships=waypoints, Changelog=history, Documentation=book-text, Configuration=settings-2, …). Sub-labels INSIDE a section (Formula / References / Rolls up) get NO icon — that contrast is what marks the levels. EXCEPTION: the "Referenced by" section groups its rows BY KIND (Automations=zap · Interfaces & pages=layout-panel-left · Formulas=variable · Rollups=sigma · Lookups=search · Docs=book-text · Chats=messages-square) — each group sub-header DOES carry its kind concept-icon (+ a right-aligned per-group count), because there the icon is the group signifier, not a section label. Empty groups are omitted.',
       "Show BACK-references in the field Relationships section: the fields that point at this field (formula / rollup / lookup), each an ordinary row with a '← referenced by' direction marker that mirrors the table-level LINKS TO / LINKED FROM language. Forward config (Formula / Looks up / Rolls up) stays untouched. The reverse edges are derived by inverting the forward graph — the engine must emit them (Airtable's API returns only the forward config).",
       'Put the section count in a small catalog badge (badge-sm badge-neutral) pressed right after the name; separate top-level sections with whitespace (no divider line). Show the badge only from 2 upward — suppress the lone "1" (a single item is self-evident from the one row below it). Same for the Referenced-by group sub-headers.',
@@ -1787,16 +1831,17 @@ export const SB_ENTRIES: SBEntry[] = [
     id: 'pattern-multi-panel-drawer',
     group: 'Patterns',
     name: 'Multi-panel drawer (independent tabs)',
-    summary: 'Independent side-by-side detail panels — the slot next to the table is the anchor; every other panel you opened by hand. Capped at 4.',
+    summary: 'Independent side-by-side detail panels — the slot next to the table is the anchor; every other panel you opened by hand. Capped at 10.',
     description:
-      'The <strong>independent side-by-side multi-panel</strong> behaviour layered on the <a href="#pattern-detail-panel">entity detail panel</a> so a power user can hold and compare several schema entities at once. <strong>Model — independent panels, capped at 4</strong> (redesigned from the old Anchor+Focus cap-2; that parent-child model is retired). Each panel is <strong>self-contained</strong> (own visit-stack, own description-edit state) and <strong>closes independently</strong> — there is no "close both". <strong>The anchor slot:</strong> the panel nearest the table is <em>docked to it</em> — a plain open (a Browse row / <code>schema:openEntity</code>) ALWAYS lands in that panel, never in the focused one and never in a new one, so the answer to "what will this click replace?" is always "the panel by the table". Transience is encoded by <strong>position, not by a badge</strong>: no preview chip, no italic title, no Pin. The anchor’s <strong>header is hatched</strong> (a faint diagonal <code>repeating-linear-gradient</code> + a slightly deeper fill) and has <strong>no drag grip</strong>: the bar you would drag a panel by visibly does not move. It must read as <em>fixed</em>, never as <em>disabled</em> — the panel below stays fully interactive. Deliberately <strong>not</strong> an accent left border: that pixel belongs to the resize grip, whose hover state is the same primary colour. Nothing can be dropped into the anchor’s slot. <strong>Detach</strong> turns it into an ordinary panel and frees the slot for the next row you click. <strong>Open beside:</strong> ⌘/Ctrl-click or middle-click a reference/row (or the picker) opens that entity in a NEW ordinary panel beside — a plain reference click drills <strong>in place</strong> within its panel (push, Miller rule). The focused panel carries <strong>no decoration</strong> — focus is implied by where the user just clicked. There is no top bar and <strong>no rail surface</strong>: the controls (a round ＋ add, the open-count, and the shutter pill 5px further out) simply <strong>float on the leftmost panel’s left edge</strong>, so the drawers keep every pixel of width. The ＋ opens a picker whose <strong>search sits directly under the title</strong>, above a scope-aware <em>Suggested</em> list — <em>This base</em> offers the focused table, the whole base and its sibling tables; <em>All bases</em> offers every base. Panels already open are never suggested. <strong>Cap 4</strong> — opening a 5th evicts the least-recently-focused panel with a one-tap Undo; the anchor is never the victim (it is the one panel the user did not ask for by hand). <strong>Non-modal</strong> — no scrim; the table behind stays visible AND clickable. <strong>Resizable at two levels</strong> — each panel’s left edge line drags its OWN width, while the rail’s <strong>shutter pill</strong> drags the WHOLE stack: left grows it, right shrinks it, every expanded panel snaps to one equal width, and squeezing past the floor parks them one at a time from the left (pulling back out unparks them right to left) instead of collapsing the whole stack at once (auto-fit keeps a table strip visible; a default width persists in localStorage). <strong>Mobile (&lt; 900px)</strong> shows a single full-width column (the focused panel). Everything inside each panel is the unchanged <a href="#pattern-detail-panel">detail-panel canon</a> (header identity + crumbs + identity meta + ordered sections + <a href="#panel-section-nav">section-nav</a> + dual-description Draft→Publish) — this pattern only governs how several panels coexist. Reorder (drag handle) and collapse-to-rail + auto-accordion follow as further increments. A per-panel Compare toggle existed and was <strong>removed</strong> on client feedback — the diff highlight solved no problem he had. Ported from <code>research/multi-panel-drawer/</code>. Live: <a href="/panels">Panel Lab</a> + <a href="/schema">Schema › Browse</a>.',
+      'The <strong>independent side-by-side multi-panel</strong> behaviour layered on the <a href="#pattern-detail-panel">entity detail panel</a> so a power user can hold and compare several schema entities at once. <strong>Model — independent panels, capped at 10</strong> (redesigned from the old Anchor+Focus cap-2; that parent-child model is retired). Each panel is <strong>self-contained</strong> (own visit-stack, own description-edit state) and <strong>closes independently</strong> — there is no "close both". <strong>The anchor slot:</strong> the panel nearest the table is <em>docked to it</em> — a plain open (a Browse row / <code>schema:openEntity</code>) ALWAYS lands in that panel, never in the focused one and never in a new one, so the answer to "what will this click replace?" is always "the panel by the table". Transience is encoded by <strong>position, not by a badge</strong>: no preview chip, no italic title, no Pin. The anchor’s <strong>header is hatched</strong> (a faint diagonal <code>repeating-linear-gradient</code> + a slightly deeper fill) and has <strong>no drag grip</strong>: the bar you would drag a panel by visibly does not move. It must read as <em>fixed</em>, never as <em>disabled</em> — the panel below stays fully interactive. Deliberately <strong>not</strong> an accent left border: that pixel belongs to the resize grip, whose hover state is the same primary colour. Nothing can be dropped into the anchor’s slot. <strong>Detach</strong> turns it into an ordinary panel and frees the slot for the next row you click. <strong>Open beside:</strong> ⌘/Ctrl-click or middle-click a reference/row (or the picker) opens that entity in a NEW ordinary panel beside — a plain reference click drills <strong>in place</strong> within its panel (push, Miller rule). The focused panel carries <strong>no decoration</strong> — focus is implied by where the user just clicked. There is no top bar and <strong>no rail surface</strong>: the controls (a round ＋ add, the open-count, and the shutter pill 5px further out) simply <strong>float on the leftmost panel’s left edge</strong>, so the drawers keep every pixel of width. The ＋ opens a picker whose <strong>search sits directly under the title</strong>, above a scope-aware <em>Suggested</em> list — <em>This base</em> offers the focused table, the whole base and its sibling tables; <em>All bases</em> offers every base. Panels already open are never suggested. <strong>Cap 10</strong> — opening an 11th evicts the least-recently-focused panel with a one-tap Undo; the anchor is never the victim (it is the one panel the user did not ask for by hand). <strong>Non-modal</strong> — no scrim; the table behind stays visible AND clickable. <strong>Resizable at two levels</strong> — each panel’s left edge line drags its OWN width, while the rail’s <strong>shutter pill</strong> drags the WHOLE stack: left grows it, right shrinks it, every expanded panel snaps to one equal width, and squeezing past the floor parks them one at a time from the left (pulling back out unparks them right to left) instead of collapsing the whole stack at once (auto-fit keeps a table strip visible; a default width persists in localStorage). <strong>Mobile (&lt; 900px)</strong> shows a single full-width column (the focused panel). Everything inside each panel is the unchanged <a href="#pattern-detail-panel">detail-panel canon</a> (header identity + crumbs + identity meta + ordered sections + <a href="#panel-section-nav">section-nav</a> + dual-description Draft→Publish) — this pattern only governs how several panels coexist. Reorder (drag handle) and collapse-to-rail + auto-accordion follow as further increments. A per-panel Compare toggle existed and was <strong>removed</strong> on client feedback — the diff highlight solved no problem he had. <strong>Automations & Interfaces open here too</strong> (client answer): a row on those tabs opens its item as an ordinary stacking panel (same open-beside / rail / undo-close), rendering the shared read body (<code>schemaReadBody.ts</code>); a tagged table/field drills in place, and the panel footer’s Edit/Delete route back to that tab’s existing form. Ported from <code>research/multi-panel-drawer/</code>. Live: <a href="/panels">Panel Lab</a> + <a href="/schema">Schema › Browse</a>.<br><br><strong>The hold slot (Oleh 2026-07-24).</strong> One leading slot in the header answers a single question — <em>how is this panel held?</em> A movable panel shows its drag grip there; the anchored one shows Detach. They are mutually exclusive, so it is always one control in one place, and Detach no longer sits on the right among unrelated actions like open-in-Airtable and close. <strong>The slot is closed until the header is hovered or holds focus</strong>: a grip and a pin do not earn permanent ink, and at rest the title and its icon should start at the edge of the header rather than behind an empty gap. It collapses to <strong>zero width</strong> and opens on hover, nudging the title right — that small movement is what says the control belongs to the panel and not to the content. Collapse it with <code>width: 0</code>, never <code>display: none</code>: the control has to stay in the DOM to stay focusable, or a hover-only affordance quietly becomes keyboard-unreachable, which is also why <code>:focus-within</code> opens it.',
     reference: 'design:components/schema/EntityPanel.astro (.ep-wrap / .ep-rail / .ep-sheet[data-ep-sheet-tpl] / .ep-previewbar / .ep-grip)',
     showCode: false,
     usageDo: [
-      'Cap at FOUR independent panels; each closes on its own (no "close both"). Opening a 5th evicts the least-recently-focused one with an Undo.',
+      'Cap at TEN independent panels; each closes on its own (no "close both"). Opening an 11th evicts the least-recently-focused one with an Undo.',
       'Give the stack a shutter pill on its outer (left) edge: dragging it resizes every expanded panel together AND equalizes their widths. Squeeze past the floor and panels park to rail strips ONE AT A TIME, leftmost first, with the survivors re-sharing the freed width; pulling back out unparks them right to left. Keep the per-panel edge grip for adjusting one panel alone.',
       'A plain open ALWAYS lands in the anchor — the panel next to the table. Never retarget the focused panel: focus is an accident of the last click and must not decide what gets replaced. Mark the anchor by its POSITION (fixed slot) plus a hatched, grip-less header — the surface you drag by, visibly immovable. Never a coloured left border: that pixel is the resize grip’s.',
       '⌘/Ctrl-click or middle-click a reference/row (or the picker) opens a NEW ordinary panel beside. A plain reference click drills in place (push, Miller rule). Back pops that panel’s stack; at the root the × dismisses. Detach frees the anchor slot; the next plain open recreates it.',
+'A panel’s BODY may itself be a visit-stack, so one panel can drill through related things without spawning a new panel each time: the Schema entity panel pushes entity→field, the Data changelog drill pushes run→record. A plain click on a row inside the panel PUSHES that view onto the body’s stack with a Back arrow; ⌘/Ctrl-click opens it BESIDE as a new panel instead. Back pops the body’s stack; at the root the × dismisses the panel. This keeps "drill deeper here" and "compare side by side" as two clear, separate gestures rather than one overloaded open.',
       'Float the add (＋, round) + open-count on the leftmost panel’s left edge — no top bar and no rail column stealing width. Don’t decorate the focused panel: focus is implied by where the user just clicked.',
       'In the ＋ picker put the search field directly under the title, then the Suggested list. A scope pill (This base ⇄ All bases) must re-render BOTH the suggestions and the live typeahead results — a pill that only relabels itself reads as broken.',
       'Keep it non-modal: no scrim, the table behind stays visible and clickable. Each panel’s edge line resizes that panel alone (auto-fit keeps a table strip visible; persist a default width).',
@@ -2066,13 +2111,248 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
+    id: 'pattern-row-actions',
+    group: 'Patterns',
+    name: 'Clickable row (chevron + hover actions)',
+    summary: 'The ONE way an openable row behaves — hover bg, a persistent grey chevron, and hover-revealed action icons that collapse to a ⋯ menu.',
+    description:
+      'Every row that opens a detail uses this one anatomy, so nothing reads as a mishmash (the app used to mix "Details →" text links, a hover chevron, and a ⋯ menu). The whole row is <strong>clickable</strong> with a hover background (<code>.row-clickable</code>, <code>role="button"</code>, keyboard-focusable). Its trailing edge, right to left: a <strong>persistent quiet grey chevron</strong> (<code>.row-go</code>, <code>lucide--chevron-right</code>) that is <em>always</em> visible so openability is self-evident, brightening on hover; and — <strong>revealed on hover</strong> — the row\'s contextual <strong>action icons</strong> (<code>.row-actions</code>, ghost icon-buttons, <code>opacity 0 → 1</code>) to the chevron\'s left. When there are <strong>more than two actions</strong> they collapse into a <strong>⋯ dropdown</strong> (<code>.row-menu</code>) instead of a loud icon row. Whole-row click / Enter / Space opens the detail (same target as the chevron); the action icons and ⋯ <code>stopPropagation()</code> and do their own thing. Generalises two earlier one-offs: Relationships\' grey chevron-on-hover and Automations/Interfaces\' pencil+trash reveal. The classes are global (<code>styles/components/row-actions.css</code>) so every table adopts them instead of reinventing the look. Live: <a href="/backups">Backups</a>, <a href="/reports">Reports</a>, <a href="/schema">Schema</a>.',
+    reference: 'styles/components/row-actions.css',
+    showCode: true,
+    usageDo: [
+      'Make the whole row clickable and keyboard-focusable; the chevron and the row open the same detail.',
+      'Keep the chevron persistent (quiet grey), so a row advertises that it opens without needing a hover.',
+      'Reveal contextual actions on hover to the chevron\'s left; collapse to a ⋯ menu when there are more than two.',
+      'stopPropagation on every action icon so it does not also trigger the row\'s open.',
+    ],
+    usageDont: [
+      "Don't use a trailing \"Details →\" / \"Open →\" text link — that's what this replaces.",
+      "Don't hide the chevron until hover (openability should be visible at rest), and don't leave five loose icons in a row (use ⋯).",
+    ],
+    examples: [
+      {
+        label: 'A clickable row — persistent chevron, two hover actions',
+        html: `
+<table class="table text-sm" style="max-width:560px">
+  <tbody>
+    <tr class="row-clickable" role="button" tabindex="0">
+      <td><span class="badge badge-soft badge-success badge-sm">Healthy</span></td>
+      <td class="font-medium">Jul 6 – Jul 13, 2026</td>
+      <td>
+        <span class="row-end">
+          <span class="row-actions">
+            <button class="btn btn-sm btn-ghost btn-square" aria-label="Export"><span class="iconify lucide--download size-4"></span></button>
+            <button class="btn btn-sm btn-ghost btn-square" aria-label="Copy link"><span class="iconify lucide--link size-4"></span></button>
+          </span>
+          <span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+        </span>
+      </td>
+    </tr>
+    <tr class="row-clickable" role="button" tabindex="0">
+      <td><span class="badge badge-soft badge-error badge-sm">Failed</span></td>
+      <td class="font-medium">Jun 29 – Jul 6, 2026</td>
+      <td>
+        <span class="row-end">
+          <span class="row-actions"><button class="btn btn-sm btn-ghost btn-square" aria-label="Retry"><span class="iconify lucide--rotate-ccw size-4"></span></button></span>
+          <span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+        </span>
+      </td>
+    </tr>
+  </tbody>
+</table>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-report',
+    group: 'Patterns',
+    name: 'Report document',
+    summary: 'The sectioned periodic report — a header status strip over collapsible section cards, every reference clickable.',
+    description:
+      'The Reports detail view renders one <em>report per period</em>: a document that answers "what happened since the last report", not a live dashboard. It is a bespoke composition on existing primitives (like <a href="#pattern-audit-table">audit tables</a> and <a href="#pattern-status-rail">the status rail</a> are), so keep the composition custom (<code>.rpt-*</code>) and standardize only the primitives inside it. Anatomy, top to bottom: (1) a <strong>named window</strong> heading — the literal date range + "since last report", never a rolling "now"; (2) a header <a href="#pattern-metric-tiles">metric-tile strip</a> where each tile carries its <strong>delta vs the prior report</strong> (a number without a delta is decoration); (3) the <strong>four fixed section cards</strong> — Backup summary · Connection health · Schema health · Documentation updates — each on one grammar: a <strong>one-line muted aggregate</strong> (the section\'s unique numbers, NOT the header tiles restated) → a <strong>column-headed table</strong> of itemized rows → an explicit <strong>"No issues this period" line</strong> when empty. Every table carries real column headers and right-aligns its numeric columns (<code>tabular-nums</code>) sharing a left anchor (the status badge) and a right anchor (numbers + chevron) — that shared grid is what makes the report read as vertical guidelines rather than scattered numbers. Do NOT restate a header-strip number as a nested metric box inside a section (that duplication is the anti-pattern this replaced). A section is <em>never omitted</em>: an absent section is indistinguishable from "the report didn\'t run". Every referenced element is interactive and keeps the report as the spine — <strong>schema elements open the shared <a href="#pattern-entity-panel">EntityPanel</a></strong> in place (dispatch <code>schema:openEntity</code>, identical to Schema/Docs), while genuinely separate objects (a backup run, a doc) navigate. <strong>Reports v2 (client 2026-07-13):</strong> a report is a <strong>named, saved DEFINITION</strong> — the sections it covers, the bases it scopes to, and its time window — <em>separate</em> from the <strong>schedule</strong> (when/who/format), which is embedded 1:1 on the report. So <code>/reports</code> is a list of <em>definitions</em> (not artifacts — <a href="#pattern-audit-table">audit tables</a> applied), each opening its report page (<code>/reports/[id]</code>) with three tabs (client 2026-07-14): <strong>Most Recent</strong> (default — the latest run rendered inline for instant value, reusing this document + the shared EntityPanel), <strong>History</strong> (the run trail; a run row opens the rendered document at <code>/reports/run/[runId]</code>, whose breadcrumb goes <em>Reports / ‹report› / ‹window›</em> back to the parent report, not the top list), and <strong>Settings</strong> (name · section checkboxes · base scope · window · the one schedule) shown beside a <strong>live preview</strong> that renders the report using <em>current data</em> and reacts as you toggle sections / base scope (own <code>.rpd-prev-*</code> classes; labelled "using current data (not a saved run)"). A Space auto-has a default "Full &lt;Space&gt; Report"; duplicate a report for a second cadence. Two more includable sections (client 2026-07-14): <strong>Trends</strong> — a grid of compact metric cards (records/tables/fields/attachments/automations/interfaces) that expand to a full <a href="#pattern-trend-chart">trend chart</a> (ApexCharts) with the legend toggling per-base lines — and <strong>Data health</strong> — a Zoho-style record-data + attachment-data split (per-base record counts + storage), a shell that refines after the Data page. Live: <a href="/reports">Reports</a>. Components: <code>views/ReportsView.astro</code> (list) · <code>views/ReportDefinitionView.astro</code> (report page) · <code>views/ReportDetailView.astro</code> (a run).',
+    reference: 'design:views/ReportDefinitionView.astro (.rpd) · views/ReportDetailView.astro (.rpt) · views/ReportsView.astro (.rpl)',
+    showCode: false,
+    usageDo: [
+      'Print the literal window ("Jul 6 – Jul 13, 2026 · since last report") and give every headline number a delta vs the prior report.',
+      'Use the metric-tile strip for the header (the single at-a-glance), then the "one-line aggregate → column-headed table → explicit empty line" grammar for every section; give every table real column headers and right-align numeric columns for shared vertical guidelines.',
+      'State "No issues this period" as an affirmative line inside the card when a section is empty — never omit the section, never an empty-state illustration.',
+      'Open schema references with the shared EntityPanel (schema:openEntity) so the drill-in feels identical to the rest of the app; navigate only for separate objects (run detail, doc).',
+    ],
+    usageDont: [
+      "Don't render a rolling live-dashboard window — a report is pinned to a named period.",
+      "Don't omit an empty section, and don't show a bare number without a delta.",
+      "Don't build a second detail surface for schema elements — reuse the one EntityPanel.",
+      "Don't restate a header-strip metric as a nested box inside a section, and don't leave a data table without column headers.",
+    ],
+    examples: [
+      {
+        label: 'A section card — one-line aggregate → column-headed table (numbers right-aligned)',
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100 overflow-hidden" style="max-width:560px">
+  <div class="flex items-center gap-2 border-b border-base-300 px-4 py-2.5">
+    <span class="iconify lucide--database-backup size-4 opacity-70" aria-hidden="true"></span>
+    <span class="font-semibold text-sm">Backup summary</span>
+    <span class="badge badge-soft badge-success badge-sm ml-auto"><span class="size-1.5 rounded-full bg-current"></span>Healthy</span>
+  </div>
+  <div class="flex flex-wrap items-baseline gap-2 border-b border-base-300 bg-base-200/40 px-4 py-2 text-xs">
+    <span class="inline-flex items-baseline gap-1"><span class="text-base-content/55">Runs</span><span class="font-semibold tabular-nums">14</span><span class="text-success tabular-nums">+2</span></span>
+    <span class="inline-flex items-baseline gap-1"><span class="text-base-content/30">·</span><span class="text-base-content/55">Failed</span><span class="font-semibold tabular-nums">1</span><span class="text-error tabular-nums">+1</span></span>
+    <span class="inline-flex items-baseline gap-1"><span class="text-base-content/30">·</span><span class="text-base-content/55">Volume</span><span class="font-semibold tabular-nums">2.4 GB</span></span>
+  </div>
+  <table class="table text-sm">
+    <thead><tr>
+      <th class="text-[11px] uppercase tracking-wide text-base-content/50">Status</th>
+      <th class="text-[11px] uppercase tracking-wide text-base-content/50">Base</th>
+      <th class="text-[11px] uppercase tracking-wide text-base-content/50 text-right">Records</th>
+      <th class="text-[11px] uppercase tracking-wide text-base-content/50 text-right">Size</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="badge badge-soft badge-success badge-sm">Backed up</span></td>
+        <td class="font-medium">Sales CRM</td>
+        <td class="text-right tabular-nums text-base-content/70">128,400</td>
+        <td class="text-right tabular-nums text-base-content/64">1.4 GB</td>
+      </tr>
+      <tr>
+        <td><span class="badge badge-soft badge-error badge-sm">Failed</span></td>
+        <td class="font-medium">Operations</td>
+        <td class="text-right tabular-nums text-base-content/70">—</td>
+        <td class="text-right tabular-nums text-base-content/64">—</td>
+      </tr>
+    </tbody>
+  </table>
+</div>`,
+      },
+      {
+        label: 'The affirmative empty line (a section with nothing to report)',
+        html: `
+<div role="alert" class="alert alert-success alert-soft">
+  <span class="iconify lucide--circle-check size-4" aria-hidden="true"></span>
+  <span>No connection issues this period.</span>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-trend-chart',
+    group: 'Patterns',
+    name: 'Trend chart',
+    summary: 'The one charting primitive — a themed ApexCharts line/area, as a compact sparkline or a full chart.',
+    description:
+      'The <strong>single</strong> way we draw a metric over time. It wraps <strong>ApexCharts</strong> — the vendored theme donor (<code>@opensided/theme</code>) ships apex line/bar examples, so it is the design-system-aligned charting lib (not a hand-rolled SVG, not a second library). We use the vanilla <code>apexcharts</code> package inside an Astro island (no <code>react-apexcharts</code> — avoids React-19 peer friction), and colours are read from our <code>--color-*</code> tokens at render, so a chart follows light/dark like everything else. Two variants: <strong>compact</strong> (a sparkline — no axes, grid or legend; sits inside a metric card) and <strong>full</strong> (axes + grid + legend + tooltip; the legend toggles per-series lines, which is how "Overall vs by base" is offered without a custom control). <code>format</code> renders a plain count or a byte size. First consumer: the report\'s <strong>Trends</strong> section (records/tables/fields/attachments/automations/interfaces over time) as a grid of compact metric cards that expand to the full chart (Supabase pattern), and the <strong>Data health</strong> section. Component: <code>components/ui/TrendChart.astro</code>. When you need a chart, use THIS — do not add another chart library or hand-roll SVG.',
+    reference: 'design:components/ui/TrendChart.astro · apexcharts (theme donor)',
+    showCode: false,
+    usageDo: [
+      'Use TrendChart for every time-series chart; pass series + categories and pick compact (sparkline) or full.',
+      'Let the full chart\'s legend toggle per-base series instead of building a custom Overall/By-base switch.',
+      'Keep colours as token names (primary/success/…) so the chart stays on-theme in light and dark.',
+    ],
+    usageDont: [
+      "Don't add a second charting library or hand-roll an SVG line chart — this primitive is the catalog answer.",
+      "Don't hardcode hex colours into a chart; drive them from --color-* tokens.",
+    ],
+    examples: [
+      {
+        label: 'A compact metric card (sparkline) that expands to the full chart',
+        html: `
+<details class="rounded-box border border-base-300 bg-base-100 overflow-hidden" style="max-width:320px">
+  <summary class="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer" style="list-style:none">
+    <span class="flex flex-col"><span class="text-xs text-base-content/60">Records</span><span class="text-base font-semibold tabular-nums">44,900 <span class="text-xs text-success">+2.7k</span></span></span>
+    <span class="text-base-content/40 text-xs">▾</span>
+  </summary>
+  <div class="border-t border-base-300 p-2 text-xs text-base-content/50">TrendChart (full) renders here on expand.</div>
+</details>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-recipient-input',
+    group: 'Patterns',
+    name: 'Recipient input (email chips)',
+    summary: 'Add report recipients as chips — Space members (avatar) and arbitrary external emails (envelope), Gmail mechanics.',
+    description:
+      'The recipient field for a report schedule. Two chip kinds in one input: a <strong>Space member</strong> (picked from an autocomplete, shown with an avatar) and an <strong>arbitrary external email</strong> (free-typed, shown with an envelope) — because the primary user is an agency emailing a client who is not in their Space. Gmail token mechanics: commit a chip on <strong>Enter · Tab · comma · blur</strong>; a pasted blob splits on comma / semicolon / whitespace / newline into one chip each; each entry is <strong>validated and de-duplicated</strong> on commit; an invalid address becomes a <strong>red, editable chip</strong> (click to fix) rather than being silently dropped; <strong>✕ or Backspace-at-empty</strong> removes. A <strong>live count</strong> of recipients (no hard cap — the spec sets none). Because chips are injected at runtime, the styles are <code>is:global</code> (unique <code>.rcp-</code> prefix), per our Astro-scoping rule. Component: <code>components/reports/RecipientInput.astro</code>. ASSUMPTION(reports C2): external emails are unrestricted in V1 — the privacy guard (warning / allowlist) is an open client question.',
+    reference: 'design:components/reports/RecipientInput.astro',
+    showCode: false,
+    usageDo: [
+      'Support both a member chip (avatar, from autocomplete) and an external chip (envelope, free-typed) so senders can tell who is internal.',
+      'Commit on Enter/Tab/comma/blur; accept a pasted list and split it into chips; validate + de-dupe on commit.',
+      'Turn an invalid address into a red editable chip, not a silent drop; show a live count of recipients.',
+    ],
+    usageDont: [
+      "Don't validate only on submit — commit-time feedback per chip is the point.",
+      "Don't silently discard an invalid or duplicate entry.",
+    ],
+    examples: [
+      {
+        label: 'A recipient field with a member chip, an external chip, and an invalid one',
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100 p-2" style="max-width:460px">
+  <div class="flex flex-wrap items-center gap-1.5">
+    <span class="badge badge-soft badge-primary gap-1"><span class="iconify lucide--user-round size-3"></span>Reese D.<span class="iconify lucide--x size-3 opacity-60"></span></span>
+    <span class="badge badge-ghost gap-1"><span class="iconify lucide--mail size-3"></span>client@acme.co<span class="iconify lucide--x size-3 opacity-60"></span></span>
+    <span class="badge badge-soft badge-error gap-1"><span class="iconify lucide--triangle-alert size-3"></span>not-an-email<span class="iconify lucide--x size-3 opacity-60"></span></span>
+    <input class="grow bg-transparent px-1 py-0.5 text-sm outline-none" placeholder="Add people or emails…" style="min-width:8rem" />
+  </div>
+  <div class="mt-1.5 flex justify-end px-1 text-[11px] text-base-content/50 tabular-nums">3 / 20</div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-report-schedule',
+    group: 'Patterns',
+    name: 'Report schedules',
+    summary: 'The per-Space report delivery schedules — a rows list + an editor (cadence incl. "after every backup", recipients, format).',
+    description:
+      'The <strong>Schedules</strong> sub-view of the Reports page (a <code>[ Reports · Schedules ]</code> tab toggle on <code>/reports</code>). It manages the automated delivery of reports: a Space can have several schedules for different audiences. It is a bespoke composition on primitives (like <a href="#pattern-report">the report document</a> is). Two layers: a <strong>rows list</strong> on the catalog <a href="#table">table</a> — Name · Cadence (plain-English) · Recipients (<a href="#pattern-recipient-input">chips</a> as avatars +N) · Format · an Enabled <a href="#checkbox-toggle">toggle</a> · Last delivery status · ⋯ (Edit / Duplicate / Delete) — and an <strong>editor</strong> in field order <em>Name → Cadence → Format → Recipients → suppress-empty → Save</em>. <strong>Cadence is a segmented control <code>[ After every backup | Daily | Weekly | Monthly ]</code></strong> with progressive disclosure: the event option hides the day/time fields; Weekly reveals a day-of-week, Monthly a day-of-month, and the time-based ones a time — with a plain-English echo and a "Next report: Mon Jul 20, 09:00" preview. Trigger (when it fires) is distinct from the report window (what it covers — always "since the last report"). A <strong>"Don\'t send if nothing changed"</strong> toggle (default on for the event cadence) avoids spammy empty sends. NO gating wall — the full spectrum shows (ASSUMPTION(reports C3): pricing/limited-tier behaviour is layered later). Component: <code>views/ReportsView.astro (.rps)</code> + <code>components/reports/RecipientInput.astro</code>.',
+    reference: 'design:views/ReportsView.astro (.rps)',
+    showCode: false,
+    usageDo: [
+      'Make cadence a segmented control where "After every backup" is a first-class option that hides the day/time fields.',
+      'Echo the schedule in plain English and preview the next run; the trigger is separate from the "since last report" window.',
+      'List multiple schedules as rows (Name · Cadence · Recipients · Format · Enabled · Last delivery · ⋯); open an editor to add/edit.',
+      'Offer a "don\'t send if nothing changed" toggle, default on for the after-every-backup cadence.',
+    ],
+    usageDont: [
+      "Don't gate the schedules behind an upgrade wall in this build — show the full spectrum; cost affordances are local, per-action.",
+      "Don't conflate the trigger cadence with the report window (the window is always since the last report).",
+    ],
+    examples: [
+      {
+        label: 'A schedule row + the cadence segmented control',
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100 overflow-hidden" style="max-width:620px">
+  <table class="table text-sm">
+    <thead><tr class="text-xs uppercase tracking-wider text-base-content/60"><th>Name</th><th>Cadence</th><th>Recipients</th><th>Format</th><th>Enabled</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="font-medium">Weekly client report</td>
+        <td class="text-base-content/70">Every Mon · 09:00</td>
+        <td class="text-base-content/70">4 recipients</td>
+        <td><span class="badge badge-sm badge-ghost">PDF</span></td>
+        <td><input type="checkbox" class="toggle toggle-sm toggle-primary" checked /></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="border-t border-base-300 p-3">
+    <div role="tablist" class="tabs tabs-box tabs-sm w-fit">
+      <span role="tab" class="tab tab-active">After every backup</span><span role="tab" class="tab">Daily</span><span role="tab" class="tab">Weekly</span><span role="tab" class="tab">Monthly</span>
+    </div>
+    <p class="mt-2 text-xs text-base-content/60">Sends a report as soon as each backup finishes. Next report: after the next backup.</p>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
     id: 'pattern-setup-stepper',
     group: 'Patterns',
     name: 'Setup stepper',
     summary: 'The Space-setup wizard stepper — bespoke, gated for first-run.',
     description:
       'The multi-step Space setup (Source → Destination → Bases → Depth → Schedule) is a gated linear flow for onboarding, with a free-jump edit mode afterwards. It is a product flow, not a primitive — keep it custom, and use this catalog’s inputs, selects and buttons for the controls inside each step. Live: <a href="/welcome">Welcome</a>.',
-    reference: 'components/patterns/WizardStepper.astro · components/patterns/SelectableConnectorRow.astro · views/IntegrationsSetupWizard.astro',
+    reference: 'views/IntegrationsSetupWizard.astro',
     showCode: false,
     usageDo: ['Use catalog primitives for the controls in each step.', 'Gate the stepper for first-run; allow free-jump editing after.'],
     usageDont: ["Don't reuse the gated stepper for routine edits — that’s the free-jump mode."],
@@ -2097,17 +2377,21 @@ export const SB_ENTRIES: SBEntry[] = [
     name: 'Table toolbar & pagination',
     summary: 'Search, filters and a pager wrapped around a data table — the run-history pattern.',
     description:
-      'When a table grows, wrap it in a toolbar (search + filters) above and a pager below. Search is an <a href="#input">Input</a>; each filter is a <strong>faceted dropdown</strong> — a daisyUI <code>dropdown</code> of <a href="#checkbox-toggle">checkboxes</a> with a selected-count badge on its trigger (the shadcn <em>DataTableFacetedFilter</em> pattern; cf. Deel / Profound). Multi-select where it helps (status, trigger), a single range for date; a red Clear with an × resets everything. The pager is a <a href="#select">Select</a> + prev/next <a href="#button">Buttons</a>. Filter client-side in the prototype; the real app pushes it to the query. Live: <a href="/backups">Backups</a>.',
+      'When a table grows, wrap it in a toolbar (search + filters) above and a pager below. Search is an <a href="#input">Input</a>; each filter is a <strong>faceted dropdown</strong> — a daisyUI <code>dropdown</code> of <a href="#checkbox-toggle">checkboxes</a> with a selected-count badge on its trigger (the shadcn <em>DataTableFacetedFilter</em> pattern; cf. Deel / Profound). Multi-select where it helps (status, trigger), a single range for date; a red Clear with an × resets everything. The pager is a <a href="#select">Select</a> + prev/next <a href="#button">Buttons</a>. Filter client-side in the prototype; the real app pushes it to the query. Live: <a href="/backups">Backups</a>. <strong>Shared with the <a href="#pattern-data-grid">Data ▸ Browse record grid</a> (Oleh 2026-07-23)</strong>, which used to scroll on an opaque cursor — same pager construction, but the default page size is per-surface (Backups 20, the record grid 50). <strong>Shared with the Data ▸ Changelog run list and its per-run drill (Oleh 2026-07-23)</strong> — the drill\'s prior bespoke "page N of M" pager (hardcoded 50/page, no rows control) was reconciled onto this same construction; page size stays per-surface (run list 20, drill 25).<br><br><strong>ONE component, not a copied construction (2026-07-24).</strong> The pager had been hand-copied into four places (Backups, the record grid, the Changelog run list, the Changelog drill) before it was asked for across every Schema tab too — so it is now a real element: <code>components/ui/TablePager.astro</code> for the markup and <code>components/ui/tablePager.ts</code> (<code>createPager</code>) for the behaviour. The helper owns the whole contract: the window is applied to the <strong>already filtered + sorted</strong> list, the page clamps when a shrinking set would leave it blank, <code>page</code> is ephemeral (a reload starts at page 1) and <code>pageSize</code> is a <strong>user preference</strong> under its own storage key — never part of a preset, view config or dirty diff. Any change to search, filter, sort or mode resets to page 1. Build a new paged surface by mounting the component and calling <code>createPager</code>; do not re-type the markup. <strong>Every surface is on it (2026-07-24).</strong> The four pre-existing hand-copies were migrated in the same stretch — Backups, the Data record grid, the Changelog run list and its per-run drill — so there is exactly one pager in the codebase, not one plus four look-alikes. Two mount styles, same markup: a server-rendered surface uses <code>&lt;TablePager /&gt;</code> + <code>createPager</code>; a surface that rebuilds its own body as innerHTML uses <code>pagerHtml(state)</code> and keeps its own page state — that is the Changelog drill, where every open panel pages independently while rows-per-page stays one shared preference. The drill\'s tighter lead-in is a modifier (<code>tpg-tight</code>, 4px instead of 12 because it sits under a panel header), not a second copy of the rule. Migrating Backups also gave it persisted rows-per-page, which the hand-typed version never had. Per-surface page sizes: Backups 20 · Data record grid 50 · Changelog run list 20 · Changelog drill 25 · Schema Browse (Flat) 50 · Schema Automations / Interfaces / Relationships 25 · Schema Changelog 20.<br><br><strong>The selected segment is soft-primary (Oleh 2026-07-24).</strong> A segmented toggle (Tree/Flat, the Visualize mode switch) used to mark its selection with <code>base-200</code> on a <code>base-100</code> row — grey on grey, which simply got lost, and that is not good enough for a control that now leads the toolbar and states what you are looking at. It reuses the language the app already has for <em>"this control is doing something"</em>: the same soft-primary fill, border and text as an <a href="#pattern-faceted-filter">active facet</a> — not a fourth blue. <strong>The icon follows the text colour</strong> rather than staying white: an icon disagreeing with its own label would be unique in the app.<br><br><strong>Order follows cause (Oleh 2026-07-24).</strong> A control that <em>redefines the controls after it</em> belongs BEFORE them, not in the right cluster. Schema ▸ Visualize proved it: its mode switch (Data / Relationships / Automations &amp; Interfaces) sat last, yet switching it <strong>replaces the filter set</strong> — Data offers Bases/Tables/Field types/Field visibility/Relationships, Relationships offers Bases/Tables/Relationship types, the app layer offers Bases/Node types, and only <em>Bases</em> survives all three. Reading left to right, the user configured filters and only then met the control that had decided what those filters were. It now leads the row, followed by a divider. The test is whether the control changes what the others MEAN: a <strong>scope</strong> switch leads; a <strong>display</strong> toggle that renders the same data differently (Tree/Flat on Browse and Relationships) stays in the right cluster.<br><br><strong>Where a pager is the wrong control:</strong> a <em>hierarchy</em> cannot be paged — slicing rows 51–100 out of a base ▸ table ▸ field tree cuts a table in half and orphans its fields. Schema Browse therefore pages its <strong>Flat</strong> mode only; Tree stays whole (Oleh 2026-07-23).',
     reference: 'components/patterns/RegistryTable.astro · views/BackupsListView.astro',
     showCode: false,
     usageDo: [
       'Search by stable identifiers (run id, error message) for support triage.',
       'Filter by attributes the row actually owns — status, trigger, date.',
       'Show a distinct “no matches” state, separate from the never-run empty state.',
+      'Mount <code>TablePager</code> + <code>createPager</code> for any new paged list — the default page size is the only per-surface decision.',
+      'Page the filtered set, and reset to page 1 whenever search, filter, sort or mode changes.',
     ],
     usageDont: [
       "Don't filter by something that isn’t a per-row fact (e.g. base — that’s current config, not a run snapshot).",
       "Don't paginate the search out of reach — keep it pinned above the table.",
+      "Don't hand-copy the pager markup into a new surface — that is how four near-identical idioms appeared; import the component.",
+      "Don't page a tree. Slicing a hierarchy orphans children from their parent — page the flat view, or cap per node.",
     ],
     examples: [
       {
@@ -2146,12 +2430,264 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
+    id: 'pattern-node-showmore',
+    group: 'Patterns',
+    name: 'Show more (inside a tree node)',
+    summary: 'What a hierarchy gets instead of a pager: each node reveals its children in chunks.',
+    description:
+      'A tree cannot take a <a href="#pattern-table-toolbar">pager</a> — slicing rows 51–100 out of base ▸ table ▸ field cuts a table away from its own fields. But a tree is not automatically bounded either: on Schema Browse, typing in the search <strong>auto-expands every matching base</strong>, so a query like <em>id</em> against a wide schema unfolds hundreds of field rows at once. The bound therefore goes <strong>per node</strong>: a table shows its first N fields and a <code>Show 25 more of 340</code> row underneath; clicking reveals the next chunk, never the whole tail. It reads as one row of the list, not a control bar — a full-width ghost button flush with the rows it extends, sized like them.<br><br>The cap counts <strong>visible</strong> children, so it composes with the filters rather than fighting them: filter to 12 matches and the row disappears, because there is no tail left to hide. Any change to search or filters <strong>resets every node to the first chunk</strong> — same rule as a pager returning to page 1. This also fixes the case that has nothing to do with search: manually expanding a 900-field table used to render 900 rows.',
+    reference: 'design:components/schema/SchemaBrowse.astro',
+    showCode: false,
+    usageDo: [
+      'Cap the children of a node, not the nodes themselves — the parent must always keep at least some of its own children.',
+      'Say what is left, not just "more": <code>Show 25 more of 340</code> tells the user the size of the tail.',
+      'Reset every node to its first chunk when the search or filters change.',
+    ],
+    usageDont: [
+      "Don't reveal the whole tail in one click — that is the unbounded render the cap exists to prevent.",
+      "Don't put a pager inside a tree; page the flat view instead (see the table-toolbar entry).",
+      "Don't style it as a toolbar or a card — it is one more row in the list, or it reads as the end of the list.",
+    ],
+    examples: [
+      {
+        label: 'A table node capped at 3 of 340 fields',
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100 p-2 text-sm">
+  <div class="flex items-center gap-2 px-2 py-1.5 font-medium"><span class="iconify lucide--table-2 size-4"></span>Contacts</div>
+  <div class="flex items-center gap-2 px-2 py-1.5 pl-8 text-base-content/80"><span class="iconify lucide--type size-4 opacity-60"></span>Name</div>
+  <div class="flex items-center gap-2 px-2 py-1.5 pl-8 text-base-content/80"><span class="iconify lucide--mail size-4 opacity-60"></span>Email</div>
+  <div class="flex items-center gap-2 px-2 py-1.5 pl-8 text-base-content/80"><span class="iconify lucide--calendar size-4 opacity-60"></span>Created</div>
+  <button class="btn btn-ghost btn-sm w-full justify-start gap-2 pl-8 font-normal text-base-content/60"><span class="iconify lucide--chevron-down size-4"></span>Show 25 more of 340</button>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-numbered-form-steps',
+    group: 'Patterns',
+    name: 'Numbered form steps',
+    summary: 'A long form says its order with numbered section headings — nothing more.',
+    description:
+      'When a form runs past one screen it stops reading as a task and starts reading as a wall: the New report form is eight field groups and about one and a half screens tall (Oleh 2026-07-24). The fix is the smallest one that works — <strong>group the fields into three or four named sections and number the headings</strong>: <em>① What it covers · ② When it sends · ③ Where it goes</em>. The numeral says "these are filled top to bottom" and that is the entire job. It is drawn in the app&apos;s <strong>soft-primary</strong> — the same 14% fill and primary text an active facet uses — while the heading TEXT stays muted: at a plain grey border the numeral vanished into the uppercase label it sits in front of (Oleh 2026-07-24). Only the number lifts, so the section still reads as a label rather than a badge.<br><br><strong>A sticky step rail beside the form was built first and rejected.</strong> It tracked the current step by scroll position and ticked completed ones — more machinery than the problem deserved, and a second column competing with a form that had just been given the width back. Oleh\'s call, and the right one: the headings already existed, so numbering them was enough.<br><br><strong>It is not a wizard and must not become one.</strong> No Next, nothing hidden, every field reachable — the same view also EDITS an existing record, where stepping through screens to change one field is worse than the wall was. For a genuine gated flow use the <a href="#pattern-setup-stepper">setup stepper</a>.',
+    reference: 'design:views/ReportDefinitionView.astro (.rpd-step-h / .rpd-step-n)',
+    showCode: false,
+    usageDo: [
+      'Group a long form into three or four sections with plain-language names, then number them.',
+      'Lift the numeral with soft-primary and leave the heading text muted — the number is what carries the ordering.',
+      'Order the sections the way the work actually happens, so the numbers describe rather than instruct.',
+    ],
+    usageDont: [
+      "Don't add a rail, a progress bar or completion ticks — that was tried here and was more than the problem needed.",
+      "Don't gate or hide anything behind the numbers; a numbered heading is a label, not a step you must pass.",
+      "Don't number every field — three or four sections, or the numbers stop meaning anything.",
+    ],
+    examples: [
+      {
+        label: 'Numbered section headings',
+        html: `
+<div class="flex flex-col gap-5 rounded-box border border-base-300 bg-base-100 p-5" style="max-width:420px">
+  <div class="flex flex-col gap-2">
+    <h3 class="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wider opacity-45"><span class="grid size-5 place-items-center rounded-full border border-base-300 text-[11px] font-semibold tracking-normal opacity-60">1</span>What it covers</h3>
+    <input class="input input-sm w-full" placeholder="e.g. Full Sales CRM Report" />
+  </div>
+  <div class="flex flex-col gap-2 border-t border-base-300 pt-5">
+    <h3 class="flex items-center gap-2 text-[12px] font-bold uppercase tracking-wider opacity-45"><span class="grid size-5 place-items-center rounded-full border border-base-300 text-[11px] font-semibold tracking-normal opacity-60">2</span>When it sends</h3>
+    <label class="flex items-center gap-2 text-sm"><input type="radio" name="demo-cad" class="radio radio-sm radio-primary" checked /> On each data backup</label>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-segmented-control',
+    group: 'Patterns',
+    name: 'Segmented control',
+    summary: 'A mutually-exclusive choice shown as one row of options — and ONE way to show which is chosen.',
+    description:
+      'A segmented control switches <em>how</em> or <em>over what scope</em> the same body renders — Tree/Flat, Edit/Read, Names/Types/Categories. It is <strong>not</strong> navigation: if each option owns its own content panel, page or document, that is a <a href="#tabs">Tab</a>, and tabs are styled separately. It is not a form value either — a choice that gets submitted is a radio.<br><br><strong>The selected option is soft-primary, everywhere (Oleh 2026-07-24).</strong> An audit found nine of these across the app speaking three different visual languages, and the worst of them marked selection with <code>base-200</code> on <code>base-100</code> plus bold text — roughly 2% lightness apart, which is no signal at all. The one recipe is the same the app already uses for an <a href="#pattern-faceted-filter">active facet</a>: <strong>soft-primary fill, primary text, and the icon inheriting that text colour</strong>. Never grey-on-grey, never weight alone.<br><br><strong>Two densities, one language.</strong> Both carry the identical selected colours; they differ only in the frame around them:<br>· <strong>Bordered</strong> — daisyUI <code>join</code>, classes <code>sch-tb-modes</code> / <code>sch-tb-mode-active</code>. For a toolbar, where the control sits among other bordered buttons. Note <code>join</code> pulls each segment 1px onto its neighbour, so the selected one takes <code>z-index: 1</code> and an <strong>opaque</strong> border (mixed with the surface, not with transparent) — a translucent one lets the page show through the neighbour\'s line and the divider appears to vanish.<br>· <strong>Track</strong> — classes <code>sb-segtrack</code> / <code>sb-seg-on</code>. A padded <code>base-200</code> track holding borderless buttons, for tight places: inside a dropdown, a panel, a filter menu. A bordered join at 340px reads as heavy furniture.<br><br><strong>Accessibility:</strong> if the markup says <code>role="tab"</code> it must maintain <code>aria-selected</code> — several of these toggled a class only, so a screen reader was told "tab" and never which one was current. Where there is no tabpanel, prefer <code>role="group"</code> + <code>aria-pressed</code>.',
+    reference: 'styles/global.css (.sch-tb-modes / .sb-segtrack)',
+    showCode: false,
+    usageDo: [
+      'Use it when every option is visible at once and they render the SAME body differently.',
+      'Pick the density by where it sits: bordered in a toolbar, track inside a dropdown or panel.',
+      'Keep <code>aria-selected</code> (or <code>aria-pressed</code>) in step with the visual selection.',
+    ],
+    usageDont: [
+      "Don't mark the selection with grey-on-grey or with font-weight alone — that is not a state, it is a hope.",
+      "Don't invent a third look. Nine controls re-derived this one because nothing said where the recipe lived.",
+      "Don't use it for navigation: if the option owns a content panel or a route, it is a Tab.",
+    ],
+    examples: [
+      {
+        label: 'Bordered (toolbar) and track (inside a dropdown) — same selected colours',
+        html: `
+<div class="flex flex-col items-start gap-4">
+  <div class="join">
+    <button class="btn btn-sm join-item" style="background:var(--color-base-100);border-color:var(--color-base-300)"><span class="iconify lucide--list-tree size-4"></span>Tree</button>
+    <button class="btn btn-sm join-item" style="position:relative;z-index:1;background:color-mix(in oklch,var(--color-primary) 14%,transparent);color:var(--color-primary);border-color:color-mix(in oklch,var(--color-primary) 30%,var(--color-base-100));font-weight:600"><span class="iconify lucide--table size-4"></span>Flat</button>
+  </div>
+  <div style="display:inline-flex;gap:2px;padding:3px;border-radius:9px;background:var(--color-base-200)">
+    <button class="btn btn-sm btn-ghost" style="border:0">Names</button>
+    <button class="btn btn-sm" style="border:0;background:var(--color-base-100);color:var(--color-primary);font-weight:600;box-shadow:0 1px 2px oklch(0 0 0/.08)">Types</button>
+    <button class="btn btn-sm btn-ghost" style="border:0">Categories</button>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-settings-row',
+    group: 'Patterns',
+    name: 'Settings row',
+    summary: 'Label, description and control on one line — the unit a settings hub is built from.',
+    description:
+      'A settings hub is a long list of one repeating shape: <strong>what this is</strong> (a label), <strong>what it does</strong> (a line of description, because a setting whose consequence you have to guess is a trap), and <strong>the control</strong>, right-aligned so a column of controls scans as a column. Everything else on the page is grouping around that unit.<br><br><strong>Section header</strong> — a heading, one line of helper text, and an optional action on the right. It names a group of rows; it is not a card, so rows underneath keep a single left edge to read down.<br><br><strong>Permission-gated section (spec 12).</strong> Many settings are admin-only, and the wrong answer is letting a non-admin click through to a 403. Mark the section with an <em>Admin only</em> <a href="#badge">Badge</a>, disable its controls, and say who CAN change it — "Ask your Org admin" — rather than hiding it, so the setting is discoverable and the route to changing it is obvious.<br><br><strong>Placeholder rows are allowed, dishonest ones are not.</strong> While a hub is being built the controls may be inert, but the row must not imply a working setting: mark the section, not each control, and never show a toggle in a state that suggests a saved preference that does not exist.',
+    reference: 'design:views/SettingsView.astro (.set-row)',
+    showCode: false,
+    usageDo: [
+      'Give every row a one-line description — the label alone rarely says what changing it does.',
+      'Right-align controls so they form a scannable column.',
+      'Gate by permission visibly: badge the section, disable the control, and name who can change it.',
+    ],
+    usageDont: [
+      "Don't wrap each row in its own card — a hub becomes a wall of boxes and the rows stop lining up.",
+      "Don't hide admin-only settings from non-admins; hiding makes them unfindable and the ask unclear.",
+      "Don't ship an inert control that looks live — an unmarked toggle is a promise the page can't keep.",
+    ],
+    examples: [
+      {
+        label: 'A section header and two rows, one of them admin-gated',
+        html: `
+<div class="flex flex-col gap-4" style="max-width:560px">
+  <div class="flex items-start justify-between gap-4">
+    <div><h3 class="text-base font-semibold">Notifications</h3><p class="text-sm opacity-60">Which events reach you, and where.</p></div>
+    <button class="btn btn-sm btn-neutral">Send test</button>
+  </div>
+  <div class="flex items-center justify-between gap-6 border-t border-base-300 py-3">
+    <div><div class="text-sm font-medium">Backup failed</div><div class="text-[13px] opacity-55">Email you when a run does not finish.</div></div>
+    <input type="checkbox" class="toggle toggle-sm toggle-primary" checked />
+  </div>
+  <div class="flex items-center justify-between gap-6 border-t border-base-300 py-3 opacity-60">
+    <div><div class="flex items-center gap-2 text-sm font-medium">Billing email <span class="badge badge-sm badge-ghost">Admin only</span></div><div class="text-[13px] opacity-55">Ask your Org admin to change this.</div></div>
+    <input class="input input-sm w-48" value="billing@acme.com" disabled />
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-breakpoints',
+    group: 'Patterns',
+    name: 'Breakpoint ladder',
+    summary: 'Three tiers, measured — not thirteen numbers invented one surface at a time.',
+    description:
+      'Thirteen different breakpoints had accumulated — 480 · 560 · 600 · 640 · 720 · 760 · 860 · 899.98 · 900 · 1023 · 1024 · 1100 · 1500 — including <strong>900 and 899.98 for the same idea</strong> (so Docs stacked one pixel before the record panel did) and <strong>1023 against 1024</strong> (the Inbox switched a pixel early). Three tiers now, chosen from measurements rather than habit (Oleh 2026-07-24):<br><br>· <strong>≥ 1600 — wide.</strong> Every toolbar fits fully expanded. The minimums, measured with search and labels open: Interfaces 1239 · Automations 1252 · Changelog 1316 · Browse 1541 · Relationships 1592.<br>· <strong>1024–1599.98 — laptop.</strong> A 13-inch MacBook lands here at 1440. The toolbar search collapses to its icon and secondary buttons drop their labels. That is not a promise of one row: the Data toolbar still wraps down to about 1350 and Schema Browse to about 1200 — pre-existing, and the next thing to measure.<br>· <strong>&lt; 1024 — narrow.</strong> Single column, panels take the width, <code>isMobile()</code>.<br><br><strong>A surface that cannot live at a tier gets simplified, not its own number.</strong> Visualize needed 1773px to fit expanded — 230px of that was three labelled mode buttons — so its segmented control is permanently icon-only rather than earning a fourth breakpoint. Below 1024 per-surface stacking rules (560, 640, 720…) are still allowed: that range is about fitting one column, not about the app\'s layout tiers.<br><br>The tier also has to be honoured in <strong>JS</strong>, not only CSS: <code>isMobile()</code> lives as a <code>matchMedia</code> literal in the two panel hosts AND as a default inside <code>createPanelStack</code>. That default was missed and still read <code>innerWidth &lt; 900</code>, so for 124px the Schema panel rendered its mobile CSS while its controller ran desktop logic — the exact bug this paragraph warns about, shipped by the commit that wrote it.',
+    reference: 'styles/global.css (the ladder comment) + components/ui/collapsingSearch.ts',
+    showCode: false,
+    usageDo: [
+      'Pick a tier. If a layout needs a value between tiers, simplify the layout instead.',
+      'Measure before choosing: what does this row actually need at its widest?',
+      'Keep the JS matchMedia literals in step with the CSS — a tier that exists in only one of them is a bug waiting.',
+    ],
+    usageDont: [
+      "Don't invent a breakpoint for one surface — that is how thirteen appeared.",
+      "Don't write 900 and 899.98 for the same boundary; pick the .98 form once and reuse it.",
+      "Don't force a control visible at a tier without checking what the layout does there — below 1024 the sidebar is an off-canvas drawer, so its collapse toggle belongs to the OPEN drawer, not to the closed one where it rendered as a 14px orphan.",
+    ],
+    examples: [
+      {
+        label: 'The ladder',
+        html: `
+<div class="flex flex-col gap-2 text-sm">
+  <div class="flex items-center gap-3"><span class="font-mono text-xs opacity-60" style="width:96px">&ge; 1600</span><span class="h-8 flex-1 rounded bg-base-300"></span><span class="opacity-70">wide — everything expanded</span></div>
+  <div class="flex items-center gap-3"><span class="font-mono text-xs opacity-60" style="width:96px">1024–1600</span><span class="h-8 rounded bg-base-300" style="width:68%"></span><span class="opacity-70">laptop — search collapses, labels drop</span></div>
+  <div class="flex items-center gap-3"><span class="font-mono text-xs opacity-60" style="width:96px">&lt; 1024</span><span class="h-8 rounded bg-base-300" style="width:38%"></span><span class="opacity-70">narrow — one column, full-width panels</span></div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-side-panel-width',
+    group: 'Patterns',
+    name: 'Side-panel widths',
+    summary: 'One scale for every rail and drawer, chosen by what the panel holds.',
+    description:
+      'Rails and drawers were sized one surface at a time and drifted to five different numbers — 220 · 256 · 264 · 300–340 · 320–380 — which is how Schema ▸ Docs ended up squeezing its own document to a <strong>61-character line</strong> (the bottom of the comfortable 60–75 range) while the list rail sat at its maximum. Two rails took 604px between them and left 499px for the thing the page exists to show (Oleh 2026-07-24).<br><br><strong>The scale</strong> (tokens in <code>global.css</code>, on the 4px grid) — pick a step by WHAT THE PANEL HOLDS, and when it is a close call the content column\'s readability wins:<br>· <code>--rail-s</code> <strong>240px</strong> — chips and short labels (Docs tagged entities, the Data preset rail)<br>· <code>--rail-m</code> <strong>280px</strong> — a title plus one line of meta (the Docs list, Chat threads)<br>· <code>--rail-l</code> <strong>360px</strong> — rows carrying numbers or bars (Health navigation)<br>· <code>--drawer-w</code> <strong>480px</strong> — an overlay drawer OVER the page, not a column beside it<br><br><strong>A rail is navigation and stays fixed; a drawer is a work surface and may be resized</strong> — EntityPanel, RecordPanel and the Changelog drill each persist their own. Note that a stacked drawer takes its width from <code>createPanelStack</code> at layout time, so <code>DEFW</code> is the real default and the CSS token is only the pre-JS fallback; <code>MINW</code> and <code>TABLEGAP</code> stay per-surface, which is configuration rather than drift. Result on Docs at 1440: the list drops 340 → 280, tagged entities 264 → 240, and the document goes 499 → 583px — a 73-character line.',
+    reference: 'styles/global.css (--rail-s / --rail-m / --rail-l / --drawer-w)',
+    showCode: false,
+    usageDo: [
+      'Pick a step from the scale; if none fits, argue the case and add a step rather than a one-off number.',
+      'Size the rail by its content, then check what is LEFT for the content column — a rail at its maximum next to prose at its minimum is the wrong trade.',
+      'Keep rails fixed. Reach for a resize handle only where the panel is a work surface.',
+    ],
+    usageDont: [
+      "Don't hand-tune a width for one surface — that is exactly how five numbers appeared.",
+      "Don't let two rails flank one column without checking the reading measure that remains (60–75 characters).",
+      "Don't set a drawer's default in CSS alone: a stacked drawer is sized by createPanelStack, and the stylesheet value is only the fallback before it mounts.",
+    ],
+    examples: [
+      {
+        label: 'The scale',
+        html: `
+<div class="flex flex-col gap-2 text-sm">
+  <div class="flex items-center gap-3"><span class="h-8 rounded bg-base-300" style="width:120px"></span><span class="font-mono text-xs opacity-60">--rail-s 240</span><span class="opacity-70">chips, short labels</span></div>
+  <div class="flex items-center gap-3"><span class="h-8 rounded bg-base-300" style="width:140px"></span><span class="font-mono text-xs opacity-60">--rail-m 280</span><span class="opacity-70">title + one line of meta</span></div>
+  <div class="flex items-center gap-3"><span class="h-8 rounded bg-base-300" style="width:180px"></span><span class="font-mono text-xs opacity-60">--rail-l 360</span><span class="opacity-70">rows with numbers or bars</span></div>
+  <div class="flex items-center gap-3"><span class="h-8 rounded bg-primary/25" style="width:240px"></span><span class="font-mono text-xs opacity-60">--drawer-w 480</span><span class="opacity-70">overlay drawer</span></div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-collapsing-search',
+    group: 'Patterns',
+    name: 'Collapsing search (narrow toolbars)',
+    summary: 'Below a width threshold the toolbar search shrinks to its icon and expands over the filters on focus.',
+    description:
+      'The shared <a href="#pattern-table-toolbar">toolbar</a> puts a search box, a divider, the faceted filters and a right-hand action cluster on ONE row. On a 1440-wide laptop that row no longer fits — measured on Schema ▸ Browse it needs 1167px in a 1121px toolbar — so it wraps to two rows and the page grows a ragged second line of controls (Oleh 2026-07-23). The search is the widest single item (300px) and the least often used, so below the threshold it <strong>collapses to its magnifier icon</strong> and expands back to a full field, <strong>overlaying the filters</strong>, while it has focus — and collapses the moment it loses focus, <em>even if it still holds a query</em>. Above the threshold nothing changes — on a 27" display there is no reason to hide a search box.<br><br><strong>It needs no new markup.</strong> Every toolbar search already carries <code>data-sch-search</code> on its input and is wrapped in a daisyUI <code>&lt;label class="input"&gt;</code>, so a click on the collapsed icon focuses the input <em>natively</em> — collapse is CSS, expansion is the browser\'s own label behaviour, and a few lines of JS only track the open state. The existing <kbd>/</kbd> shortcut keeps working untouched for the same reason: it calls <code>.focus()</code>, and focus is what expands the field.<br><br><strong>An active search collapses like any other (Oleh 2026-07-24).</strong> The first version kept the field open while it held a query, so an active search would not go unnoticed. That was the wrong trade: search and filter are used <em>together</em> — you search, then narrow — so a permanently expanded field permanently covered the control you reach for next. The state was already spoken for twice over in the same toolbar (the <em>"Showing 11 of 108"</em> count and the red Clear), so the collapsed icon only has to carry it: a tinted magnifier with a dot, and a tooltip holding the query. One click reopens it with the text intact.<br><br><strong>Threshold is a viewport media query, deliberately, not a container query.</strong> A container query would be more precise — the toolbar wraps because of ITS width, which also changes when the sidebar collapses — but <code>container-type: inline-size</code> applies layout containment, and this toolbar has already been the source of three stacking regressions. The precise version is the upgrade to make once the toolbar is otherwise quiet.',
+    reference: 'styles/global.css (.sch-tb-search) + components/ui/collapsingSearch.ts',
+    showCode: false,
+    usageDo: [
+      'Collapse the widest, least-frequent control first — a search you open on purpose, not a filter you read at a glance.',
+      'Expand over the filters, never by pushing them — the row must not reflow while the user is aiming at it.',
+      'Collapse it again as soon as it loses focus — even mid-search — so the filters are never blocked; mark the collapsed icon as active instead.',
+    ],
+    usageDont: [
+      "Don't collapse on wide screens — hiding a control that fits is a cost with no benefit.",
+      "Don't collapse the filters instead: they carry state (a selected count) that must stay readable.",
+      "Don't add a bespoke toggle button — the label already focuses the input, and a second control would drift from the / shortcut.",
+    ],
+    examples: [
+      {
+        label: 'Collapsed (narrow) → expanded over the filters',
+        html: `
+<div class="flex flex-col gap-3">
+  <div class="flex items-center gap-2 rounded-box border border-base-300 bg-base-100 p-2">
+    <button class="btn btn-sm btn-square btn-ghost"><span class="iconify lucide--search size-4"></span></button>
+    <span class="h-5 w-px bg-base-300"></span>
+    <button class="btn btn-sm btn-neutral gap-1.5">Bases <span class="iconify lucide--chevron-down size-3 opacity-50"></span></button>
+    <button class="btn btn-sm btn-neutral gap-1.5">Type <span class="iconify lucide--chevron-down size-3 opacity-50"></span></button>
+    <button class="btn btn-sm btn-neutral gap-1.5">Status <span class="iconify lucide--chevron-down size-3 opacity-50"></span></button>
+  </div>
+  <div class="relative flex items-center gap-2 rounded-box border border-base-300 bg-base-100 p-2">
+    <button class="btn btn-sm btn-neutral gap-1.5 invisible">Bases</button>
+    <label class="input input-sm absolute left-2 z-10 w-[min(420px,80%)]">
+      <span class="iconify lucide--search size-4 opacity-55"></span>
+      <input type="search" class="grow" placeholder="Search bases, tables, fields…" />
+      <kbd class="kbd kbd-sm opacity-50">/</kbd>
+    </label>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
     id: 'pattern-faceted-filter',
     group: 'Patterns',
     name: 'Faceted filter',
     summary: 'The one filter control used everywhere: a dropdown trigger with a count + a "filter working" active state.',
     description:
-      'Every filter across the app is this single control, so nothing reads as a mishmash. The trigger is a <strong>bordered <a href="#button">Button</a></strong> (matches the look of a <a href="#select">Select</a>) with a small chevron; when the filter is doing something it switches to a <strong>primary-tinted active state</strong> and shows a count <a href="#badge">Badge</a> inside the button. Two modes: <strong>multi-select</strong> opens a dropdown of rows = name-left + a daisyUI <a href="#checkbox-toggle">toggle</a> right (the row fades when off), with <em>Show all / Hide all</em> (disabled at the extremes) and an <code>n/total</code> count; <strong>single-select</strong> opens a list of radios and the trigger shows the chosen value (e.g. "Added"). A red <a href="#button">Clear</a> with an × resets every filter at once. Every popover opens with a <strong>Search box</strong> (placeholder <code>Search</code>, a leading magnifier) that filters the rows in place and hides empty group headings — present on every facet so they all read the same. Rows that list a <strong>base or table</strong> carry the same <strong>health status dot</strong> (success / warning / error) the tree and Visualize canvas use, so the dropdowns are consistent across tabs. Field-type rows carry the vendored Airtable icon. Component: <code>components/schema/FacetFilter.astro</code> (Astro, self-wiring via a bubbling <code>facetchange</code> event) and the React twin in the Visualize island — kept visually identical. Live: <a href="/schema">Schema</a> (Browse + Visualize + Changelog), <a href="/backups">Backups</a>. <strong>The styles are global</strong> (<code>styles/components/facet-filter.css</code>), not scoped to <code>FacetFilter.astro</code> — a second surface can then render the same <code>ff-trigger</code> / <code>ff-panel</code> / <code>ff-opt</code> classes instead of copying the look. The <a href="#pattern-inbox">Inbox</a> filter menu does exactly that: it needs lane-aware rows and a command row, which the component cannot host, so it reuses the construction. The trigger always states what it is doing: it tints primary (<code>ff-on</code>) and shows a count of active filters, because a narrowed list that looks unnarrowed is indistinguishable from an empty one.',
+      'Every filter across the app is this single control, so nothing reads as a mishmash. The trigger is a <strong>bordered <a href="#button">Button</a></strong> (matches the look of a <a href="#select">Select</a>) with a small chevron; when the filter is doing something it switches to a <strong>primary-tinted active state</strong> and shows a count <a href="#badge">Badge</a> inside the button. Two modes: <strong>multi-select</strong> opens a dropdown of rows = name-left + a daisyUI <a href="#checkbox-toggle">toggle</a> right (the row fades when off), with <em>Show all / Hide all</em> (disabled at the extremes) and an <code>n/total</code> count; <strong>single-select</strong> opens a list of radios and the trigger shows the chosen value (e.g. "Added"). A red <a href="#button">Clear</a> with an × resets every filter at once. Every popover opens with a <strong>Search box</strong> (placeholder <code>Search</code>, a leading magnifier) that filters the rows in place and hides empty group headings — present on every facet so they all read the same. Rows that list a <strong>base or table</strong> carry the same <strong>health status dot</strong> (success / warning / error) the tree and Visualize canvas use, so the dropdowns are consistent across tabs. Field-type rows carry the vendored Airtable icon. Component: <code>components/schema/FacetFilter.astro</code> (Astro, self-wiring via a bubbling <code>facetchange</code> event) and the React twin in the Visualize island — kept visually identical. Live: <a href="/schema">Schema</a> (Browse + Visualize + Changelog), <a href="/backups">Backups</a>. <strong>The styles are global</strong> (<code>styles/components/facet-filter.css</code>), not scoped to <code>FacetFilter.astro</code> — a second surface can then render the same <code>ff-trigger</code> / <code>ff-panel</code> / <code>ff-opt</code> classes instead of copying the look. The <a href="#pattern-inbox">Inbox</a> filter menu does exactly that: it needs lane-aware rows and a command row, which the component cannot host, so it reuses the construction. The trigger always states what it is doing: it tints primary (<code>ff-on</code>) and shows a count of active filters, because a narrowed list that looks unnarrowed is indistinguishable from an empty one. <strong>Locked scope (Dan 2026-07-23):</strong> a single-select SCOPE picker can be <em>locked</em> — on the Data page a Preset\'s Base and Table lock the moment the preset is first saved, because changing either would invalidate the filter that was saved with it. A locked trigger stays <strong>visible and in place</strong>, rendered disabled (<code>btn-disabled</code> + <code>aria-disabled</code>) with its chevron swapped for <code>lucide--lock</code>, and the REASON lives in a daisyUI <a href="#tooltip">tooltip</a> — so the answer to "what am I looking at" survives, and the answer to "why can\'t I change it" is one hover away. Never hide a locked scope and never explain it with a native <code>title=</code>. <strong>Workspace-grouped headings (workspace-visual-grouping):</strong> a multi-select Bases facet can opt into <code>groupToggles</code> — the same grouping the "Manage bases" picker (<code>components/integrations/BaseSelectionTable.astro</code>) uses. Build <code>groups</code> with <code>groupByWorkspace</code> (<code>components/schema/workspaceGroups.ts</code>), splitting bases by their Airtable workspace, name-ordered, with a final "Workspace unknown" bucket for anything the engine could not attribute. With <code>groupToggles</code> set AND more than one group, the facet renders a <strong>checkbox tree</strong> (redesigned with Oleh 2026-07-27 for one consistent control language — no more checkbox-for-the-group + toggle-for-each-base mishmash). Each <code>FacetGroup.label</code> is a <strong>shaded header band</strong> — left to right: a <strong>collapse chevron</strong>, a <strong>tri-state parent checkbox</strong> (a neutral <a href="#checkbox-toggle">checkbox</a> — checked / indeterminate-dash / empty reflects the group\'s items and flips them all on change), a muted <strong>layers glyph</strong> (the compact "this is a workspace grouping" signal — the verbose "· Airtable workspace" text is NOT repeated here; it stays on the picker/canvas), the group name, and a muted <strong>"N of M"</strong> count. The bases are <strong>checkbox leaves</strong>, indented beneath, that fade when unchecked — <em>no health dots</em> (the filter is uniform on every tab; health lives in the tree / Health tab). The trailing bucket for bases with no workspace reads <strong>"No workspace"</strong>. A single-group facet (one workspace, or none) ignores <code>groupToggles</code> and renders the plain flat list, unchanged — zero regression for a single-workspace estate. <strong>Placeholder workspace names (base-picker-workspace-grouping, Dan 2026-07-28):</strong> Airtable returns the workspace <em>ID</em> on every base regardless of access scope, but the workspace <em>name</em> only comes with full-environment access. A group that has an id but no name renders as <strong>"Workspace N"</strong> (numbered stably by id), keeps its "Airtable workspace" identity, and gains an <strong>inline rename</strong> (a pencil swaps the name for an editable field; the alias persists by workspace id server-side) plus an <strong>"Open in Airtable"</strong> link to identify which one it is. <strong>Superseded on the picker (2026-07-28)</strong> — the picker used to carry ONE consolidated limited-access alert band above the table; that band is gone and the fact now sits in the group header itself. <strong>Re-reversed 2026-07-29:</strong> the picker DOES group by default again — it groups itself the moment the per-base lookup completes, and its <em>Group by workspace</em> toggle is on by default. See <a href="#pattern-base-picker">Base picker (progressive workspace grouping)</a> before copying any of that into a facet. A group on/off toggle is still deliberately NOT in the FACET — a facet groups whenever it is handed groups, and the picker\'s toggle exists because it decides whether auto-add is set per workspace or per connection, a consequence a facet does not have. <strong>De-cluttered 2026-07-28 (Oleh audit):</strong> the picker had grown FOUR stacked "future automation" surfaces above the table — a standing auto-enroll card, a tinted per-workspace auto-add MACRO card, a bridge suggestion alert, and per-header switches — which duplicated each other and buried the actual job (pick bases). Now there are exactly TWO levels, and they are told apart by what they act on: a standing <strong>"Auto-enroll new workspaces"</strong> card (a whole new WORKSPACE appearing in Airtable — the one general option, kept on the picker), and <strong>auto-add as a table COLUMN</strong> (new BASES inside a workspace already enrolled). The placeholder group\'s "Open in Airtable" jump-out was cut — leaving the flow mid-setup to identify a workspace costs more than it gives, and the bases listed inside the group already identify it. <strong>Auto-add is a column, not a floating action (Oleh 2026-07-28):</strong> the bulk control had three failed homes — a tinted macro card, a toolbar button, then a caption-line link — and each time it read as a mysterious THIRD setting because nothing tied it to the switches it drives. It now lives in the sticky column header beside <em>Tables</em> / <em>Fields</em>: the header cell is the label <strong>AUTO-ADD</strong> plus the <strong>master toggle</strong>, and every workspace\'s own toggle sits in that same column directly beneath it (all three row kinds share one grid template, so the fixed right-hand columns stay in one line despite the deeper indent on base rows). Naming the column once removes the per-row text label; each toggle then carries a <a href="#tooltip">tooltip</a> naming its workspace. The master is <strong>bidirectional</strong>: it flips every workspace, and it mirrors them back — all on = checked, none = unchecked, <strong>mixed = <code>indeterminate</code></strong>, which daisyUI paints on a toggle natively by centring the knob (<code>.toggle:indeterminate</code>). Clicking a mixed master turns everything ON, matching the group select-all convention. <strong>One fact, one place:</strong> the per-row "· Airtable workspace" text was dropped once the caption above the table said it — the caption, the <em>Workspace / base</em> column header and the Airtable glyph were already three statements of the same thing, and a fourth as row text fought the provenance badges for the same strip and truncated the names. The wording now lives in the glyph\'s <a href="#tooltip">tooltip</a>: repeated signal removed, the answer still one hover away.',
     reference: 'design:components/schema/FacetFilter.astro',
     showCode: false,
     usageDo: [
@@ -2160,20 +2696,27 @@ export const SB_ENTRIES: SBEntry[] = [
       'Keep the count inside the trigger button (n/total for multi; the chosen value for single).',
       'Offer Show all / Hide all on multi facets and a single red Clear that resets everything.',
       'Open every popover with a Search box (placeholder "Search") and give base/table rows the health status dot, so all dropdowns match.',
+      'For a single-select SCOPE picker (e.g. Base / Table on the Data page), pass an optional leading concept icon (`triggerIcon`, a Lucide class) so the trigger reads as "a base" / "a table", not a bare value.',
+      'When a scope is LOCKED, keep its trigger visible and in place — render it disabled (`btn-disabled` + `aria-disabled`), swap the chevron for `lucide--lock`, and put the reason in a daisyUI tooltip. The user still needs to read what the scope IS, and to learn in one hover what to do instead (duplicate the preset, or start a new one).',
+      'For a multi-select Bases facet across a multi-workspace estate, pass `groupToggles` and build `groups` with `groupByWorkspace` — a collapse chevron + tri-state group checkbox + k/n count per workspace, "Workspace unknown" last, single-workspace estates staying flat.',
     ],
     usageDont: [
       "Don't mix styles — no native select beside the faceted buttons (that was the bug this pattern fixes).",
       "Don't drop the active state; a filtered facet that looks identical to an empty one is a defect.",
       "Don't put the control on the left of the row label — name left, toggle/radio right, everywhere.",
+      "Don't HIDE a locked scope, and don't explain the lock with a native `title=` — the trigger stays put, disabled, with the reason in a daisyUI tooltip. A scope that vanishes when it locks destroys the user's sense of place.",
     ],
     examples: [
       {
-        label: 'Triggers — default · active multi (n/total) · active single (value)',
+        label: 'Triggers — default · active multi (n/total) · active single (value) · locked scope',
         html: `
 <div class="flex flex-wrap items-center gap-2" style="padding:1.25rem 1rem">
   <div class="btn btn-sm gap-1.5" style="background:var(--color-base-100);border-color:var(--color-base-300);font-weight:400">Bases <span class="iconify lucide--chevron-down size-3 opacity-55"></span></div>
   <div class="btn btn-sm gap-1.5" style="background:color-mix(in oklch,var(--color-primary) 13%,transparent);border-color:color-mix(in oklch,var(--color-primary) 35%,transparent);color:var(--color-primary);font-weight:400">Field types <span class="badge badge-sm badge-primary">13/14</span> <span class="iconify lucide--chevron-down size-3 opacity-55"></span></div>
   <div class="btn btn-sm gap-1.5" style="background:color-mix(in oklch,var(--color-primary) 13%,transparent);border-color:color-mix(in oklch,var(--color-primary) 35%,transparent);color:var(--color-primary);font-weight:400">Added <span class="iconify lucide--chevron-down size-3 opacity-55"></span></div>
+  <div class="tooltip tooltip-bottom" data-tip="Locked — this preset is saved. Duplicate it, or start a new one, to use another table.">
+    <div class="btn btn-sm btn-disabled gap-1.5" aria-disabled="true" style="font-weight:400"><span class="iconify lucide--table-2 size-3.5 opacity-55"></span>Contacts <span class="iconify lucide--lock size-3 opacity-55"></span></div>
+  </div>
   <button class="btn btn-sm btn-ghost text-error gap-1"><span class="iconify lucide--x size-3.5"></span>Clear</button>
 </div>`,
       },
@@ -2194,6 +2737,191 @@ export const SB_ENTRIES: SBEntry[] = [
     <label class="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-base-200"><span class="grow font-medium">All changes</span><input type="radio" name="sb-ff" class="radio radio-sm radio-primary" /></label>
     <label class="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-base-200"><span class="grow font-medium">Added</span><input type="radio" name="sb-ff" class="radio radio-sm radio-primary" checked /></label>
     <label class="flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-base-200"><span class="grow font-medium">Renamed</span><input type="radio" name="sb-ff" class="radio radio-sm radio-primary" /></label>
+  </div>
+</div>`,
+      },
+      {
+        label: 'Workspace-grouped Bases facet (`groupToggles`) — a checkbox tree: shaded group band (chevron · tri-state parent · layers glyph · N of M) with checkbox leaves indented beneath · "No workspace" last',
+        html: `
+<div style="width:248px" class="rounded-box border border-base-300 bg-base-100 p-1.5 shadow-lg text-sm">
+  <div class="flex items-center gap-2 rounded-md bg-base-200 px-2 py-1 font-semibold text-[12px]">
+    <button class="inline-flex size-5 items-center justify-center rounded opacity-60"><span class="iconify lucide--chevron-down size-3.5"></span></button>
+    <input type="checkbox" class="checkbox checkbox-sm" indeterminate />
+    <span class="iconify lucide--layers size-3.5 opacity-55"></span>
+    <span class="truncate">Growth</span>
+    <span class="flex-1"></span>
+    <span class="text-[12px] opacity-55 tabular-nums">1 of 2</span>
+  </div>
+  <label class="flex items-center gap-2 rounded-md py-1 hover:bg-base-200 opacity-45" style="padding-left:2.15rem"><input type="checkbox" class="checkbox checkbox-sm" /><span class="grow truncate font-medium">Sales CRM</span></label>
+  <label class="flex items-center gap-2 rounded-md py-1 hover:bg-base-200" style="padding-left:2.15rem"><input type="checkbox" class="checkbox checkbox-sm" checked /><span class="grow truncate font-medium">Marketing</span></label>
+  <div class="flex items-center gap-2 rounded-md bg-base-200 px-2 py-1 font-semibold text-[12px]" style="margin-top:8px">
+    <button class="inline-flex size-5 items-center justify-center rounded opacity-60"><span class="iconify lucide--chevron-down size-3.5"></span></button>
+    <input type="checkbox" class="checkbox checkbox-sm" checked />
+    <span class="iconify lucide--layers size-3.5 opacity-40"></span>
+    <span class="truncate opacity-70">No workspace</span>
+    <span class="flex-1"></span>
+    <span class="text-[12px] opacity-55 tabular-nums">1 of 1</span>
+  </div>
+  <label class="flex items-center gap-2 rounded-md py-1 hover:bg-base-200" style="padding-left:2.15rem"><input type="checkbox" class="checkbox checkbox-sm" checked /><span class="grow truncate font-medium">Operations</span></label>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-base-picker',
+    group: 'Patterns',
+    name: 'Base picker (progressive workspace grouping)',
+    summary:
+      'The "choose bases" table is usable from the first paint and GROUPS ITSELF by workspace the moment the per-base lookup finishes — one determinate bar on the card edge explains the wait, one named toggle above the table sets whether auto-add is decided per workspace or per connection.',
+    description:
+      'The picker (<code>components/integrations/BaseSelectionTable.astro</code>) is the dense, capped, searchable table used by the setup wizard\'s <em>Bases</em> step and the standalone <a href="/integrations/configure/bases">Manage bases</a> screen. <strong>Why it changed (Dan, 2026-07-28):</strong> Airtable gives us a list of bases cheaply, but a base\'s WORKSPACE costs <strong>one extra API call per base</strong> — <em>"it just may take a long time to get for a long list of bases"</em>. Every earlier version assumed that map was free and switched grouping on unconditionally (<code>const grouped = groups.length &gt; 1</code>), which meant the page could not be drawn at all until the slow part finished. <strong>So grouping stopped being the frame of the page and became an enhancement that arrives.</strong> The flat table is therefore the complete product: search, sort, select-all-to-cap, show-selected, save — nothing is skeletoned, nothing is disabled, nothing waits.<br><br><strong>V2 — grouped is the DEFAULT, and the toggle says what it is FOR (Oleh, 2026-07-29).</strong> V1 optimised for "let them work immediately, offer grouping later". Reviewed live, that premise lost: <em>the user did not come for an ungrouped list, they came for a finished result and will wait ~10s if they can see the work happening.</em> So grouping is no longer an offer — <strong>the table groups itself the moment matching completes</strong>. The API cost is unchanged (one call per base, so workspaces still cannot be known at T0); what changed is that "grouped by default" now means "group automatically on completion", not "ask first". The remembered preference still wins: a user who switches it off (<code>bst-wsgroup:&lt;spaceId&gt;</code> / the <code>groupByWorkspace</code> prop in production) stays off, and every later visit renders grouped from the server with <em>no</em> movement at all. This whole design costs exactly ONE reflow, once per connection.<br><br><strong>The grouping control is not a view option — it sets the granularity of a standing decision.</strong> Grouped, auto-add is decided <em>per workspace</em>; ungrouped it is one switch for the whole connection. That consequence is why the control left the toolbar (where it sat among search and sort, as if it were cosmetic) and now has its own band directly above the table: a labelled <a href="#checkbox-toggle">toggle</a> — <strong>on by default</strong> — whose label NEVER changes (<code>Group by workspace</code>), one sentence naming the consequence, and the boundary of the change. V1 had the same binary under two names, <em>Group by workspace</em> in the toolbar and <em>Ungroup</em> in the selection strip; one setting gets one name. <strong>The band replaces, it does not join</strong>: the toolbar\'s status line leaves (the progress bar takes over that job), and the standing <em>Auto-enroll new workspaces</em> rule folds INTO this band rather than sitting as a second plate — same subject (future bases and future workspaces), one surface.<br><br><strong>Copy, verbatim.</strong> <code>Group by workspace</code> · <code>Grouped, you set auto-add per workspace. Ungrouped, it\'s one switch for the whole connection.</code> · <code>Affects this picker only — Schema and Data keep their own workspace grouping.</code> The boundary sentence is not padding: the user\'s real fear with a default-on grouping switch is invisible consequences on other screens.<br><br><strong>A determinate bar pinned to the card\'s top edge — never a spinner, never over the rows.</strong> The <a href="#progress">progress</a> entry already rules this: a bar is for known percentages, a spinner for unknown-duration work. We know the percentage (<code>31 / 50</code>), so the spinner was simply the wrong primitive and is gone. The bar is a <strong>thin catalog <code>progress</code> absolutely positioned on the top edge of the table card</strong> (<code>.bst-prog</code>, 3px, inside the card\'s clip so it follows the radius) — the browser-loading-bar idiom, which reads as "loading, the page still works". A bar drawn <em>across the rows</em> was deliberately rejected: it reads as "table unavailable", which is exactly the overlay misread this pattern exists to avoid. <strong>Keep the number beside it</strong> — the bar says how far, the number says what is being counted, and only the number explains the wait; it sits in the selection strip immediately under the bar (<code>.bst-wsstatus</code>). <strong>Do not flash it:</strong> render only after the wait exceeds ~500ms, so a five-base account never gets a blink of progress. <strong>On failure the bar stops and goes NEUTRAL, never red</strong> (drop <code>progress-primary</code>, keep <code>progress</code>) — failing to group is not a page error; the bases are still selectable and the flow continues, with <code>Retry</code> beside it.<br><br><strong>Honest copy while it runs.</strong> <code>Organising your bases by workspace… 31 / 50</code> — never "syncing your bases". The bases are already loaded and already selectable; saying otherwise teaches the user the list is incomplete and that they should wait before choosing, which is false and costs them the whole point of the flat-table-is-complete rule.<br><br><strong>Re-grouping animates, it does not fake a load.</strong> A skeleton/placeholder on re-group was proposed and REJECTED: the first grouping waits on the network, but toggling afterwards is a local DOM move that takes ~0ms, and a skeleton over an instant operation is invented latency. The honest answer to "don\'t let it jump" is an <strong>animated reflow</strong> — a FLIP pass measures each visible row before the move and transitions it from its old position, so rows travel rather than teleport (~180ms). Under <code>prefers-reduced-motion: reduce</code> the move is instant with no transform. Across that one automatic reflow, <strong>scroll position and every ticked base are preserved</strong> — selection survives free (the same DOM nodes are moved, never re-rendered) and <code>.bst-table</code>\'s <code>scrollTop</code> is captured and restored around the move.<br><br><strong>One workspace ⇒ no grouping UI at all</strong> — one group is not grouping, so neither the band nor the bar appears. Rows live in a flat container (<code>[data-bst-flatrows]</code>) or inside their group\'s <code>[data-bst-grows]</code>, never half of each.<br><br><strong>"Still matching" is not "No workspace".</strong> Two different facts, two buckets, two code paths, and they must never be merged: <em>No workspace</em> means the base has no workspace id (we asked and there is nothing to attribute), while <em>Still matching</em> means its per-base lookup has not returned yet (<code>BaseSummary.workspacePending</code>). Collapsing the second into the first states something untrue about the user\'s Airtable. The pending group carries no auto-add switch — there is nothing yet to watch — and empties itself as answers land.<br><br><strong>Progress survives a reload.</strong> The counter RESUMES from where the work got to; it never restarts at 0. There is no backend in this repo, so the harness simulates a resumed run (<code>?wsresolve=resumed</code> starts part-way), but the design assumes the work is never thrown away.<br><br><strong>Limited access moved into the header (2026-07-28).</strong> Airtable returns the workspace <em>id</em> on every base regardless of scope but the <em>name</em> only with full-environment access, so a group can be real-but-unnamed. That used to be explained by a full-width <code>alert-soft alert-warning</code> band above the whole table. The band is deleted; the fact is now stated where it applies — the group header reads <strong>Workspace 1</strong> <span class="opacity-60">· name unavailable</span> with the existing inline <strong>Rename</strong> pencil beside it. An explanation belongs next to the thing it explains, not stacked above 180 rows that are not affected by it. The route out (reconnect with full access) is not lost: it stays on the <em>Auto-enroll new workspaces</em> rule, the capability limited access actually blocks. The suffix is <code>white-space: nowrap; flex: none</code> so the NAME is still the first thing to truncate — the group header was already fixed once for truncation (<code>.bst-gname { min-width: 5rem }</code>) and must not regress.<br><br><strong>The workspace ID, and a way out to Airtable (founder, 2026-07-30).</strong> Every REAL workspace group header carries its <code>wsp…</code> id in a smaller muted label, and that label is the link to the workspace in Airtable (<code>airtable.com/&lt;wspId&gt;</code>, the same bare-id shape <code>BackupRunBaseView</code> already uses for a base). Two reasons it earns the space on a picking surface: the id is the only unambiguous handle when two workspaces share a name or when the name is a placeholder the user typed themselves, and a picker is exactly where someone needs to go and LOOK at the thing they are being asked about. It is not shown on the synthetic buckets ("No workspace", "Still matching") — those have no id and nothing to open. Like <code>.bst-gwhy</code> it is <code>white-space: nowrap; flex: none</code>, so the NAME still truncates first. <strong>Crowding + separator fixed (Oleh, 2026-07-30):</strong> the id used to butt straight against the auto-add toggle in the next column, and the ad-hoc <code>· </code> typed in front of it read as a crude, unstyled dot. Two changes, no grid track moved: <code>.bst-gident</code> gained <code>padding-right: .5rem</code> so the identity cell keeps its own 8px of breathing room before the boundary it spans up to, instead of clipping flush against it; and the typed "·" character was replaced by a shared <code>.bst-gsep</code> element — a 1px <code>currentColor</code> hairline, not a glyph — used by BOTH the id label and <code>.bst-gwhy</code>/the dual-name suffix, so the busiest case ("Workspace 1 · name unavailable · wspOps…") reads as ONE attached-fact convention rather than two different kinds of markup living side by side. The external-link icon stays visible at rest (unchanged); its gap from the id text grew from 4px to 8px so icon and text read level with each other rather than crammed together.<br><br><strong>The alias swap — dual display is EARNED, not default (Oleh 2026-07-28).</strong> A user can name a placeholder workspace, and until now the real Airtable name simply overwrote theirs when it arrived. An alias is therefore stored with the REASON it was typed (<code>WorkspaceAlias.kind</code>): <code>placeholder-fill</code> (typed only because the name was missing — every alias starts here, including the ones the inline pencil writes) versus <code>custom</code> (a deliberate different name). When a real name lands on a <code>placeholder-fill</code>, Airtable\'s name takes over — theirs was a stand-in — and <strong>one</strong> reversible prompt appears, attached under that group\'s header: <em>"Now using its Airtable name: Growth. You called it Marketing."</em> with <strong>Keep mine</strong>. Pressing it promotes the alias to <code>custom</code>, and <strong>only then</strong> are both names shown — the user\'s leading, Airtable\'s muted beside it. Never show both by default: the group header truncated once already and a permanent second name re-breaks precisely that. The prompt sits on its own attached line rather than inside the sticky header row for the same reason.<br><br><strong>Copy, verbatim (rest of the surface).</strong> <code>Organising your bases by workspace… 31 / 50</code> · <code>Group by workspace</code> · <code>Still matching</code> · <code>Couldn\'t organise by workspace</code> + <code>Retry</code> · <code>Workspace 1 · name unavailable</code> + <code>Rename</code>. No exclamation marks, no apologies, no "Oops" — a failed lookup is a fact about the connection, never the user\'s mistake. The V1 strings <code>Matching workspaces…</code>, <code>Workspaces matched</code> and <code>Ungroup</code> are RETIRED: the first two described a background job the progress bar now shows, and the third was a second name for a setting that has one.<br><br><strong>The wizard\'s gate is an instruction, not a standing accusation.</strong> The picker is the <em>Bases</em> step of the setup wizard, whose gate used to render a permanent amber <code>alert-soft alert-warning</code> band above the page heading on <em>every</em> incomplete step — telling the user they were in violation before they had done anything, on all four steps. The requirement now lives in the <strong>step subtitle</strong> ("Pick the bases this Space protects — at least one to continue"), and the amber band appears <strong>only after the user attempts Next</strong> with the gate unsatisfied, then clears the moment it is satisfied. Consequently <strong>Next is no longer disabled by a gate</strong>: a disabled button cannot be attempted, and an attempt is what earns the message. This is the wizard\'s generic mechanism, so it removes a permanent band from every step, not just this one.<br><br><strong>Structural contracts.</strong> <code>.bst[data-grouped]</code> is the single switch: it selects the five-column grid (<code>2.4rem · 16rem · Auto-add · 6rem · 6rem</code>) shared by <code>.bst-head</code>, <code>.bst-ghead</code> and <code>.bst-row</code>, reveals the group shells, and reveals the <code>.c-auto</code> cell that every row renders but flat mode hides — so "flat" and "grouped" are one template each, chosen deliberately, never inherited half-and-half. <code>.bst-head { min-height: 2.4rem }</code> and <code>.bst-ghead { top: 2.4rem }</code> are a matched sticky pair. The wizard reads the picker directly (<code>[data-base-checkbox]:checked</code> for the count, <code>[data-bst-ws-autoadd]:checked</code> for the review line), so the per-workspace auto-add switches are <strong>disabled and cleared while flat</strong> and restored from <code>data-ws-autoadd-saved</code> on grouping — a hidden checked switch would otherwise make the review step claim an auto-add the user can neither see nor have chosen.<br><br><strong>ONE search field, no scope switch (Oleh, 2026-07-29).</strong> The search used to sit beside a scope <code>&lt;select&gt;</code> docked inside the input — <em>in Bases</em> / <em>in Workspaces</em> — so the user had to decide WHERE to look before they had typed a character. That select is <strong>deleted</strong>, not hidden. The picker now uses the shared <a href="#pattern-entity-typeahead">entity typeahead</a>, exactly as Schema Browse does: one field that searches everything and groups what it finds. Typing does two things at once — it <strong>filters the table in place</strong>, matching base names AND workspace names simultaneously (the picker\'s loop is narrow → <em>Select all</em> → continue, so filtering is never replaced by jump-to-result), and it <strong>opens a grouped dropdown</strong> with <em>WORKSPACES</em> above <em>BASES</em>, each row = concept icon + name + a muted context line (a base shows its workspace, a workspace shows its base count). ↑/↓ move, ↵ picks, Esc clears, and <code>/</code> focuses the field. Workspace names are matched in BOTH modes, grouped or flat — the workspace is a property of the base whether or not the table is currently grouped, and the dropdown row names the workspace it matched on, so the match explains itself. What is mode-dependent is the WORKSPACES group: ungrouped there are no workspace rows to scroll to, so the whole group is absent (via <code>esKinds</code>) rather than present and empty.<br><br><strong>Picking is not "opening" — a picker has nothing to open.</strong> Browse\'s pick semantics must not be copied here. Picking a <strong>base</strong> clears the query, pages/expands to that row, scrolls it into view and <strong>ticks its checkbox</strong>; at the plan cap it does exactly what the row itself does — the tick is refused and the existing amber cap note explains why, never a second cap behaviour invented for the dropdown. Picking a <strong>workspace</strong> scrolls to that group and expands it if collapsed, and <strong>selects nothing</strong> — the user asked to look, not to commit 40 bases.',
+    reference: 'components/integrations/BaseSelectionTable.astro · components/integrations/BasePickerRow.astro',
+    showCode: false,
+    usageDo: [
+      'Ship the flat table as a complete product — search, sort, select, save — and let grouping arrive on top of it without ever blocking it.',
+      'Group automatically the moment the lookup completes, and preserve scroll position and every ticked base across that one reflow.',
+      'Give the grouping toggle ONE name that never changes, and state its consequence (auto-add per workspace vs per connection) plus its boundary (this picker only) beside it.',
+      'Pay for a new band with a removal: the toolbar status line left, the auto-enroll rule folded in, and the wizard gate band became conditional.',
+      'Use a determinate catalog progress bar pinned to the CARD EDGE for known-percentage waits, and keep the raw count beside it.',
+      'Hold the bar back ~500ms so a small account never sees a blink of progress, and go NEUTRAL (not red) if the lookup fails.',
+      'Animate a local re-group with a FLIP reflow, honouring prefers-reduced-motion — an instant operation gets movement, never a skeleton.',
+      'Remember the answer per connection, so a user who turned grouping off stays off.',
+      'Keep "Still matching" and "No workspace" as separate buckets with separate copy — an unfinished lookup is not an absent workspace.',
+      'Resume a progress counter where it left off after a reload; restarting at 0 tells the user their wait was thrown away.',
+      'State a limited-access caveat in the header of the group it applies to, not in a band above rows it does not apply to.',
+      'Suppress the whole grouping UI when only one group exists — one group is not grouping.',
+      'Show a wizard gate as an instruction in the step subtitle, and raise the amber band only after a failed attempt to advance.',
+      'Store a user-typed name with the REASON it was typed, and let the real name take over a stand-in — once, reversibly, with "Keep mine".',
+      'Give the picker ONE search field that matches bases and workspaces at once and groups the results — the shared entity typeahead, never a second hand-rolled one.',
+      'Keep typing a FILTER on the table; the dropdown is an extra way in, not a replacement for narrowing then selecting all.',
+      'Make picking mean what a picker means: a base scrolls into view and gets ticked (refused at the cap, same as the row), a workspace scrolls to its group and expands it, selecting nothing.',
+    ],
+    usageDont: [
+      "Don't make the user click to get the result they came for — grouping is the finished state, not an offer, once the data is in.",
+      "Don't ask the user to choose a search SCOPE before they have typed. One field searches everything; the grouped results say what was found where.",
+      "Don't skeleton, disable or block the table while workspaces resolve; the flat table is already usable and blocking it buys nothing.",
+      "Don't fake a load when re-grouping. Toggling is local and instant; a placeholder there is invented latency.",
+      "Don't draw the progress bar across the rows or over the table — a bar on top of content reads as \"table unavailable\", and it is not.",
+      "Don't use a spinner for this: the percentage is known, so the catalog says bar. And don't turn the bar red on failure — nothing the user did broke.",
+      "Don't say \"syncing your bases\": they are already loaded. Say what is actually happening — organising them by workspace.",
+      "Don't give one setting two names. \"Group by workspace\" and \"Ungroup\" were the same binary wearing two labels in two places.",
+      "Don't park bases whose lookup is still running in the \"No workspace\" bucket — that asserts a fact about their Airtable that we have not established.",
+      "Don't leave per-workspace auto-add switches live (or checked) while the table is flat — the wizard counts them, and it would report a choice the user cannot see.",
+      "Don't render a gate message before the user has had a chance to satisfy it, and don't disable the button that would earn it.",
+      "Don't show a user's name and Airtable's name side by side by default — dual display is earned by answering \"Keep mine\", and an unearned second string re-breaks the header truncation.",
+      "Don't silently overwrite a name the user typed when the real one arrives, and don't silently keep theirs either — say which one is now in use, once, with a way back.",
+    ],
+    examples: [
+      {
+        label: 'The toggle band (one name, its consequence, its boundary, auto-enroll folded in) + the card-edge progress bar — running · failed (neutral, never red)',
+        html: `
+<div class="flex flex-col gap-4" style="padding:1rem">
+  <div class="rounded-box border border-base-300 bg-base-100" style="padding:.75rem">
+    <label class="flex items-start gap-3" style="cursor:pointer">
+      <input type="checkbox" class="toggle toggle-sm toggle-primary" checked style="flex:none;margin-top:.1rem" />
+      <span class="min-w-0">
+        <span class="block text-sm font-bold">Group by workspace</span>
+        <span class="block text-xs opacity-65" style="margin-top:.125rem">Grouped, you set auto-add per workspace. Ungrouped, it's one switch for the whole connection. Affects this picker only — Schema and Data keep their own workspace grouping.</span>
+      </span>
+    </label>
+    <label class="flex items-start gap-3" style="cursor:pointer;margin-top:.75rem;padding-top:.75rem;border-top:1px dashed var(--color-base-300)">
+      <input type="checkbox" class="toggle toggle-sm toggle-primary" style="flex:none;margin-top:.1rem" />
+      <span class="min-w-0">
+        <span class="block text-sm font-bold">Auto-enroll new workspaces</span>
+        <span class="block text-xs opacity-65" style="margin-top:.125rem">Workspaces created in Airtable later are enrolled automatically at the next backup run.</span>
+      </span>
+    </label>
+  </div>
+  <div class="rounded-box border border-base-300 bg-base-100 overflow-hidden" style="position:relative">
+    <progress class="progress progress-primary" value="31" max="50" style="position:absolute;inset-inline:0;top:0;height:3px;border-radius:0"></progress>
+    <div class="flex items-center gap-2 border-b border-base-300 px-3 py-2 text-sm">
+      <span class="font-semibold opacity-70">Selected 12 of 50</span>
+      <span class="flex-1"></span>
+      <span class="text-xs opacity-60">Organising your bases by workspace… <span class="tabular-nums">31 / 50</span></span>
+    </div>
+    <div class="px-3 py-2 text-sm opacity-60">Bases stay selectable the whole time.</div>
+  </div>
+  <div class="rounded-box border border-base-300 bg-base-100 overflow-hidden" style="position:relative">
+    <progress class="progress" value="18" max="50" style="position:absolute;inset-inline:0;top:0;height:3px;border-radius:0"></progress>
+    <div class="flex items-center gap-2 border-b border-base-300 px-3 py-2 text-sm">
+      <span class="font-semibold opacity-70">Selected 12 of 50</span>
+      <span class="flex-1"></span>
+      <span class="text-xs opacity-60">Couldn't organise by workspace</span>
+      <button class="btn btn-sm btn-ghost text-primary gap-1.5"><span class="iconify lucide--rotate-ccw size-4"></span>Retry</button>
+    </div>
+    <div class="px-3 py-2 text-sm opacity-60">Not an error state — the bar stops and goes neutral, the table keeps working.</div>
+  </div>
+</div>`,
+      },
+      {
+        label: 'Group headers — placeholder name carries its own caveat · "Still matching" is its own bucket, distinct from "No workspace"',
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100 overflow-hidden" style="max-width:34rem">
+  <div class="flex items-center gap-2 bg-base-200 px-3 py-2 text-sm font-bold">
+    <span class="iconify lucide--chevron-down size-4 opacity-60"></span>
+    <input type="checkbox" class="checkbox checkbox-sm" checked />
+    <span>Workspace 1</span>
+    <span class="text-xs font-normal opacity-60 whitespace-nowrap">· name unavailable</span>
+    <span class="iconify lucide--pencil size-4 opacity-55"></span>
+    <span class="flex-1"></span>
+    <span class="text-xs font-normal opacity-60 tabular-nums">4 of 4</span>
+  </div>
+  <div class="flex items-center gap-2 bg-base-200 px-3 py-2 text-sm font-bold border-t border-base-300">
+    <span class="iconify lucide--chevron-down size-4 opacity-60"></span>
+    <input type="checkbox" class="checkbox checkbox-sm" />
+    <span class="opacity-70">Still matching</span>
+    <span class="loading loading-spinner loading-sm opacity-50"></span>
+    <span class="flex-1"></span>
+    <span class="text-xs font-normal opacity-60 tabular-nums">0 of 12</span>
+  </div>
+  <div class="flex items-center gap-2 bg-base-200 px-3 py-2 text-sm font-bold border-t border-base-300">
+    <span class="iconify lucide--chevron-down size-4 opacity-60"></span>
+    <input type="checkbox" class="checkbox checkbox-sm" />
+    <span class="opacity-70">No workspace</span>
+    <span class="flex-1"></span>
+    <span class="text-xs font-normal opacity-60 tabular-nums">0 of 3</span>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-date-range',
+    group: 'Patterns',
+    name: 'Date-range filter',
+    summary: 'A period filter with quick presets (Last 30 / 60 / 90 days) and a custom from–to range, in one popover.',
+    description:
+      'The period filter across list surfaces. Its trigger matches the shared <a href="#pattern-faceted-filter">facet filter</a> (a bordered <code>ff-trigger</code> with a calendar icon + chevron) so the whole filter bar reads as one set. Opening it shows a small popover: a column of <strong>quick presets</strong> — <em>All time · Last 30 days · Last 60 days · Last 90 days</em> (one click, the common case) — and a <strong>custom From / To</strong> pair of native <code>date</code> inputs with an <strong>Apply</strong>, for anything else. The trigger states the active range: <em>All time</em>, a preset label, or <em>Jun 6 – Jul 13</em>; when a non-default range is set it takes the primary-tinted active state (<code>ff-on</code>) like the other filters. It emits a bubbling <code>daterangechange</code> event with <code>{ from, to }</code> (ISO dates, or nulls for "all"), and clears on the shared <code>facetreset</code>. Lightweight and dependency-free (native inputs, no calendar library) — a real calendar grid can be layered later without changing the contract. Component: <code>components/ui/DateRangePicker.astro</code>. Live: <a href="/reports">Reports</a>.',
+    reference: 'design:components/ui/DateRangePicker.astro',
+    showCode: false,
+    usageDo: [
+      'Lead with the quick presets (30 / 60 / 90 days) — they are the common case — and keep a custom From/To for the rest.',
+      'State the active range on the trigger and give it the same active tint as the other filters.',
+      'Emit one range ({from,to}); let the host filter its rows — the picker owns no data.',
+    ],
+    usageDont: [
+      "Don't make the user open a calendar for the common \"last 30 days\" case — that's what the presets are for.",
+      "Don't diverge the trigger from the shared facet look — the filter bar must read as one set of controls.",
+    ],
+    examples: [
+      {
+        label: 'The popover — presets + a custom range',
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100 p-2" style="width:248px">
+  <div class="flex flex-col gap-0.5">
+    <button class="btn btn-sm btn-ghost justify-start">All time</button>
+    <button class="btn btn-sm btn-ghost justify-start">Last 30 days</button>
+    <button class="btn btn-sm btn-ghost justify-start">Last 60 days</button>
+    <button class="btn btn-sm btn-ghost justify-start">Last 90 days</button>
+  </div>
+  <div class="my-2 border-t border-base-300"></div>
+  <div class="flex flex-col gap-1.5 px-1">
+    <label class="flex items-center justify-between gap-2 text-xs"><span class="text-base-content/60">From</span><input type="date" class="input input-sm" /></label>
+    <label class="flex items-center justify-between gap-2 text-xs"><span class="text-base-content/60">To</span><input type="date" class="input input-sm" /></label>
+  </div>
+  <div class="mt-2 flex items-center justify-end gap-2 px-1">
+    <button class="btn btn-sm btn-ghost text-error">Clear</button>
+    <button class="btn btn-sm btn-primary">Apply</button>
   </div>
 </div>`,
       },
@@ -2276,6 +3004,478 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
+    id: 'pattern-data-grid',
+    group: 'Patterns',
+    name: 'Record data grid (filter/sort/search over backed-up rows)',
+    summary: 'A daisyUI table over backed-up records, sticky header, sorting + filter + search. Paged with the shared table-toolbar pager (2026-07-23) — no separate infinite-scroll idiom.',
+    description:
+      'The Data page browses the <em>rows</em> inside a backup. It is a daisyUI <code>table text-sm</code> with a <strong>sticky header</strong> (same muted-uppercase look as the <a href="/backups">Backups</a> list). <strong>Pagination (Oleh 2026-07-23):</strong> the grid used to load an unbounded scroll-window on a cursor with no numbered pages; that read as an opaque "N matching · N loaded" counter that just kept scrolling, so it was replaced with the <strong>same pager as <a href="#pattern-table-toolbar">the table toolbar</a></strong> — a rows-per-page <code>select</code> (25/50/100, default <strong>50</strong> — a record IS the row here, and a screen already fits about that many) plus prev/next, reading <em>"1–50 of 1,240"</em>. The pager acts on the <strong>filtered + sorted set</strong>; the window is applied last. Page size is a <strong>user preference</strong>, persisted separately from a saved preset — it is never part of the preset\'s config/baseline, so switching rows-per-page can never make a preset dirty. Page itself is ephemeral (not persisted; a reload starts at page 1), and any change to filter, search, sort or the active table/preset <strong>resets to page 1</strong>. A row is <strong>whole-row clickable</strong> (the shared <code>row-clickable</code> + trailing chevron) and opens the record sidebar. A <strong>linked-record cell shows the linked record NAMES</strong>, not an opaque count — up to two clickable chips + a <em>"+N"</em> overflow (a link field is often to just one record, where <em>"1 linked"</em> tells you nothing); clicking a name <strong>drills into that record</strong> (opens it in the sidebar), and the click is intercepted so it doesn\'t also open the row\'s own record. Read-only — values render as type-aware viewers, no inline edit. Pairs with baseout <code>server-data-browse</code> for the real paged queries.',
+    reference: 'design:components/data/DataBrowse.astro',
+    showCode: false,
+    usageDo: [
+      'Use the shared table-toolbar pager (rows-select + range/total + prev/next) — the same construction as Backups, default page size per-surface (Backups 20, this grid 50).',
+      'Page the FILTERED + SORTED set, with the window applied last; reset to page 1 on any filter/search/sort/table change.',
+      'Keep page size a user preference (its own storage key) — never fold it into a preset\'s saved config/baseline/dirty diff.',
+      'Keep rows whole-row clickable into the record sidebar, matching the Backups / Browse row idiom.',
+    ],
+    usageDont: [
+      "Don't reintroduce a second, differently-worded counter next to the pager (e.g. \"N matching · N loaded\") — one reading of scale, not two that can disagree.",
+      "Don't let changing rows-per-page mark a preset dirty or enter its saved config — it is a per-user display preference, not part of the view.",
+      "Don't offer inline editing — this is a read-only view of an immutable backup.",
+    ],
+    examples: [
+      {
+        label: 'The grid — sticky header + the shared pager below (rows-select · range/total · prev/next)',
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100" style="padding:.75rem">
+  <table class="table table-sm text-sm">
+    <thead><tr class="text-xs uppercase tracking-wider text-base-content/60"><th>Name</th><th>Email</th><th>Status</th><th class="text-right">Lifetime value</th></tr></thead>
+    <tbody>
+      <tr class="hover:bg-base-200 cursor-pointer"><td class="font-medium">Ada Okoye</td><td class="text-base-content/70">ada@ex.com</td><td><span class="badge badge-soft badge-success badge-sm">Active</span></td><td class="text-right font-mono tabular-nums">$4,120</td></tr>
+      <tr class="hover:bg-base-200 cursor-pointer"><td class="font-medium">Ben Larsson</td><td class="text-base-content/70">ben@ex.com</td><td><span class="badge badge-soft badge-warning badge-sm">Trial</span></td><td class="text-right font-mono tabular-nums">$0</td></tr>
+      <tr class="hover:bg-base-200 cursor-pointer"><td class="font-medium">Chidi Musa</td><td class="text-base-content/70">chidi@ex.com</td><td><span class="badge badge-soft badge-success badge-sm">Active</span></td><td class="text-right font-mono tabular-nums">$980</td></tr>
+    </tbody>
+  </table>
+  <div class="flex items-center gap-4 flex-wrap" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--color-base-300)">
+    <label class="inline-flex items-center gap-2 text-xs font-medium text-base-content/64">Rows
+      <select class="select select-sm"><option>25</option><option selected>50</option><option>100</option></select>
+    </label>
+    <div class="ml-auto text-sm text-base-content/70"><span class="mono-data">1–50</span> of <span class="mono-data">1,240</span></div>
+    <div class="inline-flex" style="gap:4px">
+      <button class="btn btn-sm btn-square btn-ghost" disabled><span class="iconify lucide--chevron-left size-4"></span></button>
+      <button class="btn btn-sm btn-square btn-ghost"><span class="iconify lucide--chevron-right size-4"></span></button>
+    </div>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-data-views',
+    group: 'Patterns',
+    name: 'Presets (Chrome-style tabs over the grid)',
+    summary: 'Named, saved configs of the Browse grid — table + filters + visible fields + sort — called PRESETS (not "views", to avoid the Airtable collision). A collapsible left LIBRARY of all presets (grouped) + a horizontal TAB BAR of the OPEN presets (Chrome-style: click a preset to open a tab, ✕ to close). Open tabs persist across reload.',
+    description:
+      'Dan\'s "killer" axis (2026-07-15): the <a href="#pattern-data-grid">record grid</a> is rarely browsed once — an operator keeps several <strong>saved configurations</strong> and moves between them. A <strong>preset</strong> = <code>{table, filters, visible fields, sort}</code>; the toolbar controls ARE the active preset\'s config. <strong>Naming (2026-07-21):</strong> these are <strong>"presets"</strong>, never "views" — "view" collides with Airtable\'s own views and ours don\'t map to theirs. <strong>Collapsible left LIBRARY + a tab bar:</strong> a left library panel that collapses like the <a href="#pattern-schema-docs">Docs list</a> (open it to find/organize presets, collapse for a clean workspace), bounded from the section-tabs baseline by a vertical divider; and a horizontal <strong>TAB BAR</strong> of the OPEN presets over the grid, drawn as soft <strong>PILLS</strong> (active = soft-primary fill, not underline tabs — those clashed with the section tabs + filter row). Collapsing hides the library; a <strong>"Presets" reopen button</strong> then leads the tab-bar row as its first item. <strong>Chrome-tab model (pin REMOVED, 2026-07-21):</strong> the library holds <em>every</em> preset (grouped + Ungrouped); <strong>clicking a library preset opens it as a tab</strong> and activates it; each tab carries an <strong>✕ to close</strong> (visible on hover + always on the active tab) — closing removes the tab but the preset stays in the library. <strong>Open tabs (ids + order + active) persist to <code>localStorage</code></strong> and survive reload — there is no "temporary preset that vanishes", and no pin/unpin. <strong>Save ≠ open:</strong> a NEW preset (New preset / Duplicate) is created in the library and opened as a tab; <strong>Save preset</strong> (<code>lucide--save</code>, shown only when the active preset\'s config is dirty vs its saved baseline) writes the current state back; <strong>Discard</strong> reverts to the baseline; <strong>Delete</strong> removes it for good. <strong>Groups:</strong> one group per preset (folder model, moved not copied); the library shows collapsible <strong>groups</strong> (header caret + count + kebab: Rename group · Delete group — <em>deleting a group never deletes its presets, they fall to Ungrouped</em>) + an <strong>Ungrouped</strong> catch-all; a group is created top-down (<code>lucide--folder-plus</code> in the rail header) or bottom-up (a preset\'s <em>Move to group ▸ New group…</em>). Every library row has a <strong>hover kebab</strong> (Rename · Duplicate · Move to group ▸ · Remove from group · Delete) AND a <strong>drag handle</strong> — <strong>drag a preset row onto a group</strong> (or Ungrouped, revealed while dragging) to re-file it. The tab-bar <strong>"+"</strong> offers New blank preset / Duplicate current and, below a separator, the user\'s <strong>existing not-open presets grouped</strong>, so you can add any preset as a tab from anywhere. Presentational (in-memory + <code>localStorage</code>); the engine owns real cross-session persistence. <strong>Save / Discard / lock / Draft (Dan 2026-07-23) — the editing model:</strong> a preset is <strong>explicitly saved</strong>. Changing the filter, sort, visible fields, column order or search leaves <em>unsaved edits</em> that do NOT stick to the tab — the tab and its library row carry an unsaved <a href="#status-dot">status dot</a>, and the toolbar offers <strong>Save preset</strong> and <strong>Discard</strong>. Discard returns the preset to its last saved state; it is NOT the same control as <strong>Clear</strong>, which empties the filter outright — two adjacent buttons, two different jobs, so each states its own in a tooltip. Dirty is computed by <strong>diffing against the saved baseline</strong>, never a sticky boolean: type a character into the search and delete it again and the preset is clean, because it once more equals what was saved. <strong>The first Save locks the preset\'s Base and Table</strong> (see <a href="#pattern-faceted-filter">the locked scope picker</a>) — changing either would invalidate the very filter that was just saved, so instead of silently wiping it the scope becomes read-only. Need another table? <strong>＋ New blank preset</strong> or <strong>Duplicate current</strong> — both arrive UNSAVED, with their scope open, so you set base + table there and then Save. An unsaved preset is a <strong>Draft</strong>: a ghost <a href="#badge">Badge</a> reading "Draft", it survives a reload with its edits intact (a draft IS its edits — losing them to a refresh is exactly the failure this model exists to prevent), and it can be deleted. Discard has nothing to return to on a never-saved Draft, so it is not offered there — Delete is the way out. Live: <a href="/data">Data</a> ▸ Browse. Component: <code>components/data/DataBrowse.astro</code> (<code>.dv-*</code>).',
+    reference: 'design:components/data/DataBrowse.astro',
+    showCode: false,
+    usageDo: [
+      'Call them PRESETS, never "views" — "view" collides with Airtable\'s own views.',
+      'Model a preset as the whole grid config (table + filters + visible fields + sort); opening a preset restores all of it.',
+      'Chrome-tab model: the library holds ALL presets; clicking one opens a TAB (soft-primary pill) and each tab has an ✕ to close. Persist the open-tab set + order + active so tabs survive reload.',
+      'Keep Save explicit: New/Duplicate opens a preset; Save (only when dirty) writes config back to the active preset; Discard reverts to the baseline.',
+      'Compute dirty by DIFFING the config against the saved baseline, never with a sticky "touched" boolean. Typing a search character and deleting it again must leave the preset CLEAN — a false dirty state trains the user to ignore the indicator.',
+      'Lock a preset\'s Base + Table on its FIRST save, and route "I need another table" to ＋ New blank preset / Duplicate current (both born unsaved, scope open). Changing the scope of a saved preset would invalidate the filter saved with it, and silently wiping a minute of filter-building is the failure this model exists to prevent.',
+      'Give an unsaved preset a ghost "Draft" badge, let it survive a reload WITH its edits, and let it be deleted. A draft IS its edits: dropping them on refresh is the same data loss, just later.',
+      'Keep Discard and Clear visibly distinct and let each state its own job in a tooltip — Discard returns to the last saved state, Clear empties the filter. They sit next to each other and do very different things.',
+      'One group per preset (folder model). Deleting a group must NEVER delete its presets — they return to Ungrouped. Hide the kebab until hover so rows/tabs stay compact.',
+      'Make the "+" list existing not-open presets (grouped) so any preset can be re-opened as a tab from the bar.',
+    ],
+    usageDont: [
+      'Don\'t call them "views" — that collides with Airtable; use "preset".',
+      "Don't bring back pin/unpin or a temporary-that-vanishes preset — an opened tab persists until the user ✕-closes it (Chrome-tab model).",
+      "Don't let one preset live in many groups — one group per preset (folder model), moved not copied.",
+      "Don't leave the grid blank when the last tab is closed — open a fresh preset so there's always an active config.",
+      "Don't let a SAVED preset change its base or table in place — and don't solve that by hiding the pickers. Lock them where they are, with the reason in a tooltip.",
+      "Don't offer Discard on a never-saved Draft — there is no baseline to return to, so the button would either do nothing or quietly behave like Clear. Delete is the way out of a draft.",
+      "Don't let a Draft evaporate on refresh, and don't flatten a nested filter group when persisting one. Silent structural data loss is worse than no persistence at all.",
+    ],
+    examples: [
+      {
+        label: 'Tab bar — OPEN presets as soft PILLS with a ✕ (active = soft-primary; Chrome-tab model)',
+        html: `
+<div class="flex items-center gap-1 px-1" style="padding:.4rem 0">
+  <button class="inline-flex items-center gap-1 rounded-full pl-3 pr-1 py-1 text-sm font-semibold" style="background:oklch(from var(--color-primary) l c h / .12);color:var(--color-primary)">Churned contacts<span class="inline-grid place-items-center size-[18px] rounded-full"><span class="iconify lucide--x size-3.5"></span></span></button>
+  <button class="inline-flex items-center gap-1 rounded-full pl-3 pr-1 py-1 text-sm" style="color:oklch(from var(--color-base-content) l c h / .65)">Unpaid orders<span class="inline-grid place-items-center size-[18px] rounded-full opacity-0"><span class="iconify lucide--x size-3.5"></span></span></button>
+  <button class="btn btn-sm btn-ghost btn-square"><span class="iconify lucide--plus size-4"></span></button>
+</div>`,
+      },
+      {
+        label: 'Library — a bordered rail of ALL presets (grouped) with a hover kebab',
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100" style="width:200px;padding:.4rem">
+  <button class="btn btn-sm btn-soft btn-primary w-full gap-1.5" style="margin-bottom:.4rem"><span class="iconify lucide--plus size-4"></span>New preset</button>
+  <div class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm" style="background:color-mix(in oklch,var(--color-primary) 10%,transparent);color:var(--color-primary)"><span class="iconify lucide--table-2 size-3.5"></span>Churned contacts</div>
+  <div class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm"><span class="iconify lucide--table-2 size-3.5 opacity-40"></span>Unpaid orders<span class="iconify lucide--ellipsis size-4 opacity-40" style="margin-left:auto"></span></div>
+  <div class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm opacity-70"><span class="iconify lucide--table-2 size-3.5 opacity-40"></span>Scratch</div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-record-panel',
+    group: 'Patterns',
+    name: 'Record panel (sectioned detail)',
+    summary: 'The record detail drawer, in the shared EntityPanel language: a Location breadcrumb + View-in-Airtable, then stacked SECTIONS — Fields (searchable, type icons, click a field → its config), Linked records (tabs, one-level drill-in), History last.',
+    description:
+      'The Data page\'s record drawer, rebuilt (Dan 2026-07-15) to read as the same detail-panel family as the Schema <a href="#pattern-entity-panel">EntityPanel</a> — a right-anchored sheet over a scrim. It is <strong>stacked sections that scroll as one</strong> (not a Fields/History segmented switch): a <strong>Location breadcrumb</strong> (Base ▸ Table ▸ record) + a <strong>"View record in Airtable"</strong> <a href="#button">Button</a> at the top; a <strong>Fields</strong> section — a <em>search</em> box inside it (records can carry hundreds of fields), each row a <strong>field-type icon</strong> + name + value, and each row <strong>clickable to open that field\'s config</strong> in the shared EntityPanel (<code>schema:openEntity</code>; ⌘/Ctrl-click opens it beside the data). <strong>The field name button now carries a tooltip</strong> naming both actions (open in place · ⌘/Ctrl-click to open beside) — a hidden ⌘-click affordance is not an affordance (Oleh 2026-07-30) — and the row ALSO shows the canon reveal-on-hover <code>⧉</code> open-beside button (same icon/tooltip/classes as every other open-beside control in the app: linked-record rows here, <code>.ep-beside</code> in Schema, <code>.dcp-openbeside</code> in the Changelog drill). It sits as a normal flex sibling after the value cell (which already truncates and yields the width) rather than absolutely overlapping — this row\'s trailing control, the provenance expand chevron, is a LIVE button (unlike EntityPanel\'s inert type/dir/health meta), so the two must both stay reachable while hovering, not swap. Field rows carry <code>⧉</code> only where the host allows field-config at all (<code>RecordBodyCtx.fieldClickable</code>) — the Changelog drill\'s inert field rows show neither the tooltip nor the button; a row that cannot be opened must not advertise opening beside. a <strong>Linked records</strong> section rendered as <strong>tabs</strong> (one per link field, e.g. Orders) showing a provenance-style preview (<em>up to N names + "+M more"</em>, the <a href="#pattern-cell-provenance">cell-provenance</a> pattern) where a linked name <strong>drills in one level in place</strong> (a mini nav with Back, plus an "open in new pane / take over" escape hatch — linked→linked is unbounded, so cap the in-place depth at one); and <strong>History</strong> (the cross-backup <a href="#pattern-record-history">diff timeline</a> + "view as of this backup"); finally a <strong>"Referenced in"</strong> section — the reverse of the Docs `@@` record tagging — listing the documents (and later chats) that tag this record, each row a doc icon + title + a quiet kind tag, clicking through to the Docs tab with that document open (<code>schema:openDoc</code>). It renders ONLY when at least one reference exists — no empty-state noise — and joins the section jump-nav automatically. Read-only. <strong>Opened from the Changelog drill (Dan 2026-07-23, revised):</strong> a record reached from a backup-run drill does NOT open this standalone drawer — it becomes a panel of the <em>drill\'s own</em> stack (see <a href="#pattern-data-changelog">Data changelog</a>). The record BODY (Location crumb · Fields · Linked · History) is shared code (<code>recordReadBody.ts</code>), so it reads identically whether it renders here for Browse/Docs or inside a drill panel — the same relationship <code>schemaReadBody</code> has to the Schema <a href="#pattern-entity-panel">EntityPanel</a>. The drill-hosted record drops the cross-stack-only affordances (field-config open-beside, value-tables, Referenced-in→Docs) and keeps the body-local reads (linked drill-in-place, provenance expand, view-as-of). This standalone RecordPanel is what Browse and Docs open, and is unchanged for them. Component: <code>components/data/RecordPanel.astro</code> (<code>.rp-*</code>).',
+    reference: 'design:components/data/RecordPanel.astro',
+    showCode: false,
+    usageDo: [
+      'Read as the EntityPanel family: right sheet + scrim, breadcrumb, concept-icon header — reuse the chrome, don\'t invent a new look.',
+      'Stack sections that scroll as one (Fields → Linked records → History), not a segmented Fields/History switch.',
+      'Put a search inside the Fields section and a field-type icon on every row; make a field row open that field\'s config (schema:openEntity), with ⌘-click to open beside.',
+      'Render linked fields as tabs with a name preview + "+M more"; drill in ONE level in place with Back, and offer an "open in new pane" escape hatch beyond that.',
+      'Keep History after the content sections, with the cross-backup diff timeline + "view as of this backup".',
+      'Show "Referenced in" (docs/chats that tag this record) only when non-empty; a row carries a kind tag (Doc/Chat) and opens the Docs tab with that document (schema:openDoc).',
+    ],
+    usageDont: [
+      "Don't go back to a Fields/History segmented toggle — the sections stack and scroll together.",
+      "Don't render an empty \"Referenced in\" section — a record with no references shows nothing at all.",
+      "Don't drill linked→linked→… unbounded in place — cap at one level with an open-in-new-pane hatch.",
+      "Don't drop the field-type icons or the in-section field search — a wide record is unreadable without them.",
+    ],
+    examples: [
+      {
+        label: 'Record panel — breadcrumb + View-in-Airtable, then stacked sections',
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100" style="width:320px;overflow:hidden">
+  <div class="border-b border-base-300 p-3">
+    <div class="flex items-center gap-2"><span class="inline-grid place-items-center size-8 rounded-lg bg-base-200"><span class="iconify lucide--table-2 size-4"></span></span><span class="font-semibold text-sm flex-1">Ada Okoye</span><span class="iconify lucide--x size-4 opacity-50"></span></div>
+    <div class="mt-1 flex items-center gap-2 text-xs text-base-content/55">Sales CRM <span class="iconify lucide--chevron-right size-3 opacity-40"></span> Contacts</div>
+    <a class="btn btn-sm btn-ghost gap-1.5 mt-2"><span class="iconify lucide--external-link size-3.5"></span>View record in Airtable</a>
+  </div>
+  <div class="p-3 flex flex-col gap-3 text-sm">
+    <div class="text-[11px] font-bold uppercase tracking-wider text-base-content/50">Fields</div>
+    <label class="input input-sm"><span class="iconify lucide--search size-3.5 opacity-50"></span><input placeholder="Search fields…" /></label>
+    <div class="rounded-lg border border-base-300">
+      <div class="flex items-center gap-2 border-b border-base-200 p-2"><span class="iconify lucide--type size-3.5 opacity-60"></span><span class="text-base-content/60 text-xs w-[40%]">Name</span><span class="flex-1">Ada Okoye</span></div>
+      <div class="flex items-center gap-2 p-2"><span class="iconify lucide--circle-dot size-3.5 opacity-60"></span><span class="text-base-content/60 text-xs w-[40%]">Status</span><span class="dg-selval">Active</span></div>
+    </div>
+    <div class="text-[11px] font-bold uppercase tracking-wider text-base-content/50">Linked records</div>
+    <div class="tabs tabs-border"><span class="tab tab-active">Orders · 2,340</span></div>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-field-filter',
+    group: 'Patterns',
+    name: 'Field filter (conditions + nested groups)',
+    summary: 'The value-level sibling of the faceted filter: a condition builder (field · operator · value) with a per-group and/or conjunction and one level of nested condition groups — the Airtable filter model, drawn in the app\'s filter language.',
+    description:
+      'Where the <a href="#pattern-faceted-filter">faceted filter</a> hides whole facets (a base, a table, a field <em>type</em>), this one filters on the <strong>values inside the rows</strong> — the control the <a href="#pattern-data-grid">record grid</a> needs to narrow a million-row table. A flat AND chip list can\'t express <code>A AND (B OR C)</code>, so this is a real <strong>condition builder</strong> modelled on Airtable — but <strong>drawn in the app\'s one filter language</strong>, not a new look: the <code>+ Filter</code> trigger is an <strong><code>ff-trigger</code></strong> (bordered, chevron, identical to Base / Table / Fields), the popover is the shared <strong><code>ff-panel</code></strong> chrome, and every row uses the catalog <a href="#select">Select</a> + <a href="#input">Input</a>. <strong>Model:</strong> a tree — a root group holds <em>conditions</em> and, one level deep, nested <em>condition groups</em>. Each group carries a single <strong>and/or conjunction that applies to all its siblings</strong>: row 1 reads a static <strong>"Where"</strong>, row 2 is an editable <strong>and/or</strong> select, rows 3+ mirror it as static text — a group is homogeneous (all-AND or all-OR), and you mix logic by nesting a group with the opposite conjunction. A condition row is <strong>[conjunction] · [field ▾] · [operator ▾] · [value] · duplicate · delete · drag-handle</strong>. The operator list is <strong>scoped to the field&#39;s Airtable type</strong> — text: <em>contains / does not contain / is / is not / is empty / is not empty</em>; number: <em>= · ≠ · &gt; · &lt; · ≥ · ≤ · between · empty</em>; date: <em>is / before / after / on-or-before / on-or-after / between</em>; single-select: <em>is / is not / is any of / is none of / empty</em>; checkbox: <em>is checked / is unchecked</em>; linked: <em>contains / is empty</em>. The footer offers <strong>+ Add condition</strong>, <strong>+ Add condition group</strong>, and <strong>Copy from another view</strong> (clones an entire filter tree from another saved view of the same table — reuse over rebuild). The trigger shows a <strong>count badge</strong> of active conditions and the <code>ff-on</code> active treatment. Because the grid pages on a cursor, <strong>any change resets the cursor</strong> and re-queries from the top; a red <a href="#button">Clear</a> empties the tree. Presentational here (it filters the loaded fixture rows); the real app pushes the predicate to the engine (<code>server-data-browse</code>). Depth is capped at <strong>one level of groups</strong> — enough for <code>A AND (B OR C)</code> without Airtable\'s heavier 2-deep nesting; relative-date presets and multi-select record pickers are a later enrichment.',
+    reference: 'design:components/data/DataBrowse.astro',
+    showCode: false,
+    usageDo: [
+      'Draw it in the app\'s filter language: an ff-trigger + an ff-panel popover with catalog Select/Input — never a bespoke popover or native selects that read as a different pattern.',
+      'Make the and/or conjunction a property of the GROUP, shared across its siblings: row 1 "Where" (static), row 2 the editable and/or, rows 3+ static text mirroring it.',
+      'Scope the operator list to the field type — never show "greater than" for a checkbox or "is checked" for text.',
+      'Offer + Add condition, + Add condition group, and Copy from another view; badge the trigger with the active-condition count and give it the ff-on active treatment.',
+      'Reset the grid cursor whenever the filter tree changes — the result set changed.',
+    ],
+    usageDont: [
+      "Don't invent a new look — no bespoke popover chrome or native selects; it must read as the same filter language as the faceted filters beside it.",
+      "Don't let a single group mix and + or — the conjunction is homogeneous per group; to mix logic, nest a group with the opposite conjunction.",
+      "Don't nest deeper than one level of groups — keep the tree shallow; A AND (B OR C) is the target, not arbitrary depth.",
+      "Don't mix this with the faceted filter's toggles — that hides field TYPES; this filters row VALUES.",
+      "Don't leave a stale cursor after a filter change — the old window no longer matches.",
+    ],
+    examples: [
+      {
+        label: 'Condition builder — Where + and/or conjunction + a nested condition group',
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100 p-3 shadow-lg text-sm" style="width:520px;max-width:92vw">
+  <div class="text-xs text-base-content/55 mb-2">In this view, show records</div>
+  <div class="flex items-center gap-2 mb-2">
+    <span class="inline-flex items-center justify-center text-xs text-base-content/60" style="width:56px">Where</span>
+    <select class="select select-sm" style="width:150px"><option>Status</option></select>
+    <select class="select select-sm" style="width:130px"><option>is</option></select>
+    <input class="input input-sm flex-1" value="Active" />
+    <button class="inline-grid place-items-center size-7 rounded-md text-base-content/45"><span class="iconify lucide--copy size-3.5"></span></button>
+    <button class="inline-grid place-items-center size-7 rounded-md text-base-content/45"><span class="iconify lucide--trash-2 size-3.5"></span></button>
+    <button class="inline-grid place-items-center size-7 rounded-md text-base-content/35"><span class="iconify lucide--grip-vertical size-3.5"></span></button>
+  </div>
+  <div class="flex items-start gap-2 mb-2">
+    <select class="select select-sm" style="width:56px;padding-inline:6px"><option>and</option><option>or</option></select>
+    <div class="flex-1 rounded-lg border border-base-300 bg-base-200/40 p-2">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="inline-flex items-center justify-center text-xs text-base-content/60" style="width:44px">Where</span>
+        <select class="select select-sm" style="width:130px"><option>Lifetime value</option></select>
+        <select class="select select-sm" style="width:70px"><option>&gt;</option></select>
+        <input class="input input-sm flex-1" value="1000" />
+      </div>
+      <div class="flex items-center gap-2">
+        <select class="select select-sm" style="width:44px;padding-inline:6px"><option>or</option><option>and</option></select>
+        <select class="select select-sm" style="width:130px"><option>Plan</option></select>
+        <select class="select select-sm" style="width:70px"><option>is</option></select>
+        <input class="input input-sm flex-1" value="Enterprise" />
+      </div>
+    </div>
+  </div>
+  <div class="flex items-center gap-3 pt-1">
+    <button class="btn btn-sm btn-ghost gap-1.5"><span class="iconify lucide--plus size-3.5"></span>Add condition</button>
+    <button class="btn btn-sm btn-ghost gap-1.5"><span class="iconify lucide--folder-plus size-3.5"></span>Add condition group</button>
+    <button class="btn btn-sm btn-ghost gap-1.5 ml-auto"><span class="iconify lucide--copy size-3.5"></span>Copy from another view</button>
+  </div>
+</div>`,
+      },
+      {
+        label: 'Collapsed trigger — ff-on with active-condition count badge',
+        html: `
+<div class="flex flex-wrap items-center gap-2" style="padding:1.25rem 1rem">
+  <div class="btn btn-sm gap-1.5 ff-on" style="border-color:color-mix(in oklch,var(--color-primary) 35%,transparent);background:color-mix(in oklch,var(--color-primary) 12%,transparent);color:var(--color-primary)"><span class="iconify lucide--plus size-3.5"></span>Filter <span class="badge badge-sm badge-primary">3</span><span class="iconify lucide--chevron-down size-3 opacity-55"></span></div>
+  <button class="btn btn-sm btn-ghost text-error gap-1"><span class="iconify lucide--x size-3.5"></span>Clear</button>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-fields-picker',
+    group: 'Patterns',
+    name: 'Fields picker (show/hide + Names/Types/Categories)',
+    summary: 'The Browse view\'s field-visibility control ("Fields", Airtable\'s term), on the LEFT with the pickers. Three searchable sub-tabs: Names (per-field toggles), Types, Categories — so you can hide one field or "hide all date fields" at once.',
+    description:
+      'Renamed from "Columns" to <strong>"Fields"</strong> (Airtable\'s term) and moved to the <strong>LEFT</strong> with Base / Table / +Filter — it is <em>view config</em>, not an export-adjacent action. Drawn in the app\'s filter language (an <code>ff-trigger</code> with a concept icon + an <code>ff-panel</code> popover), it gains three <strong>searchable sub-tabs</strong> (a field table can hold hundreds): <strong>Names</strong> (the default) — a per-field row (field-type icon + name + a <code>toggle toggle-sm toggle-primary</code>, name-left / toggle-right) to show/hide that one field; <strong>Types</strong> — one toggle per Airtable field type present ("hide all Date fields"); <strong>Categories</strong> — one toggle per coarse family (Text · Number · Date · Select · Link · Computed). Each sub-tab carries a search box. Reuses the same <code>ff-opt</code> row + toggle idiom as every other multi-select facet. Component: <code>components/data/DataBrowse.astro</code> (<code>.dg-fields*</code>).',
+    reference: 'design:components/data/DataBrowse.astro',
+    showCode: false,
+    usageDo: [
+      'Call it "Fields" and place it LEFT with the pickers — it configures the view, it is not an export control.',
+      'Give it three searchable sub-tabs — Names (per-field toggles), Types, Categories — so a user can hide one field or a whole type at once.',
+      'Reuse the ff-trigger / ff-panel chrome and the ff-opt + toggle row idiom; never a bespoke list.',
+    ],
+    usageDont: [
+      "Don't put it on the right by Export — that reads as an export option, not view config.",
+      "Don't drop the search — hundreds of fields are unnavigable without it.",
+    ],
+    examples: [
+      {
+        label: 'Fields picker — Names / Types / Categories sub-tabs + search + per-field toggles',
+        html: `
+<div class="rounded-box border border-base-300 bg-base-100 p-2 shadow-lg" style="width:280px">
+  <div class="flex gap-0.5 rounded-lg bg-base-200 p-0.5 mb-2">
+    <button class="flex-1 rounded-md bg-base-100 px-2 py-1 text-xs font-medium shadow-sm">Names</button>
+    <button class="flex-1 rounded-md px-2 py-1 text-xs text-base-content/60">Types</button>
+    <button class="flex-1 rounded-md px-2 py-1 text-xs text-base-content/60">Categories</button>
+  </div>
+  <label class="input input-sm w-full mb-2"><span class="iconify lucide--search size-3.5 opacity-50"></span><input placeholder="Search fields…" /></label>
+  <label class="ff-opt"><span class="ff-icon"><span class="iconify lucide--type size-3.5"></span></span><span class="ff-label">Name</span><input type="checkbox" class="toggle toggle-sm toggle-primary" checked /></label>
+  <label class="ff-opt"><span class="ff-icon"><span class="iconify lucide--calendar size-3.5"></span></span><span class="ff-label">Created</span><input type="checkbox" class="toggle toggle-sm toggle-primary" /></label>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-record-history',
+    group: 'Patterns',
+    name: 'Record history (cross-backup diff timeline)',
+    summary: "A record's biography across every backup — created / updated / deleted, each update expandable to per-field before → after diffs. The durable history Airtable truncates.",
+    description:
+      'The flagship of the Data page: what a record looked like at every backup, and exactly what changed between them — the history Airtable drops on restore and truncates by plan. It lives in the <a href="#pattern-detail-panel">record detail panel</a> as a <strong>reverse-chron timeline anchored to backup runs</strong> (newest first, Notion / Linear vintage). Each entry is stamped with its <strong>backup run</strong> (a link to the run detail) and a <strong>change marker</strong> — <em>created</em> (all fields added), <em>updated</em> (expandable), <em>deleted</em> (a tombstone) — the three are first-class (Bemi model), not one lumped "changed". An <strong>update expands to per-field <code>Field · Old → New</code> diffs</strong> (Salesforce column form) with <strong>Git two-tone</strong> — the old value in a red wash, the new in a green wash — so a value change reads at a glance; created rows show every field as an addition, deleted rows a single tombstone line. A <strong>"view as of this backup"</strong> toggle re-renders the Fields section at that point in time. Because the client caps how far back history goes by plan (2yr / 5yr / unlimited) but the UI never invents a limit, the section header states the <strong>available range</strong> — <em>"History since first backup · 14 runs"</em> — reflecting what we actually have, not a tier gate. Read-only; the diffs come from the engine comparing consecutive backups (<code>server-data-browse</code>).',
+    reference: 'design:components/data/RecordPanel.astro (.rp-hist)',
+    showCode: false,
+    usageDo: [
+      'Anchor every entry to its backup run (newest first) and link to that run — the run IS the timestamp.',
+      'Treat created / updated / deleted as three distinct markers; only updates expand to field diffs.',
+      'Show diffs as Field · Old → New with a red wash on the old value and a green wash on the new (Git two-tone).',
+      'State the available history range in the header ("since first backup · N runs") — reflect what we have, never a plan cap.',
+      'Offer "view as of this backup" to re-render Fields at that point in time.',
+    ],
+    usageDont: [
+      "Don't collapse created/updated/deleted into one generic \"changed\" — the kind of change is the first thing to read.",
+      "Don't invent a history limit or upsell in the UI — show the length actually available.",
+      "Don't show a diff for a created row (everything is new) or a field list for a deleted row (it's gone) — a tombstone says it.",
+    ],
+    examples: [
+      {
+        label: 'The timeline — an update expanded to field diffs, a created entry, run stamps',
+        html: `
+<div class="text-sm" style="max-width:26rem">
+  <div class="flex items-baseline justify-between pb-2">
+    <span class="text-[11px] font-bold uppercase tracking-wider text-base-content/50">History</span>
+    <span class="text-[11.5px] text-base-content/55">since first backup · 14 runs</span>
+  </div>
+  <div class="overflow-hidden rounded-[11px] border border-base-300" style="background:color-mix(in oklch, var(--color-base-200) 45%, transparent)">
+    <div class="px-3 py-2.5">
+      <div class="flex items-center gap-2"><span class="badge badge-soft badge-warning badge-sm">Updated</span><span class="text-base-content/60 text-[12px]">Jul 14 · run_8f2a1c</span></div>
+      <div class="mt-2 space-y-1.5">
+        <div class="flex items-center gap-2 text-[12.5px]"><span class="w-20 shrink-0 text-base-content/55">Status</span><span class="rounded px-1.5 py-0.5 line-through" style="background:color-mix(in oklch,var(--color-error) 15%,transparent)">Trial</span><span class="iconify lucide--arrow-right size-3 opacity-50"></span><span class="rounded px-1.5 py-0.5" style="background:color-mix(in oklch,var(--color-success) 16%,transparent)">Active</span></div>
+        <div class="flex items-center gap-2 text-[12.5px]"><span class="w-20 shrink-0 text-base-content/55">Lifetime value</span><span class="rounded px-1.5 py-0.5 line-through font-mono" style="background:color-mix(in oklch,var(--color-error) 15%,transparent)">$980</span><span class="iconify lucide--arrow-right size-3 opacity-50"></span><span class="rounded px-1.5 py-0.5 font-mono" style="background:color-mix(in oklch,var(--color-success) 16%,transparent)">$4,120</span></div>
+      </div>
+    </div>
+    <div class="border-t border-base-200 px-3 py-2.5">
+      <div class="flex items-center gap-2"><span class="badge badge-soft badge-success badge-sm">Created</span><span class="text-base-content/60 text-[12px]">Jun 2 · run_1a0b02</span></div>
+    </div>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-cell-provenance',
+    group: 'Patterns',
+    name: 'Cell provenance (formula · linked · lookup)',
+    summary: 'Why a computed cell has its value — expand a formula, linked, or lookup cell to its inputs / linked set / source. One visual family, Airtable vocabulary.',
+    description:
+      'The other thing no competitor has: for a computed or relational cell, <em>where did this value come from?</em> In the <a href="#pattern-detail-panel">record panel</a> a Field row of the right type carries an <strong>expand affordance</strong> that opens one of three panels — deliberately the <strong>same visual family</strong> (a label header + a row list + optional search/paging) so provenance feels like one feature, not three. (1) <strong>Formula → Inputs</strong>: the expression rendered read-only, then one row per referenced field (from the backed-up schema) with that field&#39;s name, type icon, and <em>this record&#39;s</em> value; a referenced field that is itself computed gets its own expand — provenance <strong>nests one level at a time on demand</strong>, never pre-expanded (Excel <em>Trace Precedents</em> / dbt column lineage). (2) <strong>Linked record → Linked records</strong>: the collapsed row shows a count + the first few chips ("Orders · 2,340 linked"); expanded it is a <strong>searchable, cursor-paged list</strong> ("Load more") because a link field can hold thousands — each row opens <em>its</em> record (the panel pushes; back returns). (3) <strong>Lookup / rollup → Source</strong>: "<em>via ‹link field› from ‹table›</em>" then the source record(s) with the looked-up value on each; a rollup prepends the aggregation ("SUM of Amount across 14 records"). Uses native Airtable words (<em>inputs · linked records · via · rollup</em>) for instant recognition. Read-only; the schema + linked sets come from the backup (client-confirmed available for both static and dynamic).',
+    reference: 'design:components/data/RecordPanel.astro (.rp-prov)',
+    showCode: false,
+    usageDo: [
+      'Make all three provenance panels one visual family: a label header + a row list + optional search/paging.',
+      'Nest formula inputs one level at a time on demand — never pre-expand the whole precedent tree.',
+      "Page and search a linked set (it can hold thousands); show count + a few chips collapsed, the full list expanded.",
+      'State a lookup/rollup source in Airtable words: "via ‹link field› from ‹table›"; prepend the aggregation for a rollup.',
+      'Let a linked/source row push its own record into the panel, with back navigation.',
+    ],
+    usageDont: [
+      "Don't dump thousands of linked chips inline — collapse to a count + preview, expand to a paged list.",
+      "Don't invent provenance the backup doesn't hold — render only the captured schema + linked sets.",
+      "Don't give the three panels three different looks — that makes provenance read as three unrelated features.",
+    ],
+    examples: [
+      {
+        label: 'Formula → Inputs (expression + referenced fields with this record\'s values)',
+        html: `
+<div class="text-sm" style="max-width:24rem">
+  <div class="rounded-[11px] border border-base-300 overflow-hidden" style="background:color-mix(in oklch, var(--color-base-200) 45%, transparent)">
+    <div class="px-3 py-2 border-b border-base-200 flex items-center gap-2"><span class="iconify lucide--variable size-3.5 opacity-70"></span><span class="font-mono text-[12px]">Amount * 1.2</span></div>
+    <div class="px-3 py-2 flex items-center gap-2"><span class="iconify lucide--hash size-3.5 opacity-60"></span><span class="grow">Amount</span><span class="font-mono text-base-content/70">$420</span></div>
+  </div>
+</div>`,
+      },
+      {
+        label: 'Linked → count + chips collapsed, paged list expanded · Lookup → Source',
+        html: `
+<div class="flex flex-col gap-3 text-sm" style="max-width:24rem">
+  <div class="rounded-[11px] border border-base-300 overflow-hidden" style="background:color-mix(in oklch, var(--color-base-200) 45%, transparent)">
+    <div class="px-3 py-2 border-b border-base-200 flex items-center gap-2"><span class="iconify lucide--link size-3.5 opacity-70"></span><span class="grow font-medium">Orders</span><span class="text-base-content/55 text-[12px]">2,340 linked</span></div>
+    <label class="input input-sm m-2"><span class="iconify lucide--search size-3.5 opacity-50"></span><input placeholder="Search linked records" /></label>
+    <div class="px-3 py-2 hover:bg-base-200 cursor-pointer">ORD-1001</div>
+    <div class="border-t border-base-200 px-3 py-2 hover:bg-base-200 cursor-pointer">ORD-1002</div>
+    <div class="border-t border-base-200 px-3 py-2 text-center text-primary text-[12px] cursor-pointer">Load more</div>
+  </div>
+  <div class="rounded-[11px] border border-base-300 overflow-hidden" style="background:color-mix(in oklch, var(--color-base-200) 45%, transparent)">
+    <div class="px-3 py-2 border-b border-base-200 text-[12px] text-base-content/60">via <strong>Contact</strong> from <strong>Contacts</strong></div>
+    <div class="px-3 py-2 flex items-center gap-2 hover:bg-base-200 cursor-pointer"><span class="grow">Ada Okoye</span><span class="font-mono text-base-content/70">ada@ex.com</span></div>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-locked-tab',
+    group: 'Patterns',
+    name: 'Locked capability state (in place)',
+    summary: 'When a whole tab/feature needs a capability the Space lacks, render it in place as a locked card that says what it does + why — never hide it.',
+    description:
+      'Some Data-page features need a <strong>dynamic (database) backup</strong>; a static/BYOS Space has files, not a queryable store, so change-tracking can\'t run. Rather than hide those tabs, render the feature <strong>in place as a locked state</strong> (the same principle as the plan-gated states elsewhere — the <a href="#pattern-prompt-editor">prompt editor</a>\'s below-tier read-only, the <a href="#checkbox-toggle">disabled item</a> rule): a centered card with a <code>lucide--lock</code> mark, the feature\'s name, <strong>one line on what it does</strong>, <strong>one line on why it needs dynamic</strong> ("Change tracking compares every backup in a live database"), and the standard enable/upgrade affordance. Seeing <em>what changed</em> is the flagship reason to move up, so the locked state IS the pitch — shown where the feature would be, not buried. This is a <strong>data-capability</strong> constraint (files can\'t be diffed), not a price tier. On the Data page it backs the <strong>Changelog tab, record History, and Chat</strong> in static-only Spaces. Calm, not alarming — a lock, not a warning triangle.',
+    reference: 'design:components/data/LockedTab.astro (.lt-*)',
+    showCode: false,
+    usageDo: [
+      'Render the feature in place as a locked card — name + what it does + why it needs the capability + the enable affordance.',
+      'Use lucide--lock (calm), not a warning triangle; keep the copy factual, not alarming.',
+      'Say plainly why it is locked ("needs a dynamic backup") — a capability reason, not a bare "upgrade".',
+    ],
+    usageDont: [
+      "Don't hide the tab — an absent tab teaches nothing; the locked state is the pitch for the capability.",
+      "Don't frame a data-capability limit as a price tier, or vice-versa — name the actual reason.",
+      "Don't use an error/warning colour — this is a calm locked state, not a failure.",
+    ],
+    examples: [
+      {
+        html: `
+<div class="flex flex-col items-center justify-center text-center gap-2 rounded-box border border-dashed border-base-300 p-12" style="background:color-mix(in oklch, var(--color-base-200) 30%, transparent)">
+  <span class="grid place-items-center size-12 rounded-xl bg-base-200"><span class="iconify lucide--lock size-5 opacity-60"></span></span>
+  <p class="text-base font-semibold">Change tracking needs a dynamic backup</p>
+  <p class="text-sm text-base-content/60 max-w-md">The Changelog compares every backup in a live database. Your Space stores static files, so there's nothing to diff — switch to a dynamic backup to see what changed between runs.</p>
+  <button class="btn btn-primary btn-sm mt-1">Enable dynamic backups</button>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-changelog-timeline',
+    group: 'Patterns',
+    name: 'Changelog timeline (columnar entry rows)',
+    summary: 'A grouped timeline whose entries are fixed, ALIGNED columns — Location · What · Type · Time — so the feed reads like a table down a rail, not scattered text. THREE feeds share it: Schema changelog, Data changelog, Data comments.',
+    description:
+      'The shared row shape for the <strong>Schema changelog</strong> and the <strong>Data ▸ Comments</strong> feed. <strong>CORRECTION, 2026-07-30:</strong> this entry used to claim the Data changelog was on this grid too, and it is NOT — <code>DataChangelog.astro</code> was redesigned in iterations 2–3 into a run-grouped count list with its own <code>.dc-*</code> classes and its own catalog entry, <a href="#pattern-data-changelog">pattern-data-changelog</a>, and it does not reference <code>.cl-entry</code> anywhere. The stale claim survived because nobody re-read it after that redesign, and it sent a build brief to the wrong file. Two feeds share this grid, not three. The <strong>timeline</strong> stays — a single rail down the left with a coloured node per entry, grouped by day (Schema) or by backup run (Data). What changed is the <strong>entry ROW</strong>: it is NOT a flex-wrap of name + badge + time (which shifts the badge/time to a different x on every row as the name length varies — the scattered look this pattern fixes). Instead each row is a <strong>CSS grid of fixed columns that line up across every entry</strong>, left → right: (1) <strong>Location / name</strong> — Base ▸ Table ▸ Entity (Data: Base · Table · record), a fixed-width column that <em>truncates</em> and never pushes the others; (2) <strong>What changed</strong> — the summary + <code>before → after</code> delta with Git two-tone (old in a red wash, new in a green wash), the flex column; (3) <strong>Change type</strong> — the soft-semantic <a href="#badge">badge</a> (Added/Removed/Renamed/Type-changed/Config/View; Data: Created/Updated/Deleted), a fixed column; (4) <strong>Time</strong>, right-aligned, <code>tabular-nums</code> (the day/run header already carries the date). A <strong>⚠ attention line</strong> sits under the row in the What-changed column when a change may have broken data. The whole row is <a href="#pattern-row-actions">row-clickable</a> into the detail drawer / record panel; the Location is its own click-through. Because the columns are fixed, the <strong>Type badge and Time share the exact same left-edge x on every row</strong> — that alignment is the point. <strong>Where the CSS lives (2026-07-29):</strong> the feed + row grid — <code>.cl-feed</code> rail, <code>.cl-fhead</code> column header, <code>.cl-day*</code> headers, <code>.cl-entry</code> / <code>.cl-node</code> / <code>.cl-c-*</code> columns and their inner Location / What / Type / Time parts — is defined ONCE in <code>styles/global.css</code>, not in a component\'s scoped <code>&lt;style&gt;</code>. That is not tidiness: an Astro scoped style never reaches a SIBLING component\'s DOM, so a second feed written in its own component could not have reused the grid at all — it would have had to copy it, which is exactly the drift this entry exists to stop (the same extraction already done for <code>.sch-tabbar</code> / <a href="#pattern-section-tabs">pattern-section-tabs</a>). A feed component keeps only what is genuinely its own (its detail drawer, its empty state) in scoped CSS. <strong>Third feed — Data ▸ Comments (comments-explorer, 2026-07-29):</strong> the same grid MECHANISM and the same class names, but its own column WIDTHS — declared under <code>.cm</code> only, never by editing <code>.cl-entry</code>, which three feeds now share. Seven columns: <strong>Location</strong> (base › table — the base NEVER truncates, the table yields first: the base is the orientation anchor and a stream you cannot orient in is not scannable), <strong>Record</strong> (its own column carrying the record\'s primary-field value — founder, 2026-07-30: "the listing table should have a column with the Record primary key value of the record it\'s tied to"), <strong>Author</strong> (an <strong>initials chip</strong> + the name — Airtable ships no profile picture, so initials are the whole visual identity available; a repeated identical person-glyph would be a wall of sameness that distinguishes nobody), <strong>Comment</strong> (the one-line snippet, with <code>@[usrXXX]</code> mention tokens RESOLVED against the payload\'s <code>mentioned</code> map — a raw id must never reach the screen), <strong>Status</strong>, <strong>Time</strong>. Author and Comment are SEPARATE columns because sharing one cell put the "Comment" header over the author\'s NAME. <strong>Status is THREE states, not two (founder, 2026-07-30).</strong> The founder corrected the original reasoning: a capture returns a record\'s WHOLE comment list, so a comment missing from a re-captured record is <em>certainly</em> deleted — no extra pass, no inference. So (1) present → <strong>no badge at all</strong> (marking the normal case put 18 identical pills in a 20-row view; a column that shouts on every row stops being read); (2) the record was captured again without this comment → <strong>"Deleted"</strong>, soft-error, matching the changelog\'s <code>removed</code> colour — now a legitimate claim; (3) the RECORD itself is gone from the backup → <strong>"Last seen &lt;date&gt;"</strong>, soft-warning, because deletion and a record leaving backup scope are indistinguishable here and only this third case still has to hedge. Do not collapse (2) and (3) into one badge — that trades a fact for a guess. <strong>Location glyphs (2026-07-30):</strong> the Location column\'s Base and Table segments (and, when a feed\'s third segment is a field or a view, that segment too) each carry their concept glyph — the same <code>lucide--database</code> / <code>lucide--table-2</code> / <code>lucide--tag</code> / <code>lucide--eye</code> icons the drawer breadcrumb (<code>.sb-crumb-ic</code>, <a href="#pattern-entity-panel">EntityPanel</a>) and the Browse tree already use, 14px + muted, <code>aria-hidden</code> — never a sixth hand-rolled ternary. All THREE feeds pull the glyph from the ONE shared mapping in <code>components/schema/entityIcon.ts</code> (<code>entityIconClass</code> for the bare iconify classes, <code>entityIconMarkup</code> for ready <code>&lt;span&gt;</code> markup), which replaced five prior copies (<code>schemaReadBody.ts</code>, <code>schemaInterfaces.ts</code>, <code>schemaAutomations.ts</code>, <code>SchemaHealth.astro</code>, <code>EntityPanel.astro</code>\'s <code>kindIcon</code>). A glyph never changes the row\'s 40px height (icon ≤ the row\'s own line-height, centered by the existing flex row) and never eats the Base column\'s room in Data ▸ Comments (the glyph sits in the fixed Base/Table slot, not inside the flexible one). <strong>Record has no glyph</strong> — open, Oleh\'s call (2026-07-30); <code>RecordPanel</code>\'s header currently reuses the table glyph for it, which is a placeholder, not a decision. Components: <code>SchemaChangelog.astro</code> (.cl-*) · <code>DataChangelog.astro</code> (.dc-*) · <code>DataComments.astro</code> (.cm-*, rows on the shared .cl-* grid).',
+    reference: 'styles/global.css (.cl-* feed + row grid) · components/schema/entityIcon.ts (concept-glyph mapping) · components/schema/SchemaChangelog.astro · components/data/DataComments.astro',
+    showCode: false,
+    usageDo: [
+      'Keep the timeline rail + grouping (by day for schema changes, by backup run for record changes).',
+      'Lay each entry as fixed grid COLUMNS (Location · What changed · Type · Time) that align across every row — never a flex-wrap that moves the badge/time with the name length.',
+      'Truncate the Location column; let the What-changed column flex; right-align Time with tabular-nums.',
+      'Keep the before→after Git two-tone and the ⚠ attention line (under the row) — only the layout changes.',
+      'Use the SAME row grid in the Schema changelog, the Data changelog and the Data comments feed so all three read identically.',
+      'Take the grid from global.css (.cl-feed / .cl-fhead / .cl-day* / .cl-entry / .cl-node / .cl-c-*) — a new feed adds a component, not a second copy of the grid.',
+      'Resolve identity tokens before they render: a comment snippet must show the mention as a name, never a raw @[usrXXX] id.',
+      'Keep a status badge to what the capture can actually prove — "Last seen <date>" for a comment that has left the source, with the explanation in a tooltip.',
+      'Give Base / Table (and Field / View when they appear) their concept glyph in the Location column via entityIcon.ts (entityIconClass / entityIconMarkup) — matching the drawer breadcrumb (.sb-crumb-ic) treatment.',
+    ],
+    usageDont: [
+      "Don't let the name length push the Type badge / Time to different x-positions row to row — that's the scattered bug.",
+      "Don't drop the timeline — the rail + grouping is the liked part; only the entry becomes columnar.",
+      "Don't diverge the Schema, Data and Comments row layouts — one grid, three feeds.",
+      "Don't put the row grid back in a scoped <style> — it cannot reach a sibling feed component, so the next feed would have to copy it.",
+      "Don't state a deletion you can't observe: an absent comment could equally be a record that left backup scope or a missed capture window.",
+      "Don't hand-roll another base/table/field/view icon ternary — import it from entityIcon.ts, the one shared mapping.",
+    ],
+    examples: [
+      {
+        label: 'Two aligned entry rows under a day header (Type + Time line up)',
+        html: `
+<div class="text-sm" style="max-width:44rem">
+  <div class="flex items-center gap-3 pb-2"><span class="size-2.5 rounded-full border-2 border-base-content/30"></span><span class="text-[11px] font-bold uppercase tracking-wider text-base-content/55">June 21, 2026</span></div>
+  <div class="grid items-center gap-3 py-2 border-t border-base-200" style="grid-template-columns:1.25rem 14rem minmax(0,1fr) 9rem 5rem">
+    <span class="size-2.5 rounded-full" style="background:var(--color-success)"></span>
+    <span class="truncate"><strong>Sales CRM</strong> <span class="text-base-content/50">▸ Q2 Forecast</span></span>
+    <span class="truncate text-base-content/80">New table added (3 fields)</span>
+    <span><span class="badge badge-soft badge-success badge-sm">Added</span></span>
+    <span class="text-right font-mono tabular-nums text-base-content/55 text-[12px]">2:07 PM</span>
+  </div>
+  <div class="grid items-center gap-3 py-2 border-t border-base-200" style="grid-template-columns:1.25rem 14rem minmax(0,1fr) 9rem 5rem">
+    <span class="size-2.5 rounded-full" style="background:var(--color-warning)"></span>
+    <span class="truncate"><strong>Marketing</strong> <span class="text-base-content/50">▸ Campaigns</span></span>
+    <span class="truncate"><span class="rounded px-1 line-through" style="background:color-mix(in oklch,var(--color-error) 15%,transparent)">Lead Source</span> <span class="iconify lucide--arrow-right size-3 opacity-50"></span> <span class="rounded px-1" style="background:color-mix(in oklch,var(--color-success) 16%,transparent)">Acquisition Channel</span></span>
+    <span><span class="badge badge-soft badge-primary badge-sm">Renamed</span></span>
+    <span class="text-right font-mono tabular-nums text-base-content/55 text-[12px]">11:40 AM</span>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-data-changelog',
+    group: 'Patterns',
+    name: 'Data changelog (records, grouped by backup run)',
+    summary: 'The record-level sibling of the schema changelog: ONE ROW PER backup run with created / updated / deleted COUNT columns; click a run to drill into its records.',
+    description:
+      'The schema <a href="#pattern-detail-panel">changelog</a> answers "what changed about the <em>structure</em>"; this answers "what changed about the <em>records</em>". <strong>Iteration 2 (Dan 2026-07-15):</strong> a single backup run can create <em>thousands</em> of records, so the feed is NOT a per-record timeline — it collapses to <strong>one row per backup run</strong> (newest first) with three <strong>count columns: Created · Updated · Deleted</strong> (from the run\'s true totals). Every run shows, including a type with zero (that column just reads 0). <strong>Iteration 3 (Dan 2026-07-21): clicking a run opens a NON-MODAL multi-panel drill</strong> — each run is a panel in the shared <a href="#pattern-multi-panel-drawer">multi-panel drawer</a> canon (anchor slot-0 + detach, ⌘/Ctrl-click a run row or the round ＋ = <strong>open-beside to COMPARE runs</strong>, cap 10 with auto-accordion strips, per-panel resize + reorder + undoable ✕, the stack shutter). The panel header follows the 2026-07-21 drawer-header canon: day title, <strong>"Jump to this backup" as a corner icon</strong> (label in the tooltip), synced-time + <strong>run-id chip with one-click copy</strong> on the crumb row. Inside, Created / Updated / Deleted are <strong>TRUE TABS</strong> (pill chips with counts; a zero-count tab stays visible, muted) — one type at a time, full-area, <strong>paginated 50/page</strong> ("‹ Prev · 1–50 of N · Next ›"); <strong>clicking a record opens the <a href="#pattern-record-history">record panel</a> with History focused</strong>; when a run\'s true count exceeds the shipped sample, an honest "showing the N sampled of M" line. The ＋ picker lists every backup (day + id + c/u/d counts, searchable; open runs marked). It shares the changelog chrome: the <code>.sch-tb</code> toolbar with the shared <a href="#pattern-faceted-filter">faceted filters</a> (Base · Table · Change type) + a Time range, a red Clear, and CSV/JSON <a href="#pattern-export-control">export</a> whose scope is the <strong>change type</strong>; the toolbar filters drive open panels live. Change-type colour follows the record-history badges (created = success, updated = warning, deleted = error). Read-only. <strong>Drill-row navigation (Dan 2026-07-23, revised — Option A):</strong> a record clicked in a run drill opens in the drill\'s OWN stack, never as a second overlapping drawer. Exactly like a field inside the Schema <a href="#pattern-entity-panel">EntityPanel</a>: a <strong>plain click drills IN PLACE within the same panel</strong> (its body carries a run→record visit-stack) with a <strong>Back arrow</strong> that returns to the run\'s record list; <strong>⌘/Ctrl-click or middle-click opens the record as a NEW panel beside</strong> in the same stack; the hover/focus <code>⧉</code> does the same. One stack, one rail, one cap — no second drawer, no second rail, no z-index fight. The record body is the shared <code>recordReadBody.ts</code> (see <a href="#pattern-record-panel">Record panel</a>). This replaced an earlier build where the record opened the standalone RecordPanel over the drill and needed a "Back to the changelog" arrow to escape the occlusion — that whole second mechanism is gone. Component: <code>components/data/DataChangelog.astro</code> (<code>.dc-*</code> list, <code>.dcp-*</code> panels).',
+    reference: 'design:components/data/DataChangelog.astro (.dc-* / .dcp-*)',
+    showCode: false,
+    usageDo: [
+      'Collapse to ONE ROW PER RUN with Created / Updated / Deleted count columns — a run can carry thousands of records, so never a per-record feed.',
+      'Drill = the shared multi-panel drawer canon: plain click lands in the anchor, ⌘-click / ＋ opens beside to compare runs, cap 10 with accordion strips.',
+      'Show Created / Updated / Deleted as TRUE TABS (counts on the pills, zero-count muted but present), one type full-area, paginated 50/page.',
+      'Open the record panel (History focused) when a record in a panel is clicked — one source of truth for per-record history.',
+      "State the truth when a run's real count exceeds the sample (showing the N sampled of M) + the Jump-to-backup corner icon.",
+      'Reuse the changelog toolbar: Base / Table / Change-type facets + a Time range + a red Clear + CSV/JSON export (scope = change type); filters re-render open panels.',
+    ],
+    usageDont: [
+      "Don't render a per-record timeline — thousands of created rows are unreadable; the run row + drill panels is the model.",
+      "Don't rebuild a second history view — a record row deep-links into the record panel's History section.",
+      "Don't hide a run with zero changes of a type — show the 0 (row column and tab) so the run trail is complete.",
+      "Don't make the drill modal — the run list stays clickable behind the panels (non-modal drawer canon).",
+    ],
+    examples: [
+      {
+        label: 'A run group with Created / Updated / Deleted sections',
+        html: `
+<div class="text-sm" style="max-width:34rem">
+  <div class="flex items-center gap-2 pb-2"><span class="iconify lucide--history size-4 opacity-60"></span><strong>Jul 14 · run_8f2a1c</strong><span class="text-base-content/50 text-[12px]">Synced 09:12</span></div>
+  <div class="overflow-hidden rounded-[11px] border border-base-300" style="background:color-mix(in oklch, var(--color-base-200) 45%, transparent)">
+    <div class="flex items-center gap-2 px-3 py-2 border-b border-base-200"><span class="badge badge-soft badge-success badge-sm">Created</span><span class="text-base-content/60 text-[12px]">3 records</span></div>
+    <div class="flex items-center gap-2 px-3 py-2 hover:bg-base-200 cursor-pointer"><span class="grow font-medium">ORD-1204</span><span class="text-base-content/55 text-[12px]">Orders</span><span class="iconify lucide--chevron-right size-3.5 opacity-40"></span></div>
+    <div class="flex items-center gap-2 px-3 py-2 border-t border-base-200"><span class="badge badge-soft badge-warning badge-sm">Updated</span><span class="text-base-content/60 text-[12px]">2 records</span></div>
+    <div class="flex items-center gap-2 px-3 py-2 border-t border-base-200 hover:bg-base-200 cursor-pointer"><span class="grow font-medium">Ada Okoye</span><span class="text-base-content/55 text-[12px]">Contacts · 2 fields</span><span class="iconify lucide--chevron-right size-3.5 opacity-40"></span></div>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
     id: 'pattern-removed-notice',
     group: 'Patterns',
     name: 'Removed / deleted notice',
@@ -2309,7 +3509,7 @@ export const SB_ENTRIES: SBEntry[] = [
     name: 'Deleted items (hidden by default · reveal + mark)',
     summary: 'Entities deleted in the source are kept for history, hidden by default, revealed by one toggle and shown muted + dated.',
     description:
-      'Schema entities deleted in Airtable are retained for history, but they shouldn’t clutter the default views. Browse (tree + flat) shows only <strong>active</strong> (and <code>unknown</code>) entities by default; <code>removed</code> ones are hidden. A single neutral <a href="#checkbox-toggle">checkbox</a> — <strong>"Include deleted"</strong> with a <strong>count <a href="#badge">badge</a></strong> (the discoverable "N deleted" affordance) and a <a href="#tooltip">tooltip</a> — reveals them. Revealed rows render <strong>muted</strong> with a neutral <strong>"Deleted" badge</strong> and a caption <em>"no longer in Airtable since &lt;date&gt;"</em>. They stay selectable: the <a href="#pattern-entity-panel">entity panel</a> opens read-only with a banner ("no longer exists in Airtable, showing the last backup") and the last-known values, <strong>no edit / publish / AI</strong>. <code>unknown</code> entities (couldn’t be confirmed this run) are NOT treated as deleted and stay visible. Deleted entities never appear in the live <a href="/schema">Visualize</a> diagram or the field-visibility picker. <strong>No Restore here</strong> — Schema is read-only; restoring lives in the Backups flow. Components: <code>components/schema/SchemaBrowse.astro</code> + <code>EntityPanel.astro</code>. Live: <a href="/schema">Schema</a> → Browse.',
+      'Schema entities deleted in Airtable are retained for history, but they shouldn’t clutter the default views. Browse (tree + flat) shows only <strong>active</strong> (and <code>unknown</code>) entities by default; <code>removed</code> ones are hidden. A single neutral <a href="#checkbox-toggle">checkbox</a> — <strong>"Include deleted"</strong> with a <strong>count <a href="#badge">badge</a></strong> (the discoverable "N deleted" affordance) and a <a href="#tooltip">tooltip</a> — reveals them. Revealed rows render <strong>muted</strong> with a neutral <strong>"Deleted" badge</strong> and a caption <em>"no longer in Airtable since &lt;date&gt;"</em>. They stay selectable: the <a href="#pattern-entity-panel">entity panel</a> opens read-only with a banner ("no longer exists in Airtable, showing the last backup") and the last-known values, <strong>no edit / publish / AI</strong>. <code>unknown</code> entities (couldn’t be confirmed this run) are NOT treated as deleted and stay visible. Deleted entities never appear in the live <a href="/schema">Visualize</a> diagram or the field-visibility picker. <strong>No Restore here</strong> — Schema is read-only; restoring lives in the Backups flow. <br><br><strong><code>unknown</code> is a THIRD state, not a shade of removed.</strong> It means <em>"not seen in the latest capture"</em> — the entity was in an earlier snapshot and the newest run neither confirmed nor contradicted it (a partial capture, a permissions gap, a table we could not read). It is a gap in <em>our</em> read, not a defect in the user\'s base, so it renders <strong>at full opacity</strong> (never the <code>.5</code> mute) with a <strong>soft INFO badge "Not in latest capture"</strong> and a tooltip naming the last run that did see it. <strong>Amber is forbidden</strong> here: amber is this app\'s Removed/warning voice everywhere else (the removed banner, the Removed badges), so an amber <code>unknown</code> would read as "your data broke" for what is really "we did not look". Ghost-grey is equally wrong — that is the Deleted badge. Info is the only tone left that says <em>informational, unresolved, no action implied</em>. Components: <code>components/schema/SchemaBrowse.astro</code> + <code>EntityPanel.astro</code>. Live: <a href="/schema">Schema</a> → Browse.',
     reference: 'design:components/schema/SchemaBrowse.astro',
     showCode: false,
     usageDo: [
@@ -2317,11 +3517,13 @@ export const SB_ENTRIES: SBEntry[] = [
       'Mark a revealed item: muted row + a "Deleted" badge + the removal date ("no longer in Airtable since …").',
       'Keep removed items inspectable but read-only — the panel shows a banner + last-known values, no edit/publish/AI.',
       'Keep `unknown` (unconfirmed) items visible; only `removed` hides behind the toggle.',
+      'Render `unknown` at FULL opacity with a soft INFO badge "Not in latest capture" — never muted, never amber, never a "Deleted" badge.',
     ],
     usageDont: [
       "Don't offer Restore here — Schema is read-only; restoring belongs in the Backups flow.",
       "Don't treat `unknown` as deleted, and don't show deleted entities in the live diagram or field picker.",
       "Don't colour the toggle/checkbox or the Deleted badge red — deletion is neutral history, not an error.",
+      "Don't render `unknown` in amber/warning — amber is this app's Removed voice and reads as \"something is wrong with your data\"; a missed capture is a gap in OUR read, not a defect in theirs.",
     ],
     examples: [
       {
@@ -2341,6 +3543,161 @@ export const SB_ENTRIES: SBEntry[] = [
         html: `
 <div style="padding:1rem;max-width:430px">
   <div class="flex items-center gap-2" style="padding:.6rem .8rem;border:1px solid var(--color-base-300);border-radius:10px;background:oklch(from var(--color-base-200) l c h /.6);font-size:12.5px;line-height:1.4"><span class="iconify lucide--trash-2 size-4" style="opacity:.55"></span><span>This field no longer exists in Airtable (deleted May 14, 2026). Showing the last backup.</span></div>
+</div>`,
+      },
+      {
+        label: 'The three states side by side — active · unknown (full opacity, soft info) · removed (muted, ghost)',
+        html: `
+<div style="padding:1rem">
+  <div class="rounded-box border border-base-300 bg-base-100 overflow-hidden text-sm">
+    <div class="flex items-center gap-2 border-b border-base-200" style="padding:.7rem .8rem"><span class="iconify lucide--eye size-4 opacity-70"></span><span class="font-medium grow">Active Campaigns</span><span class="badge badge-soft badge-success gap-1"><span class="size-1.5 rounded-full bg-current"></span>Healthy</span></div>
+    <div class="flex items-center gap-2 border-b border-base-200" style="padding:.7rem .8rem"><span class="iconify lucide--eye size-4 opacity-70"></span><span class="font-medium grow">Regional split</span><span class="badge badge-soft badge-info">Not in latest capture</span></div>
+    <div class="flex items-center gap-2" style="padding:.7rem .8rem;opacity:.5"><span class="iconify lucide--eye size-4 opacity-70"></span><span class="font-medium" style="flex:none">Q1 pipeline</span><span class="badge badge-ghost" style="font-weight:600">Deleted</span><span class="text-xs grow" style="color:oklch(from var(--color-base-content) l c h /.58)">no longer in Airtable since Jun 2, 2026</span></div>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-view-details',
+    group: 'Patterns',
+    name: 'View details (Airtable views in Schema)',
+    summary: 'An Airtable view as a first-class Schema entity — its own "Views (n)" group under the table, a lucide--eye mark, and a panel that states plainly what Airtable will never tell us.',
+    description:
+      'Airtable <strong>views</strong> (Grid, Form, Calendar, Gallery, Kanban, Timeline, Gantt) are captured alongside tables and fields and surface everywhere an entity can: <a href="/schema">Browse</a>, the entity typeahead, Docs tagging, the Changelog, and the shared <a href="#pattern-entity-panel">entity panel</a>.<br><br>' +
+      '<strong>Where they live in Browse.</strong> A view is <em>not</em> a sibling of a field. Under each table the tree renders <strong>two independent groups</strong> — the fields, then a collapsible <strong>"Views (n)"</strong> group — because a view is a lens over the whole table, not one more column in it. Each group caps independently with its own <a href="#pattern-node-showmore">"Show N more"</a>, so a table with 4 fields and 120 views does not bury the fields, and a table with 900 fields does not bury the views. The table caption reads "N fields · M records · K views". A "View types" <a href="#facet-filter">facet</a> sits beside the Field-types facet, and the deleted-items filter is relabelled <strong>"Status"</strong> because it now governs three kinds, not one.<br><br>' +
+      '<strong>The mark and the word.</strong> One icon everywhere: <code>lucide--eye</code>, and the kind word is <strong>"View"</strong> — in the tree, the flat table, the typeahead group header, the panel header, Docs chips, and the Changelog location. A view that appears anywhere without its eye, or labelled "Table", is a bug.<br><br>' +
+      '<strong>The panel — three blocks and nothing invented.</strong> (1) <strong>Identity</strong>: name, type, health, and a <strong>Personal vs Collaborative</strong> badge (Airtable\'s <code>personalForUserId</code> — a personal view is only visible to its owner, which is exactly the kind of thing that surprises someone during a restore). (2) <strong>"Fields shown · N of M"</strong> with the named field chips, <strong>grid views only</strong> — <code>visibleFieldIds</code> is returned for grid views and nothing else, so for a Form or Kanban this block is absent, not empty. (3) <strong>History</strong> — the view\'s own changelog entries.<br><br>' +
+      '<strong>"Fields shown" — name them, do not only count them.</strong> The block renders <a href="#entity-chip">entity chips</a> (<code>entityChip()</code>), one per <code>visibleFieldIds</code> entry, each carrying that field\'s <strong>Airtable field-type glyph</strong> and the panel-push hook so a click drills straight to the field. Panel list canon applies unchanged: <strong>cap at 5</strong> then an inline <strong>"+N more"</strong>, and a count badge from <strong>2 upward</strong>. A bare "12 of 34" answers a question nobody asked and provokes the one they did — <em>which ones?</em><br>' +
+      '<strong>The denominator M is the owning table\'s LIVE field count</strong> — removed (deleted-in-Airtable) fields are excluded, exactly as the table panel excludes them. A view panel that says 12 while its own table panel says 11 is a bug, not a nuance. And a view NEVER borrows the table\'s "Fields · N · in this table" stat tile: on a view that tile reads as "this view shows N fields", which is a claim we cannot make.<br><br>' +
+      '<strong>Two capture depths for one view.</strong> Through the official MCP server a view yields only id / name / type. On an <strong>Airtable enterprise account</strong> the REST API additionally returns which fields a grid view shows. Both scenarios ship, so a view panel must render either way — and the copy for the shallow case describes <strong>what this connection can supply</strong>. It is the <em>customer\'s Airtable plan</em>, never ours: <strong>no Baseout tier language, no upsell, no "upgrade" CTA, no price.</strong> Baseout does not gate product UI on plan, and this gate is not even ours to sell against.<br><br>' +
+      '<strong>Referenced by → Views.</strong> A FIELD panel\'s <a href="#pattern-entity-panel">"Referenced by"</a> gains a <strong>Views</strong> group (<code>lucide--eye</code>) listing the views whose <code>visibleFieldIds</code> contains that field — the reverse of the block above, and the answer to "if I restore/rename this field, where does it show up?". It obeys the same rule as every other group in that section: <strong>an empty group is omitted entirely</strong>, never rendered as "Views 0". Since only grid views on a full-access connection carry <code>visibleFieldIds</code>, absence here means <em>unknown</em>, not <em>nowhere</em> — which is precisely why it must not render a zero.<br><br>' +
+      '<strong>A view whose owning table is unresolved.</strong> Browse nests views strictly under their table, so a captured view with no resolved table would render nowhere at all — it would simply vanish. It gets an explicit per-base bucket instead (modelled on the base picker\'s "Still matching" group): a named group, visibly distinct from "this table has no views", with one line saying we hold the view but not which table it belongs to. Losing a row silently is the only outcome that is never acceptable.<br><br>' +
+      '<strong>The type vocabulary</strong> is <code>grid · form · calendar · gallery · kanban · timeline · block</code>, where Airtable\'s <code>block</code> means <strong>Gantt</strong> (label it "Gantt", not "Block"). Treat the enum as <strong>open</strong>: Airtable ships new view types without warning, so an unrecognised type string renders in a plain neutral chip carrying the raw string rather than being coerced into a known type or dropped.<br><br>' +
+      '<strong>Two DIFFERENT absences, worded differently — this is the point of the pattern.</strong> Conflating them is what makes a read-only tool feel broken.<br>' +
+      '• <strong>Permanent, nobody\'s fault:</strong> a view\'s <em>filters, sorts, grouping, row height and colour rules</em> have <strong>no API at all</strong> — not REST, not the official MCP server, not at any plan tier. Say so once, plainly, in a quiet neutral line: <em>"Airtable does not expose a view\'s filters, sorts or grouping to any API, so they can\'t be captured."</em> No spinner, no "connect to see more", no retry — there is nothing to retry.<br>' +
+      '• <strong>Fixable by the user:</strong> a field a reconnect with the right scope WOULD return uses the ordinary reconnect affordance. That one is actionable, so it gets an action.<br>' +
+      'Never render a placeholder filter row, a greyed sort chip, or an empty "Configuration" card for the first kind. An empty slot that looks like it could fill reads as a promise the product cannot keep, and the founder will read it as a feature we shipped half of.',
+    reference: 'design:components/schema/SchemaBrowse.astro · EntityPanel.astro · schemaEntities.ts',
+    showCode: false,
+    guides: [
+      {
+        title: 'View type → label + how to render it',
+        note: 'Airtable\'s enum is open — an unknown string is displayed, never dropped or guessed.',
+        default: 'grid',
+        rows: [
+          { token: 'grid', use: 'Label "Grid". The ONLY type that can carry `visibleFieldIds`, so the only one that shows "Fields shown · N of M" — or, when the connection did not supply them, the connection-depth line.', why: 'Airtable returns visibleFieldIds for grid views only, and only through the enterprise REST API.' },
+          { token: 'form', use: 'Label "Form". Field visibility is never known — use the "Airtable does not share it for this view type" line.', why: 'Not exposed for non-grid views, at any depth.' },
+          { token: 'calendar', use: 'Label "Calendar". Same absence line as Form.' },
+          { token: 'gallery', use: 'Label "Gallery". Same absence line as Form.' },
+          { token: 'kanban', use: 'Label "Kanban". Same absence line as Form.' },
+          { token: 'timeline', use: 'Label "Timeline". Same absence line as Form.' },
+          { token: 'block', use: 'Label **"Gantt"** — `block` is Airtable\'s wire name for a Gantt view.', why: 'Showing "Block" would be a word no Airtable user recognises.' },
+          { token: '(anything else)', use: 'Neutral `badge-ghost` chip carrying the raw string, verbatim.', why: 'Airtable adds view types; coercing an unknown one to "Grid" would be a lie.' },
+        ],
+      },
+      {
+        title: 'Which absence line to use',
+        note: 'They are not interchangeable. One is permanent and blameless; one depends on how deep THIS connection can read; one is a fixable gap in our own auth.',
+        default: 'never-exposed',
+        rows: [
+          { token: 'never-exposed', use: 'Filters · sorts · grouping · colouring · row height. Quiet neutral line, NO action.', why: 'No API at any tier returns them. Offering a retry invents a fix that does not exist.' },
+          { token: 'not-this-view-type', use: 'Field visibility on a non-grid view (form / calendar / gallery / kanban / timeline / Gantt). Quiet neutral line, NO action: "Airtable only shares which fields a view shows for grid views."', why: 'Airtable returns visibleFieldIds for grid views alone — no plan and no reconnect changes that.' },
+          { token: 'not-this-connection', use: 'A GRID view that still has no visibleFieldIds. Quiet neutral line, NO action: "This connection did not include which fields this view shows — Airtable only returns that through its REST API on an enterprise account."', why: 'Describes the CUSTOMER\'S Airtable plan / capture route, not a Baseout tier. Never phrase it as an upgrade, never attach a CTA — it is not ours to sell against, and Baseout does not gate product UI on plan.' },
+          { token: 'reconnect-would-fix', use: 'Anything a re-auth with the right scope would return. Standard reconnect affordance.', why: 'Actionable, so it gets an action.' },
+          { token: 'not-in-latest-capture', use: 'The `unknown` state — see Deleted items. Soft INFO badge, full opacity.', why: 'A gap in our read, not a deletion and not an API limit.' },
+          { token: 'table-unresolved', use: 'A captured view whose owning table the capture did not resolve. Its own named Browse bucket under the base + one explaining line. NO action.', why: 'The alternative is the row rendering nowhere. A silently dropped entity is the one failure a schema inventory can never have.' },
+        ],
+      },
+    ],
+    usageDo: [
+      'Render views as their own collapsible "Views (n)" group under the table, capped independently from the fields group.',
+      'Use lucide--eye and the word "View" in EVERY surface a view can reach — tree, flat table, typeahead, panel header, Docs chip, Changelog.',
+      'Show the Personal / Collaborative badge from personalForUserId — a personal view is invisible to teammates, which matters at restore time.',
+      'Show "Fields shown · N of M" as NAMED entity chips (field-type glyph + panel-push), capped at 5 with "+N more" — never a bare count.',
+      'Compute M from the owning table\'s LIVE field count, excluding removed fields, so the view panel and the table panel can never disagree.',
+      'When visibleFieldIds is absent, say which absence it is: "not this view type" for non-grid, "not this connection" for a grid view whose capture did not include it.',
+      'Give a FIELD panel a "Referenced by → Views" group (lucide--eye) for the views that show it, and omit the group entirely when there are none.',
+      'Give a view with an unresolved owning table its own named bucket under the base, so it is visible rather than silently dropped.',
+      'Label the `block` type "Gantt", and pass an unrecognised type through verbatim in a neutral chip.',
+      'State the permanent API limit once, in plain words, with no action attached to it.',
+    ],
+    usageDont: [
+      "Don't interleave views with fields as siblings — a view is a lens over the whole table, not a column in it.",
+      "Don't render filter rows, sort chips, grouping, colour rules or a raw-config disclosure — Airtable exposes NONE of it to any API, so any such UI is a promise the product cannot keep.",
+      "Don't put filters or sorts into a fixture either. A fixture is read as a spec; a fake filter row becomes a shipped expectation.",
+      "Don't give the permanent limit a Retry / Reconnect / \"connect to see more\" affordance — there is nothing to retry.",
+      "Don't let a view row escape the per-node cap by carrying a different row class than the capped selector.",
+      "Don't reuse the table's \"Fields · N · in this table\" stat tile on a view panel — on a view it reads as a count of what the VIEW shows, which is a claim we cannot make.",
+      "Don't phrase the missing-field-visibility line as a Baseout plan limit, an upgrade, or anything with a price or CTA — the enterprise gate is the CUSTOMER'S Airtable account, not ours.",
+      "Don't render a \"Views 0\" group in Referenced by. Absent visibleFieldIds means unknown, not nowhere, and a zero states the opposite.",
+      "Don't fall through to \"Table\" for an unhandled kind — a mislabelled panel is worse than a missing one.",
+    ],
+    examples: [
+      {
+        label: 'Browse tree — the Views group sits BESIDE the fields group, with its own cap',
+        html: `
+<div style="padding:1rem">
+  <div class="rounded-box border border-base-300 bg-base-100 overflow-hidden text-sm">
+    <div class="flex items-center gap-2 border-b border-base-200" style="padding:.7rem .8rem"><span class="iconify lucide--table-2 size-4 opacity-70"></span><span class="font-medium grow">Campaigns</span><span class="text-xs" style="color:oklch(from var(--color-base-content) l c h /.5)">9 fields · 48 records · 5 views</span></div>
+    <div class="flex items-center gap-2 border-b border-base-200" style="padding:.7rem .8rem .7rem 2.2rem"><span class="iconify lucide--type size-3.5 opacity-70"></span><span class="grow">Name</span></div>
+    <div class="flex items-center gap-2 border-b border-base-200" style="padding:.7rem .8rem .7rem 2.2rem"><span class="iconify lucide--type size-3.5 opacity-70"></span><span class="grow">Status</span></div>
+    <div class="flex items-center gap-2 border-b border-base-200" style="padding:.6rem .8rem .6rem 2.2rem;font-size:12.5px;color:oklch(from var(--color-base-content) l c h /.6)"><span class="iconify lucide--chevron-down size-4"></span><span>Views <span class="mono-data">5</span></span></div>
+    <div class="flex items-center gap-2 border-b border-base-200" style="padding:.7rem .8rem .7rem 3.4rem"><span class="iconify lucide--eye size-4 opacity-70"></span><span class="font-medium grow">Active Campaigns</span><span class="badge badge-ghost">Grid</span></div>
+    <div class="flex items-center gap-2" style="padding:.7rem .8rem .7rem 3.4rem"><span class="iconify lucide--eye size-4 opacity-70"></span><span class="font-medium grow">Submit a campaign</span><span class="badge badge-ghost">Form</span></div>
+  </div>
+</div>`,
+      },
+      {
+        label: 'View panel — identity (with Personal badge) · fields shown as NAMED chips (grid only) · the permanent-limit line',
+        html: `
+<div style="padding:1rem;max-width:460px;display:flex;flex-direction:column;gap:16px">
+  <div style="display:flex;align-items:center;gap:8px"><span class="iconify lucide--eye size-4 opacity-70"></span><span class="font-medium">My pipeline</span><span class="badge badge-soft badge-primary">Personal</span></div>
+  <div style="font-size:12.5px;color:oklch(from var(--color-base-content) l c h /.6)">View · Grid · as of last backup</div>
+  <div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:oklch(from var(--color-base-content) l c h /.5);padding-bottom:8px">Fields shown · 3 of 11</div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px">
+      <span class="sb-chip sb-chip-btn"><span class="sb-chip-ic"><span class="iconify lucide--type size-3.5"></span></span><span class="sb-chip-name">Name</span></span>
+      <span class="sb-chip sb-chip-btn"><span class="sb-chip-ic"><span class="iconify lucide--circle-dollar-sign size-3.5"></span></span><span class="sb-chip-name">Amount</span></span>
+      <span class="sb-chip sb-chip-btn"><span class="sb-chip-ic"><span class="iconify lucide--list size-3.5"></span></span><span class="sb-chip-name">Stage</span></span>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;padding:.6rem .8rem;border:1px solid var(--color-base-300);border-radius:10px;font-size:12.5px;line-height:1.45;color:oklch(from var(--color-base-content) l c h /.62)">
+    <span class="iconify lucide--info size-4" style="flex:none;opacity:.6;margin-top:1px"></span>
+    <span>Airtable does not expose a view’s filters, sorts or grouping to any API, so they can’t be captured.</span>
+  </div>
+</div>`,
+      },
+      {
+        label: 'The two absences — a non-grid view (never exposed) vs a grid view this connection could not read that deep',
+        html: `
+<div style="padding:1rem;max-width:460px;display:flex;flex-direction:column;gap:16px">
+  <div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:oklch(from var(--color-base-content) l c h /.5);padding-bottom:8px">Fields shown — Kanban view</div>
+    <div style="display:flex;gap:8px;padding:.6rem .8rem;border:1px solid var(--color-base-300);border-radius:10px;font-size:12.5px;line-height:1.45;color:oklch(from var(--color-base-content) l c h /.62)">
+      <span class="iconify lucide--info size-4" style="flex:none;opacity:.6;margin-top:1px"></span>
+      <span>Airtable only shares which fields a view shows for <strong>grid</strong> views, so there is nothing to capture for a Kanban view.</span>
+    </div>
+  </div>
+  <div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:oklch(from var(--color-base-content) l c h /.5);padding-bottom:8px">Fields shown — Grid view</div>
+    <div style="display:flex;gap:8px;padding:.6rem .8rem;border:1px solid var(--color-base-300);border-radius:10px;font-size:12.5px;line-height:1.45;color:oklch(from var(--color-base-content) l c h /.62)">
+      <span class="iconify lucide--info size-4" style="flex:none;opacity:.6;margin-top:1px"></span>
+      <span>This connection didn’t include which fields this view shows. Airtable returns that only through its REST API on an enterprise Airtable account.</span>
+    </div>
+  </div>
+</div>`,
+      },
+      {
+        label: 'Field panel — the reverse direction: Referenced by → Views (omitted entirely when there are none)',
+        html: `
+<div style="padding:1rem;max-width:460px">
+  <div style="font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:oklch(from var(--color-base-content) l c h /.5);padding-bottom:8px">Referenced by <span class="badge badge-sm badge-neutral">3</span></div>
+  <div style="font-size:12.5px;display:flex;align-items:center;gap:6px;color:oklch(from var(--color-base-content) l c h /.6);padding-bottom:4px"><span class="iconify lucide--eye size-3.5"></span>Views <span class="badge badge-sm badge-neutral">2</span></div>
+  <div class="rounded-box border border-base-300 bg-base-100 overflow-hidden text-sm">
+    <div class="flex items-center gap-2 border-b border-base-200" style="padding:.6rem .8rem"><span class="iconify lucide--eye size-3.5 opacity-70"></span><span class="grow">All companies</span><span class="text-xs" style="color:oklch(from var(--color-base-content) l c h /.55)">Grid</span><span class="iconify lucide--arrow-up-right size-3.5 opacity-50"></span></div>
+    <div class="flex items-center gap-2" style="padding:.6rem .8rem"><span class="iconify lucide--eye size-3.5 opacity-70"></span><span class="grow">My accounts</span><span class="text-xs" style="color:oklch(from var(--color-base-content) l c h /.55)">Grid</span><span class="iconify lucide--arrow-up-right size-3.5 opacity-50"></span></div>
+  </div>
 </div>`,
       },
     ],
@@ -2548,25 +3905,76 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
+    id: 'pattern-panel-edit-mode',
+    group: 'Patterns',
+    name: 'Panel Read/Edit mode',
+    summary: 'One detail panel with two modes. Pressing Edit changes nothing about the layout — the value in each slot simply becomes an input. Captured facts stay facts: never editable, never greyed.',
+    description:
+      'How a <a href="#pattern-detail-panel">detail panel</a> becomes editable. The panel has <strong>one layout and two modes</strong>, switched by the canonical segmented control <code>.sch-modeswitch</code> / <code>.sch-mode-active</code> (<code>styles/global.css</code> — never a local copy; a local copy is how Docs once ended up grey-on-grey). Read is the default mode. <strong>Nothing moves between modes:</strong> same sections, same order, same vertical positions — a row is the same height in read and in edit, which is what a borderless read slot that simply gains its border as an input buys you (<code>.sch-slot</code> / <code>.sch-slot-in</code>: identical font-size, line-height, padding and min-height). This exists because the alternative — a separate Edit form in the same drawer — produced <em>a different page about the same object</em>: the read order was status → trigger → touches → actions → descriptions → subscribers and the form order was name → ID → base → trigger → tags → descriptions → subscribers, so pressing Edit made the user re-find what they had just been reading (Oleh 2026-07-28).<br><br><strong>Captured blocks are never editable and never greyed.</strong> Where a section states what the backup <em>captured</em> (an automation\'s trigger, the tables/fields it touches, its action types) it renders <em>identically</em> in both modes, plus a small <code>from capture</code> marker on the section label in edit mode. A greyed-out disabled control reads as "broken" or "do something else first"; these are facts, not disabled fields.<br><br><strong>Which save contract applies</strong> is decided by one question, asked per field, not per surface: <em>does this write to Airtable?</em> → the value is staged as a <strong>draft</strong> and published explicitly (field/table descriptions — see <a href="#entity-panel">EntityPanel</a>); <em>is it Baseout\'s own annotation?</em> → <strong>edit mode with an explicit Save</strong> (there is no outbound act to stage, so staging one would be ceremony — but a mistimed blur must still never rewrite a colleague\'s note); <em>is it a multi-field set that must validate together?</em> → the same, one Save for the set. The switch answers "what am I doing"; Save answers "when does this become true" — both are needed, and a mode switch is not a licence to drop Save.<br><br><strong>Escape</strong> inside edit mode cancels the edit and is swallowed, so it never reaches the panel\'s own Escape (back / close) and takes the edit with it. <strong>Cancel</strong> restores the values as they were on entering edit mode. Leaving the entity or closing the panel while dirty <strong>keeps the draft</strong> (per-entity, in memory) rather than silently discarding it — come back and the panel is still in edit mode with your text. A <strong>removed</strong> entity has nothing to edit, so the switch is <strong>absent</strong>, not present-and-disabled. Live: the <a href="/schema">Automations</a> and <a href="/schema">Interfaces</a> panels (<a href="#pattern-schema-automations-interfaces">manual registry</a>, <a href="#pattern-automation-anatomy">anatomy strip</a>).',
+    reference: 'design:components/schema/schemaReadBody.ts + EntityPanel.astro (.sch-slot, .sch-modeswitch)',
+    showCode: false,
+    usageDo: [
+      'Use the canonical .sch-modeswitch / .sch-mode-active pair from styles/global.css. Read is the default segment on a detail panel (Docs opens in edit because a doc is authored; a captured entity is read).',
+      'Keep every slot in the SAME position and the SAME height across modes. Reserve the input height in read mode — a borderless value box that gains its border in edit mode is the cheap way to guarantee it.',
+      'Render captured sections (trigger / touches / actions) identically in both modes, and mark the section label "from capture" in edit mode so the user knows why there is no input.',
+      'Keep Save explicit, and put Save/Cancel in the footer slot the read-mode actions already occupy.',
+      'Swallow Escape while in edit mode: it cancels the edit, and must not reach the panel\'s own back/close handler.',
+      'Pick the save contract per FIELD by asking "does this write to Airtable?" — draft/Publish if yes, edit-mode Save if it is Baseout\'s own annotation.',
+      'Omit the switch entirely for an entity that cannot be edited (removed / read-only history).',
+    ],
+    usageDont: [
+      "Don't render a second, differently-ordered form for the same object — that is a different page about the same thing, and the user has to re-find what they were just reading.",
+      "Don't grey out or disable a captured fact to signal it isn't editable. Grey reads as broken; the 'from capture' marker says it honestly.",
+      "Don't add a THIRD contract (per-field inline commit) alongside a mode switch and a live toggle — one panel, one way to edit.",
+      "Don't let a row change height when the mode flips; if it does, the layout still 'breaks around you' and the pattern has failed.",
+      "Don't show the switch disabled for a removed entity — absent, not disabled.",
+      "Don't drop Save just because there is a mode switch (the Docs bar has no Save; that is a gap in Docs, not the pattern).",
+    ],
+    examples: [
+      {
+        label: 'The same slot in read mode and in edit mode — same position, same height',
+        html: `
+<div style="display:grid;gap:16px;max-width:560px">
+  <div style="border:1px solid var(--color-base-300);border-radius:12px;background:var(--color-base-100);padding:16px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:12px;opacity:.65">Automation · Active · as of last backup</span><span style="margin-left:auto"><span class="join sch-modeswitch"><button type="button" class="btn btn-sm join-item sch-mode-active"><span class="iconify lucide--book-open size-3.5"></span>Read</button><button type="button" class="btn btn-sm join-item"><span class="iconify lucide--pencil size-3.5"></span>Edit</button></span></span></div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.5;margin-bottom:8px"><span class="iconify lucide--text size-3.5"></span>Internal note</div>
+    <div class="sch-slot is-multi">Owned by RevOps; may switch to a daily digest.</div>
+  </div>
+  <div style="border:1px solid var(--color-base-300);border-radius:12px;background:var(--color-base-100);padding:16px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><span style="font-size:12px;opacity:.65">Automation · Active · as of last backup</span><span style="margin-left:auto"><span class="join sch-modeswitch"><button type="button" class="btn btn-sm join-item"><span class="iconify lucide--book-open size-3.5"></span>Read</button><button type="button" class="btn btn-sm join-item sch-mode-active"><span class="iconify lucide--pencil size-3.5"></span>Edit</button></span></span></div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.5;margin-bottom:8px"><span class="iconify lucide--text size-3.5"></span>Internal note</div>
+    <textarea class="textarea textarea-sm sch-slot-in" rows="3">Owned by RevOps; may switch to a daily digest.</textarea>
+  </div>
+  <div style="border:1px solid var(--color-base-300);border-radius:12px;background:var(--color-base-100);padding:16px">
+    <div style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.5;margin-bottom:8px"><span class="iconify lucide--zap size-3.5"></span>Trigger<span class="sch-cap-mark">from capture</span></div>
+    <div class="sch-anat-rows"><div class="sch-anat-row"><span class="sch-anat-k">Event</span><span class="sch-anat-v"><span class="sch-anat-event">When a record matches conditions</span></span></div></div>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
     id: 'pattern-schema-automations-interfaces',
     group: 'Patterns',
     name: 'Automations & Interfaces (manual registry)',
-    summary: 'Two Schema tabs to hand-register the automations/interfaces Airtable\'s API can\'t export: grouped/nested listings, a right-drawer create/edit form with a raw Definition JSON field + a Table/Field tag-picker (auto vs manual chips), soft-delete, below-tier upsell, and bidirectional "Referenced by" surfacing.',
+    summary: 'Two Schema tabs to hand-register the automations/interfaces Airtable\'s API can\'t export: grouped/nested listings, a right-drawer REGISTER form, an EntityPanel that reads AND edits in place (one layout, two modes), a Table/Field tag-picker (auto vs manual chips), soft-delete, below-tier upsell, and bidirectional "Referenced by" surfacing.',
     description:
-      'The Schema <a href="/schema">Automations</a> and <a href="/schema">Interfaces</a> tabs. Airtable\'s API doesn\'t expose automations or interfaces, so they\'re <strong>registered manually</strong> (or via an inbound API) and tracked alongside the schema. <strong>Listings:</strong> both group by <strong>Base</strong> (Dan 2026-07-01 — a single-Base association replaces the old free-text group), reusing the Browse tree\'s collapsible header (blue <a href="#pattern-schema-app-graph">database concept-icon</a> + base name + count). Automations sit directly under their Base; Interfaces render each Interface as a <strong>parent row</strong> with its <strong>Pages nested</strong> beneath (Base ▸ Interface ▸ Pages, Zendesk-style, "N pages" sub-count). Each Base group renders as a <strong>real table</strong> with a repeated column header (Name · Status · Trigger · Tagged + hover actions for Automations; Name · Type · Status · Tagged for Interfaces), Backups-table style with fixed-width columns so the status/trigger/tagged columns line up across groups; a <strong>Base filter</strong> + <strong>Include-removed</strong> toggle sit on the toolbar; soft-deleted rows render muted with a "Removed from Airtable" badge (kept as history, not deleted). <strong>Empty state</strong> is honest — it names the API blind-spot ("Airtable\'s API doesn\'t expose these") + a primary <em>Register</em> CTA; below the unlocking tier the same skeleton becomes a quiet <em>upsell</em>. <strong>Create/edit</strong> opens in the shared <strong>right Drawer</strong> (project default — NOT a modal): required scalars first (Name + ID + a <strong>required Base picker</strong>; Interfaces add Type <em>interface|page</em> with a <strong>parent-interface picker required for a page</strong>, scoped to the chosen Base), then a <strong>Table/Field tag-picker</strong> reusing the Browse <code>EntitySearch</code> — <em>auto</em>-derived tags render tinted + non-removable, <em>manual</em> tags outlined with an ×. There is <strong>no raw-definition JSON input</strong> — the <code>definition</code> is API-only (scraped automations), so it\'s never hand-entered and shows read-only in the detail only when a value exists. <strong>Fields (Dan round-2):</strong> automations carry an <strong>On/Off status</strong> in a dedicated <strong>Status column</strong> via our <a href="#badge">status badges</a> (badge-soft + a bg-current dot — Active = success, Inactive = neutral, Removed = warning; distinct states, not one grey pill), a <strong>Trigger</strong> chosen from a dropdown of Airtable\'s canonical trigger types (When a record is created / updated / matches conditions / enters a view · At a scheduled time · form / webhook / button · Integrated — free text is gone; the API can\'t export automations so it\'s manual input, surfaced as a labeled Trigger line in the detail), <strong>two descriptions</strong> in <strong>Airtable vs Internal tabs</strong> (automations DO have an Airtable description, but the API can\'t sync it — so there is <strong>no Publish</strong>, just save/edit; mirrors the <a href="#entity-panel">EntityPanel</a> field pattern minus write-back), and <strong>email subscribers</strong> (chip input); interfaces/pages show a <strong>Published / Not published</strong> status in a Status column (same badges, for interfaces AND pages) and an <strong>Internal-note-only</strong> description (they have no Airtable description). The row tag-count reads "<em>N tagged</em>" (labeled, not a bare icon). <strong>Change history:</strong> the read drawer gains a <strong>Changelog section</strong> (this entity\'s own added/renamed/removed/config events); the same events also appear in the <a href="/schema">Changelog</a> tab as base ▸ [concept icon] name rows (a status change reads e.g. "Automation turned off · Active → Inactive"). <strong>Bidirectional tags:</strong> a table/field\'s shared entity sidebar gains a <strong>"Referenced by"</strong> section listing the automations/interfaces that tag it, each click-through jumping to its tab + opening its detail. Components: <code>components/schema/SchemaAutomations.astro</code> + <code>schemaAutomations.ts</code>, <code>SchemaInterfaces.astro</code> + <code>schemaInterfaces.ts</code>; reuses <code>ui/Drawer.astro</code>, <code>EntitySearch.astro</code>, <code>EntityPanel.astro</code>.',
+      'The Schema <a href="/schema">Automations</a> and <a href="/schema">Interfaces</a> tabs. Airtable\'s API doesn\'t expose automations or interfaces, so they\'re <strong>registered manually</strong> (or via an inbound API) and tracked alongside the schema. <strong>Listings:</strong> both group by <strong>Base</strong> (Dan 2026-07-01 — a single-Base association replaces the old free-text group), reusing the Browse tree\'s collapsible header (blue <a href="#pattern-schema-app-graph">database concept-icon</a> + base name + count). Automations sit directly under their Base; Interfaces render each Interface as a <strong>parent row</strong> with its <strong>Pages nested</strong> beneath (Base ▸ Interface ▸ Pages, Zendesk-style, "N pages" sub-count). Each Base group renders as a <strong>real table</strong> with a repeated column header (Name · Status · Trigger · Tagged + hover actions for Automations; Name · Type · Status · Tagged for Interfaces), Backups-table style with fixed-width columns so the status/trigger/tagged columns line up across groups; a <strong>Base filter</strong> + <strong>Include-removed</strong> toggle sit on the toolbar; soft-deleted rows render muted with a "Removed from Airtable" badge (kept as history, not deleted). <strong>Empty state</strong> is honest — it names the API blind-spot ("Airtable\'s API doesn\'t expose these") + a primary <em>Register</em> CTA; below the unlocking tier the same skeleton becomes a quiet <em>upsell</em>. <strong>Register (create only)</strong> opens in the shared <strong>right Drawer</strong> (project default — NOT a modal): required scalars first (Name + ID + a <strong>required Base picker</strong>; Interfaces add Type <em>interface|page</em> with a <strong>parent-interface picker required for a page</strong>, scoped to the chosen Base), then a <strong>Table/Field tag-picker</strong> reusing the Browse <code>EntitySearch</code> — <em>auto</em>-derived tags render tinted + non-removable, <em>manual</em> tags outlined with an ×. There is <strong>no raw-definition JSON input</strong> — the <code>definition</code> is API-only (scraped automations), so it\'s never hand-entered and shows read-only in the detail only when a value exists. <strong>Fields (Dan round-2):</strong> automations carry an <strong>On/Off status</strong> in a dedicated <strong>Status column</strong> via our <a href="#badge">status badges</a> (badge-soft + a bg-current dot for the SEMANTIC states — Active = success, Removed = warning — and <code>badge-ghost</code> for Inactive, never <code>badge-soft badge-neutral</code>, which collapses to 1.34:1 on the dark theme (see <a href="#badge">Badge</a>); distinct states, not one grey pill), a <strong>Trigger</strong> chosen from a dropdown of Airtable\'s canonical trigger types (When a record is created / updated / matches conditions / enters a view · At a scheduled time · form / webhook / button · Integrated — free text is gone; the API can\'t export automations so it\'s manual input; it was a single labeled Trigger line in the detail, and is now the head of the <a href="#pattern-automation-anatomy">anatomy strip</a> whenever the capture carries a definition — the line stays for manually registered entries with nothing deeper to show), <strong>two descriptions</strong> in <strong>Airtable vs Internal tabs</strong> (automations DO have an Airtable description, but the API can\'t sync it — so there is <strong>no Publish</strong>, just save/edit; mirrors the <a href="#entity-panel">EntityPanel</a> field pattern minus write-back), and <strong>email subscribers</strong> (chip input); interfaces/pages show a <strong>Published / Not published</strong> status in a Status column (same badges, for interfaces AND pages) and an <strong>Internal-note-only</strong> description (they have no Airtable description). The row tag-count reads "<em>N tagged</em>" (labeled, not a bare icon). <strong>Change history:</strong> the read drawer gains a <strong>Changelog section</strong> (this entity\'s own added/renamed/removed/config events); the same events also appear in the <a href="/schema">Changelog</a> tab as base ▸ [concept icon] name rows (a status change reads e.g. "Automation turned off · Active → Inactive"). <strong>Bidirectional tags:</strong> a table/field\'s shared entity sidebar gains a <strong>"Referenced by"</strong> section listing the automations/interfaces that tag it, each click-through jumping to its tab + opening its detail. <strong>Editing an EXISTING entry (2026-07-28):</strong> there is no edit form any more. A row opens the stacking <a href="#pattern-entity-panel">EntityPanel</a>, and that panel edits itself in place — <a href="#pattern-panel-edit-mode">one layout, two modes</a>, so pressing Edit turns each value into an input where it already sat instead of opening a differently-ordered form about the same object. Name is edited in the panel <em>title</em>; the ID stays in the header and is never editable (it is the identity); Base is not an inline field (changing it invalidates every tag) — it stays a breadcrumb; Active becomes the toggle in the status line; the tag registry is edited inside the <strong>Touches</strong> section; both descriptions and the subscriber list become inputs in their own sections. The captured trigger / touches / actions are never editable and never greyed. The drawer form survives for <strong>Register</strong> only, where there is no read view to diverge from. This deliberately reverted the per-field inline editing added the day before: a panel running three save contracts at once (inline commit + form Save + a live Active toggle) is worse than one. Components: <code>components/schema/SchemaAutomations.astro</code> + <code>schemaAutomations.ts</code>, <code>SchemaInterfaces.astro</code> + <code>schemaInterfaces.ts</code>, <code>schemaReadBody.ts</code>; reuses <code>ui/Drawer.astro</code>, <code>EntitySearch.astro</code>, <code>EntityPanel.astro</code>.',
     reference: 'design:components/schema/SchemaAutomations.astro',
     showCode: false,
     usageDo: [
       'Frame the empty state honestly — name the API blind-spot ("Airtable\'s API can\'t export these, register them here") + one primary Register CTA. Reuse the same skeleton for the below-tier upsell.',
       'Automations = collapsible groups (count badge + "No group" bucket); Interfaces = parent rows with nested Pages ("N pages" sub-count), one level only.',
-      'Open create/edit in the right Drawer (project default), never a daisyUI modal. Scalars first (incl. the required Base), then the tag-picker.',
+      'Open REGISTER (create) in the right Drawer (project default), never a daisyUI modal. Scalars first (incl. the required Base), then the tag-picker. Editing an existing entry happens in the panel itself — see Panel Read/Edit mode; never build a second, differently-ordered form for it.',
       'Tag-picker: reuse Browse EntitySearch; auto-derived tags are tinted + non-removable, manual tags outlined with an × (only manual are removable).',
       'Associate every automation/interface with a single Base (required) and group the listings + sidebars by Base, reusing the Browse tree header/visual. Don\'t offer a raw-definition JSON input — it\'s API-only, shown read-only only when present.',
       'Surface tags both ways: on the entity\'s sidebar show a "Referenced by" section (the automations/interfaces tagging it), click-through to that tab.',
       'Soft-delete, never hard-delete: removed rows stay muted with a "Removed from Airtable" badge behind Include-removed.',
+      'When a capture carries a definition, the panel\'s detail is the <a href="#pattern-automation-anatomy">automation anatomy strip</a> (trigger → touches → typed action count), and the manual tag registry merges into that one grouped Touches section rather than sitting beside it as a near-duplicate. Rows are unchanged — the strip is panel-only.',
     ],
     usageDont: [
-      "Don't use a modal for the create/edit form — the project default is the right Drawer / entity sidebar.",
+      "Don't use a modal for the register form — the project default is the right Drawer / entity sidebar.",
+      "Don't reopen a separate edit form for an existing automation/interface — the panel edits itself in place (Panel Read/Edit mode). A second surface about the same object always drifts out of order from the first.",
       "Don't nest Interfaces deeper than interface → pages (one level; keep it dense).",
       "Don't make auto-derived tags removable or visually identical to manual ones — the source distinction is the point.",
       "Don't hard-validate the Definition JSON against a schema — it's opaque; only check it parses.",
@@ -2655,11 +4063,12 @@ export const SB_ENTRIES: SBEntry[] = [
     name: 'Schema chat (threads + context + references)',
     summary: 'A dense, utility AI chat about the schema: thread rail + conversation + composer, a context bar of removable scope chips, clickable entity/doc references, convert-to-doc, Pro+ gate.',
     description:
-      'The Schema <a href="/schema">Chat</a> tab (last tab): chat with AI about the Space\'s schema, in a <strong>Linear/Vercel-dense, no-avatar</strong> register (not a consumer chat). Three regions: a <strong>thread rail</strong> (New chat, single-line titles + muted date, hover kebab → Rename / Archive, archived hidden behind a toggle), a <strong>conversation</strong> (user vs assistant by label + subtle background + alignment, no avatars/bubbles-decoration), and a <strong>composer</strong>. A persistent <strong>context bar</strong> sits above the composer (Cursor/Langdock pattern): removable <strong>scope chips</strong> for bases/tables/fields (added via the reused <a href="#">EntitySearch</a> typeahead) + attached <strong>doc chips</strong> (doc picker); shows <strong>"Whole Space"</strong> when empty. Assistant replies carry a <strong>References</strong> row of <strong>the same chip component</strong> (entity → shared sidebar, doc → the Docs tab) — Notion native-mention model, not footnote numbers. <strong>Convert to doc</strong> drops a green <strong>linked-reference card</strong> ("Saved as a doc · Open"). <strong>Pro+ gated</strong>: below Pro+ the whole tab shows an upgrade affordance instead of a composer (discoverable, not hidden); a credits hint + Send↔Stop streaming state otherwise. Components: <code>components/schema/SchemaChat.astro</code> + <code>schemaChat.ts</code>.',
+      'The Schema <a href="/schema">Chat</a> tab (last tab): chat with AI about the Space\'s schema, in a <strong>Linear/Vercel-dense, no-avatar</strong> register (not a consumer chat). Three regions: a <strong>thread rail</strong> (New chat, single-line titles + muted date, hover kebab → Rename / Archive, archived hidden behind a toggle), a <strong>conversation</strong> (user vs assistant by label + subtle background + alignment, no avatars/bubbles-decoration), and a <strong>composer</strong>. A persistent <strong>context bar</strong> sits above the composer (Cursor/Langdock pattern): removable <strong>scope chips</strong> for bases/tables/fields (added via the reused <a href="#">EntitySearch</a> typeahead) + attached <strong>doc chips</strong> (doc picker); shows <strong>"Whole Space"</strong> when empty. Assistant replies carry a <strong>References</strong> row of <strong>the same chip component</strong> (entity → shared sidebar, doc → the Docs tab) — Notion native-mention model, not footnote numbers. <strong>Convert to doc</strong> drops a green <strong>linked-reference card</strong> ("Saved as a doc · Open"). <strong>Pro+ gated</strong>: below Pro+ the whole tab shows an upgrade affordance instead of a composer (discoverable, not hidden); a credits hint + Send↔Stop streaming state otherwise. On the <strong>Data page</strong> (data-page spec) the same surface gains: a <strong>"Current Browse view" context chip</strong> (the live table + active-filter count, offered in the Add-context picker), <strong>record references</strong> in replies (a record chip opens the record sidebar via <code>data:openRecord</code>), and the <strong>global quick-ask widget</strong> (<code>QuickAskDock.astro</code> — the right drawer opened by the header launcher) carrying the page\'s threads + the same attachable scopes on BOTH Schema and Data. Components: <code>components/schema/SchemaChat.astro</code> + <code>schemaChat.ts</code> + <code>QuickAskDock.astro</code>.',
     reference: 'design:components/schema/SchemaChat.astro',
     showCode: false,
     usageDo: [
       'Keep it dense + utility: label + subtle background + alignment for sender, no avatars or gradient bubbles.',
+      'Anchor the assistant reply on a QUIET plate (weaker fill than the user bubble, no border) and soften body text to ~85% base-content — pure white on the dark theme halates and reads as heavy.',
       'Make context visible + editable: a persistent context bar of removable scope chips + doc chips; "Whole Space" when none.',
       'Render in-reply references as the SAME chip component as the context bar; entity → shared sidebar, doc → the Docs tab.',
       'Convert-to-doc drops a linked reference card in the thread (Open), and the doc lands in the Docs tab namespace.',
@@ -2677,7 +4086,7 @@ export const SB_ENTRIES: SBEntry[] = [
 <div style="padding:1rem;max-width:680px;display:flex;flex-direction:column;gap:1rem">
   <div style="display:flex;flex-direction:column;gap:.35rem;max-width:90%">
     <span style="font-size:.68rem;font-weight:600;letter-spacing:.03em;text-transform:uppercase;opacity:.45">Assistant</span>
-    <div style="font-size:.9rem;line-height:1.55;padding:.7rem .9rem;border-radius:.7rem;background:oklch(from var(--color-base-200) l c h / .6);border:1px solid var(--color-base-300)">Deals link to Companies through the Company field, with a reciprocal Deals field, so the two are two-way.</div>
+    <div style="font-size:.9rem;line-height:1.55;padding:12px 16px;border-radius:12px;background:oklch(from var(--color-base-200) l c h / .45);color:oklch(from var(--color-base-content) l c h / .85)">Deals link to Companies through the Company field, with a reciprocal Deals field, so the two are two-way.</div>
     <div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">
       <span style="font-size:.66rem;text-transform:uppercase;letter-spacing:.04em;opacity:.42">References</span>
       <span style="display:inline-flex;align-items:center;gap:.3rem;padding:.12rem .5rem;border:1px solid color-mix(in oklch,var(--color-primary) 22%,var(--color-base-300));border-radius:999px;background:color-mix(in oklch,var(--color-primary) 6%,transparent);font-size:.76rem"><span class="iconify lucide--table-2 size-3" style="color:var(--color-primary)"></span>Deals</span>
@@ -2693,6 +4102,53 @@ export const SB_ENTRIES: SBEntry[] = [
     <span style="font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;opacity:.45">Context</span>
     <span style="display:inline-flex;align-items:center;border:1px solid color-mix(in oklch,var(--color-primary) 22%,var(--color-base-300));border-radius:999px;background:color-mix(in oklch,var(--color-primary) 6%,transparent)"><span style="display:inline-flex;align-items:center;gap:.3rem;padding:.12rem .5rem;font-size:.76rem"><span class="iconify lucide--table-2 size-3" style="color:var(--color-primary)"></span>Deals</span><span style="padding:0 .3rem;color:oklch(from var(--color-base-content) l c h / .5)"><span class="iconify lucide--x size-3"></span></span></span>
     <span class="btn btn-sm btn-ghost gap-1"><span class="iconify lucide--plus size-3.5"></span>Add context</span>
+  </div>
+</div>`,
+      },
+    ],
+  },
+  {
+    id: 'pattern-schema-docs',
+    group: 'Patterns',
+    name: 'Docs console (list · document · meta rail)',
+    summary: 'The Docs tab is a full-height three-zone console like Chat: a documents-list rail, a bordered document surface with a centered reading column, and a meta rail (Tagged entities · Links) separated by a vertical hairline — no floating cards.',
+    description:
+      'The Schema/Data <a href="/schema">Docs</a> tab, restructured to the same full-height console language as <a href="#pattern-schema-chat">Chat</a> (Mobbin: Intercom Knowledge, Notion page + details panel, GitBook — every mature docs product zones the page the same way). <strong>Three zones with real boundaries:</strong> (1) the <strong>documents-list rail</strong> (search + sort + one bordered list, full height, own scroll); (2) the <strong>document surface</strong> — ONE bordered panel (like <code>.chat-main</code>) with a header bar (byline · Edit/Read switch · <a href="#pattern-export-control">Export</a> · delete — document-scoped actions live HERE, not on the list toolbar) closed by a bottom hairline, and below it the scrolling content: text at a <strong>centered ~72ch measure</strong> while <strong>embedded diagrams break out to the full container width</strong> (a schema diagram earns every pixel); (3) the <strong>meta rail</strong> — Tagged entities and Links as stacked SECTIONS split by horizontal hairlines inside a full-height column separated from the text by a <strong>vertical <code>border-left</code></strong> (the divider users read as "context lives here"), with its own scroll. The anti-pattern this replaced: the doc text pinned to the pane\'s left edge and Tags/Links as two floating bordered cards in empty page background — on the dark theme the eye had no zones, everything read as scattered. <strong>Formatting toolbar (Dan 2026-07-15, "turn the Plate menu on"):</strong> a grouped, sticky <strong>Plate-style toolbar</strong> sits above the editor in EDIT mode only (hidden in Read via the same hide-list as the tag hint) — Bold · Italic · Strikethrough · Inline code | Heading 1 · Heading 2 | Bulleted · Numbered list | Quote, each a catalog <code>btn-square</code> with a <a href="#button">tooltip</a> and a caret-driven <code>is-active</code> state. Built from the button primitive (no bespoke component); in this mirror the commands run through <code>document.execCommand</code> so the UX is clickable for review, and the Baseout engine swaps in real Plate commands behind the identical chrome. Components: <code>components/schema/SchemaDocs.astro</code> (reused by Data via <code>dataToSchema</code>).',
+    reference: 'design:components/schema/SchemaDocs.astro',
+    showCode: false,
+    usageDo: [
+      'Fill the viewport: the console is height-clamped like Chat (max(520px, 100dvh − chrome)) so zones are columns, not cards that end mid-air.',
+      'Center the reading column inside the document surface (~72ch) — never pin long-form text to the pane\'s left edge.',
+      'Make the meta rail ONE full-height column with a vertical border-left; sections (Tagged entities, Links) divide with horizontal hairlines.',
+      'Keep the header bar (byline · mode switch · actions) inside the document surface, closed by a bottom hairline.',
+      'Let each zone scroll independently (list, document, meta rail).',
+      'Let embedded diagrams span the full reading-column width; only TEXT keeps the 72ch measure.',
+      'Give each list row a hover kebab (the Chat thread-rail pattern) with Export / Delete; document-scoped actions (Export, delete) otherwise live on the document header bar, not the list toolbar.',
+      'Show the Plate-style formatting toolbar (Bold/Italic/Strike/Code · H1/H2 · lists · Quote) above the editor in EDIT mode only, built from the btn-square primitive with tooltips and a caret-driven active state; hide it in Read mode with the rest of the edit affordances.',
+      'Data docs only (records prop present): `@@` opens the RECORD-tag widget — three paths to a record (Base ▾ / Table ▾ drill, a saved Browse preset, or a direct `rec…` id searched across all tables); picking inserts a circle-dot record chip (entityChip + data-record-open → the record drawer) and files it under a "Records" group in the Tagged-entities rail (rows share the tag search + full-path toggle; a record\'s path = base ▸ table). On Schema the records prop is absent and `@@` types literally — zero record UI.',
+    ],
+    usageDont: [
+      "Don't float metadata as separate bordered cards beside the text — that's the scattered-cards anti-pattern this replaced.",
+      "Don't offer a flat search over ALL records in the @@ widget — millions of records need a scope (table / preset) first; only a `rec…` id query may span tables.",
+      "Don't put document-scoped actions (Export PDF) on the list toolbar at search level — the toolbar filters the LIST; the bar acts on the DOCUMENT.",
+      "Don't let the page background show through between zones — the document surface is one bordered panel.",
+      "Don't give the meta rail its own card-in-card chrome; the vertical divider + section hairlines are the whole structure.",
+    ],
+    examples: [
+      {
+        label: 'The three zones — list rail · centered document · meta rail',
+        html: `
+<div style="display:grid;grid-template-columns:150px 1fr;gap:12px;height:240px;font-size:.72rem">
+  <div style="border:1px solid var(--color-base-300);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:4px">
+    <div style="padding:6px 8px;border-radius:6px;background:color-mix(in oklch,var(--color-primary) 8%,transparent);color:var(--color-primary);font-weight:600">Contacts dataset</div>
+    <div style="padding:6px 8px;border-radius:6px;opacity:.7">Orders: totals</div>
+  </div>
+  <div style="border:1px solid var(--color-base-300);border-radius:10px;overflow:hidden;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--color-base-300);opacity:.6">Dana · Edited Jul 10 <span style="margin-left:auto">Edit · Read</span></div>
+    <div style="flex:1;display:grid;grid-template-columns:1fr 96px">
+      <div style="padding:14px 24px"><div style="font-weight:700;font-size:.9rem;margin-bottom:6px">Contacts — how to read it</div><div style="opacity:.6;line-height:1.6">The centered reading column: title, body and diagrams scroll as one, ~72ch measure.</div></div>
+      <div style="border-left:1px solid var(--color-base-300);display:flex;flex-direction:column"><div style="padding:10px;border-bottom:1px solid oklch(from var(--color-base-300) l c h / .55)"><div style="font-size:.58rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.5">Tagged</div></div><div style="padding:10px"><div style="font-size:.58rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;opacity:.5">Links</div></div></div>
+    </div>
   </div>
 </div>`,
       },
@@ -2753,7 +4209,7 @@ export const SB_ENTRIES: SBEntry[] = [
     name: 'Filter toolbar (search + filters)',
     summary: 'One filter-bar layout for every page: search │ filters … → a tab-specific right cluster. Never a different shape per tab.',
     description:
-      'The same toolbar shape everywhere, so no two tabs read differently. Left → right on ONE row: a <strong>search box</strong> (fixed-ish width), a <strong>short vertical divider</strong> that separates search from the filters, then the <a href="#pattern-faceted-filter">faceted filters</a> + any checkbox filters + a red <a href="#button">Clear</a>; the <strong>right cluster</strong> (margin-left:auto) holds the tab-specific controls — a view toggle, Export, Add-to-doc, a count. It wraps gracefully on narrow widths. The classes are <strong>global</strong> (<code>.sch-tb</code>, <code>.sch-tb-search</code>, <code>.sch-tb-div</code>, <code>.sch-tb-right</code>, <code>.sch-tb-count</code>, <code>.sch-tb-check</code> in <code>global.css</code>) so the Astro tabs AND the React Visualize island share the exact same layout. Rules that come with it: <strong>section-wide metadata (a freshness stamp) lives at the page-title level, not inside a tab’s toolbar</strong>; <strong>checkbox filters are one neutral <a href="#checkbox-toggle">checkbox</a> everywhere</strong> (never a coloured <code>checkbox-warning</code> variant) with a <a href="#tooltip">tooltip</a> explaining what they do; <strong>toolbar action buttons are Secondary <a href="#button">btn-neutral</a></strong> (Add to doc, Export) — blue (primary) is reserved for the main CTA only. Live: <a href="/schema">Schema</a> (Browse / Visualize / Changelog).',
+      'The same toolbar shape everywhere, so no two tabs read differently. Left → right on ONE row: a <strong>search box</strong> (fixed-ish width), then the <a href="#pattern-faceted-filter">faceted filters</a> — <strong>with no divider between them (Oleh 2026-07-24)</strong>, because search and filters narrow the SAME set and read as one group; a rule drawn between them invents a boundary that does not exist. A divider is only earned where the MEANING changes: between a scope switch and the narrowing controls (Visualize), between what a preset IS and what you DO to it (the Data grid), or between narrowing and an action like Export + any checkbox filters + a red <a href="#button">Clear</a>; the <strong>right cluster</strong> (margin-left:auto) holds the tab-specific controls — a view toggle, Export, Add-to-doc, a count. It wraps gracefully on narrow widths. The classes are <strong>global</strong> (<code>.sch-tb</code>, <code>.sch-tb-search</code>, <code>.sch-tb-div</code>, <code>.sch-tb-right</code>, <code>.sch-tb-count</code>, <code>.sch-tb-check</code> in <code>global.css</code>) so the Astro tabs AND the React Visualize island share the exact same layout. Rules that come with it: <strong>section-wide metadata (a freshness stamp) lives at the page-title level, not inside a tab’s toolbar</strong>; <strong>checkbox filters are one neutral <a href="#checkbox-toggle">checkbox</a> everywhere</strong> (never a coloured <code>checkbox-warning</code> variant) with a <a href="#tooltip">tooltip</a> explaining what they do; <strong>toolbar action buttons are Secondary <a href="#button">btn-neutral</a></strong> (Add to doc, Export) — blue (primary) is reserved for the main CTA only. Live: <a href="/schema">Schema</a> (Browse / Visualize / Changelog).',
     reference: 'styles/global.css (.sch-tb)',
     showCode: false,
     usageDo: [
@@ -2995,11 +4451,12 @@ export const SB_ENTRIES: SBEntry[] = [
     name: 'Entity typeahead & tag chip',
     summary: 'One search-as-you-type control for entities, and the inline chip that references them.',
     description:
-      'The same typeahead powers Browse global search/jump, the Docs "add tag" control, and the inline Docs <code>@</code>-mention. It is an <a href="#input">Input</a> + a dropdown of matches <strong>grouped by kind</strong> (Bases / Tables / Fields), each row = the vendored field icon + name + parent path + a <a href="#status-dot">health dot</a>, with ↑/↓ + Enter keyboard nav and a key-hint footer. The <strong>tag chip</strong> is the entity identity rendered inline in a doc: a primary-tinted pill (type icon + name) that is clickable in both edit and reading mode and opens the <a href="#pattern-entity-panel">entity panel</a>; a chip whose entity was removed from Airtable flips to an error-tinted "no longer in schema" state instead of being silently dropped. Components: <code>components/schema/EntitySearch.astro</code> (emits <code>schema:searchInput</code> for filter-in-place and a pick event) + the chip in <code>SchemaDocs.astro</code>.',
-    reference: 'design:components/schema/EntitySearch.astro',
+      'The same typeahead powers Browse global search/jump, the Docs "add tag" control, the inline Docs <code>@</code>-mention, and — since 2026-07-29 — the <a href="#pattern-base-picker">base picker</a>\'s search. It is an <a href="#input">Input</a> + a dropdown of matches <strong>grouped by kind</strong> (Bases / Tables / Fields), each row = the vendored field icon + name + parent path + a <a href="#status-dot">health dot</a>, with ↑/↓ + Enter keyboard nav and a key-hint footer. The <strong>tag chip</strong> is the entity identity rendered inline in a doc: a primary-tinted pill (type icon + name) that is clickable in both edit and reading mode and opens the <a href="#pattern-entity-panel">entity panel</a>; a chip whose entity was removed from Airtable flips to an error-tinted "no longer in schema" state instead of being silently dropped. Components: <code>components/schema/EntitySearch.astro</code> (emits <code>schema:searchInput</code> for filter-in-place and a pick event) + the chip in <code>SchemaDocs.astro</code>.<br><br><strong>It is a GENERIC typeahead now (2026-07-29).</strong> It used to be welded to <code>SchemaEntity</code> — kinds, icons, path lines and the health dot were all hard-coded in its client script — so a second surface that needed "one field, search everything, group the results" had no way in except a second hand-rolled typeahead. It takes <strong>pre-built rows</strong> instead: <code>items: TypeaheadItem[]</code> (<code>id · kind · name · path · icon</code> HTML · optional <code>health</code> · <code>hay</code> match string · <code>scopeKey</code>) plus <code>groups: [kind, label][]</code>, which is the ONE list that fixes both the visual order of the headings and the arrow-key order. Schema call sites are unchanged: passing <code>index</code> still maps <code>SchemaEntity</code> through <code>schema/typeaheadItems.ts</code> (<code>entityToTypeaheadItem</code> + <code>SCHEMA_TYPEAHEAD_GROUPS</code>), so the icon/path/health rules stay in one place and moved OFF the client (they are computed server-side now, and the client script no longer imports the Airtable field icons at all). Two more hooks: <code>pickHint</code> renames the footer\'s <code>↵</code> verb for hosts that do not "open" anything, and a host may set <code>root.dataset.esKinds</code> at runtime to drop whole kinds from the results — the picker uses it to make the <em>Workspaces</em> group simply ABSENT while the table is ungrouped (an empty group heading would be a worse lie than no heading). The older <code>root.dataset.esScopeBase</code> hook survives via <code>scopeKey</code>.<br><br><strong>Picking is the host\'s decision, not the component\'s.</strong> The component only clears the field, fires a real <code>input</code> event (so a host filtering in place un-filters in the same tick — dispatching only the synthetic <code>schema:searchInput</code> left the picker\'s table filtered under an empty box) and dispatches the host\'s <code>pickEvent</code> with the id. Browse opens a panel; the base picker scrolls to a row and ticks it. Do not push either meaning into the component.',
+    reference: 'components/schema/EntitySearch.astro',
     showCode: false,
     usageDo: [
-      'Reuse the one typeahead for every "find an entity" need (search, add-tag, @-mention).',
+      'Reuse the one typeahead for every "find an entity" need (search, add-tag, @-mention, base picker) — feed it `items` + `groups` rather than forking it.',
+      'Keep icon / path / haystack rules in a `.ts` sibling so they are computed once, server-side, and the client script stays generic.',
       'Group results by kind and show the parent path so the right entity is unambiguous.',
       'Render entity tags as identity chips (icon + name), clickable to the entity panel.',
       'Flag a removed entity on its chip; never silently drop a reference.',
@@ -3151,7 +4608,7 @@ export const SB_ENTRIES: SBEntry[] = [
     group: 'Patterns',
     name: 'Inbox (notification center)',
     summary: 'A non-modal, single-column side panel that overlays the work area — two lanes, rolled-up successes, self-healing alerts.',
-    description: `The single home for every alert: backup finished / failed, schema changed (with breaking flags), health score dropped, a connection needs reconnecting, an automation turned off, a chat answer saved as a doc. Opens from the <strong>Inbox item at the top of the sidebar</strong> (account-scoped, above the Space groups) and slides in as a column over the left edge of the work area. It <strong>overlays</strong> the page rather than pushing it: sidebar (256px) + panel (352px) = <strong>608px of chrome</strong>, so pushing only left room for a ~970px table above a ~1580px viewport — measured at 1280px, opening a pushing panel hid <strong>339px</strong> of the Backups table behind a horizontal scroll. Overlay keeps the page's own layout untouched at every width. It is <strong>non-modal</strong>: no scrim, no focus trap, no <code>role="dialog"</code> — the page behind stays interactive wherever it is still visible, so it inherits the <a href="#pattern-multi-panel-drawer">multi-panel drawer</a>'s stance (the <a href="#drawer">Drawer</a> primitive is the wrong base here — it ships a scrim). <strong>Two lanes in one scroll:</strong> <em>Needs attention</em> (a decision is required) above <em>Activity</em> (FYI), because a flat list — Linear's documented weakness — buries the one row that matters. <strong>Successes roll up per base</strong> ("<em>Sales CRM</em> — 3 backups completed", expandable); failures, breaking schema changes and reconnect <strong>never</strong> roll up. <strong>State-backed rows self-heal</strong>: reconnect and health are bound to live state, so completing the reconnect resolves the row <em>and</em> clears the <a href="#pattern-connection-health">connection banner</a>, silently — no "it's fixed!" row is minted (Datadog→PagerDuty's default). Event rows (a backup that failed) are acknowledge-based: a later success does not un-happen the failure. Row anatomy follows Vercel's alert row — icon chip, bolded entity, terse copy, right-aligned stamp. Researched in <code>research/notifications-inbox/</code>.`,
+    description: `The single home for every alert: backup finished / failed, schema changed (with breaking flags), health score dropped, a connection needs reconnecting, an automation turned off, a chat answer saved as a doc. Opens from the <strong>Inbox item at the top of the sidebar</strong> (account-scoped, above the Space groups) and slides in as a column over the left edge of the work area. It <strong>overlays</strong> the page rather than pushing it: sidebar (256px) + panel (352px) = <strong>608px of chrome</strong>, so pushing only left room for a ~970px table above a ~1580px viewport — measured at 1280px, opening a pushing panel hid <strong>339px</strong> of the Backups table behind a horizontal scroll. Overlay keeps the page's own layout untouched at every width. It is <strong>non-modal</strong>: no scrim, no focus trap, no <code>role="dialog"</code> — the page behind stays interactive wherever it is still visible, so it inherits the <a href="#pattern-multi-panel-drawer">multi-panel drawer</a>'s stance (the <a href="#drawer">Drawer</a> primitive is the wrong base here — it ships a scrim). <strong>Two lanes in one scroll:</strong> <em>Needs attention</em> (a decision is required) above <em>Activity</em> (FYI), because a flat list — Linear's documented weakness — buries the one row that matters. <strong>Successes roll up per base</strong> ("<em>Sales CRM</em> — 3 backups completed", expandable); failures, breaking schema changes and reconnect <strong>never</strong> roll up. <strong>State-backed rows self-heal</strong>: reconnect and health are bound to live state, so completing the reconnect resolves the row <em>and</em> clears the <a href="#pattern-connection-health">connection banner</a>, silently — no "it's fixed!" row is minted (Datadog→PagerDuty's default). Event rows (a backup that failed) are acknowledge-based: a later success does not un-happen the failure. Row anatomy follows Vercel's alert row — icon chip, bolded entity, terse copy, right-aligned stamp. <strong>Styling rulings (Oleh 2026-07-23):</strong> (1) <strong>No panel shadow.</strong> The panel is separated by its 1px <code>base-300</code> border alone — per <a href="#elevation">Elevation</a>, shadows belong to popovers and dialogs, and the theme ships <code>--depth: 0</code>. The old <code>box-shadow</code> derived its colour from <code>--color-base-content</code>, which INVERTS with the theme, so on dark it rendered a 32px white glow. Never derive a shadow from a foreground token. (2) <strong>The Space label is an <a href="#entity-chip">entity chip</a>, not a badge</strong> — a Space is an entity reference, and the chip's rounded-full bordered shape is what keeps it visually distinct from the row's action button. (3) <strong>Neutral badges here are <code>badge-ghost</code></strong> (the tab counts, the Handled count, the Done/Snoozed/Resolved state) — <code>badge-soft badge-neutral</code> is banned, see <a href="#badge">Badge</a>. (4) The row action keeps to the documented button ladder; the chip must never share the action's fill recipe, because <code>btn-soft</code> and <code>badge-soft</code> are the same 8%/10% <code>color-mix</code> at the same radius and font-size — that identity was the whole "which one is clickable?" bug. Researched in <code>research/notifications-inbox/</code>.`,
     reference: 'components/layout/Inbox.astro · inbox.ts · inbox-client.ts',
     showCode: false,
     guides: [
@@ -3256,7 +4713,8 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
 
-  // ─── Local (baseout) entries — promoted-web components + patterns not yet in ui-only ───
+  // ── Local-only entries (monorepo) — kept across syncs per shared/internal/ui-sync.md §2
+  // (storybook.ts standing exception: upstream skeleton + these 11, reconciled every sync). ──
   {
     id: 'avatar',
     group: 'Primitives',

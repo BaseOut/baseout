@@ -76,6 +76,33 @@ describe("POST /api/internal/attachments/lookup — routing layer", () => {
       hits: {},
     });
   });
+
+  // server-comment-attachments Decision 4: source:'comment' branch.
+  it("returns 400 invalid_request on an unknown source", async () => {
+    const res = await SELF.fetch(
+      "http://test/api/internal/attachments/lookup",
+      authed("POST", { spaceId: SPACE_ID, source: "bogus", keys: ["com1:att1"] }),
+    );
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toBe("invalid_request");
+  });
+
+  it("returns 200 {hits:{}} for an empty comment keys batch (no DB)", async () => {
+    const res = await SELF.fetch(
+      "http://test/api/internal/attachments/lookup",
+      authed("POST", { spaceId: SPACE_ID, source: "comment", keys: [] }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { hits: Record<string, string> }).toEqual({ hits: {} });
+  });
+
+  it("returns 400 when source:'comment' but keys is missing", async () => {
+    const res = await SELF.fetch(
+      "http://test/api/internal/attachments/lookup",
+      authed("POST", { spaceId: SPACE_ID, source: "comment" }),
+    );
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("POST /api/internal/attachments/record — routing layer", () => {
@@ -129,6 +156,40 @@ describe("POST /api/internal/attachments/record — routing layer", () => {
     const res = await SELF.fetch(
       "http://test/api/internal/attachments/record",
       authed("POST", { spaceId: SPACE_ID, entries: [] }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { recorded: number }).toEqual({ recorded: 0 });
+  });
+
+  // server-comment-attachments Decision 4: source:'comment' branch.
+  it("returns 400 when a comment entry has a malformed commentAttachmentId", async () => {
+    const res = await SELF.fetch(
+      "http://test/api/internal/attachments/record",
+      authed("POST", {
+        spaceId: SPACE_ID,
+        source: "comment",
+        entries: [{ commentAttachmentId: "nocolon", storageKey: "k1" }],
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 400 when a comment entry is missing storageKey", async () => {
+    const res = await SELF.fetch(
+      "http://test/api/internal/attachments/record",
+      authed("POST", {
+        spaceId: SPACE_ID,
+        source: "comment",
+        entries: [{ commentAttachmentId: "com1:att1" }],
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("returns 200 {recorded:0} for an empty comment entries batch (no DB)", async () => {
+    const res = await SELF.fetch(
+      "http://test/api/internal/attachments/record",
+      authed("POST", { spaceId: SPACE_ID, source: "comment", entries: [] }),
     );
     expect(res.status).toBe(200);
     expect((await res.json()) as { recorded: number }).toEqual({ recorded: 0 });

@@ -1,0 +1,492 @@
+---
+/**
+ * DataComments — the Data page's Comments tab (openspec `comments-explorer`, first slice).
+ *
+ * A date-ordered stream of every captured record comment across the Space, newest first,
+ * grouped by day. It is the THIRD feed on the shared changelog row grid
+ * (`pattern-changelog-timeline`, CSS in styles/global.css): node · Location · What · Type ·
+ * Time, remapped here to base › table › record · author + snippet · status · Airtable time.
+ * No second stream primitive — that reuse is the whole point of the CSS extraction that
+ * landed with this component.
+ *
+ * Deliberately OUT of this slice (each waits on a decision, and guessing would bake it in):
+ * the thread view / expansion mechanism, the records with/without-comments filter, and any
+ * retention or erasure copy. `attachments` and `reactions` are carried in the type and in the
+ * fixtures but are NOT rendered here.
+ *
+ * Three things this surface must not overstate, all settled by Airtable's API rather than taste:
+ *  · There is no deleted flag on a comment, no comment webhook and no comment audit event. A
+ *    comment's absence is inferable only by diffing captures, and is indistinguishable from the
+ *    record leaving backup scope or from a missed capture window. So the badge reads
+ *    "Last seen <date>" — an observation — with the fuller sentence in its tooltip. It never
+ *    says "deleted in Airtable".
+ *  · There is no profile picture on a comment author, so there is no avatar. Identity is the
+ *    name → email → "Airtable user" chain and nothing else.
+ *  · `lastUpdatedTime` is non-null only after an edit and the previous text is never returned,
+ *    so "Edited" is an honest marker and a "view previous version" affordance would be a lie.
+ *
+ * Freshness is NOT stamped per tab: DataView already states "Synced as of …" once at page level
+ * and says it applies to every tab.
+ */
+import FacetFilter, { type FacetGroup } from '../schema/FacetFilter.astro';
+import { groupByWorkspace } from '../schema/workspaceGroups';
+import ExportControl from '../schema/ExportControl.astro';
+import TablePager from '../ui/TablePager.astro';
+import { authorLabel, authorInitials, commentSnippet, commentStatus } from './commentText';
+import type { DataBase, DataTable, DataRecord, DataComment } from './dataTypes';
+import { entityIconMarkup } from '../schema/entityIcon';
+
+interface Props {
+  bases: DataBase[];
+  tables: DataTable[];
+  comments: DataComment[];
+  /** Records in this backup — resolves a comment's record to its primary-field name. */
+  records: DataRecord[];
+  /** The Space's latest capture. A comment last seen BEFORE this has left the source since. */
+  lastSyncedAt?: string;
+}
+const { bases, tables, comments, records, lastSyncedAt } = Astro.props;
+
+const baseName = Object.fromEntries(bases.map((b) => [b.id, b.name]));
+const tableName = Object.fromEntries(tables.map((t) => [t.id, t.name]));
+const tableBase = Object.fromEntries(tables.map((t) => [t.id, t.baseId]));
+const recPrimary = Object.fromEntries(records.map((r) => [r.id, r.primary]));
+const multiBase = bases.length > 1;
+
+const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const fmtShort = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+// One row per comment, newest first, with everything the row + the filters need pre-resolved.
+// Resolution happens HERE and not in the fixture, because `primary` is not a field the Airtable
+// comment payload has — inventing one on the type would misrepresent the source.
+const rows = comments
+  .slice()
+  .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  .map((c) => {
+    const baseId = tableBase[c.tableId] ?? '';
+    // undefined = the commented record is not in this backup (the dangling-reference case). It is
+    // also what separates a certain deletion from an unverifiable one — see commentStatus.
+    const primary = recPrimary[c.recordId] as string | undefined;
+    return {
+      c,
+      baseId,
+      baseLabel: baseName[baseId] ?? baseId,
+      tableLabel: tableName[c.tableId] ?? c.tableId,
+      primary,
+      author: authorLabel(c.author),
+      initials: authorInitials(c.author),
+      snippet: commentSnippet(c),
+      status: commentStatus(c, { recordCaptured: primary !== undefined, latestSyncAt: lastSyncedAt }),
+    };
+  });
+
+// Day grouping, kept for now (comments-explorer decision 2): whether a stream sorted by author or
+// base should regroup is a question to answer by LOOKING at it, not by forking the pattern first.
+const days: { day: string; label: string; rows: typeof rows }[] = [];
+for (const r of rows) {
+  const day = r.c.createdAt.slice(0, 10);
+  let g = days.find((d) => d.day === day);
+  if (!g) { g = { day, label: fmtDay(r.c.createdAt), rows: [] }; days.push(g); }
+  g.rows.push(r);
+}
+
+// Facets. Base groups by Airtable workspace, exactly as the other two feeds do.
+const baseGroups: FacetGroup[] = groupByWorkspace(bases).map((g) => ({
+  label: g.name,
+  groupId: g.id,
+  unknown: g.unknown,
+  items: g.items.map((b) => ({ value: b.id, label: b.name })),
+}));
+const commentedTableIds = new Set(comments.map((c) => c.tableId));
+const tableGroups: FacetGroup[] = bases
+  .map((b) => ({
+    label: multiBase ? b.name : undefined,
+    items: tables.filter((t) => t.baseId === b.id && commentedTableIds.has(t.id)).map((t) => ({ value: t.id, label: t.name })),
+  }))
+  .filter((g) => g.items.length);
+// Authors are a facet of who is actually in the feed, labelled by the same fallback chain the
+// rows use — so a nameless author is filterable as "Airtable user" rather than being unreachable.
+const authorItems = [...new Map(comments.map((c) => [c.author.id, authorLabel(c.author)])).entries()]
+  .sort((a, b) => a[1].localeCompare(b[1]))
+  .map(([value, label]) => ({ value, label }));
+const authorGroups: FacetGroup[] = [{ items: authorItems }];
+// Status is a multi-select toggle, not a radio — filter facets are toggles app-wide.
+const statusGroups: FacetGroup[] = [{ items: [
+  { value: 'present', label: 'In the last capture' },
+  { value: 'deleted', label: 'Deleted in Airtable' },
+  { value: 'unverified', label: 'Record no longer captured' },
+] }];
+const DATE_OPTS: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']];
+
+// Two different absences, worded apart. Collapsing them would trade a fact for a guess.
+const DELETED_TIP = 'Deleted in Airtable · preserved here. The record was captured again without this comment in its comment list, so we know it is gone rather than merely unseen.';
+// The badge drops the year to stay inside its column; the tooltip carries the full date, so the
+// short form is a shortening rather than a loss.
+const unverifiedTip = (iso: string) =>
+  `Last seen in the ${fmtShort(iso)} capture, and the record it belongs to is no longer in the backup either. With nothing to re-read, a deletion and a record that left backup scope look identical — so this says only what we saw.`;
+const fmtBadgeDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const EDITED_TIP = 'Edited in Airtable. Airtable never returns a comment’s previous text, so there is no earlier version to show.';
+
+// Location-column concept glyphs (2026-07-30) — matches the drawer breadcrumb (.sb-crumb-ic),
+// from the ONE shared entityIcon.ts mapping. Record has none yet (open, Oleh's call) — its column
+// intentionally carries no glyph.
+const BASE_IC = entityIconMarkup('base', { extraClass: 'cl-base-ic' });
+const TABLE_IC = entityIconMarkup('table', { extraClass: 'cl-loc-appic' });
+---
+
+<div class="cl cm" data-datacomments data-synced={lastSyncedAt ?? ''}>
+  {comments.length > 0 ? (
+    <>
+      {/* Toolbar — the shared .sch-tb pattern, same construction as the Changelog tab, plus the
+          two facets this feed adds: Author and Status. */}
+      <div class="sch-tb cl-filters">
+        <label class="input input-sm sch-tb-search">
+          <span class="iconify lucide--search size-4 opacity-55" aria-hidden="true"></span>
+          <input type="search" placeholder="Search comments…" data-cm-search aria-label="Search comments" autocomplete="off" spellcheck="false" />
+        </label>
+        {multiBase && <FacetFilter label="Bases" name="cmbase" groups={baseGroups} groupToggles />}
+        <FacetFilter label="Tables" name="cmtable" groups={tableGroups} />
+        <FacetFilter label="Authors" name="cmauthor" groups={authorGroups} />
+        <FacetFilter label="Status" name="cmstatus" groups={statusGroups} />
+        <FacetFilter single label="Time" name="cmdate" groups={[{ items: DATE_OPTS.map(([v, l]) => ({ value: v, label: l })) }]} />
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-cm-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+        <div class="sch-tb-right">
+          <ExportControl tab="comments" format="csv" formats={['csv', 'json']} noun="comments" total={comments.length} rowSelector="[data-cm-entry]" />
+        </div>
+      </div>
+
+      {/* The stream — the shared .cl-* feed + row grid from global.css. */}
+      <div class="cl-feed" data-cm-feed>
+        {/* Header labels carry a leading glyph, the same construction the Browse grid uses for its
+            field headers (`dg-th-ic`). With six columns of plain small-caps text the row read as
+            one run of words rather than as headings (Oleh, 2026-07-30); a glyph gives each label a
+            fixed anchor the eye can land on. Record reuses the canonical record glyph, so the
+            header and the concept agree. */}
+        <div class="cl-fhead" aria-hidden="true">
+          <span></span>
+          <span><span class="iconify lucide--database cm-th-ic"></span>Location</span>
+          <span><span class="iconify lucide--circle-dot cm-th-ic"></span>Record</span>
+          <span><span class="iconify lucide--user cm-th-ic"></span>Author</span>
+          <span><span class="iconify lucide--message-square-text cm-th-ic"></span>Comment</span>
+          <span><span class="iconify lucide--activity cm-th-ic"></span>Status</span>
+          <span class="cl-fh-end"><span class="iconify lucide--clock cm-th-ic"></span>Time</span>
+          <span></span>
+        </div>
+        {days.map((g) => (
+          <section class="cl-day" data-cm-day>
+            <div class="cl-dayhead">
+              <span class="cl-daynode" aria-hidden="true"></span>
+              <div class="cl-dayrow"><span class="cl-daylabel">{g.label}</span><span class="cl-dayrule" aria-hidden="true"></span></div>
+            </div>
+            <div class="cl-entries">
+              {g.rows.map((r) => (
+                <div
+                  class="cl-entry row-clickable"
+                  role="button"
+                  tabindex="0"
+                  data-cm-entry
+                  data-comment={r.c.id}
+                  data-record={r.c.recordId}
+                  data-base={r.baseId}
+                  data-table={r.c.tableId}
+                  data-author={r.c.author.id}
+                  data-status={r.status}
+                  data-date={r.c.createdAt}
+                >
+                  <span class="cl-node" aria-hidden="true"></span>
+                  {/* Location — base › table ONLY. The record moved to its own column (founder,
+                      2026-07-30), which is what finally gives the base room to render in full: it
+                      is the orientation anchor, so the TABLE yields first here, not the base. */}
+                  <div class="cl-c-loc">
+                    <span class="cl-loclink">
+                      <span set:html={BASE_IC} /><span class="cl-basename">{r.baseLabel}</span>
+                      <span class="cl-loc"><span class="iconify lucide--chevron-right size-3 cl-loc-sep" aria-hidden="true"></span><span set:html={TABLE_IC} /><span class="cl-loc-appname">{r.tableLabel}</span></span>
+                    </span>
+                  </div>
+                  {/* Record — the primary-field value, or the dangling reference named as missing
+                      rather than a bare id pretending to be a name. */}
+                  <div class="cm-c-rec">
+                    {r.primary ? (
+                      <span class="cm-rec">{r.primary}</span>
+                    ) : (
+                      <span class="cm-rec cm-loc-missing tooltip tooltip-top" data-tip="This record is no longer in the backup."><span class="iconify lucide--unlink size-3.5" aria-hidden="true"></span>{r.c.recordId}</span>
+                    )}
+                  </div>
+                  {/* Author — initials chip + name. There is no avatar to show (Airtable ships no
+                      profile picture), and a repeated identical person-glyph would mark every row
+                      the same; initials at least tell two people apart. */}
+                  <div class="cm-c-author">
+                    {r.initials && <span class="cm-ini" aria-hidden="true">{r.initials}</span>}
+                    <span class="cm-author">{r.author}</span>
+                  </div>
+                  {/* Comment — the one-line snippet, with every @[id] token already resolved to a
+                      name (a raw id must never reach the screen). Its own column, so the "Comment"
+                      header sits over the comment instead of over the author's name. */}
+                  <div class="cl-c-what">
+                    <p class="cl-summary">
+                      <span class="cm-text">{r.snippet}</span>
+                      {r.c.lastUpdatedAt && (
+                        <span class="cm-edited tooltip tooltip-top" data-tip={EDITED_TIP}>edited</span>
+                      )}
+                    </p>
+                  </div>
+                  {/* ONLY the exceptions carry a badge. Marking the normal case put 18 identical
+                      pills in a 20-row view and 526 in the volume fixture — a column that shouts on
+                      every row stops being read (Oleh 2026-07-29, measured). The two exceptions are
+                      worded and coloured APART: one is a fact, the other is the limit of what we
+                      can tell. The Status facet still filters on all three values. */}
+                  <div class="cl-c-type">
+                    {r.status === 'deleted' && (
+                      <span class="badge badge-sm badge-soft badge-error gap-1 tooltip tooltip-left" data-tip={DELETED_TIP}>
+                        <span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span>Deleted
+                      </span>
+                    )}
+                    {r.status === 'unverified' && (
+                      <span class="badge badge-sm badge-soft badge-warning gap-1 tooltip tooltip-left" data-tip={unverifiedTip(r.c.lastSeenAt)}>
+                        <span class="iconify lucide--eye-off size-3.5" aria-hidden="true"></span>Last seen {fmtBadgeDay(r.c.lastSeenAt)}
+                      </span>
+                    )}
+                  </div>
+                  <span class="cl-c-time mono-data">{fmtTime(r.c.createdAt)}</span>
+                  <span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <TablePager name="cm" sizes={[10, 20, 50]} selected={20} />
+
+      <div class="cl-nomatch" data-cm-nomatch hidden>
+        <span class="iconify lucide--search-x size-6 opacity-50" aria-hidden="true"></span>
+        <p>No comments match these filters.</p>
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-cm-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+      </div>
+    </>
+  ) : (
+    <div class="cl-empty">
+      <span class="cl-empty-ic"><span class="iconify lucide--message-square-text"></span></span>
+      <p class="cl-empty-title">No comments captured yet</p>
+      <p class="cl-empty-sub">Comments left on records in Airtable are captured with each backup and show up here — newest first, with the base, table, and record they belong to.</p>
+    </div>
+  )}
+</div>
+
+<style>
+  /* Everything structural comes from the shared `.cl-*` feed + row grid in styles/global.css
+     (catalog: pattern-changelog-timeline). Only what is genuinely this feed's own lives here. */
+
+  /* This feed's own COLUMN WIDTHS. The grid mechanism, the class names and the row rhythm all
+     stay shared — only the track sizes are ours, because a comment's Location carries base › table
+     while the changelog's carries base › table › field, and the record needed a column of its own
+     (founder, 2026-07-30). Declared here and NOT in global.css on purpose: `.cl-entry` is now the
+     row for three feeds, and widening it for one would silently reflow the other two. */
+  /* Author is 11.5rem, not the 8.5rem it started at. An email is the COMMON case (founder,
+     2026-07-30) and roughly twice the width of "Dana Reyes", so the column has to be sized for
+     the address rather than for the comfortable name — at 8.5rem, 19 of 20 cells clipped. The
+     32px came off Location, which carries only base › table since the record moved out and had
+     room to spare. Long addresses still truncate, visibly, with the full value on hover: that is
+     the ONE mechanism this row uses for everything too long, and the author cell is not allowed
+     its own (a local-part-only label was tried and rejected — it hid the domain with no ellipsis
+     to admit it, and in an agency's Space the domain says which client a person belongs to). */
+  /* 20px between columns, not the shared grid's 12px. Six columns of text at 12px sat close
+     enough to read as one continuous run rather than as separate fields (Oleh, 2026-07-30) — this
+     feed has more columns than the changelog the grid was sized for, so it needs more air between
+     them. The 56px it costs comes out of the flexible Comment column, which is the only track that
+     can give it without something becoming unreadable. */
+  .cm .cl-fhead,
+  .cm .cl-entry {
+    grid-template-columns: 1.5rem minmax(0, 12rem) minmax(0, 7.5rem) minmax(0, 12.5rem) minmax(0, 1fr) 8.5rem 4.25rem 1.25rem;
+    column-gap: 24px;
+  }
+  /* Header glyph — same idea as the Browse grid's `.dg-th-ic`, sized down to the 11px label. */
+  .cm .cl-fhead > span { display: inline-flex; align-items: center; gap: 6px; } /* ds-ok: 6px optical icon↔label gap, matches .rp-seclabel */
+  .cm .cl-fhead .cl-fh-end { justify-content: flex-end; }
+  .cm-th-ic { font-size: 13px; opacity: .55; flex: none; }
+
+  /* Record — its own column now. Truncates from the right like any name cell. */
+  .cm-c-rec { min-width: 0; }
+  .cm-rec { display: block; font-size: .875rem; color: oklch(from var(--color-base-content) l c h / .82); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cm-c-rec .cm-loc-missing { display: flex; align-items: center; gap: .25rem; }
+
+  /* Author — initials chip + name, one line. The chip is identity, not decoration: with no avatar
+     available it is the only thing that tells two authors apart at a glance. */
+  .cm-c-author { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .cm-ini {
+    flex: none; display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 9999px;
+    background: oklch(from var(--color-base-content) l c h / .1);
+    color: oklch(from var(--color-base-content) l c h / .7);
+    font-size: .75rem; font-weight: 650; letter-spacing: .01em;
+  }
+  /* An explicit size: this cell set only a weight and silently inherited 16px from the page,
+     which is why the email read as oversized against every neighbour (Oleh, 2026-07-30). */
+  .cm-author { min-width: 0; font-size: .875rem; font-weight: 600; color: var(--color-base-content); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cm-text { color: oklch(from var(--color-base-content) l c h / .78); }
+  /* Edited marker — a fact, not a control. There is deliberately no "view previous version"
+     affordance: Airtable never returns the earlier text, so the link would go nowhere. */
+  .cm-edited { margin-left: 8px; font-size: 11px; font-style: italic; color: oklch(from var(--color-base-content) l c h / .5); cursor: help; }
+  /* A commented record that is not in this backup — same treatment as a doc's missing record
+     chip: named as missing, never a bare id pretending to be a name. */
+  .cm-loc-missing { color: oklch(from var(--color-base-content) l c h / .45); cursor: help; }
+  /* One line, always. A wrapping name gave rows two different heights (40px and 55px measured),
+     and a stream is scannable precisely because every row is the same height. Priority reversed
+     from the first cut (Oleh 2026-07-30): the BASE never shrinks and the table yields, because the
+     base is what you orient by — "Marke…" on every second row is a stream you cannot read. The
+     base still ellipsises rather than overflowing if a name is pathological. */
+  .cm .cl-c-loc { flex-wrap: nowrap; overflow: hidden; }
+  .cm .cl-c-loc .cl-basename { flex: 0 0 auto; max-width: 100%; }
+  .cm .cl-c-loc .cl-loc { flex: 0 1 auto; min-width: 2rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Node dot: matches the row's badge, so the rail reads at a glance. The shared grid only ships
+     change-type colours, and a comment's status is not a change type. */
+  .cm .cl-entry[data-status="deleted"] .cl-node { background: var(--color-error); }
+  .cm .cl-entry[data-status="unverified"] .cl-node { background: var(--color-warning); }
+</style>
+
+<script>
+  import { createPager } from '../ui/tablePager';
+
+  function wireDataComments() {
+    const root = document.querySelector<HTMLElement>('[data-datacomments]');
+    if (!root || root.dataset.cmWired) return;
+    root.dataset.cmWired = '1';
+    const feed = root.querySelector<HTMLElement>('[data-cm-feed]');
+    if (!feed) return;
+
+    const entries = Array.from(root.querySelectorAll<HTMLElement>('[data-cm-entry]'));
+    const dayGroups = Array.from(root.querySelectorAll<HTMLElement>('[data-cm-day]'));
+    const searchInput = root.querySelector<HTMLInputElement>('[data-cm-search]');
+    const noMatch = root.querySelector<HTMLElement>('[data-cm-nomatch]');
+    const clears = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-cm-clear]'));
+    const facets = Array.from(root.querySelectorAll<HTMLElement>('.ff[data-facet]'));
+    const DAY = 86_400_000;
+    const searchText = new Map(entries.map((e) => [e, (e.textContent || '').toLowerCase()]));
+
+    // Recover what truncation hides (Oleh, 2026-07-30). A record's primary field is often a whole
+    // sentence — a ticket subject, a task title — not "ORD-1000", so the Record and Comment cells
+    // clip constantly and the row is where someone SCANS rather than where they click through.
+    // The tooltip is attached ONLY to cells that are actually clipped: putting one on all 20 rows
+    // would mean 17 tooltips repeating text already fully visible, which trains the user to ignore
+    // the three that carry something new. Measured at paint, and again on resize, because which
+    // cells clip is a function of the viewport and not of the data.
+    // `data-tip` ONLY — deliberately not the `tooltip` class. The shared controller
+    // (components/ui/tooltip.ts) paints every `[data-tip]` in the top layer and uses the class
+    // purely to pick a side, while daisyUI's own pseudo-element is switched off in global.css. And
+    // the class is actively harmful here: it sets `display: inline-block`, which both changed the
+    // row height (43px against the feed's 40px) and altered the very scrollWidth/clientWidth the
+    // check reads — so measuring made the thing measured stop being clipped. Both were measured.
+    const TRUNCATABLE = '.cm-rec, .cm-author, .cl-summary';
+    const markClipped = () => {
+      entries.forEach((e) => {
+        e.querySelectorAll<HTMLElement>(TRUNCATABLE).forEach((cell) => {
+          const shown = (cell.textContent || '').trim();
+          // `data-full` is set where the row deliberately renders LESS than it knows — the author
+          // cell shows an email's local part. Such a cell needs the tooltip even when it fits,
+          // because the shortening, not the width, is what hid the rest.
+          const full = cell.dataset.full || shown;
+          if (cell.scrollWidth > cell.clientWidth + 1 || full !== shown) cell.setAttribute('data-tip', full);
+          else cell.removeAttribute('data-tip');
+        });
+      });
+    };
+    let clipRaf = 0;
+    const scheduleClipCheck = () => {
+      cancelAnimationFrame(clipRaf);
+      clipRaf = requestAnimationFrame(markClipped);
+    };
+    // A ResizeObserver on the feed, NOT a window resize listener. This tab is display:none until
+    // it is selected, so at wire time every cell measures 0 wide and NOTHING reads as clipped — a
+    // window listener would never fire to correct it and the tooltips would simply never appear
+    // (measured: 23 clipped cells, 0 tooltips). The observer fires when the feed is first laid out
+    // as well as on every later width change, which covers both cases with one mechanism.
+    new ResizeObserver(scheduleClipCheck).observe(feed);
+
+    // Hidden-value sets per multi facet + the single-select Time range — the same contract every
+    // other faceted surface uses (`facetchange` carries `hidden[]` for multi, `value` for single).
+    const hidden: Record<string, Set<string>> = { cmbase: new Set(), cmtable: new Set(), cmauthor: new Set(), cmstatus: new Set() };
+    const single: Record<string, string> = { cmdate: '' };
+    let query = '';
+
+    const pager = createPager({
+      root, name: 'cm', sizes: [10, 20, 50], defaultSize: 20,
+      storageKey: 'data-cm-pagesize', onChange: () => apply(),
+    });
+
+    // The Time range measures from the BACKUP's as-of stamp, not the wall clock — the feed is a
+    // capture, so "last 7 days" that drifted with real time would quietly empty itself.
+    const syncedAt = root.dataset.synced || '';
+    const nowMs = syncedAt ? new Date(syncedAt).getTime() : Date.now();
+
+    const apply = () => {
+      const fd = single.cmdate;
+      const q = query.trim().toLowerCase();
+      const facetActive = hidden.cmbase.size || hidden.cmtable.size || hidden.cmauthor.size || hidden.cmstatus.size;
+      const active = !!(fd || q || facetActive);
+      const matched: HTMLElement[] = [];
+      entries.forEach((e) => {
+        let ok = true;
+        if (hidden.cmbase.has(e.dataset.base || '')) ok = false;
+        if (hidden.cmtable.has(e.dataset.table || '')) ok = false;
+        if (hidden.cmauthor.has(e.dataset.author || '')) ok = false;
+        if (hidden.cmstatus.has(e.dataset.status || '')) ok = false;
+        if (fd && (nowMs - new Date(e.dataset.date as string).getTime()) / DAY > Number(fd)) ok = false;
+        if (q && !(searchText.get(e) || '').includes(q)) ok = false;
+        e.style.display = 'none';
+        if (ok) matched.push(e);
+      });
+      // A day heading is a divider over independent comments, not a parent, so the page window is
+      // taken across the whole filtered feed and a day left with nothing on this page hides itself.
+      const shown = matched.length;
+      pager.window(matched).forEach((e) => { e.style.display = ''; });
+      dayGroups.forEach((g) => {
+        const any = Array.from(g.querySelectorAll<HTMLElement>('[data-cm-entry]')).some((e) => e.style.display !== 'none');
+        g.style.display = any ? '' : 'none';
+      });
+      if (noMatch) noMatch.hidden = shown !== 0;
+      feed.style.display = shown === 0 ? 'none' : '';
+      clears.forEach((c) => (c.hidden = !active));
+      // Re-measure after the page window changes: a row that was display:none has zero widths, so
+      // it can only be judged once it is actually laid out.
+      scheduleClipCheck();
+    };
+
+    root.addEventListener('facetchange', (ev) => {
+      const d = (ev as CustomEvent).detail as { name: string; hidden?: string[]; value?: string };
+      if (d.hidden && hidden[d.name]) { hidden[d.name] = new Set(d.hidden); pager.reset(); apply(); }
+      else if (d.value !== undefined && d.name in single) { single[d.name] = d.value; pager.reset(); apply(); }
+    });
+    searchInput?.addEventListener('input', () => { query = searchInput.value; pager.reset(); apply(); });
+    clears.forEach((c) =>
+      c.addEventListener('click', () => {
+        single.cmdate = '';
+        query = '';
+        if (searchInput) searchInput.value = '';
+        Object.values(hidden).forEach((s) => s.clear());
+        facets.forEach((f) => f.dispatchEvent(new CustomEvent('facetreset')));
+        pager.reset();
+        apply();
+      }),
+    );
+
+    // Row → the record the comment is on, and then to THIS comment inside it (founder, 2026-07-30:
+    // "from the Comments listing table we could deep link to that section/comment within the
+    // record"). A record that is not in this backup lands on RecordPanel's own "This record isn't
+    // in this backup." toast rather than no-op'ing — the dangling reference stays visible.
+    const openRecord = (e: HTMLElement) => {
+      const id = e.dataset.record;
+      if (id) document.dispatchEvent(new CustomEvent('data:openRecord', { detail: { id, focus: 'comments', commentId: e.dataset.comment } }));
+    };
+    entries.forEach((e) => {
+      e.addEventListener('click', () => openRecord(e));
+      e.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openRecord(e); } });
+    });
+
+    apply();
+  }
+  wireDataComments();
+  document.addEventListener('astro:after-swap', wireDataComments);
+</script>

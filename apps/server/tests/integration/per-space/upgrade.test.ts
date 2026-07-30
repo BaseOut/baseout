@@ -67,8 +67,22 @@ describe("preUpgradeStatements (system-per-space-db v8 webhook columns)", () => 
     }
   });
 
-  it("is empty once a Space is at v8+", () => {
-    expect(preUpgradeStatements(8)).toEqual([]);
-    expect(preUpgradeStatements(9)).toEqual([]);
+  it("has no webhook-column or interface-drop steps once a Space is at v8+", () => {
+    // v8+ clears the v7 drop and v8 webhook columns; the v12 bo_at_bases
+    // collaborator stamps still apply until the Space reaches v12.
+    const v8 = preUpgradeStatements(8);
+    expect(v8).not.toContain('DROP TABLE IF EXISTS "bo_at_interfaces" CASCADE');
+    expect(v8.some((s) => s.includes("bo_at_base_runs"))).toBe(false);
+    expect(v8.every((s) => s.includes("bo_at_bases"))).toBe(true); // only v12 stamps remain
+  });
+
+  it("adds the v12 collaborator stamps until a Space reaches v12, then is empty", () => {
+    for (const from of [null, 0, 8, 11]) {
+      const stmts = preUpgradeStatements(from);
+      expect(stmts).toContain('ALTER TABLE "bo_at_bases" ADD COLUMN IF NOT EXISTS "workspace_id" text');
+      expect(stmts).toContain('ALTER TABLE "bo_at_bases" ADD COLUMN IF NOT EXISTS "own_permission_level" text');
+    }
+    expect(preUpgradeStatements(12)).toEqual([]);
+    expect(preUpgradeStatements(13)).toEqual([]);
   });
 });

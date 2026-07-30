@@ -35,6 +35,10 @@ const INTERFACES_NORMALIZE_VERSION = 7;
 // Version at which system-per-space-db (task 1.6) added the webhook-application
 // columns (bo_at_base_runs.run_type; action_source/actor on the update tables).
 const WEBHOOK_COLUMNS_VERSION = 8;
+// Version at which server-base-collaborators added the base-level collaborator
+// stamps onto bo_at_bases (the four collaborator tables are additive; only these
+// columns on an existing table need an explicit ALTER).
+const BASE_COLLAB_STAMPS_VERSION = 12;
 
 /**
  * Destructive statements that MUST run before the idempotent DDL when bringing a
@@ -62,6 +66,15 @@ export function preUpgradeStatements(from: number | null | undefined): string[] 
       'ALTER TABLE "bo_at_schema_updates" ADD COLUMN IF NOT EXISTS "actor" text',
       'ALTER TABLE "bo_at_record_updates" ADD COLUMN IF NOT EXISTS "action_source" text',
       'ALTER TABLE "bo_at_record_updates" ADD COLUMN IF NOT EXISTS "actor" text',
+    );
+  }
+  if ((from ?? 0) < BASE_COLLAB_STAMPS_VERSION) {
+    // v12: collaborator stamps on the existing bo_at_bases registry row (the
+    // four new collaborator tables are additive; these columns are not).
+    stmts.push(
+      'ALTER TABLE "bo_at_bases" ADD COLUMN IF NOT EXISTS "workspace_id" text',
+      'ALTER TABLE "bo_at_bases" ADD COLUMN IF NOT EXISTS "airtable_created_time" timestamp with time zone',
+      'ALTER TABLE "bo_at_bases" ADD COLUMN IF NOT EXISTS "own_permission_level" text',
     );
   }
   return stmts;

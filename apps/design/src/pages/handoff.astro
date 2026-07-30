@@ -42,21 +42,47 @@ const totalFlows = FLOW_REGISTRY.length;
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 // ── Schema sub-grouping (jump-nav sub-entries) ──────────────────────────────
-// The Schema feature has 22 flows — one jump target isn't enough. Group them by
-// their Schema TAB, derived from the flow name's prefix (before " — "), so the
-// rail can offer indented sub-entries. Prefixes are normalized to the canonical
-// tab set; anything that doesn't map to a real tab falls into "Cross-cutting".
+// A feature with many flows needs more than one jump target. Sub-entries are derived from the
+// flow name's PREFIX (everything before " — "), normalized against a declared order; anything that
+// doesn't map falls into "Cross-cutting".
+//
+// This was Schema-only and hardcoded. Data now declares its own set (Oleh 2026-07-30) — so the
+// mechanism is keyed by feature rather than duplicated, and Backups (13 flows) or the edge-case
+// group can join by adding a line here instead of a second copy of this logic.
 const SCHEMA_TAB_ORDER = [
-  'Browse', 'Visualize', 'Relationships', 'Automations', 'Interfaces',
+  // 'Views' is not a Schema TAB — views are entities that live inside Browse. It earns its own
+  // jump entry anyway because it now spans three surfaces (the Browse tree, the view panel, and
+  // the field panel's Referenced-by), so "where are the views?" has no single tab to point at.
+  // Without it the flow fell into Cross-cutting and was effectively unfindable (Oleh 2026-07-29).
+  'Browse', 'Views', 'Visualize', 'Relationships', 'Automations', 'Interfaces',
   'Changelog', 'Health', 'Docs', 'Chat', 'Navigation', 'Tools', 'Cross-cutting',
 ];
-const schemaTabOf = (name: string): string => {
-  const prefix = name.split(' — ')[0].trim();
-  if (prefix === 'Schema navigation') return 'Navigation';
-  if (prefix === 'Panel Lab') return 'Tools';
-  return SCHEMA_TAB_ORDER.includes(prefix) ? prefix : 'Cross-cutting';
+// Data's four flows split by surface. Comments earns a named entry for the same reason Views did:
+// "where are the comments?" otherwise has no answer but scrolling.
+const DATA_TAB_ORDER = ['Browse', 'Comments', 'Changelog', 'Cross-cutting'];
+
+const FEATURE_TABS: Record<string, string[]> = {
+  Schema: SCHEMA_TAB_ORDER,
+  Data: DATA_TAB_ORDER,
 };
-const subId = (tab: string) => `schema-sub-${slug(tab)}`;
+
+/** Which sub-entry a flow belongs to, from its name prefix. Per-feature aliases live here. */
+const tabOf = (feature: string, name: string): string => {
+  const order = FEATURE_TABS[feature];
+  if (!order) return 'Cross-cutting';
+  const prefix = name.split(' — ')[0].trim();
+  if (feature === 'Schema') {
+    if (prefix === 'Schema navigation') return 'Navigation';
+    if (prefix === 'Panel Lab') return 'Tools';
+  }
+  if (feature === 'Data') {
+    // "Data page — Browse · Record · …" is the Browse surface; the run-drill flow is Changelog.
+    if (prefix === 'Data page') return 'Browse';
+    if (prefix === 'Changelog record drill') return 'Changelog';
+  }
+  return order.includes(prefix) ? prefix : 'Cross-cutting';
+};
+const subId = (feature: string, tab: string) => `${slug(feature)}-sub-${slug(tab)}`;
 
 // Per-group render blocks: non-Schema groups render flat (a single block with no
 // heading); the Schema group splits into its non-empty tab sub-groups, each an
@@ -64,14 +90,17 @@ const subId = (tab: string) => `schema-sub-${slug(tab)}`;
 type Block = { id: string | null; heading: string | null; flows: RegistryFlow[] };
 const groupBlocks: { group: { feature: string; flows: RegistryFlow[] }; blocks: Block[] }[] =
   groups.map((group) => {
-    if (group.feature !== 'Schema') {
+    const order = FEATURE_TABS[group.feature];
+    if (!order) {
       return { group, blocks: [{ id: null, heading: null, flows: group.flows }] };
     }
-    const blocks: Block[] = SCHEMA_TAB_ORDER.map((tab) => ({
-      id: subId(tab),
-      heading: tab,
-      flows: group.flows.filter((f) => schemaTabOf(f.name) === tab),
-    })).filter((b) => b.flows.length > 0);
+    const blocks: Block[] = order
+      .map((tab) => ({
+        id: subId(group.feature, tab),
+        heading: tab,
+        flows: group.flows.filter((f) => tabOf(group.feature, f.name) === tab),
+      }))
+      .filter((b) => b.flows.length > 0);
     return { group, blocks };
   });
 
@@ -275,12 +304,15 @@ const DRAWER_RULE_GROUPS: { heading: string; rules: { trigger: string; behaviour
                       {flow.note && <p class="note">{flow.note}</p>}
 
                       <div class="stepwrap">
+                        {/* Steps open in a NEW TAB: the index is the reference you keep
+                            coming back to while walking states, so opening in place would
+                            mean a back-navigation between every single step. */}
                         <h4>Steps — click to open in the harness</h4>
                         <ol class="steps">
                           {flow.steps.map((step) => (
                             <li>
                               {step.href ? (
-                                <a class="step-link" href={step.href}>{step.label} <span class="go" aria-hidden="true">↗</span></a>
+                                <a class="step-link" href={step.href} target="_blank" rel="noopener">{step.label} <span class="go" aria-hidden="true">↗</span></a>
                               ) : (
                                 <span class="todo">{step.label} · not built yet</span>
                               )}
@@ -342,7 +374,7 @@ const DRAWER_RULE_GROUPS: { heading: string; rules: { trigger: string; behaviour
             <a href="#prototypes-tools">Prototypes &amp; tools<span class="n">{PROTOTYPES.length}</span></a>
             <a href="#drawer-behaviour">Schema drawer &mdash; behaviour<span class="n">{DRAWER_RULE_GROUPS.reduce((n, g) => n + g.rules.length, 0)}</span></a>
             {groupBlocks.map(({ group, blocks }) =>
-              group.feature === 'Schema' ? (
+              FEATURE_TABS[group.feature] ? (
                 <div class="ho-toc-grp" data-grp={slug(group.feature)}>
                   <a href={`#${slug(group.feature)}`}>{group.feature}<span class="n">{group.flows.length}</span></a>
                   <div class="ho-subnav">

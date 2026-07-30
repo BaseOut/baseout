@@ -45,6 +45,7 @@ import { spacesHealthEnableHandler } from "./pages/api/internal/spaces/health-en
 import { spacesHealthConfigHandler } from "./pages/api/internal/spaces/health-config";
 import { spacesRecordsSyncHandler } from "./pages/api/internal/spaces/records-sync";
 import { spacesCommentsSyncHandler } from "./pages/api/internal/spaces/comments-sync";
+import { spacesCollaboratorsSyncHandler } from "./pages/api/internal/spaces/collaborators-sync";
 import { spacesCommentsPlanHandler } from "./pages/api/internal/spaces/comments-plan";
 import { spacesMediaSyncHandler } from "./pages/api/internal/spaces/media-sync";
 import { spacesMediaHandler } from "./pages/api/internal/spaces/media";
@@ -144,6 +145,8 @@ const SPACES_RECORDS_SYNC_RE =
 // Batched comment captures + count-delta refresh planning (server-comments).
 const SPACES_COMMENTS_SYNC_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/comments-sync$/;
+const SPACES_COLLABORATORS_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/collaborators-sync$/;
 const SPACES_COMMENTS_PLAN_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/comments-plan$/;
 // Media index: batched metadata ingest + the Media Library read API
@@ -476,6 +479,10 @@ export default {
       const commentsPlan = SPACES_COMMENTS_PLAN_RE.exec(url.pathname);
       if (commentsPlan) {
         return await spacesCommentsPlanHandler(request, env, ctx, locals, commentsPlan[1]!);
+      }
+      const collaboratorsSync = SPACES_COLLABORATORS_SYNC_RE.exec(url.pathname);
+      if (collaboratorsSync) {
+        return await spacesCollaboratorsSyncHandler(request, env, ctx, locals, collaboratorsSync[1]!);
       }
       const mediaSync = SPACES_MEDIA_SYNC_RE.exec(url.pathname);
       if (mediaSync) {

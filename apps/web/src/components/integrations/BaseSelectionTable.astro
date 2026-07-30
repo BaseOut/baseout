@@ -546,14 +546,34 @@ const Tag = embedded ? 'div' : 'form';
                   suffix never shrinks and never wraps, so the NAME is still the first
                   thing to truncate — the fix that stopped "People & Fi…". */}
               {g.isPlaceholder && (
-                <span class="bst-gwhy tooltip" data-tip="Airtable only returns workspace names with full-environment access. Rename it here, or reconnect with full access.">· name unavailable</span>
+                <span class="bst-gwhy tooltip" data-tip="Airtable only returns workspace names with full-environment access. Rename it here, or reconnect with full access."><span class="bst-gsep" aria-hidden="true"></span>name unavailable</span>
               )}
               {/* Both names, but only because the user EARNED it by answering
                   "Keep mine". Showing Airtable's name beside every alias by
                   default would put a permanent second string in the one place
                   that already had to be fixed for truncation. */}
               {g.dualName && (
-                <span class="bst-gwhy tooltip" data-tip={`Your name for this workspace. Airtable calls it ${g.dualName}.`} data-bst-gdual>· {g.dualName} in Airtable</span>
+                <span class="bst-gwhy tooltip" data-tip={`Your name for this workspace. Airtable calls it ${g.dualName}.`} data-bst-gdual><span class="bst-gsep" aria-hidden="true"></span>{g.dualName} in Airtable</span>
+              )}
+              {/* The workspace ID, and the way out to Airtable (founder, 2026-07-30). The id is
+                  the only unambiguous handle when two workspaces share a name, or when the name on
+                  screen is a placeholder the user typed themselves — and a picker is exactly where
+                  someone wants to go and LOOK at what they are being asked about. Real workspaces
+                  only: the synthetic buckets have no id and nothing to open. Same
+                  `nowrap`/`flex: none` discipline as `.bst-gwhy`, so the NAME truncates first.
+                  Crowding + separator fixed (Oleh, 2026-07-30): the typed "· " read as a crude dot
+                  and ran flush against the auto-add toggle in column 3. The dot is now the shared
+                  `.bst-gsep` hairline (same element `.bst-gwhy` uses below), and `.bst-gident`
+                  carries its own right padding so the cell keeps breathing room before the
+                  boundary it spans up to, instead of clipping flush against it. */}
+              {g.isReal && (
+                <a
+                  class="bst-gwsid tooltip"
+                  data-tip={`${g.id} · open this workspace in Airtable`}
+                  href={`https://airtable.com/${g.id}`}
+                  target="_blank"
+                  rel="noopener"
+                ><span class="bst-gsep" aria-hidden="true"></span><span class="bst-gwsid-id">{g.id}</span><span class="iconify lucide--external-link size-3" aria-hidden="true"></span></a>
               )}
               {/* Still-matching bases are WAITING on their own lookup — a spinner, not
                   a caveat. This group empties itself as the answers land. */}

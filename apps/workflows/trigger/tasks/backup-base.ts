@@ -28,6 +28,14 @@ import {
   type AirtableRecordsPage,
 } from "./_lib/airtable-client";
 import { buildR2Key, buildAttachmentKey } from "./_lib/r2-path";
+import {
+  planCommentAttachmentDownloads,
+  downloadCommentAttachments,
+  type PendingCommentAttachment,
+  type CommentAttachmentRecordEntry,
+  type CommentAttachmentDownloadResult,
+} from "./_lib/comment-attachments";
+import { fetchBaseMetadata, type BaseMetadataResult } from "./_lib/base-metadata";
 import { pageToCsv } from "./_lib/csv-stream";
 import { normalizeFieldValue } from "./_lib/field-normalizer";
 import {
@@ -341,11 +349,40 @@ export interface BackupBaseDeps {
    * (workflows-comments design Decision 2). Comment capture only runs when
    * this is wired (the capture has nowhere to land otherwise). Throws on
    * engine errors — the capture step maps that to `partial`, never the run.
+   *
+   * The response optionally carries the comment-attachment pending set
+   * (server-comment-attachments): attachments the engine just registered as
+   * `pending` whose (2h) URLs the capture task downloads in-run. Returning
+   * `void` (older fakes) simply means "no comment attachments".
    */
   syncComments?: (args: {
     baseId: string;
     records: CommentRecordCaptureWire[];
-  }) => Promise<void>;
+  }) => Promise<CommentsSyncResult | void>;
+  /**
+   * Comment-scoped dedup callbacks (workflows-comment-attachments). Mirror the
+   * field attachmentLookup/Record pair but keyed by commentAttachmentId; when
+   * both are wired (and the run exports to a StorageWriter) the pending set from
+   * each comments-sync response is downloaded through the same writer.
+   */
+  commentAttachmentLookup?: (
+    spaceId: string,
+    keys: string[],
+  ) => Promise<Record<string, { storageKey: string; uploadStatus: string }>>;
+  commentAttachmentRecord?: (
+    spaceId: string,
+    entries: CommentAttachmentRecordEntry[],
+  ) => Promise<void>;
+  /**
+   * Base-metadata courier (workflows-base-collaborators). `fetchBaseMetadata`
+   * defaults to the real helper (tests inject a fake); `syncCollaborators`
+   * POSTs the body verbatim to the engine's collaborators-sync route. Capture
+   * runs once per base per run when `syncCollaborators` is wired; best-effort —
+   * a failed fetch/POST is `skipped(reason)`, never fails the run and never
+   * gates record/attachment/comment capture.
+   */
+  fetchBaseMetadata?: (args: { baseId: string; accessToken: string }) => Promise<BaseMetadataResult>;
+  syncCollaborators?: (args: { baseId: string; metadata: unknown }) => Promise<void>;
   /**
    * Per-record comments fetcher (workflows-comments). Defaults to the real
    * REST client (_lib/record-comments.ts) with the run's injected fetch/sleep;
@@ -437,6 +474,24 @@ export interface BackupBaseResult {
    * `refs` = attachment entries delivered.
    */
   media?: MediaCaptureOutcome;
+  /**
+   * Comment-attachment download tally (workflows-comment-attachments). Present
+   * only when attempted (comment capture active + comment-scoped dedup deps +
+   * a StorageWriter). NEVER affects `status` — best-effort; failed/expired
+   * downloads stay `pending` for server-side recovery next run.
+   */
+  commentAttachments?: CommentAttachmentDownloadResult;
+  /**
+   * Base-collaborator capture outcome (workflows-base-collaborators). Present
+   * only when attempted (syncCollaborators wired). NEVER affects `status` —
+   * best-effort; a failed metadata fetch or sync POST is `skipped(reason)`.
+   */
+  collaborators?: { status: "captured" } | { status: "skipped"; reason: string };
+}
+
+/** comments-sync response subset the capture task consumes. */
+export interface CommentsSyncResult {
+  commentAttachments?: { pending: PendingCommentAttachment[] };
 }
 
 const TRIAL_TABLE_CAP = 5;
@@ -706,6 +761,20 @@ export async function runBackupBase(
       deps.airtableClient ??
       createAirtableClient({ accessToken, fetchImpl: fetchFn });
     const schema = await client.getBaseSchema(input.atBaseId);
+
+    // 3a. Base-collaborator capture (workflows-base-collaborators) — kicked off
+    // immediately after the schema fetch (needs only token + baseId), awaited
+    // and POSTed near the end so it never blocks record/attachment/comment
+    // capture. The helper never throws; the .catch keeps an injected fake from
+    // failing the run either.
+    const collaboratorMetaPromise: Promise<BaseMetadataResult> | null = deps.syncCollaborators
+      ? (deps.fetchBaseMetadata ??
+          ((a: { baseId: string; accessToken: string }) =>
+            fetchBaseMetadata({ ...a, fetchImpl: fetchFn })))({
+          baseId: input.atBaseId,
+          accessToken,
+        }).catch((): BaseMetadataResult => ({ ok: false, reason: "transport" }))
+      : null;
 
     // 3b. MCP views capture (workflows-mcp-views) — the third capture kind.
     // Unlike 2b/2c it needs the table ids, so it starts right AFTER the schema
@@ -1031,6 +1100,39 @@ export async function runBackupBase(
     // never throws by construction, and the belt-and-braces catch keeps an
     // unexpected throw from an injected fake off the run outcome too.
     let commentsOutcome: BackupBaseResult["comments"];
+    // Comment-attachment download (workflows-comment-attachments): each
+    // comments-sync response carries a pending set the capture task downloads
+    // in-run through the SAME writer, prioritized ahead of any field-attachment
+    // backlog because it runs the instant the batch is registered (URLs age
+    // toward a 2h expiry). Active only when the comment-scoped dedup deps are
+    // wired AND a StorageWriter exists (schema-only runs omit the writer).
+    const commentAttachmentsEnabled =
+      captureComments && !!deps.commentAttachmentLookup && !!deps.commentAttachmentRecord;
+    let commentAttachmentTally: CommentAttachmentDownloadResult | undefined;
+    const onPendingAttachments = commentAttachmentsEnabled
+      ? async (pending: PendingCommentAttachment[]) => {
+          if (pending.length === 0) return;
+          const items = planCommentAttachmentDownloads(pending, {
+            orgSlug: input.orgSlug,
+            spaceName: input.spaceName,
+            baseName: input.baseName,
+          });
+          const res = await downloadCommentAttachments(items, {
+            writer,
+            spaceId: input.spaceId,
+            uploadStatus: input.storageType === "local_fs" ? "ready" : "uploaded",
+            commentLookup: deps.commentAttachmentLookup!,
+            commentRecord: deps.commentAttachmentRecord!,
+            fetchImpl: fetchFn,
+          });
+          commentAttachmentTally = {
+            downloaded: (commentAttachmentTally?.downloaded ?? 0) + res.downloaded,
+            skipped: (commentAttachmentTally?.skipped ?? 0) + res.skipped,
+            failed: (commentAttachmentTally?.failed ?? 0) + res.failed,
+          };
+        }
+      : undefined;
+
     if (captureComments && deps.syncComments) {
       const fetchComments = deps.fetchRecordComments
         ? deps.fetchRecordComments
@@ -1045,9 +1147,30 @@ export async function runBackupBase(
           planComments: deps.planComments,
           syncComments: deps.syncComments,
           fetchComments,
+          onPendingAttachments,
         });
       } catch {
         commentsOutcome = { status: "skipped", reason: "transport" };
+      }
+    }
+
+    // 5c. Base-collaborator sync (workflows-base-collaborators): await the
+    // metadata fetch kicked off after the schema fetch and POST it verbatim.
+    // A failed fetch or POST is `skipped(reason)` — never fails the run, and a
+    // skipped capture posts NOTHING (so the engine never diff-deletes on
+    // absence).
+    let collaboratorsOutcome: BackupBaseResult["collaborators"];
+    if (collaboratorMetaPromise && deps.syncCollaborators) {
+      try {
+        const meta = await collaboratorMetaPromise;
+        if (!meta.ok) {
+          collaboratorsOutcome = { status: "skipped", reason: meta.reason };
+        } else {
+          await deps.syncCollaborators({ baseId: input.atBaseId, metadata: meta.metadata });
+          collaboratorsOutcome = { status: "captured" };
+        }
+      } catch {
+        collaboratorsOutcome = { status: "skipped", reason: "transport" };
       }
     }
 
@@ -1067,6 +1190,8 @@ export async function runBackupBase(
       ...(viewsOutcome ? { views: viewsOutcome } : {}),
       ...(commentsOutcome ? { comments: commentsOutcome } : {}),
       ...(mediaOutcome ? { media: mediaOutcome } : {}),
+      ...(commentAttachmentTally ? { commentAttachments: commentAttachmentTally } : {}),
+      ...(collaboratorsOutcome ? { collaborators: collaboratorsOutcome } : {}),
     };
   } finally {
     if (locked) {
@@ -1128,6 +1253,13 @@ async function runCommentCapture(args: {
     recordId: string;
     accessToken: string;
   }) => Promise<FetchRecordCommentsResult>;
+  /**
+   * Invoked with each comments-sync response's pending comment-attachment set,
+   * right after the batch POST returns (interleaved download). Best-effort:
+   * this must not throw out of the sync callback (a throw would flip the batch
+   * to `partial`) — the handler swallows its own failures.
+   */
+  onPendingAttachments?: (pending: PendingCommentAttachment[]) => Promise<void>;
 }): Promise<CommentCaptureOutcome> {
   // 1. Plan (Decision 1b — count-delta skip). Equal counts cost zero fetches.
   let refreshIds: Set<string>;
@@ -1183,7 +1315,20 @@ async function runCommentCapture(args: {
         recordId: ref.recordId,
         accessToken: args.accessToken,
       }),
-    syncComments: (records) => args.syncComments({ baseId: args.baseId, records }),
+    syncComments: async (records) => {
+      const resp = await args.syncComments({ baseId: args.baseId, records });
+      // Interleaved comment-attachment download: fire the handler with this
+      // batch's pending set. Guarded so a download failure never turns the
+      // comment batch into `partial` (the sync POST itself already succeeded).
+      const pending = resp?.commentAttachments?.pending;
+      if (args.onPendingAttachments && pending && pending.length > 0) {
+        try {
+          await args.onPendingAttachments(pending);
+        } catch {
+          // best-effort; rows stay pending for server-side recovery
+        }
+      }
+    },
   });
   return {
     ...outcome,

@@ -575,7 +575,21 @@ html:has([data-schema][data-chat="drawer"]) {
      separates this from the name (measured: 8px). Reading the header with `textContent` makes
      it LOOK glued — "Marketing· Growth in Airtable" — because that API concatenates sibling
      elements without their layout. Do not "fix" that reading artifact with a margin. */
-  .bst-gwhy { font-size: .75rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .55); white-space: nowrap; flex: none; cursor: help; }
+  .bst-gwhy { display: inline-flex; align-items: center; gap: .5rem; font-size: .75rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .55); white-space: nowrap; flex: none; cursor: help; }
+  /* Shared "attached fact" separator (ui-only@8d9d1cd) — replaces the typed "·" character (Oleh,
+     2026-07-30: the literal interpunct read as crude). A 1px currentColor hairline, not a glyph,
+     so it renders identically at any zoom/font. Used by BOTH `.bst-gwhy` and `.bst-gwsid` so the
+     two read as ONE convention for "a secondary fact attached to the name". */
+  .bst-gsep { display: inline-block; width: 1px; height: .75rem; flex: none; background: currentColor; opacity: .35; }
+  /* The workspace id + its link out (founder, 2026-07-30): the id is the only unambiguous handle
+     when two workspaces share a name or the shown name is a user-typed placeholder. External-link
+     glyph ALWAYS visible (a hidden affordance is not an affordance). Unlike `.bst-gwhy` this one
+     may SHRINK — the id yields after the name; the LINK does not clip, only the id TEXT inside it. */
+  .bst-gwsid { display: inline-flex; align-items: center; gap: .5rem; min-width: 0; flex: 0 1 auto; font-size: .75rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .42); white-space: nowrap; text-decoration: none; }
+  .bst-gwsid-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bst-gwsid .iconify { flex: none; opacity: .7; }
+  .bst-gwsid:hover { color: var(--color-primary); }
+  .bst-gwsid:hover .iconify, .bst-gwsid:focus-visible .iconify { opacity: 1; }
   .bst-gspin { flex: none; opacity: .5; }
   /* Name-swap prompt — a quiet line attached under its group header, not an
      alert band: it concerns ONE workspace and expires the moment it is answered. */
@@ -586,7 +600,11 @@ html:has([data-schema][data-chat="drawer"]) {
   /* Identity cell spans the checkbox + name columns; everything that identifies
      the workspace (chevron, select-all, glyph, name, kind, rename, badges) lays
      out inside it with flex, leaving the columns to the right free. */
-  .bst-gident { grid-column: 1 / 3; display: flex; align-items: center; gap: .5rem; min-width: 0; }
+  /* `overflow: hidden` + `padding-right` (ui-only@8d9d1cd; Oleh, 2026-07-30): the identity cell
+     spans only the first two grid columns, so a non-shrinking child runs UNDER the auto-add toggle
+     in column 3 rather than clipping; the 8px right padding keeps the long-id clip from running
+     flush against that toggle. Shrinks the content box, not the grid track. */
+  .bst-gident { grid-column: 1 / 3; display: flex; align-items: center; gap: .5rem; min-width: 0; padding-right: .5rem; overflow: hidden; }
   /* Count spans the two number columns, right-aligned like their values. */
   .bst-gcount { grid-column: 4 / 6; text-align: right; font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .6); font-variant-numeric: tabular-nums; white-space: nowrap; }
   /* Collapse hides the group's bases; the sticky workspace header stays. */

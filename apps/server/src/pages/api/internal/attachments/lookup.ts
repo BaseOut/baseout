@@ -14,7 +14,7 @@
 // both (no-dedup; bytes still land at the destination). `storage_key` is
 // destination-agnostic. Token gate is applied by middleware.
 
-import { inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { spacePg } from "@baseout/db-schema/space";
 import type { AppLocals, Env } from "../../../../env";
 import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
@@ -31,6 +31,50 @@ function jsonResponse(body: unknown, status: number): Response {
 }
 
 type UploadStatus = "ready" | "uploaded";
+
+// server-comment-attachments Decision 4: the same lookup/record endpoints serve
+// comment-sourced attachments (keyed by the `${commentId}:${attachmentId}`
+// commentAttachmentId, in bo_at_comment_attachments) behind a `source:'comment'`
+// discriminator. A missing/`'field'` source keeps the composite-id field path.
+type Source = "field" | "comment";
+
+const parseSource = (v: unknown): Source | null => {
+  if (v === undefined || v === "field") return "field";
+  if (v === "comment") return "comment";
+  return null;
+};
+
+/** Split a `${commentId}:${attachmentId}` key; ids carry no colons. */
+function splitCommentKey(key: string): { commentId: string; attachmentId: string } | null {
+  const sep = key.indexOf(":");
+  if (sep <= 0 || sep >= key.length - 1) return null;
+  return { commentId: key.slice(0, sep), attachmentId: key.slice(sep + 1) };
+}
+
+interface CommentRecordEntry {
+  commentAttachmentId: string; // `${commentId}:${attachmentId}`
+  storageKey: string;
+  sizeBytes?: number;
+  mimeType?: string;
+  contentHash?: string;
+  filename?: string;
+  uploadStatus?: UploadStatus;
+}
+
+function isCommentRecordEntry(v: unknown): v is CommentRecordEntry {
+  if (typeof v !== "object" || v === null) return false;
+  const e = v as Record<string, unknown>;
+  if (typeof e.commentAttachmentId !== "string" || !splitCommentKey(e.commentAttachmentId)) return false;
+  if (typeof e.storageKey !== "string" || e.storageKey.length === 0) return false;
+  if (e.sizeBytes !== undefined && typeof e.sizeBytes !== "number") return false;
+  if (e.mimeType !== undefined && typeof e.mimeType !== "string") return false;
+  if (e.contentHash !== undefined && typeof e.contentHash !== "string") return false;
+  if (e.filename !== undefined && typeof e.filename !== "string") return false;
+  if (e.uploadStatus !== undefined && e.uploadStatus !== "ready" && e.uploadStatus !== "uploaded") {
+    return false;
+  }
+  return true;
+}
 
 interface RecordEntry {
   compositeId: string;
@@ -95,13 +139,60 @@ export async function attachmentsLookupHandler(
   }
 
   const spaceId = (body as { spaceId?: unknown })?.spaceId;
+  const source = parseSource((body as { source?: unknown })?.source);
+  if (source === null) return jsonResponse({ error: "invalid_request" }, 400);
+  if (typeof spaceId !== "string" || !UUID_RE.test(spaceId)) {
+    return jsonResponse({ error: "invalid_request" }, 400);
+  }
+
+  // Comment-sourced lookup: keys are commentAttachmentIds; hits are rows already
+  // written (storage_key present) so the downloader short-circuits.
+  if (source === "comment") {
+    const keys = (body as { keys?: unknown })?.keys;
+    if (!Array.isArray(keys) || keys.some((k) => typeof k !== "string")) {
+      return jsonResponse({ error: "invalid_request" }, 400);
+    }
+    if (keys.length === 0) return jsonResponse({ hits: {} }, 200);
+    const parsed = (keys as string[])
+      .map((k) => ({ key: k, ...splitCommentKey(k) }))
+      .filter((p): p is { key: string; commentId: string; attachmentId: string } => p.commentId != null);
+    if (parsed.length === 0) return jsonResponse({ hits: {} }, 200);
+
+    const resolved = await resolveOrError(locals, spaceId);
+    if ("res" in resolved) return resolved.res;
+    const { db } = locals.getMasterDb();
+    const commentIds = [...new Set(parsed.map((p) => p.commentId))];
+
+    const hits = await withSpaceSchema(db, resolved.pgLocator, async (tx) => {
+      const rows = await tx
+        .select({
+          commentId: spacePg.commentAttachments.airtableCommentId,
+          attachmentId: spacePg.commentAttachments.airtableAttachmentId,
+          storageKey: spacePg.commentAttachments.storageKey,
+          uploadStatus: spacePg.commentAttachments.uploadStatus,
+          contentHash: spacePg.commentAttachments.contentHash,
+        })
+        .from(spacePg.commentAttachments)
+        .where(inArray(spacePg.commentAttachments.airtableCommentId, commentIds));
+      const wanted = new Set(parsed.map((p) => p.key));
+      const h: Record<string, { storageKey: string; uploadStatus: string; contentHash?: string }> = {};
+      for (const r of rows) {
+        const key = `${r.commentId}:${r.attachmentId}`;
+        // Only already-written rows are hits (pending rows have no storage_key).
+        if (!wanted.has(key) || !r.storageKey) continue;
+        h[key] = {
+          storageKey: r.storageKey,
+          uploadStatus: r.uploadStatus,
+          ...(r.contentHash ? { contentHash: r.contentHash } : {}),
+        };
+      }
+      return h;
+    });
+    return jsonResponse({ hits }, 200);
+  }
+
   const compositeIds = (body as { compositeIds?: unknown })?.compositeIds;
-  if (
-    typeof spaceId !== "string" ||
-    !UUID_RE.test(spaceId) ||
-    !Array.isArray(compositeIds) ||
-    compositeIds.some((c) => typeof c !== "string")
-  ) {
+  if (!Array.isArray(compositeIds) || compositeIds.some((c) => typeof c !== "string")) {
     return jsonResponse({ error: "invalid_request" }, 400);
   }
   if (compositeIds.length === 0) {
@@ -158,13 +249,53 @@ export async function attachmentsRecordHandler(
   }
 
   const spaceId = (body as { spaceId?: unknown })?.spaceId;
+  const source = parseSource((body as { source?: unknown })?.source);
+  if (source === null) return jsonResponse({ error: "invalid_request" }, 400);
+  if (typeof spaceId !== "string" || !UUID_RE.test(spaceId)) {
+    return jsonResponse({ error: "invalid_request" }, 400);
+  }
+
+  // Comment-sourced record: the row already exists (register-first via
+  // comments-sync); this stamps storage_key + upload_status after the write.
+  if (source === "comment") {
+    const cEntries = (body as { entries?: unknown })?.entries;
+    if (!Array.isArray(cEntries) || !cEntries.every(isCommentRecordEntry)) {
+      return jsonResponse({ error: "invalid_request" }, 400);
+    }
+    if (cEntries.length === 0) return jsonResponse({ recorded: 0 }, 200);
+
+    const resolved = await resolveOrError(locals, spaceId);
+    if ("res" in resolved) return resolved.res;
+    const { db } = locals.getMasterDb();
+
+    await withSpaceSchema(db, resolved.pgLocator, async (tx) => {
+      for (const e of cEntries) {
+        const { commentId, attachmentId } = splitCommentKey(e.commentAttachmentId)!;
+        const uploadStatus = e.uploadStatus ?? "uploaded";
+        await tx
+          .update(spacePg.commentAttachments)
+          .set({
+            storageKey: e.storageKey,
+            contentHash: e.contentHash ?? null,
+            filename: e.filename ?? undefined,
+            sizeBytes: e.sizeBytes ?? undefined,
+            mimeType: e.mimeType ?? undefined,
+            uploadStatus,
+            uploadedAt: uploadStatus === "uploaded" ? sql`now()` : null,
+          })
+          .where(
+            and(
+              eq(spacePg.commentAttachments.airtableCommentId, commentId),
+              eq(spacePg.commentAttachments.airtableAttachmentId, attachmentId),
+            ),
+          );
+      }
+    });
+    return jsonResponse({ recorded: cEntries.length }, 200);
+  }
+
   const entries = (body as { entries?: unknown })?.entries;
-  if (
-    typeof spaceId !== "string" ||
-    !UUID_RE.test(spaceId) ||
-    !Array.isArray(entries) ||
-    !entries.every(isRecordEntry)
-  ) {
+  if (!Array.isArray(entries) || !entries.every(isRecordEntry)) {
     return jsonResponse({ error: "invalid_request" }, 400);
   }
   if (entries.length === 0) {

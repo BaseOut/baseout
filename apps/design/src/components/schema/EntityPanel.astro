@@ -87,6 +87,15 @@ const entityChangelog = changelog.filter((c) => c.entityId);
   </div>
 </div>
 
+{/* The tag picker an automation/interface panel BORROWS while it is in edit mode
+    (pattern-panel-edit-mode). It is one wired EntitySearch parked here and MOVED into the panel's
+    Touches section — moving the live node keeps its wiring (typeahead, keyboard, "/" focus), which
+    a copy re-rendered into innerHTML would lose. Only one panel can be holding it, which is exactly
+    right: it is one control, and it belongs to whichever panel you are editing. */}
+<div class="ep-tagpicker-home" data-ep-tagpicker-home hidden>
+  <EntitySearch index={index.filter((e) => e.kind !== 'base')} name="ep-tag" pickEvent="schema:epTagAdd" placeholder="Tag a table or field…" size="sm" />
+</div>
+
   <!-- Undo toast (pattern-undo-toast): catalog toast + soft alert + ghost button, plus a countdown bar
        that drains over the dismiss window. Bottom-centre on purpose — the panels' own ✕ live top-right.
        OUTSIDE .ep-wrap: that wrapper is hidden when the last panel closes, which is exactly the moment
@@ -115,16 +124,17 @@ const entityChangelog = changelog.filter((c) => c.entityId);
         <button type="button" class="btn btn-sm btn-ghost btn-square ep-reorder tooltip tooltip-bottom" data-ep-reorder aria-label="Drag to reorder" data-tip="Drag to reorder">
           <span class="iconify lucide--grip-vertical size-4" aria-hidden="true"></span>
         </button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square ep-detach tooltip tooltip-right" data-ep-detach aria-label="Detach panel" data-tip="Detach"><span class="iconify lucide--pin-off size-3.5" aria-hidden="true"></span></button>
         <button type="button" class="btn btn-sm btn-ghost btn-square ep-back" data-ep-back aria-label="Back" hidden>
           <span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span>
         </button>
         <span class="ep-head-ic" data-ep-head-ic aria-hidden="true"></span>
         <div class="ep-head-title" data-ep-head-title></div>
-        <!-- tooltip-LEFT, not bottom: this button sits near the right edge, and a bottom-centred bubble
+        <!-- tooltip-LEFT, not bottom: these buttons sit near the right edge, and a bottom-centred bubble
              runs off-screen whenever the panel hugs the viewport. Left grows inward, never past the edge. -->
-        <button type="button" class="btn btn-sm btn-soft btn-primary ep-detach tooltip tooltip-left" data-ep-detach data-tip="Make this a panel of your own, and free the slot by the table">
-          Detach
-        </button>
+        <!-- "View … in Airtable" as a corner icon (label lives in the tooltip) — declutters the header
+             so the body opens straight into content. Populated per entity in renderCrumbs. -->
+        <a class="btn btn-sm btn-ghost btn-square ep-viewat tooltip tooltip-left" data-ep-viewat target="_blank" rel="noopener" hidden><span class="iconify lucide--external-link size-4" aria-hidden="true"></span></a>
         <button type="button" class="btn btn-sm btn-ghost btn-square ep-park tooltip tooltip-left" data-ep-park aria-label="Park to a rail" data-tip="Park to a rail">
           <span class="iconify lucide--chevrons-left size-4" aria-hidden="true"></span>
         </button>
@@ -132,7 +142,12 @@ const entityChangelog = changelog.filter((c) => c.entityId);
           <span class="iconify lucide--x size-4" aria-hidden="true"></span>
         </button>
       </div>
-      <nav class="ep-crumbs sb-crumb-row" data-ep-crumbs aria-label="Breadcrumb" hidden></nav>
+      {/* Ancestors on the left, the entity id pulled to the right corner of the same row (Oleh 2026-07-21:
+          the id had its own line wasting height; put it beside the path, right-aligned). */}
+      <div class="ep-crumbrow" data-ep-crumbrow hidden>
+        <nav class="ep-crumbs sb-crumb-row" data-ep-crumbs aria-label="Breadcrumb" hidden></nav>
+        <div class="ep-idchip" data-ep-idchip hidden></div>
+      </div>
       <nav class="ep-secnav" data-ep-secnav-rail aria-label="Sections" hidden></nav>
     </header>
     <div class="ep-body" data-ep-body></div>
@@ -155,6 +170,9 @@ const entityChangelog = changelog.filter((c) => c.entityId);
 <script type="application/json" data-ep-changelog set:html={JSON.stringify(entityChangelog)} />
 <script type="application/json" data-ep-refs set:html={JSON.stringify(refsByEntity)} />
 <script type="application/json" data-ep-chatrefs set:html={JSON.stringify(chatRefsByEntity)} />
+{/* Q4 — Automations/Interfaces open as stacking panels; their objects render the shared read body. */}
+<script type="application/json" data-ep-automations set:html={JSON.stringify(automations)} />
+<script type="application/json" data-ep-interfaces set:html={JSON.stringify(interfaces)} />
 
 <style is:global>
   /* Global: the panel body is rendered at runtime via innerHTML, so scoped styles
@@ -183,7 +201,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
   .ep-cols { display: flex; height: 100%; justify-content: flex-end; align-items: stretch; }
   .ep-sheet {
     position: relative; height: 100%; flex: none;
-    width: var(--ep-w, min(94vw, 30rem)); display: flex; flex-direction: column;
+    width: var(--ep-w, var(--drawer-w)); display: flex; flex-direction: column;
     background: var(--color-base-100); border-left: 1px solid var(--color-base-300);
     transform: translateX(100%); transition: transform .22s cubic-bezier(.22,1,.36,1);
     pointer-events: auto;
@@ -210,17 +228,57 @@ const entityChangelog = changelog.filter((c) => c.entityId);
      state of the auto-accordion (pattern-panel-accordion). */
   .ep-sheet.ep-collapsed { width: 46px !important; min-width: 46px; cursor: pointer; }
   .ep-sheet.ep-collapsed .ep-body,
-  .ep-sheet.ep-collapsed .ep-crumbs,
+  .ep-sheet.ep-collapsed .ep-crumbrow,
   .ep-sheet.ep-collapsed .ep-secnav,
   .ep-sheet.ep-collapsed .ep-grip,
   .ep-sheet.ep-collapsed .ep-back,
+  .ep-sheet.ep-collapsed .ep-viewat,
   .ep-sheet.ep-collapsed .ep-reorder,
   .ep-sheet.ep-collapsed .ep-park { display: none !important; }
   /* Reorder handle (pattern-panel-reorder): a ⠿ grip, quiet until header-hover; drag live-swaps the
      panel order. The dragged sheet gets a dashed accent outline. */
-  .ep-reorder { cursor: grab; opacity: .35; transition: opacity .12s ease; }
-  .ep-head-row:hover .ep-reorder { opacity: .8; }
-  .ep-reorder:hover { opacity: 1; }
+
+  /* ── The "hold" slot — how this panel is held (pattern-multi-panel-drawer) ─────────────────
+     One leading slot, one control: a movable panel shows its drag grip, the anchored one shows
+     Detach, and they are already mutually exclusive (see the anchor rules above). Putting them in
+     the SAME place means the answer to "can I move this?" is always found in the same spot, and it
+     frees the slot Detach used to occupy among the unrelated right-hand actions (Oleh 2026-07-24).
+     Hidden until the header is hovered or holds focus: a grip and a pin do not need to be lit at
+     all times. See the collapse recipe below. */
+  .ep-reorder,
+  .ep-detach {
+    /* At rest the slot takes NO width — the title and its icon start at the edge of the header
+       (Oleh 2026-07-24). Squeezed to zero rather than `display: none`, so the control stays in the
+       DOM and stays focusable; hiding it outright is how a hover-only affordance silently becomes
+       keyboard-unreachable. On hover it opens and nudges the title right, which is the movement
+       that says "this belongs to the panel, not to the content". */
+    width: 0;
+    min-width: 0;
+    padding-inline: 0;
+    border-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+    transition: width .14s ease, opacity .12s ease;
+  }
+  /* The trigger is the WHOLE header, not just its top row (Oleh 2026-07-28). Opening the slot
+     widens it, which pushes everything after it — including Back — sideways. While only the title
+     followed, that nudge read as "this belongs to the panel"; once an interactive target sat
+     downstream, it moved out from under the cursor reaching for it. Arming on the header means the
+     shift happens while the pointer is still travelling (over the breadcrumb row, the id, the
+     header's own padding), so by the time it arrives the layout has settled. The nudge is kept —
+     only the moment it fires is moved earlier. */
+  .ep-head:hover .ep-reorder,
+  .ep-head:hover .ep-detach,
+  .ep-head:focus-within .ep-reorder,
+  .ep-head:focus-within .ep-detach {
+    width: 32px;
+    min-width: 32px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  /* Visibility is owned by the hold-slot rule above; this only carries the grab affordance. */
+  .ep-reorder { cursor: grab; }
   .ep-reorder.ep-grip-on { cursor: grabbing; }
   /* The dragged sheet stays OPAQUE. `opacity` here used to let the Browse table bleed through it, since
      the drawer is non-modal and sits over the table. Lift it instead: dashed accent outline + shadow. */
@@ -254,7 +312,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
   .ep-sheet.ep-collapsed .ep-head-title .badge { display: none; }
   /* Mobile: one full-width column. When a focus panel is open it takes the screen and the anchor
      tucks away (Back from an exhausted focus reveals the anchor again). */
-  @media (max-width: 899.98px) {
+  @media (max-width: 1023.98px) {
     .ep-sheet { --ep-w: 94vw; }
     .ep-grip { display: none; }
     .ep-shutter { display: none; }
@@ -269,10 +327,26 @@ const entityChangelog = changelog.filter((c) => c.entityId);
   .ep-head-ic:empty { display: none; }
   .ep-head-title { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 650; letter-spacing: -0.15px; line-height: 1.2; }
   .ep-head-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Edit mode: the title BECOMES its input (pattern-panel-edit-mode). It inherits the title's own
+     font so the name doesn't change size when the mode flips, and the header row is already 32px
+     (btn-sm) tall, so a 32px input adds no height. */
+  .ep-head-nameinput { flex: 1; min-width: 0; height: 32px; font-size: 15px; font-weight: 650; letter-spacing: -0.15px; padding: 0 8px; }
   /* Crumb-segment styling comes from the shared .sb-crumb* (styles/global.css); .ep-crumbs keeps
      only the row's layout + hide rule. */
-  .ep-crumbs { min-width: 0; overflow: hidden; }
+  .ep-crumbrow { display: flex; align-items: center; gap: 12px; }
+  .ep-crumbrow[hidden] { display: none; }
+  .ep-crumbs { min-width: 0; overflow: hidden; flex: 0 1 auto; }
   .ep-crumbs[hidden] { display: none; }
+  /* Entity id + copy chip (parity with the Data drawer's .rp-idchip). */
+  .ep-idchip { display: flex; align-items: center; gap: 6px; flex: none; margin-left: auto; } /* ds-ok: 6px optical id-chip gap */
+  .ep-idchip[hidden] { display: none; }
+  .ep-idlabel { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .45); } /* ds-ok: id-chip label, menu-title scale */
+  .ep-idval { font-size: 12px; font-family: var(--font-mono, ui-monospace, monospace); color: oklch(from var(--color-base-content) l c h / .7); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ep-copyid { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: none; border: 0; background: none; border-radius: 5px; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .5); transition: color .4s ease, background-color .4s ease; }
+  .ep-copyid:hover { background: oklch(from var(--color-base-content) l c h / .1); color: var(--color-base-content); }
+  .ep-copied { color: var(--color-success); background: oklch(from var(--color-success) l c h / .16); transition: none; }
+  .ep-copied .iconify { animation: ep-copypop .32s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes ep-copypop { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.3); } 100% { transform: scale(1); opacity: 1; } }
 
   .ep-body { flex: 1; overflow-y: auto; padding: 16px 20px 24px; }
   /* Slim, calm scrollbar: a low-alpha thumb over a transparent track, brighter on hover. The
@@ -296,8 +370,8 @@ const entityChangelog = changelog.filter((c) => c.entityId);
   .ep-title-name { font-size: 16px; font-weight: 650; line-height: 1.25; word-break: break-word; }
   .ep-title-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .65); }
   .ep-body-meta { margin-top: 0; }
-  /* "View in Airtable" sits under the identity meta line, not welded to it. */
-  .ep-viewat { margin-top: 12px; }
+  /* "View in Airtable" is a corner icon in the header (its label lives in the tooltip). */
+  .ep-viewat[hidden] { display: none; }
   /* Health as an inline chip in the identity line (replaces the old full-width Health card). */
   .ep-meta-sep { opacity: .4; }
   .ep-meta-health { display: inline-flex; align-items: center; gap: 4px; font-weight: 550; color: oklch(from var(--color-base-content) l c h / .85); }
@@ -391,9 +465,15 @@ const entityChangelog = changelog.filter((c) => c.entityId);
      two SWAP rather than overlap: as a transparent ghost the label read straight through it, and merely
      making it opaque just chopped the label against its edge. On hover the meta fades out, the button
      fades in. It carries a base-100 fill + hairline so it reads as a control on the hovered base-200 row. */
-  .ep-beside { position: absolute; right: 28px; top: 50%; transform: translateY(-50%); opacity: 0; transition: opacity .1s; z-index: 2;
+  /* `pointer-events: none` at rest is not tidiness. This button is absolutely positioned at
+     z-index 2 over the row's right edge, so while invisible it still SWALLOWS a click meant for
+     the row — the row drills in place, so the user gets a second panel instead. It bites hardest
+     where :hover never resolves first: a touch tap, or a click that lands before the hover style
+     applies. `.rp-openbeside` already carries this fix with the reason written beside it
+     (RecordPanel.astro); this copy and `.dcp-openbeside` were ported without it. */
+  .ep-beside { position: absolute; right: 28px; top: 50%; transform: translateY(-50%); opacity: 0; pointer-events: none; transition: opacity .1s; z-index: 2;
     background: var(--color-base-100); border: 1px solid var(--color-base-300); }
-  .ep-rowwrap:hover .ep-beside, .ep-beside:focus-visible { opacity: 1; }
+  .ep-rowwrap:hover .ep-beside, .ep-beside:focus-visible { opacity: 1; pointer-events: auto; }
   .ep-beside:hover { color: var(--color-primary); background: var(--color-base-200); }
   .ep-rowwrap:hover .ep-row-type,
   .ep-rowwrap:hover .ep-rel-dir,
@@ -420,6 +500,30 @@ const entityChangelog = changelog.filter((c) => c.entityId);
   /* Options chips share the same row-list container so a short option set reads as a group. */
   .ep-options { display: flex; flex-wrap: wrap; gap: 8px; border: 1px solid var(--color-base-300); border-radius: 11px; background: color-mix(in oklch, var(--color-base-200) 45%, transparent); padding: 12px; }
   .ep-empty-note { font-size: 12.5px; color: oklch(from var(--color-base-content) l c h / .5); }
+
+  /* view-schema-details — "Fields shown": the visible fields as NAMED entity chips (.sb-chip, from
+     entityChip()), in the same bordered box the Options chips use, capped at 5 with a "+N more"
+     disclosure holding the rest. Chips are injected via innerHTML, so their CSS lives in
+     styles/global.css and this container sits in the panel's is:global block — a scoped rule would
+     never reach either. Spacing stays on the 4px grid. */
+  .ep-chipbox { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; border: 1px solid var(--color-base-300); border-radius: 11px; background: color-mix(in oklch, var(--color-base-200) 45%, transparent); padding: 12px; }
+  /* The overflow lives in the SAME box: `+N more` is a chip-sized control sitting in the flow, and
+     the rest of the chips unhide in place behind it. `display: contents` so the wrapper adds no box
+     of its own and the revealed chips join the same wrap run. */
+  .ep-chiprest { display: none; }
+  .ep-chipbox:has(.ep-chipmore[open]) .ep-chiprest { display: contents; }
+  .ep-chipbox:has(.ep-chipmore[open]) .ep-chipmore { order: 1; }
+  .ep-chipmore { margin-top: 8px; }
+  .ep-chipmore-sum {
+    display: inline-flex; align-items: center; gap: 4px; cursor: pointer; list-style: none;
+    font-size: 12px; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .6);
+  }
+  .ep-chipmore-sum::-webkit-details-marker { display: none; }
+  .ep-chipmore-sum:hover { color: var(--color-base-content); }
+  .ep-chipmore[open] > .ep-chipmore-sum .ep-more-chev { transform: rotate(180deg); }
+  /* The "N of M" counter sits inline in the section header, so it opts out of the header's
+     uppercase/tracking exactly as the count badge does. */
+  .ep-sec-h .ep-sec-nm { text-transform: none; letter-spacing: normal; font-weight: 650; color: oklch(from var(--color-base-content) l c h / .68); }
   .ep-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 
   .ep-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
@@ -573,8 +677,12 @@ const entityChangelog = changelog.filter((c) => c.entityId);
 
 <script>
   import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
-  import { fieldTypeLabel, tableRelationships, type SchemaEntity } from './schemaEntities';
+  import { fieldTypeLabel, viewTypeLabel, tableRelationships, type SchemaEntity } from './schemaEntities';
   import { locationCrumbs } from './locationCrumbs';
+  import { entityChip } from './entityChip';
+  import { entityIconMarkup } from './entityIcon';
+  import { automationReadBody, interfaceReadBody, readChangelogHtml } from './schemaReadBody';
+  import { createPanelStack, type StackPanel } from '../ui/panelStack';
 
   type DocRef = { id: string; title: string };
 
@@ -613,6 +721,35 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     const spaceBases = index.filter((e) => e.kind === 'base');
     if (spaceBases.length) byId.set(SPACE_ID, { id: SPACE_ID, kind: 'space', name: 'Space', baseId: SPACE_ID, baseName: 'Space', health: 'green', hasDescription: false, childIds: spaceBases.map((b) => b.id) } as SchemaEntity);
 
+    // Q4 — Automations & Interfaces open as ordinary stacking panels. Parse their objects and register
+    // PANEL-LOCAL pseudo-entities in byId (kind 'automation'/'interface') so open/push/openBeside/rail all
+    // work unchanged; renderBody branches on the kind to the shared read-body builder. Not added to the
+    // shared index → Browse / typeahead / other tabs are untouched.
+    type AutoObj = { id: string; name: string; baseId?: string; type?: 'interface' | 'page'; status?: string; parentId?: string; [k: string]: unknown };
+    const autoEl = document.querySelector('[data-ep-automations]');
+    const ifaceEl = document.querySelector('[data-ep-interfaces]');
+    const autoList: AutoObj[] = autoEl ? JSON.parse(autoEl.textContent || '[]') : [];
+    const ifaceList: AutoObj[] = ifaceEl ? JSON.parse(ifaceEl.textContent || '[]') : [];
+    const autoById = new Map<string, AutoObj>(autoList.map((a) => [a.id, a]));
+    const ifaceById = new Map<string, AutoObj>(ifaceList.map((i) => [i.id, i]));
+    const baseName = (id?: string) => (id && byId.get(id)?.name) || 'No base';
+    const addPseudo = (o: AutoObj, kind: 'automation' | 'interface') =>
+      byId.set(o.id, { id: o.id, kind, name: o.name, baseId: o.baseId || '', baseName: baseName(o.baseId), health: 'green', hasDescription: false, childIds: [] } as unknown as SchemaEntity);
+    autoList.forEach((a) => addPseudo(a, 'automation'));
+    ifaceList.forEach((i) => addPseudo(i, 'interface'));
+    // Resolver shared with the tab markup: a tagged entity's display info + the item's own changelog.
+    const readCtx = {
+      // fieldType is passed through so a field chip can carry that type's Airtable glyph.
+      // It used to be dropped here, which made every chip render the generic tag icon —
+      // silently, since nothing errors when an optional field goes missing.
+      ent: (id: string) => { const e = byId.get(id); return e ? { name: e.name, kind: e.kind, tableName: e.tableName, fieldType: e.fieldType } : null; },
+      // pattern-panel-edit-mode: ONE layout, two modes. The body builder reads this and swaps each
+      // Baseout-owned value for its input in place; captured blocks ignore it entirely.
+      get mode(): 'read' | 'edit' { const id = stack[stack.length - 1]; return id && editIds.has(id) ? 'edit' : 'read'; },
+      baseLabel: baseName,
+      changelogHtml: (id: string) => readChangelogHtml(autoById.has(id) ? 'au' : 'if', changelog as unknown as { entityId?: string; at: string; type: string; summary: string }[], id),
+    };
+
     // B3/B8 — the REVERSE reference graph, inverted from the forward field config carried in
     // `index`. PRODUCTION / ENGINE NOTE: Airtable's meta API returns only the FORWARD config
     // (a formula's referenced fields, a lookup/rollup's target). The reverse edges ("what
@@ -632,6 +769,9 @@ const entityChangelog = changelog.filter((c) => c.entityId);
 
     const body = root.querySelector<HTMLElement>('[data-ep-body]')!;
     const crumbsEl = root.querySelector<HTMLElement>('[data-ep-crumbs]')!;
+    const crumbRowEl = root.querySelector<HTMLElement>('[data-ep-crumbrow]')!;
+    const viewatEl = root.querySelector<HTMLAnchorElement>('[data-ep-viewat]')!;
+    const idChipEl = root.querySelector<HTMLElement>('[data-ep-idchip]')!;
     const backBtn = root.querySelector<HTMLElement>('[data-ep-back]')!;
     const headIcEl = root.querySelector<HTMLElement>('[data-ep-head-ic]')!;
     const headTitleEl = root.querySelector<HTMLElement>('[data-ep-head-title]')!;
@@ -658,6 +798,38 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       }
       return s;
     };
+    // ── Panel edit MODE (pattern-panel-edit-mode) ───────────────────────────────────────────────
+    // Automation / interface panels have a read mode and an edit mode, and pressing Edit relayouts
+    // nothing: the value in each slot becomes an input where it already sat. Nothing on those
+    // objects syncs to Airtable (the API cannot export them), so every editable field here is
+    // Baseout's own note — no outbound act to stage, therefore no draft/Publish step, but Save is
+    // still EXPLICIT: a mistimed blur must not silently rewrite a colleague's note.
+    //
+    // `editIds` is per ENTITY, not per panel: drilling away from a half-finished edit and coming
+    // back restores it rather than silently discarding it. Inside the panel the only ways out are
+    // Save (commit) and Read / Cancel / Escape (discard) — one rule, no hidden third state.
+    const editIds = new Set<string>();
+    // Uncommitted values, per entity id. The body renders `{...object, ...draft}` so a re-render
+    // (tag added, subscriber removed) never loses what you typed.
+    const drafts = new Map<string, Record<string, unknown>>();
+    const curObj = (): AutoObj | null => { const id = stack[stack.length - 1]; return (id && (autoById.get(id) || ifaceById.get(id))) || null; };
+    const draftOf = (id: string) => { let d = drafts.get(id); if (!d) { d = {}; drafts.set(id, d); } return d; };
+    const draftObj = (o: AutoObj): AutoObj => (editIds.has(o.id) ? { ...o, ...(drafts.get(o.id) || {}) } : o);
+    /** Pull every open input into the draft. MUST run before anything that re-renders or navigates. */
+    function harvestEdit() {
+      const id = stack[stack.length - 1];
+      if (!id || !editIds.has(id)) return;
+      const d = draftOf(id);
+      body.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('[data-ep-f]').forEach((el) => {
+        const f = el.dataset.epF!;
+        d[f] = el instanceof HTMLInputElement && el.type === 'checkbox' ? el.checked : el.value;
+      });
+      // The NAME is edited in the panel title, which lives in the header — outside `body`.
+      const nameIn = headTitleEl.querySelector<HTMLInputElement>('[data-ep-f="name"]');
+      if (nameIn) d.name = nameIn.value;
+    }
+    /** Leave edit mode, discarding the draft (Read segment · Cancel · Escape all mean the same). */
+    function exitEdit(id: string) { editIds.delete(id); drafts.delete(id); refresh(); renderCrumbs(); }
     let descEdit: { id: string; field: 'airtable' | 'extended' } | null = null;
     let descTab: 'airtable' | 'extended' = 'airtable';
     // Publish lifecycle (faked async): draft → confirm step → Publishing… → Synced + toast.
@@ -723,15 +895,23 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       const k = type ? airtableIconKey(type) : null;
       return k ? `<svg viewBox="0 0 16 16" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '<span class="iconify lucide--circle size-3.5"></span>';
     };
+    // `size: ''` — this row's icon is sized by `.ep-row-ic .iconify` (global.css), not a
+    // per-span Tailwind size class. FIELD is the deliberate exception: it shows the field's
+    // actual Airtable TYPE icon (fieldIcon/AIRTABLE_FIELD_ICONS), richer than entityIcon's
+    // generic tag glyph, so it stays local rather than going through the shared mapping.
     const kindIcon = (e: SchemaEntity) =>
-      e.kind === 'space' ? '<span class="iconify lucide--layers"></span>'
-      : e.kind === 'base' ? '<span class="iconify lucide--database concept-ic-base"></span>'
-      : e.kind === 'table' ? '<span class="iconify lucide--table-2"></span>'
+      e.kind === 'space' ? entityIconMarkup('space', { size: '' })
+      : e.kind === 'base' ? entityIconMarkup('base', { size: '' })
+      : e.kind === 'table' ? entityIconMarkup('table', { size: '' })
+      : e.kind === 'automation' ? entityIconMarkup('automation', { size: '' })
+      : e.kind === 'interface' ? entityIconMarkup(ifaceById.get(e.id)?.type === 'page' ? 'page' : 'interface', { size: '' })
+      : e.kind === 'view' ? entityIconMarkup('view', { size: '' })
       : fieldIcon(e.fieldType);
     const healthLabel = (h: string) => (h === 'green' ? 'Healthy' : h === 'red' ? 'Needs attention' : 'Could improve');
 
     function row(e: SchemaEntity, dir?: string) {
-      const type = e.kind === 'field' ? `<span class="ep-row-type">${esc(fieldTypeLabel(e.fieldType))}</span>` : '';
+      const type = e.kind === 'field' ? `<span class="ep-row-type">${esc(fieldTypeLabel(e.fieldType))}</span>`
+        : e.kind === 'view' ? `<span class="ep-row-type">${esc(viewTypeLabel(e.viewType))}</span>` : '';
       const dirLabel = dir ? `<span class="ep-rel-dir">${dir}</span>` : '';
       const draft = hasDraft(e) ? '<span class="badge badge-sm badge-warning badge-soft ep-row-draft tooltip tooltip-left" data-tip="Unpublished description change">Draft</span>' : '';
       // Wrapper so the hover "open beside" ⧉ can be a SIBLING button (can't nest a <button> in the row <button>).
@@ -754,6 +934,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       Configuration: 'lucide--settings-2',
       Relationships: 'lucide--waypoints', 'Derived from': 'lucide--waypoints',
       Fields: 'lucide--table-2', Tables: 'lucide--table-2',
+      'Fields shown': 'lucide--columns-3',
       Options: 'lucide--list', Changelog: 'lucide--history',
       Documentation: 'lucide--book-text', 'Referenced by': 'lucide--link',
     };
@@ -765,7 +946,10 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       const label = title.split('<')[0].trim();
       const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
       secList.push({ slug, label });
-      const ic = SECTION_ICON[title];
+      // Look the icon up by the LABEL, not the raw title: a title may carry trailing markup (the
+      // Descriptions draft flag, the "N of M" counter), and keying on the whole string silently
+      // dropped the icon in exactly those cases.
+      const ic = SECTION_ICON[label];
       const icHtml = ic ? `<span class="iconify ${ic} size-3.5 ep-sec-ic" aria-hidden="true"></span>` : '';
       // Count badge only when it carries information: a lone item (count === 1) is self-evident
       // from the single row below, so we suppress the "1" badge. Shown from 2 upward.
@@ -940,6 +1124,61 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       return section('Documentation', refs.length || null, inner);
     }
 
+    // ── view-schema-details: "Fields shown" (VIEW panels only) ────────────────────────────────
+    //
+    // Airtable returns a view's `visibleFieldIds` for GRID views and, per the founder, only through
+    // the REST API on an ENTERPRISE AIRTABLE ACCOUNT — the MCP route yields id/name/type alone. Both
+    // capture depths ship, so this block renders either way and the two absences are worded apart:
+    //
+    //   • non-grid view      → Airtable never returns it, for anybody. Permanent, blameless.
+    //   • grid view, absent  → THIS connection did not read that deep.
+    //
+    // The gate is the CUSTOMER'S Airtable plan, not Baseout's, so the copy names the connection and
+    // carries no tier language, no price and no CTA — there is nothing here for us to sell.
+    //
+    // NEVER a bare "12 of 34": that answers a question nobody asked and provokes the one they did.
+    // The fields are NAMED, as entity chips with their Airtable field-type glyph + the panel-push hook.
+    //
+    // The cap is 20, NOT the 5 the row-lists use. That rule bounds VERTICAL space — five rows are
+    // five lines — and chips do not spend height the same way: twenty of them wrap into roughly the
+    // height four rows would take. Applying a row cap to a chip box was a category error; it hid
+    // fields for no reason while the panel had room for them (Oleh 2026-07-29).
+    //
+    // And the overflow expands INSIDE the same box. It is one list; splitting it into a second
+    // bordered box below made two lists appear where there is one.
+    const CHIP_CAP = 20;
+    function chipBox(chips: string[]): string {
+      if (chips.length <= CHIP_CAP) return `<div class="ep-chipbox">${chips.join('')}</div>`;
+      const rest = chips.length - CHIP_CAP;
+      return `<div class="ep-chipbox">${chips.slice(0, CHIP_CAP).join('')}`
+        + `<details class="ep-chipmore"><summary class="ep-chipmore-sum">+${rest} more<span class="iconify lucide--chevron-down size-3.5 ep-more-chev" aria-hidden="true"></span></summary></details>`
+        + `<span class="ep-chiprest">${chips.slice(CHIP_CAP).join('')}</span></div>`;
+    }
+    function renderViewFields(e: SchemaEntity): string {
+      if (e.kind !== 'view') return '';
+      const ids = e.visibleFieldIds;
+      if (!ids) {
+        // No `visibleFieldIds` at all. Which silence is it?
+        const note = e.viewType && e.viewType !== 'grid'
+          ? `Airtable only shares which fields a view shows for <strong>grid</strong> views, so there is nothing to capture for a ${esc(viewTypeLabel(e.viewType))} view.`
+          : `This connection didn’t include which fields this view shows. Airtable returns that only through its REST API on an enterprise Airtable account.`;
+        return section('Fields shown', null, `<p class="ep-empty-note">${note}</p>`);
+      }
+      // An id that doesn't resolve against the index would otherwise render as the raw string.
+      const fields = ids.map((id) => byId.get(id)).filter(Boolean) as SchemaEntity[];
+      const m = typeof e.fieldCount === 'number' ? e.fieldCount : null;
+      // "N of M" — M is the owning table's LIVE field count (removed fields excluded), so a view
+      // panel can never claim a bigger number than the table panel it belongs to.
+      const counter = ` <span class="ep-sec-nm">· ${fields.length}${m !== null ? ` of ${m}` : ''}</span>`;
+      const chips = fields.map((f) => entityChip({
+        name: f.name,
+        icon: fieldIcon(f.fieldType),
+        clickable: true,
+        attrs: `data-ep-push="${esc(f.id)}"`,
+      }));
+      return section(`Fields shown${counter}`, null, chipBox(chips));
+    }
+
     // B8 — grouped "Referenced by": every place that points at THIS entity, grouped by kind
     // (Automations · Interfaces & pages · Formulas · Rollups · Lookups · Docs · Chats), each a
     // labelled sub-list with the kind's concept icon + a capped (5) row list. Empty groups are
@@ -956,6 +1195,15 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       const rollups = referencers.filter((t) => t.fieldType === 'rollup');
       const lookups = referencers.filter((t) => t.fieldType === 'lookup');
       const chatRefs = chatRefsByEntity[e.id] || [];
+      // view-schema-details, the reverse direction: which VIEWS display this field. Answers "if I
+      // restore or rename this field, where does it show up?". Only grid views on a full-access
+      // connection carry visibleFieldIds, so an empty result means UNKNOWN, not "nowhere" — which is
+      // exactly why the group must be omitted rather than rendered as "Views 0" (the shared
+      // .filter((g) => g[2].length) below does that for every group here). Deleted views are
+      // history and are left out, as they are everywhere else by default.
+      const showingViews = e.kind === 'field'
+        ? index.filter((v) => v.kind === 'view' && !v.removed && (v.visibleFieldIds || []).includes(e.id))
+        : [];
 
       const tagRow = (r: { id: string; name: string; kind: string }, icon: string) =>
         `<button type="button" class="ep-row" ${r.kind === 'automation' ? 'data-ep-ref-auto' : 'data-ep-ref-iface'}="${esc(r.id)}"><span class="ep-row-ic"><span class="iconify ${icon} size-3.5"></span></span><span class="ep-row-name">${esc(r.name)}</span><span class="iconify lucide--arrow-up-right size-3.5 ep-row-chev"></span></button>`;
@@ -965,6 +1213,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       const groups: [string, string, string[]][] = [
         ['lucide--zap', 'Automations', autos.map((r) => tagRow(r, 'lucide--zap'))],
         ['lucide--layout-panel-left', 'Interfaces & pages', ifaces.map((r) => tagRow(r, 'lucide--layout-panel-left'))],
+        ['lucide--eye', 'Views', showingViews.map((v) => row(v))],
         ['lucide--variable', 'Formulas', formulas.map((t) => row(t))],
         ['lucide--sigma', 'Rollups', rollups.map((t) => row(t))],
         ['lucide--search', 'Lookups', lookups.map((t) => row(t))],
@@ -1020,24 +1269,48 @@ const entityChangelog = changelog.filter((c) => c.entityId);
 
     function renderBody(e: SchemaEntity): string {
       secList = [];
-      const kindWord = e.kind === 'field' ? fieldTypeLabel(e.fieldType) : e.kind === 'base' ? 'Base' : e.kind === 'space' ? 'Space' : 'Table';
+      // Q4 — automation / interface panels render the shared body in whichever MODE this entity is
+      // in, merged with any uncommitted draft so a re-render never loses what is typed.
+      if (e.kind === 'automation') { const a = autoById.get(e.id); return a ? automationReadBody(draftObj(a) as never, readCtx) : ''; }
+      if (e.kind === 'interface') {
+        const i = ifaceById.get(e.id);
+        if (!i) return '';
+        const pages = i.type === 'interface'
+          ? ifaceList.filter((p) => p.type === 'page' && p.parentId === i.id && p.status !== 'removed').map((p) => ({ id: p.id, name: p.name }))
+          : [];
+        return interfaceReadBody({ ...(draftObj(i) as never), pages } as never, readCtx);
+      }
+      // NOTE the shape: this used to FALL THROUGH to 'Table' for any unhandled kind, so a view
+      // panel would have confidently labelled itself "Table". Every kind is now named explicitly
+      // and the fallback is the kind string itself — a wrong-but-honest label beats a confident
+      // lie. A view reads "View · Grid" (view-schema-details).
+      const kindWord = e.kind === 'field' ? fieldTypeLabel(e.fieldType)
+        : e.kind === 'view' ? `View · ${viewTypeLabel(e.viewType)}`
+        : e.kind === 'base' ? 'Base'
+        : e.kind === 'space' ? 'Space'
+        : e.kind === 'table' ? 'Table'
+        : String(e.kind);
 
       // Drawer canon v2: the icon + name render in the HEADER (see renderCrumbs). The body opens
       // with the identity meta line only (kind · health · freshness).
       let html = `<div class="ep-title-meta ep-body-meta"><span class="ep-meta-kind">${esc(kindWord)}</span>${!e.removed ? ` <span class="ep-meta-sep" aria-hidden="true">·</span> <span class="ep-meta-health">${dot(e.health)}${esc(healthLabel(e.health))}</span> <span class="ep-meta-sep" aria-hidden="true">·</span> <span class="ep-meta-fresh">as of last backup</span>` : ''}</div>`;
 
-      // #11 View in Airtable — deep-link to the source (standard airtable.com scheme). Reuses the
-      // catalog `button` (btn-soft btn-primary). TODO(engine): these are backup ids; production needs
-      // the real Airtable app/tbl/fld ids to build a working URL.
-      if (!e.removed && (e.kind === 'base' || e.kind === 'table' || e.kind === 'field')) {
-        const parts = e.kind === 'base' ? [e.baseId] : e.kind === 'table' ? [e.baseId, e.id] : [e.baseId, e.tableId || '', e.id];
-        const url = 'https://airtable.com/' + parts.filter(Boolean).join('/');
-        html += `<a class="btn btn-sm btn-soft btn-primary ep-viewat" href="${esc(url)}" target="_blank" rel="noopener"><span class="iconify lucide--external-link size-4" aria-hidden="true"></span>View ${e.kind} in Airtable</a>`;
-      }
+      // #11 View in Airtable now lives as a header corner icon (see renderCrumbs) — not welded to the body.
 
       // deleted-items-filter: a removed entity is read-only history — say so up front.
       if (e.removed) {
-        html += `<div class="alert alert-soft alert-warning ep-removed" role="status"><span class="iconify lucide--trash-2 size-4" aria-hidden="true"></span><span>This ${esc(kindWord.toLowerCase())} no longer exists in Airtable${e.removedAt ? ` (deleted ${esc(fmtDate(e.removedAt))})` : ''}. Showing the last backup.</span></div>`;
+        // The banner needs a bare NOUN, not the meta line's "View · Grid" — kindWord.toLowerCase()
+        // would have produced "This view · grid no longer exists…".
+        const kindNoun = e.kind === 'view' ? 'view' : kindWord.toLowerCase();
+        html += `<div class="alert alert-soft alert-warning ep-removed" role="status"><span class="iconify lucide--trash-2 size-4" aria-hidden="true"></span><span>This ${esc(kindNoun)} no longer exists in Airtable${e.removedAt ? ` (deleted ${esc(fmtDate(e.removedAt))})` : ''}. Showing the last backup.</span></div>`;
+      }
+
+      // view-schema-details: the capture returned this view but not its owning table. Soft INFO,
+      // never amber — amber is this app's Removed voice, and this is a gap in OUR read, not a
+      // defect in the user's base. Named here as well as in Browse so the panel is self-explaining
+      // when it is opened from search rather than from the tree.
+      if (e.kind === 'view' && e.tableUnresolved) {
+        html += `<div class="alert alert-soft alert-info ep-removed" role="status"><span class="iconify lucide--help-circle size-4" aria-hidden="true"></span><span>We captured this view but not which table it belongs to, so it isn’t nested under one.</span></div>`;
       }
 
       // Metric tiles — the bordered strip + dashed dividers, matching the Home KPI tiles
@@ -1047,7 +1320,11 @@ const entityChangelog = changelog.filter((c) => c.entityId);
         `<div class="ep-stat"><div class="ep-stat-top"><span class="ep-stat-k">${k}</span><span class="iconify ${icon} ep-stat-ic" aria-hidden="true"></span></div><span class="ep-stat-v">${value}</span><span class="ep-stat-sub">${sub}</span></div>`;
       const stats: string[] = [];
       if (typeof e.recordCount === 'number') stats.push(statTile('Records', 'lucide--rows-3', e.recordCount.toLocaleString(), 'as of last backup'));
-      if (typeof e.fieldCount === 'number') stats.push(statTile('Fields', 'lucide--columns-3', String(e.fieldCount), e.kind === 'base' ? 'across all tables' : 'in this table'));
+      // A VIEW carries fieldCount only as the "N of M" DENOMINATOR for its Fields-shown block — it
+      // is the owning table's number. Rendered as a tile here it read "Fields 12 · in this table",
+      // which on a view panel is taken as "this view shows 12 fields": a claim we cannot make for a
+      // grid view and never can for any other type. The view's honest answer is renderViewFields().
+      if (typeof e.fieldCount === 'number' && e.kind !== 'view') stats.push(statTile('Fields', 'lucide--columns-3', String(e.fieldCount), e.kind === 'base' ? 'across all tables' : 'in this table'));
       // Health is NOT a tile any more — it's an inline chip in the identity meta line above (label +
       // heart-icon + status was 3× redundant and a lone Health tile ballooned to a full-width card).
       if (stats.length) html += `<div class="ep-stats" style="--ep-stat-n:${stats.length}">${stats.join('')}</div>`;
@@ -1057,6 +1334,9 @@ const entityChangelog = changelog.filter((c) => c.entityId);
 
       // A4 — field-type configuration (formula / lookup).
       if (e.kind === 'field') html += renderConfig(e);
+
+      // view-schema-details — which fields this view displays (or which silence we are in).
+      if (e.kind === 'view') html += renderViewFields(e);
 
       // Children.
       const children = (e.childIds || []).map((id) => byId.get(id)).filter(Boolean) as SchemaEntity[];
@@ -1160,7 +1440,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
         const table = e.tableId ? byId.get(e.tableId) : undefined;
         if (table) out.push(table);
         out.push(e);
-      } else if (e.kind === 'table') {
+      } else if (e.kind === 'table' || e.kind === 'automation' || e.kind === 'interface') {
         out.push(e);
       }
       return out;
@@ -1171,13 +1451,35 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     // walks the visit history (stack) separately.
     function renderCrumbs() {
       const cur = byId.get(stack[stack.length - 1]);
-      if (!cur) { crumbsEl.innerHTML = ''; crumbsEl.hidden = true; headIcEl.innerHTML = ''; headTitleEl.innerHTML = ''; backBtn.hidden = true; return; }
+      if (!cur) { crumbsEl.innerHTML = ''; crumbsEl.hidden = true; idChipEl.hidden = true; crumbRowEl.hidden = true; viewatEl.hidden = true; headIcEl.innerHTML = ''; headTitleEl.innerHTML = ''; backBtn.hidden = true; return; }
       // Drawer canon v2: the entity's icon + name live in the header title row; the crumbs
       // sub-row shows only its ANCESTORS (the current node is the header title, not a crumb).
       headIcEl.innerHTML = kindIcon(cur);
-      headTitleEl.innerHTML = `<span class="ep-head-name">${esc(cur.name)}</span>${cur.isPrimary ? ' <span class="badge badge-sm badge-neutral">Primary</span>' : ''}`;
+      // pattern-panel-edit-mode: the NAME is edited where it is read — in the panel title. Same
+      // slot, same line; the input is sized to the title so the header row does not change height.
+      // (The ID beside it stays a chip in every mode: it is the identity, not a field.)
+      if (editIds.has(cur.id)) {
+        const o = curObj();
+        const nm = (o && (drafts.get(cur.id)?.name as string | undefined)) ?? cur.name;
+        headTitleEl.innerHTML = `<input type="text" class="input input-sm ep-head-nameinput" data-ep-f="name" value="${esc(nm)}" aria-label="Name" />`;
+      } else {
+        headTitleEl.innerHTML = `<span class="ep-head-name">${esc(cur.name)}</span>${cur.isPrimary ? ' <span class="badge badge-sm badge-neutral">Primary</span>' : ''}`;
+      }
+      // "View … in Airtable" as a header corner icon (tooltip carries the specific label). Same gating and
+      // deep-link scheme as the old body button; TODO(engine): backup ids → real Airtable app/tbl/fld ids.
+      if (!cur.removed && (cur.kind === 'base' || cur.kind === 'table' || cur.kind === 'field')) {
+        const parts = cur.kind === 'base' ? [cur.baseId] : cur.kind === 'table' ? [cur.baseId, cur.id] : [cur.baseId, cur.tableId || '', cur.id];
+        viewatEl.href = 'https://airtable.com/' + parts.filter(Boolean).join('/');
+        const lbl = `View ${cur.kind} in Airtable`;
+        viewatEl.dataset.tip = lbl; viewatEl.setAttribute('aria-label', lbl); viewatEl.hidden = false;
+      } else { viewatEl.hidden = true; }
+      // Entity id + one-click copy, pulled to the right corner of the crumb row (tooltip-LEFT so the
+      // bubble grows inward from the edge). Parity with the Data drawer.
+      idChipEl.hidden = false;
+      idChipEl.innerHTML = `<span class="ep-idlabel">ID</span><code class="ep-idval">${esc(cur.id)}</code><button type="button" class="ep-copyid tooltip tooltip-left" data-ep-copyid="${esc(cur.id)}" aria-label="Copy ${esc(cur.kind)} id" data-tip="Copy id"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span></button>`;
       const ancestors = structuralPath(cur).slice(0, -1);
       crumbsEl.hidden = ancestors.length === 0;
+      crumbRowEl.hidden = false;
       crumbsEl.innerHTML = locationCrumbs(
         ancestors.map((p) => ({ name: p.name, icon: kindIcon(p), openAttrs: `data-ep-crumb-id="${p.id}"` })),
       );
@@ -1254,6 +1556,20 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       computeActive();
     }
 
+    // The shared tag picker (a real, wired EntitySearch parked in the page) is MOVED into this
+    // panel's Touches section whenever this panel is in edit mode. Moving the live node keeps its
+    // wiring across the innerHTML rebuilds the body does on every render; a copy would not.
+    const tagPickerEl = document.querySelector<HTMLElement>('[data-ep-tagpicker-home] [data-entity-search]');
+    const tagPickerHome = document.querySelector<HTMLElement>('[data-ep-tagpicker-home]');
+    function mountTagPicker() {
+      if (!tagPickerEl) return;
+      const mount = body.querySelector<HTMLElement>('[data-ep-tagmount]');
+      if (mount) { mount.appendChild(tagPickerEl); return; }
+      // No slot in THIS body. Re-home the node only when it is ORPHANED (a re-render of whichever
+      // panel held it destroyed the slot) — never steal it from a panel that is still editing.
+      if (!tagPickerEl.isConnected && tagPickerHome) tagPickerHome.appendChild(tagPickerEl);
+    }
+
     function render(swap = true) {
       const e = byId.get(stack[stack.length - 1]);
       if (!e) return;
@@ -1267,25 +1583,31 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       body.innerHTML = renderBody(e);
       if (activeChildId) body.querySelector<HTMLElement>('[data-ep-push="' + activeChildId + '"]')?.classList.add('ep-row-active');
       renderCrumbs();
+      mountTagPicker();
       renderSecNav(e);
       wireSecNav();
       if (swap) { body.classList.remove('ep-swap'); void body.offsetWidth; body.classList.add('ep-swap'); }
       body.scrollTop = 0;
     }
-    // In-place re-render for description actions — no swap animation, keeps scroll.
+    // In-place re-render for description / edit-mode actions — no swap animation, keeps scroll.
     function refresh() {
       const e = byId.get(stack[stack.length - 1]);
       if (!e) return;
       const top = body.scrollTop;
       body.innerHTML = renderBody(e);
       if (activeChildId) body.querySelector<HTMLElement>('[data-ep-push="' + activeChildId + '"]')?.classList.add('ep-row-active');
+      mountTagPicker();
       renderSecNav(e);
       wireSecNav();
       body.scrollTop = top;
     }
 
+    // Leaving an entity while an edit is open KEEPS it (per-entity draft): drilling into a tagged
+    // field to check something, then coming back, must not cost you the note you were writing.
+    // Nothing is silently discarded, and nothing blocks the navigation with a confirm.
     function open(id: string, resetStack = true) {
       if (!byId.has(id)) return;
+      harvestEdit();
       if (resetStack || stack.length === 0) stack = [id];
       root.hidden = false;
       requestAnimationFrame(() => root.classList.add('ep-in'));
@@ -1293,13 +1615,15 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     }
     function push(id: string) {
       if (!byId.has(id)) return;
+      harvestEdit();
       // Miller rule: if this id is already deeper in the trail, jump to it; else append.
       const at = stack.indexOf(id);
       stack = at >= 0 ? stack.slice(0, at + 1) : [...stack, id];
       render(true);
     }
-    function popTo(i: number) { stack = stack.slice(0, i + 1); render(true); }
+    function popTo(i: number) { harvestEdit(); stack = stack.slice(0, i + 1); render(true); }
     function doClose(instant = false) {
+      harvestEdit();
       commitOpenEdit();
       document.removeEventListener('keydown', onKeydown);
       root.classList.remove('ep-in');
@@ -1310,9 +1634,77 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     // the controller (they always target the anchor), so they are not wired here.
     root.addEventListener('click', (ev) => {
       const t = ev.target as HTMLElement;
+      // Copy the entity id → clipboard, with a green check-pop then fade (parity with the Data drawer).
+      const copyId = t.closest<HTMLElement>('[data-ep-copyid]');
+      if (copyId) {
+        ev.preventDefault(); ev.stopPropagation();
+        navigator.clipboard?.writeText(copyId.dataset.epCopyid!);
+        const ci = copyId.querySelector<HTMLElement>('.iconify');
+        if (ci) { copyId.classList.add('ep-copied'); ci.className = 'iconify lucide--check size-3.5'; setTimeout(() => { copyId.classList.remove('ep-copied'); ci.className = 'iconify lucide--copy size-3.5'; }, 1100); }
+        return;
+      }
       // × / (former scrim) → the controller decides: × on focus closes just the focus, × on anchor
       // closes both.
       if (t.closest('[data-ep-close]')) { opts.onClose(); return; }
+      // ── Panel Read/Edit mode (pattern-panel-edit-mode) ────────────────────────────────────────
+      // The segmented switch in the identity line. Read is the default; Edit turns each Baseout-owned
+      // value into an input where it already sat. Read/Cancel/Escape all mean the same thing —
+      // leave edit mode, discard the draft — so there is no fourth, hidden state.
+      const modeBtn = t.closest<HTMLElement>('[data-ep-mode]');
+      if (modeBtn) {
+        const o = curObj();
+        if (!o) return;
+        if (modeBtn.dataset.epMode === 'edit') {
+          if (!editIds.has(o.id)) { editIds.add(o.id); refresh(); renderCrumbs(); headTitleEl.querySelector<HTMLInputElement>('[data-ep-f="name"]')?.focus(); }
+        } else exitEdit(o.id);
+        return;
+      }
+      if (t.closest('[data-ep-cancel]')) { const o = curObj(); if (o) exitEdit(o.id); return; }
+      const saveBtn = t.closest<HTMLElement>('[data-ep-save]');
+      if (saveBtn) {
+        harvestEdit();
+        const o = curObj();
+        if (!o) return;
+        const kind = saveBtn.dataset.epReadKind === 'interface' ? 'interface' : 'automation';
+        const d = drafts.get(o.id) || {};
+        // Empty text is ABSENCE, not an empty string — the read slot's empty state ("No internal
+        // note yet.") only shows for undefined, and a stored "" would render as a blank section.
+        for (const [k, v] of Object.entries(d)) o[k] = typeof v === 'string' && !v.trim() ? undefined : v;
+        const pe = byId.get(o.id); if (pe && typeof o.name === 'string') pe.name = o.name;
+        editIds.delete(o.id); drafts.delete(o.id);
+        // The tab owns the listing row; it re-renders it from the saved record.
+        document.dispatchEvent(new CustomEvent(kind === 'interface' ? 'schema:interfaceSaved' : 'schema:automationSaved', { detail: { rec: { ...o } } }));
+        render(false); renderCrumbs();
+        announce('Saved');
+        return;
+      }
+      // Remove a MANUALLY tagged table/field from the Touches section (derived touches have no ×).
+      const tagX = t.closest<HTMLElement>('[data-ep-tagx]');
+      if (tagX) {
+        const o = curObj();
+        if (o && editIds.has(o.id)) {
+          harvestEdit();
+          const cur0 = (drafts.get(o.id)!.tags ?? o.tags ?? []) as { entityId: string; source?: string }[];
+          drafts.get(o.id)!.tags = cur0.filter((x) => x.entityId !== tagX.dataset.epTagx);
+          refresh();
+        }
+        return;
+      }
+      // Remove a subscriber chip.
+      const subX = t.closest<HTMLElement>('[data-ep-subx]');
+      if (subX) {
+        const o = curObj();
+        if (o && editIds.has(o.id)) {
+          harvestEdit();
+          const cur0 = (drafts.get(o.id)!.subscribers ?? o.subscribers ?? []) as string[];
+          drafts.get(o.id)!.subscribers = cur0.filter((e) => e !== subX.dataset.epSubx);
+          refresh();
+        }
+        return;
+      }
+      // Q4 — automation/interface panel footer: Delete soft-deletes on the tab and closes this panel.
+      const readDel = t.closest<HTMLElement>('[data-ep-read-delete]');
+      if (readDel) { const kind = readDel.dataset.epReadKind; opts.onClose(); document.dispatchEvent(new CustomEvent(kind === 'interface' ? 'schema:deleteInterface' : 'schema:deleteAutomation', { detail: { id: readDel.dataset.epReadDelete } })); return; }
       // Section-nav chip clicks are handled in wireSecNav (click-authoritative + scroll-spy lock).
       if (t.closest('[data-ep-secnav]')) return;
       // Back walks THIS panel's stack; once exhausted the controller decides (a focus panel closes
@@ -1330,11 +1722,12 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       // Cross-tab handoffs leave the schema panels entirely → close BOTH, then dispatch.
       const docEl = t.closest<HTMLElement>('[data-ep-doc]');
       if (docEl) { opts.onCloseAll(); document.dispatchEvent(new CustomEvent('schema:openDoc', { detail: { id: docEl.dataset.epDoc } })); return; }
-      // "Referenced by" → jump to the Automations / Interfaces tab and open that entity.
+      // "Referenced by" → the automation / interface now opens as a stacking panel beside (Q4),
+      // consistent with every other reference; no tab jump, no closeAll.
       const refAuto = t.closest<HTMLElement>('[data-ep-ref-auto]');
-      if (refAuto) { opts.onCloseAll(); document.querySelector<HTMLElement>('[data-tab="automations"]')?.click(); document.dispatchEvent(new CustomEvent('schema:openAutomation', { detail: { id: refAuto.dataset.epRefAuto } })); return; }
+      if (refAuto) { opts.onOpenBeside(refAuto.dataset.epRefAuto!); return; }
       const refIface = t.closest<HTMLElement>('[data-ep-ref-iface]');
-      if (refIface) { opts.onCloseAll(); document.querySelector<HTMLElement>('[data-tab="interfaces"]')?.click(); document.dispatchEvent(new CustomEvent('schema:openInterface', { detail: { id: refIface.dataset.epRefIface } })); return; }
+      if (refIface) { opts.onOpenBeside(refIface.dataset.epRefIface!); return; }
       // "Referenced by" → Chats: jump to the Chat tab and open that thread.
       const refChat = t.closest<HTMLElement>('[data-ep-chat]');
       if (refChat) { opts.onCloseAll(); document.querySelector<HTMLElement>('[data-tab="chat"]')?.click(); document.dispatchEvent(new CustomEvent('schema:openChat', { detail: { id: refChat.dataset.epChat } })); return; }
@@ -1434,7 +1827,31 @@ const entityChangelog = changelog.filter((c) => c.entityId);
           return;
         }
       }
+      // Add a subscriber from the chip-box input (Enter or comma), like the register form's chips.
+      if ((ev.key === 'Enter' || ev.key === ',')) {
+        const add = (document.activeElement as HTMLElement | null)?.closest?.('[data-ep-subadd]') as HTMLInputElement | null;
+        if (add && root.contains(add)) {
+          ev.preventDefault(); ev.stopImmediatePropagation();
+          const o = curObj();
+          const v = add.value.trim().replace(/,$/, '').toLowerCase();
+          if (!o || !editIds.has(o.id) || !v) return;
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { add.setCustomValidity('Enter a valid email'); add.reportValidity(); return; }
+          add.setCustomValidity(''); add.value = '';
+          harvestEdit();
+          const cur0 = (drafts.get(o.id)!.subscribers ?? o.subscribers ?? []) as string[];
+          if (!cur0.includes(v)) drafts.get(o.id)!.subscribers = [...cur0, v];
+          refresh();
+          body.querySelector<HTMLInputElement>('[data-ep-subadd]')?.focus();
+          return;
+        }
+      }
       if (ev.key === 'Escape') {
+        // Before the panel's own Escape (back / close): an open editor must swallow it, or
+        // pressing Escape to abandon an edit would close the panel and take the edit with it.
+        const curId = stack[stack.length - 1];
+        // …but the tag typeahead owns Escape while its own field has focus (it clears the query).
+        const inPicker = !!(document.activeElement as HTMLElement | null)?.closest?.('[data-entity-search]');
+        if (!inPicker && curId && editIds.has(curId)) { ev.stopImmediatePropagation(); exitEdit(curId); return; }
         if (descEdit) { ev.stopImmediatePropagation(); descEdit = null; refresh(); return; }
         if (descConfirmId) { ev.stopImmediatePropagation(); descConfirmId = null; refresh(); return; }
         if (!panelActive) return; // closing/back is the active panel's job
@@ -1444,6 +1861,32 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       }
     };
     document.addEventListener('keydown', onKeydown);
+
+    // The listing row's pencil is a shortcut into this panel's edit mode (it opens the panel first,
+    // then fires this). Only the panel actually showing that entity reacts.
+    document.addEventListener('schema:panelEditMode', (ev) => {
+      const id = (ev as CustomEvent).detail?.id as string | undefined;
+      if (!id || stack[stack.length - 1] !== id || editIds.has(id)) return;
+      editIds.add(id);
+      refresh(); renderCrumbs();
+      headTitleEl.querySelector<HTMLInputElement>('[data-ep-f="name"]')?.focus();
+    });
+
+    // The borrowed tag picker fires this. Only the panel currently HOLDING the picker reacts —
+    // the node can only be in one place, so "who is editing" is answered by the DOM, not a flag.
+    document.addEventListener('schema:epTagAdd', (ev) => {
+      if (!tagPickerEl || !body.contains(tagPickerEl)) return;
+      const o = curObj();
+      const id = (ev as CustomEvent).detail?.id as string | undefined;
+      if (!o || !id || !editIds.has(o.id)) return;
+      harvestEdit();
+      const cur0 = (drafts.get(o.id)!.tags ?? o.tags ?? []) as { entityId: string; source?: string }[];
+      if (cur0.some((x) => x.entityId === id)) return;
+      // Added by a human ⇒ source 'manual' ⇒ removable. A derived touch is never authored here.
+      drafts.get(o.id)!.tags = [...cur0, { entityId: id, source: 'manual' }];
+      refresh();
+      body.querySelector<HTMLInputElement>('[data-ep-tagmount] [data-es-field]')?.focus();
+    });
 
     return {
       el: root,
@@ -1463,7 +1906,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       },
       // Replace this panel's whole visit-stack (used to promote a focus into the anchor and to undo a
       // focus replacement). Invalid ids are dropped; an empty result is a no-op.
-      setStack: (arr: string[]) => { const valid = arr.filter((id) => byId.has(id)); if (!valid.length) return; stack = valid; render(true); },
+      setStack: (arr: string[]) => { const valid = arr.filter((id) => byId.has(id)); if (!valid.length) return; harvestEdit(); stack = valid; render(true); },
     };
   }
   type Panel = ReturnType<typeof makePanel>;
@@ -1481,194 +1924,63 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     const countEl = wrap.querySelector<HTMLElement>('[data-ep-count]')!;
     const tpl = document.querySelector<HTMLTemplateElement>('[data-ep-sheet-tpl]')!;
 
-    // MINEXP === MINW so four panels fit a 1440px laptop expanded side by side:
-    // 4*MINW + TABLEGAP + RAILW = 4*320 + 110 + 0 = 1390. Raising MINEXP again breaks that promise.
-    // RAILW is 0: the rail no longer reserves a column — its ＋ and shutter float on the drawer's edge.
-    //
-    // MAXPANELS is a ceiling on how many panels EXIST, not on how many are visible (Dan): opening past
-    // what fits parks the new one to a 46px strip instead of destroying an old panel. The number is
-    // measured, not guessed — at 1440 ten panels still leave THREE expanded side by side
-    // (3*320 + 7*46 = 1282 ≤ 1330 avail); twelve would force you down to two.
-    const DEFW = 468, MINW = 320, TABLEGAP = 110, RAILW = 0, MAXPANELS = 10, MINEXP = 320, COLLAPSE_AT = 300;
-    const loadW = () => { try { const v = parseInt(localStorage.getItem('ep-w-panel') || '', 10); return Number.isFinite(v) && v >= MINW ? v : DEFW; } catch { return DEFW; } };
-    const saveW = (px: number) => { try { localStorage.setItem('ep-w-panel', String(Math.round(px))); } catch { /* ignore */ } };
-    let defW = loadW();
-    const isMobile = () => window.innerWidth < 900;
-
-    type P = { uid: number; el: HTMLElement; panel: Panel; anchor: boolean; w: number; seq: number; collapsed: boolean };
-    let panels: P[] = [];
-    let uidSeq = 1, focusSeq = 1;
-    let focusUid = 0;
-    let lastClosed: { id: string | null; anchor: boolean } | null = null;
     let undoTimer = 0;
 
-    const byUid = (uid: number) => panels.find((p) => p.uid === uid) || null;
-    const anchorOf = () => panels.find((p) => p.anchor) || null;
-
-    function showRail() { rail.hidden = panels.length === 0; countEl.textContent = String(panels.length); countEl.hidden = panels.length < 2; }
-    function setFocus(uid: number) {
-      focusUid = uid; const p = byUid(uid); if (p) p.seq = ++focusSeq;
-      panels.forEach((q) => { q.el.classList.toggle('ep-focus', q.uid === focusUid); q.panel.setActive(q.uid === focusUid); });
-    }
-    function setAnchorFlags() { panels.forEach((q) => q.el.classList.toggle('ep-anchor', q.anchor)); }
-    // DOM order must mirror panels[] order, because the anchor's meaning IS its position.
-    const syncOrder = () => panels.forEach((p) => cols.appendChild(p.el));
-
-    function layout() {
-      if (!panels.length) { wrap!.hidden = true; return; }
-      wrap!.hidden = false;
-      showRail(); setAnchorFlags();
-      if (isMobile()) {
-        // Single-column mobile: only the focused panel shows, full width (parity with the old collapse).
-        panels.forEach((p) => { p.el.classList.remove('ep-collapsed'); p.panel.setWidth(null); p.el.style.display = (p.uid === focusUid || panels.length === 1) ? '' : 'none'; });
-        return;
-      }
-      panels.forEach((p) => p.el.style.removeProperty('display'));
-      const avail = window.innerWidth - TABLEGAP - RAILW;
-      // Auto-accordion (pattern-panel-accordion): park the least-recently-focused overflow to strips.
-      // Capacity must SUBTRACT the strips themselves — each one costs 46px of the same budget. Parking
-      // one shrinks the budget, which can force another, so iterate until it settles. Recomputed on
-      // every layout(), hence self-correcting on open, expand and window resize.
-      for (;;) {
-        const strips = panels.filter((p) => p.collapsed).length;
-        const cap = Math.max(1, Math.floor((avail - strips * 46) / MINEXP));
-        const expandedList = panels.filter((p) => !p.collapsed);
-        if (expandedList.length <= cap) break;
-        const victim = expandedList.filter((p) => !p.anchor).sort((a, b) => a.seq - b.seq)[0] || expandedList[0];
-        victim.collapsed = true;
-      }
-      panels.forEach((p) => p.el.classList.toggle('ep-collapsed', p.collapsed));
-      const expanded = panels.filter((p) => !p.collapsed);
-      const expAvail = avail - (panels.length - expanded.length) * 46;
-      let ws = expanded.map((p) => p.w);
-      const sum = ws.reduce((a, b) => a + b, 0);
-      if (sum > expAvail) { const k = expAvail / sum; ws = ws.map((w) => Math.max(MINW, Math.round(w * k))); }
-      let ei = 0;
-      panels.forEach((p) => { if (p.collapsed) p.panel.setWidth(46); else p.panel.setWidth(ws[ei++]); });
-    }
-
-    // Room for one more EXPANDED panel? The strips already parked eat the same width budget.
-    function roomToExpand(): boolean {
-      if (isMobile()) return true;
-      const avail = window.innerWidth - TABLEGAP - RAILW;
-      const strips = panels.filter((p) => p.collapsed).length;
-      const cap = Math.max(1, Math.floor((avail - strips * 46) / MINEXP));
-      return panels.filter((p) => !p.collapsed).length < cap;
-    }
-    // `anchor` panels are unshifted into slot 0 (nearest the table); everything else appends.
-    // Beyond what fits, an ordinary panel arrives ALREADY PARKED (Dan) — nothing is destroyed to make
-    // room. Only the hard MAXPANELS ceiling still evicts, and that stays undoable.
-    function createPanel(id: string, anchor: boolean): P {
-      if (anchor && panels.length >= MAXPANELS) evictLRU();
-      const frag = tpl.content.cloneNode(true) as DocumentFragment;
-      const el = frag.querySelector<HTMLElement>('.ep-sheet')!;
-      cols.appendChild(el);
-      const uid = uidSeq++;
-      const panel = makePanel(el, {
-        role: 'anchor',
-        onOpenBeside: (rid) => openBeside(rid),
-        onClose: () => closePanel(uid),
-        onCloseAll: () => closeAll(),
-        onExhaustedBack: () => {},
-      });
-      // The anchor is never born parked: a plain table click must always land somewhere visible.
-      const bornParked = !anchor && !roomToExpand();
-      const p: P = { uid, el, panel, anchor, w: defW, seq: ++focusSeq, collapsed: bornParked };
-      if (anchor) panels.unshift(p); else panels.push(p);
-      syncOrder();
-      wireGrip(p);
-      panel.open(id, true);
-      // A panel born as a strip must not steal focus — the user is still reading the panel they had.
-      // Say so once, otherwise the new entity just appears to be missing.
-      if (bornParked) showUndoless('No room to expand — opened as a strip. Click it to open.');
-      else setFocus(uid);
-      return p;
-    }
-    function closePanel(uid: number) {
-      const i = panels.findIndex((p) => p.uid === uid); if (i < 0) return;
-      const p = panels[i];
-      lastClosed = { id: p.panel.currentId(), anchor: p.anchor };
-      p.panel.doClose(true);
-      const el = p.el; window.setTimeout(() => el.remove(), 0);
-      panels.splice(i, 1);
-      if (focusUid === uid) { const n = panels[Math.max(0, i - 1)]; if (n) setFocus(n.uid); else focusUid = 0; }
-      showUndo('Panel closed');
-      layout();
-    }
-    function closeAll() { panels.slice().forEach((p) => { p.panel.doClose(true); p.el.remove(); }); panels = []; focusUid = 0; hideUndo(); layout(); }
-    // The anchor is never the victim: it is the one panel the user did not ask for by hand.
-    // `announce` is false when the user pressed "Close oldest" themselves — they already know.
-    function evictLRU(announce = true) {
-      const victim = panels.filter((p) => !p.anchor).sort((a, b) => a.seq - b.seq)[0] || panels[0]; if (!victim) return;
-      lastClosed = { id: victim.panel.currentId(), anchor: victim.anchor };
-      victim.panel.doClose(true); victim.el.remove();
-      panels = panels.filter((p) => p.uid !== victim.uid);
-      if (announce) showUndo(`Closed oldest panel — ${MAXPANELS} max`);
-    }
-    function focusExisting(id: string): boolean {
-      const p = panels.find((q) => q.panel.currentId() === id);
-      if (p) { setFocus(p.uid); p.el.scrollIntoView({ inline: 'nearest', block: 'nearest' }); layout(); return true; }
-      return false;
-    }
-    // Plain open (Browse row / schema:openEntity): ALWAYS lands in the anchor — never in the focused
-    // panel, never in a new one. Focus is an accident of the last click and must not decide what gets
-    // replaced. No anchor yet ⇒ create one in slot 0.
-    function openEntity(id: string) {
-      if (focusExisting(id)) return;
-      const a = anchorOf();
-      if (a) { if (a.collapsed) { a.collapsed = false; } a.panel.open(id, true); setFocus(a.uid); layout(); }
-      else { createPanel(id, true); layout(); }
-    }
-    // Open beside: ⌘/Ctrl/middle-click, a reference, the ⧉, or the picker → a NEW ordinary panel.
-    // At the ceiling we do NOT quietly destroy the oldest panel and hope the user catches the Undo.
-    // The action refuses, and the toast offers the destructive step as a one-click opt-in — so nothing
-    // the user opened by hand ever disappears unless they said so.
-    function openBeside(id: string) {
-      if (focusExisting(id)) return;
-      if (panels.length >= MAXPANELS) {
-        // Name the REFUSAL, not just the state: the user clicked and nothing opened, so say so first.
-        // The button carries the remedy, so the sentence stays one clause plus the reason.
-        showToast(`Can't add another panel — maximum of ${MAXPANELS} reached.`,
-          { label: 'Close oldest', icon: 'lucide--layers', run: () => { evictLRU(false); createPanel(id, false); layout(); } }, 6000);
-        return;
-      }
-      createPanel(id, false); layout();
-    }
-    // Detach: the anchor becomes an ordinary panel and the slot is free for the next table click.
-    function detachPanel(uid: number) {
-      const p = byUid(uid); if (!p || !p.anchor) return;
-      p.anchor = false; setAnchorFlags();
-      showUndoless('Detached — this panel is yours now. The next row you click opens a fresh one beside the table.');
-    }
-    // Collapse-to-rail (pattern-panel-collapse-rail): park a panel to a slim strip / expand it back.
-    function parkPanel(uid: number) { const p = byUid(uid); if (!p || p.collapsed) return; p.collapsed = true; layout(); }
-    function expandPanel(uid: number) { const p = byUid(uid); if (!p) return; p.collapsed = false; setFocus(uid); layout(); }
-
-    // ── Reorder (pattern-panel-reorder): drag the ⠿ grip to live-swap panel order ──
-    function uidAtX(x: number): number { for (const p of panels) { const r = p.el.getBoundingClientRect(); if (x >= r.left && x <= r.right) return p.uid; } return 0; }
-    function movePanel(dragUid: number, overUid: number) {
-      const from = panels.findIndex((p) => p.uid === dragUid), to = panels.findIndex((p) => p.uid === overUid);
-      if (from < 0 || to < 0 || from === to) return;
-      if (panels[from].anchor) return;              // the anchor's slot is its meaning — it never moves
-      if (anchorOf() && to === 0) return;           // …and nothing else may take slot 0
-      const [m] = panels.splice(from, 1); panels.splice(to, 0, m);
-      syncOrder();
-      layout();
-    }
-    document.addEventListener('pointerdown', (e) => {
-      const h = (e.target as HTMLElement).closest<HTMLElement>('[data-ep-reorder]'); if (!h || isMobile()) return;
-      const sheet = h.closest<HTMLElement>('.ep-sheet'); const p = panels.find((q) => q.el === sheet); if (!p) return;
-      e.preventDefault(); const dragUid = p.uid, sx = e.clientX; let dragging = false; h.classList.add('ep-grip-on');
-      const mv = (me: PointerEvent) => {
-        if (!dragging && Math.abs(me.clientX - sx) > 6) {
-          dragging = true; p.el.classList.add('ep-dragging');
-          if (anchorOf()) cols.classList.add('ep-reordering'); // fade the one panel that can't receive the drop
-        }
-        if (!dragging) return; const over = uidAtX(me.clientX); if (over && over !== dragUid) movePanel(dragUid, over);
-      };
-      const end = () => { h.classList.remove('ep-grip-on'); p.el.classList.remove('ep-dragging'); cols.classList.remove('ep-reordering'); document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', end); };
-      document.addEventListener('pointermove', mv); document.addEventListener('pointerup', end);
+    // ── Stack mechanics via the shared controller (createPanelStack, catalog pattern-multi-panel-drawer).
+    // ep- keeps its own MINW/TABLEGAP (schema entities read fine at 320; the page reserves 110 of peek to
+    // the left of the drawer) and its rich per-panel `makePanel` controller + countdown-bar undo toast +
+    // "Compare with…" picker below; the array/accordion/resize/reorder/park/cap now live once in the factory.
+    type P = StackPanel & { panel: Panel };
+    const stack = createPanelStack<P>({
+      root: wrap, panelsEl: cols, railEl: rail, countEl,
+      shutterEl: wrap.querySelector<HTMLElement>('[data-ep-shutter]'),
+      // Only MINW + TABLEGAP are ep-specific; MAXPANELS/COLLAPSE_AT/STRIP/MINEXP/isMobile take the shared
+      // defaults. 4*MINW + TABLEGAP = 4*320 + 110 = 1390 still fits a 1440 laptop expanded side by side.
+      /* DEFW is the ONE default drawer width (--drawer-w = 480). It sat at 468 here, a number off
+         every scale; MINW/TABLEGAP stay per-surface, which is config rather than drift. */
+      DEFW: 480, MINW: 320, TABLEGAP: 110,
+      storageKey: 'ep-w-panel', widthVar: '--ep-w',
+      cls: { collapsed: 'ep-collapsed', focus: 'ep-focus', anchor: 'ep-anchor', flash: '', gripOn: 'ep-grip-on', dragging: 'ep-dragging', reordering: 'ep-reordering' },
+      reorderSel: '[data-ep-reorder]', panelSel: '.ep-sheet', gripSel: '[data-ep-grip]',
+      buildPanel: () => {
+        const frag = tpl.content.cloneNode(true) as DocumentFragment;
+        const el = frag.querySelector<HTMLElement>('.ep-sheet')!;
+        const panel = makePanel(el, {
+          role: 'anchor',
+          onOpenBeside: (rid) => stack.openBeside(null, rid),
+          onClose: () => { const me = stack.panels().find((q) => q.el === el); if (me) stack.closePanel(me); },
+          onCloseAll: () => stack.closeAll(),
+          onExhaustedBack: () => {},
+        });
+        return { el, panel, uid: 0, anchor: false, w: 0, seq: 0, collapsed: false };
+      },
+      // An ep- panel self-renders on open() (which also resets its internal visit-stack), so there is
+      // nothing extra to render. panelKey = the top of that internal stack, so dedup + undo key off the
+      // entity the panel is actually showing.
+      loadInto: (p, id) => p.panel.open(id, true),
+      render: () => {},
+      panelKey: (p) => p.panel.currentId() || '',
+      onFocus: (p, active) => p.panel.setActive(active),
+      onDestroy: (p) => p.panel.doClose(true),
+      // Mobile open-beside: ep- has no in-place drill, so mirror the old behavior — spawn a panel (layout
+      // then shows only the focused one). Guard the hard cap so a phone can't exceed MAXPANELS.
+      mobileOpen: (_s, id) => { if (stack.atCap()) return; stack.createPanel(id, false); stack.layout(); },
+      toast: (label, action, ms) => showToast(label, action, ms),
+      hideToast: hideUndo,
+      text: {
+        closed: 'Panel closed',
+        capReached: (max) => `Can't add another panel — maximum of ${max} reached.`,
+        evicted: (max) => `Closed oldest panel — ${max} max`,
+        noRoom: 'No room to expand — opened as a strip. Click it to open.',
+        detached: 'Detached — this panel is yours now. The next row you click opens a fresh one beside the table.',
+      },
     });
+    // Plain open (Browse row / schema:openEntity) lands in the anchor; open-beside spawns a pinned panel.
+    const openEntity = (id: string) => stack.open(id);
+    const openBeside = (id: string) => stack.openBeside(null, id);
+    // Switching Schema tabs abandons this entity's context → close the whole stack (see SchemaView tab wiring).
+    document.addEventListener('app:tabchange', () => stack.closeAll());
+
 
     // Undo toast (pattern-undo-toast). ONE duration drives both the countdown bar and the dismiss
     // timer, so the bar can never lie about how long the offer stands.
@@ -1700,14 +2012,6 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       el.hidden = false; restartCountdown(el, ms);
       window.clearTimeout(undoTimer); undoTimer = window.setTimeout(hideUndo, ms);
     }
-    function showUndo(label: string) {
-      if (!lastClosed) return;
-      const snap = lastClosed;
-      // A restored anchor only reclaims slot 0 if the slot is still free.
-      showToast(label, { label: 'Undo', run: () => { if (snap.id) { createPanel(snap.id, snap.anchor && !anchorOf()); layout(); } } });
-    }
-    // The same surface, stating a fact rather than offering a reversal.
-    function showUndoless(label: string) { showToast(label, null); }
     function hideUndo() { const el = document.querySelector<HTMLElement>('[data-ep-undo]'); if (!el) return; window.clearTimeout(undoTimer); el.classList.remove('ep-undo-run'); el.hidden = true; }
 
     // Global entry points (unchanged contract — every tab opens via these).
@@ -1717,23 +2021,23 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       const o = (ev.target as HTMLElement).closest('[data-entity-open]');
       if (o) { ev.preventDefault(); const id = o.getAttribute('data-entity-open')!; if (me.metaKey || me.ctrlKey) openBeside(id); else openEntity(id); return; }
       const det = (ev.target as HTMLElement).closest<HTMLElement>('[data-ep-detach]');
-      if (det) { const sheet = det.closest<HTMLElement>('.ep-sheet'); const p = panels.find((q) => q.el === sheet); if (p) detachPanel(p.uid); return; }
+      if (det) { const sheet = det.closest<HTMLElement>('.ep-sheet'); const p = stack.panels().find((q) => q.el === sheet); if (p) stack.detachPanel(p); return; }
       const park = (ev.target as HTMLElement).closest<HTMLElement>('[data-ep-park]');
-      if (park) { const sh = park.closest<HTMLElement>('.ep-sheet'); const p = panels.find((q) => q.el === sh); if (p) parkPanel(p.uid); return; }
+      if (park) { const sh = park.closest<HTMLElement>('.ep-sheet'); const p = stack.panels().find((q) => q.el === sh); if (p) stack.parkPanel(p.uid); return; }
       // Click a parked strip (anywhere but its ✕) → expand it back.
       const coll = (ev.target as HTMLElement).closest<HTMLElement>('.ep-sheet.ep-collapsed');
-      if (coll && !(ev.target as HTMLElement).closest('[data-ep-close]')) { const p = panels.find((q) => q.el === coll); if (p) expandPanel(p.uid); return; }
+      if (coll && !(ev.target as HTMLElement).closest('[data-ep-close]')) { const p = stack.panels().find((q) => q.el === coll); if (p) stack.expandPanel(p.uid); return; }
       if ((ev.target as HTMLElement).closest('[data-ep-add]')) { toggleAddPop(); return; }
       // Focus a panel by clicking its chrome (not while it's the target of another handler).
       const sheet = (ev.target as HTMLElement).closest<HTMLElement>('.ep-sheet[data-entity-panel]');
-      if (sheet) { const p = panels.find((q) => q.el === sheet); if (p && focusUid !== p.uid) setFocus(p.uid); }
+      if (sheet) { const p = stack.panels().find((q) => q.el === sheet); if (p && stack.focused()?.uid !== p.uid) stack.setFocus(p); }
     });
     document.addEventListener('auxclick', (ev) => {
       const me = ev as MouseEvent; if (me.button !== 1) return;
       const o = (ev.target as HTMLElement).closest('[data-entity-open]');
       if (o) { ev.preventDefault(); openBeside(o.getAttribute('data-entity-open')!); }
     });
-    window.addEventListener('resize', () => { if (!wrap.hidden) layout(); });
+    window.addEventListener('resize', () => { if (!wrap.hidden) stack.layout(); });
 
     // ── "Compare with…" picker (rail ＋): scoped EntitySearch + Suggested defaults ──────────────────
     const pIndex: SchemaEntity[] = (() => { const el = document.querySelector('[data-ep-index]'); return el ? JSON.parse(el.textContent || '[]') : []; })();
@@ -1748,7 +2052,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     let addScope = '';
     // The focused panel's entity → its base + table (the scope + Suggested defaults).
     function pickerCtx(): { base: SchemaEntity | null; table: SchemaEntity | null } {
-      const f = byUid(focusUid); const id = f ? f.panel.currentId() : null; const e = id ? pById.get(id) : null;
+      const f = stack.focused(); const id = f ? f.panel.currentId() : null; const e = id ? pById.get(id) : null;
       if (!e) return { base: pIndex.find((x) => x.kind === 'base') || null, table: null };
       const base = pIndex.find((x) => x.kind === 'base' && x.name === e.baseName) || null;
       const table = e.kind === 'table' ? e : (e.kind === 'field' ? (pIndex.find((x) => x.kind === 'table' && x.name === e.tableName && x.baseName === e.baseName) || null) : null);
@@ -1760,7 +2064,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     // Panels already open are dropped: re-opening one beside itself is never the intent.
     function renderSugg() {
       const { base, table } = pickerCtx();
-      const open = new Set(panels.map((p) => p.panel.currentId()));
+      const open = new Set(stack.panels().map((p) => p.panel.currentId()));
       const row = (e: SchemaEntity, meta: string, ic: string) => ({ e, meta, ic });
       const groups: Array<{ label: string; items: Array<{ e: SchemaEntity; meta: string; ic: string }> }> = [];
       if (addScope) {
@@ -1816,65 +2120,6 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     document.addEventListener('click', (ev) => { if (!addPop.hidden && !addPop.contains(ev.target as Node) && !(ev.target as HTMLElement).closest('[data-ep-add]')) closeAddPop(); });
     document.addEventListener('keydown', (ev) => { if ((ev as KeyboardEvent).key === 'Escape' && !addPop.hidden) closeAddPop(); });
 
-    // Per-panel resize: the full-height left edge line drags THIS panel's width (persists a default).
-    function wireGrip(p: P) {
-      const grip = p.el.querySelector<HTMLElement>('[data-ep-grip]'); if (!grip) return;
-      grip.addEventListener('pointerdown', (e) => {
-        if (isMobile()) return; e.preventDefault(); grip.classList.add('ep-grip-on');
-        const sx = e.clientX, sw = p.w;
-        const mv = (me: PointerEvent) => {
-          const raw = sw + (sx - me.clientX);
-          if (raw < COLLAPSE_AT) { end(); parkPanel(p.uid); return; } // dragged past the floor → park to a rail
-          const cap = window.innerWidth * 0.7; p.w = Math.max(MINW, Math.min(raw, cap)); layout();
-        };
-        const end = () => { grip.classList.remove('ep-grip-on'); document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', end); defW = p.w; saveW(p.w); };
-        document.addEventListener('pointermove', mv); document.addEventListener('pointerup', end);
-      });
-    }
-
-    // Stack resize (the rail's shutter pill): drag left to grow the whole stack, right to shrink it.
-    // Unlike a per-panel grip this drives the TOTAL width, so every expanded panel ends the drag at the
-    // same size. Panels park ONE AT A TIME, leftmost first: for a stack width S we keep the largest k
-    // whose expanded panels still clear the floor (k*MINW + (n−k)*46 ≤ S); the rest become rail strips
-    // and the survivors re-share what's left. Pulling back out unparks them in reverse, right to left.
-    // `p.w` is kept while parked, so the total stays continuous across every boundary.
-    function stackResize(total: number) {
-      const n = panels.length; if (!n) return;
-      const maxTotal = window.innerWidth - TABLEGAP - RAILW;
-      const S = Math.min(total, maxTotal);
-      let k = 0;
-      for (let i = n; i >= 1; i--) { if (i * MINW + (n - i) * 46 <= S) { k = i; break; } }
-      const w = k ? Math.round(Math.max(MINW, Math.min((S - (n - k) * 46) / k, (maxTotal - (n - k) * 46) / k))) : MINW;
-      panels.forEach((p, i) => { p.collapsed = i < n - k; p.w = w; });
-      layout();
-      return k ? w : null;
-    }
-    function wireShutter() {
-      const sh = wrap!.querySelector<HTMLElement>('[data-ep-shutter]'); if (!sh) return;
-      // The rendered stack width — parked panels contribute their 46px strip, not their stored width.
-      const stackWidth = () => panels.reduce((a, p) => a + (p.collapsed ? 46 : p.w), 0);
-      sh.addEventListener('pointerdown', (e) => {
-        if (isMobile()) return; e.preventDefault(); sh.classList.add('ep-shutter-on');
-        const sx = e.clientX, st = stackWidth();
-        const mv = (me: PointerEvent) => { stackResize(st + (sx - me.clientX)); };
-        const end = () => {
-          sh.classList.remove('ep-shutter-on');
-          document.removeEventListener('pointermove', mv); document.removeEventListener('pointerup', end);
-          const w = panels.find((p) => !p.collapsed)?.w; if (w) { defW = w; saveW(w); }
-        };
-        document.addEventListener('pointermove', mv); document.addEventListener('pointerup', end);
-      });
-      // Keyboard parity: ← grows the stack, → shrinks it (same step as a comfortable drag).
-      sh.addEventListener('keydown', (e) => {
-        const k = (e as KeyboardEvent).key;
-        if (k !== 'ArrowLeft' && k !== 'ArrowRight') return;
-        e.preventDefault();
-        const n = panels.length || 1;
-        const w = stackResize(stackWidth() + (k === 'ArrowLeft' ? 32 : -32) * n);
-        if (w) { defW = w; saveW(w); }
-      });
-    }
-    wireShutter();
   }
   wireEntityPanel();
   document.addEventListener('astro:after-swap', wireEntityPanel);

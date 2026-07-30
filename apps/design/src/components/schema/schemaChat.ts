@@ -15,9 +15,16 @@ const fieldIconSvg = (type?: string) => {
   return k ? `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
 };
 
-interface Ref { kind: 'entity' | 'doc'; id: string; name: string; entityKind?: string; fieldType?: string }
+// 'record' = a data record (chip opens the record sidebar); 'browse' = the attached Browse
+// filter state (context-bar only, never an in-message reference) — data-page spec.
+// NOTE: this kind used to be called 'view'. It has nothing to do with an Airtable VIEW
+// (see view-schema-details) — it is a snapshot of the Browse grid's own filter state. Renamed
+// so the word `view` means exactly one thing across the Schema code.
+interface Ref { kind: 'entity' | 'doc' | 'record' | 'browse'; id: string; name: string; entityKind?: string; fieldType?: string }
 const refIcon = (r: Ref) =>
   r.kind === 'doc' ? '<span class="iconify lucide--file-text"></span>'
+  : r.kind === 'record' ? '<span class="iconify lucide--circle-dot concept-ic-record"></span>'
+  : r.kind === 'browse' ? '<span class="iconify lucide--sliders-horizontal"></span>'
   : r.entityKind === 'field' ? fieldIconSvg(r.fieldType) || '<span class="iconify lucide--tag"></span>'
   : r.entityKind === 'table' ? '<span class="iconify lucide--table-2"></span>'
   : '<span class="iconify lucide--database concept-ic-base"></span>';
@@ -26,7 +33,7 @@ const refIcon = (r: Ref) =>
 const chipHtml = (r: Ref, removable = false) =>
   removable
     ? entityChip({ name: r.name, icon: refIcon(r), attrs: `data-chat-chip data-ref-kind="${esc(r.kind)}" data-ref-id="${esc(r.id)}"`, remove: 'data-chip-remove' })
-    : entityChip({ name: r.name, icon: refIcon(r), clickable: true, attrs: r.kind === 'doc' ? `data-doc-open="${esc(r.id)}"` : `data-entity-open="${esc(r.id)}"` });
+    : entityChip({ name: r.name, icon: refIcon(r), clickable: true, attrs: r.kind === 'doc' ? `data-doc-open="${esc(r.id)}"` : r.kind === 'record' ? `data-record-open="${esc(r.id)}"` : `data-entity-open="${esc(r.id)}"` });
 
 export function wireChat() {
   const root = document.querySelector<HTMLElement>('[data-chat]');
@@ -72,8 +79,8 @@ export function wireChat() {
     scrollDown();
     syncScrollBtn();
   };
-  // assistant footer (marker + actions) — mirrors the frontmatter msgActions
-  const msgActions = '<div class="chat-msg-foot"><span class="chat-msg-mark"><span class="iconify lucide--sparkles size-3.5" aria-hidden="true"></span></span><div class="chat-msg-acts"><button type="button" class="chat-act" data-chat-copy aria-label="Copy"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span></button><button type="button" class="chat-act" aria-label="Good response"><span class="iconify lucide--thumbs-up size-3.5" aria-hidden="true"></span></button><button type="button" class="chat-act" aria-label="Bad response"><span class="iconify lucide--thumbs-down size-3.5" aria-hidden="true"></span></button></div></div>';
+  // assistant footer (hover actions; no standing marker) — mirrors the frontmatter msgActions
+  const msgActions = '<div class="chat-msg-foot"><div class="chat-msg-acts"><button type="button" class="chat-act" data-chat-copy aria-label="Copy"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span></button><button type="button" class="chat-act" aria-label="Good response"><span class="iconify lucide--thumbs-up size-3.5" aria-hidden="true"></span></button><button type="button" class="chat-act" aria-label="Bad response"><span class="iconify lucide--thumbs-down size-3.5" aria-hidden="true"></span></button></div></div>';
 
   // Open a specific thread from elsewhere (e.g. the EntityPanel "Referenced by ▸ Chats" jump).
   // The caller activates the Chat tab first; this just selects the thread inside it.
@@ -190,6 +197,28 @@ export function wireChat() {
       if (!scope.some((r) => r.kind === 'doc' && r.id === id)) scope.push({ kind: 'doc', id, name: doc.dataset.docTitle || 'Doc' });
       renderContext();
       (document.activeElement as HTMLElement | null)?.blur();
+      return;
+    }
+    // "Current Browse view" (data-page spec) — snapshot the LIVE Browse state (table +
+    // active filter count) the grid mirrors onto its root. Re-adding replaces the chip.
+    const browse = t.closest<HTMLElement>('[data-chat-add-browse]');
+    if (browse) {
+      const dg = document.querySelector<HTMLElement>('[data-databrowse]');
+      const table = dg?.dataset.dgCtxTable || 'Browse';
+      const n = Number(dg?.dataset.dgCtxFilters || 0);
+      const name = n > 0 ? `Browse: ${table} · ${n} filter${n === 1 ? '' : 's'}` : `Browse: ${table}`;
+      const scope = (scopeByThread[activeId] ||= []);
+      const i = scope.findIndex((r) => r.kind === 'browse');
+      if (i >= 0) scope.splice(i, 1);
+      scope.push({ kind: 'browse', id: 'browse-view', name });
+      renderContext();
+      (document.activeElement as HTMLElement | null)?.blur();
+      return;
+    }
+    // A record reference chip → the record sidebar (data-page spec).
+    const rec = t.closest<HTMLElement>('[data-record-open]');
+    if (rec) {
+      document.dispatchEvent(new CustomEvent('data:openRecord', { detail: { id: rec.dataset.recordOpen } }));
     }
   });
   // add-context picker search — filter items + hide empty section headers
@@ -305,7 +334,7 @@ export function wireChat() {
     if (!c) return;
     const id = `doc-chat-${++docSeq}`;
     const title = (convertName?.value || '').trim() || defaultDocName();
-    c.insertAdjacentHTML('beforeend', `<div class="chat-msg chat-msg-system" data-chat-msg><div class="chat-doccard"><span class="chat-doccard-ic"><span class="iconify lucide--file-plus-2 size-4" aria-hidden="true"></span></span><span class="chat-doccard-meta"><span class="chat-doccard-label">Saved as a doc</span><span class="chat-doccard-title">${esc(title)}</span></span><button type="button" class="btn btn-sm btn-neutral gap-1.5 chat-doccard-open" data-doc-open="${esc(id)}">Open<span class="iconify lucide--arrow-up-right size-3.5" aria-hidden="true"></span></button></div></div>`);
+    c.insertAdjacentHTML('beforeend', `<div class="chat-msg chat-msg-system" data-chat-msg><div class="chat-doccard"><span class="chat-doccard-ic"><span class="iconify lucide--file-plus-2 size-4" aria-hidden="true"></span></span><span class="chat-doccard-meta"><span class="chat-doccard-label">Saved as a doc</span><span class="chat-doccard-title">${esc(title)}</span></span><button type="button" class="btn btn-sm btn-soft btn-primary gap-1.5 chat-doccard-open" data-doc-open="${esc(id)}">Open<span class="iconify lucide--arrow-up-right size-3.5" aria-hidden="true"></span></button></div></div>`);
     (document.activeElement as HTMLElement | null)?.blur(); // close the popover
     scrollDown();
   };

@@ -968,6 +968,14 @@ export async function runIncrementalBackup(
     ) {
       const syncComments = deps.syncComments;
       const fetchComments = deps.fetchRecordComments;
+      // Comment attachments (server-comment-attachments): comments-sync still
+      // REGISTERS pending bo_at_comment_attachments rows from this incremental
+      // capture (register-first, server-side). This engine-brokered pass has no
+      // StorageWriter — it never resolves a storage destination — so it does not
+      // download the bytes here. The engine's comments-plan recovery force-
+      // refreshes any stuck non-uploaded row on the next full backup, which DOES
+      // have a writer, and downloads them then. We intentionally ignore the
+      // sync response's pending set in this path (no `onPendingAttachments`).
       try {
         commentsOutcome = await captureCommentsForRecords({
           toFetch: visitedRefs,

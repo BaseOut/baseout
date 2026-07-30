@@ -18,6 +18,16 @@ import type { LifecycleOp, PriorView, PriorWorkingSet, SchemaDiffResult } from "
 import type { InterfaceDiffResult, PriorInterfaceWorkingSet } from "./interfaces-sync";
 import type { ViewsDiffResult } from "./views-sync";
 import type { CommentDiffResult, PriorComment } from "./comments-sync";
+import type {
+  CommentAttachmentDiffResult,
+  PriorCommentAttachment,
+} from "./comment-attachments-sync";
+import type {
+  BaseAccessDiffResult,
+  IngestResult,
+  PriorGrant,
+  PriorInviteLink,
+} from "./collaborators-sync";
 import type { MediaDiffResult, PriorAssetRef } from "./media-sync";
 import type { AutomationDiffResult, PriorAutomationWorkingSet } from "./automations-sync";
 import type { PriorCell, PriorRecord, RecordDiffResult } from "./record-diff";
@@ -379,6 +389,381 @@ export async function applyCommentBatch(
       .set({ status: "deleted" })
       .where(inArray(spacePg.comments.airtableCommentId, diff.deletions));
   }
+}
+
+// ───────────────────── comment attachments (server-comment-attachments) ─────
+// Register-first: comments-sync upserts pending rows for attachments found in
+// comment payloads; the capture task downloads them while URLs are live
+// (comment-attachments-sync.ts owns the pure extract + diff + wire types).
+
+/** Prior rows for the batch's comment ids — the diff's whole scope. */
+export async function readCommentAttachmentWorkingSet(
+  tx: SpaceTx,
+  commentIds: string[],
+): Promise<PriorCommentAttachment[]> {
+  if (commentIds.length === 0) return [];
+  const rows = await tx
+    .select({
+      commentId: spacePg.commentAttachments.airtableCommentId,
+      attachmentId: spacePg.commentAttachments.airtableAttachmentId,
+      recordId: spacePg.commentAttachments.recordId,
+      uploadStatus: spacePg.commentAttachments.uploadStatus,
+      status: spacePg.commentAttachments.status,
+    })
+    .from(spacePg.commentAttachments)
+    .where(inArray(spacePg.commentAttachments.airtableCommentId, commentIds));
+  return rows;
+}
+
+/**
+ * Write a comment-attachment diff: upserts keyed by
+ * (airtable_comment_id, airtable_attachment_id). A row already `ready`/`uploaded`
+ * keeps its upload_status (never regressed); a resurrected `deleted` row flips
+ * back to active + pending so it re-downloads. Deletions are soft (bytes kept).
+ */
+export async function applyCommentAttachmentBatch(
+  tx: SpaceTx,
+  args: { baseId: string; baseRunId: string; diff: CommentAttachmentDiffResult; now?: Date },
+): Promise<void> {
+  const { baseId, baseRunId, diff } = args;
+  const now = args.now ?? new Date();
+  for (const u of diff.upserts) {
+    // On conflict: refresh metadata + seen stamps + resurrect to active. Only
+    // touch upload_status when resurrecting (→ pending) — otherwise leave the
+    // lifecycle (pending/ready/uploaded) exactly as the writer set it.
+    const conflictSet: Record<string, unknown> = {
+      baseId,
+      tableId: u.tableId,
+      recordId: u.recordId,
+      url: u.url,
+      filename: u.filename,
+      mimeType: u.mimeType,
+      sizeBytes: u.sizeBytes,
+      status: "active",
+      lastSeenRun: baseRunId,
+      lastSeenAt: now,
+    };
+    if (u.regressUploadStatus) conflictSet.uploadStatus = "pending";
+    await tx
+      .insert(spacePg.commentAttachments)
+      .values({
+        airtableCommentId: u.commentId,
+        airtableAttachmentId: u.attachmentId,
+        baseId,
+        tableId: u.tableId,
+        recordId: u.recordId,
+        url: u.url,
+        filename: u.filename,
+        mimeType: u.mimeType,
+        sizeBytes: u.sizeBytes,
+        uploadStatus: "pending",
+        status: "active",
+        firstSeenRun: baseRunId,
+        lastSeenRun: baseRunId,
+        firstSeenAt: now,
+        lastSeenAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          spacePg.commentAttachments.airtableCommentId,
+          spacePg.commentAttachments.airtableAttachmentId,
+        ],
+        set: conflictSet,
+      });
+  }
+  for (const key of diff.deletions) {
+    const sep = key.indexOf(":");
+    if (sep < 0) continue;
+    const commentId = key.slice(0, sep);
+    const attachmentId = key.slice(sep + 1);
+    await tx
+      .update(spacePg.commentAttachments)
+      .set({ status: "deleted" })
+      .where(
+        and(
+          eq(spacePg.commentAttachments.airtableCommentId, commentId),
+          eq(spacePg.commentAttachments.airtableAttachmentId, attachmentId),
+        ),
+      );
+  }
+}
+
+/**
+ * Record ids that hold `active` comment-attachment rows stuck below `uploaded`
+ * — comments-plan force-refreshes these regardless of comment-count delta so a
+ * fresh URL is issued (design Decision 3, recovery path).
+ */
+export async function readStuckCommentAttachmentRecords(
+  tx: SpaceTx,
+  baseId: string,
+): Promise<string[]> {
+  const rows = await tx
+    .selectDistinct({ recordId: spacePg.commentAttachments.recordId })
+    .from(spacePg.commentAttachments)
+    .where(
+      and(
+        eq(spacePg.commentAttachments.baseId, baseId),
+        eq(spacePg.commentAttachments.status, "active"),
+        sql`${spacePg.commentAttachments.uploadStatus} <> 'uploaded'`,
+      ),
+    );
+  return rows.map((r) => r.recordId);
+}
+
+// ─────────────────── base collaborators (server-base-collaborators) ─────────
+// principals (identity) + base_access (grants) + invite_links, plus the
+// base_collab_meta side table (collaborators-sync.ts owns the pure ingest +
+// diff). Per-base full-state replace: observed rows upsert active, absent
+// active rows soft-delete; principals are never deleted.
+
+export async function readBaseGrants(tx: SpaceTx, baseId: string): Promise<PriorGrant[]> {
+  const rows = await tx
+    .select({
+      principalId: spacePg.baseAccess.principalId,
+      baseId: spacePg.baseAccess.baseId,
+      interfaceId: spacePg.baseAccess.interfaceId,
+      scope: spacePg.baseAccess.scope,
+      permissionLevel: spacePg.baseAccess.permissionLevel,
+      status: spacePg.baseAccess.status,
+    })
+    .from(spacePg.baseAccess)
+    .where(eq(spacePg.baseAccess.baseId, baseId));
+  return rows;
+}
+
+export async function readBaseInviteLinks(tx: SpaceTx, baseId: string): Promise<PriorInviteLink[]> {
+  const rows = await tx
+    .select({
+      airtableInviteId: spacePg.inviteLinks.airtableInviteId,
+      baseId: spacePg.inviteLinks.baseId,
+      interfaceId: spacePg.inviteLinks.interfaceId,
+      linkScope: spacePg.inviteLinks.linkScope,
+      status: spacePg.inviteLinks.status,
+    })
+    .from(spacePg.inviteLinks)
+    .where(eq(spacePg.inviteLinks.baseId, baseId));
+  return rows;
+}
+
+/**
+ * Apply a collaborator capture: principals (fill-never-blank identity), grants
+ * (upsert active + soft-delete absent), invite links (same), and the base-meta
+ * side row. All keyed by the tables' unique indexes so retries are idempotent.
+ */
+export async function applyCollaboratorCapture(
+  tx: SpaceTx,
+  args: { baseRunId: string; ingest: IngestResult; diff: BaseAccessDiffResult; now?: Date },
+): Promise<void> {
+  const { baseRunId, ingest, diff } = args;
+  const now = args.now ?? new Date();
+
+  for (const p of ingest.principals) {
+    await tx
+      .insert(spacePg.principals)
+      .values({
+        principalId: p.principalId,
+        kind: p.kind,
+        email: p.email,
+        name: p.name,
+        firstSeenRun: baseRunId,
+        lastSeenRun: baseRunId,
+        firstSeenAt: now,
+        lastSeenAt: now,
+      })
+      .onConflictDoUpdate({
+        target: spacePg.principals.principalId,
+        set: {
+          // fill-never-blank: keep an existing identity value, fill when NULL
+          email: sql`coalesce(${spacePg.principals.email}, excluded.email)`,
+          name: sql`coalesce(${spacePg.principals.name}, excluded.name)`,
+          lastSeenRun: baseRunId,
+          lastSeenAt: now,
+        },
+      });
+  }
+
+  for (const g of diff.grantUpserts) {
+    await tx
+      .insert(spacePg.baseAccess)
+      .values({
+        principalId: g.principalId,
+        baseId: g.baseId,
+        interfaceId: g.interfaceId,
+        scope: g.scope,
+        permissionLevel: g.permissionLevel,
+        grantedByUserId: g.grantedByUserId,
+        airtableCreatedTime: g.airtableCreatedTime,
+        status: "active",
+        firstSeenRun: baseRunId,
+        lastSeenRun: baseRunId,
+        firstSeenAt: now,
+        lastSeenAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          spacePg.baseAccess.baseId,
+          spacePg.baseAccess.interfaceId,
+          spacePg.baseAccess.scope,
+          spacePg.baseAccess.principalId,
+        ],
+        set: {
+          permissionLevel: g.permissionLevel,
+          grantedByUserId: g.grantedByUserId,
+          airtableCreatedTime: g.airtableCreatedTime,
+          status: "active", // resurrect if it was deleted
+          lastSeenRun: baseRunId,
+          lastSeenAt: now,
+        },
+      });
+  }
+  for (const d of diff.grantDeletions) {
+    await tx
+      .update(spacePg.baseAccess)
+      .set({ status: "deleted", lastSeenRun: baseRunId, lastSeenAt: now })
+      .where(
+        and(
+          eq(spacePg.baseAccess.baseId, d.baseId),
+          eq(spacePg.baseAccess.interfaceId, d.interfaceId),
+          eq(spacePg.baseAccess.scope, d.scope),
+          eq(spacePg.baseAccess.principalId, d.principalId),
+        ),
+      );
+  }
+
+  for (const l of diff.inviteUpserts) {
+    await tx
+      .insert(spacePg.inviteLinks)
+      .values({
+        airtableInviteId: l.airtableInviteId,
+        baseId: l.baseId,
+        interfaceId: l.interfaceId,
+        linkScope: l.linkScope,
+        invitedEmail: l.invitedEmail,
+        permissionLevel: l.permissionLevel,
+        referredByUserId: l.referredByUserId,
+        restrictedToEmailDomains: l.restrictedToEmailDomains,
+        type: l.type,
+        airtableCreatedTime: l.airtableCreatedTime,
+        status: "active",
+        firstSeenRun: baseRunId,
+        lastSeenRun: baseRunId,
+        firstSeenAt: now,
+        lastSeenAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [
+          spacePg.inviteLinks.baseId,
+          spacePg.inviteLinks.interfaceId,
+          spacePg.inviteLinks.linkScope,
+          spacePg.inviteLinks.airtableInviteId,
+        ],
+        set: {
+          invitedEmail: l.invitedEmail,
+          permissionLevel: l.permissionLevel,
+          referredByUserId: l.referredByUserId,
+          restrictedToEmailDomains: l.restrictedToEmailDomains,
+          type: l.type,
+          airtableCreatedTime: l.airtableCreatedTime,
+          status: "active",
+          lastSeenRun: baseRunId,
+          lastSeenAt: now,
+        },
+      });
+  }
+  for (const d of diff.inviteDeletions) {
+    await tx
+      .update(spacePg.inviteLinks)
+      .set({ status: "deleted", lastSeenRun: baseRunId, lastSeenAt: now })
+      .where(
+        and(
+          eq(spacePg.inviteLinks.baseId, d.baseId),
+          eq(spacePg.inviteLinks.interfaceId, d.interfaceId),
+          eq(spacePg.inviteLinks.linkScope, d.linkScope),
+          eq(spacePg.inviteLinks.airtableInviteId, d.airtableInviteId),
+        ),
+      );
+  }
+
+  // Base-level stamps onto the bo_at_bases registry row (design Decision 5).
+  // The base row is created by the schema capture; if a collaborators capture
+  // somehow precedes it, upsert a minimal row so the stamps aren't lost.
+  await tx
+    .insert(spacePg.bases)
+    .values({
+      baseId: ingest.meta.baseId,
+      name: "",
+      workspaceId: ingest.meta.workspaceId,
+      airtableCreatedTime: ingest.meta.airtableCreatedTime,
+      ownPermissionLevel: ingest.meta.ownPermissionLevel,
+    })
+    .onConflictDoUpdate({
+      target: spacePg.bases.baseId,
+      set: {
+        // fill-never-blank: don't wipe a known value with a missing one
+        workspaceId: sql`coalesce(excluded.workspace_id, ${spacePg.bases.workspaceId})`,
+        airtableCreatedTime: sql`coalesce(excluded.airtable_created_time, ${spacePg.bases.airtableCreatedTime})`,
+        ownPermissionLevel: sql`coalesce(excluded.own_permission_level, ${spacePg.bases.ownPermissionLevel})`,
+      },
+    });
+
+  // Capture record: retain the un-modeled packages block + raw payload.
+  await tx
+    .insert(spacePg.baseCollabMeta)
+    .values({
+      baseId: ingest.meta.baseId,
+      packages: ingest.meta.packages ?? null,
+      raw: ingest.meta.raw ?? null,
+      lastSeenRun: baseRunId,
+      lastSeenAt: now,
+    })
+    .onConflictDoUpdate({
+      target: spacePg.baseCollabMeta.baseId,
+      set: {
+        packages: ingest.meta.packages ?? null,
+        raw: ingest.meta.raw ?? null,
+        lastSeenRun: baseRunId,
+        lastSeenAt: now,
+      },
+    });
+}
+
+/**
+ * Space-wide access view (task 3.2b): every principal joined to its active
+ * grants — the "who can touch what" listing, one row per (principal, base,
+ * scope) with no per-base fan-out.
+ */
+export async function readSpaceAccessView(tx: SpaceTx): Promise<
+  Array<{
+    principalId: string;
+    kind: string;
+    email: string | null;
+    name: string | null;
+    baseId: string;
+    interfaceId: string;
+    scope: string;
+    permissionLevel: string | null;
+    grantedByUserId: string | null;
+    airtableCreatedTime: Date | null;
+    status: string;
+  }>
+> {
+  return tx
+    .select({
+      principalId: spacePg.principals.principalId,
+      kind: spacePg.principals.kind,
+      email: spacePg.principals.email,
+      name: spacePg.principals.name,
+      baseId: spacePg.baseAccess.baseId,
+      interfaceId: spacePg.baseAccess.interfaceId,
+      scope: spacePg.baseAccess.scope,
+      permissionLevel: spacePg.baseAccess.permissionLevel,
+      grantedByUserId: spacePg.baseAccess.grantedByUserId,
+      airtableCreatedTime: spacePg.baseAccess.airtableCreatedTime,
+      status: spacePg.baseAccess.status,
+    })
+    .from(spacePg.principals)
+    .innerJoin(spacePg.baseAccess, eq(spacePg.principals.principalId, spacePg.baseAccess.principalId))
+    .where(eq(spacePg.baseAccess.status, "active"));
 }
 
 // ───────────────────────── media index (server-media-index) ─────────────────

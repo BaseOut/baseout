@@ -546,14 +546,34 @@ const Tag = embedded ? 'div' : 'form';
                   suffix never shrinks and never wraps, so the NAME is still the first
                   thing to truncate — the fix that stopped "People & Fi…". */}
               {g.isPlaceholder && (
-                <span class="bst-gwhy tooltip" data-tip="Airtable only returns workspace names with full-environment access. Rename it here, or reconnect with full access.">· name unavailable</span>
+                <span class="bst-gwhy tooltip" data-tip="Airtable only returns workspace names with full-environment access. Rename it here, or reconnect with full access."><span class="bst-gsep" aria-hidden="true"></span>name unavailable</span>
               )}
               {/* Both names, but only because the user EARNED it by answering
                   "Keep mine". Showing Airtable's name beside every alias by
                   default would put a permanent second string in the one place
                   that already had to be fixed for truncation. */}
               {g.dualName && (
-                <span class="bst-gwhy tooltip" data-tip={`Your name for this workspace. Airtable calls it ${g.dualName}.`} data-bst-gdual>· {g.dualName} in Airtable</span>
+                <span class="bst-gwhy tooltip" data-tip={`Your name for this workspace. Airtable calls it ${g.dualName}.`} data-bst-gdual><span class="bst-gsep" aria-hidden="true"></span>{g.dualName} in Airtable</span>
+              )}
+              {/* The workspace ID, and the way out to Airtable (founder, 2026-07-30). The id is
+                  the only unambiguous handle when two workspaces share a name, or when the name on
+                  screen is a placeholder the user typed themselves — and a picker is exactly where
+                  someone wants to go and LOOK at what they are being asked about. Real workspaces
+                  only: the synthetic buckets have no id and nothing to open. Same
+                  `nowrap`/`flex: none` discipline as `.bst-gwhy`, so the NAME truncates first.
+                  Crowding + separator fixed (Oleh, 2026-07-30): the typed "· " read as a crude dot
+                  and ran flush against the auto-add toggle in column 3. The dot is now the shared
+                  `.bst-gsep` hairline (same element `.bst-gwhy` uses below), and `.bst-gident`
+                  carries its own right padding so the cell keeps breathing room before the
+                  boundary it spans up to, instead of clipping flush against it. */}
+              {g.isReal && (
+                <a
+                  class="bst-gwsid tooltip"
+                  data-tip={`${g.id} · open this workspace in Airtable`}
+                  href={`https://airtable.com/${g.id}`}
+                  target="_blank"
+                  rel="noopener"
+                ><span class="bst-gsep" aria-hidden="true"></span><span class="bst-gwsid-id">{g.id}</span><span class="iconify lucide--external-link size-3" aria-hidden="true"></span></a>
               )}
               {/* Still-matching bases are WAITING on their own lookup — a spinner, not
                   a caveat. This group empties itself as the answers land. */}
@@ -896,7 +916,35 @@ const Tag = embedded ? 'div' : 'form';
      separates this from the name (measured: 8px). Reading the header with `textContent` makes
      it LOOK glued — "Marketing· Growth in Airtable" — because that API concatenates sibling
      elements without their layout. Do not "fix" that reading artifact with a margin. */
-  .bst-gwhy { font-size: .75rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .55); white-space: nowrap; flex: none; cursor: help; }
+  .bst-gwhy { display: inline-flex; align-items: center; gap: .5rem; font-size: .75rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .55); white-space: nowrap; flex: none; cursor: help; }
+  /* Shared "attached fact" separator — replaces the typed "·" character (Oleh, 2026-07-30: "точку
+     можна зробити якусь цікавіше" — the literal interpunct read as crude). A 1px currentColor
+     hairline, not a glyph, so it renders identically at any zoom/font and never needs its own
+     vertical-align tweak. Used by BOTH `.bst-gwhy` (· name unavailable / · dual name) and
+     `.bst-gwsid` (the id) so the two read as ONE convention for "a secondary fact attached to the
+     name" — the busiest case ("Workspace 1 · name unavailable · wspOps…") shows both back to back
+     and must not read as two different kinds of thing. 12px tall (matches the .75rem text it sits
+     beside), centred by the parent's `align-items: center`. */
+  .bst-gsep { display: inline-block; width: 1px; height: .75rem; flex: none; background: currentColor; opacity: .35; }
+  /* The workspace id + its link out. Two corrections from Oleh, 2026-07-30:
+     · the separator is the shared `.bst-gsep` hairline above, not a typed "·" — one convention
+       beside `.bst-gwhy` rather than a second one living next to it;
+     · the external-link glyph is ALWAYS visible, not revealed on hover. A hidden affordance is not
+       an affordance: nothing else on the row says this text is clickable, so hiding the one mark
+       that does means the user has to hover at random to discover it. Its gap from the id text
+       grew 4px → 8px so glyph and text read level with each other instead of crammed together. */
+  /* Unlike `.bst-gwhy` this one may SHRINK. The suffix is a fixed sentence, but an id is 17-plus
+     characters of it, and holding it rigid is what pushed the header into the next column. The
+     name still yields first (it has `flex: 0 1 auto` and a 5rem floor); the id yields second. */
+  /* The LINK does not clip — only the id TEXT inside it does. Clipping the link itself pushed the
+     external-link glyph past the overflow edge and deleted it from the screen (measured: the icon
+     sat at x=664 while its container ended at 657), which broke the one thing Oleh asked to keep
+     permanently visible. Separator and glyph are `flex: none`; the id yields. */
+  .bst-gwsid { display: inline-flex; align-items: center; gap: .5rem; min-width: 0; flex: 0 1 auto; font-size: .75rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .42); white-space: nowrap; text-decoration: none; }
+  .bst-gwsid-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bst-gwsid .iconify { flex: none; opacity: .7; }
+  .bst-gwsid:hover { color: var(--color-primary); }
+  .bst-gwsid:hover .iconify, .bst-gwsid:focus-visible .iconify { opacity: 1; }
   .bst-gspin { flex: none; opacity: .5; }
   /* Name-swap prompt — a quiet line attached under its group header, not an
      alert band: it concerns ONE workspace and expires the moment it is answered. */
@@ -907,7 +955,15 @@ const Tag = embedded ? 'div' : 'form';
   /* Identity cell spans the checkbox + name columns; everything that identifies
      the workspace (chevron, select-all, glyph, name, kind, rename, badges) lays
      out inside it with flex, leaving the columns to the right free. */
-  .bst-gident { grid-column: 1 / 3; display: flex; align-items: center; gap: .5rem; min-width: 0; }
+  /* `overflow: hidden` is load-bearing, not tidiness: the identity cell spans only the first two
+     grid columns, so anything inside it that refuses to shrink runs UNDER the auto-add toggle in
+     column 3 rather than being clipped (seen for real when the workspace id was added). */
+  /* `padding-right` (Oleh, 2026-07-30: the id "ran right up to the edge… touching the control in
+     the next column") reserves 8px of the cell's OWN width as breathing room before the boundary
+     it spans up to, so the clip in a long-id case leaves a gap instead of running flush against
+     the auto-add toggle. It shrinks the content box, not the grid track — `.bst-gwsid` (which
+     already yields before `.bst-gname`) simply gives up 8px sooner. */
+  .bst-gident { grid-column: 1 / 3; display: flex; align-items: center; gap: .5rem; min-width: 0; padding-right: .5rem; overflow: hidden; }
   /* Count spans the two number columns, right-aligned like their values. */
   .bst-gcount { grid-column: 4 / 6; text-align: right; font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .6); font-variant-numeric: tabular-nums; white-space: nowrap; }
   /* Collapse hides the group's bases; the sticky workspace header stays. */

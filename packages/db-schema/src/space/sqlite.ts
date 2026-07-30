@@ -72,6 +72,10 @@ export const bases = sqliteTable('bo_at_bases', {
   baseId: text('base_id').primaryKey(),
   name: text('name').notNull(),
   description: text('description'),                    // Airtable's imported description
+  // Collaborator-capture stamps (server-base-collaborators) — mirror of pg.ts.
+  workspaceId: text('workspace_id'),
+  airtableCreatedTime: text('airtable_created_time'),
+  ownPermissionLevel: text('own_permission_level'),
   ...annotation,
   ...lifecycle,
 })
@@ -483,6 +487,99 @@ export const comments = sqliteTable('bo_at_comments', {
   byBase: index('bo_at_comments_base_idx').on(t.baseId),
   uniqComment: uniqueIndex('bo_at_comments_comment_uq').on(t.airtableCommentId),
 }))
+
+// ---- Comment attachments (server-comment-attachments) ---- Mirror of pg.ts commentAttachments.
+export const commentAttachments = sqliteTable('bo_at_comment_attachments', {
+  id: text('id').primaryKey(),
+  airtableCommentId: text('airtable_comment_id').notNull(),
+  airtableAttachmentId: text('airtable_attachment_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('airtable_table_id').notNull(),
+  recordId: text('airtable_record_id').notNull(),
+  url: text('url'),
+  filename: text('filename'),
+  sizeBytes: integer('size_bytes'),
+  mimeType: text('mime_type'),
+  contentHash: text('content_hash'),
+  storageKey: text('storage_key'),
+  uploadStatus: text('upload_status').notNull().default('pending'),
+  status: text('status').notNull().default('active'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+  uploadedAt: text('uploaded_at'),
+}, (t) => ({
+  uniqAttachment: uniqueIndex('bo_at_comment_attachments_uq').on(t.airtableCommentId, t.airtableAttachmentId),
+  byComment: index('bo_at_comment_attachments_comment_idx').on(t.airtableCommentId),
+  byRecord: index('bo_at_comment_attachments_record_idx').on(t.recordId),
+  byStatus: index('bo_at_comment_attachments_status_idx').on(t.status, t.uploadStatus),
+}))
+
+// ---- Base collaborators (server-base-collaborators) ---- Mirror of pg.ts.
+export const principals = sqliteTable('bo_at_principals', {
+  id: text('id').primaryKey(),
+  principalId: text('principal_id').notNull(),
+  kind: text('kind').notNull(),
+  email: text('email'),
+  name: text('name'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({
+  uniqPrincipal: uniqueIndex('bo_at_principals_uq').on(t.principalId),
+}))
+
+export const baseAccess = sqliteTable('bo_at_base_access', {
+  id: text('id').primaryKey(),
+  principalId: text('principal_id').notNull(),
+  baseId: text('base_id').notNull(),
+  interfaceId: text('interface_id').notNull().default(''),
+  scope: text('scope').notNull(),
+  permissionLevel: text('permission_level'),
+  grantedByUserId: text('granted_by_user_id'),
+  airtableCreatedTime: text('airtable_created_time'),
+  status: text('status').notNull().default('active'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({
+  uniqGrant: uniqueIndex('bo_at_base_access_uq').on(t.baseId, t.interfaceId, t.scope, t.principalId),
+  byPrincipal: index('bo_at_base_access_principal_idx').on(t.principalId),
+  byBase: index('bo_at_base_access_base_idx').on(t.baseId),
+}))
+
+export const inviteLinks = sqliteTable('bo_at_invite_links', {
+  id: text('id').primaryKey(),
+  airtableInviteId: text('airtable_invite_id').notNull(),
+  baseId: text('base_id').notNull(),
+  interfaceId: text('interface_id').notNull().default(''),
+  linkScope: text('link_scope').notNull(),
+  invitedEmail: text('invited_email'),
+  permissionLevel: text('permission_level'),
+  referredByUserId: text('referred_by_user_id'),
+  restrictedToEmailDomains: text('restricted_to_email_domains', { mode: 'json' }),
+  type: text('type'),
+  airtableCreatedTime: text('airtable_created_time'),
+  status: text('status').notNull().default('active'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({
+  uniqInvite: uniqueIndex('bo_at_invite_links_uq').on(t.baseId, t.interfaceId, t.linkScope, t.airtableInviteId),
+  byBase: index('bo_at_invite_links_base_idx').on(t.baseId),
+}))
+
+export const baseCollabMeta = sqliteTable('bo_at_base_collab_meta', {
+  baseId: text('base_id').primaryKey(),
+  packages: text('packages', { mode: 'json' }),
+  raw: text('raw', { mode: 'json' }),
+  lastSeenRun: text('last_seen_run'),
+  lastSeenAt: text('last_seen_at'),
+})
 
 // ---- Media index (server-media-index) ---- Mirror of pg.ts assets/assetRefs.
 export const assets = sqliteTable('bo_at_assets', {

@@ -31,6 +31,11 @@
         "href": "/schema",
         "icon": "iconify lucide--git-branch"
       },
+      {
+        "label": "Data",
+        "href": "/data",
+        "icon": "iconify lucide--database"
+      },
       { "label": "Account", "icon": "", "isTitle": true },
       {
         "label": "Sources",

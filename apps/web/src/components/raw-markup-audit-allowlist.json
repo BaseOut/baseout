@@ -29,5 +29,8 @@
   ],
   "src/views/schema/ChangelogTab.astro": [
     "daisyUI-direct in a view (CLAUDE.md §4.2 second tier, web-schema-changelog vanilla-in-view decision): base/kind `select`, Include-removed `toggle`, `input` search, and the day-grouped feed rows (`badge` kind chips, breadcrumb, before→after delta, warning line) rendered as innerHTML in the lazy-load client script — same shape as RelationshipsTab/HealthTab."
+  ],
+  "src/views/DataView.astro": [
+    "The Data phase-1 shell (web-data-page 2.1, promoted from ui-only@8d9d1cd): the flat 5-tab bar reuses the Schema shell's daisyUI `tab` primitives inside `tabs tabs-border` (SB_ENTRIES: 'pattern-section-tabs' — the shared wireSectionTabs controller) and the shared `.sch-*` shell classes in global.css; the empty state uses catalog btn. Panels render views/schema/SoonTab.astro (reused, not recreated)."
   ]
 }

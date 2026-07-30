@@ -1,0 +1,59 @@
+---
+/**
+ * /data — the Data page (web-data-page 2.1, phase-1 shell). Space-scoped;
+ * auth via middleware like every interior page. Mirrors /schema's loader
+ * shape: engine schema read decides `hasData` (tables captured), the latest
+ * succeeded backup run stamps freshness. No tier gate on the shell — every
+ * panel is a designed soon-state and exposes no record data; the read-API
+ * promotion adds the capability gate with the data it gates (task 1.3).
+ */
+import { env } from 'cloudflare:workers';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import DataView from '../views/DataView.astro';
+import EmptyState from '../components/ui/EmptyState.astro';
+import { getBreadcrumbs } from '../lib/config';
+import { createBackupEngine } from '../lib/backup-engine';
+import { backupRuns } from '../db/schema/core';
+import { and, desc, eq, isNotNull } from 'drizzle-orm';
+
+const breadcrumbs = getBreadcrumbs('/data');
+const { account, db } = Astro.locals;
+const spaceId = account?.space?.id ?? null;
+
+// `hasData` = the per-Space DB holds captured tables (same read /schema uses).
+// Engine unavailability degrades to the pre-first-backup empty state — never
+// an error page for a shell of soon-states.
+let hasData = false;
+if (spaceId && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+  const engine = createBackupEngine({
+    binding: env.BACKUP_ENGINE,
+    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+  });
+  const schemaRes = await engine.getSchema(spaceId);
+  if (schemaRes.ok) hasData = schemaRes.tables.length > 0;
+}
+
+// Freshness stamp — the data reflects the latest completed backup run.
+let lastSyncedAt: string | null = null;
+if (db && spaceId) {
+  const [latest] = await db
+    .select({ completedAt: backupRuns.completedAt })
+    .from(backupRuns)
+    .where(and(eq(backupRuns.spaceId, spaceId), eq(backupRuns.status, 'succeeded'), isNotNull(backupRuns.completedAt)))
+    .orderBy(desc(backupRuns.completedAt))
+    .limit(1);
+  lastSyncedAt = latest?.completedAt?.toISOString() ?? null;
+}
+---
+
+<SidebarLayout pageTitle="Data" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  {!spaceId ? (
+    <EmptyState
+      icon="lucide--folder"
+      title="No active Space"
+      description="Select a Space to browse its backed-up data."
+    />
+  ) : (
+    <DataView hasData={hasData} lastSyncedAt={lastSyncedAt} />
+  )}
+</SidebarLayout>

@@ -1,0 +1,39 @@
+{
+  "_fixture": "PROVISIONAL — built from Airtable REST API docs (2026-07-29), not a live capture. Run ../spike.mjs against a seeded base to confirm/replace. The `_`-prefixed keys are notes, not part of the payload.",
+  "_source": "GET /v0/{baseId}/{tableId}/{recordId}/comments — one element of the `comments` array",
+  "id": "comHhd7ehks2foty2",
+  "author": { "id": "usrABCDEF1234567", "email": "author@example.com", "name": "Author Name" },
+  "text": "Here's the signed contract and the logo.",
+  "createdTime": "2026-07-30T14:05:00.000Z",
+  "lastUpdatedTime": null,
+  "attachments": [
+    {
+      "id": "attX1111111111111",
+      "filename": "contract.pdf",
+      "url": "https://v5.airtableusercontent.com/…EXPIRES_IN_2_HOURS…",
+      "type": "application/pdf",
+      "size": 20841
+    },
+    {
+      "id": "attY2222222222222",
+      "filename": "logo.png",
+      "url": "https://v5.airtableusercontent.com/…EXPIRES_IN_2_HOURS…",
+      "type": "image/png",
+      "size": 5120,
+      "width": 512,
+      "height": 512,
+      "thumbnails": {
+        "small": { "url": "https://…", "width": 36, "height": 36 },
+        "large": { "url": "https://…", "width": 256, "height": 256 }
+      }
+    }
+  ],
+  "_column_mapping": {
+    "id": "airtable_attachment_id",
+    "filename": "filename",
+    "url": "url (expires ~2h — download-time only, not persisted)",
+    "type": "mime_type",
+    "size": "size_bytes",
+    "width/height/thumbnails": "NOT stored — derived metadata"
+  }
+}

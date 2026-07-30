@@ -1,0 +1,220 @@
+---
+/**
+ * DataView — the Data page (/data). Space-scoped, read-only. Schema's sibling: it browses
+ * backed-up *rows* where Schema browses *structure*, so it deliberately reuses Schema's
+ * shell — the same tab grammar (`.sch-tabbar` / `.sch-panel` + a `wireDataTabs()` toggle),
+ * the same empty/soon states, the same freshness stamp.
+ *
+ * Tabs: Browse · Changelog · Comments · Docs · Chat (flat row — 5 tabs still don't need
+ * Schema's 4 clusters; `pattern-section-tabs` only clusters when the row stops scanning).
+ * Phase 1 stands up the navigable shell; each panel's real content lands in later phases
+ * (Browse = the record grid, Changelog = the data change feed, Docs/Chat = the reused
+ * Schema surfaces scoped to data).
+ */
+import DataBrowse from '../components/data/DataBrowse.astro';
+import DataChangelog from '../components/data/DataChangelog.astro';
+import DataComments from '../components/data/DataComments.astro';
+import StaticImport from '../components/data/StaticImport.astro';
+import LockedTab from '../components/data/LockedTab.astro';
+import RecordPanel from '../components/data/RecordPanel.astro';
+import SchemaDocs from '../components/schema/SchemaDocs.astro';
+import SchemaChat from '../components/schema/SchemaChat.astro';
+import QuickAskDock from '../components/schema/QuickAskDock.astro';
+import EntityPanel from '../components/schema/EntityPanel.astro';
+import { dataTablesToSchema, buildDataIndex } from '../components/data/dataToSchema';
+import type { SchemaDoc } from '../components/schema/schemaEntities';
+import type { ChatThread } from '../components/schema/SchemaChat.astro';
+import type { DataMode, DataBase, DataTable, DataRecord, DataChangeEntry, DataComment, SavedView, ViewGroup } from '../components/data/dataTypes';
+
+interface Props {
+  bases: DataBase[];
+  tables: DataTable[];
+  records?: DataRecord[];
+  changelog?: DataChangeEntry[];
+  /** Captured Airtable record comments across the Space (comments-explorer). */
+  comments?: DataComment[];
+  /** Per-run true totals for the per-run changelog (a run can create thousands). */
+  runTotals?: Record<string, { created: number; updated: number; deleted: number }>;
+  /** Saved Browse views (iteration-2 Views/Tabs shell). */
+  views?: SavedView[];
+  /** Thematic groups (folders) for the saved views. */
+  viewGroups?: ViewGroup[];
+  /** Data-scoped docs + chat threads — the SAME Schema Docs/Chat surfaces, scoped to data. */
+  docs?: SchemaDoc[];
+  chatThreads?: ChatThread[];
+  /** Which data posture this Space has — dynamic drives the full experience (Phase 6 = static). */
+  mode?: DataMode;
+  /** When the browsed data was last synced (a backup run). Stamped in the header. */
+  lastSyncedAt?: string;
+  /** True when the last backup is older than the Space's schedule expects — shows a banner. */
+  stale?: boolean;
+  /** Table Browse opens on (the `big` fixture points at the multi-million-row table). */
+  landingTableId?: string;
+  /** Browse async state — the harness sets this via ?fixture=loading|error to preview those states. */
+  loadState?: 'ready' | 'loading' | 'error';
+}
+const { bases = [], tables = [], records = [], changelog = [], comments = [], runTotals = {}, views = [], viewGroups = [], docs = [], chatThreads = [], mode = 'dynamic', lastSyncedAt, stale = false, landingTableId, loadState = 'ready' } = Astro.props;
+const hasData = tables.length > 0;
+// Reuse the Schema Docs + Chat surfaces: project data tables into the SchemaTable shape and
+// build the shared entity index those components consume (no new Docs/Chat UI).
+const schemaTables = dataTablesToSchema(tables);
+const dataIndex = buildDataIndex(bases, tables, docs);
+// Static-only Spaces have files, not a queryable store: Browse becomes a simple CSV import,
+// and the dynamic-only tabs (Changelog / record History / Chat) render as locked states.
+const isStatic = mode === 'static';
+
+// Freshness stamp — the whole page reflects one synced backup, so it lives at the title
+// level (once), right-aligned, exactly like Schema's "Schema as of …".
+const fmtStamp = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+};
+---
+
+<div class="sch" data-dataview data-mode={mode}>
+  {/* Page header — title + the page-wide freshness stamp (applies to every tab). */}
+  <header class="sch-head">
+    <div class="min-w-0">
+      <h1 class="text-title">Data</h1>
+      <p class="text-sm text-base-content/60 mt-1 max-w-xl">Browse, trace, and search the records inside your backups. Read-only.</p>
+    </div>
+    <div class="sch-head-r">
+      {hasData && lastSyncedAt && (
+        <p class="sch-stamp tooltip tooltip-left" data-tip="Data is captured at backup time and may drift from Airtable until the next run.">
+          <span class="iconify lucide--refresh-cw size-3.5" aria-hidden="true"></span>
+          Synced as of {fmtStamp(lastSyncedAt)}
+        </p>
+      )}
+      {/* Global quick-ask launcher (data-page spec: data threads in the global chat widget).
+          Dynamic-only — chatting queries a live copy, same gate as the Chat tab. */}
+      {hasData && !isStatic && (
+        <button type="button" class="btn btn-soft btn-primary gap-1.5" data-sch-ask>
+          <span class="iconify lucide--sparkles size-4" aria-hidden="true"></span>Ask about your data
+        </button>
+      )}
+    </div>
+  </header>
+
+  {hasData && stale && lastSyncedAt && (
+    <div class="alert alert-soft alert-warning dv-stale" role="status">
+      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+      <span>Data shown is from the backup of {fmtStamp(lastSyncedAt)} — older than this Space's schedule expects. A newer backup will refresh what you see here.</span>
+    </div>
+  )}
+
+  {hasData ? (
+    <>
+      {/* Tab bar — same daisyUI `tabs tabs-border` pattern as Schema, flat 5-tab row. */}
+      <div class="sch-tabbar" role="tablist" aria-label="Data sections">
+        <div class="sch-gtabs tabs tabs-border">
+          <button type="button" class="tab tab-active" role="tab" data-tab="browse"><span class="iconify lucide--table-2 size-4" aria-hidden="true"></span>Browse</button>
+          <button type="button" class="tab" role="tab" data-tab="changelog"><span class="iconify lucide--history size-4" aria-hidden="true"></span>Changelog</button>
+          <button type="button" class="tab" role="tab" data-tab="comments"><span class="iconify lucide--message-square-text size-4" aria-hidden="true"></span>Comments</button>
+          <button type="button" class="tab" role="tab" data-tab="docs"><span class="iconify lucide--book-text size-4" aria-hidden="true"></span>Docs</button>
+          <button type="button" class="tab" role="tab" data-tab="chat"><span class="iconify lucide--messages-square size-4" aria-hidden="true"></span>Chat</button>
+        </div>
+      </div>
+
+      {/* Panels — full width. Phase 1 renders placeholders; later phases fill each in. */}
+      <div class="sch-panel" data-panel="browse">
+        {isStatic
+          ? <StaticImport bases={bases} tables={tables} records={records} />
+          : <DataBrowse bases={bases} tables={tables} records={records} views={views} viewGroups={viewGroups} landingTableId={landingTableId} loadState={loadState} />}
+      </div>
+
+      <div class="sch-panel" data-panel="changelog" hidden>
+        {isStatic
+          ? <LockedTab title="Change tracking needs a dynamic backup" what="The Changelog compares every backup in a live database. Your Space stores static files, so there's nothing to diff — switch to a dynamic backup to see what changed between runs." />
+          : <DataChangelog bases={bases} tables={tables} changelog={changelog} records={records} runTotals={runTotals} now={lastSyncedAt} />}
+      </div>
+
+      {/* Comments — the third feed on the shared changelog row grid. Static Spaces have files,
+          not an Airtable connection, so there are no comments to capture. */}
+      <div class="sch-panel" data-panel="comments" hidden>
+        {isStatic
+          ? <LockedTab title="Comments need a dynamic backup" what="Record comments are read from Airtable at backup time. Your Space stores static files, so there are no comments to capture — switch to a dynamic backup to see them." />
+          : <DataComments bases={bases} tables={tables} comments={comments} records={records} lastSyncedAt={lastSyncedAt} />}
+      </div>
+
+      <div class="sch-panel" data-panel="docs" hidden>
+        {/* records + views turn on the Data-only record tagging (`@@` widget, Records tag group);
+            Schema renders the same component without them and gets zero record UI. */}
+        <SchemaDocs docs={docs} index={dataIndex} bases={bases} tables={schemaTables} records={records} views={views} />
+      </div>
+
+      <div class="sch-panel" data-panel="chat" hidden>
+        {isStatic
+          ? <LockedTab title="Data chat needs a dynamic backup" what="Chatting about your records queries a live database. Your Space stores static files, so there's nothing to query — switch to a dynamic backup to ask about your data." />
+          : <SchemaChat threads={chatThreads} index={dataIndex} docs={docs.map((d) => ({ id: d.id, title: d.title }))} aiState="ready" browseContext />}
+      </div>
+
+      {/* Global quick-ask widget — the shared QuickAskDock with DATA threads + data scopes
+          (incl. "Current Browse view"), per the data-page spec. */}
+      {!isStatic && <QuickAskDock threads={chatThreads} index={dataIndex} docs={docs.map((d) => ({ id: d.id, title: d.title }))} noun="data" browseItem />}
+    </>
+  ) : (
+    <div class="sch-empty">
+      <span class="sch-empty-ic"><span class="iconify lucide--database"></span></span>
+      <p class="sch-empty-title">Data appears after your first backup</p>
+      <p class="sch-empty-sub">Once a backup completes, the records inside it show up here to browse, trace, and search. Start one from the Backups page.</p>
+      <a href="/backups" class="btn btn-primary btn-sm mt-1"><span class="iconify lucide--archive size-4" aria-hidden="true"></span>Go to Backups</a>
+    </div>
+  )}
+</div>
+
+{/* Shared record detail drawer — opened by Browse rows (data:openRecord). `docs` feeds the
+    "Referenced in" reverse links (records tagged in documents). */}
+{hasData && <RecordPanel bases={bases} tables={tables} records={records} mode={mode} docs={docs} comments={comments} lastSyncedAt={lastSyncedAt} />}
+
+{/* Shared entity detail panel — a record-panel field click opens that FIELD's config here
+    (schema:openEntity), reusing the exact Schema drawer (iteration-2 field-click). */}
+{hasData && !isStatic && <EntityPanel index={dataIndex} docs={docs} />}
+
+<style>
+  /* Shell borrowed 1:1 from SchemaView so Data reads as the same system. */
+  .sch { display: flex; flex-direction: column; gap: 1rem; }
+  .sch-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .sch-stamp { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .55); }
+  .sch-head-r { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; justify-content: flex-end; }
+
+  .sch-tabbar { display: flex; align-items: stretch; gap: .1rem; flex-wrap: wrap; border-bottom: 1px solid var(--color-base-300); }
+  .sch-gtabs { display: flex; align-items: stretch; }
+  .sch-gtabs.tabs { border: 0; }
+  .sch-gtabs .tab { height: auto; padding: .5rem .6rem; font-size: .86rem; font-weight: 560; gap: .4rem; color: oklch(from var(--color-base-content) l c h / .68); background: transparent; white-space: nowrap; }
+  .sch-gtabs .tab .iconify { opacity: .72; }
+  .sch-gtabs .tab:hover { color: var(--color-base-content); background: transparent; }
+  .sch-gtabs .tab.tab-active { color: var(--color-primary); }
+  .sch-gtabs .tab.tab-active .iconify { opacity: 1; }
+
+  @media (max-width: 720px) {
+    .sch-tabbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+    .sch-head-r { align-items: flex-start; }
+  }
+
+  .sch-panel { width: 100%; }
+
+  .sch-empty, .sch-soon { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: .5rem; padding: 2rem; }
+  .sch-empty-ic { width: 3rem; height: 3rem; border-radius: .8rem; display: grid; place-items: center; background: var(--color-base-200); margin-bottom: .3rem; }
+  .sch-empty-ic .iconify { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .55); }
+  .sch-empty-title { font-size: 1rem; font-weight: 650; }
+  .sch-empty-sub { font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .6); max-width: 44ch; }
+
+  .sch-soon { min-height: 300px; border: 1px dashed var(--color-base-300); border-radius: .85rem; background: oklch(from var(--color-base-200) l c h / .3); }
+  .sch-soon p { font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .66); max-width: 56ch; }
+</style>
+
+<script>
+  // Tab toggle — the shared controller (pattern-section-tabs). Was a hand-copy of SchemaView's,
+  // which is exactly how the two drifted and how neither ended up reading the URL.
+  import { wireSectionTabs } from '../components/ui/sectionTabs';
+
+  function wireDataTabs() {
+    const root = document.querySelector<HTMLElement>('[data-dataview]');
+    if (!root) return;
+    wireSectionTabs({ root, searchSelector: '[data-sch-search]' });
+  }
+  wireDataTabs();
+  document.addEventListener('astro:after-swap', wireDataTabs);
+</script>

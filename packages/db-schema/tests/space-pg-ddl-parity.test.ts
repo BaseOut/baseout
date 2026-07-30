@@ -29,7 +29,7 @@ describe("per-Space PG DDL ↔ migration parity", () => {
     expect(fromModule).toEqual(fromMigration);
   });
 
-  it("covers all 37 bo_at_ tables", () => {
+  it("covers all 38 bo_at_ tables", () => {
     // 20 base + 4 Health metric (server-schema-health-scoring)
     // + 1 synced-view-candidates (server-relationships)
     // + 2 chat (server-schema-chat: threads + messages)
@@ -37,7 +37,10 @@ describe("per-Space PG DDL ↔ migration parity", () => {
     // + 5 interface entity/link tables (server-interfaces-normalize:
     //   bo_at_pages, bo_at_forms, bo_at_page_tables, bo_at_page_fields,
     //   bo_at_form_fields — bo_at_interfaces was reshaped, not added).
+    // + 1 comment attachments (server-comment-attachments: bo_at_comment_attachments).
+    // + 4 base collaborators (server-base-collaborators: bo_at_principals,
+    //   bo_at_base_access, bo_at_invite_links, bo_at_base_collab_meta).
     const creates = (SPACE_PG_DDL.match(/CREATE TABLE/g) ?? []).length;
-    expect(creates).toBe(37);
+    expect(creates).toBe(42);
   });
 });

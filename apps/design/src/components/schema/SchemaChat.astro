@@ -18,10 +18,11 @@ import { entityChip } from './entityChip';
 import type { SchemaEntity } from './schemaEntities';
 
 export interface ChatRef {
-  kind: 'entity' | 'doc';
+  /** 'record' = a data record (Data page) — its chip opens the record sidebar. */
+  kind: 'entity' | 'doc' | 'record';
   id: string;
   name: string;
-  entityKind?: 'base' | 'table' | 'field';
+  entityKind?: 'base' | 'table' | 'field' | 'view';
   fieldType?: string;
 }
 export interface ChatMessage {
@@ -48,8 +49,11 @@ interface Props {
   docs: { id: string; title: string }[];
   /** Pro+ capability. `ready` → active composer; otherwise the upgrade gate. */
   aiState?: 'ready' | 'locked' | 'no-credits';
+  /** Data page: offer "Current Browse view" (table + active filters) in the Add-context
+      picker — the data-page spec's attachable Browse filter state. */
+  browseContext?: boolean;
 }
-const { threads, index, docs, aiState = 'ready' } = Astro.props;
+const { threads, index, docs, aiState = 'ready', browseContext = false } = Astro.props;
 const canChat = aiState === 'ready';
 
 const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
@@ -63,20 +67,21 @@ const fieldIconSvg = (type?: string) => {
 };
 const refIcon = (r: ChatRef) =>
   r.kind === 'doc' ? '<span class="iconify lucide--file-text"></span>'
+  : r.kind === 'record' ? '<span class="iconify lucide--circle-dot concept-ic-record"></span>'
   : r.entityKind === 'field' ? fieldIconSvg(r.fieldType) || '<span class="iconify lucide--tag"></span>'
   : r.entityKind === 'table' ? '<span class="iconify lucide--table-2"></span>'
   : '<span class="iconify lucide--database concept-ic-base"></span>';
 // A reference chip — the shared catalog chip (entityChip). Context-bar scope chips are
 // removable (a static pill + trailing ×); in-message references are clickable buttons that
-// open the entity / doc. The removal + open hooks are preserved on the chip via attrs.
+// open the entity / doc / record (a record ref opens the record sidebar — data-page spec).
 const refChip = (r: ChatRef, removable = false) =>
   removable
     ? entityChip({ name: r.name, icon: refIcon(r), attrs: `data-chat-chip data-ref-kind="${esc(r.kind)}" data-ref-id="${esc(r.id)}"`, remove: 'data-chip-remove' })
-    : entityChip({ name: r.name, icon: refIcon(r), clickable: true, attrs: r.kind === 'doc' ? `data-doc-open="${esc(r.id)}"` : `data-entity-open="${esc(r.id)}"` });
+    : entityChip({ name: r.name, icon: refIcon(r), clickable: true, attrs: r.kind === 'doc' ? `data-doc-open="${esc(r.id)}"` : r.kind === 'record' ? `data-record-open="${esc(r.id)}"` : `data-entity-open="${esc(r.id)}"` });
 
-// Assistant footer — the AI marker + hover actions (Copy / thumbs), Claude-style.
+// Assistant footer — hover actions only (Copy / thumbs). No standing AI marker: the plate +
+// alignment already say "assistant", and an always-on sparkle read as orphaned decoration.
 const msgActions = `<div class="chat-msg-foot">
-  <span class="chat-msg-mark"><span class="iconify lucide--sparkles size-3.5" aria-hidden="true"></span></span>
   <div class="chat-msg-acts">
     <button type="button" class="chat-act" data-chat-copy aria-label="Copy"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span></button>
     <button type="button" class="chat-act" aria-label="Good response"><span class="iconify lucide--thumbs-up size-3.5" aria-hidden="true"></span></button>
@@ -90,7 +95,7 @@ const renderMessage = (m: ChatMessage) => {
       <div class="chat-doccard">
         <span class="chat-doccard-ic"><span class="iconify lucide--file-plus-2 size-4" aria-hidden="true"></span></span>
         <span class="chat-doccard-meta"><span class="chat-doccard-label">Saved as a doc</span><span class="chat-doccard-title">${esc(m.convertedDoc.title)}</span></span>
-        <button type="button" class="btn btn-sm btn-neutral gap-1.5 chat-doccard-open" data-doc-open="${esc(m.convertedDoc.id)}">Open<span class="iconify lucide--arrow-up-right size-3.5" aria-hidden="true"></span></button>
+        <button type="button" class="btn btn-sm btn-soft btn-primary gap-1.5 chat-doccard-open" data-doc-open="${esc(m.convertedDoc.id)}">Open<span class="iconify lucide--arrow-up-right size-3.5" aria-hidden="true"></span></button>
       </div>
     </div>`;
   }
@@ -132,7 +137,7 @@ const ctxGroups = [
 <section class="chat" data-chat data-can-chat={canChat ? '1' : '0'}>
   {/* ── thread rail ── */}
   <aside class="chat-rail">
-    <button type="button" class="btn btn-sm btn-neutral gap-1.5 chat-newbtn" data-chat-new>
+    <button type="button" class="btn btn-sm btn-soft btn-primary gap-1.5 chat-newbtn" data-chat-new>
       <span class="iconify lucide--plus size-4" aria-hidden="true"></span>New chat
     </button>
     <div class="chat-threads" data-chat-threads role="tablist" aria-label="Chat threads">
@@ -244,9 +249,19 @@ const ctxGroups = [
                 <div tabindex="0" class="dropdown-content chat-addctx-pop">
                   <label class="input input-sm chat-addctx-search">
                     <span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span>
-                    <input type="text" data-chat-ctx-search placeholder="Search bases, tables, fields, docs…" aria-label="Search context" autocomplete="off" />
+                    <input type="text" data-chat-ctx-search placeholder="Search bases, tables, fields, views, docs…" aria-label="Search context" autocomplete="off" />
                   </label>
                   <div class="chat-addctx-list" data-chat-ctx-list>
+                    {browseContext && (
+                      <>
+                        <div class="chat-addctx-sec" data-ctx-sec>Browse</div>
+                        <button type="button" class="chat-addctx-item" data-chat-add-browse data-search="current browse view filters table">
+                          <span class="chat-addctx-ic"><span class="iconify lucide--sliders-horizontal size-3.5" aria-hidden="true"></span></span>
+                          <span class="chat-addctx-item-name">Current Browse view</span>
+                          <span class="chat-addctx-item-path">table + filters</span>
+                        </button>
+                      </>
+                    )}
                     {ctxGroups.map((g) => g.items.length > 0 && (
                       <>
                         <div class="chat-addctx-sec" data-ctx-sec>{g.label}</div>
@@ -272,7 +287,7 @@ const ctxGroups = [
               </div>
               <span class="chat-credits"><span class="iconify lucide--zap size-3.5" aria-hidden="true"></span>~2 credits / message</span>
               <button type="button" class="btn btn-sm btn-primary btn-square chat-send" data-chat-send aria-label="Send" disabled><span class="iconify lucide--arrow-up size-4" aria-hidden="true"></span></button>
-              <button type="button" class="btn btn-sm btn-neutral btn-square chat-stop" data-chat-stop aria-label="Stop" hidden><span class="iconify lucide--square size-3.5" aria-hidden="true"></span></button>
+              <button type="button" class="btn btn-sm btn-soft btn-primary btn-square chat-stop" data-chat-stop aria-label="Stop" hidden><span class="iconify lucide--square size-3.5" aria-hidden="true"></span></button>
             </div>
           </div>
           <p class="chat-disclaimer">AI can make mistakes. Verify important details against your schema.</p>
@@ -290,7 +305,7 @@ const ctxGroups = [
   /* full-height chat (Claude feel) — fills the viewport below the page chrome.
      grid-template-rows: minmax(0,1fr) clamps the row to the chat height so the
      conversation scrolls internally instead of growing the page. */
-  .chat { display: grid; grid-template-columns: minmax(200px, 256px) 1fr; grid-template-rows: minmax(0, 1fr); gap: 1rem; height: max(520px, calc(100dvh - 216px)); }
+  .chat { display: grid; grid-template-columns: var(--rail-m) 1fr; grid-template-rows: minmax(0, 1fr); gap: 1rem; height: max(520px, calc(100dvh - 216px)); }
   /* collapsed sidebar (toggle in the top bar) — like the Docs list collapse */
   .chat.is-rail-collapsed { grid-template-columns: 1fr; }
   .chat.is-rail-collapsed .chat-rail { display: none; }
@@ -334,23 +349,35 @@ const ctxGroups = [
   .chat-thread { display: contents; }
   .chat-thread[hidden] { display: none; }
   /* conversation centered in a readable column (like ChatGPT/Claude) */
-  .chat-convo { flex: 1; overflow-y: auto; min-height: 0; padding: 1.9rem max(1.5rem, calc((100% - 48rem) / 2)); display: flex; flex-direction: column; gap: 1.9rem; }
+  .chat-convo { flex: 1; overflow-y: auto; min-height: 0; padding: 24px max(24px, calc((100% - 48rem) / 2)); display: flex; flex-direction: column; gap: 20px; }
   .chat-convo-hint { display: flex; align-items: center; gap: .5rem; margin: auto; max-width: 48ch; text-align: center; font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .6); }
 
-  /* messages — Claude model: user = grey rounded bubble (right, content-width);
-     assistant = no bubble, full-width text + a marker & hover actions beneath. */
+  /* messages — user = grey rounded bubble (right, content-width); assistant = a QUIETER
+     plate (weaker fill than the user's, no border) so the reply has an anchor instead of
+     floating as bare text in the dark field — this matches the catalog example, which
+     always drew the assistant on a subtle plate. Body text is softened to ~85%: pure
+     white on near-black halates and reads as heavy on the dark theme. */
   .chat-msg { display: flex; flex-direction: column; gap: .5rem; }
+  /* Mirrored sides, both width-capped: mine on the RIGHT, the assistant's on the LEFT with
+     a clear gap on its right — the two lanes must read at a glance, never interleaved
+     full-width blocks. */
   .chat-msg-user { align-self: flex-end; align-items: flex-end; max-width: 78%; }
-  .chat-msg-assistant { align-self: stretch; max-width: 100%; }
+  /* 90% like Claude's replies — near-full for long answers, but the right gap keeps the
+     left-lane read. */
+  .chat-msg-assistant { align-self: flex-start; align-items: flex-start; max-width: 90%; }
   .chat-msg-who { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-  .chat-msg-body { font-size: .95rem; line-height: 1.7; white-space: pre-wrap; }
-  .chat-msg-assistant .chat-msg-body { color: var(--color-base-content); }
-  .chat-msg-user .chat-msg-body { padding: .65rem .95rem; border-radius: 1.1rem 1.1rem .3rem 1.1rem; background: oklch(from var(--color-base-200) l c h / .9); font-size: .92rem; line-height: 1.6; }
+  .chat-msg-body { font-size: .95rem; line-height: 1.7; white-space: pre-wrap; color: oklch(from var(--color-base-content) l c h / .85); }
+  .chat-msg-assistant .chat-msg-body { padding: 12px 16px; border-radius: 1.1rem 1.1rem 1.1rem .3rem; background: oklch(from var(--color-base-200) l c h / .45); }
+  /* The user bubble carries the EXACT pale-blue tint of the active thread row
+     (oklch primary / .1 — approved recipe; never a violet-reading mix) so "mine" vs
+     "assistant" reads by colour, not just alignment. */
+  .chat-msg-user .chat-msg-body { padding: .65rem .95rem; border-radius: 1.1rem 1.1rem .3rem 1.1rem; background: oklch(from var(--color-primary) l c h / .1); font-size: .92rem; line-height: 1.6; }
   /* references — quiet defined chips under the reply */
   .chat-msg-refs { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; margin-top: .15rem; }
   .chat-msg-refs-label { font-size: .7rem; color: oklch(from var(--color-base-content) l c h / .45); margin-right: .1rem; }
-  /* assistant footer — coral marker + hover actions (Copy / thumbs), Claude-style */
-  .chat-msg-foot { display: flex; align-items: center; gap: .35rem; margin-top: .35rem; }
+  /* assistant footer — hover actions (Copy / thumbs); no standing marker (visual debris).
+     The .chat-msg-mark stays defined for the streaming status line only. */
+  .chat-msg-foot { display: flex; align-items: center; gap: .35rem; }
   .chat-msg-mark { display: grid; place-items: center; width: 1.4rem; height: 1.4rem; color: var(--color-primary); flex: none; }
   .chat-msg-mark .iconify { font-size: .85rem; }
   .chat-msg-acts { display: inline-flex; align-items: center; gap: 1px; opacity: 0; transition: opacity .12s ease; }
@@ -374,8 +401,10 @@ const ctxGroups = [
   .chat-convert-input { width: 100%; }
   .chat-convert-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 2px; }
 
-  /* composer — one box: scope chips (top) → textarea → toolbar (+ Add context · …) */
-  .chat-composer-wrap { border-top: 1px solid var(--color-base-300); padding: .85rem max(.9rem, calc((100% - 48rem) / 2)) 1.1rem; background: var(--color-base-100); }
+  /* composer — one box: scope chips (top) → textarea → toolbar (+ Add context · …).
+     No border-top on the wrap: the composer card's own border is the boundary — a second
+     frame around a frame only added weight. */
+  .chat-composer-wrap { padding: 8px max(16px, calc((100% - 48rem) / 2)) 12px; background: var(--color-base-100); }
   .chat-context-chips { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
   .chat-context-chips:empty { display: none; }
   .chat-context-whole { font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .5); display: inline-flex; align-items: center; gap: .3rem; }
@@ -410,7 +439,7 @@ const ctxGroups = [
   .chat-scrollbtn { position: absolute; top: -2.9rem; left: 50%; transform: translateX(-50%); display: grid; place-items: center; width: 2.1rem; height: 2.1rem; border-radius: 999px; border: 1px solid var(--color-base-300); background: var(--color-base-100); color: var(--color-base-content); cursor: pointer; box-shadow: 0 4px 14px oklch(0 0 0 / .14); z-index: 5; }
   .chat-scrollbtn:hover { background: var(--color-base-200); }
   .chat-scrollbtn[hidden] { display: none; }
-  .chat-disclaimer { text-align: center; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .4); margin-top: .55rem; }
+  .chat-disclaimer { text-align: center; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .4); margin-top: 8px; }
 
   /* streaming status line — coral marker + "thinking" */
   .chat-streaming { display: flex; flex-direction: row; align-items: center; gap: .35rem; }

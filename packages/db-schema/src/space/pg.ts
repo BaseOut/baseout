@@ -84,6 +84,11 @@ export const bases = pgTable('bo_at_bases', {
   baseId: text('base_id').primaryKey(),
   name: text('name').notNull(),
   description: text('description'),                    // Airtable's imported description
+  // Collaborator-capture stamps (server-base-collaborators, design Decision 5):
+  // base-level facts from GET /v0/meta/bases stamped onto the registry row.
+  workspaceId: text('workspace_id'),
+  airtableCreatedTime: timestamp('airtable_created_time', { withTimezone: true }),
+  ownPermissionLevel: text('own_permission_level'),
   ...annotation,
   ...lifecycle,
 })
@@ -560,6 +565,120 @@ export const comments = pgTable('bo_at_comments', {
   byBase: index('bo_at_comments_base_idx').on(t.baseId),
   uniqComment: uniqueIndex('bo_at_comments_comment_uq').on(t.airtableCommentId),
 }))
+
+// ---- Comment attachments (server-comment-attachments) ----
+// Attachment bytes referenced inside record comments. Airtable comment
+// attachment URLs expire ~2h after issuance, so the workflows task downloads
+// them in the same run that comments-sync registers them (register-first:
+// row exists as `pending` before any download). Identity is
+// (airtable_comment_id, airtable_attachment_id) — comment attachments have no
+// field anchor, so this is deliberately a separate table from bo_at_attachments
+// (whose composite_id keys on table+field+record; design Decision 1). Reuses the
+// pending|ready|uploaded lifecycle from backup-attachments; soft-deleted (status
+// 'deleted') when the parent comment is deleted or the attachment drops from a
+// re-capture (bytes retained per retention rules).
+export const commentAttachments = pgTable('bo_at_comment_attachments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  airtableCommentId: text('airtable_comment_id').notNull(),
+  airtableAttachmentId: text('airtable_attachment_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('airtable_table_id').notNull(),
+  recordId: text('airtable_record_id').notNull(),
+  url: text('url'),                                   // expires ~2h — not for persistence, download-time only
+  filename: text('filename'),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }),
+  mimeType: text('mime_type'),
+  contentHash: text('content_hash'),                  // computed at download time (API provides none)
+  storageKey: text('storage_key'),                    // key in the file destination once written
+  uploadStatus: text('upload_status').notNull().default('pending'), // pending|ready|uploaded
+  status: text('status').notNull().default('active'), // active | deleted
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
+}, (t) => ({
+  uniqAttachment: uniqueIndex('bo_at_comment_attachments_uq').on(t.airtableCommentId, t.airtableAttachmentId),
+  byComment: index('bo_at_comment_attachments_comment_idx').on(t.airtableCommentId),
+  byRecord: index('bo_at_comment_attachments_record_idx').on(t.recordId),
+  byStatus: index('bo_at_comment_attachments_status_idx').on(t.status, t.uploadStatus),
+}))
+
+// ---- Base collaborators (server-base-collaborators) ----
+// Who can access each base, captured from GET /v0/meta/bases/{id}?include=
+// collaborators,inviteLinks,interfaces,packages during backup runs
+// (workflows-base-collaborators). Normalized into an identity registry
+// (bo_at_principals) + a grant link table (bo_at_base_access) so the product
+// query "every user in this Space and what they can touch" is a plain join
+// (design Decision 1). Principals are NEVER deleted — revocation lives on
+// grants; a principal with zero active grants is retained history.
+export const principals = pgTable('bo_at_principals', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  principalId: text('principal_id').notNull(),        // Airtable usr…/ugp… id
+  kind: text('kind').notNull(),                       // user | group
+  email: text('email'),                               // users only (from payload)
+  name: text('name'),                                 // groups only from payload; users enriched later
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({
+  uniqPrincipal: uniqueIndex('bo_at_principals_uq').on(t.principalId),
+}))
+
+export const baseAccess = pgTable('bo_at_base_access', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  principalId: text('principal_id').notNull(),        // → bo_at_principals.principal_id
+  baseId: text('base_id').notNull(),
+  interfaceId: text('interface_id').notNull().default(''), // '' for non-interface scopes
+  scope: text('scope').notNull(),                     // individual_base|individual_workspace|group_base|group_workspace|individual_interface|group_interface
+  permissionLevel: text('permission_level'),
+  grantedByUserId: text('granted_by_user_id'),
+  airtableCreatedTime: timestamp('airtable_created_time', { withTimezone: true }),
+  status: text('status').notNull().default('active'), // active | deleted
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({
+  uniqGrant: uniqueIndex('bo_at_base_access_uq').on(t.baseId, t.interfaceId, t.scope, t.principalId),
+  byPrincipal: index('bo_at_base_access_principal_idx').on(t.principalId),
+  byBase: index('bo_at_base_access_base_idx').on(t.baseId),
+}))
+
+export const inviteLinks = pgTable('bo_at_invite_links', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  airtableInviteId: text('airtable_invite_id').notNull(),
+  baseId: text('base_id').notNull(),
+  interfaceId: text('interface_id').notNull().default(''),
+  linkScope: text('link_scope').notNull(),            // base | workspace | interface
+  invitedEmail: text('invited_email'),
+  permissionLevel: text('permission_level'),
+  referredByUserId: text('referred_by_user_id'),      // seeded as a principal
+  restrictedToEmailDomains: jsonb('restricted_to_email_domains'), // string[]
+  type: text('type'),                                 // singleUse | multiUse
+  airtableCreatedTime: timestamp('airtable_created_time', { withTimezone: true }),
+  status: text('status').notNull().default('active'), // active | deleted
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({
+  uniqInvite: uniqueIndex('bo_at_invite_links_uq').on(t.baseId, t.interfaceId, t.linkScope, t.airtableInviteId),
+  byBase: index('bo_at_invite_links_base_idx').on(t.baseId),
+}))
+
+// The collaborators capture record: the un-modeled `packages` block and the
+// raw payload retained verbatim for future ingestion (design Decision 5). The
+// base-level stamps (workspace id, created time, own permission) live on the
+// bo_at_bases registry row; this table is the raw-retention companion.
+export const baseCollabMeta = pgTable('bo_at_base_collab_meta', {
+  baseId: text('base_id').primaryKey(),
+  packages: jsonb('packages'),                        // shape unpinned — retained raw
+  raw: jsonb('raw'),                                  // full payload, verbatim
+  lastSeenRun: uuid('last_seen_run'),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+})
 
 // ---- Media index (server-media-index) ----
 // The digital-asset index over captured attachments: one bo_at_assets row per

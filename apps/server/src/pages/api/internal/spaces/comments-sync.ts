@@ -13,10 +13,16 @@ import {
   diffCommentBatch,
   extractCommentBatch,
 } from "../../../../lib/per-space/comments-sync";
+import {
+  diffCommentAttachments,
+  extractCommentAttachments,
+} from "../../../../lib/per-space/comment-attachments-sync";
 import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import {
+  applyCommentAttachmentBatch,
   applyCommentBatch,
   ensureBaseRun,
+  readCommentAttachmentWorkingSet,
   readCommentWorkingSet,
   withSpaceSchema,
 } from "../../../../lib/per-space/space-db-pg";
@@ -57,6 +63,10 @@ export async function spacesCommentsSyncHandler(
 
   // Malformed-entry leniency lives in extraction (dropped + counted).
   const batch = extractCommentBatch(body.records);
+  // Comment attachments ride the same payload (register-first). This route is
+  // only called when the tier has comments enabled (the capture task gates it),
+  // so no separate flag check is needed here — the gate is upstream.
+  const attach = extractCommentAttachments(body.records);
 
   const { db: masterDb } = locals.getMasterDb();
   const space = await resolveSpaceDb(masterDb, spaceId);
@@ -74,18 +84,39 @@ export async function spacesCommentsSyncHandler(
       );
       const diff = diffCommentBatch({ batch, prior });
       await applyCommentBatch(tx, { baseId, baseRunId, diff });
-      return diff;
+
+      // Comment attachments: prior scope = every comment id we saw this batch
+      // (attachment-bearing + fully re-captured, so all-removed comments still
+      // diff their prior attachments).
+      const attachCommentIds = [
+        ...new Set([
+          ...attach.attachments.map((a) => a.commentId),
+          ...attach.completeComments,
+        ]),
+      ];
+      const attachPrior = await readCommentAttachmentWorkingSet(tx, attachCommentIds);
+      const attachDiff = diffCommentAttachments({ extracted: attach, prior: attachPrior });
+      await applyCommentAttachmentBatch(tx, { baseId, baseRunId, diff: attachDiff });
+
+      return { diff, attachDiff };
     });
 
     return jsonResponse(
       {
         ok: true,
         records: batch.records.length,
-        comments: result.upserts.length,
-        added: result.added,
-        updated: result.updated,
-        deleted: result.deletions.length,
+        comments: result.diff.upserts.length,
+        added: result.diff.added,
+        updated: result.diff.updated,
+        deleted: result.diff.deletions.length,
         dropped: batch.dropped,
+        // The in-flight capture task downloads these while URLs are live.
+        commentAttachments: {
+          pending: result.attachDiff.pendingSet,
+          registered: result.attachDiff.upserts.length,
+          deleted: result.attachDiff.deletions.length,
+          dropped: attach.dropped,
+        },
       },
       200,
     );

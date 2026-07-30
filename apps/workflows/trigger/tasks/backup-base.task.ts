@@ -24,9 +24,14 @@ import {
   type CapturedBaseWire,
   type CapturedRecordWire,
   type CommentRecordCaptureWire,
+  type CommentsSyncResult,
 } from "./backup-base";
 import type { MediaRecordCaptureWire } from "./_lib/media-emitter";
 import type { AttachmentRecordEntry } from "./_lib/attachment-downloader";
+import type {
+  CommentAttachmentRecordEntry,
+  PendingCommentAttachment,
+} from "./_lib/comment-attachments";
 import {
   fetchAutomations,
   fetchInterfacePages,
@@ -304,13 +309,15 @@ async function planComments(
 
 // One streamed batch to comments-sync. Throws on any non-2xx — the pure
 // function's capture step maps that to a `partial` outcome, never the run.
+// Returns the response body so the capture task can download the pending
+// comment-attachment set in-run (server-comment-attachments).
 async function syncComments(
   engineUrl: string,
   internalToken: string,
   spaceId: string,
   backupRunId: string,
   args: { baseId: string; records: CommentRecordCaptureWire[] },
-): Promise<void> {
+): Promise<CommentsSyncResult | void> {
   const url = `${trimSlash(engineUrl)}/api/internal/spaces/${encodeURIComponent(spaceId)}/comments-sync`;
   const res = await fetch(url, {
     method: "POST",
@@ -318,6 +325,71 @@ async function syncComments(
     body: JSON.stringify({ backupRunId, baseId: args.baseId, records: args.records }),
   });
   if (!res.ok) throw new Error(`comments-sync ${res.status}`);
+  const json = (await res.json().catch(() => ({}))) as {
+    commentAttachments?: { pending?: PendingCommentAttachment[] };
+  };
+  const pending = json.commentAttachments?.pending;
+  return pending && pending.length > 0 ? { commentAttachments: { pending } } : undefined;
+}
+
+// Comment-scoped dedup callbacks (workflows-comment-attachments) — the same
+// lookup/record endpoints as field attachments, behind source:'comment'. Keyed
+// by commentAttachmentId; degrade to no-dedup on 409/501 like the field pair.
+async function commentAttachmentLookup(
+  engineUrl: string,
+  internalToken: string,
+  spaceId: string,
+  keys: string[],
+): Promise<Record<string, { storageKey: string; uploadStatus: string }>> {
+  const url = `${trimSlash(engineUrl)}/api/internal/attachments/lookup`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-internal-token": internalToken, "content-type": "application/json" },
+    body: JSON.stringify({ spaceId, source: "comment", keys }),
+  });
+  if (res.status === 409 || res.status === 501) return {};
+  if (!res.ok) throw new Error(`attachments/lookup(comment) ${res.status}`);
+  const json = (await res.json()) as {
+    hits?: Record<string, { storageKey: string; uploadStatus: string }>;
+  };
+  return json.hits ?? {};
+}
+
+async function commentAttachmentRecord(
+  engineUrl: string,
+  internalToken: string,
+  spaceId: string,
+  entries: CommentAttachmentRecordEntry[],
+): Promise<void> {
+  const url = `${trimSlash(engineUrl)}/api/internal/attachments/record`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-internal-token": internalToken, "content-type": "application/json" },
+    body: JSON.stringify({ spaceId, source: "comment", entries }),
+  });
+  if (res.status === 409 || res.status === 501) return;
+  if (!res.ok) throw new Error(`attachments/record(comment) ${res.status}`);
+}
+
+// Base-collaborator capture (workflows-base-collaborators): POST the verbatim
+// base-metadata body to collaborators-sync. Throws on non-2xx (except 409/501,
+// treated as "space DB not ready" → skip) — the pure function maps the throw
+// to `skipped`, never the run.
+async function syncCollaborators(
+  engineUrl: string,
+  internalToken: string,
+  spaceId: string,
+  backupRunId: string,
+  args: { baseId: string; metadata: unknown },
+): Promise<void> {
+  const url = `${trimSlash(engineUrl)}/api/internal/spaces/${encodeURIComponent(spaceId)}/collaborators-sync`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-internal-token": internalToken, "content-type": "application/json" },
+    body: JSON.stringify({ backupRunId, baseId: args.baseId, metadata: args.metadata }),
+  });
+  if (res.status === 409 || res.status === 501) return;
+  if (!res.ok) throw new Error(`collaborators-sync ${res.status}`);
 }
 
 // Media-metadata engine callback (workflows-media-metadata). One streamed
@@ -502,6 +574,18 @@ export const backupBaseTask = task({
             ),
           syncComments: (args) =>
             syncComments(
+              engineUrl,
+              internalToken,
+              payload.spaceId,
+              payload.runId,
+              args,
+            ),
+          commentAttachmentLookup: (spaceId, keys) =>
+            commentAttachmentLookup(engineUrl, internalToken, spaceId, keys),
+          commentAttachmentRecord: (spaceId, entries) =>
+            commentAttachmentRecord(engineUrl, internalToken, spaceId, entries),
+          syncCollaborators: (args) =>
+            syncCollaborators(
               engineUrl,
               internalToken,
               payload.spaceId,

@@ -350,4 +350,123 @@ describe("runBackupBase — comment capture", () => {
     expect(deps.fetchRecordComments).not.toHaveBeenCalled();
     expect(result.comments).toBeUndefined();
   });
+
+  // ── comment attachments (workflows-comment-attachments) ──
+  it("downloads the pending comment-attachment set the sync response returns", async () => {
+    const planComments = plan(["rec1"]);
+    // comments-sync returns a pending attachment; lookup misses; fetch OK.
+    const syncComments = vi.fn(async () => ({
+      commentAttachments: {
+        pending: [
+          { commentAttachmentId: "com1:att1", commentId: "com1", recordId: "rec1", url: "https://cdn/att1", filename: "a.pdf" },
+        ],
+      },
+    })) as SyncCommentsMock;
+    const commentAttachmentLookup = vi.fn(async () => ({}));
+    const commentAttachmentRecord = vi.fn<
+      NonNullable<BackupBaseDeps["commentAttachmentRecord"]>
+    >(async () => {});
+    // fetch mock that serves the CDN bytes, delegating everything else.
+    const base = makeFetchMock();
+    const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.startsWith("https://cdn/")) return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+      return base(input, init);
+    }) as unknown as typeof fetch;
+    const deps = baseDeps({
+      planComments,
+      syncComments,
+      commentAttachmentLookup,
+      commentAttachmentRecord,
+      fetchImpl,
+    });
+    const result = await runBackupBase(INPUT, deps);
+
+    expect(result.status).toBe("succeeded");
+    expect(commentAttachmentLookup).toHaveBeenCalledWith("space-1", ["com1:att1"]);
+    // recorded with a storage key + local_fs → 'ready'
+    expect(commentAttachmentRecord).toHaveBeenCalledTimes(1);
+    const [, entries] = commentAttachmentRecord.mock.calls[0]!;
+    expect(entries[0]).toMatchObject({
+      commentAttachmentId: "com1:att1",
+      uploadStatus: "ready",
+      storageKey: "acme/MySpace/ProjectsDB/attachments/comments/com1/a.pdf",
+    });
+    expect(result.commentAttachments).toEqual({ downloaded: 1, skipped: 0, failed: 0 });
+  });
+
+  it("a lookup hit skips the download (already staged)", async () => {
+    const planComments = plan(["rec1"]);
+    const syncComments = vi.fn(async () => ({
+      commentAttachments: {
+        pending: [
+          { commentAttachmentId: "com1:att1", commentId: "com1", recordId: "rec1", url: "https://cdn/att1", filename: "a.pdf" },
+        ],
+      },
+    })) as SyncCommentsMock;
+    const commentAttachmentRecord = vi.fn(async () => {});
+    const deps = baseDeps({
+      planComments,
+      syncComments,
+      commentAttachmentLookup: vi.fn(async () => ({
+        "com1:att1": { storageKey: "existing/key", uploadStatus: "uploaded" },
+      })),
+      commentAttachmentRecord,
+    });
+    const result = await runBackupBase(INPUT, deps);
+
+    expect(commentAttachmentRecord).not.toHaveBeenCalled();
+    expect(result.commentAttachments).toEqual({ downloaded: 0, skipped: 1, failed: 0 });
+  });
+
+  it("no comment-attachment deps wired → no tally, comment capture unaffected", async () => {
+    const planComments = plan(["rec1"]);
+    const syncComments = vi.fn(async () => ({
+      commentAttachments: { pending: [{ commentAttachmentId: "com1:att1", commentId: "com1", recordId: "rec1", url: "https://cdn/att1", filename: "a.pdf" }] },
+    })) as SyncCommentsMock;
+    const deps = baseDeps({ planComments, syncComments });
+    const result = await runBackupBase(INPUT, deps);
+
+    expect(result.commentAttachments).toBeUndefined();
+    expect(result.comments).toMatchObject({ status: "captured" });
+  });
+
+  // ── base collaborators (workflows-base-collaborators) ──
+  it("collaborator courier: fetches base metadata and POSTs it verbatim once", async () => {
+    const planComments = plan(["rec1"]);
+    const metadata = { workspaceId: "wsp1", individualCollaborators: { baseCollaborators: [] } };
+    const fetchBaseMetadata = vi.fn(async () => ({ ok: true as const, metadata }));
+    const syncCollaborators = vi.fn(async () => {});
+    const deps = baseDeps({ planComments, fetchBaseMetadata, syncCollaborators });
+    const result = await runBackupBase(INPUT, deps);
+
+    expect(fetchBaseMetadata).toHaveBeenCalledWith({ baseId: "appXYZ", accessToken: expect.any(String) });
+    expect(syncCollaborators).toHaveBeenCalledTimes(1);
+    expect(syncCollaborators).toHaveBeenCalledWith({ baseId: "appXYZ", metadata });
+    expect(result.collaborators).toEqual({ status: "captured" });
+    expect(result.status).toBe("succeeded");
+  });
+
+  it("collaborator fetch failure → skipped(reason), NOTHING posted, run + comments unaffected", async () => {
+    const planComments = plan(["rec1"]);
+    const fetchBaseMetadata = vi.fn(async () => ({ ok: false as const, reason: "http_403" }));
+    const syncCollaborators = vi.fn(async () => {});
+    const deps = baseDeps({ planComments, fetchBaseMetadata, syncCollaborators });
+    const result = await runBackupBase(INPUT, deps);
+
+    expect(syncCollaborators).not.toHaveBeenCalled();
+    expect(result.collaborators).toEqual({ status: "skipped", reason: "http_403" });
+    expect(result.status).toBe("succeeded");
+    expect(result.comments).toMatchObject({ status: "captured" });
+  });
+
+  it("no syncCollaborators wired → no collaborator capture, no metadata fetch", async () => {
+    const planComments = plan(["rec1"]);
+    const fetchBaseMetadata = vi.fn(async () => ({ ok: true as const, metadata: {} }));
+    const deps = baseDeps({ planComments, fetchBaseMetadata });
+    const result = await runBackupBase(INPUT, deps);
+
+    expect(fetchBaseMetadata).not.toHaveBeenCalled();
+    expect(result.collaborators).toBeUndefined();
+  });
 });

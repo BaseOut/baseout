@@ -19,6 +19,7 @@ import { planCommentRefresh } from "../../../../lib/per-space/comments-sync";
 import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import {
   readActiveCommentCounts,
+  readStuckCommentAttachmentRecords,
   withSpaceSchema,
 } from "../../../../lib/per-space/space-db-pg";
 
@@ -75,11 +76,23 @@ export async function spacesCommentsPlanHandler(
   }
 
   try {
-    const storedActiveCounts = await withSpaceSchema(masterDb, space.pgLocator, (tx) =>
-      readActiveCommentCounts(tx, body.baseId as string),
+    const { storedActiveCounts, stuckAttachmentRecords } = await withSpaceSchema(
+      masterDb,
+      space.pgLocator,
+      async (tx) => ({
+        storedActiveCounts: await readActiveCommentCounts(tx, body.baseId as string),
+        stuckAttachmentRecords: await readStuckCommentAttachmentRecords(tx, body.baseId as string),
+      }),
     );
     const plan = planCommentRefresh({ observed, storedActiveCounts });
-    return jsonResponse({ ok: true, refresh: plan.refresh, zeroCandidates: plan.zeroCandidates }, 200);
+    // Recovery path (comment attachments, design Decision 3): a record with an
+    // active non-uploaded comment attachment is force-refreshed regardless of
+    // comment-count delta, so the re-fetch issues a fresh (2h) URL. Union with
+    // the count-delta refresh set, restricted to records actually observed this
+    // run (we can only re-fetch what's still listed).
+    const observedIds = new Set(observed.map((o) => o.recordId));
+    const refresh = [...new Set([...plan.refresh, ...stuckAttachmentRecords.filter((r) => observedIds.has(r))])];
+    return jsonResponse({ ok: true, refresh, zeroCandidates: plan.zeroCandidates }, 200);
   } catch (err) {
     return jsonResponse(
       { error: "plan_failed", message: err instanceof Error ? err.message : String(err) },

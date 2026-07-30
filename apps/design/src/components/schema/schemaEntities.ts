@@ -10,7 +10,7 @@
  */
 import type { SchemaTable } from './SchemaCanvas';
 
-export type EntityKind = 'space' | 'base' | 'table' | 'field';
+export type EntityKind = 'space' | 'base' | 'table' | 'field' | 'view';
 export type Health = 'green' | 'amber' | 'red';
 
 export interface SchemaEntity {
@@ -26,6 +26,20 @@ export interface SchemaEntity {
   tableName?: string;
   /** Airtable field type (fields only) — drives the vendored field icon. */
   fieldType?: string;
+  // ── Views (view-schema-details) ───────────────────────────────────────────────────────
+  /** Airtable view type (views only): grid / form / calendar / gallery / kanban / timeline /
+   *  block (= Gantt). The enum is OPEN — an unrecognised string is rendered verbatim. */
+  viewType?: string;
+  /** Views only: set when the view is PERSONAL (visible to this collaborator alone). */
+  personalForUserId?: string;
+  /** Views only: the fields the view shows. Airtable returns this for GRID views ONLY, so its
+   *  absence on a form/kanban/calendar view means "no API for it", never "shows no fields".
+   *  There is deliberately NO filters/sorts/grouping here — Airtable exposes none of it. */
+  visibleFieldIds?: string[];
+  /** Views only: the capture could not resolve the owning table (founder Q7 open). Such a view
+   *  carries NO tableId — it hangs off the base — and Browse gives it its own bucket instead of
+   *  dropping it. Distinct from `unknown`, which is about the view itself, not our read of it. */
+  tableUnresolved?: boolean;
   isPrimary?: boolean;
   health: Health;
   /** "As of last backup" — never a live count. base = Σ tables; table = own. */
@@ -82,8 +96,9 @@ export interface SchemaDocDiagram {
   /** The tables this scoped mini-diagram includes. */
   tableIds: string[];
 }
-/** A doc body is a small block model so the editor shell and reading view share one render. */
-export type DocInline = string | { entity: string };
+/** A doc body is a small block model so the editor shell and reading view share one render.
+ *  `{ record }` is a DATA-page token (record tagging, Dan 2026-07-15 B4) — Schema docs never emit it. */
+export type DocInline = string | { entity: string } | { record: string };
 export interface DocBlock {
   type: 'h2' | 'p' | 'ul' | 'diagram';
   content?: DocInline[];
@@ -100,6 +115,9 @@ export interface SchemaDoc {
   body: DocBlock[];
   /** Tagged entity ids (the explicit association list). */
   entityIds: string[];
+  /** Tagged RECORD ids (Data docs only — B4 record tagging; drives the rail's Records group
+   *  and the record drawer's "Referenced in" reverse links). */
+  recordIds?: string[];
   links: SchemaDocLink[];
   diagrams: SchemaDocDiagram[];
 }
@@ -195,6 +213,47 @@ export function buildEntityIndex(
         });
       }
 
+      // View entities (view-schema-details). A view is a LENS over the table, not a member of
+      // it, so: parentId = the table (it nests under it in Browse), but it is NOT in the table's
+      // childIds — those are the fields, and mixing the two would put views in the panel's
+      // "Fields" list. Health is always 'green' and views are EXCLUDED from the base health
+      // rollup above: we capture a view's identity, not anything we could score it on, so an
+      // amber view would be an invented judgement.
+      // The "N of M" denominator: M is the table's LIVE field count, which EXCLUDES fields deleted
+      // in Airtable — the same number the table's own panel shows. Deriving it here (rather than
+      // trusting a per-view figure) is what stops a view panel claiming 12 while its table claims 11.
+      const liveFieldCount = t.fieldCount ?? t.fields.filter((f) => !f.removed).length;
+      for (const v of t.views ?? []) {
+        entities.push({
+          id: v.id,
+          kind: 'view',
+          name: v.name,
+          baseId: base.id,
+          baseName: base.name,
+          // Q7 open: when the capture didn't say which table a view belongs to, we must not
+          // invent one. No tableId ⇒ Browse renders it in the base's "table unresolved" bucket.
+          tableId: v.tableUnresolved ? undefined : t.id,
+          tableName: v.tableUnresolved ? undefined : t.name,
+          tableUnresolved: v.tableUnresolved,
+          viewType: v.type,
+          personalForUserId: v.personalForUserId,
+          visibleFieldIds: v.visibleFieldIds,
+          // Prefer the table we actually hold: a captured per-view figure that disagrees with the
+          // table's own live count is exactly the defect this replaces. The captured number is the
+          // fallback only when there are no fields to count (a schema-shallow capture).
+          fieldCount: t.fields.length ? liveFieldCount : v.fieldCount,
+          health: 'green',
+          // A view under a removed table is itself gone, exactly as a field is.
+          removed: v.removed || t.removed,
+          removedAt: v.removedAt ?? (t.removed ? t.removedAt : undefined),
+          unknown: v.unknown,
+          hasDescription: false,
+          parentId: t.id,
+          childIds: [],
+          docIds: docsFor(v.id),
+        });
+      }
+
       // Table entity.
       entities.push({
         id: t.id,
@@ -205,7 +264,8 @@ export function buildEntityIndex(
         tableName: t.name,
         health: t.health,
         recordCount: t.recordCount,
-        fieldCount: t.fieldCount ?? t.fields.length,
+        // Same live count the views' "N of M" denominator uses — the two can never disagree.
+        fieldCount: liveFieldCount,
         airtableDescription: t.airtableDescription,
         airtableDraft: t.airtableDraft,
         airtableExternallyChanged: t.airtableExternallyChanged,
@@ -254,6 +314,23 @@ export function tableRelationships(
     .filter((e) => e.kind === 'field' && e.linkedTableId === table.id)
     .map((f) => ({ tableId: f.tableId!, tableName: f.tableName ?? 'Table', fieldName: f.name }));
   return { outgoing, incoming };
+}
+
+/**
+ * Human label for an Airtable VIEW type (view-schema-details).
+ *
+ * `block` is Airtable's wire name for a GANTT view — showing "Block" would be a word no
+ * Airtable user recognises. The enum is treated as OPEN: Airtable ships new view types, so an
+ * unrecognised string is returned VERBATIM rather than coerced to a known type or dropped.
+ * Callers render the result in a neutral chip either way.
+ */
+const VIEW_TYPE_LABEL: Record<string, string> = {
+  grid: 'Grid', form: 'Form', calendar: 'Calendar', gallery: 'Gallery',
+  kanban: 'Kanban', timeline: 'Timeline', block: 'Gantt',
+};
+export function viewTypeLabel(type?: string): string {
+  if (!type) return 'View';
+  return VIEW_TYPE_LABEL[type] ?? type;
 }
 
 /** Human label for an Airtable field type (e.g. single_select → "Single select"). */

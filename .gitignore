@@ -35,6 +35,7 @@ pnpm-debug.log*
 
 # Claude Code
 .claude/worktrees/
+/.superpowers/
 
 # OS / editor
 .DS_Store

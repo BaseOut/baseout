@@ -8,26 +8,14 @@
 import { setButtonLoading } from '../../lib/ui';
 import { wireTableSort } from './tableSort';
 import { entityChip } from './entityChip';
-import { locationCrumbs } from './locationCrumbs';
+import { createPager } from '../ui/tablePager';
+import { entityIconClass } from './entityIcon';
 
 interface AuTag { entityId: string; source: 'auto' | 'manual' }
 interface Automation { id: string; name: string; baseId: string; triggerType?: string; status: 'active' | 'removed'; enabled?: boolean; airtableDescription?: string; internalDescription?: string; subscribers?: string[]; definition?: string; tags?: AuTag[]; removedAt?: string }
-type Ent = { name: string; kind: 'base' | 'table' | 'field'; tableName: string | null };
+type Ent = { name: string; kind: 'base' | 'table' | 'field' | 'view'; tableName: string | null };
 
 const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
-const entIcon = (kind: string) => kind === 'field' ? 'lucide--tag concept-ic-field' : kind === 'table' ? 'lucide--table-2' : 'lucide--database concept-ic-base';
-// Section count badge (DRAWER CANON v2): a catalog badge pressed after the label, shown only from 2 up (suppress "1").
-const countBadge = (n: number) => (n >= 2 ? ` <span class="badge badge-sm badge-neutral">${n}</span>` : '');
-
-// Identity status (read drawer meta line): a colored DOT + label, NOT a soft badge.
-// Active = green, Inactive (off) = grey, Removed = red. (The soft badge stays in the listing.)
-const statusDot = (a: Automation) => {
-  const removed = a.status === 'removed';
-  const on = a.enabled !== false;
-  const tone = removed ? 'red' : on ? 'green' : 'grey';
-  const label = removed ? 'Removed' : on ? 'Active' : 'Inactive';
-  return `<span class="au-status"><span class="au-dot au-dot-${tone}"></span>${label}</span>`;
-};
 
 // Status badge (mirror of the Astro statusBadge): badge-soft + semantic color + bg-current dot.
 const statusBadge = (a: Automation) => {
@@ -36,7 +24,7 @@ const statusBadge = (a: Automation) => {
   if (removed) return `<span class="badge badge-soft badge-warning au-badge tooltip tooltip-right" data-tip="No longer exists in Airtable"><span class="size-1.5 rounded-full bg-current"></span>Removed</span>`;
   return on
     ? `<span class="badge badge-soft badge-success au-badge tooltip tooltip-right" data-tip="On in Airtable — this automation is running"><span class="size-1.5 rounded-full bg-current"></span>Active</span>`
-    : `<span class="badge badge-soft badge-neutral au-badge tooltip tooltip-right" data-tip="Off in Airtable — this automation isn't running"><span class="size-1.5 rounded-full bg-current"></span>Inactive</span>`;
+    : `<span class="badge badge-ghost au-badge tooltip tooltip-right" data-tip="Off in Airtable — this automation isn't running"><span class="size-1.5 rounded-full bg-current"></span>Inactive</span>`;
 };
 
 export function wireAutomations() {
@@ -52,43 +40,43 @@ export function wireAutomations() {
   const basesMap: Record<string, string> = {};
   try { Object.assign(basesMap, JSON.parse(document.querySelector('[data-au-bases]')?.textContent || '{}')); } catch { /* none */ }
   const baseLabel = (id?: string) => (id && basesMap[id]) || 'No base';
-  // Per-automation change history (read drawer Changelog section).
-  type AuChange = { entityId?: string; at: string; type: string; summary: string; before?: string; after?: string };
-  let changelog: AuChange[] = [];
-  try { changelog = JSON.parse(document.querySelector('[data-au-changelog]')?.textContent || '[]'); } catch { /* none */ }
-  const CL_ICON: Record<string, string> = { added: 'lucide--plus-circle', removed: 'lucide--minus-circle', renamed: 'lucide--pencil-line', config: 'lucide--sliders-horizontal' };
-  const fmtCl = (iso: string) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
-  const changelogHtml = (id: string) => {
-    const evs = changelog.filter((c) => c.entityId === id).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
-    if (!evs.length) return '';
-    const items = evs.map((c) => `<li class="au-cl-item au-cl-${c.type}"><span class="iconify ${CL_ICON[c.type] || 'lucide--dot'} size-3.5 au-cl-ic" aria-hidden="true"></span><span class="au-cl-txt">${esc(c.summary)}${c.before && c.after ? ` <span class="au-cl-delta">${esc(c.before)} → ${esc(c.after)}</span>` : ''}</span><span class="au-cl-when">${esc(fmtCl(c.at))}</span></li>`).join('');
-    return `<div><div class="au-read-sect-lbl"><span class="iconify lucide--history size-3.5 au-read-sect-ic" aria-hidden="true"></span>Changelog${countBadge(evs.length)}</div><ul class="au-cl">${items}</ul></div>`;
-  };
 
   // ── filters (search · Base/Table/Field facets · include-removed) — same model as Browse/Relationships ──
   const rowsAll = () => Array.from(root.querySelectorAll<HTMLElement>('[data-au-row]'));
-  const removedToggle = root.querySelector<HTMLInputElement>('[data-au-removed]');
   const searchInput = root.querySelector<HTMLInputElement>('[data-au-search]');
   const clearBtn = root.querySelector<HTMLElement>('[data-au-clear]');
   const facetHidden: Record<string, Set<string>> = { aubase: new Set(), autable: new Set(), aufield: new Set() };
-  let includeRemoved = false;
+  // Removed-status tri-state (was an "Include removed" checkbox): active(default) | removed | all.
+  let status: 'active' | 'removed' | 'all' = 'active';
   let query = '';
   // A row passes a tag-facet when it has at least one value that isn't hidden (empty tag list → fails
   // only when the facet is active, i.e. the automation touches none of the shown tables/fields).
   const someShown = (ids: string, hidden: Set<string>) => ids.split(' ').filter(Boolean).some((v) => !hidden.has(v));
   const rowVisible = (row: HTMLElement) => {
     if (row.dataset.dismissed === '1') return false;
-    if (!includeRemoved && row.dataset.removedRow === '1') return false;
+    const isRemoved = row.dataset.removedRow === '1';
+    if (status === 'active' && isRemoved) return false;
+    if (status === 'removed' && !isRemoved) return false;
     if (query && !(row.dataset.search || '').includes(query)) return false;
     if (facetHidden.aubase.has(row.dataset.base || '')) return false;
     if (facetHidden.autable.size && !someShown(row.dataset.tables || '', facetHidden.autable)) return false;
     if (facetHidden.aufield.size && !someShown(row.dataset.fields || '', facetHidden.aufield)) return false;
     return true;
   };
-  const anyFilter = () => !!query || includeRemoved || Object.values(facetHidden).some((s) => s.size > 0);
+  const anyFilter = () => !!query || status !== 'active' || Object.values(facetHidden).some((s) => s.size > 0);
+  // Pager (pattern-table-toolbar). The base groups are headers over independent rows, not a
+  // hierarchy — an automation doesn't belong to the row above it — so the window is taken across
+  // the whole filtered sequence and a group whose rows all fall off the page simply hides itself
+  // (the existing empty-group rule below does that unchanged). 25/page: rows are chunky.
+  const pager = createPager({
+    root, name: 'au', sizes: [10, 25, 50], defaultSize: 25,
+    storageKey: 'sch-au-pagesize', onChange: () => apply(),
+  });
   const apply = () => {
-    let shown = 0;
-    rowsAll().forEach((row) => { const ok = rowVisible(row); row.hidden = !ok; if (ok) shown++; });
+    const matched: HTMLElement[] = [];
+    rowsAll().forEach((row) => { row.hidden = true; if (rowVisible(row)) matched.push(row); });
+    const shown = matched.length;
+    pager.window(matched).forEach((row) => { row.hidden = false; });
     root.querySelectorAll<HTMLElement>('[data-au-group]').forEach((g) => {
       g.hidden = !Array.from(g.querySelectorAll<HTMLElement>('[data-au-row]')).some((r) => !r.hidden);
     });
@@ -98,18 +86,16 @@ export function wireAutomations() {
   };
   document.addEventListener('facetchange', (ev) => {
     const d = (ev as CustomEvent).detail || {};
-    if (!(d.name in facetHidden)) return; // ignore other tabs' facets
-    facetHidden[d.name] = new Set<string>(d.hidden || []);
-    apply();
+    if (d.name in facetHidden) { facetHidden[d.name] = new Set<string>(d.hidden || []); pager.reset(); apply(); return; }
+    if (d.name === 'austatus') { status = (d.value || 'active') as typeof status; pager.reset(); apply(); return; }
   });
-  removedToggle?.addEventListener('change', () => { includeRemoved = !!removedToggle.checked; apply(); });
-  searchInput?.addEventListener('input', () => { query = searchInput.value.trim().toLowerCase(); apply(); });
+  searchInput?.addEventListener('input', () => { query = searchInput.value.trim().toLowerCase(); pager.reset(); apply(); });
   clearBtn?.addEventListener('click', () => {
     Object.keys(facetHidden).forEach((k) => (facetHidden[k] = new Set()));
-    query = ''; includeRemoved = false;
+    query = ''; status = 'active';
     if (searchInput) searchInput.value = '';
-    if (removedToggle) removedToggle.checked = false;
     document.dispatchEvent(new CustomEvent('facetreset'));
+    pager.reset();
     apply();
   });
 
@@ -141,16 +127,25 @@ export function wireAutomations() {
   const fSub = $m<HTMLInputElement>('[data-au-f-sub]');
   const subsWrap = $m<HTMLElement>('[data-au-subs]');
   const chipsWrap = $m<HTMLElement>('[data-au-chips]');
-  const readEl = $m<HTMLElement>('[data-au-read]');
-  const formEl = $m<HTMLElement>('[data-au-form]');
   const title = panel?.querySelector<HTMLElement>('.sb-drawer-title');
   const titleIc = panel?.querySelector<HTMLElement>('[data-sb-drawer-titleic]');
   const crumbsEl = panel?.querySelector<HTMLElement>('[data-sb-drawer-crumbs]');
   const saveBtn = $m<HTMLButtonElement>('[data-au-save]');
   let editingId: string | null = null;
-  let readingId: string | null = null;
   let tags: AuTag[] = [];
   let subs: string[] = [];
+
+  // Editing an EXISTING automation does NOT happen here. A row opens the stacking EntityPanel and
+  // that panel edits itself in place — one layout, a read mode and an edit mode
+  // (pattern-panel-edit-mode). It reports the committed record back through this event, and the
+  // only thing left for the tab to do is re-render its listing row.
+  document.addEventListener('schema:automationSaved', (ev) => {
+    const rec = (ev as CustomEvent).detail?.rec as Automation | undefined;
+    if (!rec?.id) return;
+    byId.set(rec.id, { ...(byId.get(rec.id) as Automation), ...rec });
+    upsertRow(byId.get(rec.id)!, rec.id);
+    apply();
+  });
 
   // Description tabs (Airtable / Internal) — mirror the field-description tab pattern, minus Publish.
   const showDescTab = (key: string) => {
@@ -167,67 +162,19 @@ export function wireAutomations() {
     const e = ents[t.entityId];
     const name = e ? e.name : t.entityId;
     const context = e && e.kind === 'field' && e.tableName ? e.tableName : undefined;
-    const icon = `<span class="iconify ${entIcon(e?.kind || 'table')} size-3.5" aria-hidden="true"></span>`;
+    const icon = `<span class="iconify ${entityIconClass(e?.kind || 'table')} size-3.5" aria-hidden="true"></span>`;
     return entityChip({ name, icon, context, attrs: 'data-au-chip="' + esc(t.entityId) + '"', remove: t.source === 'manual' ? 'data-au-chip-x="' + esc(t.entityId) + '"' : undefined, derived: t.source === 'auto' });
   };
   const renderChips = () => { if (chipsWrap) chipsWrap.innerHTML = tags.map(chipHtml).join(''); };
 
-  // Read view (default on row click) — leads with description + what it touches; the raw
-  // JSON is opaque/optional, tucked at the bottom.
-  const readChip = (t: AuTag) => {
-    const e = ents[t.entityId];
-    const name = e ? e.name : t.entityId;
-    const context = e && e.kind === 'field' && e.tableName ? e.tableName : undefined;
-    const icon = `<span class="iconify ${entIcon(e?.kind || 'table')} size-3.5" aria-hidden="true"></span>`;
-    // Read view: plain neutral chip — the auto/manual distinction isn't actionable here, so we don't signal it.
-    return entityChip({ name, icon, context, clickable: true, attrs: 'data-entity-open="' + esc(t.entityId) + '"' });
-  };
-  const openRead = (id: string) => {
-    const a = byId.get(id);
-    if (!a || !readEl) return;
-    readingId = id;
-    // Canon drawer header: the concept-icon tile + entity name live in the fixed rail (like the other
-    // detail drawers); the body opens with the identity meta line. Populate the rail here.
-    if (titleIc) { titleIc.innerHTML = '<span class="iconify lucide--zap concept-ic-automation size-4" aria-hidden="true"></span>'; titleIc.hidden = false; }
-    if (title) title.textContent = a.name;
-    // Location → header crumbs sub-row (the base), not the meta line.
-    if (crumbsEl) {
-      crumbsEl.innerHTML = locationCrumbs([
-        { name: baseLabel(a.baseId), icon: '<span class="iconify lucide--database concept-ic-base size-3.5"></span>' },
-      ]);
-      crumbsEl.hidden = false;
-    }
-    const removed = a.status === 'removed';
-    const subCount = (a.subscribers || []).length;
-    const subsHtml = subCount
-      ? `<div><div class="au-read-sect-lbl"><span class="iconify lucide--users size-3.5 au-read-sect-ic" aria-hidden="true"></span>Subscribers${countBadge(subCount)}</div><div class="au-read-listbox">${(a.subscribers || []).map((e) => `<span class="au-read-sub"><span class="iconify lucide--mail size-3.5" aria-hidden="true" style="opacity:.6"></span>${esc(e)}</span>`).join('')}</div></div>`
-      : '';
-    // Two descriptions: the Airtable-side copy (manual, no sync) + the Baseout-only Internal note.
-    const noteHtml =
-      `<div><div class="au-read-sect-lbl"><span class="iconify lucide--text size-3.5 au-read-sect-ic" aria-hidden="true"></span>Airtable description</div><p class="au-read-desc${a.airtableDescription ? '' : ' is-empty'}">${a.airtableDescription ? esc(a.airtableDescription) : 'No Airtable description saved.'}</p></div>` +
-      `<div><div class="au-read-sect-lbl"><span class="iconify lucide--text size-3.5 au-read-sect-ic" aria-hidden="true"></span>Internal note</div><p class="au-read-desc${a.internalDescription ? '' : ' is-empty'}">${a.internalDescription ? esc(a.internalDescription) : 'No internal note yet.'}</p></div>`;
-    const tagCount = (a.tags || []).length;
-    readEl.innerHTML = `
-      <div class="au-read-meta"><span class="au-read-kind">Automation</span><span class="au-read-sep" aria-hidden="true">·</span>${statusDot(a)}<span class="au-read-sep" aria-hidden="true">·</span><span class="au-meta-fresh">as of last backup</span></div>
-      ${a.triggerType ? `<div><div class="au-read-sect-lbl"><span class="iconify lucide--zap size-3.5 au-read-sect-ic" aria-hidden="true"></span>Trigger</div><p class="au-read-desc">${esc(a.triggerType)}</p></div>` : ''}
-      ${noteHtml}
-      <div><div class="au-read-sect-lbl"><span class="iconify lucide--at-sign size-3.5 au-read-sect-ic" aria-hidden="true"></span>Touches${countBadge(tagCount)}</div>${tagCount ? `<div class="au-read-listbox">${(a.tags || []).map(readChip).join('')}</div>` : `<p class="au-read-empty">No tables or fields tagged.</p>`}</div>
-      ${subsHtml}
-      ${changelogHtml(a.id)}
-      ${a.definition ? `<details class="sch-read-def"><summary>Raw definition (JSON)<span class="iconify lucide--chevron-down size-3.5 sch-def-chev" aria-hidden="true"></span></summary><pre>${esc(a.definition)}</pre></details>` : ''}
-      <div class="sch-read-foot"><button type="button" class="btn btn-sm btn-neutral gap-1.5" data-read-edit><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span>Edit</button>${removed ? '' : `<button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-read-delete><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span>Delete</button>`}</div>`;
-    readEl.hidden = false;
-    if (formEl) formEl.hidden = true;
-    openDrawer(true);
-  };
-
+  /** REGISTER only (`id` is always null now — editing lives in the panel). */
   const openEdit = (id: string | null) => {
     editingId = id;
     const a = id ? byId.get(id) : null;
     if (titleIc) { titleIc.innerHTML = ''; titleIc.hidden = true; }
     if (crumbsEl) { crumbsEl.innerHTML = ''; crumbsEl.hidden = true; }
-    if (title) title.textContent = a ? 'Edit automation' : 'Register automation';
-    if (saveBtn) saveBtn.textContent = a ? 'Save changes' : 'Register automation';
+    if (title) title.textContent = 'Register automation';
+    if (saveBtn) saveBtn.textContent = 'Register automation';
     if (fName) fName.value = a?.name ?? '';
     if (fId) { fId.value = a?.id ?? ''; fId.readOnly = !!a; }
     if (fBase) fBase.value = a?.baseId ?? '';
@@ -246,48 +193,46 @@ export function wireAutomations() {
     renderSubs();
     tags = (a?.tags ?? []).map((t) => ({ ...t }));
     renderChips();
-    if (readEl) readEl.hidden = true;
-    if (formEl) formEl.hidden = false;
     openDrawer(true);
     setTimeout(() => fName?.focus(), 0);
   };
   root.querySelectorAll<HTMLElement>('[data-au-new]').forEach((b) => b.addEventListener('click', () => openEdit(null)));
   $m<HTMLElement>('[data-au-cancel]')?.addEventListener('click', () => openDrawer(false));
-  // Read-view actions: Edit → the form; Delete → soft-delete + close; a tag chip → close
-  // the drawer so the EntityPanel (opened by the global data-entity-open delegate) shows.
-  readEl?.addEventListener('click', (ev) => {
-    const t = ev.target as HTMLElement;
-    if (t.closest('[data-read-edit]')) { if (readingId) openEdit(readingId); return; }
-    if (t.closest('[data-read-delete]')) { if (readingId) softDelete(readingId); openDrawer(false); return; }
-    if (t.closest('[data-entity-open]')) openDrawer(false);
-  });
-  // EntityPanel "Referenced by" jump opens the automation's read view here.
-  document.addEventListener('schema:openAutomation', (ev) => {
-    const id = (ev as CustomEvent).detail?.id as string | undefined;
-    if (id && byId.has(id)) openRead(id);
-  });
 
-  // edit / delete (row actions) + row click → edit
+  // Q4 — a row opens the automation as a stacking EntityPanel (like Browse/Relationships), not a
+  // one-off drawer. The panel footer routes Edit/Delete back here via the events below.
+  const openInPanel = (id: string) => { if (byId.has(id)) document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id } })); };
+  document.addEventListener('schema:openAutomation', (ev) => { const id = (ev as CustomEvent).detail?.id as string | undefined; if (id) openInPanel(id); });
+  document.addEventListener('schema:deleteAutomation', (ev) => { const id = (ev as CustomEvent).detail?.id as string | undefined; if (id && byId.has(id)) softDelete(id); });
+
+  // edit / delete (row hover actions) + row click → open the panel
   root.addEventListener('click', (ev) => {
     const t = ev.target as HTMLElement;
+    // The row's pencil is a SHORTCUT to the panel's edit mode — not a second edit surface.
     const edit = t.closest<HTMLElement>('[data-au-edit]');
-    if (edit) { ev.stopPropagation(); openEdit(edit.dataset.auEdit!); return; }
+    if (edit) {
+      ev.stopPropagation();
+      const id = edit.dataset.auEdit!;
+      openInPanel(id);
+      document.dispatchEvent(new CustomEvent('schema:panelEditMode', { detail: { id } }));
+      return;
+    }
     const del = t.closest<HTMLElement>('[data-au-delete]');
     if (del) { ev.stopPropagation(); softDelete(del.dataset.auDelete!); return; }
     const row = t.closest<HTMLElement>('[data-au-row]');
-    if (row) openRead(row.dataset.auId!);
+    if (row) openInPanel(row.dataset.auId!);
   });
   root.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Enter' && ev.key !== ' ') return;
     const row = (ev.target as HTMLElement).closest<HTMLElement>('[data-au-row]');
     if (!row) return;
     ev.preventDefault();
-    openRead(row.dataset.auId!);
+    openInPanel(row.dataset.auId!);
   });
 
   // ── tag-picker: add (EntitySearch) / remove ──
   document.addEventListener('schema:auTagAdd', (ev) => {
-    if (!toggle?.checked) return;
+    if (!toggle?.checked) return; // the Register drawer owns this picker (the panel has its own)
     const id = (ev as CustomEvent).detail?.id as string | undefined;
     if (!id || tags.some((t) => t.entityId === id)) return;
     tags.push({ entityId: id, source: 'manual' });
@@ -325,7 +270,7 @@ export function wireAutomations() {
   // in the read view when present.
 
   // ── save (faked) ──
-  const form = $m<HTMLFormElement>('[data-au-form]');
+  const form = $m<HTMLFormElement>('[data-au-reg]');
   form?.addEventListener('submit', (ev) => {
     ev.preventDefault();
     const name = fName?.value.trim();
@@ -361,12 +306,12 @@ export function wireAutomations() {
   const rowHtml = (a: Automation) => {
     const removed = a.status === 'removed';
     const tagCount = (a.tags || []).length;
-    return `<tr class="au-row" data-au-row data-au-id="${esc(a.id)}" data-base="${esc(a.baseId)}" data-tables="${esc(auTagIds(a, 'table').join(' '))}" data-fields="${esc(auTagIds(a, 'field').join(' '))}" data-search="${esc(auSearch(a))}" data-removed-row="${removed ? '1' : '0'}" role="button" tabindex="0">
+    return `<tr class="au-row row-clickable" data-au-row data-au-id="${esc(a.id)}" data-base="${esc(a.baseId)}" data-tables="${esc(auTagIds(a, 'table').join(' '))}" data-fields="${esc(auTagIds(a, 'field').join(' '))}" data-search="${esc(auSearch(a))}" data-removed-row="${removed ? '1' : '0'}" role="button" tabindex="0">
       <td class="au-c-name"><span class="au-nm"><span class="iconify lucide--zap concept-ic-automation size-4 au-row-ic" aria-hidden="true"></span><span class="au-row-name">${esc(a.name)}</span></span></td>
       <td class="au-c-status">${statusBadge(a)}</td>
       <td class="au-c-trigger">${a.triggerType ? esc(a.triggerType) : '<span class="au-dash">—</span>'}</td>
       <td class="au-c-tags">${tagCount ? `<button type="button" class="btn btn-ghost btn-sm text-sm gap-1.5 tooltip tooltip-left" data-tip="${tagCount} tagged table${tagCount === 1 ? '' : 's'} / field${tagCount === 1 ? '' : 's'}" aria-label="${tagCount} tagged tables/fields"><span class="iconify lucide--tags size-4" aria-hidden="true"></span><span class="mono-data">${tagCount}</span> tagged</button>` : '<span class="au-dash">—</span>'}</td>
-      <td class="au-c-act"><span class="au-row-actions"><button type="button" class="btn btn-sm btn-ghost btn-square" data-au-edit="${esc(a.id)}" aria-label="Edit"><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span></button>${removed ? '' : `<button type="button" class="btn btn-sm btn-ghost btn-square text-error" data-au-delete="${esc(a.id)}" aria-label="Delete"><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span></button>`}</span></td>
+      <td class="au-c-act"><span class="row-end"><span class="row-actions"><button type="button" class="btn btn-sm btn-ghost btn-square tooltip tooltip-left" data-tip="Edit" data-au-edit="${esc(a.id)}" aria-label="Edit"><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span></button>${removed ? '' : `<button type="button" class="btn btn-sm btn-ghost btn-square text-error tooltip tooltip-left" data-tip="Delete" data-au-delete="${esc(a.id)}" aria-label="Delete"><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span></button>`}</span><span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span></span></td>
     </tr>`;
   };
   const upsertRow = (a: Automation, prevId: string | null) => {
@@ -417,6 +362,7 @@ export function wireAutomations() {
       if (col === 3) { const m = (row.querySelector('.au-c-tags')?.textContent || '').match(/\d+/); return m ? Number(m[0]) : -1; }
       return '';
     },
+    () => { pager.reset(); apply(); },
   );
 
   apply();

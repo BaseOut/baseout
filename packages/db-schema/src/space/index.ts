@@ -44,4 +44,10 @@ export { spacePgDdlStatementsIdempotent } from './pg-ddl-upgrade'
 // (new table); the idempotent DDL covers existing Spaces.
 // v10: Media index (server-media-index) — bo_at_assets + bo_at_asset_refs.
 // Purely additive.
-export const SPACE_SCHEMA_VERSION = 10
+// v11: Comment attachments (server-comment-attachments) —
+// bo_at_comment_attachments. Purely additive (new table); the idempotent DDL
+// covers existing Spaces.
+// v12: Base collaborators (server-base-collaborators) — bo_at_principals,
+// bo_at_base_access, bo_at_invite_links, bo_at_base_collab_meta. Purely
+// additive (four new tables); the idempotent DDL covers existing Spaces.
+export const SPACE_SCHEMA_VERSION = 12
