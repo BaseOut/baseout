@@ -6,7 +6,10 @@ Who can touch a base — and at what permission level, granted by whom, since wh
 
 ## What Changes
 
-- **New per-Space table `bo_at_collaborators`** (all three schema mirrors): one row per principal per scope — `scope` enum `individual_base | individual_workspace | group_base | group_workspace | individual_interface | group_interface`, `permission_level`, `email` + `user_id` (individual scopes), `group_id` + `group_name` (group scopes), `granted_by_user_id`, `airtable_created_time`, `base_id`, `interface_id` (interface scopes only), lifecycle `status` (`active`/`deleted`), first/last-seen stamps. The API's top-level `collaborators` block is **deprecated by Airtable's own docs** in favor of `individualCollaborators`/`groupCollaborators` — ingestion reads the canonical blocks, with the deprecated block as a fallback source mapped to the `individual_*` scopes (design Decision 2).
+- **Normalized two-table model (2026-07-29 founder direction):**
+  - **`bo_at_principals`** — the central identity registry: one row per distinct user or group observed anywhere in the Space (`principal_id`, `kind`, `email`, `name`, seen stamps; extensible for future enterprise-sourced user details). Identity accretes from every source — collaborator entries, `grantedByUserId` referrers, invite-link referrers; user `name` (absent from this payload) enriches opportunistically from comment authors and, later, the enterprise user API. Principal rows are never deleted.
+  - **`bo_at_base_access`** — the link table: principal × base grants carrying `scope` (`individual_base | individual_workspace | group_base | group_workspace | individual_interface | group_interface`), `permission_level`, `granted_by_user_id`, `airtable_created_time`, `interface_id` (interface scopes), lifecycle `status`, seen stamps. Workspace-derived grants are recorded per base with their workspace origin preserved in the scope. This makes the Space-wide "every user × their access across monitored bases" view a plain join.
+  - The API's top-level `collaborators` block is **deprecated by Airtable's own docs** in favor of `individualCollaborators`/`groupCollaborators` — ingestion reads the canonical blocks, with the deprecated block as a fallback source mapped to the `individual_*` scopes (design Decision 2).
 - **New per-Space table `bo_at_invite_links`**: outstanding invite links are a live security surface (an unexpired multi-use edit link is an open door) — `airtable_invite_id`, `link_scope` (`base`/`workspace`/`interface`), `invited_email`, `permission_level`, `referred_by_user_id`, `restricted_to_email_domains`, `type` (`singleUse`/`multiUse`), timestamps, lifecycle + seen stamps.
 - **New internal route `POST /api/internal/spaces/collaborators-sync`** (INTERNAL_TOKEN-gated, comments-sync pattern): accepts the per-base metadata capture from the workflows task, upserts both tables, and diffs run-over-run — principals/links absent from a successful re-capture are marked `deleted` (access-revocation visibility, the same value the record diff provides).
 - **Base registry enrichment:** the capture's `workspaceId`, base `createdTime`, and our token's `permissionLevel` are stamped onto the base's registry row; the `packages` block (shape not yet pinned) and the raw payload are retained for future ingestion.
@@ -18,7 +21,7 @@ Who can touch a base — and at what permission level, granted by whom, since wh
 
 ### New Capabilities
 
-- `collaborator-registry`: per-Space persistence and lifecycle of base/workspace/interface collaborators and outstanding invite links from the base-metadata endpoint, with run-over-run revocation diffing, base-registry enrichment (workspaceId, createdTime, own permissionLevel), and raw-payload retention for not-yet-ingested blocks (packages).
+- `collaborator-registry`: per-Space principal identity registry + base-access grant link table (and invite links) fed from the base-metadata endpoint, with run-over-run revocation diffing on grants, opportunistic identity enrichment, base-registry enrichment (workspaceId, createdTime, own permissionLevel), and raw-payload retention for not-yet-ingested blocks (packages).
 
 ### Modified Capabilities
 

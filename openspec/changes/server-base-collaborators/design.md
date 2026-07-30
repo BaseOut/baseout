@@ -8,7 +8,7 @@ The persistence pattern follows `server-comments`: workflows captures during the
 
 ## Payload → schema mapping (confirmed shapes)
 
-Collaborator entry (individual): `{createdTime, email, grantedByUserId, permissionLevel, userId}`. Group entry: `{createdTime, grantedByUserId, groupId, name, permissionLevel}` — **no email/userId**, hence nullable principal columns and a `scope` discriminator rather than separate tables per kind. Interface entries reuse the same shapes under `interfaces.<pageBundleId>.{individualCollaborators, groupCollaborators, inviteLinks}`.
+Collaborator entry (individual): `{createdTime, email, grantedByUserId, permissionLevel, userId}` — note **no user `name`** in this payload. Group entry: `{createdTime, grantedByUserId, groupId, name, permissionLevel}` — no email/userId. Fields split across the two tables: identity (`userId`/`groupId` → `principal_id`, `kind`, `email`, group `name`) lands on `bo_at_principals`; grant facts (`permissionLevel`, `grantedByUserId`, `createdTime`, derived `scope`) land on `bo_at_base_access`. Interface entries reuse the same shapes under `interfaces.<pageBundleId>.{individualCollaborators, groupCollaborators, inviteLinks}`.
 
 Invite link: `{id, invitedEmail (nullable), permissionLevel, referredByUserId, restrictedToEmailDomains[], type: singleUse|multiUse, createdTime}`.
 
@@ -26,8 +26,11 @@ Invite link: `{id, invitedEmail (nullable), permissionLevel, referredByUserId, r
 
 ## Decisions
 
-**1. One table, `scope` discriminator — not per-kind tables.**
-Six scopes share one lifecycle, one diff algorithm, one sync route. The alternative (separate base/workspace/interface tables) triples the migration and diff surface for zero query benefit; scope + two nullable principal columns (`user_id` vs `group_id`) is the established trade (cf. `bo_at_asset_refs` handling mixed anchors).
+**1. Normalized principals + grants, not one denormalized table (founder direction, 2026-07-29).**
+`bo_at_principals` (identity: one row per distinct user/group seen anywhere in the Space) + `bo_at_base_access` (grants: principal × base × scope with permission level and lifecycle). Rationale: the product query is "every user in this Space and what they can touch" — a plain join under this model, a DISTINCT-and-regroup under a single flat table; identity fields stop repeating per grant row; and the principals table is the natural accretion point for identity enrichment (user `name` is absent from this payload but present on comment authors, and the enterprise user API adds full details later — columns extend without touching grants). Grant rows keep the six-value `scope` discriminator rather than per-kind tables: one lifecycle, one diff, one route. Principals are never deleted — revocation lives on grants; a principal with zero active grants is retained history. `grantedByUserId` and invite-link referrers seed principal rows (kind `user`, identity NULL until enriched), so the registry converges on every user id the Space has ever surfaced.
+
+**1a. Workspace grants are recorded per base, not per workspace.**
+A workspace collaborator appears in every base capture in that workspace; we store one grant row per (principal, base) with `scope='*_workspace'` preserving the origin. Full normalization (a single per-workspace grant row) would dedupe those rows but break the capture-granularity diff (each API response is one base's complete state) and turn the users×bases display into a workspace-expansion query. Human-scale row counts make the duplication trivial.
 
 **2. Canonical blocks first; deprecated block as fallback only.**
 Airtable's docs deprecate top-level `collaborators` in favor of `individualCollaborators`/`groupCollaborators`, and the sample payload shows the deprecated block duplicating the individual entries. Ingestion therefore reads the canonical blocks; entries found **only** in the deprecated block (older payload variants) are ingested with the matching `individual_*` scope. Never both — the unique key `(base_id, interface_id, scope, principal_id)` makes double-ingestion structurally impossible. (`principal_id` = `user_id` for individual scopes, `group_id` for group scopes; `interface_id` empty-string-normalized for non-interface scopes so the unique index works across both SQLite and PG.)
