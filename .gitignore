@@ -27,6 +27,7 @@ packages/*/test-results/
 # Personal working notes — never commit
 boss-todo.md
 admin_requests.md
+worklog-*.md
 
 # Logs
 *.log
@@ -59,5 +60,5 @@ coverage/
 .eslintcache
 .npm
 
-# Generated compliance artifacts (rebuild: scratchpad build-pdfs.mjs from repo markdown)
-shared/internal/comp-ai-policies/pdf/
+# Comp AI — internal compliance working files, kept entirely out of the repo
+shared/internal/comp-ai*
