@@ -1,0 +1,11 @@
+# Code ownership — Change & Release Management evidence (SOC 2 CC8.1).
+# Every change to main has a designated reviewer/owner. Add Dan Fellars'
+# GitHub handle alongside @autumn-shakespeare once confirmed (hand-off item).
+* @autumn-shakespeare
+
+# Compliance-sensitive surfaces (auth, crypto, secrets, middleware).
+/apps/web/src/lib/crypto.ts        @autumn-shakespeare
+/apps/web/src/lib/auth-factory.ts  @autumn-shakespeare
+/apps/web/src/middleware.ts        @autumn-shakespeare
+/apps/server/src/middleware.ts     @autumn-shakespeare
+/.github/                          @autumn-shakespeare

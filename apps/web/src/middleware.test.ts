@@ -220,3 +220,35 @@ describe('appendSetCookies — sliding-session cookie forwarding (2026-07-14)', 
     expect(res.headers.getSetCookie()).toEqual(['a=b; Path=/'])
   })
 })
+
+// HSTS is the deployed-TLS evidence for SOC 2 CC6.1/CC6.7 — Strict-Transport-
+// Security on every deployed response, skipped on the local dev host
+// (baseout.local's mkcert TLS is not a public HSTS context). Landed with the
+// .github SOC 2 hardening set. See shared/internal/comp-ai-policies/
+// secure-configuration-hardening.md and oauth-setup.md §5.5.
+describe('embedFrameHeaders — HSTS (SOC 2 CC6.7 deployed-TLS evidence)', () => {
+  const HSTS = 'max-age=63072000; includeSubDomains; preload'
+
+  it('sets HSTS on a deployed host', async () => {
+    const { embedFrameHeaders } = await import('./middleware')
+    const context = { url: new URL('https://app.baseout.com/dashboard') } as never
+    const res = (await embedFrameHeaders(context, async () => new Response('ok'))) as Response
+    expect(res.headers.get('Strict-Transport-Security')).toBe(HSTS)
+  })
+
+  it('does NOT set HSTS on the local dev host (baseout.local)', async () => {
+    const { embedFrameHeaders } = await import('./middleware')
+    const context = { url: new URL('https://baseout.local:4331/dashboard') } as never
+    const res = (await embedFrameHeaders(context, async () => new Response('ok'))) as Response
+    expect(res.headers.get('Strict-Transport-Security')).toBeNull()
+  })
+
+  it('does not overwrite an existing HSTS header', async () => {
+    const { embedFrameHeaders } = await import('./middleware')
+    const context = { url: new URL('https://app.baseout.com/x') } as never
+    const next = async () =>
+      new Response('ok', { headers: { 'Strict-Transport-Security': 'max-age=1' } })
+    const res = (await embedFrameHeaders(context, next)) as Response
+    expect(res.headers.get('Strict-Transport-Security')).toBe('max-age=1')
+  })
+})
