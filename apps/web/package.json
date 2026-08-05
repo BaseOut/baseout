@@ -36,7 +36,7 @@
     "@opensided/theme": "file:./vendor/@opensided/theme",
     "@tailwindcss/vite": "^4.2.2",
     "astro": "^6.1.2",
-    "better-auth": "^1.6.5",
+    "better-auth": "^1.6.13",
     "drizzle-orm": "^0.45.2",
     "nanostores": "^1.3.0",
     "postgres": "^3.4.9",
