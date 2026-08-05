@@ -30,6 +30,10 @@ No new behavior ships, so there is no red-green TDD loop; the **verification gat
 
 ## 6. Close-out + SOC 2 evidence
 
-- [ ] 6.1 After push + Dependabot re-scan, re-run the Comp AI `dependabot_enabled` + `code_scanning` checks; record before/after alert counts + the residual risk-accepted set in the ledger.
-- [ ] 6.2 Cross-link the ledger from `shared/internal/comp-ai-policy-evidence-map.md` (vulnerability-patch-management + secure-development policies) so the auditor sees remediation + a governed exception process, not an open finding.
-- [ ] 6.3 Full-repo sanity: `pnpm install --frozen-lockfile` clean from root; no `minimumReleaseAge` / frozen-lockfile policy was relaxed (grep the diff for lockfile-discipline config changes → none).
+- [x] 6.1 After push + Dependabot re-scan, re-run the Comp AI `dependabot_enabled` + `code_scanning` checks; record before/after alert counts + the residual risk-accepted set in the ledger. — _Recorded (ledger §8/§9): **174 → 74 (100 cleared), critical 2 → 0, high 70 → 22.** Residual 22 highs mapped to follow-up changes._
+- [x] 6.2 Cross-link the ledger from `shared/internal/comp-ai-policy-evidence-map.md` (vulnerability-patch-management + secure-development policies) so the auditor sees remediation + a governed exception process, not an open finding. — _Cross-linked in the main-repo compliance docs._
+- [x] 6.3 Full-repo sanity: `pnpm install --frozen-lockfile` clean from root; no `minimumReleaseAge` / frozen-lockfile policy was relaxed (grep the diff for lockfile-discipline config changes → none). — _`--frozen-lockfile` clean after every batch; `pnpm-workspace.yaml` `minimumReleaseAge`/frozen policy untouched (react-router deferred *because* the gate was respected)._
+
+## 7. Residual → follow-up changes
+
+The remaining 22 highs (0 critical) are code-migrations, not lockfile fixes — filed as separate changes: `system-wrangler-4-upgrade` (undici ×12), `system-db-schema-drizzle-0.45` (drizzle ×2), `website-astro-7-upgrade` (astro/sharp/ws website ×~9); `react-router` auto-clears once 7.18.0 passes `minimumReleaseAge`. See ledger §9.
