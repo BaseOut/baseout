@@ -181,44 +181,55 @@ Organization (Billing Entity)
 
 ## 3. Pricing Tiers Overview
 
-| | **Trial** | **Launch** | **Growth** | **Pro** | **Business** | **Enterprise** |
-|---|---|---|---|---|---|---|
-| **Monthly Price** | $0 | $49/mo | $99/mo | $199/mo | $399/mo | Custom |
-| **Annual Price** | $0 | $468/yr ($39/mo) | $948/yr ($79/mo) | $1,908/yr ($159/mo) | $3,828/yr ($319/mo) | Custom |
-| **Transfer Credits/mo** | 1,000 | 15,000 | 40,000 | 120,000 | 400,000 | Custom |
-| **Onboarding Credits** | 500 | 5,000 | 10,000 | 25,000 | 75,000 | Custom |
-| **Credit Overage Rate** | None (pauses) | $0.007/cr | $0.006/cr | $0.005/cr | $0.004/cr | Negotiated |
-| **Backup Mode** | Static + Dynamic (Schema Only) | Static + Dynamic | Static + Dynamic | Static + Dynamic | Static + Dynamic | Static + Dynamic |
-| **Backup Frequency** | Monthly | Weekly | Weekly | Daily + Instant | Daily + Instant | Daily + Instant |
-| **Instant Backup** | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ |
-| **Database** | D1 (schema only) | D1 (full) | D1 (full) | Shared PostgreSQL | Dedicated PostgreSQL | BYODB |
-| **R2 File Storage** | 250 MB | 5 GB | 20 GB | 75 GB | 250 GB | Custom |
-| **Database Storage** | 100 MB | 1 GB | 5 GB | 25 GB | 100 GB | Custom |
-| **Snapshot Retention** | 30 days | 90 days | 6 months | 12 months | 24 months | Custom |
-| **Spaces** | 1 | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
-| **Bases per Space** | 1 | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
-| **Connections per Space** | 2 | 2 | 2 | 2 | 2 | 2 |
-| **Included Restores/mo** | 1 | 2 | 3 | 5 | 15 | Unlimited |
-| **Smart Cleanup Policy** | Basic | Time-based | Two-tier | Three-tier | Custom | Custom |
-| **Team Members** | 1 | 3 | 5 | 10 | 15 | Unlimited |
-| **Support** | Community | Email | Priority email | Priority email | Priority + chat | Dedicated CSM + SLA |
+> **SUPERSEDED 2026-08-03 — reconciled to the locked pricing model.** The authoritative pricing source is [`research/pricing/pricing-guide.md`](../research/pricing/pricing-guide.md) (locked 2026-08-03; decision log in [`final-pricing-matrix.md`](../research/pricing/final-pricing-matrix.md)). The old model this section carried — **Launch/Growth/Pro/Business** tiers, a single **transfer-credit** meter, and **per-credit auto-billed overage** — is retired. What changed:
+> - **Tiers renamed** to a capacity ladder: **Lite / Core / Plus / Max** (+ sales-led **Enterprise**). No public "Trial" column — the trial is 14 days of Lite (below). No hidden Starter / On2Air-Bridge plans — legacy On2Air customers migrate via the legacy-migration registry + a 20% lifetime coupon.
+> - **Typed per-lever metering replaces credits.** Consumption is measured against typed allowances (records, file storage, AI credits, calls), not one credit pool.
+> - **No auto-billed overage.** Limit behavior is **warn at 90% / enforce at 100%** plus a flat **add-on library** ($10/mo per unit) — §5 below is superseded (`overage_records` stays dormant, design D8).
+> - **Capability values resolve from the DB-native `plan_features` catalog via `resolveEntitlements(orgId)`**, not Stripe product metadata — §5.6.2 / §5.6.6 below are superseded (see [`openspec/changes/shared-entitlements/design.md`](../openspec/changes/shared-entitlements/design.md) D1).
+>
+> §4–§5.6 and the per-tier columns in §6–§16 still carry legacy tier names pending the full `shared-entitlements` build; the authoritative caps are the matrix below + the runtime `plan_features` seed.
 
-> Trial DB storage (D1 schema only) powers the Schema capability — visualizing base structure, changelog, and health scores. Full record data storage in a Baseout-managed database requires Launch or above.
+Four public tiers (a capacity ladder — size of estate, not company stage) plus a sales-led Enterprise tier. Billing and gating key on stable internal slugs (`lite | core | plus | max | enterprise`, plus `trial`); the names are display copy. No tier shows "Unlimited" — every cap is a number.
 
-### Non-Public Plans
+| | **Lite** | **Core** | **Plus** | **Max** | **Enterprise** |
+|---|---|---|---|---|---|
+| **Monthly** | $49 | $99 | $199 | $399 | Custom |
+| **Annual (~2 months free)** | $499/yr | $999/yr | $1,999/yr | $3,999/yr | Custom |
+| Records under management | 250K | 750K | 1.5M | 5M | Custom |
+| File storage under mgmt (GB) | 50 | 250 | 500 | 1,500 | Custom |
+| AI credits /mo | 200 | 1,000 | 5,000 | 15,000 | Custom |
+| Bring your own AI key | — | — | ✓ | ✓ | ✓ |
+| Bases under management | 15 | 50 | 150 | 500 | Custom |
+| Backup frequency (max cadence) | Monthly | Weekly | Daily | Instant | Instant |
+| Manual (on-demand) backups /mo | 1 | 5 | 10 | 25 | Custom |
+| Spaces | 3 | 10 | 25 | 100 | Custom |
+| Database (isolation class) | SQLite (D1) | D1 or dedicated PG (shared cluster) | Dedicated PG (dedicated cluster) | Dedicated cluster or BYODB | Custom |
+| Database size (org-wide, record data) | 5 GB | 10 GB | 25 GB | 50 GB | Custom |
+| Seats | 1 | 5 | 10 | 25 | Custom |
+| Restores /mo | 3 | 10 | 30 | Fair use | Fair use |
+| Schema history retention | 90 days | 180 days | 1 year | 3 years | 5 years / Custom |
+| Record history retention | 90 days | 180 days | 1 year | 3 years | 5 years / Custom |
+| Snapshot destinations (external) | 1 | 2 | 3 | 5 | Custom |
+| Snapshot destination types | Cloud drives | Cloud drives | + S3 | + S3 | Custom |
+| Monthly call allowance (API + MCP + Direct SQL) | 10K | 50K | 250K | 1M | Custom |
+| Active reports | 5 | 25 | 50 | 100 | Custom |
+| Documents | 10 | 25 | 50 | 100 | Custom |
+| Audit logs | — | — | — | ✓ | ✓ |
+| Support | Email | Priority email | Priority email | Priority + chat | Dedicated CSM + SLA |
 
-Not featured on the public pricing page. Discoverable for users who seek it out or are directed to it.
+Included at **every** tier (feature gates on for all): internal snapshots, MCP access, Automations & interfaces backup, Comments backup, API access, SSO/SAML, PII detection, Direct SQL access. Product constant: 2 Connections per Space.
 
-| Plan | Price/mo | Credits/mo | Backup Mode | DB | Spaces | Bases/Space | Frequency | Team Members |
-|---|---|---|---|---|---|---|---|---|
-| **Starter** | $29 | 5,000 | Static + Dynamic (Schema Only) | D1 (schema only) | 3 | 3 | Monthly | 2 |
-| **On2Air Bridge** | $9.99 | 2,000 | Static + Dynamic (Schema Only) | D1 (schema only) | 1 | 3 | Monthly | 1 |
+**Trial — 14 days of Lite.** Full Lite allowances and features with a **one-time backup** (single snapshot). Trial data is deleted 14 days after the backup runs unless the account upgrades; escalating deletion-warning emails lead up to the deadline. Not a fifth pricing column.
 
-> **Starter** is for users who genuinely cannot afford Launch but need more than the free Trial — more spaces, more credits, and schema-level dynamic access. It is not marketed or featured. The **On2Air Bridge** is for On2Air Basic/Starter customers transitioning at their existing price point — it activates at the **On2Air sunset announcement, not at Baseout's launch** (Baseout and On2Air coexist until then; founder direction 2026-07-24). See §5 and §6 of Pricing_Credit_System.md for the full transition strategy.
+**Add-on library (flat, identical at every tier).** Recurring $10/mo per unit: +100K records, +50 GB files, +2 GB DB size, +3 bases, +1 Space, +2 seats, +1 external destination (to the 5 max), +5 reports, +10 documents, +1,000 AI credits/mo, +50K calls/mo, +3 restores/mo. One-time packs (this cycle only, $12 each): +1,000 AI credits, +50K calls, +3 restores. **Not purchasable — upgrade only:** backup frequency, DB isolation class, retention ladders, S3 destination type, audit logs, BYOK, support level.
+
+**Legacy migration (On2Air):** Starter→Lite, Essentials→Core, Professional→Plus, Premium→Max, with a **20% lifetime floating discount** at or above the mapped tier (Stripe coupon off list price). Full detail in `pricing-guide.md` §8; implemented by the legacy-migration-registry in `openspec/changes/shared-entitlements/`.
 
 ---
 
 ## 4. Tier Limits & Quotas
+
+> **SUPERSEDED 2026-08-03 (shared-entitlements).** The caps below use the retired model (transfer credits, "Unlimited" Spaces/Bases, legacy tier names). Current per-lever caps are the §3 matrix; the runtime source of truth is the `plan_features` catalog resolved via `resolveEntitlements(orgId)` (design D1). Kept for historical reference only.
 
 ### 4.1 Resource Limits
 
@@ -275,7 +286,9 @@ Not featured on the public pricing page. Discoverable for users who seek it out 
 
 ## 5. Overage Pricing
 
-> **NOTE:** Credits meter all backup, restore, and API transfer activity. Storage is billed separately in dollars and does not reset monthly. There are no per-record or per-attachment caps — credits are the single consumption meter. Customers can configure **auto-overage** (allow additional activity, billed at the end of the period) or **hard cap** (pause at limit and notify).
+> **SUPERSEDED 2026-08-03 (shared-entitlements).** The credit-metered, auto-billed-overage model in all of §5 (§5.1–§5.5) is retired. The locked model does **not** auto-bill per-unit overage: it **warns at 90% and enforces at 100%**, and sells a flat **add-on library** ($10/mo per unit; §3). The `overage_records` table stays dormant (design D8). Everything below is historical.
+
+> **NOTE (legacy):** Credits meter all backup, restore, and API transfer activity. Storage is billed separately in dollars and does not reset monthly. There are no per-record or per-attachment caps — credits are the single consumption meter. Customers can configure **auto-overage** (allow additional activity, billed at the end of the period) or **hard cap** (pause at limit and notify).
 
 ### 5.1 Transfer Credit Overage Rates
 
@@ -384,7 +397,9 @@ When additional platforms are launched, a new product set is created following t
 
 ### 5.6.2 Stripe Product Metadata
 
-Every Stripe Product must include the following metadata. The application resolves capabilities and limits by reading this metadata — never by parsing the product name.
+> **SUPERSEDED 2026-08-03 (shared-entitlements design D1).** Capabilities no longer resolve from Stripe metadata. New rule: **Stripe carries money and identity** (products, prices, subscription state, plus a single `plan_slug` metadata key for reconciliation); **the master-DB `plan_features` catalog carries what the money buys.** The `tier` enum below is retired; the new plan slugs are `lite | core | plus | max` (+ `trial`, `enterprise`), stored on `subscription_items.plan_id`. `subscription_items.tier` remains only as a cached display value during migration.
+
+Every Stripe Product must include the following metadata (legacy shape):
 
 ```
 platform: "airtable" | "notion" | "hubspot" | ...
@@ -431,6 +446,8 @@ A percentage discount is applied automatically to each platform subscription ite
 | **Trial interaction** | Discount applies to paid items only. Trial items are free and do not count as the "first" platform for discount purposes until converted to paid. |
 
 ### 5.6.6 Capability Resolution
+
+> **SUPERSEDED 2026-08-03 (shared-entitlements design D1).** Capability resolution moves to a single shared `resolveEntitlements(orgId)` over the DB-native catalog — a 3-way join of `plan_features ⟕ account_feature_overrides ⟕ active addon_purchases` returning the full typed entitlement map (`effective = (override ?? plan value) + Σ active add-on quantities`). The per-platform independence and no-cross-platform-blending rules below still hold; only the *source* changes (DB catalog, not Stripe metadata). The "Feature flag source of truth" row is retired.
 
 The application determines a customer's accessible capabilities by reading their active Stripe subscription items and resolving per-platform access independently.
 

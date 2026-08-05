@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-08-03 by [`shared-byos-drive`](../shared-byos-drive/proposal.md).** This proposal was written against `main` when managed R2 was parked and Drive was "BYOS-only." Both premises moved on: R2 is revived (`system-r2-revive`) and Drive's reachable re-land is `shared-byos-drive` (the `StorageWriter` factory + OAuth Connect + encrypted tokens + engine decrypt). Build `shared-byos-drive`, not this. Retained for reference — do not implement.
+
 ## Why
 
 V1 ships with **BYOS-only** storage on `main` ([R2 pause memo](../../../shared/internal/refactor-roadmap.md) — managed R2 is documented-pause via a separate `system-r2-park` change that lives on a different branch). Today, [`main`](../../../) has zero BYOS implementation: no `storage_destinations` table in [apps/web/src/db/schema](../../../apps/web/src/db/schema/), no `StorageWriter` interface in [apps/server/src/lib](../../../apps/server/src/lib/), no OAuth flow for any cloud provider, and no writer in [apps/workflows](../../../apps/workflows/). The [integrations page](../../../apps/web/src/pages/integrations.astro) surfaces Airtable Connections only.

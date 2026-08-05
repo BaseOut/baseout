@@ -18,7 +18,7 @@ Canonical specs live in [shared/](shared/):
 
 - Every feature, field, table name, tier limit, and capability gate **must** match these specs. If a request conflicts, flag the conflict and cite the spec section — don't silently pick.
 - Use the canonical naming dictionary from `Baseout_Features.md` §1 (Organization, Space, Platform, Connection, Base, etc.) in all code and copy. Never invent synonyms.
-- Gate capabilities and quotas from Stripe product metadata (`platform` + `tier`) per `Baseout_Features.md` §5.5 — never from product name strings.
+- Gate capabilities and quotas by resolving the DB-native entitlement catalog via `resolveEntitlements(orgId)` — never from Stripe product metadata or product name strings. Stripe carries money and identity only (products, prices, subscription state, plus a single `plan_slug` metadata key for reconciliation); the master-DB `plan_features` catalog carries what the money buys (`shared-entitlements` design D1; the pricing model is `research/pricing/pricing-guide.md`, reconciled into `Baseout_Features.md` §3). Until `shared-entitlements` lands, the legacy path reads `subscription_items.tier` (cached display value) — new code should target `resolveEntitlements`.
 - V2-only capabilities (MCP server, RAG, Governance, third-party connectors, multi-platform Spaces) are out of scope unless explicitly requested.
 
 The older [product/info/](product/info/) overview predates the v1.1 PRD — treat the v1.1 PRD as authoritative when the two disagree.

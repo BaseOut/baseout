@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-08-03 by [`shared-entitlements`](../shared-entitlements/proposal.md) (Phase 7 — trial-lifecycle).** This change encodes the retired trial (7-day, 1,000-record / 5-table / 100-attachment data cap). The locked model is **14 days of Lite with a one-time backup, data deleted 14 days after the backup runs** ([`research/pricing/pricing-guide.md`](../../../research/pricing/pricing-guide.md) §2; `shared-entitlements` design D14). Trial quota state, the deletion clock, and pre-enqueue gating are absorbed by `shared-entitlements` tasks 7.1–7.3. Do not implement independently — retained for reference.
+
 ## Why
 
 [PRD §1.5](../../../shared/Baseout_PRD.md) defines the trial:

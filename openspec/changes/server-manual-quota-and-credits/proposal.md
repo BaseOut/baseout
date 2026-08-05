@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-08-03 by [`shared-entitlements`](../shared-entitlements/proposal.md).** This change is built on the retired credit-metered, auto-billed-overage model (`credit_transactions`, Stripe metered usage). In the locked model there is **no per-credit charging**: manual backups are a **creation cap** (Lite 1 / Core 5 / Plus 10 / Max 25 per month) enforced at 100% with an add-on offer, counted via `usage_rollups`. Absorbed by `shared-entitlements` Phase 3 (metering) + task 4.3 (creation-cap enforcement); the flat add-on library replaces credit purchases and `overage_records` stays dormant (design D8). Do not implement independently — retained for reference.
+
 ## Why
 
 Manual backup runs are free today. The route at [apps/web/src/pages/api/spaces/[spaceId]/backup-runs.ts](../../../apps/web/src/pages/api/spaces/%5BspaceId%5D/backup-runs.ts) accepts any POST from an authenticated user and triggers `BackupEngineClient.startRun(...)` without checking quota or charging credits. Per [Features §4.2](../../../shared/Baseout_Features.md):

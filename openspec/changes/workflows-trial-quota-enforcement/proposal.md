@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-08-03 by [`shared-entitlements`](../shared-entitlements/proposal.md) (task 7.2 — daily trial evaluation cron + staged emails).** The trial-email cron here is absorbed by the entitlements trial-lifecycle (T-7 / T-3 / T-1 / day-of stages on the shared email skeleton, design D14). Do not implement independently — retained for reference.
+
 ## Why
 
 Workflows-side counterpart to [`server-trial-quota-enforcement`](../server-trial-quota-enforcement/proposal.md). The server-side change owns the `trial-enforcement-gate` capability — quota state in the master DB, pre-enqueue gating in `/runs/start`, and the apps/web trial banner. This change owns the daily trial-email cron that sends "trial expiring in N days" notifications.

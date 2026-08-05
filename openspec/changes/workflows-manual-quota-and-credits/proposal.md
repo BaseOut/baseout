@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-08-03 by [`shared-entitlements`](../shared-entitlements/proposal.md).** Attachment-byte tracking is absorbed by task 3.1 (extend the backup progress/complete callbacks with file-byte counts → `usage_rollups`); the credit-balance-alert cron is absorbed by the enforcement notification state machine + limit emails (tasks 4.2, 5.1). The credit model this change assumes is retired (design D8). Do not implement independently — retained for reference.
+
 ## Why
 
 Workflows-side counterpart to [`server-manual-quota-and-credits`](../server-manual-quota-and-credits/proposal.md). The server-side change owns the `credit_transactions` writes, Stripe metered-usage reporting, mid-run overage cap pause, and the apps/web settings UI. This change owns two task-side bits: (a) tracking attachment byte counts during a backup so the engine can charge for them, and (b) the daily credit-balance-alert cron that emails Org admins when consumption crosses 50/75/90/100% thresholds.
