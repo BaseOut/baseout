@@ -2,75 +2,111 @@
 // Cross-org restore run viewer (PRD §16.1 operational visibility — the
 // restore-side sibling of /backups). Read-only; gated to staff by
 // src/middleware.ts.
-import { desc, eq } from 'drizzle-orm';
+//
+// admin-crm-ux (Task 1.5): server-side pagination + sort + filter via the
+// shared planner/chrome. Stat tiles use a bounded 7-day window (design D3/D4).
+import { and, asc, desc, eq, ilike, or, count, gte } from 'drizzle-orm';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import PageHeader from '@web/components/ui/PageHeader.astro';
 import Badge from '@web/components/ui/Badge.astro';
 import EmptyState from '@web/components/ui/EmptyState.astro';
+import SortHeader from '../components/table/SortHeader.astro';
+import Pager from '../components/table/Pager.astro';
+import FilterBar from '../components/table/FilterBar.astro';
 import { restoreRuns, spaces, organizations } from '../db/schema';
 import { formatDuration } from '../lib/backup-runs';
 import {
   summarizeRestores,
-  filterByStatus,
   describeScope,
   RESTORE_STATUS_BADGE,
   type RestoreRow,
 } from '../lib/restore-runs';
-import { truncationNote } from '../lib/ui';
+import { parseTableQuery, pageInfo, type TableSpec } from '../lib/table-query';
 
 const { db } = Astro.locals;
-const LIMIT = 100;
 
-const rows: RestoreRow[] = await db
-  .select({
-    id: restoreRuns.id,
-    status: restoreRuns.status,
-    scope: restoreRuns.scope,
-    scopeTarget: restoreRuns.scopeTarget,
-    tablesRestored: restoreRuns.tablesRestored,
-    recordsRestored: restoreRuns.recordsRestored,
-    attachmentsRestored: restoreRuns.attachmentsRestored,
-    triggeredBy: restoreRuns.triggeredBy,
-    isTrial: restoreRuns.isTrial,
-    startedAt: restoreRuns.startedAt,
-    completedAt: restoreRuns.completedAt,
-    errorMessage: restoreRuns.errorMessage,
-    createdAt: restoreRuns.createdAt,
-    spaceName: spaces.name,
-    orgName: organizations.name,
-  })
+const STATUS_VALUES = ['failed', 'running', 'queued', 'succeeded', 'cancelled'] as const;
+
+const SPEC: TableSpec = {
+  sortKeys: ['created', 'status', 'org', 'space'],
+  defaultSort: 'created',
+  defaultDir: 'desc',
+  searchable: true,
+  filters: [
+    { key: 'status', allowed: [...STATUS_VALUES] },
+    { key: 'org' },
+  ],
+};
+const SORT_MAP = { created: restoreRuns.createdAt, status: restoreRuns.status, org: organizations.name, space: spaces.name } as const;
+
+const RESTORE_COLUMNS = {
+  id: restoreRuns.id,
+  status: restoreRuns.status,
+  scope: restoreRuns.scope,
+  scopeTarget: restoreRuns.scopeTarget,
+  tablesRestored: restoreRuns.tablesRestored,
+  recordsRestored: restoreRuns.recordsRestored,
+  attachmentsRestored: restoreRuns.attachmentsRestored,
+  triggeredBy: restoreRuns.triggeredBy,
+  isTrial: restoreRuns.isTrial,
+  startedAt: restoreRuns.startedAt,
+  completedAt: restoreRuns.completedAt,
+  errorMessage: restoreRuns.errorMessage,
+  createdAt: restoreRuns.createdAt,
+  spaceName: spaces.name,
+  orgName: organizations.name,
+} as const;
+
+const query = parseTableQuery(Astro.url, SPEC);
+
+const conditions = [];
+if (query.filters.status) conditions.push(eq(restoreRuns.status, query.filters.status));
+if (query.filters.org) conditions.push(eq(spaces.organizationId, query.filters.org));
+if (query.q) conditions.push(or(ilike(organizations.name, `%${query.q}%`), ilike(spaces.name, `%${query.q}%`)));
+const whereClause = conditions.length ? and(...conditions) : undefined;
+
+const sortCol = SORT_MAP[query.sort as keyof typeof SORT_MAP];
+const orderBy = query.dir === 'asc' ? asc(sortCol) : desc(sortCol);
+
+const [{ n: total }] = await db
+  .select({ n: count() })
   .from(restoreRuns)
   .leftJoin(spaces, eq(spaces.id, restoreRuns.spaceId))
   .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
-  .orderBy(desc(restoreRuns.createdAt))
-  .limit(LIMIT);
+  .where(whereClause);
+const info = pageInfo(total, query.page, query.per);
 
-const statusFilter = Astro.url.searchParams.get('status');
-const summaries = summarizeRestores(rows, new Date());
-const visible = filterByStatus(rows, statusFilter);
+const rows: RestoreRow[] = await db
+  .select(RESTORE_COLUMNS)
+  .from(restoreRuns)
+  .leftJoin(spaces, eq(spaces.id, restoreRuns.spaceId))
+  .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
+  .where(whereClause)
+  .orderBy(orderBy)
+  .limit(query.per)
+  .offset(info.offset);
 
-const FILTERS = ['failed', 'running', 'queued', 'succeeded', 'cancelled'];
+const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+const statsRows: RestoreRow[] = await db
+  .select(RESTORE_COLUMNS)
+  .from(restoreRuns)
+  .leftJoin(spaces, eq(spaces.id, restoreRuns.spaceId))
+  .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
+  .where(gte(restoreRuns.createdAt, sevenDaysAgo));
+const summaries = summarizeRestores(statsRows, new Date());
+
+const params = Astro.url.searchParams;
+const scopedOrg = query.filters.org ?? null;
+const filterHidden: Record<string, string> = { sort: query.sort, dir: query.dir, per: String(query.per) };
+if (scopedOrg) filterHidden.org = scopedOrg;
+const statusOptions = [{ value: '', label: 'All statuses' }, ...STATUS_VALUES.map((s) => ({ value: s, label: s }))];
+
 const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 19) : '—');
 ---
 
 <SidebarLayout title="Admin — Restore Runs">
   <div class="mx-auto max-w-[1200px] space-y-6">
-    <PageHeader
-      title="Restore runs"
-      description={`Most-recent restores across all organizations.${truncationNote(rows.length, LIMIT)}`}
-    >
-      <div slot="actions" role="tablist" class="tabs tabs-box tabs-sm">
-        <a role="tab" href="/restores" aria-selected={!statusFilter} class={`tab ${!statusFilter ? 'tab-active' : ''}`}>all</a>
-        {FILTERS.map((s) => (
-          <a
-            role="tab"
-            href={`/restores?status=${s}`}
-            aria-selected={statusFilter === s}
-            class={`tab ${statusFilter === s ? 'tab-active' : ''}`}
-          >{s}</a>
-        ))}
-      </div>
-    </PageHeader>
+    <PageHeader title="Restore runs" description="Restore run status across all organizations." />
 
     <div class="stats stats-horizontal bg-base-100 border border-base-300">
       {summaries.map((s) => (
@@ -88,57 +124,73 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
       ))}
     </div>
 
-    {visible.length === 0 ? (
+    {scopedOrg && (
+      <div class="alert alert-info py-2">
+        <span>Scoped to one organization.</span>
+        <a href="/restores" class="link link-hover">Clear scope</a>
+      </div>
+    )}
+
+    <FilterBar
+      action="/restores"
+      searchable
+      q={query.q}
+      qPlaceholder="Search org or space…"
+      filters={[{ key: 'status', label: 'Status', options: statusOptions, current: query.filters.status ?? null }]}
+      hidden={filterHidden}
+    />
+
+    {rows.length === 0 ? (
       <EmptyState
         icon="lucide--archive-restore"
-        title={statusFilter ? 'No matches' : 'No restore runs yet'}
-        description={statusFilter
-          ? `No restores with status “${statusFilter}”.`
-          : 'Customer restores appear here the moment they are queued.'}
+        title="No restore runs"
+        description={`No restores${query.filters.status ? ` with status “${query.filters.status}”` : ''}${query.q ? ` matching “${query.q}”` : ''} found.`}
       />
     ) : (
-      <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
-        <table class="table table-zebra table-sm">
-          <thead>
-            <tr>
-              <th>Created</th>
-              <th>Organization</th>
-              <th>Space</th>
-              <th>Status</th>
-              <th>Scope</th>
-              <th>Tables</th>
-              <th>Records</th>
-              <th>Attachments</th>
-              <th>Trigger</th>
-              <th>Duration</th>
-              <th>Error</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((r) => (
+      <div class="space-y-3">
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+          <table class="table table-zebra table-sm">
+            <thead>
               <tr>
-                <td class="font-mono text-xs whitespace-nowrap">{fmt(r.createdAt)}</td>
-                <td>{r.orgName ?? '—'}</td>
-                <td>{r.spaceName ?? '—'}</td>
-                <td>
-                  <span class="flex items-center gap-1">
-                    <Badge variant={RESTORE_STATUS_BADGE[r.status] ?? 'default'} size="sm">{r.status}</Badge>
-                    {r.isTrial && <Badge variant="default" size="sm">trial</Badge>}
-                  </span>
-                </td>
-                <td class="font-mono text-xs">{describeScope(r.scope, r.scopeTarget)}</td>
-                <td class="text-right">{r.tablesRestored}</td>
-                <td class="text-right">{r.recordsRestored}</td>
-                <td class="text-right">{r.attachmentsRestored}</td>
-                <td>{r.triggeredBy.replace(/_/g, ' ')}</td>
-                <td class="whitespace-nowrap">{formatDuration(r.startedAt, r.completedAt)}</td>
-                <td class="max-w-xs truncate text-error text-xs" title={r.errorMessage ?? ''}>
-                  {r.errorMessage ?? ''}
-                </td>
+                <SortHeader label="Created" sortKey="created" current={params} spec={SPEC} />
+                <SortHeader label="Organization" sortKey="org" current={params} spec={SPEC} />
+                <SortHeader label="Space" sortKey="space" current={params} spec={SPEC} />
+                <SortHeader label="Status" sortKey="status" current={params} spec={SPEC} />
+                <SortHeader label="Scope" current={params} spec={SPEC} />
+                <SortHeader label="Tables" align="right" current={params} spec={SPEC} />
+                <SortHeader label="Records" align="right" current={params} spec={SPEC} />
+                <SortHeader label="Attachments" align="right" current={params} spec={SPEC} />
+                <SortHeader label="Trigger" current={params} spec={SPEC} />
+                <SortHeader label="Duration" current={params} spec={SPEC} />
+                <SortHeader label="Error" current={params} spec={SPEC} />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmt(r.createdAt)}</td>
+                  <td>{r.orgName ?? '—'}</td>
+                  <td>{r.spaceName ?? '—'}</td>
+                  <td>
+                    <span class="flex items-center gap-1">
+                      <Badge variant={RESTORE_STATUS_BADGE[r.status] ?? 'default'} size="sm">{r.status}</Badge>
+                      {r.isTrial && <Badge variant="default" size="sm">trial</Badge>}
+                    </span>
+                  </td>
+                  <td class="font-mono text-xs">{describeScope(r.scope, r.scopeTarget)}</td>
+                  <td class="text-right">{r.tablesRestored}</td>
+                  <td class="text-right">{r.recordsRestored}</td>
+                  <td class="text-right">{r.attachmentsRestored}</td>
+                  <td>{r.triggeredBy.replace(/_/g, ' ')}</td>
+                  <td class="whitespace-nowrap">{formatDuration(r.startedAt, r.completedAt)}</td>
+                  <td class="max-w-xs truncate text-error text-xs" title={r.errorMessage ?? ''}>{r.errorMessage ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <Pager info={info} current={params} per={query.per} noun="restore" />
       </div>
     )}
   </div>

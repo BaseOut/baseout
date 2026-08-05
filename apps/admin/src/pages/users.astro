@@ -1,33 +1,58 @@
 ---
 // /users — global users directory (admin-entity-directories). Read-only sessions
-// access; role='super' gated by middleware. Search + role filter + limit in SQL.
-import { and, eq, ilike, inArray, max, or } from 'drizzle-orm';
+// access; role='super' gated by middleware.
+//
+// admin-crm-ux (Task 1.4): server-side pagination + sort + filter via the
+// shared planner/chrome. Memberships + last-session are fetched for the current
+// page only (inArray) and assembled with preserveOrder (design D3).
+import { and, asc, desc, eq, ilike, inArray, max, or, count } from 'drizzle-orm';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import PageHeader from '@web/components/ui/PageHeader.astro';
-import Card from '@web/components/ui/Card.astro';
 import Badge from '@web/components/ui/Badge.astro';
 import EmptyState from '@web/components/ui/EmptyState.astro';
 import EntityLink from '../components/EntityLink.astro';
+import SortHeader from '../components/table/SortHeader.astro';
+import Pager from '../components/table/Pager.astro';
+import FilterBar from '../components/table/FilterBar.astro';
 import { users, sessions } from '@baseout/db-schema';
 import { organizations, organizationMembers } from '../db/schema';
 import { buildUsersDirectory } from '../lib/users-directory';
-import { entityHref, truncationNote } from '../lib/ui';
+import { parseTableQuery, pageInfo, type TableSpec } from '../lib/table-query';
+import { entityHref } from '../lib/ui';
 
-const LIMIT = 200;
-const url = new URL(Astro.request.url);
-const q = (url.searchParams.get('q') ?? '').trim();
-const role = (url.searchParams.get('role') ?? '').trim() || null;
 const { db } = Astro.locals;
 
-const filters = [] as ReturnType<typeof eq>[];
-if (q) filters.push(or(ilike(users.email, `%${q}%`), ilike(users.name, `%${q}%`))!);
-if (role) filters.push(eq(users.role, role));
+const ROLE_VALUES = ['customer', 'super'] as const;
+
+const SPEC: TableSpec = {
+  sortKeys: ['email', 'role', 'created'],
+  defaultSort: 'email',
+  defaultDir: 'asc',
+  searchable: true,
+  filters: [{ key: 'role', allowed: [...ROLE_VALUES] }],
+};
+const SORT_MAP = { email: users.email, role: users.role, created: users.createdAt } as const;
+
+const query = parseTableQuery(Astro.url, SPEC);
+
+const conditions = [];
+if (query.q) conditions.push(or(ilike(users.email, `%${query.q}%`), ilike(users.name, `%${query.q}%`)));
+if (query.filters.role) conditions.push(eq(users.role, query.filters.role));
+const whereClause = conditions.length ? and(...conditions) : undefined;
+
+const sortCol = SORT_MAP[query.sort as keyof typeof SORT_MAP];
+const orderBy = query.dir === 'asc' ? asc(sortCol) : desc(sortCol);
+
+const [{ n: total }] = await db.select({ n: count() }).from(users).where(whereClause);
+const info = pageInfo(total, query.page, query.per);
+
 const userRows = await db
   .select({ id: users.id, name: users.name, email: users.email, role: users.role, emailVerified: users.emailVerified, createdAt: users.createdAt })
   .from(users)
-  .where(filters.length ? and(...filters) : undefined)
-  .orderBy(users.email)
-  .limit(LIMIT);
+  .where(whereClause)
+  .orderBy(orderBy)
+  .limit(query.per)
+  .offset(info.offset);
 
 const userIds = userRows.map((u) => u.id);
 const [memberships, latestSessions] = userIds.length
@@ -38,51 +63,59 @@ const [memberships, latestSessions] = userIds.length
     ])
   : [[], []];
 
-const rows = buildUsersDirectory({
-  users: userRows,
-  memberships,
-  latestSessions: latestSessions.filter((s): s is { userId: string; updatedAt: Date } => !!s.updatedAt),
-});
+const rows = buildUsersDirectory(
+  {
+    users: userRows,
+    memberships,
+    latestSessions: latestSessions.filter((s): s is { userId: string; updatedAt: Date } => !!s.updatedAt),
+  },
+  { preserveOrder: true },
+);
+
+const params = Astro.url.searchParams;
+const filterHidden: Record<string, string> = { sort: query.sort, dir: query.dir, per: String(query.per) };
+const roleOptions = [{ value: '', label: 'All roles' }, ...ROLE_VALUES.map((r) => ({ value: r, label: r }))];
 
 const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : 'never');
 ---
 
 <SidebarLayout title="Admin — Users">
   <div class="mx-auto max-w-[1100px] space-y-6">
-    <PageHeader title="Users" description={`Every user, their org memberships, and last sign-in.${truncationNote(userRows.length, LIMIT)}`} />
+    <PageHeader title="Users" description="Every user, their org memberships, and last sign-in." />
 
-    <form method="get" class="flex flex-wrap items-center gap-2">
-      <input type="search" name="q" value={q} placeholder="Search email or name…" class="input input-bordered input-sm w-64" />
-      <select name="role" class="select select-bordered select-sm">
-        <option value="" selected={!role}>All roles</option>
-        {['customer', 'super'].map((r) => (<option value={r} selected={role === r}>{r}</option>))}
-      </select>
-      <button class="btn btn-sm btn-primary" type="submit">Apply</button>
-    </form>
+    <FilterBar
+      action="/users"
+      searchable
+      q={query.q}
+      qPlaceholder="Search email or name…"
+      filters={[{ key: 'role', label: 'Role', options: roleOptions, current: query.filters.role ?? null }]}
+      hidden={filterHidden}
+    />
 
-    <Card variant="outlined">
-      {rows.length === 0 ? (
-        <EmptyState title="No users match" description="Try a different search or role." />
-      ) : (
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
+    {rows.length === 0 ? (
+      <EmptyState title="No users match" description="Try a different search or role." />
+    ) : (
+      <div class="space-y-3">
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+          <table class="table table-zebra table-sm">
             <thead>
-              <tr class="border-b border-base-300 text-left text-xs uppercase text-base-content/60">
-                <th class="py-2 pr-4 font-medium">User</th>
-                <th class="py-2 pr-4 font-medium">Role</th>
-                <th class="py-2 pr-4 font-medium">Organizations</th>
-                <th class="py-2 pr-4 font-medium">Last seen</th>
+              <tr>
+                <SortHeader label="User" sortKey="email" current={params} spec={SPEC} />
+                <SortHeader label="Role" sortKey="role" current={params} spec={SPEC} />
+                <SortHeader label="Organizations" current={params} spec={SPEC} />
+                <SortHeader label="Created" sortKey="created" current={params} spec={SPEC} />
+                <SortHeader label="Last seen" current={params} spec={SPEC} />
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr class="border-b border-base-200/60">
-                  <td class="py-2 pr-4">
+                <tr>
+                  <td>
                     <div class="font-medium"><EntityLink type="user" id={r.id} label={r.name ?? r.email} /></div>
                     <div class="text-xs text-base-content/50">{r.email}{!r.emailVerified && ' · unverified'}</div>
                   </td>
-                  <td class="py-2 pr-4">{r.role === 'super' ? <Badge variant="primary">super</Badge> : r.role}</td>
-                  <td class="py-2 pr-4">
+                  <td>{r.role === 'super' ? <Badge variant="primary" size="sm">super</Badge> : r.role}</td>
+                  <td>
                     {r.memberships.length === 0 ? <span class="text-base-content/50">—</span> : (
                       <div class="flex flex-wrap gap-1">
                         {r.memberships.map((m) => (
@@ -91,13 +124,16 @@ const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : 'n
                       </div>
                     )}
                   </td>
-                  <td class="py-2 pr-4 text-base-content/70">{fmt(r.lastSeenAt)}</td>
+                  <td class="text-base-content/70">{r.createdAt.toISOString().slice(0, 10)}</td>
+                  <td class="text-base-content/70">{fmt(r.lastSeenAt)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      )}
-    </Card>
+
+        <Pager info={info} current={params} per={query.per} noun="user" />
+      </div>
+    )}
   </div>
 </SidebarLayout>

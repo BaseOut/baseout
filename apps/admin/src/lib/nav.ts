@@ -22,7 +22,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Directory',
     items: [
-      { href: '/customers', label: 'Customers', icon: 'iconify lucide--users-round' },
+      { href: '/organizations', label: 'Organizations', icon: 'iconify lucide--users-round' },
       { href: '/users', label: 'Users', icon: 'iconify lucide--user' },
       { href: '/spaces', label: 'Spaces', icon: 'iconify lucide--layers' },
     ],

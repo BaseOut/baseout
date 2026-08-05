@@ -1,0 +1,187 @@
+---
+// /connections/[id] — connection drill-in (admin-crm-ux Task 3.1/3.2). Staff-
+// gated, master-DB-only, metadata only (no token values, no *_enc). Home of the
+// Invalidate-connection action (relocated off the /connections listing — the
+// endpoint, confirm flow, and audit write are unchanged).
+import { desc, eq } from 'drizzle-orm';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import Button from '@web/components/ui/Button.astro';
+import ConfirmModal from '@web/components/ui/ConfirmModal.astro';
+import { connections, connectionSessions, connectionStatusAudit, organizations, platforms, spaces } from '../../db/schema';
+import { UUID_RE } from '../../lib/actions/http';
+import { HEALTH_BADGE, type ConnectionRow } from '../../lib/connection-health';
+import { buildConnectionDetail, type ConnSession, type ConnStatusFlip, type ServedSpace } from '../../lib/connection-detail';
+import { validateReturnPath } from '../../lib/table-query';
+
+const { db } = Astro.locals;
+const now = new Date();
+
+const id = Astro.params.id;
+if (!id || !UUID_RE.test(id)) return new Response('Not found', { status: 404 });
+
+const rows = await db
+  .select({
+    id: connections.id,
+    organizationId: connections.organizationId,
+    spaceId: connections.spaceId,
+    scope: connections.scope,
+    orgName: organizations.name,
+    platformName: platforms.name,
+    displayName: connections.displayName,
+    status: connections.status,
+    tokenExpiresAt: connections.tokenExpiresAt,
+    invalidatedAt: connections.invalidatedAt,
+    lastUsedAt: connections.lastUsedAt,
+    oauthRefreshClaimId: connections.oauthRefreshClaimId,
+    oauthRefreshClaimedAt: connections.oauthRefreshClaimedAt,
+    oauthRefreshLastError: connections.oauthRefreshLastError,
+    createdAt: connections.createdAt,
+  })
+  .from(connections)
+  .leftJoin(organizations, eq(organizations.id, connections.organizationId))
+  .leftJoin(platforms, eq(platforms.id, connections.platformId))
+  .where(eq(connections.id, id))
+  .limit(1);
+
+const c = rows[0];
+if (!c) return new Response('Not found', { status: 404 });
+
+// ConnectionRow projection for the classifier.
+const connectionRow: ConnectionRow = {
+  id: c.id,
+  orgName: c.orgName,
+  platformName: c.platformName,
+  displayName: c.displayName,
+  scope: c.scope,
+  status: c.status,
+  tokenExpiresAt: c.tokenExpiresAt,
+  invalidatedAt: c.invalidatedAt,
+  lastUsedAt: c.lastUsedAt,
+  oauthRefreshClaimId: c.oauthRefreshClaimId,
+  oauthRefreshClaimedAt: c.oauthRefreshClaimedAt,
+  oauthRefreshLastError: c.oauthRefreshLastError,
+  createdAt: c.createdAt,
+};
+
+const [sessions, statusAudit, servedSpaces] = await Promise.all([
+  db
+    .select({ lockedBy: connectionSessions.lockedBy, startedAt: connectionSessions.startedAt, expiresAt: connectionSessions.expiresAt })
+    .from(connectionSessions)
+    .where(eq(connectionSessions.connectionId, id)) as Promise<ConnSession[]>,
+  db
+    .select({ oldStatus: connectionStatusAudit.oldStatus, newStatus: connectionStatusAudit.newStatus, changedAt: connectionStatusAudit.changedAt, applicationName: connectionStatusAudit.applicationName, dbUser: connectionStatusAudit.dbUser })
+    .from(connectionStatusAudit)
+    .where(eq(connectionStatusAudit.connectionId, id))
+    .orderBy(desc(connectionStatusAudit.changedAt))
+    .limit(50) as Promise<ConnStatusFlip[]>,
+  // Space-scoped → the one space; org-scoped → the org's spaces.
+  c.spaceId
+    ? (db.select({ id: spaces.id, name: spaces.name, status: spaces.status }).from(spaces).where(eq(spaces.id, c.spaceId)) as Promise<ServedSpace[]>)
+    : c.organizationId
+      ? (db.select({ id: spaces.id, name: spaces.name, status: spaces.status }).from(spaces).where(eq(spaces.organizationId, c.organizationId)).limit(50) as Promise<ServedSpace[]>)
+      : Promise.resolve([] as ServedSpace[]),
+]);
+
+const view = buildConnectionDetail({ connection: connectionRow, sessions, statusAudit, servedSpaces }, now);
+
+const backHref = validateReturnPath(Astro.url.searchParams.get('ret'), '/connections');
+const orgHref = c.organizationId ? `/organizations/${c.organizationId}` : null;
+
+const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 16) : '—');
+---
+
+<SidebarLayout title={`Admin — Connection ${c.displayName ?? c.id}`}>
+  <div class="mx-auto max-w-[1000px] space-y-6">
+    <PageHeader title={c.displayName ?? 'Connection'} description={`${c.platformName ?? '—'} · scope ${c.scope}`} backHref={backHref} backLabel="Back">
+      <Fragment slot="meta">
+        <Badge variant="default" size="sm">{c.status}</Badge>
+        <Badge variant={HEALTH_BADGE[view.health]} size="sm">{view.health.replace('_', ' ')}</Badge>
+        {orgHref && <a href={orgHref} class="link link-hover text-sm">{c.orgName ?? 'organization'} →</a>}
+      </Fragment>
+      <div slot="actions">
+        {c.status !== 'invalid' && (
+          <Button
+            variant="outline"
+            size="sm"
+            class="text-error"
+            data-action-path="/api/actions/invalidate-connection"
+            data-action-payload={JSON.stringify({ connectionId: c.id })}
+            data-action-label={`Invalidate the ${c.platformName ?? ''} connection "${c.displayName ?? c.id}" for ${c.orgName ?? 'unknown org'}. In-flight backup runs are cancelled, new backups are refused, and the customer sees a reconnect banner until they re-authorize.`}
+          >Invalidate connection</Button>
+        )}
+      </div>
+    </PageHeader>
+
+    <div class="stats stats-horizontal bg-base-100 border border-base-300">
+      <div class="stat py-3">
+        <div class="stat-title">Token expires</div>
+        <div class="stat-value text-lg font-mono">{fmt(c.tokenExpiresAt)}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Last used</div>
+        <div class="stat-value text-lg font-mono">{fmt(c.lastUsedAt)}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Session locks</div>
+        <div class={`stat-value text-2xl ${view.sessionSummary.stale > 0 ? 'text-warning' : ''}`}>{view.sessionSummary.total}</div>
+        <div class="stat-desc">{view.sessionSummary.active} active · {view.sessionSummary.stale} stale</div>
+      </div>
+    </div>
+
+    {c.oauthRefreshLastError && (
+      <div class="alert alert-error py-2"><span class="text-sm">Last refresh error: {c.oauthRefreshLastError}</span></div>
+    )}
+
+    <Card variant="outlined">
+      <div class="flex flex-col gap-3">
+        <h2 class="text-base font-semibold">Spaces served</h2>
+        {view.servedSpaces.length === 0 ? (
+          <p class="text-sm text-base-content/50">No spaces.</p>
+        ) : (
+          <div class="flex flex-wrap gap-2">
+            {view.servedSpaces.map((s) => (
+              <a href={`/spaces/${s.id}`} class="badge badge-outline badge-lg hover:badge-primary">{s.name}</a>
+            ))}
+          </div>
+        )}
+      </div>
+    </Card>
+
+    <Card variant="outlined">
+      <div class="flex flex-col gap-3">
+        <h2 class="text-base font-semibold">Status history</h2>
+        {view.statusHistory.length === 0 ? (
+          <p class="text-sm text-base-content/50">No status changes recorded.</p>
+        ) : (
+          <div class="overflow-x-auto rounded-box border border-base-300">
+            <table class="table table-zebra table-sm">
+              <thead>
+                <tr><th>Changed</th><th>Transition</th><th>Application</th><th>DB user</th></tr>
+              </thead>
+              <tbody>
+                {view.statusHistory.map((f) => (
+                  <tr>
+                    <td class="font-mono text-xs whitespace-nowrap">{fmt(f.changedAt)}</td>
+                    <td class="text-xs"><span class="text-base-content/60">{f.oldStatus ?? '—'}</span> → <b>{f.newStatus}</b></td>
+                    <td class="font-mono text-xs">{f.applicationName ?? '—'}</td>
+                    <td class="font-mono text-xs">{f.dbUser}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Card>
+  </div>
+
+  <ConfirmModal id="action-confirm" title="Invalidate connection" confirmLabel="Invalidate" confirmClass="btn-error">
+    <p class="text-sm" data-confirm-label></p>
+    <p class="mt-2 text-sm text-error hidden" data-confirm-error></p>
+    <p class="mt-2 text-xs text-base-content/50">This action is recorded in the admin audit log before it executes.</p>
+    <button slot="confirm" type="button" class="btn btn-error" data-confirm-button>Confirm</button>
+  </ConfirmModal>
+</SidebarLayout>

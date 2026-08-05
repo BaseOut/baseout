@@ -1,52 +1,134 @@
 ---
 // Cross-org backup run viewer (PRD §16.1 — "backup run status" across all
 // Organizations). Read-only; gated to role='super' by src/middleware.ts.
-// Absorbs the web /ops page, improved with org/space names.
-import { desc, eq } from 'drizzle-orm';
+//
+// admin-crm-ux (Task 1.3): server-side pagination + sorting + filtering via the
+// shared table-query planner and chrome — replaces the old bounded LIMIT 100.
+// The stat tiles are computed from a bounded 7-day window (their max horizon)
+// so they stay global rather than page-scoped; the pure summarizeRuns helper is
+// reused unchanged (design D3: in-memory derivation stays display-only).
+import { and, asc, desc, eq, ilike, or, count, gte } from 'drizzle-orm';
 import SidebarLayout from '../../layouts/SidebarLayout.astro';
 import PageHeader from '@web/components/ui/PageHeader.astro';
 import Badge from '@web/components/ui/Badge.astro';
 import EmptyState from '@web/components/ui/EmptyState.astro';
+import SortHeader from '../../components/table/SortHeader.astro';
+import Pager from '../../components/table/Pager.astro';
+import FilterBar from '../../components/table/FilterBar.astro';
+import EntityLink from '../../components/EntityLink.astro';
 import { backupRuns, spaces, organizations } from '../../db/schema';
 import {
   summarizeRuns,
-  filterByStatus,
   formatDuration,
   RUN_STATUS_BADGE,
   type RunRow,
 } from '../../lib/backup-runs';
+import { parseTableQuery, pageInfo, type TableSpec } from '../../lib/table-query';
 
 const { db } = Astro.locals;
 
-const rows: RunRow[] = await db
-  .select({
-    id: backupRuns.id,
-    status: backupRuns.status,
-    kind: backupRuns.kind,
-    isTrial: backupRuns.isTrial,
-    triggeredBy: backupRuns.triggeredBy,
-    recordCount: backupRuns.recordCount,
-    tableCount: backupRuns.tableCount,
-    attachmentCount: backupRuns.attachmentCount,
-    startedAt: backupRuns.startedAt,
-    completedAt: backupRuns.completedAt,
-    errorMessage: backupRuns.errorMessage,
-    deletedAt: backupRuns.deletedAt,
-    createdAt: backupRuns.createdAt,
-    spaceName: spaces.name,
-    orgName: organizations.name,
-  })
+const STATUS_FILTERS = ['failed', 'running', 'queued', 'succeeded'] as const;
+
+const SPEC: TableSpec = {
+  sortKeys: ['created', 'status', 'org', 'space', 'records', 'tables'],
+  defaultSort: 'created',
+  defaultDir: 'desc',
+  searchable: true,
+  filters: [
+    { key: 'status', allowed: [...STATUS_FILTERS] },
+    { key: 'org' }, // free-form id filter — set by command-center "view all" links
+  ],
+};
+
+// Whitelisted sort keys → Drizzle columns. User input is validated to a key by
+// the planner; the column object is chosen here, never interpolated (design D2).
+const SORT_MAP = {
+  created: backupRuns.createdAt,
+  status: backupRuns.status,
+  org: organizations.name,
+  space: spaces.name,
+  records: backupRuns.recordCount,
+  tables: backupRuns.tableCount,
+} as const;
+
+// Shared RunRow projection — reused by the page query and the stats window.
+const RUN_COLUMNS = {
+  id: backupRuns.id,
+  status: backupRuns.status,
+  kind: backupRuns.kind,
+  isTrial: backupRuns.isTrial,
+  triggeredBy: backupRuns.triggeredBy,
+  recordCount: backupRuns.recordCount,
+  tableCount: backupRuns.tableCount,
+  attachmentCount: backupRuns.attachmentCount,
+  startedAt: backupRuns.startedAt,
+  completedAt: backupRuns.completedAt,
+  errorMessage: backupRuns.errorMessage,
+  deletedAt: backupRuns.deletedAt,
+  createdAt: backupRuns.createdAt,
+  spaceName: spaces.name,
+  orgName: organizations.name,
+} as const;
+
+const query = parseTableQuery(Astro.url, SPEC);
+
+// Shared WHERE clause — used identically by the page query and the count.
+const conditions = [];
+if (query.filters.status) conditions.push(eq(backupRuns.status, query.filters.status));
+if (query.filters.org) conditions.push(eq(spaces.organizationId, query.filters.org));
+if (query.q) {
+  conditions.push(or(ilike(organizations.name, `%${query.q}%`), ilike(spaces.name, `%${query.q}%`)));
+}
+const whereClause = conditions.length ? and(...conditions) : undefined;
+
+const sortCol = SORT_MAP[query.sort as keyof typeof SORT_MAP];
+const orderBy = query.dir === 'asc' ? asc(sortCol) : desc(sortCol);
+
+// Count first (shares WHERE) so we can clamp an out-of-range page before the
+// row query — the pager then reflects the true, filtered total.
+const [{ n: total }] = await db
+  .select({ n: count() })
   .from(backupRuns)
   .leftJoin(spaces, eq(spaces.id, backupRuns.spaceId))
   .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
-  .orderBy(desc(backupRuns.createdAt))
-  .limit(100);
+  .where(whereClause);
 
-const statusFilter = Astro.url.searchParams.get('status');
-const summaries = summarizeRuns(rows, new Date());
-const visible = filterByStatus(rows, statusFilter);
+const info = pageInfo(total, query.page, query.per);
 
-const FILTERS = ['failed', 'running', 'queued', 'succeeded'];
+const rows: RunRow[] = await db
+  .select(RUN_COLUMNS)
+  .from(backupRuns)
+  .leftJoin(spaces, eq(spaces.id, backupRuns.spaceId))
+  .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
+  .where(whereClause)
+  .orderBy(orderBy)
+  .limit(query.per)
+  .offset(info.offset);
+
+// Stat tiles: global 24h/7d rollup, bounded to the 7-day horizon they display.
+const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+const statsRows: RunRow[] = await db
+  .select(RUN_COLUMNS)
+  .from(backupRuns)
+  .leftJoin(spaces, eq(spaces.id, backupRuns.spaceId))
+  .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
+  .where(gte(backupRuns.createdAt, sevenDaysAgo));
+const summaries = summarizeRuns(statsRows, new Date());
+
+const params = Astro.url.searchParams;
+const scopedOrg = query.filters.org ?? null;
+
+const statusOptions = [
+  { value: '', label: 'All statuses' },
+  ...STATUS_FILTERS.map((s) => ({ value: s, label: s })),
+];
+const filterHidden: Record<string, string> = {
+  sort: query.sort,
+  dir: query.dir,
+  per: String(query.per),
+};
+if (scopedOrg) filterHidden.org = scopedOrg;
+
 const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 19) : '—');
 ---
 
@@ -54,23 +136,8 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
   <div class="mx-auto max-w-[1200px] space-y-6">
     <PageHeader
       title="Backup runs"
-      description="100 most-recent runs across all organizations (PRD §16.1)."
-    >
-      {/* Status filter — daisyUI segmented tabs. Kept as <a> links so the SSR
-          ?status filter drives the render (no primitive covers href-tabs; the
-          @web Tabs primitive is radio-based). */}
-      <div slot="actions" role="tablist" class="tabs tabs-box tabs-sm">
-        <a role="tab" href="/backups" aria-selected={!statusFilter} class={`tab ${!statusFilter ? 'tab-active' : ''}`}>all</a>
-        {FILTERS.map((s) => (
-          <a
-            role="tab"
-            href={`/backups?status=${s}`}
-            aria-selected={statusFilter === s}
-            class={`tab ${statusFilter === s ? 'tab-active' : ''}`}
-          >{s}</a>
-        ))}
-      </div>
-    </PageHeader>
+      description="Backup run status across all organizations (PRD §16.1)."
+    />
 
     <div class="stats stats-horizontal bg-base-100 border border-base-300">
       {summaries.map((s) => (
@@ -88,56 +155,76 @@ const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 
       ))}
     </div>
 
-    {visible.length === 0 ? (
+    {scopedOrg && (
+      <div class="alert alert-info py-2">
+        <span>Scoped to one organization.</span>
+        <a href="/backups" class="link link-hover">Clear scope</a>
+      </div>
+    )}
+
+    <FilterBar
+      action="/backups"
+      searchable
+      q={query.q}
+      qPlaceholder="Search org or space…"
+      filters={[{ key: 'status', label: 'Status', options: statusOptions, current: query.filters.status ?? null }]}
+      hidden={filterHidden}
+    />
+
+    {rows.length === 0 ? (
       <EmptyState
         icon="lucide--database-backup"
         title="No backup runs"
-        description={`No backup runs${statusFilter ? ` with status “${statusFilter}”` : ''} yet.`}
+        description={`No backup runs${query.filters.status ? ` with status “${query.filters.status}”` : ''}${query.q ? ` matching “${query.q}”` : ''} found.`}
       />
     ) : (
-      <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
-        <table class="table table-zebra table-sm">
-          <thead>
-            <tr>
-              <th>Created</th>
-              <th>Organization</th>
-              <th>Space</th>
-              <th>Status</th>
-              <th>Kind</th>
-              <th>Trigger</th>
-              <th>Records</th>
-              <th>Tables</th>
-              <th>Duration</th>
-              <th>Error</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((r) => (
+      <div class="space-y-3">
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+          <table class="table table-zebra table-sm">
+            <thead>
               <tr>
-                <td class="font-mono text-xs whitespace-nowrap">
-                  <a href={`/backups/${r.id}`} class="link link-hover">{fmt(r.createdAt)}</a>
-                </td>
-                <td>{r.orgName ?? '—'}</td>
-                <td>{r.spaceName ?? '—'}</td>
-                <td>
-                  <span class="flex items-center gap-1">
-                    <Badge variant={RUN_STATUS_BADGE[r.status] ?? 'default'} size="sm">{r.status}</Badge>
-                    {r.isTrial && <Badge variant="default" size="sm">trial</Badge>}
-                    {r.deletedAt && <Badge variant="default" size="sm">pruned</Badge>}
-                  </span>
-                </td>
-                <td>{r.kind}</td>
-                <td>{r.triggeredBy}</td>
-                <td class="text-right">{r.recordCount ?? '—'}</td>
-                <td class="text-right">{r.tableCount ?? '—'}</td>
-                <td class="whitespace-nowrap">{formatDuration(r.startedAt, r.completedAt)}</td>
-                <td class="max-w-xs truncate text-error text-xs" title={r.errorMessage ?? ''}>
-                  {r.errorMessage ?? ''}
-                </td>
+                <SortHeader label="Created" sortKey="created" current={params} spec={SPEC} />
+                <SortHeader label="Organization" sortKey="org" current={params} spec={SPEC} />
+                <SortHeader label="Space" sortKey="space" current={params} spec={SPEC} />
+                <SortHeader label="Status" sortKey="status" current={params} spec={SPEC} />
+                <SortHeader label="Kind" current={params} spec={SPEC} />
+                <SortHeader label="Trigger" current={params} spec={SPEC} />
+                <SortHeader label="Records" sortKey="records" align="right" current={params} spec={SPEC} />
+                <SortHeader label="Tables" sortKey="tables" align="right" current={params} spec={SPEC} />
+                <SortHeader label="Duration" current={params} spec={SPEC} />
+                <SortHeader label="Error" current={params} spec={SPEC} />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr>
+                  <td class="font-mono text-xs whitespace-nowrap">
+                    <EntityLink type="backup_run" id={r.id} label={fmt(r.createdAt)} />
+                  </td>
+                  <td>{r.orgName ?? '—'}</td>
+                  <td>{r.spaceName ?? '—'}</td>
+                  <td>
+                    <span class="flex items-center gap-1">
+                      <Badge variant={RUN_STATUS_BADGE[r.status] ?? 'default'} size="sm">{r.status}</Badge>
+                      {r.isTrial && <Badge variant="default" size="sm">trial</Badge>}
+                      {r.deletedAt && <Badge variant="default" size="sm">pruned</Badge>}
+                    </span>
+                  </td>
+                  <td>{r.kind}</td>
+                  <td>{r.triggeredBy}</td>
+                  <td class="text-right">{r.recordCount ?? '—'}</td>
+                  <td class="text-right">{r.tableCount ?? '—'}</td>
+                  <td class="whitespace-nowrap">{formatDuration(r.startedAt, r.completedAt)}</td>
+                  <td class="max-w-xs truncate text-error text-xs" title={r.errorMessage ?? ''}>
+                    {r.errorMessage ?? ''}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <Pager info={info} current={params} per={query.per} noun="run" />
       </div>
     )}
   </div>

@@ -42,4 +42,19 @@ describe('buildSpacesDirectory', () => {
     expect(rows[3].attention).toBe(false)
     expect(rows.find((r) => r.id === 's2')!.lastRun?.errorMessage).toBe('boom')
   })
+
+  it('preserveOrder keeps the input order (SQL-paginated pages) but still flags attention', () => {
+    const rows = buildSpacesDirectory(
+      {
+        spaces: [space('s1', 'Aaa healthy'), space('s2', 'Zzz failed'), space('s3', 'Mmm ok')],
+        platforms: [],
+        configs: [],
+        dbs: [],
+        latestRuns: [{ spaceId: 's2', status: 'failed', errorMessage: 'boom', createdAt: new Date('2026-07-01') }],
+      },
+      { preserveOrder: true },
+    )
+    expect(rows.map((r) => r.id)).toEqual(['s1', 's2', 's3']) // input order, not attention-first
+    expect(rows.find((r) => r.id === 's2')!.attention).toBe(true)
+  })
 })

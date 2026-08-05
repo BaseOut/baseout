@@ -1,100 +1,152 @@
 ---
 // /spaces — global spaces directory (admin-entity-directories). Read-only;
-// role='super' gated by middleware. Attention-first ordering + config/db/last-run
-// summary in the pure lib. DB locators rendered inert (plain text, no links).
-import { and, desc, eq, ilike, or } from 'drizzle-orm';
+// role='super' gated by middleware.
+//
+// admin-crm-ux (Task 1.4): server-side pagination + sort + filter via the
+// shared planner/chrome. Enrichment (platforms/config/db/last-run) is fetched
+// only for the current page's spaces (inArray) and assembled with preserveOrder
+// so the SQL ORDER BY wins (design D3). The attention state is kept as a per-row
+// highlight; the `status` filter is how staff surface problem spaces now.
+import { and, asc, desc, eq, ilike, inArray, or, count } from 'drizzle-orm';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import PageHeader from '@web/components/ui/PageHeader.astro';
-import Card from '@web/components/ui/Card.astro';
 import Badge from '@web/components/ui/Badge.astro';
 import EmptyState from '@web/components/ui/EmptyState.astro';
 import EntityLink from '../components/EntityLink.astro';
+import SortHeader from '../components/table/SortHeader.astro';
+import Pager from '../components/table/Pager.astro';
+import FilterBar from '../components/table/FilterBar.astro';
 import { backupConfigurations, backupRuns, organizations, platforms, spaceDatabases, spacePlatforms, spaces } from '../db/schema';
 import { buildSpacesDirectory } from '../lib/spaces-directory';
-import { entityHref, truncationNote } from '../lib/ui';
+import { parseTableQuery, pageInfo, type TableSpec } from '../lib/table-query';
+import { entityHref } from '../lib/ui';
 
-const LIMIT = 200;
-const url = new URL(Astro.request.url);
-const q = (url.searchParams.get('q') ?? '').trim();
-const status = (url.searchParams.get('status') ?? '').trim() || null;
 const { db } = Astro.locals;
 
-const filters = [] as ReturnType<typeof eq>[];
-if (q) filters.push(or(ilike(spaces.name, `%${q}%`), ilike(organizations.name, `%${q}%`))!);
-if (status) filters.push(eq(spaces.status, status));
+const STATUS_VALUES = ['active', 'setup_incomplete', 'error', 'paused'] as const;
+
+const SPEC: TableSpec = {
+  sortKeys: ['name', 'status'],
+  defaultSort: 'name',
+  defaultDir: 'asc',
+  searchable: true,
+  filters: [
+    { key: 'status', allowed: [...STATUS_VALUES] },
+    { key: 'org' },
+  ],
+};
+const SORT_MAP = { name: spaces.name, status: spaces.status } as const;
+
+const query = parseTableQuery(Astro.url, SPEC);
+
+const conditions = [];
+if (query.q) conditions.push(or(ilike(spaces.name, `%${query.q}%`), ilike(organizations.name, `%${query.q}%`)));
+if (query.filters.status) conditions.push(eq(spaces.status, query.filters.status));
+if (query.filters.org) conditions.push(eq(spaces.organizationId, query.filters.org));
+const whereClause = conditions.length ? and(...conditions) : undefined;
+
+const sortCol = SORT_MAP[query.sort as keyof typeof SORT_MAP];
+const orderBy = query.dir === 'asc' ? asc(sortCol) : desc(sortCol);
+
+const [{ n: total }] = await db
+  .select({ n: count() })
+  .from(spaces)
+  .leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+  .where(whereClause);
+const info = pageInfo(total, query.page, query.per);
 
 const spaceRows = await db
   .select({ id: spaces.id, name: spaces.name, status: spaces.status, organizationId: spaces.organizationId, organizationName: organizations.name })
   .from(spaces)
   .leftJoin(organizations, eq(spaces.organizationId, organizations.id))
-  .where(filters.length ? and(...filters) : undefined)
-  .orderBy(spaces.name)
-  .limit(LIMIT);
+  .where(whereClause)
+  .orderBy(orderBy)
+  .limit(query.per)
+  .offset(info.offset);
 
-const [platformRows, configs, dbs, latestRuns] = await Promise.all([
-  db.select({ spaceId: spacePlatforms.spaceId, code: platforms.slug }).from(spacePlatforms).innerJoin(platforms, eq(spacePlatforms.platformId, platforms.id)),
-  db.select({ spaceId: backupConfigurations.spaceId, frequency: backupConfigurations.frequency, scope: backupConfigurations.scope, mode: backupConfigurations.mode }).from(backupConfigurations),
-  db.select({ spaceId: spaceDatabases.spaceId, backend: spaceDatabases.backend, status: spaceDatabases.status }).from(spaceDatabases),
-  db.selectDistinctOn([backupRuns.spaceId], { spaceId: backupRuns.spaceId, status: backupRuns.status, errorMessage: backupRuns.errorMessage, createdAt: backupRuns.createdAt })
-    .from(backupRuns).orderBy(backupRuns.spaceId, desc(backupRuns.createdAt)),
-]);
+const ids = spaceRows.map((s) => s.id);
+const [platformRows, configs, dbs, latestRuns] = ids.length
+  ? await Promise.all([
+      db.select({ spaceId: spacePlatforms.spaceId, code: platforms.slug }).from(spacePlatforms).innerJoin(platforms, eq(spacePlatforms.platformId, platforms.id)).where(inArray(spacePlatforms.spaceId, ids)),
+      db.select({ spaceId: backupConfigurations.spaceId, frequency: backupConfigurations.frequency, scope: backupConfigurations.scope, mode: backupConfigurations.mode }).from(backupConfigurations).where(inArray(backupConfigurations.spaceId, ids)),
+      db.select({ spaceId: spaceDatabases.spaceId, backend: spaceDatabases.backend, status: spaceDatabases.status }).from(spaceDatabases).where(inArray(spaceDatabases.spaceId, ids)),
+      db.selectDistinctOn([backupRuns.spaceId], { spaceId: backupRuns.spaceId, status: backupRuns.status, errorMessage: backupRuns.errorMessage, createdAt: backupRuns.createdAt })
+        .from(backupRuns).where(inArray(backupRuns.spaceId, ids)).orderBy(backupRuns.spaceId, desc(backupRuns.createdAt)),
+    ])
+  : [[], [], [], []];
 
-const rows = buildSpacesDirectory({
-  spaces: spaceRows,
-  platforms: platformRows,
-  configs,
-  dbs,
-  latestRuns: latestRuns.filter((r): r is { spaceId: string; status: string; errorMessage: string | null; createdAt: Date } => !!r.spaceId && !!r.createdAt),
-});
+const rows = buildSpacesDirectory(
+  {
+    spaces: spaceRows,
+    platforms: platformRows,
+    configs,
+    dbs,
+    latestRuns: latestRuns.filter((r): r is { spaceId: string; status: string; errorMessage: string | null; createdAt: Date } => !!r.spaceId && !!r.createdAt),
+  },
+  { preserveOrder: true },
+);
+
+const params = Astro.url.searchParams;
+const scopedOrg = query.filters.org ?? null;
+const filterHidden: Record<string, string> = { sort: query.sort, dir: query.dir, per: String(query.per) };
+if (scopedOrg) filterHidden.org = scopedOrg;
+const statusOptions = [{ value: '', label: 'All statuses' }, ...STATUS_VALUES.map((s) => ({ value: s, label: s }))];
 
 const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
 ---
 
 <SidebarLayout title="Admin — Spaces">
   <div class="mx-auto max-w-[1200px] space-y-6">
-    <PageHeader title="Spaces" description={`Every Space with config, DB posture, and last-run outcome (needs-attention first).${truncationNote(spaceRows.length, LIMIT)}`} />
+    <PageHeader title="Spaces" description="Every Space with config, DB posture, and last-run outcome." />
 
-    <form method="get" class="flex flex-wrap items-center gap-2">
-      <input type="search" name="q" value={q} placeholder="Search space or org…" class="input input-bordered input-sm w-64" />
-      <select name="status" class="select select-bordered select-sm">
-        <option value="" selected={!status}>All statuses</option>
-        {['active', 'setup_incomplete', 'error', 'paused'].map((s) => (<option value={s} selected={status === s}>{s}</option>))}
-      </select>
-      <button class="btn btn-sm btn-primary" type="submit">Apply</button>
-    </form>
+    {scopedOrg && (
+      <div class="alert alert-info py-2">
+        <span>Scoped to one organization.</span>
+        <a href="/spaces" class="link link-hover">Clear scope</a>
+      </div>
+    )}
 
-    <Card variant="outlined">
-      {rows.length === 0 ? (
-        <EmptyState title="No spaces match" description="Try a different search or status." />
-      ) : (
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
+    <FilterBar
+      action="/spaces"
+      searchable
+      q={query.q}
+      qPlaceholder="Search space or org…"
+      filters={[{ key: 'status', label: 'Status', options: statusOptions, current: query.filters.status ?? null }]}
+      hidden={filterHidden}
+    />
+
+    {rows.length === 0 ? (
+      <EmptyState title="No spaces match" description="Try a different search or status." />
+    ) : (
+      <div class="space-y-3">
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+          <table class="table table-zebra table-sm">
             <thead>
-              <tr class="border-b border-base-300 text-left text-xs uppercase text-base-content/60">
-                <th class="py-2 pr-4 font-medium">Space</th>
-                <th class="py-2 pr-4 font-medium">Status</th>
-                <th class="py-2 pr-4 font-medium">Config</th>
-                <th class="py-2 pr-4 font-medium">Database</th>
-                <th class="py-2 pr-4 font-medium">Last run</th>
+              <tr>
+                <SortHeader label="Space" sortKey="name" current={params} spec={SPEC} />
+                <SortHeader label="Status" sortKey="status" current={params} spec={SPEC} />
+                <SortHeader label="Config" current={params} spec={SPEC} />
+                <SortHeader label="Database" current={params} spec={SPEC} />
+                <SortHeader label="Last run" current={params} spec={SPEC} />
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => (
-                <tr class={`border-b border-base-200/60 ${r.attention ? 'bg-error/5' : ''}`}>
-                  <td class="py-2 pr-4">
+                <tr class={r.attention ? 'bg-error/5' : ''}>
+                  <td>
                     <div class="font-medium"><EntityLink type="space" id={r.id} label={r.name} /></div>
                     <div class="text-xs text-base-content/50">
                       {r.organizationId ? <a href={entityHref('org', r.organizationId)} class="link link-hover">{r.organizationName}</a> : '—'}
                       {r.platformCodes.length > 0 && ` · ${r.platformCodes.join(', ')}`}
                     </div>
                   </td>
-                  <td class="py-2 pr-4"><Badge variant={r.status === 'active' ? 'success' : r.status === 'error' ? 'error' : 'default'}>{r.status}</Badge></td>
-                  <td class="py-2 pr-4 text-base-content/70">{r.config ? `${r.config.frequency} · ${r.config.mode} · ${r.config.scope}` : <span class="text-base-content/40">not configured</span>}</td>
-                  <td class="py-2 pr-4 text-base-content/70">{r.db.backend ? `${r.db.backend} (${r.db.status})` : <span class="text-base-content/40">not provisioned</span>}</td>
-                  <td class="py-2 pr-4">
+                  <td><Badge variant={r.status === 'active' ? 'success' : r.status === 'error' ? 'error' : 'default'} size="sm">{r.status}</Badge></td>
+                  <td class="text-base-content/70">{r.config ? `${r.config.frequency} · ${r.config.mode} · ${r.config.scope}` : <span class="text-base-content/40">not configured</span>}</td>
+                  <td class="text-base-content/70">{r.db.backend ? `${r.db.backend} (${r.db.status})` : <span class="text-base-content/40">not provisioned</span>}</td>
+                  <td>
                     {r.lastRun ? (
                       <div>
-                        <Badge variant={r.lastRun.status === 'succeeded' ? 'success' : r.lastRun.status === 'failed' ? 'error' : 'default'}>{r.lastRun.status}</Badge>
+                        <Badge variant={r.lastRun.status === 'succeeded' ? 'success' : r.lastRun.status === 'failed' ? 'error' : 'default'} size="sm">{r.lastRun.status}</Badge>
                         <span class="ml-1 text-xs text-base-content/50">{fmt(r.lastRun.at)}</span>
                         {r.lastRun.errorMessage && <div class="text-xs text-error/80">{r.lastRun.errorMessage}</div>}
                       </div>
@@ -105,7 +157,9 @@ const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : '�
             </tbody>
           </table>
         </div>
-      )}
-    </Card>
+
+        <Pager info={info} current={params} per={query.per} noun="space" />
+      </div>
+    )}
   </div>
 </SidebarLayout>

@@ -57,6 +57,9 @@ export function displayLocator(row: SpaceDbRow): string {
 export function buildDbTracker(
   rows: SpaceDbRow[],
   volumes: VolumeRow[],
+  // admin-crm-ux: preserveOrder keeps the SQL page order under pagination
+  // (design D3) instead of the in-memory error-first sort.
+  opts: { preserveOrder?: boolean } = {},
 ): { entries: DbTrackerEntry[]; summary: DbTrackerSummary } {
   const volumeBySpace = new Map(volumes.map((v) => [v.spaceId, v]))
 
@@ -68,17 +71,18 @@ export function buildDbTracker(
     pending: 3,
     active: 4,
   }
-  const entries = rows
-    .map((r) => ({
-      ...r,
-      locator: displayLocator(r),
-      volume: volumeBySpace.get(r.spaceId) ?? null,
-    }))
-    .sort(
-      (a, b) =>
-        (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9) ||
-        (a.orgName ?? '').localeCompare(b.orgName ?? ''),
-    )
+  const mapped = rows.map((r) => ({
+    ...r,
+    locator: displayLocator(r),
+    volume: volumeBySpace.get(r.spaceId) ?? null,
+  }))
+  const entries = opts.preserveOrder
+    ? mapped
+    : mapped.sort(
+        (a, b) =>
+          (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9) ||
+          (a.orgName ?? '').localeCompare(b.orgName ?? ''),
+      )
 
   const byBackend: Record<string, number> = {}
   const byStatus: Record<string, number> = {}

@@ -11,6 +11,7 @@ import EmptyState from '@web/components/ui/EmptyState.astro';
 import { backupRunBases, backupRuns, connections, organizations, restoreRuns, spaceDatabases, spaces, adminErrorAcks } from '../../db/schema';
 import { classifyErrors, countOpenErrors, groupByOrg, type ErrorType, type ErrorSources } from '../../lib/errors';
 import { entityHref, truncationNote } from '../../lib/ui';
+import { retParam } from '../../lib/table-query';
 
 const LIMIT = 200;
 const url = new URL(Astro.request.url);
@@ -51,6 +52,7 @@ const groups = groupByOrg(filtered);
 const totalRows = brs.length + brbs.length + rrs.length + conns.length + sdbs.length;
 
 const TYPE_LABEL: Record<string, string> = { backup_run: 'Backup run', backup_run_base: 'Base backup', restore_run: 'Restore', connection: 'Connection', space_database: 'Database' };
+const ret = retParam('/errors', url.searchParams);
 const fmt = (d: Date) => new Date(d).toISOString().replace('T', ' ').slice(0, 16);
 ---
 
@@ -83,23 +85,13 @@ const fmt = (d: Date) => new Date(d).toISOString().replace('T', ' ').slice(0, 16
               <li class={`flex flex-col gap-1 rounded-box border border-base-200 p-3 ${item.acked ? 'opacity-60' : ''}`}>
                 <div class="flex flex-wrap items-center gap-2">
                   <Badge variant={item.acked ? 'default' : 'error'}>{TYPE_LABEL[item.type]}</Badge>
-                  <span class="font-medium">{item.label}</span>
+                  <a href={`/errors/${item.targetId}?type=${item.type}&ret=${ret}`} class="link link-hover font-medium">{item.label}</a>
                   <span class="text-xs text-base-content/50">{fmt(item.occurredAt)}</span>
                   {item.acked && <span class="text-xs text-base-content/50">· acked by {item.ackedByEmail}</span>}
                 </div>
                 <p class="text-sm text-error/80">{item.message}</p>
-                <div class="flex flex-wrap gap-2">
-                  {item.acked ? (
-                    <button class="btn btn-xs" data-ack="unack" data-type={item.type} data-id={item.targetId} data-state={item.stateFingerprint ?? ''} data-org={item.orgId ?? ''}>Re-open</button>
-                  ) : (
-                    <button class="btn btn-xs" data-ack="ack" data-type={item.type} data-id={item.targetId} data-state={item.stateFingerprint ?? ''} data-org={item.orgId ?? ''}>Acknowledge</button>
-                  )}
-                  {item.type === 'backup_run' && item.spaceId && (
-                    <button class="btn btn-xs btn-outline" data-remediate="force-backup" data-space={item.spaceId}>Force backup</button>
-                  )}
-                  {item.type === 'connection' && item.stateFingerprint !== 'invalid' && (
-                    <button class="btn btn-xs btn-outline" data-remediate="invalidate-connection" data-connection={item.targetId}>Invalidate</button>
-                  )}
+                <div>
+                  <a href={`/errors/${item.targetId}?type=${item.type}&ret=${ret}`} class="link link-hover text-xs">Triage →</a>
                 </div>
               </li>
             ))}
@@ -109,34 +101,3 @@ const fmt = (d: Date) => new Date(d).toISOString().replace('T', ' ').slice(0, 16
     )}
   </div>
 </SidebarLayout>
-
-<script>
-  import { postAction } from '../../lib/ui';
-
-  document.querySelectorAll<HTMLButtonElement>('[data-ack]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const phase = btn.dataset.ack; // 'ack' | 'unack'
-      const note = phase === 'ack' ? (prompt('Optional note (visible to staff only):') ?? undefined) : undefined;
-      const res = await postAction(`/api/actions/${phase === 'ack' ? 'acknowledge' : 'unacknowledge'}-error`, {
-        targetType: btn.dataset.type,
-        targetId: btn.dataset.id,
-        targetState: btn.dataset.state || undefined,
-        organizationId: btn.dataset.org || undefined,
-        note,
-      }, btn);
-      if (res.ok) location.reload();
-      else alert(`Failed: ${res.error}`);
-    });
-  });
-
-  document.querySelectorAll<HTMLButtonElement>('[data-remediate]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const kind = btn.dataset.remediate;
-      if (!confirm(`Run "${kind}"?`)) return;
-      const body = kind === 'force-backup' ? { spaceId: btn.dataset.space } : { connectionId: btn.dataset.connection };
-      const res = await postAction(`/api/actions/${kind}`, body, btn);
-      if (res.ok) location.reload();
-      else alert(`Failed: ${res.error}`);
-    });
-  });
-</script>

@@ -45,13 +45,20 @@ export interface SpaceRow {
   attention: boolean
 }
 
-export function buildSpacesDirectory(input: {
-  spaces: SpaceInput[]
-  platforms: SpacePlatformInput[]
-  configs: SpaceConfigInput[]
-  dbs: SpaceDbInput[]
-  latestRuns: SpaceLatestRun[]
-}): SpaceRow[] {
+export function buildSpacesDirectory(
+  input: {
+    spaces: SpaceInput[]
+    platforms: SpacePlatformInput[]
+    configs: SpaceConfigInput[]
+    dbs: SpaceDbInput[]
+    latestRuns: SpaceLatestRun[]
+  },
+  // admin-crm-ux: under server-side pagination the SQL ORDER BY is authoritative
+  // (design D3) — pass preserveOrder to keep the input order instead of the
+  // in-memory attention-first sort. The `attention` flag stays a per-row
+  // display highlight either way.
+  opts: { preserveOrder?: boolean } = {},
+): SpaceRow[] {
   const platBySpace = new Map<string, string[]>()
   for (const p of input.platforms) {
     const list = platBySpace.get(p.spaceId) ?? []
@@ -81,6 +88,8 @@ export function buildSpacesDirectory(input: {
       attention,
     }
   })
+
+  if (opts.preserveOrder) return rows
 
   // Attention-first (D2): rank 0 = needs attention, then by name.
   return rows.sort((a, b) => {

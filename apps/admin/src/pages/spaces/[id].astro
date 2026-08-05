@@ -8,8 +8,11 @@ import SidebarLayout from '../../layouts/SidebarLayout.astro';
 import PageHeader from '@web/components/ui/PageHeader.astro';
 import Card from '@web/components/ui/Card.astro';
 import Badge from '@web/components/ui/Badge.astro';
+import Button from '@web/components/ui/Button.astro';
+import ConfirmModal from '@web/components/ui/ConfirmModal.astro';
 import EmptyState from '@web/components/ui/EmptyState.astro';
 import EntityLink from '../../components/EntityLink.astro';
+import { validateReturnPath } from '../../lib/table-query';
 import { users } from '@baseout/db-schema';
 import { atBases, backupConfigurationBases, backupConfigurations, backupRetentionPolicies, backupRuns, connections, organizations, organizationMembers, spaceDatabases, spaces, storageDestinations } from '../../db/schema';
 import { buildSpaceDetail } from '../../lib/space-detail';
@@ -63,12 +66,26 @@ const view = buildSpaceDetail({
 });
 
 const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 16).replace('T', ' ') : '—');
+const backHref = validateReturnPath(Astro.url.searchParams.get('ret'), '/spaces');
 ---
 
 <SidebarLayout title={`Admin — ${view.space!.name}`}>
   <div class="mx-auto max-w-[1100px] space-y-6">
-    <PageHeader title={view.space!.name} description={`Space · ${view.space!.spaceType ?? 'single_platform'}`}>
-      <Badge variant={view.space!.status === 'active' ? 'success' : view.space!.status === 'error' ? 'error' : 'default'}>{view.space!.status}</Badge>
+    <PageHeader title={view.space!.name} description={`Space · ${view.space!.spaceType ?? 'single_platform'}`} backHref={backHref} backLabel="Back">
+      <Fragment slot="meta">
+        <Badge variant={view.space!.status === 'active' ? 'success' : view.space!.status === 'error' ? 'error' : 'default'}>{view.space!.status}</Badge>
+      </Fragment>
+      <div slot="actions">
+        {view.space!.status === 'active' && (
+          <Button
+            variant="outline"
+            size="sm"
+            data-action-path="/api/actions/force-backup"
+            data-action-payload={JSON.stringify({ spaceId: id })}
+            data-action-label={`Force a backup run for "${view.space!.name}". Enqueues a manual run immediately, bypassing the schedule.`}
+          >Force backup</Button>
+        )}
+      </div>
     </PageHeader>
 
     <Card variant="outlined">
@@ -168,4 +185,11 @@ const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 16).repl
       </Card>
     </div>
   </div>
+
+  <ConfirmModal id="action-confirm" title="Force backup" confirmLabel="Force backup" confirmClass="btn-primary">
+    <p class="text-sm" data-confirm-label></p>
+    <p class="mt-2 text-sm text-error hidden" data-confirm-error></p>
+    <p class="mt-2 text-xs text-base-content/50">This action is recorded in the admin audit log before it executes.</p>
+    <button slot="confirm" type="button" class="btn btn-primary" data-confirm-button>Confirm</button>
+  </ConfirmModal>
 </SidebarLayout>

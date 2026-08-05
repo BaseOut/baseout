@@ -54,18 +54,7 @@ const userInitial = (user?.email?.charAt(0) ?? 'S').toUpperCase();
         </a>
       </div>
 
-      <!-- Support omnisearch (admin-support-search D4). Plain GET → /search, so
-           no CSRF surface + shareable URLs. Hidden on the collapsed rail; on
-           mobile it rides the off-canvas sidebar. -->
-      <form method="get" action="/search" role="search" class="px-3 pb-1 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">
-        <input
-          type="search"
-          name="q"
-          placeholder="Search ID, email, name…"
-          aria-label="Search the admin console"
-          class="input input-bordered input-sm w-full"
-        />
-      </form>
+      {/* Omnisearch moved to the persistent top bar (admin-crm-ux Task 4.1). */}
 
       <!-- Floating rail toggle — desktop only -->
       <label
@@ -154,6 +143,34 @@ const userInitial = (user?.email?.charAt(0) ?? 'S').toUpperCase();
         <span class="w-8"></span>
       </div>
 
+      {/* Persistent top-bar omnisearch (admin-crm-ux Task 4.1). Baseline: plain
+          GET → /search (query-shape detection + exact-match redirect reused). PE:
+          Cmd/Ctrl+K or `/` focuses; typeahead dropdown from /api/search/suggest. */}
+      <header class="sticky top-0 z-40 flex items-center gap-3 border-b border-base-300 bg-base-100/95 px-4 py-2 backdrop-blur supports-[backdrop-filter]:bg-base-100/80">
+        <form method="get" action="/search" role="search" class="relative w-full max-w-lg" data-search-form>
+          <input
+            type="search"
+            name="q"
+            id="admin-search"
+            placeholder="Search ID, email, name…"
+            aria-label="Search the admin console"
+            autocomplete="off"
+            role="combobox"
+            aria-expanded="false"
+            aria-controls="admin-suggest"
+            class="input input-bordered input-sm w-full"
+            data-search-input
+          />
+          <div
+            id="admin-suggest"
+            role="listbox"
+            data-suggest
+            class="absolute left-0 right-0 top-full z-50 mt-1 hidden max-h-96 overflow-y-auto rounded-box border border-base-300 bg-base-100 shadow-lg"
+          ></div>
+        </form>
+        <kbd class="kbd kbd-sm hidden text-base-content/50 md:inline-flex">⌘K</kbd>
+      </header>
+
       <main id="layout-content" class="flex-1 p-6 md:p-8">
         <slot />
       </main>
@@ -165,6 +182,7 @@ const userInitial = (user?.email?.charAt(0) ?? 'S').toUpperCase();
 <script>
   import { wireThemeToggle } from '@web/lib/theme';
   import { initActionConfirm } from '../lib/action-confirm';
+  import { initSearchTypeahead } from '../lib/search-typeahead';
 
   document
     .querySelectorAll<HTMLInputElement>('#admin-theme-toggle')
@@ -172,4 +190,7 @@ const userInitial = (user?.email?.charAt(0) ?? 'S').toUpperCase();
 
   // No-op on pages without a confirm dialog (initActionConfirm early-returns).
   initActionConfirm();
+
+  // Top-bar omnisearch typeahead (progressive enhancement over the GET form).
+  initSearchTypeahead();
 </script>

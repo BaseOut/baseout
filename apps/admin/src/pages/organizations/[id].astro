@@ -9,6 +9,10 @@ import SidebarLayout from '../../layouts/SidebarLayout.astro';
 import PageHeader from '@web/components/ui/PageHeader.astro';
 import Card from '@web/components/ui/Card.astro';
 import Badge from '@web/components/ui/Badge.astro';
+import Button from '@web/components/ui/Button.astro';
+import ConfirmModal from '@web/components/ui/ConfirmModal.astro';
+import EntityLink from '../../components/EntityLink.astro';
+import { validateReturnPath } from '../../lib/table-query';
 import {
   adminAuditLog,
   backupRuns,
@@ -16,6 +20,7 @@ import {
   organizationMembers,
   organizations,
   platforms,
+  restoreRuns,
   spaceDatabases,
   spacePlatforms,
   spaces,
@@ -27,7 +32,8 @@ import {
 import { UUID_RE } from '../../lib/actions/http';
 import { summarizeHealth, HEALTH_BADGE, type ConnectionRow } from '../../lib/connection-health';
 import { RUN_STATUS_BADGE, formatDuration } from '../../lib/backup-runs';
-import { SUB_STATUS_BADGE, stripeCustomerUrl } from '../../lib/subscriptions';
+import { RESTORE_STATUS_BADGE, describeScope } from '../../lib/restore-runs';
+import { SUB_STATUS_BADGE, estimateMrr, formatCents, stripeCustomerUrl } from '../../lib/subscriptions';
 import { pairAuditRows, AUDIT_OUTCOME_BADGE, AUDIT_OUTCOME_LABEL, type AuditResultRow } from '../../lib/audit-view';
 import { orderMembers, overageLabel, spacesWithAssets } from '../../lib/org-detail';
 import { DB_STATUS_BADGE } from '../../lib/db-tracker';
@@ -176,6 +182,26 @@ const [dbRows, destRows, runRows] = await Promise.all([
         .limit(20),
 ]);
 
+const restoreRows = spaceIds.length === 0
+  ? []
+  : await db
+      .select({
+        id: restoreRuns.id,
+        status: restoreRuns.status,
+        scope: restoreRuns.scope,
+        scopeTarget: restoreRuns.scopeTarget,
+        triggeredBy: restoreRuns.triggeredBy,
+        startedAt: restoreRuns.startedAt,
+        completedAt: restoreRuns.completedAt,
+        createdAt: restoreRuns.createdAt,
+        spaceName: spaces.name,
+      })
+      .from(restoreRuns)
+      .leftJoin(spaces, eq(spaces.id, restoreRuns.spaceId))
+      .where(inArray(restoreRuns.spaceId, spaceIds))
+      .orderBy(desc(restoreRuns.createdAt))
+      .limit(20);
+
 // Recent audit entries for this org (paired intent+result, same as /audit).
 const auditIntents = await db
   .select({
@@ -213,6 +239,22 @@ const { classified, summary: connSummary } = summarizeHealth(connRows, now);
 const subscription = subRows[0] ?? null;
 const needingAttention = connSummary.total - connSummary.byHealth.healthy;
 
+// Estimated MRR for this org (list prices; same caveat as the directory).
+const mrr = estimateMrr(
+  itemRows.map((i) => ({
+    tier: i.tier,
+    billingPeriod: i.billingPeriod,
+    subscriptionStatus: subscription?.status ?? null,
+    cancelledAt: i.cancelledAt,
+  })),
+);
+
+// State-preserving back link to the directory (design D8).
+const backHref = validateReturnPath(Astro.url.searchParams.get('ret'), '/organizations');
+
+// Per-section "view all →" links to the org-filtered global listings.
+const orgFilter = `?org=${org.id}`;
+
 const spaceStatusVariant: Record<string, BadgeVariant> = {
   active: 'success',
   paused: 'warning',
@@ -228,9 +270,9 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
   <div class="mx-auto max-w-[1200px] space-y-6">
     <PageHeader
       title={org.name}
-      description={`Created ${fmtDate(org.createdAt)} · overage: ${overageLabel(org.overageMode, org.monthlyOverageCap)}`}
-      backHref="/"
-      backLabel="Organizations"
+      description={`Created ${fmtDate(org.createdAt)} · est. MRR ${formatCents(mrr.totalCents)}${mrr.unpriceable > 0 ? '＋' : ''} · overage: ${overageLabel(org.overageMode, org.monthlyOverageCap)}`}
+      backHref={backHref}
+      backLabel="Back"
     >
       <Fragment slot="meta">
         <span class="font-mono text-xs text-base-content/50">{org.slug}</span>
@@ -242,6 +284,18 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
           <Badge variant="default" size="sm">no subscription</Badge>
         )}
       </Fragment>
+      {!org.hasMigrated && (
+        <div slot="actions">
+          <Button
+            variant="outline"
+            size="sm"
+            class="text-error"
+            data-action-path="/api/actions/force-migration"
+            data-action-payload={JSON.stringify({ organizationId: org.id })}
+            data-action-label={`Mark "${org.name}" (${org.slug}) as migrated. The org leaves the pending list and its "Complete Your Migration" screen goes away. Dynamic-locked is not changed.`}
+          >Mark migrated</Button>
+        </div>
+      )}
     </PageHeader>
 
     <div class="stats stats-horizontal bg-base-100 border border-base-300">
@@ -265,8 +319,23 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
       </div>
     </div>
 
+    {/* In-page section navigation (design D7 — command-center feel, no tabs). */}
+    <nav class="flex flex-wrap gap-2 text-sm" aria-label="Sections">
+      {[
+        ['members', 'Members'],
+        ['subscription', 'Subscription'],
+        ['spaces', 'Spaces'],
+        ['connections', 'Connections'],
+        ['backups', 'Backup runs'],
+        ['restores', 'Restore runs'],
+        ['audit', 'Audit'],
+      ].map(([anchor, label]) => (
+        <a href={`#${anchor}`} class="badge badge-outline badge-lg hover:badge-primary">{label}</a>
+      ))}
+    </nav>
+
     <Card variant="outlined">
-      <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-3" id="members">
         <h2 class="text-base font-semibold">Members</h2>
         {members.length === 0 ? (
           <p class="text-sm text-base-content/50">No members.</p>
@@ -279,7 +348,7 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
               <tbody>
                 {members.map((m) => (
                   <tr>
-                    <td>{m.name ?? '—'}</td>
+                    <td><EntityLink type="user" id={m.userId} label={m.name ?? m.email ?? '—'} /></td>
                     <td class="text-xs">{m.email ?? '—'}</td>
                     <td><Badge variant={m.role === 'owner' ? 'primary' : 'default'} size="sm">{m.role}</Badge></td>
                     <td class="font-mono text-xs">{fmtDate(m.acceptedAt)}</td>
@@ -293,7 +362,7 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
     </Card>
 
     <Card variant="outlined">
-      <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-3" id="subscription">
         <h2 class="text-base font-semibold">Subscription</h2>
         {!subscription ? (
           <p class="text-sm text-base-content/50">No subscription.</p>
@@ -337,20 +406,23 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
     </Card>
 
     <Card variant="outlined">
-      <div class="flex flex-col gap-3">
-        <h2 class="text-base font-semibold">Spaces</h2>
+      <div class="flex flex-col gap-3" id="spaces">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-semibold">Spaces</h2>
+          <a href={`/spaces${orgFilter}`} class="link link-hover text-sm">view all →</a>
+        </div>
         {spaceDetails.length === 0 ? (
           <p class="text-sm text-base-content/50">No spaces.</p>
         ) : (
           <div class="overflow-x-auto rounded-box border border-base-300">
             <table class="table table-zebra table-sm">
               <thead>
-                <tr><th>Space</th><th>Status</th><th>Platform</th><th>Database</th><th>Destinations</th></tr>
+                <tr><th>Space</th><th>Status</th><th>Platform</th><th>Database</th><th>Destinations</th><th></th></tr>
               </thead>
               <tbody>
                 {spaceDetails.map((s) => (
                   <tr>
-                    <td>{s.name}</td>
+                    <td><EntityLink type="space" id={s.id} label={s.name} /></td>
                     <td><Badge variant={spaceStatusVariant[s.status] ?? 'default'} size="sm">{s.status}</Badge></td>
                     <td>{s.platformName ?? '—'}</td>
                     <td>
@@ -371,6 +443,17 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
                         ? '—'
                         : s.destinations.map((d) => d.type).join(', ')}
                     </td>
+                    <td class="text-right">
+                      {s.status === 'active' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          data-action-path="/api/actions/force-backup"
+                          data-action-payload={JSON.stringify({ spaceId: s.id })}
+                          data-action-label={`Force a backup run for "${s.name}". Enqueues a manual run immediately, bypassing the schedule.`}
+                        >Force backup</Button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -381,8 +464,11 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
     </Card>
 
     <Card variant="outlined">
-      <div class="flex flex-col gap-3">
-        <h2 class="text-base font-semibold">Connections</h2>
+      <div class="flex flex-col gap-3" id="connections">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-semibold">Connections</h2>
+          <a href={`/connections${orgFilter}`} class="link link-hover text-sm">view all →</a>
+        </div>
         {classified.length === 0 ? (
           <p class="text-sm text-base-content/50">No connections. Actions live on the <a href="/connections" class="link link-hover">Connections</a> page.</p>
         ) : (
@@ -410,8 +496,11 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
     </Card>
 
     <Card variant="outlined">
-      <div class="flex flex-col gap-3">
-        <h2 class="text-base font-semibold">Recent backup runs</h2>
+      <div class="flex flex-col gap-3" id="backups">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-semibold">Recent backup runs</h2>
+          <a href={`/backups${orgFilter}`} class="link link-hover text-sm">view all →</a>
+        </div>
         {runRows.length === 0 ? (
           <p class="text-sm text-base-content/50">No backup runs yet.</p>
         ) : (
@@ -424,7 +513,7 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
                 {runRows.map((r) => (
                   <tr>
                     <td class="font-mono text-xs whitespace-nowrap">
-                      <a href={`/backups/${r.id}`} class="link link-hover">{fmt(r.createdAt)}</a>
+                      <EntityLink type="backup_run" id={r.id} label={fmt(r.createdAt)} />
                     </td>
                     <td>{r.spaceName ?? '—'}</td>
                     <td><Badge variant={RUN_STATUS_BADGE[r.status] ?? 'default'} size="sm">{r.status}</Badge></td>
@@ -441,7 +530,39 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
     </Card>
 
     <Card variant="outlined">
-      <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-3" id="restores">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-semibold">Recent restore runs</h2>
+          <a href={`/restores${orgFilter}`} class="link link-hover text-sm">view all →</a>
+        </div>
+        {restoreRows.length === 0 ? (
+          <p class="text-sm text-base-content/50">No restore runs yet.</p>
+        ) : (
+          <div class="overflow-x-auto rounded-box border border-base-300">
+            <table class="table table-zebra table-sm">
+              <thead>
+                <tr><th>Created</th><th>Space</th><th>Status</th><th>Scope</th><th>Trigger</th><th>Duration</th></tr>
+              </thead>
+              <tbody>
+                {restoreRows.map((r) => (
+                  <tr>
+                    <td class="font-mono text-xs whitespace-nowrap">{fmt(r.createdAt)}</td>
+                    <td>{r.spaceName ?? '—'}</td>
+                    <td><Badge variant={RESTORE_STATUS_BADGE[r.status] ?? 'default'} size="sm">{r.status}</Badge></td>
+                    <td class="font-mono text-xs">{describeScope(r.scope, r.scopeTarget)}</td>
+                    <td>{r.triggeredBy.replace(/_/g, ' ')}</td>
+                    <td class="whitespace-nowrap">{formatDuration(r.startedAt, r.completedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Card>
+
+    <Card variant="outlined">
+      <div class="flex flex-col gap-3" id="audit">
         <h2 class="text-base font-semibold">Recent staff actions</h2>
         {auditEntries.length === 0 ? (
           <p class="text-sm text-base-content/50">No staff actions recorded for this organization. Full trail on <a href="/audit" class="link link-hover">Audit</a>.</p>
@@ -476,4 +597,11 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
       </div>
     </Card>
   </div>
+
+  <ConfirmModal id="action-confirm" title="Confirm staff action" confirmLabel="Confirm" confirmClass="btn-primary">
+    <p class="text-sm" data-confirm-label></p>
+    <p class="mt-2 text-sm text-error hidden" data-confirm-error></p>
+    <p class="mt-2 text-xs text-base-content/50">This action is recorded in the admin audit log before it executes.</p>
+    <button slot="confirm" type="button" class="btn btn-primary" data-confirm-button>Confirm</button>
+  </ConfirmModal>
 </SidebarLayout>

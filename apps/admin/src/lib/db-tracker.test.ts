@@ -58,4 +58,16 @@ describe('buildDbTracker', () => {
     expect(entries).toEqual([])
     expect(summary.total).toBe(0)
   })
+
+  it('preserveOrder keeps the SQL page order instead of error-first', () => {
+    const { entries } = buildDbTracker(
+      [
+        row({ id: 'ok', spaceId: 's1', status: 'active' }),
+        row({ id: 'bad', spaceId: 's2', status: 'error' }),
+      ],
+      [],
+      { preserveOrder: true },
+    )
+    expect(entries.map((e) => e.id)).toEqual(['ok', 'bad'])
+  })
 })

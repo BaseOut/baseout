@@ -1,11 +1,20 @@
 ---
 // Subscriptions dashboard (PRD §16.1 — "Subscriptions view"). Read-only;
 // gated to role='super' by src/middleware.ts.
-import { desc, eq } from 'drizzle-orm';
+//
+// admin-crm-ux (Task 1.4): the org listing paginates in SQL with a derived
+// status-rollup filter (EXISTS / NOT EXISTS predicates — design D3). The
+// summary tiles + estimated MRR stay whole-truth via summarizeSubscriptionsGlobal
+// over the (bounded) full subscription/item set + a global org count (design D4).
+import { and, asc, desc, eq, exists, ilike, notExists, or, sql, count } from 'drizzle-orm';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import PageHeader from '@web/components/ui/PageHeader.astro';
 import Badge from '@web/components/ui/Badge.astro';
 import EmptyState from '@web/components/ui/EmptyState.astro';
+import SortHeader from '../components/table/SortHeader.astro';
+import Pager from '../components/table/Pager.astro';
+import FilterBar from '../components/table/FilterBar.astro';
+import EntityLink from '../components/EntityLink.astro';
 import {
   organizations,
   overageRecords,
@@ -15,8 +24,8 @@ import {
 } from '../db/schema';
 import {
   buildSubscriptionsView,
+  summarizeSubscriptionsGlobal,
   estimateMrr,
-  filterByStatus,
   formatCents,
   stripeCustomerUrl,
   stripeSubscriptionUrl,
@@ -25,30 +34,50 @@ import {
   TRIAL_STATE_BADGE,
   type OverageRow,
   type SubItemRow,
+  type SubRow,
 } from '../lib/subscriptions';
-import { truncationNote } from '../lib/ui';
+import { parseTableQuery, pageInfo, type TableSpec } from '../lib/table-query';
 
 const { db } = Astro.locals;
-const ORG_LIMIT = 200;
 
-const [orgRows, subRows, itemRows] = await Promise.all([
-  db
-    .select({
-      id: organizations.id,
-      name: organizations.name,
-      slug: organizations.slug,
-      stripeCustomerId: organizations.stripeCustomerId,
-    })
-    .from(organizations)
-    .orderBy(desc(organizations.createdAt))
-    .limit(ORG_LIMIT),
-  db
-    .select({
-      organizationId: subscriptions.organizationId,
-      stripeSubscriptionId: subscriptions.stripeSubscriptionId,
-      status: subscriptions.status,
-    })
-    .from(subscriptions),
+const STATUS_VALUES = ['trialing', 'active', 'past_due', 'cancelled', 'none'] as const;
+
+const SPEC: TableSpec = {
+  sortKeys: ['name', 'created'],
+  defaultSort: 'created',
+  defaultDir: 'desc',
+  searchable: true,
+  filters: [{ key: 'status', allowed: [...STATUS_VALUES] }],
+};
+const SORT_MAP = { name: organizations.name, created: organizations.createdAt } as const;
+
+const query = parseTableQuery(Astro.url, SPEC);
+
+// Derived subscription-status rollup as a correlated SQL predicate (design D3).
+const conditions = [];
+if (query.q) conditions.push(or(ilike(organizations.name, `%${query.q}%`), ilike(organizations.slug, `%${query.q}%`)));
+if (query.filters.status) {
+  const s = query.filters.status;
+  conditions.push(
+    s === 'none'
+      ? notExists(db.select({ x: sql`1` }).from(subscriptions).where(eq(subscriptions.organizationId, organizations.id)))
+      : exists(
+          db
+            .select({ x: sql`1` })
+            .from(subscriptions)
+            .where(and(eq(subscriptions.organizationId, organizations.id), eq(subscriptions.status, s))),
+        ),
+  );
+}
+const whereClause = conditions.length ? and(...conditions) : undefined;
+
+const sortCol = SORT_MAP[query.sort as keyof typeof SORT_MAP];
+const orderBy = query.dir === 'asc' ? asc(sortCol) : desc(sortCol);
+
+// Whole-truth inputs (bounded — one subscription + a few items per paying org).
+const [[{ n: orgTotalCount }], allSubs, allItems] = await Promise.all([
+  db.select({ n: count() }).from(organizations),
+  db.select({ organizationId: subscriptions.organizationId, stripeSubscriptionId: subscriptions.stripeSubscriptionId, status: subscriptions.status }).from(subscriptions) as Promise<SubRow[]>,
   db
     .select({
       organizationId: subscriptions.organizationId,
@@ -66,6 +95,35 @@ const [orgRows, subRows, itemRows] = await Promise.all([
     .leftJoin(platforms, eq(platforms.id, subscriptionItems.platformId)) as Promise<SubItemRow[]>,
 ]);
 
+const now = new Date();
+const summary = summarizeSubscriptionsGlobal(orgTotalCount, allSubs, allItems, now);
+const statusByOrg = new Map(allSubs.map((s) => [s.organizationId, s.status]));
+const mrr = estimateMrr(
+  allItems.map((i) => ({
+    tier: i.tier,
+    billingPeriod: i.billingPeriod,
+    subscriptionStatus: statusByOrg.get(i.organizationId) ?? null,
+    cancelledAt: i.cancelledAt,
+  })),
+);
+
+// Paginated org listing.
+const [{ n: total }] = await db.select({ n: count() }).from(organizations).where(whereClause);
+const info = pageInfo(total, query.page, query.per);
+const orgRows = await db
+  .select({ id: organizations.id, name: organizations.name, slug: organizations.slug, stripeCustomerId: organizations.stripeCustomerId })
+  .from(organizations)
+  .where(whereClause)
+  .orderBy(orderBy)
+  .limit(query.per)
+  .offset(info.offset);
+
+const pageOrgIds = new Set(orgRows.map((o) => o.id));
+const pageSubs = allSubs.filter((s) => pageOrgIds.has(s.organizationId));
+const pageItems = allItems.filter((i) => pageOrgIds.has(i.organizationId));
+const { rows } = buildSubscriptionsView(orgRows, pageSubs, pageItems, now, { preserveOrder: true });
+
+// Overage records — separate bounded section (unchanged).
 const overageRows: OverageRow[] = await db
   .select({
     orgName: organizations.name,
@@ -82,48 +140,18 @@ const overageRows: OverageRow[] = await db
   .leftJoin(organizations, eq(organizations.id, overageRecords.organizationId))
   .orderBy(desc(overageRecords.periodStart))
   .limit(200);
-
-const { rows, summary } = buildSubscriptionsView(orgRows, subRows, itemRows, new Date());
-
-// Estimated MRR over every fetched item (list prices — see TIER_MONTHLY_CENTS).
-const mrr = estimateMrr(
-  rows.flatMap((r) =>
-    r.items.map((i) => ({
-      tier: i.tier,
-      billingPeriod: i.billingPeriod,
-      subscriptionStatus: r.subscriptionStatus,
-      cancelledAt: i.cancelledAt,
-    })),
-  ),
-);
 const overages = summarizeOverages(overageRows);
 
-// ?status= slices the table; the summary stats stay whole-truth.
-const statusFilter = Astro.url.searchParams.get('status');
-const visible = filterByStatus(rows, statusFilter);
-const STATUS_FILTERS = ['trialing', 'active', 'past_due', 'cancelled', 'none'];
+const params = Astro.url.searchParams;
+const filterHidden: Record<string, string> = { sort: query.sort, dir: query.dir, per: String(query.per) };
+const statusOptions = [{ value: '', label: 'All statuses' }, ...STATUS_VALUES.map((s) => ({ value: s, label: s.replace('_', ' ') }))];
 
 const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
 ---
 
 <SidebarLayout title="Admin — Subscriptions">
   <div class="mx-auto max-w-[1200px] space-y-6">
-    <PageHeader
-      title="Subscriptions"
-      description={`Stripe subscription + trial state per Organization (PRD §16.1).${truncationNote(orgRows.length, ORG_LIMIT)}`}
-    >
-      <div slot="actions" role="tablist" class="tabs tabs-box tabs-sm">
-        <a role="tab" href="/subscriptions" aria-selected={!statusFilter} class={`tab ${!statusFilter ? 'tab-active' : ''}`}>all</a>
-        {STATUS_FILTERS.map((s) => (
-          <a
-            role="tab"
-            href={`/subscriptions?status=${s}`}
-            aria-selected={statusFilter === s}
-            class={`tab ${statusFilter === s ? 'tab-active' : ''}`}
-          >{s.replace('_', ' ')}</a>
-        ))}
-      </div>
-    </PageHeader>
+    <PageHeader title="Subscriptions" description="Stripe subscription + trial state per Organization (PRD §16.1)." />
 
     <div class="stats stats-horizontal bg-base-100 border border-base-300">
       <div class="stat py-3">
@@ -149,105 +177,96 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
       <div class="stat py-3">
         <div class="stat-title">By status</div>
         <div class="stat-desc text-sm mt-1">
-          {Object.entries(summary.byStatus).map(([status, count]) => (
-            <span class="mr-2">{status}: <b>{count}</b></span>
+          {Object.entries(summary.byStatus).map(([status, c]) => (
+            <span class="mr-2">{status}: <b>{c}</b></span>
           ))}
         </div>
       </div>
     </div>
 
-    {visible.length === 0 ? (
+    <FilterBar
+      action="/subscriptions"
+      searchable
+      q={query.q}
+      qPlaceholder="Search organization…"
+      filters={[{ key: 'status', label: 'Status', options: statusOptions, current: query.filters.status ?? null }]}
+      hidden={filterHidden}
+    />
+
+    {rows.length === 0 ? (
       <EmptyState
         icon="lucide--credit-card"
-        title={statusFilter ? 'No matches' : 'No subscriptions yet'}
-        description={statusFilter
-          ? `No organizations with subscription status “${statusFilter}”.`
-          : 'No organizations in the master DB yet.'}
+        title={query.filters.status || query.q ? 'No matches' : 'No subscriptions yet'}
+        description={query.filters.status || query.q ? 'No organizations match this filter.' : 'No organizations in the master DB yet.'}
       />
     ) : (
-      <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
-        <table class="table table-zebra table-sm">
-          <thead>
-            <tr>
-              <th>Organization</th>
-              <th>Status</th>
-              <th>Platform / Tier</th>
-              <th>Trial</th>
-              <th>Period ends</th>
-              <th>Cancelled</th>
-              <th>Stripe</th>
-            </tr>
-          </thead>
-          <tbody>
-            {visible.map((org) => (
+      <div class="space-y-3">
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+          <table class="table table-zebra table-sm">
+            <thead>
               <tr>
-                <td>
-                  <div class="font-medium">{org.name}</div>
-                  <div class="font-mono text-xs text-base-content/50">{org.slug}</div>
-                </td>
-                <td>
-                  {org.subscriptionStatus ? (
-                    <Badge variant={SUB_STATUS_BADGE[org.subscriptionStatus] ?? 'default'} size="sm">
-                      {org.subscriptionStatus}
-                    </Badge>
-                  ) : (
-                    <Badge variant="default" size="sm">no subscription</Badge>
-                  )}
-                </td>
-                <td>
-                  {org.items.length === 0 ? '—' : org.items.map((i) => (
-                    <div class="whitespace-nowrap flex items-center gap-1">
-                      <span>{i.platformName ?? '?'} ·</span>
-                      <Badge variant="primary" size="sm">{i.tier}</Badge>
-                      <span class="text-xs text-base-content/50">{i.billingPeriod}</span>
-                    </div>
-                  ))}
-                </td>
-                <td>
-                  {org.items.map((i) => (
-                    <div class="whitespace-nowrap flex items-center gap-1">
-                      <Badge variant={TRIAL_STATE_BADGE[i.trialState]} size="sm">
-                        {i.trialState.replace('_', ' ')}
-                      </Badge>
-                      {i.trialDaysLeft !== null && (
-                        <span class="text-xs text-base-content/60">{i.trialDaysLeft}d left</span>
-                      )}
-                      {i.trialBackupRunUsed && (
-                        <Badge variant="default" size="sm" class="ml-1">run used</Badge>
-                      )}
-                    </div>
-                  ))}
-                </td>
-                <td>{org.items.map((i) => <div>{fmtDate(i.currentPeriodEnd)}</div>)}</td>
-                <td>{org.items.map((i) => <div>{fmtDate(i.cancelledAt)}</div>)}</td>
-                <td class="font-mono text-xs">
-                  <div title={org.stripeCustomerId ?? ''}>
-                    {org.stripeCustomerId ? (
-                      <a
-                        href={stripeCustomerUrl(org.stripeCustomerId)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="link link-hover"
-                      >{`${org.stripeCustomerId.slice(0, 14)}…`}</a>
-                    ) : (
-                      '—'
-                    )}
-                  </div>
-                  <div title={org.stripeSubscriptionId ?? ''}>
-                    {org.stripeSubscriptionId && (
-                      <a
-                        href={stripeSubscriptionUrl(org.stripeSubscriptionId)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="link link-hover"
-                      >{`${org.stripeSubscriptionId.slice(0, 14)}…`}</a>
-                    )}
-                  </div>
-                </td>
+                <SortHeader label="Organization" sortKey="name" current={params} spec={SPEC} />
+                <SortHeader label="Status" current={params} spec={SPEC} />
+                <SortHeader label="Platform / Tier" current={params} spec={SPEC} />
+                <SortHeader label="Trial" current={params} spec={SPEC} />
+                <SortHeader label="Period ends" current={params} spec={SPEC} />
+                <SortHeader label="Cancelled" current={params} spec={SPEC} />
+                <SortHeader label="Stripe" current={params} spec={SPEC} />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((org) => (
+                <tr>
+                  <td>
+                    <div class="font-medium"><EntityLink type="org" id={org.id} label={org.name} /></div>
+                    <div class="font-mono text-xs text-base-content/50">{org.slug}</div>
+                  </td>
+                  <td>
+                    {org.subscriptionStatus ? (
+                      <Badge variant={SUB_STATUS_BADGE[org.subscriptionStatus] ?? 'default'} size="sm">{org.subscriptionStatus}</Badge>
+                    ) : (
+                      <Badge variant="default" size="sm">no subscription</Badge>
+                    )}
+                  </td>
+                  <td>
+                    {org.items.length === 0 ? '—' : org.items.map((i) => (
+                      <div class="whitespace-nowrap flex items-center gap-1">
+                        <span>{i.platformName ?? '?'} ·</span>
+                        <Badge variant="primary" size="sm">{i.tier}</Badge>
+                        <span class="text-xs text-base-content/50">{i.billingPeriod}</span>
+                      </div>
+                    ))}
+                  </td>
+                  <td>
+                    {org.items.map((i) => (
+                      <div class="whitespace-nowrap flex items-center gap-1">
+                        <Badge variant={TRIAL_STATE_BADGE[i.trialState]} size="sm">{i.trialState.replace('_', ' ')}</Badge>
+                        {i.trialDaysLeft !== null && <span class="text-xs text-base-content/60">{i.trialDaysLeft}d left</span>}
+                        {i.trialBackupRunUsed && <Badge variant="default" size="sm" class="ml-1">run used</Badge>}
+                      </div>
+                    ))}
+                  </td>
+                  <td>{org.items.map((i) => <div>{fmtDate(i.currentPeriodEnd)}</div>)}</td>
+                  <td>{org.items.map((i) => <div>{fmtDate(i.cancelledAt)}</div>)}</td>
+                  <td class="font-mono text-xs">
+                    <div title={org.stripeCustomerId ?? ''}>
+                      {org.stripeCustomerId ? (
+                        <a href={stripeCustomerUrl(org.stripeCustomerId)} target="_blank" rel="noopener noreferrer" class="link link-hover">{`${org.stripeCustomerId.slice(0, 14)}…`}</a>
+                      ) : '—'}
+                    </div>
+                    <div title={org.stripeSubscriptionId ?? ''}>
+                      {org.stripeSubscriptionId && (
+                        <a href={stripeSubscriptionUrl(org.stripeSubscriptionId)} target="_blank" rel="noopener noreferrer" class="link link-hover">{`${org.stripeSubscriptionId.slice(0, 14)}…`}</a>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <Pager info={info} current={params} per={query.per} noun="organization" />
       </div>
     )}
 
@@ -256,8 +275,7 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
       <p class="text-sm text-base-content/60 mt-1">
         Per-metric usage over quota, per billing period. Written by the quota
         monitor; “billed” once a Stripe invoice item exists.
-        {overages.rows.length > 0 &&
-          ` Total ${formatCents(overages.totalCents)} · unbilled ${formatCents(overages.unbilledCents)}.`}
+        {overages.rows.length > 0 && ` Total ${formatCents(overages.totalCents)} · unbilled ${formatCents(overages.unbilledCents)}.`}
       </p>
       {overages.rows.length === 0 ? (
         <p class="text-sm text-base-content/50 mt-2">No overage records yet.</p>
@@ -281,18 +299,12 @@ const fmtDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
                 <tr>
                   <td>{o.orgName ?? '—'}</td>
                   <td><Badge variant="default" size="sm">{o.metric.replace(/_/g, ' ')}</Badge></td>
-                  <td class="font-mono text-xs whitespace-nowrap">
-                    {fmtDate(o.periodStart)} → {fmtDate(o.periodEnd)}
-                  </td>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmtDate(o.periodStart)} → {fmtDate(o.periodEnd)}</td>
                   <td class="text-right">{o.includedQuota}</td>
                   <td class="text-right">{o.usageAmount}</td>
                   <td class={`text-right ${o.overageAmount > 0 ? 'text-warning' : ''}`}>{o.overageAmount}</td>
                   <td class="text-right font-mono text-xs">{formatCents(o.totalCostCents)}</td>
-                  <td>
-                    {o.stripeInvoiceItemId
-                      ? <Badge variant="success" size="sm">billed</Badge>
-                      : <Badge variant="warning" size="sm">unbilled</Badge>}
-                  </td>
+                  <td>{o.stripeInvoiceItemId ? <Badge variant="success" size="sm">billed</Badge> : <Badge variant="warning" size="sm">unbilled</Badge>}</td>
                 </tr>
               ))}
             </tbody>

@@ -1,0 +1,122 @@
+---
+// /errors/[id]?type=<errorType> — error-triage drill-in (admin-crm-ux Task 3.3).
+// Stable per-error URL keyed on the ack identity (targetType + targetId). Reuses
+// the tested classifyErrors by loading just the one source row into its bucket,
+// then renders full context + the acknowledge/unacknowledge action (relocated
+// off the /errors listing — endpoint/confirm/audit unchanged).
+import { and, eq } from 'drizzle-orm';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import Button from '@web/components/ui/Button.astro';
+import ConfirmModal from '@web/components/ui/ConfirmModal.astro';
+import { adminErrorAcks, backupRunBases, backupRuns, connections, organizations, restoreRuns, spaceDatabases, spaces } from '../../db/schema';
+import { UUID_RE } from '../../lib/actions/http';
+import { classifyErrors, type AckRow, type ErrorSources, type ErrorType } from '../../lib/errors';
+import { validateReturnPath } from '../../lib/table-query';
+
+const { db } = Astro.locals;
+const id = Astro.params.id;
+const type = (Astro.url.searchParams.get('type') ?? '') as ErrorType;
+const VALID: ErrorType[] = ['backup_run', 'backup_run_base', 'restore_run', 'connection', 'space_database'];
+if (!id || !UUID_RE.test(id) || !VALID.includes(type)) return new Response('Not found', { status: 404 });
+
+const runOrg = { orgId: spaces.organizationId, orgName: organizations.name, spaceName: spaces.name };
+const sources: ErrorSources = { backupRuns: [], backupRunBases: [], restoreRuns: [], connections: [], spaceDatabases: [] };
+
+if (type === 'backup_run') {
+  sources.backupRuns = await db
+    .select({ id: backupRuns.id, spaceId: backupRuns.spaceId, ...runOrg, errorMessage: backupRuns.errorMessage, completedAt: backupRuns.completedAt, createdAt: backupRuns.createdAt })
+    .from(backupRuns).leftJoin(spaces, eq(backupRuns.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(eq(backupRuns.id, id)).limit(1);
+} else if (type === 'backup_run_base') {
+  sources.backupRunBases = await db
+    .select({ id: backupRunBases.id, spaceId: backupRuns.spaceId, orgId: spaces.organizationId, orgName: organizations.name, spaceName: spaces.name, baseName: backupRunBases.baseName, errorMessage: backupRunBases.errorMessage, completedAt: backupRunBases.completedAt, runCreatedAt: backupRuns.createdAt })
+    .from(backupRunBases).innerJoin(backupRuns, eq(backupRunBases.runId, backupRuns.id)).leftJoin(spaces, eq(backupRuns.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(eq(backupRunBases.id, id)).limit(1);
+} else if (type === 'restore_run') {
+  sources.restoreRuns = await db
+    .select({ id: restoreRuns.id, spaceId: restoreRuns.spaceId, ...runOrg, errorMessage: restoreRuns.errorMessage, completedAt: restoreRuns.completedAt, createdAt: restoreRuns.createdAt })
+    .from(restoreRuns).leftJoin(spaces, eq(restoreRuns.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(eq(restoreRuns.id, id)).limit(1);
+} else if (type === 'connection') {
+  sources.connections = await db
+    .select({ id: connections.id, orgId: connections.organizationId, orgName: organizations.name, status: connections.status, oauthRefreshLastError: connections.oauthRefreshLastError, invalidatedAt: connections.invalidatedAt, pendingReauthAt: connections.pendingReauthAt, modifiedAt: connections.modifiedAt })
+    .from(connections).leftJoin(organizations, eq(connections.organizationId, organizations.id))
+    .where(eq(connections.id, id)).limit(1);
+} else {
+  sources.spaceDatabases = await db
+    .select({ id: spaceDatabases.id, spaceId: spaceDatabases.spaceId, orgId: spaces.organizationId, orgName: organizations.name, spaceName: spaces.name, status: spaceDatabases.status, errorMessage: spaceDatabases.errorMessage, modifiedAt: spaceDatabases.modifiedAt })
+    .from(spaceDatabases).leftJoin(spaces, eq(spaceDatabases.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(eq(spaceDatabases.id, id)).limit(1);
+}
+
+const acks: AckRow[] = await db
+  .select({ targetType: adminErrorAcks.targetType, targetId: adminErrorAcks.targetId, targetState: adminErrorAcks.targetState, phase: adminErrorAcks.phase, createdAt: adminErrorAcks.createdAt, ackedByEmail: adminErrorAcks.ackedByEmail })
+  .from(adminErrorAcks)
+  .where(and(eq(adminErrorAcks.targetType, type), eq(adminErrorAcks.targetId, id)));
+
+const item = classifyErrors(sources, acks)[0];
+if (!item) return new Response('Not found', { status: 404 });
+
+const backHref = validateReturnPath(Astro.url.searchParams.get('ret'), '/errors');
+const TYPE_LABEL: Record<ErrorType, string> = { backup_run: 'Backup run', backup_run_base: 'Base backup', restore_run: 'Restore', connection: 'Connection', space_database: 'Database' };
+const ackPayload = JSON.stringify({ targetType: item.type, targetId: item.targetId, targetState: item.stateFingerprint ?? undefined, organizationId: item.orgId ?? undefined });
+
+const fmt = (d: Date) => new Date(d).toISOString().replace('T', ' ').slice(0, 19);
+---
+
+<SidebarLayout title={`Admin — ${TYPE_LABEL[item.type]} error`}>
+  <div class="mx-auto max-w-[900px] space-y-6">
+    <PageHeader title={`${TYPE_LABEL[item.type]}: ${item.label}`} description={`Occurred ${fmt(item.occurredAt)}`} backHref={backHref} backLabel="Back">
+      <Fragment slot="meta">
+        <Badge variant={item.acked ? 'default' : 'error'} size="sm">{item.acked ? 'acknowledged' : 'open'}</Badge>
+        {item.acked && item.ackedByEmail && <span class="text-xs text-base-content/50">by {item.ackedByEmail} · {item.ackedAt ? fmt(item.ackedAt) : ''}</span>}
+      </Fragment>
+      <div slot="actions">
+        {item.acked ? (
+          <Button variant="outline" size="sm" data-action-path="/api/actions/unacknowledge-error" data-action-payload={ackPayload} data-action-label={`Re-open this ${TYPE_LABEL[item.type].toLowerCase()} error. It returns to the open triage queue.`}>Re-open</Button>
+        ) : (
+          <Button variant="outline" size="sm" data-action-path="/api/actions/acknowledge-error" data-action-payload={ackPayload} data-action-label={`Acknowledge this ${TYPE_LABEL[item.type].toLowerCase()} error. It is suppressed from the open queue${item.type === 'connection' ? ' while the connection stays in this broken state' : ''}.`}>Acknowledge</Button>
+        )}
+      </div>
+    </PageHeader>
+
+    <Card variant="outlined">
+      <div class="flex flex-col gap-3">
+        <h2 class="text-base font-semibold">Error</h2>
+        <pre class="whitespace-pre-wrap rounded-box bg-base-200 p-3 text-sm text-error">{item.message}</pre>
+        <dl class="grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
+          <div>
+            <dt class="text-base-content/50">Organization</dt>
+            <dd>{item.orgId ? <a href={`/organizations/${item.orgId}`} class="link link-hover">{item.orgName ?? item.orgId}</a> : '—'}</dd>
+          </div>
+          <div>
+            <dt class="text-base-content/50">Space</dt>
+            <dd>{item.spaceId ? <a href={`/spaces/${item.spaceId}`} class="link link-hover">{item.spaceName ?? item.spaceId}</a> : '—'}</dd>
+          </div>
+          {item.type === 'backup_run' && (
+            <div>
+              <dt class="text-base-content/50">Run</dt>
+              <dd><a href={`/backups/${item.targetId}`} class="link link-hover font-mono text-xs">{item.targetId.slice(0, 8)}…</a></dd>
+            </div>
+          )}
+          {item.type === 'connection' && (
+            <div>
+              <dt class="text-base-content/50">Connection</dt>
+              <dd><a href={`/connections/${item.targetId}`} class="link link-hover font-mono text-xs">{item.targetId.slice(0, 8)}…</a></dd>
+            </div>
+          )}
+        </dl>
+      </div>
+    </Card>
+  </div>
+
+  <ConfirmModal id="action-confirm" title="Error triage" confirmLabel="Confirm" confirmClass="btn-primary">
+    <p class="text-sm" data-confirm-label></p>
+    <p class="mt-2 text-sm text-error hidden" data-confirm-error></p>
+    <p class="mt-2 text-xs text-base-content/50">This action is recorded in the admin audit log before it executes.</p>
+    <button slot="confirm" type="button" class="btn btn-primary" data-confirm-button>Confirm</button>
+  </ConfirmModal>
+</SidebarLayout>

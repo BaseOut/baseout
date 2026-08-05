@@ -4,6 +4,7 @@ import {
   detectQuery,
   escapeLike,
   finalizeGroup,
+  toSuggestGroups,
   GROUP_LIMIT,
   linkFor,
   membershipContext,
@@ -131,5 +132,27 @@ describe('membershipContext', () => {
     ])
     expect(m.get('u1')).toBe('Acme, Globex')
     expect(m.get('u2')).toBe('Initech')
+  })
+})
+
+describe('toSuggestGroups', () => {
+  const row = (id: string, href: string | null) => ({ id, label: id, context: null, href })
+  it('caps each group to perGroup, keeps only navigable rows, drops empty groups', () => {
+    const result = {
+      redirect: null,
+      groups: [
+        { key: 'org', label: 'Organizations', rows: [row('o1', '/organizations/o1'), row('o2', '/organizations/o2'), row('o3', '/organizations/o3'), row('o4', '/organizations/o4')], truncated: true },
+        { key: 'user', label: 'Users', rows: [row('u1', null)], truncated: false }, // no href → dropped
+        { key: 'space', label: 'Spaces', rows: [row('s1', '/spaces/s1')], truncated: false },
+      ],
+    }
+    const out = toSuggestGroups(result, 3)
+    expect(out.map((g) => g.key)).toEqual(['org', 'space']) // user dropped (no navigable rows)
+    expect(out[0].rows).toHaveLength(3) // capped from 4
+    expect(out[1].rows).toHaveLength(1)
+  })
+
+  it('returns empty for a no-result search', () => {
+    expect(toSuggestGroups({ redirect: null, groups: [] }, 3)).toEqual([])
   })
 })

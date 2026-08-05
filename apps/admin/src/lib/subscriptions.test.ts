@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   deriveTrialState,
   buildSubscriptionsView,
+  summarizeSubscriptionsGlobal,
   estimateMrr,
   filterByStatus,
   formatCents,
@@ -188,5 +189,42 @@ describe('formatCents', () => {
     expect(formatCents(0)).toBe('$0.00')
     expect(formatCents(12800)).toBe('$128.00')
     expect(formatCents(2599)).toBe('$25.99')
+  })
+})
+
+describe('buildSubscriptionsView preserveOrder', () => {
+  it('keeps the input (SQL page) order instead of sorting by name', () => {
+    const orgs = [
+      { id: 'o1', name: 'Zeta', slug: 'zeta', stripeCustomerId: null },
+      { id: 'o2', name: 'Alpha', slug: 'alpha', stripeCustomerId: null },
+    ]
+    const { rows } = buildSubscriptionsView(orgs, [], [], NOW, { preserveOrder: true })
+    expect(rows.map((r) => r.id)).toEqual(['o1', 'o2'])
+  })
+})
+
+describe('summarizeSubscriptionsGlobal', () => {
+  it('tallies statuses, derives none from the org count, and counts active trials', () => {
+    const subs = [
+      { organizationId: 'o1', stripeSubscriptionId: 's1', status: 'active' },
+      { organizationId: 'o2', stripeSubscriptionId: 's2', status: 'trialing' },
+      { organizationId: 'o3', stripeSubscriptionId: 's3', status: 'past_due' },
+    ]
+    const items = [
+      item({ organizationId: 'o2', trialEndsAt: daysFromNow(5) }), // trialing → active trial
+      item({ organizationId: 'o1', trialEverUsed: true }),
+    ]
+    // 5 orgs total, 3 have subscriptions → 2 with none
+    const summary = summarizeSubscriptionsGlobal(5, subs, items, NOW)
+    expect(summary.organizations).toBe(5)
+    expect(summary.byStatus).toEqual({ active: 1, trialing: 1, past_due: 1, none: 2 })
+    expect(summary.pastDue).toBe(1)
+    expect(summary.activeTrials).toBe(1)
+  })
+
+  it('omits none when every org has a subscription', () => {
+    const subs = [{ organizationId: 'o1', stripeSubscriptionId: 's1', status: 'active' }]
+    const summary = summarizeSubscriptionsGlobal(1, subs, [], NOW)
+    expect(summary.byStatus).toEqual({ active: 1 })
   })
 })

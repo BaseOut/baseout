@@ -170,6 +170,25 @@ export interface SearchResult {
   groups: ResultGroup[]
 }
 
+// ── Typeahead suggestions (admin-crm-ux Task 4.2) ────────────────────────────
+
+export interface SuggestGroup {
+  key: string
+  label: string
+  rows: ResultRow[]
+}
+
+/**
+ * Map a full SearchResult into tight typeahead groups: only navigable rows (an
+ * href), capped at `perGroup` each, empty groups dropped. Metadata only — the
+ * same {id,label,context,href} the results page already shows.
+ */
+export function toSuggestGroups(result: SearchResult, perGroup: number): SuggestGroup[] {
+  return result.groups
+    .map((g) => ({ key: g.key, label: g.label, rows: g.rows.filter((r) => r.href).slice(0, perGroup) }))
+    .filter((g) => g.rows.length > 0)
+}
+
 const LIM = GROUP_LIMIT + 1 // fetch +1 to detect truncation
 
 /** `%q%` ILIKE pattern with metacharacters escaped. */

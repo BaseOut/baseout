@@ -32,11 +32,16 @@ export interface UserRow {
   lastSeenAt: Date | null
 }
 
-export function buildUsersDirectory(input: {
-  users: UserInput[]
-  memberships: MembershipInput[]
-  latestSessions: UserLatestSession[]
-}): UserRow[] {
+export function buildUsersDirectory(
+  input: {
+    users: UserInput[]
+    memberships: MembershipInput[]
+    latestSessions: UserLatestSession[]
+  },
+  // admin-crm-ux: preserveOrder keeps the SQL page order under pagination
+  // (design D3) instead of the in-memory email sort.
+  opts: { preserveOrder?: boolean } = {},
+): UserRow[] {
   const byUser = new Map<string, MembershipInput[]>()
   for (const m of input.memberships) {
     const list = byUser.get(m.userId) ?? []
@@ -45,7 +50,7 @@ export function buildUsersDirectory(input: {
   }
   const sessions = new Map(input.latestSessions.map((s) => [s.userId, s.updatedAt]))
 
-  return input.users
+  const rows = input.users
     .map((u): UserRow => ({
       id: u.id,
       name: u.name,
@@ -58,5 +63,7 @@ export function buildUsersDirectory(input: {
         .sort((a, b) => a.organizationName.localeCompare(b.organizationName)),
       lastSeenAt: sessions.get(u.id) ?? null, // null = never signed in
     }))
-    .sort((a, b) => (a.email ?? '').localeCompare(b.email ?? ''))
+
+  if (opts.preserveOrder) return rows
+  return rows.sort((a, b) => (a.email ?? '').localeCompare(b.email ?? ''))
 }

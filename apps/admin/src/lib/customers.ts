@@ -51,7 +51,9 @@ export function buildCustomersDirectory(
     subItems: CustomerSubItem[]
     latestRuns: OrgLatestRun[]
   },
-  opts: { status?: string | null } = {},
+  // admin-crm-ux: under SQL pagination the page applies status/sort in SQL, so
+  // pass preserveOrder to keep the DB order and skip the in-memory status filter.
+  opts: { status?: string | null; preserveOrder?: boolean } = {},
 ): CustomerRow[] {
   const spaces = countMap(input.spaceCounts)
   const members = countMap(input.memberCounts)
@@ -84,6 +86,7 @@ export function buildCustomersDirectory(
     }
   })
 
+  if (opts.preserveOrder) return rows
   const filtered = opts.status ? rows.filter((r) => r.subscriptionStatus === opts.status) : rows
   return filtered.sort((a, b) => a.name.localeCompare(b.name))
 }

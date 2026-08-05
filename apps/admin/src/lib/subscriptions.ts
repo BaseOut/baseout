@@ -73,6 +73,10 @@ export function buildSubscriptionsView(
   subs: SubRow[],
   items: SubItemRow[],
   now: Date,
+  // admin-crm-ux: preserveOrder keeps the SQL page order under pagination
+  // (design D3) instead of the in-memory name sort. The returned `summary` is
+  // then page-local; use summarizeSubscriptionsGlobal for whole-truth stats.
+  opts: { preserveOrder?: boolean } = {},
 ): { rows: OrgSubscriptionView[]; summary: SubscriptionSummary } {
   const subByOrg = new Map(subs.map((s) => [s.organizationId, s]))
   const itemsByOrg = new Map<string, SubItemRow[]>()
@@ -82,20 +86,21 @@ export function buildSubscriptionsView(
     itemsByOrg.set(i.organizationId, list)
   }
 
-  const rows = orgs
-    .map((o) => {
-      const sub = subByOrg.get(o.id) ?? null
-      return {
-        ...o,
-        subscriptionStatus: sub?.status ?? null,
-        stripeSubscriptionId: sub?.stripeSubscriptionId ?? null,
-        items: (itemsByOrg.get(o.id) ?? []).map((i) => ({
-          ...i,
-          ...deriveTrialState(i, sub?.status ?? null, now),
-        })),
-      }
-    })
-    .sort((a, b) => a.name.localeCompare(b.name))
+  const unsorted = orgs.map((o) => {
+    const sub = subByOrg.get(o.id) ?? null
+    return {
+      ...o,
+      subscriptionStatus: sub?.status ?? null,
+      stripeSubscriptionId: sub?.stripeSubscriptionId ?? null,
+      items: (itemsByOrg.get(o.id) ?? []).map((i) => ({
+        ...i,
+        ...deriveTrialState(i, sub?.status ?? null, now),
+      })),
+    }
+  })
+  const rows = opts.preserveOrder
+    ? unsorted
+    : unsorted.sort((a, b) => a.name.localeCompare(b.name))
 
   const byStatus: Record<string, number> = {}
   for (const r of rows) {
@@ -111,6 +116,44 @@ export function buildSubscriptionsView(
       activeTrials: rows.filter((r) => r.items.some((i) => i.trialState === 'trialing')).length,
       pastDue: byStatus['past_due'] ?? 0,
     },
+  }
+}
+
+/**
+ * Whole-truth summary independent of the paginated page (admin-crm-ux D4). The
+ * listing paginates orgs in SQL, so the summary tiles are fed from the (bounded)
+ * full set of subscriptions + items plus a global organization count rather than
+ * the current page. `byStatus['none']` = orgs with no subscription row.
+ */
+export function summarizeSubscriptionsGlobal(
+  organizationCount: number,
+  subs: SubRow[],
+  items: SubItemRow[],
+  now: Date,
+): SubscriptionSummary {
+  const byStatus: Record<string, number> = {}
+  for (const s of subs) byStatus[s.status] = (byStatus[s.status] ?? 0) + 1
+  const noneCount = Math.max(0, organizationCount - subs.length)
+  if (noneCount > 0) byStatus['none'] = noneCount
+
+  const statusByOrg = new Map(subs.map((s) => [s.organizationId, s.status]))
+  const itemsByOrg = new Map<string, SubItemRow[]>()
+  for (const i of items) {
+    const list = itemsByOrg.get(i.organizationId) ?? []
+    list.push(i)
+    itemsByOrg.set(i.organizationId, list)
+  }
+  let activeTrials = 0
+  for (const [orgId, orgItems] of itemsByOrg) {
+    const status = statusByOrg.get(orgId) ?? null
+    if (orgItems.some((i) => deriveTrialState(i, status, now).trialState === 'trialing')) activeTrials++
+  }
+
+  return {
+    organizations: organizationCount,
+    byStatus,
+    activeTrials,
+    pastDue: byStatus['past_due'] ?? 0,
   }
 }
 

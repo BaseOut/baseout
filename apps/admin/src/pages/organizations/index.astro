@@ -1,0 +1,250 @@
+---
+// /organizations — the CRM entry point (admin-crm-ux Task 2.1/2.2). Replaces
+// /customers (which now 301s here). Read-only; role='super' gated by middleware.
+//
+// Server-side pagination + sort + three SQL-predicate filters (status rollup,
+// platform, tier) + search over name/slug/member-email. Sortable aggregates
+// (space count, member count, last activity) are correlated subqueries so they
+// survive SQL pagination (design D2/D3). Per-row MRR/tier/status derivation stays
+// in the pure buildCustomersDirectory (preserveOrder — SQL owns ordering).
+import { and, asc, desc, eq, exists, notExists, ilike, inArray, or, sql, count } from 'drizzle-orm';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import SortHeader from '../../components/table/SortHeader.astro';
+import Pager from '../../components/table/Pager.astro';
+import FilterBar from '../../components/table/FilterBar.astro';
+import {
+  backupRuns,
+  organizations,
+  organizationMembers,
+  platforms,
+  spaces,
+  spacePlatforms,
+  subscriptionItems,
+  subscriptions,
+  users,
+} from '../../db/schema';
+import { buildCustomersDirectory, type CustomerSubItem } from '../../lib/customers';
+import { parseTableQuery, pageInfo, retParam, type TableSpec } from '../../lib/table-query';
+
+const { db } = Astro.locals;
+
+const STATUS_VALUES = ['trialing', 'active', 'past_due', 'canceled', 'none'] as const;
+const TIER_VALUES = ['starter', 'launch', 'growth', 'pro', 'business', 'enterprise'] as const;
+
+// Platform filter options come from the DB (small, stable set).
+const platformRows = await db.select({ slug: platforms.slug, name: platforms.name }).from(platforms).orderBy(platforms.name);
+const platformSlugs = platformRows.map((p) => p.slug);
+
+const SPEC: TableSpec = {
+  sortKeys: ['name', 'created', 'spaces', 'members', 'activity'],
+  defaultSort: 'name',
+  defaultDir: 'asc',
+  searchable: true,
+  filters: [
+    { key: 'status', allowed: [...STATUS_VALUES] },
+    { key: 'platform', allowed: platformSlugs },
+    { key: 'tier', allowed: [...TIER_VALUES] },
+  ],
+};
+
+// Sortable aggregates as correlated scalar subqueries (design D3).
+const spaceCountExpr = sql<number>`(select count(*)::int from ${spaces} where ${spaces.organizationId} = ${organizations.id})`;
+const memberCountExpr = sql<number>`(select count(*)::int from ${organizationMembers} where ${organizationMembers.organizationId} = ${organizations.id})`;
+const lastActivityExpr = sql<Date | null>`(select max(${backupRuns.createdAt}) from ${backupRuns} inner join ${spaces} on ${spaces.id} = ${backupRuns.spaceId} where ${spaces.organizationId} = ${organizations.id})`;
+
+const SORT_MAP = {
+  name: organizations.name,
+  created: organizations.createdAt,
+  spaces: spaceCountExpr,
+  members: memberCountExpr,
+  activity: lastActivityExpr,
+} as const;
+
+const query = parseTableQuery(Astro.url, SPEC);
+
+const conditions = [];
+if (query.q) {
+  conditions.push(
+    or(
+      ilike(organizations.name, `%${query.q}%`),
+      ilike(organizations.slug, `%${query.q}%`),
+      exists(
+        db
+          .select({ x: sql`1` })
+          .from(organizationMembers)
+          .innerJoin(users, eq(users.id, organizationMembers.userId))
+          .where(and(eq(organizationMembers.organizationId, organizations.id), ilike(users.email, `%${query.q}%`))),
+      ),
+    ),
+  );
+}
+if (query.filters.status) {
+  const s = query.filters.status;
+  conditions.push(
+    s === 'none'
+      ? notExists(db.select({ x: sql`1` }).from(subscriptions).where(eq(subscriptions.organizationId, organizations.id)))
+      : exists(db.select({ x: sql`1` }).from(subscriptions).where(and(eq(subscriptions.organizationId, organizations.id), eq(subscriptions.status, s)))),
+  );
+}
+if (query.filters.platform) {
+  const p = query.filters.platform;
+  conditions.push(
+    or(
+      exists(
+        db
+          .select({ x: sql`1` })
+          .from(spacePlatforms)
+          .innerJoin(spaces, eq(spaces.id, spacePlatforms.spaceId))
+          .innerJoin(platforms, eq(platforms.id, spacePlatforms.platformId))
+          .where(and(eq(spaces.organizationId, organizations.id), eq(platforms.slug, p))),
+      ),
+      exists(
+        db
+          .select({ x: sql`1` })
+          .from(subscriptionItems)
+          .innerJoin(subscriptions, eq(subscriptions.id, subscriptionItems.subscriptionId))
+          .innerJoin(platforms, eq(platforms.id, subscriptionItems.platformId))
+          .where(and(eq(subscriptions.organizationId, organizations.id), eq(platforms.slug, p))),
+      ),
+    ),
+  );
+}
+if (query.filters.tier) {
+  conditions.push(
+    exists(
+      db
+        .select({ x: sql`1` })
+        .from(subscriptionItems)
+        .innerJoin(subscriptions, eq(subscriptions.id, subscriptionItems.subscriptionId))
+        .where(and(eq(subscriptions.organizationId, organizations.id), eq(subscriptionItems.tier, query.filters.tier))),
+    ),
+  );
+}
+const whereClause = conditions.length ? and(...conditions) : undefined;
+
+const sortCol = SORT_MAP[query.sort as keyof typeof SORT_MAP];
+const orderBy = query.dir === 'asc' ? asc(sortCol) : desc(sortCol);
+
+const [{ n: total }] = await db.select({ n: count() }).from(organizations).where(whereClause);
+const info = pageInfo(total, query.page, query.per);
+
+const pageOrgs = await db
+  .select({
+    id: organizations.id,
+    name: organizations.name,
+    slug: organizations.slug,
+    hasMigrated: organizations.hasMigrated,
+    createdAt: organizations.createdAt,
+    spaceCount: spaceCountExpr,
+    memberCount: memberCountExpr,
+    lastActivity: lastActivityExpr,
+  })
+  .from(organizations)
+  .where(whereClause)
+  .orderBy(orderBy)
+  .limit(query.per)
+  .offset(info.offset);
+
+// Per-org tier/status/MRR derivation for the page's orgs.
+const pageOrgIds = pageOrgs.map((o) => o.id);
+const subItems = pageOrgIds.length
+  ? ((await db
+      .select({
+        organizationId: subscriptions.organizationId,
+        tier: subscriptionItems.tier,
+        billingPeriod: subscriptionItems.billingPeriod,
+        subscriptionStatus: subscriptions.status,
+        cancelledAt: subscriptionItems.cancelledAt,
+      })
+      .from(subscriptionItems)
+      .innerJoin(subscriptions, eq(subscriptionItems.subscriptionId, subscriptions.id))
+      .where(inArray(subscriptions.organizationId, pageOrgIds))) as CustomerSubItem[])
+  : [];
+
+const rows = buildCustomersDirectory(
+  {
+    orgs: pageOrgs.map((o) => ({ id: o.id, name: o.name, slug: o.slug, hasMigrated: o.hasMigrated, createdAt: o.createdAt })),
+    spaceCounts: pageOrgs.map((o) => ({ organizationId: o.id, count: o.spaceCount })),
+    memberCounts: pageOrgs.map((o) => ({ organizationId: o.id, count: o.memberCount })),
+    subItems,
+    latestRuns: pageOrgs
+      .filter((o): o is typeof o & { lastActivity: Date } => !!o.lastActivity)
+      .map((o) => ({ organizationId: o.id, lastRunAt: o.lastActivity })),
+  },
+  { preserveOrder: true },
+);
+
+const params = Astro.url.searchParams;
+const ret = retParam('/organizations', params);
+const filterHidden: Record<string, string> = { sort: query.sort, dir: query.dir, per: String(query.per) };
+const statusOptions = [{ value: '', label: 'All statuses' }, ...STATUS_VALUES.map((s) => ({ value: s, label: s.replace('_', ' ') }))];
+const platformOptions = [{ value: '', label: 'All platforms' }, ...platformRows.map((p) => ({ value: p.slug, label: p.name }))];
+const tierOptions = [{ value: '', label: 'All tiers' }, ...TIER_VALUES.map((t) => ({ value: t, label: t }))];
+
+const dollars = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0 })}`;
+const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : '—');
+---
+
+<SidebarLayout title="Admin — Organizations">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader title="Organizations" description="Every Organization with billing + activity context — the CRM entry point." />
+
+    <FilterBar
+      action="/organizations"
+      searchable
+      q={query.q}
+      qPlaceholder="Search name, slug, or member email…"
+      filters={[
+        { key: 'status', label: 'Status', options: statusOptions, current: query.filters.status ?? null },
+        { key: 'platform', label: 'Platform', options: platformOptions, current: query.filters.platform ?? null },
+        { key: 'tier', label: 'Tier', options: tierOptions, current: query.filters.tier ?? null },
+      ]}
+      hidden={filterHidden}
+    />
+
+    {rows.length === 0 ? (
+      <EmptyState title="No organizations match" description="Try a different search or filter." />
+    ) : (
+      <div class="space-y-3">
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+          <table class="table table-zebra table-sm">
+            <thead>
+              <tr>
+                <SortHeader label="Organization" sortKey="name" current={params} spec={SPEC} />
+                <SortHeader label="Tier" current={params} spec={SPEC} />
+                <SortHeader label="Status" current={params} spec={SPEC} />
+                <SortHeader label="Est. MRR" current={params} spec={SPEC} />
+                <SortHeader label="Spaces" sortKey="spaces" align="right" current={params} spec={SPEC} />
+                <SortHeader label="Members" sortKey="members" align="right" current={params} spec={SPEC} />
+                <SortHeader label="Last activity" sortKey="activity" current={params} spec={SPEC} />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr>
+                  <td>
+                    <a href={`/organizations/${r.id}?ret=${ret}`} class="link link-hover font-medium">{r.name}</a>
+                    {!r.hasMigrated && <Badge variant="warning" size="sm">unmigrated</Badge>}
+                    <div class="text-xs text-base-content/50">{r.slug}</div>
+                  </td>
+                  <td>{r.tiers.length ? r.tiers.join(', ') : '—'}</td>
+                  <td><Badge variant={r.subscriptionStatus === 'active' ? 'success' : r.subscriptionStatus === 'past_due' ? 'error' : 'default'} size="sm">{r.subscriptionStatus}</Badge></td>
+                  <td>{dollars(r.mrr.totalCents)}{r.mrr.unpriceable > 0 ? '＋' : ''}</td>
+                  <td class="text-right">{r.spaceCount}</td>
+                  <td class="text-right">{r.memberCount}</td>
+                  <td class="text-base-content/70">{fmt(r.lastActivityAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <Pager info={info} current={params} per={query.per} noun="organization" />
+      </div>
+    )}
+    <p class="text-xs text-base-content/50">Est. MRR is list-price only (Stripe amounts aren’t synced); ＋ = an unpriceable (enterprise/custom) item on an active sub.</p>
+  </div>
+</SidebarLayout>

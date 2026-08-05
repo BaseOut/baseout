@@ -52,4 +52,17 @@ describe('buildCustomersDirectory', () => {
     )
     expect(rows.map((r) => r.id)).toEqual(['o2'])
   })
+
+  it('preserveOrder keeps SQL page order and skips the in-memory status filter', () => {
+    const rows = buildCustomersDirectory(
+      {
+        orgs: [org('o2', 'Zeta'), org('o1', 'Acme')],
+        spaceCounts: [], memberCounts: [], latestRuns: [],
+        subItems: [item('o1', { subscriptionStatus: 'active' }), item('o2', { subscriptionStatus: 'trialing' })],
+      },
+      { status: 'active', preserveOrder: true },
+    )
+    // input order preserved; status filter NOT applied (page did it in SQL)
+    expect(rows.map((r) => r.id)).toEqual(['o2', 'o1'])
+  })
 })

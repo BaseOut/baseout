@@ -25,4 +25,12 @@ describe('buildUsersDirectory', () => {
     expect(rows[0].lastSeenAt).toBeNull()
     expect(rows[0].memberships).toEqual([])
   })
+
+  it('preserveOrder keeps the input (SQL page) order instead of sorting by email', () => {
+    const rows = buildUsersDirectory(
+      { users: [user('u2', 'zed@x.com'), user('u1', 'ann@x.com')], memberships: [], latestSessions: [] },
+      { preserveOrder: true },
+    )
+    expect(rows.map((r) => r.email)).toEqual(['zed@x.com', 'ann@x.com'])
+  })
 })

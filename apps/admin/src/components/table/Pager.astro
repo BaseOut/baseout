@@ -1,0 +1,90 @@
+---
+// Pager for admin listing tables (admin-crm-ux D5): "n–m of total", a numbered
+// page window with prev/next, and a page-size selector — all plain server-
+// rendered <a> links (no JS required). Preserves every sibling query param.
+import { pageHref, perHref, type PageInfo } from '../../lib/table-query';
+
+interface Props {
+  info: PageInfo;
+  current: URLSearchParams;
+  perOptions?: readonly number[];
+  per: number;
+  /** Singular noun for the total, e.g. "run" → "4,231 runs". */
+  noun?: string;
+}
+
+const { info, current, perOptions = [25, 50, 100], per, noun = 'row' } = Astro.props;
+
+// Numbered window: current ±2, always including first and last with gaps.
+const windowPages: number[] = [];
+const start = Math.max(1, info.clampedPage - 2);
+const end = Math.min(info.totalPages, info.clampedPage + 2);
+for (let p = start; p <= end; p++) windowPages.push(p);
+const showFirst = start > 1;
+const showFirstGap = start > 2;
+const showLast = end < info.totalPages;
+const showLastGap = end < info.totalPages - 1;
+
+const nf = new Intl.NumberFormat('en-US');
+const nounPlural = info.total === 1 ? noun : `${noun}s`;
+---
+
+<nav class="flex flex-wrap items-center justify-between gap-3 text-sm" aria-label="Pagination">
+  <div class="text-base-content/70">
+    {info.total === 0 ? (
+      <span>No {nounPlural}</span>
+    ) : (
+      <span>{nf.format(info.from)}–{nf.format(info.to)} of {nf.format(info.total)} {nounPlural}</span>
+    )}
+  </div>
+
+  <div class="flex items-center gap-3">
+    {info.totalPages > 1 && (
+      <div class="join">
+        <a
+          class={`join-item btn btn-sm ${info.hasPrev ? '' : 'btn-disabled'}`}
+          href={info.hasPrev ? pageHref(current, info.clampedPage - 1) : undefined}
+          aria-label="Previous page"
+        >«</a>
+
+        {showFirst && (
+          <>
+            <a class="join-item btn btn-sm" href={pageHref(current, 1)}>1</a>
+            {showFirstGap && <span class="join-item btn btn-sm btn-disabled">…</span>}
+          </>
+        )}
+
+        {windowPages.map((p) => (
+          <a
+            class={`join-item btn btn-sm ${p === info.clampedPage ? 'btn-active' : ''}`}
+            href={pageHref(current, p)}
+            aria-current={p === info.clampedPage ? 'page' : undefined}
+          >{p}</a>
+        ))}
+
+        {showLast && (
+          <>
+            {showLastGap && <span class="join-item btn btn-sm btn-disabled">…</span>}
+            <a class="join-item btn btn-sm" href={pageHref(current, info.totalPages)}>{info.totalPages}</a>
+          </>
+        )}
+
+        <a
+          class={`join-item btn btn-sm ${info.hasNext ? '' : 'btn-disabled'}`}
+          href={info.hasNext ? pageHref(current, info.clampedPage + 1) : undefined}
+          aria-label="Next page"
+        >»</a>
+      </div>
+    )}
+
+    <div class="join" role="group" aria-label="Rows per page">
+      {perOptions.map((opt) => (
+        <a
+          class={`join-item btn btn-sm ${opt === per ? 'btn-active' : ''}`}
+          href={perHref(current, opt)}
+          aria-current={opt === per ? 'true' : undefined}
+        >{opt}</a>
+      ))}
+    </div>
+  </div>
+</nav>
