@@ -239,6 +239,20 @@
       "when": 1785173020591,
       "tag": "0033_workspace_bases",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1785867414472,
+      "tag": "0034_entitlements_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1785867500000,
+      "tag": "0035_usage_rollups_unique_idx",
+      "breakpoints": true
     }
   ]
 }

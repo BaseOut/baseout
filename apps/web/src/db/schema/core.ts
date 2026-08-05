@@ -29,6 +29,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { baseout, users } from './auth'
+import { plans } from '@baseout/db-schema'
 
 // ———————————————————————————————————————————————————————————————————————————
 // PLATFORMS
@@ -415,8 +416,11 @@ export const subscriptions = baseout.table('subscriptions', {
 // ———————————————————————————————————————————————————————————————————————————
 // SUBSCRIPTION ITEMS
 // One row per active Platform within a subscription.
-// Capabilities and limits are always resolved from Stripe product metadata
-// (platform + tier) — these fields are cached locally for fast lookups only.
+// Capabilities and limits now resolve from the DB-native entitlement catalog via
+// resolveEntitlements(orgId) keyed on plan_id (shared-entitlements D1) — NOT from
+// Stripe product metadata. The legacy `tier` column stays as a cached display
+// value during migration; it is backfilled into plan_id by shared-entitlements
+// task 2.3 and retired once all gating call sites move to the resolution lib.
 // ———————————————————————————————————————————————————————————————————————————
 
 export const subscriptionItems = baseout.table('subscription_items', {
@@ -430,8 +434,10 @@ export const subscriptionItems = baseout.table('subscription_items', {
   stripeSubscriptionItemId: text('stripe_subscription_item_id').notNull().unique(),
   stripeProductId: text('stripe_product_id').notNull(),
   stripePriceId: text('stripe_price_id').notNull(),
+  // Entitlement linkage (D1). Nullable during migration until backfill (task 2.3).
+  planId: text('plan_id').references(() => plans.id, { onDelete: 'set null' }),
   tier: text('tier').notNull(),
-  // 'starter' | 'launch' | 'growth' | 'pro' | 'business' | 'enterprise'
+  // legacy, cached display only — 'starter' | 'launch' | 'growth' | 'pro' | 'business' | 'enterprise'
   billingPeriod: text('billing_period').notNull(), // 'monthly' | 'annual'
   trialEndsAt: timestamp('trial_ends_at', { withTimezone: true }),
   trialBackupRunUsed: boolean('trial_backup_run_used').notNull().default(false),

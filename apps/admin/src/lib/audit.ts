@@ -16,6 +16,9 @@ export type AdminAction =
   // admin-error-triage: acknowledge / un-acknowledge a triage-queue error.
   | 'acknowledge_error'
   | 'unacknowledge_error'
+  // shared-entitlements 2.4 / admin-entitlements 3.2: set-or-clear a per-account
+  // feature override. Domain write = applyOverrideWrite from @baseout/db-schema.
+  | 'set_entitlement_override'
 export type AuditTargetType =
   | 'space'
   | 'connection'

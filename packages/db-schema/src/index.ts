@@ -20,3 +20,10 @@
 // externally, flip main/types/exports back to ./dist and add the build to CI.
 
 export * from './schema/auth'
+export * from './schema/entitlements'
+export * from './entitlements/values'
+export * from './entitlements/resolve'
+export * from './entitlements/override'
+export * from './entitlements/evaluate'
+export * from './entitlements/usage-eval'
+export * from './entitlements/period'
