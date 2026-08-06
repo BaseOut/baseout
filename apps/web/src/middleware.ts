@@ -14,6 +14,7 @@ import { isLocalDevHost } from "./lib/oauth/local-dev-secure";
 import { sanitizeReturnTo } from "./lib/airtable/return-to";
 import { resolveLoginCallback } from "./lib/return-to";
 import { handleAccountCreated } from "./lib/signup/account-created";
+import { handleMagicLinkRequested, handleSessionCreated } from "./lib/auth-events";
 import { handleTwoFactorEvent } from "./lib/two-factor/events";
 import { handleSsoAccountLinked } from "./lib/airtable/sso-linked";
 
@@ -169,6 +170,9 @@ const handleRequest = defineMiddleware(async (context, next) => {
     // signup-domain-association fork hook — records known-domain matches at
     // account creation so /welcome can offer join-or-create (never blocks).
     onAccountCreated: (user) => handleAccountCreated(db, user),
+    // web-auth CC7.2: authentication-event trail (login-link + sign-in).
+    onMagicLinkRequested: (input) => handleMagicLinkRequested(db, input),
+    onSessionCreated: (session) => handleSessionCreated(db, session),
     // web-auth-2fa: master-key layer for TOTP secrets + the audit/email sink.
     encryptionKey: (env as unknown as { BASEOUT_ENCRYPTION_KEY?: string })
       .BASEOUT_ENCRYPTION_KEY,

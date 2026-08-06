@@ -34,6 +34,14 @@ export interface AuthFactoryEnv extends SendEmailEnv {
   // Airtable SSO) cross. Best-effort — implementations must never throw
   // into the signup flow.
   onAccountCreated?: (user: { id: string; email: string }) => Promise<void>
+  /** SOC 2 CC7.2: a login-link was requested (authentication attempt). */
+  onMagicLinkRequested?: (input: { email: string }) => Promise<void>
+  /** SOC 2 CC7.2: a session was created (successful sign-in, any method). */
+  onSessionCreated?: (session: {
+    userId: string
+    ipAddress?: string | null
+    userAgent?: string | null
+  }) => Promise<void>
   // Master encryption key (BASEOUT_ENCRYPTION_KEY, base64 32 bytes) — the
   // at-rest layer for TOTP secrets/backup codes (web-auth-2fa; PRD §20.2).
   // When absent (fresh dev clone) the plugin-native encryption still applies.
@@ -231,6 +239,19 @@ export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
           },
         },
       },
+      session: {
+        create: {
+          // CC7.2: a session row = a successful sign-in (every method lands
+          // here). Records who authenticated + non-secret request context.
+          after: async (session) => {
+            await env.onSessionCreated?.({
+              userId: session.userId,
+              ipAddress: session.ipAddress ?? null,
+              userAgent: session.userAgent ?? null,
+            })
+          },
+        },
+      },
     },
     account: {
       // Login-token at-rest posture (PRD §20.2 spirit): the SSO access/
@@ -248,6 +269,8 @@ export function createAuth(db: DrizzleDb, env: AuthFactoryEnv) {
       ...plugins,
       magicLink({
         sendMagicLink: async ({ email, url }) => {
+          // CC7.2: record the authentication attempt — never the url/token.
+          await env.onMagicLinkRequested?.({ email })
           const rendered = renderMagicLinkEmail({ email, url })
           await sendEmail({ to: email, ...rendered }, env)
         },

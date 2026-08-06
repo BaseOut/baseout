@@ -16,6 +16,9 @@ import type { AppDb } from '../db'
 import { authAuditLog } from '../db/schema'
 
 export type AuthAuditKind =
+  // Core authentication lifecycle (SOC 2 CC7.2): login-link attempt + sign-in.
+  | 'magic_link_requested'
+  | 'session_created'
   | 'signup_domain_matched'
   | 'join_request_created'
   | 'join_request_approved'

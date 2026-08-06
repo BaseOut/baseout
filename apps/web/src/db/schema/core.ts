@@ -1163,6 +1163,7 @@ export const organizationJoinRequests = baseout.table('organization_join_request
 export const authAuditLog = baseout.table('auth_audit_log', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()`),
   kind: text('kind').notNull(),
+  // 'magic_link_requested' | 'session_created'  (CC7.2 auth lifecycle)
   // 'signup_domain_matched' | 'join_request_created' | 'join_request_approved'
   // | 'join_request_declined' | 'join_request_expired'
   // | 'sso_account_linked' | 'sso_user_created'
