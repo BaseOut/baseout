@@ -1,0 +1,27 @@
+# Dependabot — Vulnerability & Patch Management evidence (SOC 2 CC7.1).
+# Security updates (automated fix PRs for vulnerable deps) are enabled at the
+# GitHub repo level; this file adds scheduled version-update PRs so dependency
+# drift is caught proactively. See shared/internal/comp-ai-policies/
+# vulnerability-patch-management.md.
+version: 2
+updates:
+  - package-ecosystem: "npm" # covers the pnpm workspace lockfile
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: "development"
+    labels:
+      - "dependencies"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "ci"
