@@ -44,7 +44,7 @@
     "test:e2e:install": "playwright install --with-deps chromium"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "^13.1.10",
+    "@astrojs/cloudflare": "^13.7.0",
     "@astrojs/react": "^5.0.7",
     "@baseout/db-schema": "workspace:*",
     "@baseout/embed-protocol": "workspace:*",
@@ -94,7 +94,7 @@
     "typescript-eslint": "^8.59.1",
     "vite": "7.3.2",
     "vitest": "^4.1.5",
-    "wrangler": "^4.112.0"
+    "wrangler": "^4.116.0"
   },
   "overrides": {
     "vite": "~7.3.1"
