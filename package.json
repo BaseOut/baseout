@@ -32,8 +32,20 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "eslint": "^10.2.1",
+    "lat.md": "^0.11.0",
     "prettier": "^3.3.3",
     "typescript": "^5.6.0",
     "typescript-eslint": "^8.59.1"
+  },
+  "pnpm": {
+    "comment": "overrides pin transitive deps to their first patched version to clear Dependabot high CVEs (system-dep-remediation batch 2b). Same-major only. Excluded: undici (wrangler 3.x/miniflare — wrangler 3→4 upgrade follow-up), drizzle-orm (db-schema 0.36→0.45 migration follow-up), react-router (fix 7.18.0 younger than the 7-day minimumReleaseAge gate — defer), sharp (astro-pinned — verify compat separately).",
+    "overrides": {
+      "fast-uri": "^3.1.4",
+      "ip-address": "^10.3.1",
+      "hono": "^4.12.25",
+      "svgo": "^4.0.2",
+      "brace-expansion": "^5.0.7",
+      "ws@8.18.0": "^8.21.0"
+    }
   }
 }

@@ -1,4 +1,5 @@
-// SpaceDO — per-Space scheduler.
+// @lat: [[durable-objects#Durable Objects#SpaceDO]]
+// SpaceDO — per-Space scheduler + backup controller.
 //
 // Dispatches a Space's backup schedule(s) from a single Durable Object alarm.
 // server-backup-scope extends the original single-cadence design

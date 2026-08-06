@@ -1,3 +1,5 @@
+// @lat: [[auth#Auth#Route Protection]]
+// @lat: [[architecture#Architecture#Per-Request Locals]]
 import { defineMiddleware, sequence } from "astro:middleware";
 import { env } from "cloudflare:workers";
 import { applyFrameAncestors, buildFrameAncestors } from "./lib/embed/frame-headers";

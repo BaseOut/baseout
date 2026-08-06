@@ -1,3 +1,6 @@
+// @lat: [[db-schema-overview#DB Schema Overview]]
+// @lat: [[db-schema-overview#DB Schema Overview#Core Tables]]
+// @lat: [[db-schema-overview#DB Schema Overview#Naming Conventions]]
 /**
  * Baseout — Master Database Schema
  * Database: PostgreSQL (DigitalOcean)
