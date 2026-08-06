@@ -59,6 +59,18 @@ import { spacesSchemaReadHandler } from "./pages/api/internal/spaces/schema-read
 import { spacesSchemaChangelogHandler } from "./pages/api/internal/spaces/schema-changelog";
 import { spacesSchemaSearchHandler } from "./pages/api/internal/spaces/schema-search";
 import { spacesSchemaVersionsHandler } from "./pages/api/internal/spaces/schema-versions";
+// Data browser read routes (server-data-browse §3).
+import { spacesDataRecordsHandler } from "./pages/api/internal/spaces/data-records";
+import { spacesDataRecordHandler } from "./pages/api/internal/spaces/data-record";
+import { spacesDataRecordHistoryHandler } from "./pages/api/internal/spaces/data-record-history";
+import { spacesDataRecordLinksHandler } from "./pages/api/internal/spaces/data-record-links";
+import { spacesDataRecordProvenanceHandler } from "./pages/api/internal/spaces/data-record-provenance";
+import { spacesDataChangelogHandler } from "./pages/api/internal/spaces/data-changelog";
+import { spacesDataSearchHandler } from "./pages/api/internal/spaces/data-search";
+import {
+  spacesDataExportHandler,
+  spacesDataExportJobHandler,
+} from "./pages/api/internal/spaces/data-export";
 import { spacesNotificationsHandler } from "./pages/api/internal/spaces/notifications";
 import { spacesNotificationsTriageHandler } from "./pages/api/internal/spaces/notifications-triage";
 import { spacesNotificationsMuteHandler } from "./pages/api/internal/spaces/notifications-mute";
@@ -177,6 +189,25 @@ const SPACES_SCHEMA_SEARCH_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/schema-search$/;
 const SPACES_SCHEMA_VERSIONS_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/schema-versions$/;
+// Data browser read routes over the per-Space record store (server-data-browse §3).
+const SPACES_DATA_RECORDS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/tables\/([^/]+)\/records$/;
+const SPACES_DATA_RECORD_HISTORY_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/records\/([^/]+)\/history$/;
+const SPACES_DATA_RECORD_LINKS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/records\/([^/]+)\/links\/([^/]+)$/;
+const SPACES_DATA_RECORD_PROVENANCE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/records\/([^/]+)\/provenance\/([^/]+)$/;
+const SPACES_DATA_RECORD_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/records\/([^/]+)$/;
+const SPACES_DATA_CHANGELOG_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/changelog$/;
+const SPACES_DATA_SEARCH_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/search$/;
+const SPACES_DATA_EXPORT_JOB_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/export\/([^/]+)$/;
+const SPACES_DATA_EXPORT_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/export$/;
 // Webhook lifecycle + incremental-run callbacks (server-instant-webhook
 // Phases D + E).
 const WEBHOOK_SUBSCRIPTIONS_CURSOR_RE =
@@ -634,6 +665,49 @@ export default {
       const schemaVersions = SPACES_SCHEMA_VERSIONS_RE.exec(url.pathname);
       if (schemaVersions) {
         return await spacesSchemaVersionsHandler(request, env, ctx, locals, schemaVersions[1]!);
+      }
+
+      // Data browser (server-data-browse §3): keyset-paginated per-Space record
+      // reads. Handlers do their own method + backend guards.
+      const dataRecords = SPACES_DATA_RECORDS_RE.exec(url.pathname);
+      if (dataRecords) {
+        return await spacesDataRecordsHandler(request, env, ctx, locals, dataRecords[1]!, dataRecords[2]!);
+      }
+      // Record detail + history (checked before the bare-record route; both are
+      // $-anchored so order is cosmetic — a /history path can't match the bare RE).
+      const dataRecordHistory = SPACES_DATA_RECORD_HISTORY_RE.exec(url.pathname);
+      if (dataRecordHistory) {
+        return await spacesDataRecordHistoryHandler(request, env, ctx, locals, dataRecordHistory[1]!, dataRecordHistory[2]!);
+      }
+      // Linked-record expansion + cell provenance (3 captures: space, record, field).
+      const dataRecordLinks = SPACES_DATA_RECORD_LINKS_RE.exec(url.pathname);
+      if (dataRecordLinks) {
+        return await spacesDataRecordLinksHandler(request, env, ctx, locals, dataRecordLinks[1]!, dataRecordLinks[2]!, dataRecordLinks[3]!);
+      }
+      const dataRecordProvenance = SPACES_DATA_RECORD_PROVENANCE_RE.exec(url.pathname);
+      if (dataRecordProvenance) {
+        return await spacesDataRecordProvenanceHandler(request, env, ctx, locals, dataRecordProvenance[1]!, dataRecordProvenance[2]!, dataRecordProvenance[3]!);
+      }
+      const dataRecord = SPACES_DATA_RECORD_RE.exec(url.pathname);
+      if (dataRecord) {
+        return await spacesDataRecordHandler(request, env, ctx, locals, dataRecord[1]!, dataRecord[2]!);
+      }
+      const dataChangelog = SPACES_DATA_CHANGELOG_RE.exec(url.pathname);
+      if (dataChangelog) {
+        return await spacesDataChangelogHandler(request, env, ctx, locals, dataChangelog[1]!);
+      }
+      const dataSearch = SPACES_DATA_SEARCH_RE.exec(url.pathname);
+      if (dataSearch) {
+        return await spacesDataSearchHandler(request, env, ctx, locals, dataSearch[1]!);
+      }
+      // Export: job-status (GET, 2 captures) checked before the export POST route.
+      const dataExportJob = SPACES_DATA_EXPORT_JOB_RE.exec(url.pathname);
+      if (dataExportJob) {
+        return await spacesDataExportJobHandler(request, env, ctx, locals, dataExportJob[1]!, dataExportJob[2]!);
+      }
+      const dataExport = SPACES_DATA_EXPORT_RE.exec(url.pathname);
+      if (dataExport) {
+        return await spacesDataExportHandler(request, env, ctx, locals, dataExport[1]!);
       }
 
       // Inbox notifications (server-notifications-inbox): derived alert feed

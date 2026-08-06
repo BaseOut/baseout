@@ -233,6 +233,26 @@ export const attachments = pgTable('bo_at_attachments', {
   byHash: index('bo_at_attachments_hash_idx').on(t.contentHash),
 }))
 
+// ---- Data-browse export jobs (server-data-browse) ----
+// Async record-export jobs (the sync path streams straight to the response and
+// creates NO row — this table backs the async path only). `scope` = what to
+// export (base/table/filters/sort), `format` csv|json, `output_location` = the
+// storage key/URL once written. Operational table → no Airtable-entity
+// annotation/lifecycle columns.
+export const exportJobs = pgTable('bo_at_export_jobs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  scope: jsonb('scope').notNull(),
+  format: text('format').notNull(),                   // 'csv' | 'json'
+  status: text('status').notNull().default('queued'), // queued|running|succeeded|failed
+  outputLocation: text('output_location'),            // storage key/URL when succeeded
+  rowCount: integer('row_count'),
+  error: text('error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (t) => ({
+  byStatus: index('bo_at_export_jobs_status_idx').on(t.status),
+}))
+
 // Documentation lives inline as `ai_description` / `ai_overview` /
 // `description_override` columns on bo_at_bases/tables/fields/records (the
 // `annotation` set above) — no separate bo_at_documentation table. The Data

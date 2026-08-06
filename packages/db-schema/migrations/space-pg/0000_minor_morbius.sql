@@ -212,6 +212,18 @@ CREATE TABLE "bo_at_documents" (
 	"updated_at" timestamp with time zone
 );
 --> statement-breakpoint
+CREATE TABLE "bo_at_export_jobs" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"scope" jsonb NOT NULL,
+	"format" text NOT NULL,
+	"status" text DEFAULT 'queued' NOT NULL,
+	"output_location" text,
+	"row_count" integer,
+	"error" text,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"completed_at" timestamp with time zone
+);
+--> statement-breakpoint
 CREATE TABLE "bo_at_fields" (
 	"field_id" text PRIMARY KEY NOT NULL,
 	"table_id" text NOT NULL,
@@ -555,6 +567,7 @@ CREATE INDEX "bo_at_document_links_doc_idx" ON "bo_at_document_links" USING btre
 CREATE INDEX "bo_at_document_tags_doc_idx" ON "bo_at_document_tags" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX "bo_at_document_tags_target_idx" ON "bo_at_document_tags" USING btree ("target_type","target_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "bo_at_document_tags_uq" ON "bo_at_document_tags" USING btree ("document_id","target_type","target_id");--> statement-breakpoint
+CREATE INDEX "bo_at_export_jobs_status_idx" ON "bo_at_export_jobs" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "bo_at_fields_table_idx" ON "bo_at_fields" USING btree ("table_id");--> statement-breakpoint
 CREATE INDEX "bo_at_form_fields_form_idx" ON "bo_at_form_fields" USING btree ("form_id");--> statement-breakpoint
 CREATE INDEX "bo_at_form_fields_field_idx" ON "bo_at_form_fields" USING btree ("field_id");--> statement-breakpoint

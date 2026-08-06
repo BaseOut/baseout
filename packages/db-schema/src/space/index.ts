@@ -50,4 +50,9 @@ export { spacePgDdlStatementsIdempotent } from './pg-ddl-upgrade'
 // v12: Base collaborators (server-base-collaborators) — bo_at_principals,
 // bo_at_base_access, bo_at_invite_links, bo_at_base_collab_meta. Purely
 // additive (four new tables); the idempotent DDL covers existing Spaces.
-export const SPACE_SCHEMA_VERSION = 12
+// v13: Data-browse export jobs (server-data-browse) — bo_at_export_jobs (async
+// record-export queue). Purely additive; the idempotent DDL covers existing
+// Spaces. The pg_trgm value-search index is deferred until extension
+// availability is confirmed on the managed per-Space provider — record-search
+// ships the bounded-ILIKE + scan-budget fallback (`partial` flag) meanwhile.
+export const SPACE_SCHEMA_VERSION = 13

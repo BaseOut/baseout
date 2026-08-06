@@ -624,3 +624,18 @@ export const assetRefs = sqliteTable('bo_at_asset_refs', {
   byRecord: index('bo_at_asset_refs_record_idx').on(t.recordId),
   byBase: index('bo_at_asset_refs_base_idx').on(t.baseId),
 }))
+
+// ---- Data-browse export jobs (server-data-browse) ---- Mirror of pg.ts exportJobs.
+export const exportJobs = sqliteTable('bo_at_export_jobs', {
+  id: text('id').primaryKey(),
+  scope: text('scope').notNull(),                     // JSON-encoded
+  format: text('format').notNull(),
+  status: text('status').notNull().default('queued'),
+  outputLocation: text('output_location'),
+  rowCount: integer('row_count'),
+  error: text('error'),
+  createdAt: text('created_at'),
+  completedAt: text('completed_at'),
+}, (t) => ({
+  byStatus: index('bo_at_export_jobs_status_idx').on(t.status),
+}))

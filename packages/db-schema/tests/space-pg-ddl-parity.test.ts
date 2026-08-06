@@ -41,6 +41,6 @@ describe("per-Space PG DDL ↔ migration parity", () => {
     // + 4 base collaborators (server-base-collaborators: bo_at_principals,
     //   bo_at_base_access, bo_at_invite_links, bo_at_base_collab_meta).
     const creates = (SPACE_PG_DDL.match(/CREATE TABLE/g) ?? []).length;
-    expect(creates).toBe(42);
+    expect(creates).toBe(43);
   });
 });
