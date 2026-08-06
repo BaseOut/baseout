@@ -38,6 +38,9 @@ describe("schema mirrors", () => {
         "tableCount",
         "attachmentCount",
         "startedAt",
+        // server-run-reconciliation: the sweep reads createdAt as the age anchor
+        // for never-started rows. Canonical column: apps/web drizzle 0006.
+        "createdAt",
         "completedAt",
         "errorMessage",
         "triggerRunIds",
@@ -100,12 +103,17 @@ describe("schema mirrors", () => {
         "mode",
         "storageType",
         "autoAddFutureBases",
+        // web-workspace-bases: standing new-workspaces flag, read by the engine
+        // auto-enroll check at run start.
+        "autoEnrollNewWorkspaces",
         "nextScheduledAt",
         // server-backup-scope: read by SpaceDO.alarm() (scope, schemaFrequency)
         // + written by the DO (schemaNextScheduledAt).
         "scope",
         "schemaFrequency",
         "schemaNextScheduledAt",
+        // server-instant-webhook: DO webhook-poll cadence for frequency='instant'.
+        "webhookPollIntervalSeconds",
       ].sort(),
     );
   });
@@ -134,19 +142,28 @@ describe("schema mirrors", () => {
         "discoveredVia",
         "firstSeenAt",
         "lastSeenAt",
+        // server-mcp-workspaces / web-workspace-bases: Airtable workspace identity,
+        // stamped by web persistence + engine rediscovery when the MCP listing is
+        // available. Canonical migration owned by web-workspace-bases.
+        "workspaceId",
+        "workspaceName",
       ].sort(),
     );
   });
 
-  it("subscriptions exposes the columns the engine reads (workspace rediscovery tier resolver)", () => {
+  it("subscriptions exposes the columns the engine reads (workspace rediscovery tier resolver + usage anchor)", () => {
+    // shared-entitlements 3.1/D6: createdAt is the monthly-anniversary anchor for
+    // usage metering, read at run-complete finalization.
     expect(Object.keys(getTableColumns(subscriptions)).sort()).toEqual(
-      ["id", "organizationId", "status"].sort(),
+      ["id", "organizationId", "status", "createdAt"].sort(),
     );
   });
 
-  it("subscription_items exposes the columns the engine reads (workspace rediscovery tier resolver)", () => {
+  it("subscription_items exposes the columns the engine reads (workspace rediscovery tier resolver + entitlement resolution)", () => {
+    // shared-entitlements 2.3/4.2: planId is read when resolving DB-native
+    // effective entitlements (the migration off `tier`).
     expect(Object.keys(getTableColumns(subscriptionItems)).sort()).toEqual(
-      ["id", "subscriptionId", "platformId", "tier"].sort(),
+      ["id", "subscriptionId", "platformId", "tier", "planId"].sort(),
     );
   });
 });
