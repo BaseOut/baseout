@@ -122,3 +122,68 @@ export async function provisionSpaceDatabase(
     return { ok: false, code: "provision_failed", message };
   }
 }
+
+// ── Deprovision (cleanup fan-out on Space deletion) ──────────────────────────
+// system-per-space-db §6.2 (design §"cleanup job owns per-Space teardown"). The
+// engine owns the per-Space DB lifecycle, so teardown runs here: drop the
+// managed_pg schema (DROP SCHEMA IF EXISTS … CASCADE — idempotent) then delete
+// the control-plane space_databases row. Injected I/O so it's unit-tested with
+// fakes; the PG-backed deps are wired by the DELETE branch of the
+// provision-database route.
+//
+// d1/byodb teardown is deferred with those backends (needs the Cloudflare D1
+// API token / customer DB creds); a row with no locator (never provisioned) is
+// dropped without a backend call. The caller for a real Space-delete flow lives
+// in apps/web (master DB owns Spaces) — that cross-app wire is the follow-up.
+
+export interface DeprovisionDeps {
+  /** Current backend + locator for the Space, or null if there is no row. */
+  getRow(spaceId: string): Promise<{ backend: string; locator: string | null } | null>;
+  /** Drop the managed_pg schema-per-Space (idempotent DROP SCHEMA … CASCADE). */
+  dropManagedPg(spaceId: string): Promise<void>;
+  /** Delete the space_databases control-plane row. */
+  deleteRow(spaceId: string): Promise<void>;
+}
+
+export type DeprovisionResult =
+  | { ok: true; status: "deprovisioned" | "not_found" }
+  | {
+      ok: false;
+      code: "backend_not_implemented" | "deprovision_failed";
+      message?: string;
+    };
+
+export async function deprovisionSpaceDatabase(
+  deps: DeprovisionDeps,
+  input: { spaceId: string },
+): Promise<DeprovisionResult> {
+  const row = await deps.getRow(input.spaceId);
+  if (!row) return { ok: true, status: "not_found" }; // idempotent: nothing to tear down
+
+  // Never provisioned (pending/error with no locator): just drop the row.
+  if (row.locator === null) {
+    await deps.deleteRow(input.spaceId);
+    return { ok: true, status: "deprovisioned" };
+  }
+
+  if (row.backend !== "managed_pg") {
+    // d1/byodb teardown needs the backend's own credentials — deferred.
+    return {
+      ok: false,
+      code: "backend_not_implemented",
+      message: `teardown for backend '${row.backend}' is not implemented`,
+    };
+  }
+
+  try {
+    await deps.dropManagedPg(input.spaceId);
+    await deps.deleteRow(input.spaceId);
+    return { ok: true, status: "deprovisioned" };
+  } catch (err) {
+    return {
+      ok: false,
+      code: "deprovision_failed",
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+}

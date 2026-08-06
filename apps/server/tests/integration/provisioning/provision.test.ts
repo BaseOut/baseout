@@ -1,7 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { SPACE_SCHEMA_VERSION } from "@baseout/db-schema/space";
 import {
+  deprovisionSpaceDatabase,
   provisionSpaceDatabase,
+  type DeprovisionDeps,
   type SpaceDbProvisionWriter,
 } from "../../../src/lib/provisioning/provision";
 
@@ -119,5 +121,66 @@ describe("provisionSpaceDatabase", () => {
     expect(res).toEqual({ ok: false, code: "backend_not_implemented" });
     expect(state.calls).toEqual(["getStatus", "beginProvisioning", "markError"]);
     expect(state.lastError?.message).toContain("backend_not_implemented:d1");
+  });
+});
+
+// In-memory fake for the teardown deps: records the call sequence.
+function fakeDeprovision(row: { backend: string; locator: string | null } | null, dropThrows?: string) {
+  const state = { calls: [] as string[] };
+  const deps: DeprovisionDeps = {
+    async getRow() {
+      state.calls.push("getRow");
+      return row;
+    },
+    async dropManagedPg() {
+      state.calls.push("dropManagedPg");
+      if (dropThrows) throw new Error(dropThrows);
+    },
+    async deleteRow() {
+      state.calls.push("deleteRow");
+    },
+  };
+  return { state, deps };
+}
+
+describe("deprovisionSpaceDatabase", () => {
+  it("is idempotent: no row → not_found, no teardown calls", async () => {
+    const { state, deps } = fakeDeprovision(null);
+    const res = await deprovisionSpaceDatabase(deps, { spaceId: SPACE_ID });
+    expect(res).toEqual({ ok: true, status: "not_found" });
+    expect(state.calls).toEqual(["getRow"]);
+  });
+
+  it("managed_pg: drops the schema then deletes the row", async () => {
+    const { state, deps } = fakeDeprovision({ backend: "managed_pg", locator: "bo_space_abc" });
+    const res = await deprovisionSpaceDatabase(deps, { spaceId: SPACE_ID });
+    expect(res).toEqual({ ok: true, status: "deprovisioned" });
+    expect(state.calls).toEqual(["getRow", "dropManagedPg", "deleteRow"]);
+  });
+
+  it("never-provisioned row (no locator): deletes the row without a backend drop", async () => {
+    const { state, deps } = fakeDeprovision({ backend: "managed_pg", locator: null });
+    const res = await deprovisionSpaceDatabase(deps, { spaceId: SPACE_ID });
+    expect(res).toEqual({ ok: true, status: "deprovisioned" });
+    expect(state.calls).toEqual(["getRow", "deleteRow"]); // no dropManagedPg
+  });
+
+  it("non-managed backend with a locator: teardown deferred (501), nothing dropped", async () => {
+    const { state, deps } = fakeDeprovision({ backend: "d1", locator: "d1-db-123" });
+    const res = await deprovisionSpaceDatabase(deps, { spaceId: SPACE_ID });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("backend_not_implemented");
+    expect(state.calls).toEqual(["getRow"]); // no drop, no delete
+  });
+
+  it("surfaces a drop failure as deprovision_failed and does NOT delete the row", async () => {
+    const { state, deps } = fakeDeprovision({ backend: "managed_pg", locator: "bo_space_abc" }, "drop boom");
+    const res = await deprovisionSpaceDatabase(deps, { spaceId: SPACE_ID });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.code).toBe("deprovision_failed");
+      expect(res.message).toBe("drop boom");
+    }
+    expect(state.calls).toEqual(["getRow", "dropManagedPg"]); // deleteRow not reached
   });
 });

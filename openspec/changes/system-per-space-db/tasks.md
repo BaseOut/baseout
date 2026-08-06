@@ -53,8 +53,8 @@
 ## 6. Migration + lifecycle ops
 
 - [ ] 6.1 Backend migration job (D1↔managed_pg↔byodb) — DEFERRED.
-- [~] 6.2 Cleanup fan-out: on Space/run deletion, tear down the per-Space rows/DB. _(`dropManagedPgSchema` helper shipped; NOT yet wired to a Space-deletion path.)_
-- [ ] 6.3 Prune `bo_at_record_updates` by retention — DEFERRED (ship after the core model).
+- [~] 6.2 Cleanup fan-out: on Space/run deletion, tear down the per-Space rows/DB. _(Engine teardown SHIPPED: pure `deprovisionSpaceDatabase` orchestrator (drop managed_pg schema → delete `space_databases` row; idempotent; d1/byodb teardown deferred with those backends) wired as `DELETE /api/internal/spaces/:spaceId/provision-database` + 5 unit tests. REMAINING: the web Space-delete flow that CALLS this route — cross-app, so a `shared-*` follow-up; web currently has no Space-delete endpoint.)_
+- [~] 6.3 Prune `bo_at_record_updates` by retention. _(Mechanism SHIPPED: pure `recordUpdatesPruneCutoff(now, days)` (no-op guard on ≤0/∞ so a bad window never wipes history) + `pruneRecordUpdates(tx, cutoffIso)` DELETE over runs completed before the cutoff (in-flight runs never pruned) + rendered-SQL tests. REMAINING: the per-Space cron pass that invokes it, and the effective-retention SOURCE — wired to `resolveEntitlements` by shared-entitlements §4.4.)_
 
 ## 7. Reconcile superseded specs — DONE
 

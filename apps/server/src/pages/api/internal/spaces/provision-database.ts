@@ -14,12 +14,18 @@
 //   backend_not_implemented                  → 501
 //   provision_failed                         → 500
 
+import { eq } from "drizzle-orm";
 import type { AppLocals, Env } from "../../../../env";
-import { provisionSpaceDatabase } from "../../../../lib/provisioning/provision";
+import {
+  deprovisionSpaceDatabase,
+  provisionSpaceDatabase,
+} from "../../../../lib/provisioning/provision";
 import {
   applyManagedPgSchema,
+  dropManagedPgSchema,
   drizzleSpaceDbWriter,
 } from "../../../../lib/provisioning/provision-pg";
+import { spaceDatabases } from "../../../../db/schema";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -38,6 +44,40 @@ export async function spacesProvisionDatabaseHandler(
   locals: AppLocals,
   spaceId: string,
 ): Promise<Response> {
+  // DELETE = deprovision (cleanup fan-out on Space deletion, system-per-space-db
+  // §6.2): drop the managed_pg schema + delete the control-plane row. Called by
+  // the web Space-delete flow (that cross-app wire is the follow-up).
+  if (request.method === "DELETE") {
+    if (!UUID_RE.test(spaceId)) {
+      return jsonResponse({ error: "invalid_request" }, 400);
+    }
+    const { db, sql } = locals.getMasterDb();
+    const result = await deprovisionSpaceDatabase(
+      {
+        async getRow(id) {
+          const [row] = await db
+            .select({ backend: spaceDatabases.backend, locator: spaceDatabases.pgLocator })
+            .from(spaceDatabases)
+            .where(eq(spaceDatabases.spaceId, id))
+            .limit(1);
+          return row ? { backend: row.backend, locator: row.locator } : null;
+        },
+        async dropManagedPg(id) {
+          await dropManagedPgSchema(sql, id);
+        },
+        async deleteRow(id) {
+          await db.delete(spaceDatabases).where(eq(spaceDatabases.spaceId, id));
+        },
+      },
+      { spaceId },
+    );
+    if (result.ok) {
+      return jsonResponse({ ok: true, status: result.status }, 200);
+    }
+    const status = result.code === "backend_not_implemented" ? 501 : 500;
+    return jsonResponse({ ok: false, error: result.code, message: result.message }, status);
+  }
+
   if (request.method !== "POST") {
     return jsonResponse({ error: "method_not_allowed" }, 405);
   }
