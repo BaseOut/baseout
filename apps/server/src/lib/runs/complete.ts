@@ -69,6 +69,13 @@ export interface ProcessRunCompleteInput {
   tablesProcessed: number;
   recordsProcessed: number;
   attachmentsProcessed: number;
+  /**
+   * File bytes this base put under management (shared-entitlements 3.1).
+   * Carried through so the route can ingest the Space's `file_storage_gb`
+   * meter; processRunComplete itself ignores it. Optional — an older workflows
+   * build omits it (treated as 0).
+   */
+  fileBytesProcessed?: number;
   errorMessage?: string;
   /**
    * Per-table breakdown from the Trigger.dev backup-base task. When present,

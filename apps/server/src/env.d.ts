@@ -11,6 +11,14 @@ export interface Env {
   /** Hyperdrive binding — used in deployed envs (production / staging). Optional locally. */
   HYPERDRIVE?: Hyperdrive;
   /**
+   * Cloudflare account + a D1-read API token — used by the DB-size meter
+   * (shared-entitlements 3.2) to read a D1 Space's `file_size` via the CF REST
+   * API (PRAGMAs unsupported). Optional: absent until the token is provisioned,
+   * in which case D1 DB-size measurement returns null (managed_pg is unaffected).
+   */
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  CLOUDFLARE_D1_API_TOKEN?: string;
+  /**
    * AES-256-GCM key (base64-encoded 32 bytes) — must match apps/web.
    * The engine decrypts connection/storage tokens and re-encrypts on BYOS
    * storage-destination refresh paths.
@@ -109,6 +117,15 @@ export interface Env {
    * Set in .dev.vars for the dev Worker ONLY — never staging/production.
    */
   VIEW_CAPTURE_OVERRIDE?: string;
+  /**
+   * Entitlement-enforcement flag (shared-entitlements 4.3). Exactly "1" turns
+   * usage evaluation from warn-only into enforcing (100% crossing selects the
+   * `enforced` state + fires the enforcement notification instead of a second
+   * warning). Default/unset = warn-only, so metering + notification-state
+   * dedupe can land safely ahead of the cutover. Read at the run-complete
+   * usage-evaluation call site (src/pages/api/internal/runs/complete.ts).
+   */
+  ENTITLEMENT_ENFORCEMENT?: string;
 }
 
 export interface AppLocals {

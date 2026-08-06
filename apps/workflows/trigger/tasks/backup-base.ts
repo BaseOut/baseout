@@ -427,6 +427,14 @@ export interface BackupBaseResult {
   tablesProcessed: number;
   recordsProcessed: number;
   attachmentsProcessed: number;
+  /**
+   * File bytes this run put under management (shared-entitlements 3.1) —
+   * internal CSV snapshot bytes plus NEWLY-written attachment bytes. Dedup
+   * skips are excluded (their bytes are already stored). Rolled into the
+   * Space's `file_storage_gb` stock meter by the engine's completion
+   * ingestion. 0 on schema-only and early-fail paths.
+   */
+  fileBytes: number;
   errorMessage?: string;
   /** Per-table breakdown accumulated during the table loop. Present on
    * succeeded / trial_truncated / trial_complete; absent on early-exit
@@ -493,6 +501,10 @@ export interface BackupBaseResult {
 export interface CommentsSyncResult {
   commentAttachments?: { pending: PendingCommentAttachment[] };
 }
+
+// Reused for CSV byte accounting (shared-entitlements 3.1). UTF-8 byte length
+// is what actually lands in storage, so it's the honest file-size unit.
+const utf8 = new TextEncoder();
 
 const TRIAL_TABLE_CAP = 5;
 const TRIAL_RECORD_CAP = 1000;
@@ -608,6 +620,7 @@ export async function runBackupBase(
 
   let tablesProcessed = 0;
   let recordsProcessed = 0;
+  let fileBytes = 0;
   let trialComplete = false;
   const tableDetail: BackupTableDetail[] = [];
 
@@ -893,6 +906,7 @@ export async function runBackupBase(
         tablesProcessed: tables.length,
         recordsProcessed: 0,
         attachmentsProcessed: 0,
+        fileBytes: 0,
         tableDetail: tables.map((t) => ({
           tableId: t.id,
           tableName: t.name,
@@ -983,6 +997,14 @@ export async function runBackupBase(
             );
             out[name] = cellResult.keys.join(";");
             attachmentsProcessed += cellResult.downloaded;
+            // File-storage meter (shared-entitlements 3.1): count bytes we
+            // actually wrote this run. Dedup skips reference already-stored
+            // bytes, so they add no net storage under management.
+            if (cellResult.attachments) {
+              for (const m of cellResult.attachments) {
+                if (!m.dedupSkipped) fileBytes += m.sizeBytes ?? 0;
+              }
+            }
             // Media-metadata tap (workflows-media-metadata Decision 1):
             // emission fires per processed attachment — writes AND
             // dedup-skips (a skip is a new ref on an existing asset).
@@ -1026,6 +1048,10 @@ export async function runBackupBase(
       });
 
       await (deps.writeCsv ?? ((k, c) => writer.writeCsv(k, c)))(key, csv);
+
+      // File-storage meter (shared-entitlements 3.1): the internal CSV snapshot
+      // is the primary file-bytes contribution for every run.
+      fileBytes += utf8.encode(csv).byteLength;
 
       // Phase 10d: fire-and-forget progress event after the table CSV lands
       // on disk. Bumps backup_runs.{record_count,table_count} so the
@@ -1184,6 +1210,7 @@ export async function runBackupBase(
       tablesProcessed,
       recordsProcessed,
       attachmentsProcessed,
+      fileBytes,
       tableDetail,
       ...(interfacePagesOutcome ? { interfacePages: interfacePagesOutcome } : {}),
       ...(automationsOutcome ? { automations: automationsOutcome } : {}),
@@ -1220,6 +1247,7 @@ export async function runBackupBase(
       tablesProcessed: tables,
       recordsProcessed: records,
       attachmentsProcessed: 0,
+      fileBytes: 0,
       errorMessage,
     };
   }

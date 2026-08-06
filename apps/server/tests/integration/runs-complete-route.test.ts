@@ -165,6 +165,21 @@ describe("parseRunCompleteBody — incremental shape", () => {
     expect(parsed!.incremental).toBeUndefined();
   });
 
+  it("parses fileBytesProcessed when present (shared-entitlements 3.1)", () => {
+    const parsed = parseRunCompleteBody({ ...VALID_BODY, fileBytesProcessed: 5_000_000 });
+    expect(parsed!.input).toMatchObject({ recordsProcessed: 42, fileBytesProcessed: 5_000_000 });
+  });
+
+  it("omits fileBytesProcessed when absent (older workflows build)", () => {
+    const parsed = parseRunCompleteBody(VALID_BODY);
+    expect(parsed!.input.fileBytesProcessed).toBeUndefined();
+  });
+
+  it("rejects a malformed fileBytesProcessed rather than coercing", () => {
+    expect(parseRunCompleteBody({ ...VALID_BODY, fileBytesProcessed: -1 })).toBeNull();
+    expect(parseRunCompleteBody({ ...VALID_BODY, fileBytesProcessed: 1.5 })).toBeNull();
+  });
+
   it("maps the incremental counters: records = created+updated+deleted+reconciled, tables/attachments 0", () => {
     const parsed = parseRunCompleteBody(INCREMENTAL_BODY);
     expect(parsed).not.toBeNull();

@@ -432,6 +432,10 @@ async function postCompletion(
     tablesProcessed: result.tablesProcessed,
     recordsProcessed: result.recordsProcessed,
     attachmentsProcessed: result.attachmentsProcessed,
+    // File-storage meter (shared-entitlements 3.1): the bytes this run put
+    // under management, ingested into the Space's `file_storage_gb` rollup.
+    // Additive — an older engine ignores the field.
+    fileBytesProcessed: result.fileBytes,
     ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
     // Interface-capture outcome (workflows-mcp-interface-pages): additive —
     // today it lands in Trigger.dev run output + this POST body (engine
@@ -609,6 +613,7 @@ export const backupBaseTask = task({
         tablesProcessed: 0,
         recordsProcessed: 0,
         attachmentsProcessed: 0,
+        fileBytes: 0,
         errorMessage,
       };
     }

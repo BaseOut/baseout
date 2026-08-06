@@ -34,13 +34,18 @@
 //   run_not_found                    → 404
 //   invalid request body             → 400  { error: 'invalid_request' }
 
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql, sum } from "drizzle-orm";
 import type { AppLocals, Env } from "../../../../env";
 import {
   airtableWebhookSubscriptions,
   backupRuns,
   backupRunBases,
   backupRunTables,
+  spaceDatabases,
+  spaces,
+  subscriptions,
+  usageNotificationState,
+  usageRollups,
 } from "../../../../db/schema";
 import {
   processRunComplete,
@@ -48,6 +53,15 @@ import {
   type ProcessRunCompleteInput,
   type ProcessRunCompleteResult,
 } from "../../../../lib/runs/complete";
+import { ingestRunUsage, type UsageIngestDeps } from "../../../../lib/runs/usage-ingest";
+import { ingestSpaceDbSize, type DbSizeIngestDeps } from "../../../../lib/runs/db-size";
+import { resolveEntitlements } from "../../../../lib/entitlements/resolve";
+import {
+  evaluateUsageForOrg,
+  type UsageEnforcementDeps,
+} from "../../../../lib/entitlements/usage-enforcement";
+import { createSkeletonNotifier } from "../../../../lib/entitlements/notify";
+import { currentMonthlyPeriod, type UsageState } from "@baseout/db-schema";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -186,6 +200,12 @@ function parseSnapshotBody(r: Record<string, unknown>): ProcessRunCompleteInput 
   if (!isNonNegativeInt(r.tablesProcessed)) return null;
   if (!isNonNegativeInt(r.recordsProcessed)) return null;
   if (!isNonNegativeInt(r.attachmentsProcessed)) return null;
+  // File-storage meter (shared-entitlements 3.1). Optional + additive — an
+  // older workflows build omits it. Reject a malformed value rather than
+  // silently coercing.
+  if (r.fileBytesProcessed !== undefined && !isNonNegativeInt(r.fileBytesProcessed)) {
+    return null;
+  }
   if (r.errorMessage !== undefined && typeof r.errorMessage !== "string") {
     return null;
   }
@@ -215,6 +235,9 @@ function parseSnapshotBody(r: Record<string, unknown>): ProcessRunCompleteInput 
     tablesProcessed: r.tablesProcessed,
     recordsProcessed: r.recordsProcessed,
     attachmentsProcessed: r.attachmentsProcessed,
+    ...(isNonNegativeInt(r.fileBytesProcessed)
+      ? { fileBytesProcessed: r.fileBytesProcessed }
+      : {}),
     ...(typeof r.errorMessage === "string"
       ? { errorMessage: r.errorMessage }
       : {}),
@@ -223,9 +246,253 @@ function parseSnapshotBody(r: Record<string, unknown>): ProcessRunCompleteInput 
   };
 }
 
+/** The per-request masterDb Drizzle instance, typed off App.Locals. */
+type MasterDb = ReturnType<AppLocals["getMasterDb"]>["db"];
+
+// ── Shared usage-rollup wiring (shared-entitlements 3.1 + 3.2) ───────────────
+// resolveOrgAnchor + the rollup upsert are used by BOTH the per-base record/
+// file ingest (3.1, `add`) and the DB-size level write (3.2, `set`).
+
+/** Resolve a Space's Organization + monthly-anniversary anchor (D6). */
+async function resolveOrgAnchor(
+  db: MasterDb,
+  spaceId: string,
+): Promise<{ organizationId: string; anchor: Date } | null> {
+  const rows = await db
+    .select({
+      organizationId: spaces.organizationId,
+      anchor: subscriptions.createdAt,
+    })
+    .from(spaces)
+    .leftJoin(
+      subscriptions,
+      and(
+        eq(subscriptions.organizationId, spaces.organizationId),
+        inArray(subscriptions.status, ["active", "trialing"]),
+      ),
+    )
+    .where(eq(spaces.id, spaceId))
+    .limit(1);
+  const row = rows[0];
+  // No org, or no active/trialing subscription to anchor the monthly cycle →
+  // can't attribute a period. Skip; the reconciliation sweep re-derives later.
+  if (!row || !row.anchor) return null;
+  return { organizationId: row.organizationId, anchor: row.anchor };
+}
+
+/**
+ * Atomically write one Space-scoped rollup for a meter+period. `add` increments
+ * (`used = used + value`) for the per-base best-effort counters; `set` replaces
+ * (`used = value`) for an absolute measurement like DB size. Date params MUST
+ * be ISO strings — a bare Date serializes as toString() text PG rejects (the
+ * deployed-500 trap in reference_postgresjs_date_precision). Conflict target
+ * mirrors the 0035 unique-index expression exactly.
+ */
+async function upsertRollup(
+  db: MasterDb,
+  row: {
+    organizationId: string;
+    spaceId: string;
+    featureSlug: string;
+    meterKind: string;
+    periodStart: Date;
+    periodEnd: Date;
+    value: number;
+  },
+  mode: "add" | "set",
+): Promise<void> {
+  const nextUsed =
+    mode === "add"
+      ? sql`baseout.usage_rollups.used + ${row.value}`
+      : sql`${row.value}`;
+  await db.execute(sql`
+    INSERT INTO baseout.usage_rollups
+      (organization_id, feature_slug, space_id, period_start, period_end, used, meter_kind)
+    VALUES (
+      ${row.organizationId}, ${row.featureSlug}, ${row.spaceId},
+      ${row.periodStart.toISOString()}::timestamptz,
+      ${row.periodEnd.toISOString()}::timestamptz,
+      ${row.value}, ${row.meterKind}
+    )
+    ON CONFLICT (organization_id, feature_slug, (COALESCE(space_id, '')), period_start)
+    DO UPDATE SET used = ${nextUsed}, modified_at = NOW()
+  `);
+}
+
+/** Per-base record + file-byte ingestion deps (shared-entitlements 3.1). */
+function usageIngestDeps(db: MasterDb): UsageIngestDeps {
+  return {
+    resolveOrgAnchor: (spaceId) => resolveOrgAnchor(db, spaceId),
+    upsertRollupDelta: (row) =>
+      upsertRollup(db, { ...row, value: row.delta }, "add"),
+  };
+}
+
+/** SUM of relation sizes in a per-Space PG schema — the managed_pg DB-size
+ *  measure (schema-per-Space topology; see db-size.ts). schemaName is a bound
+ *  param, so injection-safe regardless of its provenance. */
+async function measurePgSchemaBytes(
+  db: MasterDb,
+  schemaName: string,
+): Promise<number | null> {
+  const rows = await db.execute(sql`
+    SELECT COALESCE(SUM(pg_total_relation_size(c.oid)), 0)::bigint AS bytes
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = ${schemaName} AND c.relkind IN ('r', 'm')
+  `);
+  const raw = (rows as unknown as Array<{ bytes: string | number }>)[0]?.bytes;
+  const bytes = Number(raw ?? 0);
+  return Number.isFinite(bytes) ? bytes : null;
+}
+
+/** D1 database `file_size` via the Cloudflare REST API (shared-entitlements
+ *  3.2). Returns null when the account/token isn't provisioned or on any API
+ *  error — DB-size metering is best-effort. */
+async function measureD1Bytes(
+  env: Env,
+  databaseId: string,
+): Promise<number | null> {
+  const accountId = env.CLOUDFLARE_ACCOUNT_ID;
+  const token = env.CLOUDFLARE_D1_API_TOKEN;
+  if (!accountId || !token) return null;
+  try {
+    const res = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}`,
+      { headers: { authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as { result?: { file_size?: number } };
+    const size = body.result?.file_size;
+    return typeof size === "number" && Number.isFinite(size) ? size : null;
+  } catch {
+    return null;
+  }
+}
+
+/** DB-size measurement + level-write deps (shared-entitlements 3.2). */
+function dbSizeIngestDeps(db: MasterDb, env: Env): DbSizeIngestDeps {
+  return {
+    getSpaceDb: async (spaceId) => {
+      const rows = await db
+        .select({
+          backend: spaceDatabases.backend,
+          status: spaceDatabases.status,
+          pgLocator: spaceDatabases.pgLocator,
+          d1DatabaseId: spaceDatabases.d1DatabaseId,
+        })
+        .from(spaceDatabases)
+        .where(eq(spaceDatabases.spaceId, spaceId))
+        .limit(1);
+      return rows[0] ?? null;
+    },
+    measurers: {
+      measurePgSchemaBytes: (schemaName) => measurePgSchemaBytes(db, schemaName),
+      measureD1Bytes: (databaseId) => measureD1Bytes(env, databaseId),
+    },
+    resolveOrgAnchor: (spaceId) => resolveOrgAnchor(db, spaceId),
+    upsertRollupLevel: (row) =>
+      upsertRollup(db, { ...row, value: row.used }, "set"),
+  };
+}
+
+// ── Usage-enforcement wiring (shared-entitlements 4.2, design D7) ─────────────
+// The stock/level meters a snapshot completion can move: 3.1 increments the two
+// per-base meters; 3.2 sets database_size_gb once on finalization. We evaluate
+// the same superset every time — evaluateUsage skips any slug with no rollup row
+// (not returned by readUsage) and any non-limit feature, so a stale/absent meter
+// is a silent no-op, never a false alarm.
+const STOCK_METER_SLUGS = [
+  "records_under_management",
+  "file_storage_gb",
+  "database_size_gb",
+];
+
+/**
+ * Drizzle-backed deps for `evaluateUsageForOrg` (the pure warn-90 / enforce-100
+ * state machine, unit-tested). Resolves the org's effective entitlements, reads
+ * the org-summed current-period usage + persisted notification state for the
+ * affected meters, upserts only the states that moved, and fires the skeleton
+ * notifier on transitions only. `ENTITLEMENT_ENFORCEMENT` gates warn-only vs
+ * enforcing (default off). Date params in the raw writeStates upsert are ISO
+ * strings — a bare Date serializes as toString() text PG rejects (the deployed
+ * -500 trap in reference_postgresjs_date_precision); the query-builder reads
+ * bind Date params directly, which is safe.
+ */
+function usageEnforcementDeps(db: MasterDb, env: Env): UsageEnforcementDeps {
+  return {
+    resolveEntitlements: (orgId) =>
+      resolveEntitlements(db, orgId).then((r) => r?.entitlements ?? null),
+    readUsage: async (orgId, featureSlugs, period) => {
+      if (featureSlugs.length === 0) return [];
+      // Org total per meter = SUM of the per-Space rollups for this period.
+      const rows = await db
+        .select({
+          featureSlug: usageRollups.featureSlug,
+          used: sum(usageRollups.used),
+        })
+        .from(usageRollups)
+        .where(
+          and(
+            eq(usageRollups.organizationId, orgId),
+            inArray(usageRollups.featureSlug, featureSlugs),
+            eq(usageRollups.periodStart, period.start),
+          ),
+        )
+        .groupBy(usageRollups.featureSlug);
+      return rows.map((r) => ({
+        featureSlug: r.featureSlug,
+        used: Number(r.used ?? 0),
+      }));
+    },
+    readStates: async (orgId, featureSlugs, periodStart) => {
+      if (featureSlugs.length === 0) return [];
+      const rows = await db
+        .select({
+          featureSlug: usageNotificationState.featureSlug,
+          state: usageNotificationState.state,
+        })
+        .from(usageNotificationState)
+        .where(
+          and(
+            eq(usageNotificationState.organizationId, orgId),
+            inArray(usageNotificationState.featureSlug, featureSlugs),
+            eq(usageNotificationState.periodStart, periodStart),
+          ),
+        );
+      return rows.map((r) => ({
+        featureSlug: r.featureSlug,
+        state: r.state as UsageState,
+      }));
+    },
+    writeStates: async (orgId, periodStart, changed, at) => {
+      // One upsert per moved feature — `changed` is at most STOCK_METER_SLUGS.
+      // ON CONFLICT targets the named unique constraint the web migration owns.
+      for (const c of changed) {
+        await db.execute(sql`
+          INSERT INTO baseout.usage_notification_state
+            (organization_id, feature_slug, state, period_start, last_transition_at)
+          VALUES (
+            ${orgId}, ${c.featureSlug}, ${c.next},
+            ${periodStart.toISOString()}::timestamptz,
+            ${at.toISOString()}::timestamptz
+          )
+          ON CONFLICT ON CONSTRAINT usage_notification_state_org_feature_period_unique
+          DO UPDATE SET
+            state = ${c.next},
+            last_transition_at = ${at.toISOString()}::timestamptz,
+            modified_at = NOW()
+        `);
+      }
+    },
+    notifier: createSkeletonNotifier(),
+    enforcementEnabled: env.ENTITLEMENT_ENFORCEMENT === "1",
+  };
+}
+
 export async function runsCompleteHandler(
   request: Request,
-  _env: Env,
+  env: Env,
   _ctx: ExecutionContext,
   locals: AppLocals,
   runId: string,
@@ -370,6 +637,78 @@ export async function runsCompleteHandler(
         // ignored — the next reconcile-cadence check simply fires again.
       }
     }
+
+    // Usage metering (shared-entitlements 3.1 + 3.2). Snapshot completions only
+    // (incremental deltas are the sweep's job), and never on a noop idempotent
+    // replay (which would double-count). Everything here is best-effort — a
+    // metering failure must not turn a recorded completion into a wire error;
+    // the reconciliation sweep (task 3.5) is the authority that heals drift.
+    if (result.kind !== "noop" && !parsed.incremental) {
+      let spaceId: string | undefined;
+      try {
+        const runRows = await db
+          .select({ spaceId: backupRuns.spaceId })
+          .from(backupRuns)
+          .where(eq(backupRuns.id, runId))
+          .limit(1);
+        spaceId = runRows[0]?.spaceId;
+      } catch {
+        // ignore — nothing to attribute against.
+      }
+      if (spaceId) {
+        // 3.1: this base's records + file bytes → Space stock rollups (increment).
+        try {
+          await ingestRunUsage(
+            {
+              spaceId,
+              recordsProcessed: input.recordsProcessed,
+              fileBytesProcessed: input.fileBytesProcessed ?? 0,
+              now: new Date(),
+            },
+            usageIngestDeps(db),
+          );
+        } catch {
+          // best-effort; the sweep re-derives exact levels.
+        }
+        // 3.2: measure the Space's DB size ONCE, at run finalization (the last
+        // base has reported and the row flipped terminal) → set the level.
+        if (result.kind === "finalized") {
+          try {
+            await ingestSpaceDbSize(
+              { spaceId, now: new Date() },
+              dbSizeIngestDeps(db, env),
+            );
+          } catch {
+            // best-effort; the sweep re-derives exact levels.
+          }
+        }
+        // 4.2: now that this base's meters have landed, evaluate warn-90 /
+        // enforce-100 for the org's affected stock meters and dispatch skeleton
+        // notifications on transitions only. Behind ENTITLEMENT_ENFORCEMENT
+        // (default off → warn-only). Best-effort — a metering/notification
+        // failure must never turn a recorded completion into a wire error; the
+        // reconciliation sweep (task 3.5) re-evaluates. Runs per non-noop
+        // snapshot completion (D7: evaluation runs wherever usage changes land).
+        try {
+          const anchor = await resolveOrgAnchor(db, spaceId);
+          if (anchor) {
+            const { start, end } = currentMonthlyPeriod(anchor.anchor, new Date());
+            await evaluateUsageForOrg(
+              {
+                organizationId: anchor.organizationId,
+                featureSlugs: STOCK_METER_SLUGS,
+                period: { start, end },
+                now: new Date(),
+              },
+              usageEnforcementDeps(db, env),
+            );
+          }
+        } catch {
+          // best-effort; the sweep re-evaluates exact levels + states.
+        }
+      }
+    }
+
     if (result.kind === "noop") {
       return jsonResponse({ ok: true, kind: "noop" }, statusFor(result));
     }
