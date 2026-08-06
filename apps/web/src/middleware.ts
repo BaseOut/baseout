@@ -10,6 +10,7 @@ import {
   SESSION_TTL_MS,
 } from "./lib/session-cache";
 import { rewriteLocalhostTrapUrl } from "./lib/oauth/canonical-dev-origin";
+import { isLocalDevHost } from "./lib/oauth/local-dev-secure";
 import { sanitizeReturnTo } from "./lib/airtable/return-to";
 import { resolveLoginCallback } from "./lib/return-to";
 import { handleAccountCreated } from "./lib/signup/account-created";
@@ -136,11 +137,21 @@ function resolveDbUrl(): string {
 // every in-iframe navigation response needs it or the browser blanks the
 // frame mid-session; and with no header at all (the pre-embed state) any
 // site could frame any Baseout page. shared-embed-protocol design Decision 7.
-const embedFrameHeaders = defineMiddleware(async (_context, next) => {
+const embedFrameHeaders = defineMiddleware(async (context, next) => {
   const res = await next();
   const raw = (env as unknown as { PUBLIC_EMBED_ALLOWED_ANCESTORS?: string })
     .PUBLIC_EMBED_ALLOWED_ANCESTORS;
-  return applyFrameAncestors(res, buildFrameAncestors(raw));
+  const framed = applyFrameAncestors(res, buildFrameAncestors(raw));
+  // HSTS on every deployed response (SOC 2 CC6.1/CC6.7 TLS evidence). Skipped
+  // on the local dev host (baseout.local) whose mkcert TLS is not a public
+  // context — see shared/internal/oauth-setup.md §5.5.
+  if (!isLocalDevHost(context.url.hostname) && !framed.headers.has('Strict-Transport-Security')) {
+    framed.headers.set(
+      'Strict-Transport-Security',
+      'max-age=63072000; includeSubDomains; preload',
+    );
+  }
+  return framed;
 });
 
 const handleRequest = defineMiddleware(async (context, next) => {
