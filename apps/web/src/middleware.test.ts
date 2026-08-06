@@ -220,3 +220,36 @@ describe('appendSetCookies — sliding-session cookie forwarding (2026-07-14)', 
     expect(res.headers.getSetCookie()).toEqual(['a=b; Path=/'])
   })
 })
+
+// Pins the HSTS header shipped in e42040d (SOC 2 CC6.1/CC6.7 TLS evidence, the
+// Comp AI `tls_https` check). HSTS must ride every DEPLOYED response but never
+// the local dev host (baseout.local), whose mkcert TLS is not a public Secure
+// context — see shared/internal/oauth-setup.md §5.5. Backfills the test the
+// header shipped without.
+describe('embedFrameHeaders — HSTS (SOC 2 CC6.1/CC6.7)', () => {
+  const HSTS = 'max-age=63072000; includeSubDomains; preload'
+  const call = async (href: string) => {
+    const { embedFrameHeaders } = await import('./middleware')
+    return (
+      embedFrameHeaders as unknown as (
+        c: { url: URL },
+        next: () => Promise<Response>,
+      ) => Promise<Response>
+    )({ url: new URL(href) }, async () => new Response('ok'))
+  }
+
+  it('sets a 2-year preload HSTS header on the deployed dev host', async () => {
+    const res = await call('https://baseout-dev.openside.workers.dev/')
+    expect(res.headers.get('Strict-Transport-Security')).toBe(HSTS)
+  })
+
+  it('sets HSTS on the production host too', async () => {
+    const res = await call('https://app.baseout.com/dashboard')
+    expect(res.headers.get('Strict-Transport-Security')).toBe(HSTS)
+  })
+
+  it('skips HSTS on the local dev host (baseout.local)', async () => {
+    const res = await call('https://baseout.local:4331/')
+    expect(res.headers.get('Strict-Transport-Security')).toBeNull()
+  })
+})

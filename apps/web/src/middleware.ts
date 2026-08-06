@@ -137,7 +137,9 @@ function resolveDbUrl(): string {
 // every in-iframe navigation response needs it or the browser blanks the
 // frame mid-session; and with no header at all (the pre-embed state) any
 // site could frame any Baseout page. shared-embed-protocol design Decision 7.
-const embedFrameHeaders = defineMiddleware(async (context, next) => {
+// Exported for unit testing (middleware.test.ts) — mirrors the file's other
+// test-only exports (appendSetCookies, isPublicRoute).
+export const embedFrameHeaders = defineMiddleware(async (context, next) => {
   const res = await next();
   const raw = (env as unknown as { PUBLIC_EMBED_ALLOWED_ANCESTORS?: string })
     .PUBLIC_EMBED_ALLOWED_ANCESTORS;
