@@ -443,7 +443,7 @@ There is intentionally no `src/`, no UI, no DB layer here — the workflows app 
 
 # 6A. Staff Console Standards (`apps/admin/`) — run & demo
 
-`apps/admin/` is the internal staff console: an Astro SSR app on the `@astrojs/cloudflare` adapter, served at `baseout.local:4332` in dev. The runnable foundation (scaffold + staff gate + Organizations→Spaces tracker) shipped via `openspec/changes/admin-foundation/`; the broader console (Google SSO, more surfaces, manual admin actions, audit trail) remains the deferred `admin` umbrella change.
+`apps/admin/` is the internal staff console: an Astro SSR app on the `@astrojs/cloudflare` adapter, served at `baseout.local:4333` in dev (4333, not 4332 — `apps/design` owns 4332, so admin has its own port to avoid the astro port-collision auto-bump). The runnable foundation (scaffold + staff gate + Organizations→Spaces tracker) shipped via `openspec/changes/admin-foundation/`; the broader console (Google SSO, more surfaces, manual admin actions, audit trail) remains the deferred `admin` umbrella change.
 
 **Auth model (interim).** Admin has **no login of its own** — it reuses `apps/web`'s better-auth session. Middleware reads the `better-auth.session_token` cookie, looks it up in the master-DB `sessions` table, and requires `users.role === 'super'`. Unauthenticated visitors get a "Sign in" page that routes to web's `/login?returnTo=<admin origin>` (web honors a validated `returnTo` and uses it as the magic-link `callbackURL`); signed-in non-staff get a "Staff only" 403. Real Google Workspace SSO is deferred to the `admin` umbrella change.
 
@@ -457,10 +457,10 @@ There is intentionally no `src/`, no UI, no DB layer here — the workflows app 
 pnpm install                                   # from repo root
 cp apps/admin/.env.example apps/admin/.env     # then paste DATABASE_URL from apps/web/.env
 pnpm --filter @baseout/web dev                 # terminal 1 — https://baseout.local:4331 (login lives here)
-pnpm --filter @baseout/admin dev               # terminal 2 — http://baseout.local:4332
+pnpm --filter @baseout/admin dev               # terminal 2 — http://baseout.local:4333
 ```
 
-1. Open `http://baseout.local:4332` → "Sign in" → land on web's login → magic-link in → you're routed back to admin.
+1. Open `http://baseout.local:4333` → "Sign in" → land on web's login → magic-link in → you're routed back to admin.
 2. The gate requires `role = 'super'`. Grant yourself staff in dev:
    ```bash
    cd apps/web && node --env-file=.env -e 'const s=require("postgres")(process.env.DATABASE_URL,{prepare:false,connection:{search_path:"baseout,public"}});s`update baseout.users set role=${"super"} where email=${"you@example.com"}`.then(r=>console.log("promoted",r.count)).finally(()=>s.end())'

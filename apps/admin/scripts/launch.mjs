@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 // Renders wrangler.jsonc from wrangler.jsonc.example (substituting DATABASE_URL
 // from .env into the Hyperdrive localConnectionString), then runs astro.
 //
-//   node scripts/launch.mjs dev     astro dev on baseout.local:4332
+//   node scripts/launch.mjs dev     astro dev on baseout.local:4333
 //   node scripts/launch.mjs build   astro build (adapter emits dist/server/wrangler.json)
 //
 // SSR runs in a workerd runner, so the master DB is reached via the Hyperdrive

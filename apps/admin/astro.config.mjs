@@ -5,9 +5,11 @@ import cloudflare from '@astrojs/cloudflare';
 
 // apps/admin — internal staff console (tracer slice; see
 // openspec/changes/admin-foundation). SSR on the Cloudflare adapter, mirroring
-// apps/web. Dev runs via `astro dev` (platformProxy) on baseout.local:4332 so
+// apps/web. Dev runs via `astro dev` (platformProxy) on baseout.local:4333 so
 // the non-Secure, host-only better-auth session cookie set by apps/web on
 // baseout.local is shared with admin (the staff gate reuses that session).
+// NOTE: 4333, not 4332 — apps/design squats 4332, so admin gets its own port to
+// avoid the astro auto-bump collision. Cookie sharing is by host, not port.
 
 // `@web/*` resolves to apps/web/src so admin consumes the shared design system
 // (theme + ui/patterns primitives) with zero duplication — the same reuse
@@ -21,7 +23,7 @@ export default defineConfig({
   adapter: cloudflare({
     platformProxy: { enabled: true },
   }),
-  server: { host: 'baseout.local', port: 4332 },
+  server: { host: 'baseout.local', port: 4333 },
   vite: {
     plugins: [tailwindcss()],
     resolve: {

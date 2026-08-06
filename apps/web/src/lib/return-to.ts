@@ -52,7 +52,7 @@ export function validateReturnTo(
 // shapes come out:
 //   - relative app path                → unchanged (browser resolves same-origin)
 //   - absolute baseout.local URL (dev) → unchanged (shared-cookie host; admin
-//                                        on :4332 reads web's cookie directly)
+//                                        on :4333 reads web's cookie directly)
 //   - any other allowlisted origin     → the RELATIVE /api/admin/handoff route
 // The wrap exists because web's session cookie is host-only (and workers.dev
 // is on the Public Suffix List, so no Domain= cookie can span the two dev
