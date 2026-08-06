@@ -1,5 +1,7 @@
 # admin-read-surfaces
 
+> **Partly superseded by `admin-crm-ux` (2026-08-03):** the bounded row-limit wording on these read surfaces is replaced by URL-driven server-side pagination/sort/filter (`admin-table-infra`).
+
 ## Why
 
 PRD §16.1 specifies the super-admin console's read-only capabilities: subscriptions visibility, cross-org backup run status, connection health, database provisioning tracking, background-service monitoring, and On2Air migration status. `admin-foundation` shipped exactly one surface (Organizations → Spaces tracker). This change builds the remaining read-only surfaces on that proven pattern, turning the tracer slice into a usable staff console. Manual admin actions + the append-only audit trail stay in the deferred `admin` umbrella change.

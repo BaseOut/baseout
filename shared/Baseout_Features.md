@@ -66,9 +66,9 @@
 
 | Canonical Term | Definition | Aliases to Avoid | Notes |
 |---|---|---|---|
-| **Backup** | A point-in-time snapshot of Base data (schema, records, and/or attachments). | Snapshot, Export, Dump | The act of capturing data from Airtable into Baseout storage. |
-| **Backup Run** | A single execution of the backup process. Produces a Backup Snapshot. | Job, Execution, Cycle | Has a start time, end time, status, and metrics. |
-| **Backup Snapshot** | The output of a Backup Run — the stored point-in-time data. | Backup Version, Checkpoint | Each Snapshot is identified by timestamp and can be used for Restore. |
+| **Backup** | The *act* of capturing Base data (schema, records, and/or attachments) from Airtable into Baseout. A process — it produces a Snapshot. | Export, Dump | "Backup" is the process; the stored output is a **Snapshot** (below). *(Amended 2026-08-05: "Snapshot" is no longer an alias to avoid — it is the canonical term for the stored output.)* |
+| **Backup Run** | A single execution of the backup process. Produces a Snapshot. | Job, Execution, Cycle | Has a start time, end time, status, and metrics. |
+| **Snapshot** (a.k.a. Backup Snapshot) | The output of a Backup Run: a point-in-time capture of a Base saved as CSV — **one CSV file per table**. Kept in Baseout-managed R2 (an *internal snapshot*) and/or delivered to an external Storage Destination. | Backup Version, Checkpoint | The canonical customer-facing term for a stored capture. Snapshots kept in Baseout-managed storage count toward **File storage under management**; snapshots delivered only to external destinations do not (§3; `pricing-guide.md` §4). Identified by timestamp; used for Restore. |
 | **Static Backup** | A backup mode where data is exported as flat files (CSV/JSON) directly to a Storage Destination. Data is never stored in a Baseout-managed database. | File Backup, CSV Export, Flat Backup | Data streams through memory only — never written to Baseout disk. Privacy-preserving. |
 | **Dynamic Backup** | A backup mode where data is written to a Baseout-provisioned or customer-provided database. Enables SQL access, real-time sync, and advanced capabilitys. | Database Backup, Live Backup, DB Sync | Requires explicit customer opt-in to data storage. |
 | **Storage Destination** | The external file storage location where static backup files and attachments are saved. | Storage Location, Cloud Storage, File Target | Examples: Google Drive, Dropbox, Box, OneDrive, S3, Cloudflare R2. |
@@ -216,6 +216,8 @@ Four public tiers (a capacity ladder — size of estate, not company stage) plus
 | Documents | 10 | 25 | 50 | 100 | Custom |
 | Audit logs | — | — | — | ✓ | ✓ |
 | Support | Email | Priority email | Priority email | Priority + chat | Dedicated CSM + SLA |
+
+**Records under management (RUM)** is counted org-wide across all bases **regardless of where snapshots are stored** — records whose snapshots live in Baseout-managed R2 and records whose snapshots are delivered only to the customer's own storage (BYOS / Google Drive / etc.) count identically. RUM measures records *under management*, not byte location; where the bytes live only affects the separate **File storage under management** meter (`pricing-guide.md` §4). *(Implementation note: today's metering counts records from Baseout-side backup runs — BYOS-only counting is a `shared-entitlements` follow-up.)*
 
 Included at **every** tier (feature gates on for all): internal snapshots, MCP access, Automations & interfaces backup, Comments backup, API access, SSO/SAML, PII detection, Direct SQL access. Product constant: 2 Connections per Space.
 
@@ -746,6 +748,8 @@ The AI capability provides advanced artificial intelligence capabilities layered
 ### 11.1 Feature Matrix
 
 > \* Not available when using static file backups only.
+>
+> **Reconciliation note (2026-08-05):** §11.1 still uses legacy tier names (superseded per §3). Under the locked model, AI features gate on the DB-native **`plan_features`** catalog and draw from a shared **AI-credit** pool (1 credit = 1¢; provider cost + 25% markup — `pricing-guide.md` §4, `ai-credit-model.md`). **Bring your own AI key** — the customer supplies their own AI-provider API key, Baseout routes AI through it and consumes **zero credits** — is a **Plus+** feature (catalog slug `byo_ai_key`; matrix §3 line 201; mechanism spec `openspec/changes/shared-ai-byok/`). It is **distinct** from **Bring Your Own AI *Model*** (the last row below): a deferred V2/Enterprise capability where a customer wires in their own *model endpoint*, not an API key.
 
 | Feature | Trial | Starter | Launch | Growth | Pro | Business | Enterprise |
 |---|---|---|---|---|---|---|---|
@@ -758,7 +762,7 @@ The AI capability provides advanced artificial intelligence capabilities layered
 | **Chatbot Filters** | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✓* |
 | **AI Skills (Custom)** | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* |
 | **Vector Database** | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✓* |
-| **Bring Your Own AI Model** | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* |
+| **Bring Your Own AI Model** *(V2 — distinct from BYO **key**, see note above)* | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* |
 
 ### 11.2 AI Feature Descriptions
 
@@ -770,7 +774,7 @@ The AI capability provides advanced artificial intelligence capabilities layered
 | **Chatbot Embed Code** | An embeddable snippet that allows the customer to place the chatbot in their own website, app, or Airtable interface. |
 | **AI Skills** | Custom-defined AI routines that combine the customer's API, tools, and data with Baseout's AI layer to automate specific workflows. |
 | **Vector Database** | A vector database (provisioned by Baseout) that stores embeddings of the customer's data for semantic search and RAG functionality. |
-| **Bring Your Own AI Model** | Enterprise customers can connect their own AI model (e.g., a fine-tuned GPT, Claude, or open-source model) to Baseout's AI pipeline. |
+| **Bring Your Own AI Model** *(V2, deferred)* | Enterprise customers connect their own **model endpoint** (a fine-tuned GPT/Claude/open-source model) into Baseout's AI pipeline — a distinct, deferred capability. **Not** to be confused with **Bring your own AI key** (Plus+, §3 / `pricing-guide.md` §69 / `openspec/changes/shared-ai-byok/`): supplying an API key for an existing provider so Baseout routes AI through the customer's own account and consumes zero credits. |
 
 ---
 

@@ -1265,6 +1265,7 @@ export const SB_ENTRIES: SBEntry[] = [
 
   {
     id: 'alert',
+    reference: 'components/ui/Alert.astro',
     group: 'Primitives',
     name: 'Alert',
     summary: 'daisyUI alert — an inline banner for a state the user should notice.',

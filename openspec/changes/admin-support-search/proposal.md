@@ -1,5 +1,7 @@
 # admin-support-search
 
+> **Partly superseded by `admin-crm-ux` (2026-08-03):** the omnisearch box moves from the sidebar to a persistent top bar with a typeahead dropdown (`/api/search/suggest`). The `/search` backend, query-shape detection, and exact-match redirect are reused unchanged.
+
 ## Why
 
 Support work almost always starts from a single identifier — a customer email, an org name, an Airtable base ID, a run UUID from an error report — and today staff must guess which admin surface to open and hunt through per-page filters to find the entity. A global omnisearch turns any identifier a staff member holds into a direct jump to the right record, which is the single highest-leverage step toward "answer account-level questions fast."

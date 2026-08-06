@@ -1,5 +1,7 @@
 # admin-entity-directories
 
+> **Partly superseded by `admin-crm-ux` (2026-08-03):** the bounded 100–200-row caps on these directories are replaced by server-side pagination, and `/customers` is relocated to `/organizations` (301 kept). This change's assembly libs are reused; only the row-cap wording and the route are superseded.
+
 ## Why
 
 Staff answering account-level questions have no global entity lists: `/` shows an Organizations → Spaces tracker, but there is no way to see all users (only per-org via `/organizations/[id]`), no standalone spaces table, and no customers directory with billing context. Support workflows start from "who is this customer / user / space?" — today that requires knowing the org first. This change adds the three directory pages that make every core entity findable.

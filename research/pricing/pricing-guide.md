@@ -60,7 +60,7 @@ Four public tiers, named as a capacity ladder (size of estate, not company stage
 
 ## 4. Line-item definitions
 
-**Records under management** — total Airtable records Baseout is backing up and managing for the organization, org-wide across all Spaces. The primary self-selection meter. Snapshot version history does **not** multiply the count (30 daily snapshots ≠ 30× records — history depth is priced by retention, not by this meter).
+**Records under management** — total Airtable records Baseout is backing up and managing for the organization, org-wide across all Spaces. Counted the same **regardless of where the snapshots are stored** — records whose snapshots live in Baseout-managed R2 and records whose snapshots are delivered only to the customer's own storage (BYOS / Google Drive / etc.) count identically; RUM measures records under management, not where the bytes live (byte location is the separate **File storage under management** meter below). The primary self-selection meter. Snapshot version history does **not** multiply the count (30 daily snapshots ≠ 30× records — history depth is priced by retention, not by this meter).
 
 **File storage under management (GB)** — gigabytes of files Baseout stores or manages: attachment files, plus any snapshots kept in Baseout-managed storage. Org-wide. Snapshots delivered to **external** destinations do not count — external bytes live in the customer's own storage; the external-delivery service is priced by the destination slots, not by volume.
 
@@ -215,3 +215,13 @@ Migrating On2Air customers receive a **20% lifetime discount** on any Baseout ti
 1. Validate Baseout engine efficiency ≥2× vs. the legacy engine — the Plus p90 margin depends on it (`final-pricing-matrix.md` §2.1).
 2. Dedicated clusters provision lean ($15-class) and scale with use.
 3. Reconcile this guide into `shared/Baseout_Features.md` (naming dictionary, tier matrix, Stripe metadata slugs) before implementation.
+
+### 9.1 Runtime source of truth (shared-entitlements)
+
+As of `shared-entitlements`, the **master-DB `plan_features` catalog is the runtime source** for every capability and quota — resolved through `resolveEntitlements(orgId)` (pure `composeEntitlements` over plan values + per-account overrides + active add-ons). Stripe carries **money and identity only** (products, prices, subscription state, plus a single `plan_slug` metadata key for reconciliation) — never the entitlement values.
+
+This **supersedes `shared/Baseout_Features.md` §5.5** ("gate capabilities from Stripe product metadata"): that instruction is retained only as history and must be flagged as superseded in the queued Features reconciliation change. Code gates on **feature slugs** (`records_under_management`, `backup_frequency_max`, `bases_under_management`, …), never on tier-name strings or Stripe metadata.
+
+Legacy path (being retired): `apps/web/src/lib/capabilities/resolveCapabilities` still reads the cached `subscription_items.tier`. Migrating that resolver to `resolveEntitlements` (task 2.3) is **blocked** on two catalog gaps — the entitlement catalog has no `schema_docs` or `webhook_poll_min` feature, and `bases_per_space` (per-Space) has no clean equivalent (only org-wide `bases_under_management`), which is a product-semantics decision. Add those features (or decide the bases semantics) before the resolver cutover.
+
+Cross-references: `openspec/changes/admin-entitlements` (staff override HTTP route + catalog admin) and the ui-only `usage-and-billing` design (Settings → Usage surface, task 9.3).
