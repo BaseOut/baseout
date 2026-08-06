@@ -40,3 +40,18 @@ declare module 'cloudflare:workers' {
     BACKUP_ENGINE_INTERNAL_TOKEN: string;
   }
 }
+
+// The `env` import from 'cloudflare:workers' is typed as `Cloudflare.Env` (generated
+// by cf-typegen), so optional runtime flags that aren't declared wrangler bindings
+// are merged onto `Cloudflare.Env` here — mirrors the engine's hand-maintained
+// `apps/server/src/env.d.ts` entry so both apps read the flag the same way.
+declare namespace Cloudflare {
+  interface Env {
+    /**
+     * ENTITLEMENT_ENFORCEMENT flag (shared-entitlements task 4.3). `"1"` turns
+     * creation-cap enforcement ON; anything else (incl. undefined, the default)
+     * leaves it dark (warn-only). Matches `env.ENTITLEMENT_ENFORCEMENT === "1"`.
+     */
+    ENTITLEMENT_ENFORCEMENT?: string;
+  }
+}
