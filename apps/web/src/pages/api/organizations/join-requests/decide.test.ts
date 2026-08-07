@@ -120,6 +120,76 @@ describe('handlePost — approve/decline', () => {
   })
 })
 
+describe('handlePost — seat cap enforcement (shared-entitlements 4.3)', () => {
+  const blocked = {
+    allowed: false as const,
+    featureSlug: 'seats',
+    used: 5,
+    limit: 5,
+    addonSlug: 'seats_2',
+  }
+  const allowed = {
+    allowed: true as const,
+    featureSlug: 'seats',
+    used: 2,
+    limit: 5,
+    addonSlug: 'seats_2',
+  }
+
+  it('approve blocked at the seat cap → 403 limit_reached, decide never runs', async () => {
+    const decide = vi.fn()
+    const res = await handlePost({
+      user: ACTOR,
+      requestId: REQUEST_ID,
+      body: { action: 'approve' },
+      decide,
+      notifyRequester: vi.fn(),
+      checkSeatCap: vi.fn().mockResolvedValue(blocked),
+    })
+    expect(res.status).toBe(403)
+    const payload = (await res.json()) as Record<string, unknown>
+    expect(payload).toMatchObject({ code: 'limit_reached', feature: 'seats', addon: 'seats_2' })
+    expect(decide).not.toHaveBeenCalled()
+  })
+
+  it('approve under the seat cap → proceeds to decide', async () => {
+    const decide = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 'approved',
+      requester: { id: 'u_1', email: 'person@acme.com' },
+      organization: { id: 'org_1', name: 'Acme' },
+    })
+    const res = await handlePost({
+      user: ACTOR,
+      requestId: REQUEST_ID,
+      body: { action: 'approve' },
+      decide,
+      notifyRequester: vi.fn().mockResolvedValue(undefined),
+      checkSeatCap: vi.fn().mockResolvedValue(allowed),
+    })
+    expect(res.status).toBe(200)
+    expect(decide).toHaveBeenCalled()
+  })
+
+  it('decline never consults the seat cap', async () => {
+    const checkSeatCap = vi.fn()
+    await handlePost({
+      user: ACTOR,
+      requestId: REQUEST_ID,
+      body: { action: 'decline' },
+      decide: vi.fn().mockResolvedValue({
+        ok: true,
+        status: 'declined',
+        requester: { id: 'u_1', email: 'x@acme.com' },
+        organization: { id: 'org_1', name: 'Acme' },
+      }),
+      notifyRequester: vi.fn(),
+      checkSeatCap,
+    })
+    expect(checkSeatCap).not.toHaveBeenCalled()
+  })
+})
+
 describe('handleGet — pending list', () => {
   it('401 without an active org', async () => {
     const res = await handleGet({

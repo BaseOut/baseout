@@ -13,10 +13,14 @@
 
 import type { APIRoute } from 'astro'
 import { env } from 'cloudflare:workers'
+import { and, count, eq, isNotNull } from 'drizzle-orm'
 import {
   decideJoinRequest,
   type DecideJoinRequestResult,
 } from '../../../../lib/signup/join-requests'
+import { organizationJoinRequests, organizationMembers } from '../../../../db/schema'
+import { resolveEntitlements } from '../../../../lib/entitlements/resolve'
+import { checkCreationCap } from '../../../../lib/entitlements/enforce-create'
 import { renderJoinRequestApprovedEmail } from '../../../../lib/email/templates/join-request'
 import { sendEmail } from '../../../../lib/email/send'
 
@@ -43,6 +47,18 @@ export interface HandlePostInput {
     requesterEmail: string
     organizationName: string
   }) => Promise<void>
+  /**
+   * Seat creation-cap gate (shared-entitlements 4.3), consulted only on approve
+   * (a new accepted member consumes a seat). Optional — absent means no gating
+   * (also the posture when ENTITLEMENT_ENFORCEMENT is off). Returns `allowed`
+   * plus the cap details for the block payload.
+   */
+  checkSeatCap?: (requestId: string) => Promise<{
+    allowed: boolean
+    used: number | null
+    limit: number | null
+    addonSlug: string | null
+  }>
 }
 
 export async function handlePost(input: HandlePostInput): Promise<Response> {
@@ -61,6 +77,25 @@ export async function handlePost(input: HandlePostInput): Promise<Response> {
       : null
   if (!action) {
     return jsonResponse({ error: 'invalid_action' }, 400)
+  }
+
+  // Seat cap: approving a join request creates an accepted member. Block at the
+  // cap before the membership write; decline is never gated.
+  if (action === 'approve' && input.checkSeatCap) {
+    const seat = await input.checkSeatCap(input.requestId)
+    if (!seat.allowed) {
+      return jsonResponse(
+        {
+          error: `You've reached your plan's Seats limit (${seat.limit}). Add seats or upgrade to approve more members.`,
+          code: 'limit_reached',
+          feature: 'seats',
+          used: seat.used,
+          limit: seat.limit,
+          addon: seat.addonSlug,
+        },
+        403,
+      )
+    }
   }
 
   const result = await input.decide(input.requestId, action)
@@ -112,6 +147,33 @@ export const POST: APIRoute = async ({ request, params, locals }) => {
     body,
     decide: (requestId, action) =>
       decideJoinRequest(db, { requestId, actor: user!, action }),
+    checkSeatCap: async (requestId) => {
+      // Resolve the request's org; a missing request → allow (decide() 404s it).
+      const [reqRow] = await db
+        .select({ organizationId: organizationJoinRequests.organizationId })
+        .from(organizationJoinRequests)
+        .where(eq(organizationJoinRequests.id, requestId))
+        .limit(1)
+      if (!reqRow) {
+        return { allowed: true, used: null, limit: null, addonSlug: null }
+      }
+      return checkCreationCap(reqRow.organizationId, 'seats', {
+        enforcementEnabled: env.ENTITLEMENT_ENFORCEMENT === '1',
+        resolveEntitlements: (id) => resolveEntitlements(db, id),
+        count: async (id) => {
+          const [row] = await db
+            .select({ n: count() })
+            .from(organizationMembers)
+            .where(
+              and(
+                eq(organizationMembers.organizationId, id),
+                isNotNull(organizationMembers.acceptedAt),
+              ),
+            )
+          return Number(row?.n ?? 0)
+        },
+      })
+    },
     notifyRequester: async ({ requesterEmail, organizationName }) => {
       const rendered = renderJoinRequestApprovedEmail({ organizationName })
       await sendEmail(
