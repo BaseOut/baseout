@@ -32,6 +32,7 @@ import {
 import { exchangeCodeForTokens } from '../../../../../lib/onedrive/oauth'
 import { promoteStorageTypeIfDefault } from '../../../../../lib/backup-config/storage-type'
 import { persistOneDriveDestination } from '../../../../../lib/onedrive/persist'
+import { enforceDestinationCap } from '../../../../../lib/entitlements/enforce-destination'
 import { sanitizeReturnTo } from '../../../../../lib/airtable/return-to'
 import { shouldSetSecureOAuthCookie } from '../../../../../lib/oauth/local-dev-secure'
 import { resolvePostOAuthReturnLocation } from '../../../../../lib/oauth/canonical-dev-origin'
@@ -148,6 +149,19 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
     me = await odClient.me()
   } catch {
     return redirectWith(failUrl('onedrive_api_failed'), clearCookie)
+  }
+
+  // Creation cap (shared-entitlements 4.3): block a NEW external destination once
+  // the org is at its plan's cap. Re-connecting this provider is a replace, so the
+  // count excludes this (space, type). Dark unless ENTITLEMENT_ENFORCEMENT=1.
+  const cap = await enforceDestinationCap(
+    locals.db,
+    handoff.spaceId,
+    'onedrive',
+    env.ENTITLEMENT_ENFORCEMENT === '1',
+  )
+  if (!cap.allowed) {
+    return redirectWith(failUrl('limit_reached'), clearCookie)
   }
 
   try {
