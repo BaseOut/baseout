@@ -4,13 +4,13 @@ TDD per CLAUDE.md §3.4. Pure path/naming helpers get Vitest first. R2 API inter
 
 ## 1. Bucket naming + provisioning
 
-- [ ] 1.1 Pure `resolveManagedBucketName(env, organizationId)` → `baseout-{env}-org-{orgId}`; length/charset assertions; Vitest
+- [x] 1.1 Pure `resolveManagedBucketName(env, organizationId)` → `baseout-{env}-org-{orgId}`; length/charset assertions; Vitest — _DONE 2026-08-07: `apps/workflows/trigger/tasks/_lib/r2-bucket.ts`; validates inputs + re-validates the composed name against R2 account-global rules (3–63, lowercase, no leading/trailing hyphen); 7 Vitest cases._
 - [ ] 1.2 Lazy provisioning helper: `ensureAccountBucket(...)` — idempotent `CreateBucket` (treat-exists-as-success) + lifecycle-template apply; concurrency-safe single-writer gate that records the bucket name on the org's managed storage-destination row exactly once; tests for the race
 - [ ] 1.3 Lifecycle-template rollforward sweep (server cron or ops script): re-apply the current template to existing account buckets; test the template diff/apply logic
 
 ## 2. Key layout
 
-- [ ] 2.1 `buildR2Key` branches on destination kind — managed R2 = Space-rooted (`{SpaceName}/{BaseName}/{DateTime}/{TableName}.csv`), BYOS = org-rooted (unchanged); attachments Space-rooted for managed; sanitization + traversal guard unchanged; exhaustive Vitest over both branches (`apps/workflows/trigger/tasks/_lib/r2-path.ts`)
+- [x] 2.1 `buildR2Key` branches on destination kind — managed R2 = Space-rooted (`{SpaceName}/{BaseName}/{DateTime}/{TableName}.csv`), BYOS = org-rooted (unchanged); attachments Space-rooted for managed; sanitization + traversal guard unchanged; exhaustive Vitest over both branches (`apps/workflows/trigger/tasks/_lib/r2-path.ts`) — _DONE 2026-08-07: optional `kind?: 'managed_r2' | 'byos'` (default `byos`) on `BuildR2KeyInput`/`BuildAttachmentKeyInput`; managed drops the orgSlug root, byos byte-for-byte unchanged; both builders covered; existing callers compile unchanged (kind optional). Caller wiring (pass `kind` + resolved per-account bucket) lands with the read/write cutover (§2.2/§3)._
 - [ ] 2.2 `R2Writer` targets the resolved per-account bucket (from the org row) for managed writes; BYOS/local unchanged; writer tests updated
 
 ## 3. Read path
