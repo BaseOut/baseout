@@ -19,6 +19,8 @@ import {
   subscriptionItems,
   subscriptions,
 } from "../../db/schema";
+import { resolveEntitlements } from "../entitlements/resolve";
+import { entitlementsToCapabilities } from "./entitlement-capabilities";
 import {
   getTierCapabilities,
   type Tier,
@@ -43,10 +45,23 @@ export interface ResolvedCapabilities {
   capabilities: TierCapabilitySet;
 }
 
+export interface ResolveCapabilitiesOptions {
+  /**
+   * Prefer the DB-native `plan_features` catalog (`resolveEntitlements`) over the
+   * cached `subscription_items.tier` for the capability VALUES (shared-entitlements
+   * task 2.3 cutover). Defaults true — mirrors apps/web's post-cutover default.
+   * Falls back to the legacy tier table when the org has no resolvable plan or
+   * resolution errors, so the cutover is reversible and fail-safe. The `tier`
+   * display field is unchanged either way (still the cached column).
+   */
+  preferEntitlements?: boolean;
+}
+
 export async function resolveCapabilities(
   db: AppDb,
   organizationId: string,
   platformSlug: string,
+  opts: ResolveCapabilitiesOptions = {},
 ): Promise<ResolvedCapabilities> {
   const [row] = await db
     .select({ tier: subscriptionItems.tier })
@@ -66,8 +81,23 @@ export async function resolveCapabilities(
     .limit(1);
 
   const tier = asTier(row?.tier);
-  return {
-    tier,
-    capabilities: getTierCapabilities(tier),
-  };
+
+  // Capability VALUES: entitlements when resolvable (task 2.3 default), else the
+  // legacy tier table. Un-backfilled orgs (null resolution) and resolution errors
+  // fall through to the tier table, so the cutover stays fail-safe. The `tier`
+  // display field is unchanged either way.
+  const preferEntitlements = opts.preferEntitlements ?? true;
+  let capabilities: TierCapabilitySet = getTierCapabilities(tier);
+  if (preferEntitlements) {
+    try {
+      const resolution = await resolveEntitlements(db, organizationId);
+      if (resolution) {
+        capabilities = entitlementsToCapabilities(resolution.entitlements);
+      }
+    } catch {
+      // Catalog-integrity failure → keep the legacy tier capabilities.
+    }
+  }
+
+  return { tier, capabilities };
 }
