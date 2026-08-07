@@ -126,6 +126,22 @@ export interface Env {
    * usage-evaluation call site (src/pages/api/internal/runs/complete.ts).
    */
   ENTITLEMENT_ENFORCEMENT?: string;
+  /**
+   * DB-isolation-class enforcement flag (shared-db-isolation-ladder L2.2). Exactly
+   * "1" makes provisioning REFUSE a per-Space DB whose isolation class exceeds the
+   * org's tier ceiling. Default/unset = off, because the d1 backend isn't wired
+   * yet, so enforcing would refuse Lite (ceiling d1) orgs that currently provision
+   * managed_pg. Read at the provision-database route.
+   */
+  DB_ISOLATION_ENFORCEMENT?: string;
+  /**
+   * Retention-source flag (shared-entitlements 4.4). Exactly "1" sources the
+   * schema-history / record-history / snapshot retention windows from
+   * resolveEntitlements (per-org effective values) instead of the legacy
+   * hardcoded TIER_CAP_DAYS ladder. Default/unset = legacy, so the change lands
+   * dark and deletion behaviour is unchanged until deliberately flipped.
+   */
+  RETENTION_FROM_ENTITLEMENTS?: string;
 }
 
 export interface AppLocals {

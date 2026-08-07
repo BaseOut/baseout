@@ -29,7 +29,7 @@ function jsonResponse(body: unknown, status: number): Response {
 
 export async function cleanupPlanHandler(
   request: Request,
-  _env: Env,
+  env: Env,
   _ctx: ExecutionContext,
   locals: AppLocals,
 ): Promise<Response> {
@@ -38,7 +38,12 @@ export async function cleanupPlanHandler(
   }
 
   const { db } = locals.getMasterDb();
-  const plan = await buildCleanupPlan(buildCleanupPlanDeps(db), new Date());
+  const plan = await buildCleanupPlan(
+    buildCleanupPlanDeps(db, {
+      retentionFromEntitlements: env.RETENTION_FROM_ENTITLEMENTS === "1",
+    }),
+    new Date(),
+  );
   // shared-service-runs: open a retention_cleanup run row and echo its id; the
   // workflows cron carries it back to /cleanup-complete for finalize. Null when
   // the insert failed (logged) — the pass still runs; the id is just omitted.

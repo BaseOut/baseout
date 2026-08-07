@@ -10,7 +10,9 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { backupRetentionPolicies, backupRuns, spaces } from "../../db/schema";
 import { resolveCapabilities } from "../capabilities/resolve";
+import { resolveEntitlements } from "../entitlements/resolve";
 import { buildRunDeleteDeps } from "../runs/delete-deps";
+import { retentionCapDaysFromEntitlements } from "./retention-window";
 import type { BuildCleanupPlanDeps } from "./build-cleanup-plan";
 import type { RetentionPolicyValues } from "./types";
 
@@ -26,10 +28,30 @@ const TERMINAL_STATUSES = [
   "trial_truncated",
 ] as const;
 
-export function buildCleanupPlanDeps(db: MasterDb): BuildCleanupPlanDeps {
+export function buildCleanupPlanDeps(
+  db: MasterDb,
+  opts?: { retentionFromEntitlements?: boolean },
+): BuildCleanupPlanDeps {
   const runDeleteDeps = buildRunDeleteDeps(db);
 
   return {
+    // shared-entitlements 4.4: only supplied when RETENTION_FROM_ENTITLEMENTS is
+    // on — sources the snapshot cap from resolveEntitlements; a null return
+    // (no org / no plan / unresolved feature) falls back to the legacy tier cap.
+    resolveRetentionCapDaysOverride: opts?.retentionFromEntitlements
+      ? async (spaceId) => {
+          const [space] = await db
+            .select({ organizationId: spaces.organizationId })
+            .from(spaces)
+            .where(eq(spaces.id, spaceId))
+            .limit(1);
+          if (!space) return null;
+          const resolution = await resolveEntitlements(db, space.organizationId);
+          if (!resolution) return null;
+          return retentionCapDaysFromEntitlements(resolution.entitlements);
+        }
+      : undefined,
+
     listSpacesWithLiveRuns: async () => {
       const rows = await db
         .selectDistinct({ spaceId: backupRuns.spaceId })

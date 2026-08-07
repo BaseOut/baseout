@@ -37,6 +37,13 @@ export interface BuildCleanupPlanDeps {
   listSpacesWithLiveRuns: () => Promise<string[]>;
   /** The Space's org subscription tier (for cap + default policy); null if none. */
   resolveSpaceTier: (spaceId: string) => Promise<Tier | null>;
+  /**
+   * Optional entitlement-sourced snapshot cap (days), shared-entitlements 4.4.
+   * When present and it returns a number, it REPLACES the legacy tier cap; a null
+   * return (or an absent dep — the default) falls back to `getTierCapDays(tier)`.
+   * cleanup-deps only supplies this when RETENTION_FROM_ENTITLEMENTS is on.
+   */
+  resolveRetentionCapDaysOverride?: (spaceId: string) => Promise<number | null>;
   /** The Space's persisted retention policy, or null to use the tier default. */
   loadPolicy: (spaceId: string) => Promise<RetentionPolicyValues | null>;
   /** Live (non-deleted, terminal) runs for the Space. */
@@ -55,7 +62,12 @@ export async function buildCleanupPlan(
   for (const spaceId of spaceIds) {
     const tier = await deps.resolveSpaceTier(spaceId);
     const policy = (await deps.loadPolicy(spaceId)) ?? getDefaultPolicy(tier);
-    const cap = getTierCapDays(tier);
+    // Prefer the entitlement-sourced cap (4.4) when supplied; else the legacy
+    // tier ladder. Absent dep (flag off) = byte-identical legacy behaviour.
+    const override = deps.resolveRetentionCapDaysOverride
+      ? await deps.resolveRetentionCapDaysOverride(spaceId)
+      : null;
+    const cap = override ?? getTierCapDays(tier);
     const runs = await deps.loadRunsForSpace(spaceId);
 
     const decision = decideDeletions(runs, policy, cap, now);
