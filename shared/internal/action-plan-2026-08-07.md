@@ -14,9 +14,11 @@ what's in scope today, the order, and cross-change ordering. Update the Status c
 | `system-r2-bucket-topology` | 1.1 `resolveManagedBucketName`; 2.1 `buildR2Key` kind-branch | ✅ done | `4a4a1c7` |
 | `shared-db-isolation-ladder` | L2.1 pure gate; L1 `isolation_class`/`cluster_id`/`db_clusters` (migration) | ✅ done | `c3452a6` (L2.1), `6e88b4d` (L1) |
 | `shared-entitlements` | destinations creation-cap (4.3) | ✅ done | `2f218f6` |
-| `shared-entitlements` | retention wiring (4.4) | ⛔ deferred | — (live deletion logic, no dark-launch flag) |
-| `shared-ai-byok` | 1.1 migration; 2.1/2.2 key-management API; 3.1 engine deps (mirror + findActiveKey + isByokEntitled) | ✅ done | `1a1325c`, `cbe89ce`, `76a7974` |
-| `shared-ai-byok` | 3.3 credential endpoint + 4.2/4.3 call-site routing | ⛔ deferred | — routing needs per-provider clients (anthropic/openai) in the two Workers-AI adapters — larger than a seam wire |
+| `shared-entitlements` | retention wiring (4.4, dark flag `RETENTION_FROM_ENTITLEMENTS`) | ✅ done | `46f4190` |
+| `shared-entitlements` | server capability cutover (2.3, preferEntitlements default true + fallback) | ✅ done | `19cc6bf` |
+| `shared-db-isolation-ladder` | provisioning gate (L2.2, dark flag `DB_ISOLATION_ENFORCEMENT`) | ✅ done | `a211bdf` |
+| `shared-ai-byok` | 1.1 migration; 2.1/2.2 API; 3.1 engine deps; 4.2/4.3 adapter routing (BYOK live for schema-desc + health-scoring) | ✅ done | `1a1325c`, `cbe89ce`, `76a7974`, `725cdc0` |
+| `shared-ai-byok` | 3.3 credential endpoint + 4.1 chat routing + 2.3 settings UI | ⛔ deferred | — 3.3/4.1 pair for the Node chat task; UI is ui-sync-governed |
 | `system-r2-bucket-topology` | caller wiring (managed backups → per-account bucket) | ⛔ blocked | R2 provisioning creds live only in the Trigger.dev env; can't verify locally (verify-then-code) |
 
 Also shipped earlier this cycle: entitlements creation-cap kernel + usage endpoint (9.1) + Spaces & Seats
