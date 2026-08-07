@@ -15,7 +15,7 @@ TDD throughout (CLAUDE.md §3.4): each pure module writes its Vitest suite first
 
 ## 3. Routing seam + credential delivery (apps/server)
 
-- [ ] 3.1 Read-only `ai_provider_keys` mirror in `apps/server` (header comment names the canonical web migration; admin/server own no migrations).
+- [x] 3.1 Read-only `ai_provider_keys` mirror in `apps/server` (header comment names the canonical web migration; admin/server own no migrations). — _DONE 2026-08-07: `apps/server/src/db/schema/ai-provider-keys.ts` (read-only mirror, cites 0036) + barrel export; `apps/server/src/lib/ai/provider-keys-io.ts` provides the real `ResolveAiRoutingDeps` — `findActiveKey` (active-row facts, no key material) + `isByokEntitled` (server `resolveEntitlements` → `byo_ai_key`, fail-closed). Pure `byokEntitledFrom` decision has 4 Vitest cases; server tsc clean. Seam is now wireable; the call-site cutover is 4.x (needs per-provider clients — larger than a seam wire)._
 - [x] 3.2 Pure `resolveAiRouting(orgId)` + tests: returns `{ mode: 'pool' }` or `{ mode: 'byok', provider, model, billable: false }`; `byok` only when `byo_ai_key` resolves true AND an `active` key exists for a supported provider. Return shape carries **no secret material** (safe to log).
 - [ ] 3.3 `INTERNAL_TOKEN`-gated credential-fetch endpoint (`GET /api/internal/orgs/:orgId/ai-credential?provider=…`) + tests: resolves routing, decrypts `key_enc` server-side, returns plaintext only over the trusted boundary; rejects missing/invalid `x-internal-token`; response body never logged. Payload/enqueue carries only `{ orgId, provider }`.
 

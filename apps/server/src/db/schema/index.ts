@@ -28,5 +28,6 @@ export * from "./usage-rollups";
 export * from "./account-feature-overrides";
 export * from "./addon-purchases";
 export * from "./usage-notification-state";
+export * from "./ai-provider-keys";
 export * from "./airtable-webhooks";
 export * from "./airtable-webhook-subscriptions";
