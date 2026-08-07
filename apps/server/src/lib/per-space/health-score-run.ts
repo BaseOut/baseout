@@ -9,6 +9,8 @@ import { eq } from "drizzle-orm";
 import { healthScoreRules, spaces } from "../../db/schema";
 import type { AppDb } from "../../db/worker";
 import type { Env } from "../../env";
+import type { ByokAdapterConfig } from "../ai/byok-credential";
+import { callByokModel } from "../ai/provider-call";
 import { parseModelJson } from "./describe-schema";
 import { resolveScoreInputs } from "./health-resolve";
 import { writeHealthResults, type HealthSyncMetric } from "./health-io";
@@ -76,12 +78,29 @@ export function buildMetricPrompt(args: { prompt: string; schemaContext: string 
 /** Same POC default + override knob family as describe-schema. */
 const DEFAULT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
-/** ScoreMetricFn over the Workers AI binding, or null when absent/disabled. */
-export function workersAiScoreMetric(env: Env): ScoreMetricFn | null {
+/**
+ * ScoreMetricFn, or null when AI is absent/disabled (availability gate
+ * unchanged — BYOK still rides the `env.AI` binding being present).
+ *
+ * `byok` (shared-ai-byok 4.2): a BYOK-entitled org on a supported provider
+ * scores via THEIR key/provider; everyone else keeps the `env.AI` pool path
+ * byte-for-byte. Both branches feed the SAME parseScoreResponse contract.
+ */
+export function workersAiScoreMetric(env: Env, byok?: ByokAdapterConfig | null): ScoreMetricFn | null {
   const ai = env.AI;
   if (!ai || env.AI_DESCRIPTIONS_ENABLED === "false") return null;
   const model = env.AI_DESCRIPTIONS_MODEL || DEFAULT_MODEL;
   return async ({ prompt, schemaContext }) => {
+    if (byok) {
+      const text = await callByokModel({
+        provider: byok.provider,
+        model: byok.model,
+        apiKey: byok.apiKey,
+        prompt: buildMetricPrompt({ prompt, schemaContext }),
+        maxTokens: 1200,
+      });
+      return parseScoreResponse(parseModelJson(text));
+    }
     const res = (await ai.run(model as Parameters<Ai["run"]>[0], {
       messages: [{ role: "user", content: buildMetricPrompt({ prompt, schemaContext }) }],
       max_tokens: 1200,

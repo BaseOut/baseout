@@ -14,6 +14,7 @@ import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import { ensureSpaceSchemaCurrent } from "../../../../lib/provisioning/upgrade";
 import { resolveScoreInputs } from "../../../../lib/per-space/health-resolve";
 import { runEngineHealthScore, workersAiScoreMetric } from "../../../../lib/per-space/health-score-run";
+import { resolveByokAdapterForSpace } from "../../../../lib/ai/byok-credential";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -68,6 +69,8 @@ export async function spacesHealthRerunHandler(
       return jsonResponse({ ok: true, enqueued: false, reason: "no_enabled_metrics" }, 200);
     }
 
+    // Availability gate (unchanged); the pool closure is reused below when the
+    // org isn't BYOK.
     const scoreMetric = workersAiScoreMetric(env);
     if (!scoreMetric) {
       return jsonResponse({ ok: true, enqueued: false, reason: "ai_unavailable" }, 200);
@@ -79,7 +82,12 @@ export async function spacesHealthRerunHandler(
       (async () => {
         const fresh = createMasterDb(env);
         try {
-          await runEngineHealthScore({ masterDb: fresh.db, pgLocator, spaceId, baseId, runId, scoreMetric });
+          // BYOK routing resolved server-side (in-Worker decrypt, shared-ai-byok
+          // 4.2); null = pool. Never fails the run over BYOK.
+          const byok = await resolveByokAdapterForSpace(fresh.db, env.BASEOUT_ENCRYPTION_KEY, spaceId);
+          // `?? scoreMetric` keeps the non-null pool closure when byok is off.
+          const scoreMetricFn = (byok ? workersAiScoreMetric(env, byok) : scoreMetric) ?? scoreMetric;
+          await runEngineHealthScore({ masterDb: fresh.db, pgLocator, spaceId, baseId, runId, scoreMetric: scoreMetricFn });
         } catch (err) {
           // eslint-disable-next-line no-console -- background-scoring failure would otherwise be invisible
           console.error("health-score run failed:", err instanceof Error ? err.message : String(err));

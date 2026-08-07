@@ -10,6 +10,8 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { spacePg } from "@baseout/db-schema/space";
 import type { Env } from "../../env";
+import type { ByokAdapterConfig } from "../ai/byok-credential";
+import { callByokModel } from "../ai/provider-call";
 import type { SpaceTx } from "./space-db-pg";
 import {
   applyBaseResponse,
@@ -146,12 +148,30 @@ export async function saveDescriptionUpdates(tx: SpaceTx, updates: DescriptionUp
  */
 const DEFAULT_MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 
-/** Build a GenerateFn over the Workers AI binding, or null when absent/disabled. */
-export function workersAiGenerate(env: Env): GenerateFn | null {
+/**
+ * Build a GenerateFn, or null when AI is absent/disabled (the availability
+ * gate is unchanged — BYOK still rides the `env.AI` binding being present).
+ *
+ * `byok` (shared-ai-byok 4.2): when a BYOK-entitled org resolved to a
+ * supported provider, generation routes to THEIR key/provider via
+ * `callByokModel`; otherwise the EXISTING `env.AI` pool path runs byte-for-byte.
+ */
+export function workersAiGenerate(env: Env, byok?: ByokAdapterConfig | null): GenerateFn | null {
   const ai = env.AI;
   if (!ai || env.AI_DESCRIPTIONS_ENABLED === "false") return null;
   const model = env.AI_DESCRIPTIONS_MODEL || DEFAULT_MODEL;
   return async (prompt: string) => {
+    if (byok) {
+      // BYOK: customer provider (direct fetch, design D2). Returns the model's
+      // text — parseModelJson consumes it exactly as the pool string below.
+      return callByokModel({
+        provider: byok.provider,
+        model: byok.model,
+        apiKey: byok.apiKey,
+        prompt,
+        maxTokens: 800,
+      });
+    }
     const res = (await ai.run(model as Parameters<Ai["run"]>[0], {
       messages: [{ role: "user", content: prompt }],
       max_tokens: 800,

@@ -3,8 +3,13 @@
 // describe-schema-io.ts and are exercised by the smoke. Placed under
 // tests/integration/** so the server test runner picks it up.
 
-import { describe, expect, it } from "vitest";
-import { runDescribeBase, type DescribeBaseData } from "../../../src/lib/per-space/describe-schema-io";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  runDescribeBase,
+  workersAiGenerate,
+  type DescribeBaseData,
+} from "../../../src/lib/per-space/describe-schema-io";
+import type { Env } from "../../../src/env";
 
 const data = (over?: Partial<DescribeBaseData>): DescribeBaseData => ({
   base: { baseId: "appX", name: "Sales CRM", description: null, aiDescription: null, status: "active" },
@@ -102,5 +107,48 @@ describe("runDescribeBase", () => {
     });
     expect(result.described).toBe(0);
     expect(saveCalls).toBe(0);
+  });
+});
+
+// shared-ai-byok 4.2 — the generate adapter's pool/byok branch.
+describe("workersAiGenerate", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("returns null when the AI binding is absent or descriptions are disabled", () => {
+    expect(workersAiGenerate({} as unknown as Env)).toBeNull();
+    expect(
+      workersAiGenerate({ AI: { run: vi.fn() }, AI_DESCRIPTIONS_ENABLED: "false" } as unknown as Env),
+    ).toBeNull();
+  });
+
+  it("pool path (no byok): calls env.AI.run and returns its text unchanged", async () => {
+    const run = vi.fn(async () => ({ response: '{"base":"pool"}' }));
+    const generate = workersAiGenerate({ AI: { run } } as unknown as Env);
+    expect(generate).not.toBeNull();
+    const out = await generate!("PROMPT");
+    expect(run).toHaveBeenCalledOnce();
+    expect(out).toBe('{"base":"pool"}');
+  });
+
+  it("byok path: routes to the customer provider via fetch, never env.AI", async () => {
+    const run = vi.fn(async () => ({ response: "POOL" }));
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ content: [{ type: "text", text: '{"base":"byok"}' }] }), {
+        status: 200,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const generate = workersAiGenerate({ AI: { run } } as unknown as Env, {
+      provider: "anthropic",
+      model: "claude-x",
+      apiKey: "sk-ant",
+    });
+    const out = await generate!("PROMPT");
+    expect(out).toBe('{"base":"byok"}');
+    expect(run).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect((fetchMock.mock.calls[0] as [string, RequestInit])[0]).toBe(
+      "https://api.anthropic.com/v1/messages",
+    );
   });
 });

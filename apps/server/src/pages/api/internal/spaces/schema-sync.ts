@@ -76,6 +76,7 @@ import {
   workersAiGenerate,
 } from "../../../../lib/per-space/describe-schema-io";
 import { runEngineHealthScore, workersAiScoreMetric } from "../../../../lib/per-space/health-score-run";
+import { resolveByokAdapterForSpace } from "../../../../lib/ai/byok-credential";
 import { inferAndWriteSyncedViews } from "../../../../lib/per-space/relationships-io";
 import { regenerateQueryViews } from "../../../../lib/per-space/query-views-io";
 import {
@@ -351,6 +352,9 @@ export async function spacesSchemaSyncHandler(
     // time, and the model calls must not delay the sync ack or hold a pooled
     // connection (load and save are separate short transactions around the
     // generation). Skipped when the AI binding is absent or disabled.
+    // Availability gate (unchanged): both factories share the same condition,
+    // so `generate`/`scoreMetric` are both null or both non-null. They double
+    // as the pool closures reused below when the org isn't BYOK.
     const generate = workersAiGenerate(env);
     const scoreMetric = workersAiScoreMetric(env);
     if (generate || scoreMetric) {
@@ -359,12 +363,18 @@ export async function spacesSchemaSyncHandler(
         (async () => {
           const fresh = createMasterDb(env);
           try {
-            if (generate) {
+            // Resolve BYOK routing once, server-side (no HTTP) — these adapters
+            // run in-Worker so they decrypt the key directly (shared-ai-byok
+            // 4.2). Null = pool for everyone not BYOK-entitled/keyed.
+            const byok = await resolveByokAdapterForSpace(fresh.db, env.BASEOUT_ENCRYPTION_KEY, spaceId);
+            const generateFn = byok ? workersAiGenerate(env, byok) : generate;
+            const scoreMetricFn = byok ? workersAiScoreMetric(env, byok) : scoreMetric;
+            if (generateFn) {
               await runDescribeBase({
                 baseId: captured.baseId,
                 load: () => withSpaceSchema(fresh.db, pgLocator, (tx) => loadDescribeBaseData(tx, captured.baseId)),
                 save: (updates) => withSpaceSchema(fresh.db, pgLocator, (tx) => saveDescriptionUpdates(tx, updates)),
-                generate,
+                generate: generateFn,
               });
             }
             // Health scores after every schema capture (the Health tab's
@@ -372,14 +382,14 @@ export async function spacesSchemaSyncHandler(
             // schema actually changed or the base has never been scored is
             // decided inside resolveScoreInputs' enabled-metrics gate; scoring
             // an unchanged base refreshes staleness cheaply at POC scale.
-            if (scoreMetric && result.schemaChanged) {
+            if (scoreMetricFn && result.schemaChanged) {
               await runEngineHealthScore({
                 masterDb: fresh.db,
                 pgLocator,
                 spaceId,
                 baseId: captured.baseId,
                 runId: baseRunId,
-                scoreMetric,
+                scoreMetric: scoreMetricFn,
               });
             }
           } catch (err) {
