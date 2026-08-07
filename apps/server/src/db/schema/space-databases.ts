@@ -28,6 +28,11 @@ export const spaceDatabases = baseout.table("space_databases", {
   d1DatabaseId: text("d1_database_id"),
   pgLocator: text("pg_locator"),
   byodbConnectionStringEnc: text("byodb_connection_string_enc"),
+  // Tier-facing isolation class (shared-db-isolation-ladder L1). Migration:
+  // apps/web/drizzle/0037_db_isolation_ladder.sql. Derived from backend today;
+  // the engine will set it explicitly once L3 cluster provisioning lands.
+  isolationClass: text("isolation_class"), // d1 | shared_cluster | dedicated_cluster | byodb
+  clusterId: text("cluster_id"),
   schemaVersion: integer("schema_version"),
   lastSchemaSyncAt: timestamp("last_schema_sync_at", { withTimezone: true }),
   lastRecordsSyncAt: timestamp("last_records_sync_at", { withTimezone: true }),

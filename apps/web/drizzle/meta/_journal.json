@@ -260,6 +260,13 @@
       "when": 1786111489467,
       "tag": "0036_ai_provider_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1786113953380,
+      "tag": "0037_db_isolation_ladder",
+      "breakpoints": true
     }
   ]
 }

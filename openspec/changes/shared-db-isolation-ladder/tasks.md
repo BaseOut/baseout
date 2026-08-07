@@ -4,8 +4,8 @@ TDD per CLAUDE.md §3.4. Provisioning/promotion are pure-orchestration modules w
 
 ## 1. Model
 
-- [ ] 1.1 `space_databases` gains `isolation_class` (`d1 | shared_cluster | dedicated_cluster | byodb`) + nullable `cluster_id`; derive/backfill `isolation_class` from existing `backend`; `packages/db-schema` + canonical migration in `apps/web`; server/admin mirrors header-commented; `db:check` clean
-- [ ] 1.2 New `db_clusters` master table (kind, owner_org_id, connection/Hyperdrive config ref, status); migration + mirrors; tests for the row lifecycle helpers
+- [x] 1.1 `space_databases` gains `isolation_class` (`d1 | shared_cluster | dedicated_cluster | byodb`) + nullable `cluster_id`; derive/backfill `isolation_class` from existing `backend`; `packages/db-schema` + canonical migration in `apps/web`; server/admin mirrors header-commented; `db:check` clean — _DONE 2026-08-07: added both columns + a nullable-tolerant CHECK to `apps/web/src/db/schema/core.ts`; canonical migration `drizzle/0037_db_isolation_ladder.sql` (additive) with a backfill UPDATE (d1→d1, managed_pg→shared_cluster, byodb→byodb); applied to dev; `db:check` clean; server mirror `apps/server/src/db/schema/space-databases.ts` updated (header cites 0037)._
+- [~] 1.2 New `db_clusters` master table (kind, owner_org_id, connection/Hyperdrive config ref, status); migration + mirrors; tests for the row lifecycle helpers — _PARTIAL 2026-08-07: table + FKs + CHECKs + owner-org index defined in `core.ts` and created by 0037. **REMAINING:** the row-lifecycle helpers (create/lookup a cluster row) + their tests land with L3 provisioning, which is their first consumer — no reader yet, so nothing to unit-test._
 
 ## 2. Tier gate
 

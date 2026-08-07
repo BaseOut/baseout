@@ -726,6 +726,34 @@ export const storageDestinations = baseout.table('storage_destinations', {
 // ———————————————————————————————————————————————————————————————————————————
 
 // ———————————————————————————————————————————————————————————————————————————
+// DB CLUSTERS
+// Registry of managed-Postgres clusters (shared-db-isolation-ladder L2). One row
+// per cluster: `kind` = shared (env-singleton, multi-tenant schema-per-Space) or
+// dedicated (one account owns the whole cluster). `owner_org_id` is NULL for a
+// shared cluster. `connection_ref` points at the Hyperdrive/connection config.
+// Cluster provisioning + the space_databases.cluster_id wire land in L3.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const dbClusters = baseout.table('db_clusters', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  kind: text('kind').notNull(), // 'shared' | 'dedicated'
+  ownerOrgId: text('owner_org_id').references(() => organizations.id, {
+    onDelete: 'cascade',
+  }),
+  connectionRef: text('connection_ref'),
+  status: text('status').notNull().default('active'), // provisioning | active | draining | retired
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check('db_clusters_kind_check', sql`${table.kind} IN ('shared', 'dedicated')`),
+  check(
+    'db_clusters_status_check',
+    sql`${table.status} IN ('provisioning', 'active', 'draining', 'retired')`,
+  ),
+  index('db_clusters_owner_org_idx').on(table.ownerOrgId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
 // SPACE DATABASES
 // Filed by openspec/changes/system-per-space-db. One row per Space — the
 // control-plane pointer to that Space's dedicated per-Space database.
@@ -763,6 +791,14 @@ export const spaceDatabases = baseout.table('space_databases', {
   d1DatabaseId: text('d1_database_id'),
   pgLocator: text('pg_locator'),
   byodbConnectionStringEnc: text('byodb_connection_string_enc'),
+  // Tier-facing isolation class (shared-db-isolation-ladder L1). Backfilled from
+  // `backend` (d1→d1, managed_pg→shared_cluster, byodb→byodb); the
+  // dedicated_cluster class + the cluster wire land in L3. `backend` stays the
+  // engine/dialect; this is the pricing-ladder dimension.
+  isolationClass: text('isolation_class'),
+  // The managed-PG cluster this Space's DB lives on. NULL for d1 / byodb, or
+  // until L3 provisioning assigns one.
+  clusterId: text('cluster_id').references(() => dbClusters.id),
   // SPACE_SCHEMA_VERSION applied to the per-Space DB; drives the lazy on-access
   // migration check. Null until first provision completes.
   schemaVersion: integer('schema_version'),
@@ -786,6 +822,10 @@ export const spaceDatabases = baseout.table('space_databases', {
   check(
     'space_databases_sovereign_requires_records',
     sql`${table.backend} <> 'byodb' OR ${table.recordsEnabled} = true`,
+  ),
+  check(
+    'space_databases_isolation_class_check',
+    sql`${table.isolationClass} IS NULL OR ${table.isolationClass} IN ('d1', 'shared_cluster', 'dedicated_cluster', 'byodb')`,
   ),
 ])
 
