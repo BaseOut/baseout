@@ -15,8 +15,9 @@ what's in scope today, the order, and cross-change ordering. Update the Status c
 | `shared-db-isolation-ladder` | L2.1 pure gate; L1 `isolation_class`/`cluster_id`/`db_clusters` (migration) | ✅ done | `c3452a6` (L2.1), `6e88b4d` (L1) |
 | `shared-entitlements` | destinations creation-cap (4.3) | ✅ done | `2f218f6` |
 | `shared-entitlements` | retention wiring (4.4) | ⛔ deferred | — (live deletion logic, no dark-launch flag) |
-| `shared-ai-byok` | 1.1 migration; 2.1/2.2 key-management API | ✅ done | `1a1325c` (1.1), `cbe89ce` (2.x) |
-| `shared-ai-byok` | 4.2/4.3 routing + 3.1 mirror | ⛔ deferred | — (needs 3.3 credential delivery to function) |
+| `shared-ai-byok` | 1.1 migration; 2.1/2.2 key-management API; 3.1 engine deps (mirror + findActiveKey + isByokEntitled) | ✅ done | `1a1325c`, `cbe89ce`, `76a7974` |
+| `shared-ai-byok` | 3.3 credential endpoint + 4.2/4.3 call-site routing | ⛔ deferred | — routing needs per-provider clients (anthropic/openai) in the two Workers-AI adapters — larger than a seam wire |
+| `system-r2-bucket-topology` | caller wiring (managed backups → per-account bucket) | ⛔ blocked | R2 provisioning creds live only in the Trigger.dev env; can't verify locally (verify-then-code) |
 
 Also shipped earlier this cycle: entitlements creation-cap kernel + usage endpoint (9.1) + Spaces & Seats
 enforcement (`d73a9bf`, `7d52bd5`). Every enforcement path is behind `ENTITLEMENT_ENFORCEMENT` (default off).
