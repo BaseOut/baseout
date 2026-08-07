@@ -29,6 +29,7 @@ export default defineConfig({
     './src/db/schema/core.ts',
     './src/db/schema/two-factor.ts',
     './src/db/schema/entitlements.ts',
+    './src/db/schema/ai-provider-keys.ts',
   ],
   out: './drizzle',
   schemaFilter: ['baseout'],
