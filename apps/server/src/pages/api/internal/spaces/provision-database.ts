@@ -11,21 +11,25 @@
 // Result-code → HTTP-status:
 //   ok                                       → 200 { ok, status, backend, locator }
 //   invalid_backend / sovereign_requires_…   → 400
+//   isolation_above_ceiling                  → 403 (DB_ISOLATION_ENFORCEMENT only)
 //   backend_not_implemented                  → 501
 //   provision_failed                         → 500
 
 import { eq } from "drizzle-orm";
+import { refuseAboveCeiling } from "@baseout/db-schema";
 import type { AppLocals, Env } from "../../../../env";
 import {
   deprovisionSpaceDatabase,
   provisionSpaceDatabase,
+  type ProvisionDeps,
 } from "../../../../lib/provisioning/provision";
 import {
   applyManagedPgSchema,
   dropManagedPgSchema,
   drizzleSpaceDbWriter,
 } from "../../../../lib/provisioning/provision-pg";
-import { spaceDatabases } from "../../../../db/schema";
+import { resolveEntitlements } from "../../../../lib/entitlements/resolve";
+import { spaceDatabases, spaces } from "../../../../db/schema";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -39,7 +43,7 @@ function jsonResponse(body: unknown, status: number): Response {
 
 export async function spacesProvisionDatabaseHandler(
   request: Request,
-  _env: Env,
+  env: Env,
   _ctx: ExecutionContext,
   locals: AppLocals,
   spaceId: string,
@@ -105,10 +109,38 @@ export async function spacesProvisionDatabaseHandler(
 
   const { db, sql } = locals.getMasterDb();
 
+  // DB-isolation-class tier ceiling (shared-db-isolation-ladder L2.2). Only
+  // enforced under the DB_ISOLATION_ENFORCEMENT flag — off by default because
+  // the d1 backend isn't wired yet, so enforcing would wrongly refuse Lite
+  // (ceiling d1) orgs that currently provision managed_pg. Flag off ⇒ the gate
+  // is undefined and provisioning behaviour is byte-for-byte unchanged.
+  const isolationGate: ProvisionDeps["isolationGate"] =
+    env.DB_ISOLATION_ENFORCEMENT === "1"
+      ? async ({ requestedClass }) => {
+          const [space] = await db
+            .select({ organizationId: spaces.organizationId })
+            .from(spaces)
+            .where(eq(spaces.id, spaceId))
+            .limit(1);
+          // No Space row (or no entitlement resolution) → fail open (allow).
+          if (!space) return { allowed: true, ceiling: "byodb" };
+          const resolution = await resolveEntitlements(db, space.organizationId);
+          if (!resolution) return { allowed: true, ceiling: "byodb" };
+          try {
+            return refuseAboveCeiling(requestedClass, resolution.entitlements);
+          } catch {
+            // Org's catalog lacks the database_isolation_class feature → fail
+            // open (allow) rather than 500 the provisioning call.
+            return { allowed: true, ceiling: "byodb" };
+          }
+        }
+      : undefined;
+
   const result = await provisionSpaceDatabase(
     {
       writer: drizzleSpaceDbWriter(db),
       backends: { managedPg: (id) => applyManagedPgSchema(sql, id) },
+      isolationGate,
     },
     { spaceId, backend, recordsEnabled, provisionedByUserId },
   );
@@ -129,8 +161,10 @@ export async function spacesProvisionDatabaseHandler(
     result.code === "invalid_backend" ||
     result.code === "sovereign_requires_records"
       ? 400
-      : result.code === "backend_not_implemented"
-        ? 501
-        : 500;
+      : result.code === "isolation_above_ceiling"
+        ? 403
+        : result.code === "backend_not_implemented"
+          ? 501
+          : 500;
   return jsonResponse({ ok: false, error: result.code, message: result.message }, status);
 }

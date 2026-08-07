@@ -3,6 +3,7 @@ import {
   residencyPosture,
   validateProvisionRequest,
   schemaNameForSpace,
+  isolationClassForBackend,
 } from "../../../src/lib/provisioning/posture";
 
 describe("residencyPosture", () => {
@@ -44,5 +45,13 @@ describe("schemaNameForSpace", () => {
   it("throws on a non-UUID (injection guard — the value reaches DDL)", () => {
     expect(() => schemaNameForSpace('x"; drop schema baseout; --')).toThrow();
     expect(() => schemaNameForSpace("not-a-uuid")).toThrow();
+  });
+});
+
+describe("isolationClassForBackend", () => {
+  it("maps each backend to its database_isolation_class ladder member", () => {
+    expect(isolationClassForBackend("d1")).toBe("d1");
+    expect(isolationClassForBackend("managed_pg")).toBe("shared_cluster");
+    expect(isolationClassForBackend("byodb")).toBe("byodb");
   });
 });

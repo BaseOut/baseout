@@ -24,6 +24,27 @@ export function residencyPosture(backend: SpaceDbBackend): ResidencyPosture {
   return backend === "byodb" ? "sovereign" : "managed";
 }
 
+/** A member of the `database_isolation_class` ladder (ascending isolation). */
+export type IsolationClass =
+  | "d1"
+  | "shared_cluster"
+  | "dedicated_cluster"
+  | "byodb";
+
+/**
+ * Maps a provisioning backend to its `database_isolation_class` ladder member
+ * (the entitlement-catalog enum the tier ceiling is graded against):
+ *   d1 → d1, managed_pg → shared_cluster, byodb → byodb.
+ *
+ * `dedicated_cluster` has no distinct backend today (a dedicated cluster is
+ * still `managed_pg` at the row level, distinguished by its `db_clusters`
+ * owner) — it is not reachable from a backend alone, so it never appears here.
+ * Per openspec/changes/shared-db-isolation-ladder (tasks L1.1 / L2.2).
+ */
+export function isolationClassForBackend(backend: SpaceDbBackend): IsolationClass {
+  return backend === "managed_pg" ? "shared_cluster" : backend;
+}
+
 export type ProvisionValidation =
   | { ok: true }
   | { ok: false; code: "invalid_backend" | "sovereign_requires_records" };

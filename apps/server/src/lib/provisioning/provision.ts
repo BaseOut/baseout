@@ -11,6 +11,7 @@
 
 import { SPACE_SCHEMA_VERSION } from "@baseout/db-schema/space";
 import {
+  isolationClassForBackend,
   validateProvisionRequest,
   type SpaceDbBackend,
 } from "./posture";
@@ -35,6 +36,7 @@ export type ProvisionResult =
       code:
         | "invalid_backend"
         | "sovereign_requires_records"
+        | "isolation_above_ceiling"
         | "backend_not_implemented"
         | "provision_failed";
       message?: string;
@@ -71,6 +73,18 @@ export interface ProvisionBackends {
 export interface ProvisionDeps {
   writer: SpaceDbProvisionWriter;
   backends: ProvisionBackends;
+  /**
+   * Optional DB-isolation-class tier ceiling gate (shared-db-isolation-ladder
+   * L2.2). When present, provisioning is refused if the requested class exceeds
+   * the org's entitlement ceiling. Returns null to fail open (no resolution).
+   * ABSENT by default — the route only supplies it under the
+   * DB_ISOLATION_ENFORCEMENT flag, so default behaviour is byte-for-byte
+   * unchanged.
+   */
+  isolationGate?: (input: {
+    spaceId: string;
+    requestedClass: string;
+  }) => Promise<{ allowed: boolean; ceiling: string } | null>;
 }
 
 export async function provisionSpaceDatabase(
@@ -84,6 +98,24 @@ export async function provisionSpaceDatabase(
   if (!valid.ok) return valid; // {ok:false, code} — no DB write on a bad request
 
   const backend = input.backend as SpaceDbBackend;
+
+  // Tier ceiling: refuse a class the org isn't entitled to BEFORE touching the
+  // row state machine, so a denied request writes nothing. The gate is injected
+  // (and only supplied under DB_ISOLATION_ENFORCEMENT); absent ⇒ unchanged. A
+  // null result is fail-open (no entitlement resolution → allow).
+  if (deps.isolationGate) {
+    const gate = await deps.isolationGate({
+      spaceId: input.spaceId,
+      requestedClass: isolationClassForBackend(backend),
+    });
+    if (gate && !gate.allowed) {
+      return {
+        ok: false,
+        code: "isolation_above_ceiling",
+        message: `isolation class '${isolationClassForBackend(backend)}' exceeds the plan ceiling '${gate.ceiling}'`,
+      };
+    }
+  }
 
   // Idempotent: an already-active row means the per-Space DB exists. Re-running
   // would re-create tables and fail; short-circuit instead.

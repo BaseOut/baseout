@@ -10,7 +10,7 @@ TDD per CLAUDE.md §3.4. Provisioning/promotion are pure-orchestration modules w
 ## 2. Tier gate
 
 - [x] 2.1 Pure `allowedIsolationClasses(entitlements)` + `refuseAboveCeiling(requested, entitlement)` using the resolution lib's `database_isolation_class` rank; exhaustive Vitest (each tier → allowed set; above-ceiling refusal) — _DONE 2026-08-07: `packages/db-schema/src/entitlements/isolation-ladder.ts`, barrel-exported; data-driven off the resolved feature's `enumValues` (reuses `getEnum`/`enumRank`, no hardcoded ladder); 10 Vitest cases (Lite/Plus/Max ceilings, requested==ceiling, unknown-class + not-resolved throw). Wiring into provisioning entry points is L2.2/L3 (pending)._
-- [ ] 2.2 Wire the gate into every provisioning entry point; downgrade leaves existing DBs running, caps only new provisioning; tests
+- [x] 2.2 Wire the gate into every provisioning entry point; downgrade leaves existing DBs running, caps only new provisioning; tests — _DONE 2026-08-07: optional `isolationGate` dep on `provisionSpaceDatabase` (denied ⇒ `isolation_above_ceiling`, writes nothing) + `isolationClassForBackend` map (posture.ts); the `/provision-database` route assembles the gate only when `DB_ISOLATION_ENFORCEMENT === "1"` (else undefined ⇒ byte-identical), resolving the Space's org → `resolveEntitlements` → `refuseAboveCeiling` → HTTP 403; fail-open on no space / no plan / missing feature (never 500s). posture 3 + provision 4 new Vitest cases; server tsc clean. Dark by default (d1 backend unimplemented, so enforcing would wrongly refuse Lite). Only NEW provisioning is gated — existing DBs untouched._
 
 ## 3. Provisioning
 

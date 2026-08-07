@@ -122,6 +122,79 @@ describe("provisionSpaceDatabase", () => {
     expect(state.calls).toEqual(["getStatus", "beginProvisioning", "markError"]);
     expect(state.lastError?.message).toContain("backend_not_implemented:d1");
   });
+
+  it("refuses when the isolation gate denies — before any DB write", async () => {
+    const { state, writer } = fakeWriter();
+    const res = await provisionSpaceDatabase(
+      {
+        writer,
+        backends: { managedPg: okManagedPg() },
+        isolationGate: async () => ({ allowed: false, ceiling: "d1" }),
+      },
+      { spaceId: SPACE_ID, backend: "managed_pg", recordsEnabled: false },
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.code).toBe("isolation_above_ceiling");
+    expect(state.calls).toEqual([]); // gate denied → no getStatus/begin, nothing written
+  });
+
+  it("passes the requested isolation class to the gate and proceeds when allowed", async () => {
+    const { state, writer } = fakeWriter();
+    let seen: { spaceId: string; requestedClass: string } | undefined;
+    const res = await provisionSpaceDatabase(
+      {
+        writer,
+        backends: { managedPg: okManagedPg("bo_space_ok") },
+        isolationGate: async (input) => {
+          seen = input;
+          return { allowed: true, ceiling: "byodb" };
+        },
+      },
+      { spaceId: SPACE_ID, backend: "managed_pg", recordsEnabled: false },
+    );
+    expect(seen).toEqual({ spaceId: SPACE_ID, requestedClass: "shared_cluster" });
+    expect(res).toEqual({
+      ok: true,
+      status: "active",
+      backend: "managed_pg",
+      locator: "bo_space_ok",
+    });
+    expect(state.calls).toEqual(["getStatus", "beginProvisioning", "markActive"]);
+  });
+
+  it("proceeds when the gate returns null (fail open — no entitlement resolution)", async () => {
+    const { state, writer } = fakeWriter();
+    const res = await provisionSpaceDatabase(
+      {
+        writer,
+        backends: { managedPg: okManagedPg("bo_space_open") },
+        isolationGate: async () => null,
+      },
+      { spaceId: SPACE_ID, backend: "managed_pg", recordsEnabled: false },
+    );
+    expect(res).toEqual({
+      ok: true,
+      status: "active",
+      backend: "managed_pg",
+      locator: "bo_space_open",
+    });
+    expect(state.calls).toEqual(["getStatus", "beginProvisioning", "markActive"]);
+  });
+
+  it("proceeds unchanged when no isolationGate is provided (default)", async () => {
+    const { state, writer } = fakeWriter();
+    const res = await provisionSpaceDatabase(
+      { writer, backends: { managedPg: okManagedPg("bo_space_nogate") } },
+      { spaceId: SPACE_ID, backend: "managed_pg", recordsEnabled: false },
+    );
+    expect(res).toEqual({
+      ok: true,
+      status: "active",
+      backend: "managed_pg",
+      locator: "bo_space_nogate",
+    });
+    expect(state.calls).toEqual(["getStatus", "beginProvisioning", "markActive"]);
+  });
 });
 
 // In-memory fake for the teardown deps: records the call sequence.
