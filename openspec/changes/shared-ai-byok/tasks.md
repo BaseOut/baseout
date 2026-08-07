@@ -9,8 +9,8 @@ TDD throughout (CLAUDE.md §3.4): each pure module writes its Vitest suite first
 
 ## 2. Key-management API + settings UI (apps/web, Plus+ gated)
 
-- [ ] 2.1 API routes (add / rotate / revoke) + tests: server-side validation, Org-admin authz, `byo_ai_key` gate via `resolveEntitlements`; a submit-time provider health-check (Task 6.1) must pass before storing `status='active'`; audit-log rows on every write (metadata only — provider, `last_four`, actor — never the key).
-- [ ] 2.2 Read/list endpoint + tests: returns only `{ provider, last_four, label, status, model_default, last_validated_at }` — **never** `key_enc` or plaintext (assert in test).
+- [~] 2.1 API routes (add / rotate / revoke) + tests: server-side validation, Org-admin authz, `byo_ai_key` gate via `resolveEntitlements`; a submit-time provider health-check (Task 6.1) must pass before storing `status='active'`; audit-log rows on every write (metadata only — provider, `last_four`, actor — never the key). — _PARTIAL 2026-08-07: routes + DI handlers landed. `POST`/`DELETE /api/ai-keys` (`apps/web/src/pages/api/ai-keys/index.ts`): provider allow-list, non-empty key, **owner/admin-only** mutations, `byo_ai_key` gate via `resolveEntitlements` (403 `not_entitled` below Plus); add/rotate via `persistProviderKey`, revoke = status→disabled; 13 Vitest cases (incl. plaintext never echoed). **REMAINING:** submit-time provider health-check (6.1) before `status='active'`; audit-log rows on writes._
+- [x] 2.2 Read/list endpoint + tests: returns only `{ provider, last_four, label, status, model_default, last_validated_at }` — **never** `key_enc` or plaintext (assert in test). — _DONE 2026-08-07: `GET /api/ai-keys` selects display-only columns; test asserts the payload never contains `key_enc`._
 - [ ] 2.3 Settings UI (Storybook-first per §4.2): per-provider key entry (write-only field, shows only `last_four` once saved), rotate + revoke controls, status/last-validated display, disabled affordance when un-entitled; `setButtonLoading` on every server-waiting action (§4.5). Paired designer surface flagged if a ui-only change is spun out.
 
 ## 3. Routing seam + credential delivery (apps/server)
