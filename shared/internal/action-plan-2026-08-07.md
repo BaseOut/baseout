@@ -9,12 +9,17 @@ what's in scope today, the order, and cross-change ordering. Update the Status c
 
 ## The four changes + today's in-scope tasks
 
-| Change | In-scope tasks (today) | Status | Notes |
+| Change | In-scope tasks (today) | Status | Commit |
 |---|---|---|---|
-| `system-r2-bucket-topology` | 1.1 `resolveManagedBucketName`; 2.1 `buildR2Key` kind-branch | ⏳ in progress | pure kernels; `kind` optional (default `byos`) so existing callers are unchanged. §4 doc-body relocation stays LAST (non-additive). |
-| `shared-db-isolation-ladder` | L2.1 pure gate; L1 `isolation_class`/`cluster_id`/`db_clusters` (migration) | ⏳ in progress | `database_isolation_class` slug + ladder already seeded/resolvable. L3+ (cluster provisioning, promotion job) deferred. |
-| `shared-entitlements` | destinations creation-cap (4.3); retention wiring (4.4) | ⬜ pending | destinations = 4 BYOS callback insertion points, per-org distinct-external count. 2.3 (server cutover) + 5.1 (emails) flagged below. |
-| `shared-ai-byok` | 1.1 migration; 4.2/4.3 route Workers-AI sites + 3.1 mirror; 2.1/2.2 API | ⬜ pending | `persistProviderKey` (1.2) + `resolveAiRouting` (3.2) already built. 2.3 UI + 4.1 chat + 3.3 endpoint deferred. |
+| `system-r2-bucket-topology` | 1.1 `resolveManagedBucketName`; 2.1 `buildR2Key` kind-branch | ✅ done | `4a4a1c7` |
+| `shared-db-isolation-ladder` | L2.1 pure gate; L1 `isolation_class`/`cluster_id`/`db_clusters` (migration) | ✅ done | `c3452a6` (L2.1), `6e88b4d` (L1) |
+| `shared-entitlements` | destinations creation-cap (4.3) | ✅ done | `2f218f6` |
+| `shared-entitlements` | retention wiring (4.4) | ⛔ deferred | — (live deletion logic, no dark-launch flag) |
+| `shared-ai-byok` | 1.1 migration; 2.1/2.2 key-management API | ✅ done | `1a1325c` (1.1), `cbe89ce` (2.x) |
+| `shared-ai-byok` | 4.2/4.3 routing + 3.1 mirror | ⛔ deferred | — (needs 3.3 credential delivery to function) |
+
+Also shipped earlier this cycle: entitlements creation-cap kernel + usage endpoint (9.1) + Spaces & Seats
+enforcement (`d73a9bf`, `7d52bd5`). Every enforcement path is behind `ENTITLEMENT_ENFORCEMENT` (default off).
 
 Already shipped this cycle (do not rebuild): entitlements creation-cap kernel + usage endpoint
 (9.1 org-scope) + Spaces & Seats cap enforcement (`shared-entitlements` 3.4 / 4.3 subset / 9.1).
@@ -34,6 +39,10 @@ Already shipped this cycle (do not rebuild): entitlements creation-cap kernel + 
   server `preferEntitlements` flag + parity. Do last/carefully.
 - `shared-entitlements` 5.1 real limit emails — apps/server has **no** `send_email` binding (rail is
   apps/web only); needs a forward-to-web internal route or a new server binding.
+- `shared-entitlements` 4.4 retention wiring — modifies **live data-deletion logic** (the retention
+  cron) and has **no** dark-launch flag, so a change flips deletion windows immediately on deploy.
+  Deserves a careful standalone pass: read `decide-deletions.ts`, add a guard/flag, and reconcile the
+  new per-tier windows (Lite 90d … Max 1095d) against the legacy `TIER_CAP_DAYS` ladder before cutover.
 - `shared-ai-byok` 2.3 settings UI (ui-sync/Storybook governed), 4.1 chat task (workflows Anthropic
   path), 3.3 credential-fetch endpoint (pair with 4.1).
 - `system-r2-bucket-topology` §4 doc-body relocation; `shared-db-isolation-ladder` L3+ — the
