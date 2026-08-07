@@ -9,7 +9,7 @@ TDD per CLAUDE.md §3.4. Provisioning/promotion are pure-orchestration modules w
 
 ## 2. Tier gate
 
-- [ ] 2.1 Pure `allowedIsolationClasses(entitlements)` + `refuseAboveCeiling(requested, entitlement)` using the resolution lib's `database_isolation_class` rank; exhaustive Vitest (each tier → allowed set; above-ceiling refusal)
+- [x] 2.1 Pure `allowedIsolationClasses(entitlements)` + `refuseAboveCeiling(requested, entitlement)` using the resolution lib's `database_isolation_class` rank; exhaustive Vitest (each tier → allowed set; above-ceiling refusal) — _DONE 2026-08-07: `packages/db-schema/src/entitlements/isolation-ladder.ts`, barrel-exported; data-driven off the resolved feature's `enumValues` (reuses `getEnum`/`enumRank`, no hardcoded ladder); 10 Vitest cases (Lite/Plus/Max ceilings, requested==ceiling, unknown-class + not-resolved throw). Wiring into provisioning entry points is L2.2/L3 (pending)._
 - [ ] 2.2 Wire the gate into every provisioning entry point; downgrade leaves existing DBs running, caps only new provisioning; tests
 
 ## 3. Provisioning
