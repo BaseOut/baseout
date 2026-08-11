@@ -1,3 +1,4 @@
+// @lat: [[durable-objects#Durable Objects#ConnectionDO]]
 // ConnectionDO — per-Airtable-Connection rate-limit gateway + lock holder
 // + token cache.
 //

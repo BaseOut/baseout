@@ -1,3 +1,4 @@
+// @lat: [[architecture#Architecture#Per-Request masterDb]]
 // Per-request master DB factory.
 //
 // Per CLAUDE.md §5.1: postgres-js holds TCP sockets and workerd forbids

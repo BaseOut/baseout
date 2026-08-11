@@ -1,3 +1,4 @@
+// @lat: [[architecture#Architecture#Account Context]]
 /**
  * Account context loader — resolves the full "viewer" for a given user.
  *
