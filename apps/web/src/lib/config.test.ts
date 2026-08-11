@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { getPageContext } from './config'
+import { getPageContext, getNavItems, getBreadcrumbs } from './config'
 import type { AccountContext } from './account'
 
 type LocalsSubset = {
@@ -87,5 +87,20 @@ describe('getPageContext', () => {
     expect(ctx.productName.length).toBeGreaterThan(0)
     expect(Array.isArray(ctx.navItems)).toBe(true)
     expect(ctx.navItems.length).toBeGreaterThan(0)
+  })
+})
+
+describe('Actions nav entry (web-actions)', () => {
+  it('exposes an /actions item in the Space group', () => {
+    const actions = getNavItems().find((i) => i.href === '/actions')
+    expect(actions).toBeDefined()
+    expect(actions?.label).toBe('Actions')
+    expect(actions?.icon).toContain('square-pen')
+  })
+
+  it('resolves the /actions breadcrumb trail (Home › Actions)', () => {
+    const crumbs = getBreadcrumbs('/actions')
+    expect(crumbs[0]).toEqual({ label: 'Home', href: '/' })
+    expect(crumbs.at(-1)).toEqual({ label: 'Actions' })
   })
 })
