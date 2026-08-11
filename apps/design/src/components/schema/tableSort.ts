@@ -20,6 +20,9 @@ export function wireTableSort(
   root: HTMLElement,
   getGroups: () => SortGroup[],
   getValue: (item: HTMLElement, col: number) => string | number,
+  /** Runs after each re-sort reorders the DOM — lets the caller re-page / re-filter
+   *  (e.g. reset the pager and re-apply its window) against the new order. */
+  afterSort?: () => void,
 ) {
   let col = -1;
   let dir: 1 | -1 = 1;
@@ -42,6 +45,7 @@ export function wireTableSort(
         })
         .forEach((el) => g.container.appendChild(el));
     }
+    afterSort?.();
   };
 
   // Delegate so headers added later (a new Base group created on save) are covered too.

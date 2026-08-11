@@ -45,27 +45,23 @@ export const FIXTURE_INTEGRATIONS_STATE: IntegrationsState = {
   hasBackupConfig: true,
   policy: {
     frequency: 'monthly',
-    // depth-driven (Dan 2026-07-01): record data + attachments on → "Data &
-    // attachments backup" box; schema tied to it by default (grey preview).
-    scope: 'schema-data',
-    recordData: true,
-    attachments: true,
-    schemaTied: true,
-    dataFrequency: 'monthly',
+    // Full backup: data + schema, with a more-frequent schema-only schedule (daily).
+    scope: 'schema_and_data',
     schemaFrequency: 'daily',
-    nextDataAt: new Date(Date.now() + 18 * 24 * 60 * 60 * 1000).toISOString(),
-    nextSchemaAt: new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString(),
+    schemaNextScheduledAt: new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString(),
     storageType: 'byos_google_drive',
     nextScheduledAt: new Date(
       new Date('2026-06-04T09:00:00.000Z').getTime() + 6 * 60 * 60 * 1000,
     ).toISOString(),
     autoAddFutureBases: false,
   },
-  storageDestination: {
-    type: 'google_drive',
-    accountEmail: 'ops@demo.co',
-    connectedAt: '2026-04-15T14:25:00.000Z',
-  },
+  storageDestinations: [
+    {
+      type: 'google_drive',
+      accountEmail: 'ops@demo.co',
+      connectedAt: '2026-04-15T14:25:00.000Z',
+    },
+  ],
   unreadEvents: [
     {
       id: 'evt_design_bases_discovered',
@@ -89,11 +85,14 @@ export const FIXTURE_INTEGRATIONS_STATE_EMPTY: IntegrationsState = {
   hasBackupConfig: false,
   policy: {
     frequency: 'monthly',
+    scope: 'schema_and_data',
+    schemaFrequency: null,
+    schemaNextScheduledAt: null,
     storageType: 'r2_managed',
     nextScheduledAt: null,
     autoAddFutureBases: false,
   },
-  storageDestination: null,
+  storageDestinations: [],
   unreadEvents: [],
 };
 
@@ -225,7 +224,7 @@ export const FIXTURE_INTEGRATIONS_STATE_SETUP_MANY: IntegrationsState = {
     nextScheduledAt: null,
     autoAddFutureBases: false,
   },
-  storageDestination: null,
+  storageDestinations: [],
   unreadEvents: [],
   // ── Workspace auto-enroll (workspace-auto-enroll) ──
   // Deliberately mixed so the picker's global macro renders INDETERMINATE by
@@ -319,6 +318,6 @@ export const FIXTURE_INTEGRATIONS_STATE_SETUP_FITS: IntegrationsState = {
     nextScheduledAt: null,
     autoAddFutureBases: false,
   },
-  storageDestination: null,
+  storageDestinations: [],
   unreadEvents: [],
 };

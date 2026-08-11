@@ -87,6 +87,25 @@ export interface SchemaField {
   /** The symmetric inverse link field id in the linked table (the backlink). */
   inverseFieldId?: string;
 }
+export interface SchemaView {
+  id: string;
+  name: string;
+  /** Airtable view type (grid/form/calendar/…); OPEN enum — unknown values render verbatim. */
+  type?: string;
+  /** Set when the view is PERSONAL (visible to one collaborator alone). */
+  personalForUserId?: string;
+  /** Field ids the view shows (Airtable exposes this for GRID views only). */
+  visibleFieldIds?: string[];
+  /** The capture could not resolve the owning table — the view hangs off the base. */
+  tableUnresolved?: boolean;
+  /** Captured per-view field count — fallback when the table has no fields to count. */
+  fieldCount?: number;
+  /** Deleted in Airtable but retained for history. */
+  removed?: boolean;
+  removedAt?: string;
+  /** Unconfirmed this run (NOT deleted; stays visible). */
+  unknown?: boolean;
+}
 export interface SchemaTable {
   id: string;
   name: string;
@@ -115,6 +134,8 @@ export interface SchemaTable {
   unknown?: boolean;
   /** The Airtable base this table belongs to — drives the base filter on multi-base Spaces. */
   baseId?: string;
+  /** Views (view-schema-details) — a lens over the table, feeds the entity index's view bucket. */
+  views?: SchemaView[];
 }
 interface Props {
   tables: SchemaTable[];
@@ -136,6 +157,9 @@ interface Props {
   interfaces?: AppInterface[];
   /** Embedded, scoped, read-only mode (Docs mini-diagrams): hide the toolbar + minimap. */
   embed?: boolean;
+  /** Default the "group by workspace" affordance on (base-picker-workspace-grouping) when the
+   *  Space's connection carries workspace metadata. */
+  wsGroupDefault?: boolean;
 }
 
 type TableNodeData = {
@@ -622,7 +646,7 @@ function nodeFields(t: SchemaTable, hiddenTypes?: Set<string>, hiddenFields?: Se
 
 function layout(
   tables: SchemaTable[],
-  opts?: { hiddenTypes?: Set<string>; hiddenFields?: Set<string>; showRelationships?: boolean; hiddenRel?: Set<RelKind>; bases?: { id: string; name: string }[] },
+  opts?: { hiddenTypes?: Set<string>; hiddenFields?: Set<string>; showRelationships?: boolean; hiddenRel?: Set<string>; bases?: { id: string; name: string }[] },
 ): { nodes: Node[]; edges: Edge[] } {
   const hiddenTypes = opts?.hiddenTypes;
   const hiddenFields = opts?.hiddenFields;
@@ -978,7 +1002,7 @@ function Canvas({ tables, bases, baseHealth, docs, genState = 'ready', embed = f
   const [hiddenTables, setHiddenTables] = useState<Set<string>>(() => new Set());
   const [hiddenTypes, setHiddenTypes] = useState<Set<string>>(() => new Set());
   const [hiddenFields, setHiddenFields] = useState<Set<string>>(() => new Set());
-  const [hiddenRel, setHiddenRel] = useState<Set<RelKind>>(() => new Set());
+  const [hiddenRel, setHiddenRel] = useState<Set<string>>(() => new Set());
   // Visualize sub-mode (Dan 2026-07-01 / Q8): Data ER diagram (default), the Relationships
   // graph, and the Automations & Interfaces (app-layer) graph (Epic 4).
   const [mode, setMode] = useState<'data' | 'relationships' | 'appLayer'>('data');
@@ -1266,9 +1290,9 @@ function Canvas({ tables, bases, baseHealth, docs, genState = 'ready', embed = f
     }));
   }, [nodes, focusSet, edgeFocus]);
 
-  const displayEdges = useMemo(() => {
+  const displayEdges = useMemo<Edge[]>(() => {
     if (edgeFocus) {
-      return edges.map((e) => {
+      return edges.map((e): Edge => {
         const on = e.id === edgeFocus.id;
         return {
           ...e,
@@ -1277,14 +1301,14 @@ function Canvas({ tables, bases, baseHealth, docs, genState = 'ready', embed = f
       });
     }
     if (!focusSet) return edges;
-    return edges.map((e) => {
+    return edges.map((e): Edge => {
       const on = e.source === selectedId || e.target === selectedId;
       return {
         ...e,
         animated: on,
         style: { ...e.style, stroke: on ? 'var(--color-primary)' : (e.style?.stroke as string), strokeOpacity: on ? 1 : 0.06, strokeWidth: on ? 2 : 1.5 },
         markerEnd: on ? { ...(e.markerEnd as Record<string, unknown>), color: 'var(--color-primary)' } : e.markerEnd,
-      };
+      } as Edge;
     });
   }, [edges, focusSet, selectedId, edgeFocus]);
 

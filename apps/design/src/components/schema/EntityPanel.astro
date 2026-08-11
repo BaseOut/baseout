@@ -1278,7 +1278,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
         const pages = i.type === 'interface'
           ? ifaceList.filter((p) => p.type === 'page' && p.parentId === i.id && p.status !== 'removed').map((p) => ({ id: p.id, name: p.name }))
           : [];
-        return interfaceReadBody({ ...(draftObj(i) as never), pages } as never, readCtx);
+        return interfaceReadBody({ ...draftObj(i), pages } as never, readCtx);
       }
       // NOTE the shape: this used to FALL THROUGH to 'Table' for any unhandled kind, so a view
       // panel would have confidently labelled itself "Table". Every kind is now named explicitly

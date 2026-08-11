@@ -664,6 +664,7 @@ const DOC_SORTS: { v: string; l: string }[] = [
     }
 
     function openDoc(id: string) {
+      if (!root || !docView) return;
       const d = allDocs.find((x) => x.id === id);
       if (!d) return;
       current = d;
@@ -679,6 +680,7 @@ const DOC_SORTS: { v: string; l: string }[] = [
       setMode('edit');
     }
     function newDoc() {
+      if (!root || !docView) return;
       current = { id: 'new', title: '', updatedAt: new Date().toISOString(), bodyHtml: '<p></p>', entityIds: [], recordIds: [], links: [], diagramIds: [] };
       tagIds = [];
       recIds = [];
@@ -714,6 +716,7 @@ const DOC_SORTS: { v: string; l: string }[] = [
     }
 
     function setMode(mode: 'edit' | 'read') {
+      if (!root) return;
       root.classList.toggle('dc-reading', mode === 'read');
       editor.contentEditable = mode === 'edit' ? 'true' : 'false';
       titleField.readOnly = mode === 'read';

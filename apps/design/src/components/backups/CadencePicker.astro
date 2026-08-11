@@ -1,0 +1,44 @@
+---
+/**
+ * CadencePicker — the small frequency segmented control used inside
+ * BackupScheduleScope's "Schedule" column (one per backup group: data + schema).
+ *
+ * Minimal harness primitive: a `.cad` container of daisyUI button-radios named
+ * `name`, one per allowed cadence, with the current `selected` one checked. The
+ * host (BackupScheduleScope) reads the checked value via `input[name]:checked`
+ * and listens for `change` on the enclosing `.cad`, so the only contract this
+ * component owes is: the `.cad` wrapper, the radio `name`, and each option's
+ * `value` being the Frequency string.
+ */
+import type { Frequency } from '@web/lib/capabilities/tier-capabilities';
+
+interface Props {
+  /** Radio-group name the host reads (e.g. `bss-data-cad`). */
+  name: string;
+  /** Currently selected cadence. */
+  selected: Frequency;
+  /** Cadences the tier allows (Features §6.1). */
+  availableFrequencies: readonly Frequency[];
+}
+const { name, selected, availableFrequencies } = Astro.props;
+
+const LABEL: Record<Frequency, string> = {
+  monthly: 'Monthly',
+  weekly: 'Weekly',
+  daily: 'Daily',
+  instant: 'Instant',
+};
+---
+
+<div class="cad join" data-cadence={name}>
+  {availableFrequencies.map((f) => (
+    <input
+      type="radio"
+      class="join-item btn btn-sm"
+      name={name}
+      value={f}
+      aria-label={LABEL[f]}
+      checked={f === selected}
+    />
+  ))}
+</div>

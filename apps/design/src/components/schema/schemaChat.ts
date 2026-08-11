@@ -114,6 +114,7 @@ export function wireChat() {
   archToggle?.addEventListener('change', () => { if (archList) archList.hidden = !archToggle.checked; });
 
   function archiveThread(id: string) {
+    if (!root) return;
     const row = root.querySelector<HTMLElement>(`.chat-threads [data-chat-trow="${CSS.escape(id)}"]`);
     if (!row) return;
     row.remove();

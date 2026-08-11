@@ -319,6 +319,7 @@ export function wireInterfaces() {
   const activePages = (parentId: string) => Array.from(root.querySelectorAll<HTMLElement>(`[data-if-row][data-if-kind="page"]`)).filter((r) => byId.get(r.dataset.ifId!)?.parentId === parentId && byId.get(r.dataset.ifId!)?.status !== 'removed').length;
 
   function upsertRow(i: Iface, prevId: string | null) {
+    if (!root) return;
     const existing = prevId ? root.querySelector<HTMLElement>(`[data-if-row][data-if-id="${CSS.escape(prevId)}"]`) : null;
     if (existing) {
       if (i.type === 'page') existing.outerHTML = pageRowHtml(i);
@@ -346,6 +347,7 @@ export function wireInterfaces() {
   }
 
   function softDelete(id: string) {
+    if (!root) return;
     const rec = byId.get(id);
     if (rec) rec.status = 'removed';
     const row = root.querySelector<HTMLElement>(`[data-if-row][data-if-id="${CSS.escape(id)}"]`);

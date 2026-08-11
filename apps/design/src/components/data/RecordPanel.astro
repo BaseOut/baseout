@@ -392,6 +392,7 @@ const iconsByType = Object.fromEntries(
     const UNDO_MS = 4000;
     function restartCountdown(el: HTMLElement, ms: number) { el.style.setProperty('--rp-undo-ms', ms + 'ms'); el.classList.remove('rp-undo-run'); void el.offsetWidth; el.classList.add('rp-undo-run'); }
     function showToast(label: string, action: { label: string; run: () => void; icon?: string } | null, ms = UNDO_MS) {
+      if (!root) return;
       const el = root.querySelector<HTMLElement>('[data-rp-undo]'); if (!el) return;
       const lbl = el.querySelector<HTMLElement>('[data-rp-undo-label]'); if (lbl) lbl.textContent = label;
       const btn = el.querySelector<HTMLButtonElement>('[data-rp-undo-act]');
@@ -402,7 +403,7 @@ const iconsByType = Object.fromEntries(
       el.hidden = false; restartCountdown(el, ms);
       window.clearTimeout(undoTimer); undoTimer = window.setTimeout(hideUndo, ms);
     }
-    function hideUndo() { const el = root.querySelector<HTMLElement>('[data-rp-undo]'); if (!el) return; window.clearTimeout(undoTimer); el.classList.remove('rp-undo-run'); el.hidden = true; }
+    function hideUndo() { if (!root) return; const el = root.querySelector<HTMLElement>('[data-rp-undo]'); if (!el) return; window.clearTimeout(undoTimer); el.classList.remove('rp-undo-run'); el.hidden = true; }
 
     // ── The ONE shared stacking controller (catalog pattern-multi-panel-drawer) ─────
     const stack = createPanelStack<Panel>({

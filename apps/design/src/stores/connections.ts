@@ -1,5 +1,5 @@
 import { atom } from 'nanostores'
-import type { Frequency } from '../lib/capabilities/tier-capabilities'
+import type { Frequency } from '@web/lib/capabilities/tier-capabilities'
 
 /**
  * Summary of a connection safe for client-side consumption.

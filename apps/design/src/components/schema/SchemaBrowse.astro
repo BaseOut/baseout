@@ -183,7 +183,7 @@ const healthGroups = [{ items: [
           <span class="br-ic"><span class="iconify lucide--database size-4"></span></span>
           <span class="br-fmain">
             <span class="br-name">{base.name}</span>
-            <span class="br-sub">{tables.filter((t) => !t.removed).length} tables · {base.fieldCount} fields</span>
+            <span class="br-sub">{tables.filter((t) => !t.table.removed).length} tables · {base.fieldCount} fields</span>
           </span>
           <span class="br-fcol br-fcol-type"></span>
           <span class="br-fcol br-fcol-status"><Fragment set:html={statusBadgeHtml(base.health)} /></span>
@@ -463,6 +463,7 @@ const healthGroups = [{ items: [
     };
 
     function apply() {
+      if (!root) return;
       let shown = 0;
       // Flat rows.
       flatView.querySelectorAll<HTMLElement>('.br-trow').forEach((r) => {

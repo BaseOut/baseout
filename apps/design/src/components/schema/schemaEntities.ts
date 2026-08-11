@@ -10,7 +10,7 @@
  */
 import type { SchemaTable } from './SchemaCanvas';
 
-export type EntityKind = 'space' | 'base' | 'table' | 'field' | 'view';
+export type EntityKind = 'space' | 'base' | 'table' | 'field' | 'view' | 'interface' | 'automation';
 export type Health = 'green' | 'amber' | 'red';
 
 export interface SchemaEntity {

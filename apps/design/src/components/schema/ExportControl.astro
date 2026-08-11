@@ -31,9 +31,32 @@ interface Props {
   space?: string;
   /** Above this many items the export degrades to an async request (ProBackup's pattern). */
   heavyAbove?: number;
+  /** Additional file formats the user may pick (e.g. `['csv', 'json']`) — the fixed `format` leads. */
+  formats?: string[];
+  /** Offer a "this one vs all" split scope (the open doc / the changed record) alongside the
+   *  filtered/everything scope. `splitSelector` counts the "this one" side. */
+  splitScope?: boolean;
+  splitSelector?: string;
+  /** Copy for the split scope's two radios + the unit noun. */
+  splitLabel?: { one: string; all: string; unit: string };
+  /** Changelog-flavoured scope (counts changes rather than rows). */
+  changeScope?: boolean;
 }
 
-const { tab, format, noun, total, rowSelector = '', space = 'Space', heavyAbove = 500 } = Astro.props;
+const {
+  tab,
+  format,
+  noun,
+  total,
+  rowSelector = '',
+  space = 'Space',
+  heavyAbove = 500,
+  formats,
+  splitScope = false,
+  splitSelector = '',
+  splitLabel,
+  changeScope = false,
+} = Astro.props;
 
 const LABEL: Record<ExportFormat, string> = {
   csv: 'Export CSV',
@@ -47,11 +70,16 @@ const LABEL: Record<ExportFormat, string> = {
   data-export
   data-export-tab={tab}
   data-export-format={format}
+  data-export-formats={formats && formats.length ? formats.join(',') : undefined}
   data-export-noun={noun}
   data-export-total={String(total)}
   data-export-rows={rowSelector}
   data-export-space={space}
   data-export-heavy={String(heavyAbove)}
+  data-export-split={splitScope ? '1' : undefined}
+  data-export-split-rows={splitSelector || undefined}
+  data-export-split-label={splitLabel ? JSON.stringify(splitLabel) : undefined}
+  data-export-change-scope={changeScope ? '1' : undefined}
 >
   <button type="button" class="btn btn-sm gap-1.5 ff-trigger xp-trigger" data-export-trigger aria-haspopup="true" aria-expanded="false">
     <span class="iconify lucide--download size-4 opacity-70" aria-hidden="true"></span>

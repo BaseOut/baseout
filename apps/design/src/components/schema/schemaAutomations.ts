@@ -339,6 +339,7 @@ export function wireAutomations() {
 
   // ── soft-delete (faked) ──
   function softDelete(id: string) {
+    if (!root) return;
     const rec = byId.get(id);
     if (rec) rec.status = 'removed';
     const row = root.querySelector<HTMLElement>(`[data-au-row][data-au-id="${CSS.escape(id)}"]`);

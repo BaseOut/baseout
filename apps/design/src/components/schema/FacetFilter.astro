@@ -29,8 +29,33 @@ interface Props {
   groups: FacetGroup[];
   /** Single-select (radios + the selected label on the trigger) instead of multi-select. */
   single?: boolean;
+  /** Per-group show/hide toggles (a group header carries its own "all" control). */
+  groupToggles?: boolean;
+  /** Single-select: reflect the picked option's label onto the trigger (like `single`), even
+   *  when the trigger otherwise shows the static `label`. */
+  labelTrigger?: boolean;
+  /** Keep the trigger in its active (primary-tinted) state regardless of selection — used by the
+   *  Base/Table pickers, which always name a current value. */
+  alwaysActive?: boolean;
+  /** Iconify class rendered as a leading glyph on the trigger (e.g. `lucide--database`). */
+  triggerIcon?: string;
+  /** Render the control disabled (locked) — the trigger is inert and reasons via `lockReason`. */
+  disabled?: boolean;
+  /** Tooltip/aria copy explaining why the control is disabled. */
+  lockReason?: string;
 }
-const { label, name, groups, single = false } = Astro.props;
+const {
+  label,
+  name,
+  groups,
+  single = false,
+  groupToggles = false,
+  labelTrigger = false,
+  alwaysActive = false,
+  triggerIcon,
+  disabled = false,
+  lockReason,
+} = Astro.props;
 const total = groups.reduce((n, g) => n + g.items.length, 0);
 const firstLabel = groups[0]?.items[0]?.label ?? label;
 
@@ -41,9 +66,26 @@ const fieldIcon = (key?: string) => {
 };
 ---
 
-<div class="dropdown ff" data-facet={name} data-facet-total={total} data-facet-single={single ? '1' : undefined}>
-  <div tabindex="0" role="button" class="btn btn-sm gap-1.5 ff-trigger" aria-label={label}>
-    {single ? <span data-facet-label>{firstLabel}</span> : <>{label}<span class="badge badge-sm badge-primary ff-count" data-facet-badge hidden></span></>}
+<div
+  class="dropdown ff"
+  data-facet={name}
+  data-facet-total={total}
+  data-facet-single={single ? '1' : undefined}
+  data-facet-grouptoggles={groupToggles ? '1' : undefined}
+  data-facet-label-trigger={labelTrigger ? '1' : undefined}
+  data-facet-always-active={alwaysActive ? '1' : undefined}
+  data-facet-lock={lockReason || undefined}
+>
+  <div
+    tabindex={disabled ? -1 : 0}
+    role="button"
+    class:list={['btn btn-sm gap-1.5 ff-trigger', { 'ff-active': alwaysActive, 'btn-disabled': disabled }]}
+    aria-label={disabled && lockReason ? `${label} — ${lockReason}` : label}
+    aria-disabled={disabled ? 'true' : undefined}
+    title={disabled ? lockReason : undefined}
+  >
+    {triggerIcon && <span class={`iconify ${triggerIcon} size-3.5 opacity-70`} aria-hidden="true"></span>}
+    {single || labelTrigger ? <span data-facet-label>{firstLabel}</span> : <>{label}<span class="badge badge-sm badge-primary ff-count" data-facet-badge hidden></span></>}
     <span class="iconify lucide--chevron-down size-3 opacity-55" aria-hidden="true"></span>
   </div>
   <div tabindex="0" class="dropdown-content ff-panel">

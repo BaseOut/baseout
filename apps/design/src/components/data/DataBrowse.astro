@@ -992,6 +992,7 @@ const fieldIconSvg = (type?: string) => {
       thead.innerHTML = `<tr>${cells}<th aria-label="Open"></th></tr>`;
     }
     function renderBody() {
+      if (!root) return;
       const v = active(); const pid = primaryId();
       const colIds = orderedColIds();
       const rows = rowsForActive();
@@ -1029,6 +1030,7 @@ const fieldIconSvg = (type?: string) => {
       root.querySelectorAll<HTMLElement>('[data-dg-clear]').forEach((c) => (c.hidden = !filtering && v.hiddenCols.size === 0));
     }
     function renderGrid() {
+      if (!root) return;
       renderHead(); renderBody();
       // Mirror the active view's state onto the root — the chat "Current Browse view" context chip reads it.
       root.dataset.dgCtxTable = activeTable().name;
@@ -1221,6 +1223,7 @@ const fieldIconSvg = (type?: string) => {
       }).join('');
     };
     function renderFilter() {
+      if (!root) return;
       const tree = treeRoot();
       fbTree.innerHTML = groupBody(tree, '');
       const n = countConds(tree);
@@ -1362,6 +1365,7 @@ const fieldIconSvg = (type?: string) => {
     // Reflect a scope picker's lock state onto its trigger — a bubbling `facetlock` event that
     // FacetFilter itself owns the visual treatment for (disabled + lock glyph + tooltip reason).
     function setFacetLocked(name: string, locked: boolean) {
+      if (!root) return;
       root.querySelector(`[data-facet="${name}"]`)?.dispatchEvent(
         new CustomEvent('facetlock', { detail: { locked, reason: LOCK_REASON } }),
       );
@@ -1582,6 +1586,7 @@ const fieldIconSvg = (type?: string) => {
       return html || '<div class="dv-groupempty">No presets match.</div>';
     }
     function renderViews() {
+      if (!root) return;
       // Single writer: every state-changing action already re-renders, so persisting here covers all
       // of them (Save/Discard/Delete/new tab/close tab/rename/move-to-group/…) without a separate
       // call site to remember. Also runs on the very first render, migrating a legacy `dg-open-presets`
@@ -1718,6 +1723,7 @@ const fieldIconSvg = (type?: string) => {
       });
     }
     function startRename(id: string) {
+      if (!root) return;
       const v = views.find((x) => x.id === id)!;
       const tabEl = root.querySelector<HTMLElement>(`[data-dv-tab="${id}"]`);
       if (!tabEl) return;
@@ -1734,6 +1740,7 @@ const fieldIconSvg = (type?: string) => {
       input.addEventListener('blur', commit);
     }
     function startRenameGroup(id: string) {
+      if (!root) return;
       const g = groups.find((x) => x.id === id)!;
       const nameEl = root.querySelector<HTMLElement>(`[data-dv-group="${id}"] .dv-groupname`);
       if (!nameEl) return;
