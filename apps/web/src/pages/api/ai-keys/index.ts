@@ -22,6 +22,11 @@ import {
   type PersistProviderKeyInputs,
   type PersistProviderKeyResult,
 } from '../../../lib/ai/persist-provider-key'
+import {
+  checkProviderKey,
+  type CheckProviderKeyResult,
+} from '../../../lib/ai/check-provider-key'
+import { writeAuthAudit } from '../../../lib/auth-audit'
 import { resolveEntitlements } from '../../../lib/entitlements/resolve'
 
 export const PROVIDERS = ['anthropic', 'openai', 'cloudflare'] as const
@@ -42,11 +47,28 @@ export interface AiKeyView {
   lastValidatedAt: Date | string | null
 }
 
+/**
+ * Metadata-only audit event for a key write. Records provider + last_four +
+ * actor + action — NEVER the key, plaintext, or ciphertext.
+ */
+export interface AiKeyAuditEvent {
+  action: 'ai_key_added' | 'ai_key_rotated' | 'ai_key_revoked'
+  organizationId: string
+  actorUserId: string
+  actorEmail?: string | null
+  provider: string
+  lastFour?: string | null
+}
+
 export interface HandleDeps {
   listKeys: (organizationId: string) => Promise<AiKeyView[]>
   isByokEntitled: (organizationId: string) => Promise<boolean>
   persist: (inputs: PersistProviderKeyInputs) => Promise<PersistProviderKeyResult>
   revoke: (organizationId: string, provider: string) => Promise<boolean>
+  /** Submit-time provider health-check (Task 6.1) — key must pass before store. */
+  checkKey: (provider: string, plaintextKey: string) => Promise<CheckProviderKeyResult>
+  /** Append a metadata-only audit row (never the key). */
+  audit: (event: AiKeyAuditEvent) => Promise<void>
 }
 
 function isProvider(v: unknown): v is Provider {
@@ -100,6 +122,16 @@ export async function handlePost(input: {
     )
   }
 
+  // The key must authenticate against the provider before it is stored active
+  // (design.md → Submit-time validation). A failing check stores nothing.
+  const check = await input.deps.checkKey(body.provider, key)
+  if (!check.ok) {
+    return jsonResponse(
+      { error: check.error ?? 'Key validation failed', code: 'key_validation_failed' },
+      400,
+    )
+  }
+
   const result = await input.deps.persist({
     organizationId: orgId,
     provider: body.provider,
@@ -107,6 +139,15 @@ export async function handlePost(input: {
     label: typeof body.label === 'string' ? body.label : null,
     modelDefault: typeof body.modelDefault === 'string' ? body.modelDefault : null,
     createdByUserId: input.account.user.id,
+  })
+
+  await input.deps.audit({
+    action: result.rotated ? 'ai_key_rotated' : 'ai_key_added',
+    organizationId: orgId,
+    actorUserId: input.account.user.id,
+    actorEmail: input.account.user.email ?? null,
+    provider: result.provider,
+    lastFour: result.lastFour,
   })
 
   return jsonResponse(
@@ -132,6 +173,15 @@ export async function handleDelete(input: {
     return jsonResponse({ error: 'Unknown provider', code: 'invalid_provider' }, 400)
   }
   const revoked = await input.deps.revoke(orgId, body.provider)
+  if (revoked) {
+    await input.deps.audit({
+      action: 'ai_key_revoked',
+      organizationId: orgId,
+      actorUserId: input.account.user.id,
+      actorEmail: input.account.user.email ?? null,
+      provider: body.provider,
+    })
+  }
   return jsonResponse({ ok: true, revoked }, 200)
 }
 
@@ -179,6 +229,18 @@ function buildDeps(locals: App.Locals): HandleDeps {
         .returning({ id: aiProviderKeys.id })
       return updated.length > 0
     },
+    checkKey: (provider, plaintextKey) => checkProviderKey(provider, plaintextKey),
+    audit: (event) =>
+      writeAuthAudit(db, {
+        kind: event.action,
+        actorUserId: event.actorUserId,
+        actorEmail: event.actorEmail ?? null,
+        organizationId: event.organizationId,
+        targetType: 'ai_provider_key',
+        targetId: event.provider,
+        // metadata is display-only — provider + last_four, NEVER the key.
+        metadata: { provider: event.provider, lastFour: event.lastFour ?? null },
+      }),
   }
 }
 

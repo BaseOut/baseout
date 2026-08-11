@@ -31,6 +31,11 @@ export type AuthAuditKind =
   | '2fa_disabled'
   | '2fa_backup_code_consumed'
   | '2fa_challenge_failed'
+  // BYOK provider-key lifecycle (shared-ai-byok 2.1) — metadata carries
+  // provider + last_four + actor ONLY, never the key/ciphertext.
+  | 'ai_key_added'
+  | 'ai_key_rotated'
+  | 'ai_key_revoked'
 
 export interface AuthAuditEntry {
   kind: AuthAuditKind

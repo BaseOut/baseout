@@ -45,8 +45,11 @@ function makeDeps(overrides: Partial<HandleDeps> = {}): HandleDeps {
       lastFour: i.plaintextKey.slice(-4),
       keyFingerprint: 'f'.repeat(64),
       status: 'active' as const,
+      rotated: false,
     })),
     revoke: vi.fn(async () => true),
+    checkKey: vi.fn(async () => ({ ok: true })),
+    audit: vi.fn(async () => {}),
     ...overrides,
   }
 }
@@ -145,6 +148,71 @@ describe('handlePost — add / rotate a key', () => {
     expect(body).toMatchObject({ ok: true, key: { provider: 'anthropic', lastFour: 'WXYZ', status: 'active' } })
     expect(JSON.stringify(body)).not.toContain('sk-secret')
   })
+
+  it('400 key_validation_failed when the health-check fails — never persists, never audits', async () => {
+    const deps = makeDeps({
+      checkKey: vi.fn(async () => ({ ok: false, error: 'Anthropic key validation failed (HTTP 401)' })),
+    })
+    const res = await handlePost({
+      account: makeAccount(),
+      body: { provider: 'anthropic', key: 'sk-bad-KEY9' },
+      deps,
+    })
+    expect(res.status).toBe(400)
+    const body = await json(res)
+    expect(body.code).toBe('key_validation_failed')
+    expect(body.error).toBe('Anthropic key validation failed (HTTP 401)')
+    // A failing key must never be stored active, and nothing is audited.
+    expect(deps.checkKey).toHaveBeenCalledWith('anthropic', 'sk-bad-KEY9')
+    expect(deps.persist).not.toHaveBeenCalled()
+    expect(deps.audit).not.toHaveBeenCalled()
+  })
+
+  it('health-checks AFTER the entitlement gate (un-entitled never reaches checkKey)', async () => {
+    const deps = makeDeps({ isByokEntitled: vi.fn(async () => false) })
+    await handlePost({ account: makeAccount(), body: { provider: 'anthropic', key: 'sk-abcd' }, deps })
+    expect(deps.checkKey).not.toHaveBeenCalled()
+  })
+
+  it('200 valid add → audits ai_key_added with metadata only (never the key)', async () => {
+    const deps = makeDeps()
+    const res = await handlePost({
+      account: makeAccount(),
+      body: { provider: 'anthropic', key: 'sk-secret-WXYZ', label: 'prod' },
+      deps,
+    })
+    expect(res.status).toBe(200)
+    expect(deps.audit).toHaveBeenCalledTimes(1)
+    const event = (deps.audit as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(event).toMatchObject({
+      action: 'ai_key_added',
+      organizationId: ORG,
+      actorUserId: 'u_1',
+      provider: 'anthropic',
+      lastFour: 'WXYZ',
+    })
+    // the audit event must NEVER carry key material
+    expect(JSON.stringify(event)).not.toContain('sk-secret')
+  })
+
+  it('200 rotate (existing active key replaced) → audits ai_key_rotated', async () => {
+    const deps = makeDeps({
+      persist: vi.fn(async (i) => ({
+        provider: i.provider,
+        lastFour: i.plaintextKey.slice(-4),
+        keyFingerprint: 'f'.repeat(64),
+        status: 'active' as const,
+        rotated: true,
+      })),
+    })
+    await handlePost({
+      account: makeAccount(),
+      body: { provider: 'anthropic', key: 'sk-rotated-0000' },
+      deps,
+    })
+    const event = (deps.audit as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(event.action).toBe('ai_key_rotated')
+  })
 })
 
 describe('handleDelete — revoke a key', () => {
@@ -157,6 +225,18 @@ describe('handleDelete — revoke a key', () => {
     const res = await handleDelete({ account: makeAccount(), body: { provider: 'anthropic' }, deps })
     expect(res.status).toBe(200)
     expect(deps.revoke).toHaveBeenCalledWith(ORG, 'anthropic')
+  })
+  it('audits ai_key_revoked on a successful revoke (metadata only)', async () => {
+    const deps = makeDeps()
+    await handleDelete({ account: makeAccount(), body: { provider: 'anthropic' }, deps })
+    expect(deps.audit).toHaveBeenCalledTimes(1)
+    const event = (deps.audit as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(event).toMatchObject({ action: 'ai_key_revoked', organizationId: ORG, actorUserId: 'u_1', provider: 'anthropic' })
+  })
+  it('does NOT audit when nothing was revoked (no active key)', async () => {
+    const deps = makeDeps({ revoke: vi.fn(async () => false) })
+    await handleDelete({ account: makeAccount(), body: { provider: 'anthropic' }, deps })
+    expect(deps.audit).not.toHaveBeenCalled()
   })
   it('403 for a non-admin member', async () => {
     const deps = makeDeps()
