@@ -22,8 +22,12 @@ export interface MiddlewareResult {
 /**
  * Constant-time string equality. Returns false immediately on length mismatch
  * (length itself is not secret), then XORs every byte to avoid early exit.
+ *
+ * Exported so the token-gated credential endpoint (shared-ai-byok task 3.3) can
+ * re-use the exact same comparison for its defense-in-depth handler-level check
+ * rather than duplicating a security primitive.
  */
-function constantTimeEqual(a: string, b: string): boolean {
+export function constantTimeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let mismatch = 0;
   for (let i = 0; i < a.length; i++) {
