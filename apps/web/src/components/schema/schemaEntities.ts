@@ -169,7 +169,7 @@ export function buildEntityIndex(
       const tableHas = Boolean(ai || t.airtableDescription || t.userDescription);
       // Removed (deleted) tables are history — they don't count toward the active base rollups.
       if (!t.removed) {
-        baseHealth = worst(baseHealth, t.health);
+        baseHealth = worst(baseHealth, t.health ?? 'green');
         if (typeof t.recordCount === 'number') baseRecords += t.recordCount;
       }
 
@@ -264,7 +264,7 @@ export function buildEntityIndex(
         baseId: base.id,
         baseName: base.name,
         tableName: t.name,
-        health: t.health,
+        health: t.health ?? 'green',
         recordCount: t.recordCount,
         // Same live count the views' "N of M" denominator uses — the two can never disagree.
         fieldCount: liveFieldCount,

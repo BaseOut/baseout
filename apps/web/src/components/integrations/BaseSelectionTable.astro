@@ -135,7 +135,7 @@ const rawMap = new Map<string, RawGroup>();
 for (const r of rows) {
   const id = r.b.workspacePending ? PENDING_WS : (r.b.workspaceId ?? UNKNOWN_WS);
   let g = rawMap.get(id);
-  if (!g) { g = { id, realName: r.b.workspaceName, rows: [] }; rawMap.set(id, g); }
+  if (!g) { g = { id, realName: r.b.workspaceName ?? undefined, rows: [] }; rawMap.set(id, g); }
   if (!g.realName && r.b.workspaceName) g.realName = r.b.workspaceName;
   g.rows.push(r);
 }
@@ -746,7 +746,7 @@ const Tag = embedded ? 'div' : 'form';
       // ours (which filters the table). Order between them does not matter.
       const esRoot = root.querySelector<HTMLElement>('[data-entity-search]');
       const search = root.querySelector<HTMLInputElement>('[data-es-field]');
-      const sortSel = root.querySelector<HTMLSelectElement>('[data-bst-sort]');
+      const sortSel = root.querySelector('[data-bst-sort]') as HTMLSelectElement | null;
       const countEl = root.querySelector<HTMLElement>('[data-bst-count]');
       const capNote = root.querySelector<HTMLElement>('[data-bst-cap-note]');
       const capText = root.querySelector<HTMLElement>('[data-bst-cap-text]');
@@ -761,7 +761,7 @@ const Tag = embedded ? 'div' : 'form';
       const pagerPrev = root.querySelector<HTMLButtonElement>('[data-bst-prev]');
       const pagerNext = root.querySelector<HTMLButtonElement>('[data-bst-next]');
       const pagerInfo = root.querySelector<HTMLElement>('[data-bst-pageinfo]');
-      const pagerSize = root.querySelector<HTMLSelectElement>('[data-bst-pagesize]');
+      const pagerSize = root.querySelector('[data-bst-pagesize]') as HTMLSelectElement | null;
       const total = boxes.length;
       let pageSize = 10;
       let page = 1;
@@ -1368,7 +1368,7 @@ const Tag = embedded ? 'div' : 'form';
             dual.dataset.bstGdual = '';
             dual.setAttribute('data-tip', `Your name for this workspace. Airtable calls it ${airtable}.`);
             dual.textContent = `· ${airtable} in Airtable`;
-            g.gname?.after(dual);
+            g.gname?.insertAdjacentElement('afterend', dual);
           }
           swap.hidden = true;
           const wsId = g.el.dataset.bstGroup || '';

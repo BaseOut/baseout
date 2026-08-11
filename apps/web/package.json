@@ -19,6 +19,7 @@
     "versions:upload:production": "CLOUDFLARE_ENV=production node --env-file-if-exists=.env scripts/launch.mjs build && wrangler versions upload --config dist/server/wrangler.json",
     "versions:deploy:production": "wrangler versions deploy --name baseout",
     "cf-typegen": "wrangler types",
+    "pretypecheck": "test -f worker-configuration.d.ts || (node --env-file-if-exists=.env scripts/launch.mjs render-config && wrangler types)",
     "astro": "astro",
     "storybook": "storybook dev -p 6006 --no-open",
     "build-storybook": "storybook build -o dist/storybook",

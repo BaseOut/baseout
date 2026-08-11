@@ -95,6 +95,25 @@ export interface SchemaField {
   /** The symmetric inverse link field id in the linked table (the backlink). */
   inverseFieldId?: string;
 }
+export interface SchemaView {
+  id: string;
+  name: string;
+  /** Airtable view type (grid/form/calendar/…); OPEN enum — unknown values render verbatim. */
+  type?: string;
+  /** Set when the view is PERSONAL (visible to one collaborator alone). */
+  personalForUserId?: string;
+  /** Field ids the view shows (Airtable exposes this for GRID views only). */
+  visibleFieldIds?: string[];
+  /** The capture could not resolve the owning table — the view hangs off the base. */
+  tableUnresolved?: boolean;
+  /** Captured per-view field count — fallback when the table has no fields to count. */
+  fieldCount?: number;
+  /** Deleted in Airtable but retained for history. */
+  removed?: boolean;
+  removedAt?: string;
+  /** Unconfirmed this run (NOT deleted; stays visible). */
+  unknown?: boolean;
+}
 export interface SchemaTable {
   id: string;
   name: string;
@@ -124,6 +143,9 @@ export interface SchemaTable {
   unknown?: boolean;
   /** The Airtable base this table belongs to — drives the base filter on multi-base Spaces. */
   baseId?: string;
+  /** Views captured for this table (view-schema-details). Optional: schema-shallow
+   *  captures and schema-only plans omit it. */
+  views?: SchemaView[];
 }
 interface Props {
   tables: SchemaTable[];

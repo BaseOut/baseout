@@ -11,13 +11,25 @@ import type { ResolvedCapabilities } from './resolve'
 const PRO: ResolvedCapabilities = {
   tier: 'pro',
   hasSubscription: true,
-  capabilities: { basesPerSpace: 25 },
+  internal: false,
+  capabilities: {
+    basesPerSpace: 25,
+    frequencies: ['monthly', 'weekly', 'daily', 'instant'],
+    schemaDocs: 'manual_ai',
+    webhookPollMinSeconds: 900,
+  },
 }
 
 const BUSINESS: ResolvedCapabilities = {
   tier: 'business',
   hasSubscription: true,
-  capabilities: { basesPerSpace: 50 },
+  internal: false,
+  capabilities: {
+    basesPerSpace: 50,
+    frequencies: ['monthly', 'weekly', 'daily', 'instant'],
+    schemaDocs: 'manual_ai',
+    webhookPollMinSeconds: 900,
+  },
 }
 
 describe('capability cache', () => {
