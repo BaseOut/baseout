@@ -10,6 +10,33 @@ packages:
   - "!apps/embed/airtable-interface"
   - "packages/*"
 
+# Transitive-dependency version pins to clear Dependabot high CVEs
+# (system-dep-remediation-2: post-consolidation re-apply + extend). pnpm 10+
+# reads `overrides` from THIS file, not package.json's pnpm.overrides — the
+# pnpm 9->11 upgrade silently orphaned the package.json block, which is the
+# root cause of the CVE regression. Same-major only; every target verified
+# >=7 days old so the minimumReleaseAge gate below is satisfied.
+# Deferred (need code migrations, tracked as follow-ups): undici@5.29.0
+# (wrangler 3.x/miniflare -> wrangler 3->4), drizzle-orm (db-schema 0.36->0.45),
+# product/website majors (astro 5->6).
+overrides:
+  fast-uri: "^3.1.5"
+  ip-address: "^10.3.1"
+  hono: "^4.12.25"
+  svgo: "^4.0.2"
+  brace-expansion: "^5.0.7"
+  ws: "^8.21.0"
+  "undici@7": "^7.29.0"
+  "nanoid@3": "^3.3.17"
+  "nanoid@5": "^5.1.16"
+  "js-yaml@4": "^4.3.1"
+  "vite@7": "^7.3.6"
+  react-router: "^7.18.2"
+  socket.io-parser: "^4.2.7"
+  engine.io: "^6.6.7"
+  postcss: "^8.5.18"
+  sharp: "^0.35.0"
+
 # Native-binary / postinstall builds we trust under pnpm 11's
 # strictDepBuilds default. Anything not listed here is silently ignored.
 allowBuilds:
