@@ -48,3 +48,6 @@ schema-starter
 
 # local pipeline / roadmap notes
 pipeline-roadmap.md
+
+# locally-trusted dev TLS certs for https://baseout.local:4331 (mkcert)
+.certs/

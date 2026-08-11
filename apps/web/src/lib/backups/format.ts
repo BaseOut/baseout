@@ -1,0 +1,273 @@
+/**
+ * Pure formatters for the BackupHistoryWidget. Extracted so the per-row
+ * mapping is unit-testable without DOM.
+ */
+
+import type { BackupRunSummary } from '../backup-runs/types'
+
+export function statusLabel(status: string): string {
+  switch (status) {
+    case 'queued':
+      return 'Queued'
+    case 'running':
+      return 'Running'
+    case 'succeeded':
+      return 'Succeeded'
+    case 'failed':
+      return 'Failed'
+    case 'trial_complete':
+      return 'Trial complete'
+    case 'trial_truncated':
+      return 'Trial — truncated'
+    case 'cancelling':
+      return 'Cancelling'
+    case 'cancelled':
+      return 'Cancelled'
+    case 'deleting':
+      return 'Deleting'
+    default:
+      return status
+  }
+}
+
+/** daisyUI badge color classes. Stable per status — UI tests pin them. */
+export function statusBadgeClass(status: string): string {
+  switch (status) {
+    case 'succeeded':
+      return 'badge-success'
+    case 'failed':
+      return 'badge-error'
+    case 'running':
+      return 'badge-info'
+    case 'queued':
+      return 'badge-ghost'
+    case 'trial_complete':
+    case 'trial_truncated':
+    case 'cancelling':
+    case 'deleting':
+      return 'badge-warning'
+    case 'cancelled':
+      return 'badge-neutral'
+    default:
+      return 'badge-ghost'
+  }
+}
+
+/**
+ * Backup run kind (server-backup-scope): 'full' = schema + data; 'schema' =
+ * schema-only run (skips records/attachments). Shown as a secondary badge in
+ * history. Unknown/legacy values fall back to 'Full' so old rows read sensibly.
+ */
+export function kindLabel(kind: string): string {
+  return kind === 'schema' ? 'Schema' : 'Full'
+}
+
+/** daisyUI badge class for the run-kind chip (secondary to the status chip). */
+export function kindBadgeClass(kind: string): string {
+  return kind === 'schema' ? 'badge-info' : 'badge-ghost'
+}
+
+/**
+ * Render a duration in human-friendly form. <60s → "Xs"; <60m → "Xm Ys";
+ * else → "Xh Ym". Returns null when either bound is missing (still
+ * running, or never started).
+ */
+export function formatDuration(
+  startedAt: string | null,
+  completedAt: string | null,
+): string | null {
+  if (!startedAt || !completedAt) return null
+  const start = new Date(startedAt).getTime()
+  const end = new Date(completedAt).getTime()
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+    return null
+  }
+  const seconds = Math.round((end - start) / 1000)
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const remSec = seconds % 60
+  if (minutes < 60) {
+    return remSec === 0 ? `${minutes}m` : `${minutes}m ${remSec}s`
+  }
+  const hours = Math.floor(minutes / 60)
+  const remMin = minutes % 60
+  return remMin === 0 ? `${hours}h` : `${hours}h ${remMin}m`
+}
+
+/**
+ * Health derivation rule per PRD §6.2 (good / warning / failure).
+ *   - 'failed' status                           → 'failure'
+ *   - 'trial_truncated' OR sticky errorMessage  → 'warning'
+ *   - everything else (incl. terminal success,
+ *     queued, running)                          → 'good'
+ *
+ * This sits alongside the atomic `status` field — `status` is the engine's
+ * state machine, `healthStatus` is the customer-facing trust signal.
+ */
+export type HealthStatus = 'good' | 'warning' | 'failure'
+
+export function healthStatus(run: BackupRunSummary): HealthStatus {
+  if (run.status === 'failed') return 'failure'
+  if (run.status === 'trial_truncated' || run.errorMessage !== null) {
+    return 'warning'
+  }
+  return 'good'
+}
+
+/** daisyUI badge color class for a health chip. */
+export function healthBadgeClass(health: HealthStatus): string {
+  switch (health) {
+    case 'good':
+      return 'badge-success'
+    case 'warning':
+      return 'badge-warning'
+    case 'failure':
+      return 'badge-error'
+  }
+}
+
+/**
+ * Title-case the engine's free-text `triggered_by` field for display.
+ * Snake_case → spaces → Title Case. Falls back to the raw value when empty.
+ */
+export function formatTriggeredBy(value: string): string {
+  if (!value) return '—'
+  return value
+    .split(/[_\s]+/)
+    .filter((part) => part.length > 0)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(' ')
+}
+
+/**
+ * Whether a run was webhook-triggered (web-instant-webhook). The engine's
+ * `triggered_by` is free-text; the webhook pipeline writes values starting
+ * with 'webhook' (mirrors triggerKey in ./list-row).
+ */
+export function isWebhookRun(triggeredBy: string): boolean {
+  return triggeredBy.startsWith('webhook')
+}
+
+/**
+ * Detail line for webhook-triggered runs: "Source: Webhook · N created ·
+ * N updated · N deleted", plus "· N reconciled" when a reconciliation pass
+ * contributed. Returns null for non-webhook runs.
+ *
+ * The change counts are optional on BackupRunSummary — `backup_runs` doesn't
+ * persist them yet (they arrive with the engine's incremental-run completion
+ * payload in server-instant-webhook), so the line degrades to "Source:
+ * Webhook" until they land.
+ */
+export function webhookSourceLine(run: BackupRunSummary): string | null {
+  if (!isWebhookRun(run.triggeredBy)) return null
+  const parts = ['Source: Webhook']
+  if (
+    run.createdCount != null &&
+    run.updatedCount != null &&
+    run.deletedCount != null
+  ) {
+    parts.push(
+      `${run.createdCount} created`,
+      `${run.updatedCount} updated`,
+      `${run.deletedCount} deleted`,
+    )
+    if (run.reconciledRecords != null && run.reconciledRecords > 0) {
+      parts.push(`${run.reconciledRecords} reconciled`)
+    }
+  }
+  return parts.join(' · ')
+}
+
+/**
+ * Format the IntegrationsView "Next backup: <date>" line. Reads
+ * backup_configurations.next_scheduled_at — the unix-ms timestamp the
+ * SpaceDO scheduled. NULL is rendered as "Not yet scheduled" (no schedule
+ * armed yet — either pre-bootstrap or instant-frequency).
+ *
+ * Locale-aware via Intl.DateTimeFormat; the user's browser locale wins
+ * over our server timezone. MVP fires all alarms at 00:00 UTC, so the
+ * displayed time reflects what that boundary looks like in the viewer's
+ * timezone.
+ */
+export function formatNextScheduledAt(iso: string | null): string {
+  if (!iso) return 'Not yet scheduled'
+  const date = new Date(iso)
+  if (!Number.isFinite(date.getTime())) return 'Not yet scheduled'
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
+}
+
+/**
+ * Full locale-formatted timestamp for the detail panel (collapsed row uses
+ * the shorter `toLocaleString()`). Returns '—' on null/invalid so the panel
+ * never renders 'Invalid Date'.
+ */
+export function expandedTimestamp(iso: string | null): string {
+  if (!iso) return '—'
+  const date = new Date(iso)
+  if (!Number.isFinite(date.getTime())) return '—'
+  return date.toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'medium',
+  })
+}
+
+/**
+ * Footer label for a soft-deleted (cleanup-pruned) run — the cleanup engine
+ * sets backup_runs.deleted_at after removing the snapshot's storage objects
+ * (server-retention-and-cleanup Phase E.3). Returns '' when the run hasn't
+ * been pruned (null / invalid) so the widget can skip the pruned styling.
+ */
+export function formatDeletedAt(iso: string | null): string {
+  if (!iso) return ''
+  const date = new Date(iso)
+  if (!Number.isFinite(date.getTime())) return ''
+  return `Pruned ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(date)}`
+}
+
+/**
+ * One-line summary for a row, used by the widget's <li> body. Returns the
+ * record/table/attachment counts when present, falling back to a status-
+ * specific message.
+ */
+export function describeCounts(run: BackupRunSummary): string {
+  // Failed runs surface their errorMessage regardless of count values — the
+  // engine-side patch writes table_count=0 / record_count=0 alongside the
+  // errorMessage on a thrown failure, so the counts-only branch below would
+  // mask it as "0 tables · 0 records" without this short-circuit.
+  if (run.status === 'failed') {
+    return run.errorMessage ?? 'Failed'
+  }
+  // Phase 10d: while a run is in flight AND the engine has started bumping
+  // record_count via /api/internal/runs/:id/progress, show a live "Backing
+  // up… N records" counter so users see motion before /complete writes the
+  // final totals. The "no counts yet" branch keeps the legacy "In progress…"
+  // copy for the brief window between status='running' and the first
+  // /progress event.
+  if (run.status === 'running') {
+    if (run.recordCount === null && run.tableCount === null) {
+      return 'In progress…'
+    }
+    const n = run.recordCount ?? 0
+    return `Backing up… ${n} record${n === 1 ? '' : 's'}`
+  }
+  if (run.recordCount === null && run.tableCount === null) {
+    if (run.status === 'queued') return 'Waiting to start…'
+    return ''
+  }
+  const parts: string[] = []
+  if (run.tableCount !== null) {
+    parts.push(`${run.tableCount} table${run.tableCount === 1 ? '' : 's'}`)
+  }
+  if (run.recordCount !== null) {
+    parts.push(`${run.recordCount} record${run.recordCount === 1 ? '' : 's'}`)
+  }
+  if (run.attachmentCount !== null && run.attachmentCount > 0) {
+    parts.push(
+      `${run.attachmentCount} attachment${run.attachmentCount === 1 ? '' : 's'}`,
+    )
+  }
+  return parts.join(' · ')
+}

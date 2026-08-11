@@ -18,7 +18,7 @@ Canonical specs live in [shared/](shared/):
 
 - Every feature, field, table name, tier limit, and capability gate **must** match these specs. If a request conflicts, flag the conflict and cite the spec section — don't silently pick.
 - Use the canonical naming dictionary from `Baseout_Features.md` §1 (Organization, Space, Platform, Connection, Base, etc.) in all code and copy. Never invent synonyms.
-- Gate capabilities and quotas from Stripe product metadata (`platform` + `tier`) per `Baseout_Features.md` §5.5 — never from product name strings.
+- Gate capabilities and quotas by resolving the DB-native entitlement catalog via `resolveEntitlements(orgId)` — never from Stripe product metadata or product name strings. Stripe carries money and identity only (products, prices, subscription state, plus a single `plan_slug` metadata key for reconciliation); the master-DB `plan_features` catalog carries what the money buys (`shared-entitlements` design D1; the pricing model is `research/pricing/pricing-guide.md`, reconciled into `Baseout_Features.md` §3). Until `shared-entitlements` lands, the legacy path reads `subscription_items.tier` (cached display value) — new code should target `resolveEntitlements`.
 - V2-only capabilities (MCP server, RAG, Governance, third-party connectors, multi-platform Spaces) are out of scope unless explicitly requested.
 
 The older [product/info/](product/info/) overview predates the v1.1 PRD — treat the v1.1 PRD as authoritative when the two disagree.
@@ -33,12 +33,13 @@ Per [shared/Baseout_Implementation_Plan.md](shared/Baseout_Implementation_Plan.m
 
 ```
 apps/
-  web/      Frontend Astro SSR app — auth, OAuth Connect, dashboard, settings
-  server/   Backup/restore engine — Durable Objects, R2, schema discovery, Trigger.dev
-  admin/    Admin / observability surfaces
-  api/      Public + internal API layer
-  sql/      Direct SQL access (Business+ tier)
-  hooks/    Webhooks
+  web/        Frontend Astro SSR app — auth, OAuth Connect, dashboard, settings
+  server/     Backup/restore engine Worker — Durable Objects, schema discovery, enqueues Trigger.dev tasks
+  workflows/  Trigger.dev v3 task project — backup-base + other long-running task definitions (Node runner)
+  admin/      Admin / observability surfaces
+  api/        Public + internal API layer
+  sql/        Direct SQL access (Business+ tier)
+  hooks/      Webhooks
 packages/
   db-schema/  Drizzle schema (shared)
   shared/     Shared types + utilities
@@ -46,7 +47,7 @@ packages/
 openspec/     OpenSpec changes + specs (driven by opsx:propose|apply|archive)
 shared/       Product-spec docs (PRD, Features, Implementation Plan, Backlog)
 brand/        Brand assets + guidelines
-scripts/      Repo automation (incl. fix-symlinks.js postinstall)
+scripts/      Repo automation (e.g. openspec-changes.mjs — `pnpm openspec:changes <app>` lists changes for an app)
 references/   Third-party reference material
 ```
 
@@ -56,12 +57,13 @@ Package manager pinned at `pnpm@9.12.0`. New apps go in `apps/<name>/` with pack
 
 `brand/`, `shared/`, `product/info/` (older marketing overview), `product/website/` (Astro marketing site — not yet relocated to `apps/web/`). The full frontend implementation and backup engine each live in their own repos today and will migrate into `apps/web/` and `apps/server/` respectively.
 
-## Repo Split: Frontend vs Backend
+## Repo Split: Frontend vs Backend vs Workflows
 
-Baseout is conceptually two Workers + one shared Postgres, regardless of where the code currently lives:
+Baseout is conceptually two Workers + one Trigger.dev task project + one shared Postgres, regardless of where the code currently lives:
 
 - **Frontend (eventual `apps/web/`)** — Astro SSR app, auth + magic-link, OAuth Connect flows, integrations dashboard, settings, marketing pages, middleware, `/ops` staff console, master-DB schema ownership.
-- **Backend / backup engine (eventual `apps/server/`)** — Headless Cloudflare Worker. Exposes only `/api/health` (public probe) and `/api/internal/*` (`INTERNAL_TOKEN`-gated). Hosts Durable Objects (per-Connection rate-limit gateway, per-Space scheduler), runs Trigger.dev v3 tasks, writes backup output to R2 or BYOS.
+- **Backend / backup engine (`apps/server/`)** — Headless Cloudflare Worker. Exposes only `/api/health` (public probe) and `/api/internal/*` (`INTERNAL_TOKEN`-gated). Hosts Durable Objects (per-Connection rate-limit gateway, per-Space scheduler), enqueues Trigger.dev tasks via `@trigger.dev/sdk`. Cron-only background work that fits inside Worker wall-clock budget runs here too.
+- **Workflows (`apps/workflows/`)** — Trigger.dev v3 task project. Tasks run on Trigger.dev's **Node** runner (unlimited concurrency, no Worker time limit) and are enqueued from the Backend Worker. Houses the per-base backup task and any future long-running async work. Writes backup output to local disk (R2 was removed) — eventually BYOS.
 
 **Rules:**
 
@@ -69,6 +71,8 @@ Baseout is conceptually two Workers + one shared Postgres, regardless of where t
 - Backend reads OAuth tokens written by the frontend; both must agree on the master encryption key.
 - If you find yourself adding a UI component, an `/ops` page, or a `better-auth` instance to the backend, you're proposing the wrong split — surface it before coding.
 - Master-DB schema migrations are owned by the frontend. The backend mirrors specific tables (e.g. `backup_runs`, `backup_configuration_bases`) with header comments naming the canonical migration source.
+- Workflows is Node-only: never import `cloudflare:workers`, never assume workerd globals. The Backend Worker bundle stays SDK-only — task references are `import type { … } from "@baseout/workflows"` so task bodies don't leak into the Worker bundle.
+- **`/ops` console placement**: staff-only `/ops/*` routes live inside `apps/web` (admin-gated by `users.role = 'super'`), and a standalone staff console now also exists at `apps/admin/`. The full `apps/admin` console (Google SSO, the rest of the surfaces, manual actions, audit trail) is still the deferred `admin` umbrella change; the runnable foundation slice (Astro SSR scaffold + staff gate + Organizations→Spaces tracker) shipped via `openspec/changes/admin-foundation/`. **Staff role is `users.role` with values `customer | super`** — NOT `user_role = 'admin'` (a column that does not exist). See the `apps/admin` runbook in §6A.
 
 ---
 
@@ -101,6 +105,7 @@ Unrequested changes create review burden, introduce regression surface, and wast
 Security is a gate on every change, not an afterthought.
 
 - **Secrets:** Never hardcode. All secrets via Cloudflare Secrets or `.env` (never committed). See PRD §20.
+- **Deployed-secret source of truth: `.dev.vars`.** For the dev-targeted Workers (`baseout-dev`, `baseout-server-dev`, `baseout-admin-dev`), `apps/web/.dev.vars`, `apps/server/.dev.vars`, and `apps/admin/.dev.vars` are the single source of truth. `pnpm --filter @baseout/web run deploy` and `pnpm --filter @baseout/server deploy:dev` auto-run `wrangler secret bulk .dev.vars` after `wrangler deploy` so the deployed secret set tracks `.dev.vars` exactly. (Note the `run` token on the web script — `pnpm deploy` without it is intercepted by pnpm's builtin and fails with `ERR_PNPM_INVALID_DEPLOY_TARGET`.) **Never run `wrangler secret put` by hand against a dev Worker** — it creates drift, and drift between web's encryption key (which writes `*_enc` columns at OAuth-callback time) and the server's key (which the refresh cron uses to decrypt) silently flips Airtable connections to `status='invalid'` and forces customer-visible reconnects (the recurring failure mode documented in [shared/internal/oauth-setup.md](shared/internal/oauth-setup.md) and the auto-memory). Edit `.dev.vars` and redeploy instead. Staging/production secrets are managed separately and are NOT touched by the dev sync scripts.
 - **Encryption at rest:** OAuth tokens, refresh tokens, and API keys encrypted with AES-256-GCM in the master DB (PRD §20.2). Never store plaintext.
 - **Passwords:** Baseout is passwordless (magic-link via `better-auth`). No password inputs, hashing, or "forgot password" flows anywhere. If a requirement implies passwords, surface as a scope conflict.
 - **API tokens:** Store hashes, not plaintext (see `api_tokens.token_hash` in PRD §21.3).
@@ -156,7 +161,104 @@ Debug output must not ship.
 
 ## 3.6 OpenSpec-Driven Changes
 
-Per-app changes flow through `openspec/changes/<changename>/` using `opsx:propose|apply|archive`, not free-form docs. Cross-cutting changes (e.g. `web-client-isolation`) get no per-app symlink. Archived changes flow into `openspec/specs/`.
+All non-trivial changes flow through `openspec/changes/<changename>/` using `opsx:propose|apply|archive`, not free-form docs. Changes live flat under `openspec/changes/`; group them by **prefix**, not by nested folders. Archived changes flow into `openspec/specs/`.
+
+### Change naming convention
+
+Pick the prefix based on what the change actually touches:
+
+- **`<app>-<topic>`** — code-only scope is one app under `apps/`. The prefix MUST match the directory name (`web`, `server`, `workflows`, `admin`, `api`, `sql`, `hooks`). The parent / umbrella change for an app is just `<app>` (no topic suffix).
+  - Example: `server-attachments`, `web-smooth-theme-swap`, `workflows-restore`, `server` (parent).
+  - When server-side and workflows-side work pair off (one Trigger.dev task + one Worker route), file **two** changes — `server-<topic>` + `workflows-<topic>` — and cross-reference each other in `proposal.md`. Each remains single-app.
+
+- **`shared-<topic>`** — code change that touches more than one app as a unit (i.e., the change MUST land across multiple apps' source trees to function).
+  - Example: a service-binding wiring that adds a `services` block to apps/web AND `env` typing on apps/server; a cross-Worker DO binding that adds the namespace binding on apps/web AND new DO handlers on apps/server.
+  - Heuristic: if reverting the change requires touching files in two or more `apps/*` directories, it's `shared-*`.
+
+- **`system-<topic>`** — structural / repo-shape / tooling changes that aren't tied to any one app's runtime code. Includes monorepo layout shifts, workspace package introductions, openspec convention changes, root scripts, CI, lint/typecheck infra, third-party SDK upgrades that span the whole repo, architectural-decision-records (R2 storage stance, encryption-key rotation policy, etc.).
+  - Example: `system-db-schema` (workspace package extraction), `system-r2-stance` (architectural decision), `system-pnpm-version-bump`.
+
+### Where the boundary blurs
+
+- A `shared-*` change usually decomposes into one or more `<app>-<topic>` follow-ups once the cross-cutting wire is in place. File the shared parent first; spawn the per-app follow-ups as they emerge.
+- A `system-*` change rarely touches runtime code at all — it changes how code is *organized*. If you find yourself writing real business logic inside a `system-*` change, you've probably crossed into `shared-*` or `<app>-*` territory; re-scope.
+- "Touches" means "the code change goes into the file." Documentation cross-references in `proposal.md` / `design.md` that mention another app's files don't count as touching.
+
+### Discovery
+
+`pnpm openspec:changes <app>` lists every change whose prefix matches the app name (parent + follow-ups + task progress). `openspec list | grep '^shared-'` and `openspec list | grep '^system-'` cover the cross-cutting buckets.
+
+## 3.7 OAuth, R2, Permissions, Routing — Consult the Runbook First
+
+[shared/internal/oauth-setup.md](shared/internal/oauth-setup.md) is the **single source of truth** for which OAuth redirect URIs are registered with each provider per environment, the gap checklist for missing URIs, the workarounds (stub mode, cross-env Connect), and the deploy commands. It exists because the cost of getting any of this wrong is a broken Reconnect flow that's invisible until a token expires.
+
+**Rules:**
+
+- **Read it BEFORE any change** that touches OAuth Connect flows, redirect URI construction (`getRedirectUri`, `PUBLIC_AUTH_BASE_URL`, the wrangler `--var` flag in `apps/web/package.json` `dev`), middleware auth, route protection in `apps/web/src/middleware.ts`, the `connections` table or `storage_destinations` table, or any new provider integration. The matrix in §3 tells you what's registered today; assuming is what broke last time.
+- **Update it in the SAME change** that:
+  - Registers a new redirect URI with a provider (update §3.1 / §3.2 status + §4 checklist).
+  - Stands up a new env (update §1 envs table + add a §3.N row per provider + add deploy command to §6).
+  - Adds a new OAuth provider (new §3.N subsection + extend §2 callback-path table + extend §4 gap checklist).
+  - Changes `PUBLIC_AUTH_BASE_URL` resolution, wrangler precedence assumptions, or stub-mode behavior (update §5).
+  - Modifies routing/middleware in a way that changes which paths are auth-gated (note in §8 failure-modes if it changes a known symptom).
+- **Cite §X** of the doc when surfacing OAuth-related decisions in PRs, openspec proposals, or change discussions, so future reviewers/Claude see the audit trail.
+- **Never assume** `.dev.vars` is the authoritative source for OAuth env vars — wrangler 4.x `--var` flag wins (see [§5.1](shared/internal/oauth-setup.md) + [§8](shared/internal/oauth-setup.md)).
+- **Never assume** a URI is registered without checking §3 — the cost of grep'ing the matrix is seconds; the cost of a wrong assumption is the breakage chain from `2026-05-25`.
+
+If a needed URI is missing per §3 and adding it is blocked (owner unreachable, no account access), use the workarounds in §5 — don't paper over with a `--var` swap that breaks the other provider.
+
+**Same rule applies to managed Cloudflare R2.** [shared/internal/r2-setup.md](shared/internal/r2-setup.md) is the source-of-truth for per-env R2 bucket + cred status (the parallel runbook to `oauth-setup.md`). Read it before any change that touches R2 cred resolution (`R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET` plumbing), bucket naming, `R2Writer` behavior (`apps/workflows/trigger/tasks/_lib/storage-writers/r2.ts`), or the per-Space `storage_type='r2_managed'` dispatch. Update it in the same change that rotates a token, provisions a new env, or changes the writer interface. **Never put R2 creds in any `.dev.vars` file** — the Workers don't reach R2; only the Trigger.dev Node runner does. The architecture rationale lives in [`openspec/changes/system-r2-revive/proposal.md`](openspec/changes/system-r2-revive/proposal.md); the implementation/launch plan in [`openspec/changes/system-r2-launch/`](openspec/changes/system-r2-launch/).
+
+**Same rule applies to ui-only design syncs.** [shared/internal/ui-sync.md](shared/internal/ui-sync.md) is the source-of-truth for the ui-only → `apps/design` → `apps/web` sync/promotion state (last-synced hash, path-mapping table, never-sync list, per-surface promotion matrix). Read it before pulling anything from the `ui-only` remote or promoting a design-harness view into `apps/web`; update it in the same change as every sync or promotion. The procedure is the `/ui-sync` skill (`.claude/skills/ui-sync/SKILL.md`); `pnpm ui:sync-status` reports the pending delta. **Never `git merge` ui-only** — unrelated history; selective checkout at a pinned hash only. Promotions repurpose existing Storybook-cataloged widgets (intake order per §4.2) — never recreate them.
+
+## 3.8 Commit Message Format
+
+Every commit ends with a **Verification** section — a short, concrete account of how to demo, test, and confirm the change — placed just before the `Co-Authored-By` trailer. It exists so the next engineer and the reviewer can reproduce the result without reverse-engineering the diff. Pull it straight from the smoke command you surfaced for human approval (the human-tested local-commit loop), so it costs nothing extra.
+
+**Format:**
+
+```
+<type>(<scope>): <imperative subject, ≤72 chars>
+
+<body — what changed and WHY: the problem and the reasoning, not a file list>
+
+Verification:
+- Demo:    <one command + the observable result that proves it works>
+- Test:    <the automated test command(s) that cover this change>
+- Checks:  <typecheck / build / db:check result you actually ran>
+- Caveats: <env-gating, deployed-only, manual-only — or "n/a">
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+```
+
+**Rules:**
+
+- **Conventional-commit subject.** Keep the existing `feat` / `fix` / `docs` / `refactor` / `chore` / `test` / `revert` + `(scope)` prefix convention.
+- **`Demo` is mandatory for any behavior change.** Give the exact command and the observable outcome (e.g. "Backups → Run backup; row goes queued→running→succeeded"), not "test it manually."
+- **`Test` names the command, not the intent.** `pnpm --filter @baseout/workflows test backup-base`, not "added tests." If non-trivial logic shipped without a test, that's a §3.4 violation — write the test, don't paper over it here.
+- **`Checks` records what you actually ran** (`npm run typecheck && npm run build` green; `db:check` clean — per §3.4 / §7). Never claim green you didn't observe.
+- **`Caveats` flags anything blocking local verification** — deployed-only flows (Drive Connect, engine smoke via `--remote`), env-gated providers, missing redirect URIs — and cites the runbook (e.g. `oauth-setup.md §3.2`).
+- **Trivial commits may collapse to one line:** `Verification: doc-only, no runtime change.` (matches the existing "Doc-only; no code or secrets." convention). Applies to docs, comments, and config-only changes with no behavior impact.
+- **Don't `--no-verify`, don't fabricate a Demo.** If you couldn't verify (blocked on a deployed env, a missing URI), say so in `Caveats` and surface it for human testing rather than inventing a result.
+
+**Example (behavior change):**
+
+```
+feat(workflows): write backup CSVs to local disk per base
+
+R2 was removed for the MVP, so backup-base now streams each table to
+apps/server/.backups/<runId>/<base>/<table>.csv instead of an R2 bucket.
+
+Verification:
+- Demo:    `npx trigger.dev dev` + `pnpm --filter @baseout/server deploy:dev`,
+           then Backups → Run backup on baseout.local; .backups/<runId>/ fills
+           with one CSV per table.
+- Test:    `pnpm --filter @baseout/workflows test backup-base`
+- Checks:  `npm run typecheck && npm run build` green.
+- Caveats: engine runs --remote — deploy before smoking (apps/web remote mode).
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+```
 
 ## 3.7 Knowledge Graph (lat.md)
 
@@ -197,19 +299,21 @@ For all cross-component reactive state in the Astro app, use [`nanostores`](http
 
 ## 4.2 Theme & Design System
 
-**Priority order:**
+**Priority order (Storybook first, daisyUI second — no custom components):**
 
-- **Primary:** `@opensided/theme` — first choice for all styling.
-- **Secondary:** `daisyUI` — for components not covered by `@opensided/theme`.
-- **Fallback:** Custom CSS only when neither covers the requirement.
+- **First:** a **Storybook-cataloged** component under `src/components/ui/*.astro` or `src/components/patterns/*.astro` (every tracked component has a story). Reuse it; extend its story for any new prop/variant/state.
+- **Second:** **daisyUI** markup directly (via `@opensided/theme`) when no Storybook component covers the need; document the pattern in the `apps/design` `/styleguide`.
+- **Never hand-roll a custom Astro wrapper or scoped CSS** where a Storybook component or daisyUI primitive exists. If neither covers the requirement, STOP and surface it for a decision.
 - Don't mix theme approaches within a single component.
 
 **Rules:**
 
 - Follow Astro component best practices: separate markup, styles, scripts.
 - Single-responsibility components (DRY).
-- Reuse from `src/components/ui/` before creating new ones.
+- Reuse from `src/components/ui/` and `src/components/patterns/` before writing markup.
 - Use design tokens from `@opensided/theme` instead of hardcoded values.
+- **Catalogs are daisyUI-first and authoritative.** Every tracked `ui/*.astro` and `patterns/*.astro` has a Storybook story (`pnpm --filter @baseout/web storybook`); the designer's `/styleguide` in `apps/design` is the design-system source of truth. Reference both on every UI change, prefer a daisyUI primitive over custom, and add/extend the story in the same change — a coverage test enforces it. See `apps/web/.claude/CLAUDE.md` §2.5.
+- **Component intake order:** Storybook first, daisyUI second only. Reuse an existing Storybook component before writing markup. If no wrapper exists, use daisyUI markup directly and document/update the matching `apps/design` `/styleguide` entry. Promote inline daisyUI into a new Storybook component when a second real call site exists or a product-specific API is clearly useful.
 - Cross-check UI work against PRD §6 (UX & design direction) and Features §1 (naming).
 
 ## 4.3 Mobile-First
@@ -293,7 +397,7 @@ src/
 ## 5.2 Backend Surface Contract
 
 - Public: `/api/health` (liveness probe).
-- Internal: `/api/internal/*` gated by `x-internal-token` header. Frontend calls these to enqueue work.
+- Internal: `/api/internal/*` gated by `x-internal-token` header. Frontend reaches these via the `BACKUP_ENGINE` Cloudflare Worker service binding (declared in `apps/web/wrangler.jsonc.example`), not over public HTTP. The token gate stays as defense-in-depth alongside the binding's network-level isolation.
 - No other public surface. No customer auth. No UI.
 
 ## 5.3 Backend File Organization
@@ -313,25 +417,79 @@ src/
     ConnectionDO.ts       per-Connection rate-limit gateway
     SpaceDO.ts            per-Space scheduler
   lib/
-    trigger-client.ts     Helpers for enqueuing Trigger.dev tasks
+    trigger-client.ts     Helpers for enqueuing Trigger.dev tasks (type-only `import type` from @baseout/workflows)
   pages/
     api/
       health.ts           Public liveness probe
       internal/           INTERNAL_TOKEN-gated routes
-trigger/
-  tasks/                  Trigger.dev v3 task implementations
-trigger.config.ts         Trigger.dev project config (maxDuration: 600 default)
 drizzle/                  Engine-owned migrations (none yet — backup_runs migration lives in frontend)
 scripts/
   launch.mjs              Renders wrangler.jsonc + .dev.vars from .env, then runs astro
   migrate.mjs             Wrapper for drizzle-kit migrate against master DB
 ```
 
-There is intentionally no `src/components/`, `src/layouts/`, `src/pages/login.astro`, `src/pages/ops/`, `src/pages/api/auth/`, `src/lib/auth-factory.ts`, `src/lib/authz.ts`, `src/lib/email/`, `src/lib/ui.ts`, `src/styles/`, or `vendor/@opensided/` in the backend. All of that is frontend.
+There is intentionally no `src/components/`, `src/layouts/`, `src/pages/login.astro`, `src/pages/ops/`, `src/pages/api/auth/`, `src/lib/auth-factory.ts`, `src/lib/authz.ts`, `src/lib/email/`, `src/lib/ui.ts`, `src/styles/`, or `vendor/@opensided/` in the backend. All of that is frontend. Trigger.dev task **bodies** live in `apps/workflows/` — never reintroduce a `trigger/` directory or `trigger.config.ts` here.
 
 ---
 
-# 6. Development Checklist
+# 6. Workflows Standards (`apps/workflows/`)
+
+Trigger.dev v3 task project. Runs on the Trigger.dev cloud's **Node** runner — NOT inside workerd. The Backend Worker enqueues via `@trigger.dev/sdk`.
+
+- **Runtime: Node only.** Never import `cloudflare:workers`. `process.env` is the source of truth for runtime config (`BACKUP_ENGINE_URL`, `INTERNAL_TOKEN`, `AIRTABLE_*`, BYOS provider keys), populated from the Trigger.dev env-vars UI per environment.
+- **Pure orchestration is separated from the task wrapper.** Each task has a pure-async-function module (`backup-base.ts`) that takes injected deps, and a thin wrapper (`backup-base.task.ts`) that adapts the JSON payload, reads env vars, and calls the pure function. Tests target the pure module.
+- **Type-only exports.** `trigger/tasks/index.ts` re-exports task references as `export type` so the Backend Worker can `tasks.trigger<typeof X>(...)` without bundling the task body.
+- **Engine callback contract.** Tasks POST per-table progress and a final completion to `/api/internal/runs/:runId/{progress,complete}`. Transport errors are fire-and-forget — the run-row state machine + DO lock alarm are the safety nets.
+- **Test runner.** Plain Vitest with `environment: "node"` — no `@cloudflare/vitest-pool-workers`. External APIs (Airtable, R2/BYOS, engine HTTP) mocked at the boundary.
+- **File layout.**
+
+```
+trigger/
+  tasks/
+    index.ts              Type-only re-exports for Worker consumers
+    _ping.ts              Smoke task
+    backup-base.task.ts   Trigger.dev wrapper
+    backup-base.ts        Pure orchestration (testable)
+    _lib/                 Pure helpers — airtable client, csv stream, field normalizer, fs writer, path layout
+trigger.config.ts         Trigger.dev project config (maxDuration: 600 default; per-task overrides allowed)
+tests/                    Vitest (Node) — one file per pure module + task wrapper
+```
+
+There is intentionally no `src/`, no UI, no DB layer here — the workflows app holds task code, helpers, and tests only.
+
+---
+
+# 6A. Staff Console Standards (`apps/admin/`) — run & demo
+
+`apps/admin/` is the internal staff console: an Astro SSR app on the `@astrojs/cloudflare` adapter, served at `baseout.local:4333` in dev (4333, not 4332 — `apps/design` owns 4332, so admin has its own port to avoid the astro port-collision auto-bump). The runnable foundation (scaffold + staff gate + Organizations→Spaces tracker) shipped via `openspec/changes/admin-foundation/`; the broader console (Google SSO, more surfaces, manual admin actions, audit trail) remains the deferred `admin` umbrella change.
+
+**Auth model (interim).** Admin has **no login of its own** — it reuses `apps/web`'s better-auth session. Middleware reads the `better-auth.session_token` cookie, looks it up in the master-DB `sessions` table, and requires `users.role === 'super'`. Unauthenticated visitors get a "Sign in" page that routes to web's `/login?returnTo=<admin origin>` (web honors a validated `returnTo` and uses it as the magic-link `callbackURL`); signed-in non-staff get a "Staff only" 403. Real Google Workspace SSO is deferred to the `admin` umbrella change.
+
+**Deployed dev (`baseout-admin-dev`).** Admin deploys to `https://baseout-admin-dev.openside.workers.dev` via `pnpm --filter @baseout/admin run deploy` (build → `wrangler deploy` → `.dev.vars` secret sync — same pipeline shape as web). Deployed, web's session cookie can never reach admin (host-only + workers.dev is on the Public Suffix List), so sign-in rides a **60s AES-GCM handoff token**: web's `/api/admin/handoff` (gated on `role='super'`) mints it, admin's `/auth/handoff` opens it and sets its own `baseout_admin_session` cookie. Requires web's `vars.ADMIN_APP_URL` + an `ADMIN_HANDOFF_SECRET` byte-identical in both apps' `.dev.vars`. Setup + failure modes: [ops-setup.md §1](shared/internal/ops-setup.md) and [oauth-setup.md §8](shared/internal/oauth-setup.md). Local dev is unchanged (shared baseout.local cookie, no handoff). Staging/prod deploys stay in the `admin` umbrella change.
+
+**DB access.** `astro dev` runs SSR inside a **workerd** runner, so a direct postgres-js connection to a remote DB fails — admin reads the master DB through a **Hyperdrive** binding exactly as `apps/web` does. `scripts/launch.mjs` renders `wrangler.jsonc` from `wrangler.jsonc.example`, substituting `DATABASE_URL` into the Hyperdrive `localConnectionString`; `wrangler.jsonc` is gitignored. The binding reuses the **shared dev Hyperdrive** — never create a separate config for admin (a second 15-conn pool would saturate the ~19-conn dev cluster).
+
+**Run & demo (fresh clone):**
+
+```bash
+pnpm install                                   # from repo root
+cp apps/admin/.env.example apps/admin/.env     # then paste DATABASE_URL from apps/web/.env
+pnpm --filter @baseout/web dev                 # terminal 1 — https://baseout.local:4331 (login lives here)
+pnpm --filter @baseout/admin dev               # terminal 2 — http://baseout.local:4333
+```
+
+1. Open `http://baseout.local:4333` → "Sign in" → land on web's login → magic-link in → you're routed back to admin.
+2. The gate requires `role = 'super'`. Grant yourself staff in dev:
+   ```bash
+   cd apps/web && node --env-file=.env -e 'const s=require("postgres")(process.env.DATABASE_URL,{prepare:false,connection:{search_path:"baseout,public"}});s`update baseout.users set role=${"super"} where email=${"you@example.com"}`.then(r=>console.log("promoted",r.count)).finally(()=>s.end())'
+   ```
+3. The tracker lists every Organization with its Spaces, status, platform, and tier.
+
+**Rules.** Mirror operational tables from `apps/web/src/db/schema/core.ts` (header-comment the canonical source); admin owns no migrations. Keep admin's auth isolated — it only *reads* the session table, never issues/mutates sessions, and runs no `better-auth` instance. Tests: plain Vitest (node) on the pure modules (gate decision, tracker grouping). Adding a cross-app touch (e.g. the web `returnTo`) makes the change `shared-*` — file it accordingly.
+
+---
+
+# 7. Development Checklist
 
 Before requesting review:
 
@@ -348,11 +506,14 @@ Before requesting review:
 - [ ] No hardcoded values; uses theme tokens (frontend UI work)
 - [ ] If touching mirrored DB schema, the canonical migration in the frontend is updated to match
 - [ ] If touching auth, secrets, or external integrations — security review points called out
+- [ ] If touching a Trigger.dev task body, change lives in `apps/workflows/`. If touching the enqueue path, change lives in `apps/server/`. Cross-app contract (payload shape, callback shape) updated on both sides if it shifts.
+- [ ] Commit message ends with a `Verification` section (Demo / Test / Checks / Caveats), per §3.8 — or the one-line trivial form for doc/config-only changes
 
 ---
 
-# 7. Asking, Confirming, Committing
+# 8. Asking, Confirming, Committing
 
+- Format every commit message per §3.8 — Conventional-commit subject, "why" body, and a closing `Verification` section (how to demo, test, and confirm the change).
 - Don't commit, push, or open a PR without explicit user approval. Approving a plan does not authorize individual git actions.
 - Create new commits rather than amending — when a pre-commit hook fails, the commit didn't happen, so `--amend` would modify the previous commit.
 - Stage specific files by name; avoid `git add -A` / `git add .` so secrets and large binaries don't slip in.

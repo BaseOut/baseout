@@ -1,0 +1,171 @@
+---
+/**
+ * FacetFilter — the one filter-control pattern used across the app (Backups list +
+ * Schema). A daisyUI dropdown whose trigger is a bordered button with a small chevron
+ * and a "filter-working" active state (primary tint), matching the Backups faceted filter.
+ *
+ * Two modes:
+ *  - multi (default): rows are name-left + a daisyUI toggle-sm right; the row fades when
+ *    off. Show all / Hide all + an n/total count badge. Emits `facetchange { name, hidden[] }`.
+ *  - single: rows are radios; the trigger shows the selected option's label. Active when a
+ *    non-default option is picked. Emits `facetchange { name, value }`.
+ * Both listen for `facetreset`. Field-type rows can show the vendored Airtable icon (iconKey).
+ */
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+
+export interface FacetItem {
+  value: string;
+  label: string;
+  dot?: string;
+  iconKey?: string;
+}
+export interface FacetGroup {
+  label?: string;
+  items: FacetItem[];
+}
+interface Props {
+  label: string;
+  name: string;
+  groups: FacetGroup[];
+  /** Single-select (radios + the selected label on the trigger) instead of multi-select. */
+  single?: boolean;
+}
+const { label, name, groups, single = false } = Astro.props;
+const total = groups.reduce((n, g) => n + g.items.length, 0);
+const firstLabel = groups[0]?.items[0]?.label ?? label;
+
+const fieldIcon = (key?: string) => {
+  if (!key) return '';
+  const k = airtableIconKey(key);
+  return k ? `<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
+};
+---
+
+<div class="dropdown ff" data-facet={name} data-facet-total={total} data-facet-single={single ? '1' : undefined}>
+  <div tabindex="0" role="button" class="btn btn-sm gap-1.5 ff-trigger" aria-label={label}>
+    {single ? <span data-facet-label>{firstLabel}</span> : <>{label}<span class="badge badge-sm badge-primary ff-count" data-facet-badge hidden></span></>}
+    <span class="iconify lucide--chevron-down size-3 opacity-55" aria-hidden="true"></span>
+  </div>
+  <div tabindex="0" class="dropdown-content ff-panel">
+    <div class="ff-search">
+      <label class="input input-sm ff-search-input">
+        <span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span>
+        <input type="text" data-facet-search placeholder="Search" aria-label={`Search ${label}`} autocomplete="off" />
+      </label>
+    </div>
+    {!single && (
+      <div class="ff-allrow">
+        <button type="button" class="btn btn-sm btn-ghost gap-1 px-2 text-primary" data-facet-all="show">
+          <span class="iconify lucide--eye size-3.5" aria-hidden="true"></span>Show all
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost gap-1 px-2" data-facet-all="hide">
+          <span class="iconify lucide--eye-off size-3.5" aria-hidden="true"></span>Hide all
+        </button>
+      </div>
+    )}
+    {groups.map((g) => (
+      <>
+        {g.label && <div class="ff-group">{g.label}</div>}
+        {g.items.map((i, idx) => (
+          <label class="ff-opt">
+            {i.dot && <span class="ff-dot" style={`background:${i.dot}`} aria-hidden="true"></span>}
+            {i.iconKey && <span class="ff-icon" set:html={fieldIcon(i.iconKey)} />}
+            <span class="ff-label">{i.label}</span>
+            {single ? (
+              <input type="radio" class="radio radio-sm radio-primary" name={`ffr-${name}`} data-facet-opt value={i.value} data-label={i.label} checked={idx === 0} />
+            ) : (
+              <input type="checkbox" class="toggle toggle-sm toggle-primary" data-facet-opt value={i.value} checked />
+            )}
+          </label>
+        ))}
+      </>
+    ))}
+    <div class="ff-nomatch" data-facet-nomatch hidden>No matches</div>
+  </div>
+</div>
+
+{/* Styles live in styles/components/facet-filter.css — the Inbox filter menu renders the same
+    classes, so they cannot be scoped to this component. */}
+
+<script>
+  function wireFacets() {
+    document.querySelectorAll<HTMLElement>('.ff[data-facet]').forEach((ff) => {
+      if (ff.dataset.facetWired) return;
+      ff.dataset.facetWired = '1';
+      const name = ff.dataset.facet!;
+      const trigger = ff.querySelector<HTMLElement>('[role="button"]');
+      const opts = Array.from(ff.querySelectorAll<HTMLInputElement>('[data-facet-opt]'));
+
+      // In-popover search — filters the option rows in place. Present on every facet for
+      // consistency (the client asked for a "Search" box in each dropdown).
+      const search = ff.querySelector<HTMLInputElement>('[data-facet-search]');
+      const nomatch = ff.querySelector<HTMLElement>('[data-facet-nomatch]');
+      const groupEls = Array.from(ff.querySelectorAll<HTMLElement>('.ff-group'));
+      search?.addEventListener('input', () => {
+        const q = search.value.trim().toLowerCase();
+        let visible = 0;
+        ff.querySelectorAll<HTMLElement>('.ff-opt').forEach((row) => {
+          const t = (row.querySelector('.ff-label')?.textContent || '').toLowerCase();
+          const show = !q || t.includes(q);
+          row.style.display = show ? '' : 'none';
+          if (show) visible++;
+        });
+        // Hide a group heading when none of its rows survive the filter.
+        groupEls.forEach((gl) => {
+          let n = gl.nextElementSibling as HTMLElement | null;
+          let any = false;
+          while (n && !n.classList.contains('ff-group')) {
+            if (n.classList.contains('ff-opt') && n.style.display !== 'none') any = true;
+            n = n.nextElementSibling as HTMLElement | null;
+          }
+          gl.style.display = any ? '' : 'none';
+        });
+        if (nomatch) nomatch.hidden = visible > 0;
+      });
+
+      if (ff.dataset.facetSingle) {
+        const labelEl = ff.querySelector<HTMLElement>('[data-facet-label]');
+        const sync = (emit = true) => {
+          const sel = opts.find((o) => o.checked) ?? opts[0];
+          const val = sel?.value ?? '';
+          if (labelEl) labelEl.textContent = sel?.dataset.label ?? '';
+          trigger?.classList.toggle('ff-on', val !== '');
+          if (emit) ff.dispatchEvent(new CustomEvent('facetchange', { detail: { name, value: val }, bubbles: true }));
+        };
+        opts.forEach((o) =>
+          o.addEventListener('change', () => { sync(); (document.activeElement as HTMLElement | null)?.blur(); }),
+        );
+        ff.addEventListener('facetreset', () => { opts.forEach((o, i) => (o.checked = i === 0)); sync(false); });
+        sync(false);
+        return;
+      }
+
+      const total = Number(ff.dataset.facetTotal || '0');
+      const badge = ff.querySelector<HTMLElement>('[data-facet-badge]');
+      const showAll = ff.querySelector<HTMLButtonElement>('[data-facet-all="show"]');
+      const hideAll = ff.querySelector<HTMLButtonElement>('[data-facet-all="hide"]');
+      const sync = (emit = true) => {
+        const hidden = opts.filter((o) => !o.checked).map((o) => o.value);
+        if (badge) {
+          badge.hidden = hidden.length === 0;
+          badge.textContent = `${total - hidden.length}/${total}`;
+        }
+        trigger?.classList.toggle('ff-on', hidden.length > 0);
+        if (showAll) showAll.disabled = hidden.length === 0;
+        if (hideAll) hideAll.disabled = hidden.length === total;
+        if (emit) ff.dispatchEvent(new CustomEvent('facetchange', { detail: { name, hidden }, bubbles: true }));
+      };
+      opts.forEach((o) => o.addEventListener('change', () => sync()));
+      // Keep the dropdown OPEN after Show all / Hide all (Dan 2026-07-03). Preventing the button's
+      // mousedown stops it from taking focus, so the trigger stays focused and the focus-based
+      // daisyUI dropdown doesn't close (a disabled button would otherwise blur → close the menu).
+      [showAll, hideAll].forEach((b) => b?.addEventListener('mousedown', (e) => e.preventDefault()));
+      showAll?.addEventListener('click', () => { opts.forEach((o) => (o.checked = true)); sync(); });
+      hideAll?.addEventListener('click', () => { opts.forEach((o) => (o.checked = false)); sync(); });
+      ff.addEventListener('facetreset', () => { opts.forEach((o) => (o.checked = true)); sync(false); });
+      sync(false);
+    });
+  }
+  wireFacets();
+  document.addEventListener('astro:after-swap', wireFacets);
+</script>

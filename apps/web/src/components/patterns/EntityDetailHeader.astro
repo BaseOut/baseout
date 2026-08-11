@@ -1,0 +1,29 @@
+---
+import Badge from '../ui/Badge.astro';
+import PageHeader from '../ui/PageHeader.astro';
+
+interface Props {
+  title: string;
+  description?: string;
+  backHref: string;
+  backLabel: string;
+  statusLabel: string;
+  statusVariant?: 'default' | 'primary' | 'secondary' | 'tertiary' | 'success' | 'warning' | 'error';
+  statusDot?: boolean;
+}
+
+const {
+  title,
+  description,
+  backHref,
+  backLabel,
+  statusLabel,
+  statusVariant = 'default',
+  statusDot = false,
+} = Astro.props;
+---
+
+<PageHeader title={title} description={description} backHref={backHref} backLabel={backLabel}>
+  <Badge slot="meta" variant={statusVariant} dot={statusDot}>{statusLabel}</Badge>
+  {Astro.slots.has('actions') && <Fragment slot="actions"><slot name="actions" /></Fragment>}
+</PageHeader>

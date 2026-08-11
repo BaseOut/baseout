@@ -2,6 +2,31 @@ import type { AppDb } from '../db'
 import { spaces, userPreferences } from '../db/schema'
 import { and, eq, sql } from 'drizzle-orm'
 
+/**
+ * Promote a Space from 'setup_incomplete' to 'active'. Idempotent: the WHERE
+ * guard on current status means an already-active row is a no-op, and a
+ * 'paused' / 'error' row isn't touched (those are intentional non-active
+ * states). Intended call sites are user actions that signal "setup is done"
+ * — today that's the backup-config save handler (frequency + storage chosen).
+ *
+ * Why this helper exists: spaces.status defaults to 'setup_incomplete' at
+ * insert time (see onboarding/complete.ts and spaces.ts createSpaceForOrg),
+ * and no code path ever flipped it on completion — so every real-user space
+ * has been wedged at 'setup_incomplete' indefinitely, causing the dashboard
+ * to render the new-user "Connect your first base" prompt forever even after
+ * the user has finished setup. Wire any new "user finished a setup step"
+ * endpoint to call this so the flag doesn't drift again.
+ */
+export async function promoteSpaceIfSetupIncomplete(
+  db: AppDb,
+  spaceId: string,
+): Promise<void> {
+  await db
+    .update(spaces)
+    .set({ status: 'active', modifiedAt: new Date() })
+    .where(and(eq(spaces.id, spaceId), eq(spaces.status, 'setup_incomplete')))
+}
+
 export interface SpaceSummary {
   id: string
   name: string

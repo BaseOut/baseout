@@ -1,0 +1,56 @@
+---
+// Document shell for apps/admin — mirrors apps/web/src/layouts/Layout.astro so
+// the staff console renders in the same Baseout brand theme as the customer app.
+// The full @opensided/theme chain + brand themes come from apps/web via the
+// `@web` alias; admin's own global.css only extends Tailwind's content scan.
+import '@web/styles/global.css';
+import '../styles/global.css';
+import '@fortawesome/fontawesome-free/css/fontawesome.min.css';
+import '@fortawesome/fontawesome-free/css/solid.min.css';
+import '@fortawesome/fontawesome-free/css/brands.min.css';
+
+interface Props {
+  title?: string;
+}
+const { title = 'Baseout Admin' } = Astro.props;
+---
+<!doctype html>
+<html lang="en" data-theme="baseout-light" data-font-family="urbanist" class="group/html" style="color-scheme: light dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
+      rel="stylesheet"
+    />
+    <title>{title}</title>
+    <script is:inline>
+      // First-paint theme: stored preference wins, else OS preference. Mirrors
+      // apps/web so the light/dark choice carries the same semantics ('theme' =
+      // 'dark' | 'light' → baseout / baseout-light). The footer toggle
+      // (wireThemeToggle) owns every subsequent change.
+      function applyTheme() {
+        var stored = null;
+        try { stored = localStorage.getItem('theme'); } catch (e) { /* private mode */ }
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var isDark = stored === 'dark' || (!stored && prefersDark);
+        document.documentElement.setAttribute('data-theme', isDark ? 'baseout' : 'baseout-light');
+      }
+      applyTheme();
+    </script>
+  </head>
+  <body class="font-sans text-base-content antialiased">
+    <slot />
+  </body>
+</html>
+
+<style>
+  html, body {
+    margin: 0;
+    width: 100%;
+    min-height: 100%;
+  }
+</style>

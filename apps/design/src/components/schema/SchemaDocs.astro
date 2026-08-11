@@ -1,0 +1,1144 @@
+---
+/**
+ * SchemaDocs — the Docs tab. Author long-form documentation ABOUT the schema:
+ * a documents LIST, and a DOCUMENT view (a dependency-free rich-text editor shell
+ * with inline @-entity tags, a tags panel, external links, and saved React-Flow
+ * mini-diagrams) plus a clean READING mode.
+ *
+ * Distinct from Browse descriptions: a description is a field ON an entity; a
+ * document is a page that can span many entities. Tagging is bidirectional — the
+ * entity ids a doc tags surface in each entity's "Documentation" panel section.
+ *
+ * Editor: the production target is Plate (platejs.org) for the custom inline
+ * entity-tag node; this mirror ships a faithful contenteditable shell wired to the
+ * shared EntitySearch typeahead, real tag chips, and the real ER engine for the
+ * embedded diagrams. Swap the editor core for Plate in the monorepo.
+ */
+import EntitySearch from './EntitySearch.astro';
+import ExportControl from './ExportControl.astro';
+import { entityChip } from './entityChip';
+import SchemaCanvas from './SchemaCanvas';
+import { fieldTypeLabel, type SchemaEntity, type SchemaDoc, type DocInline, type DocBlock } from './schemaEntities';
+import type { SchemaTable } from './SchemaCanvas';
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+
+interface Props {
+  docs: SchemaDoc[];
+  index: SchemaEntity[];
+  bases: { id: string; name: string; workspaceId?: string; workspaceName?: string }[];
+  tables: SchemaTable[];
+  /** DATA-page only (B4 record tagging): the browsable records — presence turns on the `@@`
+   *  record-tag widget + the rail's Records group. Absent on Schema ⇒ zero record UI. */
+  records?: { id: string; tableId: string; primary: string }[];
+  /** DATA-page only: saved Browse presets — the widget's "via preset" scope path. */
+  views?: { id: string; name: string; tableId: string }[];
+}
+const { docs, index, bases, tables, records = [], views = [] } = Astro.props;
+const byId = new Map(index.map((e) => [e.id, e]));
+const recById = new Map(records.map((r) => [r.id, r]));
+const tableNameById = new Map(tables.map((t) => [t.id, t.name]));
+
+const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const fieldIconSvg = (type?: string) => {
+  const k = type ? airtableIconKey(type) : null;
+  return k ? `<svg viewBox="0 0 16 16" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
+};
+const chipIcon = (e: SchemaEntity) =>
+  e.kind === 'base' ? '<span class="iconify lucide--database concept-ic-base"></span>'
+  : e.kind === 'table' ? '<span class="iconify lucide--table-2"></span>'
+  : e.kind === 'view' ? '<span class="iconify lucide--eye concept-ic-view"></span>'
+  : `<span class="concept-ic-field">${fieldIconSvg(e.fieldType) || '<span class="iconify lucide--circle"></span>'}</span>`;
+
+/** A tag chip — the shared catalog chip (entityChip), clickable in both edit + read mode
+ *  (opens the shared panel). `contenteditable="false"` keeps it atomic inside the editor.
+ *  A tag whose entity was removed from the schema is a BROKEN reference (not a live entity
+ *  ref) — the builder has no missing variant, so it keeps its own quiet error affordance. */
+function chip(id: string): string {
+  const e = byId.get(id);
+  if (!e) return `<span class="doc-chip-missing tooltip tooltip-top" contenteditable="false" data-tip="No longer in schema"><span class="iconify lucide--unlink"></span>${esc(id)}</span>`;
+  return entityChip({ name: e.name, icon: chipIcon(e), clickable: true, attrs: `data-entity-open="${esc(e.id)}" data-kind="${esc(e.kind)}" contenteditable="false"` });
+}
+/** A RECORD chip (B4) — same catalog chip, a circle-dot icon (distinct from docs' file-text and
+ *  tables' table-2) + the record's primary value; clicking opens the record drawer. */
+function recChip(id: string): string {
+  const r = recById.get(id);
+  if (!r) return `<span class="doc-chip-missing tooltip tooltip-top" contenteditable="false" data-tip="No longer in this backup"><span class="iconify lucide--unlink"></span>${esc(id)}</span>`;
+  return entityChip({ name: r.primary, icon: '<span class="iconify lucide--circle-dot"></span>', clickable: true, attrs: `data-record-open="${esc(r.id)}" contenteditable="false"` });
+}
+function renderInline(content: DocInline[] = []): string {
+  return content.map((c) => (typeof c === 'string' ? esc(c) : 'entity' in c ? chip(c.entity) : recChip(c.record))).join('');
+}
+function renderBlocks(body: DocBlock[]): string {
+  return body
+    .map((b) => {
+      if (b.type === 'h2') return `<h2>${renderInline(b.content)}</h2>`;
+      if (b.type === 'p') return `<p>${renderInline(b.content)}</p>`;
+      if (b.type === 'ul') return `<ul>${(b.items || []).map((it) => `<li>${renderInline(it)}</li>`).join('')}</ul>`;
+      if (b.type === 'diagram') return `<div class="doc-diagram-anchor" data-diagram="${esc(b.diagramId || '')}"></div>`;
+      return '';
+    })
+    .join('');
+}
+
+const fmtDate = (iso: string) => {
+  try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch { return iso; }
+};
+const tablesForDiagram = (ids: string[]) => tables.filter((t) => ids.includes(t.id));
+
+// Document-list sort options (mirrors the Health base-list sorter).
+const DOC_SORTS: { v: string; l: string }[] = [
+  { v: 'recent', l: 'Recently edited' },
+  { v: 'oldest', l: 'Oldest edited' },
+  { v: 'name', l: 'Name A–Z' },
+];
+---
+
+<section class="dc" data-docs>
+  {docs.length === 0 ? (
+    <div class="dc-empty">
+      <span class="iconify lucide--book-text size-7 opacity-40" aria-hidden="true"></span>
+      <p class="dc-empty-t">No documents yet</p>
+      <p class="dc-empty-s">Document how a base or workflow is structured, tagging the real tables and fields.</p>
+      <button type="button" class="btn btn-sm btn-primary gap-1.5" data-dc-new><span class="iconify lucide--plus size-4"></span>New document</button>
+    </div>
+  ) : (
+    <div class="dc-shell">
+      {/* ===== LEFT — persistent documents list (master), like the Health console ===== */}
+      <aside class="dc-sidebar">
+        <div class="dc-sidebar-head">
+          <h2 class="dc-sidebar-title">Documents <span class="badge badge-sm badge-neutral dc-sidebar-count">{docs.length}</span></h2>
+          <button type="button" class="btn btn-sm btn-primary gap-1.5" data-dc-new><span class="iconify lucide--plus size-4" aria-hidden="true"></span>New</button>
+        </div>
+        {/* toolbar: search + sort dropdown, mirroring the Health base-list tools */}
+        <div class="dc-tools">
+          <div class="dc-tools-search"><EntitySearch index={index} name="docfind" placeholder="Search documents…" pickEvent="schema:openEntity" /></div>
+          <div class="dropdown dropdown-end">
+            <div tabindex="0" role="button" class="btn btn-sm btn-square btn-ghost dc-sortbtn tooltip tooltip-left" aria-label="Sort documents" data-tip="Sort documents">
+              <span class="iconify lucide--arrow-up-down size-4" aria-hidden="true"></span>
+            </div>
+            <ul tabindex="0" class="dropdown-content menu dc-sortmenu">
+              <li class="menu-title">Sort by</li>
+              {DOC_SORTS.map((s) => (
+                <li><button type="button" class:list={['dc-sortopt', { 'is-active': s.v === 'recent' }]} data-dc-sort={s.v}><span class="iconify lucide--check size-3.5 dc-sort-check" aria-hidden="true"></span>{s.l}</button></li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <div class="dc-doclist" data-dc-doclist>
+          {docs.map((d) => (
+            <div class="dc-docitem" data-dc-item={d.id} data-name={d.title.toLowerCase()} data-date={d.updatedAt}>
+              <button type="button" class="dc-docitem-main" data-dc-open={d.id}>
+                <span class="dc-docitem-title">{d.title}</span>
+                <span class="dc-docitem-meta">Edited {fmtDate(d.updatedAt)} · {d.entityIds.length} tags</span>
+                <span class="dc-docitem-excerpt">{d.excerpt}</span>
+              </button>
+              {/* Hover row actions (the Chat thread-rail kebab): export / delete without opening. */}
+              <div class="dropdown dropdown-end dc-docitem-menu">
+                <div tabindex="0" role="button" class="btn btn-sm btn-ghost btn-square dc-docitem-kebab" aria-label="Document actions"><span class="iconify lucide--ellipsis size-4" aria-hidden="true"></span></div>
+                <ul tabindex="0" class="dropdown-content menu dc-kebab-menu">
+                  <li><button type="button" data-dc-rowexport={d.id}><span class="iconify lucide--download size-3.5" aria-hidden="true"></span>Export PDF</button></li>
+                  <li><button type="button" class="text-error" data-dc-rowdelete={d.id}><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span>Delete</button></li>
+                </ul>
+              </div>
+            </div>
+          ))}
+        </div>
+      </aside>
+
+      {/* ===== RIGHT — the selected document (detail) ===== */}
+      <div class="dc-pane">
+        <div class="dc-pane-empty" data-dc-pane-empty hidden>
+          <span class="iconify lucide--file-text size-7 opacity-40" aria-hidden="true"></span>
+          <p>Select a document to read or edit.</p>
+        </div>
+        <div class="dc-doc" data-dc-doc hidden>
+          <div class="dc-doc-bar">
+            <button type="button" class="btn btn-sm btn-ghost btn-square dc-listtoggle tooltip tooltip-bottom" data-dc-listtoggle aria-label="Hide document list" data-tip="Hide document list"><span class="iconify lucide--panel-left-close size-4" data-dc-listtoggle-ic aria-hidden="true"></span></button>
+            <span class="dc-doc-byline" data-dc-byline></span>
+            <div class="join dc-modeswitch">
+              <button type="button" class="btn btn-sm join-item dc-mode-active" data-dc-mode="edit"><span class="iconify lucide--pencil size-3.5"></span>Edit</button>
+              <button type="button" class="btn btn-sm join-item" data-dc-mode="read"><span class="iconify lucide--book-open size-3.5"></span>Read</button>
+            </div>
+            {/* Exports the OPEN document by default (with an "All documents" zip option); it lives on
+                the document bar, tied to the open doc, not the list toolbar. Reviewed on the deployed
+                preview and accepted — no change requested. */}
+            <ExportControl tab="docs" format="pdf" noun="documents" total={docs.length} rowSelector="[data-dc-item].dc-active" splitScope splitSelector="[data-dc-item]" splitLabel={{ one: 'This document', all: 'All documents', unit: 'document' }} />
+            <button type="button" class="btn btn-sm btn-ghost btn-square text-error dc-delete tooltip tooltip-bottom" data-dc-delete aria-label="Delete document" data-tip="Delete document"><span class="iconify lucide--trash-2 size-4" aria-hidden="true"></span></button>
+          </div>
+
+          <div class="dc-doc-grid">
+            <div class="dc-main">
+              {/* Text keeps a readable centered measure; diagrams below break out to the full
+                  container width — a schema diagram earns every pixel it can get. */}
+              <div class="dc-measure">
+                <input class="dc-titlefield" data-dc-title placeholder="Untitled document" />
+                <div class="dc-hint" data-dc-hint>
+                  <span class="iconify lucide--at-sign size-3.5"></span>Type <kbd class="kbd kbd-xs">@</kbd> to tag a base, table, or field.
+                  {records.length > 0 && <span class="dc-hint-rec"><kbd class="kbd kbd-xs">@@</kbd> tags a record.</span>}
+                </div>
+                {/* Plate-style formatting toolbar (Dan 2026-07-15: "with plate js it has the ability
+                    to show a menu … turn that on within here"). Edit-mode only — hidden in read via
+                    the .dc-reading hide-list. Built from the catalog button primitive; the engine
+                    swaps the execCommand wiring for real Plate commands under this same chrome. */}
+                <div class="dc-fmtbar" data-dc-fmtbar role="toolbar" aria-label="Formatting">
+                  <div class="dc-fmt-grp">
+                    <button type="button" class="btn btn-sm btn-ghost btn-square dc-fmt tooltip tooltip-bottom" data-dc-fmt="bold" aria-label="Bold" data-tip="Bold"><span class="iconify lucide--bold size-4" aria-hidden="true"></span></button>
+                    <button type="button" class="btn btn-sm btn-ghost btn-square dc-fmt tooltip tooltip-bottom" data-dc-fmt="italic" aria-label="Italic" data-tip="Italic"><span class="iconify lucide--italic size-4" aria-hidden="true"></span></button>
+                    <button type="button" class="btn btn-sm btn-ghost btn-square dc-fmt tooltip tooltip-bottom" data-dc-fmt="strike" aria-label="Strikethrough" data-tip="Strikethrough"><span class="iconify lucide--strikethrough size-4" aria-hidden="true"></span></button>
+                    <button type="button" class="btn btn-sm btn-ghost btn-square dc-fmt tooltip tooltip-bottom" data-dc-fmt="code" aria-label="Inline code" data-tip="Inline code"><span class="iconify lucide--code size-4" aria-hidden="true"></span></button>
+                  </div>
+                  <span class="dc-fmt-div" aria-hidden="true"></span>
+                  <div class="dc-fmt-grp">
+                    <button type="button" class="btn btn-sm btn-ghost btn-square dc-fmt tooltip tooltip-bottom" data-dc-fmt="h1" aria-label="Heading 1" data-tip="Heading 1"><span class="iconify lucide--heading-1 size-4" aria-hidden="true"></span></button>
+                    <button type="button" class="btn btn-sm btn-ghost btn-square dc-fmt tooltip tooltip-bottom" data-dc-fmt="h2" aria-label="Heading 2" data-tip="Heading 2"><span class="iconify lucide--heading-2 size-4" aria-hidden="true"></span></button>
+                  </div>
+                  <span class="dc-fmt-div" aria-hidden="true"></span>
+                  <div class="dc-fmt-grp">
+                    <button type="button" class="btn btn-sm btn-ghost btn-square dc-fmt tooltip tooltip-bottom" data-dc-fmt="ul" aria-label="Bulleted list" data-tip="Bulleted list"><span class="iconify lucide--list size-4" aria-hidden="true"></span></button>
+                    <button type="button" class="btn btn-sm btn-ghost btn-square dc-fmt tooltip tooltip-bottom" data-dc-fmt="ol" aria-label="Numbered list" data-tip="Numbered list"><span class="iconify lucide--list-ordered size-4" aria-hidden="true"></span></button>
+                  </div>
+                  <span class="dc-fmt-div" aria-hidden="true"></span>
+                  <button type="button" class="btn btn-sm btn-ghost btn-square dc-fmt tooltip tooltip-bottom" data-dc-fmt="quote" aria-label="Quote" data-tip="Quote"><span class="iconify lucide--quote size-4" aria-hidden="true"></span></button>
+                </div>
+                <div class="dc-editor" data-dc-editor contenteditable="true" spellcheck="false"></div>
+              </div>
+              <div class="dc-diagrams" data-dc-diagrams>
+                {/* Diagram blocks are mounted here per-doc; each is a scoped, read-only ER view. */}
+              </div>
+            </div>
+
+            <aside class="dc-rail">
+              <div class="dc-rail-sec">
+                <div class="dc-rail-h">Tagged entities <span data-dc-tagcount class="dc-rail-n"></span>
+                  {/* iteration-2 (Dan 2026-07-15): a long list needs search; and since table + field
+                      names collide, a "full path" toggle expands each chip to base ▸ table ▸ field. */}
+                  <button type="button" class="dc-tagpath-btn tooltip tooltip-left" data-dc-tagpath aria-label="Toggle full path" data-tip="Show full path"><span class="iconify lucide--list-tree size-3.5" aria-hidden="true"></span></button>
+                </div>
+                <label class="input input-sm dc-tagsearch" data-dc-tagsearch-wrap hidden>
+                  <span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span>
+                  <input type="search" data-dc-tagsearch placeholder="Search tags…" aria-label="Search tagged entities" autocomplete="off" />
+                </label>
+                <div class="dc-tags" data-dc-tags></div>
+                {/* Rare action behind a click (mirrors "+ Add link" below): an always-open input here
+                    read as a SECOND search bar under "Search tags…" (Oleh 2026-07-21). The button
+                    swaps for the EntitySearch; picking a tag or Esc collapses it back. */}
+                <button type="button" class="btn btn-sm btn-ghost gap-1 text-primary dc-addtag-btn" data-dc-addtag-btn><span class="iconify lucide--plus size-3.5" aria-hidden="true"></span>Add tag</button>
+                <div class="dc-addtag" data-dc-addtag hidden><EntitySearch index={index} name="doctag" placeholder="Add a tag…" pickEvent="schema:addTag" /></div>
+              </div>
+
+              <div class="dc-rail-sec">
+                <div class="dc-rail-h">Links</div>
+                <div class="dc-links" data-dc-links></div>
+                <button type="button" class="btn btn-sm btn-ghost gap-1 text-primary dc-addlink" data-dc-addlink><span class="iconify lucide--plus size-3.5"></span>Add link</button>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* Pre-rendered diagram canvases (one per doc diagram), shown/hidden by the active doc. */}
+  <div class="dc-diagram-pool" data-dc-diagram-pool hidden>
+    {docs.flatMap((d) => d.diagrams.map((dg) => (
+      <div class="dc-diagram" data-dc-diagram={dg.id} data-dc-diagram-doc={d.id}>
+        <div class="dc-diagram-head">
+          <span class="dc-diagram-name"><span class="iconify lucide--workflow size-4" aria-hidden="true"></span>{dg.name}</span>
+          <div class="dc-diagram-actions">
+            <span class="dc-diagram-scope">{dg.tableIds.length} tables</span>
+            <button type="button" class="btn btn-sm btn-ghost gap-1 dc-diagram-open tooltip tooltip-top" data-diagram-tables={dg.tableIds.join(',')} data-tip="Open this diagram in the Visualize tab"><span class="iconify lucide--maximize-2 size-3.5"></span>Open in Visualize</button>
+          </div>
+        </div>
+        <div class="dc-diagram-canvas">
+          <SchemaCanvas client:only="react" tables={tablesForDiagram(dg.tableIds)} bases={bases} genState="locked" embed={true} />
+        </div>
+      </div>
+    )))}
+  </div>
+
+  {/* D6 — delete-document confirmation */}
+  <dialog class="modal" data-dc-delete-modal>
+    <div class="modal-box">
+      <h3 class="text-base font-semibold">Delete document?</h3>
+      <p class="py-3 text-sm opacity-80">“<span data-dc-delete-name></span>” will be removed. This can’t be undone.</p>
+      <div class="modal-action">
+        <form method="dialog"><button class="btn btn-sm">Cancel</button></form>
+        <button type="button" class="btn btn-sm btn-error gap-1.5" data-dc-delete-confirm><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span>Delete</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button aria-label="Close">close</button></form>
+  </dialog>
+</section>
+
+{/* Per-doc data the client uses to hydrate the editor / rail / diagrams. */}
+<script type="application/json" data-dc-data set:html={JSON.stringify(
+  docs.map((d) => ({
+    id: d.id, title: d.title, updatedAt: d.updatedAt, author: d.author,
+    bodyHtml: renderBlocks(d.body),
+    entityIds: d.entityIds, recordIds: d.recordIds || [], links: d.links,
+    diagramIds: d.diagrams.map((dg) => dg.id),
+  }))
+)} />
+<script type="application/json" data-dc-entities set:html={JSON.stringify(
+  index.map((e) => ({ id: e.id, kind: e.kind, name: e.name, baseName: e.baseName, tableName: e.tableName, fieldType: e.fieldType }))
+)} />
+{/* DATA-page record scope (B4): records + presets for the @@ widget. Empty on Schema ⇒ the
+    script leaves every record affordance off. Table/base names ride along for row context. */}
+<script type="application/json" data-dc-records set:html={JSON.stringify(
+  records.map((r) => ({ id: r.id, tableId: r.tableId, primary: r.primary }))
+)} />
+<script type="application/json" data-dc-views set:html={JSON.stringify(
+  views.map((v) => ({ id: v.id, name: v.name, tableId: v.tableId }))
+)} />
+<script type="application/json" data-dc-tablemeta set:html={JSON.stringify(
+  tables.map((t) => ({ id: t.id, name: t.name, baseId: t.baseId, baseName: bases.find((b) => b.id === t.baseId)?.name || '' }))
+)} />
+
+<style is:global>
+  .dc { display: block; }
+
+  /* Full-height three-zone console (pattern-schema-docs), same language as Chat: the docs
+     list rail + ONE bordered document surface fill the viewport below the page chrome, so
+     the zones read as columns — not cards that end mid-air on the page background. */
+  .dc-shell { display: grid; grid-template-columns: var(--rail-m) minmax(0, 1fr); gap: 16px; align-items: stretch; height: max(520px, calc(100dvh - 216px)); }
+  @media (max-width: 1023.98px) { .dc-shell { grid-template-columns: 1fr; height: auto; } .dc-pane { min-height: 480px; } }
+
+  /* Borderless column (like the Health nav): only the doc list carries the border, so we
+     avoid a card-in-card. Head + tools sit above the bordered list. */
+  .dc-sidebar { display: flex; flex-direction: column; gap: 12px; min-height: 0; align-self: stretch; }
+  .dc-sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .dc-sidebar-title { font-size: 14px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+
+  /* toolbar: search grows, sort is a square dropdown button (mirrors .hl-tools / .hl-sortbtn) */
+  .dc-tools { display: flex; align-items: center; gap: 8px; }
+  .dc-tools-search { flex: 1; min-width: 0; }
+  .dc-sortbtn { flex: none; border: 1px solid var(--color-base-300); }
+  .dc-sortmenu { z-index: 30; width: 12rem; margin-top: 4px; padding: 4px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: 10px; box-shadow: 0 8px 24px oklch(0 0 0 / .16); }
+  .dc-sortopt { display: flex; align-items: center; gap: 8px; }
+  .dc-sort-check { flex: none; opacity: 0; color: var(--color-primary); }
+  .dc-sortopt.is-active { font-weight: 600; }
+  .dc-sortopt.is-active .dc-sort-check { opacity: 1; }
+
+  /* ONE bordered container; rows share it and are split by a hairline — no per-item card
+     (the Health .hl-master pattern). Compact: title + meta + a single-line excerpt. */
+  .dc-doclist { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden auto; border: 1px solid var(--color-base-300); border-radius: 10px; }
+  .dc-docitem { position: relative; border-top: 1px solid oklch(from var(--color-base-300) l c h / .55); transition: background .12s ease; }
+  .dc-docitem:first-child { border-top: 0; }
+  .dc-docitem:hover { background: oklch(from var(--color-base-200) l c h / .45); }
+  .dc-docitem.dc-active { background: oklch(from var(--color-primary) l c h / .08); }
+  .dc-docitem-main { display: flex; flex-direction: column; gap: 1px; text-align: left; width: 100%; border: 0; padding: 8px 12px; cursor: pointer; background: none; font: inherit; color: inherit; }
+  /* Row actions: an absolute hover overlay (never inline — it would shift the text), and
+     pointer-events off while hidden so the closed dropdown can't eat row clicks. */
+  .dc-docitem-menu { position: absolute; top: 6px; right: 6px; opacity: 0; pointer-events: none; }
+  .dc-docitem:hover .dc-docitem-menu, .dc-docitem-menu:focus-within { opacity: 1; pointer-events: auto; }
+  .dc-docitem-kebab { background: var(--color-base-100); border: 1px solid var(--color-base-300); }
+  .dc-kebab-menu { z-index: 30; width: 10.5rem; margin-top: 2px; padding: 4px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: 9px; box-shadow: 0 8px 24px oklch(0 0 0 / .16); font-size: 13px; }
+  .dc-kebab-menu button { display: flex; align-items: center; gap: 8px; }
+  .dc-docitem-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dc-docitem.dc-active .dc-docitem-title { color: var(--color-primary); }
+  .dc-docitem-meta { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .5); }
+  .dc-docitem-excerpt { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .6); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* The document surface: ONE bordered panel (like .chat-main) — header bar, then the
+     centered reading column beside the meta rail. */
+  .dc-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: 12px; background: var(--color-base-100); overflow: hidden; }
+  .dc-pane-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 80px 20px; color: oklch(from var(--color-base-content) l c h / .55); }
+  .dc-pane-empty[hidden] { display: none; }
+
+  .dc-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 56px 20px; text-align: center; border: 1px dashed var(--color-base-300); border-radius: 12px; }
+  .dc-empty-t { font-size: 15px; font-weight: 650; margin: 8px 0 0; }
+  .dc-empty-s { font-size: 13px; color: oklch(from var(--color-base-content) l c h / .6); max-width: 46ch; margin: 0 0 8px; }
+
+  /* document */
+  .dc-doc { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .dc-doc[hidden] { display: none; }
+  .dc-doc-bar { display: flex; align-items: center; gap: 12px; flex: none; padding: 8px 12px; border-bottom: 1px solid var(--color-base-300); }
+  .dc-doc-byline { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .5); margin-left: 4px; }
+  .dc-modeswitch { margin-left: auto; }
+  /* Styling comes from the shared segmented-control rule in global.css (pattern-segmented-control).
+     The local copy here predated it and marked selection with base-200 on base-100 — about 2% of
+     lightness apart, i.e. no visible selected state at all. */
+  /* D1 — collapse the document list to give the editor more room */
+  .dc-list-collapsed .dc-shell { grid-template-columns: 1fr; }
+  .dc-list-collapsed .dc-sidebar { display: none; }
+  .dc-listtoggle, .dc-delete { flex: none; }
+
+  /* The two interior zones: the reading column and the meta rail, split by ONE vertical
+     hairline (the divider that says "context lives here" — same read as the Chat rail). */
+  .dc-doc-grid { display: grid; grid-template-columns: minmax(0, 1fr) var(--rail-s); flex: 1; min-height: 0; align-items: stretch; }
+
+  /* Reading column: title + body + diagrams scroll as one. Text is centered to a ~72ch
+     measure (.dc-measure); diagrams take the full container width. */
+  .dc-main { min-width: 0; overflow-y: auto; padding: 24px 24px 48px; }
+  .dc-measure { max-width: 72ch; margin-inline: auto; }
+
+  .dc-titlefield { width: 100%; border: 0; background: none; font-size: 24px; font-weight: 700; letter-spacing: -.01em; padding: 2px 0; outline: none; color: var(--color-base-content); }
+  .dc-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: oklch(from var(--color-base-content) l c h / .5); margin: 4px 0 12px; }
+  /* Plate-style formatting toolbar: a grouped strip above the editor, sticky so it stays reachable
+     on a long doc. Buttons are the catalog btn-square primitive; dividers are 1px optical rules. */
+  .dc-fmtbar { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; position: sticky; top: 0; z-index: 5; margin: 0 0 12px; padding: 4px; border: 1px solid var(--color-base-300); border-radius: 8px; background: var(--color-base-100); }
+  .dc-fmt-grp { display: flex; align-items: center; gap: 2px; }
+  .dc-fmt-div { width: 1px; align-self: stretch; margin: 4px 2px; background: var(--color-base-300); } /* ds-ok: 1px optical divider */
+  .dc-fmt.is-active { background: var(--color-base-200); color: var(--color-primary); }
+  .dc-editor { font-size: 14px; line-height: 1.7; min-height: 320px; outline: none; }
+  .dc-editor h1 { font-size: 22px; font-weight: 700; margin: 24px 0 8px; }
+  .dc-editor blockquote { margin: 12px 0; padding: 4px 0 4px 16px; border-left: 3px solid var(--color-base-300); color: oklch(from var(--color-base-content) l c h / .7); }
+  .dc-editor ol { margin: 12px 0; padding-left: 24px; list-style: decimal; }
+  .dc-editor code { font-family: var(--font-mono, ui-monospace); font-size: 12.5px; background: oklch(from var(--color-base-content) l c h / .08); padding: 1px 4px; border-radius: 4px; }
+  .dc-editor:focus { outline: none; }
+  .dc-editor h2 { font-size: 17px; font-weight: 650; margin: 24px 0 8px; }
+  .dc-editor p { margin: 12px 0; }
+  .dc-editor ul { margin: 12px 0; padding-left: 24px; list-style: disc; }
+  .dc-editor li { margin: 4px 0; }
+  .dc-editor .doc-diagram-anchor { margin: 16px 0; }
+
+  /* tag chips use the shared catalog chip (.sb-chip, is:global via EntityChip.astro). Only the
+     broken-reference state (entity removed from the schema) keeps a bespoke, self-contained
+     affordance — the builder has no missing variant. */
+  .doc-chip-missing { display: inline-flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 999px; font-size: 13px; font-weight: 500; line-height: 1.2; white-space: nowrap; vertical-align: middle; cursor: default; background: color-mix(in oklch, var(--color-error) 9%, transparent); color: var(--color-error); border: 1px solid color-mix(in oklch, var(--color-error) 25%, transparent); }
+  .doc-chip-missing .iconify { font-size: 14px; }
+
+  /* Meta rail: a full-height column behind ONE vertical hairline; Tagged entities and
+     Links are stacked sections split by horizontal hairlines — no floating cards. */
+  .dc-rail { display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--color-base-300); }
+  .dc-rail-sec { padding: 16px; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .55); }
+  .dc-rail-sec:last-child { border-bottom: 0; }
+  /* Narrow panes: the rail drops below the reading column as a horizontal band; the whole
+     interior scrolls as one instead of per-zone. */
+  /* The document's own grid stacks EARLIER than the page tier. With the category rail beside it,
+     a pane at 1050px left the reading column at 208px — a truncated title, a three-row toolbar and
+     four words per line. This is per-surface stacking inside a tier, not a fourth app breakpoint:
+     below ~1280 the column cannot carry prose next to a 240px rail. */
+  @media (max-width: 1279.98px) {
+    .dc-doc-grid { display: flex; flex-direction: column; overflow-y: auto; }
+    .dc-main { overflow: visible; flex: none; }
+    .dc-rail { overflow: visible; border-left: 0; border-top: 1px solid var(--color-base-300); flex-direction: row; flex-wrap: wrap; }
+    .dc-rail-sec { flex: 1 1 240px; border-bottom: 0; }
+  }
+  @media (max-width: 600px) { .dc-rail { flex-direction: column; } }
+  .dc-rail-h { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .5); margin-bottom: 8px; display: flex; align-items: center; gap: 4px; }
+  .dc-rail-n { font-weight: 600; opacity: .7; }
+  /* Scrolls past ~9 rows (Dan 2026-07-15: "ability to scroll when this is long"). */
+  .dc-tags { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; max-height: 264px; overflow-y: auto; }
+  .dc-tags:empty { margin-bottom: 0; }
+  .dc-tagrow { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 7px; }
+  .dc-tagrow:hover { background: var(--color-base-200); }
+  .dc-tagrow-ic { width: 16px; display: grid; place-items: center; flex: none; }
+  .dc-tagrow-ic svg { width: 13px; height: 13px; opacity: .8; }
+  .dc-tagrow-ic .iconify { font-size: .82rem; opacity: .75; }
+  .dc-tagrow-name { flex: 1; min-width: 0; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  /* Path is hidden by default (compact); the "full path" toggle reveals base ▸ table ▸ field. */
+  .dc-tagrow-path { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .45); display: none; }
+  .dc-tags-fullpath .dc-tagrow-path { display: inline; }
+  .dc-tagpath-btn { margin-left: auto; display: inline-grid; place-items: center; width: 20px; height: 20px; border: 0; background: none; border-radius: 5px; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .5); }
+  .dc-tagpath-btn:hover { background: oklch(from var(--color-base-content) l c h / .08); color: var(--color-base-content); }
+  .dc-tagpath-btn.dc-on { color: var(--color-primary); }
+  .dc-tagsearch { width: 100%; margin-bottom: 8px; }
+  .dc-tagsearch[hidden] { display: none; }
+  .dc-tagrow[hidden] { display: none; }
+  .dc-tagrow-x { opacity: 0; border: 0; background: none; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .5); display: grid; place-items: center; padding: 2px; border-radius: 4px; flex: none; }
+  .dc-tagrow:hover .dc-tagrow-x { opacity: 1; }
+  .dc-tagrow-x:hover { background: var(--color-base-300); color: var(--color-error); }
+  .dc-tags-empty { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .45); padding: 2px 2px 8px; }
+
+  .dc-links { display: flex; flex-direction: column; gap: 4px; }
+  .dc-linkrow { display: flex; align-items: center; gap: 8px; font-size: 12.5px; padding: 4px 8px; border-radius: 6px; }
+  .dc-linkrow:hover { background: var(--color-base-200); }
+  .dc-linkrow a { color: var(--color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dc-links-empty { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .45); padding: 2px 2px 8px; }
+
+  /* @-mention dropdown — fixed: it is positioned from caret viewport coords, and the
+     reading column now scrolls inside the pane (page scroll no longer matches). */
+  .dc-mention { position: fixed; z-index: 50; min-width: 240px; max-width: 300px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: 10px; box-shadow: 0 10px 30px oklch(0 0 0 / .18); padding: 4px; max-height: 280px; overflow-y: auto; }
+  .dc-mention[hidden] { display: none; }
+  .dc-mention-group { padding: 8px 8px 4px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .45; }
+  .dc-mention-opt { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 7px; cursor: pointer; }
+  .dc-mention-opt[aria-selected="true"], .dc-mention-opt:hover { background: var(--color-base-200); }
+  .dc-mention-ic { width: 16px; display: grid; place-items: center; flex: none; }
+  .dc-mention-ic svg { width: 14px; height: 14px; opacity: .8; }
+  .dc-mention-ic .iconify { font-size: .85rem; opacity: .75; }
+  .dc-mention-main { min-width: 0; flex: 1; }
+  .dc-mention-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dc-mention-path { font-size: 10.5px; color: oklch(from var(--color-base-content) l c h / .5); }
+
+  /* `@@` record-tag widget (B4, Data only) — the mention popover's language plus a scope row:
+     Base ▾ / Table ▾ (or a preset), then the result list. Positioned from caret coords. */
+  .dc-recw { position: fixed; z-index: 50; width: 340px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: 10px; box-shadow: 0 10px 30px oklch(0 0 0 / .18); padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .dc-recw[hidden] { display: none; }
+  .dc-recw-head { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 650; }
+  .dc-recw-head .iconify { opacity: .7; }
+  /* Same shared rule as the Edit/Read switch above — this was a byte-identical second copy under a
+     third class name. */
+  .dc-recw-scope { display: flex; gap: 8px; }
+  .dc-recw-scope[hidden] { display: none; }
+  .dc-recw-sel { flex: 1; min-width: 0; }
+  .dc-recw-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; }
+  .dc-recw-opt { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 7px; cursor: pointer; }
+  .dc-recw-opt[aria-selected="true"], .dc-recw-opt:hover { background: var(--color-base-200); }
+  .dc-recw-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dc-recw-ctx { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .5); flex: none; }
+  .dc-recw-id { font-size: 12px; font-family: var(--font-mono, ui-monospace); color: oklch(from var(--color-base-content) l c h / .45); flex: none; } /* ds-ok: mono record id */
+  .dc-recw-none { padding: 8px; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .5); }
+  .dc-recw-foot { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .45); border-top: 1px solid oklch(from var(--color-base-300) l c h / .55); padding-top: 8px; }
+  .dc-hint-rec { margin-left: 8px; }
+
+  /* Rail tag GROUPS (Entities / Records) — only rendered when a doc tags records. */
+  .dc-taggroup { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .4); padding: 8px 8px 2px; }
+  .dc-taggroup:first-child { padding-top: 0; }
+
+  /* diagrams — part of the reading column, scrolling with the body */
+  .dc-diagrams { margin-top: 24px; display: flex; flex-direction: column; gap: 16px; }
+  .dc-diagrams:empty { margin-top: 0; }
+  .dc-diagram { border: 1px solid var(--color-base-300); border-radius: 11px; overflow: hidden; }
+  .dc-diagram-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--color-base-300); background: var(--color-base-200); }
+  .dc-diagram-name { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+  .dc-diagram-actions { display: inline-flex; align-items: center; gap: 12px; }
+  .dc-diagram-scope { font-size: 11.5px; color: oklch(from var(--color-base-content) l c h / .55); }
+  .dc-diagram-canvas { height: 340px; background: var(--color-base-100); }
+  .dc-diagram-canvas .react-flow { background: transparent; }
+
+  /* reading mode */
+  .dc.dc-reading [data-dc-editor] { pointer-events: auto; }
+  .dc.dc-reading .dc-titlefield { pointer-events: none; }
+  .dc.dc-reading .dc-hint, .dc.dc-reading .dc-fmtbar, .dc.dc-reading .dc-addtag, .dc.dc-reading .dc-addtag-btn, .dc.dc-reading .dc-addlink, .dc.dc-reading .dc-tagrow-x { display: none; }
+  .dc-addtag-btn { align-self: flex-start; }
+  .dc-addtag[hidden] { display: none; }
+</style>
+
+<script>
+  import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+  import { entityChip } from './entityChip';
+
+  type Ent = { id: string; kind: 'base' | 'table' | 'field' | 'view'; name: string; baseName: string; tableName?: string; fieldType?: string };
+  type DocData = { id: string; title: string; updatedAt: string; author?: string; bodyHtml: string; entityIds: string[]; recordIds: string[]; links: { label: string; url: string }[]; diagramIds: string[] };
+  type RecMeta = { id: string; tableId: string; primary: string };
+  type ViewMeta = { id: string; name: string; tableId: string };
+  type TMeta = { id: string; name: string; baseId: string; baseName: string };
+
+  function wireDocs() {
+    const root = document.querySelector<HTMLElement>('[data-docs]');
+    if (!root || root.dataset.dcWired) return;
+    root.dataset.dcWired = '1';
+
+    const entEl = document.querySelector('[data-dc-entities]');
+    const dataEl = document.querySelector('[data-dc-data]');
+    const entities: Ent[] = entEl ? JSON.parse(entEl.textContent || '[]') : [];
+    const allDocs: DocData[] = dataEl ? JSON.parse(dataEl.textContent || '[]') : [];
+    const entById = new Map(entities.map((e) => [e.id, e]));
+    // DATA-page record scope (B4): empty on Schema ⇒ every record affordance stays off.
+    const recs: RecMeta[] = JSON.parse(document.querySelector('[data-dc-records]')?.textContent || '[]');
+    const presets: ViewMeta[] = JSON.parse(document.querySelector('[data-dc-views]')?.textContent || '[]');
+    const tmeta: TMeta[] = JSON.parse(document.querySelector('[data-dc-tablemeta]')?.textContent || '[]');
+    const recsMode = recs.length > 0;
+    const recMetaById = new Map(recs.map((r) => [r.id, r]));
+    const tmetaById = new Map(tmeta.map((t) => [t.id, t]));
+
+    const docView = root.querySelector<HTMLElement>('[data-dc-doc]');
+    if (!docView) return; // no documents → the empty state is shown; nothing to wire
+    const doclist = root.querySelector<HTMLElement>('[data-dc-doclist]')!;
+    const paneEmpty = root.querySelector<HTMLElement>('[data-dc-pane-empty]')!;
+    const editor = root.querySelector<HTMLElement>('[data-dc-editor]')!;
+    const titleField = root.querySelector<HTMLInputElement>('[data-dc-title]')!;
+    const byline = root.querySelector<HTMLElement>('[data-dc-byline]')!;
+    const tagsEl = root.querySelector<HTMLElement>('[data-dc-tags]')!;
+    const tagCountEl = root.querySelector<HTMLElement>('[data-dc-tagcount]')!;
+    const linksEl = root.querySelector<HTMLElement>('[data-dc-links]')!;
+    const diagramsEl = root.querySelector<HTMLElement>('[data-dc-diagrams]')!;
+    const pool = root.querySelector<HTMLElement>('[data-dc-diagram-pool]')!;
+    const delModal = root.querySelector<HTMLDialogElement>('[data-dc-delete-modal]');
+    const delName = root.querySelector<HTMLElement>('[data-dc-delete-name]');
+    const sidebarCount = root.querySelector<HTMLElement>('.dc-sidebar-count');
+
+    // Sort the document list (mirrors the Health base-list sorter): reorder rows in place.
+    // Re-query each time so a deleted row drops out of the set.
+    const sortOpts = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-dc-sort]'));
+    sortOpts.forEach((opt) =>
+      opt.addEventListener('click', () => {
+        const mode = opt.dataset.dcSort;
+        Array.from(doclist.querySelectorAll<HTMLElement>('[data-dc-item]'))
+          .sort((a, b) => {
+            if (mode === 'name') return (a.dataset.name ?? '').localeCompare(b.dataset.name ?? '');
+            const da = Date.parse(a.dataset.date ?? '') || 0;
+            const db = Date.parse(b.dataset.date ?? '') || 0;
+            return mode === 'oldest' ? da - db : db - da;
+          })
+          .forEach((r) => doclist.appendChild(r));
+        sortOpts.forEach((o) => o.classList.toggle('is-active', o === opt));
+        (document.activeElement as HTMLElement | null)?.blur();
+      }),
+    );
+
+    // "Open in Visualize" on a doc diagram → switch to the Visualize tab and scope the canvas to
+    // that diagram's tables (delegated; diagrams move between the pool and the active doc).
+    if (!root.dataset.dcDiagramOpenWired) {
+      root.dataset.dcDiagramOpenWired = '1';
+      root.addEventListener('click', (ev) => {
+        const btn = (ev.target as HTMLElement).closest('.dc-diagram-open');
+        if (!btn) return;
+        const ids = (btn.getAttribute('data-diagram-tables') || '').split(',').filter(Boolean);
+        document.querySelector<HTMLElement>('[data-tab="visualize"]')?.click();
+        document.dispatchEvent(new CustomEvent('schema:visualizeScope', { detail: { tableIds: ids } }));
+      });
+    }
+
+    const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+    const fieldIcon = (type?: string) => { const k = type ? airtableIconKey(type) : null; return k ? `<svg viewBox="0 0 16 16">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '<span class="iconify lucide--circle size-3.5"></span>'; };
+    const icon = (e: Ent) => e.kind === 'base' ? '<span class="iconify lucide--database concept-ic-base"></span>' : e.kind === 'table' ? '<span class="iconify lucide--table-2"></span>' : e.kind === 'view' ? '<span class="iconify lucide--eye concept-ic-view"></span>' : `<span class="concept-ic-field">${fieldIcon(e.fieldType)}</span>`;
+    const path = (e: Ent) => e.kind === 'field' || e.kind === 'view' ? `${e.baseName} ▸ ${e.tableName}` : e.kind === 'table' ? e.baseName : 'Base';
+    const fmt = (iso: string) => { try { return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch { return iso; } };
+
+    let current: DocData | null = null;
+    let tagIds: string[] = [];
+    // Tagged RECORD ids (B4) — a separate lane from entity tags; only ever non-empty on Data.
+    let recIds: string[] = [];
+
+    const tagSearchWrap = root.querySelector<HTMLElement>('[data-dc-tagsearch-wrap]');
+    const tagSearchInput = root.querySelector<HTMLInputElement>('[data-dc-tagsearch]');
+    // A record's "full path" = base ▸ table (it has no deeper ancestry than its table).
+    const recPath = (r: RecMeta) => { const t = tmetaById.get(r.tableId); return t ? `${t.baseName} ▸ ${t.name}` : ''; };
+    function renderTags() {
+      const total = tagIds.length + recIds.length;
+      tagCountEl.textContent = total ? String(total) : '';
+      if (!total) { tagsEl.innerHTML = '<p class="dc-tags-empty">No entities tagged yet.</p>'; if (tagSearchWrap) tagSearchWrap.hidden = true; return; }
+      const entRows = tagIds.map((id) => {
+        const e = entById.get(id);
+        if (!e) return '';
+        // data-search carries name + full path so the tag search matches either.
+        return `<div class="dc-tagrow" data-tag-id="${id}" data-search="${esc((e.name + ' ' + path(e)).toLowerCase())}">
+          <span class="dc-tagrow-ic">${icon(e)}</span>
+          <span class="dc-tagrow-name" data-entity-open="${id}">${esc(e.name)} <span class="dc-tagrow-path">${esc(path(e))}</span></span>
+          <button type="button" class="dc-tagrow-x" data-tag-remove="${id}" aria-label="Remove tag"><span class="iconify lucide--x size-3.5"></span></button>
+        </div>`;
+      }).join('');
+      // Records group (B4): its own labelled cluster under the entities; rows open the record
+      // drawer and share the search + full-path toggle (path = base ▸ table).
+      const recRows = recIds.map((id) => {
+        const r = recMetaById.get(id);
+        if (!r) return '';
+        return `<div class="dc-tagrow" data-rec-id="${id}" data-search="${esc((r.primary + ' ' + recPath(r) + ' ' + r.id).toLowerCase())}">
+          <span class="dc-tagrow-ic"><span class="iconify lucide--circle-dot"></span></span>
+          <span class="dc-tagrow-name" data-record-open="${id}">${esc(r.primary)} <span class="dc-tagrow-path">${esc(recPath(r))}</span></span>
+          <button type="button" class="dc-tagrow-x" data-tag-remove-rec="${id}" aria-label="Remove record tag"><span class="iconify lucide--x size-3.5"></span></button>
+        </div>`;
+      }).join('');
+      tagsEl.innerHTML = recRows
+        ? `${entRows ? `<div class="dc-taggroup">Entities</div>${entRows}` : ''}<div class="dc-taggroup">Records</div>${recRows}`
+        : entRows;
+      // The search appears once the list is long enough to need it.
+      if (tagSearchWrap) tagSearchWrap.hidden = total <= 6;
+      filterTags();
+    }
+    function filterTags() {
+      const query = (tagSearchInput?.value || '').trim().toLowerCase();
+      tagsEl.querySelectorAll<HTMLElement>('.dc-tagrow').forEach((row) => {
+        row.hidden = !!query && !(row.dataset.search || '').includes(query);
+      });
+    }
+    tagSearchInput?.addEventListener('input', filterTags);
+    root.querySelector<HTMLElement>('[data-dc-tagpath]')?.addEventListener('click', (e) => {
+      const on = tagsEl.classList.toggle('dc-tags-fullpath');
+      (e.currentTarget as HTMLElement).classList.toggle('dc-on', on);
+      (e.currentTarget as HTMLElement).setAttribute('data-tip', on ? 'Shorten path' : 'Show full path');
+    });
+    function renderLinks() {
+      const links = current?.links || [];
+      linksEl.innerHTML = links.length
+        ? links.map((l) => `<div class="dc-linkrow"><span class="iconify lucide--external-link size-3.5 opacity-60"></span><a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)}</a></div>`).join('')
+        : '<p class="dc-links-empty">No links yet.</p>';
+    }
+    function mountDiagrams() {
+      // Return currently-mounted diagrams to the pool (don't destroy the React instances),
+      // then mount this doc's. Lets us switch docs without re-creating canvases.
+      Array.from(diagramsEl.children).forEach((c) => pool.appendChild(c));
+      (current?.diagramIds || []).forEach((id) => {
+        const node = pool.querySelector<HTMLElement>(`[data-dc-diagram="${id}"]`);
+        if (node) diagramsEl.appendChild(node);
+      });
+      window.dispatchEvent(new Event('resize'));
+    }
+    function setActiveItem(id: string | null) {
+      doclist.querySelectorAll<HTMLElement>('[data-dc-item]').forEach((i) => i.classList.toggle('dc-active', i.dataset.dcItem === id));
+      // The export control's "This document" (active doc) + "All documents" (doc count) follow this;
+      // switching/deleting a doc fires no input/change, so tell it (EXPORT-2).
+      document.dispatchEvent(new CustomEvent('data:splitchange', { detail: { id } }));
+    }
+
+    function openDoc(id: string) {
+      const d = allDocs.find((x) => x.id === id);
+      if (!d) return;
+      current = d;
+      tagIds = [...d.entityIds];
+      recIds = [...(d.recordIds || [])];
+      titleField.value = d.title;
+      editor.innerHTML = d.bodyHtml;
+      byline.textContent = `${d.author ? d.author + ' · ' : ''}Edited ${fmt(d.updatedAt)}`;
+      renderTags(); renderLinks(); mountDiagrams();
+      paneEmpty.hidden = true; docView.hidden = false;
+      setActiveItem(id);
+      root.classList.remove('dc-reading');
+      setMode('edit');
+    }
+    function newDoc() {
+      current = { id: 'new', title: '', updatedAt: new Date().toISOString(), bodyHtml: '<p></p>', entityIds: [], recordIds: [], links: [], diagramIds: [] };
+      tagIds = [];
+      recIds = [];
+      titleField.value = '';
+      editor.innerHTML = '<p></p>';
+      byline.textContent = 'Draft · not saved';
+      renderTags(); renderLinks(); mountDiagrams();
+      paneEmpty.hidden = true; docView.hidden = false;
+      setActiveItem(null);
+      root.classList.remove('dc-reading'); setMode('edit');
+      titleField.focus();
+    }
+
+    // D6 — delete by id (the bar's trash targets the open doc; a row kebab targets its row).
+    let pendingDelete: string | null = null;
+    function requestDelete(id: string) {
+      const d = allDocs.find((x) => x.id === id);
+      if (!d || !delModal) return;
+      pendingDelete = id;
+      if (delName) delName.textContent = d.title || 'Untitled document';
+      delModal.showModal();
+    }
+    function deleteDoc(id: string) {
+      const idx = allDocs.findIndex((d) => d.id === id);
+      if (idx >= 0) allDocs.splice(idx, 1);
+      doclist.querySelector(`[data-dc-item="${id}"]`)?.remove();
+      if (sidebarCount) sidebarCount.textContent = String(allDocs.length);
+      delModal?.close();
+      pendingDelete = null;
+      if (current?.id !== id) return; // deleted a non-open row — the pane stays as is
+      if (allDocs.length) openDoc(allDocs[0].id);
+      else { docView!.hidden = true; paneEmpty.hidden = false; current = null; setActiveItem(null); }
+    }
+
+    function setMode(mode: 'edit' | 'read') {
+      root.classList.toggle('dc-reading', mode === 'read');
+      editor.contentEditable = mode === 'edit' ? 'true' : 'false';
+      titleField.readOnly = mode === 'read';
+      root.querySelectorAll('[data-dc-mode]').forEach((b) => b.classList.toggle('dc-mode-active', (b as HTMLElement).dataset.dcMode === mode));
+    }
+
+    // List → open.
+    root.addEventListener('click', (ev) => {
+      const open = (ev.target as HTMLElement).closest<HTMLElement>('[data-dc-open]');
+      if (open) { openDoc(open.dataset.dcOpen!); return; }
+      if ((ev.target as HTMLElement).closest('[data-dc-new]')) { newDoc(); return; }
+      const mode = (ev.target as HTMLElement).closest<HTMLElement>('[data-dc-mode]');
+      if (mode) { setMode(mode.dataset.dcMode as 'edit' | 'read'); return; }
+      const rm = (ev.target as HTMLElement).closest<HTMLElement>('[data-tag-remove]');
+      if (rm) { tagIds = tagIds.filter((t) => t !== rm.dataset.tagRemove); renderTags(); return; }
+      const rmRec = (ev.target as HTMLElement).closest<HTMLElement>('[data-tag-remove-rec]');
+      if (rmRec) { recIds = recIds.filter((t) => t !== rmRec.dataset.tagRemoveRec); renderTags(); return; }
+      // A record reference (a rail Records row or an inline record chip) → the record drawer.
+      const recOpen = (ev.target as HTMLElement).closest<HTMLElement>('[data-record-open]');
+      if (recOpen) { ev.preventDefault(); document.dispatchEvent(new CustomEvent('data:openRecord', { detail: { id: recOpen.dataset.recordOpen } })); return; }
+      const addlink = (ev.target as HTMLElement).closest('[data-dc-addlink]');
+      if (addlink) { addLinkPrompt(); return; }
+      // D1 — collapse / expand the document list.
+      const lt = (ev.target as HTMLElement).closest('[data-dc-listtoggle]');
+      if (lt) {
+        const collapsed = root.classList.toggle('dc-list-collapsed');
+        const ic = root.querySelector<HTMLElement>('[data-dc-listtoggle-ic]');
+        if (ic) ic.className = `iconify size-4 ${collapsed ? 'lucide--panel-left-open' : 'lucide--panel-left-close'}`;
+        (lt as HTMLElement).title = collapsed ? 'Show document list' : 'Hide document list';
+        window.dispatchEvent(new Event('resize'));
+        return;
+      }
+      // Row kebab: export (opens the doc, then the one export control) / delete with confirm.
+      const rowExp = (ev.target as HTMLElement).closest<HTMLElement>('[data-dc-rowexport]');
+      if (rowExp) {
+        openDoc(rowExp.dataset.dcRowexport!);
+        (document.activeElement as HTMLElement | null)?.blur(); // close the kebab dropdown
+        window.setTimeout(() => {
+          root.querySelector<HTMLElement>('.dc-doc-bar [data-export-trigger]')?.focus();
+          // Focus opens the panel without the trigger's click-sync — nudge the counts.
+          document.dispatchEvent(new Event('change'));
+        }, 30);
+        return;
+      }
+      const rowDel = (ev.target as HTMLElement).closest<HTMLElement>('[data-dc-rowdelete]');
+      if (rowDel) { (document.activeElement as HTMLElement | null)?.blur(); requestDelete(rowDel.dataset.dcRowdelete!); return; }
+      // D6 — delete the open document with confirmation.
+      const del = (ev.target as HTMLElement).closest('[data-dc-delete]');
+      if (del) { if (current && current.id !== 'new') requestDelete(current.id); return; }
+      if ((ev.target as HTMLElement).closest('[data-dc-delete-confirm]')) { if (pendingDelete) deleteDoc(pendingDelete); return; }
+    });
+
+    function addLinkPrompt() {
+      const url = window.prompt('Link URL'); if (!url) return;
+      const label = window.prompt('Link label', url) || url;
+      if (current) { current.links.push({ label, url }); renderLinks(); }
+    }
+
+    // "+ Add tag" (mirrors "+ Add link"): the button swaps for the typeahead; pick/Esc collapses back.
+    const addTagBtn = root.querySelector<HTMLButtonElement>('[data-dc-addtag-btn]');
+    const addTagWrap = root.querySelector<HTMLElement>('[data-dc-addtag]');
+    const closeAddTag = () => { if (!addTagWrap || !addTagBtn) return; addTagWrap.hidden = true; addTagBtn.hidden = false; };
+    addTagBtn?.addEventListener('click', () => {
+      if (!addTagWrap) return;
+      addTagWrap.hidden = false; addTagBtn.hidden = true;
+      const inp = addTagWrap.querySelector<HTMLInputElement>('input'); inp?.focus();
+    });
+    addTagWrap?.addEventListener('keydown', (e) => { if ((e as KeyboardEvent).key === 'Escape') { e.stopPropagation(); closeAddTag(); } });
+
+    // Add tag from the rail typeahead.
+    document.addEventListener('schema:addTag', (ev) => {
+      const id = (ev as CustomEvent).detail?.id;
+      if (!id || tagIds.includes(id)) return;
+      tagIds.push(id); renderTags(); closeAddTag();
+      // Also insert a chip at the end of the editor for visibility.
+      const e = entById.get(id);
+      if (e && editor.contentEditable === 'true') {
+        const chip = makeChip(e);
+        editor.appendChild(chip); editor.appendChild(document.createTextNode(' '));
+      }
+    });
+
+    function makeChip(e: Ent): HTMLElement {
+      const tpl = document.createElement('template');
+      tpl.innerHTML = entityChip({ name: e.name, icon: icon(e), clickable: true, attrs: `data-entity-open="${esc(e.id)}" data-kind="${esc(e.kind)}" contenteditable="false"` }).trim();
+      return tpl.content.firstElementChild as HTMLElement;
+    }
+
+    // ===== Inline @-mention =====
+    const mention = document.createElement('div');
+    mention.className = 'dc-mention'; mention.hidden = true;
+    document.body.appendChild(mention);
+    let mentionRange: Range | null = null;
+    let mResults: Ent[] = [];
+    let mActive = -1;
+
+    function closeMention() { mention.hidden = true; mentionRange = null; mActive = -1; }
+    function queryAtCaret(): { q: string; range: Range; rec?: boolean } | null {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount || !editor.contains(sel.anchorNode)) return null;
+      const node = sel.anchorNode;
+      if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+      const text = node.textContent || '';
+      const off = sel.anchorOffset;
+      const before = text.slice(0, off);
+      // `@@` = the RECORD trigger (B4, Data only) — checked FIRST so it never reads as an
+      // entity mention. On Schema (no records) it falls through and `@@` types literally,
+      // showing the plain entity mention exactly as before.
+      if (recsMode) {
+        const mr = before.match(/@@([\w -]{0,30})$/);
+        if (mr) {
+          const range = document.createRange();
+          range.setStart(node, off - mr[0].length);
+          range.setEnd(node, off);
+          return { q: mr[1].trim().toLowerCase(), range, rec: true };
+        }
+      }
+      const m = before.match(/@([\w ]{0,30})$/);
+      if (!m) return null;
+      const range = document.createRange();
+      range.setStart(node, off - m[0].length);
+      range.setEnd(node, off);
+      return { q: m[1].trim().toLowerCase(), range };
+    }
+    function showMention(q: string, range: Range) {
+      mResults = entities.filter((e) => `${e.name} ${e.tableName || ''} ${e.baseName}`.toLowerCase().includes(q)).slice(0, 24);
+      mentionRange = range;
+      if (!mResults.length) { mention.innerHTML = '<div class="dc-mention-group">No matches</div>'; }
+      else {
+        // view-schema-details: 'view' must be here or a @-mentioned view vanishes from the
+        // typeahead silently — no error, just absent.
+        const groups: Array<[string, string]> = [['base', 'Bases'], ['table', 'Tables'], ['field', 'Fields'], ['view', 'Views']];
+        let html = ''; let i = 0; const ordered: Ent[] = [];
+        for (const [kind, label] of groups) {
+          const items = mResults.filter((e) => e.kind === kind);
+          if (!items.length) continue;
+          html += `<div class="dc-mention-group">${label}</div>`;
+          for (const e of items) {
+            html += `<div class="dc-mention-opt" data-m-i="${i}" data-m-id="${e.id}"><span class="dc-mention-ic">${icon(e)}</span><span class="dc-mention-main"><div class="dc-mention-name">${esc(e.name)}</div><div class="dc-mention-path">${esc(path(e))}</div></span></div>`;
+            ordered.push(e); i++;
+          }
+        }
+        mResults = ordered;
+        mention.innerHTML = html;
+      }
+      const rect = range.getBoundingClientRect();
+      mention.style.left = `${Math.min(rect.left, window.innerWidth - 320)}px`;
+      mention.style.top = `${rect.bottom + 4}px`;
+      mention.hidden = false; mActive = -1;
+    }
+    function setMActive(i: number) {
+      const opts = Array.from(mention.querySelectorAll<HTMLElement>('.dc-mention-opt'));
+      if (!opts.length) return;
+      mActive = (i + opts.length) % opts.length;
+      opts.forEach((o, k) => o.setAttribute('aria-selected', String(k === mActive)));
+      opts[mActive]?.scrollIntoView({ block: 'nearest' });
+    }
+    function insertChip(e: Ent) {
+      if (!mentionRange) return;
+      mentionRange.deleteContents();
+      const chip = makeChip(e);
+      mentionRange.insertNode(chip);
+      const space = document.createTextNode(' ');
+      chip.after(space);
+      const sel = window.getSelection();
+      const r = document.createRange(); r.setStartAfter(space); r.collapse(true);
+      sel?.removeAllRanges(); sel?.addRange(r);
+      if (!tagIds.includes(e.id)) { tagIds.push(e.id); renderTags(); }
+      closeMention();
+    }
+
+    editor.addEventListener('input', () => {
+      if (editor.contentEditable !== 'true') return;
+      const at = queryAtCaret();
+      // Deleting back past the trigger closes whichever popover was open (cancel path).
+      if (at?.rec) { closeMention(); showRecw(at.q, at.range); }
+      else if (at) { closeRecw(); showMention(at.q, at.range); }
+      else { closeMention(); closeRecw(); }
+    });
+    editor.addEventListener('keydown', (ev) => {
+      if (!recw.hidden) {
+        if (ev.key === 'ArrowDown') { ev.preventDefault(); setRecwActive(recwActive + 1); }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); setRecwActive(recwActive - 1); }
+        else if (ev.key === 'Enter') { ev.preventDefault(); const r = recwResults[recwActive >= 0 ? recwActive : 0]; if (r) recwPick(r); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); closeRecw(); }
+        return;
+      }
+      if (mention.hidden) return;
+      if (ev.key === 'ArrowDown') { ev.preventDefault(); setMActive(mActive + 1); }
+      else if (ev.key === 'ArrowUp') { ev.preventDefault(); setMActive(mActive - 1); }
+      else if (ev.key === 'Enter' && mActive >= 0) { ev.preventDefault(); insertChip(mResults[mActive]); }
+      else if (ev.key === 'Escape') { ev.preventDefault(); closeMention(); }
+    });
+    mention.addEventListener('mousedown', (ev) => { const o = (ev.target as HTMLElement).closest<HTMLElement>('.dc-mention-opt'); if (o) { ev.preventDefault(); insertChip(entById.get(o.dataset.mId!)!); } });
+    editor.addEventListener('blur', () => window.setTimeout(closeMention, 150));
+
+    // ===== `@@` record-tag widget (B4, Data only) ==================================
+    // Three paths to a record: (1) drill — Base ▾ / Table ▾ scope the list; (2) via PRESET —
+    // a saved Browse preset scopes it instead; (3) direct id — a `rec…` query matches by id
+    // prefix ACROSS all tables (ids are globally unique, so scope would only get in the way).
+    // The `@@…` text at the caret IS the query (same mechanics as the @ entity mention); the
+    // widget floats at the caret with the scope controls + result list. Esc / deleting the
+    // trigger cancels; picking swaps the trigger text for an inline record chip.
+    const recw = document.createElement('div');
+    recw.className = 'dc-recw'; recw.hidden = true;
+    document.body.appendChild(recw);
+    let recwRange: Range | null = null;
+    let recwResults: RecMeta[] = [];
+    let recwActive = -1;
+    let recwQ = '';
+    let recwMode: 'table' | 'preset' = 'table';
+    let recwBase = ''; let recwTable = ''; let recwPreset = '';
+    const recwBases = [...new Map(tmeta.map((t) => [t.baseId, t.baseName])).entries()]; // [baseId, baseName]
+    if (recsMode) {
+      recw.innerHTML = `
+        <div class="dc-recw-head"><span class="iconify lucide--circle-dot size-3.5" aria-hidden="true"></span>Tag a record</div>
+        ${presets.length ? `<div class="join dc-recw-mode">
+          <button type="button" class="btn btn-sm join-item dc-recw-mode-on" data-recw-mode="table">By table</button>
+          <button type="button" class="btn btn-sm join-item" data-recw-mode="preset">By preset</button>
+        </div>` : ''}
+        <div class="dc-recw-scope" data-recw-scope-table>
+          <select class="select select-sm dc-recw-sel" data-recw-base aria-label="Base"></select>
+          <select class="select select-sm dc-recw-sel" data-recw-table aria-label="Table"></select>
+        </div>
+        <div class="dc-recw-scope" data-recw-scope-preset hidden>
+          <select class="select select-sm dc-recw-sel dc-recw-sel-wide" data-recw-preset aria-label="Preset"></select>
+        </div>
+        <div class="dc-recw-list" data-recw-list></div>
+        <div class="dc-recw-foot">Keep typing to search — a name, or a <code>rec…</code> id (id search spans all tables).</div>`;
+    }
+    const recwBaseSel = recw.querySelector<HTMLSelectElement>('[data-recw-base]');
+    const recwTableSel = recw.querySelector<HTMLSelectElement>('[data-recw-table]');
+    const recwPresetSel = recw.querySelector<HTMLSelectElement>('[data-recw-preset]');
+    const recwList = recw.querySelector<HTMLElement>('[data-recw-list]');
+    function recwFillScopes() {
+      if (!recwBaseSel || !recwTableSel) return;
+      if (!recwBase) recwBase = recwBases[0]?.[0] || '';
+      recwBaseSel.innerHTML = recwBases.map(([id, name]) => `<option value="${esc(id)}"${id === recwBase ? ' selected' : ''}>${esc(name)}</option>`).join('');
+      const btables = tmeta.filter((t) => t.baseId === recwBase);
+      if (!btables.some((t) => t.id === recwTable)) recwTable = btables[0]?.id || '';
+      recwTableSel.innerHTML = btables.map((t) => `<option value="${esc(t.id)}"${t.id === recwTable ? ' selected' : ''}>${esc(t.name)}</option>`).join('');
+      if (recwPresetSel) {
+        if (!recwPreset) recwPreset = presets[0]?.id || '';
+        recwPresetSel.innerHTML = presets.map((p) => `<option value="${esc(p.id)}"${p.id === recwPreset ? ' selected' : ''}>${esc(p.name)} · ${esc(tmetaById.get(p.tableId)?.name || '')}</option>`).join('');
+      }
+    }
+    function recwRender() {
+      if (!recwList) return;
+      const q = recwQ;
+      // Direct-id path: a `rec…` query searches ids across EVERY table, scope ignored.
+      const idMode = q.startsWith('rec') && q.length >= 4;
+      let pool: RecMeta[];
+      if (idMode) pool = recs.filter((r) => r.id.toLowerCase().startsWith(q));
+      else {
+        // Harness nuance: a preset scopes to its TABLE only — its saved filters live in the
+        // Browse runtime and don't replay here; the engine applies them for real.
+        const scopeTable = recwMode === 'preset' ? (presets.find((p) => p.id === recwPreset)?.tableId || '') : recwTable;
+        pool = recs.filter((r) => r.tableId === scopeTable && (!q || r.primary.toLowerCase().includes(q)));
+      }
+      recwResults = pool.slice(0, 30);
+      recwActive = recwResults.length ? 0 : -1;
+      recwList.innerHTML = recwResults.length
+        ? recwResults.map((r, i) => `<div class="dc-recw-opt" data-recw-i="${i}" data-recw-id="${esc(r.id)}" aria-selected="${i === recwActive}">
+            <span class="dc-recw-name">${esc(r.primary)}</span>
+            ${idMode ? `<span class="dc-recw-ctx">${esc(tmetaById.get(r.tableId)?.name || '')}</span>` : ''}
+            <code class="dc-recw-id">${esc(r.id)}</code>
+          </div>`).join('')
+        : '<div class="dc-recw-none">No records match.</div>';
+    }
+    function setRecwActive(i: number) {
+      const opts = Array.from(recw.querySelectorAll<HTMLElement>('.dc-recw-opt'));
+      if (!opts.length) return;
+      recwActive = (i + opts.length) % opts.length;
+      opts.forEach((o, k) => o.setAttribute('aria-selected', String(k === recwActive)));
+      opts[recwActive]?.scrollIntoView({ block: 'nearest' });
+    }
+    function showRecw(q: string, range: Range) {
+      if (!recsMode) return;
+      recwRange = range; recwQ = q;
+      recwFillScopes(); recwRender();
+      const rect = range.getBoundingClientRect();
+      recw.style.left = `${Math.min(rect.left, window.innerWidth - 360)}px`;
+      recw.style.top = `${rect.bottom + 4}px`;
+      recw.hidden = false;
+    }
+    function closeRecw() { recw.hidden = true; recwRange = null; recwActive = -1; }
+    function makeRecChip(r: RecMeta): HTMLElement {
+      const tpl = document.createElement('template');
+      tpl.innerHTML = entityChip({ name: r.primary, icon: '<span class="iconify lucide--circle-dot"></span>', clickable: true, attrs: `data-record-open="${esc(r.id)}" contenteditable="false"` }).trim();
+      return tpl.content.firstElementChild as HTMLElement;
+    }
+    function recwPick(r: RecMeta) {
+      if (!recwRange) return;
+      recwRange.deleteContents();
+      const chipEl = makeRecChip(r);
+      recwRange.insertNode(chipEl);
+      const space = document.createTextNode(' ');
+      chipEl.after(space);
+      const sel = window.getSelection();
+      const rr = document.createRange(); rr.setStartAfter(space); rr.collapse(true);
+      sel?.removeAllRanges(); sel?.addRange(rr);
+      if (!recIds.includes(r.id)) { recIds.push(r.id); renderTags(); }
+      closeRecw();
+      editor.focus();
+    }
+    recw.addEventListener('mousedown', (ev) => {
+      const o = (ev.target as HTMLElement).closest<HTMLElement>('.dc-recw-opt');
+      if (o) { ev.preventDefault(); const r = recMetaById.get(o.dataset.recwId!); if (r) recwPick(r); }
+    });
+    recw.addEventListener('click', (ev) => {
+      const mode = (ev.target as HTMLElement).closest<HTMLElement>('[data-recw-mode]');
+      if (mode) {
+        recwMode = mode.dataset.recwMode as 'table' | 'preset';
+        recw.querySelectorAll<HTMLElement>('[data-recw-mode]').forEach((b) => b.classList.toggle('dc-recw-mode-on', b === mode));
+        recw.querySelector<HTMLElement>('[data-recw-scope-table]')!.hidden = recwMode !== 'table';
+        recw.querySelector<HTMLElement>('[data-recw-scope-preset]')!.hidden = recwMode !== 'preset';
+        recwRender();
+      }
+    });
+    recwBaseSel?.addEventListener('change', () => { recwBase = recwBaseSel.value; recwTable = ''; recwFillScopes(); recwRender(); });
+    recwTableSel?.addEventListener('change', () => { recwTable = recwTableSel.value; recwRender(); });
+    recwPresetSel?.addEventListener('change', () => { recwPreset = recwPresetSel.value; recwRender(); });
+    // Esc while a scope <select> holds focus (the editor keydown handler can't see it).
+    recw.addEventListener('keydown', (ev) => { if ((ev as KeyboardEvent).key === 'Escape') { ev.preventDefault(); closeRecw(); editor.focus(); } });
+    // Outside click closes; clicks inside the editor re-run the caret check via `input`/selection.
+    document.addEventListener('mousedown', (ev) => {
+      if (recw.hidden) return;
+      const t = ev.target as HTMLElement;
+      if (!recw.contains(t) && !editor.contains(t)) closeRecw();
+    });
+
+    // Entity-tag clicks that arrive while editing: swallow the default so the click doesn't also
+    // act on the contenteditable, and let the OPENING happen where it happens everywhere else.
+    //
+    // This used to dispatch `schema:openEntity` itself. The document-level delegate in
+    // EntityPanel matches the same `[data-entity-open]` chip, so every click ran twice — and on a
+    // ⌘/Ctrl-click the two disagreed: this handler retargeted the anchor panel while the delegate
+    // opened a second one beside, so a single click did both. Dropping the dispatch removes the
+    // double-fire and gains ⌘-click-to-open-beside inside a doc, which the delegate already
+    // implements and this handler was quietly overriding.
+    editor.addEventListener('click', (ev) => {
+      const chip = (ev.target as HTMLElement).closest<HTMLElement>('.sb-chip[data-entity-open]');
+      if (chip) ev.preventDefault();
+    });
+
+    // Open a specific doc when Browse's panel links to it.
+    document.addEventListener('schema:openDoc', (ev) => {
+      const id = (ev as CustomEvent).detail?.id;
+      const tabBtn = document.querySelector<HTMLElement>('[data-tab="docs"]');
+      tabBtn?.click();
+      if (id) window.setTimeout(() => openDoc(id), 30);
+    });
+
+    // ── Formatting toolbar (Plate-style menu) ──────────────────────────────────────
+    // Mock wiring: document.execCommand keeps the harness clickable for UX review. The Baseout
+    // engine replaces these with Plate editor commands behind the SAME toolbar chrome.
+    const fmtbar = root.querySelector<HTMLElement>('[data-dc-fmtbar]');
+    const fmtBtns = fmtbar ? Array.from(fmtbar.querySelectorAll<HTMLElement>('[data-dc-fmt]')) : [];
+    // The block-level tag the caret currently sits in (for heading / quote active state).
+    const caretBlockTag = (): string => {
+      const sel = window.getSelection();
+      let n = sel && sel.rangeCount ? (sel.getRangeAt(0).startContainer as Node | null) : null;
+      while (n && n !== editor) {
+        if (n.nodeType === 1 && /^(H1|H2|BLOCKQUOTE)$/.test((n as HTMLElement).tagName)) return (n as HTMLElement).tagName;
+        n = n.parentNode;
+      }
+      return '';
+    };
+    const caretInCode = (): boolean => {
+      const sel = window.getSelection();
+      let n = sel && sel.rangeCount ? (sel.getRangeAt(0).startContainer as Node | null) : null;
+      while (n && n !== editor) { if (n.nodeType === 1 && (n as HTMLElement).tagName === 'CODE') return true; n = n.parentNode; }
+      return false;
+    };
+    const wrapInlineCode = () => {
+      const sel = window.getSelection(); if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+      const range = sel.getRangeAt(0);
+      if (!editor.contains(range.commonAncestorContainer)) return;
+      const code = document.createElement('code');
+      try { range.surroundContents(code); } catch { code.appendChild(range.extractContents()); range.insertNode(code); }
+      sel.removeAllRanges();
+    };
+    const runFmt = (cmd: string) => {
+      editor.focus();
+      switch (cmd) {
+        case 'bold': document.execCommand('bold'); break;
+        case 'italic': document.execCommand('italic'); break;
+        case 'strike': document.execCommand('strikeThrough'); break;
+        case 'code': wrapInlineCode(); break;
+        case 'h1': document.execCommand('formatBlock', false, caretBlockTag() === 'H1' ? 'P' : 'H1'); break;
+        case 'h2': document.execCommand('formatBlock', false, caretBlockTag() === 'H2' ? 'P' : 'H2'); break;
+        case 'ul': document.execCommand('insertUnorderedList'); break;
+        case 'ol': document.execCommand('insertOrderedList'); break;
+        case 'quote': document.execCommand('formatBlock', false, caretBlockTag() === 'BLOCKQUOTE' ? 'P' : 'BLOCKQUOTE'); break;
+      }
+      syncFmtActive();
+    };
+    const cmdState = (c: string) => { try { return document.queryCommandState(c); } catch { return false; } };
+    const syncFmtActive = () => {
+      if (!fmtBtns.length) return;
+      const block = caretBlockTag();
+      const state: Record<string, boolean> = {
+        bold: cmdState('bold'), italic: cmdState('italic'), strike: cmdState('strikeThrough'),
+        code: caretInCode(), h1: block === 'H1', h2: block === 'H2', quote: block === 'BLOCKQUOTE',
+        ul: cmdState('insertUnorderedList'), ol: cmdState('insertOrderedList'),
+      };
+      fmtBtns.forEach((b) => b.classList.toggle('is-active', !!state[b.dataset.dcFmt || '']));
+    };
+    // mousedown (not click) so the editor selection is still live when the command runs.
+    fmtbar?.addEventListener('mousedown', (ev) => {
+      const btn = (ev.target as HTMLElement).closest<HTMLElement>('[data-dc-fmt]');
+      if (!btn) return;
+      ev.preventDefault();
+      runFmt(btn.dataset.dcFmt!);
+    });
+    document.addEventListener('selectionchange', () => {
+      if (root.classList.contains('dc-reading')) return;
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount && editor.contains(sel.getRangeAt(0).startContainer)) syncFmtActive();
+    });
+
+    // Auto-select the first document (master-detail console, like Health).
+    if (allDocs.length) openDoc(allDocs[0].id);
+    else { docView.hidden = true; paneEmpty.hidden = false; }
+  }
+  wireDocs();
+  document.addEventListener('astro:after-swap', wireDocs);
+</script>

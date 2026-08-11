@@ -1,11 +1,5 @@
 ---
-import SidebarLayout from '../layouts/SidebarLayout.astro';
-import PlaceholderView from '../views/PlaceholderView.astro';
-import { getBreadcrumbs } from '../lib/config';
-
-const breadcrumbs = getBreadcrumbs('/reports');
+// Reports is out of V1 scope (Jul 6, 2026 decision — openspec/changes/web-v1-scope-trim):
+// the tab is hidden and this route redirects so stale links / bookmarks don't 404.
+return Astro.redirect('/', 302);
 ---
-
-<SidebarLayout pageTitle="Reports" breadcrumbs={breadcrumbs}>
-  <PlaceholderView label="Reports" />
-</SidebarLayout>

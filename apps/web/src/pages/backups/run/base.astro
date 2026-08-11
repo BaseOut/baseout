@@ -1,0 +1,143 @@
+---
+/**
+ * Per-base drill-down within a single backup run.
+ * Route: /backups/run/base?run=<runId>&base=<atBaseId>
+ *
+ * Loads the engine's per-run detail, filters to the requested base, and
+ * renders BackupRunBaseView with real per-table counts. If the run has no
+ * per-base snapshot (legacy run) or the requested base isn't in the detail,
+ * redirects back to the run detail page.
+ *
+ * Auth: session via Astro.locals.account (middleware-gated SSR). Space
+ * membership is enforced by the DB query — the run must belong to the
+ * authenticated Space (same IDOR pattern as cancel.ts).
+ */
+import { env } from 'cloudflare:workers';
+import { and, eq } from 'drizzle-orm';
+import SidebarLayout from '../../../layouts/SidebarLayout.astro';
+import BackupRunBaseView from '../../../views/BackupRunBaseView.astro';
+import { getBreadcrumbs } from '../../../lib/config';
+import { createBackupEngine } from '../../../lib/backup-engine';
+import type { EngineRunDetailBase } from '../../../lib/backup-engine';
+import {
+  backupConfigurations,
+  backupRuns,
+  connections,
+} from '../../../db/schema';
+
+const breadcrumbs = getBreadcrumbs('/backups');
+const { account, db } = Astro.locals;
+const spaceId = account?.space?.id ?? null;
+
+const runId = Astro.url.searchParams.get('run');
+const atBaseId = Astro.url.searchParams.get('base');
+
+// Missing params, no Space, or no DB → back to the list.
+if (!runId || !atBaseId || !spaceId || !db) return Astro.redirect('/backups');
+
+// Load the run row — IDOR guard: run must belong to the authenticated Space.
+const rows = await db
+  .select({
+    id: backupRuns.id,
+    status: backupRuns.status,
+    configStorageType: backupConfigurations.storageType,
+  })
+  .from(backupRuns)
+  .leftJoin(backupConfigurations, eq(backupConfigurations.spaceId, backupRuns.spaceId))
+  .leftJoin(connections, eq(connections.id, backupRuns.connectionId))
+  .where(and(eq(backupRuns.id, runId), eq(backupRuns.spaceId, spaceId)))
+  .limit(1);
+
+const row = rows[0];
+// Run not found or not in this Space → redirect to run list (IDOR-safe).
+if (!row) return Astro.redirect('/backups');
+
+// Fetch per-base detail from the engine.
+if (!env.BACKUP_ENGINE || !env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+  // Engine binding not configured (local dev without engine) → back to run page.
+  return Astro.redirect(`/backups/run?id=${runId}`);
+}
+
+const engine = createBackupEngine({
+  binding: env.BACKUP_ENGINE,
+  internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+});
+
+const detailRes = await engine.getRunDetail(runId);
+if (!detailRes.ok) {
+  // Engine unreachable or run not found in engine → back to run page.
+  return Astro.redirect(`/backups/run?id=${runId}`);
+}
+
+const engineBase: EngineRunDetailBase | undefined = detailRes.bases.find(
+  (b) => b.atBaseId === atBaseId,
+);
+// Legacy run (empty bases[]) or base not in detail → back to run page.
+if (!engineBase) return Astro.redirect(`/backups/run?id=${runId}`);
+
+// Determine destination kind from run-level storage type.
+const destKind = row.configStorageType === 'managed_pg' ? 'database' : 'file';
+
+// Map engine tables → BackupRunBaseView's TableRun[].
+// Snapshot gaps: views are not recorded by the engine (default 0).
+// recordsRemaining / attachmentsRemaining are only meaningful during a live
+// run and are not in the snapshot (default null — completed tables show totals).
+const knownTableStatuses = new Set(['ok', 'failed', 'running', 'pending']);
+const tables = engineBase.tables.map((t) => ({
+  id: t.tableId,
+  name: t.tableName,
+  // Engine doesn't persist per-table status in the snapshot; infer from base.
+  status: (knownTableStatuses.has(engineBase.status) && engineBase.status !== 'ok'
+    ? engineBase.status
+    : 'ok') as 'ok' | 'failed' | 'running' | 'pending',
+  fields: t.fieldCount,
+  records: t.recordCount,
+  recordsRemaining: null as number | null,
+  views: 0,
+  attachments: t.attachmentCount,
+  attachmentsRemaining: null as number | null,
+  failed: 0,
+}));
+
+// Run-level depth (same inference as run.astro — no per-base flags).
+const knownStatuses = ['succeeded', 'failed', 'running', 'cancelled', 'trial_succeeded'] as const;
+const runStatus = (knownStatuses as readonly string[]).includes(row.status)
+  ? (row.status as (typeof knownStatuses)[number])
+  : 'cancelled';
+
+const depth = {
+  schema: tables.length > 0,
+  data: engineBase.recordsCount > 0 || runStatus === 'succeeded' || runStatus === 'trial_succeeded',
+  attachments: engineBase.attachmentsCount > 0,
+};
+
+const knownBaseStatuses = new Set(['ok', 'failed', 'running', 'pending']);
+const baseStatus = knownBaseStatuses.has(engineBase.status)
+  ? (engineBase.status as 'ok' | 'failed' | 'running' | 'pending')
+  : 'pending';
+
+const base = {
+  runId,
+  runState: runStatus === 'running' ? 'running' : runStatus === 'failed' ? 'failed' : 'done',
+  atBaseId: engineBase.atBaseId,
+  name: engineBase.baseName,
+  status: baseStatus,
+  startedAt: engineBase.startedAt,
+  completedAt: engineBase.completedAt,
+  depth,
+  destKind: destKind as 'file' | 'database',
+  // Snapshot gaps: destination URLs/paths are not captured per-base by the engine.
+  destProvider: '',
+  destIcon: null as string | null,
+  folder: null as string | null,
+  folderUrl: null as string | null,
+  dbRef: null as string | null,
+  error: engineBase.errorMessage,
+  tables,
+  failedAttachments: [],
+};
+---
+
+<SidebarLayout pageTitle={engineBase.baseName} breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <BackupRunBaseView base={base} />
+</SidebarLayout>

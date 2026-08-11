@@ -1,0 +1,35 @@
+---
+/**
+ * apps/design wrapper around `@web/layouts/SidebarLayout.astro`.
+ *
+ * The wrapper exists for two reasons:
+ *  1. import `../styles/design.css` (which carries the @source directives
+ *     Tailwind needs to scan apps/web for class names) into the module graph.
+ *  2. append a HARNESS-ONLY "Handoff" link to the sidebar footer so the
+ *     design→engineering flow index (/handoff) is one click away. This is a
+ *     design tool, NOT a product route, so it lives here and never touches
+ *     `app-config.json`.
+ */
+import '../styles/design.css';
+import WebSidebarLayout from '@web/layouts/SidebarLayout.astro';
+import { getFooterNavItems } from '@web/lib/config';
+import { inboxItems, inboxEmpty, inboxOneSpace } from '../fixtures/inbox';
+
+const props = Astro.props as Record<string, unknown>;
+const footerNavItems = [
+  ...getFooterNavItems(),
+  { label: 'Handoff', href: '/handoff', icon: 'iconify lucide--workflow' },
+  { label: 'Storybook', href: '/styleguide', icon: 'iconify lucide--book-open' },
+];
+
+// `?fixture=empty` drives the inbox zero-state.
+const inboxFixture = Astro.url.searchParams.get('fixture');
+const items =
+  inboxFixture === 'empty' ? inboxEmpty : inboxFixture === 'one-space' ? inboxOneSpace : inboxItems;
+---
+
+<WebSidebarLayout {...props} footerNavItems={footerNavItems} inboxItems={items}>
+  <slot name="app-banner" slot="app-banner" />
+  <slot name="topbar-status" slot="topbar-status" />
+  <slot />
+</WebSidebarLayout>

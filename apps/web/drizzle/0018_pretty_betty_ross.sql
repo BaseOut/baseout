@@ -1,0 +1,1 @@
+DROP TABLE "baseout"."attachment_dedup" CASCADE;

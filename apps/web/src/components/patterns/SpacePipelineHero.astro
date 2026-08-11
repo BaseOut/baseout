@@ -1,0 +1,83 @@
+---
+/**
+ * SpacePipelineHero — the unconfigured Space's empty state, drawn as the product
+ * model itself (Airbyte-style): a Source anchor (Airtable, the one platform every
+ * backup starts from) → the Baseout hub (this Space) → a Destinations column
+ * (Drive / Dropbox / S3 / databases).
+ *
+ * Teaching-first and decorative: tiles aren't clickable, the single CTA opens the
+ * setup wizard. Connection lines softly take turns lighting up (restrained — no
+ * traveling pulses); honors prefers-reduced-motion.
+ *
+ * Brand marks: Airtable + Google Drive are official multicolor assets; Dropbox and
+ * AWS are Font Awesome brand glyphs tinted with their brand colors; the database
+ * tile uses a generic glyph (Postgres-blue) to stand for the whole DB category
+ * rather than fake a specific logo.
+ *
+ * NOTE: classes are prefixed `sph-` because daisyUI globally defines `.hero`.
+ */
+import Button from '../ui/Button.astro';
+
+interface Props {
+  spaceName: string;
+}
+const { spaceName } = Astro.props;
+
+// Coordinates in the 760×420 viewBox; HTML tiles reuse the same numbers as
+// percentages (the stage keeps the 760/420 aspect) so curves + tiles scale together.
+const SRC = { x: 120, y: 196 };
+const HUB = { x: 380, y: 196 };
+const DEST_X = 660;
+const DESTS = [
+  { y: 58, img: '/brands/google-drive.svg', alt: 'Google Drive' },
+  { y: 150, img: '/brands/dropbox.svg', alt: 'Dropbox' },
+  { y: 246, img: '/brands/aws.svg', alt: 'Amazon S3' },
+  { y: 338, icon: 'lucide--database', alt: 'Postgres and other databases' },
+];
+const xp = (n: number) => `${(n / 760) * 100}%`;
+const yp = (n: number) => `${(n / 420) * 100}%`;
+// Airtable → hub: a straight run between the two big tiles. Hub → each destination: a gentle S-curve.
+const leftPath = `M ${SRC.x + 52} ${SRC.y} H ${HUB.x - 52}`;
+const rightPath = (y: number) => `M ${HUB.x + 52} ${HUB.y} C 525 ${HUB.y}, 560 ${y}, ${DEST_X - 34} ${y}`;
+---
+
+<section class="sph" aria-label={`Set up ${spaceName}'s backup`}>
+  <h2 class="sph-title">Set up this Space&rsquo;s backup</h2>
+  <p class="sph-sub">Connect Airtable to storage you control.</p>
+
+  <div class="sph-stage" aria-hidden="true">
+    <svg class="sph-net" viewBox="0 0 760 420" preserveAspectRatio="none">
+      <path class="net-base" d={leftPath} />
+      {DESTS.map((d) => <path class="net-base" d={rightPath(d.y)} />)}
+      <path class="net-on net-on-left" d={leftPath} />
+      {DESTS.map((d, i) => <path class={`net-on net-on-${i}`} d={rightPath(d.y)} />)}
+    </svg>
+
+    <span class="sph-col-label" style={`left:${xp(SRC.x)};top:29%`}>Sources</span>
+    <span class="sph-col-label" style={`left:${xp(DEST_X)};top:3%`}>Destinations</span>
+
+    {/* Source anchor: Airtable, hub-sized — the platform everything starts from */}
+    <span class="sph-anchor" style={`left:${xp(SRC.x)};top:${yp(SRC.y)}`}>
+      <img src="/airtable.svg" alt="Airtable" />
+    </span>
+    <span class="sph-anchor-name" style={`left:${xp(SRC.x)};top:${yp(SRC.y + 64)}`}>Airtable</span>
+
+    {/* Hub: Baseout + this Space */}
+    <span class="sph-hub" style={`left:${xp(HUB.x)};top:${yp(HUB.y)}`}>
+      <img src="/images/logo/icon-dark.svg" alt="" class="brand-logo-cyan" />
+      <img src="/images/logo/icon-light.svg" alt="" class="brand-logo-blue" />
+    </span>
+    <span class="sph-hub-name" style={`left:${xp(HUB.x)};top:${yp(HUB.y + 64)}`}>{spaceName}</span>
+
+    {/* Destination tiles */}
+    {DESTS.map((d) => (
+      <span class="sph-tile" style={`left:${xp(DEST_X)};top:${yp(d.y)}`}>
+        {d.img ? <img src={d.img} alt={d.alt} /> : <span class={`iconify ${d.icon} sph-db`} title={d.alt}></span>}
+      </span>
+    ))}
+  </div>
+
+  <div class="sph-cta">
+    <Button href="/integrations/configure?first=1" variant="primary">Set up backup</Button>
+  </div>
+</section>

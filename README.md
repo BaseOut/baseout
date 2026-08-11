@@ -1,6 +1,6 @@
 # Baseout
 
-Backup, restore, and data intelligence layer for Airtable. Monorepo containing six independently-deployed Cloudflare Workers projects plus three shared workspace packages.
+Backup, restore, and data intelligence layer for Airtable. Monorepo containing six independently-deployed Cloudflare Workers projects, one Trigger.dev task project, and three shared workspace packages.
 
 ## What is Baseout?
 
@@ -11,42 +11,49 @@ Baseout lets teams back up, restore, and query their Airtable data. Customers co
 ### `apps/web` — Customer app (`@baseout/web`)
 The main customer-facing surface. Astro SSR deployed to Cloudflare Workers. Owns: authentication (better-auth — magic link, email+password, 2FA, SAML), the onboarding wizard, the dashboard (live backup progress via WebSocket, storage usage, health scores), all feature UIs (Backup, Restore, Schema, Data, AI, Integrations), Stripe billing UX, and the `/api/*` endpoints the browser calls. Also hosts the Airtable extension embed and On2Air migration UX.
 
-→ Specs: [`openspec/changes/baseout-web/`](openspec/changes/baseout-web/)
+→ Specs: [`openspec/changes/web/`](openspec/changes/web/)
 
 ---
 
 ### `apps/server` — Data plane (`@baseout/server`)
-The backend engine. Cloudflare Worker with Durable Objects and Trigger.dev V3 integration. Owns: the backup engine (per-Space state machine DO + one Trigger.dev job per Base), the restore engine (Base/table/point-in-time scope), all six BYOS storage destinations (Google Drive, Dropbox, Box, OneDrive, S3, Frame.io) plus R2 managed storage, schema diff and health score computation, background cron services (webhook renewal, OAuth token refresh, trial-expiry monitor, quota monitor, smart-cleanup scheduler), DB provisioning for Pro+ client databases, and the On2Air migration script.
+The backend engine Worker. Cloudflare Worker with Durable Objects; enqueues Trigger.dev tasks via `@trigger.dev/sdk`. Owns: the per-Space state machine DO + per-Connection rate-limit DO, the restore engine (Base/table/point-in-time scope), all six BYOS storage destinations (Google Drive, Dropbox, Box, OneDrive, S3, Frame.io) plus R2 managed storage, schema diff and health score computation, background cron services (webhook renewal, OAuth token refresh, trial-expiry monitor, quota monitor, smart-cleanup scheduler), DB provisioning for Pro+ client databases, and the On2Air migration script.
 
-→ Specs: [`openspec/changes/baseout-backup/`](openspec/changes/baseout-backup/)
+→ Specs: [`openspec/changes/server/`](openspec/changes/server/)
+
+---
+
+### `apps/workflows` — Trigger.dev tasks (`@baseout/workflows`)
+Trigger.dev v3 task project. Runs on Trigger.dev's Node runner — NOT inside a Cloudflare Worker. Hosts long-running async work that exceeds Worker wall-clock budgets: the per-base backup task, future per-base restore, attachment ingestion, retention cleanup, trial-email cron, etc. Enqueued from `apps/server` via `tasks.trigger<typeof X>(...)` with type-only references from `@baseout/workflows`.
+
+→ Specs: [`openspec/changes/workflows/`](openspec/changes/workflows/) plus paired `workflows-<topic>` siblings for each in-flight Trigger.dev workload (attachments, cleanup, dynamic-mode provisioning, instant-webhook, etc.)
 
 ---
 
 ### `apps/admin` — Internal admin (`@baseout/admin`)
 Internal operations dashboard. Astro SSR, Google SSO, Cloudflare Workers. Super-admin access to Organizations, Spaces, billing state, run history, and on-call tooling.
 
-→ Specs: [`openspec/changes/baseout-admin/`](openspec/changes/baseout-admin/)
+→ Specs: [`openspec/changes/admin/`](openspec/changes/admin/)
 
 ---
 
 ### `apps/api` — Inbound API (`@baseout/api`)
 Public versioned ingestion API at `api.baseout.com`. Cloudflare Worker. Accepts token-authenticated HTTP POSTs from external scripts and AI agents, validates payloads, enforces tier-based rate limits, debits credits, and forwards validated payloads to `apps/server` via HMAC service token. Does not write to client DBs directly.
 
-→ Specs: [`openspec/changes/baseout-api/`](openspec/changes/baseout-api/)
+→ Specs: [`openspec/changes/api/`](openspec/changes/api/)
 
 ---
 
 ### `apps/sql` — SQL API (`@baseout/sql`)
 Public read-only SQL API at `sql.baseout.com` (Pro+). Cloudflare Worker with Hyperdrive. Accepts token-authenticated SELECT queries, enforces read-only safety, executes against the Space's client DB under a read-only role, and debits credits. Structurally symmetric to `apps/api` — same `api_tokens` table, same OpenAPI publishing pattern.
 
-→ Specs: [`openspec/changes/baseout-sql/`](openspec/changes/baseout-sql/)
+→ Specs: [`openspec/changes/sql/`](openspec/changes/sql/)
 
 ---
 
 ### `apps/hooks` — Webhook receiver (`@baseout/hooks`)
 Public Airtable webhook receiver at `webhooks.baseout.com`. Cloudflare Worker. Owns the public Airtable webhook callback endpoint: verifies HMAC signatures, coalesces payloads, and forwards to `apps/server`'s internal ingestion endpoint. Deployed and versioned independently so signature-scheme rotations never require a data-plane deploy.
 
-→ Specs: [`openspec/changes/baseout-hooks/`](openspec/changes/baseout-hooks/)
+→ Specs: [`openspec/changes/hooks/`](openspec/changes/hooks/)
 
 ---
 
@@ -54,7 +61,7 @@ Public Airtable webhook receiver at `webhooks.baseout.com`. Cloudflare Worker. O
 
 | Package | Description |
 |---|---|
-| [`packages/db-schema`](packages/db-schema/) | Drizzle schema + migrations for the master DB. The single source of truth for all table definitions. Consumed by all six apps at a pinned version. Schema changes are coordinated events. → [`openspec/changes/baseout-db-schema/`](openspec/changes/baseout-db-schema/) |
+| [`packages/db-schema`](packages/db-schema/) | Drizzle schema + migrations for the master DB. The single source of truth for all table definitions. Consumed by all six apps at a pinned version. Schema changes are coordinated events. → [`openspec/changes/db-schema/`](openspec/changes/db-schema/) |
 | [`packages/shared`](packages/shared/) | AES-256-GCM encryption, HMAC service-token issuer/validator, structured error types, logging helpers, common Zod helpers. Used by all six apps for cross-app auth and internal utilities. |
 | [`packages/ui`](packages/ui/) | Astro/React component library shared between `web` and `admin`. |
 
@@ -75,7 +82,8 @@ apps/admin       → apps/server (HTTP, HMAC service token — super-admin ops)
 baseout/
 ├─ apps/
 │  ├─ web/          # Customer Astro SSR app + /api/* endpoints
-│  ├─ server/       # Backup/restore engine, Durable Objects, cron, migration
+│  ├─ server/       # Backup/restore engine Worker, Durable Objects, cron, migration
+│  ├─ workflows/    # Trigger.dev v3 task project — long-running async work (Node runner)
 │  ├─ admin/        # Internal admin Astro SSR app (Google SSO)
 │  ├─ api/          # Public inbound API (api.baseout.com)
 │  ├─ sql/          # Public read-only SQL API (sql.baseout.com)
@@ -85,7 +93,7 @@ baseout/
 │  ├─ ui/           # Shared Astro/React components
 │  └─ shared/       # Encryption, HMAC tokens, error types, Zod helpers
 ├─ openspec/        # Spec-driven workflow — proposals, designs, specs, tasks
-│  ├─ changes/      # One change per app/package (symlinked into each app/openspec/)
+│  ├─ changes/      # One change per app/package (flat layout; query via `pnpm openspec:changes <app>`)
 │  └─ specs/        # Living capability specs (merged from archived changes)
 ├─ shared/          # Cross-cutting product docs (Features, DB Schema, Pricing)
 └─ archive/         # Original PRDs (historical reference only)
@@ -118,26 +126,67 @@ for app in web server admin api sql hooks; do
   cp apps/$app/.dev.vars.example apps/$app/.dev.vars
   # edit apps/$app/.dev.vars with your DB string, API keys, etc.
 done
+# workflows uses .env (Trigger.dev runner is Node, not workerd):
+cp apps/workflows/.env.example apps/workflows/.env 2>/dev/null || true
 
-# 7. Run a single app locally
-pnpm dev:web          # or dev:server, dev:admin, dev:api, dev:sql, dev:hooks
+# 7. apps/web only — one-time local setup (canonical dev URL is
+#    https://baseout.local:4331, NOT localhost — see note below)
+pnpm --filter @baseout/web setup:hosts    # adds `127.0.0.1 baseout.local` to /etc/hosts (sudo)
+pnpm --filter @baseout/web setup:certs    # optional: locally-trusted cert, removes the https warning
 
-# 8. Run tests across the whole workspace
+# 8. Run a single app locally
+pnpm dev              # apps/web (alias for dev:web) — opens https://baseout.local:4331
+# or: pnpm dev:server, dev:admin, dev:api, dev:sql, dev:hooks, dev:workflows
+
+# 9. Run tests across the whole workspace
 pnpm test
 
-# 9. Typecheck everything
+# 10. Typecheck everything
 pnpm typecheck
 ```
 
-### OpenSpec symlinks
+### apps/web local dev URL — use `https://baseout.local:4331`, not `localhost`
 
-Each app and package has an `openspec/` symlink pointing into `openspec/changes/<name>/`, so `apps/web/openspec/proposal.md` and `openspec/changes/baseout-web/proposal.md` are the same file. On Mac/Linux these resolve correctly after `git clone`. The postinstall script (`scripts/fix-symlinks.js`) repairs broken symlinks automatically on `pnpm install` — useful on Windows or after a clone with `core.symlinks=false`.
+`apps/web` serves at **`https://baseout.local:4331`** locally. This is the
+only origin where magic-link login and Airtable OAuth Connect both work:
+under `wrangler dev --remote` Better Auth can't infer the browser origin, so
+`PUBLIC_AUTH_BASE_URL` is pinned to `baseout.local` and Airtable's OAuth
+redirect URI is registered only for that host. **Logging in via `localhost`
+fails** ("Invalid origin", session cookie lands on the wrong host).
+
+`pnpm dev` (step 8) preflights the `/etc/hosts` mapping and fails fast with
+the fix if it's missing, then auto-opens `https://baseout.local:4331`.
+wrangler still prints its own `localhost:4331` bind line — ignore it.
+Full background: [shared/internal/oauth-setup.md §5.5](shared/internal/oauth-setup.md).
+
+### Finding OpenSpec changes
+
+OpenSpec changes live flat under `openspec/changes/<name>/`. The prefix groups them:
+
+- `<app>-<topic>` — single-app change (prefix matches a directory under `apps/`, e.g. `server-attachments`, `web-smooth-theme-swap`)
+- `shared-<topic>` — code change that touches two or more apps as a unit (e.g. `shared-server-service-binding`, `shared-websocket-progress`)
+- `system-<topic>` — structural / repo-shape / tooling change (e.g. `system-db-schema`, `system-r2-stance`)
+
+See `CLAUDE.md` §3.6 for the full rule.
+
+To list changes by prefix:
 
 ```bash
-pnpm fix:symlinks     # run manually if needed
+pnpm openspec:changes web        # web + every web-*
+pnpm openspec:changes server     # server + every server-*
+pnpm openspec:changes workflows  # workflows + every workflows-*
+pnpm openspec:changes shared     # cross-app changes
+pnpm openspec:changes system     # structural / tooling changes
 ```
 
-**Windows:** before cloning, run `git config --global core.symlinks true` and enable Developer Mode (Settings → Privacy & Security → For developers).
+Or use the OpenSpec CLI directly:
+
+```bash
+openspec list                    # all active changes
+openspec list | grep '^server'   # filter by prefix
+openspec show server             # full content of one change
+openspec validate <change>       # validate a specific change
+```
 
 ## Deployment
 
@@ -156,8 +205,8 @@ pnpm fix:symlinks     # run manually if needed
 
 ```bash
 openspec list                              # all active changes
-openspec status --change baseout-web       # status of one change
-openspec show baseout-web                  # full content of one change
+openspec status --change web       # status of one change
+openspec show web                  # full content of one change
 openspec validate --all                    # validate everything
 ```
 

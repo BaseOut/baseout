@@ -1,0 +1,23 @@
+---
+// Backups list — the redesigned run-history table (rows drill into /backups/run).
+// Replaces the old RunBackupButton card + accordion BackupHistoryWidget.
+// ?fixture=empty (no runs) · ?fixture=failed (one failed run).
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import BackupsListView from '@web/views/BackupsListView.astro';
+import { getBreadcrumbs } from '@web/lib/config';
+import { FIXTURE_BACKUP_RUNS, FIXTURE_BACKUP_RUNS_EMPTY, FIXTURE_BACKUP_RUNS_FAILED } from '../fixtures/backup-runs';
+
+const breadcrumbs = getBreadcrumbs('/backups');
+const fixture = Astro.url.searchParams.get('fixture');
+const base =
+  fixture === 'empty' ? FIXTURE_BACKUP_RUNS_EMPTY : fixture === 'failed' ? FIXTURE_BACKUP_RUNS_FAILED : FIXTURE_BACKUP_RUNS;
+
+// Re-anchor the fixture timeline to "now" so relative times read naturally.
+const OFFSET = Date.now() - new Date('2026-06-04T09:00:00.000Z').getTime();
+const shift = (iso: string | null) => (iso ? new Date(new Date(iso).getTime() + OFFSET).toISOString() : iso);
+const runs = base.map((r) => ({ ...r, createdAt: shift(r.createdAt)!, startedAt: shift(r.startedAt), completedAt: shift(r.completedAt) }));
+---
+
+<SidebarLayout pageTitle="Backups" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <BackupsListView runs={runs} />
+</SidebarLayout>

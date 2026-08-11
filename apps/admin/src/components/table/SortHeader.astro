@@ -1,0 +1,36 @@
+---
+// Sortable column header for admin listing tables (admin-crm-ux D5).
+// Renders a `<th>` whose link toggles sort direction and resets pagination;
+// preserves every other query param. A header with no `sortKey` renders as a
+// plain, non-sortable `<th>` — used for in-memory-derived columns (design D3).
+import { sortHref, type TableSpec } from '../../lib/table-query';
+
+interface Props {
+  label: string;
+  /** Sort key from the page's TableSpec. Omit for a non-sortable column. */
+  sortKey?: string;
+  current: URLSearchParams;
+  spec: TableSpec;
+  align?: 'left' | 'right';
+  class?: string;
+}
+
+const { label, sortKey, current, spec, align = 'left', class: className = '' } = Astro.props;
+
+const alignClass = align === 'right' ? 'text-right' : '';
+const active = sortKey !== undefined && current.get('sort') === sortKey;
+const dir = current.get('dir') === 'asc' ? 'asc' : 'desc';
+const href = sortKey !== undefined ? sortHref(current, sortKey, spec) : null;
+const indicator = active ? (dir === 'asc' ? '↑' : '↓') : '↕';
+---
+
+<th class={`${alignClass} ${className}`.trim()} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+  {href ? (
+    <a href={href} class="link link-hover inline-flex items-center gap-1 whitespace-nowrap">
+      <span>{label}</span>
+      <span class={active ? 'opacity-80' : 'opacity-30'} aria-hidden="true">{indicator}</span>
+    </a>
+  ) : (
+    <span class="whitespace-nowrap">{label}</span>
+  )}
+</th>

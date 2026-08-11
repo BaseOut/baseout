@@ -1,0 +1,240 @@
+---
+/**
+ * FrequencyPicker — the Space's backup-cadence control (web-instant-webhook).
+ *
+ * Offers the four Features §6.1 cadences. Instant is enabled when the tier
+ * allows it (Pro+ per the PRD §2.2 ruling in server-instant-webhook) AND the
+ * Space's dynamic DB is ready; a locked Instant states WHY (tier vs dynamic
+ * DB). Selecting Instant reveals the poll-interval control bound to
+ * `backup_configurations.webhook_poll_interval_seconds`, offered down to the
+ * tier's platform minimum (server-side validation authoritative — a
+ * `webhook_poll_interval_below_minimum` rejection renders inline with the
+ * echoed minimum). A cap failure (`airtable_webhook_cap_reached`) reverts
+ * the selection and explains the org cap, per the spec scenario.
+ *
+ * Decision logic lives in src/lib/backups/frequency-picker.ts (unit-tested);
+ * the save round-trips to Airtable via webhook registration, so the button
+ * shows a spinner (setButtonLoading, CLAUDE.md §4.5).
+ *
+ * Built from catalog primitives: daisyUI radio rows (the wizard's schedule
+ * pattern), ui/Select for the interval, ui/Button for the save.
+ */
+import Button from '../ui/Button.astro';
+import Select from '../ui/Select.astro';
+import { cn } from '../../lib/ui';
+import type { Frequency } from '../../lib/capabilities/tier-capabilities';
+import {
+  formatIntervalSeconds,
+  instantLockReason,
+  intervalChoices,
+  lockReasonCopy,
+} from '../../lib/backups/frequency-picker';
+
+interface Props {
+  spaceId: string;
+  /** Currently saved data (full-backup) cadence. */
+  frequency: Frequency;
+  /** Currently saved Instant poll interval (seconds; column default 900). */
+  webhookPollIntervalSeconds: number;
+  /** Cadences the org's tier allows (resolveCapabilities → frequencies). */
+  availableFrequencies: readonly Frequency[];
+  /** Whether the Space's dynamic DB is ready (space_databases.status='active'). */
+  dynamicDbReady: boolean;
+  /** Tier platform minimum for the poll interval (webhookPollMinSeconds). */
+  webhookPollMinSeconds: number;
+  class?: string;
+}
+
+const {
+  spaceId,
+  frequency,
+  webhookPollIntervalSeconds,
+  availableFrequencies,
+  dynamicDbReady,
+  webhookPollMinSeconds,
+  class: className = '',
+} = Astro.props;
+
+const OPTIONS: { value: Frequency; label: string; helper: string }[] = [
+  { value: 'monthly', label: 'Monthly', helper: 'One scheduled backup per month' },
+  { value: 'weekly', label: 'Weekly', helper: 'One scheduled backup per week' },
+  { value: 'daily', label: 'Daily', helper: 'One scheduled backup per day' },
+  { value: 'instant', label: 'Instant', helper: 'Webhook-driven — captures changes as they happen' },
+];
+
+const tierAllowsInstant = availableFrequencies.includes('instant');
+const instantLock = instantLockReason({ tierAllowsInstant, dynamicDbReady });
+
+const isAllowed = (value: Frequency): boolean =>
+  value === 'instant' ? instantLock === null : availableFrequencies.includes(value);
+
+const choices = intervalChoices(webhookPollMinSeconds, webhookPollIntervalSeconds);
+const intervalValue = choices.some((c) => c.value === String(webhookPollIntervalSeconds))
+  ? String(webhookPollIntervalSeconds)
+  : choices[0]?.value;
+---
+
+<section
+  class={cn('rounded-lg border border-base-300 p-4 sm:p-6', className)}
+  data-frequency-picker
+  data-space-id={spaceId}
+  data-saved-frequency={frequency}
+  aria-labelledby="frequency-picker-heading"
+>
+  <header class="flex items-baseline justify-between gap-2">
+    <h3 id="frequency-picker-heading" class="text-base font-semibold">Backup schedule</h3>
+    <span class="text-xs text-success" data-fp-saved hidden aria-live="polite">Saved</span>
+  </header>
+
+  <fieldset class="mt-3 grid gap-1.5">
+    <legend class="sr-only">Backup frequency</legend>
+    {OPTIONS.map((opt) => {
+      const allowed = isAllowed(opt.value);
+      const isInstant = opt.value === 'instant';
+      return (
+        <div class={cn('flex items-start justify-between gap-3 rounded-md border border-base-200 px-3 py-2.5', !allowed && 'opacity-60')}>
+          <label class={cn('flex min-w-0 items-start gap-3', allowed ? 'cursor-pointer' : 'cursor-not-allowed')}>
+            <input
+              type="radio"
+              name="fp-frequency"
+              value={opt.value}
+              checked={frequency === opt.value}
+              disabled={!allowed}
+              class="radio radio-sm radio-primary mt-0.5"
+              data-fp-frequency
+            />
+            <span class="min-w-0">
+              <span class="block text-sm font-medium">
+                {isInstant && <span aria-hidden="true">⚡ </span>}{opt.label}
+              </span>
+              <span class="block text-xs text-base-content/60">{opt.helper}</span>
+              {isInstant && instantLock && (
+                <span class="mt-0.5 flex items-center gap-1 text-xs text-warning" data-fp-lock-reason={instantLock}>
+                  <span class="iconify lucide--lock size-3" aria-hidden="true"></span>
+                  {lockReasonCopy(instantLock)}
+                </span>
+              )}
+            </span>
+          </label>
+          {isInstant && instantLock === 'tier' && (
+            <Button href="/settings/billing" variant="warning" size="sm" outline class="shrink-0">Upgrade</Button>
+          )}
+        </div>
+      );
+    })}
+  </fieldset>
+
+  {/* Poll interval — only meaningful on Instant; hidden otherwise. Options are
+      client-clamped to the tier minimum; the server re-validates and its
+      below-minimum rejection renders in the error line below. */}
+  <div class={cn('mt-3', frequency !== 'instant' && 'hidden')} data-fp-interval>
+    <Select
+      label="Check for changes every"
+      name="fp-interval"
+      size="sm"
+      options={choices}
+      value={intervalValue}
+      hint={`Your plan's minimum is every ${formatIntervalSeconds(webhookPollMinSeconds)}.`}
+    />
+  </div>
+
+  <div class="mt-4 flex items-center gap-3">
+    <Button type="button" variant="primary" size="sm" data-fp-save>Save schedule</Button>
+    <p class="text-sm text-error" role="alert" data-fp-error hidden></p>
+  </div>
+</section>
+
+<script>
+  import { saveBackupConfig } from '../../lib/backups/save-config';
+  import { describeFrequencySaveError } from '../../lib/backups/frequency-picker';
+  import { setButtonLoading } from '../../lib/ui';
+
+  type Cadence = 'monthly' | 'weekly' | 'daily' | 'instant';
+
+  function initFrequencyPickers() {
+    document
+      .querySelectorAll<HTMLElement>('[data-frequency-picker]')
+      .forEach((root) => {
+        if (root.dataset.fpInit) return;
+        root.dataset.fpInit = '1';
+
+        const spaceId = root.dataset.spaceId ?? '';
+        const radios = Array.from(
+          root.querySelectorAll<HTMLInputElement>('[data-fp-frequency]'),
+        );
+        const intervalWrap = root.querySelector<HTMLElement>('[data-fp-interval]');
+        // Concrete cast — worker-configuration.d.ts's HTMLRewriter globals break
+        // querySelector<HTMLSelectElement> (see BackupsListView for the same note).
+        const intervalSelect = intervalWrap?.querySelector('select') as
+          | HTMLSelectElement
+          | null
+          | undefined;
+        const saveBtn = root.querySelector<HTMLButtonElement>('[data-fp-save]');
+        const errorEl = root.querySelector<HTMLElement>('[data-fp-error]');
+        const savedEl = root.querySelector<HTMLElement>('[data-fp-saved]');
+
+        const selected = (): Cadence =>
+          (radios.find((r) => r.checked)?.value as Cadence | undefined) ??
+          ((root.dataset.savedFrequency as Cadence | undefined) ?? 'monthly');
+
+        const syncInterval = () => {
+          intervalWrap?.classList.toggle('hidden', selected() !== 'instant');
+        };
+        const setError = (msg: string | null) => {
+          if (!errorEl) return;
+          errorEl.hidden = !msg;
+          errorEl.textContent = msg ?? '';
+        };
+        const revertSelection = () => {
+          const saved = root.dataset.savedFrequency;
+          radios.forEach((r) => {
+            r.checked = r.value === saved;
+          });
+          syncInterval();
+        };
+
+        radios.forEach((r) =>
+          r.addEventListener('change', () => {
+            syncInterval();
+            setError(null);
+            if (savedEl) savedEl.hidden = true;
+          }),
+        );
+
+        saveBtn?.addEventListener('click', async () => {
+          const frequency = selected();
+          const input: Parameters<typeof saveBackupConfig>[0] = {
+            spaceId,
+            frequency,
+          };
+          if (frequency === 'instant' && intervalSelect) {
+            input.webhookPollIntervalSeconds = Number(intervalSelect.value);
+          }
+          setError(null);
+          if (savedEl) savedEl.hidden = true;
+          // Registration round-trips to Airtable — spinner per CLAUDE.md §4.5.
+          setButtonLoading(saveBtn, true);
+          try {
+            const result = await saveBackupConfig(input);
+            const failure = describeFrequencySaveError(result);
+            if (!failure) {
+              root.dataset.savedFrequency = frequency;
+              if (savedEl) savedEl.hidden = false;
+              return;
+            }
+            // Cap reached (and other hard locks) revert the selection; the
+            // below-minimum rejection keeps the user's edits (spec scenarios).
+            if (failure.revert) revertSelection();
+            setError(failure.message);
+          } finally {
+            setButtonLoading(saveBtn, false);
+          }
+        });
+
+        syncInterval();
+      });
+  }
+
+  initFrequencyPickers();
+  document.addEventListener('astro:page-load', initFrequencyPickers);
+</script>

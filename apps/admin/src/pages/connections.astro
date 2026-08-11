@@ -1,0 +1,312 @@
+---
+// Connection health (PRD §16.1 — "OAuth connections dashboard"). Gated to
+// role='super' by src/middleware.ts. Staff action: "Invalidate" per non-invalid
+// row (POST /api/actions/invalidate-connection, audit-logged, cancels in-flight
+// runs).
+//
+// admin-crm-ux (Task 1.5): server-side pagination + sort + a raw `?status=`
+// filter (design D3: the six-way health class stays display-only). The summary
+// tiles classify the full (bounded) connection set for a global view; the
+// listing paginates in SQL and classifies each page row for its badge. The
+// invalidate action stays here until /connections/[id] lands (Task 3.2).
+import { and, asc, desc, eq, ilike, lt, or, sql, count } from 'drizzle-orm';
+import { env } from 'cloudflare:workers';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import SortHeader from '../components/table/SortHeader.astro';
+import Pager from '../components/table/Pager.astro';
+import FilterBar from '../components/table/FilterBar.astro';
+import {
+  connections,
+  connectionSessions,
+  organizations,
+  platforms,
+  spaces,
+  storageDestinations,
+} from '../db/schema';
+import {
+  summarizeHealth,
+  classifyConnection,
+  classifyDestination,
+  HEALTH_BADGE,
+  type ConnectionRow,
+  type DestinationRow,
+} from '../lib/connection-health';
+import { createAdminEngine, type EngineTokenHealthResult } from '../lib/backup-engine';
+import { parseTableQuery, pageInfo, retParam, type TableSpec } from '../lib/table-query';
+
+const { db } = Astro.locals;
+const now = new Date();
+const DEST_LIMIT = 200;
+
+const STATUS_VALUES = ['active', 'refreshing', 'pending_reauth', 'invalid'] as const;
+
+const SPEC: TableSpec = {
+  sortKeys: ['created', 'status', 'org', 'platform', 'tokenExpires', 'lastUsed'],
+  defaultSort: 'created',
+  defaultDir: 'desc',
+  searchable: true,
+  filters: [
+    { key: 'status', allowed: [...STATUS_VALUES] },
+    { key: 'org' },
+  ],
+};
+
+const CONN_COLUMNS = {
+  id: connections.id,
+  orgName: organizations.name,
+  platformName: platforms.name,
+  displayName: connections.displayName,
+  scope: connections.scope,
+  status: connections.status,
+  tokenExpiresAt: connections.tokenExpiresAt,
+  invalidatedAt: connections.invalidatedAt,
+  lastUsedAt: connections.lastUsedAt,
+  oauthRefreshClaimId: connections.oauthRefreshClaimId,
+  oauthRefreshClaimedAt: connections.oauthRefreshClaimedAt,
+  oauthRefreshLastError: connections.oauthRefreshLastError,
+  createdAt: connections.createdAt,
+} as const;
+const SORT_MAP = {
+  created: connections.createdAt,
+  status: connections.status,
+  org: organizations.name,
+  platform: platforms.name,
+  tokenExpires: connections.tokenExpiresAt,
+  lastUsed: connections.lastUsedAt,
+} as const;
+
+const query = parseTableQuery(Astro.url, SPEC);
+
+const conditions = [];
+if (query.filters.status) conditions.push(eq(connections.status, query.filters.status));
+if (query.filters.org) conditions.push(eq(connections.organizationId, query.filters.org));
+if (query.q) conditions.push(or(ilike(organizations.name, `%${query.q}%`), ilike(platforms.name, `%${query.q}%`), ilike(connections.displayName, `%${query.q}%`)));
+const whereClause = conditions.length ? and(...conditions) : undefined;
+
+const sortCol = SORT_MAP[query.sort as keyof typeof SORT_MAP];
+const orderBy = query.dir === 'asc' ? asc(sortCol) : desc(sortCol);
+
+// Engine token-health snapshot — best-effort (a dead/unconfigured engine
+// degrades to a quiet note, never a broken page).
+let tokenHealth: EngineTokenHealthResult | null = null;
+try {
+  const engine = createAdminEngine({ binding: env.BACKUP_ENGINE, internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN });
+  tokenHealth = engine ? await engine.tokenHealth() : null;
+} catch {
+  tokenHealth = null;
+}
+const tokenHealthOk = tokenHealth?.ok === true ? tokenHealth : null;
+
+// Global health summary — classify the full (bounded) connection set.
+const allConns = (await db
+  .select(CONN_COLUMNS)
+  .from(connections)
+  .leftJoin(organizations, eq(organizations.id, connections.organizationId))
+  .leftJoin(platforms, eq(platforms.id, connections.platformId))) as ConnectionRow[];
+const { summary } = summarizeHealth(allConns, now);
+const broken = summary.total - summary.byHealth.healthy;
+
+const staleSessions = await db
+  .select({ count: sql<number>`count(*)::int` })
+  .from(connectionSessions)
+  .where(lt(connectionSessions.expiresAt, sql`${now.toISOString()}::timestamptz`));
+const staleSessionCount = staleSessions[0]?.count ?? 0;
+
+// Paginated listing.
+const [{ n: total }] = await db
+  .select({ n: count() })
+  .from(connections)
+  .leftJoin(organizations, eq(organizations.id, connections.organizationId))
+  .leftJoin(platforms, eq(platforms.id, connections.platformId))
+  .where(whereClause);
+const info = pageInfo(total, query.page, query.per);
+
+const connRows = (await db
+  .select(CONN_COLUMNS)
+  .from(connections)
+  .leftJoin(organizations, eq(organizations.id, connections.organizationId))
+  .leftJoin(platforms, eq(platforms.id, connections.platformId))
+  .where(whereClause)
+  .orderBy(orderBy)
+  .limit(query.per)
+  .offset(info.offset)) as ConnectionRow[];
+const visibleConnections = connRows.map((c) => ({ ...c, health: classifyConnection(c, now) }));
+
+const destRows = (await db
+  .select({
+    type: storageDestinations.type,
+    orgName: organizations.name,
+    spaceName: spaces.name,
+    oauthAccountEmail: storageDestinations.oauthAccountEmail,
+    oauthExpiresAt: storageDestinations.oauthExpiresAt,
+    connectedAt: storageDestinations.connectedAt,
+    lastValidatedAt: storageDestinations.lastValidatedAt,
+  })
+  .from(storageDestinations)
+  .leftJoin(spaces, eq(spaces.id, storageDestinations.spaceId))
+  .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
+  .limit(DEST_LIMIT)) as DestinationRow[];
+const destinations = destRows.map((d) => ({ ...d, health: classifyDestination(d, now) }));
+
+const params = Astro.url.searchParams;
+const ret = retParam('/connections', params);
+const scopedOrg = query.filters.org ?? null;
+const filterHidden: Record<string, string> = { sort: query.sort, dir: query.dir, per: String(query.per) };
+if (scopedOrg) filterHidden.org = scopedOrg;
+const statusOptions = [{ value: '', label: 'All statuses' }, ...STATUS_VALUES.map((s) => ({ value: s, label: s.replace('_', ' ') }))];
+
+const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 16) : '—');
+---
+
+<SidebarLayout title="Admin — Connections">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader title="Connection health" description="OAuth connection status across all organizations (PRD §16.1)." />
+
+    <div class="stats stats-horizontal bg-base-100 border border-base-300">
+      <div class="stat py-3">
+        <div class="stat-title">Connections</div>
+        <div class="stat-value text-2xl">{summary.total}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Needing attention</div>
+        <div class={`stat-value text-2xl ${broken > 0 ? 'text-error' : ''}`}>{broken}</div>
+        <div class="stat-desc">
+          {summary.byHealth.invalid} invalid · {summary.byHealth.pending_reauth} reauth ·
+          {summary.byHealth.refresh_stuck} stuck · {summary.byHealth.refresh_error} refresh err ·
+          {summary.byHealth.token_expired} expired
+        </div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Stale session locks</div>
+        <div class={`stat-value text-2xl ${staleSessionCount > 0 ? 'text-warning' : ''}`}>{staleSessionCount}</div>
+        <div class="stat-desc">connection_sessions past expires_at</div>
+      </div>
+      {tokenHealthOk ? (
+        <>
+          <div class="stat py-3">
+            <div class="stat-title">Expired access tokens</div>
+            <div class={`stat-value text-2xl ${tokenHealthOk.activeExpired > 0 ? 'text-error' : ''}`}>{tokenHealthOk.activeExpired}</div>
+            <div class="stat-desc">active connections, per engine</div>
+          </div>
+          <div class="stat py-3">
+            <div class="stat-title">Refresh tokens expiring soon</div>
+            <div class={`stat-value text-2xl ${tokenHealthOk.refreshExpiringSoon > 0 ? 'text-warning' : ''}`}>{tokenHealthOk.refreshExpiringSoon}</div>
+            <div class="stat-desc">per engine token-health probe</div>
+          </div>
+        </>
+      ) : (
+        <div class="stat py-3">
+          <div class="stat-title">Engine token health</div>
+          <div class="stat-value text-2xl text-base-content/40">—</div>
+          <div class="stat-desc">engine token-health unavailable</div>
+        </div>
+      )}
+    </div>
+
+    {scopedOrg && (
+      <div class="alert alert-info py-2">
+        <span>Scoped to one organization.</span>
+        <a href="/connections" class="link link-hover">Clear scope</a>
+      </div>
+    )}
+
+    <FilterBar
+      action="/connections"
+      searchable
+      q={query.q}
+      qPlaceholder="Search org, platform, or name…"
+      filters={[{ key: 'status', label: 'Status', options: statusOptions, current: query.filters.status ?? null }]}
+      hidden={filterHidden}
+    />
+
+    {visibleConnections.length === 0 ? (
+      <EmptyState
+        icon="lucide--plug"
+        title={query.filters.status || query.q ? 'No matches' : 'No connections yet'}
+        description={query.filters.status || query.q ? 'No connections match this filter.' : 'No OAuth connections across any organization.'}
+      />
+    ) : (
+      <div class="space-y-3">
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+          <table class="table table-zebra table-sm">
+            <thead>
+              <tr>
+                <SortHeader label="Organization" sortKey="org" current={params} spec={SPEC} />
+                <SortHeader label="Platform" sortKey="platform" current={params} spec={SPEC} />
+                <SortHeader label="Name / scope" current={params} spec={SPEC} />
+                <SortHeader label="Status" sortKey="status" current={params} spec={SPEC} />
+                <SortHeader label="Health" current={params} spec={SPEC} />
+                <SortHeader label="Token expires" sortKey="tokenExpires" current={params} spec={SPEC} />
+                <SortHeader label="Last used" sortKey="lastUsed" current={params} spec={SPEC} />
+                <SortHeader label="Last refresh error" current={params} spec={SPEC} />
+              </tr>
+            </thead>
+            <tbody>
+              {visibleConnections.map((c) => (
+                <tr>
+                  <td>{c.orgName ?? '—'}</td>
+                  <td>{c.platformName ?? '—'}</td>
+                  <td>
+                    <a href={`/connections/${c.id}?ret=${ret}`} class="link link-hover">{c.displayName ?? c.id}</a>
+                    <div class="text-xs text-base-content/50">{c.scope}</div>
+                  </td>
+                  <td><Badge variant="default" size="sm">{c.status}</Badge></td>
+                  <td><Badge variant={HEALTH_BADGE[c.health]} size="sm">{c.health.replace('_', ' ')}</Badge></td>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmt(c.tokenExpiresAt)}</td>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmt(c.lastUsedAt)}</td>
+                  <td class="max-w-xs truncate text-error text-xs" title={c.oauthRefreshLastError ?? ''}>{c.oauthRefreshLastError ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <Pager info={info} current={params} per={query.per} noun="connection" />
+      </div>
+    )}
+
+    <div>
+      <h2 class="text-lg font-semibold">Storage destinations (BYOS OAuth)</h2>
+      {destinations.length === 0 ? (
+        <p class="text-sm text-base-content/50 mt-2">No storage destinations yet.</p>
+      ) : (
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100 mt-2">
+          <table class="table table-zebra table-sm">
+            <thead>
+              <tr>
+                <th>Organization</th>
+                <th>Space</th>
+                <th>Provider</th>
+                <th>Account</th>
+                <th>OAuth health</th>
+                <th>Connected</th>
+                <th>Last validated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {destinations.map((d) => (
+                <tr>
+                  <td>{d.orgName ?? '—'}</td>
+                  <td>{d.spaceName ?? '—'}</td>
+                  <td><Badge variant="default" size="sm">{d.type}</Badge></td>
+                  <td class="text-xs">{d.oauthAccountEmail ?? '—'}</td>
+                  <td>
+                    <Badge variant={d.health === 'token_expired' ? 'warning' : d.health === 'ok' ? 'success' : 'default'} size="sm">
+                      {d.health === 'no_oauth' ? 'n/a' : d.health.replace('_', ' ')}
+                    </Badge>
+                  </td>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmt(d.connectedAt)}</td>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmt(d.lastValidatedAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  </div>
+
+</SidebarLayout>

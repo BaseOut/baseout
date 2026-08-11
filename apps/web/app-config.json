@@ -10,6 +10,7 @@
   },
   "navigation": {
     "top": [
+      { "label": "Space", "icon": "", "isTitle": true },
       {
         "label": "Home",
         "href": "/",
@@ -31,14 +32,20 @@
         "icon": "iconify lucide--git-branch"
       },
       {
-        "label": "Integrations",
-        "href": "/integrations",
-        "icon": "iconify lucide--plug"
+        "label": "Data",
+        "href": "/data",
+        "icon": "iconify lucide--database"
+      },
+      { "label": "Account", "icon": "", "isTitle": true },
+      {
+        "label": "Sources",
+        "href": "/sources",
+        "icon": "iconify lucide--square-arrow-right-exit"
       },
       {
-        "label": "Reports",
-        "href": "/reports",
-        "icon": "iconify lucide--file-text"
+        "label": "Destinations",
+        "href": "/destinations",
+        "icon": "iconify lucide--square-arrow-right-enter"
       }
     ],
     "bottom": [

@@ -1,0 +1,21 @@
+---
+// Schema page (SchemaView). Harness fixture — the engineer wires GET /spaces/:id/schema.
+// Fixtures now live in ../fixtures/schema-lab.ts (shared with the /panels review lab).
+// ?fixture=empty → never-backed-up zero state. ?ai=locked|no-credits → Visualize AI gating.
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import SchemaView from '../views/SchemaView.astro';
+import { getBreadcrumbs } from '@web/lib/config';
+import {
+  schemaBases, multiTables, health, changelog, relationships,
+  schemaDocs, chatThreads, automations, interfaces,
+} from '../fixtures/schema-lab';
+
+const breadcrumbs = getBreadcrumbs('/schema');
+const empty = Astro.url.searchParams.get('fixture') === 'empty';
+const aiParam = Astro.url.searchParams.get('ai');
+const aiState: 'ready' | 'locked' | 'no-credits' = aiParam === 'locked' || aiParam === 'no-credits' ? aiParam : 'ready';
+---
+
+<SidebarLayout pageTitle="Schema" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <SchemaView bases={schemaBases} tables={empty ? [] : multiTables} health={empty ? [] : health} changelog={empty ? [] : changelog} relationships={empty ? [] : relationships} automations={empty ? [] : automations} interfaces={empty ? [] : interfaces} chatThreads={empty ? [] : chatThreads} docs={empty ? [] : schemaDocs} lastBackupAt="2026-06-22T14:07:00" hasRecordCounts={true} aiState={aiState} />
+</SidebarLayout>

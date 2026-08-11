@@ -1,0 +1,20 @@
+{
+  "name": "@baseout/embed-airtable-data",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Baseout Airtable data-layer extension (sidebar at the data layer): thin no-UI wrapper embedding the Baseout app with cursor-derived context. NOT a pnpm workspace member — the Airtable blocks CLI owns install/run here (see README).",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@airtable/blocks": "^1.18.0",
+    "@baseout/embed-core": "file:../core",
+    "react": "^16.14.0",
+    "react-dom": "^16.14.0"
+  },
+  "devDependencies": {
+    "@types/react": "^16.14.0",
+    "@types/react-dom": "^16.9.0",
+    "typescript": "^5.6.0"
+  }
+}

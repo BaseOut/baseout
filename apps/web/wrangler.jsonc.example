@@ -6,14 +6,14 @@
 // Magic-link base URL: auth-factory.ts reads `env.PUBLIC_AUTH_BASE_URL` as
 // an explicit override and falls back to per-request Host-header detection
 // when absent. The `npm run dev` and `npm run wrangler` scripts pass the var
-// via `wrangler dev --var PUBLIC_AUTH_BASE_URL:http://localhost:4331`, so
-// the literal value below is what gets baked into the deployed dev worker.
+// via `wrangler dev --var PUBLIC_AUTH_BASE_URL:https://baseout.local:4331`,
+// so the literal value below is what gets baked into the deployed dev worker.
 // Top-level config = dev environment (worker `baseout-dev`).
 // `env.staging` and `env.production` override the dev-specific bits.
 //
 // Wrangler does NOT inherit non-inheritable keys (vars, hyperdrive,
-// kv_namespaces, send_email) from top-level into env blocks — every
-// env redeclares the full set. See:
+// kv_namespaces, send_email, services, durable_objects) from top-level
+// into env blocks — every env redeclares the full set. See:
 // https://developers.cloudflare.com/workers/wrangler/configuration/#environments
 //
 // Deploy:
@@ -23,6 +23,8 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "baseout-dev",
+  // Pin the account — multi-account wrangler logins break non-interactive remote dev/deploys with a misleading "must be logged in" error (2026-07-09).
+  "account_id": "f094d60e8a0996752eb1efd971bda45a",
   "compatibility_date": "2026-04-22",
   "compatibility_flags": [
     "nodejs_compat",
@@ -54,13 +56,25 @@
   "vars": {
     "EMAIL_FROM": "Baseout <login@mail.baseout.dev>",
     "PUBLIC_AUTH_BASE_URL": "https://baseout-dev.openside.workers.dev",
+    // Embedding hosts allowed to frame the app AND to complete the embed
+    // handshake (shared-embed-protocol; one list feeds both frame-ancestors
+    // and the child bridge). Dev allows any Chrome extension; production
+    // pins the published extension id + observed Airtable extension origins.
+    "PUBLIC_EMBED_ALLOWED_ANCESTORS": "https://airtable.com, https://*.airtableblocks.com, chrome-extension://*",
     // dev-only — DO NOT replicate to env.staging or env.production.
     // Gates the /api/internal/test/last-verification endpoint that
     // Playwright uses to fetch magic-link tokens. The endpoint enforces
     // its own HMAC + email-pattern checks; this var is the outermost
     // build-time switch. Absence in staging/prod = the route 401s at
     // the middleware (route is not bypassed → auth required → no session).
-    "E2E_TEST_MODE": "true"
+    "E2E_TEST_MODE": "true",
+    // dev-only — DO NOT replicate to env.staging or env.production until the
+    // admin console deploys there (the `admin` umbrella change). Allowlists
+    // the deployed staff-console origin for /login's ?returnTo= and gates the
+    // /api/admin/handoff mint. Absence = no cross-origin handoff possible.
+    // Pairs with the ADMIN_HANDOFF_SECRET secret in .dev.vars (must equal
+    // apps/admin's). See openspec/changes/shared-admin-dev-deploy.
+    "ADMIN_APP_URL": "https://baseout-admin-dev.openside.workers.dev"
   },
   "hyperdrive": [
     {
@@ -78,6 +92,33 @@
     {
       "binding": "SESSION",
       "id": "d5cac1df2216476eaeb38e9fca639559"
+    }
+  ],
+  // Service binding to @baseout/server. Routes engine calls (the test-
+  // connection probe, future enqueue/restore endpoints) through Cloudflare's
+  // internal Worker-to-Worker network rather than public HTTP. Bypasses the
+  // RFC1918 / loopback fetch ban that breaks plain-fetch transport when
+  // apps/web runs `wrangler dev --remote`. INTERNAL_TOKEN gate on apps/server
+  // stays as defense-in-depth.
+  //
+  // `remote: true` is REQUIRED for the binding to resolve to the deployed
+  // baseout-server-dev Worker during local dev. Without it, modern Wrangler
+  // (4.x) doesn't wire service bindings to deployed siblings even under the
+  // legacy `wrangler dev --remote` flag — `binding.fetch()` returns 403
+  // because the binding has nothing to forward to. See:
+  // https://developers.cloudflare.com/workers/development-testing/#remote-bindings
+  //
+  // `remote: true` is local-dev-only — deployed Workers always resolve the
+  // binding to the named sibling Worker in the same account regardless.
+  //
+  // Staging + production service blocks are deferred to a follow-up openspec
+  // change — those Workers (baseout-server-staging, baseout-server) aren't
+  // deployed yet, so resolving the binding would fail at deploy.
+  "services": [
+    {
+      "binding": "BACKUP_ENGINE",
+      "service": "baseout-server-dev",
+      "remote": true
     }
   ],
   "env": {

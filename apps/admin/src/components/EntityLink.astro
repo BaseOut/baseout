@@ -1,0 +1,35 @@
+---
+// Universal entity reference (admin-entity-linking D3): a link to the entity's
+// detail/anchor route via the single entityHref authority, plus an optional peek
+// affordance. The peek button ships `hidden` and is un-hidden by the PeekSidebar
+// island on hydrate (progressive enhancement — the link works with JS off).
+import { entityHref, isPeekable, type EntityType } from '../lib/entity-link'
+
+interface Props {
+  type: EntityType
+  id: string
+  label: string
+  /** Show the peek button (only when the type is peekable). Default true. */
+  peek?: boolean
+  class?: string
+}
+
+const { type, id, label, peek = true, class: cls } = Astro.props
+const href = entityHref(type, id)
+const showPeek = peek && isPeekable(type)
+---
+
+<span class:list={['inline-flex items-center gap-1', cls]}>
+  <a href={href} class="link link-hover">{label}</a>
+  {showPeek && (
+    <button
+      type="button"
+      class="peek-btn hidden text-base-content/40 hover:text-base-content"
+      data-peek-type={type}
+      data-peek-id={id}
+      aria-label={`Peek ${label}`}
+    >
+      <i class="iconify lucide--panel-right-open size-3.5"></i>
+    </button>
+  )}
+</span>

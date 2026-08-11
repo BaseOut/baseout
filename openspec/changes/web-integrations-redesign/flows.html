@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Integrations — user flows &amp; states</title>
+  <style>
+    :root {
+      --bg: #0b0d10; --panel: #14171c; --panel-2: #1a1e24; --line: #262b33;
+      --text: #e6e8eb; --muted: #9aa2ad; --faint: #6b7280;
+      --blue: #4a9eff; --amber: #e0a93b; --red: #ef5350; --green: #3ec77a; --accent: #7c5cff;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans);
+      font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 1100px; margin: 0 auto; padding: 40px 24px 96px; }
+    header.page { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 8px; }
+    .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+    h1 { font-size: 26px; font-weight: 650; letter-spacing: -.01em; margin: 8px 0 6px; }
+    .sub { color: var(--muted); max-width: 70ch; }
+    .meta { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; }
+    .meta code { color: var(--muted); }
+
+    section.diagram { margin-top: 44px; }
+    section.diagram > h2 {
+      font-size: 16px; font-weight: 620; margin: 0 0 4px; letter-spacing: -.005em;
+      display: flex; align-items: baseline; gap: 10px;
+    }
+    section.diagram > h2 .tag {
+      font-family: var(--mono); font-size: 11px; color: var(--accent);
+      border: 1px solid color-mix(in oklab, var(--accent) 50%, var(--line));
+      border-radius: 5px; padding: 1px 6px;
+    }
+    section.diagram > p.lead { color: var(--muted); margin: 0 0 16px; max-width: 78ch; }
+    .panel {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+      padding: 20px; overflow-x: auto;
+    }
+    .mermaid { display: flex; justify-content: center; min-height: 60px; }
+
+    /* Legend */
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 18px 0 0; padding: 0; list-style: none; }
+    .legend li { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(255,255,255,.15); }
+    .sw-blue { background: #16344a; border-color: var(--blue); }
+    .sw-amber { background: #3a2e0e; border-color: var(--amber); }
+    .sw-red { background: #3a0e12; border-color: var(--red); }
+    .sw-green { background: #0e3a1c; border-color: var(--green); }
+
+    /* Traceability table */
+    table.trace { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+    table.trace th, table.trace td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    table.trace th { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); font-weight: 500; }
+    table.trace td.req { font-family: var(--mono); font-size: 12px; color: var(--accent); white-space: nowrap; }
+    table.trace tr:last-child td { border-bottom: none; }
+    table.trace code { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+    .note { font-size: 12.5px; color: var(--faint); margin-top: 10px; }
+    .note code { color: var(--muted); }
+    footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--faint); }
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="page">
+      <div class="eyebrow">Baseout · OpenSpec · integrations-redesign</div>
+      <h1>Integrations — user flows &amp; states</h1>
+      <p class="sub">Every state a user can be in on the Integrations screen, and every path between them — from an empty Space through connecting Airtable, configuring protection, and recovering a broken connection. The source of truth for these flows is <code>specs/integrations/spec.md</code>; each diagram region maps to a requirement and its scenarios in the table below.</p>
+      <div class="meta">canonical spec: <code>openspec/changes/integrations-redesign/specs/integrations/spec.md</code> &nbsp;·&nbsp; rendering: Mermaid (editable inline)</div>
+    </header>
+
+    <!-- LEGEND -->
+    <ul class="legend">
+      <li><span class="swatch sw-blue"></span> Entry / empty</li>
+      <li><span class="swatch sw-amber"></span> Needs attention (paused / locked / blocked)</li>
+      <li><span class="swatch sw-red"></span> Broken (backups will not run)</li>
+      <li><span class="swatch sw-green"></span> Protected / success</li>
+    </ul>
+
+    <!-- DIAGRAM A -->
+    <section class="diagram">
+      <h2><span class="tag">A</span> State map — where the user can be</h2>
+      <p class="lead">The top-level routing every time the screen loads. Status of the Airtable connection and whether any base is selected determine which of five states the user lands in.</p>
+      <div class="panel">
+        <pre class="mermaid">
+flowchart TD
+    Land(["User opens Integrations"]) --> Q1{"Airtable connected?"}
+    Q1 -->|No| Empty["EMPTY — Connect hero<br/>read-only access promise"]
+    Q1 -->|Yes| Q2{"Connection status"}
+    Q2 -->|"active / refreshing"| Q3{"Any base selected?"}
+    Q2 -->|pending_reauth| Reauth["RECONNECT REQUIRED<br/>backups paused"]
+    Q2 -->|invalid| Invalid["DISCONNECTED<br/>backups will not run"]
+    Q3 -->|No| Setup["CONNECTED, NOT CONFIGURED<br/>config auto-expanded"]
+    Q3 -->|Yes| Protected["PROTECTED<br/>settled summary · config collapsed"]
+    Empty --> Connect[["Connect flow → B"]]
+    Connect --> Setup
+    Reauth --> Connect
+    Invalid --> Connect
+    Setup --> Configure[["Configure flow → C"]]
+    Protected -.->|"Edit settings"| Configure
+    Configure --> Protected
+
+    classDef empty fill:#16344a,stroke:#4a9eff,color:#cfe8ff;
+    classDef warn fill:#3a2e0e,stroke:#e0a93b,color:#ffeccf;
+    classDef err fill:#3a0e12,stroke:#ef5350,color:#ffd0d4;
+    classDef ok fill:#0e3a1c,stroke:#3ec77a,color:#cfffd9;
+    class Empty empty;
+    class Reauth,Setup warn;
+    class Invalid err;
+    class Protected ok;
+        </pre>
+      </div>
+    </section>
+
+    <!-- DIAGRAM B -->
+    <section class="diagram">
+      <h2><span class="tag">B</span> Connect flow — OAuth vs API key</h2>
+      <p class="lead">From the empty hero, the user picks a connection method. Both end in base discovery on success; every failure returns to the hero with a specific, human-readable reason.</p>
+      <div class="panel">
+        <pre class="mermaid">
+flowchart TD
+    Start(["Connect hero"]) --> M{"Method"}
+    M -->|"OAuth (recommended)"| OA["Redirect to Airtable consent"]
+    M -->|"API key"| AK["Paste personal access token<br/>(read-only scopes)"]
+    OA --> OAr{"Result"}
+    OAr -->|approved| Disc["Discover bases"]
+    OAr -->|access_denied| E1["Error — you declined access"]
+    OAr -->|missing_code| E2["Error — no auth code returned"]
+    OAr -->|token_exchange_failed| E3["Error — Airtable rejected the connection"]
+    OAr -->|api_call_failed| E4["Error — connected, but base list failed"]
+    AK --> AKr{"Token valid?"}
+    AKr -->|yes| Disc
+    AKr -->|no| E5["Error — invalid or wrong-scope token"]
+    Disc --> OK["Connected — found N bases"]
+    OK --> Cfg[["Configure flow → C"]]
+    E1 --> Start
+    E2 --> Start
+    E3 --> Start
+    E4 --> Start
+    E5 --> Start
+
+    classDef ok fill:#0e3a1c,stroke:#3ec77a,color:#cfffd9;
+    classDef err fill:#3a0e12,stroke:#ef5350,color:#ffd0d4;
+    class Disc,OK ok;
+    class E1,E2,E3,E4,E5 err;
+        </pre>
+      </div>
+    </section>
+
+    <!-- DIAGRAM C -->
+    <section class="diagram">
+      <h2><span class="tag">C</span> Configure &amp; protect</h2>
+      <p class="lead">The configuration panel, top to bottom: choose bases, choose layers, set a schedule, pick destinations (static and dynamic can run in parallel), then run the first backup. Branch nodes are the edge cases — tier cap, zero bases, plan-locked frequency, BYOS auth, broken connection.</p>
+      <div class="panel">
+        <pre class="mermaid">
+flowchart TD
+    A(["Configuration panel"]) --> B["1 · Select bases<br/>cues: tables · records · last change"]
+    B --> Bc{"Within tier cap?"}
+    Bc -->|"over cap"| Bx["Save blocked — deselect N<br/>blocked bases show 'Upgrade'"]
+    Bx --> B
+    Bc -->|"0 selected"| B0["Space not protected<br/>pick at least one base"]
+    B0 --> B
+    Bc -->|ok| C["2 · Layers<br/>Schema always · Data default · Attachments opt-in (billed)"]
+    C --> D["3 · Schedule"]
+    D --> Dg{"Frequency on plan?"}
+    Dg -->|locked| Dx["Shown locked + Upgrade affordance"]
+    Dx --> D
+    Dg -->|ok| E["4 · Destinations — in parallel"]
+    E --> S1["Static — files<br/>Managed R2 or BYOS"]
+    E --> S2["Dynamic — DB mirror (optional)"]
+    S1 --> S1a{"BYOS?"}
+    S1a -->|yes| S1b["Authenticate + pick folder"]
+    S1a -->|"no (managed)"| Run
+    S1b --> Run
+    S2 --> S2a["Pick DB · authenticate in follow-up"]
+    S2a --> Run
+    Run["Run backup now"] --> Rc{"Connection healthy?"}
+    Rc -->|broken| Rx["Run disabled, with reason"]
+    Rc -->|ok| Rr["Run starts → appears in history"]
+    Rr --> G(["PROTECTED<br/>bases · schedule · destination"])
+
+    classDef warn fill:#3a2e0e,stroke:#e0a93b,color:#ffeccf;
+    classDef err fill:#3a0e12,stroke:#ef5350,color:#ffd0d4;
+    classDef ok fill:#0e3a1c,stroke:#3ec77a,color:#cfffd9;
+    class Bx,B0,Dx warn;
+    class Rx err;
+    class Rr,G ok;
+        </pre>
+      </div>
+    </section>
+
+    <!-- DIAGRAM D -->
+    <section class="diagram">
+      <h2><span class="tag">D</span> Connection health — recovery state machine</h2>
+      <p class="lead">How a live connection moves between health states over its lifetime, and how the UI responds. Refreshing is transient and keeps backups running; <code>pending_reauth</code> and <code>invalid</code> are the recovery states that route back into the connect flow.</p>
+      <div class="panel">
+        <pre class="mermaid">
+stateDiagram-v2
+    [*] --> active: connection established
+    active --> refreshing: token auto-refresh
+    refreshing --> active: refreshed (backups keep working)
+    active --> pending_reauth: token expiring / revoked
+    refreshing --> pending_reauth: refresh failed
+    pending_reauth --> active: user reconnects
+    pending_reauth --> invalid: left unresolved
+    invalid --> active: user reconnects
+    active --> active: new bases discovered (banner)
+
+    note right of pending_reauth
+        Amber. Backups paused.
+        Reconnect = primary action.
+    end note
+    note right of invalid
+        Red. Backups will not run.
+    end note
+        </pre>
+      </div>
+    </section>
+
+    <!-- TRACEABILITY -->
+    <section class="diagram">
+      <h2><span class="tag">↔</span> Traceability — diagram → spec</h2>
+      <p class="lead">Each region of the flows above maps to a requirement in <code>specs/integrations/spec.md</code> and the scenarios that cover its states. If a scenario exists with no node here, the diagram is incomplete; if a node exists with no scenario, the spec is.</p>
+      <table class="trace">
+        <thead>
+          <tr><th>Diagram region</th><th>Requirement</th><th>Scenarios covered</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>A · Empty hero</td><td class="req">Connect an Airtable platform</td><td>No connection yet</td></tr>
+          <tr><td>A · Reconnect / Disconnected</td><td class="req">Recover a broken connection</td><td>Reconnect required (pending_reauth) · Disconnected (invalid) · Refreshing tokens</td></tr>
+          <tr><td>A · Protected / Not configured</td><td class="req">Show protection status (progressive disclosure)</td><td>Protected and settled · Connected but not configured · Returning user edits one setting</td></tr>
+          <tr><td>B · Method + outcomes</td><td class="req">Connect an Airtable platform</td><td>Connect via OAuth · Connect via API key · Connection succeeds · Connection fails</td></tr>
+          <tr><td>C · Step 1 — bases</td><td class="req">Select which bases to back up</td><td>Bases listed with importance cues · Tier limit visible · Selecting beyond the tier limit · No bases selected · New bases discovered</td></tr>
+          <tr><td>C · Step 2 — layers</td><td class="req">Choose what gets backed up</td><td>Schema always included · Data on by default · Attachments opt-in</td></tr>
+          <tr><td>C · Step 3 — schedule</td><td class="req">Choose a backup schedule</td><td>Pick a frequency · Frequency locked by plan</td></tr>
+          <tr><td>C · Step 4 — destinations</td><td class="req">Choose backup destinations</td><td>Static destination · Dynamic destination · Both in parallel · Destination needs authentication and a folder · Managed vs bring-your-own</td></tr>
+          <tr><td>C · Run → Protected</td><td class="req">Run the first backup and confirm it worked</td><td>Run a backup now · Run disabled on broken connection · First backup succeeds</td></tr>
+          <tr><td>D · Health state machine</td><td class="req">Recover a broken connection</td><td>pending_reauth · invalid · refreshing · new bases discovered (banner)</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      Open this file in a browser to view the rendered diagrams (Mermaid loads from a CDN, so a network connection is needed for rendering only — the diagram source is stored inline in this file). Edit the <code>&lt;pre class="mermaid"&gt;</code> blocks to change a flow, then re-open. Keep this in sync with <code>specs/integrations/spec.md</code>.
+    </footer>
+  </div>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      securityLevel: 'loose',
+      themeVariables: {
+        background: '#14171c',
+        primaryColor: '#1a1e24',
+        primaryBorderColor: '#3a414c',
+        primaryTextColor: '#e6e8eb',
+        lineColor: '#5b6470',
+        secondaryColor: '#1a1e24',
+        tertiaryColor: '#1a1e24',
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+        fontSize: '13px',
+        nodeBorder: '#3a414c',
+        clusterBkg: '#14171c',
+        edgeLabelBackground: '#14171c',
+        labelBackground: '#14171c',
+      },
+    });
+  </script>
+</body>
+</html>

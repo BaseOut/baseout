@@ -1,4 +1,22 @@
-DATABASE_URL=postgres://localhost:5432/baseout_dev
-MASTER_ENCRYPTION_KEY=
-GOOGLE_SSO_CLIENT_SECRET=
-SERVICE_HMAC_TO_BACKUP=
+# Local-dev RUNTIME secrets for @baseout/admin. Copy to .dev.vars and fill in.
+# .dev.vars is gitignored — never commit real values. It is also the single
+# source of truth for the deployed dev Worker's secrets:
+# `pnpm --filter @baseout/admin run deploy` runs `wrangler secret bulk` from
+# this file after every deploy. NEVER `wrangler secret put` by hand (CLAUDE.md
+# §3.3 — hand-set secrets drift).
+#
+# DATABASE_URL lives in .env, NOT here (see .env.example) — keeping it out of
+# .dev.vars means the bulk sync can never upload it as a Worker secret.
+
+# Shared secret keying the login → admin handoff token (AES-256-GCM). MUST be
+# byte-identical to apps/web's ADMIN_HANDOFF_SECRET — web mints the token, admin
+# opens it. Generate once and paste into both files:
+#   openssl rand -base64 32
+ADMIN_HANDOFF_SECRET=
+
+# Backup-engine internal token for staff actions (force backup / run cancel).
+# MUST equal apps/web's BACKUP_ENGINE_INTERNAL_TOKEN (== the server's
+# INTERNAL_TOKEN) — copy the value from apps/web/.dev.vars. Pairs with the
+# BACKUP_ENGINE service binding in wrangler.jsonc.example. Leave empty to run
+# without engine access: force-backup 503s, invalidate skips run cancels.
+BACKUP_ENGINE_INTERNAL_TOKEN=

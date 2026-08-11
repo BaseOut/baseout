@@ -6,6 +6,25 @@
 /* Tailwind CSS + dark variant for Nexus themes */
 @import "@opensided/theme/styles/tailwind.css";
 
+/* Explicit content-scan for apps/web/src. No-op for apps/web's own build
+   (Tailwind v4 already auto-scans the project root) but load-bearing for
+   `apps/design`, which imports this stylesheet via Layout.astro from a
+   different project root and would otherwise miss every utility class
+   used inside apps/web's components/layouts/views. */
+@source "../**/*.{astro,ts,tsx,html,mdx}";
+
+/* Nav icon classes (e.g. `lucide--archive`) live in app-config.json, which sits
+   outside src/ and isn't covered by the glob above. Scan it explicitly so those
+   icons get generated — otherwise unmatched `iconify lucide--*` classes render
+   as solid squares. */
+@source "../../app-config.json";
+
+/* Icon classes built dynamically from a prop — e.g. `<TextInput icon="id-card" />`
+   renders `lucide--${icon}` — are invisible to the static scanner, so their masks
+   never generate and they render as solid squares. Safelist every icon passed as a
+   prop here. (Add new prop-icon names to this list.) */
+@source inline("lucide--mail lucide--user lucide--id-card lucide--building-2 lucide--megaphone");
+
 /* Iconify (lucide icons) — enables `iconify lucide--*` class names. */
 @plugin "@iconify/tailwind4" {
     prefixes: lucide;
@@ -30,17 +49,27 @@
 
 /* ── Project-Specific Component Styles ──────────────────── */
 @import "./components/overrides.css";
-@import "./components/social-button.css";
-@import "./components/feature-badge.css";
+@import "./components/space-pipeline-hero.css";
+@import "./components/base-selection.css";
 @import "./components/auth.css";
 @import "./components/brand-logo.css";
+/* facet-filter before export-control: .xp-panel overrides .ff-panel at equal specificity. */
+@import "./components/facet-filter.css";
+@import "./components/export-control.css";
 
 /* ── Body Background (uses Nexus --root-bg token) ───────── */
 body {
   background: var(--root-bg, var(--color-base-200));
+  /* Base weight bumped 400 → 500: Urbanist 400 reads thin at small sizes.
+     Prominent text carries explicit weights (≥600), so only thin
+     secondary/small text lifts. (Baseout DESIGN typography pass.) */
+  font-weight: 500;
 }
 
-/* ── Material Symbols ───────────────────────────────────── */
+/* ── Material Symbols (legacy icon set — being migrated to Iconify Lucide) ──
+   Still used by ~9 surfaces (auth pages, a few ui/ components). Kept until the
+   Material-Symbols→Lucide markup migration completes; new work uses `iconify
+   lucide--*` + the standalone `.icon-*` utilities below. */
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
   vertical-align: middle;
@@ -57,3 +86,585 @@ body {
 .material-symbols-outlined.icon-filled {
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
+
+/* ── Our small-button scale: btn-sm uses 14px text (not daisyUI's 12px) ──
+   Deliberate scale choice (not a hack): the app's base text is 14px, so a 12px
+   button label reads small next to content. Our sm keeps daisyUI's compact 32px
+   HEIGHT but lifts the font to 14px, so dense buttons (toolbars, filter chips,
+   table row actions) match the app. All three of our button sizes (sm/md/lg) thus
+   read at ≥14px. Plain (unlayered) rule so it wins over daisyUI's layered btn-sm.
+   Documented in the size system (/styleguide → Button). */
+.btn-sm { --fontsize: 0.875rem; }
+
+/* ── Machine-data type (narrow "Mono Boundary") ──────────
+   JetBrains Mono for machine-generated tokens only: IDs, durations,
+   timestamps, technical references (folders, db refs, hex). Human-read
+   counts stay in the sans font with tabular-nums. */
+.mono-data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* ── Type scale (Baseout DESIGN) ─────────────────────────
+   Named roles from the design system. Display/Headline are for
+   brand/marketing surfaces; Title/Subtitle/Label are the in-app set. */
+.text-display  { font-size: 64px; font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; }
+.text-headline { font-size: 48px; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; }
+.text-title    { font-size: 32px; font-weight: 600; line-height: 1.25; letter-spacing: -0.02em; }
+.text-subtitle { font-size: 22px; font-weight: 600; line-height: 1.4; }
+.text-label    { font-size: 14px; font-weight: 500; line-height: 1.4; letter-spacing: 0.05em; text-transform: uppercase; }
+
+/* ── Icon sizing (standalone, for Iconify Lucide spans `iconify lucide--*`) ──
+   Sized via font-size since the Iconify mask is 1em. Coexists with the
+   Material-Symbols-scoped rules above during the icon migration; the scoped
+   rule wins for material-symbols spans, this covers lucide spans + /styleguide. */
+.icon-xs  { font-size: 12px; }
+.icon-sm  { font-size: 14px; }
+.icon-md  { font-size: 16px; }
+.icon-lg  { font-size: 18px; }
+.icon-xl  { font-size: 20px; }
+.icon-2xl { font-size: 24px; }
+.icon-3xl { font-size: 28px; }
+
+/* ── Theme swap ─────────────────────────────────────────── */
+/* The dark/light swap is an instant [data-theme] attribute set in
+   src/lib/theme.ts — daisyUI repaints every CSS variable in one frame. No
+   View Transition cross-fade and no per-element transition suppression: with
+   nothing animating, nothing can fall out of sync, freeze, or pop. This
+   mirrors the sibling `okb` project, which is seamless for exactly this
+   reason. (Page navigation still uses Astro's ClientRouter, but <html> carries
+   transition:animate="none", so the theme attribute is the only thing the
+   swap touches.) */
+
+/* ═══ Schema (round-3 shell + shared toolbar) — promoted from ui-only@d97c777 ═══
+   Sections below came via apps/design/src/styles/schema-lab.css (now deleted) plus
+   the design SchemaView's shell layout CSS (web-schema-round3-shell §4.1). */
+
+/* ── Ghost-button hover (app-wide) ──────────────────────
+   daisyUI's default btn-ghost hover tint is too faint to read on our dark surfaces.
+   Lift it to a clearly-visible base-content wash so ghost buttons (toolbars, row
+   actions, drawer Cancel, menu items) give obvious hover feedback. `!important`
+   because Tailwind v4 + Lightning CSS otherwise merges a plain `.btn-ghost:hover`
+   into daisyUI's own rule and drops it (same build behaviour as the btn-sm note). */
+.btn-ghost:hover { background-color: oklch(from var(--color-base-content) l c h / 0.14) !important; }
+
+
+/* ── Tooltips ─────────────────────────────────────────────
+   daisyUI tooltips are the ONLY tooltips we use — never the native `title`
+   attribute (it waits ~1s, looks unstyled, and ignores the theme). Zero the
+   open-delay so the hint appears the instant the pointer lands; the fade stays,
+   only the wait is removed. See the Tooltip entry in /styleguide. */
+.tooltip::before,
+.tooltip::after {
+  transition-delay: 0s;
+}
+
+/* ── Schema toolbar (shared) ──────────────────────────────
+   ONE filter-bar pattern across every Schema tab (Browse / Visualize / Changelog).
+   Global (not scoped) so the Astro tabs AND the React Visualize island share the
+   exact same layout: [search] │ [filters…] ……… [tab-specific right cluster].
+   Left → right: a search box, a short vertical divider, then the filters; the
+   right cluster (segment / actions) is pushed to the far edge. */
+.sch-tb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* the search box — fixed-ish width on the left so the filters share the line */
+.sch-tb-search {
+  flex: 0 1 300px;
+  min-width: 200px;
+}
+.sch-tb-search > .es,
+.sch-tb-search > .input {
+  width: 100%;
+}
+/* the short vertical divider separating search from the filters */
+.sch-tb-div {
+  flex: none;
+  width: 1px;
+  height: 1.4rem;
+  background: var(--color-base-300);
+  margin: 0 2px;
+}
+/* the tab-specific right cluster (Tree/Flat segment, Export, Add to doc…) */
+.sch-tb-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+/* a muted count/metadata chip living in the right cluster */
+.sch-tb-count {
+  font-size: 12px;
+  color: oklch(from var(--color-base-content) l c h / 0.55);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* a plain checkbox + label filter (Undocumented / Linked only / Needs attention).
+   One neutral checkbox everywhere — never a coloured (warning) variant. */
+.sch-tb-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 4px;
+  white-space: nowrap;
+  color: oklch(from var(--color-base-content) l c h / 0.8);
+}
+/* the shared Tree/Flat view-toggle segment. `.rl-modes` is kept as an alias for the Visualize
+   island (SchemaCanvas), which still uses the old class name — same styling, one source. */
+.sch-tb-modes .btn,
+.rl-modes .btn {
+  background: var(--color-base-100);
+  border-color: var(--color-base-300);
+  font-weight: 500;
+  box-shadow: none;
+}
+.sch-tb-modes .btn:hover,
+.rl-modes .btn:hover { background: var(--color-base-200); }
+.sch-tb-modes .sch-tb-mode-active,
+.rl-modes .rl-mode-active {
+  background: var(--color-base-200);
+  color: var(--color-base-content);
+  border-color: var(--color-base-300);
+  font-weight: 600;
+}
+/* the "/" keyboard hint inside a search field — pushed to the right edge, muted */
+.sch-tb-search .sch-tb-slash { margin-left: auto; opacity: 0.55; }
+
+/* ── Entity concept-icon colour language ──────────────────────────────────────
+   Wherever an entity NAME appears in tabular/text/chip contexts, its concept icon
+   carries a consistent colour so bases / tables / fields read the same everywhere
+   (the Browse treatment, generalised): base = primary (blue), table = success
+   (green), field = neutral. Graph nodes keep their own health-dot language (React
+   inline colours override these).
+
+   `table-2` is used ONLY as the table-entity icon, so it can be coloured globally.
+   `database` is overloaded (base entity AND database destinations), and fields use
+   many per-type icons, so base/field are opted-in per icon via a `concept-ic-*`
+   class on the icon span (or its wrapper) — set by the entity-icon helpers. */
+.iconify.lucide--table-2,
+.concept-ic-table .iconify, .concept-ic-table svg, .iconify.concept-ic-table {
+  color: color-mix(in oklch, var(--color-success) 78%, var(--color-base-content));
+}
+.concept-ic-base .iconify, .concept-ic-base svg, .iconify.concept-ic-base {
+  color: color-mix(in oklch, var(--color-primary) 78%, var(--color-base-content));
+}
+.concept-ic-field .iconify, .concept-ic-field svg, .iconify.concept-ic-field {
+  color: var(--color-base-content);
+}
+/* App-layer concept colours (match the Visualize graph legend): automation = amber,
+   interface = violet, page = blue — softened toward neutral like the Browse tree. */
+.concept-ic-automation .iconify, .iconify.concept-ic-automation {
+  color: color-mix(in oklch, #d97706 82%, var(--color-base-content));
+}
+.concept-ic-interface .iconify, .iconify.concept-ic-interface {
+  color: color-mix(in oklch, #7c3aed 82%, var(--color-base-content));
+}
+.concept-ic-page .iconify, .iconify.concept-ic-page {
+  color: color-mix(in oklch, #2563eb 82%, var(--color-base-content));
+}
+
+/* Sortable table headers (Schema table views: Automations · Interfaces · Relationships).
+   A header with data-sort-col is clickable; the active one shows a ▲/▼ via data-sort-dir. */
+[data-sort-col] {
+  cursor: pointer;
+  user-select: none;
+}
+[data-sort-col]:hover {
+  color: var(--color-base-content);
+}
+[data-sort-col]::after {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-left: 0.3rem;
+  vertical-align: middle;
+  opacity: 0;
+  border-left: 3.5px solid transparent;
+  border-right: 3.5px solid transparent;
+}
+[data-sort-col][data-sort-dir="asc"]::after {
+  opacity: 0.75;
+  border-bottom: 4px solid currentColor;
+}
+[data-sort-col][data-sort-dir="desc"]::after {
+  opacity: 0.75;
+  border-top: 4px solid currentColor;
+}
+
+/* Panel scroll-lock: while any full-cover detail overlay is open, the app (document) scroll
+   is locked so the page behind can't scroll — only the panel's own scrollbar works (standard
+   modal behaviour). Pure CSS :has(), shared across every Schema overlay; releases automatically
+   when the overlay closes (hidden re-added / checkbox unchecked / data-chat=closed). */
+html:has([data-entity-panel]:not([hidden])),
+html:has([data-rl-detail]:not([hidden])),
+html:has([data-cl-detail]:not([hidden])),
+html:has(#au-modal:checked),
+html:has(#if-modal:checked),
+html:has([data-schema][data-chat="drawer"]) {
+  overflow: hidden;
+}
+
+/* ── Schema shell layout (.sch-*) — clustered tab bar, freshness stamp, panels ── */
+  .sch { display: flex; flex-direction: column; gap: 1rem; }
+  .sch-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  /* Section-wide freshness stamp — quiet, right-aligned. */
+  .sch-stamp { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .55); }
+  .sch-head-r { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; justify-content: flex-end; }
+  /* the chat launcher (top-right) is now the catalog Ghost Button (btn btn-ghost) — no custom CSS */
+
+  /* grouped tab bar (approved Variant A) — cluster label ABOVE each group's tabs, thin dividers */
+  .sch-tabbar { display: flex; align-items: stretch; gap: .1rem; flex-wrap: wrap; border-bottom: 1px solid var(--color-base-300); }
+  .sch-group { display: flex; flex-direction: column; }
+  .sch-glabel { font-size: .6rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .42); padding: 0 0 .1rem .6rem; }
+  /* The tabs are the catalog daisyUI `tab` (inside `tabs tabs-border`); the pattern themes them to
+     the quiet-inactive / primary-underline-active look. The 1px baseline is the .sch-tabbar border. */
+  .sch-gtabs { display: flex; align-items: stretch; }
+  .sch-gtabs.tabs { border: 0; }
+  /* The active underline is daisyUI's own tab-active indicator (its ::before, already primary in
+     this theme) — we DON'T add a second border-bottom (that caused a doubled/offset underline). */
+  .sch-gtabs .tab { height: auto; padding: .5rem .6rem; font-size: .86rem; font-weight: 560; gap: .4rem; color: oklch(from var(--color-base-content) l c h / .68); background: transparent; white-space: nowrap; }
+  .sch-gtabs .tab .iconify { opacity: .72; }
+  .sch-gtabs .tab:hover { color: var(--color-base-content); background: transparent; }
+  .sch-gtabs .tab.tab-active { color: var(--color-primary); }
+  .sch-gtabs .tab.tab-active .iconify { opacity: 1; }
+  .sch-tabdiv { width: 1px; background: var(--color-base-300); margin: 0 .6rem; align-self: flex-end; height: 1.9rem; }
+
+  /* primitive mobile: let the grouped bar scroll sideways (a fuller mobile nav is a follow-up) */
+  @media (max-width: 720px) {
+    .sch-tabbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+    .sch-head-r { align-items: flex-start; }
+  }
+  .sch-panel { width: 100%; }
+  .sch-empty, .sch-soon { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: .5rem; padding: 2rem; }
+  .sch-empty-ic { width: 3rem; height: 3rem; border-radius: .8rem; display: grid; place-items: center; background: var(--color-base-200); margin-bottom: .3rem; }
+  .sch-empty-ic .iconify { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .55); }
+  .sch-empty-title { font-size: 1rem; font-weight: 650; }
+  .sch-empty-sub { font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .6); max-width: 44ch; }
+
+  .sch-soon { min-height: 300px; border: 1px dashed var(--color-base-300); border-radius: .85rem; background: oklch(from var(--color-base-200) l c h / .3); }
+  .sch-soon p { font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .66); max-width: 56ch; }
+
+/* ── base-picker (components/integrations/BaseSelectionTable.astro) — promoted from ui-only@9a8b448; styles global per catalog governance ── */
+  .bst { display: flex; flex-direction: column; }
+  .bst-toolbar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .bst-spacer { flex: 1; }
+  /* The shared typeahead's own root (`.es`) is `position: relative` and full-width,
+     so the only thing this surface owns is how much of the toolbar row it takes.
+     The dropdown is absolutely positioned against `.es`, so nothing here may clip. */
+  .bst-searchwrap { flex: 1 1 auto; min-width: 14rem; }
+
+  /* Workspace-resolution status — the COUNT that belongs to the card-edge bar,
+     living in the selection strip directly beneath it. No band, no border, no
+     background: it is a sentence in a row the user is already reading, and it
+     leaves entirely the moment grouping lands. */
+  .bst-wsstatus { display: inline-flex; align-items: center; gap: .5rem; font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .bst-wsstatus[hidden] { display: none; }
+  .bst-wsstatus .btn { flex: none; }
+  .bst-wsstatus-t { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* The grouping band — the ONE surface above the table that is about workspaces.
+     A plain bordered plate (not tinted): it is a setting, not a warning. The
+     auto-enroll rule is its second row, separated by a dashed hairline rather
+     than being a card of its own — same subject, one plate. */
+  /* Two columns: the settings read left, the single remedy sits right (Oleh 2026-07-29).
+     `align-items: center` so the button centres against however many lines the copy wraps to,
+     rather than pinning to the first row's baseline. */
+  .bst-gband { display: flex; flex-direction: column; margin-bottom: .75rem; padding: .75rem; border: 1px solid var(--color-base-300); border-radius: .6rem; }
+  /* The button lives INSIDE the first row rather than beside the whole band. Centred on the band
+     it sat 8px above the dashed rule, because the two settings are unequal heights and the band's
+     midpoint is not the divider — measured, not guessed. Sitting in row 1 it is centred against
+     the copy it answers, and the rule below now spans the full band width with nothing ending
+     awkwardly next to it. */
+  .bst-gband-r1 { display: flex; align-items: center; gap: 24px; }
+  .bst-gband-r1 .bst-gband-row { flex: 1 1 auto; min-width: 0; }
+  /* Breathing room on BOTH sides so the button reads as its own zone rather than as something
+     bumped up against the copy. The dashed rule between the two settings deliberately stops at
+     the copy column — it separates those two rows, and running it under the button would put a
+     line through the one element that belongs to both of them. */
+  .bst-gband-act { flex: none; }
+  /* Under ~640px the two columns stop fitting side by side and the button drops below the copy
+     rather than squeezing the sentence into a column two words wide. */
+  @media (max-width: 640px) {
+    .bst-gband { flex-direction: column; align-items: stretch; }
+    .bst-gband-act { align-self: flex-start; }
+  }
+  .bst-gband-row { display: flex; align-items: flex-start; gap: .75rem; cursor: pointer; }
+  /* Indented to the toggle's text column so the action reads as belonging to the row above it,
+     not as a third setting in the band. */
+  .bst-gband-row .toggle { flex: none; margin-top: .125rem; /* ds-ok optical: aligns the switch to the cap-height of its heading */ }
+  .bst-gband-h { display: block; font-size: .85rem; font-weight: 700; }
+
+  /* Selection strip — the card's own top row. Shares the header's surface so the
+     card reads as one object, and keeps the list actions next to the list. */
+  .bst-selbar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; padding: .5rem .75rem; border-bottom: 1px solid var(--color-base-300); background: oklch(from var(--color-base-200) l c h / .45); }
+  .bst-count { font-size: .8rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .7); }
+  .bst-filter { display: inline-flex; align-items: center; gap: .5rem; font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .6); cursor: pointer; }
+
+  /* The cap note + new-bases banner are catalog alerts; only the top margin is bespoke. */
+  .bst-cap-note { margin-top: .5rem; }
+  .bst-newbases { margin-bottom: .75rem; }
+  .bst-newbases[hidden], .bst-cap-note[hidden] { display: none; }
+
+  .bst-autoadd { display: flex; align-items: center; gap: .75rem; margin-top: .5rem; padding: .75rem; border: 1px solid oklch(from var(--color-primary) l c h / .3); border-radius: .6rem; background: oklch(from var(--color-primary) l c h / .06); cursor: pointer; }
+  .bst-autoadd .toggle { flex: none; }
+  .bst-autoadd .checkbox { flex: none; }
+
+  /* Standing "Auto-enroll new workspaces" rule (workspace-auto-enroll) — no longer
+     its own dashed card. It FOLDED INTO the grouping band above (2026-07-29): both
+     rows are about what happens to things that appear in Airtable later, and two
+     plates for one subject is exactly the stacking Oleh called out. A dashed
+     hairline keeps them legible as two rules. */
+  .bst-wsenroll { padding-top: .75rem; margin-top: .75rem; border-top: 1px dashed var(--color-base-300); }
+  /* Flat table ⇒ no workspaces on screen ⇒ nothing for a workspace rule to
+     stand on. It returns with the groups. */
+  .bst-wsenroll[hidden] { display: none; }
+  /* Inert on this connection. The heading and switch dim; the reason line keeps
+     full contrast, because a dimmed explanation is the one part still worth
+     reading. */
+  .bst-wsenroll.is-blocked { cursor: not-allowed; }
+  .bst-wsenroll.is-blocked .bst-gband-h { opacity: .45; }
+  .bst-wsenroll.is-blocked .toggle { opacity: .45; cursor: not-allowed; }
+
+  /* Per-workspace auto-add toggle — lives in the Auto-add column, named once by
+     the sticky column header above it, explained per row by its tooltip. */
+  .bst-gauto { display: inline-flex; align-items: center; }
+  /* The em-dash sits where the switch would, so the column still scans as a column. */
+  .bst-gauto-na { display: inline-flex; align-items: center; font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .35); cursor: default; }
+  .bst-gauto .toggle { margin: 0; }
+
+  /* Cap-blocked chip: warning badge + adjacent Upgrade link, composed inline in
+     the group header (catalog note on Badge — a recoverable-limit pairing, not a
+     new primitive). */
+  .bst-gcap { display: inline-flex; align-items: center; gap: .5rem; flex: none; }
+  .bst-gcap-link { font-size: .75rem; font-weight: 700; text-decoration: underline; color: var(--color-warning); white-space: nowrap; }
+
+  /* Placeholder-name group actions (rename + open-in-Airtable) — a real workspace
+     that arrived without a name. Icon buttons mirror the twist chevron's shape. */
+  .bst-gact { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; flex: none; border-radius: .35rem; color: oklch(from var(--color-base-content) l c h / .55); cursor: pointer; }
+  .bst-gact:hover { background: oklch(from var(--color-base-300) l c h / .6); color: var(--color-base-content); }
+  /* Inline rename field, swapped in for the name span while editing. */
+  .bst-gname[hidden] { display: none; }
+  .bst-gname-edit { flex: 0 1 auto; min-width: 0; max-width: 16rem; font-size: .85rem; font-weight: 700; padding: .25rem .5rem; border: 1px solid var(--color-primary); border-radius: .35rem; background: var(--color-base-100); color: var(--color-base-content); }
+  .bst-gname-edit[hidden] { display: none; }
+
+  /* The `.bst-nonames` limited-access band that used to live here is deleted; the
+     fact it carried now sits in the placeholder group's own header as `.bst-gwhy`. */
+
+  /* The CARD is the wrapper now: it owns the border, the radius and the clipping,
+     so the selection strip and the scrolling table sit inside one outline. The
+     table itself keeps only its background — giving it a border too would draw a
+     second rule directly under the strip's. */
+  .bst-tablewrap { position: relative; margin-top: .75rem; border: 1px solid var(--color-base-300); border-radius: .7rem; overflow: hidden; background: var(--color-base-100); }
+  /* The card-edge progress line. `overflow: hidden` on the wrapper clips it to the
+     card radius, so it reads as part of the card's own edge rather than a floating
+     bar. 3px is a hairline, not spacing — it sits with the 1px borders, not on the
+     4px grid. z-index clears the sticky column header (z-3) inside the scroller. */
+  .bst-prog { position: absolute; inset-inline: 0; top: 0; z-index: 4; width: 100%; height: 3px; border-radius: 0; }
+  .bst-prog[hidden] { display: none; }
+  .bst-table { background: var(--color-base-100); }
+  /* Animated reflow for the ONE automatic group (and any later toggle). Re-grouping
+     is a local DOM move that costs ~0ms, so it gets movement, never a skeleton — a
+     placeholder over an instant operation is invented latency. `:global()` because
+     rows are rendered by BasePickerRow.astro and carry ITS scope id; a plain
+     `.bst-row` here matches nothing. */
+  :global(.bst-row.bst-flip) { transition: transform .18s ease; }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.bst-row.bst-flip) { transition: none; }
+  }
+  /* `:global()` on every `.bst-row` selector is LOAD-BEARING, not decoration. Rows are rendered by
+     the separate `BasePickerRow.astro`, so they carry that component's scope id, and a plain
+     `.bst-row` here — scoped to THIS component — silently matches nothing. The rows then fall back
+     to `display: inline` and the whole table reflows into a paragraph of base names (2026-07-29).
+     They stay in this file, beside `.bst-head` and `.bst-ghead`, because the three grid templates
+     must move together; splitting them across components is how they drift apart. */
+  .bst-head, :global(.bst-row) { display: grid; grid-template-columns: 2.4rem minmax(0, 1fr) 6rem 6rem; align-items: center; gap: .5rem; padding: .5rem .75rem; }
+  /* Grouped mode inserts the Auto-add column right after the name. It is a column
+     you ACT in, not one you read, so it is pulled tight against the thing it acts
+     on: the name track is capped (rather than absorbing every spare pixel) and the
+     Auto-add track takes the slack with its content left-aligned, so the switch sits
+     just past the names instead of drifting out to the metrics. All three row kinds
+     share the template, so the fixed right-hand columns stay in one vertical line
+     even though base rows carry a deeper left indent. */
+  .bst[data-grouped] .bst-head,
+  .bst[data-grouped] :global(.bst-row),
+  .bst[data-grouped] .bst-ghead { grid-template-columns: 2.4rem minmax(0, 16rem) minmax(9.5rem, 1fr) 6rem 6rem; }
+  :global(.c-auto) { display: flex; align-items: center; justify-content: flex-start; }
+  /* ONE switch picks ONE template. `[data-grouped]` selects the five-column grid,
+     shows the group shells and reveals the Auto-add cell that every row always
+     renders; without it the four-column grid applies, the shells are gone and
+     the cell is not there to occupy a track. A state is never half of each. */
+  /* Also :global — `.c-auto` is a CELL of BasePickerRow. Left scoped, it never hid in flat mode,
+     so every row carried a 5th child inside a 4-column grid and the Fields value wrapped onto a
+     second line under the checkbox (2026-07-29). The header's own .c-auto is this component's, so
+     it needs the plain selector too — hence both. */
+  .bst:not([data-grouped]) .c-auto,
+  .bst:not([data-grouped]) :global(.c-auto) { display: none; }
+  .bst:not([data-grouped]) .bst-group { display: none; }
+  .bst[data-grouped] .bst-flatrows { display: none; }
+  /* Master switch in the sticky column header — label + toggle, right-aligned so
+     it sits exactly above the per-workspace toggles it drives. */
+  .bst-autoall { display: inline-flex; align-items: center; gap: .5rem; cursor: pointer; }
+  .bst-autoall-label { white-space: nowrap; }
+  .bst-autoall .toggle { flex: none; }
+  .bst-head { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .66); background: var(--color-base-200); border-bottom: 1px solid var(--color-base-300); }
+  :global(.bst-row) { border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .5); cursor: pointer; max-height: 3rem; }
+  :global(.bst-row:last-child) { border-bottom: 0; }
+  :global(.bst-row:hover) { background: oklch(from var(--color-base-200) l c h / .5); }
+  :global(.bst-row.search-hidden), :global(.bst-row.page-hidden) { display: none; }
+  /* At the plan cap, unselectable (unchecked) rows read as inactive. */
+  :global(.bst-row.is-capped) { opacity: .4; cursor: not-allowed; }
+  :global(.bst-row.is-capped:hover) { background: transparent; }
+  :global(.bst-row.is-capped input) { cursor: not-allowed; }
+  :global(.c-name) { font-weight: 600; font-size: .87rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  :global(.c-num) { font-size: .8rem; text-align: right; color: oklch(from var(--color-base-content) l c h / .6); font-variant-numeric: tabular-nums; }
+  .bst-head .c-num { text-align: right; }
+  .bst-empty { padding: 2rem; text-align: center; font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .66); }
+
+  /* ── Workspace groups as a shallow tree (base-picker-workspace-grouping) ──
+     A workspace is a parent node; its bases nest one indent deeper. Real block
+     containers (not display:contents) so the indent + tree guide can be drawn.
+     The two number columns stay right-anchored, so they align to the sticky
+     column header regardless of the left indent. */
+  .bst-group { display: block; }
+  /* Bases nudge slightly right of the workspace checkbox to read as nested. The
+     row itself spans the full width (no inset box, no tree rail) — only the grid
+     content shifts; the right-anchored number columns stay aligned to the header. */
+  /* 52px = the group checkbox's left edge (12 pad + 24 twist + 8 gap = 44) + one 8px
+     nesting step, so bases read one indent under their workspace. Recompute if the
+     header padding, twist width or gident gap changes. */
+  .bst[data-grouped] :global(.bst-row) { padding-left: 3.25rem; }
+  .bst-ghead {
+    display: grid;
+    align-items: center;
+    gap: .5rem;
+    padding: .5rem .75rem; /* mirrors the row padding so columns align — change all three together */
+    background: var(--color-base-200); /* opaque — rows must not ghost through */
+    border-bottom: 1px solid var(--color-base-300);
+    position: sticky;
+    top: 2.4rem; /* pinned just under the sticky column header (.bst-head) */
+    z-index: 2;
+  }
+  .bst-group:not(:first-child) .bst-ghead { border-top: 1px solid var(--color-base-300); }
+  /* Twist chevron = the tree expand/collapse affordance (left, tree convention). */
+  .bst-twist { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; flex: none; border-radius: .35rem; color: oklch(from var(--color-base-content) l c h / .6); cursor: pointer; }
+  .bst-twist:hover { background: oklch(from var(--color-base-300) l c h / .6); color: var(--color-base-content); }
+  .bst-twist .iconify { transition: transform .15s ease; }
+  .bst-group.group-collapsed .bst-twist .iconify { transform: rotate(-90deg); }
+  .bst-gcheck { flex: none; }
+  /* Monochrome Airtable glyph (inline svg so it follows currentColor) — the same mark
+     the base-filter dropdowns use; muted, faded for the "No workspace" bucket. */
+  .bst-gicon { display: inline-flex; align-items: center; flex: none; color: oklch(from var(--color-base-content) l c h / .5); }
+  .bst-gicon svg { display: block; width: 14px; height: 14px; }
+  .bst-gicon-mut { opacity: .5; }
+  /* The workspace NAME is the thing being identified, so it keeps a floor and is
+     the LAST to give up space. */
+  .bst-gname { font-weight: 700; font-size: .85rem; min-width: 5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 0 1 auto; }
+  /* Provenance / limit badges never wrap into two lines or shrink. */
+  .bst-ghead .badge { white-space: nowrap; flex: none; }
+  /* "· name unavailable" — the limited-access caveat, folded out of its old band
+     and into the one header it is true of. `flex: none` + `nowrap` keeps the NAME
+     the first thing to give up space, which is what stopped "People & Fi…". */
+  /* No margin here on purpose: `.bst-gident` is a flex row with `gap: 8px`, which already
+     separates this from the name (measured: 8px). Reading the header with `textContent` makes
+     it LOOK glued — "Marketing· Growth in Airtable" — because that API concatenates sibling
+     elements without their layout. Do not "fix" that reading artifact with a margin. */
+  .bst-gwhy { display: inline-flex; align-items: center; gap: .5rem; font-size: .75rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .55); white-space: nowrap; flex: none; cursor: help; }
+  /* Shared "attached fact" separator (ui-only@8d9d1cd) — replaces the typed "·" character (Oleh,
+     2026-07-30: the literal interpunct read as crude). A 1px currentColor hairline, not a glyph,
+     so it renders identically at any zoom/font. Used by BOTH `.bst-gwhy` and `.bst-gwsid` so the
+     two read as ONE convention for "a secondary fact attached to the name". */
+  .bst-gsep { display: inline-block; width: 1px; height: .75rem; flex: none; background: currentColor; opacity: .35; }
+  /* The workspace id + its link out (founder, 2026-07-30): the id is the only unambiguous handle
+     when two workspaces share a name or the shown name is a user-typed placeholder. External-link
+     glyph ALWAYS visible (a hidden affordance is not an affordance). Unlike `.bst-gwhy` this one
+     may SHRINK — the id yields after the name; the LINK does not clip, only the id TEXT inside it. */
+  .bst-gwsid { display: inline-flex; align-items: center; gap: .5rem; min-width: 0; flex: 0 1 auto; font-size: .75rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .42); white-space: nowrap; text-decoration: none; }
+  .bst-gwsid-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bst-gwsid .iconify { flex: none; opacity: .7; }
+  .bst-gwsid:hover { color: var(--color-primary); }
+  .bst-gwsid:hover .iconify, .bst-gwsid:focus-visible .iconify { opacity: 1; }
+  .bst-gspin { flex: none; opacity: .5; }
+  /* Name-swap prompt — a quiet line attached under its group header, not an
+     alert band: it concerns ONE workspace and expires the moment it is answered. */
+  .bst-gswap { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem .5rem 3.25rem; font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .7); background: oklch(from var(--color-base-200) l c h / .5); border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .5); }
+  .bst-gswap[hidden] { display: none; }
+  .bst-gswap-t { flex: 1; min-width: 0; }
+  .bst-gswap .iconify { flex: none; opacity: .6; }
+  /* Identity cell spans the checkbox + name columns; everything that identifies
+     the workspace (chevron, select-all, glyph, name, kind, rename, badges) lays
+     out inside it with flex, leaving the columns to the right free. */
+  /* `overflow: hidden` + `padding-right` (ui-only@8d9d1cd; Oleh, 2026-07-30): the identity cell
+     spans only the first two grid columns, so a non-shrinking child runs UNDER the auto-add toggle
+     in column 3 rather than clipping; the 8px right padding keeps the long-id clip from running
+     flush against that toggle. Shrinks the content box, not the grid track. */
+  .bst-gident { grid-column: 1 / 3; display: flex; align-items: center; gap: .5rem; min-width: 0; padding-right: .5rem; overflow: hidden; }
+  /* Count spans the two number columns, right-aligned like their values. */
+  .bst-gcount { grid-column: 4 / 6; text-align: right; font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .6); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* Collapse hides the group's bases; the sticky workspace header stays. */
+  .bst-group.group-collapsed .bst-grows { display: none; }
+  /* An active search overrides collapse so matches are reachable (non-matching
+     rows stay search-hidden); the chevron reads expanded while the query holds. */
+  .bst.is-searching .bst-group.group-collapsed .bst-grows { display: block; }
+  .bst.is-searching .bst-group.group-collapsed .bst-twist .iconify { transform: none; }
+  /* Search that empties a group hides the whole band (header + rows). */
+  .bst-group.group-empty .bst-ghead { display: none; }
+  /* Indeterminate (partial-selection) on the group select-all: the daisyUI checkbox
+     keeps its outlined (unfilled) box — we do NOT try to fill it, because daisyUI's
+     background lives in a cascade layer with !important and beats any unlayered
+     override (that left the box transparent + an invisible base-100 dash before, in
+     dark). Instead paint ONE crisp centred dash in base-CONTENT, which contrasts
+     against the header surface in both themes. background-image is not set by daisyUI
+     on the base checkbox, so this applies cleanly. Distinct from the filled checked
+     box — the honest tri-state read. */
+  .bst-ghead input.bst-gcheck:indeterminate {
+    background-image: linear-gradient(var(--color-base-content), var(--color-base-content));
+    background-size: 10px 2px;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+  /* Pagination (illustrative) — controls are catalog select / buttons */
+  .bst-pager { display: flex; align-items: center; justify-content: space-between; gap: .75rem; margin-top: .75rem; flex-wrap: wrap; }
+  .bst-pager-nav { display: inline-flex; align-items: center; gap: .75rem; }
+  .bst-page-info { font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .6); }
+
+  /* The scroll lives on a max-height list so hundreds of rows stay in one place. */
+  .bst-table { max-height: min(78vh, 46rem); overflow-y: auto; }
+  /* Column header pinned at the very top (z above the workspace headers); its
+     fixed height is the offset the sticky workspace headers pin below. */
+  .bst-head { position: sticky; top: 0; z-index: 3; min-height: 2.4rem; box-sizing: border-box; }
+
+/* ── entity typeahead (components/schema/EntitySearch.astro) — promoted from ui-only@9a8b448; styles global per catalog governance ── */
+  /* Global: the result list is rendered at runtime via innerHTML. Classes are .es- prefixed. */
+  .es { position: relative; }
+  .es-input { width: 100%; background: var(--color-base-100); }
+  .es-kbd { opacity: .5; }
+  .es-input:focus-within .es-kbd { display: none; }
+
+  .es-pop {
+    position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; right: 0;
+    background: var(--color-base-100); border: 1px solid var(--color-base-300);
+    border-radius: var(--radius-box, .9rem); box-shadow: 0 10px 30px oklch(0 0 0 / .16);
+    overflow: hidden;
+  }
+  .es-list { max-height: min(52vh, 380px); overflow-y: auto; padding: 4px; }
+  .es-group { padding: 8px 8px 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .45; }
+  .es-opt { display: flex; align-items: center; gap: 8px; padding: 8px 8px; border-radius: 7px; cursor: pointer; }
+  .es-opt[aria-selected="true"], .es-opt:hover { background: var(--color-base-200); }
+  .es-opt-ic { width: 18px; flex: none; display: grid; place-items: center; }
+  .es-opt-ic svg { width: 15px; height: 15px; opacity: .8; }
+  .es-opt-ic .iconify { font-size: .9rem; opacity: .75; }
+  .es-opt-main { min-width: 0; flex: 1; }
+  .es-opt-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .es-opt-path { font-size: 11px; color: oklch(from var(--color-base-content) l c h / .5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .es-opt-dot { width: 7px; height: 7px; border-radius: 999px; flex: none; }
+  .es-dot-green { background: var(--color-success); } .es-dot-amber { background: var(--color-warning); } .es-dot-red { background: var(--color-error); }
+  .es-empty { padding: 16px; text-align: center; font-size: 12.5px; color: oklch(from var(--color-base-content) l c h / .5); }
+  .es-foot { display: flex; gap: 16px; padding: 8px 12px; border-top: 1px solid var(--color-base-300); font-size: 11px; color: oklch(from var(--color-base-content) l c h / .5); }
+  .es-foot span { display: inline-flex; align-items: center; gap: 4px; }

@@ -1,0 +1,2 @@
+ALTER TABLE "baseout"."storage_destinations" DROP CONSTRAINT "storage_destinations_type_check";--> statement-breakpoint
+ALTER TABLE "baseout"."storage_destinations" ADD CONSTRAINT "storage_destinations_type_check" CHECK ("baseout"."storage_destinations"."type" IN ('local_fs', 'google_drive', 'box'));

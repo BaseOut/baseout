@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Multi-panel Schema drawer — validating Dan's asks (V1–V6)</title>
+<style>
+  :root{
+    --bg:#fbfbfa; --panel:#fff; --ink:#1c1d1f; --muted:#6b6f76; --line:#e6e6e4;
+    --accent:#2f6df6; --accent-soft:#eef3ff; --good:#1a7f4b; --good-soft:#e8f5ee;
+    --warn:#9a6b00; --warn-soft:#fbf3df; --bad:#b42318; --bad-soft:#fdecea;
+    --code:#f3f3f1; --shadow:0 1px 2px rgba(0,0,0,.05),0 4px 16px rgba(0,0,0,.05);
+    --radius:10px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#161719; --panel:#1e2022; --ink:#e9eaec; --muted:#9aa0a8; --line:#2c2f33;
+      --accent:#6f9dff; --accent-soft:#1b2740; --good:#5cc98d; --good-soft:#132a1e;
+      --warn:#e2b64d; --warn-soft:#2c2510; --bad:#f2837a; --bad-soft:#2c1512;
+      --code:#26282b; --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.35);
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;}
+  .wrap{max-width:920px;margin:0 auto;padding:40px 24px 96px}
+  h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+  h2{font-size:22px;margin:48px 0 8px;letter-spacing:-.01em;padding-top:12px;border-top:1px solid var(--line)}
+  h3{font-size:16px;margin:22px 0 6px}
+  p{margin:8px 0}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .sub{color:var(--muted);font-size:15px;margin-top:0}
+  .tag{display:inline-block;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;
+    background:var(--accent-soft);color:var(--accent);vertical-align:middle;margin-left:8px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:18px 20px;margin:16px 0;box-shadow:var(--shadow)}
+  .lead{background:var(--accent-soft);border-color:transparent}
+  .rec{border-left:3px solid var(--good);background:var(--good-soft)}
+  .rec h3{margin-top:0;color:var(--good)}
+  .ask{border-left:3px solid var(--accent)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:640px){.grid2{grid-template-columns:1fr}}
+  ul{margin:8px 0;padding-left:20px}
+  li{margin:4px 0}
+  code{background:var(--code);padding:1px 6px;border-radius:5px;font-size:13px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  kbd{background:var(--panel);border:1px solid var(--line);border-bottom-width:2px;
+    border-radius:5px;padding:1px 6px;font-size:12px;font-family:ui-monospace,monospace}
+  .who{font-weight:600}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:1px 8px;border-radius:999px}
+  .p-good{background:var(--good-soft);color:var(--good)}
+  .p-warn{background:var(--warn-soft);color:var(--warn)}
+  .p-bad{background:var(--bad-soft);color:var(--bad)}
+  .scroll{overflow-x:auto}
+  .src{font-size:13.5px}
+  .src li{margin:6px 0}
+  .diagram{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:18px;margin:16px 0;overflow-x:auto}
+  .note{font-size:13px;color:var(--muted)}
+  .toc{columns:2;font-size:14px}
+  @media(max-width:640px){.toc{columns:1}}
+  hr{border:none;border-top:1px solid var(--line);margin:20px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Multi-panel Schema drawer — validating & deepening Dan's asks</h1>
+<p class="sub">Track A research pass · How shipped products solve V1–V6 · Baseout Schema section · 2026-07-09</p>
+
+<div class="card lead">
+  <strong>What this is.</strong> Dan recorded a video asking us to evolve the Schema
+  <em>EntityPanel</em> from today's cascading <em>Anchor+Focus</em> model (parent+child, cap 2,
+  closing the parent closes the child) into <strong>independent, side-by-side, browser-tab-like
+  panels</strong> so he can compare <em>field ↔ field</em>. This report checks each of his six
+  asks (V1–V6) against real shipped products, flags edge-cases, and recommends a concrete design —
+  with a focused recommendation for his open question (V6: max count + overflow).
+  <br><br>
+  <span class="note">Honest attribution: "What X does" = observed competitor behavior with a
+  cited source. "Recommendation" = our call for Baseout, clearly labelled.</span>
+</div>
+
+<h2>Executive summary</h2>
+<div class="card">
+<p><strong>Dan's instinct is well-supported.</strong> The pattern he's describing — self-contained
+panels, a "+" to spawn one, cmd-click a link to open it beside the current one — is exactly how
+the strongest comparison tools ship today. The single closest precedent is the
+<span class="who">Cloudflare AI Gateway Playground</span> and
+<span class="who">Google AI Studio</span> "compare" views: each pane is a self-contained card with
+its own <kbd>+</kbd> and <kbd>✕</kbd> in its header, laid out horizontally.</p>
+<ul>
+  <li><strong>V1 Independent close — do it.</strong> The cascade (close parent → close child) is
+  the odd one out; every comparison UI closes panes independently. Give each panel its own ✕.</li>
+  <li><strong>V2 "+" button — do it, and label it.</strong> Best precedents put a <kbd>+</kbd> in
+  a panel's header (Cloudflare) or a labelled <em>"Add panel"</em> button (Chatbase "Add an
+  instance"). Default the new panel to the current base / current table-all-fields.</li>
+  <li><strong>V3 Base & Space starting levels — do it as a drill-down column, not a new screen.</strong>
+  Neon, Airtable and every master-detail browser use one navigable list that drills
+  Space → Base → Table → Field. Collapse the chrome when there's a single base.</li>
+  <li><strong>V4 Cmd/Ctrl-click → new panel — do it, but it MUST have a visible fallback.</strong>
+  This is his headline ask and the highest-value one, but it's a <em>hidden</em> affordance.
+  Every product that relies on it also exposes a visible "open to the side / open in split"
+  control (VS Code, Notion). Ship both.</li>
+  <li><strong>V5 De-emphasize the table middle-layer — do it via optional/skippable, not removal.</strong>
+  Airtable keeps the layer but lets you jump straight to fields; make table a pass-through when a
+  field is the target.</li>
+  <li><strong>V6 Max count + overflow — recommend a soft cap of 3 side-by-side, then horizontal
+  scroll with a tab-strip overview; hard cap 5.</strong> Precedent: comparison/tab research says
+  3–5 is the human ceiling; browser tabs, VS Code editor groups and Postman all overflow by
+  scrolling a strip rather than shrinking panes to unreadability. Details in V6 + the decisions table.</li>
+</ul>
+</div>
+
+<div class="card">
+<div class="toc">
+<strong>Contents</strong>
+<ul>
+<li><a href="#v1">V1 · Independent close</a></li>
+<li><a href="#v2">V2 · The "+" affordance</a></li>
+<li><a href="#v3">V3 · Base & Space drill-down</a></li>
+<li><a href="#v4">V4 · Cmd-click → new panel</a></li>
+<li><a href="#v5">V5 · De-emphasize table layer</a></li>
+<li><a href="#v6">V6 · Max count + overflow</a></li>
+<li><a href="#new">Refinements we found</a></li>
+<li><a href="#decisions">Decisions to lock</a></li>
+<li><a href="#sources">Sources</a></li>
+</ul>
+</div>
+</div>
+
+<h2>The panel model at a glance</h2>
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  A["Space<br/>(all Bases)"] --> B["Base<br/>(all Tables)"]
+  B --> C["Table<br/>(all Fields)"]
+  C --> D["Field"]
+  subgraph rail["Horizontal panel rail — each panel self-contained, own ✕, own +"]
+    P1["Panel 1<br/>Field: Status"]
+    P2["Panel 2<br/>Field: Owner"]
+    P3["Panel 3<br/>Table: Tasks"]
+  end
+  D -. "Cmd-click a reference<br/>opens beside" .-> P2
+  classDef n fill:#eef3ff,stroke:#2f6df6,color:#1c1d1f;
+  class A,B,C,D n;
+</pre>
+<p class="note">Today: A/B/C/D are locked into a 2-deep parent→child cascade. Target: any level
+can be its own independent panel in a horizontal rail; new panels come from <kbd>+</kbd> or a
+cmd-clicked reference.</p>
+</div>
+
+<!-- ============ V1 ============ -->
+<h2 id="v1">V1 · Independent panels, closed independently <span class="tag">validated</span></h2>
+<p><em>Ask: drop the cascade where closing a parent closes the child. Each panel is self-contained
+with its own "Close tab" ✕.</em></p>
+
+<h3>What real products do</h3>
+<ul>
+  <li><span class="who">Cloudflare AI Gateway Playground</span> — two model panes side by side,
+  <strong>each with its own <kbd>✕</kbd></strong> (plus <kbd>+</kbd> and a collapse control) in its
+  own header. Closing one leaves the other untouched.
+  <a href="https://mobbin.com/screens/020268fc-33e9-4d18-aab1-8a3da90900fb">[Mobbin]</a></li>
+  <li><span class="who">Google AI Studio compare</span> — independent model panes, each with a
+  header <kbd>✕</kbd>; you add/remove freely.
+  <a href="https://mobbin.com/screens/fd90c75f-9fd6-4d1a-98e5-c8b823db35c0">[Mobbin]</a></li>
+  <li><span class="who">Notion</span> — a page can be open as full page while a database row is open
+  in Side Peek; these are independent surfaces, each dismissed on its own; nothing cascades-closed.
+  <a href="https://www.notion.com/help/navigate-with-the-sidebar">[Notion]</a></li>
+  <li><span class="who">Dovetail / Navattic</span> record side-panels use a single explicit header
+  ✕ to dismiss — the expected, discoverable close affordance for a detail surface.
+  <a href="https://mobbin.com/screens/aac9827e-b12f-4fe5-908a-2efd0acfcc11">[Mobbin]</a></li>
+</ul>
+
+<h3>Pitfalls</h3>
+<ul>
+  <li><strong>Orphaning context.</strong> When a child no longer depends on its parent, a user can
+  close the "Status field's table" and be left with a field panel whose origin is now unclear. Fix:
+  each panel carries its own breadcrumb (<code>Base › Table › Field</code>) so it's self-explanatory
+  after any sibling closes.</li>
+  <li><strong>Losing "close all".</strong> Independent closes make clearing the workspace tedious.
+  Provide a single "Close all" / <kbd>Esc</kbd>-clears-focused escape hatch.</li>
+</ul>
+
+<div class="card rec"><h3>Recommendation</h3>
+Adopt independent panels. Every panel gets its own header with breadcrumb + <kbd>✕</kbd>
+(tooltip "Close panel", not "Close tab" — these are panels, not browser tabs). Keep <kbd>Esc</kbd>
+closing the focused panel; add a "Close all" affordance once ≥2 are open. Drop the parent→child
+cascade entirely.
+</div>
+
+<!-- ============ V2 ============ -->
+<h2 id="v2">V2 · The "+" button to open a new panel <span class="tag">validated</span></h2>
+<p><em>Ask: a "+" opens a new panel; default lands on the same base / same table-with-all-fields.</em></p>
+
+<h3>What real products do</h3>
+<ul>
+  <li><span class="who">Cloudflare AI Playground</span> — the <kbd>+</kbd> lives
+  <strong>inside each pane's header toolbar</strong>, next to collapse/✕. Clicking it spawns a new
+  pane to the right.
+  <a href="https://mobbin.com/screens/020268fc-33e9-4d18-aab1-8a3da90900fb">[Mobbin]</a></li>
+  <li><span class="who">Chatbase compare</span> — uses a labelled button, <strong>"Add an
+  instance"</strong>, in the top bar rather than a bare glyph, so the action reads unambiguously.
+  <a href="https://mobbin.com/screens/36bae7e5-535b-453d-b9df-b2bed6c7f07b">[Mobbin]</a></li>
+  <li><span class="who">Postman / browsers</span> — the canonical "+" sits at the <strong>end of the
+  tab strip</strong>; users already read a trailing "+" as "new tab here".</li>
+  <li><span class="who">Airtable interfaces</span> — a record detail's "+ New field"/add controls
+  appear in-panel, reinforcing that "+" inside a panel = add-within-context.
+  <a href="https://mobbin.com/screens/aac9827e-b12f-4fe5-908a-2efd0acfcc11">[Mobbin]</a></li>
+</ul>
+
+<h3>Pitfalls</h3>
+<ul>
+  <li><strong>"+ of what?"</strong> A bare "+" is ambiguous about the starting level. Cloudflare
+  gets away with it because every pane is the same type (a model). Baseout panels can be a Space,
+  Base, Table or Field — so a raw "+" needs either a smart default or a tiny menu.</li>
+  <li><strong>Placement collision.</strong> A trailing-strip "+" competes with per-panel "+"; pick
+  one primary spawn point to avoid two mental models.</li>
+</ul>
+
+<div class="card rec"><h3>Recommendation</h3>
+Two spawn points, one meaning ("open another panel"):
+<ul>
+<li><strong>Primary: a trailing "+" at the end of the panel rail</strong> (browser/Postman mental
+model). Bare glyph is fine there because position teaches it; add a tooltip "Open another panel".</li>
+<li><strong>Default target = current context, one level up-and-out:</strong> matching Dan's ask —
+open the <em>same table with all fields</em> when you're on a field, or the <em>same base with all
+tables</em> when you're on a table. This makes "+" a fast "give me a sibling comparison surface".</li>
+<li>Long-press / dropdown caret on the "+" offers "New panel at Base…/Table…" for jumping
+elsewhere. Keep the click path one-tap for the common case.</li>
+</ul>
+</div>
+
+<!-- ============ V3 ============ -->
+<h2 id="v3">V3 · Base-level and Space-level starting views <span class="tag">validated</span></h2>
+<p><em>Ask: new levels that don't exist yet — a base-level view and a space-level view; list all
+bases → drill into base → table → field. Single base ⇒ default straight into it.</em></p>
+
+<h3>What real products do</h3>
+<ul>
+  <li><span class="who">Neon</span> — a left "Tables" list (schema/branch scoped) → click a table →
+  rows → a right inspector for the selected row. One coherent drill-down column feeding a detail
+  panel; exactly the Space→Base→Table→Field shape.
+  <a href="https://mobbin.com/screens/0e379f78-1bf7-4dd3-aeb4-87d2a285a71d">[Mobbin]</a></li>
+  <li><span class="who">Master-detail / two-panel selector</span> pattern — a navigable list on one
+  side, details on the other, letting users "skip through content at speed while keeping an
+  overview". Standard for hierarchical browse.
+  <a href="https://www.interaction-design.org/literature/article/two-panel-selectors-for-easy-access-of-content">[IxDF]</a>
+  <a href="https://webapphuddle.com/master-detail-ui-pattern-design/">[WebAppHuddle]</a></li>
+  <li><span class="who">Airtable Base schema</span> — a base-level schema view that shows all tables
+  and their relationships as an entry point above individual records.
+  <a href="https://support.airtable.com/docs/base-schema-extension">[Airtable]</a></li>
+  <li><span class="who">Lightfield / Braintrust</span> — sidebar hierarchy (Accounts → Contacts;
+  Datasets → row) with a persistent detail panel, showing the "drill a level, inspect, drill again"
+  loop generalizes cleanly.
+  <a href="https://mobbin.com/screens/b47a2904-f608-414d-ac6c-241ff0642556">[Mobbin]</a></li>
+</ul>
+
+<h3>Pitfalls</h3>
+<ul>
+  <li><strong>Empty middle levels.</strong> A Space with one Base, or a Base with one Table, makes
+  the extra level pure friction — hence Dan's "single base ⇒ default straight in".</li>
+  <li><strong>Breadcrumb depth.</strong> Four levels (Space › Base › Table › Field) is deep; without
+  a persistent breadcrumb users lose the thread, especially once panels detach (V1).</li>
+</ul>
+
+<div class="card rec"><h3>Recommendation</h3>
+Model the drill-down as <strong>one panel whose "level" is data, not four different screens</strong>
+(this matches our existing EntityPanel decision — states-as-data). A panel can be a Space list, a
+Base overview, a Table (all fields), or a Field. Rules:
+<ul>
+<li><strong>Every panel shows a breadcrumb</strong> <code>Space › Base › Table › Field</code>; each
+crumb is clickable and (with cmd) opens that level in a new panel — reuses V4.</li>
+<li><strong>Auto-skip singletons:</strong> single Base ⇒ Space view opens straight into the Base;
+single Table ⇒ Base opens into the Table. Never make the user click through a list of one.</li>
+<li>Space/Base views are <strong>lists with counts + health</strong> (X tables, Y fields, N issues),
+not empty scaffolding — they should earn their level by summarizing.</li>
+</ul>
+</div>
+
+<!-- ============ V4 ============ -->
+<h2 id="v4">V4 · Cmd/Ctrl-click a reference → new panel beside <span class="tag">headline · needs a visible fallback</span></h2>
+<p><em>Ask (his "most user-friendly"): cmd-click a reference/backlink opens it in a NEW panel
+side-by-side, like cmd-clicking a browser link opens a new tab.</em></p>
+
+<h3>What real products do</h3>
+<ul>
+  <li><span class="who">VS Code</span> — <kbd>Cmd/Ctrl+Alt+click</kbd> on a symbol runs
+  "Go to Definition <em>to the Side</em>", splitting the editor and opening the target beside the
+  source. Crucially, the same action is <strong>also a visible command</strong> ("Open to the Side",
+  the split-editor button, and a right-click menu item) — the modifier is an accelerator, not the
+  only door.
+  <a href="https://code.visualstudio.com/docs/getstarted/userinterface">[VS Code docs]</a>
+  <a href="https://www.codestudy.net/blog/how-to-open-go-to-definition-in-other-split-tab-for-same-file-in-vs-code/">[guide]</a></li>
+  <li><span class="who">Notion</span> — <kbd>Cmd/Ctrl+click</kbd> a page link opens it in a new tab
+  instead of Side Peek; plain click uses the default (peek). Standard browser muscle-memory.
+  <a href="https://www.makeuseof.com/change-notion-side-peek-setting/">[Notion peek]</a></li>
+  <li><span class="who">Browsers (the mental model Dan cites)</span> — cmd-click = new tab is
+  near-universal, <em>but</em> UX literature is explicit that it's a <strong>hidden affordance</strong>:
+  power users know it, most users don't; forcing/relying on new-tab behavior without a visible cue
+  disorients people.
+  <a href="https://www.nngroup.com/articles/timing-exposing-content/">[NN/g]</a>
+  <a href="https://sensiolabs.com/blog/2025/the-tab-trap-why-forcing-new-tabs-is-bad-ux">[SensioLabs]</a>
+  <a href="https://www.uxpin.com/studio/blog/affordances-user-interaction/">[UXPin affordances]</a></li>
+</ul>
+
+<h3>The discoverability problem (and how the pros solve it)</h3>
+<p>Cmd-click is an <em>implicit affordance</em> — no signifier tells you it exists, so it must never
+be the <strong>only</strong> way to reach side-by-side. The winning pattern across VS Code / Notion:
+<strong>ship the modifier accelerator AND a visible control that does the same thing</strong>, then
+optionally teach the shortcut in a tooltip on that control.</p>
+
+<div class="card rec"><h3>Recommendation</h3>
+Ship V4 exactly as Dan wants — <strong>and</strong> make it discoverable three ways:
+<ul>
+<li><strong>Accelerator:</strong> <kbd>Cmd/Ctrl+click</kbd> (and middle-click) any reference,
+backlink, linked-field, relationship, or breadcrumb crumb ⇒ opens that entity in a new panel to the
+right, without disturbing the current one. Plain click = navigate the current panel (or its focus
+child, per today's behavior).</li>
+<li><strong>Visible fallback:</strong> on hover, references show a small "open beside" ⧉ icon (like
+GitHub's/VS Code's split glyph). Clicking the icon does the same as cmd-click. This is the signifier
+the shortcut lacks.</li>
+<li><strong>Teach it:</strong> the ⧉ icon's tooltip reads "Open in new panel · <kbd>⌘</kbd>-click".
+One-time coach-mark the first time a user opens a second panel.</li>
+<li><strong>Consistency guard:</strong> because plain-click already navigates, be careful the two
+behaviors don't surprise — document that plain=replace-in-place, modifier/icon=open-beside, and keep
+it identical everywhere (breadcrumbs, refs, list rows).</li>
+</ul>
+</div>
+
+<!-- ============ V5 ============ -->
+<h2 id="v5">V5 · De-emphasize / make optional the middle table view <span class="tag">validated (soften, don't delete)</span></h2>
+<p><em>Ask: the table-level view is a middle layer he'd like to make optional.</em></p>
+
+<h3>What real products do</h3>
+<ul>
+  <li><span class="who">Airtable</span> — you can press space to jump a row straight to its expanded
+  record; the "table" is a pass-through, and record detail can even be swapped for a custom interface
+  page. The layer exists but never blocks getting to the record.
+  <a href="https://support.airtable.com/docs/expanded-records">[Airtable expanded records]</a></li>
+  <li><span class="who">VS Code / IDEs</span> — "Go to Definition" jumps you straight to the symbol;
+  you don't stop at the file's outline first. The intermediate structure is available (Outline view)
+  but optional.</li>
+</ul>
+
+<div class="card rec"><h3>Recommendation</h3>
+Keep the Table panel (it's the natural target for "compare all fields of two tables" and the default
+V2 spawn), but make it a <strong>pass-through when a field is the real target</strong>: cmd-clicking a
+field reference opens the <em>field</em> panel directly, not the table. Offer a per-user default
+("open references as: Field detail / Table with field highlighted"). So: not removed, just never
+mandatory — matches Airtable's "layer present, never in the way".
+</div>
+
+<!-- ============ V6 ============ -->
+<h2 id="v6">V6 · Max panel count + overflow strategy <span class="tag">his open question — recommendation below</span></h2>
+<p><em>Ask: he flagged this as unresolved and mused about "some kind of layering" when too many are
+open, each scrollable.</em></p>
+
+<h3>What the evidence says</h3>
+<ul>
+  <li><strong>Human ceiling is ~3–5.</strong> Comparison and tab research repeatedly lands on 3–5 as
+  the point past which side-by-side/tabs overwhelm; two-panel is the comfortable default, more than
+  that needs deliberate handling and wide screens.
+  <a href="https://www.eleken.co/blog-posts/tabs-ux">[Eleken tabs UX]</a>
+  <a href="https://www.sap.com/design-system/fiori-design-web/v1-120/ui-elements/comparison-pattern">[SAP Fiori comparison]</a></li>
+  <li><strong>Side-by-side needs width.</strong> Master-detail side-by-side is "more suited for wider
+  screens"; below a width threshold you fall back to overlay/stacked.
+  <a href="https://webapphuddle.com/master-detail-ui-pattern-design/">[master-detail]</a></li>
+  <li><strong>How shipped comparison tools cap:</strong> Cloudflare/Google AI Studio/Chatbase compare
+  keep panes to a small horizontal set and let each pane scroll internally; they don't shrink panes
+  to unreadable slivers.
+  <a href="https://mobbin.com/screens/020268fc-33e9-4d18-aab1-8a3da90900fb">[Cloudflare]</a></li>
+  <li><strong>How tab-based tools overflow:</strong> browsers, Postman and VS Code editor groups keep
+  a fixed minimum tab/pane width and <strong>scroll the strip</strong> (with an overflow menu / tab
+  overview) rather than infinitely subdividing.</li>
+  <li><span class="who">Dan's "layering" intuition</span> maps to the macOS/tab-overview idea: when
+  too many are open, show a compact strip/stack you can flip through, each panel still fully
+  scrollable when focused.</li>
+</ul>
+
+<div class="card rec"><h3>Recommendation for V6</h3>
+<strong>Soft cap 3 visible side-by-side · hard cap 5 open · overflow = horizontal scroll of
+fixed-min-width panels + a tab-strip overview. No true z-axis "stack".</strong>
+<ul>
+<li><strong>Fixed minimum panel width</strong> (e.g. ~360–420px). Panels never shrink below legible;
+instead the rail scrolls horizontally once total width exceeds the viewport. This is the
+browser/Postman/VS Code model and preserves "each scrollable" (each panel scrolls its own body).</li>
+<li><strong>Show up to 3 comfortably</strong> on a typical laptop; a 4th/5th are reachable by
+scrolling the rail. A slim <strong>panel-strip header</strong> (little chips: <code>Status ·
+Owner · Tasks · …</code>) sits above the rail so you always see everything open and can click a chip
+to scroll it into view — this is the "overview" Dan wants without a literal stack.</li>
+<li><strong>Hard cap at 5.</strong> Opening a 6th prompts "Close a panel to open this" (or auto-closes
+the oldest/least-recently-focused, with an undo). Prevents the "40 tabs" mess and keeps compare
+meaningful.</li>
+<li><strong>Prefer scroll-strip over z-layering.</strong> A literal stacked/layered deck hides panels
+behind panels — bad for the core job (compare side-by-side <em>at a glance</em>). The chip-strip gives
+the awareness a stack would, while keeping comparison visible. If Dan still wants a "collapse to
+spine" affordance, implement it as a per-panel collapse-to-rail-chip (Cloudflare has a collapse
+control), not a global stack.</li>
+<li><strong>Narrow screens:</strong> below ~2-panel width, fall back to one panel at a time with the
+chip-strip as the switcher (the responsive master-detail fallback).</li>
+</ul>
+</div>
+
+<!-- ============ NEW IDEAS ============ -->
+<h2 id="new">Refinements & new ideas we found (worth stealing)</h2>
+<div class="grid2">
+  <div class="card">
+    <h3>Per-panel breadcrumb = the glue</h3>
+    Once panels are independent (V1), the breadcrumb inside each panel is what stops them becoming
+    orphans. Make crumbs cmd-clickable to spawn that level (ties V3+V4 together).
+  </div>
+  <div class="card">
+    <h3>"Open beside" hover glyph</h3>
+    The ⧉ split icon on hover (VS Code) is the single highest-leverage addition — it makes the hidden
+    cmd-click affordance visible and teachable in one control.
+  </div>
+  <div class="card">
+    <h3>Panel-strip overview chips</h3>
+    A chip row naming every open panel doubles as the overflow control (V6) and a "close all / jump
+    to" surface. Cheap to build, solves awareness.
+  </div>
+  <div class="card">
+    <h3>Sync-scroll for true compare</h3>
+    Cloudflare/AI-Studio compare panes offer a "sync" toggle so scrolling one scrolls both. For
+    field↔field compare (same schema shape), an optional "align sections" could line up
+    Description/Relationships/Health rows across panels.
+  </div>
+  <div class="card">
+    <h3>Pin vs. transient panels</h3>
+    Borrow VS Code preview tabs: a single-clicked panel is <em>transient</em> (replaced by the next
+    single-click); double-click or edit "pins" it. Keeps casual browsing from piling up panels while
+    still supporting deliberate compare.
+  </div>
+  <div class="card">
+    <h3>Deep-link / shareable panel set</h3>
+    Encode open panels in the URL (like our <code>?fixture=</code> harness already does) so a
+    field↔field comparison is shareable with a teammate — a real differentiator for an inspection tool.
+  </div>
+</div>
+
+<!-- ============ DECISIONS ============ -->
+<h2 id="decisions">Decisions to lock</h2>
+<div class="scroll">
+<table>
+<thead><tr><th>#</th><th>Decision</th><th>Recommendation</th><th>Confidence</th><th>Precedent</th></tr></thead>
+<tbody>
+<tr><td>D1</td><td>Cascade vs independent close</td><td>Independent panels, each with own ✕ + breadcrumb; drop parent→child cascade</td><td><span class="pill p-good">High</span></td><td>Cloudflare, Google AI Studio, Notion</td></tr>
+<tr><td>D2</td><td>"+" placement</td><td>Trailing "+" at end of panel rail (primary); caret-menu for other levels</td><td><span class="pill p-good">High</span></td><td>Browsers, Postman, Chatbase "Add an instance"</td></tr>
+<tr><td>D3</td><td>"+" default target</td><td>Current context one level out (field⇒table-all-fields; table⇒base-all-tables)</td><td><span class="pill p-warn">Med</span></td><td>Dan's ask; confirm with him</td></tr>
+<tr><td>D4</td><td>New levels</td><td>Add Space + Base as panel <em>states</em>, not new screens; states-as-data</td><td><span class="pill p-good">High</span></td><td>Neon, Airtable base schema, our EntityPanel model</td></tr>
+<tr><td>D5</td><td>Singleton skip</td><td>Auto-drill through single Base / single Table</td><td><span class="pill p-good">High</span></td><td>Dan's ask; standard</td></tr>
+<tr><td>D6</td><td>Cmd-click → new panel</td><td>Ship it + middle-click, plus visible ⧉ "open beside" glyph + tooltip teaching the shortcut</td><td><span class="pill p-good">High</span></td><td>VS Code, Notion; NN/g hidden-affordance guidance</td></tr>
+<tr><td>D7</td><td>Plain-click semantics</td><td>Plain = replace-in-place; modifier/⧉ = open beside. Identical everywhere</td><td><span class="pill p-warn">Med</span></td><td>Browser convention; confirm no conflict w/ today's focus-child</td></tr>
+<tr><td>D8</td><td>Table middle-layer</td><td>Keep but pass-through to field when field is the target; user default</td><td><span class="pill p-good">High</span></td><td>Airtable expanded records</td></tr>
+<tr><td><strong>D9</strong></td><td><strong>V6 max count</strong></td><td><strong>Soft 3 visible · hard 5 open; block/auto-close-oldest at 6 with undo</strong></td><td><span class="pill p-warn">Med</span></td><td>Tabs/comparison 3–5 ceiling (Eleken, SAP Fiori)</td></tr>
+<tr><td><strong>D10</strong></td><td><strong>V6 overflow</strong></td><td><strong>Fixed-min-width panels + horizontal scroll + chip-strip overview. NOT a z-stack</strong></td><td><span class="pill p-warn">Med</span></td><td>Browser/Postman/VS Code strip overflow</td></tr>
+<tr><td>D11</td><td>Responsive floor</td><td>Below ~2-panel width ⇒ one panel + chip-strip switcher</td><td><span class="pill p-good">High</span></td><td>Master-detail responsive fallback</td></tr>
+<tr><td>D12</td><td>Close-all escape</td><td>Add "Close all" once ≥2 open; Esc closes focused</td><td><span class="pill p-good">High</span></td><td>General</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">Confidence "Med" items (D3, D7, D9, D10) are the ones to explicitly confirm with Dan —
+especially the V6 cap numbers and whether he accepts a scroll-strip instead of a literal layered stack.</p>
+
+<!-- ============ SOURCES ============ -->
+<h2 id="sources">Sources</h2>
+<div class="card src">
+<strong>Competitor screens (Mobbin)</strong>
+<ul>
+<li>Cloudflare AI Gateway Playground — per-pane +/✕, side-by-side compare — <a href="https://mobbin.com/screens/020268fc-33e9-4d18-aab1-8a3da90900fb">mobbin.com/screens/020268fc…</a></li>
+<li>Google AI Studio — independent compare panes, header ✕ — <a href="https://mobbin.com/screens/fd90c75f-9fd6-4d1a-98e5-c8b823db35c0">mobbin.com/screens/fd90c75f…</a></li>
+<li>Chatbase compare — "Add an instance" spawn button — <a href="https://mobbin.com/screens/36bae7e5-535b-453d-b9df-b2bed6c7f07b">mobbin.com/screens/36bae7e5…</a></li>
+<li>Neon — Tables list → row → inspector (schema drill-down) — <a href="https://mobbin.com/screens/0e379f78-1bf7-4dd3-aeb4-87d2a285a71d">mobbin.com/screens/0e379f78…</a></li>
+<li>Dovetail — record side panel with tabs + ✕ — <a href="https://mobbin.com/screens/aac9827e-b12f-4fe5-908a-2efd0acfcc11">mobbin.com/screens/aac9827e…</a></li>
+<li>Navattic — detail side panel (Activity/Details tabs) beside table — <a href="https://mobbin.com/screens/79a31934-4ca2-4700-86a5-c180fa735404">mobbin.com/screens/79a31934…</a></li>
+<li>Lightfield — hierarchy sidebar + persistent detail — <a href="https://mobbin.com/screens/b47a2904-f608-414d-ac6c-241ff0642556">mobbin.com/screens/b47a2904…</a></li>
+<li>Mixpanel — two-panel comparison board — <a href="https://mobbin.com/screens/569fb3ac-440e-4e84-8672-0d5990b12354">mobbin.com/screens/569fb3ac…</a></li>
+<li>Figma — "Compare changes" side-by-side/overlay — <a href="https://mobbin.com/screens/ebb90bf9-735a-4f5f-968a-8152ff58dde8">mobbin.com/screens/ebb90bf9…</a></li>
+</ul>
+<strong>Docs & articles</strong>
+<ul>
+<li>VS Code — User interface / split editors — <a href="https://code.visualstudio.com/docs/getstarted/userinterface">code.visualstudio.com/docs/getstarted/userinterface</a></li>
+<li>VS Code — Go to Definition to the Side (Cmd+Alt+click) — <a href="https://www.codestudy.net/blog/how-to-open-go-to-definition-in-other-split-tab-for-same-file-in-vs-code/">codestudy.net</a></li>
+<li>Notion — navigate with the sidebar (Side Peek) — <a href="https://www.notion.com/help/navigate-with-the-sidebar">notion.com/help/navigate-with-the-sidebar</a></li>
+<li>Notion — change side peek / cmd-click new tab — <a href="https://www.makeuseof.com/change-notion-side-peek-setting/">makeuseof.com</a></li>
+<li>Airtable — expanded records / persistent action bar — <a href="https://support.airtable.com/docs/expanded-records">support.airtable.com/docs/expanded-records</a></li>
+<li>Airtable — base schema extension — <a href="https://support.airtable.com/docs/base-schema-extension">support.airtable.com/docs/base-schema-extension</a></li>
+<li>NN/g — timing guidelines for exposing hidden content — <a href="https://www.nngroup.com/articles/timing-exposing-content/">nngroup.com</a></li>
+<li>SensioLabs — the tab trap (forcing new tabs, cmd-click, user control) — <a href="https://sensiolabs.com/blog/2025/the-tab-trap-why-forcing-new-tabs-is-bad-ux">sensiolabs.com</a></li>
+<li>UXPin — affordances & hidden/implicit affordances — <a href="https://www.uxpin.com/studio/blog/affordances-user-interaction/">uxpin.com</a></li>
+<li>Eleken — tabs UX best practices (3–5 ceiling) — <a href="https://www.eleken.co/blog-posts/tabs-ux">eleken.co</a></li>
+<li>SAP Fiori — comparison pattern — <a href="https://www.sap.com/design-system/fiori-design-web/v1-120/ui-elements/comparison-pattern">sap.com/design-system…</a></li>
+<li>IxDF — two-panel selectors — <a href="https://www.interaction-design.org/literature/article/two-panel-selectors-for-easy-access-of-content">interaction-design.org</a></li>
+<li>WebAppHuddle — master-detail UI pattern — <a href="https://webapphuddle.com/master-detail-ui-pattern-design/">webapphuddle.com</a></li>
+<li>Linear — keyboard shortcuts (Space = peek) — <a href="https://keycombiner.com/collections/linear/">keycombiner.com/collections/linear</a></li>
+</ul>
+</div>
+
+<p class="note" style="margin-top:32px">Track A research · read-only · no app code changed. Next:
+turn the D-table into a locked spec + prototype the panel rail against the existing EntityPanel.</p>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  try{
+    const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    mermaid.initialize({startOnLoad:true, theme: dark ? 'dark' : 'default', securityLevel:'loose'});
+  }catch(e){}
+</script>
+</div>
+</body>
+</html>

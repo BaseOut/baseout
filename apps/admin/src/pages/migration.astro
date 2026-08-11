@@ -1,0 +1,95 @@
+---
+// On2Air migration status (PRD §16.1 — "completed vs pending user counts").
+// Gated to role='super' by src/middleware.ts.
+//
+// admin-crm-ux Task 3.4: read-only. The "Mark migrated" (force-migration) action
+// moved to the org command center (/organizations/[id]); each pending row links
+// there. Endpoint/confirm/audit unchanged.
+import { eq } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import Alert from '@web/components/ui/Alert.astro';
+import EntityLink from '../components/EntityLink.astro';
+import { organizations, subscriptions } from '../db/schema';
+import { buildMigrationView, type MigrationOrgRow } from '../lib/migration';
+
+const { db } = Astro.locals;
+
+const orgRows: MigrationOrgRow[] = await db
+  .select({
+    id: organizations.id,
+    name: organizations.name,
+    slug: organizations.slug,
+    hasMigrated: organizations.hasMigrated,
+    dynamicLocked: organizations.dynamicLocked,
+    createdAt: organizations.createdAt,
+    subscriptionStatus: subscriptions.status,
+  })
+  .from(organizations)
+  .leftJoin(subscriptions, eq(subscriptions.organizationId, organizations.id))
+  .limit(1000);
+
+const view = buildMigrationView(orgRows);
+const fmtDate = (d: Date) => d.toISOString().slice(0, 10);
+---
+
+<SidebarLayout title="Admin — Migration">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader
+      title="On2Air migration"
+      description="Completed vs pending migrations (PRD §16.1). Pending = organizations.has_migrated is false."
+    />
+
+    <div class="stats stats-horizontal bg-base-100 border border-base-300">
+      <div class="stat py-3">
+        <div class="stat-title">Organizations</div>
+        <div class="stat-value text-2xl">{view.total}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Migrated</div>
+        <div class="stat-value text-2xl text-success">{view.migrated}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Pending</div>
+        <div class={`stat-value text-2xl ${view.pending > 0 ? 'text-warning' : ''}`}>{view.pending}</div>
+        <div class="stat-desc">{view.pendingPct}% of all orgs</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Dynamic-locked</div>
+        <div class="stat-value text-2xl">{view.dynamicLocked}</div>
+        <div class="stat-desc">On2Air-origin accounts</div>
+      </div>
+    </div>
+
+    {view.pendingOrgs.length === 0 ? (
+      <Alert variant="success">No pending migrations. 🎉</Alert>
+    ) : (
+      <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+        <table class="table table-zebra table-sm">
+          <thead>
+            <tr>
+              <th>Organization</th>
+              <th>Created</th>
+              <th>Dynamic-locked</th>
+              <th>Subscription</th>
+            </tr>
+          </thead>
+          <tbody>
+            {view.pendingOrgs.map((o) => (
+              <tr>
+                <td>
+                  <div class="font-medium"><EntityLink type="org" id={o.id} label={o.name} /></div>
+                  <div class="font-mono text-xs text-base-content/50">{o.slug}</div>
+                </td>
+                <td class="font-mono text-xs">{fmtDate(o.createdAt)}</td>
+                <td>{o.dynamicLocked ? <Badge variant="warning" size="sm">locked</Badge> : '—'}</td>
+                <td>{o.subscriptionStatus ?? <span class="text-base-content/50">none</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+  </div>
+</SidebarLayout>

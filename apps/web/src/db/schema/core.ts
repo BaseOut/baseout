@@ -16,16 +16,20 @@
  */
 
 import {
+  bigint,
   boolean,
+  check,
   index,
   integer,
   jsonb,
   text,
   timestamp,
   unique,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { baseout, users } from './auth'
+import { plans } from '@baseout/db-schema'
 
 // ———————————————————————————————————————————————————————————————————————————
 // PLATFORMS
@@ -149,6 +153,10 @@ export const spacePlatforms = baseout.table('space_platforms', {
 // Pure registry of Airtable bases known within a Space.
 // Backup-specific flags (is_included, is_auto_discovered) live in
 // backup_configuration_bases, not here.
+// MIRROR NOTE (web-workspace-bases): the engine (apps/server) READS the
+// workspace_id / workspace_name columns for the per-run auto-enroll check
+// (server-mcp-workspaces) — canonical migration is
+// apps/web/drizzle/0033_workspace_bases.sql (CLAUDE.md §2 mirror rule).
 // ———————————————————————————————————————————————————————————————————————————
 
 export const atBases = baseout.table('at_bases', {
@@ -158,12 +166,62 @@ export const atBases = baseout.table('at_bases', {
     .references(() => spaces.id, { onDelete: 'cascade' }),
   atBaseId: text('at_base_id').notNull(),      // Airtable base ID e.g. "appXXXXXXXXX"
   name: text('name').notNull(),                // cached from last API scan
+  discoveredVia: text('discovered_via').notNull().default('oauth_callback'),
+  // 'oauth_callback' | 'rediscovery_scheduled' | 'rediscovery_manual'
+  // Set on INSERT only — `onConflictDoUpdate` omits this column from the set-list
+  // so the original discovery source is preserved across rediscoveries.
+  // Airtable workspace identity (web-workspace-bases, design Decision 1):
+  // denormalized, NULLABLE, stamped whenever workspace data is available at
+  // persist/rescan/rediscovery time; absence never blocks base persistence.
+  // Airtable-side identity only — never Baseout structure (Features §1).
+  workspaceId: text('workspace_id'),
+  workspaceName: text('workspace_name'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   unique('at_bases_space_base_unique').on(table.spaceId, table.atBaseId),
   index('at_bases_space_id_idx').on(table.spaceId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// SPACE WORKSPACES (web-workspace-bases)
+// Per-Space Airtable-workspace ENROLLMENT — intent, not membership (design
+// Decision 2): a row means "this Space auto-adds bases from this workspace
+// when auto_enroll_future_bases is on". Which base belongs to which
+// workspace lives on at_bases.workspace_id. Un-enrolling removes future
+// auto-adds but never touches already-configured bases. A Space may enroll
+// MULTIPLE workspaces. `enrolled_via='auto'` rows are materialized by the
+// engine when backup_configurations.auto_enroll_new_workspaces is true and
+// a new workspace first appears (design Decision 2b).
+// MIRROR NOTE: the engine (apps/server) reads AND inserts ('auto') rows —
+// canonical migration is apps/web/drizzle/0033_workspace_bases.sql
+// (CLAUDE.md §2 mirror rule; paired change server-mcp-workspaces).
+// ———————————————————————————————————————————————————————————————————————————
+
+export const spaceWorkspaces = baseout.table('space_workspaces', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  workspaceId: text('workspace_id').notNull(),   // Airtable workspace id e.g. "wspXXXX"
+  workspaceName: text('workspace_name'),
+  autoEnrollFutureBases: boolean('auto_enroll_future_bases').notNull().default(false),
+  enrolledVia: text('enrolled_via').notNull().default('manual'),
+  // 'manual' | 'auto' — 'auto' rows are engine-materialized (Decision 2b).
+  // Stamped by the engine's per-run workspace check so the settings UI can
+  // show freshness (design Decision 2).
+  lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check(
+    'space_workspaces_enrolled_via_check',
+    sql`${table.enrolledVia} IN ('manual', 'auto')`,
+  ),
+  unique('space_workspaces_space_workspace_unique').on(table.spaceId, table.workspaceId),
+  index('space_workspaces_space_id_idx').on(table.spaceId),
 ])
 
 // ———————————————————————————————————————————————————————————————————————————
@@ -225,11 +283,23 @@ export const connections = baseout.table('connections', {
   invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
   // set when dead-connection cadence completes and status moves to 'invalid'
   lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  oauthRefreshClaimId: text('oauth_refresh_claim_id'),
+  oauthRefreshClaimedAt: timestamp('oauth_refresh_claimed_at', { withTimezone: true }),
+  oauthRefreshLastError: text('oauth_refresh_last_error'),
+  // Airtable's refresh token expires after 60 days idle (`refresh_expires_in`),
+  // then the authorization is revoked. Captured at Connect + on every refresh so
+  // the idle-expiry clock is predictable (drives the keep-alive selection +
+  // gauge) instead of discovered reactively via invalid_grant.
+  refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+  // Stamped when status flips to 'pending_reauth' — the start of the
+  // dead-connection grace window (auto-invalidation + future reconnect cadence).
+  pendingReauthAt: timestamp('pending_reauth_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('connections_org_platform_idx').on(table.organizationId, table.platformId),
   index('connections_created_by_idx').on(table.createdByUserId),
+  index('connections_oauth_refresh_claim_idx').on(table.oauthRefreshClaimId),
 ])
 
 // ———————————————————————————————————————————————————————————————————————————
@@ -256,6 +326,74 @@ export const connectionSessions = baseout.table('connection_sessions', {
 ])
 
 // ———————————————————————————————————————————————————————————————————————————
+// CONNECTION STATUS AUDIT
+// DB-side audit trail for unexpected connection status flips. A Postgres
+// trigger populates this table so it catches old Workers, scripts, and direct
+// SQL as well as app code.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const connectionStatusAudit = baseout.table('connection_status_audit', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  connectionId: text('connection_id')
+    .notNull()
+    .references(() => connections.id, { onDelete: 'cascade' }),
+  organizationId: text('organization_id'),
+  platformId: text('platform_id'),
+  oldStatus: text('old_status'),
+  newStatus: text('new_status').notNull(),
+  oldInvalidatedAt: timestamp('old_invalidated_at', { withTimezone: true }),
+  newInvalidatedAt: timestamp('new_invalidated_at', { withTimezone: true }),
+  oldTokenExpiresAt: timestamp('old_token_expires_at', { withTimezone: true }),
+  newTokenExpiresAt: timestamp('new_token_expires_at', { withTimezone: true }),
+  oldModifiedAt: timestamp('old_modified_at', { withTimezone: true }),
+  newModifiedAt: timestamp('new_modified_at', { withTimezone: true }),
+  changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+  dbUser: text('db_user').notNull().default(sql`current_user`),
+  applicationName: text('application_name').default(sql`current_setting('application_name', true)`),
+  txid: bigint('txid', { mode: 'number' }).notNull().default(sql`txid_current()`),
+}, (table) => [
+  index('connection_status_audit_connection_idx').on(table.connectionId, table.changedAt),
+  index('connection_status_audit_changed_idx').on(table.changedAt),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// ADMIN AUDIT LOG
+// Append-only trail for staff console actions (apps/admin). Two-row model:
+// an 'intent' row is INSERTed BEFORE the action executes, a 'result' row is
+// appended after (intent_id points back). No code path may UPDATE or DELETE
+// rows — outcome is a second row, never a mutation. Actor fields are
+// denormalized snapshots (no FK) so audit history survives user deletion.
+// params must never contain tokens, secrets, or *_enc values.
+// Owned by openspec/changes/shared-admin-actions; written by apps/admin.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const adminAuditLog = baseout.table('admin_audit_log', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  phase: text('phase').notNull().default('intent'),
+  // 'intent' | 'result'
+  intentId: text('intent_id'),
+  // result rows reference their intent row; no FK — append-only, no cascades
+  actorUserId: text('actor_user_id').notNull(),
+  actorEmail: text('actor_email').notNull(),
+  action: text('action').notNull(),
+  // 'force_backup' | 'invalidate_connection' | 'force_migration'
+  // (reserved: 'reset_trial' | 'adjust_plan' | 'grant_credits')
+  targetType: text('target_type').notNull(),
+  // 'space' | 'connection' | 'organization'
+  targetId: text('target_id').notNull(),
+  organizationId: text('organization_id'),
+  params: jsonb('params'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  dbUser: text('db_user').notNull().default(sql`current_user`),
+  applicationName: text('application_name').default(sql`current_setting('application_name', true)`),
+  txid: bigint('txid', { mode: 'number' }).notNull().default(sql`txid_current()`),
+}, (table) => [
+  index('admin_audit_log_created_idx').on(table.createdAt),
+  index('admin_audit_log_target_idx').on(table.targetType, table.targetId, table.createdAt),
+  index('admin_audit_log_actor_idx').on(table.actorUserId, table.createdAt),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
 // SUBSCRIPTIONS
 // One Stripe subscription per Organization.
 // Created at sign-up as a $0 trial — modified (never replaced) as tiers change.
@@ -278,8 +416,11 @@ export const subscriptions = baseout.table('subscriptions', {
 // ———————————————————————————————————————————————————————————————————————————
 // SUBSCRIPTION ITEMS
 // One row per active Platform within a subscription.
-// Capabilities and limits are always resolved from Stripe product metadata
-// (platform + tier) — these fields are cached locally for fast lookups only.
+// Capabilities and limits now resolve from the DB-native entitlement catalog via
+// resolveEntitlements(orgId) keyed on plan_id (shared-entitlements D1) — NOT from
+// Stripe product metadata. The legacy `tier` column stays as a cached display
+// value during migration; it is backfilled into plan_id by shared-entitlements
+// task 2.3 and retired once all gating call sites move to the resolution lib.
 // ———————————————————————————————————————————————————————————————————————————
 
 export const subscriptionItems = baseout.table('subscription_items', {
@@ -293,8 +434,10 @@ export const subscriptionItems = baseout.table('subscription_items', {
   stripeSubscriptionItemId: text('stripe_subscription_item_id').notNull().unique(),
   stripeProductId: text('stripe_product_id').notNull(),
   stripePriceId: text('stripe_price_id').notNull(),
+  // Entitlement linkage (D1). Nullable during migration until backfill (task 2.3).
+  planId: text('plan_id').references(() => plans.id, { onDelete: 'set null' }),
   tier: text('tier').notNull(),
-  // 'starter' | 'launch' | 'growth' | 'pro' | 'business' | 'enterprise'
+  // legacy, cached display only — 'starter' | 'launch' | 'growth' | 'pro' | 'business' | 'enterprise'
   billingPeriod: text('billing_period').notNull(), // 'monthly' | 'annual'
   trialEndsAt: timestamp('trial_ends_at', { withTimezone: true }),
   trialBackupRunUsed: boolean('trial_backup_run_used').notNull().default(false),
@@ -328,9 +471,20 @@ export const backupRuns = baseout.table('backup_runs', {
     .notNull()
     .references(() => connections.id, { onDelete: 'restrict' }),
   status: text('status').notNull().default('queued'),
-  // 'queued' | 'running' | 'succeeded' | 'failed' | 'trial_complete'
+  // 'queued' | 'running' | 'succeeded' | 'failed' | 'trial_complete' | 'trial_truncated' | 'cancelling' | 'cancelled' | 'deleting'
+  // (Application-level constraint — column is plain text, no enum to migrate.
+  //  'cancelling' is an intermediate state; 'cancelled' is terminal.
+  //  'deleting' is the intermediate state for user-initiated per-run delete
+  //  (openspec/changes/shared-backup-run-delete); the terminal action is a
+  //  row hard-DELETE, not a status flip.)
   triggeredBy: text('triggered_by').notNull(),
   // free-text; engine-defined (e.g. 'manual', 'scheduled', 'webhook', 'trial')
+  kind: text('kind').notNull().default('full'),
+  // 'full' | 'schema' — what this run captured (openspec/changes/server-backup-scope).
+  // 'full' = schema + data (manual + data-scheduled runs); 'schema' = schema only
+  // (schema-scheduled runs, which skip records/attachments). Plain text +
+  // application-level constraint, like `status`. Drives the history Schema/Full
+  // badge and the per-base task's capture path.
   isTrial: boolean('is_trial').notNull().default(false),
   recordCount: integer('record_count'),
   tableCount: integer('table_count'),
@@ -338,6 +492,16 @@ export const backupRuns = baseout.table('backup_runs', {
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   errorMessage: text('error_message'),
+  triggerRunIds: jsonb('trigger_run_ids').$type<string[]>(),
+  // JSON array of Trigger.dev v3 run IDs (one per included base). Set when the
+  // engine fans out to per-base tasks; consumed by the run-complete callback to
+  // determine when all per-base work has reported in.
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  // Soft-delete marker for the retention/cleanup engine
+  // (openspec/changes/server-retention-and-cleanup). Set when the cleanup pass
+  // has removed this run's storage objects; the row itself is retained for
+  // audit. NULL until pruned. Distinct from the user-initiated per-run delete
+  // (shared-backup-run-delete), which hard-DELETEs the row.
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -345,6 +509,10 @@ export const backupRuns = baseout.table('backup_runs', {
   index('backup_runs_connection_id_idx').on(table.connectionId),
   index('backup_runs_status_idx').on(table.status),
   index('backup_runs_created_at_idx').on(table.createdAt),
+  // Partial index — the cleanup pass scans live runs per Space, newest-first.
+  index('backup_runs_undeleted_idx')
+    .on(table.spaceId, table.startedAt.desc())
+    .where(sql`${table.deletedAt} IS NULL`),
 ])
 
 // ———————————————————————————————————————————————————————————————————————————
@@ -394,11 +562,46 @@ export const backupConfigurations = baseout.table('backup_configurations', {
     .notNull()
     .references(() => spaces.id, { onDelete: 'cascade' }),
   frequency: text('frequency').notNull().default('monthly'),
-  // 'monthly' | 'weekly' | 'daily' | 'instant' — gated by tier per Features §6.1
+  // 'monthly' | 'weekly' | 'daily' | 'instant' — gated by tier per Features §6.1.
+  // This is the DATA (full-backup) schedule. See `scope` + `schema_frequency`
+  // for the schema schedule (openspec/changes/server-backup-scope).
+  scope: text('scope').notNull().default('schema_and_data'),
+  // 'schema_only' | 'schema_and_data' — what the schedule(s) back up
+  // (openspec/changes/server-backup-scope). schema_only runs NO data backup
+  // (schema schedule only); schema_and_data runs the data schedule (`frequency`)
+  // plus, when `schema_frequency` is set, a more-frequent schema-only schedule.
+  schemaFrequency: text('schema_frequency'),
+  // Optional cadence for the schema-only schedule ('monthly'|'weekly'|'daily').
+  // NULL ⇒ schema refreshes only with each full data backup. server-backup-scope.
+  schemaNextScheduledAt: timestamp('schema_next_scheduled_at', { withTimezone: true }),
+  // Engine-owned mirror of next_scheduled_at for the schema schedule; SpaceDO
+  // writes it on alarm-set / alarm-fire. NULL until scheduled. server-backup-scope.
   mode: text('mode').notNull().default('static'),
   // 'static' | 'dynamic' — Features §6.2
   storageType: text('storage_type').notNull().default('r2_managed'),
   // 'r2_managed' | 'google_drive' | 'dropbox' | 'box' | 'onedrive' | 's3' | 'frame_io' | 'byos'
+  autoAddFutureBases: boolean('auto_add_future_bases').notNull().default(false),
+  // Standing flag for workspaces that DO NOT EXIST YET (web-workspace-bases
+  // design Decision 2b): when true, a workspace newly observed on the
+  // connection is auto-enrolled by the engine as a space_workspaces row
+  // (enrolled_via='auto', auto_enroll_future_bases=true). Governs only the
+  // unknown→known transition; existing rows are never modified by it.
+  // Legacy precedence (Decision 3): with NO space_workspaces rows,
+  // auto_add_future_bases keeps its connection-wide meaning; once any row
+  // exists, rows + this flag are authoritative and the legacy flag is inert.
+  autoEnrollNewWorkspaces: boolean('auto_enroll_new_workspaces').notNull().default(false),
+  // Instant mode: how often the Space's DO polls for webhook-dirty bases
+  // (server-instant-webhook Phase A; tier minimums in Features §6.1).
+  webhookPollIntervalSeconds: integer('webhook_poll_interval_seconds').notNull().default(900),
+  // When true, bases discovered via rediscovery (alarm or manual rescan) are
+  // included in the next backup run automatically — subject to the tier
+  // `basesPerSpace` cap. See workspace-rediscovery change.
+  nextScheduledAt: timestamp('next_scheduled_at', { withTimezone: true }),
+  // Engine-owned. SpaceDO writes this on every alarm-set / alarm-fire so the
+  // IntegrationsView can render "Next backup: <date>" without recomputing
+  // from frequency. NULL until the first PATCH /backup-config OR the
+  // bootstrap script hits this Space's DO. Phase B of
+  // baseout-backup-schedule-and-cancel.
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -430,4 +633,616 @@ export const backupConfigurationBases = baseout.table('backup_configuration_base
     table.atBaseId,
   ),
   index('backup_configuration_bases_config_id_idx').on(table.backupConfigurationId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// SPACE EVENTS
+// Minimal per-Space notification surface. Each row is a user-visible event
+// (currently only 'bases_discovered' from workspace rediscovery). The
+// IntegrationsView reads unread rows on SSR and renders an inline banner.
+// Designed as a tiny additive surface — future kinds (token_expiry,
+// schema_drift) land as new `kind` values without schema changes. If a
+// full notification stack ships later, migrate via INSERT … SELECT.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const spaceEvents = baseout.table('space_events', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  kind: text('kind').notNull(),
+  // 'bases_discovered' (V1) — additive
+  payload: jsonb('payload').notNull(),
+  // For 'bases_discovered':
+  //   { discovered: AtBaseId[], autoAdded: AtBaseId[],
+  //     blockedByTier: AtBaseId[], tierCap: number | null }
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+}, (table) => [
+  index('space_events_space_id_active_idx')
+    .on(table.spaceId)
+    .where(sql`${table.dismissedAt} IS NULL`),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// STORAGE DESTINATIONS
+// Per-Space BYOS destinations. One row per (Space, provider type) — UNIQUE on
+// (space_id, type); re-connecting a provider UPSERTs its own row only. The
+// PRIMARY destination (the one backups write to) is whichever type
+// backup_configurations.storage_type points at (shared-multi-destinations).
+// Originally filed by openspec/changes/shared-byos-drive — Google Drive is
+// the first concrete non-local-fs writer. CHECK on `type` widens additively
+// as subsequent providers (S3, Frame.io) land in their own changes.
+//
+// Token columns are AES-256-GCM ciphertext (PRD §20.2). Encryption key
+// (BASEOUT_ENCRYPTION_KEY) is shared between apps/web (writes on Connect)
+// and apps/server (reads + lazy refresh on backup-start). Workflows never
+// holds the key — it asks the engine's internal route for decrypted creds.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const storageDestinations = baseout.table('storage_destinations', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  // 'local_fs' | 'google_drive' | 'box' | 'dropbox' | 'onedrive' — enforced
+  // by CHECK below + widened additively when subsequent BYOS providers land.
+
+  // OAuth token storage (Drive only; local_fs leaves these null).
+  oauthAccessTokenEnc: text('oauth_access_token_enc'),
+  oauthRefreshTokenEnc: text('oauth_refresh_token_enc'),
+  oauthExpiresAt: timestamp('oauth_expires_at', { withTimezone: true }),
+  oauthScope: text('oauth_scope'),
+  oauthAccountEmail: text('oauth_account_email'),
+
+  // Provider-specific.
+  // For Google Drive: providerFolderId = Drive ID of the per-Space
+  // `Baseout-<spaceId>` folder (cached after first creation). providerAccountId
+  // = Drive user id for audit.
+  providerFolderId: text('provider_folder_id'),
+  providerAccountId: text('provider_account_id'),
+
+  // Audit.
+  connectedByUserId: text('connected_by_user_id')
+    .references(() => users.id),
+  connectedAt: timestamp('connected_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  lastValidatedAt: timestamp('last_validated_at', { withTimezone: true }),
+}, (table) => [
+  check(
+    'storage_destinations_type_check',
+    sql`${table.type} IN ('local_fs', 'google_drive', 'box', 'dropbox', 'onedrive')`,
+  ),
+  index('storage_destinations_type_idx').on(table.type),
+  unique('storage_destinations_space_id_type_unique').on(table.spaceId, table.type),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// ATTACHMENT DEDUP — REMOVED. Attachment metadata moved to the per-Space
+// bo_at_attachments table (openspec/changes/system-per-space-db §3.4); dedup is
+// now scoped within each Space's DB. See @baseout/db-schema/space.
+// ———————————————————————————————————————————————————————————————————————————
+
+// ———————————————————————————————————————————————————————————————————————————
+// DB CLUSTERS
+// Registry of managed-Postgres clusters (shared-db-isolation-ladder L2). One row
+// per cluster: `kind` = shared (env-singleton, multi-tenant schema-per-Space) or
+// dedicated (one account owns the whole cluster). `owner_org_id` is NULL for a
+// shared cluster. `connection_ref` points at the Hyperdrive/connection config.
+// Cluster provisioning + the space_databases.cluster_id wire land in L3.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const dbClusters = baseout.table('db_clusters', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  kind: text('kind').notNull(), // 'shared' | 'dedicated'
+  ownerOrgId: text('owner_org_id').references(() => organizations.id, {
+    onDelete: 'cascade',
+  }),
+  connectionRef: text('connection_ref'),
+  status: text('status').notNull().default('active'), // provisioning | active | draining | retired
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check('db_clusters_kind_check', sql`${table.kind} IN ('shared', 'dedicated')`),
+  check(
+    'db_clusters_status_check',
+    sql`${table.status} IN ('provisioning', 'active', 'draining', 'retired')`,
+  ),
+  index('db_clusters_owner_org_idx').on(table.ownerOrgId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// SPACE DATABASES
+// Filed by openspec/changes/system-per-space-db. One row per Space — the
+// control-plane pointer to that Space's dedicated per-Space database.
+//
+// `backend` selects where the per-Space DB lives; `records_enabled` is an
+// independent toggle for whether the record tables are populated (the per-Space
+// DB always exists for schema / attachments / diffs / docs). Residency posture
+// is DERIVED, not stored: `managed` (d1 | managed_pg) vs `sovereign` (byodb —
+// schema + records live only in the customer's DB). Sovereign requires
+// records_enabled = true (enforced by CHECK + app-level validation).
+//
+// The per-Space schema itself (bo_at_* tables) lives in @baseout/db-schema/space,
+// NOT in this master-DB file. Cross-DB references are plain columns, never FKs.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const spaceDatabases = baseout.table('space_databases', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .unique()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  // 'd1' | 'managed_pg' | 'byodb' — enforced by CHECK below.
+  backend: text('backend').notNull(),
+  // Whether the record tables (bo_at_records / bo_at_record_field_data) are
+  // populated. The per-Space DB exists regardless.
+  recordsEnabled: boolean('records_enabled').notNull().default(false),
+  // Provisioning lifecycle.
+  status: text('status').notNull().default('pending'),
+  // 'pending' | 'provisioning' | 'active' | 'migrating' | 'error'
+  // Backend locators — exactly one is set, per `backend`:
+  //   d1         → d1_database_id (Cloudflare D1 database UUID)
+  //   managed_pg → pg_locator (generic locator, e.g. the schema-per-Space name
+  //                on the shared cluster)
+  //   byodb      → byodb_connection_string_enc (AES-256-GCM-encrypted customer PG DSN)
+  d1DatabaseId: text('d1_database_id'),
+  pgLocator: text('pg_locator'),
+  byodbConnectionStringEnc: text('byodb_connection_string_enc'),
+  // Tier-facing isolation class (shared-db-isolation-ladder L1). Backfilled from
+  // `backend` (d1→d1, managed_pg→shared_cluster, byodb→byodb); the
+  // dedicated_cluster class + the cluster wire land in L3. `backend` stays the
+  // engine/dialect; this is the pricing-ladder dimension.
+  isolationClass: text('isolation_class'),
+  // The managed-PG cluster this Space's DB lives on. NULL for d1 / byodb, or
+  // until L3 provisioning assigns one.
+  clusterId: text('cluster_id').references(() => dbClusters.id),
+  // SPACE_SCHEMA_VERSION applied to the per-Space DB; drives the lazy on-access
+  // migration check. Null until first provision completes.
+  schemaVersion: integer('schema_version'),
+  lastSchemaSyncAt: timestamp('last_schema_sync_at', { withTimezone: true }),
+  lastRecordsSyncAt: timestamp('last_records_sync_at', { withTimezone: true }),
+  provisionedByUserId: text('provisioned_by_user_id').references(() => users.id),
+  provisionedAt: timestamp('provisioned_at', { withTimezone: true }),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check(
+    'space_databases_backend_check',
+    sql`${table.backend} IN ('d1', 'managed_pg', 'byodb')`,
+  ),
+  check(
+    'space_databases_status_check',
+    sql`${table.status} IN ('pending', 'provisioning', 'active', 'migrating', 'error')`,
+  ),
+  // Sovereign (byodb) requires a dynamic DB — records must be enabled.
+  check(
+    'space_databases_sovereign_requires_records',
+    sql`${table.backend} <> 'byodb' OR ${table.recordsEnabled} = true`,
+  ),
+  check(
+    'space_databases_isolation_class_check',
+    sql`${table.isolationClass} IS NULL OR ${table.isolationClass} IN ('d1', 'shared_cluster', 'dedicated_cluster', 'byodb')`,
+  ),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// RESTORE RUNS
+// One row per restore run. Mirrors the backup_runs lifecycle (queued → running →
+// succeeded | failed | cancelling | cancelled). Canonical owner; apps/server
+// mirrors this in apps/server/src/db/schema/restore-runs.ts.
+// Migrations: apps/web/drizzle/0019_restore_runs.sql
+// ———————————————————————————————————————————————————————————————————————————
+
+export const restoreRuns = baseout.table('restore_runs', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  connectionId: text('connection_id')
+    .notNull()
+    .references(() => connections.id, { onDelete: 'restrict' }),
+  sourceRunId: text('source_run_id')
+    .notNull()
+    .references(() => backupRuns.id, { onDelete: 'restrict' }),
+  status: text('status').notNull(),
+  // 'queued' | 'running' | 'cancelling' | 'cancelled' | 'succeeded' | 'failed'
+  scope: text('scope').notNull(),
+  // 'base' | 'table' | 'point_in_time'
+  scopeTarget: jsonb('scope_target').notNull(),
+  // { baseId, tableId?, runId? }
+  tablesRestored: integer('tables_restored').notNull().default(0),
+  recordsRestored: integer('records_restored').notNull().default(0),
+  attachmentsRestored: integer('attachments_restored').notNull().default(0),
+  triggerRunIds: text('trigger_run_ids').array().notNull().default(sql`'{}'`),
+  // Postgres text[] — one entry per Trigger.dev run ID fanned out during start.
+  triggeredBy: text('triggered_by').notNull(),
+  // 'user_manual' | 'admin_override'
+  isTrial: boolean('is_trial').notNull().default(false),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_restore_runs_space_status').on(table.spaceId, table.status),
+  index('idx_restore_runs_source').on(table.sourceRunId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// BACKUP RUN BASES
+// Per-base snapshot written by the Trigger.dev backup-base task on completion
+// (via the optional tables[] payload on POST /api/internal/runs/:runId/complete).
+// When present, provides the per-base breakdown for the run-detail UI.
+// Absent for legacy completions that predate the workflows-run-detail change.
+// Canonical owner; apps/server mirrors this in backup-run-bases.ts.
+// Migration: apps/web/drizzle/0020_backup_run_bases_and_tables.sql
+// ———————————————————————————————————————————————————————————————————————————
+
+export const backupRunBases = baseout.table('backup_run_bases', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  runId: text('run_id')
+    .notNull()
+    .references(() => backupRuns.id, { onDelete: 'cascade' }),
+  atBaseId: text('at_base_id').notNull(),
+  baseName: text('base_name').notNull(),
+  status: text('status').notNull(),
+  // 'succeeded' | 'failed' | 'trial_complete' | 'trial_truncated'
+  tablesCount: integer('tables_count').notNull().default(0),
+  recordsCount: integer('records_count').notNull().default(0),
+  attachmentsCount: integer('attachments_count').notNull().default(0),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('backup_run_bases_run_id_idx').on(table.runId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// BACKUP RUN TABLES
+// Per-table snapshot written alongside backup_run_bases rows. One row per table
+// within a base's backup snapshot. Absent for legacy completions.
+// Canonical owner; apps/server mirrors this in backup-run-tables.ts.
+// Migration: apps/web/drizzle/0020_backup_run_bases_and_tables.sql
+// ———————————————————————————————————————————————————————————————————————————
+
+export const backupRunTables = baseout.table('backup_run_tables', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  runBaseId: text('run_base_id')
+    .notNull()
+    .references(() => backupRunBases.id, { onDelete: 'cascade' }),
+  tableId: text('table_id').notNull(),
+  tableName: text('table_name').notNull(),
+  recordCount: integer('record_count').notNull().default(0),
+  fieldCount: integer('field_count').notNull().default(0),
+  attachmentCount: integer('attachment_count').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('backup_run_tables_run_base_id_idx').on(table.runBaseId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// BACKUP RETENTION POLICIES
+// One row per Space — the resolved retention policy the cleanup engine prunes
+// against. Filed by openspec/changes/server-retention-and-cleanup (Phase A).
+// `policy_tier` is derived from the Space's subscription tier on write; the
+// numeric knobs are nullable because each tier only uses a subset (see the
+// design's per-tier field table). Canonical owner; apps/server mirrors this in
+// backup-retention-policies.ts. Migration:
+// apps/web/drizzle/0021_backup_retention_and_cleanup.sql
+// ———————————————————————————————————————————————————————————————————————————
+
+/** Retention policy shape per Features §6.9 — Basic → Custom ladder. */
+export type RetentionPolicyTier =
+  | 'basic'
+  | 'time_based'
+  | 'two_tier'
+  | 'three_tier'
+  | 'custom'
+
+export const backupRetentionPolicies = baseout.table('backup_retention_policies', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .unique()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  policyTier: text('policy_tier').notNull().$type<RetentionPolicyTier>(),
+  keepLastN: integer('keep_last_n'),
+  dailyWindowDays: integer('daily_window_days'),
+  weeklyWindowDays: integer('weekly_window_days'),
+  monthlyIndefinite: boolean('monthly_indefinite').notNull().default(false),
+  customRules: jsonb('custom_rules'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check(
+    'backup_retention_policies_policy_tier_check',
+    sql`${table.policyTier} IN ('basic','time_based','two_tier','three_tier','custom')`,
+  ),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// HEALTH SCORE RULES
+// Filed by openspec/changes/system-per-space-db. Org-scoped, configurable rules
+// the engine evaluates per run to compute a Base's health score. The computed
+// RESULTS live per-Space (bo_at_health_scores / bo_at_health_issues in
+// @baseout/db-schema/space); only the rules are master-DB control-plane state.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const healthScoreRules = baseout.table('health_score_rules', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: text('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  // Stable rule identifier, unique per Org (e.g. 'missing_primary_field').
+  code: text('code').notNull(),
+  name: text('name').notNull(),
+  description: text('description'),
+  category: text('category'),                              // grouping for the score breakdown
+  severity: text('severity').notNull().default('medium'),  // 'high' | 'medium' | 'low'
+  // Contribution to the 0–100 score; larger deduction when the rule fires.
+  weight: integer('weight').notNull().default(0),
+  enabled: boolean('enabled').notNull().default(true),
+  config: jsonb('config'),                                 // rule-specific thresholds / params
+  // server-schema-health-scoring: the metric-driven AI model. `prompt` is the
+  // system-default AI prompt for the metric (space-level + per-entity overrides
+  // live per-Space in bo_at_health_metric_prompts / _overrides); `entity_tier`
+  // groups metrics by the level they evaluate. Both NULL on legacy deterministic
+  // rules (weight/config only).
+  prompt: text('prompt'),
+  entityTier: text('entity_tier'),                         // 'base' | 'table' | 'field'
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check(
+    'health_score_rules_severity_check',
+    sql`${table.severity} IN ('high', 'medium', 'low')`,
+  ),
+  check(
+    'health_score_rules_entity_tier_check',
+    sql`${table.entityTier} IS NULL OR ${table.entityTier} IN ('base', 'table', 'field')`,
+  ),
+  unique('health_score_rules_org_code_unique').on(table.organizationId, table.code),
+  index('health_score_rules_organization_id_idx').on(table.organizationId),
+])
+
+// Public API tokens (api-rest-read). Bearer tokens for api.baseout.com: the
+// plaintext (`bo_live_<random>`) is shown ONCE at creation; only its SHA-256 hash
+// is stored (PRD §21.3 — hashes, never plaintext). Org-owned, optionally
+// Space-bound (NULL space_id = all Spaces in the Org). Scopes are read-only in v1
+// (`org:read` | `backups:read` | `schema:read`; write scopes reserved). apps/api
+// mirrors this table read-only; web owns CRUD + this migration.
+export const apiTokens = baseout.table('api_tokens', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: text('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  spaceId: text('space_id').references(() => spaces.id, { onDelete: 'cascade' }), // NULL = all Spaces in the Org
+  name: text('name').notNull(),                       // human label
+  tokenPrefix: text('token_prefix').notNull(),        // e.g. "bo_live_ab12cd" — display/identification only
+  tokenHash: text('token_hash').notNull().unique(),   // SHA-256 hex of the full token
+  scopes: text('scopes').array().notNull().default(sql`ARRAY[]::text[]`),
+  isActive: boolean('is_active').notNull().default(true),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  createdByUserId: text('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('api_tokens_organization_id_idx').on(table.organizationId),
+  index('api_tokens_token_hash_idx').on(table.tokenHash),
+])
+
+// Background-service run log (shared-service-runs). One row per execution of a
+// scheduled/cron/engine-mediated background service, written `started` and
+// finalized `succeeded`/`failed`. Operational telemetry (single-row lifecycle,
+// not audit pairs) — a dangling `started` row past its staleness window is the
+// crash signal. `counts` is jsonb because per-service counter shapes differ.
+// apps/server writes via withServiceRun(); apps/admin mirrors it read-only.
+export const serviceRuns = baseout.table('service_runs', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  service: text('service').notNull(),                 // e.g. oauth_refresh_sweep | retention_cleanup
+  status: text('status').notNull().default('started'), // started | succeeded | failed (app-enforced)
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  durationMs: integer('duration_ms'),
+  counts: jsonb('counts'),                            // per-service counters (schemaless)
+  errorMessage: text('error_message'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('service_runs_service_started_idx').on(table.service, table.startedAt.desc()),
+  index('service_runs_status_idx').on(table.status),
+])
+
+// Staff error-triage acknowledgements (admin-error-triage). APPEND-ONLY like
+// admin_audit_log — effective state = latest `phase` row per (target_type,
+// target_id[, target_state]); no UPDATE/DELETE (guard-tested in apps/admin).
+// Owned by this change; apps/admin mirrors it read+INSERT-only. Ack targets a
+// source-row (backup_run|backup_run_base|restore_run|connection|space_database);
+// `target_state` carries the connection error fingerprint so a differently-broken
+// connection resurfaces. Denormalized actor columns survive user deletion (no FK).
+export const adminErrorAcks = baseout.table('admin_error_acks', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  phase: text('phase').notNull().default('ack'), // 'ack' | 'unack'
+  targetType: text('target_type').notNull(),
+  targetId: text('target_id').notNull(),
+  targetState: text('target_state'), // connection fingerprint; NULL for run/db targets
+  organizationId: text('organization_id'),
+  ackedByUserId: text('acked_by_user_id').notNull(),
+  ackedByEmail: text('acked_by_email').notNull(),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  dbUser: text('db_user').notNull().default(sql`current_user`),
+  applicationName: text('application_name').default(sql`current_setting('application_name', true)`),
+  txid: bigint('txid', { mode: 'number' }).notNull().default(sql`txid_current()`),
+}, (table) => [
+  index('admin_error_acks_target_idx').on(table.targetType, table.targetId, table.createdAt),
+  index('admin_error_acks_org_idx').on(table.organizationId, table.createdAt),
+])
+
+// ── Airtable webhooks (hooks + server-instant-webhook Phase A) ──────────────
+// Pull-based pipeline: Airtable pings hooks.baseout.com (payload-free); the
+// receiver stamps last_ping_at ("changes waiting"); each subscribed Space's DO
+// polls on its own cadence and pulls payloads via the cursor API. One webhook
+// per (org, base) — Airtable caps 2/base/integration — with per-Space
+// subscription cursors. No event rows, no queue (webhook_events was dropped
+// from the design). Canonical migration: apps/web/drizzle/0030.
+export const airtableWebhooks = baseout.table('airtable_webhooks', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  // ^ pre-generated and embedded in the notificationUrl path — NOT Airtable's id.
+  organizationId: text('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  connectionId: text('connection_id')
+    .notNull()
+    .references(() => connections.id, { onDelete: 'restrict' }),
+  // ^ the OAuth token that created the webhook (create/refresh/poll auth).
+  baseId: text('base_id').notNull(),                    // Airtable app…
+  airtableWebhookId: text('airtable_webhook_id').notNull().unique(),
+  macSecretBase64Enc: text('mac_secret_base64_enc').notNull(),
+  // ^ AES-256-GCM ciphertext; Airtable returns the secret ONLY at create.
+  status: text('status').notNull().default('active'),
+  // 'active' | 'notifications_disabled' | 'pending_reauth' | 'inactive'
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  lastPingAt: timestamp('last_ping_at', { withTimezone: true }),      // written by apps/hooks
+  lastPingSourceIp: text('last_ping_source_ip'),                       // written by apps/hooks
+  lastRenewedAt: timestamp('last_renewed_at', { withTimezone: true }), // written by the renewal cron
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique('airtable_webhooks_org_base_unique').on(table.organizationId, table.baseId),
+  index('airtable_webhooks_last_ping_idx').on(table.lastPingAt),
+  index('airtable_webhooks_expiry_idx')
+    .on(table.expiresAt)
+    .where(sql`${table.status} = 'active'`),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// ORGANIZATION DOMAINS (web-signup-domain-association)
+// Explicit overrides on top of DERIVED known domains (an org "has" a domain
+// when a verified member uses it, public providers excluded — see
+// src/lib/signup/domain-association.ts). mode='add' claims a domain a young
+// org hasn't populated yet; mode='suppress' stops a domain from matching
+// (e.g. a consultant's client domain appearing via a guest member).
+// ———————————————————————————————————————————————————————————————————————————
+
+export const organizationDomains = baseout.table('organization_domains', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: text('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  domain: text('domain').notNull(),            // lowercase, e.g. "acme.com"
+  mode: text('mode').notNull(),                // 'add' | 'suppress'
+  createdByUserId: text('created_by_user_id')
+    .references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check('organization_domains_mode_check', sql`${table.mode} IN ('add', 'suppress')`),
+  unique('organization_domains_org_domain_unique').on(table.organizationId, table.domain),
+  index('organization_domains_domain_idx').on(table.domain),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// ORGANIZATION JOIN REQUESTS (web-signup-domain-association)
+// Inbound "request to join" lifecycle: pending → approved | declined |
+// expired (~7 days). One OPEN request per (org, user) — partial unique index
+// below. Decline stamps a re-request cool-down (~30 days). Approval creates
+// the organization_members row via the existing team-member machinery
+// (src/lib/signup/join-requests.ts). Suggest-never-auto-join: a pending
+// request never blocks the requester, who proceeds in their own account.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const organizationJoinRequests = baseout.table('organization_join_requests', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: text('organization_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  requesterUserId: text('requester_user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  status: text('status').notNull().default('pending'),
+  // 'pending' | 'approved' | 'declined' | 'expired'
+  /** Domain that matched at request time — audit context, not authorization. */
+  domain: text('domain'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  decidedAt: timestamp('decided_at', { withTimezone: true }),
+  decidedByUserId: text('decided_by_user_id')
+    .references(() => users.id, { onDelete: 'set null' }),
+  /** Set on decline: the requester may not re-request this org until then. */
+  declineCooldownUntil: timestamp('decline_cooldown_until', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  check(
+    'organization_join_requests_status_check',
+    sql`${table.status} IN ('pending', 'approved', 'declined', 'expired')`,
+  ),
+  // One open request per (org, user); decided rows don't block a re-request.
+  uniqueIndex('organization_join_requests_open_unique')
+    .on(table.organizationId, table.requesterUserId)
+    .where(sql`${table.status} = 'pending'`),
+  index('organization_join_requests_org_status_idx').on(table.organizationId, table.status),
+  index('organization_join_requests_requester_idx').on(table.requesterUserId),
+])
+
+// ———————————————————————————————————————————————————————————————————————————
+// AUTH AUDIT LOG (web-signup-domain-association; consumed by web-auth-2fa +
+// web-auth-airtable-sso). Append-only auth-event trail following the
+// admin_audit_log posture: single event rows, denormalized actor snapshot
+// (no FK — history survives user deletion), no UPDATE/DELETE ever. metadata
+// must never contain tokens, secrets, TOTP material, or *_enc values.
+// ———————————————————————————————————————————————————————————————————————————
+
+export const authAuditLog = baseout.table('auth_audit_log', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  kind: text('kind').notNull(),
+  // 'magic_link_requested' | 'session_created'  (CC7.2 auth lifecycle)
+  // 'signup_domain_matched' | 'join_request_created' | 'join_request_approved'
+  // | 'join_request_declined' | 'join_request_expired'
+  // | 'sso_account_linked' | 'sso_user_created'
+  // | '2fa_enroll_started' | '2fa_enabled' | '2fa_disabled'
+  // | '2fa_backup_code_consumed' | '2fa_challenge_failed' — additive.
+  actorUserId: text('actor_user_id'),
+  actorEmail: text('actor_email'),
+  organizationId: text('organization_id'),
+  targetType: text('target_type'),
+  targetId: text('target_id'),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  dbUser: text('db_user').notNull().default(sql`current_user`),
+  applicationName: text('application_name').default(sql`current_setting('application_name', true)`),
+  txid: bigint('txid', { mode: 'number' }).notNull().default(sql`txid_current()`),
+}, (table) => [
+  index('auth_audit_log_kind_created_idx').on(table.kind, table.createdAt),
+  index('auth_audit_log_actor_idx').on(table.actorUserId, table.createdAt),
+  index('auth_audit_log_org_idx').on(table.organizationId, table.createdAt),
+])
+
+// Per-Space fan-out: which Spaces consume a webhook, each with its own payload
+// cursor (Airtable cursors start at 1) and polling watermark. last_polled_at
+// answers "have I looked since the last ping?" — NOT processing success; the
+// cursor tracks durable progress.
+export const airtableWebhookSubscriptions = baseout.table('airtable_webhook_subscriptions', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  webhookId: text('webhook_id')
+    .notNull()
+    .references(() => airtableWebhooks.id, { onDelete: 'cascade' }),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  payloadCursor: bigint('payload_cursor', { mode: 'number' }).notNull().default(1),
+  lastPolledAt: timestamp('last_polled_at', { withTimezone: true }),
+  lastReconciledAt: timestamp('last_reconciled_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique('airtable_webhook_subscriptions_webhook_space_unique').on(table.webhookId, table.spaceId),
+  index('airtable_webhook_subscriptions_space_idx').on(table.spaceId),
 ])

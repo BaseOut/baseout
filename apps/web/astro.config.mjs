@@ -1,13 +1,23 @@
 import { defineConfig } from 'astro/config';
 import tailwindcss from '@tailwindcss/vite';
 import cloudflare from '@astrojs/cloudflare';
+import react from '@astrojs/react';
 
 export default defineConfig({
   output: 'server',
   adapter: cloudflare({
     platformProxy: { enabled: true },
   }),
+  // React islands are used ONLY for the Schema Docs rich-text editor (Plate)
+  // and mini-diagram canvas (React Flow) — surfaces daisyUI can't provide.
+  // Hydrated client:visible; see src/components/islands/README.md (governance
+  // carve-out, shared-schema-docs §5).
+  integrations: [react()],
   server: { port: 4331 },
+  prefetch: {
+    prefetchAll: false,
+    defaultStrategy: 'hover',
+  },
   // Disabled because `wrangler dev --remote` dispatches requests through CF's
   // edge, so the worker sees a host that doesn't match the browser's Origin
   // header — Astro's check then 403s every form POST. The OAuth flow has its

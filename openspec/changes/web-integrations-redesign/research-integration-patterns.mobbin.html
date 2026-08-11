@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Integration patterns — Mobbin research</title>
+  <style>
+    :root {
+      --bg: #0b0d10; --panel: #14171c; --panel-2: #1a1e24; --line: #262b33;
+      --text: #e6e8eb; --muted: #9aa2ad; --faint: #6b7280;
+      --blue: #4a9eff; --amber: #e0a93b; --red: #ef5350; --green: #3ec77a; --accent: #7c5cff;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 40px 24px 96px; }
+    header.page { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 8px; }
+    .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+    h1 { font-size: 26px; font-weight: 650; letter-spacing: -.01em; margin: 8px 0 6px; }
+    .sub { color: var(--muted); max-width: 78ch; }
+    .meta { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; }
+    .meta code { color: var(--muted); }
+    .pill { display:inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+
+    section.block { margin-top: 46px; }
+    section.block > h2 { font-size: 17px; font-weight: 620; margin: 0 0 4px; letter-spacing: -.005em; display: flex; align-items: baseline; gap: 10px; }
+    section.block > h2 .tag { font-family: var(--mono); font-size: 11px; color: var(--accent); border: 1px solid color-mix(in oklab, var(--accent) 50%, var(--line)); border-radius: 5px; padding: 1px 6px; }
+    section.block > p.lead { color: var(--muted); margin: 0 0 18px; max-width: 84ch; }
+    section.block > p.lead strong { color: var(--text); }
+
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+    figure.shot { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+    figure.shot img { width: 100%; height: auto; display: block; background: #fff; border-bottom: 1px solid var(--line); }
+    figure.shot figcaption { padding: 12px 14px 13px; }
+    figure.shot .app { font-weight: 620; font-size: 13.5px; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    figure.shot .app a { font-family: var(--mono); font-size: 11px; color: var(--blue); text-decoration: none; font-weight: 500; white-space: nowrap; }
+    figure.shot .app a:hover { text-decoration: underline; }
+    figure.shot .cap { color: var(--muted); font-size: 12.5px; margin-top: 5px; }
+    figure.shot .cap b { color: var(--text); font-weight: 600; }
+    figure.shot.star { border-color: color-mix(in oklab, var(--green) 45%, var(--line)); }
+    figure.shot.star .badge { display:inline-block; font-size: 10px; font-family: var(--mono); color: var(--green); border: 1px solid color-mix(in oklab, var(--green) 50%, var(--line)); border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+
+    table.trace { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+    table.trace th, table.trace td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    table.trace th { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); font-weight: 500; }
+    table.trace td.k { font-weight: 600; white-space: nowrap; }
+    table.trace tr:last-child td { border-bottom: none; }
+
+    .callout { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; padding: 16px 18px; margin-top: 18px; }
+    .callout h3 { margin: 0 0 8px; font-size: 14px; }
+    .callout ol { margin: 0; padding-left: 20px; } .callout li { margin: 4px 0; color: var(--muted); } .callout li b { color: var(--text); }
+    .two { display:grid; gap:14px; grid-template-columns: 1fr 1fr; } @media (max-width:720px){ .two{ grid-template-columns:1fr; } }
+    .good { color: var(--green); } .bad { color: var(--red); }
+    footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--faint); }
+    a.inline { color: var(--blue); text-decoration: none; } a.inline:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="page">
+      <div class="eyebrow">Baseout · OpenSpec · integrations-redesign · competitor research</div>
+      <h1>Integration patterns — Mobbin research</h1>
+      <p class="sub">Real product screens pulled from <strong>Mobbin</strong> (web), source-isolated so its quality can be judged on its own and compared against the web report. Screenshots are embedded inline — each links back to its Mobbin page. Lens: where connection lives · where config lives · OAuth return · edit vs setup · empty→connected.</p>
+      <div class="meta"><span class="pill">source: Mobbin only</span> &nbsp; <span class="pill">platform: web</span> &nbsp; compare with <code>research-integration-patterns.web.html</code></div>
+    </header>
+
+    <!-- 1 -->
+    <section class="block">
+      <h2><span class="tag">1</span> Where connection lives</h2>
+      <p class="lead">Two homes: a <strong>grid of provider cards</strong> (logo + value prop + Connect) or a <strong>dense one-line list</strong> when there are many providers. For Airtable-only V1 a single focused card is right; the grid is the future container, not something to over-build now.</p>
+      <div class="grid">
+        <figure class="shot"><img src="assets/mobbin/dovetail.webp" alt="Dovetail integrations grid" /><figcaption><span class="app">Dovetail <a href="https://mobbin.com/screens/9cca134b-6550-4855-8e26-781f17dd4f67" target="_blank">Mobbin ↗</a></span><span class="cap">Card grid — logo + one-line value prop + <b>Connect</b> per provider.</span></figcaption></figure>
+        <figure class="shot"><img src="assets/mobbin/miro.webp" alt="Miro integrations tab" /><figcaption><span class="app">Miro <a href="https://mobbin.com/screens/332ce966-a691-461a-becd-a89a29bb6cfa" target="_blank">Mobbin ↗</a></span><span class="cap">Settings → Integrations tab; connected rows flip to account + <b>Log out</b>.</span></figcaption></figure>
+        <figure class="shot"><img src="assets/mobbin/threads.webp" alt="Threads integrations list" /><figcaption><span class="app">Threads <a href="https://mobbin.com/screens/cbad4fdc-fbcb-4fd7-b92d-d0000686debd" target="_blank">Mobbin ↗</a></span><span class="cap">Dense list with a per-row state ladder: <b>Sign in / Enable / Connected / Setup</b>.</span></figcaption></figure>
+        <figure class="shot"><img src="assets/mobbin/userinterviews.webp" alt="User Interviews integrations" /><figcaption><span class="app">User Interviews <a href="https://mobbin.com/screens/a663fa43-1fbe-4f01-a1cc-3525a6b75e70" target="_blank">Mobbin ↗</a></span><span class="cap">Per-row <b>Connect / Disconnect</b> with a one-line description each.</span></figcaption></figure>
+      </div>
+    </section>
+
+    <!-- 2 -->
+    <section class="block">
+      <h2><span class="tag">2</span> Where config lives — the key decision</h2>
+      <p class="lead">Mobbin splits cleanly by <strong>config weight</strong>: light connect → small modal / inline; <strong>heavy config → a dedicated page or large side-panel with a validate-then-commit step</strong>, never a cramped modal. The two below are the closest analogs to Baseout.</p>
+      <div class="grid">
+        <figure class="shot star"><img src="assets/mobbin/planetscale-workflow-tables.webp" alt="PlanetScale new workflow" /><figcaption><span class="app">PlanetScale <span class="badge">CLOSEST</span><a href="https://mobbin.com/flows/0d7c5dda-1633-4ea4-9345-2ec04efba4c4" target="_blank">Mobbin ↗</a></span><span class="cap">Dedicated page: <b>Source → Destination</b> keyspace, <b>pick which tables</b> to replicate (checkboxes + sizes), live validation checks, Advanced options → <b>Validate → Create</b>.</span></figcaption></figure>
+        <figure class="shot"><img src="assets/mobbin/neon-connection-string-error.webp" alt="Neon import data panel" /><figcaption><span class="app">Neon <a href="https://mobbin.com/flows/a15904ee-ae55-46a9-b1bf-cfb6a3ac6924" target="_blank">Mobbin ↗</a></span><span class="cap">Side-panel: <b>connection string</b> field → <b>Run Checks</b> (verify-before) → surfaces a real <b class="bad">“Cannot connect to the source database”</b> error state.</span></figcaption></figure>
+      </div>
+      <p class="lead" style="margin-top:18px">Verdict: the evidence backs our call — <strong>heavy config belongs on a page/panel with a validate step, not a modal.</strong> Modals only appear for the light connect step.</p>
+    </section>
+
+    <!-- 3 -->
+    <section class="block">
+      <h2><span class="tag">3</span> OAuth return &amp; the read-only promise</h2>
+      <p class="lead">A <strong>dedicated confirmation</strong>, never a silent redirect — matching our spec’s “Connection succeeds → confirm + report N bases found.” Note Base44 also labels each connector <strong>“Read only”</strong>, exactly our read-only-access promise.</p>
+      <div class="grid">
+        <figure class="shot"><img src="assets/mobbin/squarespace-youre-connected.webp" alt="Squarespace You're Connected" /><figcaption><span class="app">Squarespace <a href="https://mobbin.com/flows/7250b9c1-f318-47d9-8aa7-53a07536072b" target="_blank">Mobbin ↗</a></span><span class="cap">Returns to the product with a clear <b>“You’re Connected!”</b> confirmation banner.</span></figcaption></figure>
+        <figure class="shot"><img src="assets/mobbin/base44-connectors-readonly.webp" alt="Base44 connectors read only" /><figcaption><span class="app">Base44 <a href="https://mobbin.com/flows/89fa5102-48d4-432f-8365-7508397657f6" target="_blank">Mobbin ↗</a></span><span class="cap">A <b>Connected</b> section + an Available catalog where connectors are tagged <b>“Read only”</b> — our read-only access promise, on a real screen.</span></figcaption></figure>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section class="block">
+      <h2><span class="tag">4</span> Edit vs first setup — the pattern we recommend</h2>
+      <p class="lead">Managing an already-connected integration is <strong>a dedicated detail page with all sections in place</strong> — change in place, no wizard re-run. Linear is best-in-class and is exactly the pattern we proposed.</p>
+      <div class="grid">
+        <figure class="shot star"><img src="assets/mobbin/linear.webp" alt="Linear Slack integration detail" /><figcaption><span class="app">Linear <span class="badge">BEST</span><a href="https://mobbin.com/screens/e64c901c-4ada-4f0a-b3a0-89a6ccf490da" target="_blank">Mobbin ↗</a></span><span class="cap">Dedicated detail page: header (enabled by / docs), <b>Connected workspaces · Connected ▾</b>, then a <b>Settings</b> section with inline toggles. One page serves status <i>and</i> edit.</span></figcaption></figure>
+        <figure class="shot"><img src="assets/mobbin/attio.webp" alt="Attio integration sections" /><figcaption><span class="app">Attio <a href="https://mobbin.com/screens/0eaf7c47-f12f-47ca-97cd-133787b64db1" target="_blank">Mobbin ↗</a></span><span class="cap">Sectioned page: <b>Scopes · Access tokens · OAuth · Webhooks · Delete</b> — settings-style, all in place.</span></figcaption></figure>
+        <figure class="shot"><img src="assets/mobbin/qatalog.webp" alt="Qatalog accordion" /><figcaption><span class="app">Qatalog <a href="https://mobbin.com/screens/4f88fe2c-5d76-4d38-a6bb-9bcf72c564f7" target="_blank">Mobbin ↗</a></span><span class="cap">Lighter middle-ground: <b>accordion-in-place</b> — expand a provider → “what you can do” + Connect / Disable.</span></figcaption></figure>
+        <figure class="shot"><img src="assets/mobbin/sana.webp" alt="Sana AI manage connected modal" /><figcaption><span class="app">Sana AI <a href="https://mobbin.com/screens/b1499283-b6cb-4ba3-bc66-82a1d16e123f" target="_blank">Mobbin ↗</a></span><span class="cap">Manage-connected as a <b>modal</b> (Last synchronized · Synchronize · Disconnect) — works only because the config is light.</span></figcaption></figure>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section class="block">
+      <h2><span class="tag">5</span> Empty → Connected transition</h2>
+      <p class="lead">The card mutates in place once connected — the empty “Connect” card becomes a “Connected” card carrying status, with a <strong>⚙ / … </strong>into the detail page.</p>
+      <div class="grid">
+        <figure class="shot"><img src="assets/mobbin/charma.webp" alt="Charma connected cards" /><figcaption><span class="app">Charma <a href="https://mobbin.com/screens/b8829590-0ca1-47ff-a6b1-1f9536ac5154" target="_blank">Mobbin ↗</a></span><span class="cap">Connect → <b>“✓ Connected”</b> + a <b>…</b> overflow menu for manage / disconnect.</span></figcaption></figure>
+        <figure class="shot"><img src="assets/mobbin/lovable.webp" alt="Lovable connected account" /><figcaption><span class="app">Lovable <a href="https://mobbin.com/screens/a7aea256-297a-4c4f-85ba-1679bb9f48bb" target="_blank">Mobbin ↗</a></span><span class="cap">Connected-account panel: “Add your account to manage connected organizations.”</span></figcaption></figure>
+      </div>
+    </section>
+
+    <!-- Deltas -->
+    <section class="block">
+      <h2><span class="tag">↔</span> Direct hits on our founder-call deltas</h2>
+      <p class="lead">Without prompting, Mobbin surfaced evidence for nearly every delta we’d specced — a strong signal our spec isn’t invented.</p>
+      <div class="grid">
+        <figure class="shot"><img src="assets/mobbin/threads-api-key.webp" alt="Threads generate API key" /><figcaption><span class="app">API key <a href="https://mobbin.com/screens/b599720d-3db8-406e-8587-207e66c811f7" target="_blank">Mobbin ↗</a></span><span class="cap">Threads — <b>“Generate API Key”</b> as an alternative to OAuth. Backs our API-key connect delta.</span></figcaption></figure>
+        <figure class="shot"><img src="assets/mobbin/cohere-reauthorize.webp" alt="Cohere reauthorize" /><figcaption><span class="app">Recovery <a href="https://mobbin.com/flows/f5803790-2882-46a4-a03f-08a9467d5d48" target="_blank">Mobbin ↗</a></span><span class="cap">Cohere — a broken connector shows <b class="bad">“Reauthorize”</b>. Backs our reconnect/recovery state.</span></figcaption></figure>
+        <figure class="shot"><img src="assets/mobbin/neon-connection-string-error.webp" alt="Neon connection string" /><figcaption><span class="app">BYODB <a href="https://mobbin.com/flows/a15904ee-ae55-46a9-b1bf-cfb6a3ac6924" target="_blank">Mobbin ↗</a></span><span class="cap">Neon — paste a <b>connection string</b> for a database destination. Backs our dynamic / bring-your-own-DB delta.</span></figcaption></figure>
+        <figure class="shot"><img src="assets/mobbin/mural-upgrade.webp" alt="Mural upgrade to connect" /><figcaption><span class="app">Plan-gating <a href="https://mobbin.com/screens/298dfcfe-4d16-46df-a4e1-93b7c78de599" target="_blank">Mobbin ↗</a></span><span class="cap">Mural — locked integrations show <b>“Upgrade to connect”</b>. Backs our upgrade-affordance delta.</span></figcaption></figure>
+      </div>
+    </section>
+
+    <!-- verdict -->
+    <section class="block">
+      <h2><span class="tag">✓</span> Coverage &amp; implication</h2>
+      <div class="two">
+        <div class="callout" style="border-left-color:var(--green)">
+          <h3 class="good">Mobbin covered well</h3>
+          <ol>
+            <li>Connect surfaces, OAuth confirmation, connected-card states.</li>
+            <li><b>Dedicated edit pages</b> (Linear, Attio) — our recommended pattern, confirmed on real screens.</li>
+            <li>Unexpectedly, <b>heavy data-sync config</b> (PlanetScale, Neon) — tables + validate.</li>
+            <li>Niche deltas: read-only labels, reauthorize, connection string, upgrade-lock.</li>
+          </ol>
+        </div>
+        <div class="callout" style="border-left-color:var(--red)">
+          <h3 class="bad">Mobbin gaps → see web report</h3>
+          <ol>
+            <li>No end-to-end Fivetran/Airbyte connector wizard.</li>
+            <li>No <b>static + dynamic destinations in parallel</b> (our most distinctive need).</li>
+            <li>Scheduling / frequency config barely appears (mostly one-shot imports).</li>
+          </ol>
+        </div>
+      </div>
+      <div class="callout">
+        <h3>What the evidence tells us to build (app-wide pattern)</h3>
+        <ol>
+          <li><b>Overview = card</b> that flips empty → “Connected” with status + quick actions (Miro / Charma / Threads).</li>
+          <li><b>Heavy config = dedicated page/panel</b> with a <b>validate-then-commit</b> step (PlanetScale / Neon) — not a modal.</li>
+          <li><b>Edit = a dedicated detail page opened with all sections in place</b> (Linear / Attio) — no wizard re-run.</li>
+          <li><b>Modals only for the light connect step</b> (Discord / Squarespace).</li>
+        </ol>
+      </div>
+    </section>
+
+    <footer>
+      Screenshots © their respective apps, curated by Mobbin; embedded here from <code>assets/mobbin/</code> for review. Open this file in a browser — images load from the local assets folder (no network needed). Companion: <a class="inline" href="research-integration-patterns.web.html">research-integration-patterns.web.html</a>.
+    </footer>
+  </div>
+</body>
+</html>

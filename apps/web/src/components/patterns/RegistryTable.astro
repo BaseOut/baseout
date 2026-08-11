@@ -1,0 +1,30 @@
+---
+interface RegistryColumn {
+  key: string;
+  label: string;
+  align?: 'left' | 'right';
+}
+
+interface RegistryRow {
+  href: string;
+  cells: Record<string, string>;
+}
+
+interface Props {
+  columns: RegistryColumn[];
+  rows: RegistryRow[];
+}
+
+const { columns, rows } = Astro.props;
+---
+
+<div class="overflow-hidden rounded-box border border-base-300 bg-base-100" role="table">
+  <div class="grid items-center gap-3 border-b border-base-300 bg-base-200/50 px-4 py-3 text-xs font-bold uppercase tracking-wider text-base-content/55" style={`grid-template-columns: repeat(${columns.length}, minmax(0, 1fr));`} role="row">
+    {columns.map((column) => <span class={column.align === 'right' ? 'text-right' : ''}>{column.label}</span>)}
+  </div>
+  {rows.map((row) => (
+    <a href={row.href} class="grid items-center gap-3 border-b border-base-300/50 px-4 py-3 text-sm text-base-content no-underline transition-colors last:border-b-0 hover:bg-base-200/50" style={`grid-template-columns: repeat(${columns.length}, minmax(0, 1fr));`} role="row">
+      {columns.map((column) => <span class={column.align === 'right' ? 'text-right font-mono tabular-nums' : 'min-w-0 truncate'}>{row.cells[column.key]}</span>)}
+    </a>
+  ))}
+</div>

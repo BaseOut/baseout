@@ -1,0 +1,1 @@
+ALTER TABLE "baseout"."backup_runs" ADD COLUMN "trigger_run_ids" jsonb;

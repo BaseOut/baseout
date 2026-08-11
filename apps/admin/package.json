@@ -3,21 +3,39 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Internal Astro SSR admin app at admin.baseout.com (Google SSO). See ./openspec/proposal.md.",
+  "description": "Internal Astro SSR admin app. See openspec/changes/admin-foundation/proposal.md (tracer slice) and openspec/changes/admin/proposal.md (full console, deferred).",
   "scripts": {
-    "dev": "wrangler dev",
-    "build": "astro build",
-    "deploy": "wrangler deploy",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "dev": "node --env-file-if-exists=.env scripts/launch.mjs dev",
+    "build": "node --env-file-if-exists=.env scripts/launch.mjs build",
+    "deploy": "node --env-file-if-exists=.env scripts/launch.mjs build && wrangler deploy --config dist/server/wrangler.json && pnpm run secrets:sync",
+    "secrets:sync": "node scripts/sync-secrets.mjs --config dist/server/wrangler.json",
+    "preview": "astro preview",
+    "astro": "astro",
+    "typecheck": "astro check",
+    "lint": "eslint .",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest"
   },
   "dependencies": {
+    "@astrojs/cloudflare": "^13.1.10",
     "@baseout/db-schema": "workspace:*",
-    "@baseout/shared": "workspace:*",
-    "@baseout/ui": "workspace:*"
+    "@fortawesome/fontawesome-free": "^6.7.2",
+    "@opensided/theme": "file:../web/vendor/@opensided/theme",
+    "@tailwindcss/vite": "^4.2.2",
+    "astro": "^6.1.2",
+    "daisyui": "^5.5.19",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9",
+    "tailwindcss": "^4.2.2"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20240924.0",
-    "wrangler": "^3.78.0"
+    "@astrojs/check": "^0.9.8",
+    "@cloudflare/workers-types": "^4.20250906.0",
+    "@iconify-json/lucide": "^1.2.105",
+    "@iconify/tailwind4": "^1.2.3",
+    "@types/node": "^25.5.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.5",
+    "wrangler": "^4.61.1"
   }
 }

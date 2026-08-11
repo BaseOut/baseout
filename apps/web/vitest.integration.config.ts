@@ -10,9 +10,13 @@ const POLYFILL_TEARDOWN_NOISE = /Stream was cancelled/
 
 export default defineConfig({
   plugins: [
+    // The lockfile carries two vite majors (astro's 7, vitest's 8), so the
+    // plugin's Plugin<any> type resolves against a different vite copy than
+    // defineConfig expects under `astro check`. Runtime is unaffected — the
+    // integration suite loads this config fine. Bridge the phantom mismatch.
     cloudflareTest({
       wrangler: { configPath: './wrangler.test.jsonc' },
-    }),
+    }) as never,
   ],
   test: {
     include: ['tests/integration/**/*.test.ts'],

@@ -1,0 +1,87 @@
+// Template for wrangler.jsonc — committed to git.
+//
+// scripts/launch.mjs renders this into wrangler.jsonc at dev/build time,
+// substituting the {{DATABASE_URL}} placeholder below with the value from .env
+// (build falls back to a placeholder — deployed Workers connect via the
+// Hyperdrive `id`, never localConnectionString).
+//
+// apps/admin runs via `astro dev`, which executes SSR inside a workerd runner
+// (@astrojs/cloudflare + @cloudflare/vite-plugin). A direct postgres-js TCP
+// connection to the remote DB does NOT work from workerd — so, exactly like
+// apps/web, the master DB is reached through a Hyperdrive binding whose
+// `localConnectionString` miniflare proxies to the real Postgres. The
+// middleware reads `env.HYPERDRIVE.connectionString`.
+//
+// Deploy (dev env only today — staging/prod stay in the `admin` umbrella change):
+//   pnpm --filter @baseout/admin run deploy   # → baseout-admin-dev.openside.workers.dev
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Top-level config = the DEV env, mirroring apps/web (`baseout-dev`).
+  "name": "baseout-admin-dev",
+  // Pin the account — multi-account wrangler logins break non-interactive
+  // deploys with a misleading "must be logged in" error (2026-07-09).
+  "account_id": "f094d60e8a0996752eb1efd971bda45a",
+  // No `main` — the @astrojs/cloudflare adapter owns the worker entry.
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
+
+  // Non-secret runtime config. WEB_APP_URL is where the customer app (and its
+  // /login + /api/admin/handoff) lives — the staff gate routes unauthenticated
+  // visitors there. Local dev overrides via .env (see middleware webAppUrl()).
+  "vars": {
+    "WEB_APP_URL": "https://baseout-dev.openside.workers.dev"
+  },
+
+  // Master-DB access. `localConnectionString` is used for local dev only (the
+  // miniflare Hyperdrive proxy connects to it); a deployed Worker connects via
+  // the Hyperdrive `id`.
+  //
+  // The `id` REUSES the shared dev Hyperdrive that baseout-dev and
+  // baseout-server-dev already point at — Workers referencing the same config
+  // share one origin pool (capped at 15 conns against dev PG's ~19 usable).
+  // Do NOT create a separate Hyperdrive config for admin: that would add a
+  // second 15-conn pool and saturate the cluster (the 2026-07-08 "backups
+  // spin forever" incident). Do NOT raise the cap.
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "ba2652f40f864918a2da0849f24d12a2",
+      "localConnectionString": "{{DATABASE_URL}}"
+    }
+  ],
+
+  // Astro-session KV. Admin doesn't use Astro sessions, but the
+  // @astrojs/cloudflare adapter injects a SESSION binding into the generated
+  // deploy config unconditionally — without a pinned id, `wrangler deploy`
+  // tries to interactively provision one. Dedicated dev namespace
+  // (`baseout-admin-dev-session`); NOT shared with web's session KV.
+  "kv_namespaces": [
+    {
+      "binding": "SESSION",
+      "id": "dc4341c8e5fa45cc82047733f66a6113"
+    }
+  ],
+
+  // Backup engine — staff actions (force backup, invalidate connection) call
+  // the server's INTERNAL_TOKEN-gated /api/internal/runs/:id/{start,cancel}.
+  // Mirrors apps/web's binding: `remote: true` makes local `astro dev` proxy
+  // to the deployed baseout-server-dev Worker (same account, resolves
+  // natively when deployed). Requires BACKUP_ENGINE_INTERNAL_TOKEN in
+  // .dev.vars (same value as web's — see .dev.vars.example). Without the
+  // binding/token, force-backup 503s and invalidate skips run cancels.
+  "services": [
+    {
+      "binding": "BACKUP_ENGINE",
+      "service": "baseout-server-dev",
+      "remote": true
+    }
+  ],
+
+  // Routes — intentionally none. Dev serves on workers.dev; admin.baseout.com
+  // is wired at production-deploy time in the `admin` umbrella change.
+
+  "observability": {
+    "enabled": false,
+    "logs": { "enabled": false }
+  }
+}

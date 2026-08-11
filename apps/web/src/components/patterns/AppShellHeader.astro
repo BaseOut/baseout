@@ -1,0 +1,64 @@
+---
+/**
+ * Topbar — MOBILE ONLY.
+ *
+ * The bell moved into the sidebar's Inbox item (see `pattern-inbox`), which left
+ * this bar holding nothing but a hamburger that was already `lg:hidden`. So the
+ * whole bar is now hidden on desktop; it survives on narrow screens because it is
+ * the only way to reach the off-canvas sidebar.
+ *
+ * The `topbar-status` slot (the collapsed connection-health pill) stays for the
+ * mobile layout — on desktop a broken connection surfaces as an Inbox row.
+ */
+---
+
+<!-- Topbar -->
+<div
+  role="navigation"
+  aria-label="Navbar"
+  class="flex items-center justify-between px-3 lg:hidden"
+  id="layout-topbar"
+  transition:persist="baseout-topbar"
+>
+  <!-- Left: Sidebar toggle -->
+  <div class="inline-flex items-center">
+    <label
+      class="btn btn-square btn-ghost btn-sm"
+      aria-label="Toggle sidebar"
+      for="layout-sidebar-toggle-trigger"
+    >
+      <span class="iconify lucide--menu icon-xl" aria-hidden="true"></span>
+    </label>
+  </div>
+
+  <!-- Right: connection-health pill (when the banner is collapsed) -->
+  <div class="inline-flex items-center gap-2">
+    <slot name="topbar-status" />
+  </div>
+</div>
+
+<script>
+  import { $pageHeader, type PageHeaderState } from '../../stores/pageHeader';
+  import type { Breadcrumb } from '../../lib/types';
+
+  function readState(): PageHeaderState {
+    const el = document.getElementById('page-header-state');
+    if (!el?.textContent) return { breadcrumbs: [] };
+    try {
+      const raw = JSON.parse(el.textContent) as { title?: string | null; breadcrumbs?: Breadcrumb[] };
+      return {
+        title: raw.title ?? undefined,
+        breadcrumbs: Array.isArray(raw.breadcrumbs) ? raw.breadcrumbs : [],
+      };
+    } catch {
+      return { breadcrumbs: [] };
+    }
+  }
+
+  function syncFromDom() {
+    $pageHeader.set(readState());
+  }
+
+  syncFromDom();
+  document.addEventListener('astro:after-swap', syncFromDom);
+</script>

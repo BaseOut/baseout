@@ -1,0 +1,19 @@
+/*
+ * Tailwind content-scan extension for apps/admin.
+ *
+ * The Baseout theme + primitives themselves come from apps/web: Layout.astro
+ * imports `@web/styles/global.css` (the full @opensided/theme chain + the
+ * baseout / baseout-light brand themes). This file only tells Tailwind which
+ * source trees to scan for class names, because `@tailwindcss/vite` auto-detects
+ * sources relative to the project root (apps/admin) and would otherwise never
+ * see the classes used inside the reused apps/web components (behind the `@web`
+ * alias). Mirrors apps/design/src/styles/design.css.
+ *
+ * `@reference "tailwindcss"` (emits no output) makes Tailwind v4 process this
+ * file as a Tailwind source so the @source directives are recognized. @source
+ * paths resolve relative to THIS file (apps/admin/src/styles).
+ */
+@reference "tailwindcss";
+@source "../../../web/src/**/*.{astro,ts,tsx,html,mdx}";
+@source "../../../web/app-config.json";
+@source "../**/*.{astro,ts,html}";

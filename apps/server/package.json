@@ -3,18 +3,30 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Backup engine, restore engine, background services, schema diff, DB provisioning, On2Air migration. See ./openspec/proposal.md.",
+  "description": "Backup engine, restore engine, background services, schema diff, DB provisioning, On2Air migration. See openspec/changes/server/proposal.md.",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "node --env-file-if-exists=.env scripts/launch.mjs dev && wrangler dev --env dev --port 8787",
+    "render-config": "node --env-file-if-exists=.env scripts/launch.mjs dev",
     "build": "tsup src/index.ts --format esm --dts",
-    "deploy": "wrangler deploy",
+    "deploy": "node --env-file-if-exists=.env scripts/launch.mjs deploy && wrangler deploy",
+    "deploy:dev": "node --env-file-if-exists=.env scripts/launch.mjs deploy && wrangler deploy --env dev && pnpm run secrets:sync:dev",
+    "secrets:sync:dev": "node scripts/sync-secrets.mjs --env dev",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "check:cron": "node scripts/check-cron-config.mjs",
+    "smoke:seed": "node --env-file-if-exists=.env scripts/smoke-seed-run.mjs seed",
+    "smoke:cleanup": "node --env-file-if-exists=.env scripts/smoke-seed-run.mjs cleanup",
+    "bootstrap:space-do-alarms": "node --env-file-if-exists=.env scripts/bootstrap-space-do-alarms.mjs",
+    "bootstrap:retention": "node --env-file-if-exists=.env scripts/bootstrap-retention-policies.mjs"
   },
   "dependencies": {
     "@baseout/db-schema": "workspace:*",
-    "@baseout/shared": "workspace:*"
+    "@baseout/shared": "workspace:*",
+    "@baseout/workflows": "workspace:*",
+    "@trigger.dev/sdk": "4.5.7",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.14.9",

@@ -1,0 +1,293 @@
+---
+/**
+ * SchemaView — the Schema page shell (web-schema-round3-shell).
+ *
+ * Round-3 design (ui-only, approved /schema-nav Variant A): 8 tabs grouped into
+ * 4 labelled clusters — Explore (Browse · Visualize · Relationships) · App layer
+ * (Automations · Interfaces) · Monitor (Changelog · Health) · Knowledge
+ * (Docs · Chat History) — plus a page-level freshness stamp and a persistent
+ * "Ask about your schema" ghost launcher that opens the Chat panel.
+ *
+ * Tab bodies live in ./schema/*Tab.astro (views tier, raw-markup allowlisted);
+ * this shell owns the cluster tab bar (buttons toggling data-panel sections),
+ * the shared entity modal, and the "/" search shortcut. Automations /
+ * Interfaces are soon-gated until their slices land.
+ */
+import PageHeader from '../components/ui/PageHeader.astro'
+import BrowseTab from './schema/BrowseTab.astro'
+import ChangelogTab from './schema/ChangelogTab.astro'
+import RelationshipsTab from './schema/RelationshipsTab.astro'
+import VisualizeTab from './schema/VisualizeTab.astro'
+import HealthTab from './schema/HealthTab.astro'
+import DocsTabPanel from './schema/DocsTab.astro'
+import ChatTab from './schema/ChatTab.astro'
+import SoonTab from './schema/SoonTab.astro'
+import type { DocsTabEntity } from '../components/islands/DocsTab'
+import type {
+  SchemaDocSummary,
+  SchemaEntityBase,
+  SchemaEntityField,
+  SchemaEntityTable,
+  SchemaEntityView,
+} from '../lib/backup-engine'
+import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities'
+import { isRemoved } from '../lib/schema-docs/deleted-filter'
+
+interface Props {
+  spaceId: string
+  level: SchemaDocsLevel
+  docs: SchemaDocSummary[]
+  schema: {
+    bases: SchemaEntityBase[]
+    tables: SchemaEntityTable[]
+    fields: SchemaEntityField[]
+    views: SchemaEntityView[]
+  }
+  state: 'ok' | 'not_ready' | 'unconfigured' | 'error'
+  /** When the schema was last captured (latest succeeded backup). Freshness stamp. */
+  lastBackupAt?: string | null
+}
+
+const { spaceId, level, docs, schema, state, lastBackupAt = null } = Astro.props
+
+const hasSchema = schema.bases.length > 0
+const aiEnabled = level === 'manual_ai'
+
+// Live bases only — removed bases have no current grade / relationships / chat scope.
+const healthBases = schema.bases.filter((b) => !isRemoved(b.status))
+
+// Flatten the entity tree for the Docs-tab tag picker.
+const entities: DocsTabEntity[] = [
+  ...schema.bases.map((b) => ({ type: 'base' as const, id: b.baseId, label: b.name })),
+  ...schema.tables.map((t) => ({ type: 'table' as const, id: t.tableId, label: t.name })),
+  ...schema.fields.map((f) => ({ type: 'field' as const, id: f.fieldId, label: f.name })),
+  ...schema.views.map((v) => ({ type: 'view' as const, id: v.viewId, label: v.name })),
+]
+
+const fmtStamp = (iso: string) => {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+const CLUSTERS = [
+  {
+    label: 'Explore',
+    tabs: [
+      { id: 'browse', label: 'Browse', icon: 'lucide--list-tree' },
+      { id: 'visualize', label: 'Visualize', icon: 'lucide--workflow' },
+      { id: 'relationships', label: 'Relationships', icon: 'lucide--waypoints' },
+    ],
+  },
+  {
+    label: 'App layer',
+    tabs: [
+      { id: 'automations', label: 'Automations', icon: 'lucide--zap' },
+      { id: 'interfaces', label: 'Interfaces', icon: 'lucide--layout-panel-left' },
+    ],
+  },
+  {
+    label: 'Monitor',
+    tabs: [
+      { id: 'changelog', label: 'Changelog', icon: 'lucide--history' },
+      { id: 'health', label: 'Health', icon: 'lucide--heart-pulse' },
+    ],
+  },
+  {
+    label: 'Knowledge',
+    tabs: [
+      { id: 'docs', label: 'Docs', icon: 'lucide--book-text' },
+      { id: 'chat', label: 'Chat History', icon: 'lucide--messages-square' },
+    ],
+  },
+]
+---
+
+<section data-schema-docs data-space-id={spaceId} class="sch">
+  <header class="sch-head">
+    <PageHeader
+      title="Schema"
+      description="Browse your Airtable schema and document it for your team."
+    />
+    <div class="sch-head-r">
+      {lastBackupAt && (
+        <p class="sch-stamp tooltip tooltip-left" data-tip="Schema is captured at backup time and may drift from Airtable until the next run.">
+          <span class="iconify lucide--history size-3.5" aria-hidden="true"></span>
+          Schema as of {fmtStamp(lastBackupAt)}
+        </p>
+      )}
+      {hasSchema && aiEnabled && (
+        <button type="button" class="btn btn-ghost text-primary gap-1.5" data-sch-ask>
+          <span class="iconify lucide--sparkles size-4" aria-hidden="true"></span>Ask about your schema
+        </button>
+      )}
+    </div>
+  </header>
+
+  <div class="sch-tabbar" role="tablist" aria-label="Schema sections">
+    {CLUSTERS.map((cluster, ci) => (
+      <>
+        {ci > 0 && <span class="sch-tabdiv" aria-hidden="true"></span>}
+        <div class="sch-group">
+          <span class="sch-glabel">{cluster.label}</span>
+          <div class="sch-gtabs tabs tabs-border">
+            {cluster.tabs.map((t) => (
+              <button
+                type="button"
+                class:list={['tab', { 'tab-active': t.id === 'browse' }]}
+                role="tab"
+                data-tab={t.id}
+              >
+                <span class={`iconify ${t.icon} size-4`} aria-hidden="true"></span>{t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </>
+    ))}
+  </div>
+
+  <div class="sch-panel" data-panel="browse">
+    <BrowseTab spaceId={spaceId} schema={schema} state={state} />
+  </div>
+
+  <div class="sch-panel" data-panel="visualize" hidden>
+    <VisualizeTab spaceId={spaceId} level={level} hasSchema={hasSchema} schema={schema} />
+  </div>
+
+  <div class="sch-panel" data-panel="relationships" hidden>
+    <RelationshipsTab hasSchema={hasSchema} healthBases={healthBases} />
+  </div>
+
+  <div class="sch-panel" data-panel="automations" hidden>
+    <SoonTab
+      icon="lucide--zap"
+      title="Automations is coming soon"
+      description="Your base's automations, captured and documented alongside the schema they touch."
+    />
+  </div>
+
+  <div class="sch-panel" data-panel="interfaces" hidden>
+    <SoonTab
+      icon="lucide--layout-panel-left"
+      title="Interfaces is coming soon"
+      description="Interfaces and pages, captured and documented with the tables and fields they use."
+    />
+  </div>
+
+  <div class="sch-panel" data-panel="changelog" hidden>
+    <ChangelogTab hasSchema={hasSchema} healthBases={healthBases} schema={schema} />
+  </div>
+
+  <div class="sch-panel" data-panel="health" hidden>
+    <HealthTab hasSchema={hasSchema} aiEnabled={aiEnabled} healthBases={healthBases} />
+  </div>
+
+  <div class="sch-panel" data-panel="docs" hidden>
+    <DocsTabPanel spaceId={spaceId} docs={docs} aiEnabled={aiEnabled} entities={entities} />
+  </div>
+
+  <div class="sch-panel" data-panel="chat" hidden>
+    <ChatTab hasSchema={hasSchema} aiEnabled={aiEnabled} healthBases={healthBases} />
+  </div>
+
+  {/* Shared entity-detail modal — opened from any tab (Relationships click-through,
+      future Chat refs) via an `open-entity-detail` CustomEvent. Reuses the
+      docs-by-entity endpoint the Browse panel uses. */}
+  <dialog id="entity-modal" class="modal">
+    <div class="modal-box">
+      <form method="dialog">
+        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" aria-label="Close">✕</button>
+      </form>
+      <div id="entity-modal-body" class="text-sm">
+        <span class="loading loading-spinner loading-sm"></span>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+</section>
+
+<script>
+  // Cluster tab bar: buttons toggle data-panel sections (web-schema-round3-shell).
+  // The per-tab lazy-load hooks live with their tab scripts and listen on these
+  // same buttons, so switching here needs no knowledge of tab internals.
+  function wireSchemaShell() {
+    const root = document.querySelector<HTMLElement>('[data-schema-docs]')
+    if (!root) return
+    const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-tab]'))
+    const panels = Array.from(root.querySelectorAll<HTMLElement>('[data-panel]'))
+    tabs.forEach((t) =>
+      t.addEventListener('click', () => {
+        tabs.forEach((x) => x.classList.toggle('tab-active', x === t))
+        panels.forEach((p) => (p.hidden = p.dataset.panel !== t.dataset.tab))
+      }),
+    )
+    // The header "Ask about your schema" launcher opens the Chat panel
+    // (Knowledge ▸ Chat History) — same surface, one click from any tab.
+    const chatTab = root.querySelector<HTMLButtonElement>('[data-tab="chat"]')
+    root
+      .querySelector<HTMLButtonElement>('[data-sch-ask]')
+      ?.addEventListener('click', () => chatTab?.click())
+    // "/" focuses the visible tab's search — the shared shortcut for list tabs.
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== '/') return
+      const ae = document.activeElement as HTMLElement | null
+      if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return
+      const panel = panels.find((p) => !p.hidden)
+      const search = panel?.querySelector<HTMLInputElement>('[data-sch-search]')
+      if (search) {
+        e.preventDefault()
+        search.focus()
+      }
+    })
+  }
+  wireSchemaShell()
+</script>
+
+<script>
+  // Shared entity-detail modal (web-relationships-tab click-through). Any tab can
+  // open it by dispatching `open-entity-detail` with {type,id,name}; it reuses the
+  // Browse docs-by-entity endpoint to show the entity + its documents.
+  const emodal = document.getElementById('entity-modal') as HTMLDialogElement | null
+  const ebody = document.getElementById('entity-modal-body')
+  const eroot = document.querySelector<HTMLElement>('[data-schema-docs]')
+  if (emodal && ebody && eroot) {
+    const spaceId = eroot.dataset.spaceId!
+    const esc = (s: string) =>
+      String(s).replace(
+        /[&<>"]/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
+      )
+    document.addEventListener('open-entity-detail', async (e) => {
+      const d = (e as CustomEvent).detail as { type: string; id: string; name?: string }
+      ebody.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
+      emodal.showModal()
+      let res: Response
+      try {
+        res = await fetch(
+          `/api/spaces/${spaceId}/docs-by-entity?targetType=${encodeURIComponent(d.type)}&targetId=${encodeURIComponent(d.id)}`,
+        )
+      } catch {
+        ebody.innerHTML = '<span class="text-error">Could not load entity.</span>'
+        return
+      }
+      if (!res.ok) {
+        ebody.innerHTML = '<span class="text-error">Could not load entity.</span>'
+        return
+      }
+      const data = (await res.json()) as { entityRemoved: boolean; documents: { title: string; excerpt?: string | null }[] }
+      const head = `<div class="mb-3 flex items-center gap-2"><span class="font-semibold text-base-content">${esc(d.name ?? d.id)}</span><span class="badge badge-ghost">${esc(d.type)}</span>${data.entityRemoved ? '<span class="badge badge-warning">removed from Airtable</span>' : ''}</div>`
+      const docs =
+        data.documents.length === 0
+          ? '<p class="text-base-content/50">No documents tag this entity yet.</p>'
+          : `<ul class="space-y-2">${data.documents
+              .map(
+                (doc) =>
+                  `<li class="rounded border border-base-300/60 p-3"><span class="font-medium">${esc(doc.title)}</span>${doc.excerpt ? `<span class="mt-1 block text-sm text-base-content/60">${esc(doc.excerpt)}</span>` : ''}</li>`,
+              )
+              .join('')}</ul>`
+      ebody.innerHTML = head + docs
+    })
+  }
+</script>

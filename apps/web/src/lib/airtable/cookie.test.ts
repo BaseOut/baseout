@@ -26,6 +26,21 @@ describe('sealHandoffPayload / openHandoffPayload', () => {
     expect(opened).toEqual(payload)
   })
 
+  it('round-trips an optional returnTo field', async () => {
+    const payload = {
+      verifier: 'v',
+      state: 's',
+      organizationId: 'o',
+      spaceId: 'sp',
+      userId: 'u',
+      redirectUri: 'https://example.com/cb',
+      returnTo: '/integrations',
+    }
+    const sealed = await sealHandoffPayload(payload, TEST_KEY)
+    const opened = await openHandoffPayload(sealed, TEST_KEY)
+    expect(opened.returnTo).toBe('/integrations')
+  })
+
   it('rejects a tampered ciphertext', async () => {
     const sealed = await sealHandoffPayload(
       {

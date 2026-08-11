@@ -1,0 +1,28 @@
+{
+  "name": "@baseout/embed-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared no-UI embed wrapper: mounts the full-viewport Baseout iframe and runs the host side of the embed messaging protocol. Host specifics (context acquisition, open-external opener) are injected by the per-host packages (chrome, airtable-data, airtable-interface).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@baseout/embed-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "happy-dom": "^20.9.0",
+    "tsup": "^8.3.0",
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,199 @@
+---
+// One base inside one backup run, drilled to its tables (BackupRunBaseView).
+// Harness fixture — the engineer wires the real per-base detail endpoint.
+// Query: ?run=<id>&base=<base-id>&state=done|running|failed (default done).
+//
+// The per-table figures sum to the same per-base totals used on the run-detail
+// page (apps/design/src/pages/backups/run.astro), so drilling down stays consistent.
+import SidebarLayout from '../../../layouts/SidebarLayout.astro';
+import BackupRunBaseView from '@web/views/BackupRunBaseView.astro';
+import DestSwitcher from '../../../components/DestSwitcher.astro';
+import { getBreadcrumbs } from '@web/lib/config';
+
+const breadcrumbs = getBreadcrumbs('/backups');
+const state = (Astro.url.searchParams.get('state') ?? 'done').toLowerCase();
+const runId = Astro.url.searchParams.get('run') ?? 'run_2026_06_15_daily';
+const baseId = Astro.url.searchParams.get('base') ?? 'b-sales';
+// Destination demo (threaded from the run page): drive (static/Drive) · s3 (static/S3) · db (dynamic/Postgres).
+const dest = (Astro.url.searchParams.get('dest') ?? 'drive').toLowerCase();
+
+const NOW = Date.now();
+const ago = (min: number) => new Date(NOW - min * 60000).toISOString();
+
+type TableDef = { id: string; name: string; fields: number; records: number; views: number; attachments: number };
+type BaseDef = {
+  id: string;
+  name: string;
+  atBaseId: string;
+  index: number; // order within the run (drives per-state status)
+  tables: TableDef[];
+};
+
+// Per-table counts sum to each base's run totals (14 tables · 12,407 records · 218 attachments overall).
+const BASES: BaseDef[] = [
+  {
+    id: 'b-mktg', name: 'Marketing Calendar', atBaseId: 'appMktgCalendar01', index: 0,
+    tables: [
+      { id: 't-campaigns', name: 'Campaigns', fields: 32, records: 1840, views: 6, attachments: 48 },
+      { id: 't-content', name: 'Content Calendar', fields: 28, records: 1520, views: 5, attachments: 30 },
+      { id: 't-channels', name: 'Channels', fields: 24, records: 652, views: 3, attachments: 6 },
+    ],
+  },
+  {
+    id: 'b-sales', name: 'Sales CRM', atBaseId: 'appSalesCRM00001', index: 1,
+    tables: [
+      { id: 't-accounts', name: 'Accounts', fields: 38, records: 1120, views: 5, attachments: 18 },
+      { id: 't-contacts', name: 'Contacts', fields: 34, records: 1480, views: 4, attachments: 12 },
+      { id: 't-opps', name: 'Opportunities', fields: 36, records: 980, views: 6, attachments: 16 },
+      { id: 't-activities', name: 'Activities', fields: 24, records: 270, views: 3, attachments: 6 },
+    ],
+  },
+  {
+    id: 'b-cs', name: 'Customer Success', atBaseId: 'appCustSuccess001', index: 2,
+    tables: [
+      { id: 't-customers', name: 'Customers', fields: 42, records: 1290, views: 5, attachments: 22 },
+      { id: 't-health', name: 'Health Scores', fields: 34, records: 814, views: 4, attachments: 16 },
+    ],
+  },
+  {
+    id: 'b-prod', name: 'Product Roadmap', atBaseId: 'appProductRoad001', index: 3,
+    tables: [
+      { id: 't-features', name: 'Features', fields: 32, records: 742, views: 5, attachments: 16 },
+      { id: 't-releases', name: 'Releases', fields: 26, records: 461, views: 3, attachments: 8 },
+    ],
+  },
+  {
+    id: 'b-eng', name: 'Engineering Bugs', atBaseId: 'appEngBugs000001', index: 4,
+    tables: [
+      { id: 't-tickets', name: 'Tickets', fields: 52, records: 458, views: 7, attachments: 8 },
+      { id: 't-eng-releases', name: 'Releases', fields: 42, records: 184, views: 3, attachments: 4 },
+    ],
+  },
+  {
+    id: 'b-hr', name: 'HR Directory', atBaseId: 'appHRDirectory01', index: 5,
+    tables: [{ id: 't-employees', name: 'Employees', fields: 41, records: 596, views: 4, attachments: 8 }],
+  },
+];
+
+const def = BASES.find((b) => b.id === baseId) ?? BASES[1];
+const i = def.index;
+const DEPTH = { schema: true, data: true, attachments: true };
+
+// Destination preset (see run.astro for the full static-vs-dynamic explanation):
+// STATIC writes files into storage you own (Drive/S3) — Output is a browsable folder;
+// DYNAMIC mirrors rows into a database you own (Postgres) — Output is a DB reference.
+const slug = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/(^_|_$)/g, '');
+const PRESET = {
+  drive: { kind: 'file' as const, provider: 'Google Drive', icon: '/brands/google-drive.svg' as string | null,
+    folder: `/Baseout/Core CRM/${def.name}` as string | null, folderUrl: `https://drive.google.com/drive/folders/baseout-coreCRM-${def.id}` as string | null, dbRef: null as string | null },
+  s3: { kind: 'file' as const, provider: 'Amazon S3', icon: '/brands/aws.svg' as string | null,
+    folder: `s3://baseout-backups/Core CRM/${def.name}` as string | null, folderUrl: `https://s3.console.aws.amazon.com/s3/buckets/baseout-backups?prefix=Core+CRM/${def.id}/` as string | null, dbRef: null as string | null },
+  db: { kind: 'database' as const, provider: 'Postgres', icon: null as string | null,
+    folder: null as string | null, folderUrl: null as string | null, dbRef: `core_crm_warehouse · public.${slug(def.name)}` as string | null },
+};
+const P = PRESET[dest as keyof typeof PRESET] ?? PRESET.drive;
+const DEST_KIND = P.kind;
+const DEST_PROVIDER = P.provider;
+const DEST_ICON = P.icon;
+const FOLDER = P.folder;
+const FOLDER_URL = P.folderUrl;
+const DB_REF = P.dbRef;
+
+// A fully-captured table row.
+const okTable = (t: TableDef) => ({
+  id: t.id,
+  name: t.name,
+  status: 'ok' as const,
+  fields: t.fields,
+  records: t.records,
+  recordsRemaining: null,
+  views: t.views,
+  attachments: t.attachments,
+  attachmentsRemaining: null,
+  failed: 0,
+});
+const pendingTable = (t: TableDef) => ({
+  id: t.id, name: t.name, status: 'pending' as const,
+  fields: t.fields, records: 0, recordsRemaining: null, views: t.views, attachments: 0, attachmentsRemaining: null, failed: 0,
+});
+
+let base;
+
+if (state === 'running') {
+  // Mirror the run page: bases 0–3 done, base 4 (Engineering Bugs) running, base 5 pending.
+  if (i < 4) {
+    base = {
+      runId, runState: state, atBaseId: def.atBaseId, name: def.name, status: 'ok' as const,
+      startedAt: ago(20 - i * 2), completedAt: ago(18 - i * 2), depth: DEPTH,
+      destKind: DEST_KIND, destProvider: DEST_PROVIDER, destIcon: DEST_ICON, folder: FOLDER, folderUrl: FOLDER_URL, dbRef: DB_REF, error: null,
+      tables: def.tables.map(okTable), failedAttachments: [],
+    };
+  } else if (i === 4) {
+    // Tickets streaming (410/458 records, 7/8 attachments), Releases still pending.
+    // Matches the run page's per-base figures: 410 done / 232 remaining records, 7 done / 5 remaining attachments.
+    const tickets = def.tables[0];
+    const rel = def.tables[1];
+    base = {
+      runId, runState: state, atBaseId: def.atBaseId, name: def.name, status: 'running' as const,
+      startedAt: ago(1), completedAt: null, depth: DEPTH,
+      destKind: DEST_KIND, destProvider: DEST_PROVIDER, destIcon: DEST_ICON, folder: FOLDER, folderUrl: FOLDER_URL, dbRef: DB_REF, error: null,
+      tables: [
+        { id: tickets.id, name: tickets.name, status: 'running' as const, fields: tickets.fields, records: 410, recordsRemaining: 48, views: tickets.views, attachments: 7, attachmentsRemaining: 1, failed: 0 },
+        pendingTable(rel),
+      ],
+      failedAttachments: [],
+    };
+  } else {
+    base = {
+      runId, runState: state, atBaseId: def.atBaseId, name: def.name, status: 'pending' as const,
+      startedAt: null, completedAt: null, depth: DEPTH,
+      destKind: DEST_KIND, destProvider: DEST_PROVIDER, destIcon: DEST_ICON, folder: FOLDER, folderUrl: FOLDER_URL, dbRef: DB_REF, error: null,
+      tables: def.tables.map(pendingTable), failedAttachments: [],
+    };
+  }
+} else if (state === 'failed') {
+  // Mirror the run page: base 3 (Product Roadmap) failed on a 429; the rest are fine.
+  if (i === 3) {
+    base = {
+      runId, runState: state, atBaseId: def.atBaseId, name: def.name, status: 'failed' as const,
+      startedAt: ago(7), completedAt: ago(6), depth: DEPTH,
+      destKind: DEST_KIND, destProvider: DEST_PROVIDER, destIcon: DEST_ICON, folder: null, folderUrl: null, dbRef: null,
+      error: 'Airtable returned 429 (rate-limited) for base appProductRoad001. Retried 3× with exponential backoff, then stopped the run before any table was written.',
+      tables: def.tables.map((t, k) =>
+        k === 0
+          ? { id: t.id, name: t.name, status: 'failed' as const, fields: t.fields, records: 0, recordsRemaining: null, views: t.views, attachments: 0, attachmentsRemaining: null, failed: 0 }
+          : pendingTable(t),
+      ),
+      failedAttachments: [],
+    };
+  } else {
+    base = {
+      runId, runState: state, atBaseId: def.atBaseId, name: def.name, status: 'ok' as const,
+      startedAt: ago(20 - i * 2), completedAt: ago(18 - i * 2), depth: DEPTH,
+      destKind: DEST_KIND, destProvider: DEST_PROVIDER, destIcon: DEST_ICON, folder: FOLDER, folderUrl: FOLDER_URL, dbRef: DB_REF, error: null,
+      tables: def.tables.map(okTable), failedAttachments: [],
+    };
+  }
+} else {
+  // done: everything backed up. Engineering Bugs (i===4) carries 2 failed attachments,
+  // split across Tickets + Releases, matching the run-detail fixture.
+  const isEng = i === 4;
+  base = {
+    runId, runState: 'done', atBaseId: def.atBaseId, name: def.name, status: 'ok' as const,
+    startedAt: ago(20 - i * 2), completedAt: ago(18 - i * 2), depth: DEPTH,
+    destKind: DEST_KIND, destProvider: DEST_PROVIDER, destIcon: DEST_ICON, folder: FOLDER, folderUrl: FOLDER_URL, dbRef: DB_REF, error: null,
+    tables: def.tables.map((t, k) => (isEng && k <= 1 ? { ...okTable(t), failed: 1 } : okTable(t))),
+    failedAttachments: isEng
+      ? [
+          { table: 'Tickets', file: 'crash-log-2026-06-15.zip', reason: 'File exceeds the 1 GB attachment limit' },
+          { table: 'Releases', file: 'demo-build.mp4', reason: 'Airtable returned 410 — file expired before fetch' },
+        ]
+      : [],
+  };
+}
+---
+
+<SidebarLayout pageTitle={def.name} breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <BackupRunBaseView base={base} />
+  <DestSwitcher />
+</SidebarLayout>

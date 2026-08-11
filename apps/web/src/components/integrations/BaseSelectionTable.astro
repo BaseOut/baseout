@@ -1,0 +1,1415 @@
+---
+/**
+ * BaseSelectionTable — the full-width, dense base picker built for scale.
+ *
+ * Shared by both configure layouts under evaluation:
+ *  - the "Manage bases" screen (summary + drill-in layout), and
+ *  - the "Bases" tab (tabbed layout).
+ *
+ * Handles hundreds of bases without pagination: search + sort + virtual-feeling
+ * scroll + cap-aware select-all + "show selected" + (only when all are selected)
+ * an auto-add-future-bases toggle. Columns are Tables and Fields — the only
+ * metrics Airtable's schema endpoint exposes; values here are illustrative
+ * placeholders (the engine supplies real figures). The field/table hierarchy
+ * can later nest under each row.
+ */
+import type { BaseSummary, WorkspaceAlias, WorkspaceEnrollment, WorkspaceResolveState } from '../../stores/connections';
+import { AIRTABLE_GLYPH } from '../schema/airtableGlyph';
+import EntitySearch from '../schema/EntitySearch.astro';
+import BasePickerRow from './BasePickerRow.astro';
+import { BASE_PICKER_TYPEAHEAD_GROUPS, buildBasePickerItems } from './basePickerSearch';
+
+interface Props {
+  bases: BaseSummary[];
+  cap: number | null;
+  spaceId?: string;
+  /** Render without the outer form (the host page owns the form/submit). */
+  embedded?: boolean;
+  /**
+   * Per-workspace auto-add posture (workspace-auto-enroll). Optional — a
+   * connection with no workspace grouping (or an older fixture) omits it and
+   * the picker falls back to the legacy single `.bst-autoadd` toggle.
+   */
+  enrolledWorkspaces?: WorkspaceEnrollment[];
+  /** Standing "Auto-enroll new workspaces" rule, current saved value. */
+  autoEnrollNewWorkspaces?: boolean;
+  /**
+   * How far the per-base workspace lookup has got. Defaults to 'off' — the
+   * picker says NOTHING about workspaces unless a resolution is actually
+   * running, because the flat table is the complete product on its own.
+   */
+  wsResolve?: WorkspaceResolveState;
+  /** Bases resolved so far (resumes after a reload; never restarts at 0). */
+  wsResolvedCount?: number;
+  /** Bases the lookup has to get through. Defaults to the base count. */
+  wsTotalCount?: number;
+  /**
+   * "Group by workspace" for this connection. Defaults to TRUE — grouped is the
+   * resting state (Oleh 2026-07-29), so only a user who deliberately turned it
+   * off arrives here as `false`.
+   */
+  groupByWorkspace?: boolean;
+  /** Names the user typed for workspaces, each with the reason they typed it. */
+  workspaceAliases?: WorkspaceAlias[];
+}
+const {
+  bases,
+  cap,
+  spaceId = '',
+  embedded = false,
+  enrolledWorkspaces = [],
+  autoEnrollNewWorkspaces = false,
+  wsResolve = 'off',
+  wsResolvedCount = 0,
+  wsTotalCount,
+  groupByWorkspace = true,
+  workspaceAliases = [],
+} = Astro.props;
+
+const fmt = new Intl.NumberFormat('en-US');
+
+// Per-base metadata we can actually get from Airtable's schema endpoint
+// (GET /v0/meta/bases/{baseId}/tables): table count and total field count.
+// Record counts and "last changed" are NOT exposed by the API, so they're not
+// shown. Values here are illustrative placeholders (deterministic from name).
+function baseMeta(name: string) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = ((h << 5) - h + name.charCodeAt(i)) | 0;
+  const tables = 3 + (Math.abs(h) % 18);
+  const fields = tables * (5 + (Math.abs(h * 13) % 11));
+  return { tables, fields };
+}
+const rows = bases.map((b) => ({ b, m: baseMeta(b.name) }));
+const includedCount = bases.filter((b) => b.isIncluded).length;
+
+// Workspace grouping (base-picker-workspace-grouping). Airtable returns the
+// workspace ID on every base regardless of access scope, but the workspace NAME
+// only comes with full-environment access. So a base falls into one of three
+// group states:
+//   - real name   → has an id AND a name (full access).
+//   - placeholder → has an id but NO name (limited access) → labelled
+//                   "Workspace N", numbered stably by id; the user can rename it
+//                   in place (persists by id server-side) or open it in Airtable.
+//   - unknown     → no workspace id at all (MCP unavailable) → "No workspace".
+// Order: real names first (A–Z), then generic placeholders by number, unknown
+// last. When only ONE group would exist, headers are suppressed and the table
+// renders flat — zero regression for single-workspace estates.
+interface PickerGroup {
+  id: string;
+  /** Display label: real name, "Workspace N", "Still matching", or "No workspace". */
+  name: string;
+  /** Has a workspace identity (a real Airtable workspace, named or not). */
+  isReal: boolean;
+  /** Real workspace whose name wasn't available with the current access. */
+  isPlaceholder: boolean;
+  /**
+   * The lookup for these bases hasn't come back yet. NEVER the same bucket as
+   * `No workspace`: "we haven't asked yet" and "we asked and there is none" are
+   * two different facts, and merging them would assert the second one falsely.
+   */
+  isPending: boolean;
+  /**
+   * The real Airtable name has arrived for a workspace the user had already
+   * named themselves BECAUSE it had no name. Airtable's name takes over (theirs
+   * was a stand-in), and one reversible prompt offers to keep theirs instead.
+   */
+  swapFrom?: string;
+  /**
+   * Airtable's own name, shown muted beside a name the user deliberately chose.
+   * Only ever set for a 'custom' alias — dual display is EARNED by answering
+   * "Keep mine", never the default.
+   */
+  dualName?: string;
+  rows: typeof rows;
+  enrollment?: WorkspaceEnrollment;
+}
+const UNKNOWN_WS = '__unknown__';
+const PENDING_WS = '__pending__';
+const enrollmentMap = new Map(enrolledWorkspaces.map((w) => [w.workspaceId, w]));
+
+// First pass: bucket rows by workspace id, remembering the real name if any base
+// in the group carries one. A base still waiting on its own lookup goes to the
+// PENDING bucket regardless of what else it carries.
+interface RawGroup { id: string; realName?: string; rows: typeof rows; }
+const rawMap = new Map<string, RawGroup>();
+for (const r of rows) {
+  const id = r.b.workspacePending ? PENDING_WS : (r.b.workspaceId ?? UNKNOWN_WS);
+  let g = rawMap.get(id);
+  if (!g) { g = { id, realName: r.b.workspaceName, rows: [] }; rawMap.set(id, g); }
+  if (!g.realName && r.b.workspaceName) g.realName = r.b.workspaceName;
+  g.rows.push(r);
+}
+
+// Stable placeholder numbers: real workspaces that arrived without a name are
+// "Workspace N", numbered by workspace id so the number is stable for a given
+// workspace across loads (until the user renames it or full access supplies the
+// real name).
+const placeholderNo = new Map(
+  [...rawMap.values()]
+    .filter((g) => g.id !== UNKNOWN_WS && g.id !== PENDING_WS && !g.realName)
+    .map((g) => g.id)
+    .sort()
+    .map((id, i) => [id, i + 1] as const),
+);
+
+const aliasMap = new Map(workspaceAliases.map((a) => [a.workspaceId, a]));
+const groups: PickerGroup[] = [...rawMap.values()].map((g) => {
+  const isPending = g.id === PENDING_WS;
+  const isReal = g.id !== UNKNOWN_WS && !isPending;
+  const alias = isReal ? aliasMap.get(g.id) : undefined;
+  // Whose name wins, and why. A 'custom' alias is a deliberate choice and
+  // outranks Airtable; a 'placeholder-fill' alias was only ever a stand-in for a
+  // name we could not read, so the real one takes over the moment it arrives —
+  // and says so, once, with a way back.
+  const custom = alias?.kind === 'custom';
+  const name = !isReal
+    ? (isPending ? 'Still matching' : 'No workspace')
+    : custom
+      ? alias!.alias
+      : (g.realName ?? alias?.alias ?? `Workspace ${placeholderNo.get(g.id)}`);
+  return {
+    id: g.id,
+    name,
+    isReal,
+    // A placeholder is a real workspace with no name to show — and one the user
+    // has already named themselves is no longer one.
+    isPlaceholder: isReal && !g.realName && !alias,
+    isPending,
+    swapFrom: isReal && g.realName && alias && !custom ? alias.alias : undefined,
+    dualName: custom && g.realName ? g.realName : undefined,
+    rows: g.rows,
+    enrollment: enrollmentMap.get(g.id),
+  };
+});
+// Order: named workspaces A–Z, then generic placeholders by number, then the two
+// tail buckets — "Still matching" (transient, will empty itself) above
+// "No workspace" (settled).
+const tailRank = (g: PickerGroup) => (g.id === UNKNOWN_WS ? 3 : g.id === PENDING_WS ? 2 : g.isPlaceholder ? 1 : 0);
+groups.sort((a, b) => {
+  const ra = tailRank(a), rb = tailRank(b);
+  if (ra !== rb) return ra - rb;
+  if (ra === 1) return (placeholderNo.get(a.id) ?? 0) - (placeholderNo.get(b.id) ?? 0);
+  return a.name.localeCompare(b.name);
+});
+// Default within-group order is by name — matches the flat default sort.
+for (const g of groups) g.rows.sort((a, b) => a.b.name.localeCompare(b.b.name));
+// Flat is the DEFAULT and is complete on its own: one globally name-ordered list,
+// so nothing leaks the grouping the user has not asked for yet.
+const flatRows = [...rows].sort((a, b) => a.b.name.localeCompare(b.b.name));
+// Every row carries the group it WOULD go to, so grouping is a DOM move on
+// click rather than a re-render — the flat table stays exactly as the user left
+// it until they ask for something else.
+const groupOfBase = new Map<string, PickerGroup>();
+for (const g of groups) for (const r of g.rows) groupOfBase.set(r.b.id, g);
+const wsNameOf = (id: string) => {
+  const g = groupOfBase.get(id);
+  return g && g.isReal ? g.name.toLowerCase() : '';
+};
+
+// Grouped is the DEFAULT (Oleh 2026-07-29, reversing the v1 "always ask"): the
+// user came for a finished result, not for an ungrouped list they then have to
+// fix. Workspaces still cannot be known at T0 — one extra Airtable call per base
+// — so "grouped by default" means the table groups itself the MOMENT matching
+// completes, which the client does. `grouped` here is only the FIRST paint: it
+// can be true straight away (the server already knows), and it is false while
+// the lookup is still running. More than one group is still required — one
+// workspace is not grouping, so that estate sees no band and no bar at all.
+const wsCapable = groups.length > 1;
+const grouped = wsCapable && wsResolve === 'ready' && groupByWorkspace;
+// The lookup reports through a determinate bar on the card's top edge plus the
+// count beside it — never a spinner (the percentage is known, and the catalog
+// `progress` entry reserves spinners for unknown-duration work).
+const showProgress = wsCapable && wsResolve !== 'off';
+// The band is about a grouping that is happening or has happened. A connection
+// with no workspace lookup at all ('off') gets NO band — a permanently disabled
+// toggle explaining a capability this connection does not have is exactly the
+// dead weight this pass is removing.
+const showGroupBand = showProgress;
+const wsTotal = wsTotalCount ?? bases.length;
+const wsDone = Math.min(wsResolvedCount, wsTotal);
+// Names are all-or-nothing per connection: one connection carries one access
+// scope, so either every workspace resolves its real Airtable name or none does.
+const anyPlaceholder = groups.some((g) => g.isPlaceholder);
+
+// Typeahead rows — ONE field searches bases AND workspaces (Oleh 2026-07-29).
+// The scope <select> that used to make the user choose first is deleted; the
+// grouped dropdown is what disambiguates now. Rows for BOTH kinds are always
+// built server-side; the client hides the workspace kind while the table is
+// ungrouped, because then there is no group to scroll to.
+const searchItems = buildBasePickerItems(groups);
+const searchPlaceholder = wsCapable
+  ? `Search ${bases.length} bases and workspaces`
+  : `Search ${bases.length} bases`;
+
+const Tag = embedded ? 'div' : 'form';
+---
+
+<div
+  class="bst"
+  data-base-table
+  data-cap={cap ?? ''}
+  data-grouped={grouped ? '1' : undefined}
+  data-ws-resolve={wsCapable ? wsResolve : 'off'}
+  data-ws-done={wsDone}
+  data-ws-total={wsTotal}
+  data-bst-space={spaceId || 'default'}
+>
+  {/* New-bases notify — appears when Airtable has bases discovered since the last
+      backup. They never join silently; the user reviews and adds (up to the cap).
+      The "auto-add future bases" toggle below is the opt-in alternative. */}
+  <div role="alert" class="alert alert-soft alert-info bst-newbases" data-bst-newbases hidden>
+    <span class="iconify lucide--sparkles size-4" aria-hidden="true"></span>
+    <span class="flex-1"><strong data-bst-newbases-count>0</strong> new base<span data-bst-newbases-plural>s</span> appeared in Airtable since your last backup — not backed up yet.</span>
+    <button type="button" class="btn btn-sm btn-ghost" data-bst-newbases-review>Review</button>
+    <button type="button" class="btn btn-sm btn-primary" data-bst-newbases-add>Add <span data-bst-newbases-addn>0</span></button>
+    <button type="button" class="btn btn-sm btn-ghost btn-square" data-bst-newbases-dismiss aria-label="Dismiss"><span class="iconify lucide--x size-4"></span></button>
+  </div>
+
+  {/* ── The grouping band (v2, Oleh 2026-07-29) ──
+      ONE band, and it REPLACES rather than joins: the toolbar's workspace status
+      line left (the card-edge progress bar took that job) and the standing
+      auto-enroll rule card folded IN here instead of sitting as a second plate.
+      It exists at all because grouping stopped being cosmetic — grouped, auto-add
+      is decided PER WORKSPACE; ungrouped it is one switch for the whole
+      connection — so the control that sets that granularity can no longer live
+      among search and sort. One setting, ONE name: the toggle's label never
+      changes to "Ungroup".
+      The limited-access WARNING BAND that used to sit here is still gone
+      (2026-07-28) — that fact lives in the placeholder group's own header
+      ("Workspace 1 · name unavailable" + Rename). */}
+  {showGroupBand && (
+    <div class="bst-gband" data-bst-gband>
+      <div class="bst-gband-r1">
+      <label class="bst-gband-row">
+        <input
+          type="checkbox"
+          class="toggle toggle-sm toggle-primary"
+          data-bst-wsgroup
+          checked={grouped}
+          disabled={wsResolve !== 'ready'}
+          aria-label="Group by workspace"
+        />
+        <span class="min-w-0">
+          <span class="bst-gband-h">Group by workspace</span>
+          {/* Benefit first, in words someone who opened this product ten minutes ago can use.
+              The old line named Schema and Data — surfaces a first-time user has never seen, so it
+              answered a question they cannot have yet (Oleh 2026-07-29). It is not simplified here,
+              it is cut; if that cross-surface caveat is ever needed it belongs in Settings.
+              The access sentence sits HERE, next to the numbered names it explains, rather than
+              in a banner over the whole table. */}
+          <span class="block text-xs text-base-content/65 mt-0.5">
+            Your bases, grouped as Airtable organises them — and you choose, per workspace, whether new bases are backed up too.
+            {/* Name the labels the user is actually looking at and the action they can take —
+                "Workspace 1, 2, 3" + "rename" beats "so they're numbered here" (Oleh 2026-07-29),
+                because it matches what is on screen and says what to do about it.
+                The comment lives OUTSIDE the `&&` body: inside it, `( {comment} <El/> )` is two
+                sibling expressions in one slot and the route 500s while every static check passes. */}
+            {anyPlaceholder && (
+              <span> Names weren’t shared with your access, so they’re <strong class="font-semibold">Workspace 1, 2, 3</strong> — rename any below.</span>
+            )}
+          </span>
+        </span>
+      </label>
+      {anyPlaceholder && (
+        <a href="/sources" class="btn btn-sm btn-soft btn-primary bst-gband-act">Reconnect with full access</a>
+      )}
+      </div>
+      <label class:list={['bst-gband-row', 'bst-wsenroll', anyPlaceholder && 'is-blocked']} data-bst-wsenroll hidden={!grouped} aria-disabled={anyPlaceholder ? 'true' : undefined}>
+        <input
+          type="checkbox"
+          class="toggle toggle-sm toggle-primary"
+          checked={!anyPlaceholder && autoEnrollNewWorkspaces}
+          disabled={anyPlaceholder}
+          data-bst-wsenroll-check
+        />
+        <span class="min-w-0">
+          <span class="bst-gband-h">Auto-enroll new workspaces</span>
+          {/* The enabled copy states the WHOLE chain, not the first link. This one switch reaches
+              three steps deep — a workspace that does not exist yet appears, joins this Space, and
+              (founder answer to Q3, 2026-07-28) arrives with its own auto-add already ON, so its
+              bases are backed up without anyone having looked at them. The old copy stopped at
+              "are enrolled automatically", the least consequential third of what happens. Not a
+              separate warning: nagging about a switch someone just deliberately turned on is
+              noise — a description that omits two thirds of the effect is the actual defect. The
+              plan-limit clause matches the per-connection toggle so one bound is not worded twice.
+              COMMENT POSITION: outside the ternary. Inside a branch, `( {comment} <El/> )` is two
+              sibling expressions in one slot — the route 500s while every static check passes.
+              This has now cost three separate debugging rounds; the branches must stay bare. */}
+          {anyPlaceholder ? (
+            <span class="block text-xs text-base-content/65 mt-0.5">
+              Not available with your current access — we only see the workspaces you shared, so a new one never reaches us.
+            </span>
+          ) : (
+            <span class="block text-xs text-base-content/65 mt-0.5">Workspaces created in Airtable later join this Space at the next backup run — and their bases are backed up automatically too, up to your plan limit.</span>
+          )}
+        </span>
+      </label>
+    </div>
+  )}
+
+  {/* Toolbar — search · sort (catalog select; search is the shared typeahead) */}
+  {/* The search is the SHARED entity typeahead (pattern-entity-typeahead), the same
+      control Schema Browse uses — not a second hand-rolled one. It asks no scope
+      question: typing filters the table on base AND workspace names at once, and
+      the dropdown groups what it found under WORKSPACES / BASES. Picking is the
+      picker's own semantics (tick a base / open a workspace), wired below off
+      `bst:pick:<space>` — the component itself opens nothing. */}
+  <div class="bst-toolbar">
+    <div class="bst-searchwrap">
+      <EntitySearch
+        name={`basepicker-${spaceId || 'default'}`}
+        items={searchItems}
+        groups={BASE_PICKER_TYPEAHEAD_GROUPS}
+        placeholder={searchPlaceholder}
+        pickEvent={`bst:pick:${spaceId || 'default'}`}
+        pickHint="select"
+        emptyText="No bases or workspaces match"
+      />
+    </div>
+    <select class="select select-sm w-auto" data-bst-sort aria-label="Sort bases">
+      <option value="name">Name (A–Z)</option>
+      <option value="tables">Most tables</option>
+      <option value="fields">Most fields</option>
+    </select>
+    {/* The workspace-resolution status line that used to end this toolbar is GONE
+        (2026-07-29). It was a spinner plus a sentence reporting a job whose
+        percentage we actually know, sat among search and sort, and it carried the
+        grouping action as a second name for a setting that now has one. The bar on
+        the table card's top edge reports the job; the band above owns the setting.
+        Removing it is what pays for that band. */}
+  </div>
+
+  <div role="alert" class="alert alert-soft alert-warning bst-cap-note" data-bst-cap-note hidden>
+    <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
+    <span class="flex-1" data-bst-cap-text></span>
+    <a href="/settings/billing" class="font-bold underline whitespace-nowrap">Upgrade</a>
+  </div>
+
+  {!wsCapable && (
+    /* Legacy fallback (no workspace grouping available on this connection at all) —
+       the original
+       single "back up everything going forward" toggle, shown only once every
+       current base is selected. Kept as a toggle: it maps 1:1 to the saved
+       `policy.autoAddFutureBases` boolean and applies immediately in that sense
+       of "this connection has one undifferentiated bucket of bases", not a set
+       of per-workspace choices, so there is no third state to represent. */
+    <label class="bst-autoadd" data-bst-autoadd hidden>
+      <input type="checkbox" class="toggle toggle-sm toggle-primary" data-bst-autoadd-check />
+      <span class="min-w-0">
+        <span class="block text-sm font-medium">Automatically back up new bases</span>
+        <span class="block text-xs text-base-content/65 mt-0.5">When you add a base in Airtable, include it in this backup (up to your plan limit).</span>
+      </span>
+    </label>
+  )}
+
+  <Tag
+    {...(embedded ? {} : { method: 'POST', action: `/api/spaces/${spaceId}/backup-config/bases` })}
+    data-base-selection-form
+    class="bst-tablewrap"
+  >
+    {/* The catalog `progress`, pinned as a 3px line to the TOP EDGE of the card —
+        the browser-loading-bar idiom, which reads as "loading, the page still
+        works". Deliberately NOT across the rows: a bar over the content reads as
+        "table unavailable", and the table is fully usable the whole time. A
+        spinner was the wrong primitive here — we know the percentage, and the
+        catalog reserves spinners for unknown-duration work. Held back ~500ms by
+        the script so a five-base account never gets a blink of it, and dropped to
+        the NEUTRAL variant (never red) if the lookup gives up. */}
+    {showProgress && (
+      <progress
+        class="progress progress-primary bst-prog"
+        data-bst-prog
+        value={wsDone}
+        max={wsTotal || 1}
+        aria-label="Organising your bases by workspace"
+        hidden
+      ></progress>
+    )}
+    {/* Selection strip — the count and everything that ACTS on the list, attached to
+        the top of the table card. The toolbar above is now purely about FINDING
+        (search · scope · sort); mixing the two is what grew the four stacked bands
+        and pushed the toolbar into a second row at 1440. It sits OUTSIDE the scroll
+        container so it stays put while rows scroll, and inside the card border so it
+        reads as part of the table rather than another floating band. */}
+    <div class="bst-selbar">
+      <p class="bst-count">Selected <span data-bst-count>{includedCount}</span>{cap === null ? '' : ` of ${cap} (your plan's max)`}</p>
+      {/* The COUNT belongs to the bar: the bar says how far, the number says what
+          is being counted, and only the number explains the wait at all. It sits
+          in this strip because the strip is the row immediately under the bar's
+          edge. Copy is honest — the bases are already loaded and already
+          selectable, so this is "organising", never "syncing your bases". */}
+      {showProgress && (
+        <span class="bst-wsstatus" data-bst-wsstatus hidden>
+          <span class="bst-wsstatus-t" data-bst-wsstatus-text></span>
+          <button type="button" class="btn btn-sm btn-ghost text-primary gap-1.5" data-bst-wsretry hidden>
+            <span class="iconify lucide--rotate-ccw size-4" aria-hidden="true"></span>Retry
+          </button>
+        </span>
+      )}
+      <span class="bst-spacer"></span>
+      {wsCapable && (
+        <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-bst-collapse-all aria-expanded="true" hidden={!grouped}>
+          <span class="iconify lucide--chevrons-down-up size-4" aria-hidden="true"></span>
+          <span data-bst-collapse-all-label>Collapse all</span>
+        </button>
+      )}
+      <button type="button" class="btn btn-sm btn-ghost text-primary" data-bst-select-all>Select all</button>
+      <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-bst-clear hidden><span class="iconify lucide--x size-4" aria-hidden="true"></span>Clear</button>
+      <label class="bst-filter">
+        <input type="checkbox" class="checkbox checkbox-sm" data-bst-show-selected />
+        <span>Show selected only</span>
+      </label>
+    </div>
+
+    <div class="bst-table" data-bst-list role="table">
+      {/* Column header — always present so the two number columns are labelled
+          (Tables / Fields), in flat AND grouped mode. Pinned above group headers. */}
+      <div class="bst-head" role="row">
+        <span class="c-check"></span>
+        <span class="c-name" data-bst-namecol>{grouped ? 'Workspace / base' : 'Base'}</span>
+        {/* Auto-add is a real COLUMN, not a floating action: naming it here once
+            (like Tables / Fields) is what makes the per-workspace switches below
+            self-explanatory, and puts the master switch directly above the column
+            it controls — the relationship the earlier floating link never showed.
+            It sits next to the name, so the row reads as two identity columns on
+            the left and two metric columns on the right. */}
+        {wsCapable && (
+          <span class="c-auto">
+            <label class="bst-autoall tooltip" data-tip="Auto-add future bases in every workspace">
+              <input
+                type="checkbox"
+                class="toggle toggle-sm toggle-primary"
+                data-bst-wsauto-all
+                disabled={!grouped}
+                aria-label="Auto-add future bases in every workspace"
+              />
+              <span class="bst-autoall-label">Auto-add bases</span>
+            </label>
+          </span>
+        )}
+        <span class="c-num">Tables</span>
+        <span class="c-num">Fields</span>
+      </div>
+      {/* FLAT is the default home for rows and is complete on its own: one
+          globally name-ordered list, no group order leaking through, nothing
+          skeletoned or disabled while the workspace lookup runs in the
+          background. Rows move out of here into the group shells below only when
+          the user accepts the offer. */}
+      <div class="bst-flatrows" data-bst-flatrows>
+        {grouped ? null : flatRows.map(({ b, m }) => (
+          <BasePickerRow
+            base={b}
+            tables={m.tables}
+            fields={m.fields}
+            fieldsText={fmt.format(m.fields)}
+            groupId={groupOfBase.get(b.id)?.id ?? UNKNOWN_WS}
+            wsName={wsNameOf(b.id)}
+          />
+        ))}
+      </div>
+      {wsCapable && groups.map((g) => (
+        <div class="bst-group" data-bst-group={g.id}>
+            <div class="bst-ghead" role="row">
+              {/* Identity cell — spans the checkbox + name columns so the auto-add
+                  switch and the count land in the SAME columns the sticky header
+                  labels. */}
+              <span class="bst-gident">
+              {/* Twist chevron = the tree expand/collapse affordance (left, tree convention). */}
+              <button
+                type="button"
+                class="bst-twist"
+                data-bst-group-toggle
+                aria-expanded="true"
+                aria-label={`Toggle ${g.name}`}
+              >
+                <span class="iconify lucide--chevron-down size-4" aria-hidden="true"></span>
+              </button>
+              <input
+                type="checkbox"
+                class="checkbox checkbox-sm bst-gcheck"
+                data-bst-group-check
+                data-group={g.id}
+                aria-label={`Select all bases in ${g.name}`}
+              />
+              {/* Monochrome Airtable mark (brand-logo exception) — the same "this is an
+                  Airtable workspace" glyph the base-filter dropdowns use, so the two read
+                  as one system; faded for the buckets that are not a workspace. The
+                  wording lives in its tooltip rather than as row text. */}
+              <span
+                class:list={['bst-gicon', g.isReal && 'tooltip', !g.isReal && 'bst-gicon-mut']}
+                {...(g.isReal ? { 'data-tip': 'Airtable workspace' } : {})}
+                set:html={AIRTABLE_GLYPH}
+              />
+              <span class="bst-gname" data-bst-gname>{g.name}</span>
+              {/* The limited-access explanation lives HERE now, not in a band above
+                  the whole table: this group is the only thing it is true of. The
+                  suffix never shrinks and never wraps, so the NAME is still the first
+                  thing to truncate — the fix that stopped "People & Fi…". */}
+              {g.isPlaceholder && (
+                <span class="bst-gwhy tooltip" data-tip="Airtable only returns workspace names with full-environment access. Rename it here, or reconnect with full access."><span class="bst-gsep" aria-hidden="true"></span>name unavailable</span>
+              )}
+              {/* Both names, but only because the user EARNED it by answering
+                  "Keep mine". Showing Airtable's name beside every alias by
+                  default would put a permanent second string in the one place
+                  that already had to be fixed for truncation. */}
+              {g.dualName && (
+                <span class="bst-gwhy tooltip" data-tip={`Your name for this workspace. Airtable calls it ${g.dualName}.`} data-bst-gdual><span class="bst-gsep" aria-hidden="true"></span>{g.dualName} in Airtable</span>
+              )}
+              {/* The workspace ID, and the way out to Airtable (founder, 2026-07-30). The id is
+                  the only unambiguous handle when two workspaces share a name, or when the name on
+                  screen is a placeholder the user typed themselves — and a picker is exactly where
+                  someone wants to go and LOOK at what they are being asked about. Real workspaces
+                  only: the synthetic buckets have no id and nothing to open. Same
+                  `nowrap`/`flex: none` discipline as `.bst-gwhy`, so the NAME truncates first.
+                  Crowding + separator fixed (Oleh, 2026-07-30): the typed "· " read as a crude dot
+                  and ran flush against the auto-add toggle in column 3. The dot is now the shared
+                  `.bst-gsep` hairline (same element `.bst-gwhy` uses below), and `.bst-gident`
+                  carries its own right padding so the cell keeps breathing room before the
+                  boundary it spans up to, instead of clipping flush against it. */}
+              {g.isReal && (
+                <a
+                  class="bst-gwsid tooltip"
+                  data-tip={`${g.id} · open this workspace in Airtable`}
+                  href={`https://airtable.com/${g.id}`}
+                  target="_blank"
+                  rel="noopener"
+                ><span class="bst-gsep" aria-hidden="true"></span><span class="bst-gwsid-id">{g.id}</span><span class="iconify lucide--external-link size-3" aria-hidden="true"></span></a>
+              )}
+              {/* Still-matching bases are WAITING on their own lookup — a spinner, not
+                  a caveat. This group empties itself as the answers land. */}
+              {g.isPending && (
+                <span class="loading loading-spinner loading-sm bst-gspin" aria-hidden="true"></span>
+              )}
+              {/* Limited-access groups arrive with an id but no name ("Workspace N").
+                  An inline field lets the user rename in place (persists by workspace
+                  id server-side). Hidden until the pencil is pressed. */}
+              {g.isPlaceholder && (
+                <input type="text" class="bst-gname-edit" data-bst-gname-edit value={g.name} aria-label="Workspace name" hidden />
+              )}
+              {g.isPlaceholder && (
+                <button type="button" class="bst-gact tooltip" data-tip="Rename workspace" data-bst-group-rename aria-label={`Rename ${g.name}`}>
+                  <span class="iconify lucide--pencil size-4" aria-hidden="true"></span>
+                </button>
+              )}
+              {/* No "Auto-enrolled" badge here. Arriving automatically is an EVENT,
+                  and a badge is a STATE — it would never expire, so a workspace added
+                  six months ago keeps announcing it long after the user has accepted
+                  it, on the one surface whose job is picking. The arrival is announced
+                  once, when it matters, through the Inbox / new-items notification, and
+                  the permanent provenance record lives in Settings → Enrolled
+                  workspaces, the surface you visit to audit rather than to choose. */}
+              {/* Cap-blocked: this workspace's auto-add can't fill further because the
+                  plan cap is already spent. A composite of the existing warning badge +
+                  an adjacent Upgrade link (catalog note on Badge) — auto-add itself
+                  stays operable, it just won't add more until the cap moves. */}
+              {g.enrollment?.capBlocked && (
+                <span class="bst-gcap">
+                  <span class="badge badge-soft badge-warning badge-sm">Plan limit reached</span>
+                  <a href="/settings/billing" class="bst-gcap-link">Upgrade</a>
+                </span>
+              )}
+              </span>
+              {/* Per-workspace auto-add — sits in the Auto-add COLUMN, directly
+                  under the master switch in the sticky header, so the two read as
+                  one control and its own text label is no longer needed. Each
+                  carries a tooltip naming the workspace it acts on. */}
+              <span class="c-auto">
+                {g.isReal ? (
+                  <span class="bst-gauto tooltip" data-tip={`Auto-add future bases in ${g.name}`}>
+                    <input
+                      type="checkbox"
+                      class="toggle toggle-sm toggle-primary"
+                      data-bst-ws-autoadd
+                      data-group={g.id}
+                      data-ws-autoadd-saved={g.enrollment?.autoAdd ? '1' : '0'}
+                      checked={grouped && (g.enrollment?.autoAdd ?? false)}
+                      disabled={!grouped}
+                      aria-label={`Auto-add future bases in ${g.name}`}
+                    />
+                  </span>
+                ) : (
+                  /* Not applicable, and said so rather than left blank. Neither tail
+                     bucket has a workspace to watch or an id to store the preference
+                     against — but they are NOT the same fact, so they do not share a
+                     sentence: one has no workspace, the other has not been told yet.
+                     An empty cell in a column of switches reads as "blocked", which is
+                     the one thing it is not — the bases below select like any other. */
+                  <span
+                    class="bst-gauto-na tooltip"
+                    data-tip={g.isPending
+                      ? 'Not applicable yet — we are still matching these bases to their workspaces. You can select them now.'
+                      : 'Not applicable — these bases have no workspace to watch. You can still select them individually.'}
+                  >—</span>
+                )}
+              </span>
+              <span class="bst-gcount" data-bst-gcount>{g.rows.filter(({ b }) => b.isIncluded).length} of {g.rows.length}</span>
+            </div>
+          {/* The name swap, announced ONCE and reversible. It sits on its own
+              line attached under the header rather than inside it: the header is
+              a single sticky row that was already fixed for truncation, and a
+              sentence plus a button in there would reopen exactly that. */}
+          {g.swapFrom && (
+            <div class="bst-gswap" data-bst-gswap>
+              <span class="iconify lucide--info size-4" aria-hidden="true"></span>
+              <span class="bst-gswap-t">Now using its Airtable name: <strong>{g.name}</strong>. You called it {g.swapFrom}.</span>
+              <button type="button" class="btn btn-sm btn-ghost text-primary" data-bst-keep-mine data-alias={g.swapFrom}>Keep mine</button>
+              <button type="button" class="btn btn-sm btn-ghost btn-square" data-bst-gswap-dismiss aria-label="Dismiss"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button>
+            </div>
+          )}
+          <div class="bst-grows" data-bst-grows>
+            {grouped ? g.rows.map(({ b, m }) => (
+              <BasePickerRow
+                base={b}
+                tables={m.tables}
+                fields={m.fields}
+                fieldsText={fmt.format(m.fields)}
+                groupId={g.id}
+                wsName={g.isReal ? g.name.toLowerCase() : ''}
+              />
+            )) : null}
+          </div>
+        </div>
+      ))}
+    </div>
+    <p class="bst-empty" data-bst-empty hidden>No bases match your filters.</p>
+  </Tag>
+
+  {/* Pagination — illustrative; paginates the current (searched/sorted/filtered) set. */}
+  <div class="bst-pager" data-bst-pager hidden>
+    <label class="inline-flex items-center gap-2 text-sm font-medium text-base-content/60">Show
+      <select class="select select-sm w-auto" data-bst-pagesize aria-label="Bases per page">
+        <option value="10">10</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+      </select>
+      per page
+    </label>
+    <div class="bst-pager-nav">
+      <button type="button" class="btn btn-sm btn-ghost" data-bst-prev><span class="iconify lucide--chevron-left size-4"></span> Prev</button>
+      <span class="bst-page-info mono-data" data-bst-pageinfo></span>
+      <button type="button" class="btn btn-sm btn-ghost" data-bst-next>Next <span class="iconify lucide--chevron-right size-4"></span></button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+  function wireBaseTables() {
+    document.querySelectorAll<HTMLElement>('[data-base-table]').forEach((root) => {
+      if (root.dataset.bstWired === '1') return;
+      root.dataset.bstWired = '1';
+
+      const capRaw = root.dataset.cap;
+      const cap = capRaw === '' || capRaw === undefined ? null : Number(capRaw);
+      const rows = Array.from(root.querySelectorAll<HTMLElement>('[data-bst-row]'));
+      const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('[data-base-checkbox]'));
+      // Grouping is MUTABLE now — it is the user's click, not a property of the
+      // data — so every read goes through the attribute rather than a captured
+      // boolean.
+      const isGrouped = () => root.hasAttribute('data-grouped');
+      const flatWrap = root.querySelector<HTMLElement>('[data-bst-flatrows]');
+      // Rows know which group they BELONG to regardless of where they currently
+      // sit, so group membership survives moving between the flat container and
+      // the group shells.
+      const rowsByGroup = new Map<string, HTMLElement[]>();
+      rows.forEach((r) => {
+        const id = r.dataset.group || '';
+        const list = rowsByGroup.get(id);
+        if (list) list.push(r); else rowsByGroup.set(id, [r]);
+      });
+      // Per-group handles. Group-header checkboxes carry [data-bst-group-check],
+      // NEVER [data-base-checkbox], so the wizard's base count/submit selector
+      // ([data-base-checkbox]:checked) never miscounts a header as a base.
+      const groupData = Array.from(root.querySelectorAll<HTMLElement>('[data-bst-group]')).map((el) => {
+        const groupRows = rowsByGroup.get(el.dataset.bstGroup || '') ?? [];
+        return {
+          el,
+          check: el.querySelector<HTMLInputElement>('[data-bst-group-check]'),
+          gcount: el.querySelector<HTMLElement>('[data-bst-gcount]'),
+          rowsWrap: el.querySelector<HTMLElement>('[data-bst-grows]'),
+          boxes: groupRows
+            .map((r) => r.querySelector<HTMLInputElement>('[data-base-checkbox]'))
+            .filter((b): b is HTMLInputElement => !!b),
+          rows: groupRows,
+          // Per-workspace auto-add checkbox (workspace-auto-enroll). NEVER
+          // [data-base-checkbox] — same reasoning as the group select-all above.
+          wsAutoAdd: el.querySelector<HTMLInputElement>('[data-bst-ws-autoadd]'),
+          // Inline rename handles (placeholder "Workspace N" groups only).
+          gname: el.querySelector<HTMLElement>('[data-bst-gname]'),
+          gnameEdit: el.querySelector<HTMLInputElement>('[data-bst-gname-edit]'),
+          renameBtn: el.querySelector<HTMLButtonElement>('[data-bst-group-rename]'),
+        };
+      });
+      // The search field belongs to the shared typeahead now (EntitySearch.astro),
+      // so the handle is ITS field, not a `[data-bst-search]` of our own. Two
+      // listeners share the input: the component's (which paints the dropdown) and
+      // ours (which filters the table). Order between them does not matter.
+      const esRoot = root.querySelector<HTMLElement>('[data-entity-search]');
+      const search = root.querySelector<HTMLInputElement>('[data-es-field]');
+      const sortSel = root.querySelector<HTMLSelectElement>('[data-bst-sort]');
+      const countEl = root.querySelector<HTMLElement>('[data-bst-count]');
+      const capNote = root.querySelector<HTMLElement>('[data-bst-cap-note]');
+      const capText = root.querySelector<HTMLElement>('[data-bst-cap-text]');
+      const emptyEl = root.querySelector<HTMLElement>('[data-bst-empty]');
+      const autoAddRow = root.querySelector<HTMLElement>('[data-bst-autoadd]');
+      const autoAddCheck = root.querySelector<HTMLInputElement>('[data-bst-autoadd-check]');
+      // Master auto-add switch in the sticky column header (grouped only) — drives
+      // every workspace's [data-bst-ws-autoadd] toggle and mirrors their combined
+      // state back, including the mixed one.
+      const wsAutoAll = root.querySelector<HTMLInputElement>('[data-bst-wsauto-all]');
+      const pager = root.querySelector<HTMLElement>('[data-bst-pager]');
+      const pagerPrev = root.querySelector<HTMLButtonElement>('[data-bst-prev]');
+      const pagerNext = root.querySelector<HTMLButtonElement>('[data-bst-next]');
+      const pagerInfo = root.querySelector<HTMLElement>('[data-bst-pageinfo]');
+      const pagerSize = root.querySelector<HTMLSelectElement>('[data-bst-pagesize]');
+      const total = boxes.length;
+      let pageSize = 10;
+      let page = 1;
+      let showSelected = false;
+      let showNew = false;
+      let newDismissed = false;
+
+      const checkedCount = () => boxes.filter((b) => b.checked).length;
+      const showCap = (msg: string) => { if (capNote && capText) { capText.textContent = msg; capNote.hidden = false; } };
+      const hideCap = () => { if (capNote) capNote.hidden = true; };
+
+      // Fill checkboxes up to the shared tier-cap budget. The ceiling is the
+      // GLOBAL checked count, so both the global select-all and each per-group
+      // select-all draw from the SAME budget and stop mid-group at the cap.
+      const fillToCap = (targetBoxes: HTMLInputElement[]) => {
+        let n = checkedCount();
+        for (const b of targetBoxes) {
+          if (cap !== null && n >= cap) break;
+          if (!b.checked) { b.checked = true; n++; }
+        }
+      };
+
+      const clearBtn = root.querySelector<HTMLButtonElement>('[data-bst-clear]');
+      function refreshCount() {
+        const n = checkedCount();
+        if (countEl) countEl.textContent = String(n);
+        // Clear only matters when something is selected — hide it on an empty selection.
+        if (clearBtn) clearBtn.hidden = n === 0;
+        // At the plan cap, the UNCHECKED rows can't be added — dim them + disable their
+        // checkbox so it's obvious far down a long list (not just from the top banner).
+        // Checked rows stay active so the user can still deselect to free up room.
+        const atCap = cap !== null && n >= cap;
+        boxes.forEach((b) => {
+          const capped = atCap && !b.checked;
+          b.closest<HTMLElement>('[data-bst-row]')?.classList.toggle('is-capped', capped);
+          b.disabled = capped;
+        });
+        if (cap !== null && n >= cap) showCap(`Plan limit reached — backing up ${cap} of ${total} bases. Upgrade to add more.`);
+        else hideCap();
+        // Auto-add only makes sense as "back up everything", so show it only when
+        // every current base is selected; reset it when the selection drops below all.
+        if (autoAddRow) {
+          const allSelected = total > 0 && n === total;
+          autoAddRow.hidden = !allSelected;
+          if (!allSelected && autoAddCheck) autoAddCheck.checked = false;
+        }
+        // Sync each group header checkbox from its own rows: checked = all in the
+        // group selected, indeterminate (dash) = some, empty = none. A cap-clamped
+        // group fill lands on "some" → the dash, the honest partial signal.
+        groupData.forEach((g) => {
+          const sel = g.boxes.filter((b) => b.checked).length;
+          if (g.check) {
+            g.check.checked = sel > 0 && sel === g.boxes.length;
+            g.check.indeterminate = sel > 0 && sel < g.boxes.length;
+          }
+          if (g.gcount) g.gcount.textContent = `${sel} of ${g.boxes.length}`;
+        });
+      }
+
+      // Mirror the workspaces' auto-add switches up into the master: on when all
+      // are on, off when none are, and the MIXED state when they disagree. daisyUI
+      // renders :indeterminate on a toggle natively (the knob sits centred), so the
+      // third state needs no checkbox and no bespoke styling.
+      const wsAutoToggles = () =>
+        groupData.map((g) => g.wsAutoAdd).filter((c): c is HTMLInputElement => !!c);
+      function syncWsAutoAll() {
+        if (!wsAutoAll) return;
+        const checks = wsAutoToggles();
+        const on = checks.filter((c) => c.checked).length;
+        wsAutoAll.checked = checks.length > 0 && on === checks.length;
+        wsAutoAll.indeterminate = on > 0 && on < checks.length;
+      }
+
+      // Rows passing the current search + show-selected filters (across all pages).
+      const candidates = () => rows.filter((r) =>
+        !r.classList.contains('search-hidden') &&
+        (!showSelected || !!r.querySelector<HTMLInputElement>('[data-base-checkbox]')?.checked) &&
+        (!showNew || r.dataset.new === '1'));
+
+      // Paginate: reveal only the current page of the filtered set.
+      function applyView() {
+        const cands = candidates();
+        // Grouped mode: no pager (decided) — reveal every candidate and rely on the
+        // scroll container + collapse. A group with no visible rows hides entirely.
+        if (isGrouped()) {
+          const visible = new Set(cands);
+          rows.forEach((r) => r.classList.toggle('page-hidden', !visible.has(r)));
+          groupData.forEach((g) => g.el.classList.toggle('group-empty', !g.rows.some((r) => visible.has(r))));
+          if (emptyEl) emptyEl.hidden = cands.length > 0;
+          if (pager) pager.hidden = true;
+          return;
+        }
+        const pages = Math.max(1, Math.ceil(cands.length / pageSize));
+        page = Math.min(Math.max(1, page), pages);
+        const start = (page - 1) * pageSize;
+        rows.forEach((r) => r.classList.add('page-hidden'));
+        cands.slice(start, start + pageSize).forEach((r) => r.classList.remove('page-hidden'));
+        if (emptyEl) emptyEl.hidden = cands.length > 0;
+        if (pager) {
+          // Keep the pager (with its page-size dropdown) whenever the table is large
+          // enough to paginate; the nav buttons just disable at the ends / on one page.
+          pager.hidden = total <= 10;
+          if (pagerInfo) pagerInfo.textContent = `Page ${page} of ${pages} · ${cands.length} base${cands.length === 1 ? '' : 's'}`;
+          pagerPrev?.toggleAttribute('disabled', page <= 1);
+          pagerNext?.toggleAttribute('disabled', page >= pages);
+        }
+      }
+
+      // Hard cap on manual check.
+      boxes.forEach((b) => b.addEventListener('change', () => {
+        if (b.checked && cap !== null && checkedCount() > cap) {
+          b.checked = false;
+          showCap(`Your plan covers ${cap} bases. Upgrade to add more.`);
+        }
+        refreshCount();
+        refreshNewBanner();
+        if (showSelected || showNew) applyView();
+      }));
+
+      // ONE search, no scope question (Oleh 2026-07-29). A row matches on its base
+      // name OR its workspace name, simultaneously — which is what the deleted
+      // `in Bases` / `in Workspaces` select used to gate. The old worry (a workspace
+      // term dumping every base in it while you hunt for a base) is answered by the
+      // dropdown, not by a switch: the BASES group there names each hit's workspace,
+      // so a workspace-term match explains itself. Matching is NOT gated on grouped —
+      // a base's workspace is a fact about the base either way — and `data-wsname` is
+      // empty when the connection has no workspace data at all, so those estates are
+      // untouched.
+      function applySearch() {
+        const q = (search?.value || '').trim().toLowerCase();
+        rows.forEach((row) => {
+          const hay = `${row.dataset.name || ''} ${row.dataset.wsname || ''}`;
+          row.classList.toggle('search-hidden', !!q && !hay.includes(q));
+        });
+        // An active search temporarily overrides collapse — a match inside a
+        // collapsed group must be reachable. The collapse state itself is kept
+        // (the class stays), so groups re-collapse when the query is cleared.
+        root.classList.toggle('is-searching', !!q);
+        page = 1;
+        applyView();
+      }
+      search?.addEventListener('input', applySearch);
+
+      // Which KINDS the dropdown may return. Ungrouped there are no workspace rows
+      // on screen, so a WORKSPACES heading would offer to scroll somewhere that does
+      // not exist — the group is made absent rather than present-and-empty.
+      function syncSearchKinds() {
+        if (esRoot) esRoot.dataset.esKinds = isGrouped() ? '' : 'base';
+      }
+
+      // The current comparator, remembered so a later group/ungroup re-homes rows
+      // in the order the user is actually looking at.
+      let sortCmp = (a: HTMLElement, b: HTMLElement) =>
+        (a.dataset.name || '').localeCompare(b.dataset.name || '');
+      // Sort — reorder rows in place, then re-page.
+      function applySort() {
+        // Sort WITHIN each group (groups stay name-ordered); flat mode sorts globally.
+        if (isGrouped()) {
+          groupData.forEach((g) => [...g.rows].sort(sortCmp).forEach((r) => g.rowsWrap?.appendChild(r)));
+        } else {
+          [...rows].sort(sortCmp).forEach((r) => flatWrap?.appendChild(r));
+        }
+      }
+      sortSel?.addEventListener('change', () => {
+        const by = sortSel.value;
+        sortCmp = (a: HTMLElement, b: HTMLElement) => {
+          if (by === 'tables') return Number(b.dataset.tables) - Number(a.dataset.tables);
+          if (by === 'fields') return Number(b.dataset.fields) - Number(a.dataset.fields);
+          return (a.dataset.name || '').localeCompare(b.dataset.name || '');
+        };
+        applySort();
+        page = 1;
+        applyView();
+      });
+
+      // Select all (up to cap) / clear.
+      root.querySelector<HTMLButtonElement>('[data-bst-select-all]')?.addEventListener('click', () => {
+        fillToCap(boxes);
+        if (cap !== null && total > cap) showCap(`Selected ${cap} of ${total} (plan limit). Upgrade to add more.`);
+        refreshCount();
+        applyView();
+        // Notify external listeners (e.g. the tab's count badge) — programmatic
+        // checks don't fire native change events.
+        boxes[0]?.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      root.querySelector<HTMLButtonElement>('[data-bst-clear]')?.addEventListener('click', () => {
+        boxes.forEach((b) => (b.checked = false));
+        refreshCount();
+        applyView();
+        boxes[0]?.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+
+      // ── Per-workspace select-all + collapse ──
+      groupData.forEach((g) => {
+        // Toggle the whole group, sharing the global cap budget. Already-full → clear;
+        // otherwise fill to cap (stops mid-group at the cap, header shows the dash).
+        g.check?.addEventListener('change', () => {
+          // Tri-state toggle: if ANYTHING in the group is selected (full OR a
+          // cap-clamped partial), the click CLEARS the whole group — the user can
+          // always roll a group back, even at the plan cap. Only an empty group
+          // fills (up to the shared cap).
+          const anyChecked = g.boxes.some((b) => b.checked);
+          if (anyChecked) {
+            g.boxes.forEach((b) => (b.checked = false));
+          } else {
+            fillToCap(g.boxes);
+            if (cap !== null && checkedCount() >= cap && g.boxes.some((b) => !b.checked)) {
+              showCap(`Plan limit reached — backing up ${cap} of ${total} bases. Upgrade to add more.`);
+            }
+          }
+          refreshCount();
+          refreshNewBanner();
+          applyView();
+          boxes[0]?.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        // Collapse via the chevron only — the header body holds the select-all
+        // checkbox, so a whole-header click would collide with its hit area.
+        const toggle = g.el.querySelector<HTMLButtonElement>('[data-bst-group-toggle]');
+        toggle?.addEventListener('click', () => {
+          const collapsed = g.el.classList.toggle('group-collapsed');
+          toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        });
+        // Per-workspace auto-add toggle — its own change re-labels the bulk action
+        // (workspace-auto-enroll). Nothing here submits until Save; it's just state.
+        g.wsAutoAdd?.addEventListener('change', syncWsAutoAll);
+
+        // Inline rename for placeholder ("Workspace N") groups — a real workspace
+        // whose name we couldn't read with the current access. Optimistic here;
+        // the alias persists by workspace id server-side in prod.
+        if (g.renameBtn && g.gname && g.gnameEdit) {
+          const nameSpan = g.gname;
+          const nameEdit = g.gnameEdit;
+          const startRename = () => {
+            nameEdit.value = (nameSpan.textContent || '').trim() || nameEdit.value;
+            nameSpan.hidden = true;
+            nameEdit.hidden = false;
+            nameEdit.focus();
+            nameEdit.select();
+          };
+          const commit = () => {
+            if (nameEdit.hidden) return;
+            const v = nameEdit.value.trim();
+            if (v) nameSpan.textContent = v;
+            nameSpan.hidden = false;
+            nameEdit.hidden = true;
+            const wsId = g.el.dataset.bstGroup || '';
+            // Stubbed in the design harness (api catch-all returns { ok: true });
+            // the real endpoint stores the alias keyed by workspace id. Renaming
+            // HERE is always a 'placeholder-fill': the field only exists because
+            // Airtable withheld the name, so this is a stand-in, not a preference
+            // — which is what lets the real name take over later without asking.
+            fetch(`/api/workspaces/${encodeURIComponent(wsId)}/alias`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ alias: v, kind: 'placeholder-fill' }),
+            }).catch(() => {});
+          };
+          g.renameBtn.addEventListener('click', startRename);
+          nameEdit.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            else if (e.key === 'Escape') { e.preventDefault(); nameSpan.hidden = false; nameEdit.hidden = true; }
+          });
+          nameEdit.addEventListener('blur', commit);
+        }
+      });
+
+      // Master switch: set every workspace to its new state. Clicking it while
+      // MIXED turns everything on — the same "a partial select-all fills" rule the
+      // group select-all above follows.
+      wsAutoAll?.addEventListener('change', () => {
+        const checked = wsAutoAll.checked;
+        wsAutoAll.indeterminate = false;
+        wsAutoToggles().forEach((c) => { c.checked = checked; });
+      });
+
+      // Collapse all / expand all.
+      const collapseAllBtn = root.querySelector<HTMLButtonElement>('[data-bst-collapse-all]');
+      const collapseAllLabel = root.querySelector<HTMLElement>('[data-bst-collapse-all-label]');
+      collapseAllBtn?.addEventListener('click', () => {
+        const anyExpanded = groupData.some((g) => !g.el.classList.contains('group-collapsed'));
+        groupData.forEach((g) => {
+          g.el.classList.toggle('group-collapsed', anyExpanded);
+          g.el.querySelector('[data-bst-group-toggle]')?.setAttribute('aria-expanded', anyExpanded ? 'false' : 'true');
+        });
+        if (collapseAllLabel) collapseAllLabel.textContent = anyExpanded ? 'Expand all' : 'Collapse all';
+        collapseAllBtn.setAttribute('aria-expanded', anyExpanded ? 'false' : 'true');
+      });
+
+      // ── Picking a typeahead result ──
+      //
+      // A PICKER HAS NOTHING TO OPEN, so Browse's pick semantics are deliberately
+      // NOT copied. A base result scrolls into view and gets ticked; a workspace
+      // result scrolls to its group and expands it, selecting nothing (the user
+      // asked to look, not to commit forty bases). The component has already
+      // cleared the query and fired a real `input` event by the time we get here,
+      // so the table is unfiltered and the target row is reachable.
+      function revealRow(el: HTMLElement) {
+        const grp = el.closest<HTMLElement>('[data-bst-group]');
+        if (grp?.classList.contains('group-collapsed')) {
+          grp.classList.remove('group-collapsed');
+          grp.querySelector('[data-bst-group-toggle]')?.setAttribute('aria-expanded', 'true');
+        }
+        // Flat mode paginates, so "scroll to it" first means "be on its page".
+        if (!isGrouped()) {
+          const idx = candidates().indexOf(el);
+          if (idx >= 0) page = Math.floor(idx / pageSize) + 1;
+        }
+        applyView();
+        el.scrollIntoView({ block: 'center', behavior: reducedMotion() ? 'auto' : 'smooth' });
+      }
+      document.addEventListener(`bst:pick:${root.dataset.bstSpace || 'default'}`, (ev) => {
+        const id = (ev as CustomEvent<{ id?: string }>).detail?.id || '';
+        if (id.startsWith('ws:')) {
+          const g = groupData.find((x) => x.el.dataset.bstGroup === id.slice(3));
+          if (!g) return;
+          g.el.classList.remove('group-collapsed');
+          g.el.querySelector('[data-bst-group-toggle]')?.setAttribute('aria-expanded', 'true');
+          applyView();
+          g.el.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
+          return;
+        }
+        if (!id.startsWith('base:')) return;
+        const box = boxes.find((b) => b.value === id.slice(5));
+        const row = box?.closest<HTMLElement>('[data-bst-row]');
+        if (!box || !row) return;
+        if (!box.checked) {
+          // At the cap, `refreshCount` has already disabled every unchecked box.
+          // Do exactly what the row does — refuse, and let the existing amber cap
+          // note carry the reason. No second cap behaviour lives in the dropdown.
+          if (box.disabled) {
+            showCap(`Plan limit reached — backing up ${cap} of ${total} bases. Upgrade to add more.`);
+          } else {
+            box.checked = true;
+            if (cap !== null && checkedCount() > cap) {
+              box.checked = false;
+              showCap(`Your plan covers ${cap} bases. Upgrade to add more.`);
+            }
+            refreshCount();
+            refreshNewBanner();
+            boxes[0]?.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+        revealRow(row);
+      });
+
+      // Show selected only.
+      root.querySelector<HTMLInputElement>('[data-bst-show-selected]')?.addEventListener('change', (e) => {
+        showSelected = (e.target as HTMLInputElement).checked;
+        page = 1;
+        applyView();
+      });
+
+      // Pager.
+      pagerPrev?.addEventListener('click', () => { page -= 1; applyView(); });
+      pagerNext?.addEventListener('click', () => { page += 1; applyView(); });
+      pagerSize?.addEventListener('change', () => { pageSize = Number(pagerSize.value) || 10; page = 1; applyView(); });
+
+      // ── New bases discovered (notify; the auto-add toggle is the opt-in path) ──
+      const newBox = root.querySelector<HTMLElement>('[data-bst-newbases]');
+      const newCountEl = root.querySelector<HTMLElement>('[data-bst-newbases-count]');
+      const newPluralEl = root.querySelector<HTMLElement>('[data-bst-newbases-plural]');
+      const newAddnEl = root.querySelector<HTMLElement>('[data-bst-newbases-addn]');
+      const newAddBtn = root.querySelector<HTMLButtonElement>('[data-bst-newbases-add]');
+      const newRows = rows.filter((r) => r.dataset.new === '1');
+      const pendingNew = () => newRows.filter((r) => !r.querySelector<HTMLInputElement>('[data-base-checkbox]')?.checked);
+      const addableNew = () => Math.min(pendingNew().length, cap === null ? Infinity : Math.max(0, cap - checkedCount()));
+      function refreshNewBanner() {
+        if (!newBox) return;
+        const pend = pendingNew().length;
+        if (pend === 0 || newDismissed) { newBox.hidden = true; return; }
+        newBox.hidden = false;
+        if (newCountEl) newCountEl.textContent = String(pend);
+        if (newPluralEl) newPluralEl.textContent = pend === 1 ? '' : 's';
+        const addable = addableNew();
+        if (newAddnEl) newAddnEl.textContent = String(addable);
+        newAddBtn?.toggleAttribute('disabled', addable === 0);
+      }
+      root.querySelector<HTMLButtonElement>('[data-bst-newbases-review]')?.addEventListener('click', () => {
+        showNew = true; page = 1; applyView();
+      });
+      newAddBtn?.addEventListener('click', () => {
+        let room = cap === null ? Infinity : cap - checkedCount();
+        for (const r of pendingNew()) {
+          if (room <= 0) break;
+          const box = r.querySelector<HTMLInputElement>('[data-base-checkbox]');
+          if (box) { box.checked = true; room -= 1; }
+        }
+        if (cap !== null && pendingNew().length > 0) showCap(`Plan limit reached — backing up ${cap} of ${total} bases. Upgrade to add more.`);
+        refreshCount(); applyView(); refreshNewBanner();
+        boxes[0]?.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      root.querySelector<HTMLButtonElement>('[data-bst-newbases-dismiss]')?.addEventListener('click', () => {
+        newDismissed = true; showNew = false; if (newBox) newBox.hidden = true; applyView();
+      });
+
+      // ── Workspace resolution: report on the bar, then GROUP without being asked ──
+      //
+      // Getting a base's workspace costs one extra Airtable call PER BASE, so the
+      // map arrives late and in pieces. Two rules hold this together: the flat
+      // table is complete without it (nothing is skeletoned, disabled or blocked
+      // while it runs), and when it lands the table groups ITSELF — the user came
+      // for the finished result, not for a list they then have to fix. That is
+      // exactly ONE reflow, once per connection, and it is animated.
+      const progEl = root.querySelector<HTMLProgressElement>('[data-bst-prog]');
+      const statusEl = root.querySelector<HTMLElement>('[data-bst-wsstatus]');
+      const statusText = root.querySelector<HTMLElement>('[data-bst-wsstatus-text]');
+      const wsRetryBtn = root.querySelector<HTMLButtonElement>('[data-bst-wsretry]');
+      const groupToggle = root.querySelector<HTMLInputElement>('[data-bst-wsgroup]');
+      const enrollRow = root.querySelector<HTMLElement>('[data-bst-wsenroll]');
+      const nameCol = root.querySelector<HTMLElement>('[data-bst-namecol]');
+      const scrollBox = root.querySelector<HTMLElement>('[data-bst-list]');
+      // Grouped is the default, but the user's OWN "off" outranks it — forever, per
+      // connection. In production that round-trips through the `groupByWorkspace`
+      // prop; this repo has no backend, so the client keeps the same promise
+      // locally (verified 2026-07-29: without it, a reload throws the answer away).
+      const wsGroupKey = `bst-wsgroup:${root.dataset.bstSpace || 'default'}`;
+      const readGroupPref = (): boolean | null => {
+        try { const v = localStorage.getItem(wsGroupKey); return v === null ? null : v === '1'; } catch { return null; }
+      };
+      const writeGroupPref = (on: boolean) => {
+        try { localStorage.setItem(wsGroupKey, on ? '1' : '0'); } catch { /* private mode — the session still works, it just forgets */ }
+      };
+      const wsTotal = Number(root.dataset.wsTotal || '0');
+      let wsDone = Number(root.dataset.wsDone || '0');
+      let wsRole = (root.dataset.wsResolve || 'off') as 'off' | 'resolving' | 'ready' | 'failed';
+      let wsTimer: ReturnType<typeof setInterval> | null = null;
+
+      // Don't FLASH the bar: a five-base account resolves in a blink, and a
+      // progress bar that appears and vanishes is noise pretending to be
+      // information. Nothing renders until the wait has actually been felt.
+      const PROG_DELAY_MS = 500;
+      let progShown = false;
+      let progTimer: ReturnType<typeof setTimeout> | null = null;
+
+      function paintWs() {
+        // The toggle is real only once there is something to group by.
+        if (groupToggle) groupToggle.disabled = wsRole !== 'ready';
+        const running = wsRole === 'resolving';
+        const failed = wsRole === 'failed';
+        const live = progShown && (running || failed);
+        if (progEl) {
+          progEl.value = wsDone;
+          // Failure STOPS the bar and drops it to the neutral variant. Never red:
+          // a workspace lookup that gave up is not a page error — every base is
+          // still selectable and the flow continues.
+          progEl.classList.toggle('progress-primary', running);
+          progEl.hidden = !live;
+        }
+        if (statusEl) statusEl.hidden = !live;
+        if (statusText) {
+          // Honest copy. The bases are ALREADY loaded; "syncing your bases" would
+          // teach the user the list is incomplete and that they should wait before
+          // selecting, which is false and costs them the whole point of the design.
+          statusText.textContent = running
+            ? `Organising your bases by workspace… ${wsDone} / ${wsTotal}`
+            : failed
+              ? 'Couldn’t organise by workspace'
+              : '';
+        }
+        if (wsRetryBtn) wsRetryBtn.hidden = !failed;
+      }
+
+      // Harness-only simulation of the background lookup. There is no backend in
+      // this repo, so the counter is ticked locally — but it always RESUMES from
+      // the count it was handed (a reload never throws the work away and never
+      // restarts at 0), and when it lands it only ever flips the line to the
+      // offer. Production replaces this with the engine's real progress.
+      // Demo PACING, not logic. With a real backend the counter follows actual completions;
+      // here it is simulated, and the first pass ran ~24 steps in ~8s — fast enough that the
+      // phase was over before anyone could see what it was (Oleh 2026-07-29: make it long
+      // enough to read). ~30 steps at 500ms ≈ 15s: slow enough to watch the number climb and
+      // to try selecting bases WHILE it runs, which is the behaviour worth showing.
+      const WS_TICK_MS = 600;
+      const WS_TICK_STEPS = 40;
+      function runResolution() {
+        if (wsTimer) clearInterval(wsTimer);
+        wsTimer = setInterval(() => {
+          wsDone = Math.min(wsTotal, wsDone + Math.max(1, Math.ceil(wsTotal / WS_TICK_STEPS)));
+          if (wsDone >= wsTotal) {
+            if (wsTimer) clearInterval(wsTimer);
+            wsTimer = null;
+            onResolved();
+            return;
+          }
+          paintWs();
+        }, WS_TICK_MS);
+      }
+
+      // Matching finished. THIS is the moment the table groups itself — the single
+      // disruptive event in the whole design, and it happens once per connection.
+      // The only thing that stops it is the user's own remembered "off".
+      function onResolved() {
+        wsRole = 'ready';
+        if (progTimer) { clearTimeout(progTimer); progTimer = null; }
+        const off = readGroupPref() === false;
+        if (!off && groupData.length > 0 && !isGrouped()) {
+          if (groupToggle) groupToggle.checked = true;
+          setGrouped(true);
+        }
+        paintWs();
+      }
+
+      // The single deliberate template switch. Rows LIVE in one home or the other,
+      // never half in each: flat means the flat container + the four-column grid +
+      // no Auto-add cell; grouped means the group shells + the five-column grid.
+      // FLIP: measure every visible row BEFORE the move, then transition each one
+      // from where it was to where it landed. Rows travel instead of teleporting —
+      // which is the honest answer to "don't let it jump". A skeleton was proposed
+      // and rejected: this operation is local and takes ~0ms, so a placeholder over
+      // it would be invented latency (see storybook pattern-base-picker).
+      const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      function measureRows() {
+        const before = new Map<HTMLElement, number>();
+        rows.forEach((r) => { if (r.offsetParent) before.set(r, r.getBoundingClientRect().top); });
+        return before;
+      }
+      function playFlip(before: Map<HTMLElement, number>) {
+        const moved: HTMLElement[] = [];
+        before.forEach((top, r) => {
+          if (!r.offsetParent) return;
+          const dy = top - r.getBoundingClientRect().top;
+          if (!dy) return;
+          r.style.transform = `translateY(${dy}px)`;
+          moved.push(r);
+        });
+        if (moved.length === 0) return;
+        requestAnimationFrame(() => {
+          moved.forEach((r) => { r.classList.add('bst-flip'); r.style.transform = ''; });
+          window.setTimeout(() => moved.forEach((r) => r.classList.remove('bst-flip')), 240);
+        });
+      }
+
+      function setGrouped(on: boolean, animate = true) {
+        // Scroll survives the reflow; the SELECTION survives for free, because the
+        // very same row nodes are moved between homes — nothing is re-rendered, so
+        // no checkbox is ever recreated.
+        const before = animate && !reducedMotion() ? measureRows() : null;
+        const keepScroll = scrollBox?.scrollTop ?? 0;
+        if (on) root.setAttribute('data-grouped', '1');
+        else root.removeAttribute('data-grouped');
+        if (on) {
+          groupData.forEach((g) => g.rows.forEach((r) => g.rowsWrap?.appendChild(r)));
+        } else if (flatWrap) {
+          rows.forEach((r) => flatWrap.appendChild(r));
+        }
+        applySort();
+        // Per-workspace auto-add is only real while the workspaces are on screen.
+        // The wizard's review step counts [data-bst-ws-autoadd]:checked, so a
+        // hidden checked switch would make it claim an auto-add the user can
+        // neither see nor have chosen; the saved value waits in the dataset.
+        groupData.forEach((g) => {
+          const c = g.wsAutoAdd;
+          if (!c) return;
+          c.disabled = !on;
+          c.checked = on && c.dataset.wsAutoaddSaved === '1';
+        });
+        if (wsAutoAll) wsAutoAll.disabled = !on;
+        if (groupToggle) groupToggle.checked = on;
+        if (collapseAllBtn) collapseAllBtn.hidden = !on;
+        if (enrollRow) enrollRow.hidden = !on;
+        if (nameCol) nameCol.textContent = on ? 'Workspace / base' : 'Base';
+        syncSearchKinds();
+        syncWsAutoAll();
+        applySearch();
+        refreshCount();
+        paintWs();
+        if (scrollBox) scrollBox.scrollTop = keepScroll;
+        if (before) playFlip(before);
+      }
+
+      // ONE control, ONE name. There is no second "Ungroup" label anywhere — this
+      // toggle IS the setting, and the setting is what decides whether auto-add is
+      // chosen per workspace or once for the whole connection.
+      groupToggle?.addEventListener('change', () => {
+        const on = groupToggle.checked;
+        writeGroupPref(on);
+        setGrouped(on);
+      });
+      wsRetryBtn?.addEventListener('click', () => {
+        wsRole = 'resolving';
+        // The user asked for this one, so it shows at once — the anti-flash delay
+        // exists for waits nobody requested.
+        progShown = true;
+        paintWs();
+        runResolution();
+      });
+
+      // ── The name swap: Airtable's name takes over, "Keep mine" reverses it ──
+      //
+      // Answering promotes the alias from 'placeholder-fill' (typed only because
+      // the name was missing) to 'custom' (a deliberate choice) — and ONLY then
+      // do both names show, the user's leading and Airtable's muted beside it.
+      groupData.forEach((g) => {
+        const swap = g.el.querySelector<HTMLElement>('[data-bst-gswap]');
+        if (!swap) return;
+        const keepBtn = swap.querySelector<HTMLButtonElement>('[data-bst-keep-mine]');
+        keepBtn?.addEventListener('click', () => {
+          const mine = keepBtn.dataset.alias || '';
+          const airtable = (g.gname?.textContent || '').trim();
+          if (g.gname && mine) g.gname.textContent = mine;
+          if (airtable) {
+            const dual = document.createElement('span');
+            dual.className = 'bst-gwhy tooltip';
+            dual.dataset.bstGdual = '';
+            dual.setAttribute('data-tip', `Your name for this workspace. Airtable calls it ${airtable}.`);
+            dual.textContent = `· ${airtable} in Airtable`;
+            g.gname?.after(dual);
+          }
+          swap.hidden = true;
+          const wsId = g.el.dataset.bstGroup || '';
+          fetch(`/api/workspaces/${encodeURIComponent(wsId)}/alias`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ alias: mine, kind: 'custom' }),
+          }).catch(() => {});
+        });
+        // Dismiss = accept Airtable's name. The alias stays 'placeholder-fill',
+        // so it simply stops being used; nothing is destroyed.
+        swap.querySelector<HTMLButtonElement>('[data-bst-gswap-dismiss]')?.addEventListener('click', () => {
+          swap.hidden = true;
+        });
+      });
+
+      // Restore the remembered answer BEFORE the first paint — and WITHOUT the
+      // animation. A returning user is not re-experiencing the reflow; for them the
+      // page simply renders in the state they left it. The animated move is reserved
+      // for the one real event: matching completing while they watch.
+      const storedGroupPref = readGroupPref();
+      if (wsRole === 'ready' && storedGroupPref !== null && storedGroupPref !== isGrouped()) {
+        if (storedGroupPref && groupData.length > 0) setGrouped(true, false);
+        else if (!storedGroupPref) setGrouped(false, false);
+      }
+
+      // A lookup that is already finished at first paint needs no bar at all; one
+      // that failed shows immediately (there is nothing left to wait for); one that
+      // is running arms the anti-flash delay.
+      if (wsRole === 'failed') progShown = true;
+      else if (wsRole === 'resolving') progTimer = setTimeout(() => { progShown = true; paintWs(); }, PROG_DELAY_MS);
+      paintWs();
+      if (wsRole === 'resolving') runResolution();
+
+      refreshCount();
+      applyView();
+      refreshNewBanner();
+      syncWsAutoAll();
+      syncSearchKinds();
+    });
+  }
+  wireBaseTables();
+  document.addEventListener('astro:after-swap', wireBaseTables);
+</script>

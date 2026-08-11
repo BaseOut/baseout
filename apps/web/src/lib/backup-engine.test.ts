@@ -1,0 +1,942 @@
+import { describe, expect, it, vi } from 'vitest'
+import { createBackupEngine } from './backup-engine'
+
+const TOKEN = 'test-internal-token'
+const CONN_ID = '11111111-2222-3333-4444-555555555555'
+// Placeholder base used by createBackupEngine when calling binding.fetch.
+// Cloudflare ignores the host on a service binding — apps/server reads only
+// path + headers + body — but Fetcher.fetch() requires an absolute URL.
+const PLACEHOLDER_BASE = 'https://engine'
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+/**
+ * Build a Fetcher-shaped stub backed by the supplied handler. The handler
+ * receives the full Request the engine client constructed (URL + headers +
+ * method) and returns the Response the binding "would" return.
+ *
+ * vi.fn wraps the .fetch property so tests can assert call counts + inspect
+ * the captured Request the same way they used to inspect (url, init).
+ */
+function fetcherStub(
+  handler: (req: Request) => Promise<Response> | Response,
+): Fetcher & { fetch: ReturnType<typeof vi.fn> } {
+  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+    handler(new Request(input as RequestInfo, init)),
+  )
+  return { fetch } as unknown as Fetcher & {
+    fetch: ReturnType<typeof vi.fn>
+  }
+}
+
+describe('createBackupEngine.whoami', () => {
+  it('calls binding.fetch with method POST and the canonical /api/internal/connections/:id/whoami path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({
+        connectionId: CONN_ID,
+        airtable: { id: 'usrX', scopes: ['data.records:read'] },
+      }),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await engine.whoami(CONN_ID)
+    expect(binding.fetch).toHaveBeenCalledOnce()
+    const captured = binding.fetch.mock.calls[0]
+    // First-arg form is checked via the Request the handler received; we
+    // also assert here that the Fetcher.fetch was invoked with an absolute
+    // URL placeholder + canonical path (the binding ignores the host).
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(
+      `/api/internal/connections/${CONN_ID}/whoami`,
+    )
+    expect(url.origin).toBe(PLACEHOLDER_BASE)
+    const init = captured![1] as RequestInit
+    expect(init.method).toBe('POST')
+    const headers = init.headers as Record<string, string>
+    expect(headers['x-internal-token']).toBe(TOKEN)
+    expect(headers.accept).toBe('application/json')
+  })
+
+  it('returns ok:true with connectionId + airtable on 200', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({
+        connectionId: CONN_ID,
+        airtable: {
+          id: 'usrXYZ',
+          scopes: ['data.records:read', 'schema.bases:read'],
+          email: 'user@example.com',
+        },
+      }),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.whoami(CONN_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.connectionId).toBe(CONN_ID)
+      expect(result.airtable.id).toBe('usrXYZ')
+      expect(result.airtable.scopes).toEqual([
+        'data.records:read',
+        'schema.bases:read',
+      ])
+      expect(result.airtable.email).toBe('user@example.com')
+    }
+  })
+
+  it('maps 401 unauthorized to code:unauthorized status:401', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'unauthorized' }, 401),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.whoami(CONN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('unauthorized')
+      expect(result.status).toBe(401)
+    }
+  })
+
+  it('maps 404 connection_not_found', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'connection_not_found' }, 404),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.whoami(CONN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('connection_not_found')
+      expect(result.status).toBe(404)
+    }
+  })
+
+  it('maps 409 connection_status and surfaces the connectionStatus field', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse(
+        { error: 'connection_status', status: 'pending_reauth' },
+        409,
+      ),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.whoami(CONN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('connection_status')
+      expect(result.connectionStatus).toBe('pending_reauth')
+    }
+  })
+
+  it('maps 502 airtable_token_rejected', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'airtable_token_rejected' }, 502),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.whoami(CONN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('airtable_token_rejected')
+  })
+
+  it('maps 502 airtable_upstream and surfaces upstreamStatus', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'airtable_upstream', upstream_status: 503 }, 502),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.whoami(CONN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('airtable_upstream')
+      expect(result.upstreamStatus).toBe(503)
+    }
+  })
+
+  it('maps unknown error codes to engine_error', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'something_new' }, 418),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.whoami(CONN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_error')
+      expect(result.status).toBe(418)
+    }
+  })
+
+  it('maps fetch failure (engine unreachable) to engine_unreachable status:0', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.whoami(CONN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_unreachable')
+      expect(result.status).toBe(0)
+    }
+  })
+
+  it('passes the connection_id through encodeURIComponent on the path', async () => {
+    // Replaces the now-irrelevant "trailing slash on base URL" test. The
+    // binding doesn't see a base URL the caller can trail-slash; the
+    // remaining path-construction invariant worth covering is that the
+    // connection id is URI-encoded so an injected slash or # can't escape
+    // the canonical path.
+    const binding = fetcherStub(() =>
+      jsonResponse({
+        connectionId: CONN_ID,
+        airtable: { id: 'usrX', scopes: [] },
+      }),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const dirty = '11111111-2222-3333-4444-555555555555/admin#x'
+    await engine.whoami(dirty)
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(
+      `/api/internal/connections/${encodeURIComponent(dirty)}/whoami`,
+    )
+  })
+})
+
+const RUN_ID = '99999999-aaaa-bbbb-cccc-dddddddddddd'
+
+describe('createBackupEngine.startRun', () => {
+  it('calls binding.fetch with method POST and the canonical /api/internal/runs/:id/start path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse(
+        { runId: RUN_ID, triggerRunIds: ['run_a', 'run_b'] },
+        202,
+      ),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await engine.startRun(RUN_ID)
+    expect(binding.fetch).toHaveBeenCalledOnce()
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(`/api/internal/runs/${RUN_ID}/start`)
+    expect(url.origin).toBe(PLACEHOLDER_BASE)
+    const init = captured![1] as RequestInit
+    expect(init.method).toBe('POST')
+    const headers = init.headers as Record<string, string>
+    expect(headers['x-internal-token']).toBe(TOKEN)
+    expect(headers.accept).toBe('application/json')
+  })
+
+  it('returns ok:true with runId + triggerRunIds on 202', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse(
+        { runId: RUN_ID, triggerRunIds: ['run_a', 'run_b'] },
+        202,
+      ),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.startRun(RUN_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.runId).toBe(RUN_ID)
+      expect(result.triggerRunIds).toEqual(['run_a', 'run_b'])
+    }
+  })
+
+  it.each([
+    ['run_not_found', 404],
+    ['run_already_started', 409],
+    ['connection_not_found', 404],
+    ['invalid_connection', 409],
+    ['config_not_found', 404],
+    ['unsupported_storage_type', 422],
+    ['no_bases_selected', 422],
+    ['unauthorized', 401],
+  ] as const)('maps %s with status %i', async (code, status) => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: code }, status),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.startRun(RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe(code)
+      expect(result.status).toBe(status)
+    }
+  })
+
+  it('maps unknown error codes to engine_error', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'something_we_dont_know' }, 418),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.startRun(RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_error')
+      expect(result.status).toBe(418)
+    }
+  })
+
+  it('maps fetch failure (engine unreachable) to engine_unreachable status:0', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.startRun(RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_unreachable')
+      expect(result.status).toBe(0)
+    }
+  })
+
+  it('passes the run_id through encodeURIComponent on the path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse(
+        { runId: RUN_ID, triggerRunIds: [] },
+        202,
+      ),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const dirty = '99999999-aaaa-bbbb-cccc-dddddddddddd/escape#x'
+    await engine.startRun(dirty)
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(
+      `/api/internal/runs/${encodeURIComponent(dirty)}/start`,
+    )
+  })
+})
+
+describe('createBackupEngine.cancelRun', () => {
+  it('calls binding.fetch with method POST and the canonical /api/internal/runs/:id/cancel path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, cancelledTriggerRunIds: ['run_a'] }, 200),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await engine.cancelRun(RUN_ID)
+    expect(binding.fetch).toHaveBeenCalledOnce()
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(`/api/internal/runs/${RUN_ID}/cancel`)
+    expect(url.origin).toBe(PLACEHOLDER_BASE)
+    const init = captured![1] as RequestInit
+    expect(init.method).toBe('POST')
+    const headers = init.headers as Record<string, string>
+    expect(headers['x-internal-token']).toBe(TOKEN)
+    expect(headers.accept).toBe('application/json')
+  })
+
+  it('returns ok:true with cancelledTriggerRunIds on 200', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse(
+        { ok: true, cancelledTriggerRunIds: ['run_a', 'run_b'] },
+        200,
+      ),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.cancelRun(RUN_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.cancelledTriggerRunIds).toEqual(['run_a', 'run_b'])
+    }
+  })
+
+  it('returns ok:true with empty cancelledTriggerRunIds when the queued run had none', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, cancelledTriggerRunIds: [] }, 200),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.cancelRun(RUN_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.cancelledTriggerRunIds).toEqual([])
+    }
+  })
+
+  it.each([
+    ['run_not_found', 404],
+    ['run_already_terminal', 409],
+    ['unauthorized', 401],
+  ] as const)('maps %s with status %i', async (code, status) => {
+    const binding = fetcherStub(() => jsonResponse({ error: code }, status))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.cancelRun(RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe(code)
+      expect(result.status).toBe(status)
+    }
+  })
+
+  it('maps unknown error codes to engine_error', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'something_new' }, 418),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.cancelRun(RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_error')
+      expect(result.status).toBe(418)
+    }
+  })
+
+  it('maps fetch failure (engine unreachable) to engine_unreachable status:0', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.cancelRun(RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_unreachable')
+      expect(result.status).toBe(0)
+    }
+  })
+
+  it('passes the run_id through encodeURIComponent on the path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, cancelledTriggerRunIds: [] }, 200),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const dirty = '99999999-aaaa-bbbb-cccc-dddddddddddd/escape#x'
+    await engine.cancelRun(dirty)
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(
+      `/api/internal/runs/${encodeURIComponent(dirty)}/cancel`,
+    )
+  })
+})
+
+describe('createBackupEngine.deleteRun', () => {
+  it('calls binding.fetch with method POST and the canonical /api/internal/runs/:id/delete path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, triggerRunId: 'run_d' }, 202),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await engine.deleteRun(RUN_ID)
+    expect(binding.fetch).toHaveBeenCalledOnce()
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(`/api/internal/runs/${RUN_ID}/delete`)
+    expect(url.origin).toBe(PLACEHOLDER_BASE)
+    const init = captured![1] as RequestInit
+    expect(init.method).toBe('POST')
+    const headers = init.headers as Record<string, string>
+    expect(headers['x-internal-token']).toBe(TOKEN)
+    expect(headers.accept).toBe('application/json')
+  })
+
+  it('returns ok:true with triggerRunId on 202', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, triggerRunId: 'run_xyz' }, 202),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.deleteRun(RUN_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.triggerRunId).toBe('run_xyz')
+    }
+  })
+
+  it.each([
+    ['run_not_found', 404],
+    ['run_not_terminal', 409],
+    ['delete_in_progress', 409],
+    ['unauthorized', 401],
+  ] as const)('maps %s with status %i', async (code, status) => {
+    const binding = fetcherStub(() => jsonResponse({ error: code }, status))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.deleteRun(RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe(code)
+      expect(result.status).toBe(status)
+    }
+  })
+
+  it('maps unknown error codes to engine_error', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'something_new' }, 418),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.deleteRun(RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_error')
+      expect(result.status).toBe(418)
+    }
+  })
+
+  it('maps fetch failure (engine unreachable) to engine_unreachable status:0', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.deleteRun(RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_unreachable')
+      expect(result.status).toBe(0)
+    }
+  })
+
+  it('passes the run_id through encodeURIComponent on the path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, triggerRunId: 'run_a' }, 202),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const dirty = '99999999-aaaa-bbbb-cccc-dddddddddddd/escape#x'
+    await engine.deleteRun(dirty)
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(
+      `/api/internal/runs/${encodeURIComponent(dirty)}/delete`,
+    )
+  })
+})
+
+const RESTORE_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+
+describe('createBackupEngine.startRestore', () => {
+  it('calls binding.fetch with method POST and the canonical /api/internal/restores/:id/start path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, restoreId: RESTORE_ID, triggerRunId: 'run_r1' }, 202),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await engine.startRestore(RESTORE_ID)
+    expect(binding.fetch).toHaveBeenCalledOnce()
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(`/api/internal/restores/${RESTORE_ID}/start`)
+    expect(url.origin).toBe(PLACEHOLDER_BASE)
+    const init = captured![1] as RequestInit
+    expect(init.method).toBe('POST')
+    const headers = init.headers as Record<string, string>
+    expect(headers['x-internal-token']).toBe(TOKEN)
+    expect(headers.accept).toBe('application/json')
+  })
+
+  it('returns ok:true with restoreId + triggerRunId on 202', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, restoreId: RESTORE_ID, triggerRunId: 'run_r1' }, 202),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.startRestore(RESTORE_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.restoreId).toBe(RESTORE_ID)
+      expect(result.triggerRunId).toBe('run_r1')
+    }
+  })
+
+  it.each([
+    ['restore_not_found', 404],
+    ['restore_already_started', 409],
+    ['source_run_not_restorable', 422],
+    ['unauthorized', 401],
+  ] as const)('maps %s with status %i', async (code, status) => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: code }, status),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.startRestore(RESTORE_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe(code)
+      expect(result.status).toBe(status)
+    }
+  })
+
+  it('maps unknown error codes to engine_error', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'something_new' }, 418),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.startRestore(RESTORE_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_error')
+      expect(result.status).toBe(418)
+    }
+  })
+
+  it('maps fetch failure (engine unreachable) to engine_unreachable status:0', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.startRestore(RESTORE_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_unreachable')
+      expect(result.status).toBe(0)
+    }
+  })
+
+  it('passes the restore_id through encodeURIComponent on the path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, restoreId: RESTORE_ID, triggerRunId: 'run_r1' }, 202),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const dirty = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee/escape#x'
+    await engine.startRestore(dirty)
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(
+      `/api/internal/restores/${encodeURIComponent(dirty)}/start`,
+    )
+  })
+})
+
+const DETAIL_RUN_ID = 'cccccccc-dddd-eeee-ffff-000000000000'
+
+describe('createBackupEngine.getRunDetail', () => {
+  it('calls binding.fetch with method GET and the canonical /api/internal/runs/:id/detail path', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ bases: [] }, 200),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await engine.getRunDetail(DETAIL_RUN_ID)
+    expect(binding.fetch).toHaveBeenCalledOnce()
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(`/api/internal/runs/${DETAIL_RUN_ID}/detail`)
+    expect(url.origin).toBe(PLACEHOLDER_BASE)
+    const init = captured![1] as RequestInit
+    expect(init.method).toBe('GET')
+    const headers = init.headers as Record<string, string>
+    expect(headers['x-internal-token']).toBe(TOKEN)
+    expect(headers.accept).toBe('application/json')
+  })
+
+  it('returns ok:true with non-empty bases[] on 200', async () => {
+    const bases = [
+      {
+        atBaseId: 'appABC123456789',
+        baseName: 'Sales CRM',
+        status: 'ok',
+        tablesCount: 4,
+        recordsCount: 3850,
+        attachmentsCount: 52,
+        startedAt: '2026-06-15T10:00:00.000Z',
+        completedAt: '2026-06-15T10:02:30.000Z',
+        errorMessage: null,
+        tables: [
+          { tableId: 'tblA', tableName: 'Accounts', recordCount: 1120, fieldCount: 38, attachmentCount: 18 },
+        ],
+      },
+    ]
+    const binding = fetcherStub(() => jsonResponse({ bases }, 200))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.getRunDetail(DETAIL_RUN_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.bases).toHaveLength(1)
+      expect(result.bases[0]!.atBaseId).toBe('appABC123456789')
+      expect(result.bases[0]!.baseName).toBe('Sales CRM')
+      expect(result.bases[0]!.tablesCount).toBe(4)
+      expect(result.bases[0]!.tables).toHaveLength(1)
+      expect(result.bases[0]!.tables[0]!.tableId).toBe('tblA')
+    }
+  })
+
+  it('returns ok:true with empty bases[] for a legacy run', async () => {
+    const binding = fetcherStub(() => jsonResponse({ bases: [] }, 200))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.getRunDetail(DETAIL_RUN_ID)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.bases).toEqual([])
+    }
+  })
+
+  it('maps fetch failure (engine unreachable) to engine_unreachable status:0', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.getRunDetail(DETAIL_RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_unreachable')
+      expect(result.status).toBe(0)
+    }
+  })
+
+  it('maps 404 run_not_found', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'run_not_found' }, 404),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.getRunDetail(DETAIL_RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('run_not_found')
+      expect(result.status).toBe(404)
+    }
+  })
+
+  it('maps unknown error codes to engine_error', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'something_unknown' }, 418),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.getRunDetail(DETAIL_RUN_ID)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_error')
+      expect(result.status).toBe(418)
+    }
+  })
+
+  it('passes the run_id through encodeURIComponent on the path', async () => {
+    const binding = fetcherStub(() => jsonResponse({ bases: [] }, 200))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const dirty = 'cccccccc-dddd-eeee-ffff-000000000000/escape#x'
+    await engine.getRunDetail(dirty)
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(
+      `/api/internal/runs/${encodeURIComponent(dirty)}/detail`,
+    )
+  })
+})
+
+describe('createBackupEngine.provisionDatabase', () => {
+  const SPACE_ID = '11111111-2222-3333-4444-555555555555'
+
+  it('POSTs the canonical provision-database path with backend + records body', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, status: 'active', backend: 'managed_pg', locator: 'bo_space_x' }),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await engine.provisionDatabase(SPACE_ID, {
+      backend: 'managed_pg',
+      recordsEnabled: false,
+      provisionedByUserId: 'usr_1',
+    })
+    const captured = binding.fetch.mock.calls[0]
+    const url = new URL(captured![0] as string)
+    expect(url.pathname).toBe(
+      `/api/internal/spaces/${SPACE_ID}/provision-database`,
+    )
+    const init = captured![1] as RequestInit
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>)['x-internal-token']).toBe(TOKEN)
+    expect(JSON.parse(init.body as string)).toEqual({
+      backend: 'managed_pg',
+      recordsEnabled: false,
+      provisionedByUserId: 'usr_1',
+    })
+  })
+
+  it('returns ok with status + backend + locator on 200', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: true, status: 'active', backend: 'managed_pg', locator: 'bo_space_x' }),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.provisionDatabase(SPACE_ID, { backend: 'managed_pg' })
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.status).toBe('active')
+      expect(result.backend).toBe('managed_pg')
+      expect(result.locator).toBe('bo_space_x')
+    }
+  })
+
+  it('maps 400 sovereign_requires_records (with message)', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse(
+        { ok: false, error: 'sovereign_requires_records', message: 'byodb needs records' },
+        400,
+      ),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.provisionDatabase(SPACE_ID, { backend: 'byodb' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('sovereign_requires_records')
+      expect(result.status).toBe(400)
+      expect(result.message).toBe('byodb needs records')
+    }
+  })
+
+  it('maps 501 backend_not_implemented', async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ ok: false, error: 'backend_not_implemented' }, 501),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.provisionDatabase(SPACE_ID, { backend: 'd1', recordsEnabled: true })
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.code).toBe('backend_not_implemented')
+  })
+
+  it('returns engine_unreachable when the binding throws', async () => {
+    const binding = fetcherStub(() => {
+      throw new Error('socket hang up')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.provisionDatabase(SPACE_ID, { backend: 'managed_pg' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.code).toBe('engine_unreachable')
+      expect(result.status).toBe(0)
+    }
+  })
+})
+
+describe('createBackupEngine inbox methods (web-notifications-inbox §5.1)', () => {
+  const SPACE_ID = '11111111-2222-3333-4444-555555555555'
+
+  it('getNotifications GETs the canonical notifications path and returns items', async () => {
+    const items = [
+      { id: 'run:r1', kind: 'backup-failed', title: '*Sales CRM* backup failed', at: '2026-07-09T10:00:00.000Z' },
+    ]
+    const binding = fetcherStub(() => jsonResponse({ ok: true, items }))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.getNotifications(SPACE_ID)
+    const req = binding.fetch.mock.calls[0]
+    const url = new URL(req![0] as string)
+    expect(url.pathname).toBe(`/api/internal/spaces/${SPACE_ID}/notifications`)
+    expect((req![1] as RequestInit).method).toBe('GET')
+    expect(((req![1] as RequestInit).headers as Record<string, string>)['x-internal-token']).toBe(TOKEN)
+    expect(result).toEqual({ ok: true, items })
+  })
+
+  it('getNotifications tolerates a missing items array', async () => {
+    const binding = fetcherStub(() => jsonResponse({ ok: true }))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await expect(engine.getNotifications(SPACE_ID)).resolves.toEqual({ ok: true, items: [] })
+  })
+
+  it('triageNotification POSTs the triage path with the input body', async () => {
+    const binding = fetcherStub(() => jsonResponse({ ok: true }))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.triageNotification(SPACE_ID, {
+      itemId: 'run:r1',
+      action: 'snooze',
+      snoozedUntil: '2026-07-11T00:00:00.000Z',
+    })
+    const req = binding.fetch.mock.calls[0]
+    const url = new URL(req![0] as string)
+    expect(url.pathname).toBe(`/api/internal/spaces/${SPACE_ID}/notifications/triage`)
+    expect((req![1] as RequestInit).method).toBe('POST')
+    expect(JSON.parse((req![1] as RequestInit).body as string)).toEqual({
+      itemId: 'run:r1',
+      action: 'snooze',
+      snoozedUntil: '2026-07-11T00:00:00.000Z',
+    })
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('triageNotification surfaces the 422 state-backed-done rejection as engine_error/422', async () => {
+    const binding = fetcherStub(() => jsonResponse({ ok: false, error: 'state_backed' }, 422))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.triageNotification(SPACE_ID, { itemId: 'conn:c1', action: 'done' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.status).toBe(422)
+      expect(result.code).toBe('engine_error')
+    }
+  })
+
+  it('muteNotificationBase POSTs the mute path with baseId + muted', async () => {
+    const binding = fetcherStub(() => jsonResponse({ ok: true }))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.muteNotificationBase(SPACE_ID, 'appXYZ', true)
+    const req = binding.fetch.mock.calls[0]
+    const url = new URL(req![0] as string)
+    expect(url.pathname).toBe(`/api/internal/spaces/${SPACE_ID}/notifications/mute`)
+    expect(JSON.parse((req![1] as RequestInit).body as string)).toEqual({ baseId: 'appXYZ', muted: true })
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('inbox methods return engine_unreachable when the binding throws', async () => {
+    const binding = fetcherStub(() => {
+      throw new Error('socket hang up')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    await expect(engine.getNotifications(SPACE_ID)).resolves.toEqual({
+      ok: false,
+      code: 'engine_unreachable',
+      status: 0,
+    })
+  })
+})
+
+// ── web-instant-webhook: webhook registration lifecycle (server E.1/E.3) ────
+
+describe('createBackupEngine.registerWebhooks', () => {
+  const SPACE_ID = '99999999-8888-7777-6666-555555555555'
+
+  it('POSTs the canonical /api/internal/spaces/:id/register-webhooks path with the token', async () => {
+    const binding = fetcherStub(() => jsonResponse({ ok: true }))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.registerWebhooks(SPACE_ID)
+    expect(result).toEqual({ ok: true })
+    const [rawUrl, init] = binding.fetch.mock.calls[0]!
+    const url = new URL(rawUrl as string)
+    expect(url.pathname).toBe(
+      `/api/internal/spaces/${SPACE_ID}/register-webhooks`,
+    )
+    expect((init as RequestInit).method).toBe('POST')
+    const headers = (init as RequestInit).headers as Record<string, string>
+    expect(headers['x-internal-token']).toBe(TOKEN)
+  })
+
+  it("maps Airtable's per-base cap to airtable_webhook_cap_reached", async () => {
+    const binding = fetcherStub(() =>
+      jsonResponse({ error: 'airtable_webhook_cap_reached' }, 409),
+    )
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.registerWebhooks(SPACE_ID)
+    expect(result).toEqual({
+      ok: false,
+      code: 'airtable_webhook_cap_reached',
+      status: 409,
+    })
+  })
+
+  it('maps a transport throw to engine_unreachable', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.registerWebhooks(SPACE_ID)
+    expect(result).toEqual({ ok: false, code: 'engine_unreachable', status: 0 })
+  })
+
+  it('maps unknown error bodies to engine_error', async () => {
+    const binding = fetcherStub(() => jsonResponse({ error: 'boom' }, 500))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.registerWebhooks(SPACE_ID)
+    expect(result).toEqual({ ok: false, code: 'engine_error', status: 500 })
+  })
+})
+
+describe('createBackupEngine.unregisterWebhooks', () => {
+  const SPACE_ID = '99999999-8888-7777-6666-555555555555'
+
+  it('POSTs the canonical /api/internal/spaces/:id/unregister-webhooks path', async () => {
+    const binding = fetcherStub(() => jsonResponse({ ok: true }))
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.unregisterWebhooks(SPACE_ID)
+    expect(result).toEqual({ ok: true })
+    const [rawUrl, init] = binding.fetch.mock.calls[0]!
+    const url = new URL(rawUrl as string)
+    expect(url.pathname).toBe(
+      `/api/internal/spaces/${SPACE_ID}/unregister-webhooks`,
+    )
+    expect((init as RequestInit).method).toBe('POST')
+  })
+
+  it('maps a transport throw to engine_unreachable', async () => {
+    const binding = fetcherStub(() => {
+      throw new TypeError('fetch failed')
+    })
+    const engine = createBackupEngine({ binding, internalToken: TOKEN })
+    const result = await engine.unregisterWebhooks(SPACE_ID)
+    expect(result).toEqual({ ok: false, code: 'engine_unreachable', status: 0 })
+  })
+})

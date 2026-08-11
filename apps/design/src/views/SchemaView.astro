@@ -1,0 +1,350 @@
+---
+/**
+ * SchemaView — the Schema page (/schema). Space-scoped, read-only.
+ *
+ * The 8 tabs are grouped into 4 clusters (approved /schema-nav Variant A): Explore
+ * (Browse · Visualize · Relationships) · App layer (Automations · Interfaces) ·
+ * Monitor (Changelog · Health) · Knowledge (Docs · Chat History). Each cluster has a
+ * quiet label ABOVE its tabs. Chat is OUT of the tab row — reached from the persistent
+ * "Ask about your schema" launcher (header, top-right) and Knowledge ▸ Chat History,
+ * both of which open the Chat panel. Browse is the landing tab.
+ *
+ * The Visualize canvas is a React Flow island (the one place React lives) — see
+ * components/schema/SchemaCanvas.tsx. Tab switching toggles the full-width `.sch-panel`s
+ * by `data-tab`/`data-panel`; everything else is Astro/daisyUI.
+ */
+import SchemaCanvas, { type SchemaTable } from '../components/schema/SchemaCanvas';
+import SchemaHealth, { type BaseHealth } from '../components/schema/SchemaHealth.astro';
+import SchemaChangelog, { type ChangelogEntry } from '../components/schema/SchemaChangelog.astro';
+import SchemaRelationships, { type SchemaRelationship } from '../components/schema/SchemaRelationships.astro';
+import SchemaAutomations, { type SchemaAutomation } from '../components/schema/SchemaAutomations.astro';
+import SchemaInterfaces, { type SchemaInterface } from '../components/schema/SchemaInterfaces.astro';
+import SchemaBrowse from '../components/schema/SchemaBrowse.astro';
+import SchemaChat, { type ChatThread } from '../components/schema/SchemaChat.astro';
+import SchemaDocs from '../components/schema/SchemaDocs.astro';
+import EntityPanel from '../components/schema/EntityPanel.astro';
+import RelationshipPanel from '../components/schema/RelationshipPanel.astro';
+import QuickAskDock from '../components/schema/QuickAskDock.astro';
+import { buildEntityIndex, type SchemaDoc } from '../components/schema/schemaEntities';
+
+interface Props {
+  bases: { id: string; name: string; workspaceId?: string; workspaceName?: string }[];
+  tables: SchemaTable[];
+  health?: BaseHealth[];
+  changelog?: ChangelogEntry[];
+  relationships?: SchemaRelationship[];
+  automations?: SchemaAutomation[];
+  interfaces?: SchemaInterface[];
+  chatThreads?: ChatThread[];
+  docs?: SchemaDoc[];
+  hasRecordCounts?: boolean;
+  /** When the schema was last captured (a backup run). Stamped on Browse. */
+  lastBackupAt?: string;
+  /** AI Generate-description capability for the Visualize side panel (ready / locked / no-credits). */
+  aiState?: 'ready' | 'locked' | 'no-credits';
+  /** Harness-only override for the Visualize canvas' "Group by workspace" toggle
+   *  (`?wsgroup=1`) — forces the initial state for preview without touching the stored
+   *  per-user preference. */
+  wsGroupDefault?: boolean;
+}
+const { bases, tables, health = [], changelog = [], relationships = [], automations = [], interfaces = [], chatThreads = [], docs = [], lastBackupAt, aiState = 'ready', wsGroupDefault } = Astro.props;
+const index = buildEntityIndex(bases, tables, docs);
+// Browse keeps the full index (so "Include deleted" can reveal removed entities); the live
+// diagram + doc mini-diagrams show only active tables (deleted ones are history, not current).
+const liveTables = tables.filter((t) => !t.removed);
+// Entities a Health scoring-prompt override can target (the searchable "Edit at" picker).
+const overrideTargets = index
+  .filter((e) => !e.removed)
+  .map((e) => ({
+    id: e.id,
+    kind: e.kind,
+    label: e.kind === 'field' ? `${e.baseName} ▸ ${e.tableName} ▸ ${e.name} (field)` : e.kind === 'table' ? `${e.baseName} ▸ ${e.name} (table)` : `${e.name} (base)`,
+  }));
+const hasSchema = tables.length > 0;
+
+// Freshness stamp — the whole section reflects one captured backup, so it lives at the
+// title level (once), not inside any one tab's toolbar.
+const fmtStamp = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+};
+
+// Health lookups for the facet status dots — the same per-entity health Browse renders, so
+// the Base/Table filters in Changelog and Visualize read consistently with the canvas.
+// (Keyed by name for Changelog's name-based entries; by id for the Visualize island.)
+const baseHealthByName: Record<string, 'green' | 'amber' | 'red'> = {};
+const baseHealthById: Record<string, 'green' | 'amber' | 'red'> = {};
+const tableHealthByKey: Record<string, 'green' | 'amber' | 'red'> = {};
+// Name → entity-id maps so Changelog's location breadcrumb can open the shared EntityPanel
+// (changelog entries reference base/table by name; field-level entries carry their own id).
+const baseIdByName: Record<string, string> = {};
+const tableIdByKey: Record<string, string> = {};
+for (const e of index) {
+  if (e.kind === 'base') { baseHealthByName[e.name] = e.health; baseHealthById[e.id] = e.health; baseIdByName[e.name] = e.id; }
+  else if (e.kind === 'table') { tableHealthByKey[`${e.baseName}::${e.name}`] = e.health; tableIdByKey[`${e.baseName}::${e.name}`] = e.id; }
+}
+// Name → workspace identity (workspace-visual-grouping): Changelog keys its entries by base
+// NAME (not id), so its Base facet groups by workspace via this map rather than the id-keyed
+// `bases` list directly.
+const baseWorkspaceByName: Record<string, { workspaceId?: string; workspaceName?: string }> = {};
+for (const b of bases) baseWorkspaceByName[b.name] = { workspaceId: b.workspaceId, workspaceName: b.workspaceName };
+
+---
+
+<div class="sch" data-schema>
+  {/* Page header — title + the section-wide freshness stamp (applies to every tab, so it
+      lives here once, right-aligned, not inside any single tab's toolbar). */}
+  <header class="sch-head">
+    <div class="min-w-0">
+      <h1 class="text-title">Schema</h1>
+      <p class="text-sm text-base-content/60 mt-1">Your Airtable structure, visualized — tables, fields, and how they link. Read-only.</p>
+    </div>
+    <div class="sch-head-r">
+      {lastBackupAt && (
+        <p class="sch-stamp tooltip tooltip-left" data-tip="Schema is captured at backup time and may drift from Airtable until the next run.">
+          <span class="iconify lucide--history size-3.5" aria-hidden="true"></span>
+          Schema as of {fmtStamp(lastBackupAt)}
+        </p>
+      )}
+      {/* Persistent chat launcher — reachable from any tab in the section (opens the Chat panel,
+          i.e. Knowledge ▸ Chat History). Secondary weight: the catalog soft button (subtle
+          primary fill), not ghost — it's the section's standing utility action. */}
+      {hasSchema && (
+        <button type="button" class="btn btn-soft btn-primary gap-1.5" data-sch-ask>
+          <span class="iconify lucide--sparkles size-4" aria-hidden="true"></span>Ask about your schema
+        </button>
+      )}
+    </div>
+  </header>
+
+  {/* Tab bar (approved /schema-nav Variant A): the 8 tabs are grouped into 4 clusters, each with a
+      quiet label ABOVE its tabs. Chat is pulled OUT of the row — reached via the "Ask about your
+      schema" launcher (above) + the "Chat History" item under Knowledge, which both open the Chat
+      panel (data-tab="chat"). Icons match each section's empty state. */}
+  <div class="sch-tabbar" role="tablist" aria-label="Schema sections">
+    <div class="sch-group">
+      <span class="sch-glabel">Explore</span>
+      <div class="sch-gtabs tabs tabs-border">
+        <button type="button" class="tab tab-active" role="tab" data-tab="browse"><span class="iconify lucide--list-tree size-4" aria-hidden="true"></span>Browse</button>
+        <button type="button" class="tab" role="tab" data-tab="visualize"><span class="iconify lucide--workflow size-4" aria-hidden="true"></span>Visualize</button>
+        <button type="button" class="tab" role="tab" data-tab="relationships"><span class="iconify lucide--waypoints size-4" aria-hidden="true"></span>Relationships</button>
+      </div>
+    </div>
+    <span class="sch-tabdiv" aria-hidden="true"></span>
+    <div class="sch-group">
+      <span class="sch-glabel">App layer</span>
+      <div class="sch-gtabs tabs tabs-border">
+        <button type="button" class="tab" role="tab" data-tab="automations"><span class="iconify lucide--zap size-4" aria-hidden="true"></span>Automations</button>
+        <button type="button" class="tab" role="tab" data-tab="interfaces"><span class="iconify lucide--layout-panel-left size-4" aria-hidden="true"></span>Interfaces</button>
+      </div>
+    </div>
+    <span class="sch-tabdiv" aria-hidden="true"></span>
+    <div class="sch-group">
+      <span class="sch-glabel">Monitor</span>
+      <div class="sch-gtabs tabs tabs-border">
+        <button type="button" class="tab" role="tab" data-tab="changelog"><span class="iconify lucide--history size-4" aria-hidden="true"></span>Changelog</button>
+        <button type="button" class="tab" role="tab" data-tab="health"><span class="iconify lucide--heart-pulse size-4" aria-hidden="true"></span>Health</button>
+      </div>
+    </div>
+    <span class="sch-tabdiv" aria-hidden="true"></span>
+    <div class="sch-group">
+      <span class="sch-glabel">Knowledge</span>
+      <div class="sch-gtabs tabs tabs-border">
+        <button type="button" class="tab" role="tab" data-tab="docs"><span class="iconify lucide--book-text size-4" aria-hidden="true"></span>Docs</button>
+        <button type="button" class="tab" role="tab" data-tab="chat"><span class="iconify lucide--messages-square size-4" aria-hidden="true"></span>Chat</button>
+      </div>
+    </div>
+  </div>
+
+  {/* Panels — full width */}
+  <div class="sch-panel" data-panel="browse">
+    {hasSchema ? (
+      <SchemaBrowse index={index} bases={bases} docs={docs} chatThreads={chatThreads} />
+    ) : (
+      <div class="sch-empty">
+        <span class="sch-empty-ic"><span class="iconify lucide--list-tree"></span></span>
+        <p class="sch-empty-title">Schema appears after your first backup</p>
+        <p class="sch-empty-sub">Once a backup completes, every base, table, and field shows up here to browse and inspect.</p>
+      </div>
+    )}
+  </div>
+
+  <div class="sch-panel" data-panel="visualize" hidden>
+    <div class="sch-canvas">
+      {hasSchema ? (
+        <SchemaCanvas client:only="react" tables={liveTables} bases={bases} baseHealth={baseHealthById} docs={docs} genState={aiState} relationships={relationships} automations={automations} interfaces={interfaces} wsGroupDefault={wsGroupDefault} />
+      ) : (
+        <div class="sch-empty">
+          <span class="sch-empty-ic"><span class="iconify lucide--workflow"></span></span>
+          <p class="sch-empty-title">Schema appears after your first backup</p>
+          <p class="sch-empty-sub">Once a backup completes, your tables and their relationships are drawn here.</p>
+        </div>
+      )}
+    </div>
+  </div>
+
+  <div class="sch-panel" data-panel="relationships" hidden>
+    {hasSchema ? (
+      <SchemaRelationships relationships={relationships} bases={bases} />
+    ) : (
+      <div class="sch-empty">
+        <span class="sch-empty-ic"><span class="iconify lucide--waypoints"></span></span>
+        <p class="sch-empty-title">Schema appears after your first backup</p>
+        <p class="sch-empty-sub">Once a backup completes, linked records, formulas, rollups, lookups, and synced views show up here.</p>
+      </div>
+    )}
+  </div>
+
+  <div class="sch-panel" data-panel="automations" hidden>
+    {hasSchema ? (
+      <SchemaAutomations automations={automations} bases={bases} index={index} changelog={changelog} aiState={aiState} />
+    ) : (
+      <div class="sch-empty">
+        <span class="sch-empty-ic"><span class="iconify lucide--zap"></span></span>
+        <p class="sch-empty-title">Schema appears after your first backup</p>
+        <p class="sch-empty-sub">Register automations to track them alongside your backed-up tables and fields.</p>
+      </div>
+    )}
+  </div>
+
+  <div class="sch-panel" data-panel="interfaces" hidden>
+    {hasSchema ? (
+      <SchemaInterfaces interfaces={interfaces} bases={bases} index={index} changelog={changelog} aiState={aiState} />
+    ) : (
+      <div class="sch-empty">
+        <span class="sch-empty-ic"><span class="iconify lucide--layout-panel-left"></span></span>
+        <p class="sch-empty-title">Schema appears after your first backup</p>
+        <p class="sch-empty-sub">Register interfaces and their pages to track them alongside your backed-up tables and fields.</p>
+      </div>
+    )}
+  </div>
+
+  <div class="sch-panel" data-panel="changelog" hidden>
+    <SchemaChangelog entries={changelog} baseHealth={baseHealthByName} tableHealth={tableHealthByKey} baseId={baseIdByName} tableId={tableIdByKey} baseWorkspace={baseWorkspaceByName} />
+  </div>
+
+  <div class="sch-panel" data-panel="health" hidden>
+    {health.length > 0 ? (
+      <SchemaHealth health={health} aiState={aiState} overrideTargets={overrideTargets} />
+    ) : (
+      <div class="sch-soon">
+        <span class="iconify lucide--heart-pulse size-5 opacity-60" aria-hidden="true"></span>
+        <p>Health appears after your first backup completes — a per-base 0–100 grade (Green / Yellow / Red) with the issues behind it.</p>
+      </div>
+    )}
+  </div>
+
+  <div class="sch-panel" data-panel="docs" hidden>
+    {hasSchema ? (
+      <SchemaDocs docs={docs} index={index} bases={bases} tables={liveTables} />
+    ) : (
+      <div class="sch-soon">
+        <span class="iconify lucide--book-text size-5 opacity-60" aria-hidden="true"></span>
+        <p>Docs let you write up how the schema works, tagging real bases, tables, and fields. They appear once there's a schema to document.</p>
+      </div>
+    )}
+  </div>
+
+  <div class="sch-panel" data-panel="chat" hidden>
+    {hasSchema ? (
+      <SchemaChat threads={chatThreads} index={index} docs={docs.map((d) => ({ id: d.id, title: d.title }))} aiState={aiState} />
+    ) : (
+      <div class="sch-soon">
+        <span class="iconify lucide--messages-square size-5 opacity-60" aria-hidden="true"></span>
+        <p>Chat with AI about your schema once there's a backup to talk about — scope the context to a base or table and turn answers into docs.</p>
+      </div>
+    )}
+  </div>
+
+  {/* Global quick-ask widget — shared QuickAskDock (also on the Data page per the
+      data-page spec); opened by the [data-sch-ask] launcher above. */}
+  {hasSchema && <QuickAskDock threads={chatThreads} index={index} docs={docs} noun="schema" />}
+</div>
+
+{/* Shared stacking entity detail panel — opened by Browse rows and Docs tag chips. */}
+<EntityPanel index={index} docs={docs} changelog={changelog} automations={automations} interfaces={interfaces} chatThreads={chatThreads} aiState={aiState} />
+
+{/* Shared relationship detail — opened by the Relationships table (row click) AND the
+    Visualize "Relationships" graph (edge click), both via `schema:openRelationship`. */}
+{hasSchema && <RelationshipPanel relationships={relationships} tables={liveTables} bases={bases} />}
+
+<style>
+  .sch { display: flex; flex-direction: column; gap: 1rem; }
+  .sch-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  /* Section-wide freshness stamp — quiet, right-aligned. */
+  .sch-stamp { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .55); }
+  .sch-head-r { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; justify-content: flex-end; }
+  /* the chat launcher (top-right) is the catalog Soft Button (btn btn-soft btn-primary) — no custom CSS */
+
+  /* grouped tab bar (approved Variant A) — cluster label ABOVE each group's tabs, thin dividers */
+  .sch-tabbar { display: flex; align-items: stretch; gap: .1rem; flex-wrap: wrap; border-bottom: 1px solid var(--color-base-300); }
+  .sch-group { display: flex; flex-direction: column; }
+  .sch-glabel { font-size: .6rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .42); padding: 0 0 .1rem .6rem; }
+  /* The tabs are the catalog daisyUI `tab` (inside `tabs tabs-border`); the pattern themes them to
+     the quiet-inactive / primary-underline-active look. The 1px baseline is the .sch-tabbar border. */
+  .sch-gtabs { display: flex; align-items: stretch; }
+  .sch-gtabs.tabs { border: 0; }
+  /* The active underline is daisyUI's own tab-active indicator (its ::before, already primary in
+     this theme) — we DON'T add a second border-bottom (that caused a doubled/offset underline). */
+  .sch-gtabs .tab { height: auto; padding: .5rem .6rem; font-size: .86rem; font-weight: 560; gap: .4rem; color: oklch(from var(--color-base-content) l c h / .68); background: transparent; white-space: nowrap; }
+  .sch-gtabs .tab .iconify { opacity: .72; }
+  .sch-gtabs .tab:hover { color: var(--color-base-content); background: transparent; }
+  .sch-gtabs .tab.tab-active { color: var(--color-primary); }
+  .sch-gtabs .tab.tab-active .iconify { opacity: 1; }
+  .sch-tabdiv { width: 1px; background: var(--color-base-300); margin: 0 .6rem; align-self: flex-end; height: 1.9rem; }
+
+  /* primitive mobile: let the grouped bar scroll sideways (a fuller mobile nav is a follow-up) */
+  @media (max-width: 720px) {
+    .sch-tabbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+    .sch-head-r { align-items: flex-start; }
+  }
+
+  .sch-panel { width: 100%; }
+
+  .sch-canvas {
+    height: clamp(520px, calc(100dvh - 250px), 940px);
+    border: 1px solid var(--color-base-300);
+    border-radius: .85rem;
+    overflow: hidden;
+    background: var(--color-base-100);
+  }
+  .sch-canvas :global(.react-flow) { background: transparent; }
+
+  /* Theme the React Flow chrome with our tokens (colorMode follows our data-theme,
+     not the OS, so these keep the minimap / controls on-brand in both themes). */
+  .sch-canvas :global(.react-flow__minimap) { background: var(--color-base-200); border: 1px solid var(--color-base-300); border-radius: 6px; }
+  .sch-canvas :global(.react-flow__controls) { border-radius: 7px; overflow: hidden; box-shadow: 0 2px 10px oklch(0 0 0 / .14); border: 1px solid var(--color-base-300); }
+  .sch-canvas :global(.react-flow__controls-button) { background: var(--color-base-100); border-bottom: 1px solid var(--color-base-300); }
+  .sch-canvas :global(.react-flow__controls-button:hover) { background: var(--color-base-200); }
+  .sch-canvas :global(.react-flow__controls-button svg) { fill: var(--color-base-content); }
+
+  .sch-empty, .sch-soon { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: .5rem; padding: 2rem; }
+  .sch-empty-ic { width: 3rem; height: 3rem; border-radius: .8rem; display: grid; place-items: center; background: var(--color-base-200); margin-bottom: .3rem; }
+  .sch-empty-ic .iconify { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .55); }
+  .sch-empty-title { font-size: 1rem; font-weight: 650; }
+  .sch-empty-sub { font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .6); max-width: 44ch; }
+
+  .sch-soon { min-height: 300px; border: 1px dashed var(--color-base-300); border-radius: .85rem; background: oklch(from var(--color-base-200) l c h / .3); }
+  .sch-soon p { font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .66); max-width: 56ch; }
+</style>
+
+
+<script>
+  import { wireSectionTabs } from '../components/ui/sectionTabs';
+
+  function wireSchemaTabs() {
+    const root = document.querySelector<HTMLElement>('[data-schema]');
+    if (!root) return;
+    wireSectionTabs({
+      root,
+      searchSelector: '[data-sch-search]',
+      // The one genuinely host-specific bit: React Flow measures itself, so a canvas that was
+      // hidden when it mounted needs a nudge to re-fit once it is visible.
+      onChange: (tab) => { if (tab === 'visualize') window.dispatchEvent(new Event('resize')); },
+    });
+  }
+  wireSchemaTabs();
+  document.addEventListener('astro:after-swap', wireSchemaTabs);
+</script>

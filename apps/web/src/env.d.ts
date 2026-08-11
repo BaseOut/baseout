@@ -27,5 +27,31 @@ declare namespace App {
 }
 
 declare module 'cloudflare:workers' {
-  interface ProvidedEnv extends Env {}
+  interface ProvidedEnv extends Env {
+    /**
+     * Service binding to @baseout/server (the backup engine). Declared in
+     * wrangler.jsonc.example as `services: [{ binding: "BACKUP_ENGINE",
+     * service: "baseout-server-<env>" }]`. The generated Env from
+     * `npm run cf-typegen` carries the Fetcher type; this declaration is
+     * a fallback for when types haven't been regenerated yet.
+     */
+    BACKUP_ENGINE: Fetcher;
+    /** Shared secret with @baseout/server's INTERNAL_TOKEN. Sent as x-internal-token header on every binding call to the engine. */
+    BACKUP_ENGINE_INTERNAL_TOKEN: string;
+  }
+}
+
+// The `env` import from 'cloudflare:workers' is typed as `Cloudflare.Env` (generated
+// by cf-typegen), so optional runtime flags that aren't declared wrangler bindings
+// are merged onto `Cloudflare.Env` here — mirrors the engine's hand-maintained
+// `apps/server/src/env.d.ts` entry so both apps read the flag the same way.
+declare namespace Cloudflare {
+  interface Env {
+    /**
+     * ENTITLEMENT_ENFORCEMENT flag (shared-entitlements task 4.3). `"1"` turns
+     * creation-cap enforcement ON; anything else (incl. undefined, the default)
+     * leaves it dark (warn-only). Matches `env.ENTITLEMENT_ENFORCEMENT === "1"`.
+     */
+    ENTITLEMENT_ENFORCEMENT?: string;
+  }
 }

@@ -1,0 +1,74 @@
+> **Status (as of the backend slice).** Shipped on `autumn/design-to-web`:
+> `2545a05` (§1 schema + master deltas), `9082461` (§2 managed_pg provisioning),
+> `52cb13b` (§3a pure diff modules), `22b4dd3` (§3b engine write path),
+> `aff0bd8` (§3c writer wiring). **Not yet validated live** — the deployed smoke
+> (deploy dev engine + `trigger.dev dev` → run a backup → `bo_at_*` populate) is
+> the outstanding gate. Backend-first = `managed_pg`; d1/byodb, the read path
+> (§4), restore (§5), and migration/prune (§6.1/§6.3) are deferred as planned.
+>
+> **Post-merge (2026-06-24).** Merged origin's design refinement (569bf75 +
+> 7dfa15b): the per-Space schema grew 16 → **20 tables** (adds the Docs-feature
+> tables `documents`/`document_tags`/`document_links`/`document_diagrams` +
+> `bo_at_meta`; drops `bo_at_documentation` for inline `ai_*` columns — §8.1).
+> **Re-port DONE (1e21300):** `packages/db-schema/src/space/{pg,sqlite}.ts`
+> re-ported to the 20-table design, per-Space migrations + `pg-ddl.ts`
+> regenerated, `SPACE_SCHEMA_VERSION` → 2; the 20-table DDL was applied to a
+> throwaway dev-PG schema and verified. The engine apply path was unaffected
+> (it never touched `bo_at_documentation`).
+
+## 1. Schema authoring
+
+- [x] 1.1 Author the per-Space DB schema, Postgres dialect, in `packages/db-schema/src/space/pg.ts`. _(SHIPPED: 20 `bo_at_*` tables — re-ported to the refined design (1e21300): Docs-feature tables `documents`/`document_tags`/`document_links`/`document_diagrams` + `bo_at_meta`; inline `ai_description`/`ai_overview`/`description_override` columns; no `bo_at_documentation`. Docs *feature* UI specced in `ui-only/overview/schema/05-docs-tab.md`; only storage lands here.)_
+- [x] 1.2 SQLite/D1 mirror + a dialect parity test. _(SHIPPED; in lockstep with pg.ts at 20 tables (1e21300).)_
+- [~] 1.3 `bo_at_meta` (schema_version + self-describing space_id/backend/platform), a `SPACE_SCHEMA_VERSION` constant, and the lazy on-access migration runner. _(SHIPPED: `bo_at_meta` table + `SPACE_SCHEMA_VERSION` (= 2). PENDING: the lazy on-access migration runner that compares them — see §2.2.)_
+- [~] 1.4 Master DB deltas: refactor `space_databases` (`tier` → `backend` + `records_enabled`, `pg_locator`, migration-state); add `health_score_rules`; remove `attachment_dedup`; slim `at_bases`; drop planned `backup_run_bases`; remove schema-change rows from `audit_history` scope. _(DONE: `space_databases` + `health_score_rules` (migration 0017). DONE: `attachment_dedup` removed (§3.4 cutover, migration 0018). DEFERRED: `at_bases` slim → standalone follow-up (destructive, breaks rediscovery write path). N/A: `backup_run_bases` never existed; `audit_history` not in this repo.)_
+- [x] 1.5 drizzle-kit generate for the master deltas; the per-Space schema gets its own drizzle config (separate `out`) per PRD §21.1. _(Two per-Space configs: `drizzle.space-{pg,sqlite}.config.ts` → `migrations/space-{pg,sqlite}`.)_
+- [x] 1.6 **Webhook-application deltas (resolved 2026-07-18, see §Open items in design.md):** re-port to `packages/db-schema/src/space/{pg,sqlite}.ts` — `bo_at_base_runs.run_type` (`full|incremental`, default `full`), `action_source` + `actor` on `bo_at_schema_updates` and `bo_at_record_updates` (nullable; webhook-derived writes only). Bump `SPACE_SCHEMA_VERSION` to the next version (the "→ 3" written 2026-07-18 is stale — later changes advanced it; it is 7 as of 2026-07-21, so this delta lands as → 8); regenerate per-Space migrations + `pg-ddl.ts`; additive-only so existing DBs upgrade via the lazy runner (or DDL re-apply until it ships). Consumer: `workflows-instant-webhook`. → DONE 2026-07-21: both dialects + v8 bump + regenerated baselines (`0000_aberrant_purple_man` / `0000_fresh_quentin_quire`) + `pg-ddl.ts`; column additions ride `preUpgradeStatements` (`ADD COLUMN IF NOT EXISTS`, gated `from < 8`) in `apps/server/.../upgrade.ts` since the idempotent DDL only CREATEs. Tests: `tests/webhook-deltas.test.ts` (7) + upgrade suite (10).
+
+## 2. Provisioning
+
+- [~] 2.1 Provision a dedicated per-Space DB at Space creation per `backend`. _(DONE: `managed_pg` — schema-per-Space on the shared cluster, `pg_locator`; engine route `/provision-database`, wired into `POST /api/spaces`. DEFERRED: `d1` (needs a Cloudflare API token) + `byodb` → currently `backend_not_implemented`. Onboarding first-space path not yet wired.)_
+- [~] 2.2 Apply the per-Space schema to the new DB (dialect by backend). Lazy versioned migration on access. _(DONE: managed_pg applies the bundled `bo_at_*` DDL. DEFERRED: lazy versioned on-access migration.)_
+- [x] 2.3 Enforce posture: reject `sovereign` (byodb) unless `records_enabled`. _(DB CHECK `space_databases_sovereign_requires_records` + app-level `validateProvisionRequest`.)_
+
+## 3. Capture / writer (engine + workflows) — Option B: engine-brokered writes
+
+- [x] 3.1 Per run, hash the captured base schema; write/lookup `bo_at_schema_versions` (insert only on hash change); set `bo_at_base_runs.schema_version_id` + `schema_hash`.
+- [x] 3.2 Diff captured schema vs current `bo_at_bases/tables/fields/views`: insert/seen, `removed` only on a confident full enumeration else `unknown`; bump `last_seen_run`; modifications → `bo_at_schema_updates` (before+after, `breaks_data`).
+- [x] 3.3 Records (when `records_enabled`): upsert `bo_at_records` + `bo_at_record_field_data` (sparse-until-first-value); append `bo_at_record_updates` superseded old value; first population logs nothing.
+- [ ] 3.4 Attachments → `bo_at_attachments` (per-Space dedup). _(DEFERRED: attachments still dedup via master `attachment_dedup`; cutover + dropping the master table is a standalone follow-up. Also captures views/options/field-descriptions, which need the `airtable-client` schema type extended.)_
+- [x] 3.5 Always write the per-run CSV snapshot(s) to the file destination. _(Pre-existing static-backup path, retained.)_
+- [x] 3.6 Engine rolls up overall status to master `backup_runs` independently of the per-Space DB. _(Pre-existing `/runs/:id/complete`, retained.)_
+
+## 4. Read path — DEFERRED (UI-gated; Schema/data-intelligence UI are placeholders)
+
+- [ ] 4.1 Engine internal read endpoints for the Schema page (broker per-Space reads).
+- [x] 4.2 Generate per-table query views over `bo_at_record_field_data`. _(DONE 2026-07-23, managed_pg: `apps/server/src/lib/per-space/query-views.ts` (pure SQL builders — clean raw Airtable view names sanitized/deduped Space-wide, jsonb_object_agg cell pivot, safe-casts: jsonb_typeof-guarded numeric/boolean + plpgsql `bo_at_try_{jsonb,timestamptz,date}` NULL-on-failure) + `query-views-io.ts` applier (drop+create matviews per run, stale-view cleanup via pg_matviews). Wired: `regenerate-views` op now real (records-disabled Spaces ack `records_disabled`), schema-sync regenerates all tables best-effort post-sync, records-sync rebuilds the synced table's matview per run. Gated on `records_enabled`. D1 live pivot views ride the deferred `d1` backend. Gap CLOSED by follow-up `workflows-incremental-view-refresh` (2026-07-24): the incremental pass now regenerates once at end-of-pass, after reconciliation, with the union of schema-affected ∪ record-affected tables, best-effort (record-only passes no longer leave matviews stale).)_
+- [ ] 4.3 SQL REST API queries the generated views read-only (reconcile with `sql`).
+
+## 5. Restore — DEFERRED
+
+- [ ] 5.1 Restore reads per-run CSV snapshots; per-run granularity; decoupled from `bo_at_record_updates`.
+
+## 6. Migration + lifecycle ops
+
+- [ ] 6.1 Backend migration job (D1↔managed_pg↔byodb) — DEFERRED.
+- [~] 6.2 Cleanup fan-out: on Space/run deletion, tear down the per-Space rows/DB. _(Engine teardown SHIPPED: pure `deprovisionSpaceDatabase` orchestrator (drop managed_pg schema → delete `space_databases` row; idempotent; d1/byodb teardown deferred with those backends) wired as `DELETE /api/internal/spaces/:spaceId/provision-database` + 5 unit tests. REMAINING: the web Space-delete flow that CALLS this route — cross-app, so a `shared-*` follow-up; web currently has no Space-delete endpoint.)_
+- [~] 6.3 Prune `bo_at_record_updates` by retention. _(Mechanism SHIPPED: pure `recordUpdatesPruneCutoff(now, days)` (no-op guard on ≤0/∞ so a bad window never wipes history) + `pruneRecordUpdates(tx, cutoffIso)` DELETE over runs completed before the cutoff (in-flight runs never pruned) + rendered-SQL tests. REMAINING: the per-Space cron pass that invokes it, and the effective-retention SOURCE — wired to `resolveEntitlements` by shared-entitlements §4.4.)_
+
+## 7. Reconcile superseded specs — DONE
+
+- [x] 7.1 `server-dynamic-mode` superseded banner (tier→backend×records; per-table→EAV+views; `bo_at_*`; per-base→`bo_at_base_runs`).
+- [x] 7.2 `workflows-dynamic-mode` banner (diffs → `bo_at_schema_updates`, not master `audit_history`).
+- [x] 7.3 `server/schema-diff` banner (realize `schema_diffs`/`health_scores` as concrete `bo_at_*`; rules stay master).
+- [x] 7.4 `server-attachments` banner (`attachment_dedup` → `bo_at_attachments`).
+
+## 8. Open-item decisions
+
+Resolved 2026-06-22 (authoritative design):
+- [x] 8.1 Documentation = inline `ai_description` / `ai_overview` / `description_override` columns on bases/tables/fields/records (imported stays as `description`); no `bo_at_documentation` table. Data Dictionary = V2. _(IMPL: matches — inline columns shipped, `bo_at_documentation` gone (1e21300).)_
+- [x] 8.2 `bo_at_views` included, capture gated to Airtable Enterprise customers. _(IMPL: `bo_at_views` shipped; gate ENFORCED 2026-07-23 via `apps/server/src/lib/per-space/view-capture.ts` — signal is `connections.platform_config.is_enterprise_scope` (OAuth `enterprise.*` scopes, stamped by web at Connect), resolved per run via `backup_runs.connection_id`, default CLOSED. Non-Enterprise schema-sync strips views before hash/diff/store (`stripCapturedViews` + `diffSchema includeViews:false` — prior ungated-era view rows left untouched, never false-removed); incremental `updateView` stays skipped (full runs own view capture). NOTE: non-Enterprise dev connections stop capturing views — spec-correct "empty otherwise"; SHIPPED follow-up `server-view-capture-override` (2026-07-24) adds the dev-Worker-only `VIEW_CAPTURE_OVERRIDE=1` env override (response `viewCapture:"override"`) + gated-sync sweep of stale-`active` view rows to `unknown` (`markViewsUnknownForBase`).)_
+- [x] 8.4 `managed_pg` = schema-per-Space (multiple Spaces' schemas per database). _(IMPL: matches.)_
+
+Still open:
+- [ ] 8.3 Health tables + rule taxonomy — deferred; current draft stands (scores append / issues replace; rules in core `health_score_rules`).

@@ -1,0 +1,139 @@
+---
+// /users — global users directory (admin-entity-directories). Read-only sessions
+// access; role='super' gated by middleware.
+//
+// admin-crm-ux (Task 1.4): server-side pagination + sort + filter via the
+// shared planner/chrome. Memberships + last-session are fetched for the current
+// page only (inArray) and assembled with preserveOrder (design D3).
+import { and, asc, desc, eq, ilike, inArray, max, or, count } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import EntityLink from '../components/EntityLink.astro';
+import SortHeader from '../components/table/SortHeader.astro';
+import Pager from '../components/table/Pager.astro';
+import FilterBar from '../components/table/FilterBar.astro';
+import { users, sessions } from '@baseout/db-schema';
+import { organizations, organizationMembers } from '../db/schema';
+import { buildUsersDirectory } from '../lib/users-directory';
+import { parseTableQuery, pageInfo, type TableSpec } from '../lib/table-query';
+import { entityHref } from '../lib/ui';
+
+const { db } = Astro.locals;
+
+const ROLE_VALUES = ['customer', 'super'] as const;
+
+const SPEC: TableSpec = {
+  sortKeys: ['email', 'role', 'created'],
+  defaultSort: 'email',
+  defaultDir: 'asc',
+  searchable: true,
+  filters: [{ key: 'role', allowed: [...ROLE_VALUES] }],
+};
+const SORT_MAP = { email: users.email, role: users.role, created: users.createdAt } as const;
+
+const query = parseTableQuery(Astro.url, SPEC);
+
+const conditions = [];
+if (query.q) conditions.push(or(ilike(users.email, `%${query.q}%`), ilike(users.name, `%${query.q}%`)));
+if (query.filters.role) conditions.push(eq(users.role, query.filters.role));
+const whereClause = conditions.length ? and(...conditions) : undefined;
+
+const sortCol = SORT_MAP[query.sort as keyof typeof SORT_MAP];
+const orderBy = query.dir === 'asc' ? asc(sortCol) : desc(sortCol);
+
+const [{ n: total }] = await db.select({ n: count() }).from(users).where(whereClause);
+const info = pageInfo(total, query.page, query.per);
+
+const userRows = await db
+  .select({ id: users.id, name: users.name, email: users.email, role: users.role, emailVerified: users.emailVerified, createdAt: users.createdAt })
+  .from(users)
+  .where(whereClause)
+  .orderBy(orderBy)
+  .limit(query.per)
+  .offset(info.offset);
+
+const userIds = userRows.map((u) => u.id);
+const [memberships, latestSessions] = userIds.length
+  ? await Promise.all([
+      db.select({ userId: organizationMembers.userId, organizationId: organizationMembers.organizationId, organizationName: organizations.name, role: organizationMembers.role })
+        .from(organizationMembers).innerJoin(organizations, eq(organizationMembers.organizationId, organizations.id)).where(inArray(organizationMembers.userId, userIds)),
+      db.select({ userId: sessions.userId, updatedAt: max(sessions.updatedAt) }).from(sessions).where(inArray(sessions.userId, userIds)).groupBy(sessions.userId),
+    ])
+  : [[], []];
+
+const rows = buildUsersDirectory(
+  {
+    users: userRows,
+    memberships,
+    latestSessions: latestSessions.filter((s): s is { userId: string; updatedAt: Date } => !!s.updatedAt),
+  },
+  { preserveOrder: true },
+);
+
+const params = Astro.url.searchParams;
+const filterHidden: Record<string, string> = { sort: query.sort, dir: query.dir, per: String(query.per) };
+const roleOptions = [{ value: '', label: 'All roles' }, ...ROLE_VALUES.map((r) => ({ value: r, label: r }))];
+
+const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : 'never');
+---
+
+<SidebarLayout title="Admin — Users">
+  <div class="mx-auto max-w-[1100px] space-y-6">
+    <PageHeader title="Users" description="Every user, their org memberships, and last sign-in." />
+
+    <FilterBar
+      action="/users"
+      searchable
+      q={query.q}
+      qPlaceholder="Search email or name…"
+      filters={[{ key: 'role', label: 'Role', options: roleOptions, current: query.filters.role ?? null }]}
+      hidden={filterHidden}
+    />
+
+    {rows.length === 0 ? (
+      <EmptyState title="No users match" description="Try a different search or role." />
+    ) : (
+      <div class="space-y-3">
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+          <table class="table table-zebra table-sm">
+            <thead>
+              <tr>
+                <SortHeader label="User" sortKey="email" current={params} spec={SPEC} />
+                <SortHeader label="Role" sortKey="role" current={params} spec={SPEC} />
+                <SortHeader label="Organizations" current={params} spec={SPEC} />
+                <SortHeader label="Created" sortKey="created" current={params} spec={SPEC} />
+                <SortHeader label="Last seen" current={params} spec={SPEC} />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr>
+                  <td>
+                    <div class="font-medium"><EntityLink type="user" id={r.id} label={r.name ?? r.email} /></div>
+                    <div class="text-xs text-base-content/50">{r.email}{!r.emailVerified && ' · unverified'}</div>
+                  </td>
+                  <td>{r.role === 'super' ? <Badge variant="primary" size="sm">super</Badge> : r.role}</td>
+                  <td>
+                    {r.memberships.length === 0 ? <span class="text-base-content/50">—</span> : (
+                      <div class="flex flex-wrap gap-1">
+                        {r.memberships.map((m) => (
+                          <a href={entityHref('org', m.organizationId)} class="link link-hover text-xs">{m.organizationName} <span class="text-base-content/40">({m.role})</span></a>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                  <td class="text-base-content/70">{r.createdAt.toISOString().slice(0, 10)}</td>
+                  <td class="text-base-content/70">{fmt(r.lastSeenAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <Pager info={info} current={params} per={query.per} noun="user" />
+      </div>
+    )}
+  </div>
+</SidebarLayout>

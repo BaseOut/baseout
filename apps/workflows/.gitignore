@@ -1,0 +1,10 @@
+# Local backup output (CSVs). Written by the backup-base task —
+# R2 was removed; see trigger/tasks/_lib/local-fs-write.ts.
+.backups/
+
+# Trigger.dev local artifacts.
+.trigger/
+
+# Build output.
+dist/
+node_modules/

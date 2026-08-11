@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Baseout — Customer Segments (Workshop 1)</title>
+<style>
+body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #202124; max-width: 8in; margin: 40px auto; padding: 0 24px; }
+h1 { font-size: 20pt; } h2 { font-size: 16pt; border-bottom: 2px solid #202124; padding-bottom: 4px; margin-top: 28px; }
+h3 { font-size: 13pt; margin-top: 22px; } h4 { font-size: 11.5pt; margin-top: 18px; }
+table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+th, td { border: 1px solid #999; padding: 5px 8px; font-size: 10pt; text-align: left; vertical-align: top; }
+th { background: #eee; }
+blockquote { border-left: 4px solid #f4b400; background: #fef7e0; margin: 10px 0; padding: 8px 14px; }
+code { font-family: 'Courier New', monospace; font-size: 10pt; background: #f1f3f4; padding: 0 3px; }
+hr { border: none; border-top: 1px solid #ccc; margin: 24px 0; }
+li { margin: 3px 0; }
+</style></head><body>
+<h1>Pricing Workshop 1 — Customer Segments</h1>
+<p><strong>Prepared for:</strong> Pricing consultant engagement, Workshop 1 of 4 (customer segments)
+<strong>Prepared:</strong> July 13, 2026
+<strong>Sources:</strong> State of Airtable DevOps desk research (<code>research/customers/research-notes.md</code>), report draft, PRD §1.3–1.5, On2Air Backups customer base (~330 active subscriptions — corrected 2026-07-25 from &quot;~200&quot;; see <code>research/pricing/legacy-subscription-analysis.md</code>), survey instruments (designed; survey not yet live — launching in the coming months).</p>
+<blockquote>
+<p><strong>Evidence status:</strong> Desk research findings below are verified (sources in <code>research-notes.md</code>). The State of Airtable DevOps <em>survey</em> is <strong>not yet live — it launches in the coming months</strong> (corrected 2026-07-24; earlier drafts said &quot;in field&quot;) — where a claim depends on survey data it is marked <strong>[SURVEY-PENDING]</strong>. Real-customer examples should be pulled from the On2Air billing list now, and from the survey&#39;s interview opt-in (question G3) once the survey runs; suggested selection criteria are given per segment.</p>
+</blockquote>
+<blockquote>
+<p><strong>Positioning note (owner decision, July 2026):</strong> Data <em>recovery</em> is deliberately <strong>not</strong> the lead value proposition. Airtable&#39;s API limits mean no third party can restore a base fully — automations and interfaces aren&#39;t exportable via the API, and third-party restores don&#39;t preserve record IDs — so a recovery-led pitch over-claims. The problems below are framed accordingly, around the two things Baseout genuinely does best: <strong>(1) external backups as a best-practice / governance need</strong> (the external copy Airtable itself tells customers to keep), and <strong>(2) schema intelligence and data browsing/reporting as the real, daily pain of administering Airtable.</strong> Check all pricing and packaging language against this framing.</p>
+</blockquote>
+<hr>
+<h2>The four customer profiles, ranked by relevance</h2>
+<table>
+<thead>
+<tr>
+<th>Rank</th>
+<th>Segment</th>
+<th>One-liner</th>
+<th>Revenue role</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><strong>The Internal Airtable Admin</strong> (&quot;the Airtable person&quot;)</td>
+<td>Ops/RevOps/admin at a 10–200 person company whose business-critical operations run on Airtable</td>
+<td>Core ICP — volume + mission-critical urgency</td>
+</tr>
+<tr>
+<td>2</td>
+<td><strong>The Airtable Consultant / Agency</strong></td>
+<td>Builds and maintains Airtable systems for many clients; their practice standard propagates to every client</td>
+<td>Multiplier — one subscription per client Organization, referral engine, resell potential</td>
+</tr>
+<tr>
+<td>3</td>
+<td><strong>The Compliance-Driven Mid-Market / Enterprise Team</strong></td>
+<td>IT, engineering, or data lead who must pass security reviews and needs data outside Airtable (SQL/BI/governance)</td>
+<td>Highest ACV — Business/Enterprise/BYODB tiers</td>
+</tr>
+<tr>
+<td>4</td>
+<td><strong>The Solo Operator / Micro-Business</strong></td>
+<td>Founder or freelancer running their whole business on one or a few bases</td>
+<td>Long tail — price-sensitive, low-touch, Starter/Bridge tiers</td>
+</tr>
+</tbody></table>
+<p><strong>Why this ranking.</strong> Segment 1 is the PRD&#39;s primary persona and the largest population with both the pain and a budget owner close to the pain. Segment 2 is smaller in headcount but each consultant represents many end-client Organizations — each a separate subscription — and the ecosystem&#39;s highest-leverage word-of-mouth channel — our research explicitly identifies consultants as the population whose practices propagate across the ecosystem. Segment 3 has the highest willingness to pay and the strongest external forcing function (security reviews, client contracts, compliance), but is a smaller, slower, sales-led motion. Segment 4 is high-volume/low-ACV; it matters for funnel and community presence but should not drive pricing architecture.</p>
+<p>These segments map cleanly onto the survey&#39;s role question (B1), so the merged survey dataset will quantify segment sizes and willingness-to-pay bands per segment when it closes. <strong>[SURVEY-PENDING: B1 distribution × F2/F3 budget bands]</strong></p>
+<hr>
+<h2>Segment 1 — The Internal Airtable Admin (&quot;the Airtable person&quot;)</h2>
+<h3>1. Who are they?</h3>
+<ul>
+<li><strong>Business/consumer:</strong> Business (B2B). The individual is an employee; the buyer is their company.</li>
+<li><strong>Role:</strong> Operations / RevOps / BizOps manager, office manager, or an informally-appointed &quot;Airtable person.&quot; Usually <strong>not</strong> formal IT — Gartner projects that by 2026, 80%+ of low-code users sit outside formal IT, and that is exactly this person. Technically capable (comfortable with OAuth, formulas, automations) but not an engineer.</li>
+<li><strong>Org size:</strong> ~10–200 employees; sweet spot 11–50. Airtable plan: Team or Business.</li>
+<li><strong>Industry:</strong> Horizontal — agencies, e-commerce/inventory, media &amp; content production, nonprofits, professional services, real estate, education. What they share is not an industry but a shape: operations too complex for spreadsheets, too small or too fast-moving for enterprise software.</li>
+<li><strong>Location:</strong> Predominantly US/UK/EU/AU, English-speaking, remote-friendly companies (mirrors Airtable&#39;s install base).</li>
+<li><strong>Budget:</strong> Holds or can easily obtain a tool budget in the $25–200/mo band; purchases go on a company card without procurement.</li>
+<li><strong>Communication preferences:</strong> Email first; in-app messages; help-doc self-serve. Active in the Airtable Community forum, BuiltOnAir podcast/community, Reddit r/Airtable, and <strong>LinkedIn</strong> (where their job title and &quot;Airtable&quot; skill make them findable). Not reachable by cold calls; face-to-face irrelevant. Webinars and practical content (templates, checklists) perform well.</li>
+<li><strong>Real examples:</strong> The core of the ~330 On2Air Backups subscriptions. <em>Action before workshop: pull 3–5 named accounts from the On2Air billing list matching &quot;Team/Business plan, 4–25 bases, ops-title contact&quot; and any survey G3 interview volunteers in this role.</em></li>
+</ul>
+<h3>2. What is their problem?</h3>
+<ul>
+<li><strong>Time:</strong> The daily <strong>archaeology tax</strong>: figuring out how a base works, what a field is for, what depends on what, and why something broke. Airtable has no schema changelog visible to builders — &quot;what changed, when, and who changed it&quot; has no native answer below Enterprise Scale — and documentation, where it exists at all, is hand-maintained and stale. Reporting is manual too: getting data in front of leadership means repeated per-view CSV exports or brittle Zapier syncs. <strong>[SURVEY-PENDING: D6 archaeology hours]</strong></li>
+<li><strong>Expertise:</strong> They know they <em>should</em> keep an external copy — Airtable&#39;s own security docs tell customers to — but DIY paths quietly fail: attachment URLs expire in ~2 hours, API monthly caps throttle exports on Team plans, CSV loses linked records and comments. They lack the engineering time to build and maintain reliable scripts, so the best practice stays unmet.</li>
+<li><strong>Cost:</strong> Silent breakage — a renamed or deleted field breaks formulas, automations, Zaps, and interfaces with no trail to diagnose from. Plus a governance gap: the company&#39;s operational memory (CRM, orders, projects, inventory) lives in one SaaS with plan-gated retention and no external, governed copy — contrary to the platform&#39;s own guidance.</li>
+</ul>
+<h3>3. How serious is their problem?</h3>
+<p><strong>Two pains at different points on the spectrum.</strong> The schema/visibility pain is <strong>chronic and felt daily</strong> — hours a week of archaeology, silent breakage, stale docs — and it compounds with every base, automation, and (increasingly) every AI agent writing into bases. The backup gap is <strong>latent</strong>: an unmet best practice rather than a felt emergency, which turns acute the moment leadership, a client, a security review, or a near-miss scare asks &quot;where is our external copy?&quot; <strong>Pricing implication:</strong> the daily schema/data pain is what earns habitual use and justifies the subscription month after month; the best-practice backup requirement is what makes the purchase defensible to whoever approves the spend. Package for both jobs — an admin console they live in, not disaster insurance they hope to never use.</p>
+<h3>4. How do they currently solve their problem?</h3>
+<ul>
+<li>Majority rely on <strong>Airtable&#39;s built-in snapshots and revision history only</strong> — which cannot leave the platform, restore whole-base-only into a new base, and satisfy no external-copy requirement. <strong>[SURVEY-PENDING: C1 distribution]</strong></li>
+<li>Minority do manual CSV exports (per-view, lossy, unscheduled) or Zapier/Make syncs to Sheets.</li>
+<li>Schema knowledge lives &quot;in my head&quot;; risky changes are tested &quot;carefully, in the live base.&quot;</li>
+<li>Competitor tools they might find: ProBackup (~$25–88/mo), AirBackups (per-base flat). Category awareness is low — most don&#39;t know third-party Airtable backup exists.</li>
+</ul>
+<h3>5. What repeat potential is there?</h3>
+<ul>
+<li><strong>High retention:</strong> backup is a subscribe-and-forget utility; churn is low once configured (On2Air&#39;s multi-year customer tenures bear this out). Data volume — and therefore plan tier — grows with the business.</li>
+<li><strong>Expansion path:</strong> static backup → dynamic (SQL layer) → schema intelligence → more Spaces/bases as the org&#39;s Airtable footprint grows. Credit/overage model monetizes growing usage without a sales touch.</li>
+<li><strong>Negative churn risk is low</strong> but note: the product&#39;s value is insurance-shaped; visible value moments (backup-run reports, restore drills, change alerts) are what sustain renewal.</li>
+</ul>
+<h3>6. What key benefits/value does Baseout bring them?</h3>
+<ul>
+<li><strong>Schema visibility they&#39;ve never had:</strong> changelog (&quot;Field X was deleted March 12&quot;), dependency alerts, visual diagrams, health scores, auto-maintained documentation — the category&#39;s one dedicated tool (On2Air Schemas) shut down, leaving this vacant. This is the daily-use surface that makes Baseout an admin console rather than an insurance policy.</li>
+<li><strong>Browse, query, and report on their own data:</strong> a live, queryable copy of their Airtable data means leadership questions and reporting get answered without per-view CSV gymnastics or brittle sync chains.</li>
+<li><strong>Backups as fulfilled best practice:</strong> scheduled external copies to storage <em>they</em> control (Google Drive, Dropbox, Box, OneDrive — the only tool with OneDrive), satisfying Airtable&#39;s own keep-your-own-copy recommendation and any leadership/client ask — with per-run audit reports as standing proof the practice is followed.</li>
+<li><strong>Privacy posture that&#39;s easy to say yes to:</strong> on static plans, record data streams through memory and is never stored on Baseout servers.</li>
+</ul>
+<h3>7. Best way to reach them (sales channel)</h3>
+<ul>
+<li><strong>Self-serve, product-led:</strong> SEO on admin-intent queries (&quot;Airtable schema documentation&quot;, &quot;Airtable changelog&quot;, &quot;Airtable backup best practices&quot;, &quot;report on Airtable data&quot;), free schema-visualization hook (PRD: available pre-registration), 7-day trial with one real backup run.</li>
+<li><strong>The State of Airtable DevOps report</strong> is the designed top-of-funnel for exactly this person: benchmark → maturity self-diagnosis → uplift checklist → tool.</li>
+<li>Airtable Community forum + BuiltOnAir presence, template/checklist content, email nurture from the mailing list.</li>
+<li><strong>LinkedIn:</strong> this persona is findable by title (&quot;Airtable&quot; in profiles, ops/RevOps titles at 11–200 person companies) — useful both for organic content (best-practice posts, report findings) and targeted outreach/ads around the report launch.</li>
+<li>No sales team required; support-assisted conversion at most.</li>
+</ul>
+<hr>
+<h2>Segment 2 — The Airtable Consultant / Agency</h2>
+<h3>1. Who are they?</h3>
+<ul>
+<li><strong>Business/consumer:</strong> Business — micro-businesses themselves (solo consultants to ~15-person agencies), buying on behalf of or reselling to their client roster.</li>
+<li><strong>Role/industry:</strong> Professional Airtable builders — Airtable Services Partner Program members (dozens of accredited partners incl. 40+ Gold, plus a longer tail of independents), and unaccredited freelancers on Upwork/communities. Each manages 5–50+ client bases across many workspaces and plans.</li>
+<li><strong>Location:</strong> Global, concentrated US/UK/EU; fully remote.</li>
+<li><strong>Budget:</strong> Two modes — (a) tool cost absorbed as practice overhead, (b) <strong>billed through or resold to clients</strong> (&quot;depends entirely on client billing&quot; is a survey answer option for exactly this reason). Per-client economics matter more than absolute price.</li>
+<li><strong>Communication preferences:</strong> Deeply community-native: BuiltOnAir, Airtable Community forum, TableForums, each other. Partnerships and podcasts beat ads. Email fine; they&#39;ll take a video call if there&#39;s partner upside. Publicly visible practitioners (e.g. ScottWorld&#39;s oft-repeated &quot;snapshot before &amp; after every important change&quot; advice) are the archetype.</li>
+<li><strong>Real examples:</strong> On2Air&#39;s customer list contains multi-workspace accounts that are almost certainly consultants; the survey&#39;s B1 &quot;consultant/agency&quot; respondents + G3 interview volunteers will name them. The State of Airtable DevOps survey is co-sponsored with <strong>BuiltOnAir</strong> — that channel is already warm.</li>
+</ul>
+<h3>2. What is their problem?</h3>
+<ul>
+<li><strong>Time:</strong> Manual safety and documentation work multiplied by every client: snapshot-before-and-after every risky change, duplicate-base staging, hand-maintained schema docs and diagrams per client that rot the week after they&#39;re written. One consultant&#39;s summary of tracking which automations use each field: &quot;the bit that&#39;s much harder to deal with.&quot; Understanding what changed in a client&#39;s base since their last engagement is pure archaeology.</li>
+<li><strong>Expertise:</strong> They <em>have</em> the expertise — the problem is it doesn&#39;t scale. Their documentation and protection practice is artisanal, per-client, and largely unbillable.</li>
+<li><strong>Cost:</strong> Reputation risk. A consultancy guide opens with: <em>&quot;Every Airtable consultant has had the uncomfortable conversation… someone deleted something important… &#39;Can we restore it?&#39; … If they&#39;re unlucky… the answer is no.&quot;</em> Ecosystem-wide, that answer often <strong>is</strong> no — which is exactly why the sellable practice is <em>prevention</em>: external backups in place, schema documented, changes tracked, so the uncomfortable conversation never happens. Meanwhile client security reviews increasingly ask &quot;how is this backed up?&quot; and a manual answer looks bad.</li>
+</ul>
+<h3>3. How serious is their problem?</h3>
+<p><strong>Serious and professional-reputation-shaped, trending toward table stakes.</strong> Not business-survival day-to-day, but a single unrecoverable client incident can end a client relationship or become a liability question. The Salesforce precedent is explicit: backup/change-management became standard consultant practice there, and our own report tells consultants &quot;your maturity is a product you can sell… table stakes in this ecosystem within a few years.&quot; Early movers gain a differentiator; laggards will inherit the requirement.</p>
+<h3>4. How do they currently solve their problem?</h3>
+<ul>
+<li>Defensive manual practice: manual snapshots around changes, duplicate-base testing, per-client CSV exports, hand-rolled daily API scripts that log schema to tracking tables and diff them.</li>
+<li>Some resell/deploy On2Air or ProBackup per client today; many stitch Make/Zapier syncs.</li>
+<li>Documentation via Whimsical/Notion, maintained by hand, perpetually stale.</li>
+</ul>
+<h3>5. What repeat potential is there?</h3>
+<ul>
+<li><strong>The highest in the model — and it compounds as subscriptions, not seats.</strong> Each client requires its <strong>own Organization</strong> (the top-level billing entity, holding that client&#39;s Spaces), so every new client the consultant onboards is a <em>new subscription</em> at whatever tier fits that client. One consultant with 15 clients is 15 Organizations of recurring revenue, not one expanding account. The consultant user simply belongs to all of them (the data model supports users across multiple Organizations).</li>
+<li><strong>Resell/white-label potential:</strong> per-client Organizations make pass-through billing natural — &quot;every client base backed up externally, schema documented, changes tracked&quot; as a productized service line they charge for, with each client org invoiced separately (to the consultant or directly to the client). Baseout becomes embedded infrastructure in their offer.</li>
+<li><strong>Referral engine:</strong> consultants are the ecosystem&#39;s trusted advisors; one convinced consultant seeds dozens of Segment-1 companies. Their churn also multiplies — losing one consultant can lose every client org they manage — so partner-grade support matters.</li>
+</ul>
+<h3>6. What key benefits/value does Baseout bring them?</h3>
+<ul>
+<li><strong>One login across all clients:</strong> the consultant belongs to every client Organization and switches between them — per-client backup configs, clean per-client billing separation, and audit reports they can forward to clients as proof of duty of care.</li>
+<li><strong>A billable deliverable:</strong> auto-generated schema docs, diagrams, health scores, and change logs turn invisible hygiene into client-visible artifacts.</li>
+<li><strong>Change alerts across the portfolio:</strong> know a client broke something before the client does — a &quot;hero moment&quot; machine.</li>
+<li><strong>Client-safe data posture:</strong> static-plan streaming (no data at rest on Baseout) simplifies their own data-processing story with clients.</li>
+</ul>
+<h3>7. Best way to reach them (sales channel)</h3>
+<ul>
+<li><strong>Partner/community motion:</strong> BuiltOnAir co-marketing (already in motion via the survey), Airtable Services Partner directory outreach, podcast appearances, community show-and-tell.</li>
+<li><strong>A formal partner/reseller program</strong> — margin or per-client pricing, partner badge, co-branded client reports. This is a workshop question: consultant-specific pricing (per-client packs? agency tier?) deserves its own discussion.</li>
+<li>Direct, personal outreach works here (small, identifiable population); this is the one segment where 1:1 relationship-building scales. <strong>LinkedIn makes the population enumerable</strong> — consultants advertise &quot;Airtable consultant/partner&quot; in their headline, so building the outreach list is straightforward.</li>
+</ul>
+<hr>
+<h2>Segment 3 — The Compliance-Driven Mid-Market / Enterprise Team</h2>
+<h3>1. Who are they?</h3>
+<ul>
+<li><strong>Business/consumer:</strong> Business — 200–1,000+ employees, or smaller companies selling into regulated/enterprise markets.</li>
+<li><strong>Role:</strong> IT manager, data/analytics engineer, security/compliance owner, or a platform team that inherited Airtable after the business adopted it bottom-up. The economic buyer holds a real software budget; procurement and security review are part of the purchase.</li>
+<li><strong>Industry:</strong> Anywhere Airtable reached the enterprise (80% of the Fortune 100 touch it) — media, healthcare-adjacent ops, financial services ops, agencies serving regulated clients, SaaS companies using Airtable as internal ops backbone.</li>
+<li><strong>Budget:</strong> $300–1,000+/mo is unremarkable; they compare against enterprise SaaS-backup pricing (Own Company sold to Salesforce for $1.9B serving this exact need) and against $249+/mo sync tools.</li>
+<li><strong>Communication preferences:</strong> Email + scheduled video calls; they expect security documentation (SOC 2 status, DPA, architecture docs), a sales contact, and references. Face-to-face/webinar acceptable; no community-forum buying behavior.</li>
+<li><strong>Real examples:</strong> Identify from On2Air list by domain (Enterprise-plan Airtable orgs) and from survey C6 &quot;formal requirement&quot; respondents. <strong>[SURVEY-PENDING: C6 formal-requirement share + B2 201+ orgs]</strong></li>
+</ul>
+<h3>2. What is their problem?</h3>
+<ul>
+<li><strong>Time/expertise:</strong> They must answer auditors, clients, and security reviews: &quot;how is this data backed up, what&#39;s your RTO/RPO, where does it live?&quot; Airtable gives them nothing to say — no customer-facing RTO/RPO commitment, audit logs only on Enterprise Scale (180 days, no record-level changes), snapshots that can&#39;t leave the platform. Getting Airtable data into their warehouse/BI stack got harder when Sequin shut down (Oct 2025, all customer data deleted at closure); remaining options start at $249/mo or sales-led.</li>
+<li><strong>Cost:</strong> Failing a security review blocks revenue (their client contracts); a compliance gap is a finding; engineering time to hand-roll ELT + backup + audit for a &quot;no-code&quot; tool erases the tool&#39;s ROI.</li>
+<li><strong>The AI accelerant:</strong> Airtable&#39;s MCP server, Omni, and Field Agents create new low-friction write paths into production bases that existing audit tooling doesn&#39;t see — governance anxiety is rising, not falling.</li>
+</ul>
+<h3>3. How serious is their problem?</h3>
+<p><strong>The most externally-forced of the four — up to deal-blocking.</strong> Not &quot;the business dies tomorrow,&quot; but a formal requirement (client contract, security review, insurance, compliance) has a deadline and an owner. When present, it converts &quot;nice to have&quot; into &quot;must purchase this quarter.&quot; Where no formal requirement exists yet, seriousness is moderate but ratcheting — every enterprise Airtable expansion and every AI-agent write path raises it.</p>
+<h3>4. How do they currently solve their problem?</h3>
+<ul>
+<li>Engineering-built API export scripts (fighting 5 rps limits, pagination, expiring attachment URLs) feeding S3/warehouse; often half-maintained.</li>
+<li>ELT tools (Fivetran/Airbyte) for the data-access half — expensive or self-hosted, and covering analytics, not recovery.</li>
+<li>Enterprise Scale audit logs + retention policies for the governance half — partial by design.</li>
+<li>Some simply accept the risk and document it — an open audit finding waiting for budget.</li>
+</ul>
+<h3>5. What repeat potential is there?</h3>
+<ul>
+<li><strong>Highest ACV, stickiest deployments.</strong> BYODB/dedicated-database plans embed Baseout into their data infrastructure; switching cost is high.</li>
+<li>Expansion: more bases/workspaces under governance, seats, retention add-ons, credit volume, eventually multi-platform (V2) as the same team asks &quot;what about our Notion/HubSpot?&quot;</li>
+<li>Multi-year contracts and annual prepay are natural here.</li>
+</ul>
+<h3>6. What key benefits/value does Baseout bring them?</h3>
+<ul>
+<li><strong>A defensible answer for auditors:</strong> scheduled external backups with per-run audit reports, documented retention, and customer-controlled storage (own bucket/drive) or <strong>BYODB</strong> — data never leaving their environment, unique in the market. Backup here is a governance artifact, not a recovery promise.</li>
+<li><strong>SQL access to their own data</strong> — continuously synced Postgres, filling the post-Sequin gap below/beside $249+ sales-led tools; BI and internal apps get a real database instead of API duct tape.</li>
+<li><strong>Change intelligence as governance:</strong> schema changelog, dependency alerts, and data-change history provide the record-level audit trail Airtable doesn&#39;t, including changes made by AI agents.</li>
+<li><strong>SOC 2 (in progress) + encryption architecture</strong> to pass their vendor review.</li>
+</ul>
+<h3>7. Best way to reach them (sales channel)</h3>
+<ul>
+<li><strong>Sales-assisted:</strong> demo call, security-documentation pack, pilot on one workspace → org rollout. Pricing page needs a credible Enterprise &quot;talk to us&quot; lane.</li>
+<li><strong>Inbound via the compliance question itself:</strong> content targeting &quot;Airtable SOC 2 backup requirements,&quot; &quot;Airtable data retention policy,&quot; &quot;Airtable governance&quot; — low-volume, extremely high-intent queries.</li>
+<li><strong>LinkedIn is the primary social channel for this buyer:</strong> IT/data/compliance titles are precisely targetable; thought-leadership posts on Airtable governance and the annual report land here, and outbound to named accounts (Enterprise-plan Airtable orgs) is acceptable practice in this segment.</li>
+<li>The DevOps report&#39;s governance chapter + annual benchmark builds the category credibility this buyer needs to shortlist a small vendor.</li>
+<li>Consultant referrals (Segment 2) frequently open these doors — another reason the partner motion matters.</li>
+</ul>
+<hr>
+<h2>Segment 4 — The Solo Operator / Micro-Business</h2>
+<h3>1. Who are they?</h3>
+<ul>
+<li><strong>Business/consumer:</strong> Prosumer — solo founders, freelancers, creators, tiny nonprofits (1–10 people) whose entire operation runs in a handful of bases.</li>
+<li><strong>Industry:</strong> Creators/content, e-commerce side businesses, coaching, community management, event production, small nonprofits.</li>
+<li><strong>Location:</strong> Global, more price-diverse markets than the other segments.</li>
+<li><strong>Budget:</strong> $0–29/mo tolerance; every subscription is scrutinized. Often on Airtable Free/Team where native protection is weakest (2-week snapshot retention on Free, 1,000 API calls/month).</li>
+<li><strong>Communication preferences:</strong> Fully self-serve; YouTube tutorials, Reddit, templates, community threads. Will never take a call. In-product guidance and docs carry the whole relationship.</li>
+<li><strong>Real examples:</strong> On2Air&#39;s legacy Basic/$9.99 customers (the On2Air Bridge plan exists precisely for them).</li>
+</ul>
+<h3>2. What is their problem?</h3>
+<ul>
+<li><strong>Time:</strong> None to spare — they are the business. Manual CSV exports get skipped; there is no &quot;IT&quot; to notice.</li>
+<li><strong>Expertise:</strong> Lowest of the four segments; API scripts are out of reach; they often don&#39;t know snapshots can&#39;t be exported or that trash is 7 days.</li>
+<li><strong>Cost:</strong> Ironically the highest <em>relative</em> exposure: the base <strong>is</strong> the business (client list, orders, content pipeline), and they sit on the plans with the shortest native retention. One bad automation or accidental delete is existential — but the perceived probability is low, so willingness to pay stays low until it happens.</li>
+</ul>
+<h3>3. How serious is their problem?</h3>
+<p><strong>Objectively can be business-survival; subjectively &quot;nice to have.&quot;</strong> This is the segment where the gap between criticality and preparedness is widest and least funded. Conversion is almost always incident- or scare-triggered.</p>
+<h3>4. How do they currently solve their problem?</h3>
+<ul>
+<li>Mostly nothing, or trust in Airtable&#39;s built-ins; occasional manual CSV; a Zapier free-tier sync to Google Sheets if they&#39;re savvy.</li>
+<li>Free tools (Export My Base) for one-shot exports.</li>
+</ul>
+<h3>5. What repeat potential is there?</h3>
+<ul>
+<li><strong>Modest per-account, real in aggregate.</strong> Low ACV, but very sticky once configured (set-and-forget), near-zero service cost, and a graduation path: solo operators become Segment 1 admins or Segment 2 consultants as they grow. Also the community mass that makes the category feel real.</li>
+</ul>
+<h3>6. What key benefits/value does Baseout bring them?</h3>
+<ul>
+<li><strong>The best practice, done for them:</strong> scheduled backups to the Google Drive/Dropbox they already pay for — their data in readable files they own, no API mechanics required — at a price under their scrutiny threshold (Starter $29 / Bridge $9.99 — unlisted, deliberately).</li>
+<li><strong>A picture of their own base:</strong> the free schema visualization and health score give them an understanding of their setup they&#39;ve never had — value before any payment.</li>
+</ul>
+<h3>7. Best way to reach them (sales channel)</h3>
+<ul>
+<li><strong>Pure self-serve, zero-touch:</strong> SEO + YouTube (&quot;how to back up Airtable&quot;), templates, Reddit/community answers, the free schema tool as the hook.</li>
+<li>Deliberately <strong>not</strong> featured on the pricing page (per the Features spec, Starter/Bridge are discoverable, not marketed) — serve them without letting their price points anchor the main segments.</li>
+<li>Product-led upgrade prompts as their record counts and base counts grow.</li>
+</ul>
+<hr>
+<h2>Summary matrix (for the workshop wall)</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>1 · Internal Admin</th>
+<th>2 · Consultant/Agency</th>
+<th>3 · Compliance/Mid-Market+</th>
+<th>4 · Solo Operator</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Problem framing</strong></td>
+<td>Daily schema archaeology + reporting friction; backup best practice unmet</td>
+<td>Unscalable per-client documentation &amp; safety work; reputation risk</td>
+<td>External requirement: audits, security reviews, SQL/BI access</td>
+<td>No time, no expertise, best practice out of reach</td>
+</tr>
+<tr>
+<td><strong>Seriousness</strong></td>
+<td>Chronic daily (schema/reporting); backup gap latent until asked</td>
+<td>Serious; reputation/table-stakes trajectory</td>
+<td>Deal-/audit-blocking when requirement exists</td>
+<td>Real exposure, &quot;nice to have&quot; in perception</td>
+</tr>
+<tr>
+<td><strong>Current solution</strong></td>
+<td>Open the base and look; native snapshots only; CSV/Zapier for reporting</td>
+<td>Manual snapshots, duplicate-base staging, hand-maintained docs, hand-rolled scripts</td>
+<td>Engineering scripts, ELT tools, accepted risk</td>
+<td>Nothing / trust in built-ins</td>
+</tr>
+<tr>
+<td><strong>Repeat potential</strong></td>
+<td>High retention, tier growth with data volume</td>
+<td>Highest — one new subscription (client Org) per new client; resell</td>
+<td>Highest ACV; BYODB lock-in; multi-year</td>
+<td>Modest; sticky; graduation path</td>
+</tr>
+<tr>
+<td><strong>Core value</strong></td>
+<td>Schema visibility + data browsing/reporting + best-practice backups</td>
+<td>Portfolio-wide docs/changelogs as billable deliverables + change alerts</td>
+<td>Audit-ready posture, BYOS/BYODB, SQL layer, AI-era change intel</td>
+<td>Best practice done for them, set-and-forget</td>
+</tr>
+<tr>
+<td><strong>Channel</strong></td>
+<td>PLG: SEO, report, community, LinkedIn, trial</td>
+<td>Partner program, BuiltOnAir, LinkedIn list-building, 1:1 relationships</td>
+<td>Sales-assisted inbound; security-doc pack; LinkedIn outbound; consultant referrals</td>
+<td>Zero-touch self-serve; hidden tiers</td>
+</tr>
+<tr>
+<td><strong>Likely tier fit</strong></td>
+<td>Launch $49 / Growth $99</td>
+<td>Per client Org — many at Launch $49/Growth $99, tier set by each client&#39;s size</td>
+<td>Business $399 / Enterprise</td>
+<td>Starter $29 / Bridge $9.99 (unlisted)</td>
+</tr>
+<tr>
+<td><strong>WTP evidence</strong></td>
+<td>[SURVEY-PENDING F2/F3]</td>
+<td>[SURVEY-PENDING F3 &quot;client billing&quot; share]</td>
+<td>[SURVEY-PENDING C6 × F3]</td>
+<td>[SURVEY-PENDING]</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>Open items to resolve before/during the workshop</h2>
+<ol>
+<li><strong>Attach real names.</strong> Pull 3–5 example accounts per segment from the On2Air billing list (segment by plan, base count, contact title/domain) and schedule 20-min interviews with survey G3 volunteers.</li>
+<li><strong>Survey close-out.</strong> The B1×B6×F2/F3 crosstabs will size each segment and its budget band — the single most valuable pricing input in flight. Decide whether Workshop 1 outputs get revised when the survey closes.</li>
+<li><strong>Consultant pricing architecture</strong> (Segment 2): the model is per-Organization billing, and each client requires its own Organization — so the open question is not &quot;agency tier vs. per-client&quot; (per-client is structural) but rather: does a consultant managing N client Orgs get cross-Org volume pricing, partner/reseller margin, or a consolidated invoice? Who is the bill-to per client Org — consultant or client? Flag for Workshop 2+.</li>
+<li><strong>Positioning guardrail for all pricing/packaging language:</strong> recovery is not the promise — no third party can fully restore an Airtable base (automations/interfaces aren&#39;t API-exportable; third-party restores don&#39;t preserve record IDs). The value story is proactive: best-practice external backups (governance artifact) + the schema/data intelligence layer admins use daily. Review tier names, feature descriptions, and page copy against this.</li>
+<li><strong>Grandfathering constraint:</strong> ~330 On2Air subscriptions transition at equivalent pricing for a transition period (at the sunset-triggered migration, not Baseout launch) — a boundary condition on any repricing of the lower tiers.</li>
+</ol>
+
+</body></html>

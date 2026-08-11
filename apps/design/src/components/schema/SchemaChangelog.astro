@@ -1,0 +1,636 @@
+---
+/**
+ * SchemaChangelog — the Schema page's Changelog tab (overview/schema/02-changelog-tab.md).
+ *
+ * A time-ordered, day-grouped feed of schema changes (field renamed, table added,
+ * type changed…) generated from backup-snapshot diffs. The engine pre-renders the
+ * human-readable strings; this tab styles them for hierarchy + scan. A ⚠️ flags
+ * changes that may have invalidated data — the highest-value signal in the feed.
+ *
+ * Filters (founder direction): show/hide by Base / Table / Field type via the faceted
+ * FacetFilter (the Visualize "Display" pattern); Change type + Time stay plain selects.
+ * Clicking an entry opens a right-side detail panel with its full context.
+ * All catalog Astro/daisyUI.
+ */
+import FacetFilter, { type FacetGroup } from './FacetFilter.astro';
+import { groupByWorkspace } from './workspaceGroups';
+import ExportControl from './ExportControl.astro';
+import TablePager from '../ui/TablePager.astro';
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+import { locationCrumbs, type CrumbSeg } from './locationCrumbs';
+import { CHANGE_TYPE as TYPE } from './changelogTypes';
+import { entityIconMarkup } from './entityIcon';
+
+export interface ChangelogEntry {
+  id: string;
+  at: string; // ISO timestamp
+  base: string; // base name
+  /** The table the change happened in (a new table names itself). */
+  table?: string;
+  /** The field, for field-level changes. */
+  field?: string;
+  /** C3 — the entity id (base/table/field) this change is about, so the location opens the
+   *  Browse panel. Absent for new/removed entities that aren't in the current schema. */
+  entityId?: string;
+  /** The Airtable field type, for field-level changes — drives the Field-type filter + icon. */
+  fieldType?: string;
+  /** Non-field entity changes — when set, the entry is about that entity (not a table/field);
+   *  the location shows base ▸ (table, for a view) ▸ its concept icon + `entityName`.
+   *  `view` = an Airtable view (view-schema-details): it lives UNDER a table, and unlike the
+   *  app-layer kinds it resolves against the Browse entity index, so it opens the shared
+   *  EntityPanel rather than the Automations/Interfaces tabs. */
+  entityKind?: 'automation' | 'interface' | 'page' | 'view';
+  /** The automation/interface/page/view name (non-field entries). */
+  entityName?: string;
+  type: 'added' | 'removed' | 'renamed' | 'typed' | 'config';
+  /** Pre-rendered summary (engine). Linked-record/type changes show before → after. */
+  summary: string;
+  before?: string;
+  after?: string;
+  /** AI-written plain-language explanation of the change + its impact (detail panel). */
+  aiSummary?: string;
+  /** Set when the change may have broken data — drives the ⚠️ affordance. */
+  warning?: string;
+}
+interface Props {
+  entries: ChangelogEntry[];
+  /** Current health per base name / "base::table" — drives the status dot in the Base/Table
+   *  facets so they read consistently with Browse + Visualize. Removed entities have none. */
+  baseHealth?: Record<string, 'green' | 'amber' | 'red'>;
+  tableHealth?: Record<string, 'green' | 'amber' | 'red'>;
+  /** Name → entity-id maps so the detail panel's Location breadcrumb can open the shared
+   *  EntityPanel (base by name, table by "base::table"; the field uses the entry's entityId). */
+  baseId?: Record<string, string>;
+  tableId?: Record<string, string>;
+  /** Name → workspace identity (workspace-visual-grouping) — groups the Base facet by Airtable
+   *  workspace, since Changelog entries key bases by name rather than id. */
+  baseWorkspace?: Record<string, { workspaceId?: string; workspaceName?: string }>;
+}
+const { entries, baseHealth = {}, tableHealth = {}, baseId = {}, tableId = {}, baseWorkspace = {} } = Astro.props;
+const healthDot = (h?: string) =>
+  h === 'green' ? 'var(--color-success)' : h === 'red' ? 'var(--color-error)' : h === 'amber' ? 'var(--color-warning)' : undefined;
+
+// Location breadcrumb (detail-drawer header, Row 2) — built with the shared locationCrumbs()
+// builder from the change's location ANCESTORS only (the changed entity is the header title, not
+// a crumb): Base ▸ Table for a field change · Base for a table change · Base for an app-layer
+// entity · nothing for a base-level change. A segment whose entity still exists stays clickable
+// via `data-open-entity`; the JS injects the row and delegates the open.
+const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// App-layer concept icons (match the Automations/Interfaces + Visualize legend).
+const APP_ICON: Record<string, string> = {
+  automation: '<span class="iconify lucide--zap concept-ic-automation size-3.5 cl-crumb-ic" aria-hidden="true"></span>',
+  interface: '<span class="iconify lucide--layout-panel-left concept-ic-interface size-3.5 cl-crumb-ic" aria-hidden="true"></span>',
+  page: '<span class="iconify lucide--file concept-ic-page size-3.5 cl-crumb-ic" aria-hidden="true"></span>',
+  // view-schema-details: dereferenced UNGUARDED in the location cell below — an entityKind
+  // without a key here throws at render. Keep this map exhaustive over ChangelogEntry.entityKind.
+  view: '<span class="iconify lucide--eye concept-ic-view size-3.5 cl-crumb-ic" aria-hidden="true"></span>',
+};
+// Location-column concept glyphs (2026-07-30) — Base and Table each carry their glyph, matching
+// the drawer breadcrumb (.sb-crumb-ic); the deepest app-layer/view segment already had one via
+// APP_ICON above. Built from the ONE shared entityIcon.ts mapping, not a new literal.
+const BASE_IC = entityIconMarkup('base', { extraClass: 'cl-base-ic' });
+const TABLE_IC = entityIconMarkup('table', { extraClass: 'cl-loc-appic' });
+const openAttr = (id?: string) => (id ? `data-open-entity="${esc(id)}"` : undefined);
+const locSegs = (e: ChangelogEntry): CrumbSeg[] => {
+  // Base is an ancestor for every change that lives under it (field / table / app-layer), but not
+  // for a base-level change (then the base IS the title).
+  const baseIsAncestor = !!(e.table || e.entityKind);
+  const segs: CrumbSeg[] = [];
+  if (baseIsAncestor) {
+    segs.push({ name: e.base, icon: '<span class="iconify lucide--database concept-ic-base"></span>', openAttrs: openAttr(baseId[e.base]) });
+  }
+  // Field change: the table is the intermediate ancestor (the field itself is the title).
+  // A VIEW also lives under a table (unlike an automation / interface / page, which hang off the
+  // base), so it takes the same intermediate crumb.
+  if ((!e.entityKind || e.entityKind === 'view') && (e.field || e.entityKind === 'view') && e.table) {
+    segs.push({ name: e.table, icon: '<span class="iconify lucide--table-2"></span>', openAttrs: openAttr(tableId[`${e.base}::${e.table}`]) });
+  }
+  return segs;
+};
+const locHtml = (e: ChangelogEntry) => locationCrumbs(locSegs(e));
+// The panel title (deepest entity) is itself openable when that entity exists in the schema.
+// App-layer entries open via their own handler, not the Browse EntityPanel, so deepId is empty.
+// A VIEW is the exception among entityKinds: it IS in the Browse entity index, so it keeps its
+// entityId and opens the shared panel like a field would (view-schema-details).
+const deepId = (e: ChangelogEntry) =>
+  (e.entityKind === 'view' ? e.entityId : e.entityKind ? '' : e.field ? e.entityId : e.table ? tableId[`${e.base}::${e.table}`] : baseId[e.base]) ?? '';
+// Title icon = the deepest entity's kind (field → its Airtable type icon, table → table, base →
+// database), so the drawer header matches the Browse icon hierarchy.
+const titleIcon = (e: ChangelogEntry) => {
+  if (e.entityKind) {
+    const ic = e.entityKind === 'automation' ? 'lucide--zap concept-ic-automation'
+      : e.entityKind === 'interface' ? 'lucide--layout-panel-left concept-ic-interface'
+      : e.entityKind === 'view' ? 'lucide--eye concept-ic-view'
+      : 'lucide--file concept-ic-page';
+    return `<span class="cl-detail-title-ic"><span class="iconify ${ic}"></span></span>`;
+  }
+  if (e.field) {
+    const k = e.fieldType ? airtableIconKey(e.fieldType) : null;
+    const inner = k ? `<svg viewBox="0 0 16 16" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '<span class="iconify lucide--circle"></span>';
+    return `<span class="cl-detail-title-ic">${inner}</span>`;
+  }
+  return e.table
+    ? '<span class="cl-detail-title-ic"><span class="iconify lucide--table-2"></span></span>'
+    : '<span class="cl-detail-title-ic"><span class="iconify lucide--database concept-ic-base"></span></span>';
+};
+const baseNames = [...new Set(entries.map((e) => e.base))];
+const multiBase = baseNames.length > 1;
+
+const TYPE_OPTS: [string, string][] = Object.entries(TYPE).map(([k, v]) => [k, v.label]);
+const DATE_OPTS: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']];
+
+const FT_LABEL: Record<string, string> = {
+  single_line_text: 'text', long_text: 'long text', rich_text: 'rich text', single_select: 'single-select',
+  multiple_select: 'multi-select', number: 'number', currency: 'currency', percent: 'percent', date: 'date',
+  email: 'email', url: 'url', phone_number: 'phone', checkbox: 'checkbox', collaborator: 'user', link: 'link',
+};
+const ftLabel = (t: string) => FT_LABEL[t] ?? t.replace(/_/g, ' ');
+
+// Facet groups: Tables grouped by base; field types collapsed to those present.
+const tableGroups: FacetGroup[] = baseNames
+  .map((b) => ({
+    label: multiBase ? b : undefined,
+    items: [...new Set(entries.filter((e) => e.base === b && e.table).map((e) => e.table as string))].map((t) => ({ value: t, label: t, dot: healthDot(tableHealth[`${b}::${t}`]) })),
+  }))
+  .filter((g) => g.items.length);
+// Base facet groups by Airtable workspace (workspace-visual-grouping) — same grouping shape
+// as the base picker, keyed by name here since entries reference bases by name.
+const baseGroups: FacetGroup[] = groupByWorkspace(baseNames.map((n) => ({ name: n, ...baseWorkspace[n] }))).map((g) => ({
+  label: g.name,
+  groupId: g.id,
+  unknown: g.unknown,
+  items: g.items.map((b) => ({ value: b.name, label: b.name, dot: healthDot(baseHealth[b.name]) })),
+}));
+const ftypeGroups: FacetGroup[] = [
+  { items: [...new Set(entries.map((e) => e.fieldType).filter(Boolean) as string[])].sort().map((t) => ({ value: t, label: ftLabel(t), iconKey: t })) },
+];
+const hasFieldTypes = ftypeGroups[0].items.length > 0;
+
+const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+// Group sorted-desc by calendar day.
+const sorted = entries.slice().sort((a, b) => b.at.localeCompare(a.at));
+const days: { day: string; label: string; entries: ChangelogEntry[] }[] = [];
+for (const e of sorted) {
+  const day = e.at.slice(0, 10);
+  let g = days.find((d) => d.day === day);
+  if (!g) { g = { day, label: fmtDay(e.at), entries: [] }; days.push(g); }
+  g.entries.push(e);
+}
+---
+
+<div class="cl" data-changelog>
+  {entries.length > 0 ? (
+    <>
+      {/* One toolbar row (the shared .sch-tb pattern): search │ filters … → Export.
+          Base / Table / Field type / Change type = faceted show/hide; Time = single facet (a range). */}
+      <div class="sch-tb cl-filters">
+        <label class="input input-sm sch-tb-search cl-search">
+          <span class="iconify lucide--search size-4 opacity-55" aria-hidden="true"></span>
+          <input type="search" placeholder="Search changes…" data-cl-search data-sch-search aria-label="Search changes" autocomplete="off" spellcheck="false" />
+          <kbd class="kbd kbd-sm sch-tb-slash" aria-hidden="true">/</kbd>
+        </label>
+
+        {multiBase && <FacetFilter label="Bases" name="base" groups={baseGroups} groupToggles />}
+        <FacetFilter label="Tables" name="table" groups={tableGroups} />
+        {hasFieldTypes && <FacetFilter label="Field types" name="ftype" groups={ftypeGroups} />}
+        <FacetFilter label="Change type" name="ctype" groups={[{ items: TYPE_OPTS.map(([v, l]) => ({ value: v, label: l })) }]} />
+        <FacetFilter single label="Time" name="cdate" groups={[{ items: DATE_OPTS.map(([v, l]) => ({ value: v, label: l })) }]} />
+        <FacetFilter single labelTrigger label="Attention" name="cattn" groups={[{ items: [
+          { value: 'all', label: 'All changes' },
+          { value: 'attention', label: 'Needs attention' },
+        ] }]} />
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-cl-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+
+        {/* Export offers CSV + JSON (client's answer: technical-ops users want machine-readable JSON
+            beside the spreadsheet CSV). No Excel — CSV opens in Excel and .xlsx is fiddly to get right. */}
+        <div class="sch-tb-right">
+          <ExportControl tab="changelog" format="csv" formats={['csv', 'json']} noun="changes" total={entries.length} rowSelector="[data-cl-open]" />
+        </div>
+      </div>
+
+      {/* day-grouped feed — timeline rail down the left, one node per change */}
+      <div class="cl-feed" data-cl-feed>
+        {/* Column headers — aligned to the entry grid so the feed reads as a table down the rail. */}
+        <div class="cl-fhead" aria-hidden="true">
+          <span></span>
+          <span>Location</span>
+          <span>What changed</span>
+          <span>Type</span>
+          <span class="cl-fh-end">Time</span>
+          <span></span>
+        </div>
+        {days.map((g) => (
+          <section class="cl-day" data-cl-day>
+            <div class="cl-dayhead">
+              <span class="cl-daynode" aria-hidden="true"></span>
+              <div class="cl-dayrow"><span class="cl-daylabel">{g.label}</span><span class="cl-dayrule" aria-hidden="true"></span></div>
+            </div>
+            <div class="cl-entries">
+              {g.entries.map((e) => (
+                <div
+                  class="cl-entry row-clickable"
+                  role="button"
+                  tabindex="0"
+                  data-cl-entry
+                  data-cl-open
+                  data-base={e.base}
+                  data-table={e.table ?? ''}
+                  data-field={e.field ?? ''}
+                  data-ftype={e.fieldType ?? ''}
+                  data-app-kind={e.entityKind ?? ''}
+                  data-app-id={e.entityId ?? ''}
+                  data-entity-name={e.entityName ?? ''}
+                  data-type={e.type}
+                  data-date={e.at}
+                  data-warn={e.warning ? '1' : '0'}
+                  data-summary={e.summary}
+                  data-before={e.before ?? ''}
+                  data-after={e.after ?? ''}
+                  data-ai={e.aiSummary ?? ''}
+                  data-warntext={e.warning ?? ''}
+                  data-loc-html={locHtml(e)}
+                  data-deep-id={deepId(e)}
+                  data-title-icon={titleIcon(e)}
+                >
+                  <span class="cl-node" aria-hidden="true"></span>
+                  {/* Columnar row (pattern-changelog-timeline): Location · What changed · Type · Time —
+                      fixed columns that line up across every entry. */}
+                  <div class="cl-c-loc">
+                    {e.entityKind === 'view' ? (
+                      /* view-schema-details: a view resolves in the Browse index, so its location
+                         opens the shared EntityPanel (data-cl-entity), NOT the app-tab handoff —
+                         routing it through data-cl-app-kind would land on the Interfaces tab. */
+                      <button type="button" class="cl-loclink tooltip tooltip-left" data-cl-entity={deepId(e)} data-tip="Open in Browse" aria-label="Open in Browse" disabled={!deepId(e)}>
+                        <span set:html={BASE_IC} /><span class="cl-basename">{e.base}</span>
+                        {e.table && <span class="cl-loc"><span class="iconify lucide--chevron-right size-3 cl-loc-sep" aria-hidden="true"></span><span set:html={TABLE_IC} /><span class="cl-loc-appname">{e.table}</span></span>}
+                        <span class="cl-loc"><span class="iconify lucide--chevron-right size-3 cl-loc-sep" aria-hidden="true"></span><span set:html={APP_ICON.view.replace('cl-crumb-ic', 'cl-loc-appic')} /><span class="cl-loc-appname">{e.entityName}</span></span>
+                        <span class="iconify lucide--arrow-up-right size-3 cl-loclink-ic" aria-hidden="true"></span>
+                      </button>
+                    ) : e.entityKind ? (
+                      <button type="button" class="cl-loclink tooltip tooltip-left" data-cl-app-kind={e.entityKind} data-cl-app-id={e.entityId ?? ''} data-tip="Open" aria-label="Open">
+                        <span set:html={BASE_IC} /><span class="cl-basename">{e.base}</span>
+                        <span class="cl-loc"><span class="iconify lucide--chevron-right size-3 cl-loc-sep" aria-hidden="true"></span><span set:html={APP_ICON[e.entityKind].replace('cl-crumb-ic', 'cl-loc-appic')} /><span class="cl-loc-appname">{e.entityName}</span></span>
+                        <span class="iconify lucide--arrow-up-right size-3 cl-loclink-ic" aria-hidden="true"></span>
+                      </button>
+                    ) : deepId(e) ? (
+                      <button type="button" class="cl-loclink tooltip tooltip-left" data-cl-entity={deepId(e)} data-tip="Open in Browse" aria-label="Open in Browse">
+                        <span set:html={BASE_IC} /><span class="cl-basename">{e.base}</span>
+                        {e.table && <span class="cl-loc"><span class="iconify lucide--chevron-right size-3 cl-loc-sep" aria-hidden="true"></span><span set:html={TABLE_IC} /><span class="cl-loc-appname">{e.table}</span></span>}
+                        <span class="iconify lucide--arrow-up-right size-3 cl-loclink-ic" aria-hidden="true"></span>
+                      </button>
+                    ) : (<span class="cl-loclink">
+                      <span set:html={BASE_IC} /><span class="cl-basename">{e.base}</span>
+                      {e.table && <span class="cl-loc"><span class="iconify lucide--chevron-right size-3 cl-loc-sep" aria-hidden="true"></span><span set:html={TABLE_IC} /><span class="cl-loc-appname">{e.table}</span></span>}
+                    </span>)}
+                  </div>
+                  <div class="cl-c-what">
+                    <p class="cl-summary">
+                      {e.summary}
+                      {e.before && e.after && (
+                        <span class="cl-delta"><span class="cl-before">{e.before}</span><span class="iconify lucide--arrow-right size-3.5 cl-arrow" aria-hidden="true"></span><span class="cl-after">{e.after}</span></span>
+                      )}
+                    </p>
+                    {e.warning && (
+                      <p class="cl-warn"><span class="iconify lucide--triangle-alert size-3.5" aria-hidden="true"></span>{e.warning}</p>
+                    )}
+                  </div>
+                  <div class="cl-c-type"><span class={`badge badge-sm ${TYPE[e.type].badge} gap-1`}><span class={`iconify ${TYPE[e.type].icon} size-3.5`} aria-hidden="true"></span>{TYPE[e.type].label}</span></div>
+                  <span class="cl-c-time mono-data">{fmtTime(e.at)}</span>
+                  <span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+
+      <TablePager name="cl" sizes={[10, 20, 50]} selected={20} />
+
+      {/* no-match (filters exclude everything) */}
+      <div class="cl-nomatch" data-cl-nomatch hidden>
+        <span class="iconify lucide--search-x size-6 opacity-50" aria-hidden="true"></span>
+        <p>No changes match these filters.</p>
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-cl-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+      </div>
+
+      {/* entry detail side panel */}
+      <div class="cl-detail" data-cl-detail hidden>
+        <div class="cl-detail-scrim" data-cl-detail-close></div>
+        <aside class="cl-detail-panel" role="dialog" aria-label="Change details" aria-modal="false">
+          <header class="cl-detail-head">
+            <div class="cl-detail-headrow">
+              <span class="cl-detail-titletext" data-d-title></span>
+              <button type="button" class="btn btn-sm btn-ghost btn-square cl-detail-x" data-cl-detail-close aria-label="Close details">
+                <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+              </button>
+            </div>
+            {/* canon Row 2 — the change location (ancestors only), self-describing (no label) */}
+            <nav class="cl-detail-crumbs sb-crumb-row" data-d-loc aria-label="Breadcrumb" hidden></nav>
+          </header>
+          <div class="cl-detail-body">
+            <div class="cl-detail-block">
+              <span class="cl-detail-k"><span class="iconify lucide--git-commit-horizontal size-3.5" aria-hidden="true"></span>Change type</span>
+              <span class="cl-detail-badge" data-d-badge></span>
+            </div>
+            <div class="cl-detail-block">
+              <span class="cl-detail-k"><span class="iconify lucide--file-diff size-3.5" aria-hidden="true"></span>What changed</span>
+              <p class="cl-detail-summary" data-d-summary></p>
+            </div>
+
+            {/* before → after */}
+            <div class="cl-detail-block" data-d-delta-wrap hidden>
+              <span class="cl-detail-k"><span class="iconify lucide--file-diff size-3.5" aria-hidden="true"></span>Before → After</span>
+              <div class="cl-detail-delta">
+              <div class="cl-detail-deltacol">
+                <span class="cl-detail-deltak">Before</span>
+                <span class="cl-detail-beforeval" data-d-before></span>
+              </div>
+              <span class="iconify lucide--arrow-right size-4 cl-detail-deltaarrow" aria-hidden="true"></span>
+              <div class="cl-detail-deltacol">
+                <span class="cl-detail-deltak">After</span>
+                <span class="cl-detail-afterval" data-d-after></span>
+              </div>
+              </div>
+            </div>
+
+            {/* AI summary of the change + its impact */}
+            <div class="alert alert-soft alert-info cl-detail-ai" role="status" data-d-ai-wrap hidden>
+              <span class="iconify lucide--sparkles size-4" aria-hidden="true"></span>
+              <div>
+                <div class="cl-detail-ai-head">AI summary</div>
+                <p class="cl-detail-ai-text" data-d-ai></p>
+              </div>
+            </div>
+
+            {/* broken-data warning */}
+            <div class="alert alert-soft alert-warning cl-detail-warn" role="alert" data-d-warn-wrap hidden>
+              <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span><span data-d-warn></span>
+            </div>
+
+            <div class="cl-detail-meta">
+              <span class="iconify lucide--clock size-3.5" aria-hidden="true"></span>Detected <span class="mono-data" data-d-when></span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </>
+  ) : (
+    <div class="cl-empty">
+      <span class="cl-empty-ic"><span class="iconify lucide--history"></span></span>
+      <p class="cl-empty-title">No schema changes yet</p>
+      <p class="cl-empty-sub">Changes appear once there are two backups to compare. New tables, renamed fields, and type changes show up here as they happen.</p>
+    </div>
+  )}
+</div>
+
+<style>
+  /* The feed + row grid (.cl / .cl-filters / .cl-feed / .cl-fhead / .cl-day* / .cl-entry /
+     .cl-node / .cl-c-* / .cl-nomatch / .cl-empty*) lives in styles/global.css, beside
+     `.sch-tabbar` — catalog `pattern-changelog-timeline`. It was moved out of this scoped
+     block (2026-07-29, comments-explorer) because an Astro scoped style cannot reach a
+     SIBLING component's DOM, so DataComments.astro could not have reused the grid from here.
+     Only what is genuinely this feed's own stays below: the ⚠ attention line + the change
+     detail drawer. */
+  .cl-warn { display: inline-flex; align-items: center; gap: .5rem; margin-top: .5rem; padding: .25rem .5rem; border-radius: .45rem; font-size: .78rem; font-weight: 500; line-height: 1.3; color: var(--color-warning); background: oklch(from var(--color-warning) l c h / .12); }
+  .cl-warn .iconify { flex-shrink: 0; }
+  :global([data-theme="baseout-light"]) .cl-warn { color: oklch(from var(--color-warning) calc(l - 0.12) c h); background: oklch(from var(--color-warning) l c h / .15); }
+
+  /* Entry detail side panel — a right drawer over a scrim. */
+  .cl-detail[hidden] { display: none; }
+  /* Non-modal (drawer canon): no dimming scrim, and clicks pass through to the still-live page behind —
+     the detail panel closes only via its ✕ or Esc, exactly like the EntityPanel / RecordPanel family. */
+  .cl-detail-scrim { position: fixed; inset: 0; z-index: 60; pointer-events: none; }
+  .cl-detail-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 61; width: var(--drawer-w); display: flex; flex-direction: column; background: var(--color-base-100); border-left: 1px solid var(--color-base-300); box-shadow: -10px 0 30px oklch(0 0 0 / .18); animation: clSlide .18s cubic-bezier(.22,1,.36,1); }
+  @keyframes clFade { from { opacity: 0; } }
+  @keyframes clSlide { from { transform: translateX(16px); opacity: .4; } }
+  /* Drawer canon v2: two-row header — icon tile + title on top, ancestor crumbs beneath. */
+  .cl-detail-head { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--color-base-300); }
+  .cl-detail-headrow { display: flex; align-items: center; gap: .5rem; min-height: 32px; }
+  /* Close × pushed right by margin-left:auto (same mechanism as .ep-x / .sb-drawer-x) rather
+     than the row's justify-content:space-between, so all four drawer headers agree. */
+  .cl-detail-x { margin-left: auto; flex: none; }
+  .cl-detail-titletext { display: flex; align-items: center; gap: .5rem; flex: 1; min-width: 0; font-size: 15px; font-weight: 650; letter-spacing: -0.15px; line-height: 1.2; color: var(--color-base-content); }
+  /* title name + kind-icon tile are injected via innerHTML → :global so the rules reach them */
+  :global(.cl-detail-title-name) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* canon header tile: ~2rem rounded base-200 square holding the changed-entity's kind icon (size-4) */
+  :global(.cl-detail-title-ic) { flex: none; display: inline-grid; place-items: center; width: 2rem; height: 2rem; border-radius: .55rem; background: var(--color-base-200); }
+  /* Tile glyph at opacity .8 (matching .ep-head-ic / .sb-drawer-titleic) so all four tiles read identically. */
+  :global(.cl-detail-title-ic svg) { width: 1rem; height: 1rem; opacity: .8; }
+  :global(.cl-detail-title-ic .iconify) { font-size: 1rem; opacity: .8; }
+  .cl-detail-badge { display: inline-flex; }
+  .cl-detail-body { display: flex; flex-direction: column; gap: 1.75rem; padding: 1rem; overflow-y: auto; }
+
+  /* canon Row 2 crumbs — inside the header, beneath the title row. Segment styling comes from the
+     shared .sb-crumb* (styles/global.css); this keeps only the row's layout + hide rule. */
+  .cl-detail-crumbs { min-width: 0; overflow: hidden; }
+  .cl-detail-crumbs[hidden] { display: none; }
+  /* the panel title doubles as a link to the deepest entity (template element → scoped is fine) */
+  .cl-title-link { cursor: pointer; transition: color .12s ease; }
+  .cl-title-link:hover { color: var(--color-primary); text-decoration: underline; text-underline-offset: 3px; }
+  .cl-detail-summary { font-size: .95rem; line-height: 1.55; color: var(--color-base-content); }
+  .cl-detail-block { display: flex; flex-direction: column; gap: .5rem; }
+  /* Canon: sections separated by generous whitespace (the body gap), NOT a divider hairline. */
+  .cl-detail-k { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .5); }
+  /* leading section concept icon */
+  .cl-detail-k .iconify { flex: none; opacity: .85; }
+
+  /* before → after, as two framed cells — shared row/cell container recipe */
+  .cl-detail-delta { display: flex; align-items: stretch; gap: .5rem; }
+  .cl-detail-deltacol { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: .25rem; padding: .5rem .75rem; border: 1px solid var(--color-base-300); border-radius: 11px; overflow: hidden; background: color-mix(in oklch, var(--color-base-200) 45%, transparent); }
+  .cl-detail-deltak { font-size: .64rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .45); }
+  .cl-detail-beforeval { font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .6); text-decoration: line-through; text-decoration-color: oklch(from var(--color-base-content) l c h / .3); }
+  .cl-detail-afterval { font-size: .9rem; font-weight: 600; color: var(--color-base-content); }
+  .cl-detail-deltaarrow { align-self: center; flex: none; color: oklch(from var(--color-base-content) l c h / .4); }
+
+  /* AI summary — sparkle-marked, subtle primary tint */
+  /* AI summary + broken-data warning = catalog Alerts (alert alert-soft alert-{info|warning});
+     only the internal label/text + top-align overrides remain here. */
+  .cl-detail-ai { align-items: flex-start; }
+  .cl-detail-ai-head { font-size: .7rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin-bottom: .25rem; }
+  .cl-detail-ai-text { font-size: .9rem; line-height: 1.55; }
+
+  .cl-detail-warn { align-items: flex-start; font-size: .85rem; line-height: 1.4; }
+  .cl-detail-meta { display: inline-flex; align-items: center; gap: .25rem; margin-top: .25rem; padding-top: .75rem; border-top: 1px solid var(--color-base-200); font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .55); }
+
+</style>
+
+<script>
+  // ONE shared change-type map (was hand-duplicated with the server frontmatter and drifted — `config`
+  // once went missing here, so a formula edit opened its detail wearing a green "Added" badge).
+  import { CHANGE_TYPE as TYPE_META } from './changelogTypes';
+  import { createPager } from '../ui/tablePager';
+  // An unknown type must not claim to be an addition. A neutral badge says "something changed", which
+  // is the most we know; falling back to `added` turned a missing key into a false statement.
+  const TYPE_FALLBACK = { label: 'Changed', badge: 'badge-ghost', icon: 'lucide--pencil-line' };
+
+  function wireChangelog() {
+    const root = document.querySelector<HTMLElement>('[data-changelog]');
+    if (!root || root.dataset.clWired) return;
+    root.dataset.clWired = '1';
+    const feed = root.querySelector<HTMLElement>('[data-cl-feed]');
+    if (!feed) return;
+    const entries = Array.from(root.querySelectorAll<HTMLElement>('[data-cl-entry]'));
+    const dayGroups = Array.from(root.querySelectorAll<HTMLElement>('[data-cl-day]'));
+    const searchInput = root.querySelector<HTMLInputElement>('[data-cl-search]');
+    const noMatch = root.querySelector<HTMLElement>('[data-cl-nomatch]');
+    const clears = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-cl-clear]'));
+    const facets = Array.from(root.querySelectorAll<HTMLElement>('.ff[data-facet]'));
+    const DAY = 86_400_000;
+    // Cache each entry's searchable text once (its rendered summary + location + meta).
+    const searchText = new Map(entries.map((e) => [e, (e.textContent || '').toLowerCase()]));
+
+    // hidden-value sets per multi facet (base / table / ftype / ctype) + the single-select Time range (cdate)
+    const hidden: Record<string, Set<string>> = { base: new Set(), table: new Set(), ftype: new Set(), ctype: new Set() };
+    const single: Record<string, string> = { cdate: '' };
+    let attnFilter = 'all'; // 'all' | 'attention'  (was the "Needs attention" checkbox)
+    let query = '';
+
+    const pager = createPager({
+      root, name: 'cl', sizes: [10, 20, 50], defaultSize: 20,
+      storageKey: 'sch-cl-pagesize', onChange: () => apply(),
+    });
+
+    const apply = () => {
+      const fd = single.cdate;
+      const q = query.trim().toLowerCase();
+      const facetActive = hidden.base.size || hidden.table.size || hidden.ftype.size || hidden.ctype.size;
+      const active = !!(fd || attnFilter !== 'all' || q || facetActive);
+      const matched: HTMLElement[] = [];
+      entries.forEach((e) => {
+        let ok = true;
+        if (hidden.base.has(e.dataset.base || '')) ok = false;
+        if (e.dataset.table && hidden.table.has(e.dataset.table)) ok = false;
+        if (e.dataset.ftype && hidden.ftype.has(e.dataset.ftype)) ok = false;
+        if (hidden.ctype.has(e.dataset.type || '')) ok = false;
+        if (attnFilter === 'attention' && e.dataset.warn !== '1') ok = false;
+        if (fd && (Date.now() - new Date(e.dataset.date as string).getTime()) / DAY > Number(fd)) ok = false;
+        if (q && !(searchText.get(e) || '').includes(q)) ok = false;
+        e.style.display = 'none';
+        if (ok) matched.push(e);
+      });
+      // Pager — a day heading is a divider over independent changes, not a parent, so the window is
+      // taken across the whole filtered feed and a day with nothing left on this page hides itself
+      // (the rule just below, unchanged). 20/page, matching the Data ▸ Changelog run list.
+      const shown = matched.length;
+      pager.window(matched).forEach((e) => { e.style.display = ''; });
+      dayGroups.forEach((g) => {
+        const any = Array.from(g.querySelectorAll<HTMLElement>('[data-cl-entry]')).some((e) => e.style.display !== 'none');
+        g.style.display = any ? '' : 'none';
+      });
+      if (noMatch) noMatch.hidden = shown !== 0;
+      feed.style.display = shown === 0 ? 'none' : '';
+      clears.forEach((c) => (c.hidden = !active));
+    };
+
+    // every filter (multi-facet + single-facet) reports via `facetchange`
+    root.addEventListener('facetchange', (ev) => {
+      const d = (ev as CustomEvent).detail as { name: string; hidden?: string[]; value?: string };
+      if (d.hidden && hidden[d.name]) { hidden[d.name] = new Set(d.hidden); pager.reset(); apply(); }
+      else if (d.name === 'cattn' && d.value !== undefined) { attnFilter = d.value || 'all'; pager.reset(); apply(); }
+      else if (d.value !== undefined && d.name in single) { single[d.name] = d.value; pager.reset(); apply(); }
+    });
+    searchInput?.addEventListener('input', () => { query = searchInput.value; pager.reset(); apply(); });
+    clears.forEach((c) =>
+      c.addEventListener('click', () => {
+        single.cdate = '';
+        attnFilter = 'all';
+        query = '';
+        if (searchInput) searchInput.value = '';
+        Object.values(hidden).forEach((s) => s.clear());
+        facets.forEach((f) => f.dispatchEvent(new CustomEvent('facetreset')));
+        pager.reset();
+        apply();
+      }),
+    );
+
+    // ── detail side panel ──
+    const detail = root.querySelector<HTMLElement>('[data-cl-detail]');
+    const set = (sel: string, text: string) => { const el = detail?.querySelector<HTMLElement>(sel); if (el) el.textContent = text; };
+    const openDetail = (e: HTMLElement) => {
+      if (!detail) return;
+      const t = e.dataset.type || 'added';
+      const m = TYPE_META[t] || TYPE_FALLBACK;
+      const badge = detail.querySelector<HTMLElement>('[data-d-badge]');
+      if (badge) badge.innerHTML = `<span class="badge badge-sm ${m.badge} gap-1"><span class="iconify ${m.icon} size-3.5" aria-hidden="true"></span>${m.label}</span>`;
+      // Title = the deepest entity, with its kind icon; clickable when that entity still exists.
+      const titleEl = detail.querySelector<HTMLElement>('[data-d-title]');
+      if (titleEl) {
+        titleEl.innerHTML = (e.dataset.titleIcon || '') + '<span class="cl-detail-title-name"></span>';
+        const nameEl = titleEl.querySelector<HTMLElement>('.cl-detail-title-name');
+        // Deepest entity name: field → table → app entity (automation/interface) → base.
+        if (nameEl) nameEl.textContent = e.dataset.field || e.dataset.table || e.dataset.entityName || e.dataset.base || '';
+        const deep = e.dataset.deepId || '';
+        if (deep) titleEl.dataset.openEntity = deep; else delete titleEl.dataset.openEntity;
+        titleEl.classList.toggle('cl-title-link', !!deep);
+      }
+      // Location breadcrumb — pre-built server-side (icon hierarchy + a clickable button per
+      // segment whose entity exists). Injected as-is; the open is delegated below.
+      const loc = detail.querySelector<HTMLElement>('[data-d-loc]');
+      if (loc) { const h = e.dataset.locHtml || ''; loc.innerHTML = h; loc.hidden = !h; }
+      set('[data-d-when]', new Date(e.dataset.date as string).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }));
+      set('[data-d-summary]', e.dataset.summary || '');
+      const deltaWrap = detail.querySelector<HTMLElement>('[data-d-delta-wrap]');
+      if (deltaWrap) {
+        const has = !!(e.dataset.before && e.dataset.after);
+        deltaWrap.hidden = !has;
+        if (has) { set('[data-d-before]', e.dataset.before || ''); set('[data-d-after]', e.dataset.after || ''); }
+      }
+      const aiWrap = detail.querySelector<HTMLElement>('[data-d-ai-wrap]');
+      if (aiWrap) { const a = e.dataset.ai || ''; aiWrap.hidden = !a; set('[data-d-ai]', a); }
+      const warnWrap = detail.querySelector<HTMLElement>('[data-d-warn-wrap]');
+      if (warnWrap) { const w = e.dataset.warntext || ''; warnWrap.hidden = !w; set('[data-d-warn]', w); }
+      detail.hidden = false;
+    };
+    const closeDetail = () => { if (detail) detail.hidden = true; };
+    entries.forEach((e) => {
+      e.addEventListener('click', () => openDetail(e));
+      e.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openDetail(e); } });
+    });
+    // C3 — the location opens the shared Browse entity panel (not the change detail).
+    root.querySelectorAll<HTMLElement>('[data-cl-entity]').forEach((el) => {
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const id = el.getAttribute('data-cl-entity');
+        if (id) document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id } }));
+      });
+    });
+    // App-layer location (automations / interfaces / pages) opens the matching tab + read drawer,
+    // the same handoff EntityPanel's "Referenced by" jump uses.
+    const openApp = (kind: string, id: string) => {
+      if (!id) return;
+      // A VIEW is a Browse entity, not an app-layer one — open the shared panel. Guarded
+      // explicitly because this used to be a BINARY ternary: anything that wasn't 'automation'
+      // fell through to the Interfaces tab, so a view click opened the wrong tab silently.
+      if (kind === 'view') { document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id } })); return; }
+      if (kind !== 'automation' && kind !== 'interface' && kind !== 'page') return;
+      const tab = kind === 'automation' ? 'automations' : 'interfaces';
+      const ev = kind === 'automation' ? 'schema:openAutomation' : 'schema:openInterface';
+      document.querySelector<HTMLElement>(`[data-tab="${tab}"]`)?.click();
+      document.dispatchEvent(new CustomEvent(ev, { detail: { id } }));
+    };
+    root.querySelectorAll<HTMLElement>('[data-cl-app-kind]').forEach((el) => {
+      el.addEventListener('click', (ev) => { ev.stopPropagation(); openApp(el.dataset.clAppKind || '', el.dataset.clAppId || ''); });
+    });
+    // The detail panel's Location segments + title open the shared EntityPanel. Close this drawer
+    // first so the panel isn't hidden behind it (the change drawer sits above the EntityPanel).
+    detail?.addEventListener('click', (ev) => {
+      const app = (ev.target as HTMLElement).closest<HTMLElement>('[data-open-app-kind]');
+      if (app) { closeDetail(); openApp(app.dataset.openAppKind || '', app.dataset.openAppId || ''); return; }
+      const t = (ev.target as HTMLElement).closest('[data-open-entity]') as HTMLElement | null;
+      const id = t?.dataset.openEntity;
+      if (!id) return;
+      closeDetail();
+      document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id } }));
+    });
+    root.querySelectorAll<HTMLElement>('[data-cl-detail-close]').forEach((c) => c.addEventListener('click', closeDetail));
+    document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeDetail(); });
+
+    apply();
+  }
+  wireChangelog();
+  document.addEventListener('astro:after-swap', wireChangelog);
+</script>

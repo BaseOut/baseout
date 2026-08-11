@@ -14,6 +14,54 @@ describe('TIER_CAPABILITIES', () => {
     expect(TIER_CAPABILITIES.business.basesPerSpace).toBe(50)
     expect(TIER_CAPABILITIES.enterprise.basesPerSpace).toBeNull()
   })
+
+  it('declares schemaDocs for every tier per Features §7', () => {
+    expect(TIER_CAPABILITIES.starter.schemaDocs).toBe('none')
+    expect(TIER_CAPABILITIES.launch.schemaDocs).toBe('manual')
+    expect(TIER_CAPABILITIES.growth.schemaDocs).toBe('manual')
+    expect(TIER_CAPABILITIES.pro.schemaDocs).toBe('manual_ai')
+    expect(TIER_CAPABILITIES.business.schemaDocs).toBe('manual_ai')
+    expect(TIER_CAPABILITIES.enterprise.schemaDocs).toBe('manual_ai')
+  })
+
+  it('declares the webhook poll-interval minimum for every tier (web-instant-webhook)', () => {
+    // Provisional values pending the Features §6.1 doc update
+    // (server-instant-webhook Phase G.3). Default column value is 900.
+    expect(TIER_CAPABILITIES.starter.webhookPollMinSeconds).toBe(900)
+    expect(TIER_CAPABILITIES.launch.webhookPollMinSeconds).toBe(900)
+    expect(TIER_CAPABILITIES.growth.webhookPollMinSeconds).toBe(900)
+    expect(TIER_CAPABILITIES.pro.webhookPollMinSeconds).toBe(900)
+    expect(TIER_CAPABILITIES.business.webhookPollMinSeconds).toBe(300)
+    expect(TIER_CAPABILITIES.enterprise.webhookPollMinSeconds).toBe(60)
+  })
+
+  it('declares frequencies for every tier per Features §6.1', () => {
+    expect(TIER_CAPABILITIES.starter.frequencies).toEqual(['monthly'])
+    expect(TIER_CAPABILITIES.launch.frequencies).toEqual(['monthly', 'weekly'])
+    expect(TIER_CAPABILITIES.growth.frequencies).toEqual(['monthly', 'weekly'])
+    // Instant = Pro+ per PRD §2.2 — the ruling recorded in
+    // openspec/changes/server-instant-webhook/proposal.md ("Tier conflict
+    // (unchanged ruling)"). Features §6.1 still says Business+; its update is
+    // that change's Phase G.3.
+    expect(TIER_CAPABILITIES.pro.frequencies).toEqual([
+      'monthly',
+      'weekly',
+      'daily',
+      'instant',
+    ])
+    expect(TIER_CAPABILITIES.business.frequencies).toEqual([
+      'monthly',
+      'weekly',
+      'daily',
+      'instant',
+    ])
+    expect(TIER_CAPABILITIES.enterprise.frequencies).toEqual([
+      'monthly',
+      'weekly',
+      'daily',
+      'instant',
+    ])
+  })
 })
 
 describe('getTierCapabilities', () => {

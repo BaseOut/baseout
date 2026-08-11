@@ -1,0 +1,48 @@
+---
+// /auth/sign-in — the on-brand landing for the signed-out (replaces the old
+// inline hardcoded-HTML 403 the middleware used to render). Middleware
+// redirects here with ?reason=; a failed handoff redirects with ?error=.
+// Zero DB queries — only searchParams. Signed-in staff never see this page
+// (the gate bounces them to '/').
+import Layout from '../../layouts/Layout.astro';
+import Card from '@web/components/ui/Card.astro';
+import Button from '@web/components/ui/Button.astro';
+import Alert from '@web/components/ui/Alert.astro';
+import { signInView, buildLoginUrl } from '../../lib/auth-pages';
+import { webAppUrl } from '../../lib/web-app-url';
+
+const view = signInView(
+  Astro.url.searchParams.get('reason'),
+  Astro.url.searchParams.get('error'),
+);
+const loginUrl = buildLoginUrl(webAppUrl(), Astro.url.origin);
+Astro.response.headers.set('Cache-Control', 'no-store');
+---
+
+<Layout title="Sign in — Baseout Admin">
+  <main class="flex min-h-screen items-center justify-center p-6">
+    <Card variant="outlined" class="w-full max-w-md">
+      <div class="flex flex-col gap-4">
+        <div class="flex items-center gap-2">
+          <span class="text-lg font-semibold">Baseout</span>
+          <span class="badge badge-primary badge-soft badge-sm">staff</span>
+        </div>
+
+        {view.errorNote && <Alert variant="error">{view.errorNote}</Alert>}
+
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight">{view.headline}</h1>
+          <p class="mt-1 text-sm text-base-content/60">{view.detail}</p>
+        </div>
+
+        <Button href={loginUrl}>Sign in to Baseout</Button>
+
+        <p class="text-xs text-base-content/50">
+          You'll sign in on the customer app with a magic link, then be routed
+          back to this console. If you land back on the customer app instead,
+          return to this tab and refresh.
+        </p>
+      </div>
+    </Card>
+  </main>
+</Layout>

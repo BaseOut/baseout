@@ -1,0 +1,660 @@
+<meta charset="utf-8">
+<title>Schema — independent side-by-side drawers over the table</title>
+<!--
+  PROTOTYPE (throwaway) — the multi-panel schema drawer redesign from Dan's video + Track A/B research.
+  SPATIAL MODEL = the real Schema page: the Browse TABLE stays as the surface; detail DRAWERS open from
+  the RIGHT over it, side by side, INDEPENDENT. Evolves the old /prototypes/schema-drawer-panels.html
+  from parent-child (drill slices children) → independent tabs.
+  Demonstrates: V1 independent drawers & close · V2 "+" Compare-with picker · V3 Space→Base→Table→Field
+  drill inside a drawer (breadcrumb/back) · V4 ⌘/Ctrl/middle-click + hover ⧉ "open beside" · V5 drawer
+  shows fields, no heavy record grid · V6 side-by-side shrink keeps a table strip visible + collapse-to-rail
+  + soft-cap-3/hard-cap-5. Bonus: Diff highlight across field drawers; "View in Airtable" per drawer.
+  Served at /prototypes/multi-panel.html. NOT production. Real port = apps/web/.../EntityPanel.astro.
+-->
+<style>
+  :root{
+    --bg:#0d0f13; --bg-2:#12151b; --panel:#161a22; --panel-2:#1b2029; --panel-3:#20262f;
+    --line:#242a35; --line-2:#2f3745;
+    --ink:#e8ecf3; --ink-2:#aab3c2; --ink-3:#6f7a8a;
+    --accent:#4c8dff; --accent-soft:rgba(76,141,255,.14); --accent-line:rgba(76,141,255,.45);
+    --good:#3fb37f; --good-soft:rgba(63,179,127,.16);
+    --warn:#e0a83d; --warn-soft:rgba(224,168,61,.16);
+    --violet:#a98bff; --violet-soft:rgba(169,139,255,.16);
+    --diff:#e0a83d;
+    --dshadow:-14px 0 40px rgba(0,0,0,.42);
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  :root[data-theme="light"]{
+    --bg:#f5f7fa; --bg-2:#eceff4; --panel:#ffffff; --panel-2:#f4f6f9; --panel-3:#eef1f6;
+    --line:#e6e9ef; --line-2:#d3d9e2; --ink:#161a22; --ink-2:#4a5464; --ink-3:#8a93a3;
+    --accent:#2f6fe0; --accent-soft:rgba(47,111,224,.10); --accent-line:rgba(47,111,224,.45);
+    --good:#1f9d63; --good-soft:rgba(31,157,99,.12); --warn:#b57e1a; --warn-soft:rgba(181,126,26,.14);
+    --violet:#7a5cf0; --violet-soft:rgba(122,92,240,.12); --diff:#b57e1a;
+    --dshadow:-14px 0 40px rgba(50,70,110,.2);
+  }
+  @media (prefers-color-scheme: light){:root:not([data-theme]){
+    --bg:#f5f7fa; --bg-2:#eceff4; --panel:#ffffff; --panel-2:#f4f6f9; --panel-3:#eef1f6;
+    --line:#e6e9ef; --line-2:#d3d9e2; --ink:#161a22; --ink-2:#4a5464; --ink-3:#8a93a3;
+    --accent:#2f6fe0; --accent-soft:rgba(47,111,224,.10); --accent-line:rgba(47,111,224,.45);
+    --good:#1f9d63; --good-soft:rgba(31,157,99,.12); --warn:#b57e1a; --warn-soft:rgba(181,126,26,.14);
+    --violet:#7a5cf0; --violet-soft:rgba(122,92,240,.12); --diff:#b57e1a; --dshadow:-14px 0 40px rgba(50,70,110,.2);
+  }}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;
+    -webkit-font-smoothing:antialiased;display:flex;height:100%;overflow:hidden}
+  button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:none}
+
+  /* ---------- app chrome ---------- */
+  .sidebar{flex:none;width:206px;background:var(--bg-2);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:12px 10px;z-index:40}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:640;padding:6px 8px 14px;letter-spacing:-.01em}
+  .brand .dot{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--accent),var(--violet))}
+  .space{font-size:11px;color:var(--ink-3);padding:4px 8px;font-family:var(--mono);letter-spacing:.04em;text-transform:uppercase}
+  .nav a{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:7px;color:var(--ink-2);font-size:13px;text-decoration:none;margin-bottom:1px}
+  .nav a .i{width:16px;text-align:center;color:var(--ink-3);font-size:13px}
+  .nav a:hover{background:var(--panel-2);color:var(--ink)}
+  .nav a.on{background:var(--accent-soft);color:var(--ink)} .nav a.on .i{color:var(--accent)}
+  .navgap{height:14px}
+  .theme{margin-top:auto;display:flex;align-items:center;gap:9px;padding:8px;border-radius:7px;color:var(--ink-2);font-size:12.5px}
+  .theme:hover{background:var(--panel-2);color:var(--ink)}
+  .theme .sw{width:26px;height:26px;border:1px solid var(--line);border-radius:6px;display:grid;place-items:center}
+
+  .work{flex:1;min-width:0;position:relative;display:flex;flex-direction:column;overflow:hidden}
+  .wtop{flex:none;padding:16px 24px 0;display:flex;align-items:flex-start;gap:14px}
+  .wtop h1{margin:0;font-size:22px;letter-spacing:-.02em}
+  .wtop .sub{color:var(--ink-3);font-size:13px;margin-top:3px}
+  .wtop .spacer{flex:1}
+  .toolbtn{display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-2);background:var(--panel-2);border:1px solid var(--line);
+    border-radius:8px;padding:6px 11px}
+  .toolbtn:hover{color:var(--ink);border-color:var(--line-2)}
+  .toolbtn.on{color:#fff;background:var(--accent);border-color:transparent}
+  .toolbtn svg{width:15px;height:15px}
+  .toolbtn.pri{color:#fff;background:var(--accent);border-color:transparent}
+  .toolbtn.pri:hover{filter:brightness(1.06)}
+
+  .tabs{flex:none;display:flex;gap:2px;margin:14px 24px 0;border-bottom:1px solid var(--line)}
+  .tabs button{padding:8px 12px;font-size:13px;color:var(--ink-3);border-bottom:2px solid transparent;font-weight:540}
+  .tabs button.on{color:var(--ink);border-bottom-color:var(--accent)} .tabs button:hover{color:var(--ink-2)}
+
+  /* ---------- the Browse TABLE (the surface — stays visible & clickable) ---------- */
+  .content{flex:1;min-height:0;position:relative;overflow:hidden}
+  .tablearea{position:absolute;inset:0;overflow:auto;padding:10px 24px 40px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  thead th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);font-weight:600;padding:8px 12px;position:sticky;top:0;background:var(--bg);z-index:1}
+  .grouprow td{padding:15px 12px 7px;font-weight:640;color:var(--ink);font-size:13px}
+  .grouprow .gmeta{color:var(--ink-3);font-weight:400;font-size:11.5px;margin-left:8px;font-family:var(--mono)}
+  tbody tr.frow{cursor:pointer;border-top:1px solid var(--line)}
+  tbody tr.frow:hover{background:var(--panel-2)}
+  tbody tr.frow.active{background:var(--accent-soft)}
+  tbody td{padding:10px 12px;vertical-align:middle}
+  .fname{display:flex;align-items:center;gap:9px}
+  .fname .fi{width:16px;text-align:center;color:var(--ink-3);font-size:12px}
+  .fname .pri{font-family:var(--mono);font-size:9.5px;color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 5px}
+  .chip{font-size:11px;font-family:var(--mono);padding:2px 8px;border-radius:5px;white-space:nowrap;background:var(--panel-3);color:var(--ink-2);border:1px solid var(--line)}
+  .chip.formula{color:var(--violet);background:var(--violet-soft);border-color:transparent}
+  .chip.rollup,.chip.currency{color:var(--accent);background:var(--accent-soft);border-color:transparent}
+  .chip.lookup{color:var(--good);background:var(--good-soft);border-color:transparent}
+  .chip.link{color:var(--warn);background:var(--warn-soft);border-color:transparent}
+  .chip.percent{color:var(--good);background:var(--good-soft);border-color:transparent}
+  .lk{color:var(--ink-2);font-size:12.5px}.lk .a{color:var(--accent)}
+  .st{display:inline-flex;align-items:center;gap:6px;font-size:12px}.st .d{width:6px;height:6px;border-radius:50%}
+  .st.good .d{background:var(--good)} .st.good{color:var(--good)}
+  .st.improve .d{background:var(--warn)} .st.improve{color:var(--warn)}
+  .muted{color:var(--ink-3)}
+  .rowbeside{opacity:0;color:var(--ink-3);font-size:13px;border:1px solid var(--line-2);border-radius:6px;padding:2px 7px;background:var(--panel)}
+  tbody tr.frow:hover .rowbeside{opacity:1}
+  .rowbeside:hover{color:var(--accent);border-color:var(--accent-line)}
+
+  /* ---------- drawer stack (right-anchored, FULL height of the work area) ---------- */
+  .dstack{position:absolute;top:0;right:0;bottom:0;z-index:30;display:flex;width:max-content;pointer-events:none}
+  /* control rail — rides the LEFT edge of the leftmost drawer (add / diff / count) */
+  .crail{flex:none;width:46px;height:100%;background:var(--panel-2);border-left:1px solid var(--line-2);box-shadow:var(--dshadow);
+    display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 0;pointer-events:auto}
+  .crbtn{width:32px;height:32px;border-radius:9px;display:grid;place-items:center;color:var(--ink-2);border:1px solid var(--line);background:var(--panel);font-size:16px}
+  .crbtn:hover{color:var(--ink);border-color:var(--line-2)}
+  .crbtn.add{background:var(--accent);color:#fff;border-color:transparent;font-size:19px}
+  .crbtn.add:hover{filter:brightness(1.07)}
+  .crbtn.on{background:var(--accent);color:#fff;border-color:transparent}
+  .crbtn svg{width:16px;height:16px}
+  .crsep{width:22px;height:1px;background:var(--line)}
+  .crcount{margin-top:auto;font-size:11px;font-family:var(--mono);color:var(--ink-3)}
+  .crcount i{display:block;font-size:8px;text-transform:uppercase;letter-spacing:.06em;font-style:normal}
+  .opanel{position:relative;height:100%;flex:none;width:440px;min-width:320px;background:var(--panel);border-left:1px solid var(--line-2);
+    box-shadow:var(--dshadow);display:flex;flex-direction:column;pointer-events:auto}
+  /* FOCUS carries no decoration — focus is implied by where the user just clicked. (The old accent
+     "brow" across the panel top signalled nothing useful and was cut in production too.) */
+  /* PREVIEW = italic title + a "Preview" chip and a Keep button that live in the HEADER, visible at
+     rest. The old design hid both behind a hover bar, so Dan clicked Pin without ever reading what it
+     meant. The bar survives only as an on-hover explainer for the curious. */
+  .opanel.preview .htitle{font-style:italic}
+  .pvchip{flex:none;font-style:normal;font-size:9.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;
+    color:var(--warn);background:var(--warn-soft);border-radius:999px;padding:2px 7px;line-height:1.3}
+  .hbtn.keep{width:auto;height:24px;display:inline-flex;flex-direction:row;align-items:center;justify-content:center;
+    padding:0 9px;gap:5px;font-size:11.5px;font-weight:600;white-space:nowrap;color:var(--warn);
+    border:1px solid var(--warn);border-radius:6px}
+  .hbtn.keep:hover{background:var(--warn);color:#fff}
+  .hbtn.keep svg{width:12px;height:12px;flex:none}
+  /* the explainer bar: a 4px amber line that grows on hover (12px box, 8px of it a transparent
+     hover target overlapping the header's padding) */
+  .previewbar{flex:none;position:relative;z-index:2;display:flex;align-items:center;gap:8px;padding:0 12px;height:40px;
+    overflow:hidden;background:var(--warn-soft);border-bottom:1px solid var(--line);font-size:11.5px;color:var(--ink-2);
+    transition:height .2s ease,margin-bottom .2s ease}
+  .previewbar:not(:hover){height:12px;margin-bottom:-8px;border-bottom:0;background:transparent;
+    background-image:linear-gradient(to bottom,var(--warn) 0 4px,transparent 4px)}
+  .previewbar:not(:hover)>*{opacity:0}
+  .previewbar>*{transition:opacity .14s ease .04s}
+  .previewbar .pbtext{flex:1;min-width:0;display:flex;align-items:center;gap:7px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .previewbar .pbi{flex:none;color:var(--warn);display:grid;place-items:center}
+  .previewbar .pbi svg{width:14px;height:14px;display:block}
+  /* M5: the anchor is marked by POSITION; the ⇠ glyph only names what the slot already says. */
+  .anchorpin{color:var(--ink-2);opacity:.6;cursor:default;font-size:13px}
+  .opanel.anchor{border-left:2px solid var(--accent)}
+  /* A/B/C concept switcher (prototype-only chrome) */
+  /* bottom-LEFT, over the table: the drawers own the right side and must stay unobstructed */
+  .pinmode{position:fixed;left:232px;bottom:186px;z-index:60;display:flex;align-items:center;gap:6px;background:var(--panel);
+    border:1px solid var(--line);border-radius:8px;padding:5px 7px;font-size:11.5px;box-shadow:var(--dshadow)}
+  .pinmode>span{color:var(--ink-2);margin-right:2px}
+  .pinmode button{border:1px solid transparent;border-radius:6px;padding:3px 8px;font-size:11.5px;color:var(--ink-2);background:none}
+  .pinmode button.on{color:var(--ink);border-color:var(--line);background:var(--bg-2);font-weight:600}
+  .modehint{position:fixed;left:232px;bottom:14px;z-index:60;width:300px;background:var(--panel);border:1px solid var(--line);
+    border-radius:8px;padding:8px 10px;font-size:11px;line-height:1.45;color:var(--ink-2);box-shadow:var(--dshadow)}
+  .opanel.fresh{animation:slidein .2s cubic-bezier(.2,.7,.3,1)}
+  @keyframes slidein{from{transform:translateX(36px);opacity:.3}to{transform:none;opacity:1}}
+  @media (prefers-reduced-motion:reduce){.opanel.fresh{animation:none}}
+  .opanel.collapsed{width:46px!important;min-width:46px;cursor:pointer;background:var(--panel-2);
+    display:flex;flex-direction:column;align-items:center;padding:9px 0;gap:11px;overflow:hidden}
+  .opanel.collapsed:hover{background:var(--panel-3)}
+  .opanel.collapsed .crx{flex:none;width:24px;height:24px;border-radius:6px;color:var(--ink-3);display:grid;place-items:center;font-size:12px}
+  .opanel.collapsed .crx:hover{background:var(--line-2);color:var(--ink)}
+  .opanel.collapsed .crtile{flex:none;width:26px;height:26px;border-radius:7px;background:var(--panel-3);display:grid;place-items:center;color:var(--accent);font-size:14px}
+  .opanel.collapsed .crname{writing-mode:vertical-rl;transform:rotate(180deg);font-size:12.5px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;max-height:100%;letter-spacing:.01em}
+  .grip{position:absolute;left:-6px;top:0;bottom:0;width:12px;cursor:col-resize;z-index:8;pointer-events:auto}
+  .grip::after{content:"";position:absolute;left:5px;top:0;bottom:0;width:2px;background:transparent;transition:background .12s}
+  .grip:hover::after,.grip.drag::after{background:var(--accent);box-shadow:0 0 8px var(--accent-line)}
+  .opanel.collapsed .grip{display:none}
+
+  .odhead{flex:none;display:flex;align-items:center;gap:7px;padding:11px 12px;border-bottom:1px solid var(--line)}
+  .odhead .htile{width:26px;height:26px;border-radius:7px;background:var(--panel-3);display:grid;place-items:center;color:var(--accent);flex:none;font-size:14px}
+  .odhead .htitle{font-weight:600;font-size:14px;letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .odhead .grow{flex:1;min-width:0}
+  .odhead .hlevel{font-size:10px;font-family:var(--mono);color:var(--ink-3);text-transform:uppercase;letter-spacing:.04em}
+  .odhead .hact{display:flex;align-items:center;gap:1px;flex:none}
+  .hbtn{width:26px;height:26px;border-radius:6px;color:var(--ink-3);display:grid;place-items:center;font-size:13px}
+  .hbtn:hover{background:var(--panel-2);color:var(--ink)}
+  .hbtn.back:disabled{opacity:.3;cursor:default;background:none}
+  .hbtn.drag{cursor:grab;opacity:.4}.odhead:hover .hbtn.drag{opacity:.85}.hbtn.drag:hover{opacity:1;background:var(--panel-2);color:var(--ink)}
+  .hbtn.drag svg{width:15px;height:15px}
+  .hbtn.cmp.on{color:#fff;background:var(--accent)}
+  .opanel.dragging{opacity:.55;outline:2px dashed var(--accent);outline-offset:-2px;z-index:40}
+  .crumb-row{flex:none;display:flex;align-items:center;gap:5px;padding:7px 13px;border-bottom:1px solid var(--line);
+    color:var(--ink-3);font-size:11.5px;overflow:hidden;white-space:nowrap;background:var(--bg-2)}
+  .crumb-row .cseg{cursor:pointer;overflow:hidden;text-overflow:ellipsis;max-width:120px}
+  .crumb-row .cseg:hover{color:var(--accent);text-decoration:underline}
+  .crumb-row .cseg.cur{color:var(--ink-2);cursor:default}.crumb-row .cseg.cur:hover{text-decoration:none}
+  .crumb-row .sep{opacity:.5}
+  .odbody{flex:1;overflow-y:auto;padding:14px 14px 44px}
+
+  /* ---------- drawer body ---------- */
+  .ident{display:flex;align-items:flex-start;gap:11px;margin-bottom:12px}
+  .ident .ei{width:34px;height:34px;border-radius:9px;background:var(--panel-3);display:grid;place-items:center;color:var(--accent);flex:none;font-size:16px}
+  .ident h3{margin:0;font-size:18px;letter-spacing:-.01em}.ident .et{color:var(--ink-3);font-size:12px;margin-top:2px}
+  .idline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+  .idline .diffhit{outline:2px solid var(--diff);outline-offset:2px;border-radius:6px}
+  .viewatbtn{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line);
+    border-radius:7px;padding:6px 11px;margin-bottom:2px}
+  .viewatbtn:hover{background:var(--accent);color:#fff}
+  .viewatbtn svg{width:13px;height:13px}
+  .sec{margin-top:18px}
+  .sec-h{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .sec-h .cnt{margin-left:auto}
+  .desc{color:var(--ink-2);font-size:13px}
+  .formula{font-family:var(--mono);font-size:12.5px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+  .opts{display:flex;flex-wrap:wrap;gap:6px}
+  .opt{font-size:11.5px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 9px;color:var(--ink-2)}
+  .rows{border:1px solid var(--line);border-radius:9px;background:var(--panel-2);overflow:hidden}
+  .rrow{display:flex;align-items:center;gap:10px;padding:9px 11px;cursor:pointer;border-top:1px solid var(--line);position:relative}
+  .rrow:first-child{border-top:none}.rrow:hover{background:var(--panel-3)}
+  .rrow .ri{width:16px;flex:none;color:var(--ink-3);text-align:center;font-size:12px}
+  .rrow .rn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+  .rrow .rn .pri{font-family:var(--mono);font-size:9px;color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 5px;margin-left:7px}
+  .rrow .rmeta{font-size:11.5px;color:var(--ink-3);white-space:nowrap}
+  .rrow .rtype{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-3);white-space:nowrap}
+  .rrow .rtype .td{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  .rrow .rtype.currency .td,.rrow .rtype.rollup .td{background:var(--accent)}.rrow .rtype.percent .td,.rrow .rtype.lookup .td{background:var(--good)}
+  .rrow .rtype.formula .td{background:var(--violet)}.rrow .rtype.link .td{background:var(--warn)}
+  .rrow .dir{font-size:10px;color:var(--ink-3);font-family:var(--mono)}
+  .rrow .rgo{color:var(--ink-3);font-size:14px;flex:none;margin-left:2px}
+  .beside{position:absolute;right:32px;top:50%;transform:translateY(-50%);width:23px;height:23px;border-radius:6px;display:grid;place-items:center;
+    color:var(--ink-3);background:var(--panel);border:1px solid var(--line-2);opacity:0;transition:opacity .1s;font-size:12px}
+  .rrow:hover .beside{opacity:1}.beside:hover{color:var(--accent);border-color:var(--accent-line)}
+  .rrow.ext{cursor:default}.rrow.ext:hover{background:var(--panel-2)}.rrow.ext .rgo{display:none}
+  .clog{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .clog .cb{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--warn);background:var(--warn-soft);border-radius:5px;padding:2px 8px;font-family:var(--mono)}
+  .clog .cd{font-size:11px;color:var(--ink-3);margin-left:8px}.clog .ct{font-size:12.5px;color:var(--ink-2);margin-top:7px}.clog .ct s{color:var(--ink-3)}
+  .emptydoc{color:var(--ink-3);font-size:12.5px}
+
+  /* ---------- picker popover ---------- */
+  .pickwrap{position:fixed;inset:0;z-index:60;display:none}.pickwrap.open{display:block}
+  .pickscrim{position:absolute;inset:0}
+  .picker{position:absolute;width:340px;max-height:420px;background:var(--panel);border:1px solid var(--line-2);border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,.4);display:flex;flex-direction:column;overflow:hidden}
+  .picker .psearch{flex:none;padding:11px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:9px}
+  .picker .psearch input{flex:1;background:none;border:none;outline:none;color:var(--ink);font-size:13.5px}
+  .picker .psearch .pk{font-size:14px;color:var(--ink-3)}
+  .pscope{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--ink-2);background:var(--panel-3);
+    border:1px solid var(--line);border-radius:20px;padding:3px 9px;white-space:nowrap}
+  .pscope:hover{border-color:var(--line-2);color:var(--ink)}
+  .picker .plist{flex:1;overflow-y:auto;padding:6px}
+  .picker .pgrp{font-size:10px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);padding:9px 8px 4px}
+  .picker .pitem{display:flex;align-items:center;gap:10px;padding:8px;border-radius:7px;cursor:pointer;font-size:13px}
+  .picker .pitem:hover,.picker .pitem.kbd{background:var(--accent-soft)}
+  .picker .pitem .pi{width:15px;text-align:center;color:var(--ink-3);font-size:12px}
+  .picker .pitem .pm{margin-left:auto;font-size:11px;color:var(--ink-3);font-family:var(--mono)}
+  .picker .pfoot{flex:none;border-top:1px solid var(--line);padding:7px 12px;font-size:11px;color:var(--ink-3);display:flex;gap:14px}
+  kbd{font-family:var(--mono);font-size:10.5px;background:var(--panel-3);border:1px solid var(--line);border-radius:4px;padding:0 5px;color:var(--ink-2)}
+
+  /* ---------- toast + hint ---------- */
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);opacity:0;background:var(--panel);border:1px solid var(--line-2);border-radius:9px;padding:9px 14px;font-size:12.5px;color:var(--ink-2);box-shadow:0 10px 30px rgba(0,0,0,.4);z-index:70;transition:.2s;display:flex;gap:12px;align-items:center}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast .undo{color:var(--accent);font-weight:560;cursor:pointer}
+  .hintbar{position:absolute;left:24px;bottom:16px;z-index:9;background:var(--panel);border:1px solid var(--line-2);border-radius:9px;padding:8px 13px;font-size:12px;color:var(--ink-2);box-shadow:0 8px 24px rgba(0,0,0,.3);max-width:56%}
+  .hintbar b{color:var(--ink)}.hintbar kbd{font-size:10px}
+  ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:6px}::-webkit-scrollbar-track{background:transparent}
+</style>
+
+<div class="sidebar">
+  <div class="brand"><span class="dot"></span>baseout</div>
+  <div class="space">Space · Core CRM</div>
+  <nav class="nav">
+    <a href="#"><span class="i">⌂</span>Home</a><a href="#"><span class="i">⭑</span>Backups</a>
+    <a href="#"><span class="i">↺</span>Restore</a><a href="#" class="on"><span class="i">▦</span>Schema</a>
+    <a href="#"><span class="i">▤</span>Reports</a><div class="navgap"></div>
+    <div class="space">Account</div>
+    <a href="#"><span class="i">◇</span>Sources</a><a href="#"><span class="i">◈</span>Destinations</a>
+  </nav>
+  <button class="theme" id="theme"><span class="sw">◐</span>Toggle theme</button>
+</div>
+
+<div class="work">
+  <div class="wtop">
+    <div><h1>Schema</h1><div class="sub">Your Airtable structure — tables, fields, and how they link. Read-only.</div></div>
+  </div>
+  <div class="tabs"><button class="on">Browse</button><button>Visualize</button><button>Relationships</button>
+    <button>Changelog</button><button>Health</button><button>Docs</button></div>
+  <div class="content">
+    <div class="tablearea">
+      <table><thead><tr><th style="width:38%">Name</th><th style="width:18%">Type</th>
+        <th style="width:24%">Link</th><th>Status</th></tr></thead><tbody id="tbody"></tbody></table>
+    </div>
+    <div class="hintbar" id="hint">Click a field → it opens as a <b>preview</b> drawer (amber line + <b>Preview</b> chip); another click <b>reuses</b> it. <b>Keep</b> makes it permanent — one-way, close it with ✕. Drag the <b>⠿ handle</b> to <b>reorder</b> panels · toggle <b>Compare</b> (columns icon) on 2+ field panels to highlight what differs · drag the left edge to resize (past the floor → parks) · <b>✕</b>/<kbd>Esc</kbd> closes.</div>
+  </div>
+  <div class="dstack" id="dstack"></div>
+</div>
+
+<div class="pinmode" id="pinmode">
+  <span>Pin concept</span>
+  <button data-mode="A">A · Keep</button>
+  <button data-mode="B">B · Keep + auto</button>
+  <button data-mode="C">C · Anchor slot</button>
+</div>
+<div class="modehint" id="modehint"></div>
+
+<div class="pickwrap" id="pickwrap">
+  <div class="pickscrim" data-pickclose></div>
+  <div class="picker" id="picker">
+    <div class="psearch"><span class="pk">⌕</span><input id="pinput" placeholder="Compare with…" autocomplete="off"><button class="pscope" id="pscope"></button></div>
+    <div class="plist" id="plist"></div>
+    <div class="pfoot"><span><kbd>↑↓</kbd> move</span><span><kbd>↵</kbd> open beside</span><span><kbd>esc</kbd> close</span></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+//////////////////// DATA ////////////////////
+const SPACE={name:'Core CRM'};
+const BASES=[
+  {id:'sales',name:'Sales CRM',meta:'3 tables · 30 fields',tables:['deals','companies','contacts']},
+  {id:'marketing',name:'Marketing',meta:'2 tables · 9 fields',tables:['campaigns','channels']},
+  {id:'ops',name:'Operations',meta:'1 table · 6 fields',tables:['tickets']},
+];
+const TABLES={
+  deals:{name:'Deals',base:'sales',meta:'12 fields · 980 records',fields:['amount','probability','weighted_value','company_industry','deal_company','stage'],rel:[{id:'deal_company',dir:'→ Companies'}]},
+  companies:{name:'Companies',base:'sales',meta:'10 fields · 340 records',fields:['cname','industry','pipeline_value','website'],rel:[{id:'deal_company',dir:'Linked from Deals'},{id:'contact_company',dir:'Linked from Contacts'}]},
+  contacts:{name:'Contacts',base:'sales',meta:'8 fields · 1,480 records',fields:['full_name','contact_company'],rel:[{id:'contact_company',dir:'→ Companies'}]},
+  campaigns:{name:'Campaigns',base:'marketing',meta:'6 fields · 42 records',fields:['camp_name','channel','budget','start_date']},
+  channels:{name:'Channels',base:'marketing',meta:'3 fields · 8 records',fields:['chan_name']},
+  tickets:{name:'Tickets',base:'ops',meta:'6 fields · 320 records',fields:['subject','tstatus','assignee']},
+};
+const T={
+  weighted_value:{name:'Weighted Value',table:'deals',base:'sales',icon:'ƒ',type:'Formula',tchip:'formula',link:'—',health:'good',descA:'Amount × Probability — the pipeline-weighted value.',synced:true,config:{title:'Formula',formula:'{Amount} * {Probability}'},references:['amount','probability'],changelog:{date:'Jun 19, 2026',text:'Formula updated <s>{Amount}</s> → {Amount} * {Probability}'},refBy:[{name:'Weekly pipeline digest',kind:'Automation'}]},
+  amount:{name:'Amount',table:'deals',base:'sales',icon:'$',type:'Currency',tchip:'currency',link:'—',health:'good',descA:'The gross value of the deal.',synced:true,refBy:[{id:'weighted_value',kind:'Formula'},{id:'pipeline_value',kind:'Rollup'}]},
+  probability:{name:'Probability',table:'deals',base:'sales',icon:'%',type:'Percent',tchip:'percent',link:'—',health:'good',descA:'Likelihood the deal closes.',synced:true,refBy:[{id:'weighted_value',kind:'Formula'}]},
+  company_industry:{name:'Company Industry',table:'deals',base:'sales',icon:'⤷',type:'Lookup',tchip:'lookup',link:'→ Companies',health:'improve',descA:'Industry pulled from the linked Company.',synced:true,config:{title:'Looks up',lookup:{id:'industry',via:'Company',table:'Companies'}},references:['industry']},
+  stage:{name:'Stage',table:'deals',base:'sales',icon:'◔',type:'Single select',tchip:'',link:'—',health:'good',descA:'Current pipeline stage.',synced:true,options:['Lead','Qualified','Proposal','Won','Lost']},
+  deal_company:{name:'Company',table:'deals',base:'sales',icon:'⛓',type:'Link',tchip:'link',link:'→ Companies',health:'good',descA:'The company this deal belongs to.',synced:true,config:{title:'Links to',link:{id:'companies'}},references:['companies']},
+  industry:{name:'Industry',table:'companies',base:'sales',icon:'◔',type:'Single select',tchip:'',link:'—',health:'improve',descA:'',synced:true,options:['SaaS','Fintech','Healthcare','E-commerce','Manufacturing','Other'],refBy:[{id:'company_industry',kind:'Lookup'}]},
+  pipeline_value:{name:'Pipeline Value',table:'companies',base:'sales',icon:'∑',type:'Rollup',tchip:'rollup',link:'—',health:'good',descA:'Sum of Amount across the company’s Deals.',synced:true,config:{title:'Rolls up',rollup:{id:'amount',via:'Deals',fn:'SUM(values)'}},references:['amount'],refBy:[{name:'At-risk accounts alert',kind:'Automation'}]},
+  cname:{name:'Name',table:'companies',base:'sales',icon:'A',type:'Single line text',tchip:'',link:'—',health:'good',descA:'Primary field.',primary:true,synced:true},
+  website:{name:'Website',table:'companies',base:'sales',icon:'A',type:'URL',tchip:'',link:'—',health:'good',descA:'Company website.',synced:true},
+  full_name:{name:'Full Name',table:'contacts',base:'sales',icon:'A',type:'Single line text',tchip:'',link:'—',health:'good',descA:'Primary field.',primary:true,synced:true},
+  contact_company:{name:'Company',table:'contacts',base:'sales',icon:'⛓',type:'Link',tchip:'link',link:'→ Companies',health:'good',descA:'Linked company.',synced:true,config:{title:'Links to',link:{id:'companies'}},references:['companies']},
+  camp_name:{name:'Name',table:'campaigns',base:'marketing',icon:'A',type:'Single line text',tchip:'',link:'—',health:'good',descA:'Primary field.',primary:true,synced:true},
+  channel:{name:'Channel',table:'campaigns',base:'marketing',icon:'⛓',type:'Link',tchip:'link',link:'→ Channels',health:'improve',descA:'Linked marketing channel.',synced:true,config:{title:'Links to',link:{id:'channels'}},references:['channels']},
+  budget:{name:'Budget',table:'campaigns',base:'marketing',icon:'$',type:'Currency',tchip:'currency',link:'—',health:'good',descA:'Planned spend.',synced:true},
+  start_date:{name:'Start Date',table:'campaigns',base:'marketing',icon:'▤',type:'Date',tchip:'',link:'—',health:'good',descA:'Campaign launch date.',synced:true},
+  chan_name:{name:'Name',table:'channels',base:'marketing',icon:'A',type:'Single line text',tchip:'',link:'—',health:'good',descA:'Primary field.',primary:true,synced:true},
+  subject:{name:'Subject',table:'tickets',base:'ops',icon:'A',type:'Single line text',tchip:'',link:'—',health:'good',descA:'Primary field.',primary:true,synced:true},
+  tstatus:{name:'Status',table:'tickets',base:'ops',icon:'◔',type:'Single select',tchip:'',link:'—',health:'good',descA:'Ticket status.',synced:true,options:['Open','Pending','Closed']},
+  assignee:{name:'Assignee',table:'tickets',base:'ops',icon:'A',type:'Single line text',tchip:'',link:'—',health:'improve',descA:'',synced:true},
+};
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+const typeClass=e=>e.tchip||'';
+const baseOf=id=>BASES.find(b=>b.id===id);
+// Browse table = Sales CRM fields grouped by table (the real Browse surface).
+const BROWSE=BASES[0].tables;
+
+//////////////////// TABLE RENDER ////////////////////
+function renderTable(){let h='';
+  BROWSE.forEach(tid=>{const t=TABLES[tid];
+    h+=`<tr class="grouprow"><td colspan="4">▦ ${esc(t.name)}<span class="gmeta">${esc(t.meta)}</span></td></tr>`;
+    t.fields.forEach(id=>{const e=T[id];
+      h+=`<tr class="frow" data-open="${id}"><td><div class="fname"><span class="fi">${e.icon}</span>${esc(e.name)}${e.primary?'<span class="pri">primary</span>':''}</div></td>
+        <td><span class="chip ${e.tchip}">${esc(e.type)}</span></td>
+        <td class="lk">${e.link&&e.link!=='—'?'<span class="a">'+esc(e.link)+'</span>':'<span class="muted">—</span>'}</td>
+        <td><div style="display:flex;align-items:center;gap:10px;justify-content:space-between"><span class="st ${e.health}"><span class="d"></span>${e.health==='good'?'Healthy':'Could improve'}</span>
+          <button class="rowbeside" data-openbeside="${id}" title="Open beside (⌘/Ctrl-click)">⧉</button></div></td></tr>`;});});
+  document.getElementById('tbody').innerHTML=h;}
+function markActive(){document.querySelectorAll('.frow.active').forEach(r=>r.classList.remove('active'));
+  panels.forEach(p=>{const n=cur(p);if(n.level==='field'){const r=document.querySelector(`.frow[data-open="${n.id}"]`);if(r)r.classList.add('active');}});}
+
+//////////////////// PANEL STATE ////////////////////
+const DEFW=440, MINW=320, TABLEGAP=110, RAILW=46, HARDCAP=5, COLLAPSE_AT=320;
+let PIN_MODE='A'; // 'A' = explicit Keep only · 'B' = Keep + auto-keep on intent (set by the switcher)
+let panels=[]; let uidSeq=1; let freshUid=0; let focusUid=0; let lastClosed=null;
+let dragUid=0, dragStartX=0, dragging=false;
+const newUid=()=>uidSeq++;
+const PIN_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>';
+const EYE_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+const GRIP_SVG='<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>';
+const DIFF_SVG='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><rect x="3" y="7" width="6" height="10" rx="1"/><rect x="15" y="7" width="6" height="10" rx="1"/></svg>';
+const cur=p=>p.stack[p.stack.length-1];
+const titleOf=n=>n.level==='space'?SPACE.name:n.level==='base'?baseOf(n.id).name:n.level==='table'?TABLES[n.id].name:T[n.id].name;
+const iconOf=n=>n.level==='space'?'◈':n.level==='base'?'▦':n.level==='table'?'▤':T[n.id].icon;
+
+//////////////////// BODY RENDERERS ////////////////////
+function baseRow(b){return `<div class="rrow" data-nav="base:${b.id}"><span class="ri">▦</span><span class="rn">${esc(b.name)}</span><span class="rmeta">${esc(b.meta)}</span><button class="beside" data-beside="base:${b.id}" title="Open beside · ⌘/Ctrl-click">⧉</button><span class="rgo">›</span></div>`;}
+function tableRow(tid){const t=TABLES[tid];return `<div class="rrow" data-nav="table:${tid}"><span class="ri">▤</span><span class="rn">${esc(t.name)}</span><span class="rmeta">${esc(t.meta)}</span><button class="beside" data-beside="table:${tid}" title="Open beside · ⌘/Ctrl-click">⧉</button><span class="rgo">›</span></div>`;}
+function fieldRow(fid){const e=T[fid];return `<div class="rrow" data-nav="field:${fid}"><span class="ri">${e.icon}</span><span class="rn">${esc(e.name)}${e.primary?'<span class="pri">primary</span>':''}</span><span class="rtype ${typeClass(e)}"><span class="td"></span>${esc(e.type)}</span><button class="beside" data-beside="field:${fid}" title="Open beside · ⌘/Ctrl-click">⧉</button><span class="rgo">›</span></div>`;}
+function relRow(id,dir){const e=T[id];return `<div class="rrow" data-nav="field:${id}"><span class="ri">${e.icon}</span><span class="rn">${esc(e.name)}</span><span class="dir">${esc(dir)}</span><button class="beside" data-beside="field:${id}" title="Open beside · ⌘/Ctrl-click">⧉</button><span class="rgo">›</span></div>`;}
+function byRow(r){if(r.id){const e=T[r.id];return `<div class="rrow" data-nav="field:${r.id}"><span class="ri">${e.icon}</span><span class="rn">${esc(e.name)}</span><span class="rtype ${(r.kind||'').toLowerCase()}"><span class="td"></span>${esc(r.kind)}</span><button class="beside" data-beside="field:${r.id}" title="Open beside · ⌘/Ctrl-click">⧉</button><span class="rgo">›</span></div>`;}
+  return `<div class="rrow ext"><span class="ri">⚡</span><span class="rn">${esc(r.name)}</span><span class="rtype"><span class="td"></span>${esc(r.kind)}</span></div>`;}
+const viewAt=lbl=>`<button class="viewatbtn" data-noop><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>View ${lbl} in Airtable</button>`;
+
+function spaceBody(){return `<div class="ident"><div class="ei">◈</div><div><h3>${esc(SPACE.name)}</h3><div class="et">Space · ${BASES.length} bases</div></div></div>
+  <div class="desc muted">Pick a base to drill in, or ⧉ / ⌘-click to open it beside.</div>
+  <div class="sec"><div class="sec-h">Bases<span class="cnt">${BASES.length}</span></div><div class="rows">${BASES.map(baseRow).join('')}</div></div>`;}
+function baseBody(bid){const b=baseOf(bid);return `<div class="ident"><div class="ei">▦</div><div><h3>${esc(b.name)}</h3><div class="et">Base · ${esc(b.meta)}</div></div></div>${viewAt('base')}
+  <div class="sec"><div class="sec-h">Tables<span class="cnt">${b.tables.length}</span></div><div class="rows">${b.tables.map(tableRow).join('')}</div></div>`;}
+function tableBody(tid){const t=TABLES[tid];let h=`<div class="ident"><div class="ei">▤</div><div><h3>${esc(t.name)}</h3><div class="et">Table · ${esc(t.meta)}</div></div></div>${viewAt('table')}
+  <div class="sec"><div class="sec-h">Fields<span class="cnt">${t.fields.length}</span></div><div class="rows">${t.fields.map(fieldRow).join('')}</div></div>`;
+  if(t.rel)h+=`<div class="sec"><div class="sec-h">Relationships<span class="cnt">${t.rel.length}</span></div><div class="rows">${t.rel.map(r=>relRow(r.id,r.dir)).join('')}</div></div>`;return h;}
+function fieldBody(fid,isCompare){const e=T[fid];const dc=k=>isCompare&&diffAttrs.has(k)?'diffhit':'';
+  let h=`<div class="ident"><div class="ei">${e.icon}</div><div><h3>${esc(e.name)}${e.primary?' <span class="et">· primary</span>':''}</h3><div class="et">${esc(TABLES[e.table].name)} · ${esc(baseOf(e.base).name)}</div></div></div>
+    <div class="idline"><span class="chip ${typeClass(e)} ${dc('type')}">${esc(e.type)}</span>
+      <span class="st ${e.health} ${dc('health')}"><span class="d"></span>${e.health==='good'?'Healthy':'Could improve'}</span>
+      ${e.synced?`<span class="st good ${dc('synced')}"><span class="d"></span>Synced</span>`:''}</div>${viewAt('field')}
+    <div class="sec"><div class="sec-h">Description</div><div class="desc ${dc('desc')}">${e.descA?esc(e.descA):'<span class="muted">No description in Airtable yet.</span>'}</div></div>`;
+  if(e.config){const c=e.config;let inner='';
+    if(c.formula)inner=`<div class="formula">${esc(c.formula)}</div>`;
+    else if(c.lookup)inner=`<div class="rows">${fieldRow(c.lookup.id)}</div><div class="desc" style="margin-top:6px;font-size:12px">in ${c.lookup.table}, via <b style="color:var(--ink-2)">${c.lookup.via}</b></div>`;
+    else if(c.rollup)inner=`<div class="rows">${fieldRow(c.rollup.id)}</div><div class="desc" style="margin-top:6px;font-size:12px">${c.rollup.fn} · via <b style="color:var(--ink-2)">${c.rollup.via}</b></div>`;
+    else if(c.link)inner=`<div class="rows">${tableRow(c.link.id)}</div>`;
+    h+=`<div class="sec"><div class="sec-h">${esc(c.title)}</div>${inner}</div>`;}
+  if(e.options)h+=`<div class="sec"><div class="sec-h">Options<span class="cnt">${e.options.length}</span></div><div class="opts">${e.options.map(o=>`<span class="opt">${esc(o)}</span>`).join('')}</div></div>`;
+  if(e.references&&e.references.length)h+=`<div class="sec"><div class="sec-h">References<span class="cnt">${e.references.length}</span></div><div class="rows">${e.references.map(fieldRow).join('')}</div></div>`;
+  if(e.refBy&&e.refBy.length)h+=`<div class="sec"><div class="sec-h">Referenced by<span class="cnt">${e.refBy.length}</span></div><div class="rows">${e.refBy.map(byRow).join('')}</div></div>`;
+  if(e.changelog)h+=`<div class="sec"><div class="sec-h">Changelog</div><div class="clog"><span class="cb">◆ Config changed</span><span class="cd">${e.changelog.date}</span><div class="ct">${e.changelog.text}</div></div></div>`;
+  h+=`<div class="sec"><div class="sec-h">Documentation</div><div class="emptydoc">No documents reference this yet.</div></div>`;return h;}
+const bodyFor=(n,p)=>n.level==='space'?spaceBody():n.level==='base'?baseBody(n.id):n.level==='table'?tableBody(n.id):fieldBody(n.id,!!(p&&p.compare));
+
+//////////////////// DIFF + BREADCRUMB ////////////////////
+let diffAttrs=new Set();
+function computeDiff(){diffAttrs=new Set();
+  const fs=panels.filter(p=>p.compare&&cur(p).level==='field').map(p=>T[cur(p).id]);if(fs.length<2)return;
+  const keys={type:e=>e.type,health:e=>e.health,synced:e=>!!e.synced,desc:e=>e.descA||''};
+  Object.keys(keys).forEach(k=>{if(new Set(fs.map(keys[k]).map(String)).size>1)diffAttrs.add(k);});}
+function crumbFor(p){const n=cur(p);const segs=[{t:SPACE.name,nav:'space:'}];
+  if(n.level!=='space'){const bid=n.level==='base'?n.id:n.level==='table'?TABLES[n.id].base:T[n.id].base;segs.push({t:baseOf(bid).name,nav:'base:'+bid});}
+  if(n.level==='table'||n.level==='field'){const tid=n.level==='table'?n.id:T[n.id].table;segs.push({t:TABLES[tid].name,nav:'table:'+tid});}
+  if(n.level==='field')segs.push({t:T[n.id].name,nav:'field:'+n.id});
+  return segs.map((s,i)=>`<span class="cseg ${i===segs.length-1?'cur':''}" data-crumb="${s.nav}" data-uid="${p.uid}">${esc(s.t)}</span>`+(i<segs.length-1?'<span class="sep">›</span>':'')).join('');}
+
+//////////////////// RENDER ////////////////////
+function fitWidths(){const workW=document.querySelector('.work').clientWidth;
+  let ws=panels.map(p=>p.collapsed?44:p.w);const avail=workW-TABLEGAP-RAILW,sum=ws.reduce((a,b)=>a+b,0);
+  if(sum>avail){const fixed=panels.reduce((a,p)=>a+(p.collapsed?44:0),0);
+    const room=avail-fixed,esum=panels.reduce((a,p)=>a+(p.collapsed?0:p.w),0),s=room/esum;
+    ws=panels.map(p=>p.collapsed?44:Math.max(MINW,Math.round(p.w*s)));}
+  return ws;}
+function railHTML(){return `<div class="crail">
+  <button class="crbtn add" id="addbtn" title="Add panel — Compare with…">＋</button>
+  <div class="crcount" title="${panels.length} open">${panels.length}<i>open</i></div></div>`;}
+function render(){computeDiff();
+  const wrap=document.getElementById('dstack');
+  document.getElementById('hint').style.display=panels.length?'none':'';
+  const ws=fitWidths();let h=railHTML();
+  panels.forEach((p,i)=>{const n=cur(p);const foc=p.uid===focusUid?'focus':'';
+    if(p.collapsed){h+=`<div class="opanel collapsed ${foc} ${dragging&&p.uid===dragUid?'dragging':''}" data-uid="${p.uid}" title="Expand">
+      <button class="crx" data-close="${p.uid}" title="Close panel">✕</button>
+      <span class="crtile">${iconOf(n)}</span>
+      <span class="crname">${esc(titleOf(n))}</span></div>`;return;}
+    h+=`<div class="opanel ${foc} ${p.pinned?'':'preview'} ${p.anchor?'anchor':''} ${dragging&&p.uid===dragUid?'dragging':''} ${p.uid===freshUid?'fresh':''}" data-uid="${p.uid}" style="width:${ws[i]}px">
+      <div class="grip" data-grip="${p.uid}" title="Drag to resize"></div>
+      ${p.pinned?'':`<div class="previewbar">
+        <span class="pbtext"><span class="pbi">${EYE_SVG}</span>${PIN_MODE==='B'
+          ? 'Preview — opening another field replaces this. Drilling in or opening one beside keeps it automatically.'
+          : 'Preview — opening another field replaces this'}</span>
+      </div>`}
+      <div class="odhead">
+        ${p.anchor?'<span class="hbtn anchorpin" title="This panel is docked to the table — it always shows whatever row you click. It cannot be reordered.">⇠</span>'
+                 :`<button class="hbtn drag" data-drag="${p.uid}" title="Drag to reorder">${GRIP_SVG}</button>`}
+        <button class="hbtn back" data-back="${p.uid}" title="Back" ${p.stack.length>1?'':'disabled'}>‹</button>
+        <span class="htile">${iconOf(n)}</span>
+        <div class="grow"><div class="htitle">${esc(titleOf(n))}</div><div class="hlevel">${p.anchor?'table selection':n.level}</div></div>
+        <div class="hact">
+          ${p.anchor?`<button class="hbtn keep" data-detach="${p.uid}" title="Make this a panel of your own. The anchor slot is then free for the next row you click.">Detach</button>`:''}
+          ${p.pinned?'':'<span class="pvchip">Preview</span>'}
+          ${p.pinned?'':`<button class="hbtn keep" data-pin="${p.uid}" title="Keep this panel open. A preview panel is replaced when you open another field. This cannot be undone — close the panel instead.">${PIN_SVG}Keep</button>`}
+          ${n.level==='field'?`<button class="hbtn cmp ${p.compare?'on':''}" data-compare="${p.uid}" title="Compare — highlight fields that differ across panels in Compare mode">${DIFF_SVG}</button>`:''}
+          <button class="hbtn" data-collapse="${p.uid}" title="Park to a narrow rail — expand it anytime">⟨</button>
+          <button class="hbtn" data-close="${p.uid}" title="Close drawer">✕</button></div>
+      </div>
+      <div class="crumb-row">${crumbFor(p)}</div>
+      <div class="odbody">${bodyFor(n,p)}</div></div>`;});
+  wrap.innerHTML=h;freshUid=0;markActive();}
+
+//////////////////// ACTIONS ////////////////////
+const parseTarget=s=>{const[level,id]=s.split(':');return{level,id:id||null};};
+function focusExisting(target){const p=panels.find(p=>{const n=cur(p);return n.level===target.level&&n.id===target.id;});
+  if(p){focusUid=p.uid;render();return true;}return false;}
+function openPanel(target,pinned=true){
+  if(panels.length>=HARDCAP){lastClosed=panels.shift();showToast(`Closed “${titleOf(cur(lastClosed))}” — ${HARDCAP} drawer max`,true);}
+  const uid=newUid();panels.push({uid,stack:[target],w:DEFW,collapsed:false,pinned});focusUid=uid;freshUid=uid;render();}
+//////////////////// M5 — the ANCHOR slot (mode C) ////////////////////
+// The panel in slot 0 (nearest the table) is the anchor: the table selection always lands in IT.
+// Every other panel was created by an explicit gesture and the table never touches it. There is no
+// pin, no chip, no promotion — "keeping" the anchor is spatial: Detach makes it an ordinary panel
+// and leaves the anchor slot free for the next table click.
+const anchorOf=()=>panels.find(p=>p.anchor)||null;
+function openAnchor(target){
+  const a=anchorOf();
+  if(a){a.stack=[target];focusUid=a.uid;freshUid=a.uid;render();return;}
+  const uid=newUid();panels.unshift({uid,stack:[target],w:DEFW,collapsed:false,pinned:true,anchor:true});
+  focusUid=uid;freshUid=uid;render();}
+function detachAnchor(uid){const p=panels.find(p=>p.uid===uid);if(!p||!p.anchor)return;
+  p.anchor=false;showToast('Detached — this panel is yours now. The next table click opens a fresh one beside the table.');render();}
+
+// plain table-row click: mode C retargets the anchor; A/B reuse the single "preview" panel.
+function openOrFocus(target){
+  if(focusExisting(target))return;
+  if(PIN_MODE==='C'){openAnchor(target);return;}
+  const pv=panels.find(p=>!p.pinned);
+  if(pv){pv.stack=[target];focusUid=pv.uid;freshUid=pv.uid;render();}
+  else openPanel(target,false);}
+// KEEP is ONE-WAY on purpose: there is no un-keep, so "what happens to the current preview when I
+// un-keep a second panel?" never has to be answered. The exit is ✕, like any other panel.
+function pinPanel(uid){const p=panels.find(p=>p.uid===uid);if(p&&!p.pinned){p.pinned=true;
+  showToast('Kept — this panel stays open. The next field opens in a fresh preview beside it.');render();}}
+// Concept B only: a preview panel earns permanence the moment you act on it (VS Code turns a preview
+// tab permanent as soon as you type in it). Triggers are deliberate acts, never scrolling or focusing.
+function autoKeep(uid,why){if(PIN_MODE!=='B')return false;
+  const p=panels.find(p=>p.uid===uid);if(!p||p.pinned)return false;
+  p.pinned=true;showToast(`Kept automatically — ${why}.`);return true;}
+function toggleCompare(uid){const p=panels.find(p=>p.uid===uid);if(!p)return;p.compare=!p.compare;
+  if(p.compare&&panels.filter(x=>x.compare&&cur(x).level==='field').length<2)showToast('Compare on — turn it on for another field panel to highlight what differs.');
+  render();}
+function uidAtX(x){for(const el of document.querySelectorAll('.dstack .opanel')){const r=el.getBoundingClientRect();if(x>=r.left&&x<=r.right)return +el.dataset.uid;}return 0;}
+function navInPanel(uid,target){const p=panels.find(p=>p.uid===uid);if(!p)return;
+  autoKeep(uid,'you drilled into it');
+  const idx=p.stack.findIndex(n=>n.level===target.level&&n.id===target.id);
+  if(idx>=0)p.stack=p.stack.slice(0,idx+1);else p.stack.push(target);focusUid=uid;render();}
+function backPanel(uid){const p=panels.find(p=>p.uid===uid);if(p&&p.stack.length>1){p.stack.pop();focusUid=uid;render();}}
+function closePanel(uid){const i=panels.findIndex(p=>p.uid===uid);if(i<0)return;lastClosed=panels[i];panels.splice(i,1);
+  if(focusUid===uid)focusUid=panels.length?panels[Math.max(0,i-1)].uid:0;render();}
+function collapsePanel(uid){const p=panels.find(p=>p.uid===uid);if(p){p.collapsed=!p.collapsed;render();}}
+function showToast(msg,undo){const el=document.getElementById('toast');el.innerHTML=esc(msg)+(undo?' <span class="undo" data-undo>Undo</span>':'');
+  el.classList.add('show');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),4200);}
+
+//////////////////// PICKER ////////////////////
+let pickItems=[],pickKbd=0,pickScope='base',pickCtx={base:BASES[0].id,table:BROWSE[0]};
+const itemBase=i=>i.level==='base'?i.id:i.level==='table'?TABLES[i.id].base:T[i.id].base;
+function buildPickItems(){const it=[];
+  BASES.forEach(b=>it.push({level:'base',id:b.id,name:b.name,meta:'Base',grp:'Bases',icon:'▦'}));
+  Object.keys(TABLES).forEach(tid=>it.push({level:'table',id:tid,name:TABLES[tid].name,meta:baseOf(TABLES[tid].base).name,grp:'Tables',icon:'▤'}));
+  Object.keys(T).forEach(fid=>it.push({level:'field',id:fid,name:T[fid].name,meta:`${TABLES[T[fid].table].name} · ${T[fid].type}`,grp:'Fields',icon:T[fid].icon}));
+  return it;}
+// context = the focused (or last) panel's base/table → the "+" scopes and defaults to it
+function pickerContext(){const p=panels.find(x=>x.uid===focusUid)||panels[panels.length-1];
+  if(p){const n=cur(p);
+    if(n.level==='field')return{base:T[n.id].base,table:T[n.id].table};
+    if(n.level==='table')return{base:TABLES[n.id].base,table:n.id};
+    if(n.level==='base')return{base:n.id,table:null};}
+  return{base:BASES[0].id,table:BROWSE[0]};}
+function updateScopePill(){const b=document.getElementById('pscope'),inp=document.getElementById('pinput');
+  if(pickScope==='base'){b.innerHTML='▦ '+esc(baseOf(pickCtx.base).name);inp.placeholder='Search '+baseOf(pickCtx.base).name+'…';}
+  else{b.innerHTML='◈ All bases';inp.placeholder='Search all bases…';}}
+function openPicker(anchorEl){const w=document.getElementById('pickwrap');w.classList.add('open');
+  pickCtx=pickerContext();pickScope='base';pickKbd=0;
+  const r=(anchorEl||document.getElementById('addbtn')).getBoundingClientRect();const pk=document.getElementById('picker');
+  pk.style.left=Math.max(16,Math.min(r.left,window.innerWidth-356))+'px';pk.style.top=Math.min(r.bottom+8,window.innerHeight-440)+'px';
+  const inp=document.getElementById('pinput');inp.value='';updateScopePill();renderPick('');inp.focus();}
+function closePicker(){document.getElementById('pickwrap').classList.remove('open');}
+function renderPick(q){const all=buildPickItems();
+  let pool=pickScope==='base'?all.filter(i=>i.level!=='base'&&itemBase(i)===pickCtx.base):all;
+  const ql=q.toLowerCase();
+  let matched=pool.filter(i=>i.name.toLowerCase().includes(ql)||i.meta.toLowerCase().includes(ql));
+  // default "Suggested" quick-adds when the box is empty: current table (all fields) + whole base
+  let sugg=[];
+  if(!q){if(pickCtx.table)sugg.push({level:'table',id:pickCtx.table,name:TABLES[pickCtx.table].name,meta:'all fields',grp:'Suggested',icon:'▤'});
+    sugg.push({level:'base',id:pickCtx.base,name:baseOf(pickCtx.base).name,meta:'whole base',grp:'Suggested',icon:'▦'});}
+  const sk=new Set(sugg.map(s=>s.level+':'+s.id));matched=matched.filter(i=>!sk.has(i.level+':'+i.id));
+  pickItems=[...sugg,...matched];
+  if(pickKbd>=pickItems.length)pickKbd=Math.max(0,pickItems.length-1);let h='';
+  ['Suggested','Bases','Tables','Fields'].forEach(g=>{const rows=pickItems.filter(i=>i.grp===g);if(!rows.length)return;h+=`<div class="pgrp">${g}</div>`;
+    rows.forEach(i=>{const gi=pickItems.indexOf(i);h+=`<div class="pitem ${gi===pickKbd?'kbd':''}" data-pick="${i.level}:${i.id}"><span class="pi">${i.icon}</span>${esc(i.name)}<span class="pm">${esc(i.meta)}</span></div>`;});});
+  document.getElementById('plist').innerHTML=h||`<div class="pgrp">No matches in ${pickScope==='base'?esc(baseOf(pickCtx.base).name):'any base'}</div>`;}
+
+//////////////////// EVENTS ////////////////////
+document.addEventListener('click',ev=>{const t=ev.target;
+  if(t.closest('[data-pickclose]')){closePicker();return;}
+  const pick=t.closest('[data-pick]');if(pick){openPanel(parseTarget(pick.dataset.pick));closePicker();return;}
+  if(t.closest('#pscope')){pickScope=pickScope==='base'?'all':'base';pickKbd=0;updateScopePill();renderPick(document.getElementById('pinput').value);return;}
+  if(t.closest('#addbtn')){openPicker(document.getElementById('addbtn'));return;}
+  if(t.closest('[data-undo]')){if(lastClosed){panels.unshift(lastClosed);focusUid=lastClosed.uid;lastClosed=null;document.getElementById('toast').classList.remove('show');render();}return;}
+  if(t.closest('[data-noop]')){showToast('Would deep-link to Airtable (prototype).');return;}
+  // table: open field as a drawer (⌘/Ctrl/middle → force new beside; plain → open/focus)
+  const ob=t.closest('[data-openbeside]');if(ob){ev.stopPropagation();openPanel({level:'field',id:ob.dataset.openbeside});return;}
+  const openRow=t.closest('[data-open]');if(openRow){const tgt={level:'field',id:openRow.dataset.open};
+    if(ev.metaKey||ev.ctrlKey)openPanel(tgt);else openOrFocus(tgt);return;}
+  // drawer chrome
+  const beside=t.closest('[data-beside]');if(beside){ev.preventDefault();ev.stopPropagation();
+    const src=t.closest('.opanel');if(src)autoKeep(+src.dataset.uid,'you opened another panel beside it');
+    openPanel(parseTarget(beside.dataset.beside));return;}
+  const back=t.closest('[data-back]');if(back){backPanel(+back.dataset.back);return;}
+  const det=t.closest('[data-detach]');if(det){ev.stopPropagation();detachAnchor(+det.dataset.detach);return;}
+  const pin=t.closest('[data-pin]');if(pin){ev.stopPropagation();pinPanel(+pin.dataset.pin);return;}
+  const cmp=t.closest('[data-compare]');if(cmp){ev.stopPropagation();toggleCompare(+cmp.dataset.compare);return;}
+  const collapse=t.closest('[data-collapse]');if(collapse){ev.stopPropagation();collapsePanel(+collapse.dataset.collapse);return;}
+  const close=t.closest('[data-close]');if(close){closePanel(+close.dataset.close);return;}
+  const crumb=t.closest('[data-crumb]');if(crumb){if(!crumb.classList.contains('cur'))navInPanel(+crumb.dataset.uid,parseTarget(crumb.dataset.crumb));return;}
+  const collapsed=t.closest('.opanel.collapsed');if(collapsed){collapsePanel(+collapsed.dataset.uid);return;}
+  const nav=t.closest('[data-nav]');if(nav){const pe=t.closest('.opanel');
+    if(ev.metaKey||ev.ctrlKey){if(pe)autoKeep(+pe.dataset.uid,'you opened another panel beside it');openPanel(parseTarget(nav.dataset.nav));}
+    else if(pe)navInPanel(+pe.dataset.uid,parseTarget(nav.dataset.nav));return;}
+  const pe=t.closest('.opanel');if(pe&&!pe.classList.contains('collapsed')&&focusUid!==+pe.dataset.uid){focusUid=+pe.dataset.uid;render();}
+});
+document.addEventListener('auxclick',ev=>{if(ev.button!==1)return;
+  const ob=ev.target.closest('[data-open]');if(ob){ev.preventDefault();openPanel({level:'field',id:ob.dataset.open});return;}
+  const nav=ev.target.closest('[data-nav]');if(nav){ev.preventDefault();openPanel(parseTarget(nav.dataset.nav));}});
+
+const pinput=document.getElementById('pinput');
+pinput.addEventListener('input',e=>{pickKbd=0;renderPick(e.target.value);});
+pinput.addEventListener('keydown',e=>{
+  if(e.key==='ArrowDown'){e.preventDefault();pickKbd=Math.min(pickItems.length-1,pickKbd+1);renderPick(pinput.value);document.querySelector('.pitem.kbd')?.scrollIntoView({block:'nearest'});}
+  else if(e.key==='ArrowUp'){e.preventDefault();pickKbd=Math.max(0,pickKbd-1);renderPick(pinput.value);document.querySelector('.pitem.kbd')?.scrollIntoView({block:'nearest'});}
+  else if(e.key==='Enter'){const it=pickItems[pickKbd];if(it){openPanel({level:it.level,id:it.id});closePicker();}}
+  else if(e.key==='Escape'){closePicker();}});
+
+let rz=null;
+document.addEventListener('mousedown',ev=>{
+  const dh=ev.target.closest('[data-drag]');if(dh){dragUid=+dh.dataset.drag;dragStartX=ev.clientX;dragging=false;document.body.style.cursor='grabbing';ev.preventDefault();return;}
+  const g=ev.target.closest('[data-grip]');if(!g)return;
+  const uid=+g.dataset.grip;rz={uid,x:ev.clientX,w:panels.find(p=>p.uid===uid).w};g.classList.add('drag');document.body.style.cursor='col-resize';ev.preventDefault();});
+window.addEventListener('mousemove',ev=>{
+  if(dragUid){ // reorder: live-swap the dragged panel past whichever panel the pointer is over
+    if(!dragging&&Math.abs(ev.clientX-dragStartX)>6){dragging=true;render();}
+    if(dragging){const over=uidAtX(ev.clientX);
+      if(over&&over!==dragUid){const from=panels.findIndex(p=>p.uid===dragUid),to=panels.findIndex(p=>p.uid===over);
+        // M5: slot 0 belongs to the anchor. If position encodes the rule, nothing may take that slot.
+        const minTo=anchorOf()?1:0;
+        if(from>=0&&to>=minTo){const[m]=panels.splice(from,1);panels.splice(to,0,m);render();}}}
+    return;}
+  if(!rz)return;const dx=rz.x-ev.clientX; // drag left = wider
+  const workW=document.querySelector('.work').clientWidth;const raw=rz.w+dx;const p=panels.find(p=>p.uid===rz.uid);
+  if(raw<COLLAPSE_AT){ // shrunk past the floor → auto-park to the narrow rail
+    p.collapsed=true;document.querySelector('.grip.drag')?.classList.remove('drag');document.body.style.cursor='';rz=null;render();return;}
+  p.w=Math.min(workW*0.7,raw);render();});
+window.addEventListener('mouseup',()=>{
+  if(dragUid){dragging=false;dragUid=0;document.body.style.cursor='';render();return;}
+  if(rz){document.querySelector('.grip.drag')?.classList.remove('drag');document.body.style.cursor='';rz=null;}});
+window.addEventListener('keydown',ev=>{if(ev.key==='Escape'){if(document.getElementById('pickwrap').classList.contains('open')){closePicker();return;}if(panels.length)closePanel(panels[panels.length-1].uid);}});
+document.getElementById('theme').addEventListener('click',()=>{const r=document.documentElement,c=r.getAttribute('data-theme');r.setAttribute('data-theme',c==='light'?'dark':'light');});
+
+//////////////////// SEED ////////////////////
+renderTable();
+// seed one PINNED panel + one PREVIEW (transient) so the preview/pin model reads immediately:
+// clicking another field replaces the preview; pinning it keeps it and the next click opens a new preview.
+panels=[{uid:newUid(),stack:[{level:'field',id:'amount'}],w:DEFW,collapsed:false,pinned:true},
+        {uid:newUid(),stack:[{level:'field',id:'weighted_value'}],w:DEFW,collapsed:false,pinned:false}];
+focusUid=panels[1].uid;
+
+//////////////////// PIN CONCEPT A / B ////////////////////
+// Both concepts share the SAME vocabulary and the same marker: the word is "Keep" (not "Pin", which
+// promises an un-pin we never built), and a preview panel wears a "Preview" chip + a Keep button in
+// its header, readable without hovering anything. They differ only in whether the panel can earn
+// permanence on its own.
+const MODE_HINT={
+  A:'<b>A · Keep (explicit only).</b> A preview panel shows a Preview chip and a Keep button. Only clicking Keep makes it permanent — drilling into a reference stays inside the preview, so the panel can still be replaced by the next field you click. Keep is one-way: to get rid of a panel, close it.',
+  B:'<b>B · Keep + auto.</b> Same chip and button, but the panel also keeps itself the moment you act on it — drill into a reference, or open another panel beside it. Rationale: if you are working in a panel you have already decided you want it. Scrolling and merely focusing never keep it.',
+  C:'<b>C · Anchor slot.</b> No Pin, no Keep, no Preview chip. The panel next to the table is the <b>anchor</b> (⇠): every plain row click lands in it, and nothing else can ever be replaced. It cannot be reordered, and no panel can be dragged into its slot. <b>Detach</b> turns it into a panel of your own and frees the slot for the next click. Answer to “what will this click replace?” is always “the panel by the table”.'
+};
+function setPinMode(m){PIN_MODE=m;location.hash=m;
+  // switching models re-seeds the roles so each concept starts from its own coherent state
+  if(m==='C'){panels.forEach((p,i)=>{p.pinned=true;p.anchor=(i===0);});}
+  else{panels.forEach(p=>{delete p.anchor;});}
+  document.querySelectorAll('#pinmode button').forEach(b=>b.classList.toggle('on',b.dataset.mode===m));
+  document.getElementById('modehint').innerHTML=MODE_HINT[m];render();}
+document.getElementById('pinmode').addEventListener('click',ev=>{
+  const b=ev.target.closest('[data-mode]');if(b)setPinMode(b.dataset.mode);});
+setPinMode(['A','B','C'].includes(location.hash.replace('#','').toUpperCase())?location.hash.replace('#','').toUpperCase():'A');
+</script>

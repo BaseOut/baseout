@@ -35,7 +35,21 @@ function renderWranglerConfig() {
     return 'DATABASE_URL is not set. Copy .env.example to .env and fill in a real Postgres URL.';
   }
   const template = readFileSync(WRANGLER_TEMPLATE_PATH, 'utf8');
-  const rendered = template.replaceAll('{{DATABASE_URL}}', dbUrl);
+  let rendered = template.replaceAll('{{DATABASE_URL}}', dbUrl);
+
+  // Local backup loop (BACKUP_LOCAL=1). Strip `"remote": true` from the
+  // BACKUP_ENGINE binding so apps/web talks to a LOCAL `wrangler dev` engine via
+  // the dev registry (dev.mjs also drops `--remote`). This is gated on
+  // BACKUP_LOCAL_ENGINE, which ONLY scripts/dev.mjs sets — so the `wrangler` npm
+  // scripts (which call launch.mjs directly and want `--remote`) and CI/deploy
+  // builds NEVER strip: the deployed binding is preserved and the local env can't
+  // leak into a build. The committed .example always keeps `remote: true`; only
+  // this gitignored render changes. To remove the local-dev feature entirely,
+  // delete this block (and the BACKUP_LOCAL_ENGINE line in dev.mjs).
+  if (process.env.BACKUP_LOCAL_ENGINE === '1') {
+    rendered = rendered.replace(/,?\s*"remote":\s*true/, '');
+  }
+
   writeFileSync(WRANGLER_PATH, rendered);
   return null;
 }
@@ -84,6 +98,25 @@ async function main() {
   if (!existsSync(CONFIG_PATH)) {
     console.error('\n  Setup was not completed. Exiting.\n');
     process.exit(1);
+  }
+
+  // Bail early on migration drift — every other major change has broken the
+  // dev loop by shipping schema-aware code without applying the matching
+  // migration. The check is silent when in sync and prints the exact fix
+  // command otherwise. Dev-only — `build` runs in CI without a master DB.
+  if (isDev) {
+    const driftCheck = spawn(
+      'node',
+      ['--env-file-if-exists=.env', 'scripts/check-migrations.mjs'],
+      { stdio: 'inherit', shell: true, cwd: ROOT },
+    );
+    await new Promise((resolveProc, rejectProc) => {
+      driftCheck.on('exit', (code) => {
+        if (code === 0) resolveProc();
+        else process.exit(code ?? 1);
+      });
+      driftCheck.on('error', rejectProc);
+    });
   }
 
   const child = spawn('npx', ['astro', command], {

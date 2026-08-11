@@ -1,0 +1,85 @@
+---
+// Filter bar for admin listing tables (admin-crm-ux D5): a GET <form> with an
+// optional search box and labeled <select>s. No-JS works via the visible Apply
+// button; a tiny progressive-enhancement script auto-submits on select change.
+// `page` is intentionally omitted so any filter/search change resets to page 1;
+// sort/dir/per (and any page-scoped params like `org`) ride along as hidden
+// inputs so they survive the submit (design D1).
+interface FilterOption {
+  value: string;
+  label: string;
+}
+interface FilterControl {
+  key: string;
+  label: string;
+  options: FilterOption[];
+  current: string | null;
+}
+
+interface Props {
+  action: string;
+  searchable?: boolean;
+  q?: string | null;
+  qPlaceholder?: string;
+  filters?: FilterControl[];
+  /** sort/dir/per and other params to preserve across a filter change. */
+  hidden?: Record<string, string>;
+}
+
+const {
+  action,
+  searchable = false,
+  q = null,
+  qPlaceholder = 'Search…',
+  filters = [],
+  hidden = {},
+} = Astro.props;
+
+const hasControls = searchable || filters.length > 0;
+---
+
+{hasControls && (
+  <form method="get" action={action} data-filter-bar class="flex flex-wrap items-end gap-3">
+    {Object.entries(hidden).map(([name, value]) => (
+      <input type="hidden" name={name} value={value} />
+    ))}
+
+    {searchable && (
+      <label class="form-control">
+        <span class="label-text sr-only">Search</span>
+        <input
+          type="search"
+          name="q"
+          value={q ?? ''}
+          placeholder={qPlaceholder}
+          class="input input-bordered input-sm w-56"
+          autocomplete="off"
+        />
+      </label>
+    )}
+
+    {filters.map((f) => (
+      <label class="form-control">
+        <span class="label-text text-xs text-base-content/60">{f.label}</span>
+        <select name={f.key} class="select select-bordered select-sm" data-filter-select>
+          {f.options.map((o) => (
+            <option value={o.value} selected={o.value === (f.current ?? '')}>{o.label}</option>
+          ))}
+        </select>
+      </label>
+    ))}
+
+    <button type="submit" class="btn btn-sm btn-primary">Apply</button>
+  </form>
+)}
+
+<script>
+  // Progressive enhancement: submit the filter form as soon as a <select>
+  // changes, so staff don't have to hit Apply. The Apply button remains the
+  // no-JS fallback.
+  document.querySelectorAll<HTMLFormElement>('form[data-filter-bar]').forEach((form) => {
+    form.querySelectorAll<HTMLSelectElement>('select[data-filter-select]').forEach((sel) => {
+      sel.addEventListener('change', () => form.requestSubmit());
+    });
+  });
+</script>

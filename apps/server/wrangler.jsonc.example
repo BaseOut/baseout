@@ -1,0 +1,145 @@
+// Template for apps/server/wrangler.jsonc. Rendered by scripts/launch.mjs:
+//   - the DATABASE_URL placeholder below is replaced with the value from
+//     .dev.vars, written into the gitignored wrangler.jsonc
+//
+// Why a template + renderer (mirrors apps/web's pattern):
+//   localConnectionString is read by `wrangler dev` BEFORE .dev.vars is
+//   loaded by the worker runtime, so it can't come from a runtime secret.
+//   Committing the literal credential is forbidden (CLAUDE.md §3.3 +
+//   PRD §20.1: secrets via Cloudflare Secrets or .env, never committed).
+//   The template lets us version control the structure while the credential
+//   stays in apps/server/.dev.vars (gitignored).
+//
+// Deployed Workers do NOT use localConnectionString — they connect via the
+// Hyperdrive `id`. So the placeholder rendering matters only for local dev.
+
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "baseout-server",
+  // Pin the account: the team's wrangler OAuth logins can span multiple
+  // Cloudflare accounts, and non-interactive contexts (deploys, background dev,
+  // the AI-binding remote proxy) fail with a misleading "must be logged in" /
+  // account-selection error when wrangler has to guess.
+  "account_id": "f094d60e8a0996752eb1efd971bda45a",
+  "main": "./src/index.ts",
+  "compatibility_date": "2026-04-22",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // Durable Objects — canonical names per CLAUDE.md §5.3.
+  // ConnectionDO: per-Airtable-Connection rate-limit gateway + state holder.
+  // SpaceDO: per-Space scheduler + backup controller.
+  "durable_objects": {
+    "bindings": [
+      { "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
+      { "name": "SPACE_DO", "class_name": "SpaceDO" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ConnectionDO", "SpaceDO"] }
+  ],
+
+  // Hyperdrive — local dev uses localConnectionString; the `id` is just a
+  // label until the Hyperdrive is provisioned for staging/production deploy.
+  // postgres-js direct TLS hangs inside workerd's nodejs_compat — Hyperdrive
+  // (which proxies the connection) is what actually makes per-request
+  // postgres-js usable from a Worker. See apps/web/wrangler.jsonc for the
+  // matching binding (same dev DB cluster, same id is fine for local dev).
+  // Workers AI — schema description generation (server-schema-descriptions).
+  // Platform-authenticated binding: no API key, no .dev.vars entry. Optional in
+  // Env typing; generation is skipped when absent. NOTE: local `wrangler dev`
+  // serves this binding through a remote proxy session — it requires a valid
+  // `wrangler login` (expired auth kills the dev server at startup).
+  "ai": { "binding": "AI" },
+
+  // R2 — Media Library download streaming (server-media-index). A NATIVE
+  // credential-less bucket binding (workerd-side): the r2-setup.md §2.4 rule
+  // ("no R2_* S3 creds on Workers") is untouched — that rule governs S3-API
+  // credentials, which this is not. Read-only BY DISCIPLINE: the engine only
+  // ever .get()s from it (download route); all writes stay on the Trigger.dev
+  // Node runner. Optional in Env typing — absent binding degrades the
+  // download route to 503, never affects backups.
+  "r2_buckets": [
+    { "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-dev" }
+  ],
+
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "ba2652f40f864918a2da0849f24d12a2",
+      "localConnectionString": "{{DATABASE_URL}}"
+    }
+  ],
+
+  // Cron triggers: LIVE in env.dev below (env blocks need their own triggers).
+  // Top-level stays off until staging/production env blocks are real
+  // (server-oauth-refresh-cron-health design; enable alongside
+  // shared-server-service-binding-staging-prod).
+  // "triggers": {
+  //   "crons": [
+  //     "0 * * * *",     // webhook renewal — hourly (server-cron-webhook-renewal)
+  //     "*/15 * * * *",  // OAuth token refresh — every 15 minutes
+  //     "0 * * * *",     // trial-expiry monitor — hourly
+  //     "0 * * * *",     // quota-usage monitor — hourly
+  //     "0 2 * * *"      // smart-cleanup scheduler — daily at 02:00 UTC
+  //   ]
+  // },
+
+  // Service bindings (incoming forwards from hooks + api)
+  // are configured via the Cloudflare dashboard once those Workers exist.
+
+  // Secrets (set via `wrangler secret put` in deployed envs; .dev.vars locally):
+  //   INTERNAL_TOKEN              — shared secret with apps/web (BACKUP_ENGINE_INTERNAL_TOKEN)
+  //   DATABASE_URL                — master DB (postgres-js per-request, per CLAUDE.md §5.1)
+  //                                  only used in local wrangler dev; deployed envs read HYPERDRIVE.
+  //   BASEOUT_ENCRYPTION_KEY      — AES-256-GCM key for *_enc columns; must match apps/web
+  //   TRIGGER_SECRET_KEY          — Trigger.dev v3 server-side key
+  //   TRIGGER_PROJECT_REF         — Trigger.dev project ID
+  //   CLOUDFLARE_API_TOKEN, STRIPE_API_KEY, MAILGUN_API_KEY — phase-2
+
+  // Wrangler does NOT inherit non-inheritable keys (vars, hyperdrive,
+  // kv_namespaces, send_email, durable_objects) from top-level into env
+  // blocks — every env redeclares the full set. Migrations stay top-level.
+  // See: https://developers.cloudflare.com/workers/wrangler/configuration/#environments
+  //
+  // env.staging / env.production are placeholders today — they'll get full
+  // redeclarations under the follow-up openspec change covering staging+prod
+  // service-binding wiring.
+  "env": {
+    "dev": {
+      "name": "baseout-server-dev",
+      // Cron dispatch: src/index.ts scheduled() routes by event.cron via
+      // lib/cron/dispatch.ts (server-oauth-refresh-cron-health). Keep these
+      // strings byte-identical to the dispatch map.
+      "triggers": {
+        "crons": [
+          "*/15 * * * *", // OAuth token refresh sweep + run reconciliation
+          "0 13 * * *", // OAuth idle keep-alive (shared-oauth-refresh-keepalive)
+          "0 * * * *" // Airtable webhook renewal (server-cron-webhook-renewal)
+        ]
+      },
+      "ai": { "binding": "AI" },
+      "r2_buckets": [
+        { "binding": "BACKUPS_R2", "bucket_name": "baseout-backups-dev" }
+      ],
+      "hyperdrive": [
+        {
+          "binding": "HYPERDRIVE",
+          "id": "ba2652f40f864918a2da0849f24d12a2",
+          "localConnectionString": "{{DATABASE_URL}}"
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          { "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
+          { "name": "SPACE_DO", "class_name": "SpaceDO" }
+        ]
+      }
+    },
+    "production": {
+      "name": "baseout-server"
+    },
+    "staging": {
+      "name": "baseout-server-staging"
+    }
+  }
+}

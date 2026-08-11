@@ -115,7 +115,7 @@ For all cross-component reactive state in the Astro app, use [`nanostores`](http
 - In non-Astro islands (React/Vue/Solid/etc.), use the matching `@nanostores/<framework>` hook (e.g. `useStore($account)`). In vanilla `<script>` blocks, import the atom directly and use `.subscribe()` / `.get()` / `.set()`.
 - Keep stores small and serializable. Derive composite values via `computed`.
 - Never store secrets, auth tokens, or sensitive PII in a client-side store. Server-only state stays server-only.
-- Reset stores on logout. The logout handler must clear every user-scoped store (see [src/components/layout/Sidebar.astro](../src/components/layout/Sidebar.astro)'s logout handler for the pattern).
+- Reset stores on logout. The logout handler must clear every user-scoped store (see [src/components/patterns/AppShellSidebar.astro](../src/components/patterns/AppShellSidebar.astro)'s logout handler for the pattern).
 
 ## 5. Commit Hygiene: No Stray Console Logs
 
@@ -131,6 +131,24 @@ Debug output must not ship. Before any commit — especially anything destined f
 - **Pushing to `origin/main`:** Never push to `main` without explicit user approval. If any `console.*` survived review, stop and surface each occurrence (file + line) to the user before the push — do not proceed until the user explicitly approves each one or asks you to remove it.
 - **PRs:** CI lint (`no-console` ESLint rule) must be green. A failing `no-console` check blocks merge — do not disable the rule to get green.
 - **Never** use `git commit --no-verify` to bypass the pre-commit hook that checks for console statements.
+
+## 5.5. Schema Changes Must Migrate Before They Ship
+
+If a change adds, removes, renames, or retypes a column in [src/db/schema/](../src/db/schema/) — or touches a Drizzle schema in any way that produces a new file under [drizzle/](../drizzle/) — the migration **must be applied to the dev DB in the same change that introduces the code that reads or writes the new column**. Schema-aware SSR will 404 (catch-all) or 500 the moment a `SELECT` references a missing column, and the failure mode is opaque (no helpful error in the rendered page).
+
+**Rules:**
+
+- After running `pnpm db:generate` (or hand-writing a migration), run `pnpm db:migrate` before exercising any UI that touches the affected table. Both scripts live in [package.json](../package.json).
+- `pnpm dev` runs `scripts/check-migrations.mjs` automatically as part of `scripts/launch.mjs`. If the journal under [drizzle/meta/](../drizzle/meta/) lists more migrations than the `drizzle.__drizzle_migrations` tracking table has applied rows, dev startup bails with the exact `pnpm db:migrate` command to run. **Do not bypass this gate by editing the journal.**
+- If a Drizzle column read fails at SSR time and renders a generic 404 / 500, this is almost always schema drift — run `pnpm db:check` first before debugging the page logic.
+- For changes that intentionally land schema and code in separate PRs (e.g. expand-then-contract refactors): note the order explicitly in the OpenSpec proposal's `tasks.md` so reviewers see the dependency.
+
+## 5.6. Don't Hand-Read or Hand-Write `.test.ts` Files As Routes
+
+`src/pages/api/` includes co-located test files (`*.test.ts`). Astro file-based routing scans all `.ts` files in `src/pages/` — co-located tests are tolerated because they export no `GET` / `POST` / etc. handlers. When adding a new route in a nested directory:
+
+- Place the test file beside the route (`route.ts` + `route.test.ts`).
+- Never import `cloudflare:workers` at module top of a test file — `vi.mock('cloudflare:workers', () => ({ env: {} }))` before the dynamic `await import('./route')`, mirroring the existing `backup-runs.test.ts` pattern.
 
 ---
 
@@ -151,6 +169,40 @@ When building UI/UX components and pages in this Astro project, follow these sta
 - Keep components single-responsibility (DRY principle)
 - Reuse existing UI components from `src/components/ui/` before creating new ones
 - Use design tokens from @opensided/theme instead of hardcoded values
+
+### 2.5 Component Catalogs — daisyUI-first, and keep them in lockstep
+
+The UI has **two catalogs**, and every UI change references them:
+
+- **Storybook** (`pnpm --filter @baseout/web storybook`, :6006) — the component-level
+  catalog. Each `src/components/ui/*.astro` is rendered in isolation across its
+  prop/variant matrix via Astro's Container API (`.storybook/render-astro.ts`).
+- **`/styleguide`** in `apps/design` (the designer's "Storybook") — the design-system
+  source of truth: Foundations (tokens), Primitives, Patterns, with the "when to use"
+  rules and provenance tags (daisyUI / daisyUI+custom / Custom).
+
+**Rules (enforced — a coverage test in `src/components/ui/stories-coverage.test.ts`
+fails CI if a tracked `ui/*.astro` has no sibling `*.stories.ts`):**
+
+- **Every component in `src/components/ui/` MUST have a matching `*.stories.ts`.**
+  Adding a ui component without a story is incomplete work.
+- **Before changing any ui component, open its Storybook story AND the daisyUI docs.**
+  Confirm the variant/size matrix still renders and any new variant uses
+  daisyUI / `@opensided/theme` classes (the §1 priority order) — never hand-rolled
+  CSS where a daisyUI utility exists. **Prefer a daisyUI primitive over a custom one.**
+- **New variant/size/state ⇒ add (or extend) the story in the same change.**
+- **Component intake order is mandatory: Storybook first, daisyUI second only.**
+  1. If an existing `src/components/ui/*.astro` or `src/components/patterns/*.astro` component covers the need, use it
+     and update its story for any new prop, variant, or state.
+  2. If no Storybook component exists, use daisyUI markup directly and update the
+     `apps/design` `/styleguide` entry that documents the pattern.
+  3. Promote inline daisyUI markup into a new Storybook component (`ui/` or `patterns/`)
+     when a second real call site exists or a product-specific API is clearly useful.
+  4. Do not ship custom Astro wrappers, scoped `<style>` blocks, or bespoke CSS files
+     for UI that Storybook or daisyUI already covers.
+- **Storybook reviews structure + styling only — NOT client behavior.** The Container
+  API does not run `.astro` `<script>` blocks (e.g. `Modal`'s auto-open); use a Storybook
+  `play` function, and validate real behavior in `apps/design` (a live Astro server).
 
 ### 3. Mobile-First Approach
 - Design and build for mobile devices first

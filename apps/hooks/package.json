@@ -3,20 +3,26 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Public Airtable webhook receiver at webhooks.baseout.com. See ./openspec/proposal.md.",
+  "description": "Public Airtable webhook receiver at webhooks.baseout.com. See openspec/changes/hooks/proposal.md.",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "node scripts/dev.mjs",
     "build": "tsup src/index.ts --format esm --dts",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "vitest run"
   },
   "dependencies": {
     "@baseout/db-schema": "workspace:*",
-    "@baseout/shared": "workspace:*"
+    "@baseout/shared": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240924.0",
-    "wrangler": "^3.78.0"
+    "wrangler": "^4.61.1",
+    "vitest": "^4.1.5",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0"
   }
 }

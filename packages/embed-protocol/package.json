@@ -1,0 +1,26 @@
+{
+  "name": "@baseout/embed-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The postMessage contract between an embedding host wrapper (Airtable data/interface extensions, Chrome extension) and the embedded Baseout web app: message envelope + catalog, handshake with origin locking, and the ancestor-allowlist parser shared by the child bridge and the web frame-ancestors header.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.0",
+    "vitest": "^3.0.0"
+  }
+}

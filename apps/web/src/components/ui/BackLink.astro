@@ -1,0 +1,16 @@
+---
+import { cn } from '../../lib/ui';
+
+interface Props {
+  href: string;
+  label?: string;
+  class?: string;
+}
+
+const { href, label = 'Back', class: className = '' } = Astro.props;
+---
+
+<a href={href} class={cn('inline-flex items-center gap-2 text-sm font-medium text-base-content/65 transition-colors hover:text-primary', className)}>
+  <span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span>
+  <span>{label}</span>
+</a>

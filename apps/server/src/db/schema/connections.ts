@@ -1,0 +1,59 @@
+// MIRROR of apps/web/src/db/schema/core.ts:196 (canonical writer).
+//
+// apps/web owns the connections table — its OAuth callback INSERTs/UPDATEs
+// rows, and the master DB migrations are generated from apps/web/drizzle/.
+// This mirror declares the columns the engine reads (id, status, the _enc
+// tokens, expiry, scopes, platform_config, created_at — read by the
+// SpaceDO scheduler in Phase B for `ORDER BY created_at DESC` recency).
+// modified_at / invalidated_at mirror apps/web columns for typed reads.
+// Columns the engine neither reads nor writes (display_name, scope,
+// space_id, max_concurrent_sessions, last_used_at, created_by_user_id)
+// are intentionally omitted — the omission documents intent, and adding
+// columns later is one line.
+//
+// Per CLAUDE.md §5.3: "apps/server mirrors specific tables… with header
+// comments naming the canonical migration source." This file MUST NOT be
+// migrated against — never `drizzle-kit push` from apps/server.
+
+import { jsonb, pgSchema, text, timestamp } from "drizzle-orm/pg-core";
+
+const baseout = pgSchema("baseout");
+
+export const connections = baseout.table("connections", {
+  id: text("id").primaryKey(),
+  organizationId: text("organization_id").notNull(),
+  platformId: text("platform_id").notNull(),
+  status: text("status").notNull(),
+  // Canonical status set: 'active' | 'invalid' | 'refreshing' | 'pending_reauth'
+  displayName: text("display_name"),
+  // User-given label (e.g. "Main Airtable Account") — read by the
+  // notifications feed (server-notifications-inbox) for connection-broken
+  // row copy.
+  accessTokenEnc: text("access_token_enc").notNull(),
+  refreshTokenEnc: text("refresh_token_enc"),
+  tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),
+  scopes: text("scopes"),
+  platformConfig: jsonb("platform_config"),
+  // airtable: { at_user_id, at_workspace_id, is_enterprise_scope }
+  invalidatedAt: timestamp("invalidated_at", { withTimezone: true }),
+  oauthRefreshClaimId: text("oauth_refresh_claim_id"),
+  oauthRefreshClaimedAt: timestamp("oauth_refresh_claimed_at", {
+    withTimezone: true,
+  }),
+  oauthRefreshLastError: text("oauth_refresh_last_error"),
+  // Engine-WRITTEN mirror columns (canonical migration: apps/web
+  // drizzle/0026_refresh_token_expiry.sql). refresh_token_expires_at is
+  // written on every refresh persist (idle-expiry clock for keep-alive);
+  // pending_reauth_at is stamped when the refresh fails to pending_reauth.
+  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
+    withTimezone: true,
+  }),
+  pendingReauthAt: timestamp("pending_reauth_at", { withTimezone: true }),
+  modifiedAt: timestamp("modified_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  // read by the SpaceDO scheduler (Phase B of
+  // baseout-backup-schedule-and-cancel) to pick the most-recent active
+  // Airtable connection per Org via `ORDER BY created_at DESC LIMIT 1`.
+});
+
+export type ConnectionRow = typeof connections.$inferSelect;

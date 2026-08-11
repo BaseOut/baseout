@@ -1,19 +1,29 @@
 ---
 import Card from '../components/ui/Card.astro';
 import Button from '../components/ui/Button.astro';
+import Alert from '../components/ui/Alert.astro';
+import BackupHistoryWidget from '../components/patterns/BackupHistoryWidget.astro';
 import ConnectAirtableModal from './ConnectAirtableModal.astro';
 import { buildDashboardModel } from '../lib/dashboard';
 import type { AccountContext } from '../lib/account';
 import type { IntegrationsState } from '../stores/connections';
+import type { BackupRunSummary } from '../lib/backup-runs/types';
 
 interface Props {
   account: AccountContext | null;
   integrations: IntegrationsState;
   showSuccessModal: boolean;
   errorReason: string | null;
+  initialRuns?: BackupRunSummary[];
 }
 
-const { account, integrations, showSuccessModal, errorReason } = Astro.props;
+const {
+  account,
+  integrations,
+  showSuccessModal,
+  errorReason,
+  initialRuns = [],
+} = Astro.props;
 const model = buildDashboardModel(account);
 
 const hasAirtableConnection = integrations.connections.some(
@@ -51,7 +61,7 @@ const errorMessage = errorReason
   : null;
 ---
 
-<div class="space-y-8 animate-in fade-in duration-700">
+<div class="space-y-8">
 
   <!-- Welcome header -->
   <header>
@@ -64,9 +74,7 @@ const errorMessage = errorReason
   </header>
 
   {errorMessage && (
-    <div role="alert" class="alert alert-error">
-      <span>{errorMessage}</span>
-    </div>
+    <Alert variant="error">{errorMessage}</Alert>
   )}
 
   <!-- Org / Space / Next-step cards -->
@@ -104,9 +112,10 @@ const errorMessage = errorReason
           data-open-modal="connect-airtable-modal"
         >
           <span
-            class="material-symbols-outlined icon-md mr-1"
+            class:list={['iconify', `lucide--${effectiveNextStep?.icon ?? 'link'}`, 'icon-md', 'mr-1']}
             data-dashboard-next-step-icon
-          >{effectiveNextStep?.icon ?? ''}</span>
+            aria-hidden="true"
+          ></span>
           Continue setup
         </Button>
       </div>
@@ -119,6 +128,10 @@ const errorMessage = errorReason
       </h3>
     </Card>
   </div>
+
+  {account?.space?.id && hasAirtableConnection && (
+    <BackupHistoryWidget spaceId={account.space.id} runs={initialRuns} />
+  )}
 
   <!-- Secondary cards (generic scaffolding, out of scope for hydration) -->
   <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -138,9 +151,9 @@ const errorMessage = errorReason
      <Card variant="outlined">
         <h3 class="font-bold mb-4">Quick Links</h3>
         <ul class="space-y-2">
-           <li><a href="/integrations" class="text-sm text-base-content/60 hover:text-primary flex items-center gap-2 group"><span class="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">link</span> Manage integrations</a></li>
-           <li><a href="/settings" class="text-sm text-base-content/60 hover:text-primary flex items-center gap-2 group"><span class="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">settings</span> Space settings</a></li>
-           <li><a href="/help" class="text-sm text-base-content/60 hover:text-primary flex items-center gap-2 group"><span class="material-symbols-outlined text-[18px] group-hover:translate-x-1 transition-transform">help_center</span> Documentation</a></li>
+           <li><a href="/integrations" class="text-sm text-base-content/60 hover:text-primary flex items-center gap-2 group"><span class="iconify lucide--link text-[18px] group-hover:translate-x-1 transition-transform" aria-hidden="true"></span> Manage integrations</a></li>
+           <li><a href="/settings" class="text-sm text-base-content/60 hover:text-primary flex items-center gap-2 group"><span class="iconify lucide--settings text-[18px] group-hover:translate-x-1 transition-transform" aria-hidden="true"></span> Space settings</a></li>
+           <li><a href="/help" class="text-sm text-base-content/60 hover:text-primary flex items-center gap-2 group"><span class="iconify lucide--life-buoy text-[18px] group-hover:translate-x-1 transition-transform" aria-hidden="true"></span> Documentation</a></li>
         </ul>
      </Card>
   </div>
@@ -196,7 +209,8 @@ const errorMessage = errorReason
     setHidden('[data-dashboard-next-step]', !next);
     setHidden('[data-dashboard-next-step-done]', !!next);
     setText('[data-dashboard-next-step-label]', next?.label ?? '');
-    setText('[data-dashboard-next-step-icon]', next?.icon ?? '');
+    const iconNode = document.querySelector<HTMLElement>('[data-dashboard-next-step-icon]');
+    if (iconNode && next?.icon) iconNode.className = `iconify lucide--${next.icon} icon-md mr-1`;
   }
 
   $dashboard.subscribe((state) => {

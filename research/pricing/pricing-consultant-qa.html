@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Baseout — Pricing Engagement Q&A</title>
+<style>
+body { font-family: Arial, sans-serif; font-size: 11pt; line-height: 1.5; color: #202124; max-width: 8in; margin: 40px auto; padding: 0 24px; }
+h1 { font-size: 20pt; } h2 { font-size: 16pt; border-bottom: 2px solid #202124; padding-bottom: 4px; margin-top: 28px; }
+h3 { font-size: 13pt; margin-top: 22px; }
+table { border-collapse: collapse; margin: 10px 0; width: 100%; }
+th, td { border: 1px solid #999; padding: 5px 8px; font-size: 10pt; text-align: left; vertical-align: top; }
+th { background: #eee; }
+blockquote { border-left: 4px solid #f4b400; background: #fef7e0; margin: 10px 0; padding: 8px 14px; }
+code { font-family: 'Courier New', monospace; font-size: 10pt; background: #f1f3f4; padding: 0 3px; }
+hr { border: none; border-top: 1px solid #ccc; margin: 24px 0; }
+li { margin: 3px 0; }
+</style></head><body>
+<h1>Baseout — Pricing Engagement Q&amp;A</h1>
+<p><strong>Prepared:</strong> July 23, 2026 · <strong>For:</strong> pricing consultant data request
+<strong>Sources:</strong> <code>shared/Baseout_Features.md</code> (v1.1, authoritative), <code>shared/Pricing_Credit_System.md</code>, <code>overview/pricing/Baseout_Pricing_Decision_Inputs.md</code>, <code>overview/pricing/Baseout_Pricing_Strategy_Briefing.md</code>, <code>overview/features/Baseout_GTM_Marketing_Inputs.md</code>, <code>research/customers/*</code> (verified desk research + segments workshop), and the two data-request CSVs in this directory.</p>
+<blockquote>
+<p><strong>Honesty key:</strong> Answers marked <strong>[DOCUMENTED]</strong> trace to spec/research. <strong>[INTERNAL DRAFT]</strong> = an internal position offered as a strawman, explicitly open for the consultant to challenge. <strong>[FOUNDER DIRECTION / FOUNDER ANSWER]</strong> = provided directly by the founder (dated) during the July 2026 review — these supersede conflicting statements in older internal docs. <em>(All items originally marked [NOT ON RECORD] were resolved in founder review, July 25, 2026.)</em></p>
+</blockquote>
+<hr>
+<h2>Goals &amp; Positioning</h2>
+<h3>Q: What are your goals or revenue and growth targets for the relaunch (target MRR/ARR, target ACV, target gross margin %, etc.)?</h3>
+<p><strong>[FOUNDER DIRECTION, July 25, 2026]</strong> Directional targets, explicitly not hard commitments:</p>
+<ul>
+<li><strong>Revenue goal: ~$500K ARR within 12–18 months of launch</strong> (vs. the $132.7K legacy ARR baseline — roughly 3.8×).</li>
+<li><strong>Target average customer value: $100–200/month</strong> (vs. the legacy average of $33.20/mo — i.e., the ladder must center customers on the Growth ($99) / Pro ($199) band, not the entry tiers). Implied account math: $500K ARR at $100–200/mo average ≈ <strong>210–420 customers</strong> — comparable in count to the existing legacy base, at ~3–6× the per-account value.</li>
+<li><strong>No ACV or gross-margin % target yet</strong> — the founder has explicitly flagged that Baseout&#39;s shift from On2Air&#39;s mostly-fixed costs to <strong>per-usage infrastructure costs (R2, D1, hosted PostgreSQL)</strong> is not yet well understood, and has commissioned a usage-cost/margin analysis (see the margin question below and <code>research/pricing/infrastructure-cost-model.md</code>) before setting one.</li>
+<li><strong>Legacy conversion expectation:</strong> On2Air customers transitioning at sunset will see <strong>an increase from what they pay today, but at a grandfathered discount off Baseout list prices</strong> — i.e., grandfathering means a permanent-or-temporary discount vs. list, <em>not</em> a price freeze at legacy levels. (Note: this refines the older internal mapping in <code>Pricing_Credit_System.md</code> §6, which had some cohorts paying the same or less — treat the founder direction as current.)</li>
+</ul>
+<p>Still-documented supporting context: the founders&#39; qualitative success criteria (<em>easy to understand · captures customers&#39; different intents · sound against the cost structure · gives the legacy customers (~330 active subscriptions) a respectful path · leaves room for the V2 roadmap</em>, Decision Inputs §7); the &quot;On2Air was historically underpriced&quot; belief; and category ambition references (OwnBackup&#39;s $1.9B exit; Rewind&#39;s 25K+ orgs; Airtable&#39;s 500K+ organizations).</p>
+<h3>Q: How do you want Baseout to be perceived in the Airtable ecosystem?</h3>
+<p><strong>[DOCUMENTED]</strong> As <strong>essential infrastructure with an intelligence layer on top</strong> — specifically, the anchor vendor of a category we are actively creating: <strong>&quot;Airtable DevOps.&quot;</strong> The State of Airtable DevOps survey/report (not yet live — launching in the coming months, co-sponsored with BuiltOnAir) is the category-creation play, modeled on Gearset&#39;s Salesforce DevOps playbook. Two perception rules are firm:</p>
+<ol>
+<li><strong>Never lead with data recovery/restore</strong> — no third party can do restore truly well (record IDs can&#39;t be preserved via the API). Lead with backups-as-best-practice + schema/data intelligence; restore is the moment the product proves itself, not the pitch.</li>
+<li>The daily-use surface (schema changelog, health scores, docs) is what turns Baseout from an insurance policy into an <strong>admin console</strong> — that&#39;s the perception shift from the legacy product.</li>
+</ol>
+<h3>Q: What is the biggest flaw in your current monetization/structuring?</h3>
+<p><strong>[DOCUMENTED]</strong> — several, candidly:</p>
+<ol>
+<li><strong>Legacy model (On2Air) — founder framing (July 25, 2026):</strong> the tiers <em>do</em> scale with usage — record, attachment, and base allowances step up at each price point — so this is not a flat-regardless-of-usage model. The real flaws are subtler: <strong>(a) it doesn&#39;t fully capture the value delivered; (b) the tier allowances are over-generous — each price point permits more data capture than customers at that price typically need, giving headroom away; and (c) the structure is too simple to support where Baseout is going</strong> — a four-step count-cap ladder has no way to price the additional features, functionality, and usage variability of the new product (schema intelligence, restore counts, retention depth, AI operations, per-usage infrastructure). Within that structure, top-tier heavy users still consume far beyond their price (a Premium customer at full hourly utilization consumes enterprise-scale resources for $79.99), there&#39;s no expansion-revenue mechanism between tier jumps, and intelligence features were never monetized (Schemas was sunset).</li>
+<li><strong>New draft model&#39;s known structural risk:</strong> <strong>Dedicated PostgreSQL per Space at Business ($399/mo) with unlimited Spaces</strong> — a Business customer with 10 Spaces could consume ~$200–600/mo in database COGS against $399 revenue. This is flagged internally as the single largest margin hole in the design (Strategy Briefing §7.3). Needs capping, per-Organization provisioning, or add-on pricing.</li>
+<li><strong>Enforcement gap:</strong> the designed credit meter is not in code. Today the system can gate frequency, base caps, and trials — it cannot meter or bill usage. Any launch model has a sequencing dependency (Briefing §9).</li>
+</ol>
+<h3>Q: What pricing perception would you like to convey — economy, mid-tier, premium, other?</h3>
+<p><strong>[INTERNAL DRAFT]</strong> <strong>Mid-to-premium</strong>: intentionally priced above the legacy product and above the &quot;cheap utility&quot; bracket, justified by capability depth — but far below the enterprise-only alternatives (Stacksync&#39;s $1,000/mo floor). The public ladder starts at $49 (Launch); the price-sensitive low end ($29 Starter, $9.99 Bridge) is deliberately <strong>non-public</strong> so it captures without polluting the premium ladder. Value-for-money at the mid-tier, premium at the top where governance/AI live.</p>
+<hr>
+<h2>Differentiation &amp; Market</h2>
+<h3>Q: What is your USP? What makes you stand out?</h3>
+<p><strong>[DOCUMENTED]</strong> In priority order:</p>
+<ol>
+<li><strong>BYOS + BYODB</strong> — the only vendor offering both bring-your-own-storage and bring-your-own-database; competitors are consolidating onto their own hosted storage. On static BYOS plans, record data never touches Baseout servers (streams through memory). This is the privacy/compliance story.</li>
+<li><strong>Most storage destinations in the market</strong> — Google Drive, Dropbox, Box, OneDrive (only vendor with OneDrive), S3, R2, Frame.io, custom.</li>
+<li><strong>The schema-intelligence layer in a vacant category</strong> — visualization, changelog, health scores, AI docs. The only dedicated competitor (On2Air Schemas — our own predecessor product) shut down; nothing native exists at any Airtable tier.</li>
+<li><strong>Automatic automation/interface backup via Airtable MCP</strong> <em>(updated July 25, 2026)</em> — automations and interfaces are invisible to the Airtable REST API (verified through June 2026), which is why no competitor captures them. <strong>Airtable&#39;s MCP server now exposes automations and interfaces, and Baseout can back them up automatically through it</strong> — no manual submission required for customers who enable MCP access. The original intake model (Inbound API, scripts, forms) remains as the path for customers who don&#39;t enable MCP and for gathering information beyond what MCP exposes. Either way, Baseout captures the part of a base no other backup vendor touches — the moat is now execution speed (competitors could in principle follow via MCP) rather than pure impossibility, which argues for shipping and marketing it early.</li>
+<li><strong>The SQL layer bundled with governed backup</strong> <em>(roadmap, not launch — founder direction July 25, 2026: SQL mode will likely not be ready at launch and should not be highlighted in the original pricing; use as vision/roadmap context only)</em> — post-Sequin, alternatives are sync-only and either capped tiny at low prices (Whalesync $20/mo = 500 records) or enterprise-priced (Stacksync $1,000/mo floor).</li>
+<li><strong>Credits instead of artificial limits</strong> — no record/attachment caps; the fairness story for migration.</li>
+<li><strong>Zero-egress restores</strong> (Cloudflare R2) — the cost that scares every other backup vendor is nearly free for us.</li>
+</ol>
+<h3>Q: Tell me about the target market/customer group(s). Does that differ from the legacy product?</h3>
+<p><strong>[DOCUMENTED]</strong> Four segments (full profiles in <code>research/pricing/customer-segments-workshop-1.md</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Segment</th>
+<th>Profile</th>
+<th>Tier territory</th>
+<th>Sensitivity</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Solo/small ops admin</strong></td>
+<td>1 org, 1–3 bases, set-and-forget peace of mind</td>
+<td>Trial/Starter/Launch</td>
+<td>High</td>
+</tr>
+<tr>
+<td><strong>Airtable consultant/agency</strong></td>
+<td>Implements/administers Airtable for many clients; wants professional artifacts (diagrams, health reports) to show clients. <strong>Founder direction (July 25, 2026): consultants are a <em>channel</em>, not an umbrella account</strong> — each client organization pays for its own subscription; consultants join client accounts as admins and switch between accounts, and earn <strong>referral/affiliate commissions</strong> for signing clients up on their own subscriptions</td>
+<td>Own account: Launch/Growth; primary value via the partner/referral program across client accounts</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td><strong>RevOps/BizOps at a scale-up</strong></td>
+<td>Business-critical Airtable; daily/instant backup, SQL for BI, Slack alerts</td>
+<td>Pro/Business</td>
+<td>Medium-low</td>
+</tr>
+<tr>
+<td><strong>Enterprise IT/compliance</strong></td>
+<td>Governance mandates, SSO, data sovereignty (BYODB)</td>
+<td>Enterprise</td>
+<td>Low — gated on our SOC 2 timeline</td>
+</tr>
+</tbody></table>
+<p><strong>Difference from legacy:</strong> yes, materially. The ~330 On2Air subscriptions (July 2026 Stripe export) bought a static backup product — but note the subscription analysis corrected the &quot;smaller/simpler&quot; assumption: Essentials ($29.99) is the modal plan, and <strong>Professional+Premium hold 58.5% of legacy ARR</strong>, so the base already contains a substantial higher-value cohort. The relaunch deliberately reaches up-market (consultants, RevOps, enterprise) with the intelligence/SQL/governance surface the legacy product never had. Caution flagged internally still holds: don&#39;t let the legacy base&#39;s shape cap the ambition — it over-represents the insurance job because that&#39;s all On2Air sold.</p>
+<h3>Q: What is the primary event that forces a user to upgrade their plan?</h3>
+<p><strong>[DOCUMENTED]</strong> Ranked by design intent:</p>
+<ol>
+<li><strong>Backup frequency (the RPO event)</strong> — &quot;how much data can you afford to lose?&quot; is the strongest willingness-to-pay gate. Monthly→Weekly (Launch) →Daily (Pro) →Instant (Business). On static mode, frequency also multiplies credit burn, so the two levers reinforce each other.</li>
+<li><strong>Running out of transfer credits</strong> — the estate grew or cadence increased; add-on packs bridge, upgrades resolve (plan rates are always cheaper per credit than add-ons, by design).</li>
+<li><strong>Needing more Spaces</strong> — multi-estate organizations (departments, brands, environments); unlimited arrives at Growth $99. (Deliberately <strong>not</strong> a consultant-umbrella trigger — per founder direction, each consultant client pays for its own account; there is no plan under which one subscription covers many clients.)</li>
+<li><strong>The database ladder</strong> <em>(post-launch — see the SQL launch-scope note in the tiering answer)</em> — needing real SQL (Shared PG at Pro), isolation (Dedicated at Business), or sovereignty (BYODB at Enterprise).</li>
+<li><strong>Team members, retention windows, and API quotas</strong> as secondary nudges.</li>
+</ol>
+<p>There are deliberately <strong>no record/attachment-count limits</strong> — the legacy product&#39;s caps were removed as a migration selling point.</p>
+<h3>Q: Who are your main competitors? Please provide all available competitor data.</h3>
+<p><strong>[DOCUMENTED — verified against live pages July 23, 2026]</strong> Full detail in the data-request template: <strong><code>research/pricing/competitor-landscape.csv</code></strong> (28 rows: every competitor tier with pricing, model, limits, AI allowances, strengths/weaknesses vs. Baseout, URLs). Summary:</p>
+<table>
+<thead>
+<tr>
+<th>Competitor</th>
+<th>Category</th>
+<th>Price (verified 2026-07-23)</th>
+<th>vs. Baseout</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Airtable native snapshots</strong></td>
+<td>The &quot;do nothing&quot; default</td>
+<td>Bundled ($0–54/seat)</td>
+<td>Can&#39;t leave the platform; whole-base restore into a new base; no schema intelligence; no SQL</td>
+</tr>
+<tr>
+<td><strong>ProBackup</strong></td>
+<td>Direct backup</td>
+<td>Plus $31 / Pro $47 / Premium $86 per mo (storage-based; ~19–20% annual discount)</td>
+<td>Daily-only on all tiers; no automations/interfaces; no SQL; no BYOS</td>
+</tr>
+<tr>
+<td><strong>AirBackups</strong></td>
+<td>Direct backup</td>
+<td>$15/base/mo, $150/base/yr</td>
+<td>Single destination (GCS); per-base pricing scales badly</td>
+</tr>
+<tr>
+<td><strong>Whalesync</strong></td>
+<td>SQL/data sync</td>
+<td>Personal $5 / Starter $20 (Postgres) / Plus $40–200 / Pro $200–1,600 per mo</td>
+<td>Sync ≠ backup; low tiers cap at 250–500 records; 20% annual discount</td>
+</tr>
+<tr>
+<td><strong>Coefficient</strong></td>
+<td>Spreadsheet sync</td>
+<td>Free / $49 / $99 per user per mo</td>
+<td>Sheets-focused; not backup; per-seat model</td>
+</tr>
+<tr>
+<td><strong>Stacksync</strong></td>
+<td>SQL sync (enterprise)</td>
+<td>$1,000 / $3,000 / $4,200 per mo, billed annually</td>
+<td>$12K/yr floor; sync-only</td>
+</tr>
+<tr>
+<td><strong>Sequin</strong> †</td>
+<td>SQL layer</td>
+<td>—</td>
+<td>Shut down Oct 2025; customer data deleted — a cautionary tale that sells our story</td>
+</tr>
+<tr>
+<td><strong>On2Air Schemas</strong> †</td>
+<td>Schema</td>
+<td>—</td>
+<td>Shut down; the schema category is vacant</td>
+</tr>
+<tr>
+<td><strong>DIY scripts</strong></td>
+<td>Self-hosted</td>
+<td>$0 + engineering time</td>
+<td>&quot;Unreliable backups at best&quot; (the OSS author&#39;s own words); attachment URLs expire in ~2h</td>
+</tr>
+</tbody></table>
+<p><strong>Where no exact match exists (per your instruction):</strong> for the SQL/intelligence surface, the cost a prospect currently incurs is a Whalesync mid-tier ($120–200/mo at 10–50K records, sync only), a Stacksync contract ($1,000+/mo), a DIY ELT stack (Fivetran MAR pricing, &quot;widely considered expensive&quot;), or an engineer&#39;s time maintaining scripts. <em>(Launch-scope note: SQL mode is roadmap, not a launch feature — use this comparison as vision context and for post-launch expansion pricing, not as a launch-tier anchor.)</em> For governance, there is <strong>no product at any price</strong> — the substitute is Airtable Enterprise Scale audit logs (180 days, no record-level events) plus manual audit-response labor.</p>
+<p><strong>Adjacent market — Salesforce DevOps (the maturity pattern we are following):</strong> Baseout&#39;s category thesis is that Airtable is at the inflection Salesforce hit a decade ago — citizen-built apps became production infrastructure, and a backup/DevOps vendor ecosystem grew up around the platform and exited big. The consultant should review these vendors not as competitors we&#39;ll meet in a deal, but as the <strong>pricing and packaging pattern-book for where &quot;Airtable DevOps&quot; is headed</strong> (rows included in <code>competitor-landscape.csv</code>, flagged &quot;Adjacent market — Salesforce DevOps&quot;):</p>
+<ul>
+<li><strong>Own Company (ex-OwnBackup)</strong> — Salesforce backup/recovery leader; ~7,000 customers; <strong>acquired by Salesforce for $1.9B cash (Sep 2024)</strong> — the category&#39;s proof-of-exit. Peak valuation $3.35B (2021). Historically <del>$2.90/protected-user/mo with a $500/mo minimum (third-party estimate); its pricing page now redirects into salesforce.com — the endgame where the platform absorbs its backup vendor. The Salesforce-backup category clusters at **</del>$2.50–4/protected-user/mo** (Veeam, Druva, Metallic; Salesforce&#39;s own native Backup &amp; Restore is $10/user/mo).</li>
+<li><strong>Gearset</strong> — the Salesforce DevOps suite (deploy, CI/CD, backup); bootstrapped six years, then <strong>$55M growth investment at ~1,700 customers</strong>; author of the annual <em>State of Salesforce DevOps</em> report — the exact playbook our State of Airtable DevOps report copies.</li>
+<li><strong>Copado</strong> — Salesforce-native DevOps platform; <strong>$140M Series C at ~$1.2B valuation</strong> (2021); runs a competing report with the identical name — two vendors fighting over one report title is itself evidence that category-creation reports work.</li>
+<li><strong>Rewind</strong> — the multi-SaaS backup analog (Shopify/GitHub/QuickBooks); <strong>$65M Series B, 25,000+ organizations</strong> — and the closest <em>business-model</em> analog to Baseout: SMB price points ($19–99/mo Shopify flagship, verified July 2026), a platform-native value metric (order volume — the analog of Baseout&#39;s credits), 365-day history + unlimited storage as the headline, and retention depth + cloud-sync-to-your-own-S3 as the enterprise differentiators.</li>
+<li>Pattern stats worth quoting to buyers: <strong>87% of Salesforce teams back up their orgs or plan to</strong> (Gearset 2024); <strong>backup was the single most-adopted Salesforce DevOps practice at 70%</strong> (Gearset 2025). Nothing equivalent exists for Airtable yet — that&#39;s the white space.</li>
+</ul>
+<p>The pricing lessons from the analog (pricing verified July 24, 2026): Gearset prices <strong>each module on a different unit</strong> — deploy per admin seat ($215–320/user/mo), CI/CD per team ($550–1,100/team/mo), and notably <strong>Backup per Salesforce <em>end-user</em> with a monthly minimum ($2.75–3.50/user/mo, $275–350/mo floor)</strong> — i.e., the mature market prices <em>backup on estate size, not admin seats</em>, which directly validates Baseout&#39;s estate-based (credits) approach over per-seat. Gearset&#39;s backup tiers differentiate on <strong>high-frequency backup jobs</strong> — validating Baseout&#39;s Instant-at-Business gate. Copado shows the other motion: a free self-serve wedge (Essentials $0/$99/$249 per user/mo) under a sales-led enterprise platform (median contract ~$47K/yr per third-party transaction data). The packaging arc transfers cleanly: backup as the wedge → DevOps/intelligence as expansion → compliance as the enterprise gate. What doesn&#39;t transfer: the absolute price levels ($275/mo backup <em>floors</em>) assume Salesforce-scale budgets; Airtable estates budget an order of magnitude lower today — the gap between those two numbers is the category&#39;s growth thesis.</p>
+<hr>
+<h2>Legacy Product &amp; Pricing History</h2>
+<h3>Q: What is the legacy product&#39;s current pricing/structure?</h3>
+<p><strong>[DOCUMENTED]</strong> On2Air Backups (what our ~330 active subscriptions pay today):</p>
+<table>
+<thead>
+<tr>
+<th>Plan</th>
+<th>Price/mo</th>
+<th>Bases</th>
+<th>Records</th>
+<th>Attachments</th>
+<th>Restores</th>
+<th>Max frequency</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Basic (free)</td>
+<td>$0</td>
+<td>1</td>
+<td>~1,000</td>
+<td>25</td>
+<td>1</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Starter</td>
+<td>$9.99</td>
+<td>1</td>
+<td>50,000</td>
+<td>2,500</td>
+<td>1/mo</td>
+<td>Monthly</td>
+</tr>
+<tr>
+<td>Essentials</td>
+<td>$29.99</td>
+<td>15</td>
+<td>250,000</td>
+<td>25,000</td>
+<td>1/mo</td>
+<td>Weekly</td>
+</tr>
+<tr>
+<td>Professional</td>
+<td>$49.99</td>
+<td>50</td>
+<td>1,000,000</td>
+<td>500,000</td>
+<td>5/mo</td>
+<td>Daily</td>
+</tr>
+<tr>
+<td>Premium</td>
+<td>$79.99</td>
+<td>250</td>
+<td>5,000,000</td>
+<td>1,000,000</td>
+<td>10/mo</td>
+<td>Hourly</td>
+</tr>
+<tr>
+<td>Enterprise</td>
+<td>Custom</td>
+<td>250+</td>
+<td>Custom</td>
+<td>Custom</td>
+<td>Custom</td>
+<td>Custom</td>
+</tr>
+</tbody></table>
+<p>Flat fee regardless of actual usage; frequency hard-gated by tier; count-based caps did the limiting.</p>
+<h3>Q: How was current (draft) pricing and tiering derived?</h3>
+<p><strong>[DOCUMENTED]</strong> The draft ladder (Trial $0 / Launch $49 / Growth $99 / Pro $199 / Business $399 / Enterprise custom, with non-public Starter $29 and Bridge $9.99; annual ≈ 20% off) was derived internally from four anchors: (1) legacy On2Air prices as the migration floor; (2) Airtable&#39;s own per-seat spend ($24–54/seat) as a budget proxy; (3) competitor references; (4) cost floors from the infrastructure analysis. <strong>Update (founder direction, July 24, 2026):</strong> anchor (1) is demoted — with the coexist-then-sunset launch sequencing (see the Legacy Migration section), Baseout&#39;s launch pricing is to be set <strong>independently</strong> of On2Air&#39;s price points; legacy anchors inform only the later transition plan. The <strong>credit meter</strong> was chosen over count caps deliberately — one abstract unit unifying backup volume × frequency, restores, API and AI usage, with the explicit fairness story &quot;no more artificial limits.&quot; <strong>All of this is offered as a strawman, not a commitment</strong> — internal drafts were intentionally withheld from the Decision Inputs doc to avoid anchoring, and this engagement exists to pressure-test the model. Known internal inconsistencies are catalogued honestly in Strategy Briefing §10 (e.g., a $49-vs-$59 Launch price conflict, two incompatible trial definitions, a storage-credits contradiction in the credit doc).</p>
+<h3>Q: Do you have initial tiering/pricing you&#39;d like to discuss?</h3>
+<p><strong>[INTERNAL DRAFT]</strong> Yes — the full draft is in <code>shared/Baseout_Features.md</code> §3–5:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Trial</th>
+<th>Launch</th>
+<th>Growth</th>
+<th>Pro</th>
+<th>Business</th>
+<th>Enterprise</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Monthly</td>
+<td>$0</td>
+<td>$49</td>
+<td>$99</td>
+<td>$199</td>
+<td>$399</td>
+<td>Custom</td>
+</tr>
+<tr>
+<td>Annual (eff./mo)</td>
+<td>$0</td>
+<td>$39</td>
+<td>$79</td>
+<td>$159</td>
+<td>$319</td>
+<td>Custom</td>
+</tr>
+<tr>
+<td>Credits/mo</td>
+<td>1,000</td>
+<td>15,000</td>
+<td>40,000</td>
+<td>120,000</td>
+<td>400,000</td>
+<td>Custom</td>
+</tr>
+<tr>
+<td>Frequency</td>
+<td>Monthly</td>
+<td>Weekly</td>
+<td>Weekly</td>
+<td>Daily</td>
+<td>Daily + Instant</td>
+<td>Daily + Instant</td>
+</tr>
+<tr>
+<td>Database</td>
+<td>D1 schema-only</td>
+<td>D1 full</td>
+<td>D1 full</td>
+<td>Shared PG</td>
+<td>Dedicated PG</td>
+<td>BYODB</td>
+</tr>
+<tr>
+<td>Spaces</td>
+<td>1</td>
+<td>3</td>
+<td>Unlimited</td>
+<td>Unlimited</td>
+<td>Unlimited</td>
+<td>Unlimited</td>
+</tr>
+</tbody></table>
+<p>Plus non-public <strong>Starter $29</strong> and <strong>On2Air Bridge $9.99</strong>, credit add-on packs ($25–420/mo), seat add-ons ($6–12), storage overage ($0.50/GB R2; $1–3/GB DB), and credit overage ($0.004–0.008/cr by tier, hard-cap default).</p>
+<blockquote>
+<p><strong>Launch-scope note (founder direction, July 25, 2026):</strong> the <strong>Database row above is roadmap, not launch</strong> — SQL mode (SQL REST API, Direct SQL, the Shared/Dedicated PostgreSQL ladder) will likely not be ready at launch and should not be highlighted in the original pricing. Launch tiers should differentiate on what ships at launch (frequency, retention, Spaces, credits, schema intelligence); the database ladder becomes post-launch expansion packaging when it lands.</p>
+</blockquote>
+<h3>Q: How are/will prospective clients find your product?</h3>
+<p><strong>[DOCUMENTED]</strong> Channels, in rough priority: the <strong>Airtable Marketplace listing</strong> (planned — organic discovery); the Airtable community fabric (Airtable Community forum, r/airtable, TableForums, <strong>BuiltOnAir</strong> podcast/community — the upcoming survey is co-sponsored with them); consultant/agency networks and Airtable&#39;s partner directory; the <strong>State of Airtable DevOps report</strong> as the category-marketing engine; the inherited On2Air footprint (years of SEO, forum presence, existing customer word-of-mouth); and the <strong>pre-registration schema visualization hook</strong> — OAuth in and see your base&#39;s schema diagram <em>before</em> creating an account (stays free; it&#39;s the top-of-funnel conversion device).</p>
+<h3>Q: Does the current billing platform support usage-based credit meters/overages?</h3>
+<p><strong>[DOCUMENTED]</strong> Two-part answer:</p>
+<ul>
+<li><strong>Stripe (the platform): yes.</strong> One subscription per organization, one subscription item per platform (multi-platform-ready), entitlements resolved from product metadata, metered/usage billing, seats, coupons, per-item trials — no known blocker to tiered, usage-based, hybrid, or seat models. Plan limits live in database rows, not code, so packages change without deploys.</li>
+<li><strong>Our pipeline (the implementation): not yet.</strong> The credit ledger, metering cron, and auto-billing are designed (full DB architecture in <code>Pricing_Credit_System.md</code> §8) but <strong>not in code</strong>. Today&#39;s enforceable surface: frequency gating, base caps, trial limits, per-run usage <em>recording</em>. A launch model can only enforce what&#39;s built — this is the central sequencing decision.</li>
+</ul>
+<hr>
+<h2>Features, Costs &amp; Value</h2>
+<h3>Q: Please list ALL features and descriptions for product tiering with associated costs to be baked into price.</h3>
+<p><strong>[DOCUMENTED]</strong> Delivered in the data-request template: <strong><code>research/pricing/feature-value-matrix.csv</code></strong> — 67 features across Backup / Restore / Schema / Data / Automations / Interfaces / AI / Analytics / Governance / Integrations / Notifications / Admin, each with its primary value metric, cost-to-Baseout character, tier placement per the Features spec, and build status (critical: unshipped features can&#39;t carry launch price promises).</p>
+<h3>Q: Please provide a &quot;value&quot; (estimated perceived customer value) for each feature.</h3>
+<p><strong>[DOCUMENTED — as estimates]</strong> Included in the same CSV: an Essential/High/Med/Low rating plus a dollar estimate per feature. Each dollar figure is anchored to verified market data (ProBackup&#39;s ladder, Whalesync&#39;s record-count pricing, Stacksync&#39;s floor, On2Air&#39;s legacy prices) or to demand evidence from the research (e.g., schema changelog rated Essential because the category is vacant and the pain evidence is strongest there). Treat the column as a workshop starting position, not a conclusion.</p>
+<h3>Q: What is your average infrastructure cost per client?</h3>
+<p><strong>[DOCUMENTED — order-of-magnitude profiles for floor-setting]</strong> (Decision Inputs §5.4):</p>
+<table>
+<thead>
+<tr>
+<th>Profile</th>
+<th>Shape</th>
+<th>Monthly COGS</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Small static/BYOS</td>
+<td>1 base, 10K records, weekly to customer&#39;s Drive</td>
+<td><strong>&lt; $0.50</strong></td>
+</tr>
+<tr>
+<td>Medium managed</td>
+<td>5 bases, 250K records, 10 GB attachments, weekly to R2</td>
+<td><strong>~$1–3</strong></td>
+</tr>
+<tr>
+<td>Large dynamic-shared</td>
+<td>20 bases, 1M records, daily incremental into shared PG</td>
+<td><strong>~$5–15</strong></td>
+</tr>
+<tr>
+<td>Heavy dedicated</td>
+<td>50 bases, 5M records, 200 GB, daily + dedicated PG, long retention</td>
+<td><strong>~$30–80+</strong></td>
+</tr>
+</tbody></table>
+<p>Base platform fixed costs are low hundreds of $/mo at launch scale. Credits are priced at roughly <strong>10–100× marginal cost</strong> — the meter&#39;s job is value capture and abuse prevention, not cost pass-through. Infrastructure billing exports (Cloudflare, DigitalOcean, Trigger.dev, Stripe) are available to firm these up.</p>
+<h3>Q: What features/attributes drive hosting and infrastructure costs the most?</h3>
+<p><strong>[DOCUMENTED]</strong> In order:</p>
+<ol>
+<li><strong>Dedicated PostgreSQL instances</strong> (~$19–60+/mo each) — the dominant step cost, and the flagged margin risk when combined with unlimited Spaces.</li>
+<li><strong>Storage retention</strong> — the quiet accumulator; activity meters reset monthly, storage promises don&#39;t. Smart Rolling Cleanup is the containment feature (not yet built — storage growth is currently unbounded).</li>
+<li><strong>Static-mode backup frequency</strong> — static re-transfers <em>everything</em> each run, so cost scales linearly with frequency even if nothing changed. (Dynamic inverts this: deltas only. Steering customers to dynamic is cheaper for us AND unlocks the upsell surface — a well-aligned asymmetry.)</li>
+<li><strong>Attachment volume</strong> — transfer compute + storage writes; ~$0.01/GB to move, ~$0.015/GB-month to keep on R2.</li>
+<li><strong>The initial-backup spike</strong> — first backup of a large base can be 100–200× steady-state usage; absorbed by onboarding credit buckets so the first invoice doesn&#39;t ambush anyone.</li>
+<li>What does <strong>not</strong> drive cost: restore/download egress (R2 zero-egress), API calls, seats, emails — all ~zero.</li>
+</ol>
+<h3>Q: How distinct are the new schema management features from standard backup features?</h3>
+<p><strong>[DOCUMENTED]</strong> Architecturally and commercially distinct. Backup is file-output (CSV/JSON to a destination); Schema is a <strong>database-backed intelligence capability</strong> — it requires Dynamic mode writing schema metadata to a queryable store, and it&#39;s the daily-use surface (changelog, health score, docs) versus backup&#39;s set-and-forget insurance. They share the ingestion pipeline but nothing else. Market-wise, schema intelligence is the <strong>vacant category</strong> (the only dedicated tool died; nothing native exists) while backup is contested — so schema features carry differentiation weight that backup features can&#39;t. The cheapest architectural trick in the product: schema-only D1 delivers this surface for pennies without hosting record data.</p>
+<h3>Q: Do you view schema visualization as a core feature in all tiers, or a premium upgrade?</h3>
+<p><strong>[INTERNAL DRAFT]</strong> <strong>Core-with-a-premium-ladder.</strong> Basic visualization is on every tier including Trial (via schema-only D1), and the pre-registration hook — see your schema diagram before you even sign up — is a firm commitment that stays free (it&#39;s the funnel). The premium ladder sits on top: relationship filtering (Starter+), changelog retention depth (30d→24mo), health-score configurability (Pro+), AI-generated docs (Pro+), export formats (PNG→SVG→PDF→embed). Rationale: visualization is the acquisition device; the <em>history and intelligence</em> around it is the monetization.</p>
+<h3>Q: How are AI credits consumed by the user?</h3>
+<p><strong>[DOCUMENTED]</strong> There is <strong>no separate AI credit currency</strong> — AI operations draw from the same unified transfer-credit meter as everything else: <strong>AI documentation generation = 10 credits/run; AI schema insight = 5 credits/run</strong> (rates DB-stored, tunable without deploys). Underlying COGS is cents per generation (Cloudflare Workers AI, open models). V2 AI (MCP server, RAG, chatbot) will carry real inference infrastructure and is expected to extend the same meter, priced at Business+.</p>
+<h3>Q: What is your estimated underlying API cost?</h3>
+<p><strong>[DOCUMENTED]</strong> The Airtable API itself is <strong>free</strong> — its constraint is rate limits (5 req/s per base; pagination at 100 records/request), which makes large backups cost <em>time</em>, not dollars. Our own marginal cost anchors (in the feature CSV&#39;s cost column, from Decision Inputs §5.2): 1,000 records transferred ≈ fractions of a cent; 1 GB attachments ≈ ~$0.01; R2 storage ~$0.015/GB-mo; D1 ~$0.75/GB-mo; shared PG $15–60/instance amortized; dedicated PG ~$19–60+/customer; AI generation ≈ cents; API call/SQL query/email ≈ zero. Stripe takes ~2.9% + $0.30.</p>
+<h3>Q: Should AI credits be bundled as a monthly allowance per tier, or sold as a separate top-up/add-on?</h3>
+<p><strong>[INTERNAL DRAFT — open for your recommendation]</strong> Current design: <strong>bundled in the unified meter</strong> (AI ops consume plan credits) with <strong>generic credit add-on packs</strong> ($25–420/mo) as the top-up path — no AI-specific SKU. Arguments for keeping it unified: one number for customers, one billing pipeline, COGS covered by the 10–100× credit margin. Argument for a separate AI allowance worth weighing: Airtable itself now bundles named AI credit allowances per plan (15K–25K/user/mo — verified July 2026), so the ecosystem is learning &quot;AI credits&quot; as a distinct concept; and V2 AI (RAG/chatbot) has real per-conversation inference costs that a flat transfer-credit rate may misprice. Genuinely undecided — a good workshop question.</p>
+<h3>Q: Are specific administrative guardrails reserved for enterprise/top tiers?</h3>
+<p><strong>[DOCUMENTED]</strong> Yes:</p>
+<ul>
+<li><strong>Enterprise only:</strong> BYODB (data never leaves their environment), SSO/SAML, dedicated CSM + SLA, Teams/PagerDuty channels, compliance reporting + SOC 2/GDPR tooling, data-sharing rules, Airtable Enterprise API, custom retention, AI skills/BYO-model, writeback, unlimited everything — <strong>including unlimited dedicated-database Spaces via contract (founder decision July 25, 2026: Business carries a dedicated-DB Space cap, value TBD).</strong></li>
+<li><strong>Business+:</strong> dedicated PG isolation, instant backup, Direct SQL, outbound webhooks, PII detection, audit trail, custom cleanup policies, the Governance capability, priority chat.</li>
+<li><strong>Deliberately NOT enterprise-gated:</strong> multi-Space management (unlimited at Growth $99 — it&#39;s the consultant magnet, not an enterprise gate) and audit <em>reports</em> (all tiers — provable backups are core to the trust story; only detailed log retention ladders up).</li>
+<li><strong>Constraint:</strong> SOC 2 is in progress (~6-month runway from April 2026) — Business/Enterprise can&#39;t be broadly marketed until certified.</li>
+</ul>
+<h3>Q: Do you have a margin % target or floor? Does it differ by tier?</h3>
+<p><strong>[FOUNDER DIRECTION, July 25, 2026 — floor on record]</strong> <strong>Gross-margin floor: ~75% per tier at heavy (P90) usage, with ~85% blended as the working target.</strong> Basis: the commissioned usage-cost analysis (<strong><code>research/pricing/infrastructure-cost-model.md</code></strong>, built from list prices verified July 25, 2026) shows every tier comfortably clears that floor at typical usage (blended infra+payments gross margin ≈ 88–92%), so the floor is a guardrail, not a stretch. Context: the cost structure shifts from On2Air&#39;s mostly-fixed costs to per-usage costs (R2, D1/PostgreSQL, per-run compute) — the model quantifies them per tier. Documented cost physics that inform the number: credits price at 10–100× marginal cost; small static/BYOS customers cost &lt;$0.50/mo to serve; the two places price sits <em>close</em> to cost are D1 storage overage and the dedicated-PG tier; the Business tier&#39;s dedicated-PG-per-Space × unlimited-Spaces combination was flagged as the one place margin could go negative — <strong>now resolved by two decisions (July 25, 2026): (a)</strong> provision per-Space dedicated PG on serverless PAYG PostgreSQL (Neon-class: scale-to-zero, ~$1–5/mo per typical Space — see cost model §4), and <strong>(b) founder decision: Business includes a capped number of dedicated-DB Spaces (cap value TBD); unlimited dedicated-DB Spaces move to Enterprise via contract.</strong> Enterprise/BYODB remains the <em>cheapest</em> tier to serve on infrastructure; its margin is support/compliance surface, not COGS.</p>
+<h3>Q: Is there a certain tier or feature you want to drive clients to, and why?</h3>
+<p><strong>[INTERNAL DRAFT]</strong> Two deliberate magnets:</p>
+<ol>
+<li><strong>Growth ($99) as the mid-ladder magnet</strong> — unlimited Spaces/bases makes it the no-brainer for any organization managing more than a few bases, and it sits at the floor of the founder&#39;s $100–200/mo target band. <strong>Consultant note (founder direction, July 25, 2026):</strong> consultants are driven to Growth <em>for their own account</em>, but their bigger role is as a <strong>channel</strong> — every client they onboard signs its own paying subscription, and the consultant earns a referral/affiliate commission. There is deliberately no umbrella plan where one consultant subscription covers many clients: consultants get multi-account admin access and account switching instead. Consultants are also the community&#39;s amplifiers (BuiltOnAir, forums), so their advocacy compounds — the affiliate program monetizes that channel rather than discounting it away.</li>
+<li><strong>Dynamic mode generally</strong> — incremental sync is cheaper for us than static re-transfer AND unlocks the intelligence upsell surface (schema changelog, health, docs — and, down the road, SQL). Every nudge toward dynamic aligns COGS reduction with expansion revenue. The credit meter already encodes this (static burns credits faster at high frequency).</li>
+</ol>
+<hr>
+<h2>Legacy Migration</h2>
+<blockquote>
+<p><strong>FOUNDER DIRECTION (July 24, 2026) — supersedes the launch-coupled migration framing in the internal docs below.</strong> Baseout launches as a <strong>new, independent platform &quot;from the creators of On2Air.&quot;</strong> The two products <strong>coexist</strong>: On2Air keeps running unchanged while Baseout works out the kinks with new customers. Only once Baseout is proven does On2Air get a <strong>sunset announcement plus a transition plan</strong> — auto-transition into Baseout with a grandfathering effort that thanks legacy customers for their long-term support. Three consequences for this engagement:</p>
+<ol>
+<li><strong>Baseout pricing is set independently.</strong> The On2Air price points ($9.99–$79.99) are <em>context</em>, not constraints — no launch-day tier needs to absorb the legacy cohort. Design the right ladder for the market; the transition plan is a separate, later exercise.</li>
+<li><strong>No migration mechanics ship at launch.</strong> The 90-day migration window, Bridge plan activation, and migration credit grants described in <code>Pricing_Credit_System.md</code> §6 remain valid <em>mechanics</em> but their <strong>trigger moves from Baseout&#39;s launch to On2Air&#39;s sunset date</strong> (TBD, confidence-gated).</li>
+<li><strong>The migration cohort is a phase-2 deliverable</strong> of this engagement: the workshops should still pressure-test the transition mapping, but it does not gate launch pricing.</li>
+</ol>
+</blockquote>
+<h3>Q: Please provide historical data/reports on legacy migration clients.</h3>
+<p><strong>[PARTIALLY DELIVERED — subscription data analyzed; usage join pending]</strong> The active-subscription export is analyzed in <strong><code>research/pricing/legacy-subscription-analysis.md</code></strong> (July 25, 2026): 333 active subscriptions, $11.1K MRR / $132.7K ARR, full plan mix, billing-cycle split, and transition-revenue math against the sunset-time mapping. <strong>It corrects two prior assumptions:</strong> the base is ~333 subs, not ~200; and it skews <em>higher</em> than &quot;smaller/simpler&quot; — Professional+Premium hold 58.5% of ARR. Still available on request for the deeper cut: per-customer usage shape (bases, records, attachment volumes, backup frequency) and per-run telemetry — needed for the WTP/underpayment join and consultant-account identification (email domains alone identify none). Known qualitative facts hold: multi-year tenures are common; churn is low once configured.</p>
+<h3>Q: When you simplified the product suite last year, what expectations/commitments were set regarding legacy pricing? How was it received?</h3>
+<p><strong>[FOUNDER ANSWER, July 25, 2026]</strong> The simplification: On2Air&#39;s Schemas, Forms, and Actions products were sunset, leaving Backups as the only product. <strong>No promises or commitments were made.</strong> Backups already had its own individual pricing, and that pricing was simply maintained. Customers paying for an all-apps <strong>bundle had their prices adjusted <em>down</em></strong> to standard Backups pricing as the other apps were sunset — no one paid more after the simplification. <strong>Going forward there are no expectations or promises constraining On2Air Backups pricing</strong> — the transition-plan design (phase 2) starts from a clean slate contractually and reputationally.</p>
+<p>Consultant-relevant implications: (1) the only precedent set is a <em>customer-favorable</em> one (prices adjusted down, core product untouched) — useful goodwill to reference in sunset messaging; (2) the base&#39;s multi-year tenures and continued growth through that simplification (~330 active subs today) suggest it was absorbed without meaningful churn; (3) the grandfathered-discount-off-list transition direction (see Legacy Migration section) faces no inherited pricing commitments — the constraint is purely relationship management, not obligation. Related GTM note still open: former Schemas users are warm leads for Baseout&#39;s schema-intelligence features (the sunset left that demand unserved).</p>
+<h3>Q: What pricing-related feedback have you received?</h3>
+<p><strong>[DOCUMENTED — directional]</strong> (a) The team&#39;s own assessment that On2Air was underpriced for the value; (b) migration sensitivity is real — these customers chose a cheap, simple product, so any new model needs a no-shock story; (c) multi-year tenures indicate the subscribe-and-forget utility is sticky at current prices (weak price resistance signal); (d) category awareness is low — most Airtable users don&#39;t know third-party backup exists, so price objections are rarer than existence objections. Structured WTP data is pending the survey (below).</p>
+<h3>Q: Which legacy migration strategy aligns best with your business goals? (Options A / B / C)</h3>
+<p><strong>[FOUNDER DIRECTION, July 24, 2026]</strong> None of the three as posed — all three assume migration happens <em>at</em> Baseout&#39;s launch, and it doesn&#39;t. The actual strategy is <strong>coexist first, sunset later</strong>:</p>
+<ul>
+<li><strong>Phase 1 (launch):</strong> Baseout launches independently (&quot;from the creators of On2Air&quot;). On2Air customers stay on On2Air, unchanged — no forced move, no price change, no feature lock. They may adopt Baseout as new customers if they choose.</li>
+<li><strong>Phase 2 (confidence-gated, date TBD):</strong> On2Air sunset is announced with a transition plan — auto-transition into Baseout paired with a <strong>grandfathering effort framed as gratitude for long-term support</strong>. <strong>Founder direction on its shape (July 25, 2026):</strong> legacy customers should expect <strong>an increase from what they pay today, but at a grandfathered discount off Baseout list prices</strong> — grandfathering means a discount vs. list, not a freeze at legacy prices. (This refines the older internal mapping in <code>Pricing_Credit_System.md</code> §6, which had some cohorts at same-or-lower prices; treat the founder direction as current. Exact discount depth/duration is a workshop topic.)</li>
+</ul>
+<p>Within Phase 2, the previously designed mechanics still apply and land closest to a <strong>B + C hybrid with A&#39;s feature-lock mechanic</strong>:</p>
+<ul>
+<li><strong>Option B mechanics:</strong> year-1 price hold, then automatic transition to standard pricing with 60-day notice. Only the lowest cohort ($9.99 Starter → On2Air Bridge) experiences a step-up (to $29 non-public Starter after year 1). Migration pricing requires signup within a ~90-day window.</li>
+<li><strong>Option C mechanics layered on:</strong> every cohort gets a one-time migration credit grant (2K–80K credits ≈ 2 months of typical usage) to absorb the initial full backup.</li>
+<li><strong>Option A&#39;s lock, without the resentment:</strong> legacy users carry <code>dynamic_locked</code> — new dynamic/AI features show as upgrade CTAs rather than being included or hidden. They keep their price <em>and</em> their exact product; the new surface is visibly one click away.</li>
+<li><strong>Why not pure A:</strong> indefinite grandfathering caps the largest revenue-recovery opportunity (the underpriced heavy users below) and creates a permanent second product to maintain. <strong>Why not pure C:</strong> immediate repricing contradicts the anchor constraint and risks churning a low-churn base for modest ARR. The mapping is genuinely gentle: Essentials customers get a price <em>cut</em> ($29.99→$29), Professional lands cheaper on annual ($49.99→$39), Premium holds at $79 for year 1.</li>
+</ul>
+<h3>Q: What percentage of legacy ARR comes from &quot;heavy power users&quot; significantly underpaying relative to consumption?</h3>
+<p><strong>[PARTIALLY ANSWERED — subscription side now analyzed; usage join still needed]</strong> The potential-underpayer pool is now quantified from the July 2026 Stripe export: <strong>Professional + Premium = 128 subscriptions (38.4% of the base) holding $77,671 = 58.5% of legacy ARR.</strong> That is the <em>ceiling</em> on heavy-power-user ARR exposure. The credit-equivalence analysis (<code>Pricing_Credit_System.md</code> §5) quantifies the per-account subsidy at full utilization: a <strong>Professional</strong> user at plan limits ≈ <strong>129,000 credits/mo</strong> — Baseout Pro-tier ($199) consumption for $49.99; a <strong>Premium</strong> user at full hourly utilization ≈ <strong>10.6M credits/mo</strong> — beyond Business scale, for $79.99 (4–100×+ underpayment). What fraction of the 128 accounts actually runs at those levels requires joining run telemetry (per-run record/attachment counts, available) to these subscriptions — still the single best pre-workshop analysis to run. Mitigating facts: Premium is thin (20 subs, 13.6% of ARR), and most Premium users don&#39;t simultaneously max every limit. The coexistence period (see launch-sequencing callout) conveniently defers this exposure — by sunset time, real Baseout telemetry will exist to design their transition tiers from data.</p>
+<h3>Q: How many active paid subscribers on the legacy product, and breakdown by plan type?</h3>
+<p><strong>[DOCUMENTED — Stripe export analyzed July 25, 2026]</strong> <strong>333 active paying subscriptions</strong> (trial subscriptions were excluded from the export — founder-confirmed; one minor add-on subscription also excluded). <strong>This corrects the &quot;~200 paying customers&quot; figure used in earlier docs — the active base is ~two-thirds larger.</strong> Full analysis: <code>research/pricing/legacy-subscription-analysis.md</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Plan</th>
+<th>Price/mo</th>
+<th>Subs</th>
+<th>% of subs</th>
+<th>MRR</th>
+<th>ARR</th>
+<th>% of ARR</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Starter</td>
+<td>$9.99</td>
+<td>57</td>
+<td>17.1%</td>
+<td>$520</td>
+<td>$6,236</td>
+<td>4.7%</td>
+</tr>
+<tr>
+<td>Essentials</td>
+<td>$29.99</td>
+<td>148</td>
+<td>44.4%</td>
+<td>$4,064</td>
+<td>$48,770</td>
+<td>36.8%</td>
+</tr>
+<tr>
+<td>Professional</td>
+<td>$49.99</td>
+<td>108</td>
+<td>32.4%</td>
+<td>$4,966</td>
+<td>$59,593</td>
+<td>44.9%</td>
+</tr>
+<tr>
+<td>Premium</td>
+<td>$79.99</td>
+<td>20</td>
+<td>6.0%</td>
+<td>$1,507</td>
+<td>$18,078</td>
+<td>13.6%</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td></td>
+<td><strong>333</strong></td>
+<td></td>
+<td><strong>$11,057</strong></td>
+<td><strong>$132,678</strong></td>
+<td></td>
+</tr>
+</tbody></table>
+<p>Other facts from the export: 49% annual-billed / 51% monthly (annual discount ~16.6% — so the base already accepts annual terms near Baseout&#39;s planned ~20%); average revenue per account $33.20/mo; <strong>no Enterprise/custom subscriptions exist in Stripe</strong>; the base skews <em>higher</em> than earlier docs assumed — Essentials is the modal plan, but the revenue center of gravity is Professional ($49.99), and Professional+Premium hold 58.5% of ARR.</p>
+<h3>Q: Please provide any survey data on willingness to pay, pricing, or preferred features/tiering.</h3>
+<p><strong>[PENDING]</strong> The <strong>State of Airtable DevOps survey</strong> is <strong>not yet live — it launches in the coming months</strong> (co-sponsored with BuiltOnAir); every claim that will depend on it is marked [SURVEY-PENDING] in our research discipline. The instrument is designed and includes the pricing-relevant questions: C1 (current backup practice distribution), C6 (formal external-copy requirement share), E3 (SQL-access demand), D5 (schema-visibility feature matrix), B1/B2 (respondent segmentation), G3 (interview opt-in — the source for WTP interviews). No structured WTP data exists yet; the interim proxies are legacy price anchors, Airtable seat spend, and verified competitor prices. Given the timeline, <strong>don&#39;t block launch-pricing decisions on survey close</strong> — use it to validate/adjust post-launch and to inform the phase-2 legacy transition; if WTP input is wanted sooner, the G3-style interviews could be run standalone with the segments already profiled.</p>
+<hr>
+<h2>Materials &amp; Closing</h2>
+<h3>Q: Please provide informational material to better understand the product.</h3>
+<p><strong>[DOCUMENTED]</strong> In this repo (shareable as exports):</p>
+<ul>
+<li><strong>Product:</strong> <code>shared/Baseout_PRD.md</code> (v1.1 — vision, personas, architecture, V1/V2 scope) · <code>shared/Baseout_Features.md</code> (v1.1 — the authoritative tier/capability/overage spec) · <code>shared/Pricing_Credit_System.md</code> (credit design + migration strategy + DB architecture).</li>
+<li><strong>Pricing engagement set:</strong> <code>overview/pricing/Baseout_Pricing_Decision_Inputs.md</code> (the neutral inputs doc written for this engagement) · <code>overview/pricing/Baseout_Pricing_Strategy_Briefing.md</code> (the opinionated internal briefing incl. spec-vs-built reality check) · <code>overview/features/Baseout_GTM_Marketing_Inputs.md</code>.</li>
+<li><strong>Research:</strong> <code>research/customers/research-notes.md</code> (verified evidence base, incl. competitor pricing re-verified 2026-07-23) · <code>research/customers/state-of-airtable-devops-report.md</code> (draft) · <code>research/pricing/customer-segments-workshop-1.md</code> (segments deep-dive).</li>
+<li><strong>Data-request templates (this engagement):</strong> <code>research/pricing/competitor-landscape.csv</code> · <code>research/pricing/feature-value-matrix.csv</code>.</li>
+<li><strong>Live references:</strong> legacy pricing at on2air.com/pricing; the marketing site and product mockups/design harness exist in-repo (<code>product/website/</code>, <code>apps/design</code>) — live links and demo access available on request.</li>
+</ul>
+<h3>Q: Anything else not covered above, or anecdotal information to share?</h3>
+<p><strong>[DOCUMENTED — the things a pricing consultant should know that don&#39;t fit a template]</strong></p>
+<ol start="0">
+<li><strong>Launch sequencing (founder direction, July 24, 2026):</strong> Baseout launches as a new platform &quot;from the creators of On2Air,&quot; runs <strong>in parallel with On2Air</strong> while the kinks get worked out, and only later — confidence-gated — does On2Air get a sunset announcement with an auto-transition path and a gratitude-framed grandfathering effort. Price Baseout for its market on its own merits; treat the legacy transition as a separable phase-2 workstream. (Several internal docs still assume launch-day migration — the callout in the Legacy Migration section governs.)</li>
+<li><strong>The sequencing constraint is real and central.</strong> The designed credit model cannot be enforced by shipped code today (no metering pipeline, no restore, no dynamic DB provisioning, no retention/cleanup). Launch pricing either starts with what&#39;s enforceable (flat tiers + frequency + caps) and layers metering in, or waits for the build. Please make this dependency explicit in your recommendation. <strong>Founder confirmation (July 25, 2026): SQL mode (SQL REST API, Direct SQL, the PostgreSQL ladder) will likely not be ready at launch — it comes down the road. Launch pricing should not highlight or depend on SQL; treat it as post-launch expansion packaging.</strong></li>
+<li><strong>Restore must never feel punitive in a crisis</strong> — it&#39;s the moment the product proves its worth. Credit costs for extra restores (15–75) are deliberately modest; keep them that way.</li>
+<li><strong>Bill-shock protection is table stakes:</strong> hard-cap default, threshold alerts (50/75/90/100%), onboarding buckets absorbing the 100–200× first-backup spike, DB-stored rates tunable without deploys.</li>
+<li><strong>Two near-opposite intents live in one ladder:</strong> static/BYOS customers are buying &quot;you never hold my data&quot;; dynamic customers sell that stance back for SQL/intelligence. Worth validating one ladder serves both — pricing must never force privacy-motivated customers into hosted storage.</li>
+<li><strong>The Sequin shutdown is a sales asset:</strong> the closest SQL comparable died in Oct 2025 and deleted all customer data at closure. &quot;What happens to your data layer when the vendor dies&quot; is a differentiating question we answer well (BYOS/BYODB).</li>
+<li><strong>Fresh competitive intel (July 2026) changed one thesis:</strong> Whalesync repriced sharply down-market (Postgres at $20/mo, tiny record caps) — our SQL story must lead with &quot;affordable at real estate sizes, bundled with governed backup,&quot; not &quot;the only affordable SQL.&quot; The old &quot;$249+/mo gap&quot; framing is retired.</li>
+<li><strong>V2 must extend, not break, the model:</strong> multi-platform Spaces (Notion/HubSpot) arrive as additional Stripe subscription items with a possible multi-platform discount; MCP/RAG carry real inference COGS; the Governance suite is the enterprise expansion. The billing architecture was built for this.</li>
+<li><strong>Known spec inconsistencies are catalogued, not hidden</strong> — Strategy Briefing §10 lists ten (price-typo, trial definition, storage-credit contradiction, tier-gate conflicts, code drift). The Features spec v1.1 is the designated authority where they clash; several need explicit decisions during this engagement.</li>
+</ol>
+
+</body></html>

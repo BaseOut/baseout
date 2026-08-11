@@ -1,0 +1,80 @@
+---
+// Embedding entry point (shared-embed-protocol, spec web-embedded-mode).
+// Host wrappers load /embed?host=<kind>; this page boots the child bridge and
+// hands off to context-driven navigation. Public route: an unauthenticated
+// embed renders the minimal sign-in prompt below (sign-in itself ALWAYS
+// happens top-level via child:open-external — never inside the iframe).
+import { env } from 'cloudflare:workers'
+import Layout from '../layouts/Layout.astro'
+import { getIntegrationsState } from '../lib/integrations'
+
+const user = Astro.locals.user
+const account = Astro.locals.account
+const orgId = account?.organization?.id ?? null
+const spaceId = account?.space?.id ?? null
+
+const bases =
+  user && orgId && spaceId
+    ? (await getIntegrationsState(Astro.locals.db, orgId, spaceId)).bases.map((b) => ({
+        atBaseId: b.atBaseId,
+        isIncluded: b.isIncluded,
+      }))
+    : []
+
+const bootPayload = {
+  allowedAncestors:
+    (env as unknown as { PUBLIC_EMBED_ALLOWED_ANCESTORS?: string })
+      .PUBLIC_EMBED_ALLOWED_ANCESTORS ?? '',
+  authenticated: !!user,
+  bases,
+  signInUrl: new URL('/login', Astro.url).href,
+}
+---
+
+<Layout title="Baseout" description="Baseout embedded">
+  <main class="flex min-h-screen items-center justify-center p-6">
+    {
+      user ? (
+        <div class="flex flex-col items-center gap-3" data-testid="embed-connecting">
+          <span class="loading loading-spinner loading-md" aria-hidden="true" />
+          <p class="text-sm opacity-70">Connecting to your workspace…</p>
+        </div>
+      ) : (
+        <div class="flex max-w-sm flex-col items-center gap-4 text-center" data-testid="embed-signin">
+          <p class="text-base">Sign in to Baseout to see backups and schema intelligence for this base.</p>
+          <button id="embed-signin" class="btn btn-primary" type="button">
+            Sign in to Baseout
+          </button>
+          <p class="text-xs opacity-60">Sign-in opens in a new tab. Reload this panel afterwards.</p>
+        </div>
+      )
+    }
+  </main>
+</Layout>
+
+<script type="application/json" id="embed-boot" set:html={JSON.stringify(bootPayload)} />
+<script>
+  import { initEmbedClient } from '../lib/embed/client'
+
+  const payload = JSON.parse(document.getElementById('embed-boot')!.textContent!) as {
+    allowedAncestors: string
+    authenticated: boolean
+    bases: { atBaseId: string; isIncluded: boolean }[]
+    signInUrl: string
+  }
+
+  const bridge = initEmbedClient({
+    allowedAncestors: payload.allowedAncestors,
+    authenticated: payload.authenticated,
+    enter: { bases: payload.bases },
+  })
+
+  document.getElementById('embed-signin')?.addEventListener('click', () => {
+    // Delegated to the host (chrome.tabs.create / window.open) — same-origin
+    // URLs only pass the host's open-external filter. Fall back to a plain
+    // top-level open if the bridge never connected (standalone visit).
+    if (!bridge?.openExternal(payload.signInUrl)) {
+      window.open(payload.signInUrl, '_blank', 'noopener')
+    }
+  })
+</script>

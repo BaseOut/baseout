@@ -1,0 +1,608 @@
+---
+/**
+ * Inbox — the notification center. A non-modal column that OVERLAYS the work area
+ * from its left edge. It never pushes the page: sidebar + panel = 608px of chrome,
+ * so pushing only worked above ~1580px and clipped the tables on every laptop below.
+ * No scrim and no focus trap — overlay means "the panel sits on top", not "the page
+ * behind is frozen".
+ *
+ * Single-column by design. A row deep-links to the surface where you can ACT on it
+ * (the run's log, the schema diff, the reconnect flow) — an in-panel reading pane
+ * would only restate that surface, worse, and give the same information two homes.
+ *
+ * See the `pattern-inbox` storybook entry for the model. Behaviour lives in the
+ * script below; the data model and pure helpers live in ./inbox.ts.
+ */
+import { emph } from '../../lib/ui';
+import { KIND_META, rollUp, groupTitle, groupToggleLabel, plain, handledReason, HANDLED_LABEL, laneOf, ago, type InboxItem } from './inbox';
+
+interface Props {
+  items?: InboxItem[];
+}
+
+const { items = [] } = Astro.props;
+
+const now = new Date();
+const live = items.filter((i) => handledReason(i, now) === null);
+
+/**
+ * Handled rows are rendered, not dropped — `Show handled` reveals them, and that is
+ * the only Undo for a mis-clicked Done.
+ *
+ * A handled row stays in its OWN lane. Only `Needs attention` rows are ever handled
+ * (you resolve a broken connection; you do not "finish" the news that a backup ran),
+ * so a resolved reconnect belongs under Needs attention — never demoted into Activity,
+ * where it would read as a piece of news.
+ */
+const handled = items
+  .filter((i) => handledReason(i, now) !== null)
+  .sort((a, b) => +new Date(b.at) - +new Date(a.at));
+
+const groups = rollUp(live);
+
+/**
+ * The Inbox is account-level, so a row must say which Space it came from — but only
+ * when that is a real question. With one Space the label and the filter are noise, so
+ * neither is rendered (Dan ⇄ Oleh, Slack 2026-07-09).
+ */
+const spaces = [...new Set(items.map((i) => i.space).filter(Boolean))] as string[];
+const multiSpace = spaces.length > 1;
+const inLane = (lane: string) => ({
+  groups: groups.filter((g) => laneOf(g.lead) === lane),
+  handled: handled.filter((i) => laneOf(i) === lane),
+});
+
+const lanes = [
+  { key: 'attention', label: 'Needs attention', ...inLane('attention') },
+  { key: 'activity', label: 'Activity', ...inLane('activity') },
+];
+
+---
+
+<aside
+  id="layout-inbox"
+  class="ibx"
+  data-inbox
+  aria-label="Inbox"
+  hidden
+>
+  {/* The "Inbox" heading is gone — the two tabs already name the surface. It stays
+      for screen readers, which have no icons to read. */}
+  <h2 class="sr-only">Inbox</h2>
+
+  <header class="ibx-head">
+    <div class="tabs tabs-border" role="tablist" aria-label="Inbox sections">
+      {/* The attention count is ALWAYS rendered, active tab or not. Tabs may not
+          hide a broken connection behind an unclicked tab (see the Tabs entry's
+          "don't hide critical actions behind a non-default tab"). */}
+      <button
+        type="button"
+        role="tab"
+        class="tab tab-active ibx-tab"
+        data-inbox-tab="attention"
+        aria-selected="true"
+        aria-controls="ibx-panel-attention"
+      >
+        <span class="ibx-tab-label">Needs attention</span>
+        <span class="badge badge-sm badge-error badge-soft" data-tab-count="attention" hidden></span>
+      </button>
+
+      <button
+        type="button"
+        role="tab"
+        class="tab ibx-tab"
+        data-inbox-tab="activity"
+        aria-selected="false"
+        aria-controls="ibx-panel-activity"
+      >
+        <span class="ibx-tab-label">Activity</span>
+        <span class="badge badge-sm badge-neutral badge-soft" data-tab-count="activity" hidden></span>
+      </button>
+    </div>
+
+    <div class="ibx-head-actions">
+      <a href="/settings" class="btn btn-ghost btn-sm btn-square tooltip tooltip-bottom" data-tip="Notification settings">
+        <span class="iconify lucide--settings size-4" aria-hidden="true"></span>
+        <span class="sr-only">Notification settings</span>
+      </a>
+
+      <button type="button" class="btn btn-ghost btn-sm btn-square tooltip tooltip-bottom" data-inbox-close data-tip="Close">
+        <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+        <span class="sr-only">Close inbox</span>
+      </button>
+    </div>
+  </header>
+
+  {/* The facet trigger is a LABELLED button (pattern-faceted-filter), which cannot fit beside the gear
+      in a 384px header — it collided with the Activity tab. Schema puts its facet bar one row under
+      the tabs; so does this. One row of chrome, not the three we started with. */}
+  <div class="ibx-filterbar">
+    {/* ONE place to narrow the list, built from the app's ONE filter language (pattern-faceted-filter,
+          styles/components/facet-filter.css): a bordered ff-trigger that tints primary while a filter is
+          doing something, over an ff-panel of ff-group headings and label-left / control-right ff-opt rows.
+          The trigger carries the count of active filters, so a narrowed list can never read as an empty one. */}
+      <div class="dropdown dropdown-start ff" data-inbox-filter-menu>
+        <div tabindex="0" role="button" class="btn btn-sm gap-1.5 ff-trigger" data-inbox-filter-trigger aria-label="Filter inbox">
+          <span class="iconify lucide--list-filter size-3.5 opacity-70" aria-hidden="true"></span>
+          Filter
+          <span class="badge badge-sm badge-primary ff-count" data-inbox-filter-count hidden></span>
+          <span class="iconify lucide--chevron-down size-3 opacity-55" aria-hidden="true"></span>
+        </div>
+
+        <div tabindex="0" class="dropdown-content ff-panel">
+          {multiSpace && (
+            <>
+              <div class="ff-group">Space</div>
+              <label class="ff-opt">
+                <span class="ff-label">All spaces</span>
+                <input type="radio" class="radio radio-sm radio-primary" name="ibx-space" data-inbox-space="" checked />
+              </label>
+              {spaces.map((sp) => (
+                <label class="ff-opt">
+                  <span class="ff-label">{sp}</span>
+                  <input type="radio" class="radio radio-sm radio-primary" name="ibx-space" data-inbox-space={sp} />
+                </label>
+              ))}
+              <div class="ff-sep"></div>
+            </>
+          )}
+
+          {/* Lane-scoped. "Handled" names no state in Activity, and "unread only" names none in a lane you
+              triage — offering either in the wrong lane would invent a state that cannot exist there. */}
+          <div class="ff-group">Show</div>
+          <label class="ff-opt" data-inbox-menu-lane="attention">
+            <span class="ff-label">Handled</span>
+            <span class="badge badge-sm badge-neutral badge-soft" data-inbox-handled-count hidden>0</span>
+            <input type="checkbox" class="toggle toggle-sm toggle-primary" data-inbox-show-handled />
+          </label>
+          <label class="ff-opt" data-inbox-menu-lane="activity" hidden>
+            <span class="ff-label">Unread only</span>
+            <input type="checkbox" class="toggle toggle-sm toggle-primary" data-inbox-filter="new" />
+          </label>
+        </div>
+      </div>
+
+    {/* Commands, not filters — they belong beside the trigger, not buried inside its menu. Reset shows
+        only when there is something to reset; Mark all read only in the lane where "read" is a state. */}
+    {/* The catalog's non-negotiable: "a Clear/reset is a red ghost + × shown only when there's
+        something to clear". Same shape as Restore's Clear. (Schema's own Clear buttons have drifted
+        to text-primary and to no icon at all — three different ways; the catalog is the authority.) */}
+    <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-inbox-reset hidden>
+      <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>
+      Clear
+    </button>
+
+    <button type="button" class="btn btn-sm btn-ghost gap-1.5 ibx-bar-end" data-inbox-read-all data-inbox-menu-lane="activity" hidden>
+      <span class="iconify lucide--check-check size-4" aria-hidden="true"></span>
+      Mark all read
+    </button>
+  </div>
+
+  <div class="ibx-body">
+    <div class="ibx-list">
+      {lanes.map((lane) => (
+        <section
+          class="ibx-lane"
+          id={`ibx-panel-${lane.key}`}
+          role="tabpanel"
+          data-lane={lane.key}
+          hidden={lane.key !== 'attention'}
+        >
+          {/* ALWAYS rendered, visibility owned by sync(). It used to be conditional on the SERVER's row
+              count, so a client-side filter that emptied the lane left a blank void with no explanation —
+              exactly the lie the zero-state exists to prevent. */}
+          <div class="ibx-empty" hidden={lane.groups.length > 0 || (lane.key === 'activity' && handled.length > 0)}>
+              <span
+                class:list={['iconify', lane.key === 'attention' ? 'lucide--circle-check' : 'lucide--bell', 'size-8', 'text-base-content/30']}
+                aria-hidden="true"
+              ></span>
+              <p class="mt-3 text-sm font-medium">
+                {lane.key === 'attention' ? 'Nothing needs your attention' : 'No activity yet'}
+              </p>
+              <p class="mt-1 text-sm text-base-content/60">
+                {lane.key === 'attention'
+                  ? 'Failed backups, broken connections and breaking schema changes land here.'
+                  : 'Completed backups and schema changes land here.'}
+            </p>
+          </div>
+
+          {lane.groups.map((g) => {
+            const meta = KIND_META[g.lead.kind];
+            const rolled = g.children.length > 0;
+            return (
+              <article
+                class="ibx-row"
+                role="listitem"
+                data-row={g.lead.id}
+                data-kind={g.lead.kind}
+                data-lane={lane.key}
+                data-base={g.lead.base}
+                data-base-id={g.lead.baseId}
+                data-space={g.lead.space}
+                data-space-id={g.lead.spaceId}
+                data-state-backed={g.lead.stateBacked ? 'true' : undefined}
+                data-read={g.lead.read ? 'true' : 'false'}
+              >
+                <span class:list={['ibx-chip', meta.chip]} aria-hidden="true">
+                  <span class:list={['iconify', meta.icon, 'size-4']}></span>
+                </span>
+
+                <div class="ibx-main">
+                  <a class="ibx-link" href={g.lead.href ?? '#'} data-inbox-open-row>
+                    <span class="ibx-copy" set:html={emph(rolled ? groupTitle(g) : g.lead.title)} />
+                  </a>
+
+                  {!rolled && g.lead.detail && <p class="ibx-detail">{g.lead.detail}</p>}
+
+                  {/* ONE meta line. The Space badge (20px), the group toggle and the action button
+                      (32px) used to be inline siblings in the text flow, so they aligned on the TEXT
+                      BASELINE and visibly stepped. A flex row centres them on each other instead. */}
+                  {(multiSpace && g.lead.space) || rolled || g.lead.action ? (
+                    <div class="ibx-meta">
+                      {/* A soft neutral badge (interface-rules: soft, never outline). The Inbox is
+                          account-level, so a row must say which Space it belongs to — this is the whole
+                          condition Dan set for keeping one shared stream. Rendered only when the account
+                          HAS more than one Space; CSS also drops it once the list is filtered to a
+                          single Space, where it would repeat the trigger on every row. */}
+                      {multiSpace && g.lead.space && (
+                        <span class="badge badge-sm badge-neutral badge-soft ibx-space">
+                          <span class="iconify lucide--layers size-3" aria-hidden="true"></span>
+                          {g.lead.space}
+                        </span>
+                      )}
+
+                      {rolled && (
+                        <button type="button" class="ibx-more" data-inbox-toggle-group={g.id} aria-expanded="false">
+                          <span class="iconify lucide--chevron-right size-3.5" aria-hidden="true"></span>
+                          {groupToggleLabel(g)}
+                        </button>
+                      )}
+
+                      {g.lead.action && (
+                        <a class:list={['btn btn-sm gap-1.5', g.lead.action.primary ? 'btn-soft btn-primary' : 'btn-ghost']} href={g.lead.action.href}>
+                          <span class:list={['iconify', g.lead.action.icon, 'size-4']} aria-hidden="true"></span>
+                          {g.lead.action.label}
+                        </a>
+                      )}
+                    </div>
+                  ) : null}
+
+                  {rolled && (
+                    <ul class="ibx-children" data-inbox-group={g.id} hidden>
+                      {[g.lead, ...g.children].map((c) => (
+                        <li>
+                          <a href={c.href ?? '#'} class="ibx-child">
+                            <span class="ibx-child-dot" aria-hidden="true"></span>
+                            <span class="grow truncate">{plain(c.title)}</span>
+                            <span class="ibx-stamp">{ago(c.at, now)}</span>
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div class="ibx-side">
+                  <span class="ibx-stamp">{ago(g.lead.at, now)}</span>
+                  <span class="ibx-unread" data-inbox-unread aria-hidden="true"></span>
+                </div>
+
+                {/* Attention rows are triaged (done / snooze). Activity rows are news:
+                    there is nothing to "finish", so the only control is silencing the
+                    base that keeps talking. A state-backed row has no Done — the state
+                    clears it, not the user. */}
+                <div class="ibx-actions">
+                  {lane.key === 'attention' ? (
+                    <>
+                      {!g.lead.stateBacked && (
+                        <button type="button" class="ibx-act tooltip tooltip-left" data-inbox-done data-tip="Mark done">
+                          <span class="iconify lucide--check size-3.5" aria-hidden="true"></span>
+                          <span class="sr-only">Mark done</span>
+                        </button>
+                      )}
+                      <button type="button" class="ibx-act tooltip tooltip-left" data-inbox-snooze data-tip="Snooze 1 day">
+                        <span class="iconify lucide--clock size-3.5" aria-hidden="true"></span>
+                        <span class="sr-only">Snooze for one day</span>
+                      </button>
+                    </>
+                  ) : (
+                    g.lead.base && (
+                      <button type="button" class="ibx-act tooltip tooltip-left" data-inbox-mute data-tip={`Mute ${g.lead.base}`}>
+                        <span class="iconify lucide--bell-off size-3.5" aria-hidden="true"></span>
+                        <span class="sr-only">Mute this base</span>
+                      </button>
+                    )
+                  )}
+                </div>
+              </article>
+            );
+          })}
+
+          {/* Shown when the New filter leaves nothing — otherwise the lane would read
+              as an empty inbox rather than an empty filter. */}
+          {lane.key === 'activity' && (
+            <p class="ibx-lane-empty" data-inbox-filter-empty hidden>No new activity.</p>
+          )}
+
+          {/* Handled rows: done, snoozed, or self-resolved. Rendered but hidden until
+              `Show handled` — the Undo for a mis-clicked Done. They stay in their own
+              lane; a resolved reconnect is still a connection matter, not news. */}
+          {lane.handled.map((item) => {
+            const reason = handledReason(item, now)!;
+            const meta = KIND_META[item.kind];
+            return (
+              <article
+                class="ibx-row"
+                data-row={item.id}
+                data-kind={item.kind}
+                data-lane={lane.key}
+                data-base={item.base}
+                data-base-id={item.baseId}
+                data-space-id={item.spaceId}
+                data-read="true"
+                data-handled={reason}
+              >
+                <span class:list={['ibx-chip', meta.chip]} aria-hidden="true">
+                  <span class:list={['iconify', meta.icon, 'size-4']}></span>
+                </span>
+
+                <div class="ibx-main">
+                  <a class="ibx-link" href={item.href ?? '#'} data-inbox-open-row>
+                    <span class:list={['ibx-copy', reason === 'resolved' && 'ibx-copy-resolved']} set:html={emph(item.title)} />
+                  </a>
+                  <p class="mt-1">
+                    <span class="badge badge-sm badge-soft badge-neutral">{HANDLED_LABEL[reason]}</span>
+                  </p>
+                </div>
+
+                <div class="ibx-side">
+                  <span class="ibx-stamp">{ago(item.at, now)}</span>
+                </div>
+
+                {/* A self-resolved row has no Undo — the state cleared it, so "restoring"
+                    it would assert the connection is broken again. */}
+                {reason !== 'resolved' && (
+                  <div class="ibx-actions">
+                    <button type="button" class="ibx-act tooltip tooltip-left" data-inbox-restore data-tip="Move back">
+                      <span class="iconify lucide--undo-2 size-3.5" aria-hidden="true"></span>
+                      <span class="sr-only">Move back to the list</span>
+                    </button>
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </section>
+      ))}
+    </div>
+
+  </div>
+
+  <span class="sr-only" role="status" aria-live="polite" data-inbox-live></span>
+</aside>
+
+<script>
+  import { wireInbox } from './inbox-client';
+  wireInbox();
+  document.addEventListener('astro:after-swap', wireInbox);
+</script>
+
+<!-- is:global — resolveRow() injects nodes at runtime, and Astro's scoper never
+     stamps those. Every selector here is `.ibx-`-prefixed to keep it contained. -->
+<style is:global>
+  /* The panel OVERLAYS the work area from its left edge rather than pushing it.
+     Push cost real space: sidebar (256px) + panel (352px) = 608px of chrome, so a
+     table needing ~970px only breathed above ~1580px viewport — i.e. it broke the
+     page on every ordinary laptop.
+
+     Overlay, NOT modal: no scrim, no focus trap, no role="dialog". The page behind
+     stays interactive wherever it is still visible. */
+  .ibx {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    z-index: 300;
+    display: flex;
+    flex-direction: column;
+    /* 24rem, not 22 — since the panel overlays rather than pushes, its width costs
+       the page nothing, and the two tab labels need the room. */
+    width: var(--ibx-w, 24rem);
+    max-width: 100%;
+    border-inline-end: 1px solid var(--color-base-300);
+    background: var(--color-base-100);
+    box-shadow: 8px 0 32px -12px color-mix(in srgb, var(--color-base-content) 25%, transparent);
+    overflow: hidden;
+  }
+  .ibx[hidden] { display: none; }
+
+  .ibx-head {
+    display: flex;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: nowrap;
+    padding-inline: 8px;
+    border-bottom: 1px solid var(--color-base-300);
+  }
+  /* The tab row must never wrap onto a second line — it is the panel's spine. */
+  .ibx-head .tabs { border-bottom: 0; flex-wrap: nowrap; min-width: 0; }
+  .ibx-head-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+
+  /* `.tab` is a wrapping flex box, and icon + label + badge overflow its intrinsic
+     width by a hair — which pushed the count onto a second line. Forbid the wrap and
+     let the children keep their size. */
+  .ibx-head .tabs .ibx-tab {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 8px;
+    padding-inline: 8px;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+  .ibx-head .tabs .ibx-tab > * { flex: 0 0 auto; }
+  .ibx-tab-label { white-space: nowrap; }
+  /* Counts stay legible on the inactive tab — that is the whole point of them. */
+  .ibx-tab[aria-selected='false'] { color: color-mix(in srgb, var(--color-base-content) 60%, transparent); }
+
+  .ibx-body { display: flex; flex: 1 1 auto; min-height: 0; }
+  .ibx-list { flex: 1 1 auto; min-width: 0; overflow-y: auto; }
+
+  .ibx-lane[hidden] { display: none; }
+  .ibx-lane[data-lane='attention'] .ibx-lane-count {
+    background: color-mix(in srgb, var(--color-error) 12%, transparent);
+    color: var(--color-error);
+  }
+
+  .ibx-row {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 20px;
+  }
+  .ibx-row:hover { background: color-mix(in srgb, var(--color-base-200) 60%, transparent); }
+  /* Muting a base removes its FYI rows outright — unlike Done, it is not a row
+     you "handled", so it does not belong behind `Show handled`. */
+  .ibx-row[data-muted='true'] { display: none; }
+  /* Space filter: JS stamps the rows that fall outside the chosen Space. A row hidden this way is
+     not "handled" or "muted" — it is simply out of scope, so it keeps its own state untouched. */
+  .ibx-row[data-space-hidden] { display: none; }
+  .ibx-space { gap: 4px; }
+  /* Scoped to one Space, the badge repeats the trigger on every row. `data-space-filter` is empty
+     for "All spaces", which is the only state where the badge earns its place. */
+  .ibx[data-space-filter]:not([data-space-filter='']) .ibx-space { display: none; }
+  /* One trailing meta line: Space badge · group toggle · action, all centred on each other. As inline
+     siblings they aligned on the text baseline, so a 20px badge and a 32px button stepped visibly. */
+  .ibx-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  /* A quiet row action is a GHOST that lifts on hover (interface-rules), not an outline button —
+     outline is deprecated in the button system and only survives for quiet destructive actions.
+     A visible border here also made every action look equally urgent. Only the one action per row
+     that unblocks something (Reconnect) carries a fill, via `action.primary`. */
+
+  .ibx-chip {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    margin-top: 2px;
+    flex: 0 0 auto;
+    border-radius: 8px;
+  }
+
+  .ibx-main { min-width: 0; flex: 1 1 auto; }
+  .ibx-link { display: block; }
+  .ibx-copy { font-size: 14px; line-height: 1.45; }
+  .ibx-link:hover .ibx-copy { text-decoration: underline; }
+  /* Activity is FYI — quieter, so it never competes with the lane above. */
+  .ibx-row[data-lane='activity'] .ibx-copy { color: color-mix(in srgb, var(--color-base-content) 72%, transparent); }
+  .ibx-row[data-read='true'] .ibx-copy { font-weight: 400; }
+  .ibx-row[data-read='false'] .ibx-copy { font-weight: 500; }
+
+  .ibx-detail {
+    margin-top: 4px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: color-mix(in srgb, var(--color-base-content) 60%, transparent);
+  }
+
+  .ibx-more {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: color-mix(in srgb, var(--color-base-content) 55%, transparent);
+  }
+  .ibx-more:hover { color: var(--color-base-content); }
+  .ibx-more[aria-expanded='true'] .iconify { transform: rotate(90deg); }
+
+  .ibx-children { margin-top: 4px; }
+  .ibx-child {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    font-size: 13px;
+    color: color-mix(in srgb, var(--color-base-content) 65%, transparent);
+  }
+  .ibx-child:hover { color: var(--color-base-content); }
+  .ibx-child-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-base-content) 30%, transparent);
+  }
+
+  .ibx-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+    flex: 0 0 auto;
+  }
+  .ibx-stamp {
+    font-size: 12px;
+    color: color-mix(in srgb, var(--color-base-content) 50%, transparent);
+    white-space: nowrap;
+  }
+  .ibx-unread {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--color-primary);
+  }
+  .ibx-row[data-read='true'] .ibx-unread { visibility: hidden; }
+
+  /* Triage hides until hover — dense-list convention (Notion, Slack, GitHub). */
+  .ibx-actions {
+    position: absolute;
+    inset-inline-end: 16px;
+    top: 8px;
+    display: none;
+    align-items: center;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid var(--color-base-300);
+    border-radius: 8px;
+    background: var(--color-base-100);
+  }
+  .ibx-row:hover .ibx-actions, .ibx-row:focus-within .ibx-actions { display: flex; }
+  .ibx-act {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    color: color-mix(in srgb, var(--color-base-content) 55%, transparent);
+  }
+  .ibx-act:hover { background: var(--color-base-200); color: var(--color-base-content); }
+
+  /* A state-backed row that healed itself. Struck through and quiet — the reward
+     is the alert going away, so we never mint a "resolved!" notification. */
+  .ibx-copy-resolved {
+    color: color-mix(in srgb, var(--color-base-content) 55%, transparent);
+    text-decoration: line-through;
+    text-decoration-color: color-mix(in srgb, var(--color-base-content) 30%, transparent);
+  }
+  .ibx-resolved-note {
+    margin-top: 2px;
+    font-size: 12px;
+    color: color-mix(in srgb, var(--color-base-content) 50%, transparent);
+  }
+  .ibx-row[data-resolved='true'] .ibx-actions { display: none; }
+
+  /* position+z-index: the bar precedes .ibx-list in the DOM, so without its own stacking context the
+     opaque rows painted OVER the open dropdown — only the radios peeked out past the list's edge. */
+  .ibx-filterbar { position: relative; z-index: 40; flex: none; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--color-base-300); }
+  /* Mark-all-read is the destination of the bar, not a neighbour of Reset. */
+  .ibx-bar-end { margin-left: auto; }
+  .ibx-empty { padding: 48px 24px; text-align: center; }
+
+  /* Below the sidebar breakpoint the panel takes the whole screen — a narrow
+     column beside an already-narrow page helps nobody. */
+  /* Below the sidebar breakpoint the panel takes the whole screen — a 352px column
+     over an already-narrow page helps nobody, and the sidebar is off-canvas anyway. */
+  @media (max-width: 1023px) {
+    .ibx { position: fixed; inset: 0; z-index: 400; width: 100%; box-shadow: none; }
+  }
+</style>

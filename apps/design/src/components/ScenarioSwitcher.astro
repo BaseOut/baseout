@@ -1,0 +1,210 @@
+---
+/**
+ * Design-harness only. A demo-flow presenter: a list of named flows; click one to
+ * walk it step by step (Back / Next) with a caption (what to say) per screen.
+ * Flows are shared (demo-flows.ts) so a flow spans the whole app and the session
+ * persists across navigations. Dock (3 positions) + collapse, all persisted.
+ */
+import type { DemoFlow } from '../lib/demo-flows';
+interface Props { flows: DemoFlow[]; }
+const { flows } = Astro.props;
+---
+<aside class="scsw dock-center" data-scsw aria-label="Prototype controls">
+  <div class="scsw-head">
+    <span class="scsw-dot" aria-hidden="true"></span>
+    <span class="scsw-title">Prototype</span>
+    <button type="button" class="scsw-icon" data-scsw-dock title="Move (left / center / right)" aria-label="Move panel">⇆</button>
+    <button type="button" class="scsw-icon scsw-chev" data-scsw-collapse title="Collapse" aria-label="Collapse panel">⌄</button>
+  </div>
+
+  <div class="scsw-body" data-scsw-body>
+    <div class="scsw-pane">
+      {/* Flow picker — shown when no flow is running */}
+      <div class="flow-list">
+        <p class="scsw-blurb">Pick a flow to walk through, step by step.</p>
+        {flows.map((f) => (
+          <button type="button" class="flow-card" data-scsw-flow-start={f.key}>
+            <span class="flow-card-top">
+              <span class="flow-card-name">{f.name}</span>
+              <span class="flow-card-count">{f.steps.length} steps</span>
+            </span>
+            <span class="flow-card-blurb">{f.blurb}</span>
+          </button>
+        ))}
+      </div>
+      {/* Flow runner — shown while a flow is running (root.in-flow) */}
+      <div class="flow-run">
+        <div class="flow-run-head">
+          <span class="flow-run-name" data-scsw-flow-name>Flow</span>
+          <button type="button" class="flow-run-exit" data-scsw-exit aria-label="Exit flow">✕</button>
+        </div>
+        <div class="flow-progress" data-scsw-progress aria-hidden="true"></div>
+        <p class="flow-step" data-scsw-step>step …</p>
+        <p class="flow-caption" data-scsw-caption></p>
+        <div class="flow-nav">
+          <button type="button" class="scsw-btn" data-scsw-back>◀ Back</button>
+          <button type="button" class="scsw-btn scsw-btn-primary" data-scsw-next>Next →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="application/json" data-scsw-flows is:inline set:html={JSON.stringify(flows)} />
+</aside>
+
+<style>
+  .scsw { position: fixed; bottom: 16px; z-index: 200; background: #0f172a; color: #fff; border-radius: 14px; box-shadow: 0 12px 40px rgba(2, 6, 23, .38); font-size: 12.5px; width: min(94vw, 460px); }
+  .scsw.dock-center { left: 50%; transform: translateX(-50%); }
+  .scsw.dock-left { left: 16px; right: auto; transform: none; }
+  .scsw.dock-right { right: 16px; left: auto; transform: none; }
+
+  .scsw-head { display: flex; align-items: center; gap: 8px; padding: 9px 12px; }
+  .scsw-dot { width: 7px; height: 7px; border-radius: 999px; background: #3b82f6; flex: none; }
+  .scsw-title { font-weight: 600; color: #e2e8f0; }
+  .scsw-icon { color: #94a3b8; background: transparent; border: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 3px 5px; border-radius: 6px; }
+  .scsw-icon:first-of-type { margin-left: auto; }
+  .scsw-icon:hover { color: #fff; background: #1e293b; }
+  .scsw-chev { transition: transform .18s ease; }
+  .scsw:not(.is-collapsed) .scsw-chev { transform: rotate(180deg); }
+  .scsw.is-collapsed .scsw-body { display: none; }
+  .scsw:not(.is-collapsed) .scsw-head { border-bottom: 1px solid #1e293b; }
+
+  .scsw-pane { padding: 11px 13px 13px; }
+
+  /* Flow pane: toggle picker vs runner via .in-flow on root */
+  .scsw:not(.in-flow) .flow-run { display: none; }
+  .scsw.in-flow .flow-list { display: none; }
+  .scsw-blurb { color: #cbd5e1; line-height: 1.5; margin: 0 0 10px; }
+
+  .flow-list { display: flex; flex-direction: column; gap: 6px; }
+  .flow-card { display: flex; flex-direction: column; gap: 3px; text-align: left; background: #1e293b; border: 1px solid transparent; border-radius: 10px; padding: 9px 11px; cursor: pointer; transition: .12s; }
+  .flow-card:hover { background: #243349; border-color: #334155; }
+  .flow-card-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .flow-card-name { font-weight: 600; color: #fff; font-size: 12.5px; }
+  .flow-card-count { font-size: 10px; color: #93c5fd; flex: none; }
+  .flow-card-blurb { font-size: 11px; color: #94a3b8; line-height: 1.45; }
+
+  .flow-run-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; }
+  .flow-run-name { font-weight: 600; color: #fff; }
+  .flow-run-exit { margin-left: auto; color: #94a3b8; background: transparent; border: none; cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 6px; border-radius: 6px; }
+  .flow-run-exit:hover { color: #fecaca; background: #3a1d1d; }
+  .flow-progress { display: flex; gap: 4px; margin-bottom: 10px; }
+  .flow-progress span { height: 4px; flex: 1; border-radius: 999px; background: #1e293b; transition: background .15s; }
+  .flow-progress span.done { background: #2563eb; }
+  .flow-progress span.on { background: #3b82f6; }
+  .flow-step { color: #93c5fd; font-weight: 600; font-size: 11px; margin: 0 0 5px; }
+  .flow-caption { color: #cbd5e1; line-height: 1.5; margin: 0 0 12px; }
+  .flow-nav { display: flex; gap: 6px; }
+  .flow-nav .scsw-btn { flex: 1; text-align: center; }
+
+  .scsw-btn { display: inline-block; background: #1e293b; color: #e2e8f0; padding: 7px 12px; border-radius: 8px; font-weight: 600; font-size: 12px; text-decoration: none; border: none; cursor: pointer; transition: .12s; }
+  .scsw-btn:hover { background: #334155; }
+  .scsw-btn[disabled] { opacity: .4; cursor: not-allowed; }
+  .scsw-btn-primary { background: #3b82f6; color: #fff; }
+  .scsw-btn-primary:hover { background: #2563eb; }
+
+  @media print { .scsw { display: none; } }
+</style>
+
+<script>
+  function initScsw() {
+    const root = document.querySelector<HTMLElement>('[data-scsw]');
+    if (!root) return;
+
+    // Dock (persists).
+    const docks = ['left', 'center', 'right'];
+    const applyDock = (d: string) => { root!.classList.remove('dock-left', 'dock-center', 'dock-right'); root!.classList.add('dock-' + (docks.includes(d) ? d : 'center')); };
+    applyDock(localStorage.getItem('scsw-dock') || 'center');
+    root.querySelector('[data-scsw-dock]')?.addEventListener('click', () => {
+      const next = docks[(docks.indexOf(localStorage.getItem('scsw-dock') || 'center') + 1) % docks.length];
+      applyDock(next); localStorage.setItem('scsw-dock', next);
+    });
+
+    // Collapse (persists).
+    if (localStorage.getItem('scsw-collapsed') === '1') root.classList.add('is-collapsed');
+    root.querySelector('[data-scsw-collapse]')?.addEventListener('click', () => {
+      root.classList.toggle('is-collapsed');
+      localStorage.setItem('scsw-collapsed', root.classList.contains('is-collapsed') ? '1' : '0');
+    });
+
+    // ---- Flows: a named flow is a list of { label, href, caption }. ----
+    const flowsEl = root.querySelector<HTMLElement>('[data-scsw-flows]');
+    let flows: Array<{ key: string; name: string; steps: Array<{ label: string; href: string; caption: string }> }> = [];
+    try { flows = JSON.parse(flowsEl?.textContent || '[]'); } catch { flows = []; }
+    const flowByKey: Record<string, (typeof flows)[number]> = {};
+    flows.forEach((f) => { flowByKey[f.key] = f; });
+
+    const inFlow = () => localStorage.getItem('scsw-in-flow') === '1';
+    const setInFlow = (on: boolean) => { localStorage.setItem('scsw-in-flow', on ? '1' : '0'); root!.classList.toggle('in-flow', on); };
+
+    // Compare a step href to the current URL, ignoring param order and the `v` switch.
+    const IGNORE = ['v', 'src', 'dest', 'bases']; // panel-irrelevant params (design switch + wizard hand-off)
+    const paramsKey = (sp: URLSearchParams) =>
+      [...sp.entries()].filter(([k]) => !IGNORE.includes(k)).sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([k, val]) => k + '=' + val).join('&');
+    function matchStep(steps: Array<{ href: string }>): number {
+      const here = paramsKey(new URLSearchParams(window.location.search));
+      return steps.findIndex((s) => {
+        const u = new URL(s.href, window.location.origin);
+        return u.pathname === window.location.pathname && paramsKey(u.searchParams) === here;
+      });
+    }
+
+    function gotoStep(i: number) {
+      const f = flowByKey[localStorage.getItem('scsw-flow') || ''];
+      if (!f) return;
+      const idx = Math.max(0, Math.min(f.steps.length - 1, i));
+      localStorage.setItem('scsw-step', String(idx));
+      window.location.href = f.steps[idx].href;
+    }
+    function startFlow(key: string) {
+      const f = flowByKey[key];
+      if (!f) return;
+      localStorage.setItem('scsw-flow', key);
+      localStorage.setItem('scsw-step', '0');
+      setInFlow(true);
+      window.location.href = f.steps[0].href;
+    }
+    function exitFlow() { setInFlow(false); }
+
+    function renderRun() {
+      const f = flowByKey[localStorage.getItem('scsw-flow') || ''];
+      const on = !!f && inFlow();
+      setInFlow(on);
+      if (!on) return;
+      let idx = matchStep(f.steps);
+      if (idx < 0) idx = Math.min(f.steps.length - 1, Math.max(0, parseInt(localStorage.getItem('scsw-step') || '0', 10)));
+      else localStorage.setItem('scsw-step', String(idx));
+      root!.dataset.scswIdx = String(idx);
+      const set = (sel: string, txt: string) => { const el = root!.querySelector<HTMLElement>(sel); if (el) el.textContent = txt; };
+      set('[data-scsw-flow-name]', f.name);
+      set('[data-scsw-step]', `Step ${idx + 1} of ${f.steps.length} · ${f.steps[idx].label}`);
+      set('[data-scsw-caption]', f.steps[idx].caption || '');
+      const prog = root!.querySelector<HTMLElement>('[data-scsw-progress]');
+      if (prog) prog.innerHTML = f.steps.map((_, i) => `<span class="${i === idx ? 'on' : i < idx ? 'done' : ''}"></span>`).join('');
+      const back = root!.querySelector<HTMLButtonElement>('[data-scsw-back]');
+      if (back) back.disabled = idx === 0;
+      const next = root!.querySelector<HTMLElement>('[data-scsw-next]');
+      if (next) next.textContent = idx === f.steps.length - 1 ? 'Finish ✓' : 'Next →';
+    }
+
+    root.querySelectorAll<HTMLElement>('[data-scsw-flow-start]').forEach((b) =>
+      b.addEventListener('click', () => startFlow(b.dataset.scswFlowStart || '')));
+    root.querySelector('[data-scsw-back]')?.addEventListener('click', () => {
+      const idx = parseInt(root!.dataset.scswIdx || '0', 10);
+      if (idx > 0) gotoStep(idx - 1);
+    });
+    root.querySelector('[data-scsw-next]')?.addEventListener('click', () => {
+      const f = flowByKey[localStorage.getItem('scsw-flow') || ''];
+      if (!f) return;
+      const idx = parseInt(root!.dataset.scswIdx || '0', 10);
+      if (idx >= f.steps.length - 1) exitFlow();
+      else gotoStep(idx + 1);
+    });
+    root.querySelector('[data-scsw-exit]')?.addEventListener('click', exitFlow);
+
+    renderRun();
+  }
+  initScsw();
+  // Astro does client-side swaps (ViewTransitions); re-init on each so the new panel wires up.
+  document.addEventListener('astro:after-swap', initScsw);
+</script>

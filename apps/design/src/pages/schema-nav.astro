@@ -1,0 +1,606 @@
+---
+/**
+ * /schema-nav — THROWAWAY navigation prototype (harness-only, apps/design).
+ *
+ * Lets the client click two candidate reworks of the 9-tab Schema bar over a
+ * shared placeholder body, WITHOUT touching the real SchemaView. The two
+ * variants differ ONLY in the bar treatment (decided with Oleh 2026-07-02):
+ *
+ *   Variant A — Grouped bar (cluster labels ABOVE each group's tabs)  ← Dan confirmed 2026-07-03
+ *   Variant B — Two-level bar (clusters → sub-tabs)
+ *
+ * Dan's 2026-07-03 calls, folded in:
+ *  - Variant A is the direction: groupings are visual labels above the tabs, NOT tabs.
+ *  - Mobile (A2): the labels-above bar doesn't fit narrow screens, so on mobile Variant A
+ *    swaps to the cluster TABS (Variant B's two-level treatment) — see the max-width media query.
+ *  - Chat (A3): keep the global "Ask about your schema" quick-ask drawer AND add a "Chat History"
+ *    item under the Knowledge group that opens the full 3-column chat page.
+ *
+ * Both share the SAME chat surface: a modal side-drawer over a dimmed body that can "Expand" to
+ * the full chat page (the inset-panel concept was dropped — Oleh 2026-07-02). Chat is pulled OUT
+ * of the tab row (9 → 8) and launched from the persistent Ask button. Everything here is
+ * presentational — scoped `.pn-` classes, no real SchemaChat wiring. See
+ * research/schema-navigation/index.html for the rationale.
+ */
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+
+const breadcrumbs = [{ label: 'Schema' }, { label: 'Navigation prototype' }];
+// ?v=a | b picks the initial variant (the floating switcher flips it client-side too).
+const v = Astro.url.searchParams.get('v') === 'b' ? 'b' : 'a';
+
+// A short faked conversation, reused across the inset panel, the drawer, and the
+// full view so all three read as the same assistant. Presentational only.
+const CONVO_HTML = `
+  <div class="pn-msg-user">Which tables in Sales CRM have undocumented fields?</div>
+  <div class="pn-msg-ai">
+    <span class="pn-mark"><span class="iconify lucide--sparkles size-3.5"></span></span>Three tables in Sales CRM have fields with no description: <b>Deals</b> (4 fields), <b>Contacts</b> (2), and <b>Activities</b> (1). The most linked of these is <b>Deals.Stage</b>, referenced by two rollups.
+    <div class="pn-refs"><span class="pn-refs-label">References</span>
+      <span class="pn-refchip"><span class="iconify lucide--table-2 size-3.5"></span>Deals</span>
+      <span class="pn-refchip"><span class="iconify lucide--table-2 size-3.5"></span>Contacts</span>
+      <span class="pn-refchip"><span class="iconify lucide--table-2 size-3.5"></span>Activities</span>
+    </div>
+  </div>
+  <div class="pn-msg-user">Draft a description for Deals.Stage.</div>
+  <div class="pn-msg-ai">
+    <span class="pn-mark"><span class="iconify lucide--sparkles size-3.5"></span></span>Suggested: “The current position of a deal in the sales pipeline (e.g. Lead, Qualified, Won). Drives the Weighted Value rollup and the Pipeline interface grouping.” Want me to save this as a doc?
+  </div>`;
+
+// ── Light, non-functional-but-faithful tab bodies ───────────────────────────
+// Each tab renders a real-looking toolbar (the FILTER placement is the point of
+// this prototype) + a compact table. Static HTML, no wiring. Shared by A and B.
+const ic = (n: string) => `<span class="iconify lucide--${n}"></span>`;
+const search = (ph: string) => `<span class="pn-search">${ic('search')}<span class="pn-search-ph">${ph}</span></span>`;
+const chip = (l: string, on = false) => `<span class="pn-fchip${on ? ' is-on' : ''}">${l}<span class="pn-caret">▾</span></span>`;
+const qchip = (l: string, on = false) => `<span class="pn-qchip${on ? ' is-on' : ''}">${l}</span>`;
+const seg = (opts: string[], on: string) => `<span class="pn-seg">${opts.map((o) => `<span class="pn-seg-opt${o === on ? ' is-on' : ''}">${o}</span>`).join('')}</span>`;
+const tgl = (l: string, on = false) => `<span class="pn-tgl${on ? ' is-on' : ''}"><span class="pn-tgl-box"></span>${l}</span>`;
+const btnP = (l: string, icon = 'plus') => `<span class="pn-btnp">${ic(icon)}${l}</span>`;
+const cnt = (t: string) => `<span class="pn-count">${t}</span>`;
+const badge = (l: string, k: string) => `<span class="pn-badge pn-badge-${k}">${l}</span>`;
+const sp = '<span class="pn-tb-sp"></span>';
+const nm = (icon: string, name: string, i = 0, cls = '') => `<span class="pn-nm" style="--i:${i}rem"><span class="iconify lucide--${icon} ${cls}"></span>${name}</span>`;
+const tbl = (head: string[], rows: string[][]) =>
+  `<table class="pn-tbl"><thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+const mini = (l: string, k = '') => `<span class="pn-mini pn-mini-${k}">${l}</span>`;
+
+const PANEL: Record<string, string> = {
+  browse:
+    `<div class="pn-tb">${search('Search bases, tables, fields…')}${chip('Base')}${chip('Table')}${chip('Field type')}${sp}${seg(['Tree', 'Flat'], 'Tree')}${tgl('Include deleted')}${cnt('24 of 180')}</div>` +
+    `<div class="pn-body">${tbl(['Name', 'Type', 'Description'], [
+      [nm('database', 'Sales CRM', 0, 'concept-ic-base'), '<span class="pn-mut">Base</span>', 'CRM master base'],
+      [nm('table-2', 'Deals', 1), '<span class="pn-mut">Table · 12 fields</span>', 'Open and closed deals'],
+      [nm('tag', 'Stage', 2), '<span class="pn-mut">Single select</span>', 'Pipeline position'],
+      [nm('tag', 'Amount', 2), '<span class="pn-mut">Currency</span>', 'Deal value'],
+      [nm('tag', 'Weighted Value', 2), '<span class="pn-mut">Formula</span>', 'Amount × Probability'],
+      [nm('table-2', 'Contacts', 1), '<span class="pn-mut">Table · 8 fields</span>', 'People and companies'],
+      [nm('tag', 'Email', 2), '<span class="pn-mut">Email</span>', '<span class="pn-mut">— no description</span>'],
+    ])}</div>`,
+
+  visualize:
+    `<div class="pn-tb">${chip('Fields: 24 of 180')}${chip('Bases')}${qchip('Hide unlinked')}${sp}<span class="pn-zoom">−&nbsp;&nbsp;100%&nbsp;&nbsp;+</span>${qchip('Fit')}</div>` +
+    `<div class="pn-body pn-er-wrap"><div class="pn-er">` +
+      `<div class="pn-node"><div class="pn-node-h">${ic('table-2')}Deals</div><div class="pn-node-f"><span>Stage</span><span class="pn-mut">select</span></div><div class="pn-node-f"><span>Amount</span><span class="pn-mut">currency</span></div><div class="pn-node-f pn-node-fk"><span>Contact</span><span class="pn-mut">link →</span></div></div>` +
+      `<span class="pn-edge">→</span>` +
+      `<div class="pn-node"><div class="pn-node-h">${ic('table-2')}Contacts</div><div class="pn-node-f"><span>Name</span><span class="pn-mut">text</span></div><div class="pn-node-f"><span>Email</span><span class="pn-mut">email</span></div><div class="pn-node-f pn-node-fk"><span>Company</span><span class="pn-mut">link →</span></div></div>` +
+      `<span class="pn-edge">→</span>` +
+      `<div class="pn-node"><div class="pn-node-h">${ic('table-2')}Companies</div><div class="pn-node-f"><span>Name</span><span class="pn-mut">text</span></div><div class="pn-node-f"><span>Tier</span><span class="pn-mut">select</span></div></div>` +
+    `</div><p class="pn-er-note">ER diagram — pan / zoom canvas (static preview)</p></div>`,
+
+  relationships:
+    `<div class="pn-tb">${chip('All bases ▸ All tables')}${chip('Type')}${qchip('Linked', true)}${qchip('Rollup')}${qchip('Lookup')}${sp}${tgl('Include removed')}${seg(['Tree', 'Flat'], 'Flat')}${cnt('31')}</div>` +
+    `<div class="pn-body">${tbl(['From', 'Type', 'To', 'Via field', ''], [
+      [nm('table-2', 'Deals'), badge('Linked', 'info'), 'Contacts', '<span class="pn-mut">Primary contact</span>', ''],
+      [nm('table-2', 'Deals'), badge('Rollup', 'info'), 'Contacts', '<span class="pn-mut">Contact count</span>', ''],
+      [nm('table-2', 'Invoices'), badge('Lookup', 'info'), 'Deals', '<span class="pn-mut">Amount</span>', ''],
+      [nm('table-2', 'Deals'), badge('Synced', 'off') + ' ' + badge('Inferred', 'warn'), 'Projects', '<span class="pn-mut">—</span>', mini('Confirm', 'ok') + mini('Dismiss', 'x')],
+    ])}</div>`,
+
+  automations:
+    `<div class="pn-tb">${chip('Base')}${search('Search automations…')}${tgl('Include removed')}${sp}${btnP('New automation')}</div>` +
+    `<div class="pn-body"><div class="pn-grouphdr">${nm('database', 'Sales CRM', 0, 'concept-ic-base')} <span class="pn-mut">· 3</span></div>${tbl(['Name', 'Status', 'Trigger', 'Tagged'], [
+      ['Notify deal owner', badge('Active', 'ok'), '<span class="pn-mut">Record enters “Won”</span>', '2 tagged'],
+      ['Weekly pipeline digest', badge('Inactive', 'off'), '<span class="pn-mut">Every Monday 9:00</span>', '1 tagged'],
+      ['Sync to Slack', badge('Active', 'ok'), '<span class="pn-mut">Record updated</span>', '3 tagged'],
+    ])}</div>`,
+
+  interfaces:
+    `<div class="pn-tb">${chip('Base')}${search('Search interfaces…')}${sp}${btnP('New interface')}</div>` +
+    `<div class="pn-body">${tbl(['Name', 'Type', 'Status'], [
+      [nm('database', 'Sales CRM', 0, 'concept-ic-base'), '<span class="pn-mut">Base</span>', ''],
+      [nm('layout-panel-left', 'Pipeline', 1, 'concept-ic-interface'), '<span class="pn-mut">Interface · 2 pages</span>', badge('Published', 'ok')],
+      [nm('file-text', 'Overview', 2, 'concept-ic-page'), '<span class="pn-mut">Page</span>', ''],
+      [nm('file-text', 'Deal detail', 2, 'concept-ic-page'), '<span class="pn-mut">Page</span>', ''],
+      [nm('layout-panel-left', 'Team hub', 1, 'concept-ic-interface'), '<span class="pn-mut">Interface · 1 page</span>', badge('Not published', 'off')],
+    ])}</div>`,
+
+  changelog:
+    `<div class="pn-tb">${chip('Base')}${chip('Table')}${chip('Change type')}${sp}${chip('Last 30 days')}</div>` +
+    `<div class="pn-body pn-feed">` +
+      `<div class="pn-feed-day">Jul 2</div>` +
+      `<div class="pn-feed-row"><span class="pn-feed-ic pn-fi-add">+</span><span>Field added · <b>Deals.Forecast</b></span></div>` +
+      `<div class="pn-feed-row"><span class="pn-feed-ic pn-fi-ren">✎</span><span>Field renamed · <b>Amount → Deal Amount</b></span>${badge('Data change', 'warn')}</div>` +
+      `<div class="pn-feed-row"><span class="pn-feed-ic pn-fi-rem">−</span><span>Table removed · <b>Archive</b></span>${badge('Data change', 'warn')}</div>` +
+      `<div class="pn-feed-day">Jul 1</div>` +
+      `<div class="pn-feed-row"><span class="pn-feed-ic pn-fi-cfg">⚙</span><span>Automation turned off · <b>Weekly pipeline digest</b></span></div>` +
+    `</div>`,
+
+  health:
+    `<div class="pn-tb">${seg(['Sales CRM', 'Marketing', 'Operations'], 'Sales CRM')}${sp}${chip('Category')}</div>` +
+    `<div class="pn-body pn-health">` +
+      `<div class="pn-score"><span class="pn-score-n">78</span><span class="pn-score-d">/ 100</span><span class="pn-badge pn-badge-warn">Fair</span></div>` +
+      `<div class="pn-cats">` +
+        `<div class="pn-cat"><div class="pn-cat-t"><span>Descriptions</span><span class="pn-mut">62%</span></div><div class="pn-hbar"><span class="pn-hbar-fill" style="width:62%"></span></div></div>` +
+        `<div class="pn-cat"><div class="pn-cat-t"><span>Structure</span><span class="pn-mut">90%</span></div><div class="pn-hbar"><span class="pn-hbar-fill pn-hbar-ok" style="width:90%"></span></div></div>` +
+        `<div class="pn-cat"><div class="pn-cat-t"><span>Naming</span><span class="pn-mut">71%</span></div><div class="pn-hbar"><span class="pn-hbar-fill" style="width:71%"></span></div></div>` +
+        `<div class="pn-issues"><div class="pn-feed-row"><span class="pn-feed-ic pn-fi-warn">!</span><span>18 fields missing descriptions</span></div><div class="pn-feed-row"><span class="pn-feed-ic pn-fi-warn">!</span><span>3 tables with no primary link</span></div></div>` +
+      `</div>` +
+    `</div>`,
+
+  docs:
+    `<div class="pn-tb">${search('Search docs…')}${chip('Tag')}${sp}${btnP('New doc')}</div>` +
+    `<div class="pn-body">${tbl(['Title', 'Tags', 'Updated'], [
+      [nm('file-text', 'Data model overview'), badge('Sales CRM', 'info') + ' ' + badge('Deals', 'info'), '<span class="pn-mut">Jul 1</span>'],
+      [nm('file-text', 'Onboarding schema'), badge('Contacts', 'info'), '<span class="pn-mut">Jun 20</span>'],
+      [nm('file-text', 'Formula reference'), badge('Weighted Value', 'info'), '<span class="pn-mut">Jun 12</span>'],
+    ])}</div>`,
+};
+---
+
+<SidebarLayout pageTitle="Schema navigation prototype" breadcrumbs={breadcrumbs}>
+  <div class="pn" data-variant={v} data-mode="closed">
+    {/* ── section header: freshness + persistent chat launcher ── */}
+    <div class="pn-head">
+      <div class="pn-head-l">
+        <h1 class="pn-title">Schema</h1>
+        <span class="pn-stamp"><span class="iconify lucide--history size-3.5"></span>Schema as of Jul 2 · Read-only</span>
+      </div>
+      <button type="button" class="pn-launcher" data-pn-open>
+        <span class="iconify lucide--sparkles size-4"></span>Ask about your schema
+        <kbd class="pn-kbd">⌘I</kbd>
+      </button>
+    </div>
+
+    {/* ═══════════ BAR A — grouped: cluster label ABOVE each group's tabs ═══════════ */}
+    <div class="pn-bar pn-bar-a" role="tablist" aria-label="Schema sections (grouped)">
+      <div class="pn-group">
+        <span class="pn-glabel">Explore</span>
+        <div class="pn-gtabs">
+          <button type="button" class="pn-tab is-on" data-tab data-panel="browse"><span class="iconify lucide--list-tree size-4"></span>Browse</button>
+          <button type="button" class="pn-tab" data-tab data-panel="visualize"><span class="iconify lucide--workflow size-4"></span>Visualize</button>
+          <button type="button" class="pn-tab" data-tab data-panel="relationships"><span class="iconify lucide--waypoints size-4"></span>Relationships</button>
+        </div>
+      </div>
+      <span class="pn-div"></span>
+      <div class="pn-group">
+        <span class="pn-glabel">App layer</span>
+        <div class="pn-gtabs">
+          <button type="button" class="pn-tab" data-tab data-panel="automations"><span class="iconify lucide--zap size-4"></span>Automations</button>
+          <button type="button" class="pn-tab" data-tab data-panel="interfaces"><span class="iconify lucide--layout-panel-left size-4"></span>Interfaces</button>
+        </div>
+      </div>
+      <span class="pn-div"></span>
+      <div class="pn-group">
+        <span class="pn-glabel">Monitor</span>
+        <div class="pn-gtabs">
+          <button type="button" class="pn-tab" data-tab data-panel="changelog"><span class="iconify lucide--history size-4"></span>Changelog</button>
+          <button type="button" class="pn-tab" data-tab data-panel="health"><span class="iconify lucide--heart-pulse size-4"></span>Health</button>
+        </div>
+      </div>
+      <span class="pn-div"></span>
+      <div class="pn-group">
+        <span class="pn-glabel">Knowledge</span>
+        <div class="pn-gtabs">
+          <button type="button" class="pn-tab" data-tab data-panel="docs"><span class="iconify lucide--book-text size-4"></span>Docs</button>
+          <button type="button" class="pn-tab" data-pn-chat-history><span class="iconify lucide--messages-square size-4"></span>Chat History</button>
+        </div>
+      </div>
+    </div>
+
+    {/* ═══════════ BAR B — two-level: clusters → sub-tabs ═══════════ */}
+    <div class="pn-bar-b">
+      <div class="pn-clusters" role="tablist" aria-label="Schema clusters">
+        <button type="button" class="pn-cluster is-on" data-cluster="explore"><span class="iconify lucide--list-tree size-4"></span>Explore</button>
+        <button type="button" class="pn-cluster" data-cluster="app"><span class="iconify lucide--zap size-4"></span>App layer</button>
+        <button type="button" class="pn-cluster" data-cluster="monitor"><span class="iconify lucide--heart-pulse size-4"></span>Monitor</button>
+        <button type="button" class="pn-cluster" data-cluster="knowledge"><span class="iconify lucide--book-text size-4"></span>Knowledge</button>
+      </div>
+      <div class="pn-subrow" data-sub="explore">
+        <button type="button" class="pn-subtab is-on" data-tab data-panel="browse">Browse</button>
+        <button type="button" class="pn-subtab" data-tab data-panel="visualize">Visualize</button>
+        <button type="button" class="pn-subtab" data-tab data-panel="relationships">Relationships</button>
+      </div>
+      <div class="pn-subrow" data-sub="app" hidden>
+        <button type="button" class="pn-subtab is-on" data-tab data-panel="automations">Automations</button>
+        <button type="button" class="pn-subtab" data-tab data-panel="interfaces">Interfaces</button>
+      </div>
+      <div class="pn-subrow" data-sub="monitor" hidden>
+        <button type="button" class="pn-subtab is-on" data-tab data-panel="changelog">Changelog</button>
+        <button type="button" class="pn-subtab" data-tab data-panel="health">Health</button>
+      </div>
+      <div class="pn-subrow" data-sub="knowledge" hidden>
+        <button type="button" class="pn-subtab is-on" data-tab data-panel="docs">Docs</button>
+        <button type="button" class="pn-subtab" data-pn-chat-history>Chat History</button>
+      </div>
+    </div>
+
+    {/* ── work area: one light, static screen per tab (filter placement is the point) ── */}
+    <div class="pn-work">
+      <main class="pn-main">
+        {Object.entries(PANEL).map(([key, html]) => (
+          <section class="pn-panel" data-panel={key} hidden={key !== 'browse'} set:html={html} />
+        ))}
+      </main>
+    </div>
+
+    {/* ── Chat: modal side-drawer (both variants); Expand → full page ── */}
+    <div class="pn-scrim" data-pn-close></div>
+    <aside class="pn-drawer" aria-label="Schema assistant">
+      <div class="pn-cpanel">
+        <div class="pn-cpanel-top">
+          <span class="pn-cpanel-title"><span class="iconify lucide--sparkles size-4"></span>Schema assistant</span>
+          <div class="pn-cpanel-acts">
+            <button type="button" class="pn-icobtn" data-pn-expand aria-label="Expand to full page" title="Expand"><span class="iconify lucide--arrow-up-right size-4"></span></button>
+            <button type="button" class="pn-icobtn" data-pn-close aria-label="Close"><span class="iconify lucide--x size-4"></span></button>
+          </div>
+        </div>
+        <div class="pn-cpanel-scope"><span class="pn-scopechip"><span class="iconify lucide--database size-3.5"></span>Whole Space</span></div>
+        <div class="pn-convo" set:html={CONVO_HTML}></div>
+        <div class="pn-composer">
+          <div class="pn-composer-box">
+            <div class="pn-input-fake">Ask about your schema…</div>
+            <div class="pn-composer-bar">
+              <span class="pn-addctx"><span class="iconify lucide--plus size-3.5"></span>Add context</span>
+              <span class="pn-credits"><span class="iconify lucide--zap size-3.5"></span>~2 credits</span>
+              <span class="pn-send"><span class="iconify lucide--arrow-up size-4"></span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    {/* ── Full page (shared Expand target): the rich 3-column chat ── */}
+    <div class="pn-full" aria-label="Schema assistant — full view">
+      <div class="pn-full-rail">
+        <div class="pn-full-newbtn"><span class="iconify lucide--plus size-4"></span>New chat</div>
+        <div class="pn-trow is-on"><span class="iconify lucide--message-square size-3.5"></span>Undocumented fields in Sales CRM<span class="pn-trow-when">Jul 2</span></div>
+        <div class="pn-trow"><span class="iconify lucide--message-square size-3.5"></span>What links to Companies?<span class="pn-trow-when">Jul 1</span></div>
+        <div class="pn-trow"><span class="iconify lucide--message-square size-3.5"></span>Formula fields overview<span class="pn-trow-when">Jun 28</span></div>
+      </div>
+      <div class="pn-full-main">
+        <div class="pn-full-top">
+          <span class="pn-full-thread">Undocumented fields in Sales CRM</span>
+          <div class="pn-cpanel-acts">
+            <span class="pn-convert"><span class="iconify lucide--file-text size-3.5"></span>Convert to doc</span>
+            <button type="button" class="pn-icobtn" data-pn-collapse aria-label="Collapse to panel" title="Collapse"><span class="iconify lucide--x size-4"></span></button>
+          </div>
+        </div>
+        <div class="pn-convo pn-convo-wide" set:html={CONVO_HTML}></div>
+        <div class="pn-composer pn-composer-wide">
+          <div class="pn-composer-box">
+            <div class="pn-input-fake">Ask about your schema…</div>
+            <div class="pn-composer-bar">
+              <span class="pn-addctx"><span class="iconify lucide--plus size-3.5"></span>Add context</span>
+              <span class="pn-credits"><span class="iconify lucide--zap size-3.5"></span>~2 credits / message</span>
+              <span class="pn-send"><span class="iconify lucide--arrow-up size-4"></span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="pn-full-ctx">
+        <div class="pn-full-ctx-h">Context</div>
+        <span class="pn-scopechip"><span class="iconify lucide--database size-3.5"></span>Sales CRM</span>
+        <span class="pn-scopechip"><span class="iconify lucide--table-2 size-3.5"></span>Deals</span>
+      </div>
+    </div>
+
+    {/* ── floating variant switcher (scenario-switcher pattern) ── */}
+    <div class="pn-switch" role="radiogroup" aria-label="Prototype variant">
+      <span class="pn-switch-label">Nav variant</span>
+      <button type="button" class="pn-switch-btn is-on" data-set-variant="a">
+        <span class="pn-switch-key">A</span>
+        <span class="pn-switch-meta"><b>Grouped bar</b><i>dividers + labels</i></span>
+      </button>
+      <button type="button" class="pn-switch-btn" data-set-variant="b">
+        <span class="pn-switch-key">B</span>
+        <span class="pn-switch-meta"><b>Two-level</b><i>clusters → sub-tabs</i></span>
+      </button>
+    </div>
+  </div>
+</SidebarLayout>
+
+<style is:global>
+  /* scoped-ish: everything under .pn, `.pn-`-prefixed. is:global so set:html'd
+     conversation markup is styled too. Throwaway prototype CSS. */
+  .pn { position: relative; display: flex; flex-direction: column; min-height: calc(100dvh - 130px); }
+
+  .pn-head { display: flex; align-items: center; gap: 1rem; margin-bottom: .9rem; flex: none; }
+  .pn-head-l { display: flex; align-items: baseline; gap: .7rem; min-width: 0; }
+  .pn-title { font-size: 1.4rem; font-weight: 650; letter-spacing: -.01em; }
+  .pn-stamp { display: inline-flex; align-items: center; gap: .35rem; font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .5); }
+  .pn-stamp .iconify { opacity: .7; }
+  .pn-launcher { margin-left: auto; display: inline-flex; align-items: center; gap: .45rem; font-size: .85rem; font-weight: 550; padding: .42rem .7rem .42rem .6rem; border-radius: 999px; border: 1px solid color-mix(in oklch, var(--color-primary) 40%, var(--color-base-300)); color: var(--color-primary); background: color-mix(in oklch, var(--color-primary) 7%, var(--color-base-100)); cursor: pointer; }
+  .pn-launcher:hover { background: color-mix(in oklch, var(--color-primary) 13%, var(--color-base-100)); }
+  .pn-kbd { font-size: .66rem; font-family: ui-monospace, monospace; border: 1px solid color-mix(in oklch, var(--color-primary) 35%, var(--color-base-300)); border-radius: 5px; padding: 0 .3rem; opacity: .8; }
+
+  /* ── Bar A: grouped — cluster label sits ABOVE each group's tab row ── */
+  .pn-bar { display: flex; align-items: stretch; gap: .1rem; flex-wrap: wrap; border-bottom: 1px solid var(--color-base-300); flex: none; }
+  .pn-group { display: flex; flex-direction: column; }
+  .pn-glabel { font-size: .6rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .42); padding: 0 0 .1rem .6rem; }
+  .pn-gtabs { display: flex; align-items: stretch; }
+  .pn-tab { display: inline-flex; align-items: center; gap: .4rem; padding: .5rem .6rem; font-size: .86rem; font-weight: 560; color: oklch(from var(--color-base-content) l c h / .68); border: 0; border-bottom: 2px solid transparent; background: none; cursor: pointer; white-space: nowrap; margin-bottom: -1px; }
+  .pn-tab .iconify { opacity: .72; }
+  .pn-tab:hover { color: var(--color-base-content); }
+  .pn-tab.is-on { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+  .pn-tab.is-on .iconify { opacity: 1; }
+  /* vertical divider between groups — spans the tab row only (aligned to the bottom) */
+  .pn-div { width: 1px; background: var(--color-base-300); margin: 0 .6rem; align-self: flex-end; height: 1.9rem; }
+
+  /* ── Bar B: two-level ── */
+  .pn-bar-b { display: none; flex-direction: column; flex: none; }
+  .pn-clusters { display: flex; gap: .1rem; border-bottom: 1px solid var(--color-base-300); }
+  .pn-cluster { display: inline-flex; align-items: center; gap: .45rem; padding: .55rem .85rem; font-size: .92rem; font-weight: 620; color: oklch(from var(--color-base-content) l c h / .6); border: 0; border-bottom: 2px solid transparent; background: none; cursor: pointer; margin-bottom: -1px; }
+  .pn-cluster .iconify { opacity: .7; }
+  .pn-cluster:hover { color: var(--color-base-content); }
+  .pn-cluster.is-on { color: var(--color-base-content); border-bottom-color: var(--color-base-content); }
+  .pn-cluster.is-on .iconify { opacity: 1; color: var(--color-primary); }
+  .pn-subrow { display: flex; gap: .3rem; padding: .6rem .1rem .1rem; }
+  .pn-subrow[hidden] { display: none; }
+  .pn-subtab { padding: .35rem .7rem; font-size: .84rem; font-weight: 540; color: oklch(from var(--color-base-content) l c h / .65); border: 0; border-radius: 7px; background: none; cursor: pointer; }
+  .pn-subtab:hover { background: oklch(from var(--color-base-content) l c h / .05); color: var(--color-base-content); }
+  .pn-subtab.is-on { color: var(--color-primary); background: color-mix(in oklch, var(--color-primary) 13%, transparent); }
+
+  .pn[data-variant="a"] .pn-bar-b { display: none; }
+  .pn[data-variant="a"] .pn-bar-a { display: flex; }
+  .pn[data-variant="b"] .pn-bar-a { display: none; }
+  .pn[data-variant="b"] .pn-bar-b { display: flex; }
+
+  /* A2 (Dan 2026-07-03): on mobile the labels-above-tabs bar doesn't fit, so the clusters become
+     tabs (the two-level treatment) — the one place the tab pattern earns its keep. Variant A's
+     grouped bar swaps to the cluster tabs + sub-row on narrow screens. */
+  @media (max-width: 680px) {
+    .pn[data-variant="a"] .pn-bar-a { display: none; }
+    .pn[data-variant="a"] .pn-bar-b { display: flex; }
+    .pn-head { flex-wrap: wrap; }
+    .pn-launcher { margin-left: 0; }
+  }
+
+  /* ── work area ── */
+  .pn-work { display: flex; gap: 1rem; flex: 1; min-height: 0; margin-top: 1.1rem; }
+  .pn-main { flex: 1; min-width: 0; min-height: 0; }
+  /* ── per-tab static screens ── */
+  .pn-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); overflow: hidden; height: 100%; display: flex; flex-direction: column; min-height: 420px; }
+  .pn-panel[hidden] { display: none; }
+
+  /* toolbar (the filter row — the point of the prototype) */
+  .pn-tb { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; padding: .65rem .75rem; border-bottom: 1px solid var(--color-base-200); }
+  .pn-tb-sp { flex: 1; }
+  .pn-search { display: inline-flex; align-items: center; gap: .4rem; border: 1px solid var(--color-base-300); border-radius: 8px; padding: .32rem .55rem; min-width: 220px; background: var(--color-base-100); }
+  .pn-search .iconify { opacity: .45; font-size: .9rem; }
+  .pn-search-ph { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .4); }
+  .pn-fchip { display: inline-flex; align-items: center; gap: .3rem; font-size: .8rem; border: 1px solid var(--color-base-300); border-radius: 7px; padding: .32rem .55rem; background: var(--color-base-100); color: oklch(from var(--color-base-content) l c h / .78); }
+  .pn-fchip.is-on { color: var(--color-primary); border-color: color-mix(in oklch, var(--color-primary) 40%, var(--color-base-300)); background: color-mix(in oklch, var(--color-primary) 8%, var(--color-base-100)); }
+  .pn-caret { font-size: .6rem; opacity: .5; }
+  .pn-qchip { font-size: .78rem; border: 1px solid var(--color-base-300); border-radius: 999px; padding: .22rem .6rem; color: oklch(from var(--color-base-content) l c h / .7); }
+  .pn-qchip.is-on { color: var(--color-primary); border-color: color-mix(in oklch, var(--color-primary) 40%, var(--color-base-300)); background: color-mix(in oklch, var(--color-primary) 10%, var(--color-base-100)); font-weight: 560; }
+  .pn-seg { display: inline-flex; border: 1px solid var(--color-base-300); border-radius: 8px; overflow: hidden; }
+  .pn-seg-opt { font-size: .8rem; padding: .3rem .62rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .pn-seg-opt.is-on { background: var(--color-base-200); color: var(--color-base-content); font-weight: 600; }
+  .pn-tgl { display: inline-flex; align-items: center; gap: .4rem; font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .7); }
+  .pn-tgl-box { position: relative; width: 1.9rem; height: 1.05rem; border-radius: 999px; background: var(--color-base-300); flex: none; transition: background .15s; }
+  .pn-tgl-box::after { content: ""; position: absolute; top: 2px; left: 2px; width: .75rem; height: .75rem; border-radius: 50%; background: var(--color-base-100); transition: transform .15s; }
+  .pn-tgl.is-on .pn-tgl-box { background: var(--color-primary); }
+  .pn-tgl.is-on .pn-tgl-box::after { transform: translateX(.85rem); }
+  .pn-btnp { display: inline-flex; align-items: center; gap: .35rem; font-size: .82rem; font-weight: 560; padding: .35rem .7rem; border-radius: 8px; background: var(--color-primary); color: var(--color-primary-content); }
+  .pn-btnp .iconify { font-size: .9rem; }
+  .pn-count { font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .5); }
+  .pn-zoom { font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .55); font-family: ui-monospace, monospace; }
+
+  .pn-body { flex: 1; overflow: auto; min-height: 0; }
+  .pn-mut { color: oklch(from var(--color-base-content) l c h / .5); }
+
+  /* data table — Backups style: text-sm, muted header, roomy rows, row-hover */
+  .pn-tbl { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  .pn-tbl th { text-align: left; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .45); font-weight: 600; padding: .5rem .85rem; border-bottom: 1px solid var(--color-base-200); }
+  .pn-tbl td { padding: .58rem .85rem; border-bottom: 1px solid var(--color-base-200); color: oklch(from var(--color-base-content) l c h / .88); vertical-align: middle; }
+  .pn-tbl tbody tr:hover { background: oklch(from var(--color-base-content) l c h / .03); }
+  .pn-nm { display: inline-flex; align-items: center; gap: .45rem; padding-left: var(--i, 0); font-weight: 520; }
+  .pn-nm .iconify { opacity: .82; font-size: .95rem; flex: none; }
+
+  /* soft semantic badges */
+  .pn-badge { display: inline-flex; align-items: center; gap: .25rem; font-size: .7rem; font-weight: 600; padding: .08rem .5rem; border-radius: 999px; }
+  .pn-badge-ok { color: var(--color-success); background: color-mix(in oklch, var(--color-success) 15%, transparent); }
+  .pn-badge-off { color: oklch(from var(--color-base-content) l c h / .6); background: oklch(from var(--color-base-content) l c h / .09); }
+  .pn-badge-warn { color: var(--color-warning); background: color-mix(in oklch, var(--color-warning) 16%, transparent); }
+  .pn-badge-info { color: var(--color-primary); background: color-mix(in oklch, var(--color-primary) 13%, transparent); }
+  .pn-mini { font-size: .74rem; font-weight: 560; padding: .15rem .5rem; border-radius: 6px; border: 1px solid var(--color-base-300); margin-left: .3rem; }
+  .pn-mini-ok { color: var(--color-success); border-color: color-mix(in oklch, var(--color-success) 40%, var(--color-base-300)); }
+  .pn-mini-x { color: oklch(from var(--color-base-content) l c h / .6); }
+
+  .pn-grouphdr { display: flex; align-items: center; gap: .3rem; font-size: .82rem; font-weight: 620; padding: .6rem .85rem .35rem; }
+
+  /* changelog feed */
+  .pn-feed-day { font-size: .68rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .4); padding: .7rem .85rem .25rem; }
+  .pn-feed-row { display: flex; align-items: center; gap: .6rem; padding: .5rem .85rem; border-bottom: 1px solid var(--color-base-200); font-size: .85rem; }
+  .pn-feed-row > span:nth-child(2) { flex: 1; }
+  .pn-feed-ic { display: grid; place-items: center; width: 1.4rem; height: 1.4rem; border-radius: 6px; font-weight: 700; font-size: .8rem; flex: none; }
+  .pn-fi-add { color: var(--color-success); background: color-mix(in oklch, var(--color-success) 14%, transparent); }
+  .pn-fi-ren { color: var(--color-warning); background: color-mix(in oklch, var(--color-warning) 14%, transparent); }
+  .pn-fi-rem { color: var(--color-error); background: color-mix(in oklch, var(--color-error) 14%, transparent); }
+  .pn-fi-cfg { color: oklch(from var(--color-base-content) l c h / .6); background: oklch(from var(--color-base-content) l c h / .09); }
+  .pn-fi-warn { color: var(--color-warning); background: color-mix(in oklch, var(--color-warning) 14%, transparent); }
+
+  /* visualize — light ER */
+  .pn-er-wrap { display: flex; flex-direction: column; }
+  .pn-er { display: flex; align-items: center; gap: 1.1rem; padding: 1.6rem; flex-wrap: wrap; flex: 1; }
+  .pn-node { border: 1px solid var(--color-base-300); border-radius: 10px; min-width: 158px; background: var(--color-base-100); box-shadow: 0 1px 3px oklch(0 0 0 / .05); overflow: hidden; }
+  .pn-node-h { display: flex; align-items: center; gap: .4rem; font-weight: 640; font-size: .82rem; padding: .5rem .7rem; border-bottom: 1px solid var(--color-base-200); }
+  .pn-node-h .iconify { opacity: .85; }
+  .pn-node-f { display: flex; justify-content: space-between; gap: 1rem; font-size: .78rem; padding: .32rem .7rem; color: oklch(from var(--color-base-content) l c h / .78); }
+  .pn-node-fk { color: var(--color-primary); }
+  .pn-edge { font-size: 1.3rem; color: oklch(from var(--color-base-content) l c h / .3); }
+  .pn-er-note { text-align: center; font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .4); padding: 0 0 1rem; }
+
+  /* health */
+  .pn-health { display: flex; gap: 2.2rem; padding: 1.4rem 1.5rem; flex-wrap: wrap; }
+  .pn-score { display: flex; align-items: baseline; gap: .5rem; align-self: flex-start; }
+  .pn-score-n { font-size: 2.6rem; font-weight: 700; line-height: 1; color: var(--color-warning); }
+  .pn-score-d { font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .5); }
+  .pn-cats { flex: 1; min-width: 260px; }
+  .pn-cat { margin-bottom: .7rem; }
+  .pn-cat-t { display: flex; justify-content: space-between; font-size: .8rem; margin-bottom: .28rem; }
+  .pn-hbar { height: 7px; border-radius: 999px; background: var(--color-base-200); overflow: hidden; }
+  .pn-hbar-fill { display: block; height: 100%; border-radius: 999px; background: var(--color-warning); }
+  .pn-hbar-fill.pn-hbar-ok { background: var(--color-success); }
+  .pn-issues { margin-top: 1.1rem; border-top: 1px solid var(--color-base-200); }
+
+  /* ── chat panel shell (used by the drawer + full view) ── */
+  .pn-cpanel { display: flex; flex-direction: column; height: 100%; min-height: 440px; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); overflow: hidden; }
+  .pn-cpanel-top { display: flex; align-items: center; gap: .5rem; padding: .6rem .5rem .6rem .8rem; border-bottom: 1px solid var(--color-base-300); }
+  .pn-cpanel-title { display: inline-flex; align-items: center; gap: .4rem; font-size: .85rem; font-weight: 640; }
+  .pn-cpanel-title .iconify { color: var(--color-primary); }
+  .pn-cpanel-acts { margin-left: auto; display: inline-flex; gap: .1rem; }
+  .pn-icobtn { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border: 0; background: none; border-radius: 7px; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .55); }
+  .pn-icobtn:hover { background: oklch(from var(--color-base-content) l c h / .07); color: var(--color-base-content); }
+  .pn-cpanel-scope { padding: .55rem .8rem; border-bottom: 1px solid var(--color-base-200); }
+  .pn-scopechip { display: inline-flex; align-items: center; gap: .3rem; font-size: .74rem; padding: .12rem .5rem; border-radius: 999px; border: 1px solid var(--color-base-300); background: oklch(from var(--color-base-200) l c h / .5); color: oklch(from var(--color-base-content) l c h / .7); }
+  .pn-scopechip .iconify { opacity: .6; }
+
+  /* conversation (shared by inset / drawer / full) */
+  .pn-convo { flex: 1; overflow-y: auto; min-height: 0; padding: 1.1rem 1rem; display: flex; flex-direction: column; gap: 1.2rem; }
+  .pn-convo-wide { padding: 1.9rem max(1.5rem, calc((100% - 46rem) / 2)); gap: 1.7rem; }
+  .pn-msg-user { align-self: flex-end; max-width: 82%; padding: .6rem .9rem; border-radius: 1.1rem 1.1rem .3rem 1.1rem; background: oklch(from var(--color-base-200) l c h / .9); font-size: .88rem; line-height: 1.55; }
+  .pn-msg-ai { align-self: stretch; font-size: .9rem; line-height: 1.65; color: var(--color-base-content); }
+  .pn-msg-ai .pn-mark { display: inline-grid; place-items: center; width: 1.3rem; height: 1.3rem; color: var(--color-primary); vertical-align: -.3rem; margin-right: .1rem; }
+  .pn-msg-ai .pn-refs { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .6rem; }
+  .pn-refchip { display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; padding: .1rem .45rem; border-radius: 999px; border: 1px solid var(--color-base-300); background: oklch(from var(--color-base-200) l c h / .5); color: oklch(from var(--color-base-content) l c h / .75); }
+  .pn-refchip .iconify { opacity: .6; }
+  .pn-refs-label { font-size: .68rem; color: oklch(from var(--color-base-content) l c h / .42); align-self: center; margin-right: .1rem; }
+
+  /* composer (shared) */
+  .pn-composer { padding: .8rem; border-top: 1px solid var(--color-base-300); }
+  .pn-composer-wide { padding: .9rem max(1.2rem, calc((100% - 46rem) / 2)) 1.1rem; }
+  .pn-composer-box { border: 1px solid var(--color-base-300); border-radius: 1rem; background: var(--color-base-100); padding: .7rem .85rem .6rem; box-shadow: 0 1px 3px oklch(0 0 0 / .05); }
+  .pn-input-fake { font-size: .9rem; color: oklch(from var(--color-base-content) l c h / .4); padding: .2rem 0 .7rem; }
+  .pn-composer-bar { display: flex; align-items: center; gap: .5rem; }
+  .pn-addctx { display: inline-flex; align-items: center; gap: .25rem; font-size: .76rem; color: oklch(from var(--color-base-content) l c h / .6); padding: .2rem .4rem; border-radius: 6px; }
+  .pn-credits { display: inline-flex; align-items: center; gap: .25rem; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); margin-left: auto; }
+  .pn-credits .iconify { opacity: .7; }
+  .pn-send { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: 8px; background: var(--color-primary); color: var(--color-primary-content); flex: none; }
+
+  /* ── modal drawer (Concept 2) ── */
+  .pn-scrim { position: fixed; inset: 0; background: oklch(0 0 0 / .32); opacity: 0; pointer-events: none; transition: opacity .18s ease; z-index: 60; }
+  .pn-drawer { position: fixed; top: 0; right: 0; height: 100dvh; width: min(440px, 92vw); background: var(--color-base-100); border-left: 1px solid var(--color-base-300); box-shadow: -12px 0 40px oklch(0 0 0 / .18); transform: translateX(100%); transition: transform .2s ease; z-index: 61; }
+  .pn-drawer .pn-cpanel { height: 100%; border: 0; border-radius: 0; min-height: 0; }
+  .pn[data-mode="drawer"] .pn-scrim { opacity: 1; pointer-events: auto; }
+  .pn[data-mode="drawer"] .pn-drawer { transform: translateX(0); }
+
+  /* ── full page (shared Expand target) ── */
+  .pn-full { display: none; position: fixed; inset: 0; z-index: 62; background: var(--color-base-100); grid-template-columns: minmax(200px, 250px) 1fr minmax(180px, 230px); }
+  .pn[data-mode="full"] .pn-full { display: grid; }
+  .pn-full-rail { border-right: 1px solid var(--color-base-300); padding: .8rem; display: flex; flex-direction: column; gap: .3rem; background: var(--color-base-100); }
+  .pn-full-newbtn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; font-size: .82rem; font-weight: 560; padding: .45rem; border-radius: 8px; border: 1px solid var(--color-base-300); margin-bottom: .5rem; }
+  .pn-trow { display: flex; align-items: center; gap: .45rem; padding: .45rem .5rem; border-radius: 7px; font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .8); cursor: pointer; }
+  .pn-trow .iconify { color: oklch(from var(--color-base-content) l c h / .45); flex: none; }
+  .pn-trow-when { margin-left: auto; font-size: .68rem; color: oklch(from var(--color-base-content) l c h / .4); }
+  .pn-trow.is-on { background: oklch(from var(--color-primary) l c h / .1); }
+  .pn-trow.is-on .iconify { color: var(--color-primary); }
+  .pn-full-main { display: flex; flex-direction: column; min-width: 0; }
+  .pn-full-top { display: flex; align-items: center; gap: .5rem; padding: .65rem .8rem; border-bottom: 1px solid var(--color-base-300); }
+  .pn-full-thread { font-size: .88rem; font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pn-convert { display: inline-flex; align-items: center; gap: .3rem; font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .65); padding: .25rem .5rem; border-radius: 7px; }
+  .pn-full-ctx { border-left: 1px solid var(--color-base-300); padding: .9rem .8rem; display: flex; flex-direction: column; gap: .4rem; align-items: flex-start; background: var(--color-base-100); }
+  .pn-full-ctx-h { font-size: .64rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .45); margin-bottom: .2rem; }
+
+  /* ── floating switcher ── */
+  .pn-switch { position: fixed; bottom: 1.4rem; left: 50%; transform: translateX(-50%); z-index: 55; display: flex; align-items: center; gap: .4rem; padding: .4rem .5rem; border-radius: 14px; background: var(--color-base-100); border: 1px solid var(--color-base-300); box-shadow: 0 12px 34px oklch(0 0 0 / .2); }
+  .pn-switch-label { font-size: .66rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .45); padding: 0 .3rem 0 .4rem; }
+  .pn-switch-btn { display: inline-flex; align-items: center; gap: .5rem; padding: .35rem .6rem; border-radius: 10px; border: 1px solid transparent; background: none; cursor: pointer; text-align: left; }
+  .pn-switch-btn:hover { background: oklch(from var(--color-base-content) l c h / .05); }
+  .pn-switch-btn.is-on { background: color-mix(in oklch, var(--color-primary) 10%, var(--color-base-100)); border-color: color-mix(in oklch, var(--color-primary) 40%, var(--color-base-300)); }
+  .pn-switch-key { display: grid; place-items: center; width: 1.5rem; height: 1.5rem; border-radius: 7px; font-weight: 700; font-size: .82rem; background: var(--color-base-200); color: oklch(from var(--color-base-content) l c h / .7); }
+  .pn-switch-btn.is-on .pn-switch-key { background: var(--color-primary); color: var(--color-primary-content); }
+  .pn-switch-meta { display: flex; flex-direction: column; line-height: 1.15; }
+  .pn-switch-meta b { font-size: .8rem; font-weight: 620; }
+  .pn-switch-meta i { font-size: .68rem; font-style: normal; color: oklch(from var(--color-base-content) l c h / .5); }
+
+  @media (max-width: 900px) {
+    .pn-full { grid-template-columns: 1fr; }
+    .pn-full-rail, .pn-full-ctx { display: none; }
+    .pn[data-mode="full"] .pn-full { grid-template-columns: 1fr; }
+  }
+</style>
+
+<script>
+  function wirePrototype() {
+    const root = document.querySelector<HTMLElement>('.pn');
+    if (!root || root.dataset.pnWired === '1') return;
+    root.dataset.pnWired = '1';
+
+    const setMode = (m: string) => { root.dataset.mode = m; };
+    // Both variants share one chat surface now: a modal drawer that can Expand to full page.
+    const openChat = () => setMode('drawer');
+
+    // show the static screen for a tab key
+    const showPanel = (key?: string | null) => {
+      if (!key) return;
+      root.querySelectorAll<HTMLElement>('.pn-panel').forEach((p) => (p.hidden = p.dataset.panel !== key));
+    };
+
+    // launcher + close + expand + collapse
+    root.querySelectorAll('[data-pn-open]').forEach((b) => b.addEventListener('click', openChat));
+    // "Chat History" under Knowledge (Dan 2026-07-03): jumps straight to the full 3-column chat page
+    // (thread list + conversation), distinct from the global quick-ask drawer.
+    root.querySelectorAll('[data-pn-chat-history]').forEach((b) => b.addEventListener('click', () => setMode('full')));
+    root.querySelectorAll('[data-pn-close]').forEach((b) => b.addEventListener('click', () => setMode('closed')));
+    root.querySelectorAll('[data-pn-expand]').forEach((b) => b.addEventListener('click', () => setMode('full')));
+    root.querySelectorAll('[data-pn-collapse]').forEach((b) => b.addEventListener('click', () => setMode('drawer')));
+
+    // ⌘I / Ctrl+I toggles the assistant; Esc closes
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'i' || e.key === 'I')) { e.preventDefault(); root.dataset.mode === 'closed' ? openChat() : setMode('closed'); }
+      if (e.key === 'Escape' && root.dataset.mode !== 'closed') setMode('closed');
+    });
+
+    // variant switcher
+    // the active tab (→ panel) of a given variant's currently-visible bar
+    const activeOf = (v: string) =>
+      v === 'a'
+        ? root.querySelector<HTMLElement>('.pn-bar-a .pn-tab.is-on')
+        : root.querySelector<HTMLElement>('.pn-bar-b .pn-subrow:not([hidden]) .pn-subtab.is-on');
+
+    root.querySelectorAll<HTMLElement>('[data-set-variant]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const v = btn.dataset.setVariant!;
+        root.dataset.variant = v;
+        if (root.dataset.mode !== 'closed') openChat(); // keep chat open, swap surface
+        showPanel(activeOf(v)?.dataset.panel); // sync the body to that variant's active tab
+        root.querySelectorAll('[data-set-variant]').forEach((x) => x.classList.toggle('is-on', x === btn));
+      }),
+    );
+
+    // tab active state (Bar A + Bar B sub-tabs) → swaps the static screen
+    const wireTabs = (scope: Element) => {
+      const tabs = Array.from(scope.querySelectorAll<HTMLElement>('[data-tab]'));
+      tabs.forEach((t) =>
+        t.addEventListener('click', () => {
+          tabs.forEach((x) => x.classList.toggle('is-on', x === t));
+          showPanel(t.dataset.panel);
+        }),
+      );
+    };
+    wireTabs(root.querySelector('.pn-bar-a')!);
+
+    // Bar B clusters swap the sub-row, then show that cluster's active sub-tab panel
+    root.querySelectorAll<HTMLElement>('[data-cluster]').forEach((c) =>
+      c.addEventListener('click', () => {
+        root.querySelectorAll('[data-cluster]').forEach((x) => x.classList.toggle('is-on', x === c));
+        const key = c.dataset.cluster;
+        root.querySelectorAll<HTMLElement>('.pn-subrow').forEach((r) => (r.hidden = r.dataset.sub !== key));
+        showPanel(root.querySelector<HTMLElement>(`.pn-subrow[data-sub="${key}"] .pn-subtab.is-on`)?.dataset.panel);
+      }),
+    );
+    root.querySelectorAll<HTMLElement>('.pn-subrow').forEach((r) => wireTabs(r));
+  }
+  wirePrototype();
+  document.addEventListener('astro:after-swap', wirePrototype);
+</script>

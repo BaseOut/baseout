@@ -1,0 +1,115 @@
+---
+// /users/[id] — User detail (admin-entity-linking). Read-only; role='super' gated
+// by middleware. Session rows expose metadata only (ip / user-agent / expiry —
+// never the token; data boundary). 404 on unknown id.
+import { and, desc, eq, or } from 'drizzle-orm';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import EntityLink from '../../components/EntityLink.astro';
+import { users, sessions } from '@baseout/db-schema';
+import { adminAuditLog, connections, organizations, organizationMembers } from '../../db/schema';
+import { buildUserDetail } from '../../lib/user-detail';
+
+const id = Astro.params.id!;
+const { db } = Astro.locals;
+
+const userRows = await db
+  .select({ id: users.id, email: users.email, name: users.name, role: users.role, emailVerified: users.emailVerified, createdAt: users.createdAt })
+  .from(users).where(eq(users.id, id)).limit(1);
+const user = userRows[0] ?? null;
+if (!user) return new Response(null, { status: 404, headers: { 'Content-Type': 'text/html' } });
+
+const [memberships, sessionRows, conns, auditRows] = await Promise.all([
+  db.select({ orgId: organizationMembers.organizationId, orgName: organizations.name, role: organizationMembers.role })
+    .from(organizationMembers).innerJoin(organizations, eq(organizationMembers.organizationId, organizations.id)).where(eq(organizationMembers.userId, id)),
+  db.select({ ipAddress: sessions.ipAddress, userAgent: sessions.userAgent, createdAt: sessions.createdAt, expiresAt: sessions.expiresAt })
+    .from(sessions).where(eq(sessions.userId, id)).orderBy(desc(sessions.createdAt)).limit(10),
+  db.select({ id: connections.id, orgId: connections.organizationId, orgName: organizations.name, status: connections.status, displayName: connections.displayName })
+    .from(connections).leftJoin(organizations, eq(connections.organizationId, organizations.id)).where(eq(connections.createdByUserId, id)),
+  db.select({ id: adminAuditLog.id, action: adminAuditLog.action, targetType: adminAuditLog.targetType, targetId: adminAuditLog.targetId, phase: adminAuditLog.phase, createdAt: adminAuditLog.createdAt, actorUserId: adminAuditLog.actorUserId })
+    .from(adminAuditLog).where(or(eq(adminAuditLog.actorUserId, id), and(eq(adminAuditLog.targetType, 'user'), eq(adminAuditLog.targetId, id)))).orderBy(desc(adminAuditLog.createdAt)).limit(50),
+]);
+
+const view = buildUserDetail({
+  user,
+  memberships,
+  sessions: sessionRows,
+  connections: conns,
+  audit: auditRows.map((a) => ({ id: a.id, action: a.action, targetType: a.targetType, targetId: a.targetId, phase: a.phase, createdAt: a.createdAt, relation: a.actorUserId === id ? 'actor' : 'target' as const })),
+});
+
+const fmt = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 16).replace('T', ' ') : '—');
+---
+
+<SidebarLayout title={`Admin — ${view.user!.email}`}>
+  <div class="mx-auto max-w-[1000px] space-y-6">
+    <PageHeader title={view.user!.name ?? view.user!.email} description={view.user!.email}>
+      {view.user!.role === 'super' ? <Badge variant="primary">super</Badge> : <Badge variant="default">{view.user!.role}</Badge>}
+      {!view.user!.emailVerified && <Badge variant="warning">unverified</Badge>}
+    </PageHeader>
+
+    <Card variant="outlined">
+      <h2 class="mb-3 text-base font-semibold">Organizations</h2>
+      {view.memberships.length === 0 ? <EmptyState title="No memberships" description="This user belongs to no organization." /> : (
+        <ul class="space-y-1 text-sm">
+          {view.memberships.map((m) => (
+            <li class="flex items-center justify-between">
+              <EntityLink type="org" id={m.orgId} label={m.orgName} />
+              <span class="text-xs text-base-content/50">{m.role}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+
+    <Card variant="outlined">
+      <h2 class="mb-3 text-base font-semibold">Recent sessions</h2>
+      {view.sessions.length === 0 ? <EmptyState title="Never signed in" description="No sessions on record." /> : (
+        <table class="w-full text-sm">
+          <thead><tr class="text-left text-xs uppercase text-base-content/60"><th class="py-1 pr-4 font-medium">Started</th><th class="py-1 pr-4 font-medium">Expires</th><th class="py-1 pr-4 font-medium">IP</th><th class="py-1 font-medium">Agent</th></tr></thead>
+          <tbody>
+            {view.sessions.map((s) => (
+              <tr class="border-b border-base-200/60">
+                <td class="py-1 pr-4 text-base-content/70">{fmt(s.createdAt)}</td>
+                <td class="py-1 pr-4 text-base-content/70">{fmt(s.expiresAt)}</td>
+                <td class="py-1 pr-4 text-base-content/70">{s.ipAddress ?? '—'}</td>
+                <td class="py-1 text-base-content/50 truncate max-w-[280px]">{s.userAgent ?? '—'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
+
+    <Card variant="outlined">
+      <h2 class="mb-3 text-base font-semibold">Connections created</h2>
+      {view.connections.length === 0 ? <EmptyState title="None" description="This user created no connections." /> : (
+        <ul class="space-y-1 text-sm">
+          {view.connections.map((c) => (
+            <li class="flex items-center justify-between">
+              <span class="flex items-center gap-2"><EntityLink type="connection" id={c.id} label={c.displayName ?? c.id} />{c.orgId && <span class="text-xs text-base-content/40">· <EntityLink type="org" id={c.orgId} label={c.orgName ?? c.orgId} peek={false} /></span>}</span>
+              <Badge variant={c.status === 'active' ? 'success' : c.status === 'invalid' ? 'error' : 'warning'}>{c.status}</Badge>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+
+    <Card variant="outlined">
+      <h2 class="mb-3 text-base font-semibold">Audit activity <span class="text-xs text-base-content/50">(as actor or target, last 50)</span></h2>
+      {view.audit.length === 0 ? <EmptyState title="No audit entries" description="No staff actions involve this user." /> : (
+        <ul class="space-y-1 text-sm">
+          {view.audit.map((a) => (
+            <li class="flex items-center justify-between border-b border-base-200/60 py-1">
+              <span>{a.action} <span class="text-xs text-base-content/40">({a.relation}, {a.phase})</span></span>
+              <span class="text-xs text-base-content/50">{a.targetType} · {fmt(a.createdAt)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  </div>
+</SidebarLayout>

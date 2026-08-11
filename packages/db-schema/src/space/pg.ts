@@ -1,0 +1,754 @@
+/**
+ * Per-Space DB schema — Postgres dialect (managed_pg + byodb backends).
+ *
+ * Canonical home of the per-Space schema (the applied implementation), kept in
+ * lockstep with the design-of-record at openspec/changes/system-per-space-db
+ * (design.md / spec.md). The SQLite/D1 mirror is ./sqlite.ts —
+ * tests/space-schema-parity.test.ts enforces table/column parity. A separate
+ * drizzle config (drizzle.space-pg.config.ts) generates this dialect's
+ * migrations, distinct from the master-DB config (PRD §21.1).
+ *
+ * Conventions:
+ * - bo_at_ prefix (Baseout-owned, Airtable platform namespace).
+ * - Cross-DB refs (space_id, backup_run_id, rule_id, user ids) are plain uuid
+ *   columns, NOT foreign keys — they point at the master DB.
+ * - Time lives on bo_at_base_runs; lifecycle *_run columns reference
+ *   bo_at_base_runs.id and derive their timestamp by joining that row.
+ */
+import {
+  pgTable, text, integer, bigint, boolean, jsonb, timestamp, uuid,
+  primaryKey, index, uniqueIndex,
+} from 'drizzle-orm/pg-core'
+
+// status: 'active' | 'removed' | 'unknown'. 'removed' ONLY on a confident full
+// parent enumeration; a failed/partial run uses 'unknown' (never false-delete).
+const lifecycle = {
+  status: text('status').notNull().default('active'),
+  firstSeenRun: uuid('first_seen_run'),
+  firstUnseenRun: uuid('first_unseen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+}
+
+// Documentation/annotation columns (inline; no separate table).
+// The imported Airtable description is already captured as the `description`
+// column (and in schema_versions JSON), so it is NOT duplicated here.
+// Effective description = description_override ?? ai_description ?? description.
+// Re-import only ever writes `description`, so ai/manual values are never clobbered.
+const annotation = {
+  aiDescription: text('ai_description'),
+  aiOverview: text('ai_overview'),
+  descriptionOverride: text('description_override'),
+}
+
+// Single-row, self-describing meta table. `schema_version` drives lazy
+// on-access migration: when the engine opens this DB it compares this value to
+// the code's target version and runs pending migrations before proceeding.
+// (D1 could use PRAGMA user_version; this table is used on all backends for
+// uniform code and Postgres parity.) Keyed 'singleton' — exactly one row.
+export const meta = pgTable('bo_at_meta', {
+  id: text('id').primaryKey().default('singleton'),
+  schemaVersion: integer('schema_version').notNull(),
+  spaceId: uuid('space_id').notNull(),                // → master spaces.id (self-identification)
+  backend: text('backend').notNull(),                 // d1 | managed_pg | byodb
+  platform: text('platform').notNull().default('airtable'),
+  provisionedAt: timestamp('provisioned_at', { withTimezone: true }),
+  lastMigratedAt: timestamp('last_migrated_at', { withTimezone: true }),
+})
+
+// Per-base execution record — the run↔base entry point. One row per (run, base).
+export const baseRuns = pgTable('bo_at_base_runs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  backupRunId: uuid('backup_run_id').notNull(),     // → master backup_runs.id (cross-DB)
+  baseId: text('base_id').notNull(),
+  status: text('status').notNull().default('queued'), // queued|running|succeeded|failed|unknown
+  // full = scheduled/manual backup pass; incremental = webhook-driven payload
+  // application (workflows-instant-webhook). system-per-space-db task 1.6.
+  runType: text('run_type').notNull().default('full'), // full|incremental
+  currStep: text('curr_step'),
+  schemaVersionId: uuid('schema_version_id'),         // → bo_at_schema_versions.id
+  schemaHash: text('schema_hash'),
+  tablesCount: integer('tables_count'),
+  recordsCount: integer('records_count'),
+  attachmentsCount: integer('attachments_count'),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  errorMessage: text('error_message'),
+}, (t) => ({
+  byBackupRun: index('bo_at_base_runs_backup_run_idx').on(t.backupRunId),
+  byBase: index('bo_at_base_runs_base_idx').on(t.baseId),
+}))
+
+// ---- Schema: relational current working set (latest version) ----
+
+export const bases = pgTable('bo_at_bases', {
+  baseId: text('base_id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),                    // Airtable's imported description
+  // Collaborator-capture stamps (server-base-collaborators, design Decision 5):
+  // base-level facts from GET /v0/meta/bases stamped onto the registry row.
+  workspaceId: text('workspace_id'),
+  airtableCreatedTime: timestamp('airtable_created_time', { withTimezone: true }),
+  ownPermissionLevel: text('own_permission_level'),
+  ...annotation,
+  ...lifecycle,
+})
+
+export const tables = pgTable('bo_at_tables', {
+  tableId: text('table_id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  name: text('name').notNull(),
+  primaryFieldId: text('primary_field_id'),
+  fieldCount: integer('field_count'),
+  recordCount: integer('record_count'),
+  description: text('description'),                    // Airtable's imported description
+  ...annotation,
+  ...lifecycle,
+}, (t) => ({ byBase: index('bo_at_tables_base_idx').on(t.baseId) }))
+
+export const fields = pgTable('bo_at_fields', {
+  fieldId: text('field_id').primaryKey(),
+  tableId: text('table_id').notNull(),
+  baseId: text('base_id').notNull(),
+  name: text('name').notNull(),
+  type: text('type').notNull(),
+  options: jsonb('options'),                          // type-specific config (choices, linked table, …)
+  isPrimary: boolean('is_primary').notNull().default(false),
+  description: text('description'),                    // Airtable's imported description
+  ...annotation,
+  ...lifecycle,
+}, (t) => ({ byTable: index('bo_at_fields_table_idx').on(t.tableId) }))
+
+export const views = pgTable('bo_at_views', {
+  viewId: text('view_id').primaryKey(),
+  tableId: text('table_id').notNull(),
+  baseId: text('base_id').notNull(),
+  name: text('name').notNull(),
+  type: text('type'),
+  ...annotation,
+  ...lifecycle,
+}, (t) => ({ byTable: index('bo_at_views_table_idx').on(t.tableId) }))
+
+// ---- Schema history ----
+
+// Immutable full-schema snapshot per distinct version; hash-deduped.
+export const schemaVersions = pgTable('bo_at_schema_versions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  schemaHash: text('schema_hash').notNull(),
+  schemaJson: jsonb('schema_json').notNull(),
+  firstSeenRun: uuid('first_seen_run'),               // → bo_at_base_runs.id
+}, (t) => ({
+  uniqHash: uniqueIndex('bo_at_schema_versions_base_hash_uq').on(t.baseId, t.schemaHash),
+}))
+
+// Modifications only (add/remove are lifecycle). Self-contained before+after.
+export const schemaUpdates = pgTable('bo_at_schema_updates', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  runId: uuid('run_id').notNull(),                    // → bo_at_base_runs.id
+  entityType: text('entity_type').notNull(),          // base|table|field|view|automation|interface
+  entityId: text('entity_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('table_id'),
+  changeType: text('change_type').notNull(),          // name|description|type|config|…
+  changeTypeName: text('change_type_name'),
+  beforeValue: jsonb('before_value'),
+  afterValue: jsonb('after_value'),
+  breaksData: boolean('breaks_data').notNull().default(false),
+  // Webhook-derived attribution (system-per-space-db 1.6) — NULL on
+  // backup-derived rows. action_source: Airtable's originating-action kind
+  // (e.g. client|publicApi|formSubmission|automation|sync…); actor: the
+  // originating user/collaborator id when the payload carries one.
+  actionSource: text('action_source'),
+  actor: text('actor'),
+}, (t) => ({
+  byRun: index('bo_at_schema_updates_run_idx').on(t.runId),
+  byEntity: index('bo_at_schema_updates_entity_idx').on(t.entityType, t.entityId),
+}))
+
+// ---- Records (only populated when records_enabled) ----
+
+export const records = pgTable('bo_at_records', {
+  recordId: text('record_id').primaryKey(),
+  tableId: text('table_id').notNull(),
+  baseId: text('base_id').notNull(),
+  createdTime: timestamp('created_time', { withTimezone: true }),   // Airtable's actual
+  modifiedTime: timestamp('modified_time', { withTimezone: true }), // Airtable's actual
+  status: text('status').notNull().default('active'),               // active|deleted|unknown
+  firstSeenRun: uuid('first_seen_run'),
+  firstUnseenRun: uuid('first_unseen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  ...annotation,                                       // records have no Airtable description; ai/override only
+}, (t) => ({ byTable: index('bo_at_records_table_idx').on(t.tableId) }))
+
+// Sparse-until-first-value: row created on first population, persists after,
+// value→null on clear. No row = never populated. value is JSON-encoded text.
+export const recordFieldData = pgTable('bo_at_record_field_data', {
+  recordId: text('record_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  tableId: text('table_id').notNull(),
+  value: text('value'),
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.recordId, t.fieldId] }),
+  byTableField: index('bo_at_rfd_table_field_idx').on(t.tableId, t.fieldId),
+}))
+
+// Superseded-value log: stores the OLD value being replaced; new value lives in
+// record_field_data. First population logs nothing. Prunable by simple DELETE.
+export const recordUpdates = pgTable('bo_at_record_updates', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  recordId: text('record_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  tableId: text('table_id').notNull(),
+  runId: uuid('run_id').notNull(),                    // → bo_at_base_runs.id
+  oldValue: text('old_value'),                        // superseded value (JSON-encoded)
+  // Webhook-derived attribution (system-per-space-db 1.6) — NULL on
+  // backup-derived rows; see bo_at_schema_updates for semantics.
+  actionSource: text('action_source'),
+  actor: text('actor'),
+}, (t) => ({
+  byCell: index('bo_at_record_updates_cell_idx').on(t.recordId, t.fieldId),
+  byRun: index('bo_at_record_updates_run_idx').on(t.runId),
+}))
+
+// ---- Attachments (binaries live in the file destination; metadata here) ----
+
+export const attachments = pgTable('bo_at_attachments', {
+  compositeId: text('composite_id').primaryKey(),     // {base}_{table}_{record}_{field}_{attachment}
+  tableId: text('table_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  recordId: text('record_id').notNull(),
+  storageKey: text('storage_key').notNull(),          // key in the file destination
+  contentHash: text('content_hash'),
+  filename: text('filename'),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }),
+  mimeType: text('mime_type'),
+  uploadStatus: text('upload_status').notNull().default('pending'), // pending|uploaded|failed
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
+}, (t) => ({
+  byRecord: index('bo_at_attachments_record_idx').on(t.recordId),
+  byHash: index('bo_at_attachments_hash_idx').on(t.contentHash),
+}))
+
+// ---- Data-browse export jobs (server-data-browse) ----
+// Async record-export jobs (the sync path streams straight to the response and
+// creates NO row — this table backs the async path only). `scope` = what to
+// export (base/table/filters/sort), `format` csv|json, `output_location` = the
+// storage key/URL once written. Operational table → no Airtable-entity
+// annotation/lifecycle columns.
+export const exportJobs = pgTable('bo_at_export_jobs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  scope: jsonb('scope').notNull(),
+  format: text('format').notNull(),                   // 'csv' | 'json'
+  status: text('status').notNull().default('queued'), // queued|running|succeeded|failed
+  outputLocation: text('output_location'),            // storage key/URL when succeeded
+  rowCount: integer('row_count'),
+  error: text('error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+}, (t) => ({
+  byStatus: index('bo_at_export_jobs_status_idx').on(t.status),
+}))
+
+// Documentation lives inline as `ai_description` / `ai_overview` /
+// `description_override` columns on bo_at_bases/tables/fields/records (the
+// `annotation` set above) — no separate bo_at_documentation table. The Data
+// Dictionary surface/export remains V2.
+
+// ---- Health (rules live in the master DB) ----
+
+export const healthScores = pgTable('bo_at_health_scores', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  runId: uuid('run_id').notNull(),
+  score: integer('score').notNull(),                  // 0–100
+  band: text('band').notNull(),                       // green (>=90) | yellow (60-89) | red (<60)
+  categories: jsonb('categories'),
+}, (t) => ({ byBase: index('bo_at_health_scores_base_idx').on(t.baseId) }))
+
+export const healthIssues = pgTable('bo_at_health_issues', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  tableId: text('table_id'),
+  fieldId: text('field_id'),
+  runId: uuid('run_id').notNull(),
+  ruleId: text('rule_id').notNull(),                  // → master health_score_rules.id
+  severity: text('severity').notNull(),               // high|medium|low
+  category: text('category'),
+  message: text('message').notNull(),
+  occurrenceCount: integer('occurrence_count'),
+  airtableDeeplink: text('airtable_deeplink'),
+}, (t) => ({ byBase: index('bo_at_health_issues_base_idx').on(t.baseId) }))
+
+// ---- Health metric config + results (server-schema-health-scoring) ----
+// The metric catalog + system-default prompts live in master health_score_rules;
+// these per-Space tables hold the space-level / per-entity prompt overrides, the
+// per-base enable/disable state, and per-metric sub-scores (breakdown +
+// staleness). rule_id references master health_score_rules.id (cross-DB, plain).
+
+export const healthMetricPrompts = pgTable('bo_at_health_metric_prompts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  ruleId: text('rule_id').notNull(),
+  prompt: text('prompt').notNull(),                   // space-level prompt override
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+}, (t) => ({ byRule: index('bo_at_health_metric_prompts_rule_idx').on(t.ruleId) }))
+
+export const healthMetricOverrides = pgTable('bo_at_health_metric_overrides', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  ruleId: text('rule_id').notNull(),
+  targetType: text('target_type').notNull(),          // base | table | field
+  targetId: text('target_id').notNull(),              // Airtable entity id
+  prompt: text('prompt').notNull(),                   // per-entity prompt override
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+}, (t) => ({ byRule: index('bo_at_health_metric_overrides_rule_idx').on(t.ruleId) }))
+
+export const healthMetricState = pgTable('bo_at_health_metric_state', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  ruleId: text('rule_id').notNull(),
+  enabled: boolean('enabled').notNull().default(true), // per-base enable/disable
+}, (t) => ({ byBase: index('bo_at_health_metric_state_base_idx').on(t.baseId) }))
+
+export const healthMetricScores = pgTable('bo_at_health_metric_scores', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  ruleId: text('rule_id').notNull(),
+  runId: uuid('run_id').notNull(),
+  score: integer('score').notNull(),                  // 0–100 sub-score
+  lastGeneratedAt: timestamp('last_generated_at', { withTimezone: true }),
+}, (t) => ({ byBase: index('bo_at_health_metric_scores_base_idx').on(t.baseId) }))
+
+// ---- Inbound-captured metadata (Airtable API doesn't expose these) ----
+// Submission-driven (Inbound API), not run-driven → own timestamps, not *_run.
+
+export const automations = pgTable('bo_at_automations', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  airtableEntityId: text('airtable_entity_id'),
+  name: text('name'),
+  type: text('type'),
+  definition: jsonb('definition'),
+  status: text('status').notNull().default('active'), // active|removed|unknown
+  submittedVia: text('submitted_via'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({ byBase: index('bo_at_automations_base_idx').on(t.baseId) }))
+
+// Interface apps only (pbd… containers) — server-interfaces-normalize.
+// Pages and forms are separate tables (below); no `type` discriminator. MCP
+// capture is run-driven, so lifecycle uses the run-based set (not the
+// submission-driven first_seen_at/last_seen_at the inbound tables use).
+export const interfaces = pgTable('bo_at_interfaces', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  airtableEntityId: text('airtable_entity_id'),
+  name: text('name'),
+  definition: jsonb('definition'),                    // slimmed — normalized keys stripped; unknown keys pass through
+  submittedVia: text('submitted_via'),
+  ...lifecycle,
+}, (t) => ({ byBase: index('bo_at_interfaces_base_idx').on(t.baseId) }))
+
+// Interface pages (pag…) — one row per non-form page. Parentage, page type, and
+// source table are real columns (design Decision 1); table/field usage lives in
+// the link tables below. submitted_via reserved so manual page intake stays a
+// no-migration option (design Decision 8).
+export const pages = pgTable('bo_at_pages', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  airtableEntityId: text('airtable_entity_id'),       // pag…
+  interfaceId: text('interface_id'),                  // → parent bo_at_interfaces.airtable_entity_id (pbd…)
+  name: text('name'),
+  pageType: text('page_type'),
+  sourceTableId: text('source_table_id'),             // → bo_at_tables.table_id
+  definition: jsonb('definition'),
+  submittedVia: text('submitted_via'),
+  ...lifecycle,
+}, (t) => ({
+  byBase: index('bo_at_pages_base_idx').on(t.baseId),
+  byInterface: index('bo_at_pages_interface_idx').on(t.interfaceId),
+}))
+
+// Forms (pag…, pageType='form') — standalone (interface_id null) or interface-owned.
+// sourceTableName from the payload is intentionally NOT stored (join bo_at_tables).
+export const forms = pgTable('bo_at_forms', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  airtableEntityId: text('airtable_entity_id'),       // pag…
+  interfaceId: text('interface_id'),                  // nullable — standalone forms have none
+  name: text('name'),
+  sourceTableId: text('source_table_id'),             // → bo_at_tables.table_id
+  definition: jsonb('definition'),
+  submittedVia: text('submitted_via'),
+  ...lifecycle,
+}, (t) => ({
+  byBase: index('bo_at_forms_base_idx').on(t.baseId),
+  byInterface: index('bo_at_forms_interface_idx').on(t.interfaceId),
+}))
+
+// ---- Interface link tables (IDs only — names/types/options join bo_at_tables/fields) ----
+// All ids are Airtable entity ids (page/form = pag…, table = tbl…, field = fld…),
+// plain columns matching the rest of the schema. Lifecycle-tracked and
+// cascade-removed with their parent page/form (design Decision 4/5).
+
+// Page ↔ table usage — one row per tablesByTableId entry (kept even with zero
+// listed fields; it's the anchor if per-table page attributes appear later).
+export const pageTables = pgTable('bo_at_page_tables', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  pageId: text('page_id').notNull(),                  // → bo_at_pages.airtable_entity_id
+  tableId: text('table_id').notNull(),                // → bo_at_tables.table_id
+  ...lifecycle,
+}, (t) => ({
+  byPage: index('bo_at_page_tables_page_idx').on(t.pageId),
+  byTable: index('bo_at_page_tables_table_idx').on(t.tableId),
+  uniq: uniqueIndex('bo_at_page_tables_uq').on(t.pageId, t.tableId),
+}))
+
+// Page ↔ field usage, carrying the page-scoped is_editable flag (not on bo_at_fields).
+export const pageFields = pgTable('bo_at_page_fields', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  pageId: text('page_id').notNull(),                  // → bo_at_pages.airtable_entity_id
+  tableId: text('table_id').notNull(),                // → bo_at_tables.table_id
+  fieldId: text('field_id').notNull(),                // → bo_at_fields.field_id
+  isEditable: boolean('is_editable'),                 // page-scoped
+  ...lifecycle,
+}, (t) => ({
+  byPage: index('bo_at_page_fields_page_idx').on(t.pageId),
+  byField: index('bo_at_page_fields_field_idx').on(t.fieldId),
+  uniq: uniqueIndex('bo_at_page_fields_uq').on(t.pageId, t.fieldId),
+}))
+
+// Form ↔ field usage — created now, populated when a get_form_schema capture
+// path exists (ships empty; design Non-Goal / Decision 3).
+export const formFields = pgTable('bo_at_form_fields', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  formId: text('form_id').notNull(),                  // → bo_at_forms.airtable_entity_id
+  tableId: text('table_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  isEditable: boolean('is_editable'),
+  ...lifecycle,
+}, (t) => ({
+  byForm: index('bo_at_form_fields_form_idx').on(t.formId),
+  byField: index('bo_at_form_fields_field_idx').on(t.fieldId),
+  uniq: uniqueIndex('bo_at_form_fields_uq').on(t.formId, t.fieldId),
+}))
+
+// ---- Documentation feature: user-authored docs about the schema ----
+// Distinct from the inline ai_description/description_override annotations.
+// A document tags any number of entities; those tags surface (clickable) on
+// each entity's detail panel in the Browse tab. Within-DB references are kept
+// as plain columns + indexes, matching the rest of this schema.
+
+export const documents = pgTable('bo_at_documents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  title: text('title').notNull(),
+  body: jsonb('body'),                                // Plate (platejs.org) document model, incl. inline entity-tag nodes
+  excerpt: text('excerpt'),                           // derived plain-text snippet for list/search
+  createdByUserId: uuid('created_by_user_id'),        // → master users.id
+  createdAt: timestamp('created_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+})
+
+export const documentTags = pgTable('bo_at_document_tags', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  documentId: uuid('document_id').notNull(),          // → bo_at_documents.id
+  targetType: text('target_type').notNull(),          // base|table|field|view
+  targetId: text('target_id').notNull(),              // Airtable entity id
+  addedVia: text('added_via'),                        // inline|manual
+}, (t) => ({
+  byDocument: index('bo_at_document_tags_doc_idx').on(t.documentId),
+  byTarget: index('bo_at_document_tags_target_idx').on(t.targetType, t.targetId),
+  uniq: uniqueIndex('bo_at_document_tags_uq').on(t.documentId, t.targetType, t.targetId),
+}))
+
+export const documentLinks = pgTable('bo_at_document_links', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  documentId: uuid('document_id').notNull(),
+  name: text('name'),
+  url: text('url').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (t) => ({ byDocument: index('bo_at_document_links_doc_idx').on(t.documentId) }))
+
+export const documentDiagrams = pgTable('bo_at_document_diagrams', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  documentId: uuid('document_id').notNull(),
+  name: text('name'),
+  state: jsonb('state').notNull(),                    // serialized React Flow state (nodes / positions / visible fields)
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (t) => ({ byDocument: index('bo_at_document_diagrams_doc_idx').on(t.documentId) }))
+
+// ---- Relationships: synced-view candidates (server-relationships) ----
+// API-derived relationships (linked records / formulas / rollups / lookups /
+// lastModified) are computed on read from bo_at_fields — NOT persisted here.
+// Only "synced view" candidates need a row: the engine can't see Airtable's Sync
+// feature via the API, so the inference task (workflows-relationship-inference)
+// proposes pairs by field overlap, and the user confirms/dismisses them. One row
+// per unordered table pair (canonical source<dest). status: inferred | confirmed
+// | dismissed. origin: inferred (engine) | user (manually created).
+export const syncedViewCandidates = pgTable('bo_at_synced_view_candidates', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  baseId: text('base_id').notNull(),
+  sourceTableId: text('source_table_id').notNull(),
+  destTableId: text('dest_table_id').notNull(),
+  status: text('status').notNull().default('inferred'), // inferred|confirmed|dismissed
+  origin: text('origin').notNull().default('inferred'), // inferred|user
+  matchScore: integer('match_score'),                   // 0–100 (null for user-created)
+  matchedPairs: jsonb('matched_pairs'),                 // [{sourceFieldName,destFieldName,type}]
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  createdAt: timestamp('created_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+}, (t) => ({
+  byBase: index('bo_at_synced_view_candidates_base_idx').on(t.baseId),
+  uniqPair: uniqueIndex('bo_at_synced_view_candidates_pair_uq').on(t.baseId, t.sourceTableId, t.destTableId),
+}))
+
+// ---- Chat: AI conversations about the schema (server-schema-chat) ----
+// Persisted threads + messages, like Docs but conversational. Context is scoped
+// to bases/tables/fields (scope jsonb) + attached docs (attached_doc_ids); the AI
+// reply is generated asynchronously in workflows (chat-respond) and written back,
+// so the assistant message carries a status (pending|complete|error).
+export const chatThreads = pgTable('bo_at_chat_threads', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  title: text('title').notNull().default('New chat'),
+  archived: boolean('archived').notNull().default(false),
+  scope: jsonb('scope'),                              // { baseIds?, tableIds?, fieldIds? }; null = whole Space
+  attachedDocIds: jsonb('attached_doc_ids'),          // string[] of bo_at_documents.id
+  createdByUserId: uuid('created_by_user_id'),        // → master users.id
+  createdAt: timestamp('created_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+})
+
+export const chatMessages = pgTable('bo_at_chat_messages', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  threadId: uuid('thread_id').notNull(),              // → bo_at_chat_threads.id
+  role: text('role').notNull(),                       // user | assistant
+  status: text('status').notNull().default('complete'), // assistant: pending|complete|error
+  content: text('content').notNull().default(''),
+  createdAt: timestamp('created_at', { withTimezone: true }),
+}, (t) => ({ byThread: index('bo_at_chat_messages_thread_idx').on(t.threadId) }))
+
+// ---- Inbox: notification triage state (server-notifications-inbox) ----
+// The feed itself is DERIVED at read time (backup_runs / connections /
+// bo_at_schema_updates) — only the user's triage lives here. One row per
+// triaged item, keyed by the deterministic item id (`run:<id>`, `schema:<id>`,
+// `conn:<id>`); absence = untouched. Account-shared in V1 (no user_id — the
+// documented follow-up adds one).
+export const inboxState = pgTable('bo_at_inbox_state', {
+  itemId: text('item_id').primaryKey(),
+  read: boolean('read').notNull().default(false),
+  done: boolean('done').notNull().default(false),
+  snoozedUntil: timestamp('snoozed_until', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }),
+})
+
+// Per-base mute: drops activity-lane rows for the base from the derived feed
+// (attention rows ignore mutes per the web spec). Row present = muted.
+export const inboxMutes = pgTable('bo_at_inbox_mutes', {
+  baseId: text('base_id').primaryKey(),
+  createdAt: timestamp('created_at', { withTimezone: true }),
+})
+
+// ---- Record comments (server-comments) ----
+// Customer-authored comments on records, captured via the Airtable REST
+// comments endpoint during backup runs (workflows-comments). Update-in-place
+// with soft deletion (status 'deleted' — deleted-comment visibility is the
+// product value; full text-version history deliberately rejected, design
+// Decision 2). Deletion scope is PER RECORD: ids absent from a successful
+// `complete` re-capture of their record flip to 'deleted'; unvisited records
+// are never touched. Indexed by record id for the read path and the
+// comments-plan grouped count (count-delta refresh planning, design
+// Decision 5 — no stored count column, derived from these rows).
+export const comments = pgTable('bo_at_comments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  airtableCommentId: text('airtable_comment_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('airtable_table_id').notNull(),
+  recordId: text('airtable_record_id').notNull(),
+  author: jsonb('author'),                            // {id, email, name} as provided
+  text: text('text'),
+  airtableCreatedAt: timestamp('airtable_created_at', { withTimezone: true }),
+  airtableLastUpdatedAt: timestamp('airtable_last_updated_at', { withTimezone: true }),
+  raw: jsonb('raw'),                                  // reactions, mentions — stored verbatim
+  status: text('status').notNull().default('active'), // active | deleted
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({
+  byRecord: index('bo_at_comments_record_idx').on(t.recordId),
+  byBase: index('bo_at_comments_base_idx').on(t.baseId),
+  uniqComment: uniqueIndex('bo_at_comments_comment_uq').on(t.airtableCommentId),
+}))
+
+// ---- Comment attachments (server-comment-attachments) ----
+// Attachment bytes referenced inside record comments. Airtable comment
+// attachment URLs expire ~2h after issuance, so the workflows task downloads
+// them in the same run that comments-sync registers them (register-first:
+// row exists as `pending` before any download). Identity is
+// (airtable_comment_id, airtable_attachment_id) — comment attachments have no
+// field anchor, so this is deliberately a separate table from bo_at_attachments
+// (whose composite_id keys on table+field+record; design Decision 1). Reuses the
+// pending|ready|uploaded lifecycle from backup-attachments; soft-deleted (status
+// 'deleted') when the parent comment is deleted or the attachment drops from a
+// re-capture (bytes retained per retention rules).
+export const commentAttachments = pgTable('bo_at_comment_attachments', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  airtableCommentId: text('airtable_comment_id').notNull(),
+  airtableAttachmentId: text('airtable_attachment_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('airtable_table_id').notNull(),
+  recordId: text('airtable_record_id').notNull(),
+  url: text('url'),                                   // expires ~2h — not for persistence, download-time only
+  filename: text('filename'),
+  sizeBytes: bigint('size_bytes', { mode: 'number' }),
+  mimeType: text('mime_type'),
+  contentHash: text('content_hash'),                  // computed at download time (API provides none)
+  storageKey: text('storage_key'),                    // key in the file destination once written
+  uploadStatus: text('upload_status').notNull().default('pending'), // pending|ready|uploaded
+  status: text('status').notNull().default('active'), // active | deleted
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
+}, (t) => ({
+  uniqAttachment: uniqueIndex('bo_at_comment_attachments_uq').on(t.airtableCommentId, t.airtableAttachmentId),
+  byComment: index('bo_at_comment_attachments_comment_idx').on(t.airtableCommentId),
+  byRecord: index('bo_at_comment_attachments_record_idx').on(t.recordId),
+  byStatus: index('bo_at_comment_attachments_status_idx').on(t.status, t.uploadStatus),
+}))
+
+// ---- Base collaborators (server-base-collaborators) ----
+// Who can access each base, captured from GET /v0/meta/bases/{id}?include=
+// collaborators,inviteLinks,interfaces,packages during backup runs
+// (workflows-base-collaborators). Normalized into an identity registry
+// (bo_at_principals) + a grant link table (bo_at_base_access) so the product
+// query "every user in this Space and what they can touch" is a plain join
+// (design Decision 1). Principals are NEVER deleted — revocation lives on
+// grants; a principal with zero active grants is retained history.
+export const principals = pgTable('bo_at_principals', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  principalId: text('principal_id').notNull(),        // Airtable usr…/ugp… id
+  kind: text('kind').notNull(),                       // user | group
+  email: text('email'),                               // users only (from payload)
+  name: text('name'),                                 // groups only from payload; users enriched later
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({
+  uniqPrincipal: uniqueIndex('bo_at_principals_uq').on(t.principalId),
+}))
+
+export const baseAccess = pgTable('bo_at_base_access', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  principalId: text('principal_id').notNull(),        // → bo_at_principals.principal_id
+  baseId: text('base_id').notNull(),
+  interfaceId: text('interface_id').notNull().default(''), // '' for non-interface scopes
+  scope: text('scope').notNull(),                     // individual_base|individual_workspace|group_base|group_workspace|individual_interface|group_interface
+  permissionLevel: text('permission_level'),
+  grantedByUserId: text('granted_by_user_id'),
+  airtableCreatedTime: timestamp('airtable_created_time', { withTimezone: true }),
+  status: text('status').notNull().default('active'), // active | deleted
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({
+  uniqGrant: uniqueIndex('bo_at_base_access_uq').on(t.baseId, t.interfaceId, t.scope, t.principalId),
+  byPrincipal: index('bo_at_base_access_principal_idx').on(t.principalId),
+  byBase: index('bo_at_base_access_base_idx').on(t.baseId),
+}))
+
+export const inviteLinks = pgTable('bo_at_invite_links', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  airtableInviteId: text('airtable_invite_id').notNull(),
+  baseId: text('base_id').notNull(),
+  interfaceId: text('interface_id').notNull().default(''),
+  linkScope: text('link_scope').notNull(),            // base | workspace | interface
+  invitedEmail: text('invited_email'),
+  permissionLevel: text('permission_level'),
+  referredByUserId: text('referred_by_user_id'),      // seeded as a principal
+  restrictedToEmailDomains: jsonb('restricted_to_email_domains'), // string[]
+  type: text('type'),                                 // singleUse | multiUse
+  airtableCreatedTime: timestamp('airtable_created_time', { withTimezone: true }),
+  status: text('status').notNull().default('active'), // active | deleted
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({
+  uniqInvite: uniqueIndex('bo_at_invite_links_uq').on(t.baseId, t.interfaceId, t.linkScope, t.airtableInviteId),
+  byBase: index('bo_at_invite_links_base_idx').on(t.baseId),
+}))
+
+// The collaborators capture record: the un-modeled `packages` block and the
+// raw payload retained verbatim for future ingestion (design Decision 5). The
+// base-level stamps (workspace id, created time, own permission) live on the
+// bo_at_bases registry row; this table is the raw-retention companion.
+export const baseCollabMeta = pgTable('bo_at_base_collab_meta', {
+  baseId: text('base_id').primaryKey(),
+  packages: jsonb('packages'),                        // shape unpinned — retained raw
+  raw: jsonb('raw'),                                  // full payload, verbatim
+  lastSeenRun: uuid('last_seen_run'),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+})
+
+// ---- Media index (server-media-index) ----
+// The digital-asset index over captured attachments: one bo_at_assets row per
+// unique content checksum per Space (the dedup identity the attachment writer
+// already computes), one bo_at_asset_refs row per appearance in a record
+// (design Decision 1 — dedup = one asset, N refs). Fed by the batched
+// media-sync ingest (workflows-media-metadata); read by the Media Library API.
+// NOTE: bo_at_attachments (above) remains the writer's upload/dedup working
+// set — this pair is the curated index with lifecycle + read-path indexes.
+// Assets are NEVER hard-deleted by sync: refs dropping to zero stamps
+// zero_ref_since (the retention machinery's removal-candidate flag).
+export const assets = pgTable('bo_at_assets', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  checksum: text('checksum').notNull(),               // content identity (writer's dedup hash)
+  contentType: text('content_type'),
+  contentClass: text('content_class').notNull().default('other'), // image|video|audio|document|other — written at ingest, indexed for filters
+  sizeBytes: bigint('size_bytes', { mode: 'number' }),
+  storageKind: text('storage_kind'),                  // 'r2_managed' | 'destination'
+  storageProvider: text('storage_provider'),          // BYOS provider when kind='destination'
+  storageRef: text('storage_ref'),                    // R2 object key, or provider locator
+  thumbnailStatus: text('thumbnail_status').notNull().default('none'), // none|pending|ready — generation is a follow-up change
+  thumbnailKey: text('thumbnail_key'),
+  zeroRefSince: timestamp('zero_ref_since', { withTimezone: true }),
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({
+  uniqChecksum: uniqueIndex('bo_at_assets_checksum_uq').on(t.checksum),
+  byClass: index('bo_at_assets_class_idx').on(t.contentClass),
+  keyset: index('bo_at_assets_keyset_idx').on(t.firstSeenAt, t.id), // newest-first keyset pagination + totals scans
+}))
+
+export const assetRefs = pgTable('bo_at_asset_refs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  assetId: uuid('asset_id').notNull(),                // → bo_at_assets.id
+  airtableAttachmentId: text('airtable_attachment_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('table_id').notNull(),
+  recordId: text('record_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  filename: text('filename'),                         // as named in THAT record (same bytes, different names)
+  status: text('status').notNull().default('active'), // active | removed
+  firstSeenRun: uuid('first_seen_run'),
+  lastSeenRun: uuid('last_seen_run'),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+}, (t) => ({
+  uniqAttachment: uniqueIndex('bo_at_asset_refs_attachment_uq').on(t.airtableAttachmentId),
+  byAsset: index('bo_at_asset_refs_asset_idx').on(t.assetId),
+  byRecord: index('bo_at_asset_refs_record_idx').on(t.recordId),
+  byBase: index('bo_at_asset_refs_base_idx').on(t.baseId),
+}))

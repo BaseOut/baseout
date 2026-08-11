@@ -1,0 +1,125 @@
+---
+// / — Operations dashboard (admin-operations-overview). Read-only; role='super'
+// gated by middleware. Bounded queries → pure dashboard assembly → Active runs /
+// KPI tiles / Attention items. The Organizations→Spaces tracker is superseded by
+// the /customers directory (admin-entity-directories) + this dashboard;
+// force-backup remains on /errors + the /api/actions/force-backup route. Every
+// Space/Org/run renders as a link.
+import { and, count, desc, eq, gte, isNull, lt, ne, or, sql } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import EntityLink from '../components/EntityLink.astro';
+import { backupConfigurations, backupRuns, connections, organizations, restoreRuns, spaceDatabases, spaces } from '../db/schema';
+import { assembleActiveRuns, attentionGroups, successRate, type ActiveRunInput, type AttentionItem } from '../lib/dashboard';
+import { RUN_STATUS_BADGE } from '../lib/backup-runs';
+
+const { db } = Astro.locals;
+const now = new Date();
+const nowSql = sql`${now.toISOString()}::timestamptz`;
+const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+const ACTIVE = ['queued', 'running', 'cancelling'];
+const LIM = 25;
+
+const runOrg = { spaceId: backupRuns.spaceId, spaceName: spaces.name, orgId: spaces.organizationId, orgName: organizations.name };
+const [activeBackups, activeRestores, windowRows, overdue, overdueN, unhealthy, unhealthyN, dbErr, dbErrN, failures, failuresN] = await Promise.all([
+  db.select({ id: backupRuns.id, status: backupRuns.status, startedAt: backupRuns.startedAt, createdAt: backupRuns.createdAt, ...runOrg })
+    .from(backupRuns).leftJoin(spaces, eq(backupRuns.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(and(sql`${backupRuns.status} = any(${ACTIVE})`, isNull(backupRuns.deletedAt))).limit(50),
+  db.select({ id: restoreRuns.id, status: restoreRuns.status, startedAt: restoreRuns.startedAt, createdAt: restoreRuns.createdAt, spaceId: restoreRuns.spaceId, spaceName: spaces.name, orgId: spaces.organizationId, orgName: organizations.name })
+    .from(restoreRuns).leftJoin(spaces, eq(restoreRuns.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(sql`${restoreRuns.status} = any(${ACTIVE})`).limit(20),
+  db.select({ status: backupRuns.status }).from(backupRuns).where(and(gte(backupRuns.createdAt, weekAgo), isNull(backupRuns.deletedAt))).limit(5000),
+  db.select({ spaceId: spaces.id, spaceName: spaces.name, orgId: spaces.organizationId, orgName: organizations.name })
+    .from(backupConfigurations).innerJoin(spaces, and(eq(backupConfigurations.spaceId, spaces.id), eq(spaces.status, 'active'))).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(or(lt(backupConfigurations.nextScheduledAt, nowSql), lt(backupConfigurations.schemaNextScheduledAt, nowSql))).limit(LIM),
+  db.select({ n: count() }).from(backupConfigurations).innerJoin(spaces, and(eq(backupConfigurations.spaceId, spaces.id), eq(spaces.status, 'active'))).where(or(lt(backupConfigurations.nextScheduledAt, nowSql), lt(backupConfigurations.schemaNextScheduledAt, nowSql))),
+  db.select({ id: connections.id, displayName: connections.displayName, status: connections.status, orgId: connections.organizationId, orgName: organizations.name })
+    .from(connections).leftJoin(organizations, eq(connections.organizationId, organizations.id)).where(ne(connections.status, 'active')).limit(LIM),
+  db.select({ n: count() }).from(connections).where(ne(connections.status, 'active')),
+  db.select({ spaceId: spaceDatabases.spaceId, spaceName: spaces.name, orgId: spaces.organizationId, orgName: organizations.name })
+    .from(spaceDatabases).leftJoin(spaces, eq(spaceDatabases.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id)).where(eq(spaceDatabases.status, 'error')).limit(LIM),
+  db.select({ n: count() }).from(spaceDatabases).where(eq(spaceDatabases.status, 'error')),
+  db.select({ id: backupRuns.id, spaceName: spaces.name, orgId: spaces.organizationId, orgName: organizations.name, createdAt: backupRuns.createdAt })
+    .from(backupRuns).leftJoin(spaces, eq(backupRuns.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(and(eq(backupRuns.status, 'failed'), isNull(backupRuns.deletedAt))).orderBy(desc(backupRuns.createdAt)).limit(10),
+  db.select({ n: count() }).from(backupRuns).where(and(eq(backupRuns.status, 'failed'), isNull(backupRuns.deletedAt))),
+]);
+
+const active = assembleActiveRuns(
+  [
+    ...activeBackups.map((r): ActiveRunInput => ({ ...r, kind: 'backup' })),
+    ...activeRestores.map((r): ActiveRunInput => ({ ...r, kind: 'restore' })),
+  ],
+  now,
+);
+const rate = successRate(windowRows.map((r) => r.status));
+const spaceItem = (r: { spaceId: string | null; spaceName: string | null; orgName: string | null }): AttentionItem => ({ label: r.spaceName ?? r.spaceId ?? '—', sublabel: r.orgName, href: r.spaceId ? `/spaces/${r.spaceId}` : '/errors' });
+const groups = attentionGroups({
+  overdueSchedules: { count: Number(overdueN[0]?.n ?? 0), items: overdue.map(spaceItem) },
+  unhealthyConnections: { count: Number(unhealthyN[0]?.n ?? 0), items: unhealthy.map((c) => ({ label: c.displayName ?? c.id, sublabel: `${c.orgName ?? ''} · ${c.status}`, href: `/connections#${c.id}` })) },
+  dbErrors: { count: Number(dbErrN[0]?.n ?? 0), items: dbErr.map(spaceItem) },
+  recentFailures: { count: Number(failuresN[0]?.n ?? 0), items: failures.map((f) => ({ label: f.spaceName ?? '—', sublabel: f.orgName, href: `/backups/${f.id}` })) },
+});
+---
+
+<SidebarLayout title="Admin — Overview">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader title="Operations" description="Fleet health at a glance — active work, 7-day success, and what needs attention." />
+
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <Card variant="outlined"><div class="text-xs uppercase text-base-content/50">Active runs</div><div class="mt-1 text-2xl font-semibold">{active.length}</div></Card>
+      <Card variant="outlined"><div class="text-xs uppercase text-base-content/50">7-day success</div><div class="mt-1 text-2xl font-semibold">{rate.rate === null ? '—' : `${rate.rate}%`}</div><div class="text-xs text-base-content/50">{rate.terminal} terminal runs</div></Card>
+      <Card variant="outlined"><div class="text-xs uppercase text-base-content/50">Attention items</div><div class="mt-1 text-2xl font-semibold">{groups.reduce((n, g) => n + g.count, 0)}</div></Card>
+      <Card variant="outlined"><div class="text-xs uppercase text-base-content/50">Recent failures</div><div class="mt-1 text-2xl font-semibold">{Number(failuresN[0]?.n ?? 0)}</div></Card>
+    </div>
+
+    <Card variant="outlined">
+      <h2 class="mb-3 text-base font-semibold">Active runs</h2>
+      {active.length === 0 ? <EmptyState title="Nothing running" description="No backup or restore is in flight." /> : (
+        <table class="w-full text-sm">
+          <tbody>
+            {active.map((r) => (
+              <tr class="border-b border-base-200/60">
+                <td class="py-1"><Badge variant={RUN_STATUS_BADGE[r.status] ?? 'default'}>{r.status}</Badge></td>
+                <td class="py-1">{r.kind}</td>
+                <td class="py-1">{r.spaceId ? <EntityLink type="space" id={r.spaceId} label={r.spaceName ?? r.spaceId} /> : '—'}</td>
+                <td class="py-1 text-base-content/60">{r.orgId ? <EntityLink type="org" id={r.orgId} label={r.orgName ?? r.orgId} peek={false} /> : '—'}</td>
+                <td class="py-1 text-right text-base-content/60">{r.elapsed}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </Card>
+
+    <div>
+      <h2 class="mb-3 text-base font-semibold">Attention items</h2>
+      {groups.length === 0 ? (
+        <Card variant="outlined"><EmptyState title="All clear" description="Nothing needs attention right now." /></Card>
+      ) : (
+        <div class="grid gap-4 md:grid-cols-2">
+          {groups.map((g) => (
+            <Card variant="outlined">
+              <div class="mb-2 flex items-center justify-between">
+                <h3 class="text-sm font-semibold">{g.label} <Badge variant="warning">{g.count}</Badge></h3>
+                <a href={g.href} class="text-xs link link-hover">View all →</a>
+              </div>
+              <ul class="space-y-1 text-sm">
+                {g.items.slice(0, 5).map((it) => (
+                  <li class="flex items-center justify-between">
+                    <a href={it.href} class="link link-hover truncate">{it.label}</a>
+                    {it.sublabel && <span class="ml-2 shrink-0 text-xs text-base-content/50">{it.sublabel}</span>}
+                  </li>
+                ))}
+              </ul>
+              {g.count > g.items.length && <p class="mt-2 text-xs text-base-content/40">+{g.count - g.items.length} more</p>}
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+</SidebarLayout>

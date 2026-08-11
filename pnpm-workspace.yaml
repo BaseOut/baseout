@@ -1,3 +1,48 @@
 packages:
   - "apps/*"
+  # apps/embed is an umbrella of per-host packages (embed change, design
+  # Decision 1). The two Airtable extension hosts are EXCLUDED on purpose:
+  # the Airtable blocks CLI owns their install/run lifecycle and their React
+  # peer set must not constrain the monorepo — they consume @baseout/embed-core
+  # via a file: dependency instead.
+  - "apps/embed/*"
+  - "!apps/embed/airtable-data"
+  - "!apps/embed/airtable-interface"
   - "packages/*"
+
+# Native-binary / postinstall builds we trust under pnpm 11's
+# strictDepBuilds default. Anything not listed here is silently ignored.
+allowBuilds:
+  # Test-only local Postgres for the createTestHarness spike
+  # (openspec/changes/system-test-harness-spike) — unpacks the zonky
+  # PostgreSQL 16 binaries on machines without Docker.
+  '@embedded-postgres/darwin-arm64': true
+  esbuild: true # Vite / Astro bundler — installs platform binary
+  msw: true # Test mocking — sets up service worker
+  protobufjs: true # Transitive — codegens long.js descriptors
+  sharp: true # Astro image optimization — native libvips binding
+  workerd: true # wrangler dev runtime — backend won't boot without it
+
+# Supply-chain protection: only install package versions that have been
+# public for at least 7 days (10080 minutes). Lets newly compromised
+# versions be discovered and yanked before we pick them up.
+minimumReleaseAge: 10080
+
+# Packages excluded from the minimumReleaseAge gate. Two reasons land
+# packages here: (a) registry metadata is missing the `time` field that the
+# policy needs to compute age, or (b) we deliberately want to track newer
+# vendor releases. The age policy still applies to the rest of the
+# dependency tree.
+# - @trigger.dev/*: vendor releases land faster than 7 days and at least
+#   one package (@trigger.dev/build) ships without the `time` metadata.
+#   The whole namespace is excluded so transitives (@trigger.dev/core etc.)
+#   resolve cleanly. SDK pinned at 4.4.6 in apps/server + apps/workflows.
+# Future pin bumps should re-check whether the exclusion is still needed.
+minimumReleaseAgeExclude:
+  - "@trigger.dev/*"
+  # - vscode-languageserver*: transitives of @astrojs/check (the Astro
+  #   typechecker, a build-time dev tool) whose registry metadata omits the
+  #   `time` field, so the age policy can't compute their age and hard-fails
+  #   the install. Excluded so apps/* can add @astrojs/check for `astro check`.
+  - "vscode-languageserver"
+  - "vscode-languageserver-types"

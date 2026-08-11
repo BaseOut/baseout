@@ -1,9 +1,33 @@
 // Schema barrel — mirrors specific tables from apps/web's canonical Drizzle schema.
 //
 // Migrations are owned by the frontend (apps/web/drizzle/). The server only
-// mirrors tables it reads/writes (e.g. backup_runs, backup_configuration_bases)
-// with header comments naming the canonical migration source. Per CLAUDE.md §2.
-//
-// PoC: empty barrel. Phase 1 lands the first mirrored table.
+// mirrors tables it reads/writes (e.g. connections, backup_runs,
+// backup_configuration_bases) with header comments naming the canonical
+// migration source. Per CLAUDE.md §5.3.
 
-export {};
+export * from "./connections";
+export * from "./backup-runs";
+export * from "./backup-configurations";
+export * from "./backup-configuration-bases";
+export * from "./at-bases";
+export * from "./spaces";
+export * from "./platforms";
+export * from "./subscriptions";
+export * from "./subscription-items";
+export * from "./space-events";
+export * from "./space-workspaces";
+export * from "./storage-destinations";
+export * from "./space-databases";
+export * from "./restore-runs";
+export * from "./backup-run-bases";
+export * from "./backup-run-tables";
+export * from "./backup-retention-policies";
+export * from "./health-score-rules";
+export * from "./service-runs";
+export * from "./usage-rollups";
+export * from "./account-feature-overrides";
+export * from "./addon-purchases";
+export * from "./usage-notification-state";
+export * from "./ai-provider-keys";
+export * from "./airtable-webhooks";
+export * from "./airtable-webhook-subscriptions";

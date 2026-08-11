@@ -1,0 +1,56 @@
+---
+// Data page (DataView). Harness fixture — the engineer wires GET /spaces/:id/data.
+// Fixtures live in ../fixtures/data-lab.ts.
+//   ?fixture=empty  → never-backed-up zero state
+//   ?fixture=big    → multi-million-row table promoted (virtualization stress)
+//   ?fixture=stale  → last backup older than the schedule expects
+//   ?fixture=static → files-only Space (static import flow, Phase 6)
+//   ?fixture=loading→ Browse grid loading skeleton (prod streams row windows over a cursor)
+//   ?fixture=error  → Browse grid load error with an in-context Retry
+//   ?fixture=nocomments  → Comments tab zero state (page otherwise fully populated)
+//   ?fixture=fewcomments → Comments tab at low volume (a handful of rows, all edges present)
+//   ?fixture=emailcomments → the same rows with every author/mention name stripped — the
+//                           non-enterprise world, where the Author column is all email addresses
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import DataView from '../views/DataView.astro';
+import { getBreadcrumbs } from '@web/lib/config';
+import { dataBases, dataTables, dataRecords, dataChangelog, dataComments, dataCommentsFew, dataCommentsEmailOnly, dataRunTotals, dataViews, dataViewGroups, dataDocs, dataThreads, lastSyncedAt, lastSyncedStale } from '../fixtures/data-lab';
+
+const breadcrumbs = getBreadcrumbs('/data');
+const fixture = Astro.url.searchParams.get('fixture');
+const empty = fixture === 'empty';
+const big = fixture === 'big';
+const stale = fixture === 'stale';
+const isStatic = fixture === 'static';
+// comments-explorer: the Comments tab's own zero state, without emptying the whole page.
+const nocomments = fixture === 'nocomments';
+const fewcomments = fixture === 'fewcomments';
+const emailcomments = fixture === 'emailcomments';
+
+const loadState = fixture === 'loading' ? 'loading' : fixture === 'error' ? 'error' : 'ready';
+
+const mode = isStatic ? 'static' : 'dynamic';
+const syncedAt = stale ? lastSyncedStale : lastSyncedAt;
+// The big fixture opens Browse on the multi-million-row Events table (virtualization stress).
+const landingTableId = big ? 'tblEvents' : undefined;
+---
+
+<SidebarLayout pageTitle="Data" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <DataView
+    bases={empty ? [] : dataBases}
+    tables={empty ? [] : dataTables}
+    records={empty ? [] : dataRecords}
+    changelog={empty ? [] : dataChangelog}
+    comments={empty || nocomments ? [] : emailcomments ? dataCommentsEmailOnly : fewcomments ? dataCommentsFew : dataComments}
+    runTotals={dataRunTotals}
+    views={empty ? [] : dataViews}
+    viewGroups={empty ? [] : dataViewGroups}
+    docs={empty ? [] : dataDocs}
+    chatThreads={empty ? [] : dataThreads}
+    mode={mode}
+    lastSyncedAt={syncedAt}
+    stale={stale}
+    landingTableId={landingTableId}
+    loadState={loadState}
+  />
+</SidebarLayout>

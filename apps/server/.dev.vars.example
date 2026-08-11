@@ -1,6 +1,20 @@
 # Local-dev configuration for apps/server (Cloudflare Worker — backup engine).
 # Copy to .dev.vars and fill in real values. .dev.vars is gitignored.
 # CI gets these from GitHub secrets / wrangler secret put at deploy time.
+#
+# DO NOT wrap values in quotes (KEY="value"). Wrangler's .dev.vars loader
+# treats the surrounding quotes as part of the value, so `INTERNAL_TOKEN="abc"`
+# becomes the literal string `"abc"` (with quotes) at runtime. Mismatched
+# against any caller that sent the bare token. Write `KEY=value` exactly.
+#
+# === R2 credentials are NOT stored here ===
+# Managed Cloudflare R2 (R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY
+# / R2_BUCKET) is reached ONLY from apps/workflows' Trigger.dev Node runner —
+# never from this Worker. Putting R2_* keys in this file creates a false
+# signal; they'd be loaded into workerd but never used. Canonical location
+# is the Trigger.dev project's per-environment env-vars UI; local-dev mirror
+# is apps/workflows/.env. Per-env state + rotation procedure: see
+# shared/internal/r2-setup.md.
 
 # === Master DB (baseout-master Postgres on DigitalOcean) ===
 # The engine reads connections + writes backup_runs here. apps/web owns
@@ -25,7 +39,43 @@ TRIGGER_PROJECT_REF=proj_xxxxxxxxxxxxxxxxxxxx
 # BACKUP_ENGINE_INTERNAL_TOKEN.
 INTERNAL_TOKEN=replace-with-32-bytes-of-base64-randomness
 
+# === Master encryption key (decrypt-only at the engine) ===
+# AES-256-GCM key for the *_enc columns in baseout.connections (and other
+# encrypted-at-rest columns). Same value apps/web has in its
+# BASEOUT_ENCRYPTION_KEY var. The engine NEVER writes encrypted connection
+# tokens — apps/web's OAuth callback is the canonical writer. The engine only
+# decrypts what's already in the DB.
+# Generate: `openssl rand -base64 32`.
+BASEOUT_ENCRYPTION_KEY=replace-with-base64-of-32-random-bytes
+
+# === Airtable on-demand token refresh (self-heal expired tokens) ===
+# ConnectionDO lazy-refreshes an expired Airtable access token on /token using
+# the stored refresh token — so backups don't 401 on a stale token and you never
+# need to reconnect. Keep enabled for the local backup loop. Requires the
+# AIRTABLE_OAUTH_CLIENT_ID/SECRET below to match apps/web's Airtable OAuth app.
+AIRTABLE_ON_DEMAND_REFRESH_ENABLED=1
+# AIRTABLE_OAUTH_CLIENT_ID=
+# AIRTABLE_OAUTH_CLIENT_SECRET=
+
+# === BYOS storage-provider OAuth credentials (token refresh — same as apps/web) ===
+# The engine refreshes stored BYOS tokens so the Trigger.dev workflows runner can
+# write backups. Use the SAME client IDs/secrets apps/web holds for each provider.
+# Box / Dropbox / Google Drive need both ID + secret; OneDrive (Microsoft) is
+# PKCE, so only the client ID is required engine-side.
+GOOGLE_DRIVE_OAUTH_CLIENT_ID=
+GOOGLE_DRIVE_OAUTH_CLIENT_SECRET=
+BOX_OAUTH_CLIENT_ID=
+BOX_OAUTH_CLIENT_SECRET=
+DROPBOX_OAUTH_CLIENT_ID=
+DROPBOX_OAUTH_CLIENT_SECRET=
+MICROSOFT_OAUTH_CLIENT_ID=
+
 # === Optional: local-dev TLS bypass ===
 # Set DRIZZLE_SSL=false ONLY if connecting to a local Postgres without TLS.
 # Leave unset / "require" for any DigitalOcean managed DB.
 # DRIZZLE_SSL=require
+
+# === Optional: dev/demo view-capture override (server-view-capture-override) ===
+# "1" makes /schema-sync treat every connection as view-capture-enabled
+# (response viewCapture:"override"). Dev Worker ONLY — never staging/production.
+# VIEW_CAPTURE_OVERRIDE=1

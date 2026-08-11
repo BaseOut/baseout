@@ -1,0 +1,51 @@
+---
+import { cn } from '../../lib/ui';
+
+interface Props {
+  variant?: 'info' | 'success' | 'warning' | 'error';
+  icon?: string;
+  title?: string;
+  actionHref?: string;
+  actionLabel?: string;
+  dismissible?: boolean;
+  class?: string;
+}
+
+const {
+  variant = 'info',
+  icon,
+  title,
+  actionHref,
+  actionLabel,
+  dismissible = false,
+  class: className = '',
+} = Astro.props;
+
+const iconMap: Record<NonNullable<Props['variant']>, string> = {
+  info: 'lucide--info',
+  success: 'lucide--circle-check',
+  warning: 'lucide--triangle-alert',
+  error: 'lucide--circle-x',
+};
+
+const classes = cn('alert alert-soft', `alert-${variant}`, className);
+const iconClass = icon ?? iconMap[variant];
+---
+
+<div role="alert" class={classes}>
+  <span class={`iconify ${iconClass} size-4 shrink-0`} aria-hidden="true"></span>
+  <span class="min-w-0 flex-1">
+    {title && <strong class="mr-1 font-semibold">{title}</strong>}
+    <slot />
+  </span>
+  {actionHref && actionLabel && (
+    <a href={actionHref} class={`btn btn-sm ${variant === 'error' ? 'btn-ghost' : `btn-${variant}`}`}>
+      {actionLabel}
+    </a>
+  )}
+  {dismissible && (
+    <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Dismiss" onclick="this.closest('[role=alert]')?.remove()">
+      <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+    </button>
+  )}
+</div>

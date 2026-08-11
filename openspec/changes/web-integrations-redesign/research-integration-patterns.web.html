@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Integration patterns — Web research</title>
+  <style>
+    :root {
+      --bg: #0b0d10; --panel: #14171c; --panel-2: #1a1e24; --line: #262b33;
+      --text: #e6e8eb; --muted: #9aa2ad; --faint: #6b7280;
+      --blue: #4a9eff; --amber: #e0a93b; --red: #ef5350; --green: #3ec77a; --accent: #7c5cff;
+      --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 14px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 96px; }
+    header.page { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 8px; }
+    .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+    h1 { font-size: 26px; font-weight: 650; letter-spacing: -.01em; margin: 8px 0 6px; }
+    .sub { color: var(--muted); max-width: 80ch; }
+    .meta { font-family: var(--mono); font-size: 11px; color: var(--faint); margin-top: 12px; }
+    .meta code { color: var(--muted); }
+    .pill { display:inline-block; font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+
+    .note-band { background: color-mix(in oklab, var(--amber) 12%, var(--panel)); border: 1px solid color-mix(in oklab, var(--amber) 40%, var(--line)); border-radius: 10px; padding: 13px 16px; margin-top: 20px; font-size: 13px; color: var(--muted); }
+    .note-band b { color: var(--text); }
+
+    section.block { margin-top: 44px; }
+    section.block > h2 { font-size: 17px; font-weight: 620; margin: 0 0 4px; letter-spacing: -.005em; display: flex; align-items: baseline; gap: 10px; }
+    section.block > h2 .tag { font-family: var(--mono); font-size: 11px; color: var(--accent); border: 1px solid color-mix(in oklab, var(--accent) 50%, var(--line)); border-radius: 5px; padding: 1px 6px; }
+    section.block > p.lead { color: var(--muted); margin: 0 0 16px; max-width: 84ch; }
+    section.block p.lead strong { color: var(--text); }
+    a.inline { color: var(--blue); text-decoration: none; } a.inline:hover { text-decoration: underline; }
+
+    /* Flow diagram */
+    .flow { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin: 4px 0 6px; }
+    .flow .flow-title { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-bottom: 14px; display:flex; align-items:center; gap:8px; }
+    .flow .flow-title .src { margin-left:auto; } .flow .flow-title a { color: var(--blue); text-decoration:none; font-size:11px; } .flow .flow-title a:hover{ text-decoration:underline; }
+    .steps { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; }
+    .step { background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; min-width: 0; display:flex; flex-direction:column; justify-content:center; }
+    .step .n { font-family: var(--mono); font-size: 10px; color: var(--faint); }
+    .step .t { font-size: 12.5px; font-weight: 600; margin-top: 2px; }
+    .step .d { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .step.verify { border-color: color-mix(in oklab, var(--green) 50%, var(--line)); }
+    .step.verify .t { color: var(--green); }
+    .arrow { align-self: center; color: var(--faint); font-size: 16px; line-height: 1; padding: 0 2px; }
+
+    .fan { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+    .fan .node { background: var(--panel-2); border:1px solid var(--line); border-radius:9px; padding:10px 14px; font-size:12.5px; font-weight:600; }
+    .fan .node.src { border-color: color-mix(in oklab, var(--blue) 50%, var(--line)); }
+    .fan .branch { display:flex; flex-direction:column; gap:10px; }
+    .fan .node.dst { border-color: color-mix(in oklab, var(--accent) 45%, var(--line)); }
+    .fan .node .sub { display:block; font-weight:400; color:var(--muted); font-size:11px; margin-top:2px; }
+
+    table.cmp { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+    table.cmp th, table.cmp td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    table.cmp th { font-family: var(--mono); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); font-weight: 500; }
+    table.cmp td.k { font-weight: 600; }
+    table.cmp tr:last-child td { border-bottom: none; }
+    .y { color: var(--green); font-weight:600; } .n { color: var(--red); font-weight:600; } .mid { color: var(--amber); font-weight:600; }
+
+    .callout { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; padding: 16px 18px; margin-top: 18px; }
+    .callout h3 { margin: 0 0 8px; font-size: 14px; } .callout ol { margin:0; padding-left: 20px; } .callout li { margin: 4px 0; color: var(--muted); } .callout li b { color: var(--text); }
+    .srcs { font-size: 12px; color: var(--faint); margin-top: 10px; } .srcs a { color: var(--blue); text-decoration:none; } .srcs a:hover{ text-decoration:underline; }
+    footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--faint); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="page">
+      <div class="eyebrow">Baseout · OpenSpec · integrations-redesign · competitor research</div>
+      <h1>Integration patterns — Web research</h1>
+      <p class="sub">Vendor docs + product pages, source-isolated to compare against the Mobbin report. Aimed at the <strong>gaps Mobbin left</strong>: the data-connector wizard, parallel destinations, scheduling, and the underlying “connection” data model.</p>
+      <div class="meta"><span class="pill">source: web docs</span> &nbsp; <span class="pill">no auth-gated screenshots</span> &nbsp; compare with <code>research-integration-patterns.mobbin.html</code></div>
+      <div class="note-band">Unlike the Mobbin report, these interfaces live behind auth or inside docs — clean product screenshots aren’t publicly available. So the flows below are rendered as <b>honest diagrams</b> (not mocked screenshots), each linked to its source. <b>That contrast is itself a finding:</b> Mobbin’s edge is real pixels; the web’s edge is the systematic machinery — scheduling, parallel destinations, and the data model.</div>
+    </header>
+
+    <!-- canonical flow -->
+    <section class="block">
+      <h2><span class="tag">★</span> The canonical heavy-config flow (closest domain analogs)</h2>
+      <p class="lead">Fivetran and Airbyte move data out of a source on a schedule to a destination — exactly Baseout’s shape. Both put config on a <strong>dedicated guided flow</strong>, never a modal, and both end in an explicit <strong>verify</strong> step. Our <code>flows.html</code> diagram C matches this.</p>
+
+      <div class="flow">
+        <div class="flow-title">Fivetran — connector setup <span class="src"><a href="https://www.fivetran.com/blog/database-connector-setup-a-step-by-step-guide" target="_blank">source ↗</a></span></div>
+        <div class="steps">
+          <div class="step"><span class="n">01</span><span class="t">Pick connector</span><span class="d">from the catalog</span></div>
+          <div class="arrow">→</div>
+          <div class="step"><span class="n">02</span><span class="t">Config fields</span><span class="d">embedded setup guide</span></div>
+          <div class="arrow">→</div>
+          <div class="step"><span class="n">03</span><span class="t">Schema tab</span><span class="d">tables/columns: activate, hash, block</span></div>
+          <div class="arrow">→</div>
+          <div class="step verify"><span class="n">04</span><span class="t">Save &amp; Test ✓</span><span class="d">verify before first sync</span></div>
+          <div class="arrow">→</div>
+          <div class="step"><span class="n">05</span><span class="t">Sync frequency</span><span class="d">1 min–24h, or cron</span></div>
+        </div>
+      </div>
+
+      <div class="flow">
+        <div class="flow-title">Airbyte — new connection <span class="src"><a href="https://docs.airbyte.com/platform/1.8/move-data/add-connection" target="_blank">source ↗</a></span></div>
+        <div class="steps">
+          <div class="step"><span class="n">01</span><span class="t">New connection</span></div>
+          <div class="arrow">→</div>
+          <div class="step"><span class="n">02</span><span class="t">Source</span><span class="d">reusable object</span></div>
+          <div class="arrow">→</div>
+          <div class="step"><span class="n">03</span><span class="t">Destination</span><span class="d">reusable object</span></div>
+          <div class="arrow">→</div>
+          <div class="step"><span class="n">04</span><span class="t">Streams + mode</span><span class="d">toggle streams, per-stream sync mode</span></div>
+          <div class="arrow">→</div>
+          <div class="step"><span class="n">05</span><span class="t">Sync frequency</span></div>
+          <div class="arrow">→</div>
+          <div class="step verify"><span class="n">06</span><span class="t">Set up ✓</span><span class="d">first sync runs</span></div>
+        </div>
+      </div>
+
+      <div class="callout">
+        <h3>Takeaways for us</h3>
+        <ol>
+          <li>The ordered flow <b>Connect → pick data → schedule → destination → verify</b> is the industry standard.</li>
+          <li><b>“Save &amp; Test” / verify-after is a first-class step</b> — frame our “run first backup &amp; confirm” as that verify beat.</li>
+          <li><b>Save-for-later / resumable partial setup</b> (Fivetran) is worth copying for first-time users.</li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- parallel destinations -->
+    <section class="block">
+      <h2><span class="tag">⇉</span> Parallel destinations — our most distinctive requirement</h2>
+      <p class="lead">The industry <strong>does</strong> fan out to multiple destination <em>types</em> at once. Treat destinations as <strong>independent, separately-authenticated objects</strong>, and let one backup write to several — exactly our static <strong>+</strong> dynamic in parallel.</p>
+      <div class="flow">
+        <div class="flow-title">Fan-out model (Stripe Data Pipeline · MS Fabric “stage once, reference many”)</div>
+        <div class="fan">
+          <div class="node src">Baseout backup<span class="sub">one run</span></div>
+          <div class="arrow">→</div>
+          <div class="branch">
+            <div class="node dst">Static — files<span class="sub">Drive / Dropbox / S3 / R2</span></div>
+            <div class="node dst">Dynamic — database<span class="sub">Postgres / Neon / Supabase / D1 / BYODB</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="lead" style="margin-top:14px">UX: a “Destinations” section listing each configured destination with its own status, an <strong>auth sub-step per destination</strong>, and “+ Add destination” — not a single-select. This is exactly the v2 reframe we drafted.</p>
+      <div class="srcs">Sources: <a href="https://stripe.com/resources/more/cloud-data-warehouse-pipelines" target="_blank">Stripe Data Pipeline</a> · <a href="https://learn.microsoft.com/en-us/fabric/data-factory/dataflow-gen2-data-destinations-and-managed-settings" target="_blank">Microsoft Fabric Dataflow Gen2 destinations</a></div>
+    </section>
+
+    <!-- scheduling + model -->
+    <section class="block">
+      <h2><span class="tag">⏱</span> Scheduling &amp; the “connection” data model</h2>
+      <p class="lead"><strong>Scheduling:</strong> a frequency picker with discrete options plus <strong>cron for power users</strong> (Fivetran: 1 min–24h). Plan-gate higher frequencies as <strong>visible-but-upgradeable</strong>, not hidden — consistent with how these tools sell tiers.</p>
+      <p class="lead"><strong>Data model:</strong> Airbyte’s shape — reusable <strong>sources</strong> + reusable <strong>destinations</strong>, a <strong>connection</strong> binds them — implies authenticating a source <em>once</em> and reusing it is the expected mental model. Direct evidence for resolving our open question toward <strong>Org-level Connect</strong> (auth once, reuse across Spaces).</p>
+      <div class="srcs">Sources: <a href="https://fivetran.com/docs/using-fivetran/fivetran-dashboard/connectors" target="_blank">Fivetran connections</a> · <a href="https://docs.airbyte.com/platform/using-airbyte/getting-started/set-up-a-connection" target="_blank">Airbyte connections</a> · <a href="https://docs.airbyte.com/platform/using-airbyte/getting-started/add-a-destination" target="_blank">Airbyte destinations</a></div>
+    </section>
+
+    <!-- naming + marketplace -->
+    <section class="block">
+      <h2><span class="tag">A</span> Naming &amp; the marketplace→settings pattern</h2>
+      <p class="lead"><strong>Naming:</strong> across these tools the recurring word is <strong>“sync” / “connection”</strong>; “backup” is reserved for point-in-time snapshots. Baseout does <em>both</em> — so the naming split is real, not interchangeable. Evidence for resolving our open question deliberately.</p>
+      <p class="lead"><strong>Vercel / Stripe:</strong> install from a marketplace → land on the <strong>integration’s settings page</strong> (API keys as env vars, <strong>rotate keys</strong>, <strong>Connect Project</strong>). Reinforces: connected → a dedicated settings page; and it surfaces an <strong>API-key</strong> path, like our delta.</p>
+      <div class="srcs">Sources: <a href="https://vercel.com/docs/integrations/ecommerce/stripe" target="_blank">Stripe for Vercel</a> · <a href="https://vercel.com/marketplace/stripe/stripe" target="_blank">Vercel Marketplace</a></div>
+    </section>
+
+    <!-- comparison -->
+    <section class="block">
+      <h2><span class="tag">⇄</span> What each source gave</h2>
+      <table class="cmp">
+        <thead><tr><th>Dimension</th><th>Mobbin</th><th>Web</th></tr></thead>
+        <tbody>
+          <tr><td class="k">Real UI / pixels</td><td class="y">Strong — screenshots</td><td class="n">Low — docs only</td></tr>
+          <tr><td class="k">Connected-card &amp; empty→connected</td><td class="y">Strong</td><td class="n">Weak</td></tr>
+          <tr><td class="k">Dedicated edit / detail page</td><td class="y">Strong (Linear, Attio)</td><td class="y">Strong (Fivetran tabs) — corroborates</td></tr>
+          <tr><td class="k">Heavy config: pick tables + validate</td><td class="mid">Good (PlanetScale, Neon)</td><td class="y">Strong (Fivetran/Airbyte canonical)</td></tr>
+          <tr><td class="k">Scheduling / frequency</td><td class="n">Missing</td><td class="y">Covered (1m–24h + cron)</td></tr>
+          <tr><td class="k">Parallel destinations</td><td class="n">Missing</td><td class="y">Covered (Stripe / Fabric)</td></tr>
+          <tr><td class="k">Connection data model</td><td class="mid">Implicit</td><td class="y">Explicit (Airbyte)</td></tr>
+        </tbody>
+      </table>
+      <p class="lead" style="margin-top:14px"><strong>Net:</strong> Mobbin is better for <em>seeing real UI</em> and confirming our card/edit patterns; the web is better for the <em>systematic flow, scheduling, parallel destinations, and the data model</em> that drive our two open questions. Complementary — Mobbin shows the surface, the web explains the machine.</p>
+    </section>
+
+    <!-- implication -->
+    <section class="block">
+      <h2><span class="tag">✓</span> Implication (both sources converge)</h2>
+      <div class="callout">
+        <ol>
+          <li><b>Overview = card</b> (status + quick actions) → flips empty → connected.</li>
+          <li><b>Heavy config = dedicated, tabbed route</b> with an explicit <b>Save &amp; Test / verify</b> step; resumable.</li>
+          <li><b>Edit = same detail page, sections in place</b> — no wizard re-run.</li>
+          <li><b>Destinations = independent objects, fan-out in parallel</b>, each with its own auth sub-step.</li>
+          <li><b>Connect likely Org-level</b> (auth once, reuse) — take to the client as evidence on the scope question.</li>
+        </ol>
+      </div>
+    </section>
+
+    <footer>
+      Web research compiled from the linked vendor docs &amp; product pages. Companion with embedded real screenshots: <a class="inline" href="research-integration-patterns.mobbin.html" style="color:var(--blue);text-decoration:none;">research-integration-patterns.mobbin.html</a>.
+    </footer>
+  </div>
+</body>
+</html>

@@ -1,0 +1,378 @@
+<meta charset="utf-8">
+<title>Side-by-side resizable drawers — Schema</title>
+<style>
+  :root{
+    --bg:#0d0f13; --bg-2:#12151b; --panel:#161a22; --panel-2:#1b2029; --panel-3:#20262f;
+    --line:#242a35; --line-2:#2f3745;
+    --ink:#e8ecf3; --ink-2:#aab3c2; --ink-3:#6f7a8a;
+    --accent:#4c8dff; --accent-soft:rgba(76,141,255,.14); --accent-line:rgba(76,141,255,.4);
+    --good:#3fb37f; --good-soft:rgba(63,179,127,.16);
+    --warn:#e0a83d; --warn-soft:rgba(224,168,61,.16);
+    --violet:#a98bff; --violet-soft:rgba(169,139,255,.16);
+    --dshadow:-14px 0 40px rgba(0,0,0,.42);
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  :root[data-theme="light"]{
+    --bg:#f5f7fa; --bg-2:#eceff4; --panel:#ffffff; --panel-2:#f4f6f9; --panel-3:#eef1f6;
+    --line:#e6e9ef; --line-2:#d3d9e2; --ink:#161a22; --ink-2:#4a5464; --ink-3:#8a93a3;
+    --accent:#2f6fe0; --accent-soft:rgba(47,111,224,.10); --accent-line:rgba(47,111,224,.45);
+    --good:#1f9d63; --good-soft:rgba(31,157,99,.12); --warn:#b57e1a; --warn-soft:rgba(181,126,26,.14);
+    --violet:#7a5cf0; --violet-soft:rgba(122,92,240,.12);
+    --dshadow:-14px 0 40px rgba(50,70,110,.2);
+  }
+  @media (prefers-color-scheme: light){:root:not([data-theme]){
+    --bg:#f5f7fa; --bg-2:#eceff4; --panel:#ffffff; --panel-2:#f4f6f9; --panel-3:#eef1f6;
+    --line:#e6e9ef; --line-2:#d3d9e2; --ink:#161a22; --ink-2:#4a5464; --ink-3:#8a93a3;
+    --accent:#2f6fe0; --accent-soft:rgba(47,111,224,.10); --accent-line:rgba(47,111,224,.45);
+    --good:#1f9d63; --good-soft:rgba(31,157,99,.12); --warn:#b57e1a; --warn-soft:rgba(181,126,26,.14);
+    --violet:#7a5cf0; --violet-soft:rgba(122,92,240,.12); --dshadow:-14px 0 40px rgba(50,70,110,.2);
+  }}
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5;
+    -webkit-font-smoothing:antialiased;display:flex;height:100%;overflow:hidden}
+  button{font-family:inherit;color:inherit;cursor:pointer;border:none;background:none}
+
+  .sidebar{flex:none;width:206px;background:var(--bg-2);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:12px 10px;z-index:40}
+  .brand{display:flex;align-items:center;gap:9px;font-weight:640;padding:6px 8px 14px;letter-spacing:-.01em}
+  .brand .dot{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,var(--accent),var(--violet))}
+  .space{font-size:11px;color:var(--ink-3);padding:4px 8px;font-family:var(--mono);letter-spacing:.04em;text-transform:uppercase}
+  .nav a{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:7px;color:var(--ink-2);font-size:13px;text-decoration:none;margin-bottom:1px}
+  .nav a .i{width:16px;text-align:center;color:var(--ink-3);font-size:13px}
+  .nav a:hover{background:var(--panel-2);color:var(--ink)}
+  .nav a.on{background:var(--accent-soft);color:var(--ink)} .nav a.on .i{color:var(--accent)}
+  .navgap{height:14px}
+  .theme{margin-top:auto;display:flex;align-items:center;gap:9px;padding:8px;border-radius:7px;color:var(--ink-2);font-size:12.5px}
+  .theme:hover{background:var(--panel-2);color:var(--ink)}
+  .theme .sw{width:26px;height:26px;border:1px solid var(--line);border-radius:6px;display:grid;place-items:center}
+
+  .work{flex:1;min-width:0;position:relative;display:flex;flex-direction:column;overflow:hidden}
+  .wtop{flex:none;padding:16px 24px 0}
+  .wtop h1{margin:0;font-size:22px;letter-spacing:-.02em}
+  .wtop .sub{color:var(--ink-3);font-size:13px;margin-top:3px}
+  /* layout toggle (side-by-side / overlap) — lives in the active panel header */
+  .modetoggle{display:inline-flex;gap:2px;background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:2px;flex:none;margin-right:2px}
+  .modetoggle button{width:28px;height:24px;display:grid;place-items:center;color:var(--ink-3);border-radius:5px}
+  .modetoggle button:hover{color:var(--ink);background:var(--panel-3)}
+  .modetoggle button.on{color:#fff;background:var(--accent)}
+  .modetoggle svg{width:15px;height:15px;display:block}
+  /* balancer: appears on hover of the leftmost side-by-side panel — click=50/50, drag=resize both */
+  .balancer{position:absolute;top:12px;left:-14px;width:28px;height:28px;border-radius:50%;background:var(--accent);
+    color:#fff;display:grid;place-items:center;z-index:12;cursor:ew-resize;border:2px solid var(--panel);
+    box-shadow:0 3px 10px rgba(0,0,0,.4);opacity:0;transform:scale(.8);transition:opacity .12s,transform .12s;pointer-events:auto}
+  .opanel:hover .balancer,.balancer:hover{opacity:1;transform:scale(1)}
+  .balancer svg{width:15px;height:15px;display:block}
+  .tabs{flex:none;display:flex;gap:2px;margin:14px 24px 0;border-bottom:1px solid var(--line)}
+  .tabs button{padding:8px 12px;font-size:13px;color:var(--ink-3);border-bottom:2px solid transparent;font-weight:540}
+  .tabs button.on{color:var(--ink);border-bottom-color:var(--accent)} .tabs button:hover{color:var(--ink-2)}
+
+  .content{flex:1;min-height:0;position:relative;overflow:hidden}
+  .tablearea{position:absolute;inset:0;overflow:auto;padding:10px 24px 40px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  thead th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-3);font-weight:600;padding:8px 12px;position:sticky;top:0;background:var(--bg);z-index:1}
+  .grouprow td{padding:15px 12px 7px;font-weight:640;color:var(--ink);font-size:13px}
+  .grouprow .gmeta{color:var(--ink-3);font-weight:400;font-size:11.5px;margin-left:8px;font-family:var(--mono)}
+  tbody tr.frow{cursor:pointer;border-top:1px solid var(--line)}
+  tbody tr.frow:hover{background:var(--panel-2)}
+  tbody tr.frow.active{background:var(--accent-soft)}
+  tbody td{padding:10px 12px;vertical-align:middle}
+  .fname{display:flex;align-items:center;gap:9px}
+  .fname .fi{width:16px;text-align:center;color:var(--ink-3);font-size:12px}
+  .fname .pri{font-family:var(--mono);font-size:9.5px;color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 5px}
+  .chip{font-size:11px;font-family:var(--mono);padding:2px 8px;border-radius:5px;white-space:nowrap;background:var(--panel-3);color:var(--ink-2);border:1px solid var(--line)}
+  .chip.formula{color:var(--violet);background:var(--violet-soft);border-color:transparent}
+  .chip.rollup{color:var(--accent);background:var(--accent-soft);border-color:transparent}
+  .chip.lookup{color:var(--good);background:var(--good-soft);border-color:transparent}
+  .chip.link{color:var(--warn);background:var(--warn-soft);border-color:transparent}
+  .lk{color:var(--ink-2);font-size:12.5px}.lk .a{color:var(--accent)}
+  .st{display:inline-flex;align-items:center;gap:6px;font-size:12px}.st .d{width:6px;height:6px;border-radius:50%}
+  .st.good .d{background:var(--good)} .st.good{color:var(--good)}
+  .st.improve .d{background:var(--warn)} .st.improve{color:var(--warn)}
+  .muted{color:var(--ink-3)}
+
+  /* ---------- resizable panels: two modes (side-by-side | overlap) ---------- */
+  .dstack{position:absolute;top:0;right:0;bottom:0;z-index:30;pointer-events:none}
+  .dstack.sbs{display:flex;width:max-content}
+  .dstack.overlap{left:0}
+  .opanel{position:relative;height:100%;flex:none;background:var(--panel);border-left:1px solid var(--line-2);
+    box-shadow:var(--dshadow);display:flex;flex-direction:column;pointer-events:auto;min-width:280px}
+  .dstack.overlap .opanel{position:absolute;top:0;bottom:0;right:0;height:auto}
+  .opanel.fresh{animation:slidein .2s cubic-bezier(.2,.7,.3,1)}
+  @keyframes slidein{from{transform:translateX(36px);opacity:.3}to{transform:none;opacity:1}}
+  @media (prefers-reduced-motion:reduce){.opanel.fresh{animation:none}}
+  .grip{position:absolute;left:-5px;top:0;bottom:0;width:11px;cursor:col-resize;z-index:8;pointer-events:auto}
+  .grip::after{content:"";position:absolute;left:4px;top:0;bottom:0;width:2px;background:transparent;transition:background .12s}
+  .grip:hover::after,.grip.drag::after{background:var(--accent);box-shadow:0 0 8px var(--accent-line)}
+
+  .odhead{flex:none;display:flex;align-items:center;gap:6px;padding:11px 12px 10px;border-bottom:1px solid var(--line)}
+  .crumb{flex:1;min-width:0;display:flex;align-items:center;gap:6px;color:var(--ink-3);font-size:11.5px;overflow:hidden;white-space:nowrap}
+  .crumb b{color:var(--ink-2);font-weight:560;overflow:hidden;text-overflow:ellipsis}.crumb .sep{opacity:.5}
+  .dbtn{flex:none;width:26px;height:26px;border-radius:6px;color:var(--ink-3);display:grid;place-items:center;font-size:14px}
+  .dbtn:hover{background:var(--panel-2);color:var(--ink)}
+  .odbody{flex:1;overflow-y:auto;padding:16px 16px 44px}
+
+  .ident{display:flex;align-items:flex-start;gap:11px;margin-bottom:14px}
+  .ident .ei{width:34px;height:34px;border-radius:9px;background:var(--panel-3);display:grid;place-items:center;color:var(--accent);flex:none;font-size:16px}
+  .ident h3{margin:0;font-size:18px;letter-spacing:-.01em}.ident .et{color:var(--ink-3);font-size:12px;margin-top:2px}
+  .healthbox{border:1px solid var(--line);border-radius:9px;padding:9px 12px;margin-bottom:8px;position:relative}
+  .healthbox .hl{font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-bottom:5px}
+  .healthbox .hv{display:flex;align-items:center;gap:7px;font-size:13px}
+  .healthbox .hv .d{width:7px;height:7px;border-radius:50%}
+  .h-good .d{background:var(--good)} .h-good .hv{color:var(--good)}
+  .h-improve .d{background:var(--warn)} .h-improve .hv{color:var(--warn)}
+  .healthbox .sub{color:var(--ink-3);font-size:11px;margin-top:2px}
+  .healthbox .spark{position:absolute;top:10px;right:12px;display:flex;align-items:flex-end;gap:2px;height:16px}
+  .healthbox .spark i{width:3px;background:var(--line-2);border-radius:1px}
+
+  .sec{margin-top:18px}
+  .sec-h{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);display:flex;align-items:center;gap:8px;margin-bottom:9px}
+  .sec-h .cnt{margin-left:auto}
+  .dtabs{display:flex;gap:4px;margin-bottom:9px}
+  .dtabs button{font-size:12px;padding:4px 10px;border-radius:6px;color:var(--ink-3);border:1px solid transparent}
+  .dtabs button.on{color:var(--ink);background:var(--panel-2);border-color:var(--line)}
+  .desc{color:var(--ink-2);font-size:13px}
+  .syncline{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--ink-3);margin-top:8px}
+  .syncline .si{flex:none} .syncline.ok .si{color:var(--good)} .syncline.info .si{color:var(--accent)}
+  .formula{font-family:var(--mono);font-size:12.5px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;color:var(--ink);white-space:pre-wrap;word-break:break-word}
+  .opts{display:flex;flex-wrap:wrap;gap:6px}
+  .opt{font-size:11.5px;background:var(--panel-2);border:1px solid var(--line);border-radius:6px;padding:3px 9px;color:var(--ink-2)}
+  .rows{display:flex;flex-direction:column;gap:2px}
+  .rrow{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+  .rrow:hover{background:var(--panel-2);border-color:var(--line)}
+  .rrow .ri{width:16px;flex:none;color:var(--ink-3);text-align:center;font-size:12px}
+  .rrow .rn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+  .rrow .rtype{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-3);white-space:nowrap}
+  .rrow .rtype .td{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  .rrow .rtype.currency .td{background:#e0a83d}.rrow .rtype.percent .td{background:#3fb37f}
+  .rrow .rtype.lookup .td{background:var(--good)}.rrow .rtype.rollup .td{background:var(--accent)}
+  .rrow .rtype.formula .td{background:var(--violet)}.rrow .rtype.link .td{background:var(--warn)}
+  .rrow .rgo{color:var(--ink-3);font-size:13px;flex:none}
+  .dir{font-size:10px;color:var(--ink-3);font-family:var(--mono)}
+  .rrow.ext{cursor:default}
+  .clog{background:var(--panel-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+  .clog .cb{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--warn);background:var(--warn-soft);border-radius:5px;padding:2px 8px;font-family:var(--mono)}
+  .clog .cd{font-size:11px;color:var(--ink-3);margin-left:8px}
+  .clog .ct{font-size:12.5px;color:var(--ink-2);margin-top:7px}
+  .clog .ct s{color:var(--ink-3)}
+  .emptydoc{color:var(--ink-3);font-size:12.5px}
+
+  .hintbar{position:absolute;left:24px;bottom:16px;z-index:9;background:var(--panel);border:1px solid var(--line-2);
+    border-radius:9px;padding:8px 13px;font-size:12px;color:var(--ink-2);box-shadow:var(--dshadow);max-width:52%}
+  .hintbar b{color:var(--ink)}
+  ::-webkit-scrollbar{width:9px;height:9px}::-webkit-scrollbar-thumb{background:var(--line-2);border-radius:6px}::-webkit-scrollbar-track{background:transparent}
+</style>
+
+<div class="sidebar">
+  <div class="brand"><span class="dot"></span>baseout</div>
+  <div class="space">Space · Core CRM</div>
+  <nav class="nav">
+    <a href="#"><span class="i">⌂</span>Home</a><a href="#"><span class="i">⭑</span>Backups</a>
+    <a href="#"><span class="i">↺</span>Restore</a><a href="#" class="on"><span class="i">▦</span>Schema</a>
+    <a href="#"><span class="i">▤</span>Reports</a><div class="navgap"></div>
+    <div class="space">Account</div>
+    <a href="#"><span class="i">◇</span>Sources</a><a href="#"><span class="i">◈</span>Destinations</a>
+  </nav>
+  <button class="theme" id="theme"><span class="sw">◐</span>Toggle theme</button>
+</div>
+
+<div class="work">
+  <div class="wtop">
+    <h1>Schema</h1><div class="sub">Your Airtable structure — tables, fields, and how they link. Read-only.</div>
+  </div>
+  <div class="tabs"><button class="on">Browse</button><button>Visualize</button><button>Relationships</button>
+    <button>Changelog</button><button>Health</button><button>Docs</button></div>
+  <div class="content">
+    <div class="tablearea">
+      <table><thead><tr><th style="width:40%">Name</th><th style="width:18%">Type</th>
+        <th style="width:22%">Link</th><th>Status</th></tr></thead><tbody id="tbody"></tbody></table>
+    </div>
+    <div class="hintbar" id="hint">Click a field → a full-height panel opens on the right. Drill a reference → a <b>second panel opens beside it</b>. <b>Every panel is live</b>: click references in any, and drag the resize handle on <b>each</b> panel's left edge. The table stays clickable behind. ✕ closes a panel; Esc closes the last.</div>
+  </div>
+  <div class="dstack" id="dstack"></div>
+</div>
+
+<script>
+const T={
+  weighted_value:{name:'Weighted Value',table:'Deals',base:'Sales CRM',icon:'ƒ',type:'Formula',tchip:'formula',link:'—',health:'good',
+    descA:'Amount × Probability — the pipeline-weighted value.',synced:true,
+    config:{title:'Formula',formula:'{Amount} * {Probability}'},references:['amount','probability'],
+    changelog:{date:'Jun 19, 2026',text:'Weighted Value formula updated <s>{Amount}</s> → {Amount} * {Probability}'},
+    refBy:[{name:'Weekly pipeline digest',kind:'Automation'}]},
+  amount:{name:'Amount',table:'Deals',base:'Sales CRM',icon:'$',type:'Currency',tchip:'',link:'—',health:'good',
+    descA:'The gross value of the deal.',synced:true,refBy:[{id:'weighted_value',kind:'Formula'},{id:'pipeline_value',kind:'Rollup'}]},
+  probability:{name:'Probability',table:'Deals',base:'Sales CRM',icon:'%',type:'Percent',tchip:'',link:'—',health:'good',
+    descA:'Likelihood the deal closes.',synced:true,refBy:[{id:'weighted_value',kind:'Formula'}]},
+  company_industry:{name:'Company Industry',table:'Deals',base:'Sales CRM',icon:'⤷',type:'Lookup',tchip:'lookup',link:'→ Companies',health:'improve',
+    descA:'Industry pulled from the linked Company.',synced:true,config:{title:'Looks up',lookup:{id:'industry',via:'Company',table:'Companies'}},references:['industry']},
+  stage:{name:'Stage',table:'Deals',base:'Sales CRM',icon:'◔',type:'Single select',tchip:'',link:'—',health:'good',
+    descA:'Current pipeline stage.',synced:true,options:['Lead','Qualified','Proposal','Won','Lost']},
+  deal_company:{name:'Company',table:'Deals',base:'Sales CRM',icon:'⛓',type:'Link',tchip:'link',link:'→ Companies',health:'good',
+    descA:'The company this deal belongs to.',synced:true,config:{title:'Links to',link:{id:'companies_tbl'}},references:['companies_tbl']},
+  industry:{name:'Industry',table:'Companies',base:'Sales CRM',icon:'◔',type:'Single select',tchip:'',link:'—',health:'improve',
+    descA:'',synced:true,options:['SaaS','Fintech','Healthcare','E-commerce','Manufacturing','Other'],refBy:[{id:'company_industry',kind:'Lookup'}]},
+  pipeline_value:{name:'Pipeline Value',table:'Companies',base:'Sales CRM',icon:'∑',type:'Rollup',tchip:'rollup',link:'—',health:'good',
+    descA:'Sum of Amount across the company’s Deals.',synced:true,config:{title:'Rolls up',rollup:{id:'amount',via:'Deals',fn:'SUM(values)'}},references:['amount'],
+    refBy:[{name:'At-risk accounts alert',kind:'Automation'}]},
+  cname:{name:'Name',table:'Companies',base:'Sales CRM',icon:'A',type:'Single line text',tchip:'',link:'—',health:'good',descA:'Primary field.',primary:true,synced:true},
+  website:{name:'Website',table:'Companies',base:'Sales CRM',icon:'A',type:'URL',tchip:'',link:'—',health:'good',descA:'Company website.',synced:true},
+  full_name:{name:'Full Name',table:'Contacts',base:'Sales CRM',icon:'A',type:'Single line text',tchip:'',link:'—',health:'good',descA:'Primary field.',primary:true,synced:true},
+  contact_company:{name:'Company',table:'Contacts',base:'Sales CRM',icon:'⛓',type:'Link',tchip:'link',link:'→ Companies',health:'good',descA:'Linked company.',synced:true,config:{title:'Links to',link:{id:'companies_tbl'}},references:['companies_tbl']},
+  companies_tbl:{name:'Companies',table:null,base:'Sales CRM',icon:'▦',type:'Table',tchip:'',health:'improve',meta:'10 fields · 340 records',isTable:true,
+    descA:'Accounts you sell to.',synced:true,fields:['cname','industry','pipeline_value','website'],rel:[{id:'deal_company',dir:'Linked from'},{id:'contact_company',dir:'Linked from'}]},
+};
+const GROUPS=[
+  {name:'Deals',meta:'12 fields · 980 records',ids:['amount','probability','weighted_value','company_industry','deal_company','stage']},
+  {name:'Companies',meta:'10 fields · 340 records',ids:['cname','industry','pipeline_value','website']},
+  {name:'Contacts',meta:'8 fields · 1,480 records',ids:['full_name','contact_company']},
+];
+function esc(s){return (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+const typeClass=e=>e.tchip||({Currency:'currency',Percent:'percent'}[e.type]||'');
+
+function renderTable(){let h='';
+  GROUPS.forEach(g=>{h+=`<tr class="grouprow"><td colspan="4">▦ ${g.name}<span class="gmeta">${g.meta}</span></td></tr>`;
+    g.ids.forEach(id=>{const e=T[id];
+      h+=`<tr class="frow" data-open="${id}"><td><div class="fname"><span class="fi">${e.icon}</span>${esc(e.name)}${e.primary?'<span class="pri">primary</span>':''}</div></td>
+        <td><span class="chip ${e.tchip}">${esc(e.type)}</span></td>
+        <td class="lk">${e.link&&e.link!=='—'?'<span class="a">'+esc(e.link)+'</span>':'<span class="muted">—</span>'}</td>
+        <td><span class="st ${e.health}"><span class="d"></span>${e.health==='good'?'Healthy':'Could improve'}</span></td></tr>`;});});
+  document.getElementById('tbody').innerHTML=h;}
+function markRow(id){document.querySelectorAll('.frow.active').forEach(r=>r.classList.remove('active'));
+  const r=document.querySelector(`.frow[data-open="${id}"]`);if(r)r.classList.add('active');}
+
+function refRow(id){const e=T[id];if(!e)return'';
+  return `<div class="rrow" data-drill="${id}"><span class="ri">${e.icon}</span><span class="rn">${esc(e.name)}</span>
+    <span class="rtype ${typeClass(e)}"><span class="td"></span>${esc(e.type)}</span><span class="rgo">›</span></div>`;}
+function relRow(id,dir){const e=T[id];if(!e)return'';
+  return `<div class="rrow" data-drill="${id}"><span class="ri">${e.icon}</span><span class="rn">${esc(e.name)}</span>
+    <span class="dir">${dir}</span><span class="rgo">›</span></div>`;}
+function byRow(r){if(r.id){const e=T[r.id];return `<div class="rrow" data-drill="${r.id}"><span class="ri">${e.icon}</span>
+    <span class="rn">${esc(e.name)}</span><span class="rtype ${(r.kind||'').toLowerCase()}"><span class="td"></span>${esc(r.kind)}</span><span class="rgo">›</span></div>`;}
+  return `<div class="rrow ext"><span class="ri">⚡</span><span class="rn">${esc(r.name)}</span><span class="rtype"><span class="td"></span>${esc(r.kind)}</span></div>`;}
+
+function bodyHTML(e){
+  let h=`<div class="ident"><div class="ei">${e.icon}</div><div><h3>${esc(e.name)}</h3><div class="et">${esc(e.isTable?e.meta:e.type)}${e.primary?' · primary':''}</div></div></div>
+    <div class="healthbox h-${e.health}"><div class="hl">Health</div><div class="hv"><span class="d"></span>${e.health==='good'?'Healthy':'Could improve'}</div><div class="sub">at last backup</div>
+      <div class="spark"><i style="height:40%"></i><i style="height:65%"></i><i style="height:50%"></i><i style="height:80%"></i><i style="height:100%"></i></div></div>`;
+  h+=`<div class="sec"><div class="sec-h">Description</div>
+    <div class="dtabs"><button class="on">Airtable</button><button>Internal</button></div>
+    <div class="desc">${e.descA?esc(e.descA):'<span class="muted">No description in Airtable yet — click to write one.</span>'}</div>
+    <div class="syncline info"><span class="si">ⓘ</span>Shown to everyone in Airtable · the only synced copy</div>
+    ${e.synced?'<div class="syncline ok"><span class="si">✓</span>Synced with Airtable</div>':''}</div>`;
+  if(e.config){const c=e.config;let inner='';
+    if(c.formula)inner=`<div class="formula">${esc(c.formula)}</div>`;
+    else if(c.lookup)inner=`<div class="rows">${refRow(c.lookup.id)}</div><div class="desc" style="margin-top:6px;font-size:12px">in ${c.lookup.table}, via <b style="color:var(--ink-2)">${c.lookup.via}</b></div>`;
+    else if(c.rollup)inner=`<div class="rows">${refRow(c.rollup.id)}</div><div class="desc" style="margin-top:6px;font-size:12px">${c.rollup.fn} · via <b style="color:var(--ink-2)">${c.rollup.via}</b></div>`;
+    else if(c.link)inner=`<div class="rows">${refRow(c.link.id)}</div>`;
+    h+=`<div class="sec"><div class="sec-h">${esc(c.title)}</div>${inner}</div>`;}
+  if(e.options)h+=`<div class="sec"><div class="sec-h">Options<span class="cnt">${e.options.length}</span></div><div class="opts">${e.options.map(o=>`<span class="opt">${esc(o)}</span>`).join('')}</div></div>`;
+  if(e.isTable){h+=`<div class="sec"><div class="sec-h">Fields<span class="cnt">${e.fields.length}</span></div><div class="rows">${e.fields.map(f=>refRow(f)).join('')}</div></div>`;
+    if(e.rel)h+=`<div class="sec"><div class="sec-h">Relationships<span class="cnt">${e.rel.length}</span></div><div class="rows">${e.rel.map(r=>relRow(r.id,r.dir)).join('')}</div></div>`;}
+  if(e.references&&e.references.length)h+=`<div class="sec"><div class="sec-h">References<span class="cnt">${e.references.length}</span></div><div class="rows">${e.references.map(refRow).join('')}</div></div>`;
+  if(e.refBy&&e.refBy.length)h+=`<div class="sec"><div class="sec-h">Referenced by<span class="cnt">${e.refBy.length}</span></div><div class="rows">${e.refBy.map(byRow).join('')}</div></div>`;
+  if(e.changelog)h+=`<div class="sec"><div class="sec-h">Changelog</div><div class="clog"><span class="cb">◆ Config changed</span><span class="cd">${e.changelog.date}</span><div class="ct">${e.changelog.text}</div></div></div>`;
+  h+=`<div class="sec"><div class="sec-h">Documentation</div><div class="emptydoc">No documents reference this yet.</div></div>`;
+  return h;}
+function crumb(e){return `${esc(e.base)}<span class="sep">›</span>${e.table?esc(e.table)+'<span class="sep">›</span>':''}<b>${esc(e.name)}</b>`;}
+
+//////////////////// PANELS · two modes: 'sbs' (side-by-side) | 'overlap' (Airtable) ////////////////////
+const DEFW=468, MINW=300, TABLEGAP=110, STEP=100; // STEP = min visible peek of a lower panel
+let panels=[]; let freshIdx=-1; let mode='sbs';
+
+const ICON_SBS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M12 3v18"/></svg>';
+const ICON_OVL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+const ICON_BAL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 8 22 12 18 16"/><polyline points="6 8 2 12 6 16"/><line x1="2" x2="22" y1="12" y2="12"/></svg>';
+function modeToggleHTML(){return `<div class="modetoggle" role="group" aria-label="Panel layout">
+  <button data-mode="sbs" class="${mode==='sbs'?'on':''}" title="Side by side">${ICON_SBS}</button>
+  <button data-mode="overlap" class="${mode==='overlap'?'on':''}" title="Overlap">${ICON_OVL}</button></div>`;}
+
+// side-by-side: shrink proportionally so a strip of table always stays visible
+function fitWidths(){
+  const workW=document.querySelector('.work').clientWidth;
+  let ws=panels.map(p=>p.w);
+  const avail=workW-TABLEGAP, sum=ws.reduce((a,b)=>a+b,0);
+  if(sum>avail){const s=avail/sum;ws=ws.map(w=>Math.max(MINW,Math.round(w*s)));}
+  return ws;
+}
+// overlap: guarantee each lower (older) panel is at least STEP wider than the one above → it peeks on the left
+function normalizeOverlap(){
+  const workW=document.querySelector('.work').clientWidth;
+  for(let i=panels.length-2;i>=0;i--) panels[i].w=Math.max(panels[i].w, panels[i+1].w+STEP);
+  panels.forEach(p=>p.w=Math.min(p.w, workW-24));
+}
+function render(){
+  const wrap=document.getElementById('dstack');
+  document.querySelectorAll('.frow.active').forEach(r=>r.classList.remove('active'));
+  wrap.className='dstack '+mode;
+  if(!panels.length){wrap.innerHTML='';document.getElementById('hint').style.display='';return;}
+  document.getElementById('hint').style.display='none';markRow(panels[0].id);
+  const ws = mode==='sbs' ? fitWidths() : panels.map(p=>p.w);
+  let h='';
+  panels.forEach((p,i)=>{const e=T[p.id];
+    h+=`<div class="opanel ${i===freshIdx?'fresh':''}" data-idx="${i}" style="width:${ws[i]}px;${mode==='overlap'?'z-index:'+(30+i)+';':''}">
+      <div class="grip" data-grip="${i}" title="Drag to resize"></div>
+      ${mode==='sbs'&&panels.length>=2&&i===0?`<button class="balancer" data-balance title="Click: equal 50/50 · Drag: resize both">${ICON_BAL}</button>`:''}
+      <div class="odhead"><div class="crumb">${crumb(e)}</div>
+        ${i===panels.length-1?modeToggleHTML():''}
+        <button class="dbtn" data-close="${i}" title="Close">✕</button></div>
+      <div class="odbody">${bodyHTML(e)}</div></div>`;});
+  wrap.innerHTML=h;freshIdx=-1;}
+
+function openFresh(id){panels=[{id,w:DEFW}];freshIdx=0;render();}
+function drill(id,fromIdx){
+  const j=panels.findIndex(p=>p.id===id);
+  if(j>=0){panels=panels.slice(0,j+1);}
+  else{panels=panels.slice(0,fromIdx+1);panels.push({id,w:DEFW});freshIdx=panels.length-1;
+       if(mode==='overlap')normalizeOverlap();}
+  render();}
+function closeAt(i){panels=panels.slice(0,i);render();}
+function setMode(m){mode=m; if(m==='overlap')normalizeOverlap(); else panels.forEach(p=>p.w=DEFW); render();}
+
+//////////////////// EVENTS ////////////////////
+document.addEventListener('click',ev=>{const t=ev.target;
+  const md=t.closest('[data-mode]');if(md){setMode(md.dataset.mode);return;}
+  const open=t.closest('[data-open]');if(open){openFresh(open.dataset.open);return;}
+  const drl=t.closest('[data-drill]');if(drl){const pe=t.closest('.opanel');drill(drl.dataset.drill, pe?+pe.dataset.idx:panels.length-1);return;}
+  const cl=t.closest('[data-close]');if(cl){closeAt(+cl.dataset.close);return;}});
+
+// resize: each panel's left grip resizes that panel
+let rz=null, bz=null;
+document.addEventListener('mousedown',ev=>{
+  const b=ev.target.closest('[data-balance]');
+  if(b){ev.preventDefault();ev.stopPropagation();
+    bz={x:ev.clientX,startW:panels.map(p=>p.w),total:panels.reduce((a,p)=>a+p.w,0),moved:false,workW:document.querySelector('.work').clientWidth};
+    document.body.style.cursor='ew-resize';return;}
+  const g=ev.target.closest('[data-grip]');if(!g)return;
+  const i=+g.dataset.grip;const el=g.closest('.opanel');
+  rz={i,el,x:ev.clientX,w:panels[i].w};g.classList.add('drag');document.body.style.cursor='col-resize';ev.preventDefault();});
+window.addEventListener('mousemove',ev=>{
+  if(bz){const dx=bz.x-ev.clientX;if(Math.abs(dx)>3)bz.moved=true;
+    if(bz.moved){const maxTotal=bz.workW-TABLEGAP;
+      const newTotal=Math.max(panels.length*MINW,Math.min(maxTotal,bz.total+dx));
+      const s=newTotal/bz.total, els=document.querySelectorAll('.opanel');
+      panels.forEach((p,k)=>{p.w=Math.max(MINW,Math.round(bz.startW[k]*s));if(els[k])els[k].style.width=p.w+'px';});}
+    return;}
+  if(!rz)return;const dx=rz.x-ev.clientX; // drag left = wider
+  const workW=document.querySelector('.work').clientWidth, n=panels.length;
+  if(mode==='overlap'){
+    const belowCount=rz.i;                              // older panels beneath this one
+    const maxW=workW-24-belowCount*STEP;                // leave room so their peeks stay on-screen
+    let nw=Math.max(MINW,Math.min(maxW,rz.w+dx));
+    if(rz.i<n-1) nw=Math.max(nw, panels[rz.i+1].w+STEP);// never narrower than the panel above it
+    panels[rz.i].w=nw;
+    for(let j=rz.i-1;j>=0;j--) panels[j].w=Math.max(panels[j].w, panels[j+1].w+STEP); // push lowers wider
+    const els=document.querySelectorAll('.opanel');
+    panels.forEach((p,k)=>{if(els[k])els[k].style.width=p.w+'px';});
+  }else{
+    const nw=Math.max(MINW,Math.min(workW*0.7,rz.w+dx));
+    panels[rz.i].w=nw; rz.el.style.width=nw+'px';
+  }});
+window.addEventListener('mouseup',()=>{
+  if(bz){if(!bz.moved){const total=panels.reduce((a,p)=>a+p.w,0);panels.forEach(p=>p.w=Math.round(total/panels.length));}
+    document.body.style.cursor='';bz=null;render();return;}
+  if(rz){document.querySelector('.grip.drag')?.classList.remove('drag');document.body.style.cursor='';rz=null;render();}});
+window.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&panels.length){panels.pop();render();}});
+document.getElementById('theme').addEventListener('click',()=>{const r=document.documentElement,c=r.getAttribute('data-theme');r.setAttribute('data-theme',c==='light'?'dark':'light');});
+
+renderTable();
+</script>

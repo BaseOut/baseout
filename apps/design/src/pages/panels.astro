@@ -1,0 +1,205 @@
+---
+// /panels — Panel Lab. A review harness: the REAL Schema detail panels/drawers, opened
+// on demand from a scenario rail, so we can click through, compare and discuss them
+// (incl. worst-case data) BEFORE the Stage-3 canon refactor. No product code — this page
+// mounts the real SchemaView (same components as /schema) and fires their real open paths.
+// Precedent: /connection-banner. Canon: overview/schema/panel-anatomy-canonical.md.
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import SchemaView from '../views/SchemaView.astro';
+import { getBreadcrumbs } from '@web/lib/config';
+import {
+  schemaBases, health, changelog, relationships,
+  schemaDocs, chatThreads, automations, interfaces,
+} from '../fixtures/schema-lab';
+import { labTables, SCENARIOS } from '../fixtures/panel-lab-scenarios';
+
+const breadcrumbs = getBreadcrumbs('/schema');
+---
+
+<SidebarLayout pageTitle="Panel Lab" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <SchemaView
+    bases={schemaBases}
+    tables={labTables}
+    health={health}
+    changelog={changelog}
+    relationships={relationships}
+    automations={automations}
+    interfaces={interfaces}
+    chatThreads={chatThreads}
+    docs={schemaDocs}
+    lastBackupAt="2026-06-22T14:07:00"
+    hasRecordCounts={true}
+    aiState="ready"
+  />
+
+  {/* Floating scenario rail — click a button, the real panel flies out from the right. */}
+  <aside class="plab" aria-label="Panel Lab scenarios">
+    <header class="plab-head">
+      <span class="plab-dot"></span>
+      <div>
+        <h2>Panel Lab</h2>
+        <p>Click a scenario — the real panel opens. Review surface for the canon refactor.</p>
+      </div>
+    </header>
+    {SCENARIOS.map((g) => (
+      <section class="plab-group">
+        <h3>{g.panel}</h3>
+        <p class="plab-hint">{g.hint}</p>
+        <div class="plab-btns">
+          {g.scenarios.map((s) => (
+            <button type="button" class="plab-btn" data-trig={JSON.stringify(s.trigger)}>
+              <span>{s.label}</span>
+              {s.note && <em class="plab-note">{s.note}</em>}
+            </button>
+          ))}
+        </div>
+      </section>
+    ))}
+  </aside>
+</SidebarLayout>
+
+<style>
+  .plab {
+    position: fixed;
+    left: 264px;
+    top: 72px;
+    bottom: 16px;
+    width: 268px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px;
+    overflow-y: auto;
+    z-index: 45;
+    background: color-mix(in oklch, var(--color-base-100) 92%, transparent);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--color-base-300);
+    border-radius: 14px;
+    box-shadow: 0 12px 32px oklch(0 0 0 / 0.14);
+    font-size: 0.82rem;
+  }
+  .plab-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 4px 4px 10px;
+    border-bottom: 1px solid var(--color-base-300);
+  }
+  .plab-dot {
+    flex: none;
+    width: 9px;
+    height: 9px;
+    margin-top: 5px;
+    border-radius: 999px;
+    background: var(--color-primary);
+  }
+  .plab-head h2 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 640;
+    color: var(--color-base-content);
+  }
+  .plab-head p {
+    margin: 2px 0 0;
+    font-size: 0.72rem;
+    line-height: 1.4;
+    color: oklch(from var(--color-base-content) l c h / 0.62);
+  }
+  .plab-group {
+    padding: 10px 4px 4px;
+  }
+  .plab-group h3 {
+    margin: 0;
+    font-size: 0.7rem;
+    font-weight: 680;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-primary);
+  }
+  .plab-hint {
+    margin: 2px 0 8px;
+    font-size: 0.68rem;
+    line-height: 1.4;
+    color: oklch(from var(--color-base-content) l c h / 0.55);
+  }
+  .plab-btns {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .plab-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    width: 100%;
+    text-align: left;
+    padding: 7px 9px;
+    border: 1px solid var(--color-base-300);
+    border-radius: 8px;
+    background: var(--color-base-100);
+    color: var(--color-base-content);
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: border-color 0.12s ease, background 0.12s ease;
+  }
+  .plab-btn:hover {
+    border-color: var(--color-primary);
+    background: color-mix(in oklch, var(--color-primary) 8%, var(--color-base-100));
+  }
+  .plab-note {
+    font-size: 0.66rem;
+    font-style: normal;
+    color: var(--color-warning);
+  }
+  @media (max-width: 900px) {
+    .plab { left: 12px; right: 12px; width: auto; top: auto; height: 45vh; }
+  }
+</style>
+
+<script is:inline>
+  (function () {
+    function open(t) {
+      if (t.kind === 'event') {
+        document.dispatchEvent(new CustomEvent(t.event, { detail: { id: t.id } }));
+      } else if (t.kind === 'click') {
+        var el = document.querySelector(t.selector);
+        if (el) el.click();
+      } else if (t.kind === 'clickMatch') {
+        var rows = Array.prototype.slice.call(document.querySelectorAll(t.selector));
+        var hit = rows.filter(function (x) { return (x.dataset[t.attr] || '').indexOf(t.contains) !== -1; })[0];
+        if (hit) hit.click();
+      } else if (t.kind === 'attr') {
+        var node = document.querySelector(t.selector);
+        if (node) node.setAttribute(t.attr, t.value);
+      } else if (t.kind === 'sequence') {
+        // Run each step in order, waiting a beat between so the previous render lands (e.g. open
+        // an anchor, then click a reference row inside it to spawn the focus panel).
+        var steps = t.steps || [];
+        (function run(i) {
+          if (i >= steps.length) return;
+          open(steps[i]);
+          setTimeout(function () { run(i + 1); }, 340);
+        })(0);
+      }
+    }
+    // Panels nested inside a tab section are display:none until their tab is active — so
+    // activate the owning tab first, then open on the next tick.
+    function fire(t) {
+      if (!t) return;
+      if (t.tab) {
+        var tabBtn = document.querySelector('[data-tab="' + t.tab + '"]');
+        if (tabBtn) tabBtn.click();
+        setTimeout(function () { open(t); }, 200);
+      } else {
+        open(t);
+      }
+    }
+    document.querySelectorAll('[data-trig]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        try { fire(JSON.parse(b.dataset.trig)); } catch (e) { /* noop */ }
+      });
+    });
+  })();
+</script>

@@ -1,0 +1,24 @@
+---
+import SidebarLayout from '../../../layouts/SidebarLayout.astro';
+import IntegrationsManageBasesView from '../../../views/IntegrationsManageBasesView.astro';
+import { getBreadcrumbs } from '../../../lib/config';
+import { EMPTY_INTEGRATIONS_STATE, getIntegrationsState } from '../../../lib/integrations';
+
+const breadcrumbs = getBreadcrumbs('/integrations');
+const { account, db } = Astro.locals;
+
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+
+const state =
+  orgId && spaceId
+    ? await getIntegrationsState(db, orgId, spaceId)
+    : EMPTY_INTEGRATIONS_STATE;
+
+const airtable = state.connections.find((c) => c.platformSlug === 'airtable');
+if (!airtable) return Astro.redirect('/integrations');
+---
+
+<SidebarLayout pageTitle="Choose bases" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <IntegrationsManageBasesView state={state} />
+</SidebarLayout>

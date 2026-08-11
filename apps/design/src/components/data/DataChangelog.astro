@@ -1,0 +1,1006 @@
+---
+/**
+ * DataChangelog — the Data page's Changelog tab. Iteration 2 (Dan 2026-07-15): a backup RUN
+ * can create thousands of records, so the feed collapses to ONE ROW PER RUN with created /
+ * updated / deleted COUNT columns (from `runTotals` when a run's true counts exceed the sample
+ * we ship). Iteration 3 (Dan 2026-07-21): clicking a run opens a NON-MODAL multi-panel drill
+ * (the record drawer's Schema-parity controller, dcp-): anchor slot-0 + detach, ⌘-click / ＋
+ * picker = open-beside to COMPARE runs, cap-10 + auto-accordion strips, reorder + shutter.
+ * Each panel shows Created / Updated / Deleted as TRUE TABS — one type at a time, full-area,
+ * paginated 50/page. Iteration 4 (Dan 2026-07-23, Option A): a record clicked in a run drill opens
+ * in the drill's OWN stack — a run→record visit-stack on the SAME panel (plain click drills in
+ * place, Back pops; ⌘/Ctrl-click / ⧉ / middle-click opens a new panel beside) — never a second,
+ * overlapping RecordPanel drawer. The record body is the shared `recordReadBody.ts` (see
+ * RecordPanel.astro). Read-only. Pattern: pattern-data-changelog.
+ */
+import FacetFilter, { type FacetGroup } from '../schema/FacetFilter.astro';
+import { groupByWorkspace } from '../schema/workspaceGroups';
+import ExportControl from '../schema/ExportControl.astro';
+import TablePager from '../ui/TablePager.astro';
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from '../schema/airtableFieldIcons';
+import type { DataBase, DataTable, DataRecord, DataChangeEntry } from './dataTypes';
+
+interface Props {
+  bases: DataBase[];
+  tables: DataTable[];
+  changelog: DataChangeEntry[];
+  /** Full records (Fields/Linked/History) — a drilled-in run→record view renders the SAME shared
+   *  body as the standalone RecordPanel (`recordReadBody.ts`), so it needs the same record data. */
+  records: DataRecord[];
+  /** Per-run TRUE totals (a run can create thousands; we ship only a sample of entries). */
+  runTotals?: Record<string, { created: number; updated: number; deleted: number }>;
+  /** Reference "now" for the Time filter (defaults to the wall clock). The Data view passes the
+   *  backup's as-of timestamp so "last N days" is measured from the data, not the live clock. */
+  now?: string | number;
+}
+const { bases, tables, changelog, records, runTotals = {}, now } = Astro.props;
+
+const baseName = Object.fromEntries(bases.map((b) => [b.id, b.name]));
+const tableName = Object.fromEntries(tables.map((t) => [t.id, t.name]));
+const tableBase = Object.fromEntries(tables.map((t) => [t.id, t.baseId]));
+const multiBase = bases.length > 1;
+
+const ORDER: DataChangeEntry['type'][] = ['created', 'updated', 'deleted'];
+const TYPE = {
+  created: { label: 'Created', badge: 'badge-soft badge-success' },
+  updated: { label: 'Updated', badge: 'badge-soft badge-warning' },
+  deleted: { label: 'Deleted', badge: 'badge-soft badge-error' },
+} as const;
+
+const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+
+// One entry per run, newest first, with its sample entries + resolved counts (totals override).
+const runIds = [...new Set(changelog.slice().sort((a, b) => b.at.localeCompare(a.at)).map((e) => e.runId))];
+const runs = runIds.map((runId) => {
+  const entries = changelog.filter((e) => e.runId === runId);
+  const sample = { created: entries.filter((e) => e.type === 'created').length, updated: entries.filter((e) => e.type === 'updated').length, deleted: entries.filter((e) => e.type === 'deleted').length };
+  const counts = runTotals[runId] ?? sample;
+  return { runId, at: entries[0].at, entries, counts, sample };
+});
+
+// Attention flags — surface runs that look unusual (mass delete = possible data loss; a big import
+// spike) so the backup-audit user spots trouble at a glance. Computed from the TRUE per-run totals,
+// so a flag reflects the run's real character and never changes with the toolbar filters.
+const median = (xs: number[]) => { const a = xs.filter((n) => n > 0).sort((x, y) => x - y); return a.length ? a[Math.floor(a.length / 2)] : 0; };
+const medCreated = median(runs.map((r) => r.counts.created));
+const medDeleted = median(runs.map((r) => r.counts.deleted));
+type RunFlag = { kind: 'delete' | 'spike'; label: string; tip: string };
+const flagsFor = (c: { created: number; updated: number; deleted: number }): RunFlag[] => {
+  const f: RunFlag[] = [];
+  if (c.deleted >= 50 && (medDeleted === 0 || c.deleted >= 4 * medDeleted))
+    f.push({ kind: 'delete', label: 'Mass delete', tip: `${c.deleted.toLocaleString()} records deleted in this backup — unusually high. Check for accidental data loss.` });
+  if (c.created >= 500 && (medCreated === 0 || c.created >= 4 * medCreated))
+    f.push({ kind: 'spike', label: 'Import spike', tip: `${c.created.toLocaleString()} records created in this backup — a large import versus the usual volume.` });
+  return f;
+};
+
+// Embedded snapshot the run-detail sidebar renders from. `recTables` + `records` feed a drilled-in
+// run→record view — the SAME shape RecordPanel's own snapshot ships (recordReadBody.ts is host-agnostic).
+const snapshot = {
+  baseName, tableName, tableBase,
+  nowMs: now != null ? new Date(now).getTime() : null,
+  runs: runs.map((r) => ({
+    runId: r.runId, at: r.at, counts: r.counts, sample: r.sample,
+    entries: r.entries.map((e) => ({ recordId: e.recordId, primary: e.primary, tableId: e.tableId, type: e.type, fieldCount: e.fieldCount ?? 0 })),
+  })),
+  recTables: tables.map((t) => ({ id: t.id, baseId: t.baseId, name: t.name, fields: t.fields })),
+  records: records.map((r) => ({ id: r.id, tableId: r.tableId, primary: r.primary, cells: r.cells, linked: r.linked, history: r.history })),
+};
+// Field-type icon markup, keyed by type (same construction as RecordPanel's `iconsByType`).
+const recIconsByType = Object.fromEntries(
+  tables.flatMap((t) => t.fields).map((f) => {
+    const k = airtableIconKey(f.type);
+    return [f.type, k ? `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : ''];
+  }),
+);
+
+// Facet groups (same construction as before). Base facet groups by Airtable workspace
+// (workspace-visual-grouping).
+const baseGroups: FacetGroup[] = groupByWorkspace(bases).map((g) => ({
+  label: g.name,
+  groupId: g.id,
+  unknown: g.unknown,
+  items: g.items.map((b) => ({ value: b.id, label: b.name })),
+}));
+const tableGroups: FacetGroup[] = bases
+  .map((b) => ({ label: multiBase ? b.name : undefined, items: tables.filter((t) => t.baseId === b.id).map((t) => ({ value: t.id, label: t.name })) }))
+  .filter((g) => g.items.length);
+const ctypeGroups: FacetGroup[] = [{ items: ORDER.map((t) => ({ value: t, label: TYPE[t].label })) }];
+const DATE_OPTS: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']];
+---
+
+<div class="dc" data-datachangelog>
+  {changelog.length > 0 ? (
+    <>
+      <div class="sch-tb dc-filters">
+        <label class="input input-sm sch-tb-search">
+          <span class="iconify lucide--search size-4 opacity-55" aria-hidden="true"></span>
+          <input type="search" placeholder="Search records…" data-dc-search aria-label="Search changed records" autocomplete="off" />
+        </label>
+        {multiBase && <FacetFilter label="Bases" name="dcbase" groups={baseGroups} groupToggles />}
+        <FacetFilter label="Tables" name="dctable" groups={tableGroups} />
+        <FacetFilter label="Change type" name="dctype" groups={ctypeGroups} />
+        <FacetFilter single label="Time" name="dcdate" groups={[{ items: DATE_OPTS.map(([v, l]) => ({ value: v, label: l })) }]} />
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-dc-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+        <div class="sch-tb-right">
+          <ExportControl tab="data-changelog" format="csv" formats={['csv', 'json']} noun="changes" changeScope total={changelog.length} />
+        </div>
+      </div>
+
+      {/* One ROW PER RUN — a run header with created/updated/deleted count columns. Click → the
+          drill-in sidebar. Every run shows (a run with zero of a type still has that column). */}
+      <div class="dc-samplenote" data-dc-samplenote hidden role="status">
+        <span class="iconify lucide--info size-3.5" aria-hidden="true"></span>
+        <span>While filtered, counts reflect the sampled changes, not the full run totals.</span>
+      </div>
+      <div class="dc-runs" data-dc-runs>
+        <div class="dc-runhead-row" aria-hidden="true">
+          <span>Backup run</span>
+          <span>Synced</span>
+          <span>Attention</span>
+          <span class="dc-col-n">Created</span>
+          <span class="dc-col-n">Updated</span>
+          <span class="dc-col-n">Deleted</span>
+          <span></span>
+        </div>
+        {runs.map((run) => { const flags = flagsFor(run.counts); return (
+          <button
+            type="button"
+            class="dc-runrow"
+            data-dc-runrow={run.runId}
+            data-run-at={run.at}
+            data-dc-attention={flags.length ? '1' : undefined}
+            data-bases={[...new Set(run.entries.map((e) => tableBase[e.tableId]))].join(',')}
+            data-tables={[...new Set(run.entries.map((e) => e.tableId))].join(',')}
+          >
+            <span class="dc-run-when">
+              <span class="dc-run-day">{fmtDay(run.at)}</span>
+              <span class="dc-run-meta"><span class="mono-data">{run.runId}</span></span>
+            </span>
+            <span class="dc-run-synced">{fmtTime(run.at)}</span>
+            <span class="dc-run-attn">
+              {flags.map((f) => (
+                <span class={`badge badge-sm badge-soft ${f.kind === 'delete' ? 'badge-error' : 'badge-warning'} dc-flag tooltip tooltip-top`} data-dc-flag={f.kind} data-tip={f.tip}>
+                  <span class={`iconify ${f.kind === 'delete' ? 'lucide--trash-2' : 'lucide--trending-up'} size-3`} aria-hidden="true"></span>{f.label}
+                </span>
+              ))}
+            </span>
+            {ORDER.map((t) => (
+              <span class={`dc-col-n dc-cell dc-cell-${t}`} data-dc-cell={t}>
+                <span class="dc-dot" aria-hidden="true"></span>
+                <span class="dc-n" data-dc-n={t}>{run.counts[t].toLocaleString()}</span>
+              </span>
+            ))}
+            <span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+          </button>
+        ); })}
+      </div>
+
+      {/* Pager — same construction as DataBrowse's record grid (pattern-table-toolbar): rows-per-page
+          select + range/total + prev/next. Default page size is per-surface (Backups 20, record grid
+          50, here 20 — a row is a backup RUN, like Backups). Page size is a user preference (its own
+          localStorage key below), never part of a preset/view config; page itself is ephemeral. */}
+      <TablePager name="dc" sizes={[10, 20, 50]} selected={20} />
+
+      <div class="dc-nomatch" data-dc-nomatch hidden>
+        <span class="iconify lucide--search-x size-6 opacity-50" aria-hidden="true"></span>
+        <p>No runs match these filters.</p>
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-dc-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+      </div>
+
+      {/* Drill-in: NON-MODAL multi-panel stack (each backup run = one panel; ports the record drawer's
+          Schema-parity controller — anchor slot-0 + detach, ⌘-click/＋ = open-beside, cap-10, accordion
+          strips, reorder, shutter). The list stays clickable behind the panels. */}
+      <div class="dcp-wrap" data-dcp-wrap hidden>
+        <div class="dcp-panels" data-dcp-panels>
+          {/* Zero-width rail as the FIRST flex child; the group is justify-content:flex-end so the rail's
+              controls hang LEFT of the leftmost panel (mirrors .rp-rail / Schema .ep-rail). */}
+          <div class="dcp-rail" data-dcp-rail hidden>
+            <button type="button" class="dcp-shutter tooltip tooltip-right" data-dcp-shutter aria-label="Drag to resize all panels" data-tip="Drag to resize all panels equally"><span class="dcp-shutter-pill" aria-hidden="true"></span></button>
+            <button type="button" class="btn btn-sm btn-primary btn-circle dcp-rail-add tooltip tooltip-left" data-dcp-addbtn aria-label="Compare another backup" data-tip="Compare another backup"><span class="iconify lucide--plus size-4" aria-hidden="true"></span></button>
+            <span class="dcp-rail-count" data-dcp-count hidden></span>
+          </div>
+        </div>
+        {/* ＋ picker — every backup run (day + id + c/u/d counts), open ones marked. */}
+        <div class="dcp-addpop" data-dcp-addpop hidden>
+          <div class="dcp-addpop-head"><span>Compare another backup</span></div>
+          <label class="input input-sm dcp-addsearch"><span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span><input type="search" data-dcp-addsearch placeholder="Search backups…" aria-label="Search backups" autocomplete="off" /></label>
+          <div class="dcp-addlist" data-dcp-addlist></div>
+        </div>
+        {/* Undo / info toast (outside the panels so it survives the last panel closing). */}
+        <div class="dcp-undo" data-dcp-undo hidden role="status">
+          <span class="iconify dcp-undo-ic size-4" data-dcp-undo-ic aria-hidden="true"></span>
+          <span class="dcp-undo-label" data-dcp-undo-label></span>
+          <button type="button" class="dcp-undo-act" data-dcp-undo-act hidden></button>
+          <span class="dcp-undo-bar" data-dcp-undo-bar></span>
+        </div>
+      </div>
+
+      {/* A single run panel, cloned per open run. */}
+      <template data-dcp-tpl>
+        <aside class="dcp-sheet" data-dcp-panel role="dialog" aria-modal="false" aria-label="Backup run changes">
+          <div class="dcp-grip" data-dcp-grip aria-hidden="true"><span class="dcp-grip-line"></span></div>
+          <div class="dcp-lock" aria-hidden="true"><span class="iconify lucide--lock size-5"></span><span>Docked to the list</span></div>
+          <header class="dcp-head">
+            <div class="dcp-head-row">
+              <button type="button" class="dcp-reorder tooltip tooltip-right" data-dcp-reorder aria-label="Drag to reorder" data-tip="Drag to reorder"><span class="iconify lucide--grip-vertical size-4" aria-hidden="true"></span></button>
+              <button type="button" class="btn btn-sm btn-ghost btn-square dcp-detach tooltip tooltip-right" data-dcp-detach aria-label="Detach panel" data-tip="Detach"><span class="iconify lucide--pin-off size-3.5" aria-hidden="true"></span></button>
+              <button type="button" class="btn btn-sm btn-ghost btn-square dcp-back tooltip tooltip-bottom" data-dcp-back aria-label="Back" data-tip="Back" hidden>
+                <span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span>
+              </button>
+              <span class="dcp-head-ic" aria-hidden="true"><span class="iconify lucide--history size-4"></span></span>
+              <div class="dcp-head-title" data-dcp-title></div>
+              {/* "Jump to this backup" as a corner icon (label in the tooltip) — header canon 2026-07-21. */}
+              <a class="btn btn-sm btn-ghost btn-square dcp-jumpto tooltip tooltip-left" data-dcp-jumpto href="/backups" aria-label="Jump to this backup" data-tip="Jump to this backup"><span class="iconify lucide--external-link size-4" aria-hidden="true"></span></a>
+              <button type="button" class="btn btn-sm btn-ghost btn-square dcp-park tooltip tooltip-left" data-dcp-park aria-label="Collapse to strip" data-tip="Collapse"><span class="iconify lucide--chevrons-left size-4" aria-hidden="true"></span></button>
+              <button type="button" class="btn btn-sm btn-ghost btn-square dcp-x tooltip tooltip-left" data-dcp-closepanel aria-label="Close" data-tip="Close"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button>
+            </div>
+            {/* Synced time on the left, run id + copy pulled to the right corner of the same row. */}
+            <div class="dcp-crumbrow">
+              <span class="dcp-meta" data-dcp-meta></span>
+              <div class="dcp-idchip" data-dcp-idchip></div>
+            </div>
+          </header>
+          {/* Change-type SEGMENTED CONTROL (client 2026-07-22): lifted out of the header into its own
+              full-width band — one change type at a time, full-area, paginated. */}
+          <div class="dcp-segband"><nav class="dcp-tabs" data-dcp-tabs aria-label="Change types"></nav></div>
+          {/* Search within this backup's records (client 2026-07-22). */}
+          <div class="dcp-searchband">
+            <label class="input input-sm dcp-search"><span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span><input type="search" data-dcp-search placeholder="Search these records" aria-label="Search records in this backup" autocomplete="off" /></label>
+          </div>
+          <div class="dcp-body" data-dcp-body></div>
+        </aside>
+      </template>
+    </>
+  ) : (
+    <div class="dc-empty">
+      <span class="dc-empty-ic"><span class="iconify lucide--history"></span></span>
+      <p class="dc-empty-title">No record changes yet</p>
+      <p class="dc-empty-sub">Changes appear once there are two backups to compare. Records created, updated, and deleted show up here, grouped by backup run.</p>
+    </div>
+  )}
+</div>
+
+<script type="application/json" data-dc-snapshot set:html={JSON.stringify(snapshot)} />
+<script type="application/json" data-dc-icons set:html={JSON.stringify(recIconsByType)} />
+
+<style is:global>
+  .dc { display: flex; flex-direction: column; }
+  .dc-filters { padding-bottom: 16px; margin-bottom: 20px; border-bottom: 1px solid oklch(from var(--color-base-300) l c h / .6); }
+
+  /* Per-run rows — a grid: run label + three count columns + chevron. */
+  .dc-samplenote { display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 8px; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .6); background: var(--color-base-200); border-radius: 8px; }
+  .dc-runs { display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: 12px; overflow: hidden; background: var(--color-base-100); }
+  .dc-runhead-row, .dc-runrow { display: grid; grid-template-columns: minmax(0, 1fr) 6rem 9rem 5.5rem 5.5rem 5.5rem 1.5rem; align-items: center; column-gap: 12px; padding: 12px 16px; }
+  .dc-runhead-row { background: var(--color-base-200); }
+  .dc-runhead-row > span { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .5); }
+  .dc-col-n { text-align: right; justify-self: end; }
+  .dc-runrow { border: 0; border-top: 1px solid var(--color-base-200); background: none; cursor: pointer; text-align: left; font: inherit; color: var(--color-base-content); transition: background .12s ease; }
+  .dc-runrow:hover { background: var(--color-base-200); }
+  .dc-runrow:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+  .dc-run-when { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .dc-run-synced { font-size: 13px; color: oklch(from var(--color-base-content) l c h / .7); white-space: nowrap; }
+  .dc-run-attn { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dc-flag { gap: 4px; font-weight: 600; }
+  .dc-run-day { font-size: 14px; font-weight: 650; }
+  .dc-run-meta { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .5); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dc-cell { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
+  .dc-dot { width: 7px; height: 7px; border-radius: 999px; background: oklch(from var(--color-base-content) l c h / .25); flex: none; }
+  .dc-cell-created .dc-dot { background: var(--color-success); }
+  .dc-cell-updated .dc-dot { background: var(--color-warning); }
+  .dc-cell-deleted .dc-dot { background: var(--color-error); }
+  .dc-n { font-size: 14px; font-variant-numeric: tabular-nums; font-family: var(--font-mono, ui-monospace); }
+  .dc-cell[data-zero] { opacity: .4; }
+  .dc-runrow .row-go { color: oklch(from var(--color-base-content) l c h / .4); }
+
+  .dc-nomatch { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 48px 16px; }
+  .dc-nomatch p { font-size: 14px; color: oklch(from var(--color-base-content) l c h / .65); }
+
+
+  /* ── Drill-in: non-modal multi-panel stack (ports the record drawer's .rp-* chrome 1:1, dcp-). ── */
+  .dc-sdot-created { background: var(--color-success); }
+  .dc-sdot-updated { background: var(--color-warning); }
+  .dc-sdot-deleted { background: var(--color-error); }
+  .dcp-wrap { position: fixed; inset: 0; z-index: 60; pointer-events: none; } /* non-modal; BELOW the record drawer (z-62) */
+  .dcp-wrap[hidden] { display: none; }
+  .dcp-rail { position: relative; flex: none; align-self: stretch; width: 0; pointer-events: none; }
+  .dcp-rail > * { pointer-events: auto; }
+  .dcp-rail[hidden] { display: none; }
+  .dcp-shutter { position: absolute; left: -13px; top: 50%; transform: translateY(-50%); width: 16px; height: 56px; display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: ew-resize; z-index: 3; touch-action: none; }
+  .dcp-shutter-pill { width: 4px; height: 40px; border-radius: 999px; background: oklch(from var(--color-base-content) l c h / .28); transition: background-color .12s ease, height .12s ease; }
+  .dcp-shutter:hover .dcp-shutter-pill,
+  .dcp-shutter:focus-visible .dcp-shutter-pill,
+  .dcp-shutter.dcp-shutter-on .dcp-shutter-pill { background: oklch(from var(--color-primary) l c h / .8); height: 56px; }
+  .dcp-rail-add { position: absolute; top: 12px; left: -16px; z-index: 4; box-shadow: 0 4px 12px oklch(0 0 0 / .28); }
+  .dcp-rail-count { position: absolute; top: 52px; left: -16px; width: 32px; text-align: center; font-size: 11px; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .5); font-variant-numeric: tabular-nums; } /* ds-ok: panel-count micro-label */
+  .dcp-rail-count[hidden] { display: none; }
+  .dcp-panels { position: absolute; top: 0; right: 0; bottom: 0; display: flex; flex-direction: row; justify-content: flex-end; max-width: 100vw; pointer-events: auto; }
+  .dcp-sheet { position: relative; flex: none; height: 100dvh; width: var(--dcp-w, var(--drawer-w)); background: var(--color-base-100); border-left: 1px solid var(--color-base-300); box-shadow: -12px 0 40px oklch(0 0 0 / .18); display: flex; flex-direction: column; }
+  .dcp-sheet.dcp-focus .dcp-head { border-bottom-color: oklch(from var(--color-primary) l c h / .4); }
+  .dcp-flash { animation: dcp-flash .6s ease; }
+  @keyframes dcp-flash { 0% { box-shadow: -12px 0 40px oklch(0 0 0 / .18), inset 3px 0 0 0 var(--color-primary); } 100% { box-shadow: -12px 0 40px oklch(0 0 0 / .18), inset 0 0 0 0 transparent; } }
+  .dcp-grip { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 3; touch-action: none; }
+  .dcp-grip-line { position: absolute; left: 3px; top: 0; bottom: 0; width: 2px; background: transparent; transition: background-color .12s ease; pointer-events: none; }
+  .dcp-grip:hover .dcp-grip-line, .dcp-grip.dcp-grip-on .dcp-grip-line { background: oklch(from var(--color-primary) l c h / .7); }
+  .dcp-head { border-bottom: 1px solid var(--color-base-300); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .dcp-head-row { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+  .dcp-head-ic { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .55rem; background: var(--color-base-200); color: oklch(from var(--color-base-content) l c h / .75); flex: none; }
+  .dcp-head-ic .iconify { font-size: 1rem; opacity: .8; }
+  .dcp-head-title { font-size: 15px; font-weight: 650; letter-spacing: -0.15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .dcp-crumbrow { display: flex; align-items: center; gap: 12px; }
+  .dcp-meta { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .55); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dcp-idchip { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
+  .dcp-idlabel { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .45); } /* ds-ok: id label, menu-title scale */
+  .dcp-idval { font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; color: oklch(from var(--color-base-content) l c h / .7); overflow: hidden; text-overflow: ellipsis; }
+  .dcp-copyid { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: none; border: 0; background: none; border-radius: 5px; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .5); transition: color .4s ease, background-color .4s ease; }
+  .dcp-copyid:hover { background: oklch(from var(--color-base-content) l c h / .1); color: var(--color-base-content); }
+  .dcp-copied { color: var(--color-success); background: oklch(from var(--color-success) l c h / .16); transition: none; }
+  .dcp-copied .iconify { animation: dcp-copypop .32s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes dcp-copypop { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.3); } 100% { transform: scale(1); opacity: 1; } }
+  /* TRUE TABS — the drawer's pill-chip idiom (mirrors .rp-secnav-chip) + a count. */
+  /* Change-type SEGMENTED CONTROL — a full-width, filled track with 3 equal segments below the header. */
+  .dcp-segband { padding: 12px 16px 0; }
+  .dcp-searchband { padding: 12px 16px 0; }
+  .dcp-search { width: 100%; }
+  .dcp-tabs { display: flex; gap: 4px; padding: 4px; background: var(--color-base-200); border-radius: 10px; }
+  .dcp-tab { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 12px; font-size: 13px; font-weight: 550; border: 0; background: none; border-radius: 8px; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .6); white-space: nowrap; } /* ds-ok: 6px optical dot↔label gap */
+  .dcp-tab:hover:not(.is-active) { color: var(--color-base-content); }
+  .dcp-tab.is-active { background: var(--color-base-100); color: var(--color-primary); font-weight: 600; box-shadow: 0 1px 2px oklch(0 0 0 / .08); }
+  .dcp-tab-zero { opacity: .45; }
+  .dcp-tabn { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .dcp-tab .dc-dot { width: 7px; height: 7px; }
+  /* Body — one change type, full-area, paginated. */
+  .dcp-body { flex: 1; overflow-y: auto; min-height: 0; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .dcp-list { border: 1px solid var(--color-base-300); border-radius: 11px; overflow: hidden; background: oklch(from var(--color-base-200) l c h / .45); display: flex; flex-direction: column; }
+  /* Wrapper so the hover "open beside" ⧉ can be a SIBLING button (a <button> can never nest inside
+     another <button> — the parser hoists it out and the row breaks). Hairline/hover selectors must be
+     rewritten through the wrapper, or every row grows a stray top border once wrapped. */
+  .dcp-recwrap { position: relative; }
+  .dcp-recrow { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 0; border-top: 1px solid var(--color-base-200); background: none; font: inherit; text-align: left; color: var(--color-base-content); font-size: 13px; cursor: pointer; width: 100%; }
+  .dcp-recwrap:first-child .dcp-recrow { border-top: 0; }
+  .dcp-recwrap:hover .dcp-recrow { background: var(--color-base-200); }
+  /* ⧉ occupies the same spot as the row's trailing meta so the two SWAP rather than overlap (ports
+     .ep-beside from EntityPanel.astro 1:1). */
+  /* `pointer-events: none` at rest — see the same rule on `.ep-beside`. An invisible button at
+     z-index 2 over the row's right edge otherwise swallows a click meant for the row itself. This
+     copy says it "ports .ep-beside 1:1" and faithfully ported the bug along with it. */
+  .dcp-openbeside { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); opacity: 0; pointer-events: none; transition: opacity .1s; z-index: 2;
+    background: var(--color-base-100); border: 1px solid var(--color-base-300); }
+  .dcp-recwrap:hover .dcp-openbeside, .dcp-openbeside:focus-visible { opacity: 1; pointer-events: auto; }
+  .dcp-openbeside:hover { color: var(--color-primary); background: var(--color-base-200); }
+  .dcp-recwrap:hover .dcp-recloc, .dcp-recwrap:hover .dcp-recnote { opacity: 0; transition: opacity .1s; }
+  .dcp-recname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dcp-recloc { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; flex: none; font-size: 11px; color: oklch(from var(--color-base-content) l c h / .5); } /* ds-ok: table-location micro-label */
+  .dcp-recloc-ic { display: inline-flex; align-items: center; flex: none; opacity: .85; }
+  .dcp-recnote { flex: none; font-size: 11px; color: oklch(from var(--color-base-content) l c h / .5); } /* ds-ok: field-count micro-label */
+  .dcp-more { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .55); text-align: center; padding: 4px 0; }
+  .dcp-none { padding: 12px; font-size: 13px; color: oklch(from var(--color-base-content) l c h / .5); }
+  /* ＋ picker popover — every backup run, open ones marked. */
+  .dcp-addpop { position: fixed; z-index: 61; width: 320px; max-width: 88vw; max-height: 70vh; display: flex; flex-direction: column; gap: 8px; padding: 12px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: 12px; box-shadow: 0 12px 40px oklch(0 0 0 / .22); pointer-events: auto; }
+  .dcp-addpop[hidden] { display: none; }
+  .dcp-addpop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .55); }
+  .dcp-addsearch { width: 100%; }
+  .dcp-addlist { overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
+  .dcp-addrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 8px; border: 0; background: none; border-radius: 6px; cursor: pointer; text-align: left; font: inherit; color: var(--color-base-content); }
+  .dcp-addrow:hover { background: oklch(from var(--color-base-content) l c h / .07); }
+  .dcp-addrow-open { opacity: .5; }
+  .dcp-addwhen { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .dcp-addday { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dcp-addid { font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; color: oklch(from var(--color-base-content) l c h / .45); flex: none; } /* ds-ok: id micro-label */
+  .dcp-addcounts { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+  .dcp-addn { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-variant-numeric: tabular-nums; color: oklch(from var(--color-base-content) l c h / .6); } /* ds-ok: count micro-label */
+  .dcp-addn .dc-dot { width: 6px; height: 6px; }
+  .dcp-addempty { font-size: 12px; color: oklch(from var(--color-base-content) l c h / .5); padding: 8px; }
+  /* Multi-panel chrome: reorder / anchor / lock / collapse / undo (ports .rp-* 1:1). */
+
+  /* ── The "hold" slot — how this panel is held (pattern-multi-panel-drawer) ─────────────────
+     One leading slot, one control: a movable panel shows its drag grip, the anchored one shows
+     Detach, and they are already mutually exclusive (see the anchor rules above). Putting them in
+     the SAME place means the answer to "can I move this?" is always found in the same spot, and it
+     frees the slot Detach used to occupy among the unrelated right-hand actions (Oleh 2026-07-24).
+     Hidden until the header is hovered or holds focus: a grip and a pin do not need to be lit at
+     all times. See the collapse recipe below. */
+  .dcp-reorder,
+  .dcp-detach {
+    /* At rest the slot takes NO width — the title and its icon start at the edge of the header
+       (Oleh 2026-07-24). Squeezed to zero rather than `display: none`, so the control stays in the
+       DOM and stays focusable; hiding it outright is how a hover-only affordance silently becomes
+       keyboard-unreachable. On hover it opens and nudges the title right, which is the movement
+       that says "this belongs to the panel, not to the content". */
+    width: 0;
+    min-width: 0;
+    padding-inline: 0;
+    border-width: 0;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+    transition: width .14s ease, opacity .12s ease;
+  }
+  /* Trigger is the WHOLE header, not just its top row (Oleh 2026-07-28) — opening this slot
+     widens it and pushes Back sideways, out from under the cursor reaching for it. Arming on the
+     header lets that shift happen while the pointer is still travelling. Same fix in EntityPanel. */
+  .dcp-head:hover .dcp-reorder,
+  .dcp-head:hover .dcp-detach,
+  .dcp-head:focus-within .dcp-reorder,
+  .dcp-head:focus-within .dcp-detach {
+    width: 24px;
+    min-width: 24px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  /* Visibility is owned by the hold-slot rule above; this only carries shape + the grab affordance. */
+  /* No `width` here on purpose: the hold-slot rule above owns it (0 at rest, 24px on hover). A
+     width in THIS rule sits later in the file at equal specificity and silently won, so the
+     collapse was a no-op on this surface while EntityPanel — whose shape rule carries no
+     width — worked. */
+  .dcp-reorder { display: inline-grid; place-items: center; height: 32px; flex: none; border: 0; background: none; border-radius: 6px; cursor: grab; color: var(--color-base-content); }
+  .dcp-reorder:hover { background: oklch(from var(--color-base-content) l c h / .08); }
+  .dcp-reorder.dcp-grip-on { cursor: grabbing; }
+  .dcp-detach { flex: none; }
+  .dcp-sheet.dcp-dragging { outline: 2px dashed var(--color-primary); outline-offset: -2px; z-index: 5; box-shadow: -12px 0 40px oklch(0 0 0 / .35); }
+  .dcp-sheet:not(.dcp-anchor) .dcp-detach,
+  .dcp-sheet.dcp-anchor .dcp-reorder,
+  .dcp-sheet.dcp-collapsed .dcp-detach,
+  .dcp-sheet.dcp-collapsed .dcp-park,
+  .dcp-sheet.dcp-collapsed .dcp-lock { display: none !important; }
+  .dcp-sheet.dcp-anchor .dcp-head {
+    background-color: oklch(from var(--color-base-200) l c h / .5);
+    background-image: repeating-linear-gradient(-45deg, transparent 0 5px, oklch(from var(--color-base-content) l c h / .045) 5px 6px);
+    box-shadow: inset 0 2px 0 var(--color-primary);
+  }
+  .dcp-lock { display: none; }
+  .dcp-panels.dcp-reordering .dcp-sheet.dcp-anchor .dcp-lock {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    position: absolute; inset: 0; z-index: 6; cursor: not-allowed; text-align: center; padding: 16px;
+    font-size: 13px; background: oklch(from var(--color-base-100) l c h / .88); color: oklch(from var(--color-base-content) l c h / .6);
+    animation: dcp-scrim-in .12s ease;
+  }
+  @keyframes dcp-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+  .dcp-sheet.dcp-collapsed { width: 46px !important; min-width: 46px; cursor: pointer; }
+  .dcp-sheet.dcp-collapsed .dcp-body,
+  .dcp-sheet.dcp-collapsed .dcp-crumbrow,
+  .dcp-sheet.dcp-collapsed .dcp-tabs,
+  .dcp-sheet.dcp-collapsed .dcp-jumpto,
+  .dcp-sheet.dcp-collapsed .dcp-back,
+  .dcp-sheet.dcp-collapsed .dcp-segband,
+  .dcp-sheet.dcp-collapsed .dcp-searchband,
+  .dcp-sheet.dcp-collapsed .dcp-grip,
+  .dcp-sheet.dcp-collapsed .dcp-reorder { display: none !important; }
+  /* Record view (a run→record visit-stack drill) reuses the standalone record drawer's `.rp-*` body
+     classes 1:1 — the record drawer is always co-rendered on this page (DataView.astro), so its
+     global CSS is already on the page; a small local wrapper adds the crumb-row spacing. */
+  .dcp-reccrumb { margin-bottom: 12px; }
+  .dcp-sheet.dcp-collapsed .dcp-head { padding: 8px 0; height: 100%; border-bottom: 0; }
+  .dcp-sheet.dcp-collapsed .dcp-head-row { flex-direction: column; align-items: center; gap: 12px; height: 100%; min-height: 0; }
+  .dcp-sheet.dcp-collapsed .dcp-x { order: -1; }
+  .dcp-sheet.dcp-collapsed .dcp-head-title { display: block; flex: 0 1 auto; writing-mode: vertical-rl; transform: rotate(180deg); overflow: hidden; max-height: 100%; text-overflow: ellipsis; white-space: nowrap; }
+  .dcp-undo { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 61; pointer-events: auto; display: flex; align-items: center; gap: 8px; max-width: min(92vw, 30rem); padding: 10px 14px; overflow: hidden; background: var(--color-neutral); color: var(--color-neutral-content); border-radius: 10px; box-shadow: 0 8px 24px oklch(0 0 0 / .28); font-size: 13px; } /* ds-ok: translateX(-50%) centering, not spacing */
+  .dcp-undo[hidden] { display: none; }
+  .dcp-undo-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .dcp-undo-act { flex: none; margin-left: 4px; font-weight: 600; color: var(--color-primary); background: none; border: 0; cursor: pointer; padding: 2px 8px; border-radius: 6px; }
+  .dcp-undo-act[hidden] { display: none; }
+  .dcp-undo-act:hover { background: oklch(from var(--color-primary) l c h / .18); }
+  .dcp-undo-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--color-primary); transform-origin: left center; transform: scaleX(0); }
+  .dcp-undo:not(.dcp-undo-actionable) .dcp-undo-bar { display: none; }
+  .dcp-undo.dcp-undo-run.dcp-undo-actionable .dcp-undo-bar { animation: dcp-undo-count var(--dcp-undo-ms, 4000ms) linear forwards; }
+  @keyframes dcp-undo-count { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  @media (prefers-reduced-motion: reduce) { .dcp-undo.dcp-undo-run .dcp-undo-bar { animation: none; transform: scaleX(1); } }
+  @media (max-width: 1023.98px) { .dcp-sheet { --dcp-w: 94vw; } .dcp-grip, .dcp-reorder, .dcp-shutter { display: none; } }
+
+  .dc-empty { border: 1px dashed var(--color-base-300); border-radius: 14px; background: oklch(from var(--color-base-200) l c h / .3); padding: 48px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; }
+  .dc-empty-ic { width: 3rem; height: 3rem; border-radius: .8rem; display: grid; place-items: center; background: var(--color-base-100); border: 1px solid var(--color-base-300); margin-bottom: 4px; }
+  .dc-empty-ic .iconify { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .55); }
+  .dc-empty-title { font-size: 16px; font-weight: 650; }
+  .dc-empty-sub { font-size: 14px; color: oklch(from var(--color-base-content) l c h / .6); max-width: 48ch; }
+</style>
+
+<script>
+  import { createPanelStack } from '../ui/panelStack';
+  import { createPager, pagerHtml } from '../ui/tablePager';
+  import {
+    esc, family, provFormula, provLookup, linkedList, ancestorCrumbs, renderRecordBody, paintLinked, PAGE,
+    type Table as RecTable, type Rec as RecRecord, type RecordBodyCtx, type RecordViewState,
+  } from './recordReadBody';
+  import { entityIconMarkup } from '../schema/entityIcon';
+  // The table glyph for each record row's location micro-label (`.dcp-recloc`) — matches the
+  // drawer breadcrumb (`ancestorCrumbs` above) that opens once a record is drilled into. This tab
+  // has no `.cl-*` grid (it's the run+count list, pattern-data-changelog, not
+  // pattern-changelog-timeline) so there is no base segment here to glyph — table is the only
+  // entity name this row prints.
+  const RECLOC_TABLE_IC = entityIconMarkup('table', { size: 'size-3', extraClass: 'dcp-recloc-ic' });
+  type Entry = { recordId: string; primary: string; tableId: string; type: 'created' | 'updated' | 'deleted'; fieldCount: number };
+  type Run = { runId: string; at: string; counts: Record<string, number>; sample: Record<string, number>; entries: Entry[] };
+  type Snap = {
+    baseName: Record<string, string>; tableName: Record<string, string>; tableBase: Record<string, string>; runs: Run[]; nowMs?: number | null;
+    recTables: RecTable[]; records: RecRecord[];
+  };
+
+  const ORDER: Entry['type'][] = ['created', 'updated', 'deleted'];
+  const LABEL = { created: 'Created', updated: 'Updated', deleted: 'Deleted' };
+
+  function wireDataChangelog() {
+    const root = document.querySelector<HTMLElement>('[data-datachangelog]');
+    if (!root || root.dataset.dcWired) return;
+    root.dataset.dcWired = '1';
+    const runsWrap = root.querySelector<HTMLElement>('[data-dc-runs]');
+    if (!runsWrap) return;
+    const snap: Snap = JSON.parse(document.querySelector('[data-dc-snapshot]')?.textContent || '{}');
+    const recIcons: Record<string, string> = JSON.parse(document.querySelector('[data-dc-icons]')?.textContent || '{}');
+    const runById = new Map(snap.runs.map((r) => [r.runId, r]));
+    const recById = new Map(snap.records.map((r) => [r.id, r]));
+    const recTableById = new Map(snap.recTables.map((t) => [t.id, t]));
+    // Shared-body context (recordReadBody.ts) — the DCP drill drops the cross-stack-only affordances
+    // (field-config open-beside, value-tables, Referenced-in→Docs); it keeps the body-local reads
+    // (linked drill-in-place, provenance expand, view-as-of). Read-only drill, no docRefs to feed.
+    const bodyCtx: RecordBodyCtx = { baseName: snap.baseName, tableById: recTableById, recById, icons: recIcons, staticMode: false, docRefs: {}, fieldClickable: false, showRefs: false };
+    const rows = Array.from(root.querySelectorAll<HTMLElement>('[data-dc-runrow]'));
+    const noMatch = root.querySelector<HTMLElement>('[data-dc-nomatch]');
+    const clears = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-dc-clear]'));
+    const facets = Array.from(root.querySelectorAll<HTMLElement>('.ff[data-facet]'));
+    const searchInput = root.querySelector<HTMLInputElement>('[data-dc-search]');
+    const DAY = 86_400_000;
+    // Reference "now" for the Time filter: the backup's as-of timestamp when the view supplies one,
+    // else the wall clock. Keeps the fixed-date preview honest and measures "last N days" from the data.
+    const NOW = snap.nowMs ?? Date.now();
+
+    const hidden: Record<string, Set<string>> = { dcbase: new Set(), dctable: new Set(), dctype: new Set() };
+    let dateFilter = '';
+    let query = '';
+
+    // Pager (pattern-table-toolbar, same construction as DataBrowse's record grid) — acts on the
+    // FILTERED set, window applied last. `page` is ephemeral; `pageSize` is a user preference
+    // persisted under its own key, kept OUT of any preset/view config.
+    const pager = createPager({
+      root, name: 'dc', sizes: [10, 20, 50], defaultSize: 20,
+      storageKey: 'dc-pagesize', onChange: () => apply(),
+    });
+
+    // Filter the entries of a run by the active toolbar filters (drives both the counts + the drill-in).
+    const filteredEntries = (run: Run): Entry[] => run.entries.filter((e) => {
+      if (hidden.dcbase.has(snap.tableBase[e.tableId] || '')) return false;
+      if (hidden.dctable.has(e.tableId)) return false;
+      if (hidden.dctype.has(e.type)) return false;
+      if (query && !(`${e.primary} ${snap.tableName[e.tableId]}`.toLowerCase().includes(query))) return false;
+      return true;
+    });
+
+    const apply = () => {
+      const active = !!(query || dateFilter || hidden.dcbase.size || hidden.dctable.size || hidden.dctype.size);
+      // A base/table/search filter can only count the sampled entries (Time hides whole runs, no shrink).
+      // Flag when that sampling actually collapses a visible run's true total, so we can say so honestly.
+      const filteredCounts = !!(query || hidden.dcbase.size || hidden.dctable.size);
+      let sampledShrink = false;
+      const matched: HTMLElement[] = [];
+      rows.forEach((row) => {
+        const run = runById.get(row.dataset.dcRunrow!)!;
+        const olderThan = dateFilter && (NOW - new Date(run.at).getTime()) / DAY > Number(dateFilter);
+        const ents = filteredEntries(run);
+        // Whether the run has any visible change under the current filters.
+        const anyType = ORDER.some((t) => !hidden.dctype.has(t));
+        const matches = !olderThan && anyType && (active ? ents.length > 0 || (!query && !hidden.dcbase.size && !hidden.dctable.size) : true);
+        if (matches) matched.push(row);
+        if (filteredCounts && matches) {
+          const trueTotal = run.counts.created + run.counts.updated + run.counts.deleted;
+          if (trueTotal > run.entries.length) sampledShrink = true;
+        }
+        // Recompute the count cells: filtered scales the sample down; use true totals only when unfiltered.
+        ORDER.forEach((t) => {
+          const cell = row.querySelector<HTMLElement>(`[data-dc-cell="${t}"]`);
+          const nEl = row.querySelector<HTMLElement>(`[data-dc-n="${t}"]`);
+          if (!cell || !nEl) return;
+          const filtered = query || hidden.dcbase.size || hidden.dctable.size;
+          const n = hidden.dctype.has(t) ? 0 : filtered ? ents.filter((e) => e.type === t).length : run.counts[t];
+          nEl.textContent = n.toLocaleString();
+          cell.toggleAttribute('data-zero', n === 0);
+        });
+      });
+      const shown = matched.length;
+      if (noMatch) noMatch.hidden = shown !== 0;
+      const sampleNote = root.querySelector<HTMLElement>('[data-dc-samplenote]');
+      if (sampleNote) sampleNote.hidden = !(filteredCounts && sampledShrink && shown !== 0);
+      runsWrap.style.display = shown === 0 ? 'none' : '';
+      clears.forEach((c) => (c.hidden = !active));
+
+      // Pager — pages the FILTERED (matched) set; the shared control clamps + repaints itself.
+      rows.forEach((row) => { row.hidden = true; });
+      pager.window(matched).forEach((row) => { row.hidden = false; });
+
+      // Open drill panels track the toolbar filters live (reset to page 1 on every change).
+      stack.panels().forEach((p) => { p.page = 1; p.render(); });
+    };
+
+    root.addEventListener('facetchange', (ev) => {
+      const d = (ev as CustomEvent).detail as { name: string; hidden?: string[]; value?: string };
+      if (d.hidden && hidden[d.name]) { hidden[d.name] = new Set(d.hidden); pager.reset(); apply(); }
+      else if (d.name === 'dcdate' && d.value !== undefined) { dateFilter = d.value || ''; pager.reset(); apply(); }
+    });
+    searchInput?.addEventListener('input', () => { query = searchInput.value.trim().toLowerCase(); pager.reset(); apply(); });
+    clears.forEach((c) => c.addEventListener('click', () => {
+      query = ''; dateFilter = '';
+      if (searchInput) searchInput.value = '';
+      Object.values(hidden).forEach((s) => s.clear());
+      facets.forEach((f) => f.dispatchEvent(new CustomEvent('facetreset')));
+      pager.reset();
+      apply();
+    }));
+
+    // ── Drill-in: NON-MODAL multi-panel stack (ports the record drawer's Schema controller) ─────
+    const fmtDay = (iso: string) => new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    // Rows-per-page — a run drill lists RECORDS inside one run, so it gets its own preference key
+    // (separate from the run list's `dc-pagesize`: the two controls offer different option sets —
+    // 10/20/50 vs 25/50/100 — and mean different things, a run vs a record). The value itself is
+    // shared across every OPEN panel (one preference, like the run list's), while `page` (position)
+    // stays strictly per-panel below — two open panels must page independently.
+    const DCP_PAGE_SIZES = [25, 50, 100];
+    const DCP_DEFAULT_PAGE_SIZE = 25;
+    const DCP_PAGE_SIZE_KEY = 'dcp-pagesize';
+    let dcpPageSize = DCP_DEFAULT_PAGE_SIZE;
+    try {
+      const n = Number(localStorage.getItem(DCP_PAGE_SIZE_KEY));
+      if (DCP_PAGE_SIZES.includes(n)) dcpPageSize = n;
+    } catch { /* corrupt/blocked storage — keep the default */ }
+    const isMobile = () => window.matchMedia('(max-width: 1023.98px)').matches;
+    // A panel's content is a VISIT-STACK (EntityPanel/RecordPanel parity): the root is either a run
+    // (opened from a run row) or, when opened directly via ⌘/Ctrl-click/⧉ on a record row, a record
+    // with no run underneath. A plain click on a record row inside a run PUSHES a record visit onto
+    // the SAME panel (in-place drill, Back pops it) — see the click delegation below.
+    type Visit = { kind: 'run' | 'record'; id: string };
+    type DPanel = {
+      el: HTMLElement; body: HTMLElement; titleEl: HTMLElement; metaEl: HTMLElement; idChip: HTMLElement; tabsEl: HTMLElement; grip: HTMLElement;
+      backBtn: HTMLElement; segbandEl: HTMLElement; searchbandEl: HTMLElement;
+      visit: Visit[];
+      // Run-view state (kind === 'run').
+      tab: Entry['type']; page: number; pageSize: number; search: string;
+      // Record-view state (kind === 'record') — the shared recordReadBody.ts view object, reused/reset
+      // across re-renders of the SAME record (mutated in place by renderLinked's default-tab logic etc).
+      recView: RecordViewState;
+      uid: number; anchor: boolean; w: number; seq: number; collapsed: boolean; render: () => void;
+    };
+    const wrap = root.querySelector<HTMLElement>('[data-dcp-wrap]')!;
+    const panelsEl = wrap.querySelector<HTMLElement>('[data-dcp-panels]')!;
+    const railEl = wrap.querySelector<HTMLElement>('[data-dcp-rail]')!;
+    const tpl = root.querySelector<HTMLTemplateElement>('[data-dcp-tpl]')!;
+    const addPop = wrap.querySelector<HTMLElement>('[data-dcp-addpop]')!;
+    const addSearch = wrap.querySelector<HTMLInputElement>('[data-dcp-addsearch]')!;
+    const addList = wrap.querySelector<HTMLElement>('[data-dcp-addlist]')!;
+    const railAdd = railEl.querySelector<HTMLElement>('[data-dcp-addbtn]')!;
+    const countEl = wrap.querySelector<HTMLElement>('[data-dcp-count]')!;
+    // Stack geometry — consumed by the shared createPanelStack controller (built lower, once its render +
+    // toast hooks exist). undoTimer + elToPanel stay host-side: the toast DOM and the panel click-delegation
+    // are the host's, not the stack's.
+    const DEFW = 480, MINW = 360, TABLEGAP = 64, MAXPANELS = 10, MINEXP = 360, COLLAPSE_AT = 300;
+    let undoTimer = 0;
+    const elToPanel = new WeakMap<HTMLElement, DPanel>();
+
+    // ── Per-panel render: branches on the visit-stack top (EntityPanel/RecordPanel parity) ──
+    // `run` → the run's Created/Updated/Deleted record list (TRUE TABS, paginated). `record` → the
+    // shared recordReadBody.ts body (Fields/Linked/History; no field-config, value-tables, or
+    // Referenced-in — see bodyCtx above). The Back arrow (hidden at the root) pops the visit-stack.
+    function makeRender(p: DPanel) {
+      return () => {
+        const top = p.visit[p.visit.length - 1];
+        p.backBtn.hidden = p.visit.length <= 1;
+        if (top.kind === 'record') { renderRecordView(p, top.id); return; }
+        renderRunView(p, top.id);
+      };
+    }
+    function renderRecordView(p: DPanel, recId: string) {
+      const rec = recById.get(recId);
+      p.segbandEl.hidden = true; p.searchbandEl.hidden = true; p.tabsEl.innerHTML = '';
+      if (!rec) { p.titleEl.textContent = 'Record'; p.metaEl.textContent = ''; p.idChip.innerHTML = ''; p.body.innerHTML = `<div class="dcp-none">This record isn't in this backup.</div>`; return; }
+      const t = recTableById.get(rec.tableId)!;
+      p.titleEl.textContent = rec.primary;
+      p.metaEl.textContent = t.name;
+      p.idChip.innerHTML = `<span class="dcp-idlabel">ID</span><code class="dcp-idval">${esc(rec.id)}</code><button type="button" class="dcp-copyid tooltip tooltip-left" data-dcp-copyid="${esc(rec.id)}" aria-label="Copy record ID" data-tip="Copy ID"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span></button>`;
+      const crumbHtml = `<nav class="sb-crumb-row dcp-reccrumb" aria-label="Breadcrumb">${ancestorCrumbs(bodyCtx, rec)}</nav>`;
+      p.body.innerHTML = crumbHtml + renderRecordBody(bodyCtx, p.recView, rec);
+      const lc = p.body.querySelector<HTMLElement>('[data-rp-linked]'); if (lc) paintLinked(bodyCtx, lc);
+      p.body.scrollTop = 0;
+    }
+    function renderRunView(p: DPanel, runId: string) {
+        const run = runById.get(runId); if (!run) return;
+        p.segbandEl.hidden = false; p.searchbandEl.hidden = false;
+        p.titleEl.textContent = fmtDay(run.at);
+        p.metaEl.textContent = `Synced ${fmtTime(run.at)}`;
+        p.idChip.innerHTML = `<span class="dcp-idlabel">ID</span><code class="dcp-idval">${esc(run.runId)}</code><button type="button" class="dcp-copyid tooltip tooltip-left" data-dcp-copyid="${esc(run.runId)}" aria-label="Copy run id" data-tip="Copy ID"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span></button>`;
+        const ents = filteredEntries(run);
+        const filtered = !!(query || hidden.dcbase.size || hidden.dctable.size);
+        const visibleTypes = ORDER.filter((t) => !hidden.dctype.has(t));
+        if (!visibleTypes.includes(p.tab)) { p.tab = visibleTypes[0] || 'created'; p.page = 1; }
+        // Tab counts mirror the run-row cells: filtered scales the sample; unfiltered shows true totals.
+        p.tabsEl.innerHTML = visibleTypes.map((t) => {
+          const n = filtered ? ents.filter((e) => e.type === t).length : run.counts[t];
+          return `<button type="button" class="dcp-tab${p.tab === t ? ' is-active' : ''}${n === 0 ? ' dcp-tab-zero' : ''}" data-dcp-tab="${t}"><span class="dc-dot dc-sdot-${t}" aria-hidden="true"></span>${LABEL[t]}<span class="dcp-tabn">${n.toLocaleString()}</span></button>`;
+        }).join('');
+        const list = ents.filter((e) => e.type === p.tab && (!p.search || `${e.primary} ${snap.tableName[e.tableId] || ''}`.toLowerCase().includes(p.search)));
+        const total = run.counts[p.tab];
+        const pages = Math.max(1, Math.ceil(list.length / p.pageSize));
+        if (p.page > pages) p.page = pages;
+        if (p.page < 1) p.page = 1;
+        const start = (p.page - 1) * p.pageSize;
+        const pageRows = list.slice(start, start + p.pageSize).map((e) => `
+          <div class="dcp-recwrap">
+            <button type="button" class="dcp-recrow" data-dc-rec="${esc(e.recordId)}">
+              <span class="dcp-recname">${esc(e.primary)}</span>
+              ${p.tab === 'updated' && e.fieldCount ? `<span class="dcp-recnote">${e.fieldCount} field${e.fieldCount === 1 ? '' : 's'}</span>` : ''}
+              <span class="dcp-recloc">${RECLOC_TABLE_IC}${esc(snap.tableName[e.tableId] || '')}</span>
+            </button>
+            <button type="button" class="btn btn-sm btn-ghost btn-square dcp-openbeside tooltip tooltip-left" data-dcp-openbeside="${esc(e.recordId)}" aria-label="Open beside" data-tip="Open beside · ⌘/Ctrl-click"><span class="iconify lucide--columns-2 size-4" aria-hidden="true"></span></button>
+          </div>`).join('');
+        // Pager — the SHARED construction, rendered as markup because each open panel owns its own
+        // page position and this body is rebuilt on every render (see pagerHtml). `tpg-tight` is the
+        // one per-surface metric: under a panel header the 12px lead-in is too much.
+        const pager = list.length
+          ? pagerHtml({ sizes: DCP_PAGE_SIZES, pageSize: p.pageSize, page: p.page, pages, total: list.length, className: 'tpg-tight' })
+          : '';
+        // A run's true total may exceed the sample we ship — say so honestly (not while searching).
+        const note = !p.search && total > list.length ? `<div class="dcp-more">Showing the ${list.length.toLocaleString()} sampled of ${total.toLocaleString()} — open the backup for the full list.</div>` : '';
+        p.body.innerHTML = list.length
+          ? `<div class="dcp-list">${pageRows}</div>${pager}${note}`
+          : `<div class="dcp-none">${p.search ? 'No records match your search.' : `No records ${p.tab} in this run.`}</div>`;
+        p.body.scrollTop = 0;
+    }
+
+    // ── Panel factory + lifecycle (anchor slot-0 / open-beside / cap / accordion / undo) ─────
+    // `id` is prefixed by kind — `run:<runId>` (opened from a run row / the ＋ picker) or
+    // `record:<recordId>` (⌘/Ctrl-click, ⧉, or middle-click on a record row) — so a single stack can
+    // dedup/open-beside either kind through the SAME `createPanelStack` (panelKey mirrors this).
+    const splitId = (id: string): Visit => { const i = id.indexOf(':'); return { kind: id.slice(0, i) as Visit['kind'], id: id.slice(i + 1) }; };
+    const freshRecView = (): RecordViewState => ({ asOf: null, fieldQuery: '', linkTab: '' });
+    const loadInto = (p: DPanel, id: string) => {
+      p.visit = [splitId(id)];
+      p.tab = 'created'; p.page = 1; p.search = ''; p.recView = freshRecView();
+      const s = p.el.querySelector<HTMLInputElement>('[data-dcp-search]'); if (s) s.value = '';
+    };
+    function buildPanel(): DPanel {
+      const el = tpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      const p: DPanel = {
+        el,
+        body: el.querySelector<HTMLElement>('[data-dcp-body]')!,
+        titleEl: el.querySelector<HTMLElement>('[data-dcp-title]')!,
+        metaEl: el.querySelector<HTMLElement>('[data-dcp-meta]')!,
+        idChip: el.querySelector<HTMLElement>('[data-dcp-idchip]')!,
+        tabsEl: el.querySelector<HTMLElement>('[data-dcp-tabs]')!,
+        grip: el.querySelector<HTMLElement>('[data-dcp-grip]')!,
+        backBtn: el.querySelector<HTMLElement>('[data-dcp-back]')!,
+        segbandEl: el.querySelector<HTMLElement>('.dcp-segband')!,
+        searchbandEl: el.querySelector<HTMLElement>('.dcp-searchband')!,
+        visit: [], tab: 'created', page: 1, pageSize: dcpPageSize, search: '', recView: freshRecView(), render: () => {},
+        uid: 0, anchor: false, w: 0, seq: 0, collapsed: false,
+      };
+      p.render = makeRender(p);
+      elToPanel.set(el, p);
+      // Per-panel record search (run view) — filters this backup's list (kept across tab switches).
+      // Field/linked search (record view) — incremental, so the input keeps focus (RecordPanel parity).
+      el.addEventListener('input', (e) => {
+        const target = e.target as HTMLElement;
+        const s = target.closest<HTMLInputElement>('[data-dcp-search]');
+        if (s) { p.search = s.value.trim().toLowerCase(); p.page = 1; p.render(); return; }
+        const fs = target.closest<HTMLInputElement>('[data-rp-fieldsearch]');
+        if (fs) {
+          p.recView.fieldQuery = fs.value.trim().toLowerCase();
+          p.body.querySelectorAll<HTMLElement>('[data-rp-fieldlist] .rp-field').forEach((row) => {
+            row.style.display = !p.recView.fieldQuery || (row.dataset.fname || '').includes(p.recView.fieldQuery) ? '' : 'none';
+          });
+          return;
+        }
+        const ls = target.closest<HTMLElement>('[data-rp-linksearch]');
+        if (ls) { const c = ls.closest<HTMLElement>('[data-rp-linked]')!; paintLinked(bodyCtx, c); }
+      });
+      // Rows-per-page — a shared preference across every open panel (its own key, see above); changing
+      // it in one panel updates the value + storage once and re-renders every panel from page 1.
+      el.addEventListener('change', (e) => {
+        const sel = (e.target as HTMLElement).closest<HTMLSelectElement>('[data-pager-size]');
+        if (!sel) return;
+        const n = Number(sel.value);
+        dcpPageSize = DCP_PAGE_SIZES.includes(n) ? n : DCP_DEFAULT_PAGE_SIZE;
+        try { localStorage.setItem(DCP_PAGE_SIZE_KEY, String(dcpPageSize)); } catch { /* best-effort — a user preference, not correctness-critical */ }
+        stack.panels().forEach((pp) => { pp.pageSize = dcpPageSize; pp.page = 1; pp.render(); });
+      });
+      // uid / width / seq + the per-panel resize grip are assigned & wired by createPanelStack.
+      return p;
+    }
+    function doBack(p: DPanel) { if (p.visit.length > 1) { p.visit.pop(); p.recView = freshRecView(); p.render(); } }
+    // createPanel / open / openBeside / close+undo / evict / detach / park / expand / reorder + shutter +
+    // resize-grip are all owned by createPanelStack (built below). The host only supplies the content
+    // render (makeRender) + loadInto + the toast DOM.
+
+    // ── Undo / info toast (pattern-undo-toast) ─────────────────────────────────────
+    const UNDO_MS = 4000;
+    function restartCountdown(el: HTMLElement, ms: number) { el.style.setProperty('--dcp-undo-ms', ms + 'ms'); el.classList.remove('dcp-undo-run'); void el.offsetWidth; el.classList.add('dcp-undo-run'); }
+    function showToast(label: string, action: { label: string; run: () => void; icon?: string } | null, ms = UNDO_MS) {
+      const el = wrap.querySelector<HTMLElement>('[data-dcp-undo]'); if (!el) return;
+      const lbl = el.querySelector<HTMLElement>('[data-dcp-undo-label]'); if (lbl) lbl.textContent = label;
+      const btn = el.querySelector<HTMLButtonElement>('[data-dcp-undo-act]');
+      if (btn) { btn.hidden = !action; if (action) { btn.textContent = action.label; btn.onclick = () => { action.run(); hideUndo(); }; } else btn.onclick = null; }
+      el.classList.toggle('dcp-undo-actionable', !!action);
+      const ic = el.querySelector<HTMLElement>('[data-dcp-undo-ic]');
+      if (ic) ic.className = `iconify dcp-undo-ic ${action ? (action.icon || 'lucide--rotate-ccw') : 'lucide--info'} size-4`;
+      el.hidden = false; restartCountdown(el, ms);
+      window.clearTimeout(undoTimer); undoTimer = window.setTimeout(hideUndo, ms);
+    }
+    function hideUndo() { const el = wrap.querySelector<HTMLElement>('[data-dcp-undo]'); if (!el) return; window.clearTimeout(undoTimer); el.classList.remove('dcp-undo-run'); el.hidden = true; }
+
+    // ── The ONE shared stacking controller (catalog pattern-multi-panel-drawer) ─────
+    const stack = createPanelStack<DPanel>({
+      root: wrap, panelsEl, railEl, countEl, shutterEl: wrap.querySelector<HTMLElement>('[data-dcp-shutter]'),
+      DEFW, MINW, TABLEGAP, MAXPANELS, MINEXP, COLLAPSE_AT, STRIP: 46,
+      storageKey: 'dcp-w', widthVar: '--dcp-w',
+      cls: { collapsed: 'dcp-collapsed', focus: 'dcp-focus', anchor: 'dcp-anchor', flash: 'dcp-flash', gripOn: 'dcp-grip-on', dragging: 'dcp-dragging', reordering: 'dcp-reordering' },
+      reorderSel: '[data-dcp-reorder]', panelSel: '[data-dcp-panel]', gripSel: '[data-dcp-grip]',
+      isMobile,
+      buildPanel, loadInto,
+      render: (p) => p.render(),
+      // Dedup/open-beside key off the VISIBLE thing (visit-top) — a run panel drilled into a record
+      // dedups against `record:<id>` the same way a directly-opened record panel would.
+      panelKey: (p) => { const top = p.visit[p.visit.length - 1]; return `${top.kind}:${top.id}`; },
+      canOpen: (id) => { const v = splitId(id); return v.kind === 'run' ? runById.has(v.id) : recById.has(v.id); },
+      onMissing: () => {},
+      toast: showToast, hideToast: hideUndo,
+      text: {
+        closed: 'Panel closed',
+        capReached: (m) => `Can't add another panel — maximum of ${m} reached.`,
+        evicted: (m) => `Closed oldest panel — ${m} max`,
+        noRoom: 'No room to expand — opened as a strip. Click it to open.',
+        detached: 'Detached — this panel is yours now. The next backup you open starts a fresh anchor beside the list.',
+      },
+      flash: (el) => { el.classList.remove('dcp-flash'); void el.offsetWidth; el.classList.add('dcp-flash'); },
+      onEmpty: () => closeAddPop(),
+    });
+    // Name-preserving wrappers so the existing event handlers below stay untouched.
+    const openRun = (id: string) => stack.open('run:' + id);
+    const openBeside = (id: string) => stack.openBeside(null, 'run:' + id);
+    const closePanel = (p: DPanel) => stack.closePanel(p);
+    const detachPanel = (p: DPanel) => stack.detachPanel(p);
+    const parkPanel = (uid: number) => stack.parkPanel(uid);
+    const expandPanel = (uid: number) => stack.expandPanel(uid);
+    const setFocus = (p: DPanel | null) => stack.setFocus(p);
+    const layout = () => stack.layout();
+    // Switching Data tabs abandons this run's drill context → close the whole stack (see DataView tab wiring).
+    document.addEventListener('app:tabchange', () => stack.closeAll());
+
+    // ── Events ─────────────────────────────────────────────────────────────────────
+    rows.forEach((r) => {
+      r.addEventListener('click', (e) => {
+        const id = r.dataset.dcRunrow!;
+        if ((e as MouseEvent).metaKey || (e as MouseEvent).ctrlKey) openBeside(id); else openRun(id);
+      });
+      // Middle-click a run row → open beside (browser-tab convention; mirrors EntityPanel.astro:1700-1704).
+      r.addEventListener('auxclick', (e) => {
+        const me = e as MouseEvent; if (me.button !== 1) return;
+        me.preventDefault();
+        openBeside(r.dataset.dcRunrow!);
+      });
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || wrap.hidden) return;
+      // The standalone record drawer (Browse/Docs) can still be open independently of this drill
+      // (unrelated stacks, e.g. opened from Browse in another tab) — let its own Esc handler win first.
+      if (document.querySelector('[data-recordpanel]:not([hidden])')) return;
+      const p = stack.focused() || stack.panels()[stack.panels().length - 1];
+      if (p) closePanel(p);
+    });
+    panelsEl.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const panelEl = target.closest<HTMLElement>('[data-dcp-panel]');
+      const p = panelEl ? elToPanel.get(panelEl) : null;
+      if (!p) return;
+      // A parked strip: click anywhere but its ✕ expands it back.
+      if (p.collapsed && !target.closest('[data-dcp-closepanel]')) { expandPanel(p.uid); return; }
+      if (stack.focused() !== p) setFocus(p);
+      const copyId = target.closest<HTMLElement>('[data-dcp-copyid]');
+      if (copyId) {
+        navigator.clipboard?.writeText(copyId.dataset.dcpCopyid!);
+        const ci = copyId.querySelector<HTMLElement>('.iconify');
+        if (ci) { copyId.classList.add('dcp-copied'); ci.className = 'iconify lucide--check size-3.5'; setTimeout(() => { copyId.classList.remove('dcp-copied'); ci.className = 'iconify lucide--copy size-3.5'; }, 1100); }
+        return;
+      }
+      if (target.closest('[data-dcp-closepanel]')) { closePanel(p); return; }
+      if (target.closest('[data-dcp-detach]')) { detachPanel(p); return; }
+      if (target.closest('[data-dcp-park]')) { parkPanel(p.uid); return; }
+      if (target.closest('[data-dcp-reorder]')) { return; } // handled by the pointerdown drag
+      if (target.closest('[data-dcp-back]')) { doBack(p); return; }
+      const tab = target.closest<HTMLElement>('[data-dcp-tab]');
+      if (tab) { p.tab = tab.dataset.dcpTab as Entry['type']; p.page = 1; p.render(); return; }
+      const pg = target.closest<HTMLElement>('[data-pager-prev], [data-pager-next]');
+      if (pg) { p.page += pg.hasAttribute('data-pager-next') ? 1 : -1; if (p.page < 1) p.page = 1; p.render(); return; }
+      // ── Record-view (recordReadBody.ts) body-local reads: provenance expand, view-as-of, the
+      // linked-records tab, linked-record drill-in-place / open-beside (see recordReadBody's
+      // catalog note — these stay available for a drill-hosted record; field-config, value-tables
+      // and Referenced-in→Docs do not, since bodyCtx.fieldClickable/showRefs are both false). ──
+      const exp = target.closest<HTMLElement>('[data-rp-expand]');
+      if (exp) {
+        const fieldEl = exp.closest<HTMLElement>('[data-rp-field]')!;
+        const wrapEl = fieldEl.querySelector<HTMLElement>('[data-rp-provwrap]')!;
+        const opening = wrapEl.hidden;
+        exp.classList.toggle('rp-expand-on', opening);
+        if (opening && !wrapEl.dataset.built) {
+          const top = p.visit[p.visit.length - 1];
+          const rec = recById.get(top.id)!;
+          const f = recTableById.get(rec.tableId)!.fields.find((x) => x.id === fieldEl.dataset.rpField)!;
+          const fam = family(f.type);
+          wrapEl.innerHTML = fam === 'formula' ? provFormula(bodyCtx, rec, f) : fam === 'link' ? linkedList(rec, f, rec.cells[f.id]?.linkedCount || 0) : provLookup(bodyCtx, rec, f);
+          wrapEl.dataset.built = '1';
+          const lc = wrapEl.querySelector<HTMLElement>('[data-rp-linked]'); if (lc) paintLinked(bodyCtx, lc);
+        }
+        wrapEl.hidden = !opening;
+        return;
+      }
+      const ltab = target.closest<HTMLElement>('[data-rp-linktab]');
+      if (ltab) { p.recView.linkTab = ltab.dataset.rpLinktab!; p.render(); return; }
+      const obLinked = target.closest<HTMLElement>('[data-rp-openbeside]');
+      if (obLinked) { e.stopPropagation(); stack.openBeside(p, 'record:' + obLinked.dataset.rpOpenbeside); return; }
+      const openRow = target.closest<HTMLElement>('[data-rp-open]');
+      if (openRow && openRow.dataset.rpOpen) {
+        const me = e as MouseEvent;
+        if (me.metaKey || me.ctrlKey) stack.openBeside(p, 'record:' + openRow.dataset.rpOpen);
+        else { p.visit.push({ kind: 'record', id: openRow.dataset.rpOpen }); p.recView = freshRecView(); p.render(); }
+        return;
+      }
+      const moreBtn = target.closest<HTMLElement>('[data-rp-linkmore]');
+      if (moreBtn) { const c = moreBtn.closest<HTMLElement>('[data-rp-linked]')!; c.dataset.loaded = String(Number(c.dataset.loaded) + PAGE); paintLinked(bodyCtx, c); return; }
+      const viewasBtn = target.closest<HTMLElement>('[data-rp-viewas]');
+      if (viewasBtn) { p.recView.asOf = viewasBtn.dataset.rpViewas!; p.render(); return; }
+      const clearBtn = target.closest<HTMLElement>('[data-rp-asof-clear]');
+      if (clearBtn) { p.recView.asOf = null; p.render(); return; }
+      // ⧉ "open beside" — a sibling button of a RUN-VIEW record row (explicit alternative to
+      // ⌘/Ctrl-click). Test BEFORE [data-dc-rec] + stopPropagation (mirrors RecordPanel.astro's
+      // [data-rp-openbeside]). Opens a NEW panel in this SAME stack (Option A — one stack, one rail).
+      const openBesideBtn = target.closest<HTMLElement>('[data-dcp-openbeside]');
+      if (openBesideBtn) { e.stopPropagation(); stack.openBeside(p, 'record:' + openBesideBtn.dataset.dcpOpenbeside); return; }
+      // A run-view record row: plain click drills IN PLACE (pushes a record visit onto THIS panel,
+      // Back pops it); ⌘/Ctrl-click opens the record as a new panel beside, in this same stack.
+      const rec = target.closest<HTMLElement>('[data-dc-rec]');
+      if (rec && rec.dataset.dcRec) {
+        const me = e as MouseEvent;
+        if (me.metaKey || me.ctrlKey) stack.openBeside(p, 'record:' + rec.dataset.dcRec);
+        else { p.visit.push({ kind: 'record', id: rec.dataset.dcRec }); p.recView = freshRecView(); p.render(); }
+      }
+    });
+    // Middle-click a record row → open beside (browser-tab convention), in this same stack.
+    panelsEl.addEventListener('auxclick', (e) => {
+      const me = e as MouseEvent; if (me.button !== 1) return;
+      const target = e.target as HTMLElement;
+      const rec = target.closest<HTMLElement>('[data-dc-rec]');
+      if (!rec || !rec.dataset.dcRec) return;
+      me.preventDefault();
+      const panelEl = target.closest<HTMLElement>('[data-dcp-panel]');
+      const p = panelEl ? elToPanel.get(panelEl) : null;
+      stack.openBeside(p || null, 'record:' + rec.dataset.dcRec);
+    });
+
+    // ── ＋ picker — every backup run, open ones marked; pick → open BESIDE ─────────
+    function renderAddList() {
+      const q = addSearch.value.trim().toLowerCase();
+      const openIds = new Set(stack.panels().map((p) => p.visit[0]?.kind === 'run' ? p.visit[0].id : null).filter((x): x is string => !!x));
+      const matches = snap.runs.filter((r) => !q || fmtDay(r.at).toLowerCase().includes(q) || r.runId.toLowerCase().includes(q));
+      addList.innerHTML = matches.map((r) => `<button type="button" class="dcp-addrow${openIds.has(r.runId) ? ' dcp-addrow-open' : ''}" data-dcp-addpick="${esc(r.runId)}">
+          <span class="dcp-addwhen"><span class="dcp-addday">${esc(fmtDay(r.at))}</span><code class="dcp-addid">${esc(r.runId)}</code></span>
+          <span class="dcp-addcounts">${ORDER.map((t) => `<span class="dcp-addn"><span class="dc-dot dc-sdot-${t}" aria-hidden="true"></span>${r.counts[t].toLocaleString()}</span>`).join('')}</span>
+        </button>`).join('') || '<div class="dcp-addempty">No backups match.</div>';
+    }
+    function openAddPop() {
+      const r = railAdd.getBoundingClientRect();
+      const W = 320;
+      const left = r.left - W - 8 >= 12 ? r.left - W - 8 : Math.min(r.right + 8, window.innerWidth - W - 12);
+      addPop.style.left = Math.max(12, left) + 'px';
+      addPop.style.top = Math.max(12, Math.min(r.top, window.innerHeight - 420)) + 'px';
+      addPop.hidden = false; addSearch.value = ''; renderAddList();
+      setTimeout(() => addSearch.focus(), 0);
+    }
+    function closeAddPop() { addPop.hidden = true; }
+    railEl.addEventListener('click', (e) => { if ((e.target as HTMLElement).closest('[data-dcp-addbtn]')) { e.stopPropagation(); addPop.hidden ? openAddPop() : closeAddPop(); } });
+    addSearch.addEventListener('input', renderAddList);
+    addList.addEventListener('click', (e) => { const b = (e.target as HTMLElement).closest<HTMLElement>('[data-dcp-addpick]'); if (!b) return; openBeside(b.dataset.dcpAddpick!); closeAddPop(); });
+    document.addEventListener('click', (e) => { if (!addPop.hidden && !addPop.contains(e.target as Node) && !railEl.contains(e.target as Node)) closeAddPop(); });
+    window.addEventListener('resize', () => { if (!wrap.hidden) layout(); });
+
+    apply();
+  }
+  wireDataChangelog();
+  document.addEventListener('astro:after-swap', wireDataChangelog);
+</script>

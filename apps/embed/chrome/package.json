@@ -1,0 +1,21 @@
+{
+  "name": "@baseout/embed-chrome",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Baseout Chrome extension (MV3): side panel embedding the Baseout app beside Airtable, with tab-URL-derived context. Build with `pnpm build`, then load dist/ unpacked via chrome://extensions.",
+  "scripts": {
+    "build": "tsup && node scripts/assemble.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@baseout/embed-core": "workspace:*",
+    "@baseout/embed-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.280",
+    "tsup": "^8.3.0",
+    "vitest": "^3.0.0"
+  }
+}

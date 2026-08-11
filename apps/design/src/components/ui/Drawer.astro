@@ -1,0 +1,134 @@
+---
+/**
+ * Drawer — a slide-over panel built on daisyUI's drawer primitive.
+ *
+ * A catalog component (see /styleguide → Drawer). It renders daisyUI's
+ * `drawer drawer-end` + `drawer-toggle` checkbox + `drawer-side` + `drawer-overlay`,
+ * so opening/closing is pure CSS: a host can drive it with a plain
+ * `<label for={id}>` or from JS via `document.getElementById(id).checked = true`.
+ * The overlay and the built-in × close it natively (no JS). Esc-to-close is wired
+ * once here. The panel surface uses theme tokens; the body/footer are slots, so the
+ * host keeps its own content + scoped CSS.
+ */
+interface Props {
+  /** Unique id; the matching checkbox the open/close triggers toggle. */
+  id: string;
+  /** Heading shown in the panel header. */
+  title: string;
+  /** Optional supporting line under the title. */
+  subtitle?: string;
+  /** Which edge it slides from. `bottom` is a fly-out sheet (full width, slides up). */
+  side?: 'end' | 'start' | 'bottom';
+  /** Tailwind width class for the end/start panel. */
+  width?: string;
+  /** Panel height for the bottom sheet variant. */
+  height?: string;
+}
+const { id, title, subtitle, side = 'end', width = 'w-[min(92vw,28rem)]', height = '82dvh' } = Astro.props;
+const hasFooter = Astro.slots.has('footer');
+---
+
+{side === 'bottom' ? (
+  <div class="sb-drawer sb-drawer-bottom">
+    <input id={id} type="checkbox" class="drawer-toggle sb-bottom-toggle" data-sb-drawer-toggle />
+    <label for={id} class="sb-bottom-scrim" aria-label="Close"></label>
+    <aside class="sb-bottom-panel" role="dialog" aria-label={title} aria-modal="true" style={`height:${height}`}>
+      <header class="sb-drawer-head">
+        <div class="sb-drawer-headrow">
+          <span class="sb-drawer-titleic" data-sb-drawer-titleic hidden></span>
+          <div class="min-w-0">
+            <h3 class="sb-drawer-title" data-sb-drawer-title>{title}</h3>
+            {subtitle && <p class="sb-drawer-sub">{subtitle}</p>}
+          </div>
+          <label for={id} class="btn btn-sm btn-ghost btn-square sb-drawer-x" aria-label="Close"><span class="iconify lucide--x size-4" aria-hidden="true"></span></label>
+        </div>
+        <nav class="sb-drawer-crumbs sb-crumb-row" data-sb-drawer-crumbs aria-label="Breadcrumb" hidden></nav>
+      </header>
+      <div class="sb-drawer-body"><slot /></div>
+      {hasFooter && <footer class="sb-drawer-foot"><slot name="footer" /></footer>}
+    </aside>
+  </div>
+) : (
+  <div class={`drawer drawer-${side} sb-drawer`}>
+    <input id={id} type="checkbox" class="drawer-toggle" data-sb-drawer-toggle />
+    <div class="drawer-side">
+      <label for={id} aria-label="Close" class="drawer-overlay"></label>
+      <aside class={`sb-drawer-panel ${width}`} role="dialog" aria-label={title} aria-modal="true">
+        <header class="sb-drawer-head">
+          <div class="sb-drawer-headrow">
+            <span class="sb-drawer-titleic" data-sb-drawer-titleic hidden></span>
+            <div class="min-w-0">
+              <h3 class="sb-drawer-title" data-sb-drawer-title>{title}</h3>
+              {subtitle && <p class="sb-drawer-sub">{subtitle}</p>}
+            </div>
+            <label for={id} class="btn btn-sm btn-ghost btn-square sb-drawer-x" aria-label="Close"><span class="iconify lucide--x size-4" aria-hidden="true"></span></label>
+          </div>
+          <nav class="sb-drawer-crumbs sb-crumb-row" data-sb-drawer-crumbs aria-label="Breadcrumb" hidden></nav>
+        </header>
+        <div class="sb-drawer-body"><slot /></div>
+        {hasFooter && <footer class="sb-drawer-foot"><slot name="footer" /></footer>}
+      </aside>
+    </div>
+  </div>
+)}
+
+<style>
+  /* daisyUI's drawer drives the slide + overlay fade; we style the panel surface.
+     The drawer-side is position:fixed, so a contentless drawer overlays the viewport. */
+  .sb-drawer { position: fixed; z-index: 400; }
+  .sb-drawer .drawer-side { z-index: 400; }
+  /* Darker scrim than daisyUI's default (oklch(0 0 0 / .4)) so the panel reads with
+     stronger contrast against the dimmed content behind it. */
+  .sb-drawer .drawer-overlay { background-color: oklch(0 0 0 / 0.55); }
+  .sb-drawer-panel {
+    height: 100dvh;
+    background: var(--color-base-100);
+    border-left: 1px solid var(--color-base-300);
+    display: flex;
+    flex-direction: column;
+  }
+  .drawer-start .sb-drawer-panel {
+    border-left: 0;
+    border-right: 1px solid var(--color-base-300);
+  }
+  .sb-drawer-head { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--color-base-300); }
+  .sb-drawer-headrow { display: flex; align-items: center; gap: .75rem; }
+  /* Optional location crumbs sub-row (canon drawer identity). Hidden until a host populates it. */
+  .sb-drawer-crumbs { display: flex; align-items: center; gap: 2px; overflow: hidden; font-size: 12px; }
+  .sb-drawer-crumbs[hidden] { display: none; }
+  /* Optional leading concept-icon tile (canon drawer header). Hidden until a host populates it. */
+  .sb-drawer-titleic { width: 2rem; height: 2rem; border-radius: .55rem; flex: none; display: grid; place-items: center; background: var(--color-base-200); }
+  .sb-drawer-titleic[hidden] { display: none; }
+  .sb-drawer-titleic .iconify { font-size: 1rem; opacity: .8; }
+  .sb-drawer-titleic svg { width: 17px; height: 17px; opacity: .8; }
+  .sb-drawer-title { font-size: 15px; font-weight: 650; letter-spacing: -0.15px; line-height: 1.2; }
+  .sb-drawer-sub { font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .6); margin-top: .15rem; }
+  .sb-drawer-x { margin-left: auto; flex: none; }
+  .sb-drawer-body { flex: 1; overflow-y: auto; padding: 1.1rem 1.25rem; }
+  .sb-drawer-foot { display: flex; justify-content: flex-end; gap: .5rem; padding: .9rem 1.25rem; border-top: 1px solid var(--color-base-300); }
+
+  /* Bottom fly-out sheet (side="bottom") — checkbox-driven, custom (daisyUI's drawer is horizontal).
+     Slides up from the bottom edge, full width; keeps the host's content visible above it. */
+  .sb-drawer-bottom { position: fixed; inset: 0; z-index: 400; pointer-events: none; }
+  .sb-bottom-toggle { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
+  .sb-bottom-scrim { position: fixed; inset: 0; background: oklch(0 0 0 / 0.55); opacity: 0; visibility: hidden; transition: opacity .2s ease; }
+  .sb-bottom-panel { position: fixed; left: 0; right: 0; bottom: 0; width: 100%; background: var(--color-base-100); border-top: 1px solid var(--color-base-300); border-radius: 16px 16px 0 0; box-shadow: 0 -12px 40px oklch(0 0 0 / .22); display: flex; flex-direction: column; transform: translateY(100%); transition: transform .26s cubic-bezier(.22,1,.36,1); pointer-events: auto; }
+  .sb-bottom-toggle:checked ~ .sb-bottom-scrim { opacity: 1; visibility: visible; pointer-events: auto; }
+  .sb-bottom-toggle:checked ~ .sb-bottom-panel { transform: translateY(0); }
+  @media (prefers-reduced-motion: reduce) { .sb-bottom-panel, .sb-bottom-scrim { transition: none; } }
+</style>
+
+<script>
+  // Esc closes any open drawer (daisyUI's checkbox-driven drawer has no native Esc).
+  function wireDrawerEsc() {
+    if ((window as any).__sbDrawerEscWired) return;
+    (window as any).__sbDrawerEscWired = true;
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      document
+        .querySelectorAll<HTMLInputElement>('.sb-drawer .drawer-toggle:checked')
+        .forEach((cb) => { cb.checked = false; });
+    });
+  }
+  wireDrawerEsc();
+</script>

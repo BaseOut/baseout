@@ -1,0 +1,1 @@
+ALTER TABLE "baseout"."backup_configurations" ADD COLUMN "next_scheduled_at" timestamp with time zone;

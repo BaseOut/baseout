@@ -1,0 +1,95 @@
+---
+// /search — support omnisearch (admin-support-search). Read-only; role='super'
+// gated by the same middleware as every admin surface. detectQuery (pure) →
+// runSearch (thin Drizzle, master DB only) → 302 straight to the entity on a
+// single exact-shape match, else a grouped, disambiguated list. Empty query
+// renders guidance only (no lookups).
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import { detectQuery, runSearch } from '../lib/search';
+
+const { db } = Astro.locals;
+const q = (new URL(Astro.request.url).searchParams.get('q') ?? '').trim();
+const plan = detectQuery(q);
+
+let groups: Awaited<ReturnType<typeof runSearch>>['groups'] = [];
+if (plan.kind !== 'empty') {
+  const result = await runSearch(db, plan);
+  if (result.redirect) return Astro.redirect(result.redirect, 302);
+  groups = result.groups;
+}
+
+const ACCEPTED = [
+  'A run / space / connection / organization UUID',
+  'A Stripe customer (cus_…) or subscription (sub_…) ID',
+  'An Airtable base ID (appXXXXXXXXXXXX)',
+  'A user email (exact or prefix)',
+  'A name fragment — organization, space, or user',
+];
+const isEmpty = plan.kind === 'empty';
+const noResults = !isEmpty && groups.length === 0;
+---
+
+<SidebarLayout title="Admin — Search">
+  <div class="mx-auto max-w-[1000px] space-y-6">
+    <PageHeader title="Search" description="Turn any identifier — ID, email, Stripe ref, base ID, or name — into the right page." />
+
+    <form method="get" class="flex flex-wrap items-center gap-2">
+      <input
+        type="search"
+        name="q"
+        value={q}
+        autofocus
+        placeholder="Paste an ID, email, or name…"
+        class="input input-bordered input-sm w-full max-w-md"
+      />
+      <button class="btn btn-sm btn-primary" type="submit">Search</button>
+    </form>
+
+    {isEmpty && (
+      <Card variant="outlined">
+        <h2 class="mb-2 text-sm font-semibold">Search accepts</h2>
+        <ul class="list-disc space-y-1 pl-5 text-sm text-base-content/70">
+          {ACCEPTED.map((s) => <li>{s}</li>)}
+        </ul>
+      </Card>
+    )}
+
+    {noResults && (
+      <Card variant="outlined">
+        <EmptyState title={`Nothing matched “${q}”`} description="Check the identifier, or try a shorter name fragment." />
+        <div class="mt-3 border-t border-base-200 pt-3">
+          <p class="mb-1 text-xs font-semibold uppercase text-base-content/50">Search accepts</p>
+          <ul class="list-disc space-y-1 pl-5 text-sm text-base-content/70">
+            {ACCEPTED.map((s) => <li>{s}</li>)}
+          </ul>
+        </div>
+      </Card>
+    )}
+
+    {groups.map((group) => (
+      <Card variant="outlined">
+        <div class="mb-3 flex items-center justify-between">
+          <h2 class="text-base font-semibold">{group.label}</h2>
+          {group.truncated && (
+            <span class="text-xs text-warning">Showing the first {group.rows.length} — narrow your query.</span>
+          )}
+        </div>
+        <ul class="divide-y divide-base-200/60">
+          {group.rows.map((r) => (
+            <li class="flex items-center justify-between gap-3 py-1.5 text-sm">
+              {r.href ? (
+                <a href={r.href} class="link link-hover truncate font-medium">{r.label}</a>
+              ) : (
+                <span class="truncate font-medium">{r.label}</span>
+              )}
+              {r.context && <span class="ml-2 shrink-0 text-xs text-base-content/50">{r.context}</span>}
+            </li>
+          ))}
+        </ul>
+      </Card>
+    ))}
+  </div>
+</SidebarLayout>

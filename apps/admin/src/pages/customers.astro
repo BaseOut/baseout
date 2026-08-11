@@ -1,0 +1,7 @@
+---
+// /customers → /organizations (admin-crm-ux D6). The directory moved to the
+// canonical entity name; this 301 preserves any query string so old bookmarks
+// and shared filtered links keep working. BREAKING for /customers as a route.
+// Astro.url.search includes the leading '?' (or '' when absent).
+return Astro.redirect(`/organizations${Astro.url.search}`, 301);
+---

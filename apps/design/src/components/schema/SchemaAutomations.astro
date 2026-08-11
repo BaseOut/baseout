@@ -1,0 +1,481 @@
+---
+/**
+ * SchemaAutomations — the Schema "Automations" tab (openspec automations-interfaces-tabs).
+ *
+ * Airtable's API doesn't expose automations, so they're registered MANUALLY (or via an
+ * inbound API): each has an id + name (required), an optional group + trigger type, an
+ * opaque raw `definition` JSON blob, and Table/Field tags (auto-derived or manual). This
+ * tab LISTS them grouped by `group` (Asana-style collapsible sections) and drives the
+ * create/edit modal + soft-delete. Below the tier that unlocks it → an upsell empty state.
+ *
+ * Frontmatter-thin: interactivity (collapse, base filter, include-removed, modal, tag-picker)
+ * lives in schemaAutomations.ts. Styles are is:global (`.au-`-prefixed) because rows render
+ * via set:html without Astro's scope hash.
+ */
+import EntitySearch from './EntitySearch.astro';
+import Drawer from '../ui/Drawer.astro';
+import FacetFilter from './FacetFilter.astro';
+import ExportControl from './ExportControl.astro';
+import type { SchemaEntity } from './schemaEntities';
+
+export interface AutomationTag {
+  /** The tagged entity id (a table or field id from the schema index). */
+  entityId: string;
+  /** auto = derived from the definition (engine); manual = added by the user (removable). */
+  source: 'auto' | 'manual';
+}
+export interface SchemaAutomation {
+  id: string;
+  name: string;
+  /** The single Base this automation belongs to — drives the Base-grouped listing + sidebar. */
+  baseId: string;
+  /** Trigger type label (e.g. "When record matches conditions"). Optional. */
+  triggerType?: string;
+  /** Deletion state (soft-delete in Airtable). Distinct from `enabled` (on/off). */
+  status: 'active' | 'removed';
+  /** Whether the automation is currently ON (running) in Airtable. Default true. */
+  enabled?: boolean;
+  /** The automation's Airtable-side description. Automations DO have a description in Airtable,
+   *  but the API can't export automations — so Baseout can't auto-sync/publish it; the user just
+   *  saves/edits this copy manually (no publish feature, unlike field descriptions). */
+  airtableDescription?: string;
+  /** Baseout-only note — never shown in Airtable. */
+  internalDescription?: string;
+  /** Notification email subscribers (who gets notified when this runs). */
+  subscribers?: string[];
+  /** Opaque raw definition, stored as-is for reference. Often empty (Airtable can't export it). */
+  definition?: string;
+  tags?: AutomationTag[];
+  /** ISO date it went missing from Airtable (soft-delete history). */
+  removedAt?: string;
+}
+
+interface Props {
+  automations?: SchemaAutomation[];
+  bases: { id: string; name: string }[];
+  /** Entity index (tables/fields) — feeds the tag-picker + resolves tag names. */
+  index: SchemaEntity[];
+  /** Full changelog — the read drawer surfaces each automation's own change history. */
+  changelog?: { entityId?: string; entityKind?: string; at: string; type: string; summary: string; before?: string; after?: string }[];
+  /** Tier proxy: 'ready' = has the tier; otherwise show the upsell. Harness: ?ai=locked. */
+  aiState?: 'ready' | 'locked' | 'no-credits';
+}
+const { automations = [], bases = [], index = [], changelog = [], aiState = 'ready' } = Astro.props as Props;
+const canUse = aiState === 'ready';
+// Slim per-automation change history for the read drawer (only automation events).
+const auChangelog = changelog.filter((c) => c.entityKind === 'automation' && c.entityId).map((c) => ({ entityId: c.entityId, at: c.at, type: c.type, summary: c.summary, before: c.before, after: c.after }));
+
+const NO_BASE = '__nobase__';
+// Airtable's fixed set of automation trigger types (support.airtable.com/docs/automations-overview).
+// Airtable itself surfaces these as a "Trigger type" dropdown; we mirror that instead of free text.
+export const TRIGGER_TYPES = [
+  'When a record is created',
+  'When a record is updated',
+  'When a record matches conditions',
+  'When a record enters a view',
+  'At a scheduled time',
+  'When a form is submitted',
+  'When a webhook is received',
+  'When a button is clicked',
+  'Integrated (Google / Outlook)',
+];
+const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+const fmtDate = (iso?: string) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+// Resolve a tagged entity id → its display name + kind (for tag chips + counts).
+const entById = new Map(index.map((e) => [e.id, e]));
+// Base id → name + canonical order (from the bases prop), for the Base-grouped listing.
+const baseName = new Map(bases.map((b) => [b.id, b.name]));
+const baseOrder = new Map(bases.map((b, i) => [b.id, i]));
+
+// Group by Base (Dan 2026-07-01 — replaces the old free-text `group`). Group order follows the
+// bases prop; within a base, active first then removed.
+const groups = (() => {
+  const map = new Map<string, SchemaAutomation[]>();
+  for (const a of automations) {
+    const key = a.baseId || NO_BASE;
+    (map.get(key) ?? map.set(key, []).get(key)!).push(a);
+  }
+  const keys = Array.from(map.keys()).sort((x, y) => (baseOrder.get(x) ?? 999) - (baseOrder.get(y) ?? 999));
+  return keys.map((k) => ({
+    key: k,
+    label: baseName.get(k) || 'No base',
+    items: map.get(k)!.slice().sort((x, y) => (x.status === y.status ? 0 : x.status === 'removed' ? 1 : -1)),
+  }));
+})();
+
+const hasAny = automations.length > 0;
+const removedCount = automations.filter((a) => a.status === 'removed').length;
+
+// Search + Table/Field facets (Dan 2026-07-03, cross-tab UX parity with Browse/Relationships).
+const tagName = (id: string) => entById.get(id)?.name ?? '';
+const taggedTables = (a: SchemaAutomation) => (a.tags || []).filter((t) => entById.get(t.entityId)?.kind === 'table').map((t) => t.entityId);
+const taggedFields = (a: SchemaAutomation) => (a.tags || []).filter((t) => entById.get(t.entityId)?.kind === 'field').map((t) => t.entityId);
+const auSearchStr = (a: SchemaAutomation) => [a.name, a.triggerType, ...(a.tags || []).map((t) => tagName(t.entityId))].filter(Boolean).join(' ').toLowerCase();
+// Facet items = the tables/fields actually tagged by automations (keeps the lists focused).
+const tblFacetMap = new Map<string, string>();
+const fldFacetMap = new Map<string, string>();
+for (const a of automations) {
+  for (const t of a.tags || []) {
+    const e = entById.get(t.entityId);
+    if (e?.kind === 'table') tblFacetMap.set(e.id, e.name);
+    else if (e?.kind === 'field') fldFacetMap.set(e.id, (e as any).tableName ? `${e.name} · ${(e as any).tableName}` : e.name);
+  }
+}
+const tableFacet = [...tblFacetMap].map(([value, label]) => ({ value, label }));
+const fieldFacet = [...fldFacetMap].map(([value, label]) => ({ value, label }));
+
+// Status badge — our Storybook status pattern: badge-soft + a semantic color + a leading
+// bg-current dot. Active = success, Inactive = neutral (off), Removed = warning.
+const statusBadge = (a: SchemaAutomation) => {
+  const removed = a.status === 'removed';
+  const on = a.enabled !== false;
+  if (removed) return `<span class="badge badge-soft badge-warning au-badge tooltip tooltip-right" data-tip="No longer exists in Airtable"><span class="size-1.5 rounded-full bg-current"></span>Removed</span>`;
+  return on
+    ? `<span class="badge badge-soft badge-success au-badge tooltip tooltip-right" data-tip="On in Airtable — this automation is running"><span class="size-1.5 rounded-full bg-current"></span>Active</span>`
+    : `<span class="badge badge-soft badge-neutral au-badge tooltip tooltip-right" data-tip="Off in Airtable — this automation isn't running"><span class="size-1.5 rounded-full bg-current"></span>Inactive</span>`;
+};
+
+// One table row (thead lives on the group). Columns: Name · Status · Trigger · Tagged · actions.
+const renderRow = (a: SchemaAutomation) => {
+  const removed = a.status === 'removed';
+  const tagCount = (a.tags || []).length;
+  return `<tr class="au-row" data-au-row data-au-id="${esc(a.id)}" data-base="${esc(a.baseId)}" data-tables="${esc(taggedTables(a).join(' '))}" data-fields="${esc(taggedFields(a).join(' '))}" data-search="${esc(auSearchStr(a))}" data-removed-row="${removed ? '1' : '0'}" role="button" tabindex="0">
+    <td class="au-c-name"><span class="au-nm"><span class="iconify lucide--zap concept-ic-automation size-4 au-row-ic" aria-hidden="true"></span><span class="au-row-name">${esc(a.name)}</span></span></td>
+    <td class="au-c-status">${statusBadge(a)}</td>
+    <td class="au-c-trigger">${a.triggerType ? esc(a.triggerType) : '<span class="au-dash">—</span>'}</td>
+    <td class="au-c-tags">${tagCount ? `<button type="button" class="btn btn-ghost btn-sm text-sm gap-1.5 tooltip tooltip-left" data-tip="${tagCount} tagged table${tagCount === 1 ? '' : 's'} / field${tagCount === 1 ? '' : 's'}" aria-label="${tagCount} tagged tables/fields"><span class="iconify lucide--tags size-4" aria-hidden="true"></span><span class="mono-data">${tagCount}</span> tagged</button>` : '<span class="au-dash">—</span>'}</td>
+    <td class="au-c-act"><span class="au-row-actions">
+      <button type="button" class="btn btn-sm btn-ghost btn-square" data-au-edit="${esc(a.id)}" aria-label="Edit"><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span></button>
+      ${removed ? '' : `<button type="button" class="btn btn-sm btn-ghost btn-square text-error" data-au-delete="${esc(a.id)}" aria-label="Delete"><span class="iconify lucide--trash-2 size-3.5" aria-hidden="true"></span></button>`}
+    </span></td>
+  </tr>`;
+};
+---
+
+<section class="au" data-automations data-can-use={canUse ? '1' : '0'}>
+  {!canUse ? (
+    <div class="au-gate">
+      <span class="au-gate-ic"><span class="iconify lucide--zap size-6" aria-hidden="true"></span></span>
+      <p class="au-gate-title">Track your Airtable automations</p>
+      <p class="au-gate-sub">Register the automations Airtable's API can't export, so they're tracked and documented alongside your schema. Available on Growth and above.</p>
+      <a href="/settings/billing" class="btn btn-sm btn-primary gap-1.5"><span class="iconify lucide--arrow-up-circle size-4" aria-hidden="true"></span>View plans</a>
+    </div>
+  ) : !hasAny ? (
+    <div class="au-empty">
+      <span class="au-empty-ic"><span class="iconify lucide--zap" aria-hidden="true"></span></span>
+      <p class="au-empty-title">No automations registered yet</p>
+      <p class="au-empty-sub">Airtable's API doesn't expose automations, so Baseout can't detect them automatically. Register them here to track them alongside your schema.</p>
+      <button type="button" class="btn btn-sm btn-primary gap-1.5" data-au-new><span class="iconify lucide--plus size-4" aria-hidden="true"></span>Register automation</button>
+    </div>
+  ) : (
+    <>
+      {/* Toolbar — the shared .sch-tb pattern: search │ facets + Include-removed + Clear → right (Register). */}
+      <div class="sch-tb">
+        <label class="input input-sm sch-tb-search">
+          <span class="iconify lucide--search size-4 opacity-55" aria-hidden="true"></span>
+          <input type="search" data-au-search data-sch-search placeholder="Search automations…" aria-label="Search automations" autocomplete="off" spellcheck="false" />
+          <kbd class="kbd kbd-sm sch-tb-slash" aria-hidden="true">/</kbd>
+        </label>
+        <span class="sch-tb-div" aria-hidden="true"></span>
+
+        {bases.length > 1 && <FacetFilter label="Bases" name="aubase" groups={[{ items: bases.map((b) => ({ value: b.id, label: b.name })) }]} />}
+        {tableFacet.length > 0 && <FacetFilter label="Tables" name="autable" groups={[{ items: tableFacet }]} />}
+        {fieldFacet.length > 0 && <FacetFilter label="Fields" name="aufield" groups={[{ items: fieldFacet }]} />}
+
+        {removedCount > 0 && (
+          <label class="sch-tb-check tooltip tooltip-top" data-tip="Show automations removed from Airtable (kept for history)"><input type="checkbox" class="checkbox checkbox-sm" data-au-removed /> Include removed <span class="badge badge-sm badge-ghost">{removedCount}</span></label>
+        )}
+
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1 au-clear" data-au-clear hidden>
+          <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+        </button>
+
+        <div class="sch-tb-right">
+          <ExportControl tab="automations" format="csv" noun="automations" total={automations.length} rowSelector="[data-au-row]" />
+          <button type="button" class="btn btn-sm btn-primary gap-1.5" data-au-new><span class="iconify lucide--plus size-4" aria-hidden="true"></span>Register automation</button>
+        </div>
+      </div>
+
+      <div class="au-list" data-au-list>
+        {groups.map((g) => (
+          <div class="au-group" data-au-group data-group-key={g.key}>
+            <button type="button" class="au-group-head" data-au-twist aria-expanded="true">
+              <span class="iconify lucide--chevron-down size-4 au-caret" aria-hidden="true"></span>
+              <span class="iconify lucide--database concept-ic-base size-4 au-group-ic" aria-hidden="true"></span>
+              <span class="au-group-name">{g.label}</span>
+              <span class="au-group-count mono-data">{g.items.filter((i) => i.status !== 'removed').length}</span>
+            </button>
+            <table class="au-tbl">
+              <thead>
+                <tr>
+                  <th class="au-th-name" data-sort-col="0">Name</th>
+                  <th class="au-th-status" data-sort-col="1">Status</th>
+                  <th class="au-th-trigger" data-sort-col="2">Trigger</th>
+                  <th class="au-th-tags" data-sort-col="3">Tagged</th>
+                  <th class="au-th-act" aria-label="Actions"></th>
+                </tr>
+              </thead>
+              <tbody class="au-group-body" data-au-body set:html={g.items.map((a) => renderRow(a)).join('')} />
+            </table>
+          </div>
+        ))}
+        <p class="au-nomatch" data-au-nomatch hidden>No automations match the current filters.</p>
+      </div>
+    </>
+  )}
+</section>
+
+{/* Create / edit — a right drawer (project default; not a modal). */}
+{canUse && (
+  <Drawer id="au-modal" title="Automation" width="w-[min(94vw,30rem)]">
+    {/* Read view — the default when you click a row. Filled by the .ts. */}
+    <div class="au-read" data-au-read hidden></div>
+
+    {/* Edit form. */}
+    <form class="au-form" data-au-form hidden>
+      <div class="au-form-grid">
+        <label class="au-field">
+          <span class="au-field-lbl">Name <span class="au-req">*</span></span>
+          <input type="text" class="input input-sm" data-au-f-name placeholder="e.g. Notify on stage change" required />
+        </label>
+        <label class="au-field">
+          <span class="au-field-lbl">Automation ID <span class="au-req">*</span></span>
+          <input type="text" class="input input-sm mono-data" data-au-f-id placeholder="autXXXXXXXXXXXXXX" required />
+        </label>
+        <label class="au-field">
+          <span class="au-field-lbl">Base <span class="au-req">*</span></span>
+          <select class="select select-sm" data-au-f-base required>
+            <option value="" disabled selected>Select a base…</option>
+            {bases.map((b) => <option value={b.id}>{b.name}</option>)}
+          </select>
+        </label>
+        <label class="au-field">
+          <span class="au-field-lbl">Trigger type</span>
+          <select class="select select-sm" data-au-f-trigger>
+            <option value="">Select a trigger…</option>
+            {TRIGGER_TYPES.map((t) => <option value={t}>{t}</option>)}
+          </select>
+        </label>
+      </div>
+
+      <label class="au-field au-field-toggle">
+        <span class="au-toggle-lead"><span class="au-field-lbl">Active</span><span class="au-field-hint">Whether the automation is currently running in Airtable.</span></span>
+        <input type="checkbox" class="toggle toggle-sm toggle-primary" data-au-f-enabled checked />
+      </label>
+
+      {/* Tags are the core value (impact analysis + reverse surfacing) — front them above Description. */}
+      <div class="au-field au-field-tags">
+        <span class="au-field-lbl">Tagged tables &amp; fields</span>
+        <div class="au-chips" data-au-chips></div>
+        <EntitySearch index={index.filter((e) => e.kind !== 'base')} name="autag" placeholder="Tag a table or field…" pickEvent="schema:auTagAdd" size="sm" />
+      </div>
+
+      {/* Two descriptions (Airtable vs Internal tabs) — automations HAVE an Airtable description,
+          but we can't sync it via the API, so it's just save/edit here (no Publish). */}
+      <div class="au-field au-desc">
+        <span class="au-field-lbl">Description</span>
+        <div class="au-desc-tabs" role="tablist">
+          <button type="button" class="au-desc-tab au-desc-tab-on" data-au-desc-tab="airtable" role="tab"><span class="iconify lucide--table-2 size-3.5" aria-hidden="true"></span>Airtable</button>
+          <button type="button" class="au-desc-tab" data-au-desc-tab="internal" role="tab"><span class="iconify lucide--lock size-3.5" aria-hidden="true"></span>Internal</button>
+        </div>
+        <div class="au-desc-panel" data-au-desc-panel="airtable">
+          <textarea class="textarea textarea-sm" data-au-f-airdesc rows="3" placeholder="The description as it appears on this automation in Airtable."></textarea>
+          <span class="au-field-hint">A copy of the automation's Airtable description. Baseout can't sync it via the API, so save your edits here manually.</span>
+        </div>
+        <div class="au-desc-panel" data-au-desc-panel="internal" hidden>
+          <textarea class="textarea textarea-sm" data-au-f-desc rows="3" placeholder="Baseout-only context for your team — e.g. Owned by RevOps; may switch to a daily digest."></textarea>
+          <span class="au-field-hint">Internal to Baseout — never shown in Airtable.</span>
+        </div>
+      </div>
+
+      <div class="au-field">
+        <span class="au-field-lbl">Notified subscribers</span>
+        <div class="au-subs" data-au-subs></div>
+        <input type="email" class="input input-sm" data-au-f-sub placeholder="Add an email, then press Enter" autocomplete="off" />
+        <span class="au-field-hint">Who gets notified when this automation runs.</span>
+      </label>
+
+      {/* No raw-definition input: the `definition` JSON only comes from the inbound API (scraped
+          automations), so it's read-only + shown in the detail ONLY when present — never hand-entered. */}
+
+      <div class="au-form-foot">
+        <button type="button" class="btn btn-sm btn-ghost" data-au-cancel>Cancel</button>
+        <button type="submit" class="btn btn-sm btn-primary" data-au-save>Register automation</button>
+      </div>
+    </form>
+  </Drawer>
+)}
+
+<style is:global>
+  /* is:global — rows render via set:html (no Astro scope hash); every selector is `.au-`-prefixed. */
+  .au { display: flex; flex-direction: column; gap: 1rem; }
+
+  /* toolbar */
+  /* toolbar now uses the shared .sch-tb pattern (global.css) — au-tb/au-search/au-tb-actions removed */
+
+  /* grouped list */
+  .au-list { display: flex; flex-direction: column; gap: .5rem; }
+  .au-group { border: 1px solid var(--color-base-300); border-radius: .8rem; overflow: hidden; background: var(--color-base-100); }
+  .au-group-head { display: flex; align-items: center; gap: .5rem; width: 100%; padding: .5rem .75rem; background: oklch(from var(--color-base-200) l c h / .4); border: 0; cursor: pointer; text-align: left; font: inherit; }
+  .au-group-ic { flex: none; margin-left: -.15rem; }
+  .au-group-name { font-size: .85rem; font-weight: 650; }
+  .au-group-count { font-size: .74rem; opacity: .55; }
+  .au-caret { transition: transform .15s ease; color: oklch(from var(--color-base-content) l c h / .5); }
+  .au-group[data-collapsed] .au-caret { transform: rotate(-90deg); }
+  .au-group[data-collapsed] .au-tbl { display: none; }
+
+  /* table — Backups style: text-sm, muted uppercase header, roomy row-clickable rows.
+     table-layout: fixed + explicit widths so the columns line up across every Base group. */
+  .au-tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .au-tbl thead th { text-align: left; font-size: .68rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .45); padding: .5rem .75rem; border-top: 1px solid oklch(from var(--color-base-300) l c h / .6); }
+  .au-th-status { width: 8.5rem; }
+  .au-th-trigger { width: 34%; }
+  .au-th-tags { width: 7.5rem; text-align: right; }
+  .au-th-act { width: 5rem; }
+  .au-tbl td { padding: .5rem .75rem; border-top: 1px solid oklch(from var(--color-base-300) l c h / .6); font-size: .875rem; vertical-align: middle; overflow: hidden; }
+  .au-row { cursor: pointer; }
+  .au-row:hover { background: oklch(from var(--color-base-200) l c h / .4); }
+  .au-row[hidden] { display: none; }
+  .au-row[data-removed-row="1"] { opacity: .55; }
+  .au-nm { display: inline-flex; align-items: center; gap: .5rem; min-width: 0; max-width: 100%; }
+  .au-row-ic { flex: none; }
+  .au-row-name { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .au-c-trigger { color: oklch(from var(--color-base-content) l c h / .62); font-size: .82rem; white-space: nowrap; text-overflow: ellipsis; }
+  .au-c-tags { text-align: right; white-space: nowrap; }
+  .au-badge { gap: .25rem; }
+  .au-dash { color: oklch(from var(--color-base-content) l c h / .32); }
+  .au-c-act { text-align: right; }
+  .au-row-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: .1rem; opacity: 0; transition: opacity .12s ease; }
+  .au-row:hover .au-row-actions, .au-row:focus-within .au-row-actions { opacity: 1; }
+  .au-nomatch { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .55); padding: .75rem .25rem; }
+  .au-nomatch[hidden] { display: none; }
+
+  /* empty + gate (shared skeleton — siblings) */
+  .au-empty, .au-gate { display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; padding: 3.5rem 1rem; }
+  .au-empty-ic, .au-gate-ic { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 999px; background: oklch(from var(--color-base-content) l c h / .06); color: oklch(from var(--color-base-content) l c h / .5); margin-bottom: .25rem; }
+  .au-empty-ic .iconify { width: 1.5rem; height: 1.5rem; }
+  .au-empty-title, .au-gate-title { font-size: 1rem; font-weight: 650; }
+  .au-empty-sub, .au-gate-sub { font-size: .84rem; line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .6); max-width: 30rem; }
+  .au-empty > .btn, .au-gate > .btn { margin-top: .5rem; }
+
+  /* modal form */
+  .au-form { display: flex; flex-direction: column; gap: 1rem; }
+  .au-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+  .au-field { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+  .au-field-lbl { font-size: .78rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .72); }
+  .au-field-hint { font-size: .72rem; line-height: 1.4; color: oklch(from var(--color-base-content) l c h / .5); }
+  .au-req { color: var(--color-error); }
+  /* toggle field: label+hint left, toggle right */
+  .au-field-toggle { flex-direction: row; align-items: center; justify-content: space-between; gap: 1rem; }
+  .au-toggle-lead { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+  /* two-description tabs (Airtable / Internal) — no Publish, just save/edit */
+  .au-desc { gap: .5rem; }
+  .au-desc-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--color-base-300); }
+  .au-desc-tab { display: inline-flex; align-items: center; gap: .5rem; appearance: none; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: .5rem .75rem .5rem; font: inherit; font-size: .8rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .58); cursor: pointer; }
+  .au-desc-tab .iconify { opacity: .7; }
+  .au-desc-tab:hover { color: var(--color-base-content); }
+  .au-desc-tab.au-desc-tab-on { color: var(--color-base-content); font-weight: 650; border-bottom-color: var(--color-primary); }
+  .au-desc-tab.au-desc-tab-on .iconify { opacity: 1; }
+  .au-desc-panel { display: flex; flex-direction: column; gap: .25rem; margin-top: .5rem; }
+  .au-desc-panel[hidden] { display: none; }
+  /* subscriber email chips */
+  .au-subs { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .au-subs:empty { display: none; }
+  .au-sub { display: inline-flex; align-items: center; gap: .25rem; font-size: .78rem; padding: .25rem .25rem .25rem .5rem; border-radius: 999px; border: 1px solid var(--color-base-300); background: var(--color-base-100); }
+  .au-sub-x { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 999px; cursor: pointer; opacity: .6; }
+  .au-sub-x:hover { opacity: 1; background: oklch(from var(--color-base-content) l c h / .1); }
+  .au-chips { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: .1rem; }
+  .au-chips:empty { display: none; }
+  .au-def-head { display: flex; align-items: center; justify-content: space-between; }
+  .au-def-tools { display: flex; align-items: center; gap: .5rem; }
+  .au-def-valid { font-size: .74rem; font-weight: 600; }
+  .au-def-valid.is-ok { color: var(--color-success); }
+  .au-def-valid.is-bad { color: var(--color-error); }
+  .au-form textarea, .au-form .textarea { width: 100%; box-sizing: border-box; }
+  .au-optional { font-weight: 400; color: oklch(from var(--color-base-content) l c h / .5); }
+  .au-def-input { width: 100%; font-size: .8rem; line-height: 1.5; }
+  .au-def-err { font-size: .76rem; color: var(--color-error); }
+  .au-def-err[hidden] { display: none; }
+  .au-def-valid[hidden] { display: none; }
+  .au-form-foot { display: flex; justify-content: flex-end; gap: .5rem; padding-top: .25rem; }
+  .au-def-hint { font-size: .74rem; color: oklch(from var(--color-base-content) l c h / .55); }
+  .au-adv { border-top: 1px solid var(--color-base-300); padding-top: .5rem; }
+  .au-adv-sum { display: inline-flex; align-items: center; gap: .5rem; font-size: .8rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .7); cursor: pointer; list-style: none; }
+  .au-adv-sum::-webkit-details-marker { display: none; }
+  .au-adv-sum .iconify { opacity: .6; }
+  .au-adv[open] .au-adv-sum { margin-bottom: .5rem; }
+
+  /* read view — DRAWER CANON v2: canon header block (icon tile + name + meta) as the first
+     body element; sections separated by generous whitespace (28px top margin), NO hairline. */
+  .au-read { display: flex; flex-direction: column; }
+  .au-read > * + * { margin-top: 28px; }
+  .au-read-hd { display: flex; flex-direction: column; gap: 8px; }
+  .au-read-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: oklch(from var(--color-base-content) l c h / .65); }
+  .au-read-sep { opacity: .4; }
+  /* Freshness ("as of last backup") is a trust signal — inherits the meta line's .65 alpha
+     (no extra dimming) so it stays legible beside its siblings. */
+  .au-meta-fresh { }
+  /* Identity: STATUS as a colored dot + label (twins with Interfaces' .if-status). */
+  .au-status { display: inline-flex; align-items: center; gap: 4px; font-weight: 550; color: oklch(from var(--color-base-content) l c h / .85); }
+  .au-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
+  .au-dot-green { background: var(--color-success); }
+  .au-dot-amber { background: var(--color-warning); }
+  .au-dot-red { background: var(--color-error); }
+  .au-dot-grey { background: color-mix(in oklch, var(--color-base-content) 40%, transparent); }
+  /* Location crumbs now use the shared .sb-crumb* (styles/global.css) via locationCrumbs(). */
+  .au-read-desc { font-size: .9rem; line-height: 1.55; }
+  .au-read-desc.is-empty { color: oklch(from var(--color-base-content) l c h / .5); font-style: italic; }
+  .au-read-status { display: inline-flex; align-items: center; gap: .5rem; }
+  .au-read-status .au-status-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
+  .au-read-status.is-on .au-status-dot { background: var(--color-success); }
+  .au-read-status.is-off .au-status-dot { background: oklch(from var(--color-base-content) l c h / .4); }
+  .au-read-sub { display: inline-flex; align-items: center; gap: .5rem; font-size: .82rem; padding: .25rem .5rem; border-radius: 999px; border: 1px solid var(--color-base-300); background: var(--color-base-100); }
+  /* Shared row-list container (DRAWER CANON v2): a 1–2 item list never floats. */
+  .au-read-listbox { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border: 1px solid var(--color-base-300); border-radius: 11px; background: color-mix(in oklch, var(--color-base-200) 45%, transparent); overflow: hidden; }
+  /* read-drawer changelog (this automation's own history) */
+  /* Changelog = shared row-list container (pattern-detail-panel): one bordered, faintly-tinted box
+     with hairline-split rows, so a lone 1–2-event history reads as a group, not floating text. */
+  .au-cl { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: 11px; background: color-mix(in oklch, var(--color-base-200) 45%, transparent); overflow: hidden; }
+  .au-cl-item { display: flex; align-items: center; gap: .5rem; font-size: .8rem; padding: 8px 12px; }
+  .au-cl-item + .au-cl-item { border-top: 1px solid var(--color-base-200); }
+  .au-cl-ic { flex: none; }
+  .au-cl-added .au-cl-ic { color: var(--color-success); }
+  .au-cl-removed .au-cl-ic { color: var(--color-error); }
+  .au-cl-renamed .au-cl-ic, .au-cl-config .au-cl-ic { color: var(--color-primary); }
+  .au-cl-txt { flex: 1; min-width: 0; }
+  .au-cl-delta { color: oklch(from var(--color-base-content) l c h / .55); }
+  .au-cl-when { margin-left: auto; font-size: .72rem; color: oklch(from var(--color-base-content) l c h / .5); white-space: nowrap; flex: none; }
+  .au-read-sect-lbl { display: flex; align-items: center; gap: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .5); font-weight: 700; margin-bottom: 8px; }
+  .au-read-sect-ic { flex: none; opacity: .85; }
+  .au-read-chips { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .au-read-empty { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .5); }
+  /* Raw-definition disclosure + footer rail — shared `.sch-*` canon (byte-identical in Interfaces). */
+  .sch-read-def { border: 1px solid var(--color-base-300); border-radius: 8px; }
+  .sch-read-def summary { display: flex; align-items: center; font-size: .8rem; font-weight: 600; padding: 8px 12px; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .7); list-style: none; }
+  .sch-read-def summary:hover { color: var(--color-base-content); }
+  .sch-read-def summary::-webkit-details-marker { display: none; }
+  .sch-def-chev { transition: transform .15s ease; margin-left: auto; opacity: .6; }
+  .sch-read-def[open] .sch-def-chev { transform: rotate(180deg); }
+  .sch-read-def pre { margin: 0; padding: 12px; border-top: 1px solid var(--color-base-300); font-size: .76rem; line-height: 1.5; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
+  .sch-read-foot { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--color-base-200); }
+
+  @media (max-width: 560px) { .au-form-grid { grid-template-columns: 1fr; } }
+</style>
+
+<script type="application/json" data-au-json is:inline set:html={JSON.stringify(automations)} />
+{/* Slim entity map so the .ts can render tag chips (id → name/kind) without the full index. */}
+<script type="application/json" data-au-entindex is:inline set:html={JSON.stringify(Object.fromEntries(index.map((e) => [e.id, { name: e.name, kind: e.kind, tableName: (e as any).tableName ?? null }])))} />
+{/* Base id → name, so the .ts can label a Base group it creates for a newly-registered automation. */}
+<script type="application/json" data-au-bases is:inline set:html={JSON.stringify(Object.fromEntries(bases.map((b) => [b.id, b.name])))} />
+{/* Per-automation change history for the read drawer's Changelog section. */}
+<script type="application/json" data-au-changelog is:inline set:html={JSON.stringify(auChangelog)} />
+
+<script>
+  import { wireAutomations } from './schemaAutomations';
+  wireAutomations();
+  document.addEventListener('astro:after-swap', wireAutomations);
+</script>

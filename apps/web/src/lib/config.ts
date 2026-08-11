@@ -26,8 +26,11 @@ export function getConfig(): AppConfig {
 
 export function getNavItems(): NavItem[] {
   const items = getConfig().navigation.top;
-  if (!items.length || items[0].label !== 'Home' || items[0].href !== '/') {
-    return [{ label: 'Home', href: '/', icon: 'home' }, ...items];
+  // Home now lives inside the Space group (not necessarily first), so only inject a
+  // fallback Home when the config has none at all — otherwise we'd duplicate it.
+  const hasHome = items.some((i) => !i.isTitle && i.href === '/');
+  if (!hasHome) {
+    return [{ label: 'Home', href: '/', icon: 'iconify lucide--layout-dashboard' }, ...items];
   }
   return items;
 }

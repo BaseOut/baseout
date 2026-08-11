@@ -1,0 +1,103 @@
+---
+// /errors — staff error-triage queue (admin-error-triage §4). Read + ack/un-ack;
+// role='super' gated by middleware. Five bounded queries → pure classifier →
+// org-grouped queue. Type + ack-state filters via query params.
+import { and, desc, eq, isNotNull, isNull, or } from 'drizzle-orm';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Card from '@web/components/ui/Card.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import { backupRunBases, backupRuns, connections, organizations, restoreRuns, spaceDatabases, spaces, adminErrorAcks } from '../../db/schema';
+import { classifyErrors, countOpenErrors, groupByOrg, type ErrorType, type ErrorSources } from '../../lib/errors';
+import { entityHref, truncationNote } from '../../lib/ui';
+import { retParam } from '../../lib/table-query';
+
+const LIMIT = 200;
+const url = new URL(Astro.request.url);
+const typeFilter = (url.searchParams.get('type') ?? '').trim() as ErrorType | '';
+const ackState = (url.searchParams.get('ackState') ?? 'open').trim(); // open | acked | all
+const { db } = Astro.locals;
+
+const runOrg = { orgId: spaces.organizationId, orgName: organizations.name, spaceName: spaces.name };
+const [brs, brbs, rrs, conns, sdbs, acks] = await Promise.all([
+  db.select({ id: backupRuns.id, spaceId: backupRuns.spaceId, ...runOrg, errorMessage: backupRuns.errorMessage, completedAt: backupRuns.completedAt, createdAt: backupRuns.createdAt })
+    .from(backupRuns).leftJoin(spaces, eq(backupRuns.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(and(eq(backupRuns.status, 'failed'), isNull(backupRuns.deletedAt))).orderBy(desc(backupRuns.createdAt)).limit(LIMIT),
+  db.select({ id: backupRunBases.id, spaceId: backupRuns.spaceId, orgId: spaces.organizationId, orgName: organizations.name, spaceName: spaces.name, baseName: backupRunBases.baseName, errorMessage: backupRunBases.errorMessage, completedAt: backupRunBases.completedAt, runCreatedAt: backupRuns.createdAt })
+    .from(backupRunBases).innerJoin(backupRuns, eq(backupRunBases.runId, backupRuns.id)).leftJoin(spaces, eq(backupRuns.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(and(eq(backupRunBases.status, 'failed'), isNull(backupRuns.deletedAt))).orderBy(desc(backupRuns.createdAt)).limit(LIMIT),
+  db.select({ id: restoreRuns.id, spaceId: restoreRuns.spaceId, ...runOrg, errorMessage: restoreRuns.errorMessage, completedAt: restoreRuns.completedAt, createdAt: restoreRuns.createdAt })
+    .from(restoreRuns).leftJoin(spaces, eq(restoreRuns.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(eq(restoreRuns.status, 'failed')).orderBy(desc(restoreRuns.createdAt)).limit(LIMIT),
+  db.select({ id: connections.id, orgId: connections.organizationId, orgName: organizations.name, status: connections.status, oauthRefreshLastError: connections.oauthRefreshLastError, invalidatedAt: connections.invalidatedAt, pendingReauthAt: connections.pendingReauthAt, modifiedAt: connections.modifiedAt })
+    .from(connections).leftJoin(organizations, eq(connections.organizationId, organizations.id))
+    .where(or(eq(connections.status, 'invalid'), eq(connections.status, 'pending_reauth'), isNotNull(connections.oauthRefreshLastError))).limit(LIMIT),
+  db.select({ id: spaceDatabases.id, spaceId: spaceDatabases.spaceId, orgId: spaces.organizationId, orgName: organizations.name, spaceName: spaces.name, status: spaceDatabases.status, errorMessage: spaceDatabases.errorMessage, modifiedAt: spaceDatabases.modifiedAt })
+    .from(spaceDatabases).leftJoin(spaces, eq(spaceDatabases.spaceId, spaces.id)).leftJoin(organizations, eq(spaces.organizationId, organizations.id))
+    .where(eq(spaceDatabases.status, 'error')).limit(LIMIT),
+  db.select({ targetType: adminErrorAcks.targetType, targetId: adminErrorAcks.targetId, targetState: adminErrorAcks.targetState, phase: adminErrorAcks.phase, createdAt: adminErrorAcks.createdAt, ackedByEmail: adminErrorAcks.ackedByEmail }).from(adminErrorAcks),
+]);
+
+const sources: ErrorSources = { backupRuns: brs, backupRunBases: brbs, restoreRuns: rrs, connections: conns, spaceDatabases: sdbs };
+const allItems = classifyErrors(sources, acks);
+const counts = countOpenErrors(allItems);
+const filtered = allItems.filter((i) => {
+  if (typeFilter && i.type !== typeFilter) return false;
+  if (ackState === 'open') return !i.acked;
+  if (ackState === 'acked') return i.acked;
+  return true;
+});
+const groups = groupByOrg(filtered);
+const totalRows = brs.length + brbs.length + rrs.length + conns.length + sdbs.length;
+
+const TYPE_LABEL: Record<string, string> = { backup_run: 'Backup run', backup_run_base: 'Base backup', restore_run: 'Restore', connection: 'Connection', space_database: 'Database' };
+const ret = retParam('/errors', url.searchParams);
+const fmt = (d: Date) => new Date(d).toISOString().replace('T', ' ').slice(0, 16);
+---
+
+<SidebarLayout title="Admin — Errors">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader title="Error triage" description={`${counts.total} open across the fleet.${truncationNote(totalRows, LIMIT * 5)}`} />
+
+    <form method="get" class="flex flex-wrap items-center gap-2">
+      <select name="type" class="select select-bordered select-sm">
+        <option value="" selected={!typeFilter}>All types</option>
+        {Object.entries(TYPE_LABEL).map(([v, l]) => (<option value={v} selected={typeFilter === v}>{l}</option>))}
+      </select>
+      <select name="ackState" class="select select-bordered select-sm">
+        {['open', 'acked', 'all'].map((s) => (<option value={s} selected={ackState === s}>{s}</option>))}
+      </select>
+      <button class="btn btn-sm btn-primary" type="submit">Apply</button>
+    </form>
+
+    {groups.length === 0 ? (
+      <Card variant="outlined"><EmptyState title="No errors match" description="Nothing to triage in this view." /></Card>
+    ) : (
+      groups.map((g) => (
+        <Card variant="outlined">
+          <h2 class="mb-3 text-base font-semibold">
+            {g.orgId ? <a href={entityHref('org', g.orgId)} class="link link-hover">{g.orgName ?? g.orgId}</a> : 'Unassigned'}
+            <span class="ml-2 text-xs text-base-content/50">{g.items.length}</span>
+          </h2>
+          <ul class="space-y-2">
+            {g.items.map((item) => (
+              <li class={`flex flex-col gap-1 rounded-box border border-base-200 p-3 ${item.acked ? 'opacity-60' : ''}`}>
+                <div class="flex flex-wrap items-center gap-2">
+                  <Badge variant={item.acked ? 'default' : 'error'}>{TYPE_LABEL[item.type]}</Badge>
+                  <a href={`/errors/${item.targetId}?type=${item.type}&ret=${ret}`} class="link link-hover font-medium">{item.label}</a>
+                  <span class="text-xs text-base-content/50">{fmt(item.occurredAt)}</span>
+                  {item.acked && <span class="text-xs text-base-content/50">· acked by {item.ackedByEmail}</span>}
+                </div>
+                <p class="text-sm text-error/80">{item.message}</p>
+                <div>
+                  <a href={`/errors/${item.targetId}?type=${item.type}&ret=${ret}`} class="link link-hover text-xs">Triage →</a>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ))
+    )}
+  </div>
+</SidebarLayout>

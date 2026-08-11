@@ -3,8 +3,9 @@
  *
  * Consumes the encrypted handoff cookie, completes the OAuth token exchange,
  * calls Airtable's Meta API to populate whoami + bases, and persists the
- * connection + bases. Always redirects back to /integrations with a result
- * query param — never surfaces tokens or detailed errors to the browser.
+ * connection + bases. First-time connects land in /integrations/configure
+ * (?first=1); everything else redirects back to returnTo with a result query
+ * param — never surfaces tokens or detailed errors to the browser.
  */
 
 import type { APIRoute } from 'astro'
@@ -20,9 +21,19 @@ import {
   buildClearCookie,
   openHandoffPayload,
   readHandoffCookie,
+  type OAuthHandoffPayload,
 } from '../../../../lib/airtable/cookie'
 import { exchangeCodeForTokens } from '../../../../lib/airtable/oauth'
 import { persistAirtableConnection } from '../../../../lib/airtable/persist'
+import { sanitizeReturnTo } from '../../../../lib/airtable/return-to'
+import {
+  appendQuery,
+  resolveSuccessRedirect,
+} from '../../../../lib/airtable/success-redirect'
+import { shouldSetSecureOAuthCookie } from '../../../../lib/oauth/local-dev-secure'
+import { resolvePostOAuthReturnLocation } from '../../../../lib/oauth/canonical-dev-origin'
+import { backupConfigurations } from '../../../../db/schema'
+import { eq } from 'drizzle-orm'
 
 function redirectWith(
   location: string,
@@ -38,9 +49,34 @@ function redirectWith(
 }
 
 export const GET: APIRoute = async ({ locals, request, url }) => {
-  const isSecure = url.protocol === 'https:'
+  const isSecure = shouldSetSecureOAuthCookie(request)
   const clearCookie = buildClearCookie({ secure: isSecure })
-  const failUrl = (code: string) => `/?error=${encodeURIComponent(code)}`
+
+  const workerEnv = env as unknown as {
+    AIRTABLE_OAUTH_CLIENT_ID?: string
+    AIRTABLE_OAUTH_CLIENT_SECRET?: string
+    BASEOUT_ENCRYPTION_KEY?: string
+    AIRTABLE_STUBS_ENABLED?: string
+    PUBLIC_AUTH_BASE_URL?: string
+  }
+
+  // Open the handoff cookie up front so error redirects can land on the
+  // originating page (returnTo) when we have one. If the cookie is missing
+  // or won't decrypt we fall through to the default redirect target.
+  const sealed = readHandoffCookie(request.headers.get('cookie'))
+  let handoff: OAuthHandoffPayload | null = null
+  if (sealed && workerEnv.BASEOUT_ENCRYPTION_KEY) {
+    try {
+      handoff = await openHandoffPayload(sealed, workerEnv.BASEOUT_ENCRYPTION_KEY)
+    } catch {
+      handoff = null
+    }
+  }
+  const returnTo = sanitizeReturnTo(handoff?.returnTo) ?? '/'
+  const toLocation = (path: string) =>
+    resolvePostOAuthReturnLocation(path, workerEnv.PUBLIC_AUTH_BASE_URL)
+  const failUrl = (code: string) =>
+    toLocation(appendQuery(returnTo, 'error', code))
 
   const airtableError = url.searchParams.get('error')
   if (airtableError) {
@@ -53,27 +89,17 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
     return redirectWith(failUrl('missing_code'), clearCookie)
   }
 
-  const workerEnv = env as unknown as {
-    AIRTABLE_OAUTH_CLIENT_ID?: string
-    AIRTABLE_OAUTH_CLIENT_SECRET?: string
-    BASEOUT_ENCRYPTION_KEY?: string
-    AIRTABLE_STUBS_ENABLED?: string
-  }
   if (!workerEnv.BASEOUT_ENCRYPTION_KEY) {
     return redirectWith(failUrl('not_configured'), clearCookie)
   }
 
   const { tokenUrl, apiBase } = resolveAirtableUrls(workerEnv, url.origin)
 
-  const sealed = readHandoffCookie(request.headers.get('cookie'))
   if (!sealed) {
     return redirectWith(failUrl('missing_handoff'), clearCookie)
   }
 
-  let handoff
-  try {
-    handoff = await openHandoffPayload(sealed, workerEnv.BASEOUT_ENCRYPTION_KEY)
-  } catch {
+  if (!handoff) {
     return redirectWith(failUrl('invalid_handoff'), clearCookie)
   }
 
@@ -132,5 +158,23 @@ export const GET: APIRoute = async ({ locals, request, url }) => {
     return redirectWith(failUrl('persist_failed'), clearCookie)
   }
 
-  return redirectWith('/?connected=1', clearCookie)
+  // First-time connect (no backup configuration for this Space yet) lands in
+  // Configure setup; a failed lookup falls back to the returning-user
+  // redirect rather than failing a flow whose connection already persisted.
+  let hasBackupConfig = true
+  try {
+    const rows = await locals.db
+      .select({ id: backupConfigurations.id })
+      .from(backupConfigurations)
+      .where(eq(backupConfigurations.spaceId, handoff.spaceId))
+      .limit(1)
+    hasBackupConfig = rows.length > 0
+  } catch {
+    hasBackupConfig = true
+  }
+
+  return redirectWith(
+    toLocation(resolveSuccessRedirect({ returnTo, hasBackupConfig })),
+    clearCookie,
+  )
 }

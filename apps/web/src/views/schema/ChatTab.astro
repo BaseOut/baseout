@@ -1,0 +1,325 @@
+---
+/**
+ * Chat tab (web-chat-tab, Pro+) — thread list + conversation + composer with
+ * async assistant polling. Moved verbatim from the pre-split SchemaView.astro
+ * (web-schema-round3-shell §2.1); only the lazy-load trigger changed (button tab,
+ * also fired by the header "Ask about your schema" launcher).
+ */
+import EmptyState from '../../components/ui/EmptyState.astro'
+import ExportControl from '../../components/patterns/ExportControl.astro'
+
+interface Props {
+  hasSchema: boolean
+  aiEnabled: boolean
+  healthBases: { baseId: string; name: string }[]
+}
+
+const { hasSchema, aiEnabled, healthBases } = Astro.props
+---
+
+      {!aiEnabled ? (
+        <EmptyState
+          icon="lucide--sparkles"
+          title="Chat is a Pro feature"
+          description="Upgrade to Pro to ask AI about your schema — scoped to the bases, tables and fields you choose."
+        >
+          <a href="/settings/billing" class="btn btn-primary btn-sm">Upgrade to Pro</a>
+        </EmptyState>
+      ) : !hasSchema ? (
+        <EmptyState
+          icon="lucide--sparkles"
+          title="No schema to chat about"
+          description="Chat becomes available once a backup has captured this Space’s schema."
+        />
+      ) : (
+        <div data-chat-tab class="grid gap-4 lg:grid-cols-[15rem_1fr]" style="min-height: 28rem;">
+          <aside class="flex flex-col gap-2">
+            <button type="button" id="chat-new" class="btn btn-sm btn-outline gap-1">
+              <span class="iconify lucide--plus size-4" aria-hidden="true"></span> New chat
+            </button>
+            <ul id="chat-threads" class="menu menu-sm w-full rounded-box border border-base-300 p-1 text-sm">
+              <li class="px-2 py-1 text-base-content/40">Loading…</li>
+            </ul>
+          </aside>
+          <section class="flex flex-col rounded-box border border-base-300">
+            <div class="flex flex-wrap items-center gap-2 border-b border-base-300/60 px-3 py-2 text-xs">
+              <span class="text-base-content/50">Context</span>
+              <select id="chat-scope" class="select select-bordered select-xs w-44" disabled aria-label="Chat context scope">
+                <option value="">Whole Space</option>
+                {healthBases.map((b) => (
+                  <option value={b.baseId}>{b.name}</option>
+                ))}
+              </select>
+              <span class="ml-auto flex items-center gap-1">
+                {/* total starts at 0 — threads are lazy-fetched; loadThreads() writes the
+                    real total back onto data-export-total (ExportControl reads it live). */}
+                <ExportControl tab="chat" format="pdf" noun="threads" total={0} rowSelector="#chat-threads [data-thread-id]" />
+                <button type="button" id="chat-rename" class="btn btn-ghost btn-xs" disabled>Rename</button>
+                <button type="button" id="chat-archive" class="btn btn-ghost btn-xs" disabled>Archive</button>
+              </span>
+            </div>
+            <div id="chat-conversation" class="flex-1 space-y-3 overflow-auto p-3 text-sm">
+              <p class="text-base-content/50">Start a new chat or pick one on the left.</p>
+            </div>
+            <form id="chat-form" class="flex items-end gap-2 border-t border-base-300/60 p-2">
+              <textarea
+                id="chat-input"
+                rows="2"
+                class="textarea textarea-bordered textarea-sm flex-1 resize-none"
+                placeholder="Ask about your schema…"
+                disabled
+              ></textarea>
+              <button type="submit" id="chat-send" class="btn btn-primary btn-sm" disabled>Send</button>
+            </form>
+          </section>
+        </div>
+      )}
+
+<script>
+  import { setButtonLoading } from '../../lib/ui'
+  // Chat tab (web-chat-tab): thread list + conversation + composer. The AI reply
+  // is generated async (workflows chat-respond) and written back; the assistant
+  // message starts `pending`, so after sending we poll the thread until it
+  // resolves (mirrors the backup-status polling pattern). Pro+ gated server-side;
+  // scoped-context controls + convert-to-doc + clickable refs are follow-ups.
+  const chatTab = document.querySelector<HTMLElement>('[data-chat-tab]')
+  const chatRoot = document.querySelector<HTMLElement>('[data-schema-docs]')
+  if (chatTab && chatRoot) {
+    const spaceId = chatRoot.dataset.spaceId!
+    const esc = (s: string) =>
+      String(s).replace(
+        /[&<>"]/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
+      )
+    const threadsEl = document.getElementById('chat-threads')!
+    const convEl = document.getElementById('chat-conversation')!
+    const form = document.getElementById('chat-form') as HTMLFormElement
+    const input = document.getElementById('chat-input') as HTMLTextAreaElement
+    const sendBtn = document.getElementById('chat-send') as HTMLButtonElement
+    const newBtn = document.getElementById('chat-new') as HTMLButtonElement
+    const scopeSel = document.getElementById('chat-scope') as HTMLSelectElement | null
+    const renameBtn = document.getElementById('chat-rename') as HTMLButtonElement | null
+    const archiveBtn = document.getElementById('chat-archive') as HTMLButtonElement | null
+
+    type Msg = { id: string; role: string; status: string; content: string }
+    type Thread = {
+      id: string
+      title: string
+      archived?: boolean
+      scope?: { baseIds?: string[] } | null
+      messages: Msg[]
+    }
+    type ThreadSummary = { id: string; title: string }
+
+    let currentThreadId: string | null = null
+    let pollTimer: ReturnType<typeof setInterval> | null = null
+
+    const stopPoll = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer)
+        pollTimer = null
+      }
+    }
+
+    const bubble = (m: Msg) => {
+      if (m.role === 'user') {
+        return `<div class="chat chat-end"><div class="chat-bubble chat-bubble-primary">${esc(m.content)}</div></div>`
+      }
+      const body =
+        m.status === 'pending'
+          ? '<span class="loading loading-dots loading-sm"></span>'
+          : esc(m.content)
+      const cls = m.status === 'error' ? ' chat-bubble-error' : ''
+      return `<div class="chat chat-start"><div class="chat-bubble${cls}">${body}</div></div>`
+    }
+
+    const renderConversation = (thread: Thread) => {
+      convEl.innerHTML =
+        thread.messages.length === 0
+          ? '<p class="text-base-content/50">Ask a question to get started.</p>'
+          : thread.messages.map(bubble).join('')
+      convEl.scrollTop = convEl.scrollHeight
+    }
+
+    const renderThreads = (threads: ThreadSummary[], activeId: string | null) => {
+      threadsEl.innerHTML =
+        threads.length === 0
+          ? '<li class="px-2 py-1 text-base-content/40">No chats yet</li>'
+          : threads
+              .map(
+                (t) =>
+                  `<li><button type="button" class="${t.id === activeId ? 'menu-active' : ''}" data-thread-id="${esc(t.id)}">${esc(t.title || 'Untitled')}</button></li>`,
+              )
+              .join('')
+    }
+
+    const fetchThread = async (id: string): Promise<Thread | null> => {
+      const res = await fetch(`/api/spaces/${spaceId}/chat/threads/${encodeURIComponent(id)}`)
+      if (!res.ok) return null
+      const data = (await res.json()) as { thread: Thread }
+      return data.thread
+    }
+
+    const refreshOpenThread = async () => {
+      if (!currentThreadId) return
+      const thread = await fetchThread(currentThreadId)
+      if (!thread) return
+      renderConversation(thread)
+      if (!thread.messages.some((m) => m.status === 'pending')) stopPoll()
+    }
+
+    const startPoll = () => {
+      stopPoll()
+      pollTimer = setInterval(refreshOpenThread, 2000)
+    }
+
+    const selectThread = async (id: string, threads?: ThreadSummary[]) => {
+      currentThreadId = id
+      stopPoll()
+      input.disabled = false
+      sendBtn.disabled = false
+      if (threads) renderThreads(threads, id)
+      else threadsEl.querySelectorAll('button[data-thread-id]').forEach((b) =>
+        b.classList.toggle('menu-active', (b as HTMLElement).dataset.threadId === id),
+      )
+      convEl.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
+      const thread = await fetchThread(id)
+      if (thread) {
+        renderConversation(thread)
+        if (scopeSel) {
+          scopeSel.disabled = false
+          scopeSel.value = thread.scope?.baseIds?.[0] ?? ''
+        }
+        if (renameBtn) renameBtn.disabled = false
+        if (archiveBtn) archiveBtn.disabled = false
+        if (thread.messages.some((m) => m.status === 'pending')) startPoll()
+      }
+    }
+
+    const loadThreads = async (selectFirst = false): Promise<ThreadSummary[]> => {
+      const res = await fetch(`/api/spaces/${spaceId}/chat/threads`)
+      if (!res.ok) {
+        threadsEl.innerHTML =
+          res.status === 403
+            ? '<li class="px-2 py-1 text-base-content/50">Pro plan required.</li>'
+            : '<li class="px-2 py-1 text-error">Could not load chats.</li>'
+        return []
+      }
+      const data = (await res.json()) as { threads: ThreadSummary[] }
+      // Tell the export control what "Everything" means (read live).
+      const xpRoot = document.querySelector<HTMLElement>('[data-export-tab="chat"]')
+      if (xpRoot) xpRoot.dataset.exportTotal = String(data.threads.length)
+      renderThreads(data.threads, currentThreadId)
+      if (selectFirst && data.threads.length > 0 && !currentThreadId) {
+        await selectThread(data.threads[0]!.id, data.threads)
+      }
+      return data.threads
+    }
+
+    threadsEl.addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-thread-id]')
+      if (btn?.dataset.threadId) selectThread(btn.dataset.threadId)
+    })
+
+    newBtn.addEventListener('click', async () => {
+      setButtonLoading(newBtn, true)
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/chat/threads`, { method: 'POST' })
+        if (!res.ok) return
+        const { id } = (await res.json()) as { id: string }
+        currentThreadId = null
+        const threads = await loadThreads()
+        await selectThread(id, threads)
+        input.focus()
+      } finally {
+        setButtonLoading(newBtn, false)
+      }
+    })
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      const message = input.value.trim()
+      if (!message || !currentThreadId) return
+      input.value = ''
+      sendBtn.disabled = true
+      // Optimistic: show the user message + a pending assistant bubble.
+      convEl.insertAdjacentHTML(
+        'beforeend',
+        bubble({ id: 'tmp', role: 'user', status: 'complete', content: message }) +
+          bubble({ id: 'tmp2', role: 'assistant', status: 'pending', content: '' }),
+      )
+      convEl.scrollTop = convEl.scrollHeight
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/chat/send`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ threadId: currentThreadId, message }),
+        })
+        if (res.ok) {
+          await refreshOpenThread()
+          startPoll()
+          loadThreads() // titles may update from the first message
+        } else {
+          await refreshOpenThread()
+        }
+      } finally {
+        sendBtn.disabled = false
+      }
+    })
+
+    // Scope the thread's context to a base (or Whole Space). Engine reads
+    // thread.scope on the next turn (web-chat-tab scoped-context).
+    scopeSel?.addEventListener('change', async () => {
+      if (!currentThreadId) return
+      const v = scopeSel.value
+      await fetch(`/api/spaces/${spaceId}/chat/threads/${encodeURIComponent(currentThreadId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ scope: v ? { baseIds: [v] } : null, attachedDocIds: [] }),
+      })
+    })
+
+    renameBtn?.addEventListener('click', async () => {
+      if (!currentThreadId) return
+      const title = window.prompt('Rename chat')?.trim()
+      if (!title) return
+      const res = await fetch(`/api/spaces/${spaceId}/chat/threads/${encodeURIComponent(currentThreadId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title }),
+      })
+      if (res.ok) loadThreads()
+    })
+
+    archiveBtn?.addEventListener('click', async () => {
+      if (!currentThreadId) return
+      const res = await fetch(`/api/spaces/${spaceId}/chat/threads/${encodeURIComponent(currentThreadId)}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ archived: true }),
+      })
+      if (res.ok) {
+        currentThreadId = null
+        stopPoll()
+        convEl.innerHTML = '<p class="text-base-content/50">Chat archived. Pick or start another on the left.</p>'
+        input.disabled = true
+        sendBtn.disabled = true
+        if (scopeSel) scopeSel.disabled = true
+        if (renameBtn) renameBtn.disabled = true
+        if (archiveBtn) archiveBtn.disabled = true
+        loadThreads()
+      }
+    })
+
+    let loaded = false
+    // Lazy-load on first open — fired by the Chat History tab AND the header
+    // "Ask about your schema" launcher (which clicks this tab).
+    const chatTabBtn = document.querySelector<HTMLButtonElement>('[data-tab="chat"]')
+    chatTabBtn?.addEventListener('click', () => {
+      if (!loaded) {
+        loaded = true
+        loadThreads(true)
+      }
+    })
+  }
+</script>

@@ -20,6 +20,8 @@ export interface OAuthHandoffPayload {
   spaceId: string
   userId: string
   redirectUri: string
+  /** Same-origin path to redirect the browser to after OAuth succeeds. */
+  returnTo?: string
 }
 
 export async function sealHandoffPayload(

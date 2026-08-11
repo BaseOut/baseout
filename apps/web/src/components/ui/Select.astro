@@ -62,7 +62,7 @@ const describedBy = error ? `${elId}-error` : hint ? `${elId}-hint` : undefined;
 
   {icon ? (
     <label class={selectClasses}>
-      <span class="material-symbols-outlined icon-md opacity-50">{icon}</span>
+      <span class={`iconify lucide--${icon} icon-md opacity-50`} aria-hidden="true"></span>
       <select
         id={elId}
         name={name}
@@ -101,7 +101,7 @@ const describedBy = error ? `${elId}-error` : hint ? `${elId}-hint` : undefined;
 
   {error && (
     <p id={`${elId}-error`} class="fieldset-label text-error flex items-center gap-1" role="alert">
-      <span class="material-symbols-outlined icon-sm">error</span>
+      <span class="iconify lucide--circle-alert icon-sm" aria-hidden="true"></span>
       {error}
     </p>
   )}

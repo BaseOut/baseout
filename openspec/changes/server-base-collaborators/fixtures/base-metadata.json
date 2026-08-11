@@ -1,0 +1,93 @@
+{
+  "_fixture": "PROVISIONAL — built from Airtable Meta API docs (2026-07-29), not a live capture. Run ../spike.mjs against a base with a group, an invite link, and an interface to confirm/replace. `_`-prefixed keys are notes.",
+  "_source": "GET /v0/meta/bases/{baseId}?include=collaborators&include=inviteLinks&include=interfaces&include=packages",
+  "id": "appABCDEF12345678",
+  "name": "Projects DB",
+  "workspaceId": "wspABCDEF12345678",
+  "createdTime": "2026-01-15T09:00:00.000Z",
+  "permissionLevel": "owner",
+  "individualCollaborators": {
+    "baseCollaborators": [
+      {
+        "userId": "usrBASE1111111111",
+        "email": "base.editor@example.com",
+        "permissionLevel": "edit",
+        "grantedByUserId": "usrOWNER00000000",
+        "createdTime": "2026-02-01T10:00:00.000Z"
+      }
+    ],
+    "workspaceCollaborators": [
+      {
+        "userId": "usrWS1111111111111",
+        "email": "workspace.admin@example.com",
+        "permissionLevel": "owner",
+        "grantedByUserId": "usrOWNER00000000",
+        "createdTime": "2026-01-15T09:05:00.000Z"
+      }
+    ]
+  },
+  "groupCollaborators": {
+    "baseCollaborators": [],
+    "workspaceCollaborators": [
+      {
+        "groupId": "ugpGROUP111111111",
+        "name": "Engineering",
+        "permissionLevel": "edit",
+        "grantedByUserId": "usrOWNER00000000",
+        "createdTime": "2026-01-20T12:00:00.000Z"
+      }
+    ]
+  },
+  "inviteLinks": {
+    "baseInviteLinks": [
+      {
+        "id": "invBASE1111111111",
+        "invitedEmail": null,
+        "permissionLevel": "comment",
+        "referredByUserId": "usrOWNER00000000",
+        "restrictedToEmailDomains": ["example.com"],
+        "type": "multiUse",
+        "createdTime": "2026-03-01T08:00:00.000Z"
+      }
+    ],
+    "workspaceInviteLinks": []
+  },
+  "interfaces": {
+    "pbdINTERFACE111111": {
+      "individualCollaborators": [
+        {
+          "userId": "usrIFACE111111111",
+          "email": "interface.viewer@example.com",
+          "permissionLevel": "read",
+          "grantedByUserId": "usrOWNER00000000",
+          "createdTime": "2026-04-01T11:00:00.000Z"
+        }
+      ],
+      "groupCollaborators": [],
+      "inviteLinks": [
+        {
+          "id": "invIFACE111111111",
+          "invitedEmail": "guest@partner.com",
+          "permissionLevel": "read",
+          "referredByUserId": "usrOWNER00000000",
+          "restrictedToEmailDomains": [],
+          "type": "singleUse",
+          "createdTime": "2026-04-02T11:00:00.000Z"
+        }
+      ]
+    }
+  },
+  "packages": { "_note": "shape unpinned per design Decision 5 — retained raw, not modeled" },
+  "collaborators": {
+    "_note": "DEPRECATED top-level block; when present it duplicates individualCollaborators. Ingestion reads it ONLY as a fallback (unique grant key blocks double-count).",
+    "baseCollaborators": [
+      {
+        "userId": "usrBASE1111111111",
+        "email": "base.editor@example.com",
+        "permissionLevel": "edit",
+        "grantedByUserId": "usrOWNER00000000",
+        "createdTime": "2026-02-01T10:00:00.000Z"
+      }
+    ]
+  }
+}

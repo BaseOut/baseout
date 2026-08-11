@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Multi-panel Schema Drawer — Navigation &amp; Management Ideas (Track B)</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --ink:#e7eaf0; --muted:#9aa3b2; --faint:#6c7686;
+    --accent:#4f8cff; --accent2:#7c5cff; --good:#37b978; --warn:#e0a83a; --bad:#e05a5a;
+    --radius:10px; --maxw:1080px;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f6f7f9; --panel:#fff; --panel2:#f0f2f5; --line:#e2e6ec;
+      --ink:#1a1e27; --muted:#5a6473; --faint:#8a93a3; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:0 20px 80px}
+  .wrap{max-width:var(--maxw);margin:0 auto}
+  header.top{padding:48px 0 24px;border-bottom:1px solid var(--line);margin-bottom:8px}
+  h1{font-size:30px;line-height:1.2;margin:0 0 10px;letter-spacing:-0.02em}
+  h2{font-size:22px;margin:44px 0 6px;letter-spacing:-0.01em;padding-top:14px;border-top:1px solid var(--line)}
+  h3{font-size:16px;margin:24px 0 4px}
+  .lede{color:var(--muted);font-size:16px;max-width:70ch}
+  .kicker{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);font-weight:600}
+  p{max-width:74ch}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{background:var(--panel2);padding:1px 6px;border-radius:5px;font-size:13px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .meta{color:var(--faint);font-size:13px;margin-top:8px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+    padding:16px 18px;margin:14px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+  ul{padding-left:20px}
+  li{margin:5px 0;max-width:72ch}
+  .tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;
+    border:1px solid var(--line);color:var(--muted);margin-right:6px;vertical-align:middle}
+  .tag.proven{color:var(--good);border-color:color-mix(in srgb,var(--good) 45%,transparent)}
+  .tag.spec{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
+  .tag.fit{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14px}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-weight:600}
+  .rank{font-variant-numeric:tabular-nums;font-weight:700;color:var(--accent)}
+  .src{font-size:13px}
+  .src li{margin:3px 0}
+  .callout{border-left:3px solid var(--accent);background:var(--panel);padding:12px 16px;border-radius:0 8px 8px 0;margin:16px 0}
+  .callout.rec{border-left-color:var(--good)}
+  .toc{columns:2;column-gap:28px;font-size:14px;margin:14px 0}
+  @media(max-width:600px){.toc{columns:1}}
+  .toc a{display:block;padding:2px 0}
+  /* diagram */
+  .diagram{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin:16px 0;overflow-x:auto}
+  .strip{display:flex;gap:8px;align-items:stretch;min-width:640px}
+  .pane{flex:1;min-width:120px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;color:var(--muted)}
+  .pane.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .pane .ph{color:var(--ink);font-weight:600;font-size:12px;margin-bottom:6px;display:flex;justify-content:space-between}
+  .pane .x{color:var(--faint)}
+  .stack{position:relative;width:150px;flex:0 0 150px}
+  .stack .s{position:absolute;top:0;left:0;right:0;background:var(--panel2);border:1px solid var(--line);border-radius:8px;height:120px}
+  .stack .s:nth-child(1){transform:translate(0,0);z-index:3}
+  .stack .s:nth-child(2){transform:translate(6px,6px);z-index:2;opacity:.7}
+  .stack .s:nth-child(3){transform:translate(12px,12px);z-index:1;opacity:.45}
+  .rail{flex:0 0 42px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 0;color:var(--faint);font-size:11px}
+  .cap{font-size:12px;color:var(--faint);margin-top:8px}
+  footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="kicker">Baseout · Schema · Track B research</div>
+  <h1>Managing a Workspace of Side-by-Side Schema Panels</h1>
+  <p class="lede">Broader navigation &amp; management patterns for the EntityPanel drawer as it evolves from a
+  parent-child cap-2 model into <strong>multiple independent panels for side-by-side comparison</strong> of bases,
+  tables and fields. Density target: Linear / Vercel / Plaid. Read-only inspection tool.</p>
+  <div class="meta">2026-07-09 · research only, no code changes · every claim links a source · speculative ideas flagged</div>
+</header>
+
+<div class="card">
+  <strong>How to read this</strong>
+  <div class="toc">
+    <a href="#summary">Executive summary</a>
+    <a href="#d1">1 · Navigating between panels</a>
+    <a href="#d2">2 · Adding to a comparison</a>
+    <a href="#d3">3 · Managing panels</a>
+    <a href="#d4">4 · Resizing &amp; layout</a>
+    <a href="#d5">5 · Overflow — too many panels</a>
+    <a href="#ideas">Ranked ideas for Baseout</a>
+    <a href="#rec">Overflow recommendation</a>
+    <a href="#sources">Sources</a>
+  </div>
+  <p style="margin:6px 0 0"><span class="tag proven">proven</span> a shipping product does this &nbsp;
+  <span class="tag spec">speculative</span> our idea, not observed in a shipping product &nbsp;
+  <span class="tag fit">fit</span> notes on Baseout suitability</p>
+</div>
+
+<!-- ============ SUMMARY ============ -->
+<h2 id="summary">Executive summary</h2>
+<p>The single most useful finding: <strong>the AI-model "playground" is a nearly exact analog of what Baseout needs</strong>.
+Braintrust, Chatbase and Cloudflare's AI Gateway all render <em>N independent, equally-weighted panels in a horizontal
+strip</em>, each with its own header, a per-panel close <code>×</code>, an <strong>"Add an instance" / "+"</strong> to append a
+new one, a <strong>per-panel "Sync" toggle</strong> so scrolling/input mirrors across panels, and workspace-level
+<strong>"Reset" / "Clear all"</strong> controls
+(<a href="https://mobbin.com/screens/d04586a4-5e3b-472e-b63b-069e15c7ee7d">Chatbase compare</a>,
+<a href="https://mobbin.com/screens/020268fc-33e9-4d18-aab1-8a3da90900fb">Cloudflare AI Playground</a>,
+<a href="https://mobbin.com/screens/74b1df2b-1ab0-41d3-92f7-4a353740948e">Braintrust</a>). That is the closest shipped
+precedent to a schema-entity comparison workspace, and most of the mechanics below are already validated there.</p>
+
+<p>Across the five dimensions the recommendations converge on a coherent model for a dense admin tool:</p>
+<ul>
+  <li><strong>Navigation:</strong> a persistent <em>panel-header strip</em> (each panel is self-labeling) plus keyboard cycling; a "which is active" ring; a jump/overflow menu once panels exceed the viewport.</li>
+  <li><strong>Adding:</strong> keep the literal "+" but pair it with a <em>"Compare with…" picker</em> (HubSpot's explicit compare-picker, capped at N) and <em>multi-select → open side-by-side</em> from the schema list.</li>
+  <li><strong>Managing:</strong> per-panel <code>×</code>, plus <em>close-others / close-all</em>, drag-reorder, pin, and <em>save-a-set</em> (a named comparison you can reopen) — all with precedent.</li>
+  <li><strong>Layout:</strong> equal widths by default, drag-dividers for weighting, <em>collapse-to-rail</em> for a parked panel, and one-panel focus/full-width — all standard in <code>react-resizable-panels</code>-class libraries and VS Code editor groups.</li>
+  <li><strong>Overflow (the hard one):</strong> <strong>cap the tiled panels at what fits (≈2–4), horizontally scroll a panel strip beyond that, collapse older panels to a rail, and expose everything through an overflow menu.</strong> This is the union of the AI-playground strip and VS Code's tab-overflow model, and it degrades gracefully — see the <a href="#rec">recommendation</a>.</li>
+</ul>
+
+<!-- ============ D1 ============ -->
+<h2 id="d1">1 · Navigating between panels</h2>
+<p>Once there is more than one panel, the user needs to answer three things constantly: <em>which panel am I acting
+on, how do I move focus, and how do I reach one that's off-screen.</em></p>
+
+<div class="grid2">
+  <div class="card">
+    <h3>Self-labeling panel headers + active ring</h3>
+    <p>The playground pattern gives every panel a header with the entity name and its own controls; the focused one
+    is distinguished visually. Because each schema panel already shows a base/table/field name, the <em>strip of
+    headers is itself the tab bar</em> — no separate tab row needed.</p>
+    <p class="meta"><span class="tag proven">proven</span>
+    <a href="https://mobbin.com/screens/74b1df2b-1ab0-41d3-92f7-4a353740948e">Braintrust</a>,
+    <a href="https://mobbin.com/screens/020268fc-33e9-4d18-aab1-8a3da90900fb">Cloudflare</a>
+    · <span class="tag fit">fit</span> zero new chrome</p>
+  </div>
+  <div class="card">
+    <h3>Keyboard cycling &amp; close</h3>
+    <p>Detail panels routinely bind focus/close to keys — Notion's side peek documents <em>Ctrl-Shift-\</em> to close,
+    and IDEs cycle editor groups with keyboard commands. For a power-user ops tool, <code>[</code>/<code>]</code> or
+    <code>⌘1…9</code> to focus the nth panel and <code>⌘W</code> to close the focused one are cheap and expected.</p>
+    <p class="meta"><span class="tag proven">proven</span>
+    <a href="https://www.makeuseof.com/change-notion-side-peek-setting/">Notion side peek</a>,
+    <a href="https://code.visualstudio.com/docs/getstarted/userinterface">VS Code</a></p>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Breadcrumb / hierarchy context per panel</h3>
+  <p>Because Baseout entities live in a strict hierarchy (<code>Base → Table → Field</code>), each panel header can carry a
+  compact breadcrumb so a lone Field panel still says which Table and Base it belongs to. This is the two-panel-selector
+  discipline — list context on one side, detail on the other — applied per panel.
+  <span class="tag proven">proven</span> <a href="https://mapuipatterns.com/side-by-side/">Side-by-side pattern</a>,
+  <a href="https://medium.com/design-bootcamp/side-by-side-exploring-the-power-of-the-two-panel-selector-in-ux-design-5cf8b1905bae">two-panel selector</a></p>
+</div>
+
+<div class="callout">
+  <strong>Minimap / overview:</strong> a small "N panels open" indicator that expands to a list of all open panels
+  (jump-to on click) becomes worthwhile only past ~4 panels. Precedent is Stage Manager's thumbnail strip and command-palette
+  "recents". Treat as a <span class="tag spec">speculative</span> add-on gated on the overflow case, not a v1 requirement.
+  (<a href="https://support.apple.com/guide/mac-help/use-stage-manager-mchl534ba392/mac">Stage Manager</a>)
+</div>
+
+<!-- ============ D2 ============ -->
+<h2 id="d2">2 · Adding to a comparison</h2>
+<p>The literal ask is a "+". The research says a "+" alone is the <em>weakest</em> affordance because it doesn't tell the
+user <em>what</em> they'll add. Pair it with a picker and with multi-select entry points.</p>
+
+<table>
+  <tr><th>Affordance</th><th>What it does</th><th>Precedent</th><th>Fit for Baseout</th></tr>
+  <tr>
+    <td><strong>"+" / "Add an instance"</strong></td>
+    <td>Appends an empty panel; user then picks an entity inside it.</td>
+    <td><span class="tag proven">proven</span> <a href="https://mobbin.com/screens/d04586a4-5e3b-472e-b63b-069e15c7ee7d">Braintrust / Chatbase "Add an instance"</a></td>
+    <td>Keep — but empty panel needs an EntitySearch typeahead inside it.</td>
+  </tr>
+  <tr>
+    <td><strong>"Compare with…" picker</strong></td>
+    <td>From an open panel, a dropdown adds a <em>specific</em> sibling; caps the count and shows "add up to N".</td>
+    <td><span class="tag proven">proven</span> <a href="https://mobbin.com/screens/71fd8100-4478-45c9-a368-c2a8300c5dc1">HubSpot "Compare posts — add up to 10"</a></td>
+    <td>Strong fit; reuse the existing EntitySearch typeahead as the picker.</td>
+  </tr>
+  <tr>
+    <td><strong>Multi-select → "Open side-by-side"</strong></td>
+    <td>Check several rows in the schema table, one action opens them all as panels.</td>
+    <td><span class="tag proven">proven</span> SAP Fiori comparison pattern (select items → compare) <a href="https://www.sap.com/design-system/fiori-design-web/v1-120/ui-elements/comparison-pattern">Fiori</a></td>
+    <td>High value for "compare all fields of a type" — matches the ops use case.</td>
+  </tr>
+  <tr>
+    <td><strong>Drag row into the panel strip</strong></td>
+    <td>Drag a table/field from the list onto the strip to open it as a panel; drag onto an existing panel to swap.</td>
+    <td><span class="tag proven">proven</span> VS Code drag-file-to-split <a href="https://code.visualstudio.com/docs/getstarted/userinterface">VS Code</a>; Mindtrip "drag any place from chat into itinerary" <a href="https://mobbin.com/screens/66fd64e4-2a7b-4a09-900d-c8336501bba3">Mindtrip</a></td>
+    <td>Nice-to-have; discoverability is poor without a hint — secondary to the picker.</td>
+  </tr>
+  <tr>
+    <td><strong>Recents / pinned entities</strong></td>
+    <td>The "+" menu surfaces recently-viewed and pinned entities first for one-click re-add.</td>
+    <td><span class="tag proven">proven</span> command-palette Home = recents + pinned <a href="https://learn.microsoft.com/en-us/windows/powertoys/command-palette/overview">PowerToys Command Palette</a></td>
+    <td>Cheap and high-value for repeat inspection loops.</td>
+  </tr>
+</table>
+
+<!-- ============ D3 ============ -->
+<h2 id="d3">3 · Managing panels (open / close / reorder / persist)</h2>
+<div class="grid2">
+  <div class="card">
+    <h3>Per-panel close + close-others / close-all</h3>
+    <p>Each panel header carries an <code>×</code>; the workspace carries "Reset" / "Clear all". The browser-tab
+    right-click set — <em>Close, Close Others, Close to the Right, Close All</em> — is the mature vocabulary and users
+    already know it.</p>
+    <p class="meta"><span class="tag proven">proven</span>
+    <a href="https://mobbin.com/screens/74b1df2b-1ab0-41d3-92f7-4a353740948e">Braintrust "Clear all / Reset"</a>,
+    <a href="https://code.visualstudio.com/docs/getstarted/userinterface">VS Code close-group</a></p>
+  </div>
+  <div class="card">
+    <h3>Drag-reorder + duplicate</h3>
+    <p>VS Code lets you drag editor tabs/groups to reorder and reposition. Duplicating a panel (same entity, second
+    copy) is useful to compare two <em>states</em> of one entity — e.g. current vs a changelog snapshot.</p>
+    <p class="meta"><span class="tag proven">proven</span> reorder — <a href="https://code.visualstudio.com/docs/configure/custom-layout">VS Code custom layout</a>
+    · <span class="tag spec">speculative</span> duplicate-for-diff in a schema tool</p>
+  </div>
+  <div class="card">
+    <h3>Save-a-set / named comparison</h3>
+    <p>A saved set of panels you can reopen ("Airtable → Orders vs Line Items"). Direct precedent: Edge/Arc
+    <em>Workspaces</em> persist by default where tab groups don't; terminal tools (Warp, tmux-resurrect) save and
+    restore named window/pane layouts by name.</p>
+    <p class="meta"><span class="tag proven">proven</span>
+    <a href="https://wisechecker.com/edge-tab-groups-vanish-restart-persist-them/">Edge Workspaces</a>,
+    <a href="https://docs.warp.dev/terminal/sessions/">Warp sessions</a></p>
+  </div>
+  <div class="card">
+    <h3>Persist across reload</h3>
+    <p>Layout libraries (<code>react-resizable-panels</code>) ship localStorage persistence; VS Code "remembers the layout
+    across sessions". For a read-only inspector, persisting <em>which panels + their widths</em> to localStorage is low-risk
+    and removes the "set it up again every time" tax.</p>
+    <p class="meta"><span class="tag proven">proven</span>
+    <a href="https://viprasol.com/blog/react-resizable-panels/">react-resizable-panels</a>,
+    <a href="https://code.visualstudio.com/docs/getstarted/userinterface">VS Code</a></p>
+  </div>
+</div>
+<p><em>Detach</em> (pop a panel into its own window) is common in IDEs but is heavy for a web admin tool and low-value
+for read-only inspection — <span class="tag spec">speculative</span>, recommend deferring.</p>
+
+<!-- ============ D4 ============ -->
+<h2 id="d4">4 · Resizing &amp; layout</h2>
+<p>This dimension is the most solved. The <code>react-resizable-panels</code> / shadcn Resizable / Ant Splitter family
+gives, out of the box, exactly the toolkit needed:</p>
+<ul>
+  <li><strong>Drag-dividers</strong> between panels with <code>col-resize</code> cursor affordance; keyboard-resizable and ARIA-announced.</li>
+  <li><strong>Equal vs weighted widths</strong> — default to equal; let a divider drag give one panel more room (e.g. the field with a long formula).</li>
+  <li><strong>Collapse-to-rail</strong> — <code>collapsedSize</code> parks a panel as a thin labeled rail instead of hiding it (double-click divider to collapse/expand).</li>
+  <li><strong>Full-screen one panel</strong> — a "focus / maximize" that hides the rest, mirroring Stage Manager's centered window and VS Code's maximize-group.</li>
+  <li><strong>Min/max constraints + snapping + persisted sizes</strong> so panels never collapse to unreadable slivers.</li>
+</ul>
+<p class="meta"><span class="tag proven">proven</span>
+<a href="https://viprasol.com/blog/react-resizable-panels/">react-resizable-panels</a>,
+<a href="https://reui.io/components/resizable">shadcn / ReUI Resizable</a>,
+<a href="https://ant.design/components/splitter/">Ant Design Splitter</a></p>
+
+<div class="callout">
+  <strong>Responsive / mobile:</strong> side-by-side breaks down on narrow viewports. The tabs research is blunt — past
+  ~4–5 targets a row is cramped and horizontal scroll is the honest fallback. On mobile, <em>collapse the comparison to a
+  single-panel view with a tab strip / swipe between panels</em> (Microsoft dual-view guidance: on one screen, fall back to a
+  master-detail single pane).
+  <span class="tag proven">proven</span>
+  <a href="https://blog.logrocket.com/ux-design/tabs-ux-best-practices/">tabs UX</a>,
+  <a href="https://learn.microsoft.com/en-us/dual-screen/design/dual-view">MS dual-view</a>.
+  This matches the existing Schema decision that mobile falls back to primitive tab scroll.
+</div>
+
+<h3>Sync / linked panels (comparison super-power)</h3>
+<p>Diff tools and the AI playgrounds both offer <strong>synchronized scrolling + a per-panel Sync toggle</strong> so the panes
+stay aligned while you compare, plus a <strong>Diff highlight</strong> mode. For schema, a "sync sections" toggle (scroll all panels
+to the same section — Fields, Relationships, Health) and a "diff" mode that highlights where two tables/fields differ would
+be genuinely differentiating.
+<span class="tag proven">proven (adjacent domain)</span>
+<a href="https://mobbin.com/screens/74b1df2b-1ab0-41d3-92f7-4a353740948e">Braintrust Sync/Diff toggles</a>,
+<a href="https://www.araxis.com/merge/index.en">Araxis 2/3-way</a>, Beyond Compare / Meld synced scroll
+(<a href="https://graphite.com/guides/comprehensive-guide-to-diff-tools">diff-tools guide</a>).</p>
+
+<!-- ============ D5 ============ -->
+<h2 id="d5">5 · Overflow — the hard open question</h2>
+<p>What happens at 5, 8, 12 panels? The candidate strategies, with their real-world owners:</p>
+
+<table>
+  <tr><th>Strategy</th><th>How it behaves</th><th>Precedent</th><th>Verdict for Baseout</th></tr>
+  <tr>
+    <td><strong>Horizontal scroll of a panel strip</strong></td>
+    <td>Panels keep a readable min-width; the strip scrolls, with a "peek" of the next panel as the affordance.</td>
+    <td><span class="tag proven">proven</span> AI playgrounds add instances into a scrolling strip; tabs-UX endorses scroll-with-peek <a href="https://css-tricks.com/container-adapting-tabs-with-more-button/">CSS-Tricks</a></td>
+    <td><strong>Primary.</strong> Keeps panels legible; matches the closest analog.</td>
+  </tr>
+  <tr>
+    <td><strong>Overflow "More ▾" menu</strong></td>
+    <td>Panels beyond what fits collapse into a dropdown list; select to bring one into view.</td>
+    <td><span class="tag proven">proven</span> container-adapting tabs "More" button <a href="https://css-tricks.com/container-adapting-tabs-with-more-button/">CSS-Tricks</a></td>
+    <td><strong>Secondary.</strong> The jump-to list; pairs with scroll, not instead of.</td>
+  </tr>
+  <tr>
+    <td><strong>Collapse-to-rail (accordion)</strong></td>
+    <td>Older/unfocused panels shrink to a thin labeled rail; click to re-expand.</td>
+    <td><span class="tag proven">proven</span> resizable <code>collapsedSize</code> rail <a href="https://reui.io/components/resizable">ReUI</a></td>
+    <td><strong>Good companion</strong> — keeps context visible without spending width.</td>
+  </tr>
+  <tr>
+    <td><strong>Stage-Manager stacks</strong></td>
+    <td>Off-stage panels become a thumbnail rail; the center holds the active few; groupings remembered.</td>
+    <td><span class="tag proven">proven</span> <a href="https://support.apple.com/guide/mac-help/use-stage-manager-mchl534ba392/mac">macOS Stage Manager</a> (≤6 thumbnails)</td>
+    <td><span class="tag spec">speculative</span> for web admin — elegant but heavy; over-produced for a dense tool.</td>
+  </tr>
+  <tr>
+    <td><strong>Hard cap (refuse the N+1th)</strong></td>
+    <td>Enforce a max (e.g. 4); adding beyond it prompts to close one, or the oldest auto-closes.</td>
+    <td><span class="tag proven">proven</span> HubSpot "up to 10"; tabs-UX "set a hard limit" <a href="https://blog.logrocket.com/ux-design/tabs-ux-best-practices/">LogRocket</a></td>
+    <td><strong>Use as a soft cap</strong> on <em>tiled</em> panels, not on total open.</td>
+  </tr>
+</table>
+
+<div class="diagram" aria-label="Recommended overflow layout">
+  <div class="strip">
+    <div class="rail">rail<br>▤<br>▤</div>
+    <div class="pane active"><div class="ph">Orders <span class="x">×</span></div>Table · focused</div>
+    <div class="pane"><div class="ph">Line Items <span class="x">×</span></div>Table · tiled</div>
+    <div class="pane" style="opacity:.6"><div class="ph">Customers <span class="x">×</span></div>peek →</div>
+    <div class="stack" title="overflow stack">
+      <div class="s"></div><div class="s"></div><div class="s"></div>
+    </div>
+  </div>
+  <div class="cap">Recommended composition: collapsed rail (parked panels) · 2–3 tiled readable panels with active-ring ·
+  a peek of the next panel · an overflow stack/menu ("+3 more") for the rest. Strip scrolls horizontally.</div>
+</div>
+
+<!-- ============ IDEAS ============ -->
+<h2 id="ideas">Ranked ideas to consider for Baseout</h2>
+<table>
+  <tr><th>#</th><th>Idea</th><th>Precedent</th><th>Effort / Impact</th><th>Proven?</th></tr>
+  <tr>
+    <td class="rank">1</td>
+    <td><strong>Panel strip = the tab bar.</strong> Self-labeling panel headers (name + breadcrumb + <code>×</code>), an active ring, and keyboard focus/close. No separate tab row.</td>
+    <td>AI playgrounds; VS Code editor groups; Notion peek shortcuts</td>
+    <td>Low / High</td>
+    <td><span class="tag proven">proven</span></td>
+  </tr>
+  <tr>
+    <td class="rank">2</td>
+    <td><strong>"Compare with…" picker + multi-select "Open side-by-side."</strong> Reuse EntitySearch; cap and show "add up to N"; let list-row multi-select open several panels at once.</td>
+    <td>HubSpot compare-posts; SAP Fiori comparison</td>
+    <td>Low-Med / High</td>
+    <td><span class="tag proven">proven</span></td>
+  </tr>
+  <tr>
+    <td class="rank">3</td>
+    <td><strong>Scroll-strip + collapse-to-rail + overflow menu</strong> as the unified overflow model (see recommendation).</td>
+    <td>CSS-Tricks adaptive tabs; ReUI rail; AI-playground strip</td>
+    <td>Med / High</td>
+    <td><span class="tag proven">proven</span></td>
+  </tr>
+  <tr>
+    <td class="rank">4</td>
+    <td><strong>Drag-divider resize with persisted widths + focus/maximize one panel.</strong> Equal by default, weight on demand, one-panel focus mode.</td>
+    <td>react-resizable-panels; Stage Manager center; VS Code maximize</td>
+    <td>Low (library) / Med-High</td>
+    <td><span class="tag proven">proven</span></td>
+  </tr>
+  <tr>
+    <td class="rank">5</td>
+    <td><strong>"Sync sections" toggle + Diff highlight</strong> across panels — scroll all panels to the same schema section; highlight where two entities differ.</td>
+    <td>Braintrust Sync/Diff; Araxis/Meld synced-scroll diff</td>
+    <td>Med / High (differentiator)</td>
+    <td><span class="tag spec">speculative</span> (proven in diff/LLM domains, not yet for schema)</td>
+  </tr>
+  <tr>
+    <td class="rank">6</td>
+    <td><strong>Save-a-set + persist across reload.</strong> Name a comparison, reopen it; remember panels &amp; widths in localStorage.</td>
+    <td>Edge/Arc Workspaces; Warp/tmux-resurrect; react-resizable-panels persistence</td>
+    <td>Med / Med-High</td>
+    <td><span class="tag proven">proven</span></td>
+  </tr>
+  <tr>
+    <td class="rank">7</td>
+    <td><strong>"+" menu with recents + pinned entities</strong> for one-click re-add during repeat inspection loops.</td>
+    <td>PowerToys Command Palette Home (recents + pinned)</td>
+    <td>Low / Med</td>
+    <td><span class="tag proven">proven</span></td>
+  </tr>
+  <tr>
+    <td class="rank">8</td>
+    <td><strong>Duplicate-panel-for-diff</strong> — open the same entity twice to compare current vs a changelog snapshot. (Depends on snapshot data existing.)</td>
+    <td>Diff 2-up tools; VS Code duplicate editor</td>
+    <td>Med / Med</td>
+    <td><span class="tag spec">speculative</span></td>
+  </tr>
+  <tr>
+    <td class="rank">9</td>
+    <td><strong>Stage-Manager thumbnail rail / detach-to-window.</strong> Elegant but heavy; risks over-producing a dense utility tool.</td>
+    <td>macOS Stage Manager; IDE detach</td>
+    <td>High / Low-Med</td>
+    <td><span class="tag spec">speculative — recommend defer</span></td>
+  </tr>
+</table>
+
+<!-- ============ REC ============ -->
+<h2 id="rec">Overflow strategy — concrete recommendation</h2>
+<div class="callout rec">
+  <p style="margin-top:0"><strong>Adopt a "scrolling strip with a soft tile-cap, a collapse rail, and an overflow menu."</strong>
+  Concretely:</p>
+  <ol>
+    <li><strong>Give every panel a readable min-width</strong> (e.g. ~320px). The panel strip lays them out horizontally.</li>
+    <li><strong>Tile as many as fit</strong> the work area (typically 2–4 at Baseout's density), with the focused panel carrying an active ring. Show a <strong>peek of the next panel</strong> as the scroll affordance.</li>
+    <li><strong>Beyond what fits, the strip scrolls horizontally</strong> — no shrinking panels into illegibility. Panels the user has "parked" can <strong>collapse to a thin labeled rail</strong> to hold context cheaply.</li>
+    <li><strong>An overflow "N more ▾" control</strong> lists every open panel for jump-to (and reorder/close). This is also the mobile fallback: collapse to a single panel + this list as a tab strip.</li>
+    <li><strong>Soft-cap the count</strong> (offer to close the oldest at, say, the 6th–8th) rather than a hard refusal — matches HubSpot's "up to N" and the tabs-UX "set a limit" guidance without frustrating the power user.</li>
+  </ol>
+  <p style="margin-bottom:0">This is the union of the <em>closest shipped analog</em> (AI-model playgrounds add instances into a
+  scrolling strip) and the <em>most mature overflow vocabulary</em> (VS Code / adaptive-tabs scroll + "More" menu). It degrades
+  gracefully from 2 → many → mobile, needs no exotic component, and stays in the Linear/Vercel/Plaid register.
+  Reserve Stage-Manager stacks and window-detach as later, speculative flourishes only if users actually hit double-digit panels.</p>
+</div>
+
+<!-- ============ SOURCES ============ -->
+<h2 id="sources">Sources</h2>
+<div class="src">
+<h3>Closest analogs — multi-panel compare (Mobbin)</h3>
+<ul>
+  <li><a href="https://mobbin.com/screens/74b1df2b-1ab0-41d3-92f7-4a353740948e">Braintrust — playground, N panels + Sync + Diff toggles</a></li>
+  <li><a href="https://mobbin.com/screens/d04586a4-5e3b-472e-b63b-069e15c7ee7d">Chatbase — Compare, "Add an instance" / Clear all / Reset</a></li>
+  <li><a href="https://mobbin.com/screens/218e17de-51f8-4ba2-94e8-8c790c9e5162">Chatbase — 2-up compare, per-panel Sync</a></li>
+  <li><a href="https://mobbin.com/screens/020268fc-33e9-4d18-aab1-8a3da90900fb">Cloudflare AI Playground — 2 panels, per-panel collapse/+/×</a></li>
+  <li><a href="https://mobbin.com/screens/71fd8100-4478-45c9-a368-c2a8300c5dc1">HubSpot — Compare posts, "add up to 10", Select/Add picker</a></li>
+  <li><a href="https://mobbin.com/screens/66fd64e4-2a7b-4a09-900d-c8336501bba3">Mindtrip — split view, drag-item-into-panel</a></li>
+  <li><a href="https://mobbin.com/screens/0187bddc-8982-4a0e-9e18-581b7b5a8eb7">Dovetail — side peek panel</a></li>
+</ul>
+<h3>Navigation &amp; tabs</h3>
+<ul>
+  <li><a href="https://css-tricks.com/container-adapting-tabs-with-more-button/">CSS-Tricks — container-adapting tabs with a "More" button</a></li>
+  <li><a href="https://blog.logrocket.com/ux-design/tabs-ux-best-practices/">LogRocket — tabbed navigation best practices (limits, scroll vs dropdown)</a></li>
+  <li><a href="https://www.eleken.co/blog-posts/tabs-ux">Eleken — tabs UX best practices</a></li>
+  <li><a href="https://www.makeuseof.com/change-notion-side-peek-setting/">MakeUseOf — Notion side peek (Ctrl-Shift-\ close, peek modes)</a></li>
+</ul>
+<h3>Split panes, docking, resize</h3>
+<ul>
+  <li><a href="https://code.visualstudio.com/docs/getstarted/userinterface">VS Code — editor groups, drag-dock, remembers layout</a></li>
+  <li><a href="https://code.visualstudio.com/docs/configure/custom-layout">VS Code — custom layout / editor group layout</a></li>
+  <li><a href="https://viprasol.com/blog/react-resizable-panels/">react-resizable-panels — dividers, collapse, localStorage persist</a></li>
+  <li><a href="https://reui.io/components/resizable">ReUI / shadcn Resizable — collapsedSize rail</a></li>
+  <li><a href="https://ant.design/components/splitter/">Ant Design — Splitter</a></li>
+</ul>
+<h3>Comparison &amp; two-panel patterns</h3>
+<ul>
+  <li><a href="https://mapuipatterns.com/side-by-side/">Map UI Patterns — Side by side</a></li>
+  <li><a href="https://medium.com/design-bootcamp/side-by-side-exploring-the-power-of-the-two-panel-selector-in-ux-design-5cf8b1905bae">Two-panel selector in UX</a></li>
+  <li><a href="https://www.sap.com/design-system/fiori-design-web/v1-120/ui-elements/comparison-pattern">SAP Fiori — comparison pattern</a></li>
+  <li><a href="https://learn.microsoft.com/en-us/dual-screen/design/dual-view">Microsoft — dual-view / responsive fallback</a></li>
+</ul>
+<h3>Diff / synced scroll</h3>
+<ul>
+  <li><a href="https://graphite.com/guides/comprehensive-guide-to-diff-tools">Graphite — guide to diff tools (synced scroll, 3-way)</a></li>
+  <li><a href="https://www.araxis.com/merge/index.en">Araxis Merge — 2 &amp; 3-way comparison</a></li>
+</ul>
+<h3>Window stacking, workspaces, session persistence</h3>
+<ul>
+  <li><a href="https://support.apple.com/guide/mac-help/use-stage-manager-mchl534ba392/mac">Apple — Stage Manager (thumbnail stacks, remembered groups)</a></li>
+  <li><a href="https://tabgroupvault.com/blog/arc-browser-vs-chrome">Arc vs Chrome — Spaces / vertical tab organization</a></li>
+  <li><a href="https://wisechecker.com/edge-tab-groups-vanish-restart-persist-them/">Edge Workspaces vs Tab Groups — persistence</a></li>
+  <li><a href="https://docs.warp.dev/terminal/sessions/">Warp — session restoration (windows/tabs/panes)</a></li>
+  <li><a href="https://learn.microsoft.com/en-us/windows/powertoys/command-palette/overview">PowerToys Command Palette — recents + pinned + bookmarks</a></li>
+</ul>
+</div>
+
+<footer>
+  Track B (broader ideas) — companion to Track A (client's literal asks). Research only; no app code changed.
+  Speculative ideas are labeled; every claim links a source. Mobbin screens cited by canonical URL.
+</footer>
+
+</div>
+</body>
+</html>

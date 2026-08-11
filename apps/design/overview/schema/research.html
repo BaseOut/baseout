@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Schema Visualize — research &amp; build decisions · Baseout</title>
+<style>
+  :root {
+    --bg: #f7f8fa; --panel: #ffffff; --ink: #1c2230; --soft: #5a6373; --faint: #8b93a3;
+    --line: #e6e9ef; --line2: #eef1f5;
+    --accent: #3257d6; --accent-bg: #eef2fe;
+    --ok: #1f9d5b; --ok-bg: #e9f7ef;
+    --warn: #b9770b; --warn-bg: #fbf3e2;
+    --err: #c23b3b; --err-bg: #fbecec;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d; --panel: #1b1f27; --ink: #e7eaf0; --soft: #aab2c0; --faint: #79818f;
+      --line: #2a2f39; --line2: #232830;
+      --accent: #7d9bff; --accent-bg: #1e2435;
+      --ok: #57c98a; --ok-bg: #16261d;
+      --warn: #e0ab53; --warn-bg: #2a2316;
+      --err: #e87b7b; --err-bg: #2a1a1a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 56px 28px 120px; }
+  .eyebrow { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--faint); font-weight: 700; margin: 0 0 8px; }
+  h1 { font-size: 30px; line-height: 1.2; letter-spacing: -.02em; margin: 0 0 12px; }
+  .lede { color: var(--soft); font-size: 16px; max-width: 72ch; margin: 0 0 8px; }
+  .meta { color: var(--faint); font-size: 13px; margin: 6px 0 0; }
+  h2 { font-size: 20px; letter-spacing: -.01em; margin: 52px 0 6px; padding-top: 14px; border-top: 1px solid var(--line); }
+  h2 .num { color: var(--faint); font-variant-numeric: tabular-nums; margin-right: 10px; font-weight: 600; }
+  h3 { font-size: 16px; margin: 26px 0 8px; }
+  p { margin: 10px 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code { font-family: var(--mono); font-size: .86em; background: var(--line2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+  strong { font-weight: 650; }
+  ul, ol { margin: 10px 0; padding-left: 22px; }
+  li { margin: 5px 0; }
+
+  /* TOC */
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 8px; }
+  .toc a { font-size: 12.5px; font-weight: 560; color: var(--soft); border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; background: var(--panel); }
+  .toc a:hover { color: var(--accent); border-color: var(--accent); text-decoration: none; }
+
+  /* callouts */
+  .box { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 16px 18px; margin: 16px 0; }
+  .box.tldr { background: var(--accent-bg); border-color: color-mix(in srgb, var(--accent) 30%, var(--line)); }
+  .box.adopt { background: var(--ok-bg); border-color: color-mix(in srgb, var(--ok) 30%, var(--line)); }
+  .box.avoid { background: var(--err-bg); border-color: color-mix(in srgb, var(--err) 30%, var(--line)); }
+  .box.decide { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); }
+  .box h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; }
+  .box.adopt h4 { color: var(--ok); } .box.avoid h4 { color: var(--err); } .box.decide h4 { color: var(--warn); } .box.tldr h4 { color: var(--accent); }
+
+  .tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; padding: 2px 7px; border-radius: 5px; vertical-align: middle; }
+  .tag.ok { background: var(--ok-bg); color: var(--ok); }
+  .tag.warn { background: var(--warn-bg); color: var(--warn); }
+  .tag.err { background: var(--err-bg); color: var(--err); }
+  .tag.acc { background: var(--accent-bg); color: var(--accent); }
+
+  /* tables */
+  .tbl { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; }
+  .tbl th, .tbl td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .tbl th { font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; background: var(--line2); }
+  .tbl tr:last-child td { border-bottom: 0; }
+  .tbl .y { color: var(--ok); font-weight: 600; }
+  .tbl .n { color: var(--err); font-weight: 600; }
+  .tbl .m { color: var(--warn); font-weight: 600; }
+  .tbl-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+  .tbl-wrap .tbl { margin: 0; }
+  .tbl-wrap .tbl th:first-child, .tbl-wrap .tbl td:first-child { padding-left: 16px; }
+
+  /* competitor cards */
+  .comp { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; padding: 16px 18px; margin: 14px 0; }
+  .comp-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .comp-head h3 { margin: 0; font-size: 16px; }
+  .comp-head .tech { font-size: 12px; color: var(--faint); font-family: var(--mono); }
+  .comp-grid { display: grid; grid-template-columns: 92px 1fr; gap: 4px 14px; margin-top: 10px; font-size: 13.5px; }
+  .comp-grid dt { color: var(--faint); font-weight: 650; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; padding-top: 2px; }
+  .comp-grid dd { margin: 0; color: var(--soft); }
+  .comp-grid dd strong { color: var(--ink); }
+  .steal { margin-top: 10px; font-size: 13px; padding: 8px 11px; border-radius: 8px; background: var(--ok-bg); color: var(--ink); border: 1px solid color-mix(in srgb, var(--ok) 22%, var(--line)); }
+  .steal b { color: var(--ok); }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 720px) { .two { grid-template-columns: 1fr; } .comp-grid { grid-template-columns: 1fr; gap: 2px; } .comp-grid dt { padding-top: 8px; } }
+
+  .foot { margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--faint); font-size: 13px; }
+  .src { font-size: 13px; color: var(--soft); }
+  .src code { font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow">Baseout · Schema · Visualize tab</p>
+  <h1>Schema Visualize — research &amp; build decisions</h1>
+  <p class="lede">
+    Grounding the Schema diagram in evidence: how competing schema / ER tools actually render and interact
+    with a diagram, whether <strong>React Flow</strong> is the right engine, and the patterns we should adopt,
+    avoid, and decide on before building. This is the reference to lean on — both now and when questions come up later.
+  </p>
+  <p class="meta">Companion to the client brief in <code>overview/schema/</code> (README + per-tab docs). Compiled 2026-06-22 from two parallel research passes (competitor teardown + library pressure-test) plus visual references on Mobbin.</p>
+
+  <nav class="toc">
+    <a href="#tldr">TL;DR</a>
+    <a href="#engine">1 · Engine: React Flow</a>
+    <a href="#layout">2 · Layout: dagre vs elk</a>
+    <a href="#competitors">3 · Competitor teardown</a>
+    <a href="#fork">4 · The node decision</a>
+    <a href="#patterns">5 · Patterns &amp; anti-patterns</a>
+    <a href="#mapping">6 · Map to our system</a>
+    <a href="#build">7 · Build plan</a>
+    <a href="#open">8 · Open decisions</a>
+    <a href="#sources">Sources</a>
+  </nav>
+
+  <!-- TLDR -->
+  <div class="box tldr" id="tldr">
+    <h4>TL;DR</h4>
+    <ul style="margin-bottom:0">
+      <li><strong>Engine: React Flow (<code>@xyflow/react</code> v12) is confirmed.</strong> It is the only library that satisfies all four hard constraints at once — custom HTML/JSX node cards, first-party React, hierarchical auto-layout, and read-only click-to-inspect. Validated by Liam ERD's formal ADR, ChartDB, and Supabase Studio's own schema visualizer.</li>
+      <li><strong>Layout: <code>@dagrejs/dagre</code></strong> (the React-Flow-team-recommended default; small, synchronous). Already installed. elkjs only if we later need sub-flows or finer edge routing.</li>
+      <li><strong>One real design fork to settle (§4): fields-in-node vs compact-node + side-panel.</strong> The client brief picked compact + panel; every ERD tool we studied — including Airtable's own extension — puts field rows in the node with field-to-field edges. Recommendation: a hybrid.</li>
+      <li><strong>Steal from Airtable's own "Base Schema" extension</strong> (the On2Air/Openside-lineage incumbent we're displacing): its colour-by-relation-type edge language. <strong>Beat its weaknesses:</strong> hover-only highlight, no search, no auto-layout.</li>
+      <li><strong>Hard "don'ts":</strong> no force-directed network graph (even Airtable avoids it), no render-everything-at-once, no crow's-foot cardinality (misrepresents Airtable's two-way / many-to-many links).</li>
+    </ul>
+  </div>
+
+  <!-- 1 ENGINE -->
+  <h2 id="engine"><span class="num">1</span>Engine — React Flow, confirmed</h2>
+  <p>The decisive constraint is the <strong>custom HTML/JSX node card</strong> (a table with a health dot, name, counts, and — depending on §4 — field rows). That single requirement splits the field cleanly:</p>
+  <ul>
+    <li><strong>Canvas / WebGL renderers</strong> (Cytoscape.js, vis-network, Sigma.js, AntV G6 in fast mode) draw nodes as shapes + text + images. You <em>cannot</em> render a styled React field-list card inside a node. They are also built for force-directed social graphs — the wrong shape of problem.</li>
+    <li><strong>DOM / SVG renderers</strong> (React Flow, Reaflow, GoJS, raw D3) can host a real component tree. <strong>React Flow goes furthest: a node literally <em>is</em> your React component.</strong></li>
+  </ul>
+  <p>React Flow also ships the rest of the checklist as first-class built-ins: <code>&lt;MiniMap/&gt;</code>, <code>&lt;Controls/&gt;</code>, <code>&lt;Background/&gt;</code>, pan/zoom, and per-field connection <code>&lt;Handle&gt;</code>s. xyflow even publishes an official <strong>"Database Schema Node"</strong> component (a prebuilt table node with a labeled handle per column) — i.e. they endorse this exact use case as a first-class pattern. MIT-licensed, very actively maintained.</p>
+
+  <h3>Library comparison (for a read-only structural ER viewer, ~20–200 nodes)</h3>
+  <div class="tbl-wrap">
+  <table class="tbl">
+    <thead><tr><th>Library</th><th>ER fit</th><th>React</th><th>Auto-layout</th><th>Custom HTML cards</th><th>Minimap/zoom</th><th>License</th><th>Health</th></tr></thead>
+    <tbody>
+      <tr><td><strong>React Flow</strong> <span class="tag acc">pick</span></td><td class="y">Strong</td><td class="y">First-party</td><td class="m">+dagre/elk</td><td class="y">Yes — node IS your component</td><td class="y">Built-in</td><td>MIT</td><td>Very active</td></tr>
+      <tr><td>Reaflow</td><td class="y">Good (DAG)</td><td>First-party</td><td class="y">Built-in ELK</td><td class="y">Yes (foreignObject)</td><td class="n">No minimap</td><td>Apache-2</td><td class="m">Lightly maintained</td></tr>
+      <tr><td>GoJS</td><td class="y">Excellent</td><td>Wrapper</td><td class="y">Best-in-class</td><td class="m">Templating, not JSX</td><td class="y">Yes</td><td class="n">$4k–$12k</td><td>Active</td></tr>
+      <tr><td>AntV G6</td><td class="y">Good</td><td>Ext.</td><td class="y">Rich</td><td class="m">Forces slow SVG</td><td class="y">Yes</td><td>MIT</td><td>Very active</td></tr>
+      <tr><td>D3 (raw)</td><td class="m">Parts only</td><td class="n">DOM conflict</td><td class="m">trees → +dagre</td><td class="y">Full</td><td class="n">None</td><td>ISC</td><td>Gold standard</td></tr>
+      <tr><td>Cytoscape.js</td><td class="m">Network-analysis</td><td>Community</td><td class="m">dagre ext.</td><td class="n">No (canvas)</td><td>Nav ext.</td><td>MIT</td><td>Very active</td></tr>
+      <tr><td>vis-network</td><td class="m">General net</td><td>Community</td><td class="y">Built-in</td><td class="n">No (canvas)</td><td class="n">No</td><td>MIT</td><td>Active</td></tr>
+      <tr><td>Sigma.js</td><td class="n">Force/WebGL</td><td>@react-sigma</td><td class="n">Force only</td><td class="n">No (WebGL)</td><td>Camera</td><td>MIT</td><td>Active</td></tr>
+      <tr><td>mermaid (ER)</td><td class="m">Declarative</td><td>Render-only</td><td class="y">dagre/ELK</td><td class="n">No (fixed boxes)</td><td class="n">No</td><td>MIT</td><td>Huge</td></tr>
+      <tr><td>react-digraph</td><td class="m">SVG digraph</td><td>First-party</td><td class="m">dagre tree</td><td class="m">Shapes, not free HTML</td><td>Partial</td><td>—</td><td class="n">Unmaintained</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>What React Flow deliberately leaves to us (plan for these)</h3>
+  <p>None are blockers; they are the work we own. For a <strong>read-only</strong> viewer it's a favourable trade — we skip all editing complexity and mostly need layout + custom rendering.</p>
+  <ol>
+    <li><strong>No built-in auto-layout.</strong> RF's docs say plainly: <em>"We have not implemented our own layouting solution yet."</em> → wire in dagre (§2). The single biggest "missing battery."</li>
+    <li><strong>No crow's-foot / cardinality edges.</strong> RF ships 4 edge types (bezier, smoothstep, step, straight). Relationship markers need a custom edge with SVG markers. <em>For us this is a feature, not a gap — we deliberately don't want crow's-foot (§5).</em></li>
+    <li><strong>Field-level handles are manual.</strong> Anchoring an edge to a specific field row means rendering a <code>&lt;Handle&gt;</code> per field with a unique id. The official Database Schema Node demonstrates it; we wire it per row.</li>
+    <li><strong>It's a toolkit, not a finished ER tool.</strong> We assemble nodes / edges / layout / markers. drawDB-level polish is our code.</li>
+    <li><strong>Astro:</strong> runs as a client-side React island (<code>client:only="react"</code>) — needs the DOM, won't SSR meaningfully. Expected. <span class="tag ok">already wired &amp; verified</span></li>
+  </ol>
+
+  <div class="box adopt">
+    <h4>Validation — tools built on React Flow</h4>
+    <p style="margin-top:0">Verified from package.json / ADRs, with honest counter-examples:</p>
+    <ul style="margin-bottom:0">
+      <li><strong>Liam ERD</strong> — a formal <a href="https://liambx.com">ADR (2024-11-12)</a> choosing React Flow over a custom canvas; cites 100+-table perf, built-in pan/zoom, ELK layout. <em>Strongest single datapoint.</em></li>
+      <li><strong>ChartDB</strong> — <code>@xyflow/react ^12.8.2</code> in package.json. <strong>Supabase Studio</strong>'s official schema visualizer — built on React Flow. Also Dify, DBDraw, TSDiagram, Hubql (RF showcase, DB/schema cluster).</li>
+      <li><strong>Honest counter-examples:</strong> <strong>drawDB</strong> uses a bespoke SVG/<code>foreignObject</code> renderer (proof a custom renderer is <em>viable</em>, just more work); <strong>n8n</strong> uses <em>Vue</em> Flow (a separate library — don't cite as RF evidence).</li>
+    </ul>
+  </div>
+
+  <!-- 2 LAYOUT -->
+  <h2 id="layout"><span class="num">2</span>Auto-layout — dagre, not elkjs (to start)</h2>
+  <p>React Flow has no layout of its own, so we add one. The two real options:</p>
+  <div class="tbl-wrap">
+  <table class="tbl">
+    <thead><tr><th></th><th>dagre (<code>@dagrejs/dagre</code>)</th><th>elkjs</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Quality (hierarchical/ER DAG)</strong></td><td>Very good for trees/DAGs</td><td class="y">Best-in-class; port constraints, edge routing, sub-flows</td></tr>
+      <tr><td><strong>Configurability</strong></td><td>Minimal — a virtue here</td><td>Huge (Eclipse Layout Kernel, Java-ported) — needs the Java API ref open</td></tr>
+      <tr><td><strong>Speed</strong></td><td class="y">Fast, synchronous</td><td class="m">Slower; runs async (web worker)</td></tr>
+      <tr><td><strong>Bundle</strong></td><td class="y">~tens of KB</td><td class="n">~500 KB (ported Java)</td></tr>
+      <tr><td><strong>RF team stance</strong></td><td class="y">"We highly recommend dagre" for trees</td><td class="m">"We don't often recommend elkjs… difficult to support"</td></tr>
+      <tr><td><strong>Maintenance</strong></td><td class="y">Active as <code>@dagrejs/dagre</code> (v2/v3, late 2025)</td><td>Active (v0.11)</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>Verdict: dagre.</strong> RF-team-recommended for hierarchical layouts, an order of magnitude smaller, synchronous, trivial to configure. <strong>Reach for elkjs only if</strong> dagre's edge routing/overlap proves inadequate at ~200 nodes, or we need sub-flow/grouped layouts (dagre has a known sub-flow gap) or fine port-based anchoring.</p>
+  <div class="box decide" style="background:var(--accent-bg);border-color:color-mix(in srgb, var(--accent) 30%, var(--line))">
+    <h4 style="color:var(--accent)">Gotcha — install the scoped package</h4>
+    <p style="margin:0">The "dagre is deprecated" claims online refer to the <em>old unscoped</em> <code>dagre</code> package. The maintained fork is <code>@dagrejs/dagre</code> (DagreJs org), shipping through late 2025. <span class="tag ok">we installed the right one</span></p>
+  </div>
+
+  <!-- 3 COMPETITORS -->
+  <h2 id="competitors"><span class="num">3</span>Competitor teardown — what each uses, where, and how</h2>
+  <p>Each card: how the <strong>node</strong> is built, how <strong>edges</strong> work, what drives <strong>layout</strong>, the key <strong>interactions</strong>, the <strong>tech</strong>, and the one thing worth stealing. Confidence noted where a claim is inferred.</p>
+
+  <div class="comp">
+    <div class="comp-head"><h3>Airtable "Base Schema" extension</h3><span class="tag err">the incumbent we displace</span><span class="tech">@airtable/blocks · leader-line · svg-pan-zoom · React 16</span></div>
+    <p style="margin:4px 0 0;color:var(--soft)">Same data model, same On2Air/Openside lineage. Its dependency list is the decisive evidence on the force-directed question.</p>
+    <dl class="comp-grid">
+      <dt>Node</dt><dd>Tables with their fields laid out; <strong>hovering a field shows its type</strong> in a bottom-left tooltip. Drag to rearrange.</dd>
+      <dt>Edges</dt><dd><strong>Colour-coded by relation type, hover-activated:</strong> Linked record = solid gray (bolds on hover); Formula = animated dashed <span style="color:#5b8def">blue</span>; Rollup = dashed <span style="color:#9b6bdb">purple</span>; Lookup = dashed <span style="color:#d98a3a">orange</span>; Count = dashed <span style="color:#d35b5b">red</span>. Each appears on hover of the relevant field.</dd>
+      <dt>Layout</dt><dd><strong>No graph-layout library at all</strong> — lines drawn field-DOM-element → field-DOM-element via <code>leader-line</code>; positioning is manual/drag. Pan/zoom via <code>svg-pan-zoom</code>. <em>Not force-directed</em> (verified from source).</dd>
+      <dt>Interactions</dt><dd>Hover a field → its relations light up. That's mostly it.</dd>
+      <dt>Tech</dt><dd>Airtable Blocks SDK + leader-line + svg-pan-zoom + lodash. No d3-force, webcola, dagre, elk, or React Flow.</dd>
+    </dl>
+    <div class="steal"><b>Steal:</b> the relation-type colour language. <b>Beat:</b> hover-only (nothing persists), no search/jump, no auto-layout — those three gaps are our whole opening.</div>
+  </div>
+
+  <div class="comp">
+    <div class="comp-head"><h3>Azimutt</h3><span class="tag acc">best philosophy for "faster to scan"</span><span class="tech">open source</span></div>
+    <dl class="comp-grid">
+      <dt>Node</dt><dd><strong>Does not show all fields</strong> — on big schemas an entity shows only its ~15 most important attributes, ordered PK → relations → indexes → SQL order. Entities <strong>collapse</strong> to header-only while keeping relationship lines.</dd>
+      <dt>Edges</dt><dd>Relationship endpoints as small coloured link icons on the table's left (incoming) / right (outgoing) edges; you navigate by clicking them. Relations of hidden entities/attributes are suppressed to cut clutter.</dd>
+      <dt>Layout</dt><dd><strong>Rejects "render every table at once."</strong> Many named, curated layouts; each starts <em>empty</em> and you build it via "search everywhere" + "follow relations" / "find path".</dd>
+      <dt>Interactions</dt><dd>Search across tables/columns/relations/constraints/comments; follow-relations; shortest-path between two tables; folder-organised layouts. Engineered for 1500 tables / 100k columns.</dd>
+      <dt>Tech</dt><dd>Custom (not React Flow); its value is the <em>model</em>, not the renderer.</dd>
+    </dl>
+    <div class="steal"><b>Steal:</b> "don't show everything — let the user pull in what's relevant": search-everywhere, follow-relations, show-only-key-fields, collapse. The single best idea for beating the source app.</div>
+  </div>
+
+  <div class="comp">
+    <div class="comp-head"><h3>React Flow "Database Schema Node" (the reference building block)</h3><span class="tag ok">adopt the anatomy</span><span class="tech">@xyflow/react + shadcn/ui</span></div>
+    <dl class="comp-grid">
+      <dt>Node</dt><dd>Header = table name. Body = one row per field, two columns: <strong>field name (left) + field type (right).</strong></dd>
+      <dt>Edges</dt><dd>Per-field connection handles — every field row carries a target handle (left) + source handle (right). Edges connect via <code>sourceHandle</code>/<code>targetHandle</code> matching field ids → genuinely <strong>field-to-field</strong> (e.g. <code>warehouse_id → id</code>).</dd>
+      <dt>Layout</dt><dd>Whatever you wire (dagre/elk).</dd>
+      <dt>Tech</dt><dd>Official xyflow component — the cleanest, most directly adoptable pattern for our stack.</dd>
+    </dl>
+    <div class="steal"><b>Steal:</b> the exact node anatomy + per-field handles. This is xyflow officially endorsing our use case.</div>
+  </div>
+
+  <div class="two">
+    <div class="comp">
+      <div class="comp-head"><h3>ChartDB</h3><span class="tech">@xyflow/react ^12.8</span></div>
+      <dl class="comp-grid">
+        <dt>Node</dt><dd>Field rows (name + type) with <strong>PK / nullable / unique indicators</strong>; fields rendered conditionally for perf on big tables.</dd>
+        <dt>Edges</dt><dd>Field-to-field; <strong>cardinality markers</strong> at each end via SVG marker defs.</dd>
+        <dt>Layout</dt><dd>Auto-arrange is a <strong>manual "Reorder Tables"</strong> button ("minimise overlapping") + it <strong>highlights overlapping tables</strong>. No dagre/elk named.</dd>
+        <dt>Tech</dt><dd>React Flow + React context + browser storage.</dd>
+      </dl>
+      <div class="steal"><b>Steal:</b> overlap-minimise + flag overlaps; conditional field rendering for perf.</div>
+    </div>
+    <div class="comp">
+      <div class="comp-head"><h3>dbdiagram.io</h3><span class="tech">DBML</span></div>
+      <dl class="comp-grid">
+        <dt>Node</dt><dd>Field rows (name + type, PK/FK markers); driven by DBML text.</dd>
+        <dt>Edges</dt><dd>Field-to-field refs; <strong>crow's-foot</strong> cardinality (its house notation).</dd>
+        <dt>Layout</dt><dd><strong>Table Groups</strong> — collapse/expand, custom colours, notes; per-relationship colours. "Tailor the level of detail."</dd>
+        <dt>Interactions</dt><dd><strong>Double-click a table/column → jump to its definition</strong> (two-way navigate). Zoom; no minimap found.</dd>
+      </dl>
+      <div class="steal"><b>Steal:</b> Table Groups (collapsible coloured clusters) for chunking big bases; two-way jump.</div>
+    </div>
+  </div>
+
+  <div class="two">
+    <div class="comp">
+      <div class="comp-head"><h3>drawDB</h3><span class="tech">custom SVG (no flow lib)</span></div>
+      <dl class="comp-grid">
+        <dt>Node</dt><dd>Tables with columns, indexes, FKs; drag-and-drop.</dd>
+        <dt>Edges</dt><dd><strong>Clean orthogonal (elbow) connectors</strong>; drag from a blue dot on the FK column to the PK column → field-anchored.</dd>
+        <dt>Layout</dt><dd><span class="tag err">cautionary tale</span> historically <strong>no auto-layout</strong> — SQL import dumped all tables stacked on top of each other; hand-sorting required.</dd>
+      </dl>
+      <div class="steal"><b>Steal:</b> orthogonal elbow connectors. <b>Lesson:</b> skipping layout is a real failure mode — for a read-only viewer, auto-layout is mandatory.</div>
+    </div>
+    <div class="comp">
+      <div class="comp-head"><h3>dbdocs.io</h3><span class="tech">DBML, read-only docs</span></div>
+      <dl class="comp-grid">
+        <dt>Node</dt><dd>Read-only published table pages; <strong>expand a node to reveal its relationships.</strong></dd>
+        <dt>Edges</dt><dd>"Relationship" tab = full ERD; per-table "Table references" list.</dd>
+        <dt>Layout</dt><dd>Positions <strong>saved &amp; persist</strong> across visits.</dd>
+      </dl>
+      <div class="steal"><b>Steal:</b> closest in <em>intent</em> (read-only, documentation). Persist the layout so a returning user sees the same arrangement.</div>
+    </div>
+  </div>
+
+  <div class="comp">
+    <div class="comp-head"><h3>Metabase &amp; Retool — data-model <em>browsers</em> (not diagrams)</h3><span class="tag warn">the "list sometimes beats a diagram" lesson</span></div>
+    <dl class="comp-grid">
+      <dt>Metabase</dt><dd>No spatial diagram. <strong>Tree browser</strong> (DB → schema → tables → columns); each table page lists a <strong>"Connections" section</strong> of FK relationships as clickable links; X-ray auto-profiling.</dd>
+      <dt>Retool</dt><dd>Left-panel <strong>searchable schema browser</strong> (tables + columns/types); <strong>partial fetch</strong> for large schemas.</dd>
+      <dt>Lesson</dt><dd>For many real users a fast searchable list with relationship links beats a diagram — worth offering the side panel / search as a first-class companion, not an afterthought.</dd>
+    </dl>
+    <div class="steal"><b>Steal:</b> make the searchable list + relationship links a first-class companion to the canvas (this is also our Changelog/side-panel surface).</div>
+  </div>
+
+  <p class="src" style="margin-top:14px"><strong>Least relevant (freeform canvases, not structural ER engines):</strong> Lucidchart (crow's-foot library, auto-draws on DB import, manual), Miro (ERD templates, whiteboard), Excalidraw (sketch aesthetic, weak schema model). Not models for us.</p>
+
+  <!-- 4 FORK -->
+  <h2 id="fork"><span class="num">4</span>The one real design decision — node anatomy</h2>
+  <p>This is the fork worth deciding deliberately, because the evidence diverges from the current brief.</p>
+  <div class="two">
+    <div class="box">
+      <h4 style="color:var(--accent)">School A — fields-in-node (true ERD)</h4>
+      <p style="margin-top:0;font-size:13.5px">Node = header + <strong>field rows</strong> (name · type icon · PK/link markers). Edges anchor <strong>field-to-field</strong>.</p>
+      <p style="font-size:13px;color:var(--soft);margin-bottom:0"><strong>Who:</strong> React Flow Database-Schema-Node, ChartDB, dbdiagram, drawDB, <strong>Airtable's own extension.</strong><br><strong>Pro:</strong> relationships are legible at the node; it's a real ER diagram.<br><strong>Con:</strong> denser nodes; needs progressive disclosure on big bases.</p>
+    </div>
+    <div class="box">
+      <h4 style="color:var(--accent)">School B — compact node + side-panel</h4>
+      <p style="margin-top:0;font-size:13.5px">Node = health dot + name + counts. Click → side panel with the full field list.</p>
+      <p style="font-size:13px;color:var(--soft);margin-bottom:0"><strong>Who:</strong> Neon &amp; Supabase table browsers (list + panel, not a canvas).<br><strong>Pro:</strong> dense, uniform, scan-first; matches the brief's "not a dashboard of mini-charts."<br><strong>Con:</strong> the diagram shows boxes-and-lines only; you can't see <em>which</em> fields relate without clicking.</p>
+    </div>
+  </div>
+  <div class="box decide">
+    <h4>Recommendation — a hybrid</h4>
+    <p style="margin-top:0">The brief picked <strong>B</strong>; the ERD evidence is unanimous for <strong>A</strong> (even Airtable's extension). Airtable bases are smaller than enterprise DBs, so density is manageable. Proposed middle path:</p>
+    <ul style="margin-bottom:0">
+      <li><strong>Node shows the relationship-bearing rows</strong> — the primary field + linked-record fields (the rows that actually carry edges), with type icons. Edges anchor to those specific field rows (School A's payoff) — so the diagram <em>is</em> a real ER view, not just boxes.</li>
+      <li><strong>Everything else collapses</strong> — a node can show header-only by default on large bases (Azimutt), expanding to its key rows; the <strong>full</strong> field list + Airtable types + the AI "Generate description" live in the <strong>side panel</strong> (School B's payoff + the brief's panel intent intact).</li>
+      <li><strong>Health dot + counts stay on the node header</strong> exactly as the brief specifies.</li>
+    </ul>
+  </div>
+
+  <!-- 5 PATTERNS -->
+  <h2 id="patterns"><span class="num">5</span>Patterns to adopt &amp; anti-patterns to avoid</h2>
+  <div class="box adopt">
+    <h4>Adopt (read-only, structural Airtable schema viz)</h4>
+    <ol style="margin-bottom:0">
+      <li><strong>Field-to-field edges</strong> anchored on the specific linked-record row, not table-to-table — that's the information Airtable users actually need.</li>
+      <li><strong>Colour/encode edges by Airtable relation type</strong> (linked / lookup / rollup / formula / count) using Airtable's own colour language — <em>not</em> crow's-foot.</li>
+      <li><strong>Structural auto-layout</strong> (dagre, layered) + fit-to-view, with <strong>orthogonal (elbow) connectors</strong> (drawDB). Allow drag to nudge; <strong>persist the layout</strong> (dbdocs).</li>
+      <li><strong>Click a table → persist-highlight its relationships and dim the rest</strong> (focus mode). Fixes Airtable's hover-only weakness; matches Azimutt's follow-relations.</li>
+      <li><strong>Search-everywhere + jump-to-table</strong> (Azimutt / Retool) — the highest-leverage single feature for "faster to scan than Airtable itself."</li>
+      <li><strong>Progressive disclosure</strong> — collapse to header-only; key-fields-first; <strong>table groups</strong> (dbdiagram) to chunk big bases.</li>
+      <li><strong>Standard canvas affordances</strong> — fit-to-view, zoom/pan, <strong>minimap</strong>, dotted-grid background.</li>
+      <li><strong>A first-class searchable companion list</strong> (Metabase/Retool) — our side panel + (later) Changelog already lean this way.</li>
+    </ol>
+  </div>
+  <div class="box avoid">
+    <h4>Avoid (confirmed against real source, not opinion)</h4>
+    <ul style="margin-bottom:0">
+      <li><strong>Force-directed "network graph"</strong> (floating bubbles, springy edges, edges-everywhere). No serious ERD tool uses it — <em>not even Airtable's own extension</em> (it uses leader-line + manual positioning). The brief warns against this; the source confirms it.</li>
+      <li><strong>"Render every table at once"</strong> — Azimutt's whole thesis is this fails past ~30–50 tables. Less acute for Airtable, but the principle holds: progressive over exhaustive.</li>
+      <li><strong>No auto-layout</strong> (drawDB's import-stacking bug). Read-only means <em>we</em> own the arrangement — auto-layout is mandatory.</li>
+      <li><strong>Hover-only relationship reveal</strong> with no persistent state (Airtable's gap) — you can't study a relationship while reading both tables.</li>
+      <li><strong>Crow's-foot cardinality.</strong> Correct for FK databases, <strong>semantically wrong for Airtable</strong> — linked records are often two-way and many-to-many by default; forcing 1:N would misrepresent the model. Use Airtable-native semantics.</li>
+    </ul>
+  </div>
+
+  <!-- 6 MAPPING -->
+  <h2 id="mapping"><span class="num">6</span>Mapping to our design system</h2>
+  <p>The canvas + custom node + health cards are bespoke <strong>Patterns</strong> (documented in the storybook), but the chrome leans on catalog primitives, and any new shared piece goes into the design system (per our build rule).</p>
+  <ul>
+    <li><strong>Visual register:</strong> closest reference on Mobbin is <a href="https://mobbin.com/screens/454cc4f3-78e6-4390-b853-9413b51a64b7">Vapi's dark, dense node canvas</a> — dotted grid, bottom floating zoom/fit toolbar, minimap bottom-right, right-side inspector. Match that density, on our tokens.</li>
+    <li><strong>Side panel (the field list):</strong> the model is <a href="https://mobbin.com/screens/4b05086e-5a8c-4cdf-87b7-22eccbfbeaab">Neon's table-detail panel</a> — table header + field rows (icon · name · type), grouped, <strong>monospace for types</strong> (our mono-boundary rule). Field detail like <a href="https://mobbin.com/screens/7c464faf-1370-4e9a-8d25-70595038b2bb">Supabase's column panel</a>. Build it on the catalog Drawer/side-panel + Table primitives.</li>
+    <li><strong>Node card:</strong> a React component, styled with our CSS tokens (<code>--color-base-100/300</code>, <code>--radius-box</code>) so it themes light/dark with the app. Health dot = <code>--color-success/warning/error</code> (identical to the Health tab band, so the two tabs reinforce).</li>
+    <li><strong>Field-type icons:</strong> the vendored Airtable set in <code>overview/schema/field-icons/</code> (31 SVGs, <code>currentColor</code>) — used in the node rows and the side panel. The documented exception to Lucide-only.</li>
+    <li><strong>Chrome:</strong> tabs-box (Visualize/Changelog/Health), header base-filter (Select), Export menu (Button), empty/gated states — all catalog primitives.</li>
+  </ul>
+
+  <!-- 7 BUILD -->
+  <h2 id="build"><span class="num">7</span>Build plan — what RF gives vs what we own</h2>
+  <div class="two">
+    <div class="box adopt">
+      <h4>React Flow gives us (free)</h4>
+      <ul style="margin-bottom:0;font-size:13.5px">
+        <li>The canvas: pan / zoom / fit-to-view</li>
+        <li><code>&lt;MiniMap/&gt;</code>, <code>&lt;Controls/&gt;</code>, <code>&lt;Background/&gt;</code></li>
+        <li>Custom node = our React component</li>
+        <li>Per-field <code>&lt;Handle&gt;</code>s for edge anchoring</li>
+        <li>Selection / hover state, light/dark <code>colorMode</code></li>
+      </ul>
+    </div>
+    <div class="box decide">
+      <h4>We build (the three custom pieces)</h4>
+      <ol style="margin-bottom:0;font-size:13.5px">
+        <li><strong>Layout wiring</strong> — dagre → positions → RF nodes; fit-to-view on load; persist nudges.</li>
+        <li><strong>Custom edge</strong> — orthogonal connector + colour by Airtable relation type (no crow's-foot).</li>
+        <li><strong>Per-field handles</strong> — anchor edges to specific linked-record rows.</li>
+      </ol>
+    </div>
+  </div>
+  <p style="margin-top:14px"><strong>Increments</strong> (Visualize first, per the brief): (1) page shell — header + tabs-box + states; (2) canvas with custom table nodes + dagre + minimap + a rich schema fixture; (3) field-to-field edges + relation-type colour; (4) side panel (field list + AI generate-description states); (5) focus-mode + search; (6) Health &amp; Changelog tabs. The React Flow island is already wired and verified (<code>/schema-test</code>).</p>
+
+  <!-- 8 OPEN -->
+  <h2 id="open"><span class="num">8</span>Open decisions for the founder</h2>
+  <table class="tbl">
+    <thead><tr><th>#</th><th>Decision</th><th>Our recommendation</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><strong>Node anatomy</strong> — fields-in-node vs compact + panel (§4)</td><td>Hybrid: relationship-bearing field rows in the node + full list in the side panel</td></tr>
+      <tr><td>2</td><td><strong>Edge semantics</strong> — crow's-foot vs Airtable-native</td><td>Airtable-native (link/lookup/rollup/formula/count), colour-coded like Airtable's extension; no crow's-foot</td></tr>
+      <tr><td>3</td><td><strong>Scope of interactions</strong> — is search + follow-relations + focus-mode V1 or later?</td><td>Focus-mode (click → highlight/dim) + search-jump are high-leverage; propose for V1</td></tr>
+      <tr><td>4</td><td><strong>Grade display</strong> (Health tab) — 0–100 + band vs A–F</td><td>0–100 + Green/Yellow/Red (matches the engine 1:1; the brief's open A–F needs a mapping engineering isn't producing)</td></tr>
+    </tbody>
+  </table>
+
+  <!-- SOURCES -->
+  <h2 id="sources">Sources</h2>
+  <p class="src">
+    React Flow: <code>reactflow.dev/learn/layouting</code> · <code>reactflow.dev/ui/components/database-schema-node</code> · <code>reactflow.dev/showcase</code> ·
+    Layout: <code>github.com/dagrejs/dagre</code> ·
+    Validation: Liam ERD ADR <code>liambx.com</code> (20241112-use-react-flow-for-erd-visualization) · <code>github.com/chartdb/chartdb</code> · <code>github.com/sqlhabit/sql_schema_visualizer</code> ·
+    Competitors: Airtable Base Schema extension (package.json / source) · azimutt.app · dbdiagram.io docs · drawdb.app · dbdocs.io · Metabase &amp; Retool docs ·
+    Visual refs: Mobbin (Vapi, Neon, Supabase, WRITER, OpenAI Platform).
+  </p>
+  <p class="src" style="margin-top:6px">Honest gaps: ChartDB's and Airtable's exact auto-layout algorithms aren't named in their docs (internal overlap-minimisers; Airtable uses no layout library). dbdiagram/drawDB canvas specifics partly inferred from docs/community (their pages are JS-rendered). Cleanly verified from source: React Flow node anatomy, ChartDB stack + cardinality markers, Azimutt's layout philosophy, and Airtable's full dependency list (the load-bearing fact for the no-force-directed conclusion).</p>
+
+  <div class="foot">
+    Baseout · designer → engineering reference · Schema / Visualize · 2026-06-22.
+    Companion to <code>overview/schema/README.md</code> and the per-tab briefs. The build rule: reuse catalog primitives, keep the canvas a documented Pattern, extend the design system when something's missing.
+  </div>
+
+</div>
+</body>
+</html>

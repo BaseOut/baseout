@@ -54,26 +54,28 @@
 | **Table** | A table within a Base. Contains Fields, Records, and Views. | Sheet, Tab | Directly maps to Airtable's "Table" concept. |
 | **Field** | A column within a Table. Has a name, type, and configuration. | Column, Attribute | Directly maps to Airtable's "Field" concept. |
 | **Record** | A single row of data within a Table. | Row, Entry, Item | Directly maps to Airtable's "Record" concept. |
-| **Attachment** | A file attached to a Record via an Attachment field. | File, Asset, Upload | Stored separately from record data. Has its own storage limits. |
+| **Attachment** | A file attached to a Record via an Attachment field. | File, Asset, Upload | Stored separately from record data. Has its own storage limits. Deduplicated by content checksum at capture; browsable via the Media Library (§8.1). |
+| **Comment** | A comment on a Record (author, text, timestamps, reactions/mentions). Captured automatically via the Airtable REST comments API during backup runs. *(Added 2026-07-27.)* | Note, Reply, Annotation | Persisted to the per-Space DB (`bo_at_comments`) with edit/delete visibility. Refresh is planned by comment-count delta — unchanged counts are skipped (documented trade-off: same-count edits surface when the count next changes). |
+| **Workspace (Airtable)** | An Airtable workspace — the Airtable-side container of Bases. Baseout stores Airtable workspace **identity only** (`workspace_id`/`workspace_name` columns on Airtable-scoped tables). *(Added 2026-07-27.)* | Space (never!), Team, Folder | STRICTLY an Airtable-side term: "Space" remains the Baseout structural term (chosen precisely to avoid this collision — see Open Questions resolution). `workspace_*`-prefixed columns under `at_`/space-scoped tables never describe Baseout structure. |
 | **Automation** | An Airtable automation (trigger + action workflows). | Workflow, Script | Backed up as metadata; not executable within Baseout. |
 | **Interface** | An Airtable interface (custom UI page built on Base data). | Page, Dashboard, View | Backed up as metadata; not renderable within Baseout. |
-| **View** | A saved view within a Table (grid, kanban, calendar, etc.). | Filter, Layout | Backed up as part of schema metadata. |
+| **View** | A saved view within a Table (grid, kanban, calendar, etc.). | Filter, Layout | Backed up as part of schema metadata. *Amended 2026-07-27:* captured for **all** connections via Airtable's MCP server (id/name/type) — previously enterprise-scope REST only. Availability widening, not a new gate. |
 | **Schema** | The structural definition of a Base: its Tables, Fields (names, types, options), and relationships. Does not include record data. | Structure, Definition, Model | Schema can be backed up independently of record data. |
 
 ### Backup & Storage Terms
 
 | Canonical Term | Definition | Aliases to Avoid | Notes |
 |---|---|---|---|
-| **Backup** | A point-in-time snapshot of Base data (schema, records, and/or attachments). | Snapshot, Export, Dump | The act of capturing data from Airtable into Baseout storage. |
-| **Backup Run** | A single execution of the backup process. Produces a Backup Snapshot. | Job, Execution, Cycle | Has a start time, end time, status, and metrics. |
-| **Backup Snapshot** | The output of a Backup Run — the stored point-in-time data. | Backup Version, Checkpoint | Each Snapshot is identified by timestamp and can be used for Restore. |
+| **Backup** | The *act* of capturing Base data (schema, records, and/or attachments) from Airtable into Baseout. A process — it produces a Snapshot. | Export, Dump | "Backup" is the process; the stored output is a **Snapshot** (below). *(Amended 2026-08-05: "Snapshot" is no longer an alias to avoid — it is the canonical term for the stored output.)* |
+| **Backup Run** | A single execution of the backup process. Produces a Snapshot. | Job, Execution, Cycle | Has a start time, end time, status, and metrics. |
+| **Snapshot** (a.k.a. Backup Snapshot) | The output of a Backup Run: a point-in-time capture of a Base saved as CSV — **one CSV file per table**. Kept in Baseout-managed R2 (an *internal snapshot*) and/or delivered to an external Storage Destination. | Backup Version, Checkpoint | The canonical customer-facing term for a stored capture. Snapshots kept in Baseout-managed storage count toward **File storage under management**; snapshots delivered only to external destinations do not (§3; `pricing-guide.md` §4). Identified by timestamp; used for Restore. |
 | **Static Backup** | A backup mode where data is exported as flat files (CSV/JSON) directly to a Storage Destination. Data is never stored in a Baseout-managed database. | File Backup, CSV Export, Flat Backup | Data streams through memory only — never written to Baseout disk. Privacy-preserving. |
 | **Dynamic Backup** | A backup mode where data is written to a Baseout-provisioned or customer-provided database. Enables SQL access, real-time sync, and advanced capabilitys. | Database Backup, Live Backup, DB Sync | Requires explicit customer opt-in to data storage. |
 | **Storage Destination** | The external file storage location where static backup files and attachments are saved. | Storage Location, Cloud Storage, File Target | Examples: Google Drive, Dropbox, Box, OneDrive, S3, Cloudflare R2. |
 | **Database Tier** | The type and hosting arrangement of the database used for Dynamic Backups. | DB Level, Database Plan, DB Type | Tiers: D1 (SQLite), Shared PostgreSQL, Dedicated PostgreSQL, BYODB. |
 | **BYOS** | Bring Your Own Storage — customer provides their own Storage Destination. | Custom Storage, External Storage | Available on Pro and above for fully custom destinations. |
 | **BYODB** | Bring Your Own Database — customer provides their own PostgreSQL database. Baseout writes to it. | Custom Database, External Database | Enterprise tier only. |
-| **Instant Backup** | Webhook-driven backup that captures changes in real-time as they occur in Airtable. | Webhook Backup, Real-time Backup, Live Sync | Available on Business tier and above. Uses Airtable webhooks. |
+| **Instant Backup** | Webhook-driven backup that captures changes in real-time as they occur in Airtable. | Webhook Backup, Real-time Backup, Live Sync | Available on Pro tier and above (PRD ruling — see §6.1). Uses Airtable webhooks. |
 
 ### Capability Terms
 
@@ -84,9 +86,21 @@
 | **Insight** | An automatically generated observation or recommendation about the customer's data, schema, or usage patterns. | Finding, Suggestion, Alert | Generated by the Data, Schema, or AI capabilitys. |
 | **Alert** | A configurable notification triggered when data or schema meets user-defined criteria. | Notification, Warning, Rule | Configured within individual capabilitys. Delivered via the Notifications system. |
 | **Health Score** | A composite audit grade for a Base reflecting schema cleanliness, data quality, and configuration best practices. | Audit Score, Grade, Rating | Displayed on the dashboard per Base. |
+| **Media Library** | The browsable read surface over captured Attachments: assets deduplicated by content checksum, each with its Record references (per-record filenames), media-type filters, size/count totals, and storage-aware access (download for Baseout-stored; open-in-provider for BYOS). *(Added 2026-07-27.)* | DAM, Asset Manager, Gallery, Media Manager | Part of the Data capability (§8.1) — requires Dynamic mode; no new top-level capability gate. "Asset" stays internal (schema term `bo_at_assets`), never customer-facing copy — the customer-facing unit is the Attachment. |
 | **Restore** | The process of writing backed-up data back into Airtable from a Backup Snapshot. | Recovery, Rollback, Import | Always creates new data — never overwrites existing data. |
 | **Credit** | The unit of measure for transfer and activity consumption. Credits are consumed by backup runs, restores, API calls, and other billable operations. Storage is billed separately in dollars. | Token, Unit | Credits reset monthly on the billing date. No rollover. |
 | **Overage** | Credit or storage usage that exceeds the tier's included allocation. Credits overage is billed per-credit at the plan's overage rate. Storage overage is billed per GB. | Excess, Surplus, Extra Usage | Customers can configure auto-overage or hard cap. |
+
+### Schema Documentation Terms
+
+| Canonical Term | Definition | Aliases to Avoid | Notes |
+|---|---|---|---|
+| **Document** | A user-authored piece of rich-text documentation about a Space's schema, stored in the per-Space DB (`bo_at_documents`). Has a title, a rich-text body, optional Tags, external Links, and mini-Diagrams. Distinct from an entity's inline description/AI annotation. | Doc, Note, Article, Wiki Page | Part of the Schema capability. Authored manually (Launch+) or AI-assisted (Pro+). Not an Airtable artifact. |
+| **Docs tab** | The Schema-page tab listing a Space's Documents and hosting the Document editor. | Documentation tab, Wiki | Sibling to the Browse, Visualize, Changelog, and Health tabs on the Schema page. |
+| **Browse tab** | The Schema-page tab for browsing schema entities (Bases, Tables, Fields, Views); each entity's detail panel shows a Documentation section listing the Documents that Tag it. | Explore tab, Entities tab | Read-oriented counterpart to the Docs tab. |
+| **Tag** | An association between a Document and a schema entity (Base/Table/Field/View), added inline in the editor or explicitly. Surfaces on the entity's detail panel and is removable from either side. | Link, Reference, Mention, Label | Stored in `bo_at_document_tags`. A removed entity keeps its Tag, shown flagged — never silently dropped. |
+| **External Link** | A named external URL attached to a Document. | Hyperlink, Bookmark, Reference | Stored in `bo_at_document_links`. Distinct from a Tag (which points at an internal schema entity). |
+| **Mini-Diagram** | A named, user-saved schema mini-diagram embedded in a Document (a scoped node graph). A Document may hold several. | Chart, ERD, Graph | Stored in `bo_at_document_diagrams` as serialized React Flow state. Distinct from the full auto-generated schema Visualization. |
 
 ### Infrastructure Terms
 
@@ -167,44 +181,57 @@ Organization (Billing Entity)
 
 ## 3. Pricing Tiers Overview
 
-| | **Trial** | **Launch** | **Growth** | **Pro** | **Business** | **Enterprise** |
-|---|---|---|---|---|---|---|
-| **Monthly Price** | $0 | $49/mo | $99/mo | $199/mo | $399/mo | Custom |
-| **Annual Price** | $0 | $468/yr ($39/mo) | $948/yr ($79/mo) | $1,908/yr ($159/mo) | $3,828/yr ($319/mo) | Custom |
-| **Transfer Credits/mo** | 1,000 | 15,000 | 40,000 | 120,000 | 400,000 | Custom |
-| **Onboarding Credits** | 500 | 5,000 | 10,000 | 25,000 | 75,000 | Custom |
-| **Credit Overage Rate** | None (pauses) | $0.007/cr | $0.006/cr | $0.005/cr | $0.004/cr | Negotiated |
-| **Backup Mode** | Static + Dynamic (Schema Only) | Static + Dynamic | Static + Dynamic | Static + Dynamic | Static + Dynamic | Static + Dynamic |
-| **Backup Frequency** | Monthly | Weekly | Weekly | Daily | Daily + Instant | Daily + Instant |
-| **Instant Backup** | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
-| **Database** | D1 (schema only) | D1 (full) | D1 (full) | Shared PostgreSQL | Dedicated PostgreSQL | BYODB |
-| **R2 File Storage** | 250 MB | 5 GB | 20 GB | 75 GB | 250 GB | Custom |
-| **Database Storage** | 100 MB | 1 GB | 5 GB | 25 GB | 100 GB | Custom |
-| **Snapshot Retention** | 30 days | 90 days | 6 months | 12 months | 24 months | Custom |
-| **Spaces** | 1 | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
-| **Bases per Space** | 1 | 3 | Unlimited | Unlimited | Unlimited | Unlimited |
-| **Connections per Space** | 2 | 2 | 2 | 2 | 2 | 2 |
-| **Included Restores/mo** | 1 | 2 | 3 | 5 | 15 | Unlimited |
-| **Smart Cleanup Policy** | Basic | Time-based | Two-tier | Three-tier | Custom | Custom |
-| **Team Members** | 1 | 3 | 5 | 10 | 15 | Unlimited |
-| **Support** | Community | Email | Priority email | Priority email | Priority + chat | Dedicated CSM + SLA |
+> **SUPERSEDED 2026-08-03 — reconciled to the locked pricing model.** The authoritative pricing source is [`research/pricing/pricing-guide.md`](../research/pricing/pricing-guide.md) (locked 2026-08-03; decision log in [`final-pricing-matrix.md`](../research/pricing/final-pricing-matrix.md)). The old model this section carried — **Launch/Growth/Pro/Business** tiers, a single **transfer-credit** meter, and **per-credit auto-billed overage** — is retired. What changed:
+> - **Tiers renamed** to a capacity ladder: **Lite / Core / Plus / Max** (+ sales-led **Enterprise**). No public "Trial" column — the trial is 14 days of Lite (below). No hidden Starter / On2Air-Bridge plans — legacy On2Air customers migrate via the legacy-migration registry + a 20% lifetime coupon.
+> - **Typed per-lever metering replaces credits.** Consumption is measured against typed allowances (records, file storage, AI credits, calls), not one credit pool.
+> - **No auto-billed overage.** Limit behavior is **warn at 90% / enforce at 100%** plus a flat **add-on library** ($10/mo per unit) — §5 below is superseded (`overage_records` stays dormant, design D8).
+> - **Capability values resolve from the DB-native `plan_features` catalog via `resolveEntitlements(orgId)`**, not Stripe product metadata — §5.6.2 / §5.6.6 below are superseded (see [`openspec/changes/shared-entitlements/design.md`](../openspec/changes/shared-entitlements/design.md) D1).
+>
+> §4–§5.6 and the per-tier columns in §6–§16 still carry legacy tier names pending the full `shared-entitlements` build; the authoritative caps are the matrix below + the runtime `plan_features` seed.
 
-> Trial DB storage (D1 schema only) powers the Schema capability — visualizing base structure, changelog, and health scores. Full record data storage in a Baseout-managed database requires Launch or above.
+Four public tiers (a capacity ladder — size of estate, not company stage) plus a sales-led Enterprise tier. Billing and gating key on stable internal slugs (`lite | core | plus | max | enterprise`, plus `trial`); the names are display copy. No tier shows "Unlimited" — every cap is a number.
 
-### Non-Public Plans
+| | **Lite** | **Core** | **Plus** | **Max** | **Enterprise** |
+|---|---|---|---|---|---|
+| **Monthly** | $49 | $99 | $199 | $399 | Custom |
+| **Annual (~2 months free)** | $499/yr | $999/yr | $1,999/yr | $3,999/yr | Custom |
+| Records under management | 250K | 750K | 1.5M | 5M | Custom |
+| File storage under mgmt (GB) | 50 | 250 | 500 | 1,500 | Custom |
+| AI credits /mo | 200 | 1,000 | 5,000 | 15,000 | Custom |
+| Bring your own AI key | — | — | ✓ | ✓ | ✓ |
+| Bases under management | 15 | 50 | 150 | 500 | Custom |
+| Backup frequency (max cadence) | Monthly | Weekly | Daily | Instant | Instant |
+| Manual (on-demand) backups /mo | 1 | 5 | 10 | 25 | Custom |
+| Spaces | 3 | 10 | 25 | 100 | Custom |
+| Database (isolation class) | SQLite (D1) | D1 or dedicated PG (shared cluster) | Dedicated PG (dedicated cluster) | Dedicated cluster or BYODB | Custom |
+| Database size (org-wide, record data) | 5 GB | 10 GB | 25 GB | 50 GB | Custom |
+| Seats | 1 | 5 | 10 | 25 | Custom |
+| Restores /mo | 3 | 10 | 30 | Fair use | Fair use |
+| Schema history retention | 90 days | 180 days | 1 year | 3 years | 5 years / Custom |
+| Record history retention | 90 days | 180 days | 1 year | 3 years | 5 years / Custom |
+| Snapshot destinations (external) | 1 | 2 | 3 | 5 | Custom |
+| Snapshot destination types | Cloud drives | Cloud drives | + S3 | + S3 | Custom |
+| Monthly call allowance (API + MCP + Direct SQL) | 10K | 50K | 250K | 1M | Custom |
+| Active reports | 5 | 25 | 50 | 100 | Custom |
+| Documents | 10 | 25 | 50 | 100 | Custom |
+| Audit logs | — | — | — | ✓ | ✓ |
+| Support | Email | Priority email | Priority email | Priority + chat | Dedicated CSM + SLA |
 
-Not featured on the public pricing page. Discoverable for users who seek it out or are directed to it.
+**Records under management (RUM)** is counted org-wide across all bases **regardless of where snapshots are stored** — records whose snapshots live in Baseout-managed R2 and records whose snapshots are delivered only to the customer's own storage (BYOS / Google Drive / etc.) count identically. RUM measures records *under management*, not byte location; where the bytes live only affects the separate **File storage under management** meter (`pricing-guide.md` §4). *(Implementation note: today's metering counts records from Baseout-side backup runs — BYOS-only counting is a `shared-entitlements` follow-up.)*
 
-| Plan | Price/mo | Credits/mo | Backup Mode | DB | Spaces | Bases/Space | Frequency | Team Members |
-|---|---|---|---|---|---|---|---|---|
-| **Starter** | $29 | 5,000 | Static + Dynamic (Schema Only) | D1 (schema only) | 3 | 3 | Monthly | 2 |
-| **On2Air Bridge** | $9.99 | 2,000 | Static + Dynamic (Schema Only) | D1 (schema only) | 1 | 3 | Monthly | 1 |
+Included at **every** tier (feature gates on for all): internal snapshots, MCP access, Automations & interfaces backup, Comments backup, API access, SSO/SAML, PII detection, Direct SQL access. Product constant: 2 Connections per Space.
 
-> **Starter** is for users who genuinely cannot afford Launch but need more than the free Trial — more spaces, more credits, and schema-level dynamic access. It is not marketed or featured. The **On2Air Bridge** is for On2Air Basic/Starter customers migrating at their existing price point — see §5 and §6 of Pricing_Credit_System.md for the full migration strategy.
+**Trial — 14 days of Lite.** Full Lite allowances and features with a **one-time backup** (single snapshot). Trial data is deleted 14 days after the backup runs unless the account upgrades; escalating deletion-warning emails lead up to the deadline. Not a fifth pricing column.
+
+**Add-on library (flat, identical at every tier).** Recurring $10/mo per unit: +100K records, +50 GB files, +2 GB DB size, +3 bases, +1 Space, +2 seats, +1 external destination (to the 5 max), +5 reports, +10 documents, +1,000 AI credits/mo, +50K calls/mo, +3 restores/mo. One-time packs (this cycle only, $12 each): +1,000 AI credits, +50K calls, +3 restores. **Not purchasable — upgrade only:** backup frequency, DB isolation class, retention ladders, S3 destination type, audit logs, BYOK, support level.
+
+**Legacy migration (On2Air):** Starter→Lite, Essentials→Core, Professional→Plus, Premium→Max, with a **20% lifetime floating discount** at or above the mapped tier (Stripe coupon off list price). Full detail in `pricing-guide.md` §8; implemented by the legacy-migration-registry in `openspec/changes/shared-entitlements/`.
 
 ---
 
 ## 4. Tier Limits & Quotas
+
+> **SUPERSEDED 2026-08-03 (shared-entitlements).** The caps below use the retired model (transfer credits, "Unlimited" Spaces/Bases, legacy tier names). Current per-lever caps are the §3 matrix; the runtime source of truth is the `plan_features` catalog resolved via `resolveEntitlements(orgId)` (design D1). Kept for historical reference only.
 
 ### 4.1 Resource Limits
 
@@ -227,7 +254,7 @@ Not featured on the public pricing page. Discoverable for users who seek it out 
 | Configuration | Trial | Starter | Launch | Growth | Pro | Business | Enterprise |
 |---|---|---|---|---|---|---|---|
 | **Frequency** | Monthly | Monthly | Weekly | Weekly | Daily | Daily | Daily |
-| **Instant (Webhook)** | ✗ | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ |
+| **Instant (Webhook)** | ✗ | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ |
 | **Manual (On-Demand)** | ✗ | ✗ | ✓ (2/mo) | ✓ (5/mo) | ✓ (Unlimited) | ✓ (Unlimited) | ✓ (Unlimited) |
 | **Backup Mode** | Static + Dynamic (Schema Only) | Static + Dynamic (Schema Only) | Static + Dynamic | Static + Dynamic | Static + Dynamic | Static + Dynamic | Static + Dynamic |
 | **What's Backed Up** | Schema, Records, Attachments | Schema, Records, Attachments | Schema, Records, Attachments, Automations, Interfaces | Same | Same | Same | Same + Custom metadata |
@@ -261,7 +288,9 @@ Not featured on the public pricing page. Discoverable for users who seek it out 
 
 ## 5. Overage Pricing
 
-> **NOTE:** Credits meter all backup, restore, and API transfer activity. Storage is billed separately in dollars and does not reset monthly. There are no per-record or per-attachment caps — credits are the single consumption meter. Customers can configure **auto-overage** (allow additional activity, billed at the end of the period) or **hard cap** (pause at limit and notify).
+> **SUPERSEDED 2026-08-03 (shared-entitlements).** The credit-metered, auto-billed-overage model in all of §5 (§5.1–§5.5) is retired. The locked model does **not** auto-bill per-unit overage: it **warns at 90% and enforces at 100%**, and sells a flat **add-on library** ($10/mo per unit; §3). The `overage_records` table stays dormant (design D8). Everything below is historical.
+
+> **NOTE (legacy):** Credits meter all backup, restore, and API transfer activity. Storage is billed separately in dollars and does not reset monthly. There are no per-record or per-attachment caps — credits are the single consumption meter. Customers can configure **auto-overage** (allow additional activity, billed at the end of the period) or **hard cap** (pause at limit and notify).
 
 ### 5.1 Transfer Credit Overage Rates
 
@@ -370,7 +399,9 @@ When additional platforms are launched, a new product set is created following t
 
 ### 5.6.2 Stripe Product Metadata
 
-Every Stripe Product must include the following metadata. The application resolves capabilities and limits by reading this metadata — never by parsing the product name.
+> **SUPERSEDED 2026-08-03 (shared-entitlements design D1).** Capabilities no longer resolve from Stripe metadata. New rule: **Stripe carries money and identity** (products, prices, subscription state, plus a single `plan_slug` metadata key for reconciliation); **the master-DB `plan_features` catalog carries what the money buys.** The `tier` enum below is retired; the new plan slugs are `lite | core | plus | max` (+ `trial`, `enterprise`), stored on `subscription_items.plan_id`. `subscription_items.tier` remains only as a cached display value during migration.
+
+Every Stripe Product must include the following metadata (legacy shape):
 
 ```
 platform: "airtable" | "notion" | "hubspot" | ...
@@ -418,6 +449,8 @@ A percentage discount is applied automatically to each platform subscription ite
 
 ### 5.6.6 Capability Resolution
 
+> **SUPERSEDED 2026-08-03 (shared-entitlements design D1).** Capability resolution moves to a single shared `resolveEntitlements(orgId)` over the DB-native catalog — a 3-way join of `plan_features ⟕ account_feature_overrides ⟕ active addon_purchases` returning the full typed entitlement map (`effective = (override ?? plan value) + Σ active add-on quantities`). The per-platform independence and no-cross-platform-blending rules below still hold; only the *source* changes (DB catalog, not Stripe metadata). The "Feature flag source of truth" row is retired.
+
 The application determines a customer's accessible capabilities by reading their active Stripe subscription items and resolving per-platform access independently.
 
 | Rule | Detail |
@@ -440,7 +473,21 @@ The Backup capability is the core of Baseout. It is **always enabled** on all ti
 | **Monthly** | One scheduled backup per month | All |
 | **Weekly** | One scheduled backup per week | Launch+ |
 | **Daily** | One scheduled backup per day | Pro+ |
-| **Instant** | Webhook-driven — captures changes as they occur in Airtable | Business+ |
+| **Instant** | Webhook-driven — captures changes as they occur in Airtable | Pro+ |
+
+> **Instant = Pro+** per [PRD §2.2/§9](Baseout_PRD.md) — the PRD is authoritative where the two documents disagreed (this table previously read Business+; ruling recorded in `openspec/changes/server-schedule-and-cancel/proposal.md` and synced here by `server-instant-webhook` Phase G.3).
+
+#### Webhook poll-interval minimums (provisional)
+
+Instant is pull-based: Airtable pings dirty-mark a registry and each Space polls for changes on its own cadence, `backup_configurations.webhook_poll_interval_seconds` (column default 900). Per-tier floors, as shipped in the `apps/web` capability resolver (`TIER_CAPABILITIES.webhookPollMinSeconds`) — provisional pending pricing review:
+
+| Tier | Minimum poll interval |
+|---|---|
+| Pro | 900 s (15 min) |
+| Business | 300 s (5 min) |
+| Enterprise | 60 s (1 min) |
+
+Tiers without Instant keep the 900 s default as a moot floor. A config PATCH below the tier floor is rejected with `webhook_poll_interval_below_minimum`.
 
 ### 6.2 Backup Mode
 
@@ -456,15 +503,18 @@ All plans include Static backup. Dynamic database backup is available from Launc
 
 ### 6.3 What Gets Backed Up
 
-> † These entities are not available via the Airtable REST API and are not automatically backed up. They must be submitted by the user through a Baseout intake method (Inbound API, Airtable Scripts, Airtable Automations, or Manual Forms).
+> † These entities are not available via the Airtable REST API and are not automatically backed up. They must be submitted by the user through a Baseout intake method (Inbound API, Airtable Scripts, Airtable Automations, or Manual Forms). *Amended 2026-07-27:* Automations and Interfaces are now captured **automatically via Airtable's MCP server**; intake remains a supplement.
+>
+> ‡ Comments persist to the per-Space DB and therefore require Dynamic backup mode. Tier: comments **ride the record-backup tier** (`server-comments` design Decision 4 — *confirmed 2026-07-28*).
 
 | Entity | Trial | Starter | Launch | Growth | Pro | Business | Enterprise | Collection Method |
 |---|---|---|---|---|---|---|---|---|
-| **Schema** (Tables, Fields, Views) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Automatic (REST API) |
+| **Schema** (Tables, Fields, Views) | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Automatic (REST API; Views for all connections via MCP as of 2026-07) |
 | **Records** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Automatic (REST API) |
 | **Attachments** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Automatic (REST API) |
-| **Automations** † | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | Manual (user-submitted via intake) |
-| **Interfaces** † | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | Manual (user-submitted via intake) |
+| **Comments** ‡ *(added 2026-07-27)* | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | Automatic (REST API, comment-count-planned) |
+| **Automations** | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | Automatic (MCP capture) + manual intake |
+| **Interfaces** | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | Automatic (MCP capture) + manual intake |
 | **Custom Documentation** † | ✗ | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | Manual (user-submitted via intake) |
 
 ### 6.4 Restore Capabilities
@@ -494,6 +544,8 @@ All plans include Static backup. Dynamic database backup is available from Launc
 | **Shared PostgreSQL** | Multi-tenant PostgreSQL on DigitalOcean. Schema-level isolation. | Pro |
 | **Dedicated PostgreSQL** | Single-tenant PostgreSQL on Neon, Supabase, or DigitalOcean. Full instance isolation. | Business |
 | **BYODB (Bring Your Own Database)** | Customer provides a PostgreSQL 13+ instance. Baseout writes to it. Customer controls infrastructure, backups, and keys. | Enterprise |
+
+> **Decision (2026-07-25, founder):** Business includes **a capped number of dedicated-PG Spaces** (cap value TBD — margin guardrail); **unlimited dedicated-DB Spaces are Enterprise-only, via contract**. The §3/§4.1 "Unlimited Spaces" figures for Business refer to Spaces generally — the dedicated-database entitlement within them is what the cap governs. Provisioning recommendation: serverless PAYG PostgreSQL (Neon-class, scale-to-zero) per `research/pricing/infrastructure-cost-model.md` §4.
 
 ### 6.6 Storage Destination Options
 
@@ -637,6 +689,7 @@ The Data capability provides insights, monitoring, and governance tools for the 
 | **Data Visualization** | ✗ | ✗ | ✗ | ✗ | ✓* (basic) | ✓* (advanced) | ✓* (advanced) |
 | **PII Detection** | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✓* |
 | **Data Growth Trends** | ✗ | ✗ | ✓* | ✓* | ✓* | ✓* | ✓* |
+| **Media Library** *(added 2026-07-27; tier confirmed 2026-07-28: rides the Data capability, no new gate)* | ✗ | ✗ | ✓* | ✓* | ✓* | ✓* | ✓* |
 
 ### 8.2 Alert Types
 
@@ -695,6 +748,8 @@ The AI capability provides advanced artificial intelligence capabilities layered
 ### 11.1 Feature Matrix
 
 > \* Not available when using static file backups only.
+>
+> **Reconciliation note (2026-08-05):** §11.1 still uses legacy tier names (superseded per §3). Under the locked model, AI features gate on the DB-native **`plan_features`** catalog and draw from a shared **AI-credit** pool (1 credit = 1¢; provider cost + 25% markup — `pricing-guide.md` §4, `ai-credit-model.md`). **Bring your own AI key** — the customer supplies their own AI-provider API key, Baseout routes AI through it and consumes **zero credits** — is a **Plus+** feature (catalog slug `byo_ai_key`; matrix §3 line 201; mechanism spec `openspec/changes/shared-ai-byok/`). It is **distinct** from **Bring Your Own AI *Model*** (the last row below): a deferred V2/Enterprise capability where a customer wires in their own *model endpoint*, not an API key.
 
 | Feature | Trial | Starter | Launch | Growth | Pro | Business | Enterprise |
 |---|---|---|---|---|---|---|---|
@@ -707,7 +762,7 @@ The AI capability provides advanced artificial intelligence capabilities layered
 | **Chatbot Filters** | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✓* |
 | **AI Skills (Custom)** | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* |
 | **Vector Database** | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* | ✓* |
-| **Bring Your Own AI Model** | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* |
+| **Bring Your Own AI Model** *(V2 — distinct from BYO **key**, see note above)* | ✗ | ✗ | ✗ | ✗ | ✗ | ✗ | ✓* |
 
 ### 11.2 AI Feature Descriptions
 
@@ -719,7 +774,7 @@ The AI capability provides advanced artificial intelligence capabilities layered
 | **Chatbot Embed Code** | An embeddable snippet that allows the customer to place the chatbot in their own website, app, or Airtable interface. |
 | **AI Skills** | Custom-defined AI routines that combine the customer's API, tools, and data with Baseout's AI layer to automate specific workflows. |
 | **Vector Database** | A vector database (provisioned by Baseout) that stores embeddings of the customer's data for semantic search and RAG functionality. |
-| **Bring Your Own AI Model** | Enterprise customers can connect their own AI model (e.g., a fine-tuned GPT, Claude, or open-source model) to Baseout's AI pipeline. |
+| **Bring Your Own AI Model** *(V2, deferred)* | Enterprise customers connect their own **model endpoint** (a fine-tuned GPT/Claude/open-source model) into Baseout's AI pipeline — a distinct, deferred capability. **Not** to be confused with **Bring your own AI key** (Plus+, §3 / `pricing-guide.md` §69 / `openspec/changes/shared-ai-byok/`): supplying an API key for an existing provider so Baseout routes AI through the customer's own account and consumes zero credits. |
 
 ---
 
@@ -894,6 +949,9 @@ The following questions need to be resolved before this specification can be fin
 | 12 | **Governance Capability: Is this V1 or V2?** It's a large capability with significant engineering effort. | Engineering scope, timeline | Recommend **V2**. PII Detection in the Data capability could be V1 as a preview. |
 | 13 | **Integration Capability: Which third-party connectors are V1?** Zapier, Make.com, HyperDB? | Partnership requirements, engineering scope | Recommend **V2** for all third-party connectors. SQL REST API and Inbound API are V1. |
 | 14 | **Should we offer monthly-only pricing or require annual commitment for discounts?** | Cash flow, churn | Recommend **offering both** with ~20% discount for annual. |
+| 18 | *(added 2026-07-27)* **Comment backup tier?** Comments are captured via REST (§6.3) and persist to the per-Space DB (Dynamic mode). | Capability matrix, Stripe metadata, task-payload gating (`commentsEnabled`) | Recommend **ride the record-backup tier** (comments are record data; a separate gate adds matrix surface for marginal revenue) — `server-comments` design Decision 4. **RESOLVED 2026-07-28: ride the record-backup tier** (as recommended; implementation in `apps/server/src/lib/capabilities/comment-backup.ts` already matches). |
+| 19 | *(added 2026-07-27)* **Media Library tier?** The read surface over captured attachments (§8.1). | Capability matrix, read-API gating | Recommend **rides the Data capability** (requires Dynamic mode; no new top-level gate) — `server-media-index` task 0.1. **RESOLVED 2026-07-28: rides the Data capability** (as recommended; no new gate). Forward-only index stance stands ("coverage begins {date}"); backfill of pre-index backups stays an optional follow-up. |
+| 20 | *(added 2026-07-27)* **Add `workspacesAndBases:read` to the Airtable Connect OAuth grant?** The 2026-07-27 spike showed MCP `list_workspaces` 403s on the current grant; the scope is basic (non-enterprise) but was never requested, and no workspace-identity path exists without it. Adding it requires **re-consent** — existing Connections degrade (flat picker, no workspace auto-enroll) until reconnected. | Workspace grouping + auto-enroll (`web-workspace-bases`, `server-mcp-workspaces`), OAuth consent screen, reconnect comms | Recommend **add the scope** + per-connection degradation with a "reconnect to enable" affordance; de-risk first with a PAT probe (see `server-mcp-workspaces/README.md`). **RESOLVED 2026-07-28: scope ADDED to the code grant** (`apps/web/src/lib/airtable/config.ts`). Deploy gate cleared same day (oauth-setup.md §3.1 — verify on the first post-deploy Connect). Existing Connections degrade to the flat picker until reconnected. |
 
 ### Technical
 
@@ -933,9 +991,9 @@ The following questions need to be resolved before this specification can be fin
 | Schema Management Actions | | ✓ | Write-back to Airtable |
 | Data Capability (basic metrics, changelog) | ✓ | | Requires Dynamic |
 | Data Alerts & PII Detection | | ✓ | Complex, lower priority |
-| Automations Backup + Changelog | ✓ | | Via Inbound API |
+| Automations Backup + Changelog | ✓ | | MCP capture (2026-07) + Inbound API |
 | Automations Visualization | | ✓ | Complex |
-| Interfaces Backup + Changelog | ✓ | | Via Inbound API |
+| Interfaces Backup + Changelog | ✓ | | MCP capture (2026-07) + Inbound API |
 | Interfaces Visualization | | ✓ | Complex |
 | AI-Assisted Documentation | ✓ | | In Schema & Automation capabilitys |
 | AI MCP Server | | ✓ | Per PRD |

@@ -1,0 +1,47 @@
+---
+/**
+ * Account-level Destinations registry (production, honest-pending).
+ *
+ * The design assumes account-level, reusable Destinations (Airbyte model). In
+ * baseout's backend destinations are PER-SPACE — one row per (space, provider
+ * type) with the PRIMARY selected by backup_configurations.storage_type
+ * (shared-multi-destinations); the account-level model remains a follow-up
+ * (web-nav-ia-restructure / shared-destinations "Engineer"). This renders the
+ * current Space's destinations mapped into the registry shape, with a notice,
+ * and offers swap-primary on connected non-primary rows.
+ */
+import { env } from 'cloudflare:workers';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import DestinationsView from '../views/DestinationsView.astro';
+import { getBreadcrumbs } from '../lib/config';
+import { EMPTY_INTEGRATIONS_STATE, getIntegrationsState } from '../lib/integrations';
+import { toDestinationSummaries } from '../lib/registry-mappers';
+import { getDestinationProviders, type DestinationEnv } from '../lib/provider-catalog';
+
+const breadcrumbs = getBreadcrumbs('/destinations');
+const { account, db } = Astro.locals;
+const orgId = account?.organization?.id ?? null;
+const spaceId = account?.space?.id ?? null;
+const spaceName = account?.space?.name ?? 'this Space';
+
+const state =
+  orgId && spaceId && db ? await getIntegrationsState(db, orgId, spaceId) : EMPTY_INTEGRATIONS_STATE;
+
+const destinations = toDestinationSummaries(state, spaceId ?? 'space', spaceName);
+// Availability resolves the env-gated BYOS providers (Box/Dropbox/OneDrive
+// become available only when their OAuth client id is configured).
+const providers = getDestinationProviders(env as unknown as DestinationEnv);
+
+const notice =
+  'Account-level Destinations (reused across Spaces) are on the roadmap. Today destinations are per-Space — connect several and pick which one is Primary (where backups write).';
+---
+
+<SidebarLayout pageTitle="Destinations" breadcrumbs={breadcrumbs}>
+  <DestinationsView
+    destinations={destinations}
+    notice={notice}
+    providers={providers}
+    spaceId={spaceId}
+    primaryType={state.policy.storageType}
+  />
+</SidebarLayout>

@@ -11,7 +11,7 @@
     "nodejs_compat_populate_process_env"
   ],
   "vars": {
-    "BETTER_AUTH_URL": "http://localhost:4331",
+    "BETTER_AUTH_URL": "https://baseout.local:4331",
     // Test-only static secret. 32+ chars required by better-auth's session
     // signing. Real BETTER_AUTH_SECRET lives in wrangler secrets / .env;
     // never reuse this value outside the test harness.

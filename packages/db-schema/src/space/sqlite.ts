@@ -1,0 +1,641 @@
+/**
+ * Per-Space DB schema — SQLite / Cloudflare D1 dialect (d1 backend).
+ *
+ * MIRROR of ./pg.ts — same tables, columns, and semantics; only the dialect and
+ * column types differ. Keep the two in lockstep (a parity test should assert that
+ * table names and column names match across pg.ts and sqlite.ts).
+ *
+ * Type mapping vs Postgres:
+ *   uuid       → text            (app-generated ids; no gen_random_uuid in SQLite)
+ *   jsonb      → text mode:'json'
+ *   timestamp  → text            (ISO-8601 strings)
+ *   bigint     → integer         (SQLite integers are 64-bit)
+ *   boolean    → integer mode:'boolean'
+ *   integer    → integer
+ */
+import {
+  sqliteTable, text, integer, primaryKey, index, uniqueIndex,
+} from 'drizzle-orm/sqlite-core'
+
+const lifecycle = {
+  status: text('status').notNull().default('active'),
+  firstSeenRun: text('first_seen_run'),
+  firstUnseenRun: text('first_unseen_run'),
+  lastSeenRun: text('last_seen_run'),
+}
+
+// Documentation/annotation columns (inline; no separate table). Imported
+// Airtable description stays as `description`; effective resolves
+// description_override ?? ai_description ?? description. See pg.ts.
+const annotation = {
+  aiDescription: text('ai_description'),
+  aiOverview: text('ai_overview'),
+  descriptionOverride: text('description_override'),
+}
+
+// Single-row, self-describing meta table. `schema_version` drives lazy
+// on-access migration across thousands of per-Space DBs. Keyed 'singleton'.
+// (SQLite/D1 also has PRAGMA user_version, but this table is used on all
+// backends for uniform code with the Postgres backends.)
+export const meta = sqliteTable('bo_at_meta', {
+  id: text('id').primaryKey().default('singleton'),
+  schemaVersion: integer('schema_version').notNull(),
+  spaceId: text('space_id').notNull(),                // → master spaces.id
+  backend: text('backend').notNull(),                 // d1 | managed_pg | byodb
+  platform: text('platform').notNull().default('airtable'),
+  provisionedAt: text('provisioned_at'),
+  lastMigratedAt: text('last_migrated_at'),
+})
+
+export const baseRuns = sqliteTable('bo_at_base_runs', {
+  id: text('id').primaryKey(),
+  backupRunId: text('backup_run_id').notNull(),
+  baseId: text('base_id').notNull(),
+  status: text('status').notNull().default('queued'),
+  // full = backup pass; incremental = webhook payload application (task 1.6).
+  runType: text('run_type').notNull().default('full'),
+  currStep: text('curr_step'),
+  schemaVersionId: text('schema_version_id'),
+  schemaHash: text('schema_hash'),
+  tablesCount: integer('tables_count'),
+  recordsCount: integer('records_count'),
+  attachmentsCount: integer('attachments_count'),
+  startedAt: text('started_at'),
+  completedAt: text('completed_at'),
+  errorMessage: text('error_message'),
+}, (t) => ({
+  byBackupRun: index('bo_at_base_runs_backup_run_idx').on(t.backupRunId),
+  byBase: index('bo_at_base_runs_base_idx').on(t.baseId),
+}))
+
+export const bases = sqliteTable('bo_at_bases', {
+  baseId: text('base_id').primaryKey(),
+  name: text('name').notNull(),
+  description: text('description'),                    // Airtable's imported description
+  // Collaborator-capture stamps (server-base-collaborators) — mirror of pg.ts.
+  workspaceId: text('workspace_id'),
+  airtableCreatedTime: text('airtable_created_time'),
+  ownPermissionLevel: text('own_permission_level'),
+  ...annotation,
+  ...lifecycle,
+})
+
+export const tables = sqliteTable('bo_at_tables', {
+  tableId: text('table_id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  name: text('name').notNull(),
+  primaryFieldId: text('primary_field_id'),
+  fieldCount: integer('field_count'),
+  recordCount: integer('record_count'),
+  description: text('description'),                    // Airtable's imported description
+  ...annotation,
+  ...lifecycle,
+}, (t) => ({ byBase: index('bo_at_tables_base_idx').on(t.baseId) }))
+
+export const fields = sqliteTable('bo_at_fields', {
+  fieldId: text('field_id').primaryKey(),
+  tableId: text('table_id').notNull(),
+  baseId: text('base_id').notNull(),
+  name: text('name').notNull(),
+  type: text('type').notNull(),
+  options: text('options', { mode: 'json' }),
+  isPrimary: integer('is_primary', { mode: 'boolean' }).notNull().default(false),
+  description: text('description'),                    // Airtable's imported description
+  ...annotation,
+  ...lifecycle,
+}, (t) => ({ byTable: index('bo_at_fields_table_idx').on(t.tableId) }))
+
+export const views = sqliteTable('bo_at_views', {
+  viewId: text('view_id').primaryKey(),
+  tableId: text('table_id').notNull(),
+  baseId: text('base_id').notNull(),
+  name: text('name').notNull(),
+  type: text('type'),
+  ...annotation,
+  ...lifecycle,
+}, (t) => ({ byTable: index('bo_at_views_table_idx').on(t.tableId) }))
+
+export const schemaVersions = sqliteTable('bo_at_schema_versions', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  schemaHash: text('schema_hash').notNull(),
+  schemaJson: text('schema_json', { mode: 'json' }).notNull(),
+  firstSeenRun: text('first_seen_run'),
+}, (t) => ({
+  uniqHash: uniqueIndex('bo_at_schema_versions_base_hash_uq').on(t.baseId, t.schemaHash),
+}))
+
+export const schemaUpdates = sqliteTable('bo_at_schema_updates', {
+  id: text('id').primaryKey(),
+  runId: text('run_id').notNull(),
+  entityType: text('entity_type').notNull(),
+  entityId: text('entity_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('table_id'),
+  changeType: text('change_type').notNull(),
+  changeTypeName: text('change_type_name'),
+  beforeValue: text('before_value', { mode: 'json' }),
+  afterValue: text('after_value', { mode: 'json' }),
+  breaksData: integer('breaks_data', { mode: 'boolean' }).notNull().default(false),
+  // Webhook-derived attribution (task 1.6) — NULL on backup-derived rows.
+  actionSource: text('action_source'),
+  actor: text('actor'),
+}, (t) => ({
+  byRun: index('bo_at_schema_updates_run_idx').on(t.runId),
+  byEntity: index('bo_at_schema_updates_entity_idx').on(t.entityType, t.entityId),
+}))
+
+export const records = sqliteTable('bo_at_records', {
+  recordId: text('record_id').primaryKey(),
+  tableId: text('table_id').notNull(),
+  baseId: text('base_id').notNull(),
+  createdTime: text('created_time'),
+  modifiedTime: text('modified_time'),
+  status: text('status').notNull().default('active'),
+  firstSeenRun: text('first_seen_run'),
+  firstUnseenRun: text('first_unseen_run'),
+  lastSeenRun: text('last_seen_run'),
+  ...annotation,                                       // records have no Airtable description; ai/override only
+}, (t) => ({ byTable: index('bo_at_records_table_idx').on(t.tableId) }))
+
+export const recordFieldData = sqliteTable('bo_at_record_field_data', {
+  recordId: text('record_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  tableId: text('table_id').notNull(),
+  value: text('value'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.recordId, t.fieldId] }),
+  byTableField: index('bo_at_rfd_table_field_idx').on(t.tableId, t.fieldId),
+}))
+
+export const recordUpdates = sqliteTable('bo_at_record_updates', {
+  id: text('id').primaryKey(),
+  recordId: text('record_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  tableId: text('table_id').notNull(),
+  runId: text('run_id').notNull(),
+  oldValue: text('old_value'),
+  // Webhook-derived attribution (task 1.6) — NULL on backup-derived rows.
+  actionSource: text('action_source'),
+  actor: text('actor'),
+}, (t) => ({
+  byCell: index('bo_at_record_updates_cell_idx').on(t.recordId, t.fieldId),
+  byRun: index('bo_at_record_updates_run_idx').on(t.runId),
+}))
+
+export const attachments = sqliteTable('bo_at_attachments', {
+  compositeId: text('composite_id').primaryKey(),
+  tableId: text('table_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  recordId: text('record_id').notNull(),
+  storageKey: text('storage_key').notNull(),
+  contentHash: text('content_hash'),
+  filename: text('filename'),
+  sizeBytes: integer('size_bytes'),
+  mimeType: text('mime_type'),
+  uploadStatus: text('upload_status').notNull().default('pending'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  uploadedAt: text('uploaded_at'),
+}, (t) => ({
+  byRecord: index('bo_at_attachments_record_idx').on(t.recordId),
+  byHash: index('bo_at_attachments_hash_idx').on(t.contentHash),
+}))
+
+// Documentation lives inline (ai_description / ai_overview / description_override
+// on bases/tables/fields/records) — no separate bo_at_documentation table.
+
+export const healthScores = sqliteTable('bo_at_health_scores', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  runId: text('run_id').notNull(),
+  score: integer('score').notNull(),
+  band: text('band').notNull(),
+  categories: text('categories', { mode: 'json' }),
+}, (t) => ({ byBase: index('bo_at_health_scores_base_idx').on(t.baseId) }))
+
+export const healthIssues = sqliteTable('bo_at_health_issues', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  tableId: text('table_id'),
+  fieldId: text('field_id'),
+  runId: text('run_id').notNull(),
+  ruleId: text('rule_id').notNull(),
+  severity: text('severity').notNull(),
+  category: text('category'),
+  message: text('message').notNull(),
+  occurrenceCount: integer('occurrence_count'),
+  airtableDeeplink: text('airtable_deeplink'),
+}, (t) => ({ byBase: index('bo_at_health_issues_base_idx').on(t.baseId) }))
+
+// ---- Health metric config + results (server-schema-health-scoring) ----
+// Mirror of pg.ts. Space-level / per-entity prompt overrides, per-base
+// enable/disable, and per-metric sub-scores. See pg.ts for semantics.
+
+export const healthMetricPrompts = sqliteTable('bo_at_health_metric_prompts', {
+  id: text('id').primaryKey(),
+  ruleId: text('rule_id').notNull(),
+  prompt: text('prompt').notNull(),
+  updatedAt: text('updated_at'),
+}, (t) => ({ byRule: index('bo_at_health_metric_prompts_rule_idx').on(t.ruleId) }))
+
+export const healthMetricOverrides = sqliteTable('bo_at_health_metric_overrides', {
+  id: text('id').primaryKey(),
+  ruleId: text('rule_id').notNull(),
+  targetType: text('target_type').notNull(),
+  targetId: text('target_id').notNull(),
+  prompt: text('prompt').notNull(),
+  updatedAt: text('updated_at'),
+}, (t) => ({ byRule: index('bo_at_health_metric_overrides_rule_idx').on(t.ruleId) }))
+
+export const healthMetricState = sqliteTable('bo_at_health_metric_state', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  ruleId: text('rule_id').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+}, (t) => ({ byBase: index('bo_at_health_metric_state_base_idx').on(t.baseId) }))
+
+export const healthMetricScores = sqliteTable('bo_at_health_metric_scores', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  ruleId: text('rule_id').notNull(),
+  runId: text('run_id').notNull(),
+  score: integer('score').notNull(),
+  lastGeneratedAt: text('last_generated_at'),
+}, (t) => ({ byBase: index('bo_at_health_metric_scores_base_idx').on(t.baseId) }))
+
+export const automations = sqliteTable('bo_at_automations', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  airtableEntityId: text('airtable_entity_id'),
+  name: text('name'),
+  type: text('type'),
+  definition: text('definition', { mode: 'json' }),
+  status: text('status').notNull().default('active'),
+  submittedVia: text('submitted_via'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({ byBase: index('bo_at_automations_base_idx').on(t.baseId) }))
+
+// Interface apps only (pbd… containers) — server-interfaces-normalize. Mirror of pg.ts.
+export const interfaces = sqliteTable('bo_at_interfaces', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  airtableEntityId: text('airtable_entity_id'),
+  name: text('name'),
+  definition: text('definition', { mode: 'json' }),
+  submittedVia: text('submitted_via'),
+  ...lifecycle,
+}, (t) => ({ byBase: index('bo_at_interfaces_base_idx').on(t.baseId) }))
+
+// Interface pages (pag…) — non-form pages. Mirror of pg.ts.
+export const pages = sqliteTable('bo_at_pages', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  airtableEntityId: text('airtable_entity_id'),
+  interfaceId: text('interface_id'),
+  name: text('name'),
+  pageType: text('page_type'),
+  sourceTableId: text('source_table_id'),
+  definition: text('definition', { mode: 'json' }),
+  submittedVia: text('submitted_via'),
+  ...lifecycle,
+}, (t) => ({
+  byBase: index('bo_at_pages_base_idx').on(t.baseId),
+  byInterface: index('bo_at_pages_interface_idx').on(t.interfaceId),
+}))
+
+// Forms (pag…, pageType='form') — standalone or interface-owned. Mirror of pg.ts.
+export const forms = sqliteTable('bo_at_forms', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  airtableEntityId: text('airtable_entity_id'),
+  interfaceId: text('interface_id'),
+  name: text('name'),
+  sourceTableId: text('source_table_id'),
+  definition: text('definition', { mode: 'json' }),
+  submittedVia: text('submitted_via'),
+  ...lifecycle,
+}, (t) => ({
+  byBase: index('bo_at_forms_base_idx').on(t.baseId),
+  byInterface: index('bo_at_forms_interface_idx').on(t.interfaceId),
+}))
+
+// ---- Interface link tables (IDs only) — mirror of pg.ts ----
+export const pageTables = sqliteTable('bo_at_page_tables', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  pageId: text('page_id').notNull(),
+  tableId: text('table_id').notNull(),
+  ...lifecycle,
+}, (t) => ({
+  byPage: index('bo_at_page_tables_page_idx').on(t.pageId),
+  byTable: index('bo_at_page_tables_table_idx').on(t.tableId),
+  uniq: uniqueIndex('bo_at_page_tables_uq').on(t.pageId, t.tableId),
+}))
+
+export const pageFields = sqliteTable('bo_at_page_fields', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  pageId: text('page_id').notNull(),
+  tableId: text('table_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  isEditable: integer('is_editable', { mode: 'boolean' }),
+  ...lifecycle,
+}, (t) => ({
+  byPage: index('bo_at_page_fields_page_idx').on(t.pageId),
+  byField: index('bo_at_page_fields_field_idx').on(t.fieldId),
+  uniq: uniqueIndex('bo_at_page_fields_uq').on(t.pageId, t.fieldId),
+}))
+
+export const formFields = sqliteTable('bo_at_form_fields', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  formId: text('form_id').notNull(),
+  tableId: text('table_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  isEditable: integer('is_editable', { mode: 'boolean' }),
+  ...lifecycle,
+}, (t) => ({
+  byForm: index('bo_at_form_fields_form_idx').on(t.formId),
+  byField: index('bo_at_form_fields_field_idx').on(t.fieldId),
+  uniq: uniqueIndex('bo_at_form_fields_uq').on(t.formId, t.fieldId),
+}))
+
+// ---- Documentation feature: user-authored docs about the schema ----
+// Mirror of pg.ts. A document tags any number of entities; tags surface on the
+// Browse detail panel. See pg.ts for semantics.
+
+export const documents = sqliteTable('bo_at_documents', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull(),
+  body: text('body', { mode: 'json' }),               // Plate document model
+  excerpt: text('excerpt'),
+  createdByUserId: text('created_by_user_id'),
+  createdAt: text('created_at'),
+  updatedAt: text('updated_at'),
+})
+
+export const documentTags = sqliteTable('bo_at_document_tags', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull(),
+  targetType: text('target_type').notNull(),          // base|table|field|view
+  targetId: text('target_id').notNull(),
+  addedVia: text('added_via'),                        // inline|manual
+}, (t) => ({
+  byDocument: index('bo_at_document_tags_doc_idx').on(t.documentId),
+  byTarget: index('bo_at_document_tags_target_idx').on(t.targetType, t.targetId),
+  uniq: uniqueIndex('bo_at_document_tags_uq').on(t.documentId, t.targetType, t.targetId),
+}))
+
+export const documentLinks = sqliteTable('bo_at_document_links', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull(),
+  name: text('name'),
+  url: text('url').notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (t) => ({ byDocument: index('bo_at_document_links_doc_idx').on(t.documentId) }))
+
+export const documentDiagrams = sqliteTable('bo_at_document_diagrams', {
+  id: text('id').primaryKey(),
+  documentId: text('document_id').notNull(),
+  name: text('name'),
+  state: text('state', { mode: 'json' }).notNull(),   // serialized React Flow state
+  sortOrder: integer('sort_order').notNull().default(0),
+}, (t) => ({ byDocument: index('bo_at_document_diagrams_doc_idx').on(t.documentId) }))
+
+// ---- Relationships: synced-view candidates (server-relationships) ----
+// Mirror of pg.ts syncedViewCandidates. API-derived relationships are computed
+// on read from bo_at_fields; only synced-view candidates persist here.
+export const syncedViewCandidates = sqliteTable('bo_at_synced_view_candidates', {
+  id: text('id').primaryKey(),
+  baseId: text('base_id').notNull(),
+  sourceTableId: text('source_table_id').notNull(),
+  destTableId: text('dest_table_id').notNull(),
+  status: text('status').notNull().default('inferred'), // inferred|confirmed|dismissed
+  origin: text('origin').notNull().default('inferred'), // inferred|user
+  matchScore: integer('match_score'),
+  matchedPairs: text('matched_pairs', { mode: 'json' }),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  createdAt: text('created_at'),
+  updatedAt: text('updated_at'),
+}, (t) => ({
+  byBase: index('bo_at_synced_view_candidates_base_idx').on(t.baseId),
+  uniqPair: uniqueIndex('bo_at_synced_view_candidates_pair_uq').on(t.baseId, t.sourceTableId, t.destTableId),
+}))
+
+// ---- Chat: AI conversations about the schema (server-schema-chat) ----
+// Mirror of pg.ts chatThreads + chatMessages.
+export const chatThreads = sqliteTable('bo_at_chat_threads', {
+  id: text('id').primaryKey(),
+  title: text('title').notNull().default('New chat'),
+  archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+  scope: text('scope', { mode: 'json' }),
+  attachedDocIds: text('attached_doc_ids', { mode: 'json' }),
+  createdByUserId: text('created_by_user_id'),
+  createdAt: text('created_at'),
+  updatedAt: text('updated_at'),
+})
+
+export const chatMessages = sqliteTable('bo_at_chat_messages', {
+  id: text('id').primaryKey(),
+  threadId: text('thread_id').notNull(),
+  role: text('role').notNull(),
+  status: text('status').notNull().default('complete'),
+  content: text('content').notNull().default(''),
+  createdAt: text('created_at'),
+}, (t) => ({ byThread: index('bo_at_chat_messages_thread_idx').on(t.threadId) }))
+
+// ---- Inbox: notification triage state (server-notifications-inbox) ----
+// Mirror of pg.ts inboxState + inboxMutes. Feed is derived at read time; only
+// triage state persists. Account-shared in V1.
+export const inboxState = sqliteTable('bo_at_inbox_state', {
+  itemId: text('item_id').primaryKey(),
+  read: integer('read', { mode: 'boolean' }).notNull().default(false),
+  done: integer('done', { mode: 'boolean' }).notNull().default(false),
+  snoozedUntil: text('snoozed_until'),
+  updatedAt: text('updated_at'),
+})
+
+export const inboxMutes = sqliteTable('bo_at_inbox_mutes', {
+  baseId: text('base_id').primaryKey(),
+  createdAt: text('created_at'),
+})
+
+// ---- Record comments (server-comments) ---- Mirror of pg.ts comments.
+export const comments = sqliteTable('bo_at_comments', {
+  id: text('id').primaryKey(),
+  airtableCommentId: text('airtable_comment_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('airtable_table_id').notNull(),
+  recordId: text('airtable_record_id').notNull(),
+  author: text('author', { mode: 'json' }),
+  text: text('text'),
+  airtableCreatedAt: text('airtable_created_at'),
+  airtableLastUpdatedAt: text('airtable_last_updated_at'),
+  raw: text('raw', { mode: 'json' }),
+  status: text('status').notNull().default('active'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({
+  byRecord: index('bo_at_comments_record_idx').on(t.recordId),
+  byBase: index('bo_at_comments_base_idx').on(t.baseId),
+  uniqComment: uniqueIndex('bo_at_comments_comment_uq').on(t.airtableCommentId),
+}))
+
+// ---- Comment attachments (server-comment-attachments) ---- Mirror of pg.ts commentAttachments.
+export const commentAttachments = sqliteTable('bo_at_comment_attachments', {
+  id: text('id').primaryKey(),
+  airtableCommentId: text('airtable_comment_id').notNull(),
+  airtableAttachmentId: text('airtable_attachment_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('airtable_table_id').notNull(),
+  recordId: text('airtable_record_id').notNull(),
+  url: text('url'),
+  filename: text('filename'),
+  sizeBytes: integer('size_bytes'),
+  mimeType: text('mime_type'),
+  contentHash: text('content_hash'),
+  storageKey: text('storage_key'),
+  uploadStatus: text('upload_status').notNull().default('pending'),
+  status: text('status').notNull().default('active'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+  uploadedAt: text('uploaded_at'),
+}, (t) => ({
+  uniqAttachment: uniqueIndex('bo_at_comment_attachments_uq').on(t.airtableCommentId, t.airtableAttachmentId),
+  byComment: index('bo_at_comment_attachments_comment_idx').on(t.airtableCommentId),
+  byRecord: index('bo_at_comment_attachments_record_idx').on(t.recordId),
+  byStatus: index('bo_at_comment_attachments_status_idx').on(t.status, t.uploadStatus),
+}))
+
+// ---- Base collaborators (server-base-collaborators) ---- Mirror of pg.ts.
+export const principals = sqliteTable('bo_at_principals', {
+  id: text('id').primaryKey(),
+  principalId: text('principal_id').notNull(),
+  kind: text('kind').notNull(),
+  email: text('email'),
+  name: text('name'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({
+  uniqPrincipal: uniqueIndex('bo_at_principals_uq').on(t.principalId),
+}))
+
+export const baseAccess = sqliteTable('bo_at_base_access', {
+  id: text('id').primaryKey(),
+  principalId: text('principal_id').notNull(),
+  baseId: text('base_id').notNull(),
+  interfaceId: text('interface_id').notNull().default(''),
+  scope: text('scope').notNull(),
+  permissionLevel: text('permission_level'),
+  grantedByUserId: text('granted_by_user_id'),
+  airtableCreatedTime: text('airtable_created_time'),
+  status: text('status').notNull().default('active'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({
+  uniqGrant: uniqueIndex('bo_at_base_access_uq').on(t.baseId, t.interfaceId, t.scope, t.principalId),
+  byPrincipal: index('bo_at_base_access_principal_idx').on(t.principalId),
+  byBase: index('bo_at_base_access_base_idx').on(t.baseId),
+}))
+
+export const inviteLinks = sqliteTable('bo_at_invite_links', {
+  id: text('id').primaryKey(),
+  airtableInviteId: text('airtable_invite_id').notNull(),
+  baseId: text('base_id').notNull(),
+  interfaceId: text('interface_id').notNull().default(''),
+  linkScope: text('link_scope').notNull(),
+  invitedEmail: text('invited_email'),
+  permissionLevel: text('permission_level'),
+  referredByUserId: text('referred_by_user_id'),
+  restrictedToEmailDomains: text('restricted_to_email_domains', { mode: 'json' }),
+  type: text('type'),
+  airtableCreatedTime: text('airtable_created_time'),
+  status: text('status').notNull().default('active'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({
+  uniqInvite: uniqueIndex('bo_at_invite_links_uq').on(t.baseId, t.interfaceId, t.linkScope, t.airtableInviteId),
+  byBase: index('bo_at_invite_links_base_idx').on(t.baseId),
+}))
+
+export const baseCollabMeta = sqliteTable('bo_at_base_collab_meta', {
+  baseId: text('base_id').primaryKey(),
+  packages: text('packages', { mode: 'json' }),
+  raw: text('raw', { mode: 'json' }),
+  lastSeenRun: text('last_seen_run'),
+  lastSeenAt: text('last_seen_at'),
+})
+
+// ---- Media index (server-media-index) ---- Mirror of pg.ts assets/assetRefs.
+export const assets = sqliteTable('bo_at_assets', {
+  id: text('id').primaryKey(),
+  checksum: text('checksum').notNull(),
+  contentType: text('content_type'),
+  contentClass: text('content_class').notNull().default('other'),
+  sizeBytes: integer('size_bytes'),
+  storageKind: text('storage_kind'),
+  storageProvider: text('storage_provider'),
+  storageRef: text('storage_ref'),
+  thumbnailStatus: text('thumbnail_status').notNull().default('none'),
+  thumbnailKey: text('thumbnail_key'),
+  zeroRefSince: text('zero_ref_since'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({
+  uniqChecksum: uniqueIndex('bo_at_assets_checksum_uq').on(t.checksum),
+  byClass: index('bo_at_assets_class_idx').on(t.contentClass),
+  keyset: index('bo_at_assets_keyset_idx').on(t.firstSeenAt, t.id),
+}))
+
+export const assetRefs = sqliteTable('bo_at_asset_refs', {
+  id: text('id').primaryKey(),
+  assetId: text('asset_id').notNull(),
+  airtableAttachmentId: text('airtable_attachment_id').notNull(),
+  baseId: text('base_id').notNull(),
+  tableId: text('table_id').notNull(),
+  recordId: text('record_id').notNull(),
+  fieldId: text('field_id').notNull(),
+  filename: text('filename'),
+  status: text('status').notNull().default('active'),
+  firstSeenRun: text('first_seen_run'),
+  lastSeenRun: text('last_seen_run'),
+  firstSeenAt: text('first_seen_at'),
+  lastSeenAt: text('last_seen_at'),
+}, (t) => ({
+  uniqAttachment: uniqueIndex('bo_at_asset_refs_attachment_uq').on(t.airtableAttachmentId),
+  byAsset: index('bo_at_asset_refs_asset_idx').on(t.assetId),
+  byRecord: index('bo_at_asset_refs_record_idx').on(t.recordId),
+  byBase: index('bo_at_asset_refs_base_idx').on(t.baseId),
+}))
+
+// ---- Data-browse export jobs (server-data-browse) ---- Mirror of pg.ts exportJobs.
+export const exportJobs = sqliteTable('bo_at_export_jobs', {
+  id: text('id').primaryKey(),
+  scope: text('scope').notNull(),                     // JSON-encoded
+  format: text('format').notNull(),
+  status: text('status').notNull().default('queued'),
+  outputLocation: text('output_location'),
+  rowCount: integer('row_count'),
+  error: text('error'),
+  createdAt: text('created_at'),
+  completedAt: text('completed_at'),
+}, (t) => ({
+  byStatus: index('bo_at_export_jobs_status_idx').on(t.status),
+}))

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Baseout — Pricing Strategy Brief</title>
+<style>
+  @page { size: letter; margin: 0.45in 0.55in; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 8.7pt; line-height: 1.36; color: #1a1f2e;
+  }
+  .page { page-break-after: always; }
+  .page:last-child { page-break-after: auto; }
+
+  header.masthead {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 2.5pt solid #1a1f2e; padding-bottom: 5pt; margin-bottom: 8pt;
+  }
+  .masthead h1 { font-size: 15pt; font-weight: 800; letter-spacing: -0.02em; }
+  .masthead h1 span { color: #2563eb; }
+  .masthead .meta { font-size: 7.2pt; color: #5b6472; text-align: right; line-height: 1.5; }
+
+  h2 {
+    font-size: 10pt; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #2563eb; margin: 8pt 0 3pt; padding-top: 1pt;
+  }
+  h2:first-of-type { margin-top: 0; }
+  h3 { font-size: 8.8pt; font-weight: 700; margin: 5pt 0 2pt; }
+  p { margin-bottom: 3.5pt; }
+  strong { font-weight: 700; }
+  em { font-style: italic; }
+
+  .pitch {
+    background: #eef4ff; border-left: 3pt solid #2563eb; padding: 5pt 8pt;
+    font-size: 9pt; font-style: italic; margin-bottom: 5pt; color: #1e3a8a;
+  }
+
+  table { width: 100%; border-collapse: collapse; margin: 3pt 0 5pt; font-size: 7.7pt; }
+  th {
+    background: #1a1f2e; color: #fff; text-align: left; font-weight: 700;
+    padding: 2.5pt 5pt; font-size: 7.2pt; text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  td { padding: 2.5pt 5pt; border-bottom: 0.5pt solid #d6dae2; vertical-align: top; }
+  tr:nth-child(even) td { background: #f6f8fb; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .tight td { padding: 2pt 5pt; }
+
+  .cols { display: flex; gap: 14pt; }
+  .cols > div { flex: 1; }
+
+  ul { margin: 2pt 0 5pt 12pt; }
+  li { margin-bottom: 2pt; }
+
+  .callout {
+    background: #fff4ed; border: 0.75pt solid #f0b28a; border-left: 3pt solid #ea580c;
+    padding: 5pt 8pt; margin: 5pt 0; font-size: 8.2pt;
+  }
+  .callout .tag { font-weight: 800; color: #c2410c; text-transform: uppercase; font-size: 7.2pt; letter-spacing: 0.05em; }
+
+  .kv { font-size: 8pt; }
+  .kv b { color: #2563eb; }
+
+  footer.pagefoot {
+    margin-top: 6pt; padding-top: 3pt; border-top: 0.75pt solid #d6dae2;
+    font-size: 6.8pt; color: #8a93a3; display: flex; justify-content: space-between;
+  }
+  ul { margin: 2pt 0 4pt 11pt; }
+  li { margin-bottom: 1.5pt; }
+
+  .check { color: #15803d; font-weight: 700; }
+  .cross { color: #b91c1c; font-weight: 700; }
+  .muted { color: #5b6472; }
+  .badge {
+    display: inline-block; background: #1a1f2e; color: #fff; font-size: 6.8pt;
+    font-weight: 700; padding: 1pt 5pt; border-radius: 6pt; text-transform: uppercase;
+    letter-spacing: 0.05em; vertical-align: 1pt;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================= PAGE 1 ============================= -->
+<section class="page">
+  <header class="masthead">
+    <h1>base<span>out</span> — Pricing Strategy Brief</h1>
+    <div class="meta">Prepared for pricing-strategy review · July 2026<br>
+    Condensed from <em>Baseout_Pricing_Strategy_Briefing.md</em> (full 11-section report)</div>
+  </header>
+
+  <h2>1 · What Baseout Is</h2>
+  <div class="pitch">"Baseout is the backup, restore, and data intelligence layer for Airtable — giving platform admins real-time protection, schema visibility, and direct SQL access to their own data."</div>
+  <p>B2B SaaS utility that automatically backs up Airtable (schema, records, attachments, plus user-submitted automations/interfaces) to customer-controlled or Baseout-managed storage, provides restore, and layers on data intelligence: schema visualization &amp; changelogs, base health scoring, documentation, analytics, and — on higher tiers — a live SQL copy of the customer's data with API access. V1 is Airtable-only; the architecture is built for multi-platform expansion (Notion, HubSpot, Salesforce) with per-platform subscriptions under one billing relationship.</p>
+
+  <h2>2 · Business Context — a Relaunch, Not a Cold Start</h2>
+  <p>Baseout is the full rebrand and next-gen replacement of <strong>On2Air Backups</strong>: <strong>~200 paying customers</strong> (anchored at $9.99–$79.99/mo) migrate onto Baseout tiers. On2Air was, by the team's own assessment, <strong>historically underpriced relative to value</strong>. A detailed migration plan already exists (year-1 bridge pricing, two non-public plans, migration credit grants) that new pricing must stay compatible with. Competitive set is thin: Airtable's native snapshots (free, but not an external/governed copy), Whalesync, Coefficient, DIY scripts. Claimed differentiators: most storage destinations in market (only OneDrive support) and unique <strong>BYOS/BYODB</strong> — on static bring-your-own-storage plans, record data <em>never touches Baseout servers</em>.</p>
+
+  <h2>3 · The Architecture Split That Shapes All Pricing</h2>
+  <table class="tight">
+    <tr><th style="width:16%"></th><th style="width:42%">Static backup</th><th>Dynamic backup</th></tr>
+    <tr><td><strong>What</strong></td><td>Flat-file export (CSV) per run to a storage destination</td><td>Data synced into a managed database (D1 → Shared PG → Dedicated PG → BYODB by tier)</td></tr>
+    <tr><td><strong>Privacy</strong></td><td>On BYOS, data never stored on Baseout servers</td><td>Customer explicitly opts in to hosted storage</td></tr>
+    <tr><td><strong>Cost shape</strong></td><td>Re-transfers full dataset every run — scales with <strong>volume × frequency</strong></td><td>Big initial sync, cheap incremental deltas, <strong>ongoing storage at rest</strong></td></tr>
+    <tr><td><strong>Unlocks</strong></td><td>Backup + restore only</td><td>SQL access, APIs, real-time sync, and all data-intelligence capabilities</td></tr>
+  </table>
+  <p class="kv">The dynamic database ladder is simultaneously a <b>capability gate</b>, a <b>COGS driver</b>, and a <b>privacy trade-off</b> the customer is compensated for with features. All differentiation beyond "backup tool" requires it.</p>
+
+  <h2>4 · Feature Set — Nine Tier-Gated Capabilities</h2>
+  <table class="tight">
+    <tr><th style="width:14%">Capability</th><th>Contents</th><th style="width:22%">Availability</th></tr>
+    <tr><td><strong>Backup</strong> (core)</td><td>Scheduled monthly→weekly→daily→instant(webhook); manual runs; static+dynamic; 7+ destinations; restore (base/table, point-in-time, to new data); audit reports; smart cleanup</td><td>All tiers; frequency/mode/restores gated</td></tr>
+    <tr><td><strong>Schema</strong></td><td>Auto ERD visualization; changelog (30d→24mo); health score w/ audit rules; rich-text Documents; AI docs; diagram export PNG→SVG→PDF→embed</td><td>Basic on Trial; full Launch+; AI Pro+</td></tr>
+    <tr><td><strong>Data</strong></td><td>Record dashboards, data changelog, growth trends, alerts (5/25/∞ rules), insights, PII detection</td><td>Launch+ · requires dynamic</td></tr>
+    <tr><td><strong>Automations / Interfaces</strong></td><td>Backup + changelog + docs + insights (user-submitted intake; Airtable API doesn't expose them)</td><td>Launch+ · requires dynamic</td></tr>
+    <tr><td><strong>AI</strong></td><td>AI docs &amp; schema insights (V1); MCP server, RAG, chatbot, vector DB (V2); BYO model</td><td>Pro+ docs · Business+ rest (V2)</td></tr>
+    <tr><td><strong>Analytics</strong></td><td>Usage metrics, trend charts, custom reports (5/∞) &amp; dashboards (3/∞), scheduled delivery</td><td>Basic all · full Business+</td></tr>
+    <tr><td><strong>Governance</strong></td><td>Quality rules, classification, lineage, retention policy, access controls, SOC 2/GDPR tooling</td><td>Business+ · entirely V2</td></tr>
+    <tr><td><strong>Integrations</strong></td><td>Inbound API (Growth+), SQL REST API (Pro+), Direct SQL (Business+), Zapier/Make (V2), writeback (V2)</td><td>Growth+ ladder</td></tr>
+  </table>
+  <p class="kv"><b>Customer model:</b> Organization (billing entity, one Stripe subscription) → Spaces (unit of configuration, each with its own backup config, database + storage destination) → Bases. Spaces, bases/Space, connections, and seats are all counted resources. <b>Primary buyer:</b> the Airtable platform admin — internal IT/RevOps owners and consultants managing multiple client orgs.</p>
+
+  <footer class="pagefoot"><span>Baseout — Pricing Strategy Brief</span><span>Page 1 of 3</span></footer>
+</section>
+
+<!-- ============================= PAGE 2 ============================= -->
+<section class="page">
+  <h2>5 · The Designed Pricing Model <span class="badge">Spec — not yet in code</span></h2>
+  <table class="tight">
+    <tr><th></th><th class="num">Trial</th><th class="num">Launch</th><th class="num">Growth</th><th class="num">Pro</th><th class="num">Business</th><th class="num">Enterprise</th></tr>
+    <tr><td>Monthly / annual-equiv price</td><td class="num">$0</td><td class="num">$49 / $39</td><td class="num">$99 / $79</td><td class="num">$199 / $159</td><td class="num">$399 / $319</td><td class="num">Custom</td></tr>
+    <tr><td>Transfer credits / mo</td><td class="num">1,000</td><td class="num">15,000</td><td class="num">40,000</td><td class="num">120,000</td><td class="num">400,000</td><td class="num">Custom</td></tr>
+    <tr><td>Credit overage rate</td><td class="num">pauses</td><td class="num">$0.007</td><td class="num">$0.006</td><td class="num">$0.005</td><td class="num">$0.004</td><td class="num">Negotiated</td></tr>
+    <tr><td>Effective $/credit (monthly)</td><td class="num">—</td><td class="num">$0.0039</td><td class="num">$0.0025</td><td class="num">$0.0017</td><td class="num">$0.0010</td><td class="num">—</td></tr>
+    <tr><td>Backup frequency</td><td class="num">Monthly</td><td class="num">Weekly</td><td class="num">Weekly</td><td class="num">Daily</td><td class="num">Daily + Instant</td><td class="num">Daily + Instant</td></tr>
+    <tr><td>Database (dynamic)</td><td class="num">D1 schema-only</td><td class="num">D1 full</td><td class="num">D1 full</td><td class="num">Shared PG</td><td class="num">Dedicated PG</td><td class="num">BYODB</td></tr>
+    <tr><td>R2 storage / DB storage</td><td class="num">250MB / 100MB</td><td class="num">5GB / 1GB</td><td class="num">20GB / 5GB</td><td class="num">75GB / 25GB</td><td class="num">250GB / 100GB</td><td class="num">Custom</td></tr>
+    <tr><td>Snapshot retention</td><td class="num">30 days</td><td class="num">90 days</td><td class="num">6 mo</td><td class="num">12 mo</td><td class="num">24 mo</td><td class="num">Custom</td></tr>
+    <tr><td>Spaces · bases/Space</td><td class="num">1 · 1</td><td class="num">3 · 3</td><td class="num">∞ · ∞</td><td class="num">∞ · ∞</td><td class="num">∞ · ∞</td><td class="num">∞ · ∞</td></tr>
+    <tr><td>Seats · restores/mo · manual runs</td><td class="num">1 · 1 · 0</td><td class="num">3 · 2 · 2</td><td class="num">5 · 3 · 5</td><td class="num">10 · 5 · ∞</td><td class="num">15 · 15 · ∞</td><td class="num">∞ · ∞ · ∞</td></tr>
+  </table>
+  <p class="kv"><b>No free tier</b> — trial only (per PRD: 7 days AND 1 backup run, data-capped, no card; $0 Stripe subscription swapped on upgrade). <b>Non-public plans:</b> Starter $29/mo (5,000 cr, hidden entry plan) and On2Air Bridge $9.99/mo (migration-only, year 1). <b>PAYG packs</b> $10–$150 at deliberately unattractive rates ($0.0100–0.0125/cr). Annual ≈ 20% off.</p>
+
+  <div class="cols">
+    <div>
+      <h3>Credit system (the usage meter)</h3>
+      <table class="tight">
+        <tr><th>Operation</th><th class="num">Credits</th></tr>
+        <tr><td>Schema backup (per base/run)</td><td class="num">5</td></tr>
+        <tr><td>Records (per 1,000)</td><td class="num">1</td></tr>
+        <tr><td>Attachments (per 50 MB)</td><td class="num">1</td></tr>
+        <tr><td>Restore: table / base / base+attach</td><td class="num">15 / 40 / 75</td></tr>
+        <tr><td>Manual backup or cleanup trigger</td><td class="num">10</td></tr>
+        <tr><td>AI doc gen / AI schema insight</td><td class="num">10 / 5</td></tr>
+        <tr><td>Inbound API (per 100) / SQL REST (per 50)</td><td class="num">1 / 1</td></tr>
+      </table>
+      <p class="kv">Credits reset monthly, no rollover; rates DB-stored (tunable without deploys). Multi-bucket design: plan, add-on, <b>onboarding</b> (30-day, absorbs the 200×-cost first backup), purchased (12-mo), promotional, migration — consumed soonest-expiring first over an immutable ledger. Per-org overage mode: <b>auto-bill or hard cap</b> (default cap) + 50/75/90/100% alerts.</p>
+    </div>
+    <div>
+      <h3>Overage &amp; expansion revenue</h3>
+      <table class="tight">
+        <tr><th>Item</th><th>Price</th></tr>
+        <tr><td>R2 storage overage</td><td>$0.50 /GB/mo</td></tr>
+        <tr><td>DB storage overage (D1/Shared/Dedicated)</td><td>$1 / $2 / $3 /GB/mo</td></tr>
+        <tr><td>Recurring credit add-ons (+5K→+150K/mo)</td><td>$25–$420/mo</td></tr>
+        <tr><td>One-time credit blocks (5K→200K)</td><td>$30–$700</td></tr>
+        <tr><td>Storage add-ons (+10→+250 GB R2)</td><td>$4–$130/mo</td></tr>
+        <tr><td>Extra seats (Starter→Pro)</td><td>$6–$12 /seat/mo</td></tr>
+      </table>
+      <p class="kv">Rate ladder is engineered: each tier's effective $/credit beats the tier below; add-ons beat overage; plans beat add-ons — every path points to <b>upgrade</b>. Stripe: one subscription/org, one item/platform, capabilities resolved from product metadata; multi-platform discount (15–20%, TBD) reserved for V2.</p>
+    </div>
+  </div>
+
+  <h2>6 · Pricing Levers Available</h2>
+  <table class="tight">
+    <tr><th style="width:17%">Class</th><th>Levers</th></tr>
+    <tr><td><strong>Usage meters</strong></td><td>Transfer credits (primary value metric — volume × frequency), R2 GB, DB GB, API calls, SQL queries, restores/mo, manual runs, AI operations</td></tr>
+    <tr><td><strong>Capacity limits</strong></td><td>Spaces (consultant magnet: unlimited at $99), bases/Space, connections, seats (deliberately secondary — few users per admin account)</td></tr>
+    <tr><td><strong>Capability gates</strong></td><td><strong>Backup frequency = RPO = cleanest WTP proxy</strong>; DB-engine ladder; retention; cleanup policy sophistication; destinations (S3 Growth+, custom BYOS Pro+); capability on/off + quantity sub-gates (alert rules, reports, dashboards); notification channels; diagram export; support level; SSO/SOC 2/BYODB</td></tr>
+    <tr><td><strong>Commercial constructs</strong></td><td>Annual ~20%; onboarding credits; hard-cap default; add-on/block/PAYG ladder; non-public plans; migration pricing + credit grants; per-platform trials; multi-platform discount (V2)</td></tr>
+  </table>
+
+  <footer class="pagefoot"><span>Baseout — Pricing Strategy Brief</span><span>Page 2 of 3</span></footer>
+</section>
+
+<!-- ============================= PAGE 3 ============================= -->
+<section class="page">
+  <h2>7 · Cost Structure</h2>
+  <p>Fully serverless/usage-based stack — near-zero COGS at rest, scales with activity: Cloudflare Workers + Durable Objects (web, engine, per-connection rate limiting, per-Space scheduling), Trigger.dev v3 (per-second compute for backup tasks), DigitalOcean PostgreSQL master DB, Cloudflare D1/R2/KV/Email, Workers AI, Stripe (~2.9% + 30¢), PostHog, dub.co. The Airtable API is free — its rate limits, not dollars, are the constraint.</p>
+  <div class="cols">
+    <div>
+      <h3>Margin anchors (early-2026 list prices — verify)</h3>
+      <table class="tight">
+        <tr><th>Item</th><th>Price vs cost</th></tr>
+        <tr><td>R2 storage overage</td><td>$0.50 vs ~$0.015/GB/mo → <span class="check">~97% margin</span></td></tr>
+        <tr><td>D1 DB overage</td><td>$1.00 vs ~$0.75/GB/mo → <span class="cross">~25% — thin</span></td></tr>
+        <tr><td>Credit-metered activity</td><td>Generally 10–100× marginal infra cost</td></tr>
+        <tr><td>Restore / API / email</td><td>Near-zero marginal cost (R2 has <strong>zero egress</strong>)</td></tr>
+        <tr><td>Enterprise BYODB</td><td>Cheapest tier to serve — margin is support/compliance, not COGS</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>Structural cost notes</h3>
+      <ul>
+        <li><strong>Storage persists; credits reset</strong> — retention-heavy tiers accrue COGS monthly; Smart Cleanup is the containment feature (not yet built).</li>
+        <li><strong>Dynamic incremental sync is cheaper for Baseout AND customer</strong> — the credit model nudges users toward the mode that also unlocks upsell.</li>
+        <li><strong>Step costs:</strong> support (chat at Business, CSM/SLA at Enterprise) and SOC 2 certification (prereq for selling Business+).</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout"><span class="tag">⚠ Biggest structural margin risk</span> — Business tier ($399/mo) includes a <strong>dedicated PostgreSQL instance per Space</strong> (~$19–60+/mo COGS each) <strong>with unlimited Spaces</strong>. Ten Spaces could cost more to serve than the subscription earns. Options: cap included dedicated-DB Spaces, provision per-Organization instead of per-Space, or price extra dedicated-DB Spaces as an add-on.</div>
+
+  <h2>8 · Reality Check — Spec vs. Shipped Code (July 2026)</h2>
+  <div class="cols">
+    <div>
+      <h3><span class="check">✓</span> Built &amp; working</h3>
+      <ul>
+        <li>Backup pipeline end-to-end: OAuth, scheduled (per-Space DO alarms) + manual runs, per-base Trigger.dev tasks, CSV + attachment export w/ dedup, run history/cancel/delete, per-connection rate limiting</li>
+        <li>Destinations: managed R2, Google Drive, Dropbox, Box, OneDrive (S3/Frame.io stubbed)</li>
+        <li>Stripe skeleton: customer + subscription at signup, 7-day/1-run trial enforcement, subscription-item-per-platform, tier resolution</li>
+        <li>Tier gating in code: frequency, bases/Space, schema-docs level</li>
+        <li>Auth (magic link), dashboard, integrations/destinations UI, schema browsing, staff admin console</li>
+      </ul>
+    </div>
+    <div>
+      <h3><span class="cross">✗</span> Designed but NOT implemented</h3>
+      <ul>
+        <li><strong>Entire credit system</strong> — no buckets, ledger, rates, or consumption logic; code has a simpler overage table that nothing populates</li>
+        <li><strong>Overage metering/billing</strong> — revenue leakage until built</li>
+        <li><strong>Restore</strong> — placeholder page only (a headline feature of every tier)</li>
+        <li><strong>Retention/cleanup</strong> — storage grows unbounded (COGS risk)</li>
+        <li><strong>Dynamic DB provisioning, webhooks/instant, Inbound API, SQL REST, Direct SQL</strong> — placeholder Workers</li>
+        <li>Seat/storage quota enforcement; analytics; health score UI</li>
+      </ul>
+    </div>
+  </div>
+  <p class="kv"><b>Sequencing decision:</b> launch pricing can (a) start with what's enforceable today — flat tiers + frequency + bases caps + trial — layering credits/overage in later, or (b) hold launch for the credit meter. The gap between designed and enforceable models is currently large. Code tier limits also drift from spec (e.g., bases/Space 5/10/15/25/50 vs spec 1/3/3/∞) — treat code values as provisional.</p>
+
+  <h2>9 · Open Questions for the Pricing Engagement</h2>
+  <table class="tight">
+    <tr><td style="width:50%"><strong>1.</strong> Trial: 7-day/1-run (PRD, in code) vs persistent $0 tier w/ 1,000 cr/mo (Features)?</td><td><strong>2.</strong> Dynamic storage credits (2cr/1K rec, 5cr/GB monthly) contradict "credits meter transfer only" — which wins? Changes dynamic economics materially.</td></tr>
+    <tr><td><strong>3.</strong> Dedicated-PG-per-Space × unlimited Spaces at Business — cap, restructure, or reprice?</td><td><strong>4.</strong> Is $49 the right public floor given ~200 legacy customers anchored at $9.99–$29.99 (+ hidden $29 plan)?</td></tr>
+    <tr><td><strong>5.</strong> Launch price: $49 (tier table) vs $59 (resolution note) — typo to settle.</td><td><strong>6.</strong> Does the consultant/agency segment need client-count packaging vs riding Growth?</td></tr>
+    <tr><td><strong>7.</strong> Instant backup at Pro+ (PRD) or Business+ (Features)? Same conflict on Automations/Interfaces min tier.</td><td><strong>8.</strong> Unresolved spec items: Enterprise qualification floor, default overage cap multiple, incremental-sync "changed record" definition, attachment MB measurement point, multi-platform discount %.</td></tr>
+  </table>
+
+  <p class="muted" style="font-size:7.5pt; margin-top:6pt;">Sources: shared/Baseout_Features.md v1.1 (authoritative pricing), shared/Pricing_Credit_System.md, shared/Baseout_PRD.md v1.1/1.4, shared/Baseout_Implementation_Plan.md, plus full codebase audit (apps/web, server, workflows, api, sql, hooks, admin). Full detail: overview/pricing/Baseout_Pricing_Strategy_Briefing.md.</p>
+
+  <footer class="pagefoot"><span>Baseout — Pricing Strategy Brief</span><span>Page 3 of 3</span></footer>
+</section>
+
+</body>
+</html>

@@ -2,10 +2,232 @@
 // Headless API only: /api/health (public) + /api/internal/* (INTERNAL_TOKEN-gated).
 // Per CLAUDE.md §5.2.
 
-import type { Env } from "./env";
+import type { AppLocals, Env } from "./env";
+import { createMasterDb } from "./db/worker";
 import { applyMiddleware } from "./middleware";
 import { healthHandler } from "./pages/api/health";
 import { internalPingHandler } from "./pages/api/internal/ping";
+import { dbSmokeHandler } from "./pages/api/internal/db-smoke";
+import { triggerSmokeHandler } from "./pages/api/internal/trigger-smoke";
+import { whoamiHandler } from "./pages/api/internal/connections/whoami";
+import { connectionsWorkspacesHandler } from "./pages/api/internal/connections/workspaces";
+import {
+  connectionDOProxyHandler,
+  type ConnectionDOProxyAction,
+} from "./pages/api/internal/connections/do-proxy";
+import { runsStartHandler } from "./pages/api/internal/runs/start";
+import { restoresStartHandler } from "./pages/api/internal/restores/start";
+import { restoresProgressHandler } from "./pages/api/internal/restores/progress";
+import { restoresCompleteHandler } from "./pages/api/internal/restores/complete";
+import { runsCompleteHandler } from "./pages/api/internal/runs/complete";
+import { runsProgressHandler } from "./pages/api/internal/runs/progress";
+import { runsCancelHandler } from "./pages/api/internal/runs/cancel";
+import { restoresCancelHandler } from "./pages/api/internal/restores/cancel";
+import { runsDeleteHandler } from "./pages/api/internal/runs/delete";
+import { runsDeleteCompleteHandler } from "./pages/api/internal/runs/delete-complete";
+import { runsDetailHandler } from "./pages/api/internal/runs/detail";
+import { spacesSetFrequencyHandler } from "./pages/api/internal/spaces/set-frequency";
+import { spacesProvisionDatabaseHandler } from "./pages/api/internal/spaces/provision-database";
+import { spacesSchemaSyncHandler } from "./pages/api/internal/spaces/schema-sync";
+import { spacesHealthSyncHandler } from "./pages/api/internal/spaces/health-sync";
+import { spacesHealthOverviewHandler } from "./pages/api/internal/spaces/health-overview";
+import { spacesRelationshipsOverviewHandler } from "./pages/api/internal/spaces/relationships-overview";
+import { spacesRelationshipsSyncHandler } from "./pages/api/internal/spaces/relationships-sync";
+import { spacesRelationshipsMutateHandler } from "./pages/api/internal/spaces/relationships-mutate";
+import { spacesChatThreadsHandler } from "./pages/api/internal/spaces/chat-threads";
+import { spacesChatThreadHandler } from "./pages/api/internal/spaces/chat-thread";
+import { spacesChatSendHandler } from "./pages/api/internal/spaces/chat-send";
+import { spacesChatMessageCompleteHandler } from "./pages/api/internal/spaces/chat-message-complete";
+import { spacesMigrateSchemaHandler } from "./pages/api/internal/spaces/migrate-schema";
+import { spacesHealthRerunHandler } from "./pages/api/internal/spaces/health-rerun";
+import { spacesHealthPromptHandler } from "./pages/api/internal/spaces/health-prompt";
+import { spacesHealthEnableHandler } from "./pages/api/internal/spaces/health-enable";
+import { spacesHealthConfigHandler } from "./pages/api/internal/spaces/health-config";
+import { spacesRecordsSyncHandler } from "./pages/api/internal/spaces/records-sync";
+import { spacesCommentsSyncHandler } from "./pages/api/internal/spaces/comments-sync";
+import { spacesCollaboratorsSyncHandler } from "./pages/api/internal/spaces/collaborators-sync";
+import { spacesCommentsPlanHandler } from "./pages/api/internal/spaces/comments-plan";
+import { spacesMediaSyncHandler } from "./pages/api/internal/spaces/media-sync";
+import { spacesMediaHandler } from "./pages/api/internal/spaces/media";
+import { spacesIncrementalApplyHandler } from "./pages/api/internal/spaces/incremental-apply";
+import { spacesRescanBasesHandler } from "./pages/api/internal/spaces/rescan-bases";
+import { spacesStorageDestinationHandler } from "./pages/api/internal/spaces/storage-destination";
+import { spacesDocumentsHandler } from "./pages/api/internal/spaces/documents";
+import { spacesDocumentHandler } from "./pages/api/internal/spaces/document";
+import { spacesDocsByEntityHandler } from "./pages/api/internal/spaces/docs-by-entity";
+import { spacesSchemaReadHandler } from "./pages/api/internal/spaces/schema-read";
+import { spacesSchemaChangelogHandler } from "./pages/api/internal/spaces/schema-changelog";
+import { spacesSchemaSearchHandler } from "./pages/api/internal/spaces/schema-search";
+import { spacesSchemaVersionsHandler } from "./pages/api/internal/spaces/schema-versions";
+// Data browser read routes (server-data-browse §3).
+import { spacesDataRecordsHandler } from "./pages/api/internal/spaces/data-records";
+import { spacesDataRecordHandler } from "./pages/api/internal/spaces/data-record";
+import { spacesDataRecordHistoryHandler } from "./pages/api/internal/spaces/data-record-history";
+import { spacesDataRecordLinksHandler } from "./pages/api/internal/spaces/data-record-links";
+import { spacesDataRecordProvenanceHandler } from "./pages/api/internal/spaces/data-record-provenance";
+import { spacesDataChangelogHandler } from "./pages/api/internal/spaces/data-changelog";
+import { spacesDataSearchHandler } from "./pages/api/internal/spaces/data-search";
+import {
+  spacesDataExportHandler,
+  spacesDataExportJobHandler,
+} from "./pages/api/internal/spaces/data-export";
+import { spacesNotificationsHandler } from "./pages/api/internal/spaces/notifications";
+import { spacesNotificationsTriageHandler } from "./pages/api/internal/spaces/notifications-triage";
+import { spacesNotificationsMuteHandler } from "./pages/api/internal/spaces/notifications-mute";
+import { webhookSubscriptionsCursorHandler } from "./pages/api/internal/webhook-subscriptions/cursor";
+import { webhookSubscriptionsFallbackHandler } from "./pages/api/internal/webhook-subscriptions/fallback";
+import { webhookSubscriptionsContextHandler } from "./pages/api/internal/webhook-subscriptions/context";
+import { spacesRegisterWebhooksHandler } from "./pages/api/internal/spaces/register-webhooks";
+import { spacesUnregisterWebhooksHandler } from "./pages/api/internal/spaces/unregister-webhooks";
+import { cleanupPlanHandler } from "./pages/api/internal/cleanup-plan";
+import { cleanupCompleteHandler } from "./pages/api/internal/cleanup-complete";
+import {
+  attachmentsLookupHandler,
+  attachmentsRecordHandler,
+} from "./pages/api/internal/attachments/lookup";
+import { connectionsTokenHealthHandler } from "./pages/api/internal/connections/token-health";
+import { resolveCronJobs } from "./lib/cron/dispatch";
+import { withServiceRun, numericCounts, pruneServiceRuns } from "./lib/service-runs";
+import {
+  runScheduledOauthRefresh,
+  runScheduledKeepalive,
+  runScheduledConnectionInvalidation,
+} from "./lib/cron/oauth-refresh-deps";
+import { runScheduledRunReconciliation } from "./lib/runs/reconcile-deps";
+import { runScheduledWebhookRenewal } from "./lib/cron/webhook-renewal-deps";
+
+const CONNECTIONS_WHOAMI_RE =
+  /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
+const CONNECTIONS_WORKSPACES_RE =
+  /^\/api\/internal\/connections\/([^/]+)\/workspaces$/;
+const CONNECTIONS_DO_PROXY_RE =
+  /^\/api\/internal\/connections\/([^/]+)\/(lock|unlock|token)$/;
+const RUNS_START_RE = /^\/api\/internal\/runs\/([^/]+)\/start$/;
+const RESTORES_START_RE = /^\/api\/internal\/restores\/([^/]+)\/start$/;
+const RESTORES_PROGRESS_RE = /^\/api\/internal\/restores\/([^/]+)\/progress$/;
+const RESTORES_COMPLETE_RE = /^\/api\/internal\/restores\/([^/]+)\/complete$/;
+const RESTORES_CANCEL_RE = /^\/api\/internal\/restores\/([^/]+)\/cancel$/;
+const RUNS_COMPLETE_RE = /^\/api\/internal\/runs\/([^/]+)\/complete$/;
+const RUNS_PROGRESS_RE = /^\/api\/internal\/runs\/([^/]+)\/progress$/;
+const RUNS_CANCEL_RE = /^\/api\/internal\/runs\/([^/]+)\/cancel$/;
+const RUNS_DELETE_RE = /^\/api\/internal\/runs\/([^/]+)\/delete$/;
+const RUNS_DELETE_COMPLETE_RE =
+  /^\/api\/internal\/runs\/([^/]+)\/delete-complete$/;
+const RUNS_DETAIL_RE = /^\/api\/internal\/runs\/([^/]+)\/detail$/;
+const SPACES_SET_FREQUENCY_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/set-frequency$/;
+const SPACES_PROVISION_DATABASE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/provision-database$/;
+const SPACES_SCHEMA_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/schema-sync$/;
+const SPACES_HEALTH_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/health-sync$/;
+const SPACES_HEALTH_OVERVIEW_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/health-overview$/;
+// Health Pro+ config + re-run (server-schema-health-scoring §4.2c).
+const SPACES_HEALTH_CONFIG_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/health-config$/;
+const SPACES_HEALTH_RERUN_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/health-rerun$/;
+const SPACES_HEALTH_PROMPT_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/health-prompt$/;
+const SPACES_HEALTH_ENABLE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/health-enable$/;
+// Relationships tab (server-relationships).
+const SPACES_RELATIONSHIPS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/relationships$/;
+const SPACES_RELATIONSHIPS_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/relationships\/sync$/;
+const SPACES_RELATIONSHIPS_MUTATE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/relationships\/mutate$/;
+// Chat tab (server-schema-chat).
+const SPACES_CHAT_THREADS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/chat\/threads$/;
+const SPACES_CHAT_THREAD_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/chat\/threads\/([^/]+)$/;
+const SPACES_CHAT_SEND_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/chat\/send$/;
+const SPACES_CHAT_MESSAGE_COMPLETE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/chat\/message-complete$/;
+// In-place per-Space schema upgrade (system-per-space-upgrade).
+const SPACES_MIGRATE_SCHEMA_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/migrate-schema$/;
+const SPACES_RECORDS_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/records-sync$/;
+// Batched comment captures + count-delta refresh planning (server-comments).
+const SPACES_COMMENTS_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/comments-sync$/;
+const SPACES_COLLABORATORS_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/collaborators-sync$/;
+const SPACES_COMMENTS_PLAN_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/comments-plan$/;
+// Media index: batched metadata ingest + the Media Library read API
+// (server-media-index). The read regex captures the subpath after /media.
+const SPACES_MEDIA_SYNC_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/media-sync$/;
+const SPACES_MEDIA_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/media(?:\/(.*))?$/;
+// Incremental (webhook-driven) per-space apply seam (server-dynamic-mode).
+const SPACES_INCREMENTAL_APPLY_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/incremental-apply$/;
+const SPACES_RESCAN_BASES_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/rescan-bases$/;
+const SPACES_STORAGE_DESTINATION_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/storage-destination$/;
+// Schema Docs broker (openspec/changes/shared-schema-docs §2).
+const SPACES_DOCUMENTS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/documents$/;
+const SPACES_DOCUMENT_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/documents\/([^/]+)$/;
+const SPACES_DOCS_BY_ENTITY_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/docs-by-entity$/;
+const SPACES_SCHEMA_READ_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/schema$/;
+const SPACES_SCHEMA_CHANGELOG_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/schema-changelog$/;
+const SPACES_SCHEMA_SEARCH_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/schema-search$/;
+const SPACES_SCHEMA_VERSIONS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/schema-versions$/;
+// Data browser read routes over the per-Space record store (server-data-browse §3).
+const SPACES_DATA_RECORDS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/tables\/([^/]+)\/records$/;
+const SPACES_DATA_RECORD_HISTORY_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/records\/([^/]+)\/history$/;
+const SPACES_DATA_RECORD_LINKS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/records\/([^/]+)\/links\/([^/]+)$/;
+const SPACES_DATA_RECORD_PROVENANCE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/records\/([^/]+)\/provenance\/([^/]+)$/;
+const SPACES_DATA_RECORD_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/records\/([^/]+)$/;
+const SPACES_DATA_CHANGELOG_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/changelog$/;
+const SPACES_DATA_SEARCH_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/search$/;
+const SPACES_DATA_EXPORT_JOB_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/export\/([^/]+)$/;
+const SPACES_DATA_EXPORT_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/export$/;
+// Webhook lifecycle + incremental-run callbacks (server-instant-webhook
+// Phases D + E).
+const WEBHOOK_SUBSCRIPTIONS_CURSOR_RE =
+  /^\/api\/internal\/webhook-subscriptions\/([^/]+)\/cursor$/;
+const WEBHOOK_SUBSCRIPTIONS_FALLBACK_RE =
+  /^\/api\/internal\/webhook-subscriptions\/([^/]+)\/fallback$/;
+// Payloads-auth resolution for the incremental task (server-dynamic-mode 4.1).
+const WEBHOOK_SUBSCRIPTIONS_CONTEXT_RE =
+  /^\/api\/internal\/webhook-subscriptions\/([^/]+)\/context$/;
+const SPACES_REGISTER_WEBHOOKS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/register-webhooks$/;
+const SPACES_UNREGISTER_WEBHOOKS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/unregister-webhooks$/;
+// Inbox notification feed + triage (server-notifications-inbox).
+const SPACES_NOTIFICATIONS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/notifications$/;
+const SPACES_NOTIFICATIONS_TRIAGE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/notifications\/triage$/;
+const SPACES_NOTIFICATIONS_MUTE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/notifications\/mute$/;
 
 // Re-export Durable Object classes so workerd can resolve their bindings.
 // Required even when Astro adapter wraps the entry — see CLAUDE.md §5.1.
@@ -25,32 +247,604 @@ export default {
     env: Env,
     ctx: ExecutionContext,
   ): Promise<Response> {
-    const url = new URL(request.url);
-    const mw = applyMiddleware(request, env, ctx);
+    const mw = applyMiddleware(request, env);
     if (mw.res) return mw.res;
 
-    if (url.pathname === "/api/health") {
-      return healthHandler(request, env, ctx, mw.locals);
-    }
-    if (url.pathname === "/api/internal/ping") {
-      return internalPingHandler(request, env, ctx, mw.locals);
-    }
+    // Per CLAUDE.md §5.1: per-request masterDb. Built lazily on first access
+    // so handlers that don't need the DB (health, ping) don't pay for it
+    // and don't crash when DATABASE_URL/HYPERDRIVE is misconfigured.
+    // Wrapped in an object so closure reassignment survives TS narrowing.
+    const slot: { value: ReturnType<typeof createMasterDb> | null } = {
+      value: null,
+    };
+    const locals: AppLocals = {
+      getMasterDb() {
+        if (!slot.value) slot.value = createMasterDb(env);
+        return slot.value;
+      },
+    };
 
-    // PoC-only DO smoke test: forwards to ConnectionDO by stable name.
-    // Token-gated via the /api/internal/ prefix in middleware.
-    if (url.pathname === "/api/internal/__do-smoke") {
-      const id = env.CONNECTION_DO.idFromName("smoke-test");
-      return env.CONNECTION_DO.get(id).fetch(request);
-    }
+    try {
+      const url = new URL(request.url);
 
-    return notFound();
+      if (url.pathname === "/api/health") {
+        return await healthHandler(request, env, ctx, locals);
+      }
+      if (url.pathname === "/api/internal/ping") {
+        return await internalPingHandler(request, env, ctx, locals);
+      }
+      if (url.pathname === "/api/internal/__db-smoke") {
+        return await dbSmokeHandler(request, env, ctx, locals);
+      }
+      if (url.pathname === "/api/internal/__trigger-smoke") {
+        return await triggerSmokeHandler(request, env, ctx, locals);
+      }
+
+      // Retention cleanup (openspec/changes/server-retention-and-cleanup):
+      // cleanup-plan returns the per-pass delete plan (the workflows cron then
+      // deletes the storage objects); cleanup-complete soft-deletes the rows
+      // (deleted_at) the cron confirmed. Both POST-only; handlers return 405.
+      if (url.pathname === "/api/internal/cleanup-plan") {
+        return await cleanupPlanHandler(request, env, ctx, locals);
+      }
+      if (url.pathname === "/api/internal/cleanup-complete") {
+        return await cleanupCompleteHandler(request, env, ctx, locals);
+      }
+
+      if (url.pathname === "/api/internal/connections/token-health") {
+        return await connectionsTokenHealthHandler(request, env, ctx, locals);
+      }
+
+      // PoC-only DO smoke test: forwards to ConnectionDO by stable name.
+      // Token-gated via the /api/internal/ prefix in middleware.
+      if (url.pathname === "/api/internal/__do-smoke") {
+        const id = env.CONNECTION_DO.idFromName("smoke-test");
+        return await env.CONNECTION_DO.get(id).fetch(request);
+      }
+
+      // MCP workspace listing for the picker's grouping (server-mcp-workspaces).
+      if (request.method === "GET") {
+        const workspaces = CONNECTIONS_WORKSPACES_RE.exec(url.pathname);
+        if (workspaces) {
+          return await connectionsWorkspacesHandler(request, env, ctx, locals, workspaces[1]!);
+        }
+      }
+
+      if (request.method === "POST") {
+        const m = CONNECTIONS_WHOAMI_RE.exec(url.pathname);
+        if (m) {
+          return await whoamiHandler(request, env, ctx, locals, m[1]!);
+        }
+        const proxy = CONNECTIONS_DO_PROXY_RE.exec(url.pathname);
+        if (proxy) {
+          return await connectionDOProxyHandler(
+            request,
+            env,
+            proxy[1]!,
+            proxy[2]! as ConnectionDOProxyAction,
+          );
+        }
+      }
+
+      // Run-start handles its own method check so non-POST returns 405
+      // (rather than 404) — gives the caller a clearer wire-error if it
+      // somehow fires the wrong verb.
+      const start = RUNS_START_RE.exec(url.pathname);
+      if (start) {
+        return await runsStartHandler(request, env, ctx, locals, start[1]!);
+      }
+
+      // Restore-start (server-restore Phase B.4): same method-check-inside-
+      // handler pattern as run-start.
+      const restoreStart = RESTORES_START_RE.exec(url.pathname);
+      if (restoreStart) {
+        return await restoresStartHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          restoreStart[1]!,
+        );
+      }
+
+      // Restore-progress (server-restore Phase C.2): per-table advisory counter
+      // bump from the restore-base task.
+      const restoreProgress = RESTORES_PROGRESS_RE.exec(url.pathname);
+      if (restoreProgress) {
+        return await restoresProgressHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          restoreProgress[1]!,
+        );
+      }
+
+      // Restore-complete (server-restore Phase C.4): per-base completion +
+      // terminal-transition when all trigger_run_ids have reported in.
+      const restoreComplete = RESTORES_COMPLETE_RE.exec(url.pathname);
+      if (restoreComplete) {
+        return await restoresCompleteHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          restoreComplete[1]!,
+        );
+      }
+
+      // Restore-cancel (server-restore Phase D.2): mirrors run-cancel; uses
+      // cancelled_at instead of completed_at.
+      const restoreCancel = RESTORES_CANCEL_RE.exec(url.pathname);
+      if (restoreCancel) {
+        return await restoresCancelHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          restoreCancel[1]!,
+        );
+      }
+
+      // Run-complete: same method-check-inside-handler pattern.
+      const complete = RUNS_COMPLETE_RE.exec(url.pathname);
+      if (complete) {
+        return await runsCompleteHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          complete[1]!,
+        );
+      }
+
+      // Run-progress (Phase 10d): same method-check-inside-handler pattern.
+      const progress = RUNS_PROGRESS_RE.exec(url.pathname);
+      if (progress) {
+        return await runsProgressHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          progress[1]!,
+        );
+      }
+
+      // Run-cancel: same method-check-inside-handler pattern. Handles 405
+      // for non-POST + 400 for non-UUID runId before touching the DB.
+      const cancel = RUNS_CANCEL_RE.exec(url.pathname);
+      if (cancel) {
+        return await runsCancelHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          cancel[1]!,
+        );
+      }
+
+      // Run-delete-complete BEFORE run-delete: both regexes start with
+      // /runs/<uuid>/, and `RUNS_DELETE_RE` would otherwise greedy-match
+      // "<uuid>/delete-complete" with the trailing "-complete" sliced off
+      // — well, no, $ anchors prevent that, but it costs nothing to check
+      // the longer route first.
+      const deleteComplete = RUNS_DELETE_COMPLETE_RE.exec(url.pathname);
+      if (deleteComplete) {
+        return await runsDeleteCompleteHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          deleteComplete[1]!,
+        );
+      }
+
+      // Run-detail (server-run-detail): per-base/per-table snapshot read.
+      // Returns { bases: [...] } assembled from backup_run_bases +
+      // backup_run_tables for the given runId. GET-only; method-check inside
+      // the handler returns 405 for non-GET.
+      const detail = RUNS_DETAIL_RE.exec(url.pathname);
+      if (detail) {
+        return await runsDetailHandler(request, env, ctx, locals, detail[1]!);
+      }
+
+      // Run-delete: openspec/changes/shared-backup-run-delete. CAS-flips
+      // the row to 'deleting' and enqueues delete-run-files; the task's
+      // /delete-complete callback hard-DELETEs the row.
+      const del = RUNS_DELETE_RE.exec(url.pathname);
+      if (del) {
+        return await runsDeleteHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          del[1]!,
+        );
+      }
+
+      // Spaces set-frequency proxy (Phase B of
+      // baseout-backup-schedule-and-cancel). apps/web's PATCH /backup-config
+      // calls this when frequency changes; the route forwards to SpaceDO
+      // and writes backup_configurations.next_scheduled_at.
+      const setFreq = SPACES_SET_FREQUENCY_RE.exec(url.pathname);
+      if (setFreq) {
+        return await spacesSetFrequencyHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          setFreq[1]!,
+        );
+      }
+
+      // Per-Space DB provisioning (openspec/changes/system-per-space-db §2).
+      // apps/web's POST /api/spaces calls this after creating a Space; the
+      // engine creates the per-Space DB + applies the bo_at_* schema. Method
+      // check inside the handler.
+      const provisionDb = SPACES_PROVISION_DATABASE_RE.exec(url.pathname);
+      if (provisionDb) {
+        return await spacesProvisionDatabaseHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          provisionDb[1]!,
+        );
+      }
+
+      // Per-Space DB write path (openspec/changes/system-per-space-db §3).
+      // The workflows backup writer POSTs captured schema + records here; the
+      // engine diffs vs the per-Space DB and writes the bo_at_* tables.
+      const schemaSync = SPACES_SCHEMA_SYNC_RE.exec(url.pathname);
+      if (schemaSync) {
+        return await spacesSchemaSyncHandler(request, env, ctx, locals, schemaSync[1]!);
+      }
+      const recordsSync = SPACES_RECORDS_SYNC_RE.exec(url.pathname);
+      if (recordsSync) {
+        return await spacesRecordsSyncHandler(request, env, ctx, locals, recordsSync[1]!);
+      }
+      const commentsSync = SPACES_COMMENTS_SYNC_RE.exec(url.pathname);
+      if (commentsSync) {
+        return await spacesCommentsSyncHandler(request, env, ctx, locals, commentsSync[1]!);
+      }
+      const commentsPlan = SPACES_COMMENTS_PLAN_RE.exec(url.pathname);
+      if (commentsPlan) {
+        return await spacesCommentsPlanHandler(request, env, ctx, locals, commentsPlan[1]!);
+      }
+      const collaboratorsSync = SPACES_COLLABORATORS_SYNC_RE.exec(url.pathname);
+      if (collaboratorsSync) {
+        return await spacesCollaboratorsSyncHandler(request, env, ctx, locals, collaboratorsSync[1]!);
+      }
+      const mediaSync = SPACES_MEDIA_SYNC_RE.exec(url.pathname);
+      if (mediaSync) {
+        return await spacesMediaSyncHandler(request, env, ctx, locals, mediaSync[1]!);
+      }
+      const media = SPACES_MEDIA_RE.exec(url.pathname);
+      if (media) {
+        return await spacesMediaHandler(request, env, ctx, locals, media[1]!, media[2] ?? "");
+      }
+
+      // Incremental (webhook-driven) apply seam — the workflows
+      // incremental-backup task's engine-brokered IncrementalDb transport
+      // (server-dynamic-mode, re-scoped).
+      const incrementalApply = SPACES_INCREMENTAL_APPLY_RE.exec(url.pathname);
+      if (incrementalApply) {
+        return await spacesIncrementalApplyHandler(request, env, ctx, locals, incrementalApply[1]!);
+      }
+
+      const healthSync = SPACES_HEALTH_SYNC_RE.exec(url.pathname);
+      if (healthSync) {
+        return await spacesHealthSyncHandler(request, env, ctx, locals, healthSync[1]!);
+      }
+
+      const healthOverview = SPACES_HEALTH_OVERVIEW_RE.exec(url.pathname);
+      if (healthOverview) {
+        return await spacesHealthOverviewHandler(request, env, ctx, locals, healthOverview[1]!);
+      }
+
+      const healthConfig = SPACES_HEALTH_CONFIG_RE.exec(url.pathname);
+      if (healthConfig) {
+        return await spacesHealthConfigHandler(request, env, ctx, locals, healthConfig[1]!);
+      }
+
+      const healthRerun = SPACES_HEALTH_RERUN_RE.exec(url.pathname);
+      if (healthRerun) {
+        return await spacesHealthRerunHandler(request, env, ctx, locals, healthRerun[1]!);
+      }
+
+      const healthPrompt = SPACES_HEALTH_PROMPT_RE.exec(url.pathname);
+      if (healthPrompt) {
+        return await spacesHealthPromptHandler(request, env, ctx, locals, healthPrompt[1]!);
+      }
+
+      const healthEnable = SPACES_HEALTH_ENABLE_RE.exec(url.pathname);
+      if (healthEnable) {
+        return await spacesHealthEnableHandler(request, env, ctx, locals, healthEnable[1]!);
+      }
+
+      const relSync = SPACES_RELATIONSHIPS_SYNC_RE.exec(url.pathname);
+      if (relSync) {
+        return await spacesRelationshipsSyncHandler(request, env, ctx, locals, relSync[1]!);
+      }
+
+      const relMutate = SPACES_RELATIONSHIPS_MUTATE_RE.exec(url.pathname);
+      if (relMutate) {
+        return await spacesRelationshipsMutateHandler(request, env, ctx, locals, relMutate[1]!);
+      }
+
+      const relOverview = SPACES_RELATIONSHIPS_RE.exec(url.pathname);
+      if (relOverview) {
+        return await spacesRelationshipsOverviewHandler(request, env, ctx, locals, relOverview[1]!);
+      }
+
+      const chatThread = SPACES_CHAT_THREAD_RE.exec(url.pathname);
+      if (chatThread) {
+        return await spacesChatThreadHandler(request, env, ctx, locals, chatThread[1]!, chatThread[2]!);
+      }
+
+      const chatThreads = SPACES_CHAT_THREADS_RE.exec(url.pathname);
+      if (chatThreads) {
+        return await spacesChatThreadsHandler(request, env, ctx, locals, chatThreads[1]!);
+      }
+
+      const chatSend = SPACES_CHAT_SEND_RE.exec(url.pathname);
+      if (chatSend) {
+        return await spacesChatSendHandler(request, env, ctx, locals, chatSend[1]!);
+      }
+
+      const chatMessageComplete = SPACES_CHAT_MESSAGE_COMPLETE_RE.exec(url.pathname);
+      if (chatMessageComplete) {
+        return await spacesChatMessageCompleteHandler(request, env, ctx, locals, chatMessageComplete[1]!);
+      }
+
+      const migrateSchema = SPACES_MIGRATE_SCHEMA_RE.exec(url.pathname);
+      if (migrateSchema) {
+        return await spacesMigrateSchemaHandler(request, env, ctx, locals, migrateSchema[1]!);
+      }
+
+      // Workspace rediscovery — manual rescan. apps/web's POST
+      // /api/spaces/:spaceId/rescan-bases proxies here. Method-check inside
+      // handler so non-POST returns 405. Same alarm pure-fn runs in Phase 4
+      // (SpaceDO) for scheduled rediscovery.
+      const rescanBases = SPACES_RESCAN_BASES_RE.exec(url.pathname);
+      if (rescanBases) {
+        return await spacesRescanBasesHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          rescanBases[1]!,
+        );
+      }
+
+      // Storage-destination credential read for the workflows runner
+      // (openspec/changes/shared-byos-drive Phase 3). Decrypts + lazy-refreshes
+      // Drive tokens; returns plaintext access token + Drive folder ID.
+      const storageDest =
+        SPACES_STORAGE_DESTINATION_RE.exec(url.pathname);
+      if (storageDest) {
+        return await spacesStorageDestinationHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          storageDest[1]!,
+        );
+      }
+
+      // Schema Docs broker (openspec/changes/shared-schema-docs §2). apps/web's
+      // authenticated /api/spaces/:spaceId/{documents,docs-by-entity} routes
+      // proxy here; the browser never touches the per-Space DB.
+      const docItem = SPACES_DOCUMENT_RE.exec(url.pathname);
+      if (docItem) {
+        return await spacesDocumentHandler(request, env, ctx, locals, docItem[1]!, docItem[2]!);
+      }
+      const docCollection = SPACES_DOCUMENTS_RE.exec(url.pathname);
+      if (docCollection) {
+        return await spacesDocumentsHandler(request, env, ctx, locals, docCollection[1]!);
+      }
+      const docsByEntity = SPACES_DOCS_BY_ENTITY_RE.exec(url.pathname);
+      if (docsByEntity) {
+        return await spacesDocsByEntityHandler(request, env, ctx, locals, docsByEntity[1]!);
+      }
+      const schemaRead = SPACES_SCHEMA_READ_RE.exec(url.pathname);
+      if (schemaRead) {
+        return await spacesSchemaReadHandler(request, env, ctx, locals, schemaRead[1]!);
+      }
+
+      const schemaChangelog = SPACES_SCHEMA_CHANGELOG_RE.exec(url.pathname);
+      if (schemaChangelog) {
+        return await spacesSchemaChangelogHandler(request, env, ctx, locals, schemaChangelog[1]!);
+      }
+
+      const schemaSearch = SPACES_SCHEMA_SEARCH_RE.exec(url.pathname);
+      if (schemaSearch) {
+        return await spacesSchemaSearchHandler(request, env, ctx, locals, schemaSearch[1]!);
+      }
+
+      const schemaVersions = SPACES_SCHEMA_VERSIONS_RE.exec(url.pathname);
+      if (schemaVersions) {
+        return await spacesSchemaVersionsHandler(request, env, ctx, locals, schemaVersions[1]!);
+      }
+
+      // Data browser (server-data-browse §3): keyset-paginated per-Space record
+      // reads. Handlers do their own method + backend guards.
+      const dataRecords = SPACES_DATA_RECORDS_RE.exec(url.pathname);
+      if (dataRecords) {
+        return await spacesDataRecordsHandler(request, env, ctx, locals, dataRecords[1]!, dataRecords[2]!);
+      }
+      // Record detail + history (checked before the bare-record route; both are
+      // $-anchored so order is cosmetic — a /history path can't match the bare RE).
+      const dataRecordHistory = SPACES_DATA_RECORD_HISTORY_RE.exec(url.pathname);
+      if (dataRecordHistory) {
+        return await spacesDataRecordHistoryHandler(request, env, ctx, locals, dataRecordHistory[1]!, dataRecordHistory[2]!);
+      }
+      // Linked-record expansion + cell provenance (3 captures: space, record, field).
+      const dataRecordLinks = SPACES_DATA_RECORD_LINKS_RE.exec(url.pathname);
+      if (dataRecordLinks) {
+        return await spacesDataRecordLinksHandler(request, env, ctx, locals, dataRecordLinks[1]!, dataRecordLinks[2]!, dataRecordLinks[3]!);
+      }
+      const dataRecordProvenance = SPACES_DATA_RECORD_PROVENANCE_RE.exec(url.pathname);
+      if (dataRecordProvenance) {
+        return await spacesDataRecordProvenanceHandler(request, env, ctx, locals, dataRecordProvenance[1]!, dataRecordProvenance[2]!, dataRecordProvenance[3]!);
+      }
+      const dataRecord = SPACES_DATA_RECORD_RE.exec(url.pathname);
+      if (dataRecord) {
+        return await spacesDataRecordHandler(request, env, ctx, locals, dataRecord[1]!, dataRecord[2]!);
+      }
+      const dataChangelog = SPACES_DATA_CHANGELOG_RE.exec(url.pathname);
+      if (dataChangelog) {
+        return await spacesDataChangelogHandler(request, env, ctx, locals, dataChangelog[1]!);
+      }
+      const dataSearch = SPACES_DATA_SEARCH_RE.exec(url.pathname);
+      if (dataSearch) {
+        return await spacesDataSearchHandler(request, env, ctx, locals, dataSearch[1]!);
+      }
+      // Export: job-status (GET, 2 captures) checked before the export POST route.
+      const dataExportJob = SPACES_DATA_EXPORT_JOB_RE.exec(url.pathname);
+      if (dataExportJob) {
+        return await spacesDataExportJobHandler(request, env, ctx, locals, dataExportJob[1]!, dataExportJob[2]!);
+      }
+      const dataExport = SPACES_DATA_EXPORT_RE.exec(url.pathname);
+      if (dataExport) {
+        return await spacesDataExportHandler(request, env, ctx, locals, dataExport[1]!);
+      }
+
+      // Inbox notifications (server-notifications-inbox): derived alert feed
+      // + idempotent triage/mute. The two sub-routes are checked before the
+      // bare feed route (all three are $-anchored, so order is cosmetic).
+      const notificationsTriage = SPACES_NOTIFICATIONS_TRIAGE_RE.exec(url.pathname);
+      if (notificationsTriage) {
+        return await spacesNotificationsTriageHandler(request, env, ctx, locals, notificationsTriage[1]!);
+      }
+      const notificationsMute = SPACES_NOTIFICATIONS_MUTE_RE.exec(url.pathname);
+      if (notificationsMute) {
+        return await spacesNotificationsMuteHandler(request, env, ctx, locals, notificationsMute[1]!);
+      }
+      const notifications = SPACES_NOTIFICATIONS_RE.exec(url.pathname);
+      if (notifications) {
+        return await spacesNotificationsHandler(request, env, ctx, locals, notifications[1]!);
+      }
+
+      // Incremental-run callbacks (server-instant-webhook Phase D): the
+      // incremental-backup task advances its subscription's payload cursor
+      // (monotonic) and signals payload-stream gaps (fallback → full re-read).
+      const wsCursor = WEBHOOK_SUBSCRIPTIONS_CURSOR_RE.exec(url.pathname);
+      if (wsCursor) {
+        return await webhookSubscriptionsCursorHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          wsCursor[1]!,
+        );
+      }
+      const wsFallback = WEBHOOK_SUBSCRIPTIONS_FALLBACK_RE.exec(url.pathname);
+      if (wsFallback) {
+        return await webhookSubscriptionsFallbackHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          wsFallback[1]!,
+        );
+      }
+      // Payloads-auth resolution (server-dynamic-mode Phase 4.1): the task
+      // resolves the Airtable webhook id + a fresh Connection token + the
+      // reconciliation anchor at run start — none ride the task payload.
+      const wsContext = WEBHOOK_SUBSCRIPTIONS_CONTEXT_RE.exec(url.pathname);
+      if (wsContext) {
+        return await webhookSubscriptionsContextHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          wsContext[1]!,
+        );
+      }
+
+      // Webhook lifecycle (server-instant-webhook Phase E): find-or-create
+      // the org-level (organization, base) webhooks + per-Space subscriptions
+      // on enable; unsubscribe + delete-on-last on disable.
+      const registerWebhooks = SPACES_REGISTER_WEBHOOKS_RE.exec(url.pathname);
+      if (registerWebhooks) {
+        return await spacesRegisterWebhooksHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          registerWebhooks[1]!,
+        );
+      }
+      const unregisterWebhooks = SPACES_UNREGISTER_WEBHOOKS_RE.exec(url.pathname);
+      if (unregisterWebhooks) {
+        return await spacesUnregisterWebhooksHandler(
+          request,
+          env,
+          ctx,
+          locals,
+          unregisterWebhooks[1]!,
+        );
+      }
+
+      // Attachment dedup (openspec/changes/server-attachments). The workflows
+      // downloader hits /lookup (batch read + last_seen bump) before
+      // downloading, and /record (batch upsert) after streaming a miss to the
+      // StorageWriter. Both method-check inside the handler.
+      if (url.pathname === "/api/internal/attachments/lookup") {
+        return await attachmentsLookupHandler(request, env, ctx, locals);
+      }
+      if (url.pathname === "/api/internal/attachments/record") {
+        return await attachmentsRecordHandler(request, env, ctx, locals);
+      }
+
+      return notFound();
+    } finally {
+      // Tear down only if a handler actually built the masterDb. Avoids a
+      // wasted `sql.end` cycle on health / ping which never query.
+      if (slot.value) ctx.waitUntil(slot.value.sql.end({ timeout: 5 }));
+    }
   },
 
   async scheduled(
-    _event: ScheduledEvent,
-    _env: Env,
-    _ctx: ExecutionContext,
+    event: ScheduledEvent,
+    env: Env,
+    ctx: ExecutionContext,
   ): Promise<void> {
-    // TODO(phase-2): cron-trigger dispatch (webhook renewal, OAuth refresh, etc.)
+    // Cron dispatch (server-oauth-refresh-cron-health). Each background
+    // service owns one entry in resolveCronJobs; an unmapped cron string is
+    // logged so a config/env drift never fails silently.
+    const jobs = resolveCronJobs(event.cron);
+    if (jobs.length === 0) {
+      // eslint-disable-next-line no-console -- cron observability; an unmapped firing is a config bug
+      console.log(JSON.stringify({ event: "cron_unmapped", cron: event.cron }));
+      return;
+    }
+    // shared-service-runs: each job runs under withServiceRun, which records one
+    // service_runs row (started → succeeded|failed) from the job's returned
+    // counters. A separate telemetry DB client is used for the rows + prune (the
+    // OAuth jobs manage their own client internally; a brief second short-lived
+    // client per firing is negligible for a 15-min/daily cron). Record-keeping
+    // failures are swallowed, so job behavior is unchanged.
+    const { db, sql } = createMasterDb(env);
+    try {
+      for (const job of jobs) {
+        if (job === "oauth-refresh-sweep") {
+          await withServiceRun(db, "oauth_refresh_sweep", async () => ({ counts: numericCounts(await runScheduledOauthRefresh(env)) }));
+        } else if (job === "run-reconciliation") {
+          await withServiceRun(db, "run_reconciliation", async () => ({ counts: numericCounts(await runScheduledRunReconciliation(env)) }));
+        } else if (job === "oauth-keepalive") {
+          await withServiceRun(db, "oauth_keepalive", async () => ({ counts: numericCounts(await runScheduledKeepalive(env)) }));
+        } else if (job === "connection-auto-invalidate") {
+          await withServiceRun(db, "connection_auto_invalidate", async () => ({ counts: numericCounts(await runScheduledConnectionInvalidation(env)) }));
+        } else if (job === "service-runs-prune") {
+          await withServiceRun(db, "service_runs_prune", () => pruneServiceRuns(db));
+        } else if (job === "webhook-renewal") {
+          await withServiceRun(db, "webhook_renewal", async () => ({ counts: numericCounts(await runScheduledWebhookRenewal(env)) }));
+        }
+      }
+    } finally {
+      ctx.waitUntil(sql.end({ timeout: 5 }));
+    }
   },
 };

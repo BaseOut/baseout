@@ -1,0 +1,16 @@
+# build output
+dist/
+.astro/
+
+# wrangler / miniflare local state
+.wrangler/
+
+# wrangler.jsonc is generated from wrangler.jsonc.example by scripts/dev.mjs
+# (it contains the local Postgres connection string from .env)
+wrangler.jsonc
+
+# environment variables — real secrets never commit; .env.example is tracked
+.env
+.env.*
+!.env.example
+.dev.vars

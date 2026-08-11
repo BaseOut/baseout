@@ -25,6 +25,8 @@ import {
   buildSetCookie,
   sealHandoffPayload,
 } from '../../../../lib/airtable/cookie'
+import { sanitizeReturnTo } from '../../../../lib/airtable/return-to'
+import { shouldSetSecureOAuthCookie } from '../../../../lib/oauth/local-dev-secure'
 
 function jsonError(message: string, status: number): Response {
   return new Response(JSON.stringify({ error: message }), {
@@ -33,11 +35,19 @@ function jsonError(message: string, status: number): Response {
   })
 }
 
-export const POST: APIRoute = async ({ locals, url }) => {
+export const POST: APIRoute = async ({ locals, request, url }) => {
   if (!locals.user) return jsonError('Not authenticated', 401)
   const account = locals.account
   if (!account?.organization || !account?.space) {
     return jsonError('No active organization or space', 403)
+  }
+
+  let returnTo: string | null = null
+  try {
+    const form = await request.clone().formData()
+    returnTo = sanitizeReturnTo(form.get('returnTo'))
+  } catch {
+    returnTo = null
   }
 
   const workerEnv = env as unknown as {
@@ -45,6 +55,7 @@ export const POST: APIRoute = async ({ locals, url }) => {
     AIRTABLE_OAUTH_CLIENT_SECRET?: string
     BASEOUT_ENCRYPTION_KEY?: string
     AIRTABLE_STUBS_ENABLED?: string
+    PUBLIC_AUTH_BASE_URL?: string
   }
 
   if (!workerEnv.BASEOUT_ENCRYPTION_KEY) {
@@ -64,7 +75,16 @@ export const POST: APIRoute = async ({ locals, url }) => {
     )
   }
 
-  const redirectUri = getRedirectUri(url.origin)
+  // Use PUBLIC_AUTH_BASE_URL (the browser-facing origin) when set, falling
+  // back to the request's url.origin. Under `wrangler dev --remote`, url.origin
+  // resolves to the deployed worker URL even when the browser is at
+  // baseout.local:4331 — sending that as redirect_uri makes the OAuth provider
+  // redirect to the deployed worker, where the browser's session + handoff
+  // cookies (scoped to baseout.local) don't follow, and the user bounces to
+  // /login on the deployed worker. Anchoring on PUBLIC_AUTH_BASE_URL keeps the
+  // callback on the origin the browser is actually using.
+  const publicOrigin = workerEnv.PUBLIC_AUTH_BASE_URL ?? url.origin
+  const redirectUri = getRedirectUri(publicOrigin)
   const { authorizeUrl } = resolveAirtableUrls(workerEnv, url.origin)
   const { verifier, challenge } = await generatePkcePair()
   const state = generateState()
@@ -77,6 +97,7 @@ export const POST: APIRoute = async ({ locals, url }) => {
       spaceId: account.space.id,
       userId: locals.user.id,
       redirectUri,
+      ...(returnTo ? { returnTo } : {}),
     },
     workerEnv.BASEOUT_ENCRYPTION_KEY,
   )
@@ -90,7 +111,7 @@ export const POST: APIRoute = async ({ locals, url }) => {
     authorizeUrl,
   })
 
-  const isSecure = url.protocol === 'https:'
+  const isSecure = shouldSetSecureOAuthCookie(request)
   return new Response(null, {
     status: 302,
     headers: {

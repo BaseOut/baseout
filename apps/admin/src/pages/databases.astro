@@ -1,0 +1,238 @@
+---
+// Database provisioning tracker (PRD §5.4 / §16.1). Read-only; gated to
+// role='super' by src/middleware.ts. Utilization is a proxy from the latest
+// succeeded backup run per Space — real byte metrics are phase-2.
+//
+// admin-crm-ux (Task 1.5): server-side pagination + sort + filter. The summary
+// tiles are computed with global SQL aggregates (design D4); the per-page volume
+// proxy is fetched only for the current page's Spaces.
+import { and, asc, desc, eq, ilike, inArray, or, count } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import SortHeader from '../components/table/SortHeader.astro';
+import Pager from '../components/table/Pager.astro';
+import FilterBar from '../components/table/FilterBar.astro';
+import EntityLink from '../components/EntityLink.astro';
+import { spaceDatabases, spaces, organizations, backupRuns } from '../db/schema';
+import { buildDbTracker, DB_STATUS_BADGE, type SpaceDbRow, type VolumeRow } from '../lib/db-tracker';
+import { parseTableQuery, pageInfo, type TableSpec } from '../lib/table-query';
+
+const { db } = Astro.locals;
+
+const STATUS_VALUES = ['active', 'provisioning', 'migrating', 'pending', 'error'] as const;
+const BACKEND_VALUES = ['managed_pg', 'd1'] as const;
+
+const SPEC: TableSpec = {
+  sortKeys: ['org', 'space', 'backend', 'status', 'provisioned'],
+  defaultSort: 'provisioned',
+  defaultDir: 'desc',
+  searchable: true,
+  filters: [
+    { key: 'status', allowed: [...STATUS_VALUES] },
+    { key: 'backend', allowed: [...BACKEND_VALUES] },
+    { key: 'org' },
+  ],
+};
+const SORT_MAP = {
+  org: organizations.name,
+  space: spaces.name,
+  backend: spaceDatabases.backend,
+  status: spaceDatabases.status,
+  provisioned: spaceDatabases.provisionedAt,
+} as const;
+
+const query = parseTableQuery(Astro.url, SPEC);
+
+const conditions = [];
+if (query.filters.status) conditions.push(eq(spaceDatabases.status, query.filters.status));
+if (query.filters.backend) conditions.push(eq(spaceDatabases.backend, query.filters.backend));
+if (query.filters.org) conditions.push(eq(spaces.organizationId, query.filters.org));
+if (query.q) conditions.push(or(ilike(spaces.name, `%${query.q}%`), ilike(organizations.name, `%${query.q}%`)));
+const whereClause = conditions.length ? and(...conditions) : undefined;
+
+const sortCol = SORT_MAP[query.sort as keyof typeof SORT_MAP];
+const orderBy = query.dir === 'asc' ? asc(sortCol) : desc(sortCol);
+
+// Global summary via aggregate group-bys (design D4 — whole truth, not the page).
+const [{ n: total }, byBackendRows, byStatusRows] = await Promise.all([
+  db
+    .select({ n: count() })
+    .from(spaceDatabases)
+    .leftJoin(spaces, eq(spaces.id, spaceDatabases.spaceId))
+    .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
+    .where(whereClause)
+    .then((r) => r[0]),
+  db.select({ backend: spaceDatabases.backend, n: count() }).from(spaceDatabases).groupBy(spaceDatabases.backend),
+  db.select({ status: spaceDatabases.status, n: count() }).from(spaceDatabases).groupBy(spaceDatabases.status),
+]);
+const byBackend = Object.fromEntries(byBackendRows.map((r) => [r.backend, r.n]));
+const byStatus = Object.fromEntries(byStatusRows.map((r) => [r.status, r.n]));
+const summary = {
+  total: byStatusRows.reduce((sum, r) => sum + r.n, 0),
+  errors: byStatus['error'] ?? 0,
+  byBackend,
+  byStatus,
+};
+
+const info = pageInfo(total, query.page, query.per);
+
+const dbRows = (await db
+  .select({
+    id: spaceDatabases.id,
+    spaceId: spaceDatabases.spaceId,
+    spaceName: spaces.name,
+    orgName: organizations.name,
+    backend: spaceDatabases.backend,
+    recordsEnabled: spaceDatabases.recordsEnabled,
+    status: spaceDatabases.status,
+    d1DatabaseId: spaceDatabases.d1DatabaseId,
+    pgLocator: spaceDatabases.pgLocator,
+    schemaVersion: spaceDatabases.schemaVersion,
+    lastSchemaSyncAt: spaceDatabases.lastSchemaSyncAt,
+    lastRecordsSyncAt: spaceDatabases.lastRecordsSyncAt,
+    provisionedAt: spaceDatabases.provisionedAt,
+    errorMessage: spaceDatabases.errorMessage,
+  })
+  .from(spaceDatabases)
+  .leftJoin(spaces, eq(spaces.id, spaceDatabases.spaceId))
+  .leftJoin(organizations, eq(organizations.id, spaces.organizationId))
+  .where(whereClause)
+  .orderBy(orderBy)
+  .limit(query.per)
+  .offset(info.offset)) as SpaceDbRow[];
+
+// Volume proxy = latest succeeded run per Space, for this page's Spaces only.
+const spaceIds = dbRows.map((r) => r.spaceId).filter((id): id is string => !!id);
+const recentSucceeded = spaceIds.length
+  ? await db
+      .select({ spaceId: backupRuns.spaceId, recordCount: backupRuns.recordCount, tableCount: backupRuns.tableCount, attachmentCount: backupRuns.attachmentCount, completedAt: backupRuns.completedAt })
+      .from(backupRuns)
+      .where(and(eq(backupRuns.status, 'succeeded'), inArray(backupRuns.spaceId, spaceIds)))
+      .orderBy(desc(backupRuns.completedAt))
+  : [];
+const seen = new Set<string>();
+const volumes: VolumeRow[] = [];
+for (const r of recentSucceeded) {
+  if (seen.has(r.spaceId)) continue;
+  seen.add(r.spaceId);
+  volumes.push(r);
+}
+
+const { entries } = buildDbTracker(dbRows, volumes, { preserveOrder: true });
+
+const params = Astro.url.searchParams;
+const scopedOrg = query.filters.org ?? null;
+const filterHidden: Record<string, string> = { sort: query.sort, dir: query.dir, per: String(query.per) };
+if (scopedOrg) filterHidden.org = scopedOrg;
+const statusOptions = [{ value: '', label: 'All statuses' }, ...STATUS_VALUES.map((s) => ({ value: s, label: s }))];
+const backendOptions = [{ value: '', label: 'All backends' }, ...BACKEND_VALUES.map((b) => ({ value: b, label: b }))];
+
+const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 16) : '—');
+---
+
+<SidebarLayout title="Admin — Databases">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader title="Database provisioning" description="Per-Space database backend, lifecycle, and locator (PRD §5.4). Volume = last succeeded backup run per Space." />
+
+    <div class="stats stats-horizontal bg-base-100 border border-base-300">
+      <div class="stat py-3">
+        <div class="stat-title">Databases</div>
+        <div class="stat-value text-2xl">{summary.total}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">Errors</div>
+        <div class={`stat-value text-2xl ${summary.errors > 0 ? 'text-error' : ''}`}>{summary.errors}</div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">By backend</div>
+        <div class="stat-desc text-sm mt-1">
+          {Object.entries(summary.byBackend).map(([k, v]) => <span class="mr-2">{k}: <b>{v}</b></span>)}
+        </div>
+      </div>
+      <div class="stat py-3">
+        <div class="stat-title">By status</div>
+        <div class="stat-desc text-sm mt-1">
+          {Object.entries(summary.byStatus).map(([k, v]) => <span class="mr-2">{k}: <b>{v}</b></span>)}
+        </div>
+      </div>
+    </div>
+
+    {scopedOrg && (
+      <div class="alert alert-info py-2">
+        <span>Scoped to one organization.</span>
+        <a href="/databases" class="link link-hover">Clear scope</a>
+      </div>
+    )}
+
+    <FilterBar
+      action="/databases"
+      searchable
+      q={query.q}
+      qPlaceholder="Search space or org…"
+      filters={[
+        { key: 'status', label: 'Status', options: statusOptions, current: query.filters.status ?? null },
+        { key: 'backend', label: 'Backend', options: backendOptions, current: query.filters.backend ?? null },
+      ]}
+      hidden={filterHidden}
+    />
+
+    {entries.length === 0 ? (
+      <EmptyState
+        icon="lucide--database"
+        title="No databases provisioned yet"
+        description="No per-Space databases match (rows appear in baseout.space_databases)."
+      />
+    ) : (
+      <div class="space-y-3">
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+          <table class="table table-zebra table-sm">
+            <thead>
+              <tr>
+                <SortHeader label="Organization" sortKey="org" current={params} spec={SPEC} />
+                <SortHeader label="Space" sortKey="space" current={params} spec={SPEC} />
+                <SortHeader label="Backend" sortKey="backend" current={params} spec={SPEC} />
+                <SortHeader label="Status" sortKey="status" current={params} spec={SPEC} />
+                <SortHeader label="Records" current={params} spec={SPEC} />
+                <SortHeader label="Locator" current={params} spec={SPEC} />
+                <SortHeader label="Schema v" align="right" current={params} spec={SPEC} />
+                <SortHeader label="Schema sync" current={params} spec={SPEC} />
+                <SortHeader label="Records sync" current={params} spec={SPEC} />
+                <SortHeader label="Last volume" current={params} spec={SPEC} />
+                <SortHeader label="Error" current={params} spec={SPEC} />
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr>
+                  <td>{e.orgName ?? '—'}</td>
+                  <td>
+                    {e.spaceId ? (
+                      <EntityLink type="space" id={e.spaceId} label={e.spaceName ?? '—'} />
+                    ) : (
+                      e.spaceName ?? '—'
+                    )}
+                  </td>
+                  <td><Badge variant="default" size="sm">{e.backend}</Badge></td>
+                  <td><Badge variant={DB_STATUS_BADGE[e.status] ?? 'default'} size="sm">{e.status}</Badge></td>
+                  <td>{e.recordsEnabled ? 'on' : 'off'}</td>
+                  <td class="font-mono text-xs max-w-48 truncate" title={e.locator}>{e.locator}</td>
+                  <td class="text-right">{e.schemaVersion ?? '—'}</td>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmt(e.lastSchemaSyncAt)}</td>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmt(e.lastRecordsSyncAt)}</td>
+                  <td class="text-xs whitespace-nowrap">
+                    {e.volume ? `${e.volume.recordCount ?? '?'} rec · ${e.volume.tableCount ?? '?'} tbl · ${e.volume.attachmentCount ?? '?'} att` : '—'}
+                  </td>
+                  <td class="max-w-xs truncate text-error text-xs" title={e.errorMessage ?? ''}>{e.errorMessage ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <Pager info={info} current={params} per={query.per} noun="database" />
+      </div>
+    )}
+  </div>
+</SidebarLayout>

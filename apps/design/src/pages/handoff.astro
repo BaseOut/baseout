@@ -1,0 +1,1085 @@
+---
+// /handoff — the single front door for design → engineering handoff.
+//
+// A live traceability index rendered straight from FLOW_REGISTRY: every flow /
+// state, its build status, the OpenSpec scenarios it realizes (the contract), the
+// apps/web files it exercises (the porting targets), and a link to walk it. It can
+// never go stale relative to the panel because both read the same registry.
+//
+// A single "Flows" index: reviewer-facing — status + clickable step links, engineer
+// detail tucked into a <details>, plus a "Prototypes & tools" list of standalone
+// harness routes. Carries a search affordance and a sticky jump-nav rail with scroll-spy.
+//
+// Internal/meta page on purpose: standalone chrome, not the product shell.
+import { FLOW_REGISTRY, type FlowStatus, type RegistryFlow } from '../lib/flow-registry';
+
+// Group by feature, preserving first-seen order.
+const groups: { feature: string; flows: RegistryFlow[] }[] = [];
+for (const flow of FLOW_REGISTRY) {
+  let g = groups.find((x) => x.feature === flow.feature);
+  if (!g) {
+    g = { feature: flow.feature, flows: [] };
+    groups.push(g);
+  }
+  g.flows.push(flow);
+}
+
+const count = (s: FlowStatus) => FLOW_REGISTRY.filter((f) => f.status === s).length;
+const totals = { built: count('built'), planned: count('planned'), discussion: count('discussion') };
+
+const STATUS_LABEL: Record<FlowStatus, string> = {
+  built: 'Built',
+  planned: 'Planned',
+  discussion: 'Up for discussion',
+};
+
+// Only surface status buckets that actually have flows (no empty "0 planned" noise).
+const STATUS_ORDER: FlowStatus[] = ['built', 'planned', 'discussion'];
+const presentStatuses = STATUS_ORDER.filter((s) => totals[s] > 0);
+const totalFlows = FLOW_REGISTRY.length;
+
+// Slug a feature name into a stable anchor id for the jump-nav.
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+// ── Schema sub-grouping (jump-nav sub-entries) ──────────────────────────────
+// A feature with many flows needs more than one jump target. Sub-entries are derived from the
+// flow name's PREFIX (everything before " — "), normalized against a declared order; anything that
+// doesn't map falls into "Cross-cutting".
+//
+// This was Schema-only and hardcoded. Data now declares its own set (Oleh 2026-07-30) — so the
+// mechanism is keyed by feature rather than duplicated, and Backups (13 flows) or the edge-case
+// group can join by adding a line here instead of a second copy of this logic.
+const SCHEMA_TAB_ORDER = [
+  // 'Views' is not a Schema TAB — views are entities that live inside Browse. It earns its own
+  // jump entry anyway because it now spans three surfaces (the Browse tree, the view panel, and
+  // the field panel's Referenced-by), so "where are the views?" has no single tab to point at.
+  // Without it the flow fell into Cross-cutting and was effectively unfindable (Oleh 2026-07-29).
+  'Browse', 'Views', 'Visualize', 'Relationships', 'Automations', 'Interfaces',
+  'Changelog', 'Health', 'Docs', 'Chat', 'Navigation', 'Tools', 'Cross-cutting',
+];
+// Data's four flows split by surface. Comments earns a named entry for the same reason Views did:
+// "where are the comments?" otherwise has no answer but scrolling.
+const DATA_TAB_ORDER = ['Browse', 'Comments', 'Changelog', 'Cross-cutting'];
+
+const FEATURE_TABS: Record<string, string[]> = {
+  Schema: SCHEMA_TAB_ORDER,
+  Data: DATA_TAB_ORDER,
+};
+
+/** Which sub-entry a flow belongs to, from its name prefix. Per-feature aliases live here. */
+const tabOf = (feature: string, name: string): string => {
+  const order = FEATURE_TABS[feature];
+  if (!order) return 'Cross-cutting';
+  const prefix = name.split(' — ')[0].trim();
+  if (feature === 'Schema') {
+    if (prefix === 'Schema navigation') return 'Navigation';
+    if (prefix === 'Panel Lab') return 'Tools';
+  }
+  if (feature === 'Data') {
+    // "Data page — Browse · Record · …" is the Browse surface; the run-drill flow is Changelog.
+    if (prefix === 'Data page') return 'Browse';
+    if (prefix === 'Changelog record drill') return 'Changelog';
+  }
+  return order.includes(prefix) ? prefix : 'Cross-cutting';
+};
+const subId = (feature: string, tab: string) => `${slug(feature)}-sub-${slug(tab)}`;
+
+// Per-group render blocks: non-Schema groups render flat (a single block with no
+// heading); the Schema group splits into its non-empty tab sub-groups, each an
+// anchored sub-heading (id = schema-sub-<tab>) above that sub-group's rows.
+type Block = { id: string | null; heading: string | null; flows: RegistryFlow[] };
+const groupBlocks: { group: { feature: string; flows: RegistryFlow[] }; blocks: Block[] }[] =
+  groups.map((group) => {
+    const order = FEATURE_TABS[group.feature];
+    if (!order) {
+      return { group, blocks: [{ id: null, heading: null, flows: group.flows }] };
+    }
+    const blocks: Block[] = order
+      .map((tab) => ({
+        id: subId(group.feature, tab),
+        heading: tab,
+        flows: group.flows.filter((f) => tabOf(group.feature, f.name) === tab),
+      }))
+      .filter((b) => b.flows.length > 0);
+    return { group, blocks };
+  });
+
+// ── Prototypes & tools ──────────────────────────────────────────────────────
+// Standalone harness routes that are NOT product flows — internal previews and
+// design tools. Audited against apps/design/src/pages/ (real routes only).
+const PROTOTYPES: { href: string; title: string; what: string; newTab?: boolean }[] = [
+  {
+    href: '/styleguide',
+    title: 'Styleguide',
+    what: 'The living component catalog (SB_ENTRIES) rendered in the real daisyUI theme — the catalog we build UI from.',
+  },
+  {
+    href: '/panels',
+    title: 'Panel Lab',
+    what: 'Opens the real Schema detail panels & drawers from a scenario rail so we can review them (incl. worst-case data).',
+  },
+  {
+    href: '/prototypes/schema-drawer-panels.html',
+    title: 'Multi-panel drawers (research prototype)',
+    what: 'Clickable prototype for navigating several related Schema entities at once, on a faithful Browse mock. Click a field → a non-modal drawer opens (table stays live behind); drill a reference → another panel. Two modes via the header toggle: Side-by-side (each panel resizable + 50/50 balancer) and Overlap · Airtable (right-pinned z-stack, older panels peek). Research + port notes: research/schema-drawer-panels/. Not wired into the app yet.',
+    newTab: true,
+  },
+  {
+    href: '/schema-nav',
+    title: 'Schema nav prototype',
+    what: 'Throwaway prototype of the reworked Schema tab bar (Variant A — grouped, Dan-confirmed) over a placeholder body.',
+  },
+  {
+    href: '/connection-banner',
+    title: 'Connection banner',
+    what: 'Previews the connection-health banner in the app shell plus a static gallery of every state (broken / expiring / restored…).',
+  },
+  {
+    href: '/welcome',
+    title: 'Welcome / onboarding',
+    what: 'The pre-onboarding welcome screen (trial, before any org / space exists). Pair with ?fixture=trial.',
+  },
+];
+
+// ── Schema detail drawer — behaviour & edge cases (client-review block) ───────
+// The full interaction logic of the two-panel (parent + child) Schema detail drawer, laid out
+// stage by stage so it can be reviewed end to end. Try it live in Panel Lab (the Multi-panel
+// scenarios); code lives in apps/web/src/components/schema/EntityPanel.astro.
+const DRAWER_MODEL = {
+  title: 'Schema detail drawer — behaviour & edge cases',
+  lede: 'The right-side detail drawer can hold TWO panels side by side. This is the full logic — every stage, what happens, and why — so the whole interaction can be reviewed at once.',
+  principle:
+    'LEFT = the PARENT (the entity you started from; it stays pinned). RIGHT = the CHILD (what you are exploring, with its own back history). Capped at TWO — never a third. The child belongs to the parent: close or replace the parent and the child goes with it.',
+  live: '/panels',
+};
+const DRAWER_RULE_GROUPS: { heading: string; rules: { trigger: string; behaviour: string; why: string }[] }[] = [
+  {
+    heading: 'Opening & drilling',
+    rules: [
+      { trigger: 'Open an entity (click a table row or a link)', behaviour: 'A single PARENT panel opens on the right; the table stays visible and clickable behind it (non-modal).', why: 'Quick reference without leaving the table.' },
+      { trigger: 'Drill a reference INSIDE the parent (first time)', behaviour: 'The CHILD panel opens beside it. The clicked row stays highlighted — “the right panel is this row, expanded”.', why: 'Master-detail: the highlight ties the child to where it came from.' },
+      { trigger: 'Drill ANOTHER reference in the parent (a child is already open)', behaviour: 'The child is replaced with the new entity (a fresh thread). An Undo appears to bring the previous one back.', why: 'One child at a time; Undo protects the previous exploration.' },
+      { trigger: 'Drill INSIDE the child', behaviour: 'The child navigates in place (its own history). It never opens a third panel.', why: 'Bounded at two; the child is the exploration surface.' },
+    ],
+  },
+  {
+    heading: 'Going back & closing',
+    rules: [
+      { trigger: 'Back — child at the first level', behaviour: 'No Back button yet — just Close. You clicked to open it; Close dismisses it.', why: 'Nav-stack convention (Navattic / Airtable detail panels show only Close at the root).' },
+      { trigger: 'Back — child after drilling deeper', behaviour: 'A Back button appears and walks the child’s history one step at a time.', why: 'There is now somewhere to go back to.' },
+      { trigger: 'Close the CHILD (× on the right)', behaviour: 'Closes only the child; the parent stays.', why: 'Dismiss the exploration, keep your context.' },
+      { trigger: 'Close the PARENT (× on the left)', behaviour: 'Closes BOTH. The button reads “Close both”, and hovering it dims both panels as a preview.', why: 'The child can’t outlive its parent.' },
+      { trigger: 'Esc', behaviour: 'Acts on the panel you are actually in — cancels an edit there, otherwise closes that panel.', why: 'Keyboard follows the cursor, not a fixed panel.' },
+    ],
+  },
+  {
+    heading: 'Resizing',
+    rules: [
+      { trigger: 'Drag a panel’s LEFT edge', behaviour: 'Resizes THAT panel alone; the width is remembered next time.', why: 'Independent per-panel width.' },
+      { trigger: 'The shared SHUTTER (two bars on the outer-left edge)', behaviour: 'Resizes BOTH — drag = proportional, click = even them 50/50. Hovering the left edge lights its left bar; the right edge lights its right bar.', why: 'One control for the pair; the two bars map to the two panels.' },
+      { trigger: 'Widths', behaviour: 'Auto-fit so a strip of the table always stays visible behind the pair.', why: 'You never fully lose the table.' },
+    ],
+  },
+  {
+    heading: 'Safety & responsive',
+    rules: [
+      { trigger: 'Click a table row BEHIND the pair', behaviour: 'Replaces the parent with that entity and collapses the child (it belonged to the old parent).', why: 'Consistent parent-child; you are starting a new context.' },
+      { trigger: 'Undo (toast)', behaviour: 'After a child is replaced by a new drill, one tap restores the previous child.', why: 'Reversible — an accidental replace is not a loss.' },
+      { trigger: 'Narrow screen (mobile)', behaviour: 'The pair collapses to ONE full-width column (the child if open, else the parent); closing the child returns to the parent.', why: 'Two panels don’t fit; degrade to a single drill-in drawer.' },
+    ],
+  },
+];
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flow handoff index · Baseout</title>
+  </head>
+  <body>
+    <main class="ho-panel" data-ho-panel="flows">
+      <div class="ho-layout">
+        <div class="ho-main">
+          <header class="head">
+            <p class="eyebrow">Baseout · design → engineering</p>
+            <h1>Flows</h1>
+            <p class="lede">
+              Every flow and state in one place. Each row is a reviewer&rsquo;s path: a <strong>status</strong>, a one-line
+              summary, and its <strong>steps as clickable links</strong> — click a step to view that version live in the
+              harness. The engineer&rsquo;s spec + code detail is tucked into <em>Engineer details</em> on each row. States
+              are data, not duplicated screens: a new variant is a new row in <code>flow-registry.ts</code>, never a new page.
+            </p>
+
+            <div class="legend">
+              {presentStatuses.map((s) => (
+                <span class={`pill ${s}`}><i></i>{totals[s]} {STATUS_LABEL[s].toLowerCase()}</span>
+              ))}
+              <span class="count">{totalFlows} flows · {groups.length} areas · {PROTOTYPES.length} tools</span>
+            </div>
+
+            <div class="hosearch">
+              <span class="hosearch-ic" aria-hidden="true">⌕</span>
+              <input
+                type="search"
+                id="ho-q"
+                class="hosearch-input"
+                placeholder="Search flows & tools — name, id, area, description…  (press /)"
+                autocomplete="off"
+                aria-label="Search flows and tools"
+              />
+              <span class="hosearch-count" data-ho-count hidden></span>
+            </div>
+            <p class="hosearch-empty" data-ho-empty hidden>No flows match — <button type="button" class="hosearch-clear" data-ho-clear>clear search</button>.</p>
+
+            <ul class="howto">
+              {presentStatuses.includes('built') && <li><strong>Built</strong> — clickable in the harness now; the linked steps render.</li>}
+              {presentStatuses.includes('planned') && <li><strong>Planned</strong> — agreed and not on screen yet; the spec captures the intent.</li>}
+              {presentStatuses.includes('discussion') && <li><strong>Up for discussion</strong> — direction set, design still open. Your feedback shapes it before we build.</li>}
+              <li>A step with no link is a state <strong>not built yet</strong>; open <em>Engineer details</em> for the spec scenarios and porting targets.</li>
+            </ul>
+          </header>
+
+          <section class="group" id="prototypes-tools">
+            <h2>Prototypes &amp; tools</h2>
+            <p class="grouplede">Standalone harness routes that aren&rsquo;t product flows — internal previews and design tools.</p>
+            <div class="rows">
+              {PROTOTYPES.map((p) => (
+                <article class="row proto" id={slug(p.title)}>
+                  <div class="row-head">
+                    <div class="row-title">
+                      <h3><a class="proto-title" href={p.href} target={p.newTab ? '_blank' : undefined} rel={p.newTab ? 'noopener' : undefined}>{p.title}</a></h3>
+                      <code class="id">{p.href}</code>
+                    </div>
+                    <a class="play" href={p.href} target={p.newTab ? '_blank' : undefined} rel={p.newTab ? 'noopener' : undefined}>{p.newTab ? 'Open ↗' : 'Open →'}</a>
+                  </div>
+                  <p class="blurb">{p.what}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section class="group" id="drawer-behaviour">
+            <h2>{DRAWER_MODEL.title}</h2>
+            <p class="grouplede">{DRAWER_MODEL.lede}</p>
+            <div class="dwb-principle"><strong>Model — </strong>{DRAWER_MODEL.principle}</div>
+            <a class="dwb-live" href={DRAWER_MODEL.live} target="_blank" rel="noopener">Try it live in Panel Lab — open a pair and walk the rules <span aria-hidden="true">↗</span></a>
+            {DRAWER_RULE_GROUPS.map((g) => (
+              <div class="dwb-grp">
+                <h3 class="subhead">{g.heading}<span class="n">{g.rules.length}</span></h3>
+                <div class="dwb-rules">
+                  {g.rules.map((r) => (
+                    <div class="dwb-rule">
+                      <div class="dwb-trigger">{r.trigger}</div>
+                      <div class="dwb-behaviour">{r.behaviour}</div>
+                      <div class="dwb-why"><span class="dwb-why-tag">Why</span>{r.why}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </section>
+
+          {
+            groupBlocks.map(({ group, blocks }) => (
+              <section class="group" id={slug(group.feature)}>
+                <h2>{group.feature}</h2>
+                {blocks.map((block) => (
+                <div class={block.heading ? 'subgroup' : 'rows-wrap'} data-subgroup={block.id ?? undefined}>
+                  {block.heading && (
+                    <h3 class="subhead" id={block.id}>{block.heading}<span class="n">{block.flows.length}</span></h3>
+                  )}
+                <div class="rows">
+                  {block.flows.map((flow) => (
+                    <article class={`row ${flow.status}`} id={flow.id}>
+                      <div class="row-head">
+                        <div class="row-title">
+                          <span class={`status ${flow.status}`}><i></i>{STATUS_LABEL[flow.status]}</span>
+                          <h3>{flow.name}</h3>
+                          <code class="id">{flow.id}</code>
+                        </div>
+                      </div>
+
+                      <p class="blurb">{flow.blurb}</p>
+                      {flow.note && <p class="note">{flow.note}</p>}
+
+                      <div class="stepwrap">
+                        {/* Steps open in a NEW TAB: the index is the reference you keep
+                            coming back to while walking states, so opening in place would
+                            mean a back-navigation between every single step. */}
+                        <h4>Steps — click to open in the harness</h4>
+                        <ol class="steps">
+                          {flow.steps.map((step) => (
+                            <li>
+                              {step.href ? (
+                                <a class="step-link" href={step.href} target="_blank" rel="noopener">{step.label} <span class="go" aria-hidden="true">↗</span></a>
+                              ) : (
+                                <span class="todo">{step.label} · not built yet</span>
+                              )}
+                              <span class="cap">{step.caption}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+
+                      {(flow.specs.length > 0 || flow.code.length > 0) && (
+                        <details class="eng">
+                          <summary>Engineer details</summary>
+                          <div class="cols">
+                            <div class="col">
+                              <h4>Spec scenarios</h4>
+                              <ul class="refs">
+                                {flow.specs.map((s) => (
+                                  <li>
+                                    <code>{s.change}</code> <span class="sep">›</span> {s.scenario}
+                                  </li>
+                                ))}
+                                {flow.specs.length === 0 && <li class="none">No spec scenarios yet.</li>}
+                              </ul>
+                            </div>
+                            <div class="col">
+                              <h4>Code (apps/web)</h4>
+                              <ul class="refs">
+                                {flow.code.map((c) => (
+                                  <li>
+                                    <code>{c.replace('apps/web/src/', '')}</code>
+                                  </li>
+                                ))}
+                                {flow.code.length === 0 && <li class="none">No code targets yet.</li>}
+                              </ul>
+                            </div>
+                          </div>
+                        </details>
+                      )}
+                    </article>
+                  ))}
+                </div>
+                </div>
+                ))}
+              </section>
+            ))
+          }
+
+          <footer class="foot">
+            <p>
+              Source of truth: <code>apps/design/src/lib/flow-registry.ts</code>. The floating panel plays the curated
+              subset; this index lists everything. Specs live in <code>openspec/changes/</code>.
+            </p>
+          </footer>
+        </div>
+
+        <aside class="ho-rail">
+          <nav class="ho-toc" data-toc="flows" aria-label="Jump to area">
+            <div class="ho-toc-h">On this tab</div>
+            <a href="#prototypes-tools">Prototypes &amp; tools<span class="n">{PROTOTYPES.length}</span></a>
+            <a href="#drawer-behaviour">Schema drawer &mdash; behaviour<span class="n">{DRAWER_RULE_GROUPS.reduce((n, g) => n + g.rules.length, 0)}</span></a>
+            {groupBlocks.map(({ group, blocks }) =>
+              FEATURE_TABS[group.feature] ? (
+                <div class="ho-toc-grp" data-grp={slug(group.feature)}>
+                  <a href={`#${slug(group.feature)}`}>{group.feature}<span class="n">{group.flows.length}</span></a>
+                  <div class="ho-subnav">
+                    {blocks.map((b) => (
+                      <a class="ho-sub" href={`#${b.id}`} data-sub={b.id}>{b.heading}<span class="n">{b.flows.length}</span></a>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <a href={`#${slug(group.feature)}`}>{group.feature}<span class="n">{group.flows.length}</span></a>
+              )
+            )}
+          </nav>
+        </aside>
+      </div>
+    </main>
+
+    <style>
+      html { scroll-behavior: smooth; }
+      :root {
+        --bg: oklch(0.985 0.004 255);
+        --panel: oklch(1 0 0);
+        --ink: oklch(0.27 0.02 260);
+        --ink-soft: oklch(0.52 0.02 260);
+        --ink-faint: oklch(0.62 0.015 260);
+        --line: oklch(0.92 0.006 260);
+        --line-soft: oklch(0.95 0.005 260);
+        --accent: oklch(0.55 0.16 260);
+        --ok: oklch(0.62 0.15 150);
+        --warn: oklch(0.72 0.15 75);
+        --prop: oklch(0.6 0.04 260);
+        --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font:
+          15px/1.55 -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* Two-column layout: readable content + a sticky jump-nav rail. */
+      .ho-layout {
+        max-width: 1320px;
+        margin: 0 auto;
+        padding: 36px 32px 96px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 212px;
+        gap: 40px;
+        align-items: start;
+      }
+      .ho-main { min-width: 0; }
+      .ho-rail {
+        position: sticky;
+        top: 16px;
+        align-self: start;
+      }
+      .ho-toc {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .ho-toc-h {
+        font-size: 11px;
+        font-weight: 660;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        padding: 0 10px 8px;
+      }
+      .ho-toc a {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        font-size: 12.5px;
+        font-weight: 540;
+        color: var(--ink-soft);
+        text-decoration: none;
+        padding: 6px 10px;
+        border-radius: 8px;
+        border-left: 2px solid transparent;
+        transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+      }
+      .ho-toc a:hover {
+        color: var(--accent);
+        background: var(--panel);
+      }
+      .ho-toc a.active {
+        color: var(--accent);
+        background: var(--panel);
+        border-left-color: var(--accent);
+        font-weight: 660;
+      }
+      .ho-toc a[hidden] { display: none; }
+      /* Expandable group: top-level link + indented sub-entries (Schema tabs). */
+      .ho-toc-grp {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .ho-toc-grp[hidden] { display: none; }
+      .ho-subnav {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        margin: 4px 0 4px 12px;
+        padding-left: 8px;
+        border-left: 1px solid var(--line);
+      }
+      .ho-toc a.ho-sub {
+        font-size: 12px;
+        font-weight: 520;
+        padding: 4px 8px;
+        border-radius: 6px;
+      }
+      .ho-toc .n {
+        flex: none;
+        font-size: 11px;
+        color: var(--ink-faint);
+        background: oklch(0.95 0.006 260);
+        border-radius: 999px;
+        padding: 0 6px;
+        line-height: 16px;
+      }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        font-size: 12px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        font-weight: 600;
+      }
+      h1 {
+        margin: 0 0 14px;
+        font-size: 30px;
+        font-weight: 680;
+        letter-spacing: -0.02em;
+      }
+      .lede {
+        margin: 0 0 22px;
+        max-width: 74ch;
+        color: var(--ink-soft);
+        font-size: 15px;
+      }
+      .lede strong { color: var(--ink); font-weight: 600; }
+      code {
+        font-family: var(--mono);
+        font-size: 0.86em;
+        background: oklch(0.95 0.006 260);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 1px 5px;
+        color: var(--ink);
+      }
+      .legend {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+      .legend .count {
+        font-size: 12.5px;
+        color: var(--ink-faint);
+      }
+      .hosearch {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 9px 14px;
+        margin-bottom: 14px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        transition: border-color 0.12s ease, box-shadow 0.12s ease;
+      }
+      .hosearch:focus-within {
+        border-color: color-mix(in oklch, var(--accent) 55%, var(--line));
+        box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 14%, transparent);
+      }
+      .hosearch-ic {
+        font-size: 18px;
+        line-height: 1;
+        color: var(--ink-faint);
+        flex: none;
+      }
+      .hosearch-input {
+        flex: 1;
+        min-width: 0;
+        border: 0;
+        background: none;
+        outline: none;
+        font: inherit;
+        font-size: 14.5px;
+        color: var(--ink);
+      }
+      .hosearch-input::placeholder { color: var(--ink-faint); }
+      .hosearch-input::-webkit-search-cancel-button { cursor: pointer; }
+      .hosearch-count {
+        flex: none;
+        font-size: 12px;
+        font-weight: 560;
+        color: var(--ink-faint);
+        white-space: nowrap;
+      }
+      .hosearch-empty {
+        margin: 0 0 18px;
+        font-size: 13.5px;
+        color: var(--ink-soft);
+      }
+      .hosearch-clear {
+        font: inherit;
+        font-size: 13.5px;
+        color: var(--accent);
+        background: none;
+        border: 0;
+        padding: 0;
+        cursor: pointer;
+        text-decoration: underline;
+      }
+      /* filtered-out rows / groups / sub-groups / rail links */
+      .row[hidden], .group[hidden], .subgroup[hidden], .ho-toc a[hidden] { display: none; }
+      .group { scroll-margin-top: 18px; }
+      /* Schema sub-group heading — an anchored scroll target above its rows. */
+      .subhead {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 20px 0 8px;
+        font-size: 12px;
+        font-weight: 660;
+        letter-spacing: 0.04em;
+        color: var(--ink-soft);
+        scroll-margin-top: 18px;
+      }
+      .subgroup:first-of-type .subhead { margin-top: 12px; }
+      .subhead .n {
+        font-size: 11px;
+        font-weight: 560;
+        color: var(--ink-faint);
+        background: oklch(0.95 0.006 260);
+        border-radius: 999px;
+        padding: 0 6px;
+        line-height: 16px;
+      }
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 13px;
+        font-weight: 560;
+        padding: 5px 11px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--panel);
+      }
+      .pill i {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        display: inline-block;
+      }
+      .pill.built i { background: var(--ok); }
+      .pill.planned i { background: var(--warn); }
+      .pill.discussion i { background: var(--prop); }
+      .howto {
+        margin: 0 0 8px;
+        padding: 16px 18px;
+        list-style: none;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        display: grid;
+        gap: 7px;
+      }
+      .howto li { font-size: 13.5px; color: var(--ink-soft); }
+      .howto strong { color: var(--ink); }
+
+      .group { margin-top: 44px; }
+      .group > h2 {
+        margin: 0 0 6px;
+        font-size: 13px;
+        font-weight: 680;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+        padding-bottom: 9px;
+        border-bottom: 1px solid var(--line);
+      }
+      .grouplede {
+        margin: 0 0 16px;
+        font-size: 13.5px;
+        color: var(--ink-soft);
+      }
+      /* Schema drawer — behaviour block */
+      .dwb-principle {
+        margin: 0 0 14px;
+        padding: 12px 14px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        font-size: 13px;
+        line-height: 1.55;
+        color: var(--ink-soft);
+      }
+      .dwb-principle strong { color: var(--ink); font-weight: 640; }
+      .dwb-live {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 22px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: var(--accent);
+        text-decoration: none;
+      }
+      .dwb-live:hover { text-decoration: underline; }
+      .dwb-grp { margin-top: 20px; }
+      .dwb-rules { display: grid; gap: 10px; margin-top: 10px; }
+      .dwb-rule {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px 14px;
+      }
+      .dwb-trigger { font-size: 13px; font-weight: 640; color: var(--ink); }
+      .dwb-behaviour { font-size: 13px; line-height: 1.5; color: var(--ink-soft); margin-top: 4px; }
+      .dwb-why { display: flex; align-items: baseline; gap: 8px; font-size: 12px; line-height: 1.45; color: var(--ink-faint); margin-top: 8px; }
+      .dwb-why-tag {
+        flex: none;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--accent);
+        background: color-mix(in oklch, var(--accent) 12%, transparent);
+        padding: 1px 6px;
+        border-radius: 5px;
+      }
+      .rows { display: grid; gap: 14px; }
+      .row {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 18px 20px 20px;
+        scroll-margin-top: 18px;
+      }
+      .row-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .row-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .row-title h3 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 640;
+        letter-spacing: -0.01em;
+      }
+      .proto-title { color: var(--ink); text-decoration: none; }
+      .proto-title:hover { color: var(--accent); text-decoration: underline; }
+      .id {
+        font-size: 12px;
+        color: var(--ink-faint);
+        background: transparent;
+        border: none;
+        padding: 0;
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 640;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        padding: 3px 9px 3px 8px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+      .status i {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        display: inline-block;
+      }
+      .status.built { color: oklch(0.4 0.13 150); background: oklch(0.95 0.05 150); }
+      .status.built i { background: var(--ok); }
+      .status.planned { color: oklch(0.46 0.12 70); background: oklch(0.95 0.07 80); }
+      .status.planned i { background: var(--warn); }
+      .status.discussion { color: oklch(0.45 0.03 260); background: oklch(0.95 0.01 260); }
+      .status.discussion i { background: var(--prop); }
+      .play {
+        flex: none;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--accent);
+        text-decoration: none;
+        white-space: nowrap;
+        padding-top: 3px;
+      }
+      .play:hover { text-decoration: underline; }
+      .blurb {
+        margin: 10px 0 0;
+        color: var(--ink-soft);
+        font-size: 14px;
+        max-width: 78ch;
+      }
+      .note {
+        margin: 8px 0 0;
+        font-size: 13px;
+        color: var(--ink-faint);
+        font-style: italic;
+        max-width: 78ch;
+      }
+
+      .stepwrap { margin-top: 16px; }
+      .col h4, .stepwrap h4 {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 660;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+      .steps {
+        margin: 0;
+        padding-left: 18px;
+        display: grid;
+        gap: 10px;
+      }
+      .steps li { font-size: 13.5px; }
+      .step-link {
+        color: var(--accent);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .step-link:hover { text-decoration: underline; }
+      .step-link .go { font-size: 11px; opacity: 0.75; }
+      .steps .todo {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 560;
+        color: var(--ink-faint);
+        background: oklch(0.95 0.006 260);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 2px 10px;
+      }
+      .steps .cap {
+        display: block;
+        color: var(--ink-soft);
+        font-size: 12.5px;
+        margin-top: 3px;
+        line-height: 1.5;
+        max-width: 82ch;
+      }
+
+      /* Engineer-only detail — collapsed by default. */
+      .eng {
+        margin-top: 16px;
+        border-top: 1px solid var(--line-soft);
+        padding-top: 12px;
+      }
+      .eng > summary {
+        cursor: pointer;
+        list-style: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 11px;
+        font-weight: 660;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--ink-faint);
+      }
+      .eng > summary::-webkit-details-marker { display: none; }
+      .eng > summary::before {
+        content: '';
+        width: 0;
+        height: 0;
+        border-left: 5px solid currentColor;
+        border-top: 4px solid transparent;
+        border-bottom: 4px solid transparent;
+        transition: transform 0.15s ease;
+      }
+      .eng[open] > summary::before { transform: rotate(90deg); }
+      .eng > summary:hover { color: var(--accent); }
+      .cols {
+        margin-top: 14px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 22px;
+      }
+      @media (max-width: 760px) {
+        .cols { grid-template-columns: 1fr; gap: 16px; }
+      }
+      .refs {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        gap: 7px;
+      }
+      .refs li { font-size: 13px; color: var(--ink-soft); line-height: 1.45; }
+      .refs li.none { color: var(--ink-faint); font-style: italic; }
+      .refs code { font-size: 12px; }
+      .sep { color: var(--ink-faint); }
+
+      .foot {
+        margin-top: 48px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+      }
+      .foot p { margin: 0; font-size: 13px; color: var(--ink-faint); }
+
+      /* Narrow: single column, rail becomes a horizontal chip bar above content. */
+      @media (max-width: 1160px) {
+        .ho-layout { grid-template-columns: 1fr; gap: 0; }
+        .ho-rail { position: static; order: -1; margin-bottom: 12px; }
+        .ho-toc { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+        .ho-toc-h { display: none; }
+        .ho-toc a {
+          border-left: 0;
+          border: 1px solid var(--line);
+          border-radius: 999px;
+          padding: 4px 10px;
+          background: var(--panel);
+        }
+        .ho-toc a.active { border-color: color-mix(in oklch, var(--accent) 55%, var(--line)); }
+        /* Flatten the nested Schema rail into the horizontal chip row. */
+        .ho-toc-grp, .ho-subnav { display: contents; }
+        .ho-toc a.ho-sub { font-size: 11px; padding: 3px 9px; }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: oklch(0.18 0.01 260);
+          --panel: oklch(0.22 0.012 260);
+          --ink: oklch(0.93 0.01 260);
+          --ink-soft: oklch(0.74 0.012 260);
+          --ink-faint: oklch(0.6 0.012 260);
+          --line: oklch(0.3 0.012 260);
+          --line-soft: oklch(0.26 0.012 260);
+          --accent: oklch(0.72 0.13 255);
+        }
+        code { background: oklch(0.26 0.012 260); }
+        .ho-toc .n, .subhead .n { background: oklch(0.3 0.012 260); }
+        .ho-subnav { border-left-color: var(--line); }
+        .steps .todo { background: oklch(0.26 0.012 260); }
+        .status.built { color: oklch(0.85 0.13 150); background: oklch(0.3 0.06 150); }
+        .status.planned { color: oklch(0.85 0.12 85); background: oklch(0.32 0.06 80); }
+        .status.discussion { color: oklch(0.82 0.02 260); background: oklch(0.3 0.012 260); }
+      }
+    </style>
+
+    <script is:inline>
+      // Live filter for the flow index (+ the Prototypes & tools list, which is just
+      // another .group). Matches the query against each row's full text plus its area
+      // name; hides non-matching rows, then empty areas + their rail entries.
+      (function () {
+        var input = document.getElementById('ho-q');
+        if (!input) return;
+        var countEl = document.querySelector('[data-ho-count]');
+        var emptyEl = document.querySelector('[data-ho-empty]');
+        var clearBtn = document.querySelector('[data-ho-clear]');
+
+        var groups = Array.prototype.slice.call(
+          document.querySelectorAll('.ho-panel[data-ho-panel="flows"] .group')
+        ).map(function (g) {
+          var feature = (g.querySelector('h2') ? g.querySelector('h2').textContent : '').toLowerCase();
+          var slug = g.id;
+          var chip = document.querySelector('.ho-toc[data-toc="flows"] a[href="#' + slug + '"]');
+          var chipN = chip ? chip.querySelector('.n') : null;
+          var chipTotal = chipN ? chipN.textContent : '';
+          var grpWrap = chip ? chip.closest('.ho-toc-grp') : null;
+          var rows = Array.prototype.slice.call(g.querySelectorAll('.row')).map(function (r) {
+            return { el: r, hay: (feature + ' ' + r.textContent).toLowerCase().replace(/\s+/g, ' ') };
+          });
+          // Sub-groups (Schema tabs): each hides + updates its own rail sub-entry.
+          var subs = Array.prototype.slice.call(g.querySelectorAll('.subgroup')).map(function (sg) {
+            var id = sg.getAttribute('data-subgroup');
+            var link = id ? document.querySelector('.ho-toc[data-toc="flows"] a[data-sub="' + id + '"]') : null;
+            var subN = link ? link.querySelector('.n') : null;
+            return {
+              el: sg,
+              link: link,
+              subN: subN,
+              subTotal: subN ? subN.textContent : '',
+              rows: Array.prototype.slice.call(sg.querySelectorAll('.row')),
+            };
+          });
+          return { el: g, rows: rows, subs: subs, chip: chip, chipN: chipN, chipTotal: chipTotal, grpWrap: grpWrap };
+        });
+        var total = groups.reduce(function (n, g) { return n + g.rows.length; }, 0);
+
+        function apply(q) {
+          q = q.trim().toLowerCase();
+          var shown = 0;
+          groups.forEach(function (g) {
+            var vis = 0;
+            g.rows.forEach(function (r) {
+              var ok = q === '' || r.hay.indexOf(q) !== -1;
+              r.el.hidden = !ok;
+              if (ok) vis++;
+            });
+            // Hide sub-groups + their rail sub-entries that have no visible rows.
+            g.subs.forEach(function (s) {
+              var sv = 0;
+              s.rows.forEach(function (row) { if (!row.hidden) sv++; });
+              s.el.hidden = sv === 0;
+              if (s.link) s.link.hidden = sv === 0;
+              if (s.subN) s.subN.textContent = q === '' ? s.subTotal : String(sv);
+            });
+            shown += vis;
+            g.el.hidden = vis === 0;
+            if (g.chip) g.chip.hidden = vis === 0;
+            if (g.grpWrap) g.grpWrap.hidden = vis === 0;
+            if (g.chipN) g.chipN.textContent = q === '' ? g.chipTotal : String(vis);
+          });
+          if (countEl) {
+            countEl.hidden = q === '';
+            countEl.textContent = shown + ' of ' + total;
+          }
+          if (emptyEl) emptyEl.hidden = !(q !== '' && shown === 0);
+        }
+
+        input.addEventListener('input', function () { apply(input.value); });
+        if (clearBtn) clearBtn.addEventListener('click', function () { input.value = ''; apply(''); input.focus(); });
+        window.__hoFlowsApply = apply;
+      })();
+    </script>
+
+    <script is:inline>
+      // Scroll-spy: highlight the rail entry whose section is in view. Observes
+      // both top-level groups and the Schema sub-headings; when a sub-entry is
+      // active its parent group link stays highlighted too.
+      (function () {
+        function spy(sectionSel, linkSel) {
+          var links = Array.prototype.slice.call(document.querySelectorAll(linkSel));
+          if (!links.length || !('IntersectionObserver' in window)) return;
+          var map = {};
+          links.forEach(function (l) {
+            var id = (l.getAttribute('href') || '').replace('#', '');
+            if (id) map[id] = l;
+          });
+          function setActive(id) {
+            var el = map[id];
+            if (!el) return;
+            links.forEach(function (l) { l.classList.remove('active'); });
+            el.classList.add('active');
+            var grp = el.closest('.ho-toc-grp');
+            if (grp) {
+              var top = grp.querySelector('a');
+              if (top && top !== el) top.classList.add('active');
+            }
+          }
+          var io = new IntersectionObserver(function (entries) {
+            entries.forEach(function (e) {
+              if (e.isIntersecting && map[e.target.id]) setActive(e.target.id);
+            });
+          }, { rootMargin: '0px 0px -72% 0px', threshold: 0 });
+          Array.prototype.slice.call(document.querySelectorAll(sectionSel)).forEach(function (s) { io.observe(s); });
+        }
+        spy(
+          '.ho-panel[data-ho-panel="flows"] .group, .ho-panel[data-ho-panel="flows"] .subhead',
+          '.ho-toc[data-toc="flows"] a'
+        );
+      })();
+    </script>
+
+    <script is:inline>
+      // "/" focuses the flow search; Escape clears it.
+      (function () {
+        document.addEventListener('keydown', function (e) {
+          var typing = /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '');
+          var input = document.getElementById('ho-q');
+          if (e.key === '/' && !typing && input) {
+            e.preventDefault();
+            input.focus();
+          }
+          if (e.key === 'Escape' && input && document.activeElement === input) {
+            input.value = '';
+            if (window.__hoFlowsApply) window.__hoFlowsApply('');
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,321 @@
+// Pure-function orchestration for the run-start flow (Phase 8a).
+//
+// processRunStart() validates a queued backup_run row, transitions it to
+// 'running', and fans out one Trigger.dev backup-base task per included
+// base. All side-effects (DB queries, task enqueue) are injected as deps —
+// this mirrors the Phase 7 pattern (`runBackupBase` in
+// apps/workflows/trigger/tasks/backup-base.ts) so the validation paths
+// are unit-testable without touching Postgres or Trigger.dev.
+//
+// Phase 8 scope decisions (captured in the plan resume note):
+//   - β: orgSlug ← connection.organizationId (UUID, not slug);
+//        spaceName ← run.spaceId (UUID, not name).
+//        Mirroring `organizations` + `spaces` to upgrade these is a
+//        tagged follow-up for a later phase.
+//   - The `trial_backup_run_used && is_trial` 422 check is deliberately
+//        skipped here. That column isn't in the engine's
+//        backup_configurations mirror today, and the Phase 7 task
+//        (runBackupBase) already enforces the trial caps at run-time
+//        (5 tables / 1000 records). Add the column + the pre-enqueue
+//        check together when the cleanup phase mirrors orgs/spaces.
+//
+// Reminders pinned in the plan:
+//   - storageType: only 'r2_managed' is valid in MVP. Reject otherwise.
+//     The Phase 10.4 StoragePicker UI only enables r2_managed so this
+//     should never fire from the supported flow — defense-in-depth.
+
+import type {
+  BackupConfigurationRow,
+  BackupRunRow,
+  ConnectionRow,
+} from "../../db/schema";
+import {
+  viewCaptureModeFromConnection,
+  type ViewCaptureMode,
+} from "../per-space/view-capture";
+
+export interface ProcessRunStartInput {
+  runId: string;
+}
+
+export interface IncludedBase {
+  /** Airtable base ID, e.g. "appXXXXXXXX". */
+  atBaseId: string;
+  /** Display name from at_bases.name — used in the R2 path layout. */
+  name: string;
+}
+
+/**
+ * Wire-shape payload for the backup-base Trigger.dev task. Mirrors
+ * `BackupBaseTaskPayload` in apps/workflows/trigger/tasks/backup-base.task.ts.
+ * Re-declared here (rather than imported) because the lib/runs path lives on
+ * the Worker side — importing the task body from `@baseout/workflows` would
+ * pull the Trigger.dev SDK + papaparse into the Worker bundle. The type-only
+ * re-export in `apps/workflows/trigger/tasks/index.ts` is still used by
+ * trigger-client.ts for `tasks.trigger<typeof X>(...)` payload typing.
+ */
+export interface BackupBaseTaskPayload {
+  runId: string;
+  connectionId: string;
+  atBaseId: string;
+  isTrial: boolean;
+  encryptedToken: string;
+  orgSlug: string;
+  spaceName: string;
+  baseName: string;
+  /** ISO-8601 string. Trigger.dev JSON-serializes payloads. */
+  runStartedAt: string;
+  /**
+   * Selects the StorageWriter on the workflows side (Phase A of
+   * openspec/changes/shared-backup-run-delete). Forwarded from
+   * backup_configurations.storage_type. Accept-list (ACCEPTED_STORAGE_TYPES
+   * below): 'r2_managed' (legacy default → LocalFsWriter), 'local_fs'
+   * (explicit), and the BYOS cloud providers 'google_drive', 'box',
+   * 'dropbox', 'onedrive'. Must stay in sync with the workflows
+   * resolveStorageWriter factory + the apps/web persist-policy allow-list.
+   * Future BYOS providers (S3, Frame.io) widen the gate when each lands.
+   */
+  storageType: string;
+  /**
+   * Space ID — workflows uses it to fetch decrypted storage credentials from
+   * the engine's `/api/internal/spaces/:spaceId/storage-destination` route.
+   * Required for BYOS destinations; ignored on local_fs.
+   */
+  spaceId: string;
+  /**
+   * 'full' (schema + data) or 'schema' (schema only). Forwarded from
+   * backup_runs.kind so the task skips records/attachments on a schema run
+   * (server-backup-scope / workflows-schema-only-backup).
+   */
+  kind: "full" | "schema";
+  /**
+   * Gates the MCP interface-pages capture step on the workflows side
+   * (server-mcp-interface-pages / workflows-mcp-interface-pages). True only
+   * when the Org's resolved tier includes interface backup (Growth+, per
+   * lib/capabilities/interface-backup.ts). Below tier the task makes zero
+   * MCP requests.
+   */
+  interfacesEnabled: boolean;
+  /**
+   * Gates the MCP automations capture step on the workflows side
+   * (server-mcp-automations / workflows-mcp-automations). Same contract as
+   * interfacesEnabled (Growth+, lib/capabilities/automation-backup.ts).
+   */
+  automationsEnabled: boolean;
+  /**
+   * Gates the REST comment capture step on the workflows side
+   * (server-comments / workflows-comments). Rides the record-backup tier
+   * (recommended stance, ⚠ tier pending Dan — lib/capabilities/
+   * comment-backup.ts). Below tier the task makes zero comments-endpoint or
+   * comments-plan requests.
+   */
+  commentsEnabled: boolean;
+  /**
+   * How this run captures views (server-mcp-views / workflows-mcp-views):
+   * 'rest' — enterprise-scope connection (or dev override), views ride the
+   * REST schema payload as before, no MCP call; 'mcp' — the task captures
+   * views via the Airtable MCP server and forwards them on schema-sync's
+   * optional `views` field; 'off' — no view capture. Resolved from the
+   * connection's platform_config at run start; the schema-sync route
+   * re-resolves authoritatively at persist time.
+   */
+  viewCaptureMode: ViewCaptureMode;
+}
+
+const ACCEPTED_STORAGE_TYPES = new Set([
+  "r2_managed", // legacy default — workflows routes this to LocalFsWriter
+  "local_fs", // explicit dev-only writer
+  "google_drive", // shared-byos-drive
+  "box", // box-provider (workflows BoxWriter + engine box credential route)
+  "dropbox", // dropbox-provider (workflows DropboxWriter + engine cred route)
+  "onedrive", // onedrive-provider (PKCE-only public client, Microsoft Graph)
+]);
+
+export interface ProcessRunStartDeps {
+  fetchRunById: (runId: string) => Promise<BackupRunRow | null>;
+  fetchConnectionById: (connectionId: string) => Promise<ConnectionRow | null>;
+  fetchConfigBySpace: (
+    spaceId: string,
+  ) => Promise<BackupConfigurationRow | null>;
+  fetchIncludedBases: (configId: string) => Promise<IncludedBase[]>;
+  updateRunStarted: (runId: string, startedAt: Date) => Promise<void>;
+  updateRunTriggerIds: (runId: string, triggerRunIds: string[]) => Promise<void>;
+  enqueueBackupBase: (
+    payload: BackupBaseTaskPayload,
+  ) => Promise<{ id: string }>;
+  /**
+   * Tier gate for the MCP interface-pages capture (Growth+). Resolved once
+   * per run from the Connection's Org; production wiring is
+   * resolveCapabilities + interfaceBackupEnabled in start-deps.ts.
+   */
+  resolveInterfacesEnabled: (organizationId: string) => Promise<boolean>;
+  /**
+   * Tier gate for the MCP automations capture (Growth+). Same shape as
+   * resolveInterfacesEnabled; production wiring is resolveCapabilities +
+   * automationBackupEnabled in start-deps.ts.
+   */
+  resolveAutomationsEnabled: (organizationId: string) => Promise<boolean>;
+  /**
+   * Tier gate for the REST comment capture (server-comments; rides the
+   * record-backup tier pending Dan). Same shape as the two above; production
+   * wiring is resolveCapabilities + commentBackupEnabled in start-deps.ts.
+   */
+  resolveCommentsEnabled: (organizationId: string) => Promise<boolean>;
+  /**
+   * Workspace auto-enroll pre-step (server-mcp-workspaces): runs BEFORE
+   * fetchIncludedBases so freshly-added bases join THIS run. Optional +
+   * failure-isolated — any rejection/throw is swallowed and the run proceeds
+   * on the configured base set (the spec's hard rule: the check SHALL never
+   * fail or delay the run). On today's OAuth grant the MCP listing 403s, so
+   * production resolves `{ok:false, reason:'auth'}` until the scope decision
+   * (Features §17 Q20) lands.
+   */
+  runWorkspaceAutoEnroll?: (args: {
+    spaceId: string;
+    connectionId: string;
+    organizationId: string;
+    configId: string;
+  }) => Promise<unknown>;
+  /**
+   * VIEW_CAPTURE_OVERRIDE passthrough (server-view-capture-override): exactly
+   * "1" stamps viewCaptureMode 'rest' for every connection — the legacy dev
+   * escape that opened the REST gate. Unset/other values resolve from the
+   * connection's platform_config (server-mcp-views).
+   */
+  viewCaptureOverride?: string;
+  /** Test seam — defaults to () => new Date() in production. */
+  now?: () => Date;
+}
+
+export type ProcessRunStartResult =
+  | { ok: true; runId: string; triggerRunIds: string[] }
+  | {
+      ok: false;
+      error:
+        | "run_not_found"
+        | "run_already_started"
+        | "connection_not_found"
+        | "invalid_connection"
+        | "config_not_found"
+        | "unsupported_storage_type"
+        | "no_bases_selected";
+    };
+
+export async function processRunStart(
+  input: ProcessRunStartInput,
+  deps: ProcessRunStartDeps,
+): Promise<ProcessRunStartResult> {
+  const now = deps.now ?? (() => new Date());
+
+  // 1. Run row must exist and be queued.
+  const run = await deps.fetchRunById(input.runId);
+  if (!run) return { ok: false, error: "run_not_found" };
+  if (run.status !== "queued") {
+    return { ok: false, error: "run_already_started" };
+  }
+
+  // 2. Connection must exist and be active. apps/web's reconnect flow flips
+  //    status to 'pending_reauth'/'invalid' when Airtable rejects the stored
+  //    token; the cron-OAuth-refresh change does the same proactively.
+  const connection = await deps.fetchConnectionById(run.connectionId);
+  if (!connection) return { ok: false, error: "connection_not_found" };
+  if (connection.status !== "active") {
+    return { ok: false, error: "invalid_connection" };
+  }
+
+  // 3. Config must exist for this Space. apps/web INSERTs the config row
+  //    during onboarding; missing means the user hasn't completed the
+  //    storage/frequency picker yet.
+  const config = await deps.fetchConfigBySpace(run.spaceId);
+  if (!config) return { ok: false, error: "config_not_found" };
+  if (!ACCEPTED_STORAGE_TYPES.has(config.storageType)) {
+    return { ok: false, error: "unsupported_storage_type" };
+  }
+
+  // 3b. Workspace auto-enroll pre-step (server-mcp-workspaces): detect new
+  //     workspaces/bases in enrolled workspaces and add them BEFORE the base
+  //     fetch below, so they join this very run (design Decision 2 — "the new
+  //     bases join the very run that discovered them"). Failure-isolated: any
+  //     rejection is swallowed and the run proceeds unchanged. Manual runs get
+  //     the same check (no hidden mode split).
+  if (deps.runWorkspaceAutoEnroll) {
+    try {
+      await deps.runWorkspaceAutoEnroll({
+        spaceId: run.spaceId,
+        connectionId: run.connectionId,
+        organizationId: connection.organizationId,
+        configId: config.id,
+      });
+    } catch {
+      // Skipped with no signal to the run — the spec's failure-isolation rule.
+    }
+  }
+
+  // 4. At least one base must be marked is_included=true.
+  const bases = await deps.fetchIncludedBases(config.id);
+  if (bases.length === 0) {
+    return { ok: false, error: "no_bases_selected" };
+  }
+
+  // 5. Transition the run row to 'running'. This MUST happen before any
+  //    enqueue so observers (apps/web run-history poll, future SpaceDO
+  //    cron) see a non-terminal status while tasks fan out.
+  const startedAt = now();
+  await deps.updateRunStarted(run.id, startedAt);
+
+  // 6. Fan out: one Trigger.dev task per included base. Sequential await
+  //    (rather than Promise.all) keeps trigger_run_ids ordering deterministic
+  //    and matches the order at_bases / backup_configuration_bases were
+  //    selected in. At MVP-scale (~5 bases) the latency cost is negligible.
+  //    The interface-backup tier gate is per-Org, so it resolves once for
+  //    the whole fan-out.
+  const interfacesEnabled = await deps.resolveInterfacesEnabled(
+    connection.organizationId,
+  );
+  const automationsEnabled = await deps.resolveAutomationsEnabled(
+    connection.organizationId,
+  );
+  const commentsEnabled = await deps.resolveCommentsEnabled(
+    connection.organizationId,
+  );
+  // server-mcp-views: 'rest' for enterprise scope (or the dev override),
+  // 'mcp' for everyone else — tells the task whether to run the MCP view
+  // capture. Per-connection, so it resolves once for the whole fan-out.
+  const viewCaptureMode: ViewCaptureMode =
+    deps.viewCaptureOverride === "1"
+      ? "rest"
+      : viewCaptureModeFromConnection(connection.platformConfig);
+  const triggerRunIds: string[] = [];
+  const runStartedAtIso = startedAt.toISOString();
+  for (const base of bases) {
+    const handle = await deps.enqueueBackupBase({
+      runId: run.id,
+      connectionId: run.connectionId,
+      atBaseId: base.atBaseId,
+      isTrial: run.isTrial,
+      encryptedToken: connection.accessTokenEnc,
+      // β decision: UUIDs as path placeholders until orgs/spaces mirrored.
+      orgSlug: connection.organizationId,
+      spaceName: run.spaceId,
+      baseName: base.name,
+      runStartedAt: runStartedAtIso,
+      storageType: config.storageType,
+      spaceId: run.spaceId,
+      // Forward the run kind so a schema run skips records/attachments. The row
+      // defaults to 'full' (manual + data-scheduled); the SpaceDO stamps
+      // 'schema' on schema-scheduled runs (server-backup-scope).
+      kind: run.kind === "schema" ? "schema" : "full",
+      interfacesEnabled,
+      automationsEnabled,
+      commentsEnabled,
+      viewCaptureMode,
+    });
+    triggerRunIds.push(handle.id);
+  }
+
+  // 7. Persist the fan-out so run-complete (Phase 8b) can match per-task
+  //    completions back to the run.
+  await deps.updateRunTriggerIds(run.id, triggerRunIds);
+
+  return { ok: true, runId: run.id, triggerRunIds };
+}

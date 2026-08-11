@@ -1,0 +1,158 @@
+---
+/**
+ * /2fa — the two-factor challenge step (web-auth-2fa task 2.2).
+ *
+ * Minimal functional page: the full challenge design lives in ui-only
+ * `login-methods` and promotes via /ui-sync. Reached when a 2FA-enabled
+ * user completes ANY sign-in method (magic link, Airtable SSO) on an
+ * untrusted device — the sign-in hook revoked the fresh session and armed
+ * the plugin's challenge cookie, so this page is PUBLIC (no session yet;
+ * see middleware PUBLIC_PATHS). Verification posts to the stock better-auth
+ * endpoints (/api/auth/two-factor/verify-totp | verify-backup-code), which
+ * enforce the signed challenge cookie, rate limiting, and CSRF.
+ */
+import AuthLayout from '../layouts/AuthLayout.astro';
+import TextInput from '../components/ui/TextInput.astro';
+import Checkbox from '../components/ui/Checkbox.astro';
+import Button from '../components/ui/Button.astro';
+import { getProductName } from '../lib/config';
+
+const productName = getProductName();
+
+// Relative-only continue target (set by the challenge redirect). Re-validated
+// client-side before use; anything not starting with a single '/' falls back
+// to '/'.
+const rawRedirect = Astro.url.searchParams.get('redirect') ?? '';
+const redirect =
+  rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/';
+---
+
+<AuthLayout title={`Two-Factor Verification — ${productName}`}>
+  <div class="auth-card-inner" data-twofa-root data-redirect={redirect}>
+    <div class="text-center mb-5">
+      <h2 class="auth-card-title">Two-factor verification</h2>
+      <p class="auth-card-subtitle" data-twofa-subtitle-totp>
+        Enter the 6-digit code from your authenticator app to finish signing in.
+      </p>
+      <p class="auth-card-subtitle hidden" data-twofa-subtitle-backup>
+        Enter one of your single-use backup codes.
+      </p>
+    </div>
+
+    <form id="twofa-form" class="auth-form" novalidate>
+      <TextInput
+        type="text"
+        name="code"
+        label="Verification Code"
+        icon="pin"
+        placeholder="123456"
+        autocomplete="one-time-code"
+        required
+      />
+
+      <Checkbox name="trustDevice" label="Trust this device for 30 days" />
+
+      <div
+        id="twofa-error"
+        class="fieldset-label text-error flex items-center gap-1 hidden"
+        role="alert"
+      >
+        <span class="material-symbols-outlined icon-sm">error</span>
+        <span id="twofa-error-text"></span>
+      </div>
+
+      <Button variant="primary" type="submit" class="w-full mt-1">
+        Verify
+      </Button>
+    </form>
+
+    <div class="auth-footer mt-auto">
+      <p class="auth-footer-text">
+        <button type="button" data-twofa-toggle class="auth-footer-link">
+          Use a backup code instead
+        </button>
+      </p>
+      <p class="auth-footer-text">
+        <a href="/login" class="auth-footer-link">Back to sign in</a>
+      </p>
+    </div>
+  </div>
+</AuthLayout>
+
+<script>
+  import { showFormError, hideFormError } from '../lib/auth-utils';
+  import { setButtonLoading } from '../lib/ui';
+
+  function init() {
+    const root = document.querySelector<HTMLElement>('[data-twofa-root]');
+    const form = document.getElementById('twofa-form') as HTMLFormElement | null;
+    const errorEl = document.getElementById('twofa-error');
+    const errorTextEl = document.getElementById('twofa-error-text');
+    const submitBtn = form?.querySelector('button[type="submit"]') as HTMLButtonElement | null;
+    const toggleBtn = document.querySelector<HTMLButtonElement>('[data-twofa-toggle]');
+    const subtitleTotp = document.querySelector<HTMLElement>('[data-twofa-subtitle-totp]');
+    const subtitleBackup = document.querySelector<HTMLElement>('[data-twofa-subtitle-backup]');
+    if (!root || !form || !errorEl || !errorTextEl || !submitBtn || !toggleBtn) return;
+
+    const redirectTo = root.dataset.redirect || '/';
+    let useBackupCode = false;
+
+    toggleBtn.addEventListener('click', () => {
+      useBackupCode = !useBackupCode;
+      toggleBtn.textContent = useBackupCode
+        ? 'Use an authenticator code instead'
+        : 'Use a backup code instead';
+      subtitleTotp?.classList.toggle('hidden', useBackupCode);
+      subtitleBackup?.classList.toggle('hidden', !useBackupCode);
+      hideFormError(errorEl);
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideFormError(errorEl);
+
+      const formData = new FormData(form);
+      const code = ((formData.get('code') as string) || '').trim().replace(/\s+/g, '');
+      const trustDevice = formData.get('trustDevice') != null;
+      if (!code) {
+        showFormError(errorEl, errorTextEl, 'Please enter a code.');
+        return;
+      }
+
+      const endpoint = useBackupCode
+        ? '/api/auth/two-factor/verify-backup-code'
+        : '/api/auth/two-factor/verify-totp';
+
+      setButtonLoading(submitBtn, true);
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ code, trustDevice }),
+        });
+        if (res.ok) {
+          window.location.assign(redirectTo);
+          return;
+        }
+        if (res.status === 429) {
+          showFormError(errorEl, errorTextEl, 'Too many attempts. Wait a minute and try again.');
+        } else {
+          showFormError(
+            errorEl,
+            errorTextEl,
+            useBackupCode
+              ? 'That backup code is not valid. Each code works only once.'
+              : 'That code is not valid. Codes rotate every 30 seconds — try the current one.',
+          );
+        }
+      } catch {
+        showFormError(errorEl, errorTextEl, 'Something went wrong. Please try again.');
+      } finally {
+        setButtonLoading(submitBtn, false);
+      }
+    });
+  }
+
+  init();
+</script>

@@ -1,0 +1,130 @@
+import { describe, expect, it, vi } from "vitest";
+import { refreshAirtableAccessToken } from "../../src/lib/airtable-refresh";
+
+const NOW = 1_800_000_000_000;
+
+function makeFetchMock(response: Response): typeof fetch {
+  return vi.fn(async () => response) as unknown as typeof fetch;
+}
+
+function defaultInput(
+  overrides: Partial<Parameters<typeof refreshAirtableAccessToken>[0]> = {},
+) {
+  return {
+    refreshToken: "refresh-old",
+    clientId: "client-id",
+    clientSecret: "client-secret",
+    nowMs: () => NOW,
+    ...overrides,
+  };
+}
+
+describe("refreshAirtableAccessToken", () => {
+  it("maps 200 with rotated refresh_token to success (incl. refresh_expires_in)", async () => {
+    const fetchImpl = makeFetchMock(
+      new Response(
+        JSON.stringify({
+          access_token: "access-new",
+          refresh_token: "refresh-new",
+          expires_in: 3600,
+          refresh_expires_in: 5_184_000, // 60 days
+          scope: "data.records:read",
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(
+      refreshAirtableAccessToken(defaultInput({ fetchImpl })),
+    ).resolves.toEqual({
+      kind: "success",
+      accessToken: "access-new",
+      refreshToken: "refresh-new",
+      expiresAtMs: NOW + 3600 * 1000,
+      refreshExpiresAtMs: NOW + 5_184_000 * 1000,
+      scope: "data.records:read",
+    });
+  });
+
+  it("maps 200 without refresh_token/refresh_expires_in to success (grant preserved, null expiry)", async () => {
+    const fetchImpl = makeFetchMock(
+      new Response(
+        JSON.stringify({
+          access_token: "access-new",
+          expires_in: 3600,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(
+      refreshAirtableAccessToken(defaultInput({ fetchImpl })),
+    ).resolves.toEqual({
+      kind: "success",
+      accessToken: "access-new",
+      refreshToken: "refresh-old",
+      expiresAtMs: NOW + 3600 * 1000,
+      refreshExpiresAtMs: null,
+      scope: null,
+    });
+  });
+
+  it("maps invalid_grant to pending_reauth", async () => {
+    const fetchImpl = makeFetchMock(
+      new Response(
+        JSON.stringify({
+          error: "invalid_grant",
+          error_description: "revoked",
+        }),
+        { status: 400 },
+      ),
+    );
+
+    const result = await refreshAirtableAccessToken(
+      defaultInput({ fetchImpl }),
+    );
+
+    expect(result.kind).toBe("pending_reauth");
+    if (result.kind === "pending_reauth") {
+      expect(result.reason).toContain("invalid_grant");
+      expect(result.reason).toContain("revoked");
+    }
+  });
+
+  it("maps 409 (recently refreshed) to transient, not invalid", async () => {
+    // Airtable returns 409 when a refresh token was just rotated by a
+    // concurrent refresher ("recently refreshing a token"). It is benign —
+    // the connection is healthy — so it must NOT be classified as invalid
+    // (which fails the refresh) but as transient (retry on the next tick).
+    const fetchImpl = makeFetchMock(
+      new Response(
+        JSON.stringify({ error: "conflict", error_description: "recently refreshed" }),
+        { status: 409 },
+      ),
+    );
+
+    const result = await refreshAirtableAccessToken(defaultInput({ fetchImpl }));
+    expect(result.kind).toBe("transient");
+  });
+
+  it("maps 429 and 5xx to transient", async () => {
+    const rateLimited = await refreshAirtableAccessToken(
+      defaultInput({
+        fetchImpl: makeFetchMock(
+          new Response("", { status: 429, headers: { "retry-after": "30" } }),
+        ),
+      }),
+    );
+    expect(rateLimited).toEqual({
+      kind: "transient",
+      reason: "http_429",
+      retryAfterMs: 30_000,
+    });
+
+    await expect(
+      refreshAirtableAccessToken(
+        defaultInput({ fetchImpl: makeFetchMock(new Response("", { status: 503 })) }),
+      ),
+    ).resolves.toEqual({ kind: "transient", reason: "http_503" });
+  });
+});

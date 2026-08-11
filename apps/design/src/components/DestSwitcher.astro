@@ -1,0 +1,51 @@
+---
+/**
+ * Design-harness only. A small floating toggle for the backup-run / base pages
+ * that swaps the demo destination (?dest=drive|s3|db) while preserving every other
+ * query param. Lets a reviewer compare STATIC (files in Drive / S3) vs DYNAMIC
+ * (rows in Postgres) without hand-editing the URL. Not part of the product UI.
+ */
+const current = (Astro.url.searchParams.get('dest') ?? 'drive').toLowerCase();
+const OPTS = [
+  { key: 'drive', label: 'Google Drive', sub: 'static', icon: '/brands/google-drive.svg' },
+  { key: 's3', label: 'Amazon S3', sub: 'static', icon: '/brands/aws.svg' },
+  { key: 'db', label: 'Postgres', sub: 'dynamic', icon: null },
+];
+const hrefFor = (k: string) => {
+  const u = new URL(Astro.url.href);
+  u.searchParams.set('dest', k);
+  return u.pathname + '?' + u.searchParams.toString();
+};
+const active = OPTS.some((o) => o.key === current) ? current : 'drive';
+---
+
+<aside class="dsw" aria-label="Demo: destination type">
+  <span class="dsw-tag">Demo · Destination</span>
+  <div class="dsw-opts">
+    {OPTS.map((o) => (
+      <a href={hrefFor(o.key)} class={`dsw-opt ${o.key === active ? 'is-on' : ''}`} aria-current={o.key === active ? 'true' : undefined}>
+        {o.icon ? <img src={o.icon} alt="" width="15" height="15" class="dsw-ic" /> : <span class="iconify lucide--database dsw-ic-db"></span>}
+        <span class="dsw-lbl">{o.label}</span>
+        <span class={`dsw-sub ${o.sub === 'dynamic' ? 'is-dyn' : ''}`}>{o.sub}</span>
+      </a>
+    ))}
+  </div>
+</aside>
+
+<style>
+  .dsw { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 200; display: flex; align-items: center; gap: 10px; background: #0f172a; color: #fff; border-radius: 12px; padding: 8px 10px 8px 13px; box-shadow: 0 12px 40px rgba(2, 6, 23, .38); font-size: 12px; }
+  .dsw-tag { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #64748b; flex: none; }
+  .dsw-opts { display: flex; gap: 4px; }
+  .dsw-opt { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px; background: #1e293b; color: #cbd5e1; text-decoration: none; border: 1px solid transparent; transition: .12s; }
+  .dsw-opt:hover { background: #243349; color: #fff; }
+  .dsw-opt.is-on { background: #1d4ed8; color: #fff; border-color: #3b82f6; }
+  .dsw-ic { width: 15px; height: 15px; object-fit: contain; flex: none; }
+  .dsw-ic-db { font-size: 15px; flex: none; color: #93c5fd; }
+  .dsw-opt.is-on .dsw-ic-db { color: #fff; }
+  .dsw-lbl { font-weight: 600; }
+  .dsw-sub { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 1px 5px; border-radius: 999px; background: rgba(148, 163, 184, .22); color: #cbd5e1; }
+  .dsw-sub.is-dyn { background: rgba(96, 165, 250, .25); color: #bfdbfe; }
+  .dsw-opt.is-on .dsw-sub { background: rgba(255, 255, 255, .22); color: #fff; }
+  @media print { .dsw { display: none; } }
+  @media (max-width: 640px) { .dsw-tag, .dsw-sub { display: none; } }
+</style>

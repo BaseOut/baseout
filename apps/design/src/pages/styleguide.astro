@@ -1,0 +1,668 @@
+---
+// /styleguide — Baseout UI storybook.
+//
+// A living component catalog rendered from SB_ENTRIES. Storybook-style chrome
+// (left nav + search + top toolbar with a light/dark canvas toggle), with every
+// preview rendered in the REAL daisyUI theme so the markup shown is the markup
+// that ships. Standalone chrome on purpose (a design tool, like /handoff), but
+// it imports the full app stylesheet so previews are genuinely themed.
+//
+// Add a component = add an entry to apps/design/src/lib/storybook.ts. No new page.
+import '@web/styles/global.css';
+import { SB_ENTRIES, SB_GROUPS } from '../lib/storybook';
+
+const grouped = SB_GROUPS.map((group) => ({
+  group,
+  entries: SB_ENTRIES.filter((e) => e.group === group),
+})).filter((g) => g.entries.length > 0);
+
+// Provenance tag — what's a standard daisyUI component vs our composition vs fully ours.
+// Derived from the group (every Primitive is a daisyUI component; every Pattern composes
+// daisyUI primitives), with the bespoke setup stepper as the one fully-Custom example.
+type SBEntryT = (typeof SB_ENTRIES)[number];
+const provInfo = (e: SBEntryT): { level: string; label: string } | null => {
+  const level =
+    e.id === 'pattern-setup-stepper'
+      ? 'custom'
+      : e.group === 'Primitives'
+        ? 'daisyui'
+        : e.group === 'Patterns'
+          ? 'daisyui-custom'
+          : null;
+  if (!level) return null;
+  return { level, label: level === 'daisyui' ? 'daisyUI' : level === 'daisyui-custom' ? 'daisyUI + custom' : 'Custom' };
+};
+---
+
+<html lang="en" data-theme="baseout-light">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>UI storybook · Baseout</title>
+  </head>
+  <body class="sb">
+    <aside class="sb-side">
+      <div class="sb-brand">
+        <span class="sb-brand-name">Baseout UI</span>
+        <span class="sb-brand-tag">storybook</span>
+      </div>
+      <div class="sb-search">
+        <input type="search" placeholder="Search components…" data-sb-search aria-label="Search components" />
+      </div>
+      <nav class="sb-nav" aria-label="Components">
+        {
+          grouped.map((g) => (
+            <div class="sb-nav-group">
+              <p class="sb-nav-head">{g.group}</p>
+              {g.entries.map((e) => (
+                <button class="sb-nav-item" data-target={e.id} data-name={e.name.toLowerCase()}>
+                  {e.name}
+                </button>
+              ))}
+            </div>
+          ))
+        }
+      </nav>
+      <div class="sb-side-foot">
+        <a href="/handoff">Handoff index →</a>
+      </div>
+    </aside>
+
+    <div class="sb-main">
+      <header class="sb-topbar">
+        <div class="sb-crumb">UI <span class="sb-sep">/</span> <strong data-sb-current>—</strong></div>
+        <div class="sb-tools">
+          <button class="sb-theme" data-sb-toggle aria-label="Toggle preview theme">
+            <span class="sb-theme-dot"></span>
+            <span data-sb-theme-label>Light</span>
+          </button>
+        </div>
+      </header>
+
+      <main class="sb-canvas" data-sb-theme data-theme="baseout-light">
+        {
+          SB_ENTRIES.map((e) => (
+            <section class="sb-entry" id={e.id} data-entry hidden>
+              <div class="sb-entry-head">
+                <h1>{e.name}</h1>
+                {provInfo(e) && <span class={`sb-prov sb-prov-${provInfo(e)!.level}`}>{provInfo(e)!.label}</span>}
+                {e.reference && <code class="sb-ref">{e.reference}</code>}
+              </div>
+              <p class="sb-summary">{e.summary}</p>
+              {e.description && <div class="sb-desc" set:html={e.description} />}
+
+              {e.guides &&
+                e.guides.map((g) => (
+                  <div class="sb-guide">
+                    <h2 class="sb-guide-title">{g.title}</h2>
+                    {g.note && <p class="sb-guide-note">{g.note}</p>}
+                    <div class="sb-guide-wrap">
+                      <table class="sb-guide-table">
+                        <thead>
+                          <tr>
+                            <th>Use</th>
+                            <th>When</th>
+                            <th>Why</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {g.rows.map((r) => (
+                            <tr class={g.default === r.token ? 'is-default' : ''}>
+                              <td class="sb-guide-token">
+                                {r.token}
+                                {g.default === r.token && <span class="sb-guide-default">Default</span>}
+                              </td>
+                              <td>{r.use}</td>
+                              <td class="sb-guide-why">{r.why}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+
+              {e.props && (
+                <div class="sb-props">
+                  <h2 class="sb-guide-title">Props</h2>
+                  <div class="sb-guide-wrap">
+                    <table class="sb-guide-table sb-props-table">
+                      <thead>
+                        <tr>
+                          <th>Prop</th>
+                          <th>Type</th>
+                          <th>Default</th>
+                          <th>Description</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {e.props.map((p) => (
+                          <tr>
+                            <td class="sb-guide-token">{p.name}</td>
+                            <td class="sb-prop-type"><code>{p.type}</code></td>
+                            <td class="sb-prop-default"><code>{p.default ?? '—'}</code></td>
+                            <td class="sb-guide-why">{p.description}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {(e.usageDo || e.usageDont) && (
+                <div class="sb-usage">
+                  {e.usageDo && (
+                    <div class="sb-usage-col sb-do">
+                      <p class="sb-usage-head">Do</p>
+                      <ul>{e.usageDo.map((d) => <li>{d}</li>)}</ul>
+                    </div>
+                  )}
+                  {e.usageDont && (
+                    <div class="sb-usage-col sb-dont">
+                      <p class="sb-usage-head">Don’t</p>
+                      <ul>{e.usageDont.map((d) => <li>{d}</li>)}</ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {e.examples.map((ex) => (
+                <div class="sb-example">
+                  {ex.label && <p class="sb-example-label">{ex.label}</p>}
+                  <div class="sb-preview">
+                    <div set:html={ex.html} />
+                  </div>
+                  {e.showCode !== false && (
+                    <div class="sb-code">
+                      <button class="sb-copy" type="button">Copy</button>
+                      <pre><code>{ex.html.trim()}</code></pre>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </section>
+          ))
+        }
+      </main>
+    </div>
+
+    <script is:inline>
+      (function () {
+        var items = Array.prototype.slice.call(document.querySelectorAll('.sb-nav-item'));
+        var sections = Array.prototype.slice.call(document.querySelectorAll('[data-entry]'));
+        var current = document.querySelector('[data-sb-current]');
+        var canvas = document.querySelector('[data-sb-theme]');
+
+        function select(id) {
+          var found = false;
+          sections.forEach(function (s) {
+            var on = s.id === id;
+            s.hidden = !on;
+            if (on) found = true;
+          });
+          if (!found && sections[0]) {
+            id = sections[0].id;
+            sections[0].hidden = false;
+          }
+          items.forEach(function (b) {
+            b.classList.toggle('is-active', b.getAttribute('data-target') === id);
+          });
+          var it = items.filter(function (b) { return b.getAttribute('data-target') === id; })[0];
+          if (current && it) current.textContent = it.textContent.trim();
+          if (history.replaceState) history.replaceState(null, '', '#' + id);
+          if (canvas) canvas.scrollTop = 0;
+        }
+
+        items.forEach(function (b) {
+          b.addEventListener('click', function () { select(b.getAttribute('data-target')); });
+        });
+
+        var initial = location.hash ? location.hash.slice(1) : (sections[0] && sections[0].id);
+        if (initial) select(initial);
+
+        // In-description anchor links (e.g. #table) and browser back/forward.
+        window.addEventListener('hashchange', function () {
+          if (location.hash) select(location.hash.slice(1));
+        });
+
+        // Search — filter the nav, hide empty groups.
+        var search = document.querySelector('[data-sb-search]');
+        if (search) {
+          search.addEventListener('input', function () {
+            var q = search.value.trim().toLowerCase();
+            items.forEach(function (b) {
+              var hit = b.getAttribute('data-name').indexOf(q) !== -1;
+              b.style.display = hit ? '' : 'none';
+            });
+            document.querySelectorAll('.sb-nav-group').forEach(function (g) {
+              var any = Array.prototype.some.call(g.querySelectorAll('.sb-nav-item'), function (b) {
+                return b.style.display !== 'none';
+              });
+              g.style.display = any ? '' : 'none';
+            });
+          });
+        }
+
+        // Canvas theme toggle (previews only; the chrome follows the OS).
+        var KEY = 'sb-theme';
+        var toggle = document.querySelector('[data-sb-toggle]');
+        var label = document.querySelector('[data-sb-theme-label]');
+        function applyTheme(mode) {
+          var dark = mode === 'dark';
+          if (canvas) canvas.setAttribute('data-theme', dark ? 'baseout' : 'baseout-light');
+          if (label) label.textContent = dark ? 'Dark' : 'Light';
+          document.body.setAttribute('data-sb-mode', mode);
+          try { localStorage.setItem(KEY, mode); } catch (e) {}
+        }
+        var stored = 'light';
+        try { stored = localStorage.getItem(KEY) || 'light'; } catch (e) {}
+        applyTheme(stored);
+        if (toggle) {
+          toggle.addEventListener('click', function () {
+            applyTheme(document.body.getAttribute('data-sb-mode') === 'dark' ? 'light' : 'dark');
+          });
+        }
+
+        // Copy buttons.
+        document.querySelectorAll('.sb-copy').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var code = btn.parentElement.querySelector('code');
+            if (!code) return;
+            var text = code.innerText;
+            var done = function () {
+              var prev = btn.textContent;
+              btn.textContent = 'Copied';
+              setTimeout(function () { btn.textContent = prev; }, 1200);
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(text).then(done, function () {});
+            }
+          });
+        });
+      })();
+    </script>
+
+    <style>
+      :root {
+        --sb-bg: oklch(0.985 0.004 255);
+        --sb-panel: oklch(1 0 0);
+        --sb-ink: oklch(0.27 0.02 260);
+        --sb-soft: oklch(0.5 0.02 260);
+        --sb-faint: oklch(0.62 0.015 260);
+        --sb-line: oklch(0.92 0.006 260);
+        --sb-line-soft: oklch(0.955 0.005 260);
+        --sb-accent: oklch(0.55 0.16 260);
+        --sb-active: oklch(0.96 0.02 260);
+        --sb-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+      }
+      * { box-sizing: border-box; }
+      body.sb {
+        margin: 0;
+        height: 100dvh;
+        overflow: hidden;
+        display: grid;
+        grid-template-columns: 264px 1fr;
+        background: var(--sb-bg);
+        color: var(--sb-ink);
+        font: 14px/1.5 'Urbanist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* ── Sidebar ── */
+      .sb-side {
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--sb-line);
+        background: var(--sb-panel);
+        overflow: hidden;
+      }
+      .sb-brand {
+        display: flex;
+        align-items: baseline;
+        gap: 7px;
+        padding: 18px 18px 14px;
+        border-bottom: 1px solid var(--sb-line-soft);
+      }
+      .sb-brand-name { font-size: 14px; font-weight: 700; letter-spacing: -0.01em; }
+      .sb-brand-tag {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--sb-faint);
+      }
+      .sb-search { padding: 12px 14px; border-bottom: 1px solid var(--sb-line-soft); }
+      .sb-search input {
+        width: 100%;
+        font: inherit;
+        font-size: 13px;
+        padding: 7px 10px;
+        border: 1px solid var(--sb-line);
+        border-radius: 8px;
+        background: var(--sb-bg);
+        color: var(--sb-ink);
+        outline: none;
+      }
+      .sb-search input:focus { border-color: color-mix(in oklch, var(--sb-accent) 55%, var(--sb-line)); }
+      .sb-nav { flex: 1; overflow: auto; padding: 12px 10px 20px; }
+      .sb-nav-group { margin-bottom: 14px; }
+      .sb-nav-head {
+        margin: 0 0 5px;
+        padding: 0 8px;
+        font-size: 10.5px;
+        font-weight: 680;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--sb-faint);
+      }
+      .sb-nav-item {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: 0;
+        background: transparent;
+        font: inherit;
+        font-size: 13.5px;
+        font-weight: 520;
+        color: var(--sb-soft);
+        padding: 6px 8px;
+        border-radius: 7px;
+        cursor: pointer;
+        transition: background 0.12s ease, color 0.12s ease;
+      }
+      .sb-nav-item:hover { background: var(--sb-line-soft); color: var(--sb-ink); }
+      .sb-nav-item.is-active { background: var(--sb-active); color: var(--sb-accent); font-weight: 620; }
+      .sb-side-foot { padding: 12px 18px; border-top: 1px solid var(--sb-line-soft); }
+      .sb-side-foot a { font-size: 12.5px; font-weight: 560; color: var(--sb-soft); text-decoration: none; }
+      .sb-side-foot a:hover { color: var(--sb-accent); }
+
+      /* ── Main ── */
+      .sb-main { display: flex; flex-direction: column; min-width: 0; height: 100dvh; }
+      .sb-topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 0 24px;
+        height: 52px;
+        flex: none;
+        border-bottom: 1px solid var(--sb-line);
+        background: var(--sb-panel);
+      }
+      .sb-crumb { font-size: 13px; color: var(--sb-soft); }
+      .sb-crumb strong { color: var(--sb-ink); font-weight: 620; }
+      .sb-sep { color: var(--sb-faint); margin: 0 2px; }
+      .sb-theme {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font: inherit;
+        font-size: 12.5px;
+        font-weight: 560;
+        color: var(--sb-soft);
+        padding: 6px 12px;
+        border: 1px solid var(--sb-line);
+        border-radius: 999px;
+        background: var(--sb-bg);
+        cursor: pointer;
+      }
+      .sb-theme:hover { border-color: color-mix(in oklch, var(--sb-accent) 45%, var(--sb-line)); color: var(--sb-ink); }
+      .sb-theme-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        background: oklch(0.97 0.03 95);
+        border: 1px solid oklch(0.8 0.05 95);
+      }
+      body[data-sb-mode='dark'] .sb-theme-dot { background: oklch(0.28 0.02 260); border-color: oklch(0.45 0.02 260); }
+
+      .sb-canvas { flex: 1; overflow: auto; padding: 32px 40px 80px; background: var(--color-base-200, #f5f5f7); }
+      .sb-entry { max-width: 960px; }
+      .sb-entry-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .sb-entry-head h1 {
+        margin: 0;
+        font-size: 26px;
+        font-weight: 680;
+        letter-spacing: -0.02em;
+        color: var(--color-base-content, #111);
+      }
+      .sb-ref {
+        font-family: var(--sb-mono);
+        font-size: 12px;
+        color: var(--color-base-content, #111);
+        opacity: 0.6;
+        background: var(--color-base-100, #fff);
+        border: 1px solid var(--color-base-300, #e5e5e5);
+        border-radius: 6px;
+        padding: 2px 7px;
+      }
+      /* Provenance tag — daisyUI vs our composition vs fully ours */
+      .sb-prov {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 2px 7px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+      .sb-prov-daisyui { color: oklch(0.62 0.17 300); background: oklch(0.62 0.17 300 / 0.14); }
+      .sb-prov-daisyui-custom { color: var(--color-primary); background: color-mix(in oklch, var(--color-primary) 14%, transparent); }
+      .sb-prov-custom { color: oklch(0.66 0.13 60); background: oklch(0.66 0.13 60 / 0.16); }
+      .sb-summary {
+        margin: 10px 0 0;
+        font-size: 15px;
+        color: var(--color-base-content, #333);
+        opacity: 0.85;
+        max-width: 72ch;
+      }
+      .sb-desc {
+        margin: 12px 0 0;
+        font-size: 14px;
+        line-height: 1.6;
+        color: var(--color-base-content, #333);
+        opacity: 0.82;
+        max-width: 76ch;
+      }
+      .sb-desc p { margin: 0 0 10px; }
+      .sb-desc p:last-child { margin-bottom: 0; }
+      .sb-desc ul { margin: 4px 0 12px; padding-left: 18px; display: grid; gap: 6px; }
+      .sb-desc li { font-size: 14px; line-height: 1.55; }
+      .sb-desc strong { color: var(--color-base-content, #111); font-weight: 600; }
+      .sb-desc code, .sb-summary code {
+        font-family: var(--sb-mono);
+        font-size: 0.86em;
+        background: var(--color-base-100, #fff);
+        border: 1px solid var(--color-base-300, #e5e5e5);
+        border-radius: 4px;
+        padding: 0 4px;
+      }
+      .sb-desc a { color: var(--color-primary); text-decoration: none; font-weight: 560; }
+      .sb-desc a:hover { text-decoration: underline; }
+
+      /* ── When-to-use decision tables ── */
+      .sb-guide { margin-top: 26px; }
+      .sb-guide-title {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 660;
+        letter-spacing: -0.01em;
+        color: var(--color-base-content, #111);
+      }
+      .sb-guide-note {
+        margin: 6px 0 12px;
+        font-size: 13px;
+        line-height: 1.55;
+        color: var(--color-base-content, #333);
+        opacity: 0.72;
+        max-width: 80ch;
+      }
+      .sb-guide-wrap {
+        border: 1px solid var(--color-base-300, #e5e5e5);
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--color-base-100, #fff);
+      }
+      .sb-guide-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+      .sb-guide-table th {
+        text-align: left;
+        font-size: 10.5px;
+        font-weight: 680;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--color-base-content, #333);
+        opacity: 0.5;
+        padding: 9px 14px;
+        border-bottom: 1px solid var(--color-base-300, #e5e5e5);
+      }
+      .sb-guide-table td {
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--color-base-300, #e5e5e5);
+        color: var(--color-base-content, #222);
+        vertical-align: top;
+        line-height: 1.5;
+      }
+      .sb-guide-table tr:last-child td { border-bottom: 0; }
+      .sb-guide-token {
+        white-space: nowrap;
+        font-weight: 600;
+        color: var(--color-base-content, #111);
+      }
+      .sb-guide-why { opacity: 0.68; }
+      .sb-guide-table tr.is-default {
+        background: color-mix(in oklch, var(--color-primary) 8%, var(--color-base-100));
+      }
+      .sb-guide-default {
+        display: inline-block;
+        margin-left: 8px;
+        font-size: 9.5px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: var(--color-primary);
+        border: 1px solid color-mix(in oklch, var(--color-primary) 40%, transparent);
+        border-radius: 999px;
+        padding: 1px 6px;
+        vertical-align: middle;
+      }
+      @media (max-width: 760px) {
+        .sb-guide-token { white-space: normal; }
+      }
+
+      /* ── Props / API table (the Controls / ArgTypes analog) ── */
+      .sb-props { margin-top: 26px; }
+      .sb-props-table .sb-guide-token { white-space: normal; }
+      .sb-prop-type code,
+      .sb-prop-default code {
+        font-family: var(--sb-mono);
+        font-size: 11.5px;
+        background: none;
+        border: 0;
+        padding: 0;
+        color: var(--color-base-content, #222);
+        opacity: 0.85;
+      }
+      .sb-prop-type code { white-space: normal; line-height: 1.5; }
+      .sb-prop-default code { opacity: 0.6; white-space: nowrap; }
+
+      .sb-usage {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-top: 22px;
+      }
+      @media (max-width: 720px) { .sb-usage { grid-template-columns: 1fr; } }
+      .sb-usage-col {
+        border: 1px solid var(--color-base-300, #e5e5e5);
+        border-radius: 12px;
+        padding: 14px 16px;
+        background: var(--color-base-100, #fff);
+      }
+      .sb-usage-head {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 680;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      .sb-do .sb-usage-head { color: oklch(0.55 0.13 150); }
+      .sb-dont .sb-usage-head { color: oklch(0.58 0.16 25); }
+      .sb-usage ul { margin: 0; padding-left: 16px; display: grid; gap: 5px; }
+      .sb-usage li { font-size: 13px; line-height: 1.5; color: var(--color-base-content, #333); opacity: 0.8; }
+
+      .sb-example { margin-top: 26px; }
+      .sb-example-label {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 660;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--color-base-content, #333);
+        opacity: 0.55;
+      }
+      .sb-preview {
+        padding: 30px;
+        border: 1px solid var(--color-base-300, #e5e5e5);
+        border-radius: 14px 14px 0 0;
+        background: var(--color-base-100, #fff);
+        color: var(--color-base-content, #111);
+      }
+      .sb-code {
+        position: relative;
+        border: 1px solid var(--color-base-300, #e5e5e5);
+        border-top: 0;
+        border-radius: 0 0 14px 14px;
+        background: oklch(0.21 0.015 260);
+        overflow: hidden;
+      }
+      .sb-code pre {
+        margin: 0;
+        padding: 16px 18px;
+        overflow: auto;
+        font-family: var(--sb-mono);
+        font-size: 12.5px;
+        line-height: 1.6;
+        color: oklch(0.9 0.02 260);
+      }
+      .sb-copy {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        font: inherit;
+        font-size: 11px;
+        font-weight: 600;
+        color: oklch(0.85 0.02 260);
+        background: oklch(0.28 0.02 260);
+        border: 1px solid oklch(0.4 0.02 260);
+        border-radius: 6px;
+        padding: 4px 9px;
+        cursor: pointer;
+        z-index: 1;
+      }
+      .sb-copy:hover { background: oklch(0.33 0.02 260); color: #fff; }
+
+      /* ── Kerning: Urbanist reads tight / squished at small sizes; open it up a touch.
+         Mono (code, refs) stays at normal tracking so snippets read accurately. ── */
+      body.sb { letter-spacing: 0.01em; }
+      .sb-summary, .sb-desc, .sb-guide-note, .sb-guide-table, .sb-usage li,
+      .sb-nav-item, .sb-side-foot a, .sb-crumb { letter-spacing: 0.02em; }
+      .sb-code pre, .sb-ref, .sb-desc code, .sb-summary code { letter-spacing: normal; }
+
+      /* ── Dark chrome follows the OS (like /handoff); the canvas toggle is separate ── */
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --sb-bg: oklch(0.18 0.01 260);
+          --sb-panel: oklch(0.215 0.012 260);
+          --sb-ink: oklch(0.93 0.01 260);
+          --sb-soft: oklch(0.72 0.012 260);
+          --sb-faint: oklch(0.58 0.012 260);
+          --sb-line: oklch(0.3 0.012 260);
+          --sb-line-soft: oklch(0.26 0.012 260);
+          --sb-accent: oklch(0.74 0.13 255);
+          --sb-active: oklch(0.3 0.03 260);
+        }
+      }
+    </style>
+  </body>
+</html>

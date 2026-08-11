@@ -6,7 +6,7 @@
  * hydrate into a nanostore and render in the browser.
  */
 
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm'
 import type { AppDb } from '../db'
 import {
   atBases,
@@ -14,30 +14,123 @@ import {
   backupConfigurations,
   connections,
   platforms,
+  spaceEvents,
+  spaceWorkspaces,
+  storageDestinations,
 } from '../db/schema'
 import { resolveCapabilities } from './capabilities/resolve'
-import type { BaseSummary, ConnectionSummary, IntegrationsState } from '../stores/connections'
+import type { Frequency } from './capabilities/tier-capabilities'
+import type {
+  BackupPolicy,
+  BaseSummary,
+  ConnectionSummary,
+  IntegrationsState,
+  SpaceEventSummary,
+  StorageDestinationSummary,
+  WorkspaceEnrollment,
+} from '../stores/connections'
+
+/**
+ * Map persisted space_workspaces rows onto the picker's enrollment model
+ * (web-workspace-bases). Pure — includedBaseCount is derived from the bases
+ * the state already carries, so the picker's per-workspace counts always
+ * agree with the table beneath them. Workspaces are name-ordered; unnamed
+ * ones sort last (the picker renders them as placeholder "Workspace N").
+ */
+export function deriveWorkspaceEnrollments(
+  rows: {
+    workspaceId: string
+    workspaceName: string | null
+    autoEnrollFutureBases: boolean
+    enrolledVia: string
+    lastCheckedAt: Date | null
+  }[],
+  bases: Pick<BaseSummary, 'workspaceId' | 'isIncluded'>[],
+): WorkspaceEnrollment[] {
+  const includedByWorkspace = new Map<string, number>()
+  for (const b of bases) {
+    if (!b.workspaceId || !b.isIncluded) continue
+    includedByWorkspace.set(b.workspaceId, (includedByWorkspace.get(b.workspaceId) ?? 0) + 1)
+  }
+  return rows
+    .map((r) => ({
+      workspaceId: r.workspaceId,
+      workspaceName: r.workspaceName ?? '',
+      autoAdd: r.autoEnrollFutureBases,
+      enrolledVia: (r.enrolledVia === 'auto' ? 'auto' : 'manual') as 'auto' | 'manual',
+      includedBaseCount: includedByWorkspace.get(r.workspaceId) ?? 0,
+      lastCheckedAt: r.lastCheckedAt?.toISOString() ?? null,
+    }))
+    .sort((a, b) =>
+      a.workspaceName && b.workspaceName
+        ? a.workspaceName.localeCompare(b.workspaceName)
+        : a.workspaceName
+          ? -1
+          : b.workspaceName
+            ? 1
+            : a.workspaceId.localeCompare(b.workspaceId),
+    )
+}
+
+const VALID_FREQUENCIES: ReadonlySet<Frequency> = new Set([
+  'monthly',
+  'weekly',
+  'daily',
+  'instant',
+])
+
+/**
+ * Fallback state for pages rendered without an active org/Space (e.g. a user
+ * mid-onboarding). Shared by /integrations and the /integrations/configure
+ * routes so the empty shape stays in one place.
+ */
+export const EMPTY_INTEGRATIONS_STATE: IntegrationsState = {
+  connections: [],
+  bases: [],
+  tierBasesPerSpace: 5,
+  availableFrequencies: ['monthly'],
+  hasBackupConfig: false,
+  policy: {
+    frequency: 'monthly',
+    scope: 'schema_and_data',
+    schemaFrequency: null,
+    schemaNextScheduledAt: null,
+    storageType: 'r2_managed',
+    nextScheduledAt: null,
+    autoAddFutureBases: false,
+  },
+  storageDestinations: [],
+  unreadEvents: [],
+}
+
+function asFrequency(raw: string | null | undefined): Frequency {
+  return raw && VALID_FREQUENCIES.has(raw as Frequency)
+    ? (raw as Frequency)
+    : 'monthly'
+}
 
 interface PlatformConfig {
   at_user_id?: string
   is_enterprise_scope?: boolean
 }
 
-export async function getIntegrationsState(
+/**
+ * Minimal per-request read for the app-wide connection-health banner: just the
+ * status + display name of the org's Airtable connections. Deliberately lighter
+ * than getIntegrationsState (no bases / policy / destinations) because it runs
+ * in the shared layout on every authenticated page. `deriveBannerProps`
+ * (lib/connection-health.ts) consumes this shape; storage destinations carry no
+ * status column, so they contribute no live banner state and stay `[]` here.
+ */
+export async function getConnectionHealthSummary(
   db: AppDb,
   organizationId: string,
-  spaceId: string,
-): Promise<IntegrationsState> {
-  const connectionRows = await db
-    .select({
-      id: connections.id,
-      status: connections.status,
-      displayName: connections.displayName,
-      platformConfig: connections.platformConfig,
-      createdAt: connections.createdAt,
-      platformSlug: platforms.slug,
-      platformName: platforms.name,
-    })
+): Promise<{
+  connections: { status: string; displayName: string | null }[]
+  storageDestinations: { type: string }[]
+}> {
+  const rows = await db
+    .select({ status: connections.status, displayName: connections.displayName })
     .from(connections)
     .innerJoin(platforms, eq(platforms.id, connections.platformId))
     .where(
@@ -46,22 +139,106 @@ export async function getIntegrationsState(
         eq(platforms.slug, 'airtable'),
       ),
     )
+  return { connections: rows, storageDestinations: [] }
+}
 
-  const baseRows = await db
-    .select({
-      id: atBases.id,
-      atBaseId: atBases.atBaseId,
-      name: atBases.name,
-    })
-    .from(atBases)
-    .where(eq(atBases.spaceId, spaceId))
+export async function getIntegrationsState(
+  db: AppDb,
+  organizationId: string,
+  spaceId: string,
+): Promise<IntegrationsState> {
+  // Stage A — six independent reads fire in parallel. postgres-js queues
+  // them on the per-request connection, so we stay within budget.
+  const [connectionRows, baseRows, configRows, caps, eventRows, destinationRows, workspaceRows] =
+    await Promise.all([
+    db
+      .select({
+        id: connections.id,
+        status: connections.status,
+        displayName: connections.displayName,
+        platformConfig: connections.platformConfig,
+        createdAt: connections.createdAt,
+        platformSlug: platforms.slug,
+        platformName: platforms.name,
+      })
+      .from(connections)
+      .innerJoin(platforms, eq(platforms.id, connections.platformId))
+      .where(
+        and(
+          eq(connections.organizationId, organizationId),
+          eq(platforms.slug, 'airtable'),
+        ),
+      ),
+    db
+      .select({
+        id: atBases.id,
+        atBaseId: atBases.atBaseId,
+        name: atBases.name,
+        workspaceId: atBases.workspaceId,
+        workspaceName: atBases.workspaceName,
+      })
+      .from(atBases)
+      .where(eq(atBases.spaceId, spaceId)),
+    db
+      .select({
+        id: backupConfigurations.id,
+        frequency: backupConfigurations.frequency,
+        scope: backupConfigurations.scope,
+        schemaFrequency: backupConfigurations.schemaFrequency,
+        schemaNextScheduledAt: backupConfigurations.schemaNextScheduledAt,
+        storageType: backupConfigurations.storageType,
+        nextScheduledAt: backupConfigurations.nextScheduledAt,
+        autoAddFutureBases: backupConfigurations.autoAddFutureBases,
+        autoEnrollNewWorkspaces: backupConfigurations.autoEnrollNewWorkspaces,
+      })
+      .from(backupConfigurations)
+      .where(eq(backupConfigurations.spaceId, spaceId))
+      .limit(1),
+    resolveCapabilities(db, organizationId, 'airtable'),
+    db
+      .select({
+        id: spaceEvents.id,
+        kind: spaceEvents.kind,
+        payload: spaceEvents.payload,
+        createdAt: spaceEvents.createdAt,
+      })
+      .from(spaceEvents)
+      .where(
+        and(
+          eq(spaceEvents.spaceId, spaceId),
+          isNull(spaceEvents.dismissedAt),
+        ),
+      )
+      .orderBy(desc(spaceEvents.createdAt))
+      .limit(10),
+    // Client-safe columns only — never select the *_enc token ciphertext.
+    // One row per provider type (multi-destination); most recent first.
+    db
+      .select({
+        type: storageDestinations.type,
+        accountEmail: storageDestinations.oauthAccountEmail,
+        connectedAt: storageDestinations.connectedAt,
+      })
+      .from(storageDestinations)
+      .where(eq(storageDestinations.spaceId, spaceId))
+      .orderBy(desc(storageDestinations.connectedAt)),
+    // Per-workspace enrollment posture (web-workspace-bases) — drives the
+    // picker's workspace auto-add column + the standing auto-enroll card.
+    db
+      .select({
+        workspaceId: spaceWorkspaces.workspaceId,
+        workspaceName: spaceWorkspaces.workspaceName,
+        autoEnrollFutureBases: spaceWorkspaces.autoEnrollFutureBases,
+        enrolledVia: spaceWorkspaces.enrolledVia,
+        lastCheckedAt: spaceWorkspaces.lastCheckedAt,
+      })
+      .from(spaceWorkspaces)
+      .where(eq(spaceWorkspaces.spaceId, spaceId)),
+  ])
 
-  const [config] = await db
-    .select({ id: backupConfigurations.id })
-    .from(backupConfigurations)
-    .where(eq(backupConfigurations.spaceId, spaceId))
-    .limit(1)
+  const [config] = configRows
 
+  // Stage B — only fires when there's actually a config and bases to filter by.
   const includedSet = new Set<string>()
   if (config && baseRows.length > 0) {
     const includedRows = await db
@@ -85,11 +262,27 @@ export async function getIntegrationsState(
     atBaseId: r.atBaseId,
     name: r.name,
     isIncluded: includedSet.has(r.id),
+    // Workspace grouping (web-workspace-bases): null-tolerant — the picker
+    // falls back to flat when identity is absent.
+    workspaceId: r.workspaceId ?? null,
+    workspaceName: r.workspaceName ?? null,
   }))
 
-  const caps = await resolveCapabilities(db, organizationId, 'airtable')
+  // At most one Airtable connection per org — prefer active, then most recent.
+  const airtableRows =
+    connectionRows.length <= 1
+      ? connectionRows
+      : [
+          [...connectionRows].sort((a, b) => {
+            const rank = (s: string) =>
+              s === 'active' ? 0 : s === 'pending_reauth' ? 1 : s === 'invalid' ? 2 : 3
+            const d = rank(a.status) - rank(b.status)
+            if (d !== 0) return d
+            return b.createdAt.getTime() - a.createdAt.getTime()
+          })[0]!,
+        ]
 
-  const connectionSummaries: ConnectionSummary[] = connectionRows.map((row) => {
+  const connectionSummaries: ConnectionSummary[] = airtableRows.map((row) => {
     const cfg = (row.platformConfig as PlatformConfig | null) ?? {}
     return {
       id: row.id,
@@ -107,10 +300,82 @@ export async function getIntegrationsState(
     }
   })
 
+  const storageDestinationSummaries: StorageDestinationSummary[] =
+    destinationRows.map((destination) => ({
+      type: destination.type,
+      accountEmail: destination.accountEmail ?? null,
+      connectedAt:
+        destination.connectedAt instanceof Date
+          ? destination.connectedAt.toISOString()
+          : String(destination.connectedAt),
+    }))
+
+  const policy: BackupPolicy = {
+    frequency: asFrequency(config?.frequency ?? null),
+    scope: config?.scope === 'schema_only' ? 'schema_only' : 'schema_and_data',
+    schemaFrequency: config?.schemaFrequency
+      ? asFrequency(config.schemaFrequency)
+      : null,
+    schemaNextScheduledAt:
+      config?.schemaNextScheduledAt instanceof Date
+        ? config.schemaNextScheduledAt.toISOString()
+        : (config?.schemaNextScheduledAt as string | null | undefined) ?? null,
+    storageType: config?.storageType ?? 'r2_managed',
+    nextScheduledAt:
+      config?.nextScheduledAt instanceof Date
+        ? config.nextScheduledAt.toISOString()
+        : (config?.nextScheduledAt as string | null | undefined) ?? null,
+    autoAddFutureBases: config?.autoAddFutureBases ?? false,
+  }
+
+  // Unread space_events for the banner. Workspace rediscovery is the only
+  // writer today (kind = 'bases_discovered'); other kinds will be additive.
+  const unreadEvents: SpaceEventSummary[] = []
+  for (const row of eventRows) {
+    if (row.kind !== 'bases_discovered') continue
+    const p = (row.payload ?? {}) as Record<string, unknown>
+    unreadEvents.push({
+      id: row.id,
+      kind: 'bases_discovered',
+      createdAt:
+        row.createdAt instanceof Date
+          ? row.createdAt.toISOString()
+          : String(row.createdAt),
+      payload: {
+        discovered: Array.isArray(p.discovered) ? (p.discovered as string[]) : [],
+        autoAdded: Array.isArray(p.autoAdded) ? (p.autoAdded as string[]) : [],
+        blockedByTier: Array.isArray(p.blockedByTier)
+          ? (p.blockedByTier as string[])
+          : [],
+        tierCap:
+          typeof p.tierCap === 'number'
+            ? p.tierCap
+            : p.tierCap === null
+              ? null
+              : null,
+      },
+    })
+  }
+
   return {
     connections: connectionSummaries,
     bases,
     tierBasesPerSpace: caps.capabilities.basesPerSpace,
+    availableFrequencies: caps.capabilities.frequencies,
     hasBackupConfig: Boolean(config),
+    policy,
+    storageDestinations: storageDestinationSummaries,
+    unreadEvents,
+    // Workspace-grouped picker (web-workspace-bases promotion, 2026-07-29).
+    // Server-persisted stamping means there is nothing to progressively
+    // resolve — wsResolve stays 'off' and the picker groups from SSR data.
+    // groupByWorkspace default-on; the client remembers an opt-out per Space.
+    // workspaceAliases: persistence follow-up — rename lands via the
+    // workspaces route's workspaceName update, aliases-with-provenance later.
+    enrolledWorkspaces: deriveWorkspaceEnrollments(workspaceRows, bases),
+    autoEnrollNewWorkspaces: config?.autoEnrollNewWorkspaces ?? false,
+    wsResolve: 'off',
+    groupByWorkspace: true,
+    workspaceAliases: [],
   }
 }

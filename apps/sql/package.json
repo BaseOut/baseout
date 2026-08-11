@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Public versioned read-only SQL API at sql.baseout.com. See ./openspec/proposal.md.",
+  "description": "Public versioned read-only SQL API at sql.baseout.com. See openspec/changes/sql/proposal.md.",
   "scripts": {
     "dev": "wrangler dev",
     "build": "tsup src/index.ts --format esm --dts",

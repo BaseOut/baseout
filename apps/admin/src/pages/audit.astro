@@ -1,0 +1,242 @@
+---
+// Audit trail viewer (PRD §16.1 — "view and search … audit trail"). Read-only;
+// gated to staff by src/middleware.ts.
+//
+// Section 1: staff actions from admin_audit_log — intent rows paired with
+// their result rows (lib/audit-view.ts) into one entry per action.
+// Section 2: connection status flips from connection_status_audit.
+//
+// admin-crm-ux (Task 1.5): Section 1 paginates in SQL (intents are the ordered,
+// filterable unit); Section 2 stays a bounded most-recent slice.
+import { and, asc, desc, eq, ilike, inArray, count } from 'drizzle-orm';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import PageHeader from '@web/components/ui/PageHeader.astro';
+import Badge from '@web/components/ui/Badge.astro';
+import EmptyState from '@web/components/ui/EmptyState.astro';
+import SortHeader from '../components/table/SortHeader.astro';
+import Pager from '../components/table/Pager.astro';
+import FilterBar from '../components/table/FilterBar.astro';
+import EntityLink from '../components/EntityLink.astro';
+import {
+  adminAuditLog,
+  connectionStatusAudit,
+  connections,
+  organizations,
+  platforms,
+} from '../db/schema';
+import {
+  pairAuditRows,
+  AUDIT_ACTIONS,
+  AUDIT_OUTCOME_BADGE,
+  AUDIT_OUTCOME_LABEL,
+  summarizeParams,
+  type AuditIntentRow,
+  type AuditResultRow,
+} from '../lib/audit-view';
+import { parseTableQuery, pageInfo, type TableSpec } from '../lib/table-query';
+import type { BadgeVariant as UiBadgeVariant } from '../lib/ui';
+
+const { db } = Astro.locals;
+const FLIP_LIMIT = 50;
+
+const SPEC: TableSpec = {
+  sortKeys: ['time', 'action'],
+  defaultSort: 'time',
+  defaultDir: 'desc',
+  searchable: true,
+  filters: [{ key: 'action', allowed: [...AUDIT_ACTIONS] }],
+};
+const SORT_MAP = { time: adminAuditLog.createdAt, action: adminAuditLog.action } as const;
+
+const query = parseTableQuery(Astro.url, SPEC);
+
+// Intents are the paginated unit; results are fetched for the page's intents.
+const conditions = [eq(adminAuditLog.phase, 'intent')];
+if (query.filters.action) conditions.push(eq(adminAuditLog.action, query.filters.action));
+if (query.q) conditions.push(ilike(adminAuditLog.actorEmail, `%${query.q}%`));
+const whereClause = and(...conditions);
+
+const sortCol = SORT_MAP[query.sort as keyof typeof SORT_MAP];
+const orderBy = query.dir === 'asc' ? asc(sortCol) : desc(sortCol);
+
+const [{ n: total }] = await db.select({ n: count() }).from(adminAuditLog).where(whereClause);
+const info = pageInfo(total, query.page, query.per);
+
+const intents: AuditIntentRow[] = await db
+  .select({
+    id: adminAuditLog.id,
+    createdAt: adminAuditLog.createdAt,
+    actorEmail: adminAuditLog.actorEmail,
+    action: adminAuditLog.action,
+    targetType: adminAuditLog.targetType,
+    targetId: adminAuditLog.targetId,
+    organizationId: adminAuditLog.organizationId,
+    orgName: organizations.name,
+    params: adminAuditLog.params,
+  })
+  .from(adminAuditLog)
+  .leftJoin(organizations, eq(organizations.id, adminAuditLog.organizationId))
+  .where(whereClause)
+  .orderBy(orderBy)
+  .limit(query.per)
+  .offset(info.offset);
+
+const intentIds = intents.map((i) => i.id);
+const results: AuditResultRow[] = intentIds.length === 0
+  ? []
+  : await db
+      .select({ intentId: adminAuditLog.intentId, createdAt: adminAuditLog.createdAt, params: adminAuditLog.params })
+      .from(adminAuditLog)
+      .where(and(eq(adminAuditLog.phase, 'result'), inArray(adminAuditLog.intentId, intentIds)));
+
+const entries = pairAuditRows(intents, results);
+
+// Section 2 — trigger-written connection status flips (bounded).
+const flips = await db
+  .select({
+    id: connectionStatusAudit.id,
+    changedAt: connectionStatusAudit.changedAt,
+    oldStatus: connectionStatusAudit.oldStatus,
+    newStatus: connectionStatusAudit.newStatus,
+    applicationName: connectionStatusAudit.applicationName,
+    dbUser: connectionStatusAudit.dbUser,
+    connectionName: connections.displayName,
+    connectionId: connectionStatusAudit.connectionId,
+    orgName: organizations.name,
+    platformName: platforms.name,
+  })
+  .from(connectionStatusAudit)
+  .leftJoin(connections, eq(connections.id, connectionStatusAudit.connectionId))
+  .leftJoin(organizations, eq(organizations.id, connectionStatusAudit.organizationId))
+  .leftJoin(platforms, eq(platforms.id, connectionStatusAudit.platformId))
+  .orderBy(desc(connectionStatusAudit.changedAt))
+  .limit(FLIP_LIMIT);
+
+const statusVariant: Record<string, UiBadgeVariant> = {
+  active: 'success',
+  refreshing: 'primary',
+  pending_reauth: 'warning',
+  invalid: 'error',
+};
+
+const params = Astro.url.searchParams;
+const filterHidden: Record<string, string> = { sort: query.sort, dir: query.dir, per: String(query.per) };
+const actionOptions = [{ value: '', label: 'All actions' }, ...AUDIT_ACTIONS.map((a) => ({ value: a, label: a.replace(/_/g, ' ') }))];
+
+const fmt = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 19) : '—');
+---
+
+<SidebarLayout title="Admin — Audit trail">
+  <div class="mx-auto max-w-[1200px] space-y-6">
+    <PageHeader title="Audit trail" description="Every staff action, intent paired with result (PRD §16.1). Rows are append-only — written before the action executes." />
+
+    <FilterBar
+      action="/audit"
+      searchable
+      q={query.q}
+      qPlaceholder="Search actor email…"
+      filters={[{ key: 'action', label: 'Action', options: actionOptions, current: query.filters.action ?? null }]}
+      hidden={filterHidden}
+    />
+
+    {entries.length === 0 ? (
+      <EmptyState
+        icon="lucide--scroll-text"
+        title={query.filters.action || query.q ? 'No matches' : 'No staff actions yet'}
+        description={query.filters.action || query.q
+          ? 'No staff actions match this filter.'
+          : 'Staff actions (force backup, invalidate connection, …) appear here the moment they are attempted.'}
+      />
+    ) : (
+      <div class="space-y-3">
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100">
+          <table class="table table-zebra table-sm">
+            <thead>
+              <tr>
+                <SortHeader label="Time" sortKey="time" current={params} spec={SPEC} />
+                <SortHeader label="Actor" current={params} spec={SPEC} />
+                <SortHeader label="Action" sortKey="action" current={params} spec={SPEC} />
+                <SortHeader label="Target" current={params} spec={SPEC} />
+                <SortHeader label="Organization" current={params} spec={SPEC} />
+                <SortHeader label="Outcome" current={params} spec={SPEC} />
+                <SortHeader label="Params" current={params} spec={SPEC} />
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <tr>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmt(e.createdAt)}</td>
+                  <td class="text-xs">{e.actorEmail}</td>
+                  <td><Badge variant="primary" size="sm">{e.action.replace(/_/g, ' ')}</Badge></td>
+                  <td class="text-xs">
+                    <span class="text-base-content/60">{e.targetType}</span>
+                    <span class="font-mono ml-1" title={e.targetId}>{e.targetId.slice(0, 8)}…</span>
+                  </td>
+                  <td>
+                    {e.organizationId ? (
+                      <EntityLink type="org" id={e.organizationId} label={e.orgName ?? '—'} />
+                    ) : (
+                      e.orgName ?? '—'
+                    )}
+                  </td>
+                  <td>
+                    <span class="flex items-center gap-1">
+                      <Badge variant={AUDIT_OUTCOME_BADGE[e.outcome]} size="sm">{AUDIT_OUTCOME_LABEL[e.outcome]}</Badge>
+                      {e.resultCode && <span class="font-mono text-xs text-base-content/60">{e.resultCode}</span>}
+                    </span>
+                  </td>
+                  <td class="max-w-xs truncate font-mono text-xs text-base-content/70" title={summarizeParams(e.params) ? JSON.stringify(e.params) : ''}>{summarizeParams(e.params)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <Pager info={info} current={params} per={query.per} noun="action" />
+      </div>
+    )}
+
+    <div>
+      <h2 class="text-lg font-semibold">Connection status flips</h2>
+      <p class="text-sm text-base-content/60 mt-1">Trigger-written history of every connections.status change, whichever app flipped it.</p>
+      {flips.length === 0 ? (
+        <p class="text-sm text-base-content/50 mt-2">No status changes recorded yet.</p>
+      ) : (
+        <div class="overflow-x-auto rounded-box border border-base-300 bg-base-100 mt-2">
+          <table class="table table-zebra table-sm">
+            <thead>
+              <tr>
+                <th>Changed</th>
+                <th>Organization</th>
+                <th>Platform</th>
+                <th>Connection</th>
+                <th>Transition</th>
+                <th>Application</th>
+                <th>DB user</th>
+              </tr>
+            </thead>
+            <tbody>
+              {flips.map((f) => (
+                <tr>
+                  <td class="font-mono text-xs whitespace-nowrap">{fmt(f.changedAt)}</td>
+                  <td>{f.orgName ?? '—'}</td>
+                  <td>{f.platformName ?? '—'}</td>
+                  <td class="text-xs">{f.connectionName ?? `${f.connectionId.slice(0, 8)}…`}</td>
+                  <td>
+                    <span class="flex items-center gap-1 text-xs">
+                      <span class="text-base-content/60">{f.oldStatus ?? '—'}</span>
+                      <i class="iconify lucide--arrow-right size-3 text-base-content/40"></i>
+                      <Badge variant={statusVariant[f.newStatus] ?? 'default'} size="sm">{f.newStatus}</Badge>
+                    </span>
+                  </td>
+                  <td class="font-mono text-xs">{f.applicationName ?? '—'}</td>
+                  <td class="font-mono text-xs">{f.dbUser}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  </div>
+</SidebarLayout>

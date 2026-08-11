@@ -8,7 +8,7 @@
  * logic is integration-testable against a real DB without a browser round-trip.
  */
 
-import { and, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, ne, sql } from 'drizzle-orm'
 import type { AppDb } from '../../db'
 import {
   atBases,
@@ -60,6 +60,14 @@ export async function persistAirtableConnection(
       ? new Date(Date.now() + inputs.tokens.expiresIn * 1000)
       : null
 
+  // Airtable's refresh token expires ~60 days after last use; store the
+  // absolute expiry so the keep-alive clock is known from Connect (the server
+  // re-stamps it on every refresh).
+  const refreshTokenExpiresAt =
+    typeof inputs.tokens.refreshExpiresIn === 'number'
+      ? new Date(Date.now() + inputs.tokens.refreshExpiresIn * 1000)
+      : null
+
   const platformConfig = {
     at_user_id: inputs.whoami.id,
     is_enterprise_scope: (inputs.whoami.scopes ?? []).some((s) =>
@@ -69,6 +77,8 @@ export async function persistAirtableConnection(
 
   // One active connection per (org, platform). Soft behaviour: if an existing
   // connection exists, update it in place rather than creating a duplicate.
+  // One row per (org, platform). Reconnect updates the newest row in place —
+  // never INSERT a second row (saves Airtable OAuth slots).
   const [existing] = await db
     .select({ id: connections.id })
     .from(connections)
@@ -78,6 +88,7 @@ export async function persistAirtableConnection(
         eq(connections.platformId, platform.id),
       ),
     )
+    .orderBy(desc(connections.modifiedAt))
     .limit(1)
 
   let connectionId: string
@@ -89,6 +100,7 @@ export async function persistAirtableConnection(
         accessTokenEnc,
         refreshTokenEnc,
         tokenExpiresAt,
+        refreshTokenExpiresAt,
         scopes: inputs.tokens.scope,
         platformConfig,
         status: 'active',
@@ -97,6 +109,21 @@ export async function persistAirtableConnection(
       })
       .where(eq(connections.id, existing.id))
     connectionId = existing.id
+    // Retire legacy duplicate rows for this org (dev DB drift / pre-upsert data).
+    await db
+      .update(connections)
+      .set({
+        status: 'invalid',
+        invalidatedAt: new Date(),
+        modifiedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(connections.organizationId, inputs.organizationId),
+          eq(connections.platformId, platform.id),
+          ne(connections.id, connectionId),
+        ),
+      )
   } else {
     const [inserted] = await db
       .insert(connections)
@@ -108,6 +135,7 @@ export async function persistAirtableConnection(
         accessTokenEnc,
         refreshTokenEnc,
         tokenExpiresAt,
+        refreshTokenExpiresAt,
         scopes: inputs.tokens.scope,
         platformConfig,
         status: 'active',
@@ -120,23 +148,49 @@ export async function persistAirtableConnection(
   if (inputs.bases.length > 0) {
     await db
       .insert(atBases)
-      .values(
-        inputs.bases.map((b) => ({
-          spaceId: inputs.spaceId,
-          atBaseId: b.id,
-          name: b.name,
-          lastSeenAt: now,
-        })),
-      )
+      .values(mapBasesToUpsertRows(inputs.bases, inputs.spaceId, now))
       .onConflictDoUpdate({
         target: [atBases.spaceId, atBases.atBaseId],
         set: {
           name: sql`excluded.name`,
           lastSeenAt: sql`excluded.last_seen_at`,
+          // Workspace identity (web-workspace-bases): stamp when provided,
+          // NULL-TOLERANT — a pass without workspace data (MCP failure,
+          // plain Meta listing) must never clobber previously stamped
+          // values, hence COALESCE against the existing row.
+          workspaceId: sql`coalesce(excluded.workspace_id, ${atBases}.workspace_id)`,
+          workspaceName: sql`coalesce(excluded.workspace_name, ${atBases}.workspace_name)`,
           modifiedAt: now,
         },
       })
   }
 
   return { connectionId, basesPersisted: inputs.bases.length }
+}
+
+/**
+ * Upsert rows for the at_bases insert — exported for unit tests
+ * (web-workspace-bases task 2.1: workspace fields stamped when provided,
+ * null when absent).
+ */
+export function mapBasesToUpsertRows(
+  bases: AirtableBaseSummary[],
+  spaceId: string,
+  now: Date,
+): Array<{
+  spaceId: string
+  atBaseId: string
+  name: string
+  workspaceId: string | null
+  workspaceName: string | null
+  lastSeenAt: Date
+}> {
+  return bases.map((b) => ({
+    spaceId,
+    atBaseId: b.id,
+    name: b.name,
+    workspaceId: b.workspaceId ?? null,
+    workspaceName: b.workspaceName ?? null,
+    lastSeenAt: now,
+  }))
 }

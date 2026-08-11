@@ -65,6 +65,9 @@ export interface TokenResponse {
   accessToken: string
   refreshToken: string | null
   expiresIn: number | null
+  // Seconds until the refresh token expires if unused (~60 days). Captured so
+  // the idle-expiry clock is stored at Connect, not discovered reactively.
+  refreshExpiresIn: number | null
   scope: string | null
 }
 
@@ -72,6 +75,7 @@ interface RawTokenResponse {
   access_token?: string
   refresh_token?: string | null
   expires_in?: number
+  refresh_expires_in?: number
   scope?: string
   error?: string
   error_description?: string
@@ -109,6 +113,10 @@ async function postToken(
     accessToken: json.access_token,
     refreshToken: json.refresh_token ?? null,
     expiresIn: typeof json.expires_in === 'number' ? json.expires_in : null,
+    refreshExpiresIn:
+      typeof json.refresh_expires_in === 'number'
+        ? json.refresh_expires_in
+        : null,
     scope: json.scope ?? null,
   }
 }

@@ -1,0 +1,206 @@
+---
+/**
+ * EntitySearch — the shared typeahead. A daisyUI search input + a dropdown of
+ * matches grouped by kind, each row = icon + name + a muted context line (+ an
+ * optional health dot). Keyboard: ↑/↓ move, Enter picks, Esc clears.
+ *
+ * Reused four ways: Browse global search / jump-to, the Docs "add tag" control,
+ * the Visualize add-entity picker, and the base picker's search
+ * (`integrations/BaseSelectionTable.astro`). It emits two events so a host list
+ * can react: `schema:searchInput` ({ name, query }) on every keystroke for
+ * filter-in-place, and the pick event (default `schema:openEntity`, { id }).
+ *
+ * GENERIC since 2026-07-29. Pass `index` (SchemaEntity[]) for the schema
+ * surfaces, or pre-built `items` + `groups` for anything else. Everything
+ * schema-specific — icon, path, haystack — lives in `typeaheadItems.ts` and is
+ * computed server-side, so the client script below knows nothing about bases,
+ * fields or workspaces.
+ *
+ * PICKING IS THE HOST'S DECISION. This component clears the field, fires a real
+ * `input` event (so a host filtering in place un-filters in the same tick) and
+ * dispatches `pickEvent`. Browse opens a panel; the base picker ticks a row.
+ */
+import type { SchemaEntity } from './schemaEntities';
+import type { TypeaheadGroups, TypeaheadItem } from './typeaheadItems';
+import { entityToTypeaheadItem, SCHEMA_TYPEAHEAD_GROUPS } from './typeaheadItems';
+
+interface Props {
+  /** Schema hosts: the entity index, adapted to rows here. */
+  index?: SchemaEntity[];
+  /** Non-schema hosts: rows built by the host. Wins over `index`. */
+  items?: TypeaheadItem[];
+  /** Kind → heading label. Order IS the heading + arrow-key order. */
+  groups?: TypeaheadGroups;
+  name?: string;
+  placeholder?: string;
+  /** Event dispatched on pick. Browse → opens the panel; Docs → inserts a tag. */
+  pickEvent?: string;
+  /** The verb after ↵ in the footer. Hosts that open nothing say something else. */
+  pickHint?: string;
+  emptyText?: string;
+  /** Narrow the input (toolbar vs full width). */
+  size?: 'sm' | 'md';
+}
+const {
+  index = [],
+  items,
+  groups,
+  name = 'schema',
+  placeholder = 'Search bases, tables, fields, views…',
+  pickEvent = 'schema:openEntity',
+  pickHint = 'open',
+  emptyText = 'No matching entities',
+  size = 'sm',
+} = Astro.props;
+const lite: TypeaheadItem[] = items ?? index.map(entityToTypeaheadItem);
+const groupList: TypeaheadGroups = groups ?? SCHEMA_TYPEAHEAD_GROUPS;
+---
+
+<div
+  class="es"
+  data-entity-search
+  data-es-name={name}
+  data-es-pick={pickEvent}
+  data-es-groups={JSON.stringify(groupList)}
+  data-es-empty={emptyText}
+>
+  <label class={`input ${size === 'sm' ? 'input-sm' : ''} es-input`}>
+    <span class="iconify lucide--search size-4 opacity-55" aria-hidden="true"></span>
+    <input type="search" placeholder={placeholder} data-es-field data-sch-search aria-label={placeholder} autocomplete="off" spellcheck="false" />
+    <kbd class="kbd kbd-sm es-kbd">/</kbd>
+  </label>
+  <div class="es-pop" data-es-pop hidden>
+    <div class="es-list" data-es-listbox role="listbox"></div>
+    <div class="es-foot">
+      <span><kbd class="kbd kbd-xs">↑</kbd><kbd class="kbd kbd-xs">↓</kbd> navigate</span>
+      <span><kbd class="kbd kbd-xs">↵</kbd> {pickHint}</span>
+      <span><kbd class="kbd kbd-xs">esc</kbd> clear</span>
+    </div>
+  </div>
+</div>
+
+<script type="application/json" data-es-index={name} set:html={JSON.stringify(lite)} />
+
+
+<script>
+  type Item = {
+    id: string; kind: string; name: string;
+    path?: string; icon?: string; health?: string; hay?: string; scopeKey?: string;
+  };
+
+  function wireEntitySearch() {
+    document.querySelectorAll<HTMLElement>('[data-entity-search]').forEach((root) => {
+      if (root.dataset.esWired) return;
+      root.dataset.esWired = '1';
+      const name = root.dataset.esName!;
+      const pickEvent = root.dataset.esPick || 'schema:openEntity';
+      const emptyText = root.dataset.esEmpty || 'No matching entities';
+      const dataEl = document.querySelector(`[data-es-index="${name}"]`);
+      const index: Item[] = dataEl ? JSON.parse(dataEl.textContent || '[]') : [];
+      // ONE group list, used by BOTH the rendered markup and the keyboard-nav re-order
+      // below. Order here IS the visual + arrow-key order. When the two lists were
+      // written out separately, adding a kind to one silently desynced every arrow-key
+      // index in the other — hence one constant, read once, from the host's prop.
+      const GROUPS: Array<[string, string]> = JSON.parse(root.dataset.esGroups || '[]');
+      const field = root.querySelector<HTMLInputElement>('[data-es-field]')!;
+      const pop = root.querySelector<HTMLElement>('[data-es-pop]')!;
+      const listbox = root.querySelector<HTMLElement>('[data-es-listbox]')!;
+
+      const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+      const dot = (h?: string) => (h ? `<span class="es-opt-dot es-dot-${h === 'green' ? 'green' : h === 'red' ? 'red' : 'amber'}"></span>` : '');
+
+      // Substring OR initials match (DataGrip-style abbreviation).
+      function matches(e: Item, q: string): boolean {
+        if ((e.hay || e.name.toLowerCase()).includes(q)) return true;
+        const initials = e.name.split(/[\s_]+/).map((w) => w[0]).join('').toLowerCase();
+        return initials.includes(q);
+      }
+
+      let results: Item[] = [];
+      let active = -1;
+
+      function close() { pop.hidden = true; active = -1; }
+      // Optional base-scope: a host sets root.dataset.esScopeBase = "<scopeKey>" to restrict
+      // results (the multi-panel "Compare with…" picker uses this); empty = everything.
+      const inScope = (e: Item) => { const s = root.dataset.esScopeBase || ''; return !s || e.scopeKey === s; };
+      // Optional kind filter, set at RUNTIME by the host: a comma list of the kinds that
+      // are currently meaningful. The base picker drops 'workspace' while its table is
+      // ungrouped — there is nothing to scroll to, so the group must be ABSENT rather
+      // than present and empty.
+      const inKind = (e: Item) => {
+        const raw = (root.dataset.esKinds || '').trim();
+        if (!raw) return true;
+        return raw.split(',').map((s) => s.trim()).filter(Boolean).includes(e.kind);
+      };
+      const hits = (q: string) => index.filter((e) => inScope(e) && inKind(e) && matches(e, q)).slice(0, 40);
+
+      function render(q: string) {
+        if (!q) { close(); return; }
+        results = hits(q);
+        if (!results.length) { pop.hidden = false; listbox.innerHTML = `<div class="es-empty">${esc(emptyText)}</div>`; return; }
+        let html = '';
+        let flat = 0;
+        for (const [kind, label] of GROUPS) {
+          const group = results.filter((e) => e.kind === kind);
+          if (!group.length) continue;
+          html += `<div class="es-group">${esc(label)}</div>`;
+          for (const e of group) {
+            html += `<div class="es-opt" role="option" data-es-i="${flat}" data-es-id="${esc(e.id)}">
+              <span class="es-opt-ic">${e.icon || ''}</span>
+              <span class="es-opt-main"><div class="es-opt-name">${esc(e.name)}</div><div class="es-opt-path">${esc(e.path || '')}</div></span>
+              ${dot(e.health)}
+            </div>`;
+            flat++;
+          }
+        }
+        // Re-order results to match the grouped DOM order for keyboard nav, off the SAME
+        // GROUPS constant the markup above iterated.
+        const found = results;
+        results = GROUPS.flatMap(([kind]) => found.filter((e) => e.kind === kind));
+        listbox.innerHTML = html;
+        pop.hidden = false;
+        active = -1;
+      }
+      function setActive(i: number) {
+        const opts = Array.from(listbox.querySelectorAll<HTMLElement>('.es-opt'));
+        if (!opts.length) return;
+        active = (i + opts.length) % opts.length;
+        opts.forEach((o, k) => o.setAttribute('aria-selected', String(k === active)));
+        opts[active]?.scrollIntoView({ block: 'nearest' });
+      }
+      function pick(id: string) {
+        // A REAL input event, not just the synthetic `schema:searchInput`: a host that
+        // filters its own list on `input` (the base picker) would otherwise be left
+        // filtered by a query that is no longer in the box.
+        field.value = '';
+        close();
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        document.dispatchEvent(new CustomEvent(pickEvent, { detail: { id } }));
+      }
+
+      field.addEventListener('input', () => {
+        const q = field.value.trim().toLowerCase();
+        document.dispatchEvent(new CustomEvent('schema:searchInput', { detail: { name, query: field.value.trim() } }));
+        render(q);
+      });
+      field.addEventListener('keydown', (ev) => {
+        if (pop.hidden) { if (ev.key === 'Escape' && field.value) { field.value = ''; field.dispatchEvent(new Event('input')); } return; }
+        if (ev.key === 'ArrowDown') { ev.preventDefault(); setActive(active + 1); }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); setActive(active - 1); }
+        else if (ev.key === 'Enter') { ev.preventDefault(); if (active >= 0 && results[active]) pick(results[active].id); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); close(); field.value = ''; field.dispatchEvent(new Event('input')); }
+      });
+      listbox.addEventListener('mousedown', (ev) => { const o = (ev.target as HTMLElement).closest<HTMLElement>('.es-opt'); if (o) { ev.preventDefault(); pick(o.dataset.esId!); } });
+      document.addEventListener('click', (ev) => { if (!root.contains(ev.target as Node)) close(); });
+      // "/" focuses THIS search — but only while its panel is actually visible (tab-aware, so it
+      // never steals focus to a hidden tab's search).
+      document.addEventListener('keydown', (ev) => {
+        if (ev.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA' && !(document.activeElement as HTMLElement)?.isContentEditable) {
+          if (field.offsetParent !== null) { ev.preventDefault(); field.focus(); }
+        }
+      });
+    });
+  }
+  wireEntitySearch();
+  document.addEventListener('astro:after-swap', wireEntitySearch);
+</script>

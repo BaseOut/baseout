@@ -1,0 +1,140 @@
+export const AIRTABLE_TOKEN_URL = "https://airtable.com/oauth2/v1/token";
+
+export interface AirtableRefreshInput {
+  refreshToken: string;
+  clientId: string;
+  clientSecret: string;
+  tokenUrl?: string;
+  fetchImpl?: typeof fetch;
+  nowMs?: () => number;
+}
+
+export type RefreshOutcome =
+  | {
+      kind: "success";
+      accessToken: string;
+      refreshToken: string;
+      expiresAtMs: number;
+      // Absolute ms when the (rotated) refresh token expires if unused —
+      // derived from Airtable's `refresh_expires_in` (~60 days). null when the
+      // response omits it (older responses / defensive), meaning "unknown".
+      refreshExpiresAtMs: number | null;
+      scope: string | null;
+    }
+  | { kind: "pending_reauth"; reason: string }
+  | { kind: "transient"; reason: string; retryAfterMs?: number }
+  | { kind: "invalid"; reason: string };
+
+interface RawTokenResponse {
+  access_token?: string;
+  refresh_token?: string | null;
+  expires_in?: number;
+  refresh_expires_in?: number;
+  scope?: string;
+  error?: string;
+  error_description?: string;
+}
+
+const PENDING_REAUTH_ERROR_CODES = new Set([
+  "invalid_grant",
+  "invalid_request_or_grant",
+  "unauthorized_client",
+  "access_denied",
+]);
+
+function basicAuthHeader(clientId: string, clientSecret: string): string {
+  const creds = `${clientId}:${clientSecret}`;
+  const bytes = new TextEncoder().encode(creds);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    bin += String.fromCharCode(bytes[i]!);
+  }
+  return `Basic ${btoa(bin)}`;
+}
+
+function parseRetryAfter(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number.parseInt(header, 10);
+  if (!Number.isFinite(seconds) || seconds < 0) return undefined;
+  return seconds * 1000;
+}
+
+export async function refreshAirtableAccessToken(
+  input: AirtableRefreshInput,
+): Promise<RefreshOutcome> {
+  const fetchFn = input.fetchImpl ?? fetch;
+  const nowMs = input.nowMs ?? Date.now;
+  const body = new URLSearchParams();
+  body.set("grant_type", "refresh_token");
+  body.set("refresh_token", input.refreshToken);
+
+  let res: Response;
+  try {
+    res = await fetchFn(input.tokenUrl ?? AIRTABLE_TOKEN_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        authorization: basicAuthHeader(input.clientId, input.clientSecret),
+      },
+      body: body.toString(),
+    });
+  } catch (err) {
+    return {
+      kind: "transient",
+      reason: `network_error: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  // 409 = Airtable rejects a refresh because the token was "recently
+  // refreshed" — a concurrent refresher already rotated it. Benign (the
+  // connection is healthy); treat as transient so the next tick succeeds
+  // rather than failing the refresh. See Airtable OAuth reference (409 on
+  // recent refresh) and the double-refresh race the DO serialization guards.
+  if (res.status === 429 || res.status === 409 || res.status >= 500) {
+    return {
+      kind: "transient",
+      reason: `http_${res.status}`,
+      retryAfterMs: parseRetryAfter(res.headers.get("retry-after")),
+    };
+  }
+
+  let json: RawTokenResponse;
+  try {
+    json = (await res.json()) as RawTokenResponse;
+  } catch {
+    return { kind: "invalid", reason: `http_${res.status}_unparseable_body` };
+  }
+
+  if (res.ok && typeof json.access_token === "string") {
+    const refreshToken =
+      typeof json.refresh_token === "string" && json.refresh_token.length > 0
+        ? json.refresh_token
+        : input.refreshToken;
+    const expiresIn =
+      typeof json.expires_in === "number" && Number.isFinite(json.expires_in)
+        ? json.expires_in
+        : 0;
+    const refreshExpiresIn =
+      typeof json.refresh_expires_in === "number" &&
+      Number.isFinite(json.refresh_expires_in)
+        ? json.refresh_expires_in
+        : null;
+
+    return {
+      kind: "success",
+      accessToken: json.access_token,
+      refreshToken,
+      expiresAtMs: nowMs() + expiresIn * 1000,
+      refreshExpiresAtMs:
+        refreshExpiresIn != null ? nowMs() + refreshExpiresIn * 1000 : null,
+      scope: json.scope ?? null,
+    };
+  }
+
+  const code = json.error ?? `http_${res.status}`;
+  const desc = json.error_description ? `: ${json.error_description}` : "";
+  if (PENDING_REAUTH_ERROR_CODES.has(code)) {
+    return { kind: "pending_reauth", reason: `${code}${desc}` };
+  }
+  return { kind: "invalid", reason: `${code}${desc}` };
+}
