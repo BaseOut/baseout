@@ -52,3 +52,25 @@ Already shipped this cycle (do not rebuild): entitlements creation-cap kernel + 
   non-additive / provisioning-heavy items, explicitly not "buildable-now."
 
 Everything above is behind `ENTITLEMENT_ENFORCEMENT` (default off) where it enforces — safe to land dark.
+
+## Flag-flip decisions + retention slug confirmation (2026-08-11)
+
+Three dark flags are now live-but-off. Flipping any is a **deploy action** (set in the app's
+`.dev.vars` / deployed env), so they are NOT flipped here — they need an explicit go, and one must
+NOT be flipped yet:
+
+- **`RETENTION_FROM_ENTITLEMENTS`** (`shared-entitlements` 4.4) — READY to flip. Retention **slug
+  confirmed**: the snapshot cap sources from **`record_history_retention_days`** (how long backup
+  record data is kept; Lite 90 / Core 180 / Plus 365 / Max 1095). NOT `schema_history_retention_days`
+  — that governs schema-change history, a different lever. Flipping changes deletion windows for
+  backfilled orgs (unresolved orgs keep the legacy `TIER_CAP_DAYS` via the fail-safe fallback).
+  → Deploy decision; confirm no dev org loses data unexpectedly, then set to `"1"`.
+- **`DB_ISOLATION_ENFORCEMENT`** (`shared-db-isolation-ladder` L2.2) — **KEEP OFF.** Flipping it now
+  would refuse Lite (ceiling `d1`) orgs, because the `d1` backend is unimplemented so every Space
+  provisions `managed_pg` (= `shared_cluster`, above the Lite ceiling). Safe to flip only once the
+  `d1` backend lands (or the ceiling is transitionally relaxed). Do NOT flip.
+- **`ENTITLEMENT_ENFORCEMENT`** (`shared-entitlements` 4.3) — the creation-cap enforcement flag;
+  ready, flip when caps should start blocking.
+
+The 2.3 server cutover default (`preferEntitlements` = true) and the start-deps interfaces/automations/
+comments cutover are LIVE by default (fail-safe fallback), matching apps/web — no flag.

@@ -25,6 +25,8 @@ import { automationBackupEnabled } from "../capabilities/automation-backup";
 import { commentBackupEnabled } from "../capabilities/comment-backup";
 import { buildWorkspaceAutoEnrollDep } from "../workspaces/auto-enroll-io";
 import { resolveCapabilities } from "../capabilities/resolve";
+import { boolFeatureFrom } from "../capabilities/entitlement-capabilities";
+import { resolveEntitlements } from "../entitlements/resolve";
 import type { Env } from "../../env";
 import type { ProcessRunStartDeps, IncludedBase } from "./start";
 
@@ -91,15 +93,34 @@ export function buildRunStartDeps(db: MasterDb, env: Env): ProcessRunStartDeps {
         .where(eq(backupRuns.id, id));
     },
     enqueueBackupBase: (payload) => enqueueBackupBase(env, payload),
+    // Interfaces/automations/comments backup (shared-entitlements 2.3 follow-up):
+    // prefer the DB-native boolean (all-plans-true in the new model — fixes the
+    // legacy Growth+ gate that wrongly blocked Lite/Core), fall back to the legacy
+    // tier gate when the org has no resolvable plan.
     resolveInterfacesEnabled: async (organizationId) => {
+      const fromEnt = boolFeatureFrom(
+        await resolveEntitlements(db, organizationId),
+        "automations_interfaces_backup",
+      );
+      if (fromEnt !== null) return fromEnt;
       const { tier } = await resolveCapabilities(db, organizationId, "airtable");
       return interfaceBackupEnabled(tier);
     },
     resolveAutomationsEnabled: async (organizationId) => {
+      const fromEnt = boolFeatureFrom(
+        await resolveEntitlements(db, organizationId),
+        "automations_interfaces_backup",
+      );
+      if (fromEnt !== null) return fromEnt;
       const { tier } = await resolveCapabilities(db, organizationId, "airtable");
       return automationBackupEnabled(tier);
     },
     resolveCommentsEnabled: async (organizationId) => {
+      const fromEnt = boolFeatureFrom(
+        await resolveEntitlements(db, organizationId),
+        "comments_backup",
+      );
+      if (fromEnt !== null) return fromEnt;
       const { tier } = await resolveCapabilities(db, organizationId, "airtable");
       return commentBackupEnabled(tier);
     },

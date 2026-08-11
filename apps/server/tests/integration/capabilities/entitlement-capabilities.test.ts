@@ -6,8 +6,27 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { entitlementsToCapabilities } from "../../../src/lib/capabilities/entitlement-capabilities";
+import {
+  boolFeatureFrom,
+  entitlementsToCapabilities,
+} from "../../../src/lib/capabilities/entitlement-capabilities";
 import type { EntitlementMap } from "@baseout/db-schema";
+
+function boolMap(slug: string, bool: boolean): EntitlementMap {
+  return {
+    [slug]: {
+      slug,
+      valueType: "boolean",
+      enumValues: null,
+      meterable: false,
+      meterKind: null,
+      planValue: { type: "boolean", bool },
+      overrideValue: null,
+      addonBonus: 0,
+      effective: { type: "boolean", bool },
+    },
+  };
+}
 
 function basesMap(limit: number | null): EntitlementMap {
   return {
@@ -31,5 +50,22 @@ describe("entitlementsToCapabilities (engine)", () => {
   });
   it("fair-use (null limit) → null (unlimited)", () => {
     expect(entitlementsToCapabilities(basesMap(null))).toEqual({ basesPerSpace: null });
+  });
+});
+
+describe("boolFeatureFrom (start-deps cutover)", () => {
+  it("returns the boolean feature value", () => {
+    expect(
+      boolFeatureFrom(
+        { entitlements: boolMap("automations_interfaces_backup", true) },
+        "automations_interfaces_backup",
+      ),
+    ).toBe(true);
+  });
+  it("null resolution → null (caller falls back to the legacy tier gate)", () => {
+    expect(boolFeatureFrom(null, "comments_backup")).toBeNull();
+  });
+  it("feature absent → null", () => {
+    expect(boolFeatureFrom({ entitlements: {} }, "comments_backup")).toBeNull();
   });
 });
