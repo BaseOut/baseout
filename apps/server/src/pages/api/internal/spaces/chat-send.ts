@@ -6,7 +6,9 @@
 // The Chat tab polls the thread until the pending message resolves.
 // Token gate is applied by middleware (path begins /api/internal/).
 
+import { eq } from "drizzle-orm";
 import type { AppLocals, Env } from "../../../../env";
+import { spaces } from "../../../../db/schema";
 import { resolveSpaceDb } from "../../../../lib/per-space/resolve";
 import { withSpaceSchema } from "../../../../lib/per-space/space-db-pg";
 import { ensureSpaceSchemaCurrent } from "../../../../lib/provisioning/upgrade";
@@ -58,6 +60,15 @@ export async function spacesChatSendHandler(
     return jsonResponse({ error: "backend_not_implemented" }, 501);
   }
 
+  // The chat-respond task fetches the org's AI routing/credential at run start
+  // (shared-ai-byok task 4.1), so the enqueue payload must carry the org id.
+  const [spaceOrg] = await masterDb
+    .select({ organizationId: spaces.organizationId })
+    .from(spaces)
+    .where(eq(spaces.id, spaceId))
+    .limit(1);
+  if (!spaceOrg) return jsonResponse({ error: "not_found" }, 404);
+
   let prepared: {
     userMessageId: string;
     assistantMessageId: string;
@@ -94,6 +105,7 @@ export async function spacesChatSendHandler(
   // enqueue failure, flip the pending message to error so the UI stops waiting.
   try {
     await enqueueChatRespond(env, {
+      organizationId: spaceOrg.organizationId,
       spaceId,
       threadId,
       assistantMessageId: prepared.assistantMessageId,

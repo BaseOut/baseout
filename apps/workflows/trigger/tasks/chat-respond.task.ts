@@ -14,8 +14,13 @@ import {
   type ChatRespondResult,
   type ChatTurn,
 } from "./chat-respond";
+import { fetchAiCredential, resolveChatClientConfig } from "./_lib/ai-credential";
 
-export type ChatRespondPayload = ChatRespondInput;
+// The payload carries the org id (shared-ai-byok task 4.1) so the runner can
+// fetch that org's AI routing decision + (for byok) the decrypted key at run
+// start. It carries NO secret material — the plaintext key is fetched fresh over
+// the gated credential endpoint, never serialized onto the payload.
+export type ChatRespondPayload = ChatRespondInput & { organizationId: string };
 
 const CHAT_MODEL = "claude-opus-4-8";
 
@@ -28,10 +33,11 @@ const CHAT_SYSTEM =
 
 async function generateWithClaude(
   client: Anthropic,
+  model: string,
   args: { context: string; messages: ChatTurn[] },
 ): Promise<string> {
   const res = await client.messages.create({
-    model: CHAT_MODEL,
+    model,
     max_tokens: 2048,
     system: `${CHAT_SYSTEM}\n\n${args.context}`,
     messages: args.messages.map((m) => ({ role: m.role, content: m.content })),
@@ -70,15 +76,33 @@ export const chatRespondTask = task({
   run: async (payload: ChatRespondPayload): Promise<ChatRespondResult> => {
     const engineUrl = process.env.BACKUP_ENGINE_URL;
     const internalToken = process.env.INTERNAL_TOKEN;
-    const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!engineUrl) throw new Error("BACKUP_ENGINE_URL is not set in the Trigger.dev env");
     if (!internalToken) throw new Error("INTERNAL_TOKEN is not set in the Trigger.dev env");
-    if (!apiKey) throw new Error("ANTHROPIC_API_KEY is not set in the Trigger.dev env");
 
-    const client = new Anthropic({ apiKey });
+    // BYOK routing (task 4.1): fetch the org's decision + (for byok) the
+    // decrypted key over the gated credential endpoint, then build the client
+    // from the resolved key + model. On the pool path this is identical to
+    // before — the env ANTHROPIC_API_KEY + CHAT_MODEL.
+    const credential = await fetchAiCredential(
+      fetch,
+      engineUrl,
+      internalToken,
+      payload.organizationId,
+    );
+    const config = resolveChatClientConfig(credential, {
+      apiKey: process.env.ANTHROPIC_API_KEY ?? "",
+      model: CHAT_MODEL,
+    });
+    if (!config.apiKey) {
+      // Pool path with no ANTHROPIC_API_KEY (byok always returns a non-empty
+      // key or falls back to pool) — same "no key → throw" guard as before.
+      throw new Error("No Anthropic API key available (ANTHROPIC_API_KEY unset and no BYOK key)");
+    }
+
+    const client = new Anthropic({ apiKey: config.apiKey });
 
     return runChatRespond(payload, {
-      generate: (args) => generateWithClaude(client, args),
+      generate: (args) => generateWithClaude(client, config.model, args),
       postComplete: (args) =>
         postComplete(engineUrl, internalToken, payload.spaceId, payload.threadId, args),
     });

@@ -1,0 +1,354 @@
+---
+/**
+ * AI keys (BYOK) settings surface — shared-ai-byok task 2.3.
+ *
+ * Customer-facing management of the Organization's AI provider keys, driven by
+ * the already-built /api/ai-keys endpoints (GET list / POST add-rotate /
+ * DELETE revoke). SECURITY: the plaintext key is WRITE-ONLY — it is only ever
+ * sent to the server. SSR reads DISPLAY-ONLY columns (provider, last_four,
+ * status, last_validated_at, label, model) — never `key_enc` or plaintext.
+ * The key input is never pre-filled and is cleared from the DOM after submit.
+ *
+ * Gating mirrors the API: the `byo_ai_key` entitlement is Plus+ (design D1,
+ * resolved via resolveEntitlements — never a tier-name string); mutations are
+ * owner/admin-only. Un-entitled orgs and non-admins get a disabled, read-only
+ * view with the appropriate affordance.
+ */
+import { eq } from 'drizzle-orm';
+import { getBool } from '@baseout/db-schema';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import Card from '../../components/ui/Card.astro';
+import Badge from '../../components/ui/Badge.astro';
+import Button from '../../components/ui/Button.astro';
+import TextInput from '../../components/ui/TextInput.astro';
+import Alert from '../../components/ui/Alert.astro';
+import Modal from '../../components/ui/Modal.astro';
+import { aiProviderKeys, AI_PROVIDERS, type AiProvider } from '../../db/schema';
+import { resolveEntitlements } from '../../lib/entitlements/resolve';
+
+const { account, db } = Astro.locals;
+const orgId = account?.organization?.id;
+if (!orgId || !db) return Astro.redirect('/login');
+
+const role = account?.membership?.role ?? 'member';
+const canManage = role === 'owner' || role === 'admin';
+
+// Plus+ gate — same rule the API enforces on POST (design D1). Fail-closed.
+let entitled = false;
+const resolution = await resolveEntitlements(db, orgId);
+if (resolution) {
+  try {
+    entitled = getBool(resolution.entitlements, 'byo_ai_key');
+  } catch {
+    entitled = false;
+  }
+}
+
+// Inputs/mutations are locked when the org lacks the entitlement or the viewer
+// is not an owner/admin. Existing keys still render (read-only) either way.
+const formDisabled = !entitled || !canManage;
+
+// DISPLAY-ONLY columns — no key_enc / fingerprint / plaintext leaves the DB.
+const keyRows = await db
+  .select({
+    provider: aiProviderKeys.provider,
+    label: aiProviderKeys.label,
+    modelDefault: aiProviderKeys.modelDefault,
+    lastFour: aiProviderKeys.lastFour,
+    status: aiProviderKeys.status,
+    lastValidatedAt: aiProviderKeys.lastValidatedAt,
+  })
+  .from(aiProviderKeys)
+  .where(eq(aiProviderKeys.organizationId, orgId))
+  .orderBy(aiProviderKeys.provider);
+
+type KeyRow = (typeof keyRows)[number];
+// One display row per provider — the active key wins over disabled/invalid.
+const byProvider = new Map<string, KeyRow>();
+for (const r of keyRows) {
+  const existing = byProvider.get(r.provider);
+  if (!existing || r.status === 'active') byProvider.set(r.provider, r);
+}
+
+// Presentation metadata. The provider ID set is canonical from the schema
+// (AI_PROVIDERS, kept in lockstep with the CHECK constraint + the API
+// allow-list); only labels/placeholders live here.
+const PROVIDER_META: Record<AiProvider, { label: string; keyPlaceholder: string; modelPlaceholder: string }> = {
+  anthropic: { label: 'Anthropic', keyPlaceholder: 'sk-ant-…', modelPlaceholder: 'claude-opus-4-…' },
+  openai: { label: 'OpenAI', keyPlaceholder: 'sk-…', modelPlaceholder: 'gpt-4o-…' },
+  cloudflare: { label: 'Cloudflare Workers AI', keyPlaceholder: 'API token', modelPlaceholder: '@cf/meta/llama-…' },
+};
+
+const statusVariant: Record<string, 'success' | 'error' | 'warning'> = {
+  active: 'success',
+  invalid: 'error',
+  disabled: 'warning',
+};
+
+const fmtDate = (d: Date | string | null) => {
+  if (!d) return '—';
+  const dt = typeof d === 'string' ? new Date(d) : d;
+  return Number.isNaN(dt.getTime()) ? '—' : dt.toISOString().slice(0, 10);
+};
+
+const providerCards = AI_PROVIDERS.map((id) => ({
+  id,
+  meta: PROVIDER_META[id],
+  key: byProvider.get(id) ?? null,
+}));
+
+const breadcrumbs = [
+  { label: 'Home', href: '/' },
+  { label: 'Settings', href: '/settings' },
+  { label: 'AI keys' },
+];
+---
+
+<SidebarLayout pageTitle="AI keys" breadcrumbs={breadcrumbs}>
+  <div class="max-w-3xl space-y-6">
+    <Card variant="outlined">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="material-symbols-outlined icon-xl text-primary">vpn_key</span>
+        <h3 class="text-lg font-bold">AI keys</h3>
+      </div>
+      <p class="text-sm opacity-70">
+        Bring your own AI provider credentials. When a key is set, Baseout's AI
+        features (Schema Chat, health scoring) call that provider with your key
+        instead of the included Baseout AI. Keys are encrypted at rest — only the
+        last four characters are ever shown back.
+      </p>
+    </Card>
+
+    {!entitled && (
+      <Alert
+        variant="warning"
+        title="Available on Plus and above"
+        actionHref="/settings/billing"
+        actionLabel="View plans"
+      >
+        Bring-your-own-key lets your Organization use its own Anthropic, OpenAI,
+        or Cloudflare credentials for AI features. It's included on Plus and above.
+      </Alert>
+    )}
+
+    {entitled && !canManage && (
+      <Alert variant="info" title="Read-only">
+        Only Organization owners and admins can add or revoke AI keys. You can
+        view the current status below.
+      </Alert>
+    )}
+
+    {providerCards.map(({ id, meta, key }) => (
+      <Card variant="outlined">
+        <div class="flex items-start justify-between gap-3 mb-4">
+          <div class="min-w-0">
+            <h4 class="font-bold">{meta.label}</h4>
+            {key ? (
+              <p class="text-xs opacity-70 font-mono">Key ••••{key.lastFour}</p>
+            ) : (
+              <p class="text-xs opacity-60">No key configured</p>
+            )}
+          </div>
+          {key ? (
+            <Badge variant={statusVariant[key.status] ?? 'default'} size="sm">{key.status}</Badge>
+          ) : (
+            <Badge variant="default" size="sm">not configured</Badge>
+          )}
+        </div>
+
+        {key && (
+          <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs mb-4">
+            <dt class="opacity-60">Last four</dt>
+            <dd class="font-mono">••••{key.lastFour}</dd>
+            <dt class="opacity-60">Last validated</dt>
+            <dd>{fmtDate(key.lastValidatedAt)}</dd>
+            {key.label && (<><dt class="opacity-60">Label</dt><dd>{key.label}</dd></>)}
+            {key.modelDefault && (<><dt class="opacity-60">Model</dt><dd class="font-mono break-all">{key.modelDefault}</dd></>)}
+          </dl>
+        )}
+
+        <form class="ai-key-form space-y-3" data-provider={id} novalidate>
+          <TextInput
+            label={key ? 'New key (rotate)' : 'API key'}
+            type="password"
+            name="key"
+            autocomplete="off"
+            placeholder={meta.keyPlaceholder}
+            hint="Sent once and encrypted at rest. Only the last four characters are ever shown."
+            inputClass="font-mono"
+            disabled={formDisabled}
+          />
+          <div class="grid gap-3 sm:grid-cols-2">
+            <TextInput
+              label="Label (optional)"
+              name="label"
+              placeholder="e.g. Production key"
+              value={key?.label ?? ''}
+              disabled={formDisabled}
+            />
+            <TextInput
+              label="Default model (optional)"
+              name="modelDefault"
+              placeholder={meta.modelPlaceholder}
+              value={key?.modelDefault ?? ''}
+              inputClass="font-mono"
+              disabled={formDisabled}
+            />
+          </div>
+          <div class="ai-key-error alert alert-error text-sm hidden" role="alert">
+            <span class="ai-key-error-text"></span>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <Button type="submit" variant="primary" size="sm" class="ai-key-save-btn" disabled={formDisabled}>
+              {key ? 'Rotate key' : 'Save key'}
+            </Button>
+            {key && key.status === 'active' && (
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm text-error ai-key-revoke-btn"
+                data-provider={id}
+                data-provider-label={meta.label}
+                disabled={formDisabled ? true : undefined}
+              >
+                Revoke
+              </button>
+            )}
+          </div>
+        </form>
+      </Card>
+    ))}
+  </div>
+
+  <Modal id="ai-key-revoke-modal" title="Revoke AI key?" size="sm">
+    <p class="text-sm">
+      The active <span id="ai-key-revoke-provider" class="font-medium"></span> key
+      will be disabled immediately and AI features fall back to the included
+      Baseout AI. You can add a new key any time.
+    </p>
+    <div id="ai-key-revoke-error" class="alert alert-error text-sm hidden mt-3" role="alert">
+      <span id="ai-key-revoke-error-text"></span>
+    </div>
+    <div class="modal-action">
+      <form method="dialog"><button class="btn">Cancel</button></form>
+      <button type="button" id="ai-key-revoke-confirm" class="btn btn-outline btn-error">
+        Revoke
+      </button>
+    </div>
+  </Modal>
+</SidebarLayout>
+
+<script>
+  import { setButtonLoading } from '../../lib/ui';
+  import { showFormError, hideFormError } from '../../lib/auth-utils';
+
+  // Server error codes → human copy (see /api/ai-keys handlers).
+  const POST_ERRORS: Record<string, string> = {
+    not_entitled: 'Bring-your-own-key is available on Plus and above.',
+    forbidden: 'Only Organization owners and admins can manage AI keys.',
+    invalid_provider: 'Unknown provider.',
+    invalid_key: 'Enter a valid API key.',
+  };
+
+  // ── Save / Rotate ──
+  document.querySelectorAll<HTMLFormElement>('.ai-key-form').forEach((form) => {
+    const provider = form.dataset.provider ?? '';
+    const saveBtn = form.querySelector<HTMLButtonElement>('.ai-key-save-btn');
+    const errorEl = form.querySelector<HTMLElement>('.ai-key-error');
+    const errorText = form.querySelector<HTMLElement>('.ai-key-error-text');
+    const keyInput = form.querySelector<HTMLInputElement>('input[name="key"]');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!saveBtn || !errorEl || !errorText || !keyInput) return;
+      hideFormError(errorEl);
+
+      const key = keyInput.value.trim();
+      if (!key) {
+        showFormError(errorEl, errorText, 'Enter an API key to save.');
+        return;
+      }
+      const data = new FormData(form);
+      const label = String(data.get('label') ?? '').trim();
+      const modelDefault = String(data.get('modelDefault') ?? '').trim();
+
+      setButtonLoading(saveBtn, true);
+      try {
+        const res = await fetch('/api/ai-keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider,
+            key,
+            ...(label ? { label } : {}),
+            ...(modelDefault ? { modelDefault } : {}),
+          }),
+        });
+        // Drop the plaintext from the DOM regardless of outcome (security).
+        keyInput.value = '';
+        const body = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          code?: string;
+          error?: string;
+        };
+        if (res.ok && body.ok) {
+          // Reload so SSR re-renders the new last_four / status — the plaintext
+          // exists nowhere on the page.
+          location.reload();
+          return;
+        }
+        showFormError(
+          errorEl,
+          errorText,
+          POST_ERRORS[body.code ?? ''] ?? body.error ?? 'Could not save the key. Try again.',
+        );
+      } catch {
+        keyInput.value = '';
+        showFormError(errorEl, errorText, 'Network error. Try again.');
+      } finally {
+        setButtonLoading(saveBtn, false);
+      }
+    });
+  });
+
+  // ── Revoke (shared confirm modal) ──
+  const revokeModal = document.getElementById('ai-key-revoke-modal') as HTMLDialogElement | null;
+  const revokeProviderLabel = document.getElementById('ai-key-revoke-provider');
+  const revokeConfirm = document.getElementById('ai-key-revoke-confirm') as HTMLButtonElement | null;
+  const revokeError = document.getElementById('ai-key-revoke-error');
+  const revokeErrorText = document.getElementById('ai-key-revoke-error-text');
+  let revokeProvider: string | null = null;
+
+  document.querySelectorAll<HTMLButtonElement>('.ai-key-revoke-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      revokeProvider = btn.dataset.provider ?? null;
+      if (revokeProviderLabel) revokeProviderLabel.textContent = btn.dataset.providerLabel ?? 'this provider';
+      if (revokeError) hideFormError(revokeError);
+      revokeModal?.showModal();
+    });
+  });
+
+  revokeConfirm?.addEventListener('click', async () => {
+    if (!revokeProvider || !revokeConfirm) return;
+    setButtonLoading(revokeConfirm, true);
+    try {
+      const res = await fetch('/api/ai-keys', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: revokeProvider }),
+      });
+      if (res.ok) {
+        location.reload();
+        return;
+      }
+      if (revokeError && revokeErrorText) {
+        showFormError(revokeError, revokeErrorText, 'Could not revoke the key. Try again.');
+      }
+    } catch {
+      if (revokeError && revokeErrorText) {
+        showFormError(revokeError, revokeErrorText, 'Network error. Try again.');
+      }
+    } finally {
+      setButtonLoading(revokeConfirm, false);
+    }
+  });
+</script>

@@ -94,6 +94,22 @@ const scopeOptions = [
     </Card>
 
     <Card variant="outlined">
+      <div class="flex items-center justify-between gap-4 flex-wrap">
+        <div class="flex items-center gap-3">
+          <span class="material-symbols-outlined icon-xl text-primary">vpn_key</span>
+          <div>
+            <h3 class="text-lg font-bold">AI keys</h3>
+            <p class="text-sm opacity-70">
+              Bring your own Anthropic, OpenAI, or Cloudflare credentials for
+              Baseout's AI features (Plus and above).
+            </p>
+          </div>
+        </div>
+        <Button href="/settings/ai-keys" variant="outline" size="sm">Manage AI keys</Button>
+      </div>
+    </Card>
+
+    <Card variant="outlined">
       <div class="flex items-center gap-3 mb-4">
         <span class="material-symbols-outlined icon-xl text-primary">key</span>
         <h3 class="text-lg font-bold">API tokens</h3>

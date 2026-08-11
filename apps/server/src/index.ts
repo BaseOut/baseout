@@ -86,6 +86,7 @@ import {
   attachmentsRecordHandler,
 } from "./pages/api/internal/attachments/lookup";
 import { connectionsTokenHealthHandler } from "./pages/api/internal/connections/token-health";
+import { orgsAiCredentialHandler } from "./pages/api/internal/orgs/ai-credential";
 import { resolveCronJobs } from "./lib/cron/dispatch";
 import { withServiceRun, numericCounts, pruneServiceRuns } from "./lib/service-runs";
 import {
@@ -228,6 +229,10 @@ const SPACES_NOTIFICATIONS_TRIAGE_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/notifications\/triage$/;
 const SPACES_NOTIFICATIONS_MUTE_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/notifications\/mute$/;
+// AI credential endpoint (shared-ai-byok task 3.3): the workflows Node runner
+// fetches the org's routing decision + (for byok) the decrypted key at run start.
+const ORGS_AI_CREDENTIAL_RE =
+  /^\/api\/internal\/orgs\/([^/]+)\/ai-credential$/;
 
 // Re-export Durable Object classes so workerd can resolve their bindings.
 // Required even when Astro adapter wraps the entry — see CLAUDE.md §5.1.
@@ -293,6 +298,14 @@ export default {
 
       if (url.pathname === "/api/internal/connections/token-health") {
         return await connectionsTokenHealthHandler(request, env, ctx, locals);
+      }
+
+      // AI credential endpoint (shared-ai-byok task 3.3): GET-only; the handler
+      // method-checks + re-verifies the token before any resolve/decrypt. The
+      // plaintext key crosses this trusted boundary only in the response body.
+      const aiCredential = ORGS_AI_CREDENTIAL_RE.exec(url.pathname);
+      if (aiCredential) {
+        return await orgsAiCredentialHandler(request, env, ctx, locals, aiCredential[1]!);
       }
 
       // PoC-only DO smoke test: forwards to ConnectionDO by stable name.
