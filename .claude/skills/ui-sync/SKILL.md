@@ -43,6 +43,14 @@ export, inbox, app shell, docs, …) and classify each surface:
 STOP and confirm scoping with the user when a surface is ambiguous or an
 upstream plan doc has open client questions.
 
+**Reverse / drift check (before a forward sync).** This skill is the FORWARD
+path only. To see whether the design harness has drifted from the fork in the
+OTHER direction — or to push a live-side change back UP to `ui-only` — run
+`pnpm ui:sync-drift` and use the `/sync-reconcile` skill. A file it marks
+`diverged` or `reverse-pending` MUST be reconciled before a forward sync of that
+file, or the sync silently clobbers the local edit (e.g. the write-back removal
+in `EntityPanel.astro`).
+
 ## Stage 1 — Sync → apps/design (one commit)
 
 - Copy files VERBATIM at the pinned `ui-only/main` hash
