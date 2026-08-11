@@ -19,7 +19,8 @@ what's in scope today, the order, and cross-change ordering. Update the Status c
 | `shared-db-isolation-ladder` | provisioning gate (L2.2, dark flag `DB_ISOLATION_ENFORCEMENT`) | ✅ done | `a211bdf` |
 | `shared-ai-byok` | 1.1 migration; 2.1/2.2 API; 3.1 engine deps; 4.2/4.3 adapter routing (BYOK live for schema-desc + health-scoring) | ✅ done | `1a1325c`, `cbe89ce`, `76a7974`, `725cdc0` |
 | `shared-ai-byok` | 3.3 credential endpoint + 4.1 chat routing + 2.3 settings UI + start-deps resolvers | ✅ done | `53822ba` (3.3/4.1), `86ee065` (UI), `55f0c49` (start-deps) |
-| `shared-ai-byok` | 5.x policy compose + 6.x health-check/lifecycle + 7.x verification | ⛔ deferred | — remaining polish; BYOK is end-to-end functional (keys → API → routing → chat) |
+| `shared-ai-byok` | 6.1 health-check + 2.1 submit-gate/audit + 5.2 billable + 7.1 sweep + 7.2 verify | ✅ done | `1038543` |
+| `shared-ai-byok` | 5.1 · 6.2 · 6.3-downgrade · 7.3 | 🔒 closed-out | 5.1 BLOCKED on `shared-ai-controls` (spec-only); 6.2 optional re-validation cron; 6.3 downgrade is gate-handled; 7.3 pending founder Gateway decision — **not open loops** |
 | `system-r2-bucket-topology` | caller wiring (managed backups → per-account bucket) | ⛔ blocked | R2 provisioning creds live only in the Trigger.dev env; can't verify locally (verify-then-code) |
 
 Also shipped earlier this cycle: entitlements creation-cap kernel + usage endpoint (9.1) + Spaces & Seats
