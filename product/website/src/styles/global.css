@@ -1,9 +1,11 @@
-@import "tailwindcss";
-
-/* Google Fonts */
+/* Google Fonts — @import rules must precede all other rules per CSS spec;
+   Tailwind 4's `@import "tailwindcss"` expands to rules, so fonts go first
+   (otherwise browsers silently ignore these @imports and the fonts don't load). */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;300;400;500;600;700;800&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@300;400;500;600;700&display=swap');
+
+@import "tailwindcss";
 
 @layer base {
   :root {
