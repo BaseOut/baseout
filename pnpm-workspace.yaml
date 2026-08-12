@@ -16,9 +16,10 @@ packages:
 # pnpm 9->11 upgrade silently orphaned the package.json block, which is the
 # root cause of the CVE regression. Same-major only; every target verified
 # >=7 days old so the minimumReleaseAge gate below is satisfied.
-# Deferred (need code migrations, tracked as follow-ups): undici@5.29.0
-# (wrangler 3.x/miniflare -> wrangler 3->4), drizzle-orm (db-schema 0.36->0.45),
-# product/website majors (astro 5->6).
+# Deferred (need code migrations, tracked as follow-ups): drizzle-orm
+# (db-schema 0.36->0.45) and product/website majors (astro 5->6).
+# undici@5.29.0 RESOLVED 2026-08-12: bumping apps/sql wrangler ^3->^4 dropped
+# the wrangler@3/miniflare@3/undici@5.29.0 subtree (last wrangler-3 consumer).
 overrides:
   fast-uri: "^3.1.5"
   ip-address: "^10.3.1"
