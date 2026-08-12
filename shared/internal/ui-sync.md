@@ -18,6 +18,16 @@ and `r2-setup.md`). The procedure lives in `.claude/skills/ui-sync/SKILL.md`
   that convention to find the last-synced point.
 - Status: `pnpm ui:sync-status` (pending commits, changed files by surface,
   dirty-target warnings).
+- **Reverse & drift:** `pnpm ui:sync-drift` classifies every synced surface as
+  `in-sync` / `forward-pending` (fork ahead) / `reverse-pending` (WE are ahead,
+  `apps/design/**` only) / `diverged` (both). The `/sync-reconcile` skill drives
+  the reverse path — it emits a human-applied patch UP to `ui-only` and never
+  auto-pushes. `--path <prefix>` scopes the report to one surface. Content-level
+  3-way (byte-compare modulo import rewrites) is a follow-up; v1 is file-level.
+- **Ledger gate:** `pnpm ui:sync-check` fails when a `chore(design): sync
+  ui-only@…` tip commit did not also update THIS file (§6 rule, enforced).
+- **storybook.ts reconcile:** `pnpm storybook:reconcile` prints the fork-side and
+  local-side diffs of the shared catalog for the §2 standing 3-way merge.
 
 ## 2. Path-mapping table
 
@@ -72,7 +82,8 @@ screenshots under `research/**/shots/`.
 | Schema shell + 8 tabs | `d97c777` | `09949d3` (web-schema-round3-shell) | yes — SSR `schema.astro` via `createBackupEngine()` | pre-split SchemaView in git history |
 | Schema Visualize / Changelog tabs | `d97c777` | in-flight on `autumn/june-ui-refactor` (web-schema-visualize / web-schema-changelog) | changelog feed live; visualize from SSR payload | — |
 | Schema export control | `3153dfd` | `web-schema-export` (patterns/ExportControl + lib/csv, mounted on all 7 Schema tabs) | Browse + Changelog export REAL CSV client-side (`schema:export` event + `export-rows.ts`); other tabs honest-fallback until their backends | — |
-| EntityPanel anchor model + panel polish | `3153dfd` (design harness) | **STAGED — web mount deliberately deferred** (2026-07-10): the type-import closure drags 3 fixture-driven tab components into web; draft/publish/generate actions are fixture-faked upstream, so mounting would replace the real docs-by-entity panel with faked actions; upstream drawer-round4 client questions still OPEN. 19 styleguide entries for un-promoted surfaces carry `design:`-prefixed references (the resolvability gate skips them; retarget at promotion) | pending — needs real description-publish + generate seams before mount | current BrowseTab panel is the working fallback |
+| EntityPanel anchor model + panel polish | `3153dfd` (design harness) | **STAGED — web mount deliberately deferred** (2026-07-10): the type-import closure drags 3 fixture-driven tab components into web; draft/publish/generate actions are fixture-faked upstream, so mounting would replace the real docs-by-entity panel with faked actions; upstream drawer-round4 client questions still OPEN. 19 styleguide entries for un-promoted surfaces carry `design:`-prefixed references (the resolvability gate skips them; retarget at promotion). **2026-08-11 (design-descriptions-readonly): the Airtable description tab is now READ-ONLY in the harness — the faked Publish/Discard-to-Airtable flow, the `descStates` publish states, and the `airtableDraft`/`airtableExternallyChanged` seed on `Deals ▸ Stage` were removed; Internal stays editable. This DIVERGES `EntityPanel.astro` + that fixture + the storybook.ts `pattern-entity-panel` entry from `ui-only`. **`ui:sync-drift` then revealed the fork ALREADY did this, more completely, in `ui-only@7502f81` ("Airtable goes read-only, and writing gets its own section", Oleh 2026-08-07) — lifecycle deleted across panel + controller + Browse tree + both type sets. So the resolution is a FORWARD-sync of `7502f81` that SUPERSEDES this hand-edit — NOT a reverse-sync UP. Our edit is a buildable interim until that forward-sync lands.**} | pending — superseded by `7502f81` on the next schema forward-sync | current BrowseTab panel is the working fallback (already read-only) |
+| Actions landing (read-only "writing gets its own section") | `7502f81` (design harness) | **`web-actions` (2026-08-11): promoted `ActionsView.astro` VERBATIM into `apps/web` (self-contained daisyUI, bespoke=0) + `lib/actions.ts` examples + `app-config.json` nav (`/actions`) + Features §1 `Action` dict** | landing only — static example copy; feedback form is a no-JS GET placeholder (POST+store is a follow-up) | `agents.astro` (the replaced hand-built draft) deleted |
 | Notifications Inbox | `3153dfd` | `web-notifications-inbox` §1–4 (Inbox + inbox.ts + inbox-client verbatim; AppShellHeader bell removed/`lg:hidden`; AppShellSidebar trigger + badge; SidebarLayout `inboxItems` prop default `[]` → designed zero-states) | **LIVE end-to-end** (2026-07-10): engine feed `GET/POST /api/internal/spaces/:id/notifications{,/triage,/mute}` (derive-not-mailbox, per-Space `bo_at_inbox_state`/`bo_at_inbox_mutes`, SPACE_SCHEMA_VERSION 6) + web fan-out in SidebarLayout + optimistic triage via `/api/spaces/:id/inbox/*` proxies. Deferred: health-drop kind (needs debounce), per-user read state, web §5.2-5.4 | Header/Sidebar pre-inbox in git history |
 
 ## 5. Known traps
@@ -85,6 +96,18 @@ screenshots under `research/**/shots/`.
   leave them; `pnpm --filter @baseout/design build` is the gate. Fixing them
   breaks diffability.
 - **storybook.ts reconcile:** never overwrite blindly (see §2).
+- **EntityPanel write-back — the fork already removed it (7502f81):**
+  `design-descriptions-readonly` hand-removed the faked Airtable write-back from
+  `apps/design/.../EntityPanel.astro` (a buildable interim). Then `ui:sync-drift`
+  showed `ui-only@7502f81` ("Airtable goes read-only, and writing gets its own
+  section", Oleh 2026-08-07) had ALREADY done it, more completely (panel +
+  controller + Browse tree + both type sets). **Resolution = FORWARD-sync
+  `7502f81` to SUPERSEDE the hand-edit — do NOT reverse-sync ours up.** Until
+  then, a forward sync of `EntityPanel.astro` / the `Deals ▸ Stage` fixture / the
+  storybook `pattern-entity-panel` entry is SAFE (it brings the canonical
+  read-only version) — the earlier "must not re-import" concern is void now that
+  the fork's version IS the read-only one. `web-actions` already promoted the
+  paired Actions landing from the same commit.
 - **Header/Inbox entanglement:** the Inbox surface edits
   Header/Sidebar/SidebarLayout — an app-shell change. Never land it
   half-promoted (design and web must agree on which shell renders).

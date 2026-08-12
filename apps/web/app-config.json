@@ -36,6 +36,11 @@
         "href": "/data",
         "icon": "iconify lucide--database"
       },
+      {
+        "label": "Actions",
+        "href": "/actions",
+        "icon": "iconify lucide--square-pen"
+      },
       { "label": "Account", "icon": "", "isTitle": true },
       {
         "label": "Sources",

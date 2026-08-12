@@ -36,6 +36,8 @@ export interface PersistProviderKeyResult {
   lastFour: string
   keyFingerprint: string
   status: 'active'
+  /** true when an existing active row was replaced in place (rotation). */
+  rotated: boolean
 }
 
 /**
@@ -118,5 +120,6 @@ export async function persistProviderKey(
     lastFour,
     keyFingerprint,
     status: 'active',
+    rotated: Boolean(existing),
   }
 }

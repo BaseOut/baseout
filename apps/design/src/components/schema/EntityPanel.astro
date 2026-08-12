@@ -832,9 +832,6 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     function exitEdit(id: string) { editIds.delete(id); drafts.delete(id); refresh(); renderCrumbs(); }
     let descEdit: { id: string; field: 'airtable' | 'extended' } | null = null;
     let descTab: 'airtable' | 'extended' = 'airtable';
-    // Publish lifecycle (faked async): draft → confirm step → Publishing… → Synced + toast.
-    let descConfirmId: string | null = null;
-    let descBusyId: string | null = null;
     // True while the open editor's text came from Generate (drives the AI disclaimer slot).
     let descEditAi = false;
     // Caret offset to restore when entering edit by clicking the text, so the cursor lands where
@@ -857,15 +854,6 @@ const entityChangelog = changelog.filter((c) => c.entityId);
     const liveEl = root.querySelector<HTMLElement>('[data-ep-live]');
     const announce = (m: string) => { if (liveEl) liveEl.textContent = m; };
     const focusDescEdit = (field: 'airtable' | 'extended') => body.querySelector<HTMLElement>(`[data-ep-desc-editzone="${field}"]`)?.focus();
-    // Transient success confirmation — floats over the sheet, survives body re-renders, auto-dismisses.
-    let toastTimer = 0;
-    const toast = (m: string) => {
-      const el = root.querySelector<HTMLElement>('[data-ep-toast]'); if (!el) return;
-      el.innerHTML = `<span class="iconify lucide--circle-check size-4"></span>${esc(m)}`;
-      el.hidden = false; requestAnimationFrame(() => el.classList.add('ep-toast-in'));
-      window.clearTimeout(toastTimer);
-      toastTimer = window.setTimeout(() => { el.classList.remove('ep-toast-in'); window.setTimeout(() => { el.hidden = true; }, 200); }, 2400);
-    };
     // A draft exists when the local Airtable copy differs from what's synced. Reads the
     // runtime overlay first, then the fixture seed (so seeded drafts show before first open).
     const hasDraft = (e: SchemaEntity): boolean => {
@@ -974,26 +962,21 @@ const entityChangelog = changelog.filter((c) => c.entityId);
         return section('Description', null, ro);
       }
       const s = descOf(e);
-      const ai = (e.aiDescription || '').trim();
       // The Internal note's AI draft is prompted to be more technical/verbose. In this faked
       // harness we fall back to the public AI text where no distinct technical draft is seeded
       // (in production the engine always returns a separate, more-technical draft).
       const aiTech = (e.aiTechnicalDescription || e.aiDescription || '').trim();
-      const out = s.airtable.trim() !== s.synced.trim();
       const editing = descEdit && descEdit.id === e.id ? descEdit.field : null;
-      const canGen = aiState === 'ready' && !!ai;
       const canGenExt = aiState === 'ready' && !!aiTech;
-      const busy = descBusyId === e.id;
-      const confirming = descConfirmId === e.id;
       const credit = '<span class="ep-credit">10 credits</span>';
 
       const editor = (field: 'airtable' | 'extended', value: string) => {
         const ph = field === 'airtable'
           ? 'Describe this for everyone who uses the base in Airtable…'
           : 'Internal notes — more technical detail, visible only in Baseout…';
-        // Both copies can be AI-generated: the Airtable (public) draft and the Internal note,
-        // which is prompted to be more technical/verbose (a separate engine draft).
-        const genOn = field === 'airtable' ? canGen : canGenExt;
+        // Only the Internal note is editable/AI-generated now — the Airtable description is
+        // read-only (Baseout never writes back to Airtable). editor() is Internal-only.
+        const genOn = canGenExt;
         const gen = genOn
           ? `<button type="button" class="btn btn-sm btn-ghost gap-1.5 text-primary" data-ep-desc-gen="${field}"><span class="iconify lucide--sparkles size-3.5"></span><span>${value.trim() ? 'Regenerate' : 'Generate'} ${credit}</span></button>`
           : '';
@@ -1025,47 +1008,13 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       const box = (inner: string, field?: 'airtable' | 'extended') =>
         `<div class="ep-desc-panel${field ? ' ep-desc-zone' : ''}"${field ? ` data-ep-desc-editzone="${field}" tabindex="0" role="button" aria-label="Edit description"` : ''}>${inner}${field ? '<span class="ep-desc-zone-ic" aria-hidden="true"><span class="iconify lucide--pencil size-3.5"></span></span>' : ''}</div>`;
 
-      // Each state = the value box + the scope caption (atMeta/extMeta) BELOW it + any status
-      // line + the actions. The caption is now a quiet footnote under the value, not a header.
-      let at: string;
-      if (editing === 'airtable') {
-        at = editor('airtable', s.airtable);
-      } else if (busy) {
-        at = box(`<div class="ep-desc-v">${esc(s.airtable)}</div>`) + atMeta
-          + `<div class="ep-desc-status ep-desc-busy"><span class="loading loading-spinner loading-sm"></span>Publishing to Airtable…</div>`;
-      } else if (confirming) {
-        const stale = e.airtableExternallyChanged
-          ? `<div class="alert alert-soft alert-warning ep-desc-stale" role="alert"><span class="iconify lucide--triangle-alert size-4"></span><span>Airtable's description changed since the last backup — publishing overwrites it.</span></div>`
-          : '';
-        at = box(`<div class="ep-desc-v">${esc(s.airtable)}</div>`) + atMeta
-          + `<div class="ep-desc-confirm">
-            <div class="ep-desc-confirm-h"><span class="iconify lucide--upload-cloud size-3.5"></span>Publish replaces the entire description in Airtable.</div>
-            ${stale}
-            <div class="ep-actions">
-              <button type="button" class="btn btn-sm btn-primary gap-1.5" data-ep-desc-publish-confirm><span class="iconify lucide--check size-3.5"></span>Publish</button>
-              <button type="button" class="btn btn-sm btn-ghost" data-ep-desc-publish-cancel>Cancel</button>
-            </div>
-          </div>`;
-      } else if (s.airtable.trim() === '') {
-        // Empty: the box itself is click-to-write; AI generate is the alternative.
-        const genCta = canGen
-          ? `<div class="ep-actions"><button type="button" class="btn btn-sm btn-primary gap-1.5" data-ep-desc-gen="airtable"><span class="iconify lucide--sparkles size-3.5"></span><span>Generate with AI ${credit}</span></button></div>`
-          : aiState === 'locked'
-          ? `<div class="ep-actions"><a href="/settings/billing" class="btn btn-sm btn-primary gap-1.5"><span class="iconify lucide--lock size-3.5"></span>Generate with AI</a></div>`
-          : '';
-        at = box(`<div class="ep-desc-v ep-empty">No description in Airtable yet — click to write one.</div>`, 'airtable') + atMeta + genCta;
-      } else if (out) {
-        // Click the value to edit it in place; the "not yet published" status lives in the
-        // section heading, so no Edit button is needed here.
-        at = box(`<div class="ep-desc-v">${esc(s.airtable)}</div>`, 'airtable') + atMeta
-          + `<div class="ep-actions">
-            <button type="button" class="btn btn-sm btn-primary gap-1.5" data-ep-desc-publish><span class="iconify lucide--upload-cloud size-3.5"></span>Publish to Airtable</button>
-            <button type="button" class="btn btn-sm btn-ghost gap-1.5 text-error ml-auto" data-ep-desc-discard><span class="iconify lucide--undo-2 size-3.5"></span>Discard changes</button>
-          </div>`;
-      } else {
-        at = box(`<div class="ep-desc-v">${esc(s.airtable)}</div>`, 'airtable') + atMeta
-          + `<div class="ep-desc-status ep-desc-synced"><span class="iconify lucide--circle-check size-3.5"></span>Synced with Airtable</div>`;
-      }
+      // The Airtable description is READ-ONLY in Baseout — Baseout never writes back to
+      // Airtable. (Editing/publishing a description is the future Agents section's job.)
+      // Show the imported copy as static text with its scope caption: no edit zone, no
+      // Publish/Discard, no draft/confirm/AI-generate on this tab.
+      const at = box(s.airtable.trim()
+        ? `<div class="ep-desc-v">${esc(s.airtable)}</div>`
+        : `<div class="ep-desc-v ep-empty">No description in Airtable.</div>`) + atMeta;
 
       let ext: string;
       if (editing === 'extended') {
@@ -1093,13 +1042,9 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       </div>`;
       const tabs = `${tabsBar}<div role="tabpanel" class="ep-desc-tab">${isAirtable ? at : ext}</div>`;
 
-      // Draft flag + its explanation folded into ONE badge in the section heading (the single
-      // home for "this Airtable copy has unpublished changes") — kept out of the field body.
-      const draftFlag = out
-        ? ` <span class="badge badge-sm badge-warning badge-soft ep-desc-flag"><span class="iconify lucide--pencil-line size-3"></span>Draft — Not yet published to Airtable</span>`
-        : '';
-      const title = `Descriptions${draftFlag}`;
-      return section(title, null, tabs);
+      // No draft/publish flag — the Airtable description is read-only, so there is never an
+      // "unpublished change" to surface.
+      return section('Descriptions', null, tabs);
     }
 
     // C4 — this entity's change history (the same feed, scoped to one entity).
@@ -1579,7 +1524,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       root.dataset.epKind = e.kind;
       root.dataset.epDepth = String(stack.length);
       commitOpenEdit();
-      descEdit = null; descTab = 'airtable'; descConfirmId = null; descEditAi = false;
+      descEdit = null; descTab = 'airtable'; descEditAi = false;
       body.innerHTML = renderBody(e);
       if (activeChildId) body.querySelector<HTMLElement>('[data-ep-push="' + activeChildId + '"]')?.classList.add('ep-row-active');
       renderCrumbs();
@@ -1764,23 +1709,8 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       const saveEl = t.closest<HTMLElement>('[data-ep-desc-save]');
       if (saveEl) { const e = cur(); if (e) { const field = saveEl.dataset.epDescSave as 'airtable' | 'extended'; commitField(e.id, field, descInput()?.value ?? ''); descEdit = null; descTab = field; refresh(); focusDescEdit(field); const s = descOf(e); announce(field === 'airtable' ? (s.airtable.trim() !== s.synced.trim() ? 'Draft saved, not yet published to Airtable' : 'Saved') : 'Internal note saved'); } return; }
       if (t.closest('[data-ep-desc-cancel]')) { descEdit = null; refresh(); return; }
-      // Publish is a two-step, destructive write-back: a confirm card (with a stale warning
-      // when Airtable drifted) → a faked Publishing… → Published ✓ → Synced.
-      if (t.closest('[data-ep-desc-publish]')) { const e = cur(); if (e) { descConfirmId = e.id; descTab = 'airtable'; refresh(); } return; }
-      if (t.closest('[data-ep-desc-publish-cancel]')) { descConfirmId = null; refresh(); return; }
-      if (t.closest('[data-ep-desc-publish-confirm]')) {
-        const e = cur(); if (!e) return;
-        const id = e.id; const s = descOf(e);
-        descConfirmId = null; descBusyId = id; descTab = 'airtable'; refresh();
-        window.setTimeout(() => {
-          s.synced = s.airtable; descBusyId = null;
-          commitField(id, 'airtable', s.airtable);
-          if (stack[stack.length - 1] === id) { refresh(); focusDescEdit('airtable'); }
-          announce('Published to Airtable'); toast('Published to Airtable');
-        }, 750);
-        return;
-      }
-      if (t.closest('[data-ep-desc-discard]')) { const e = cur(); if (e) { const s = descOf(e); s.airtable = s.synced; descEdit = null; descConfirmId = null; descTab = 'airtable'; refresh(); focusDescEdit('airtable'); commitField(e.id, 'airtable', s.airtable); announce('Changes discarded'); } return; }
+      // (No Publish/Discard-to-Airtable handlers — the Airtable description is read-only in
+      // Baseout. Write-back moves to the future Agents section.)
     });
     // Middle-click a reference row → open that entity in a new panel beside (browser-tab convention).
     root.addEventListener('auxclick', (ev) => {
@@ -1805,7 +1735,7 @@ const entityChangelog = changelog.filter((c) => c.entityId);
       // act on whichever panel is being edited or holds keyboard focus, even if it's not the "active"
       // panel; only Esc-to-close/back is reserved for the active panel. stopImmediatePropagation keeps
       // the sibling panel's identical listener from double-acting. (Both panels listen on document.)
-      const editingHere = !!descEdit || !!descConfirmId;
+      const editingHere = !!descEdit;
       const focusedHere = root.contains(document.activeElement);
       if (!editingHere && !focusedHere && !panelActive) return;
       // Cmd/Ctrl+Enter commits the open editor (power-user save).
@@ -1853,7 +1783,6 @@ const entityChangelog = changelog.filter((c) => c.entityId);
         const inPicker = !!(document.activeElement as HTMLElement | null)?.closest?.('[data-entity-search]');
         if (!inPicker && curId && editIds.has(curId)) { ev.stopImmediatePropagation(); exitEdit(curId); return; }
         if (descEdit) { ev.stopImmediatePropagation(); descEdit = null; refresh(); return; }
-        if (descConfirmId) { ev.stopImmediatePropagation(); descConfirmId = null; refresh(); return; }
         if (!panelActive) return; // closing/back is the active panel's job
         ev.stopImmediatePropagation();
         // Back within this panel, else hand to the controller (focus → close focus; anchor → close all).

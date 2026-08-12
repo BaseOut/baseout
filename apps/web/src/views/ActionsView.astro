@@ -1,0 +1,121 @@
+---
+/**
+ * ActionsView — the Actions section, landing page only (no runtime, no builder, no run log).
+ *
+ * Promoted verbatim from the ui-only design fork (ui-only@7502f81 "Airtable goes read-only,
+ * and writing gets its own section", Oleh 2026-08-07) via web-actions. Built entirely from
+ * `pattern-upcoming-section` (announce block · concrete named operations · capability note ·
+ * one textarea · button · submitted state) plus `pattern-access-scope` for the write-scope
+ * constraint. Primitives: alert · badge · textarea · button · card. Bespoke = 0.
+ *
+ * Why the section ships before the feature: it is where the product's read-only claim is made
+ * true. Every other surface mirrors Airtable and never writes; Actions is the stated exception,
+ * so naming it out loud turns "we almost never write" into an absolute boundary.
+ *
+ * ANTI-MARKETING GUARD: no hero band, no illustration, no gradient, no countdown, no dates, no
+ * exclamation marks, and no email capture — the reader is a logged-in customer, not a visitor.
+ * Density and type scale match Schema and Data.
+ *
+ * There is no action backend yet — Send is a plain GET that lands on the submitted state
+ * (reviewable with zero JS). Swap it for a POST to a real endpoint when persistence lands;
+ * nothing else about the form changes.
+ */
+import type { ActionExample } from '../lib/actions';
+
+interface Props {
+  /** The example operations (drafted proposals). */
+  examples?: ActionExample[];
+  /** Feedback form state. `idle` is the default. */
+  state?: 'idle' | 'submitted' | 'failed';
+  /** Text kept on screen when a send failed, so nothing a person typed is lost. */
+  draft?: string;
+}
+const { examples = [], state = 'idle', draft = '' } = Astro.props;
+---
+
+<div class="max-w-[820px]" data-actions>
+  {/* Page header — same shape and type scale as Schema / Data. */}
+  <header>
+    <div class="flex items-center gap-2">
+      <h1 class="text-title">Actions</h1>
+      <span class="badge badge-sm badge-ghost">Planned</span>
+    </div>
+    <p class="text-sm text-base-content/60 mt-1">Operations that write to your Airtable.</p>
+  </header>
+
+  {/* Announce block — alert register, states plainly that it is not built yet. */}
+  <div role="note" class="alert alert-soft alert-info mt-4">
+    <span class="iconify lucide--info size-4" aria-hidden="true"></span>
+    <span>Actions are not built yet. This page states the boundary: Baseout reads your Airtable and does not change it. Restore and Actions are the two exceptions, and each asks for a token that can write.</span>
+  </div>
+
+  {/* The concrete named operations — the part that carries the page. */}
+  <section class="card card-border bg-base-100 mt-4">
+    <div class="card-body p-5">
+      <p class="text-xs font-semibold uppercase tracking-wide text-base-content/50">What actions will do</p>
+      <ul class="mt-2 flex flex-col gap-2">
+        {examples.map((ex) => (
+          <li class="flex items-start gap-3 text-sm">
+            <span class="iconify lucide--square-pen size-4 mt-1 shrink-0 text-base-content/45" aria-hidden="true"></span>
+            <span><b class="font-medium">{ex.name}</b> — {ex.detail}</span>
+          </li>
+        ))}
+      </ul>
+      <p class="mt-4 text-xs text-base-content/50">These are proposals, not commitments. Nothing here runs today.</p>
+    </div>
+  </section>
+
+  {/* The constraint — pattern-access-scope. Say what it will cost, not only what it will do. */}
+  <section class="card card-border bg-base-100 mt-4">
+    <div class="card-body p-5">
+      <div class="flex items-start gap-3">
+        <span class="iconify lucide--key-round mt-1 size-4 shrink-0 text-base-content/60" aria-hidden="true"></span>
+        <div class="min-w-0">
+          <p class="text-sm font-medium">Actions will need their own token</p>
+          <p class="mt-1 text-sm text-base-content/70">
+            Baseout backs up with a read-only token — <code class="font-mono">schema.bases:read</code> ·
+            <code class="font-mono">data.records:read</code> · <code class="font-mono">data.recordComments:read</code>.
+            An action changes your bases, so it will ask for a separate token with
+            <code class="font-mono">schema.bases:write</code> or <code class="font-mono">data.records:write</code>.
+            The connection your backups run on cannot run an action.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  {/* One open question. No email field — we already know who is reading this. */}
+  <section class="card card-border bg-base-100 mt-4">
+    <div class="card-body p-5">
+      {state === 'submitted' ? (
+        <div role="status" class="alert alert-soft alert-success">
+          <span class="iconify lucide--check size-4" aria-hidden="true"></span>
+          <span>Thanks — that is on the list. You can send another any time.</span>
+        </div>
+      ) : (
+        <form method="get" action="/actions">
+          <input type="hidden" name="state" value="submitted" />
+          <label class="block" for="actions-ask">
+            <span class="block text-sm font-medium">What would you want an action to do?</span>
+            <span class="mt-1 block text-xs text-base-content/60">We build these in the order people ask for them.</span>
+          </label>
+          <textarea
+            id="actions-ask"
+            name="ask"
+            rows="3"
+            class="textarea textarea-bordered textarea-sm mt-3 w-full"
+            placeholder="Describe the operation you would run against your bases.">{draft}</textarea>
+          {state === 'failed' && (
+            <div role="alert" class="alert alert-soft alert-error mt-3">
+              <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
+              <span>That did not send. Your text is still here — try again.</span>
+            </div>
+          )}
+          <div class="mt-3">
+            <button type="submit" class="btn btn-sm btn-primary">Send</button>
+          </div>
+        </form>
+      )}
+    </div>
+  </section>
+</div>

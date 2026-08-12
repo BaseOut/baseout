@@ -32,6 +32,28 @@ function git(...args) {
   }
 }
 
+// --- ledger-update gate (--check) -------------------------------------------
+// A `chore(design): sync ui-only@…` commit MUST also touch the ledger
+// (shared/internal/ui-sync.md §3 sync ledger + §4 promotion matrix) so the
+// sync point never drifts from history. `pnpm ui:sync-check` fails CI / a
+// pre-commit hook when the tip sync commit forgot. No-op on non-sync tips.
+if (process.argv.includes("--check")) {
+  const subject = git("log", "-1", "--format=%s");
+  if (!/^chore\(design\):\s*sync\b.*ui-only@/.test(subject)) {
+    console.log("ui:sync-check — tip is not a `chore(design): sync ui-only@…` commit; nothing to check.");
+    process.exit(0);
+  }
+  const touched = git("show", "--name-only", "--format=", "HEAD").split("\n").filter(Boolean);
+  if (touched.includes("shared/internal/ui-sync.md")) {
+    console.log("ui:sync-check — sync commit updates the ledger (shared/internal/ui-sync.md). OK.");
+    process.exit(0);
+  }
+  console.error("ui:sync-check FAILED — the tip `chore(design): sync` commit did not update");
+  console.error("shared/internal/ui-sync.md. Update the §3 sync ledger + §4 promotion matrix in the");
+  console.error("SAME commit (CLAUDE.md §3.7 / ui-sync.md §6).");
+  process.exit(1);
+}
+
 // --- last synced hash -------------------------------------------------------
 // `--grep` matches the WHOLE message, so promotion commits that cite the hash
 // in their body match too. Walk recent matches: a subject citation wins

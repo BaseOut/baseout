@@ -92,6 +92,7 @@ describe('persistProviderKey', () => {
     expect(result).not.toHaveProperty('plaintextKey')
     expect(result.lastFour).toBe('WXYZ')
     expect(result.status).toBe('active')
+    expect(result.rotated).toBe(false) // fresh insert, not a rotation
   })
 
   it('UPDATES in place when an active row already exists (rotate / replace)', async () => {
@@ -110,6 +111,7 @@ describe('persistProviderKey', () => {
     expect(await decryptToken(row.keyEnc as string, key)).toBe(NEW)
     expect(row.lastFour).toBe('pqrs')
     expect(row.status).toBe('active')
+    expect(result.rotated).toBe(true) // replaced an existing active row
     expect(JSON.stringify(row)).not.toContain(NEW)
     expect(JSON.stringify(result)).not.toContain(NEW)
   })
