@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  backupRunTitle,
   deriveSpaceHealth,
   describeCounts,
   expandedTimestamp,
@@ -592,5 +593,17 @@ describe('deriveSpaceHealth', () => {
     })
     expect(h.lastSuccess?.id).toBe('r_schema')
     expect(h.lastFullSuccess?.id).toBe('r_full')
+  })
+})
+
+
+describe('backupRunTitle', () => {
+  it('titles a run by its timestamp', () => {
+    expect(backupRunTitle('2026-05-09T20:00:00.000Z')).toMatch(/^Backup run · /)
+  })
+
+  it('falls back to a bare label when there is no timestamp', () => {
+    expect(backupRunTitle(null)).toBe('Backup run')
+    expect(backupRunTitle(undefined)).toBe('Backup run')
   })
 })

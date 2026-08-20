@@ -9,10 +9,21 @@ import type { BackupRunSummary } from '../backup-runs/types'
 // with this file's own single-arg `formatNextScheduledAt` export (kept for
 // IntegrationsSetupWizard + its pinned tests).
 import {
+  fmtDateTime,
   fmtRelative,
   formatNextScheduledAt as fmtNextScheduled,
   isOverdue,
 } from '../time'
+
+/**
+ * The run's IDENTITY title — one string shared by BackupRunDetailView's h1 and its
+ * breadcrumb leaf (D07). A queued run has no start, so callers pass
+ * `startedAt ?? createdAt`. Promoted from ui-only@7c7202d7 (web-backups-redesign).
+ */
+export function backupRunTitle(at: string | null | undefined): string {
+  const stamp = fmtDateTime(at ?? null)
+  return stamp ? `Backup run · ${stamp}` : 'Backup run'
+}
 
 export function statusLabel(status: string): string {
   switch (status) {

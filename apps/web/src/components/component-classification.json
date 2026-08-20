@@ -240,6 +240,10 @@
     "styleguideId": "divider",
     "rationale": "Reusable separator primitive backed by daisyUI divider classes."
   },
+  "ui/Drawer.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "daisyUI drawer slide-over primitive (see /styleguide -> Drawer). Renders drawer/drawer-toggle/drawer-side/drawer-overlay with theme-token panel surface + slots; Esc-to-close wired once. Promoted from ui-only for the backup run-detail / base-detail failed-attachment slide-overs (web-backups-redesign). The fork's scoped .sb-drawer* rules were moved to styles/global.css per component-classification governance (tracked components carry no scoped style)."
+  },
   "ui/EmptyState.astro": {
     "classification": "ui-primitive-storybook",
     "styleguideId": "empty-state",

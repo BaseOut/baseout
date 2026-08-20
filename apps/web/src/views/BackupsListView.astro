@@ -13,157 +13,269 @@
  * selected-count badge on its trigger. Status & trigger are multi-select; date is
  * a single mutually-exclusive range (radios).
  */
+import { fmtAbsolute, fmtDuration, fmtRelative } from '../lib/time';
 import type { BackupRunSummary } from '../lib/backup-runs/types';
-import {
-  durationStr,
-  isActiveStatus,
-  isOkStatus,
-  sinceLabel,
-  statusMetaFor,
-  triggerDisplayLabel,
-  triggerKey,
-} from '../lib/backups/list-row';
-import { kindBadgeClass, kindLabel } from '../lib/backups/format';
-import Button from '../components/ui/Button.astro';
-import Badge from '../components/ui/Badge.astro';
-import TextInput from '../components/ui/TextInput.astro';
-import Select from '../components/ui/Select.astro';
+import { restoreRunLine } from '../lib/restore/request';
+import RunBackupNowModal from '../components/backups/RunBackupNowModal.astro';
+import LiveRefresh from '../components/backups/LiveRefresh.astro';
+import TablePager from '../components/ui/TablePager.astro';
+// PROMOTION NOTE (ui-only@7c7202d7, web-backups-redesign): the fork's Status/Kind/Trigger/Date
+// `FacetFilter` dropdowns are DROPPED here, exactly as RestoreHistoryView dropped them.
+// FacetFilter (components/schema/FacetFilter.astro) belongs to the DIVERGED schema surface — it
+// pulls in the Airtable field-glyph + workspace-grouping cluster this promotion scopes out — so the
+// audit log degrades to search + click-sort + pager (see the toolbar + the createRunLog config
+// below, which pass no facets). Restoring faceted filters is a schema-surface follow-up.
 
 interface Props {
   runs?: BackupRunSummary[];
   /**
-   * Production embed (apps/web). When true the host page (backups.astro) owns the
-   * header + the real Run-backup control, so the view's own header is dropped, and
-   * every row drills by run id (the harness `?state=running|failed` preview links
-   * are skipped). Default false keeps the design-harness behavior byte-identical.
+   * Production embed (apps/web). When true the host page (backups.astro) owns the header —
+   * the h1, the destination line, the FrequencyPicker, the webhook-reauth banner AND the
+   * `[data-backup-history]` live-poll wrapper — so this view's own `<header>` is suppressed.
+   * Default false keeps the design-harness parity byte-identical.
    */
   embedded?: boolean;
+  /** Active Space — powers the real Run-backup-now modal (POST /api/spaces/:id/backup-runs). */
+  spaceId?: string | null;
 }
-const { runs = [], embedded = false } = Astro.props;
+const { runs = [], embedded = false, spaceId = null } = Astro.props;
 const nf = new Intl.NumberFormat('en-US');
+// The moment this page rendered — what an in-flight run's elapsed time is measured against. Server
+// side, so it is the same number the first paint and the markup agree on.
+const nowIso = new Date().toISOString();
+// A live (running/queued) run makes the list a load-time snapshot → offer Refresh.
+const hasActive = runs.some((r) => r.status === 'running' || r.status === 'queued');
 
-// Status badge meta, ok/active predicates, and trigger + time formatting live
-// in lib/backups/list-row.ts so these SSR rows and the live-poll re-render
-// (widget-lifecycle → backupRowHtml) share one taxonomy and can't drift.
+// D09 — this view carried TWO private formatters (a relative and a duration) identical in
+// intent to three other copies elsewhere and subtly different in output. One module now.
+const since = (iso: string | null): string => fmtRelative(iso) ?? '—';
+const durationStr = (start: string | null, end: string | null): string =>
+  fmtDuration(start, end) ?? '—';
+
+// Status → catalog badge (soft tint + colored text for state; neutral = ghost).
+const statusMeta: Record<string, { label: string; badge: string }> = {
+  succeeded: { label: 'Succeeded', badge: 'badge-soft badge-success' },
+  trial_succeeded: { label: 'Trial run', badge: 'badge-soft badge-success' },
+  running: { label: 'Running', badge: 'badge-soft badge-warning' },
+  paused: { label: 'Paused', badge: 'badge-soft badge-warning' },
+  queued: { label: 'Queued', badge: 'badge-ghost' },
+  failed: { label: 'Failed', badge: 'badge-soft badge-error' },
+  cancelled: { label: 'Cancelled', badge: 'badge-ghost' },
+};
+const triggerLabel = (t: string) =>
+  t.startsWith('schedule') ? 'Scheduled' : t.startsWith('webhook') ? 'Webhook' : t.startsWith('onboarding') ? 'Trial' : 'Manual';
+// Normalised key for the trigger filter (data-trigger on each row).
+const triggerKey = (t: string) =>
+  t.startsWith('schedule') ? 'scheduled' : t.startsWith('webhook') ? 'webhook' : t.startsWith('onboarding') ? 'trial' : 'manual';
+
+// A count cell renders the number the run actually holds, whatever its terminal status — a run
+// that failed on one base still WROTE the others, and an audit log that blanks those cells denies
+// data it is holding (catalog `pattern-audit-table`: "a row never prints — for data that exists").
+// `—` is reserved for a value that is genuinely absent: a queued run has no record count yet.
+// The old `isOk`-driven em-dash is gone; Status is the column that carries the failure.
+const countCell = (n: number | null | undefined): string => (n == null ? '—' : nf.format(n));
+// …and the sort key follows the same rule, so a real number never sorts as "no value".
+const countKey = (n: number | null | undefined): number => (n == null ? -1 : n);
+// Status sort rank — "needs attention" first, so the FIRST click on Status (wireTableSort starts
+// ascending) puts the failures at the top. That is the whole job of an audit log; before this the
+// column could not be sorted at all.
+const statusRank: Record<string, number> = {
+  failed: 0, cancelled: 1, paused: 2, running: 3, queued: 4, trial_succeeded: 5, succeeded: 6,
+};
+const durationSec = (start: string | null, end: string | null): number =>
+  start && end ? Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1000) : -1;
+// DEFAULT ORDER. The list shipped with none — it rendered the fixture's array order, so a 3-day-old
+// Failed run sat below a 5-day-old Trial run. Newest first is the only order an audit log can
+// default to; the sortable headers take it from there. Sorted here (server) rather than on the
+// client so the first paint is already right, and copied so the caller's array is untouched.
+const orderedRuns = runs
+  .slice()
+  .sort((a, b) => new Date(b.completedAt ?? b.createdAt).getTime() - new Date(a.completedAt ?? a.createdAt).getTime());
+// Run kind → its secondary badge. `restore` is here because a restore IS a run (D05 item 5):
+// it consumes a snapshot and writes into Airtable, so it belongs in the same log, filtered
+// and sorted by the same controls, rather than in a private list of its own.
+// Keyed by `string` (BackupRunSummary.kind is string) with a `?? kindMeta.full` runtime guard —
+// the fork's `Record<'schema'|'full'|'restore', …>` fails apps/web's stricter astro-check index.
+const kindMeta: Record<string, { icon: string; label: string }> = {
+  schema: { icon: 'lucide--list-tree', label: 'Schema' },
+  full: { icon: 'lucide--database', label: 'Full' },
+  restore: { icon: 'lucide--rotate-ccw', label: 'Restore' },
+};
+const kindOf = (r: BackupRunSummary) => kindMeta[r.kind ?? 'full'] ?? kindMeta.full;
+// THE REASON LINE, generalised. A backup row states why it failed; a restore row states what
+// it did — source run, scope, target, outcome, manual-fixup count. Both are one sentence in
+// the same truncate + `tooltip` slot, and the restore sentence comes out of the ONE restore
+// derivation (lib/restore/request.ts), never assembled here.
+const rowLine = (r: BackupRunSummary): string | null =>
+  r.kind === 'restore' && r.restore ? restoreRunLine(r.restore) : r.errorMessage;
+// D07 — ONE address per run. This was a five-branch ladder that routed by STATUS
+// (`?state=running` / `?state=failed` / `?state=paused` / `?state=cancelled`) and only reached
+// `?id=` for a succeeded run, so four rows out of five opened a page that was not the row: every
+// failed run in the log shared one URL, and that URL could not be sent to anyone as "this run".
+// Status is a property OF the run, which the detail page reads from the run it loaded — it is not
+// a coordinate in the address. A restore keeps its own href because a restore's detail page is
+// `/restore`, a different page, not a different spelling of this one.
 const detailHref = (r: BackupRunSummary) =>
-  embedded
-    ? `/backups/run?id=${r.id}`
-    : r.status === 'running' || r.status === 'queued'
-      ? '/backups/run?state=running'
-      : r.status === 'failed'
-        ? '/backups/run?state=failed'
-        : `/backups/run?id=${r.id}`;
-
-// Faceted filter options (value, label). Status & trigger are multi-select
-// (checkboxes); date is single-select (radios, mutually-exclusive ranges).
-const statusOpts: [string, string][] = [['succeeded', 'Succeeded'], ['failed', 'Failed'], ['running', 'Running'], ['paused', 'Paused'], ['queued', 'Queued'], ['cancelled', 'Cancelled']];
-const triggerOpts: [string, string][] = [['scheduled', 'Scheduled'], ['manual', 'Manual'], ['webhook', 'Webhook'], ['trial', 'Trial']];
-const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days']];
+  r.kind === 'restore' && r.restore ? r.restore.detailHref : `/backups/run?id=${r.id}`;
+// (Faceted-filter option lists dropped with the FacetFilter dropdowns — see the import note.)
 ---
 
 <div class="mx-auto max-w-[1200px] bl">
+  {/* PROMOTION RECONCILE: under `embedded` (apps/web) the host page owns the header (h1 +
+      destination line + FrequencyPicker + webhook banner + the [data-backup-history] poll
+      wrapper), so this view's own header is suppressed — no double header. */}
   {!embedded && (
-    <header class="bl-head">
-      <div class="min-w-0">
+    <header class="page-head">
+      <div class="page-head-txt">
         <h1 class="text-title">Backups</h1>
         <p class="text-sm text-base-content/60 mt-1">Every backup run for this Space. Open any run for its full per-base detail.</p>
       </div>
-      <Button href="/backups/run?state=running" variant="primary" class="shrink-0"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</Button>
+      {/* D17 — one primary. With no runs the empty state below carries the same action, and the two
+          together were the duplication the audit found (header md + a second copy at btn-lg, 48px).
+          The header yields rather than the card, so the empty state keeps the exit its anatomy
+          requires and the action sits where the explanation is. */}
+      {runs.length > 0 && <button type="button" class="btn btn-primary shrink-0" onclick="document.getElementById('run-backup-now-modal').showModal()"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</button>} {/* ds-ok: page-header CTA is the documented md exception */}
     </header>
   )}
 
   {runs.length > 0 ? (
     <section class="bl-panel" data-bl-list>
-      <div class="bl-panel-head"><h2>Backup history</h2></div>
+      <div class="bl-panel-head">
+        <h2>Backup history</h2>
+        {/* The header's right end: how stale this view is, and the control that un-stales it. They
+            answer one question — "can I trust what I am reading right now?" — so they sit together,
+            hard against the right edge, away from the heading. Refresh used to sit immediately after
+            the title, which put a control in the middle of a sentence.
+            The zone note used to close this cluster and is gone (Oleh, 2026-08-11): the product is
+            US-only and the times are already the reader's own, so it was a caption on a fact nobody
+            was in doubt about. It survives in ONE place — the schedule editor — where it changes
+            what a person types rather than how they read. */}
+        <span class="bl-meta">{hasActive && <LiveRefresh />}</span>
+      </div>
 
       {/* Toolbar — search + faceted filters. Filtering/search/paging is done
           client-side over the loaded runs for the prototype; the real app pushes
           these to the runs query (?status=&trigger=&since=&q=&page=). */}
       <div class="bl-toolbar">
-        <TextInput type="search" data-bl-search placeholder="Search by Run ID or error…" icon="search" size="sm" class="grow min-w-[12rem]" aria-label="Search runs" />
+        <label class="input input-sm grow min-w-[12rem]">
+          <span class="iconify lucide--search size-4 opacity-50" aria-hidden="true"></span>
+          <input type="search" data-bl-search class="grow" placeholder="Search by Run ID or error…" aria-label="Search runs" />
+        </label>
 
-        <div class="bl-facet-popover" data-bl-facet="status">
-          <div tabindex="0" role="button" class="bl-facet-trigger" data-bl-facet-trigger aria-label="Filter by status">
-            Status
-            <span class="bl-facet-count" data-bl-facet-count hidden></span>
-            <span class="iconify lucide--chevron-down size-3 opacity-50" aria-hidden="true"></span>
-          </div>
-          <div tabindex="0" class="bl-facet-menu">
-            {statusOpts.map(([v, label]) => (
-              <label class="bl-facet-opt">
-                <input type="checkbox" class="checkbox checkbox-primary checkbox-xs" value={v} /> {label}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div class="bl-facet-popover" data-bl-facet="trigger">
-          <div tabindex="0" role="button" class="bl-facet-trigger" data-bl-facet-trigger aria-label="Filter by trigger">
-            Trigger
-            <span class="bl-facet-count" data-bl-facet-count hidden></span>
-            <span class="iconify lucide--chevron-down size-3 opacity-50" aria-hidden="true"></span>
-          </div>
-          <div tabindex="0" class="bl-facet-menu">
-            {triggerOpts.map(([v, label]) => (
-              <label class="bl-facet-opt">
-                <input type="checkbox" class="checkbox checkbox-primary checkbox-xs" value={v} /> {label}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <div class="bl-facet-popover" data-bl-facet="date">
-          <div tabindex="0" role="button" class="bl-facet-trigger" data-bl-facet-trigger aria-label="Filter by date">
-            Date
-            <span class="bl-facet-count" data-bl-facet-count hidden></span>
-            <span class="iconify lucide--chevron-down size-3 opacity-50" aria-hidden="true"></span>
-          </div>
-          <div tabindex="0" class="bl-facet-menu">
-            {dateOpts.map(([v, label]) => (
-              <label class="bl-facet-opt">
-                <input type="radio" name="bl-date" class="radio radio-primary radio-xs" value={v} checked={v === ''} /> {label}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        <Button type="button" variant="danger-ghost" size="sm" class="gap-1" data-bl-clear hidden>
+        {/* Status/Kind/Trigger/Date FacetFilters DROPPED in the apps/web promotion (see the import
+            note): search + click-sort + pager remain via createRunLog, exactly as RestoreHistoryView
+            degrades. Restoring faceted filters is a schema-surface follow-up (needs FacetFilter + its
+            Airtable-glyph cluster promoted first). */}
+        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-bl-clear hidden>
           <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
-        </Button>
+        </button>
       </div>
 
-      <div class="bl-gridwrap">
+      {/* `data-narrow-pan`, NOT `data-mobile-rows` (Oleh, 2026-08-13) — THIS REVERSES A RULE.
+          The fold restyled this table into the four-element audit row below 1280. Oleh, looking at
+          it: «у лівому куті купа бейджів незрозумілої інформації, юзер цього не зрозуміє… треба
+          зберегти колоночну сітку. Якщо якась колонка не влазить — ховаємо її повністю. Якщо
+          таблиця широка — використовуємо горизонтальний скрол, як в інших розділах.»
+
+          That is the SECOND rejection of the same decision — Schema's fold went the same way in
+          August — so `specs/16-responsive.md` §5's "read a row as a record → fold" is the thing
+          that is wrong, not this surface's application of it. Flagged for Oleh to rewrite; not
+          rewritten here.
+
+          What a fold actually did to this row: a status badge, a kind glyph and a time landed in
+          one left-hand cluster with no column headers above them, so three unrelated facts read as
+          one pile of chips. A column grid says what each value IS by where it sits, and that is
+          worth more on a narrow screen than on a wide one, because there is less else to go on.
+
+          `data-narrow-pan` (global.css) gives the wrapper the shared narrow scroller and
+          `panRail.ts` mounts the sticky rail above it automatically. The `data-m` attributes stay
+          on the cells: they are how `pattern-mobile-row` classifies a column, and this table is now
+          the exception rather than the rule — they cost nothing while unmatched, and removing them
+          would make the two logs' markup diverge for no gain. */}
+      <div class="bl-tablewrap" data-bl-tablewrap data-narrow-pan>
+        {/* THE ONE TABLE (catalog `table`): label type from `.tbl-colhead`, click-sort from
+            `wireTableSort` (`data-sort-col` + the CSS caret), `TablePager` below. This head used to
+            spell its own type out in utilities and carried no sort at all. */}
         <table class="table text-sm">
-          <thead>
-            <tr class="text-xs uppercase tracking-wider text-base-content/60">
-              <th>Status</th><th>When</th><th>Trigger</th>
-              <th class="text-right">Bases</th><th class="text-right">Records</th><th class="text-right">Attachments</th><th class="text-right">Duration</th><th></th>
+          <thead class="tbl-colhead">
+            <tr>
+              {/* ONE FACT PER COLUMN (Oleh, 2026-08-11). Status used to be 268px — a quarter of the
+                  table — holding THREE different things: the lifecycle badge, the run KIND, and a
+                  134–220-character sentence truncated to 176px, i.e. 23% of it visible with the rest
+                  behind a hover. And 46 of 57 rows carry no sentence at all, so most of that quarter
+                  was empty. Kind is a category (it filters, it sorts, every row has one) and the
+                  sentence is prose; neither belongs inside a status cell. */}
+              {/* `bl-cx` = "cut this column below 1280" — the class is on the `th` AND on every
+                  matching `td`, because a table has no column element to hang it off. Which four
+                  were cut is a measurement, recorded on the `.bl-cx` rule in the style block. */}
+              <th data-sort-col="0">Status</th><th data-sort-col="1">Kind</th><th data-sort-col="2">When</th><th data-sort-col="3" class="bl-what-h">What happened</th><th data-sort-col="4" class="bl-cx">Trigger</th>
+              <th class="text-right bl-cx" data-sort-col="5">Bases</th><th class="text-right" data-sort-col="6">Records</th><th class="text-right bl-cx" data-sort-col="7">Files</th><th class="text-right bl-cx" data-sort-col="8">Duration</th><th></th>
             </tr>
           </thead>
-          <tbody>
-            {runs.map((r) => {
-              const sm = statusMetaFor(r.status);
-              const ok = isOkStatus(r.status);
-              const active = isActiveStatus(r.status);
+          <tbody data-bl-body>
+            {orderedRuns.map((r) => {
+              const sm = statusMeta[r.status] ?? statusMeta.cancelled;
+              const active = r.status === 'running' || r.status === 'queued';
+              const held = r.status === 'paused';
+              // Sort keys live on the row as data, never as cell text: "5d ago" and "2m 14s" do not
+              // compare, and an em-dash placeholder must not sort as a value (-1 = no number here).
               return (
                 <tr
-                  class="bl-row"
-                  data-run-id={r.id}
+                  class="bl-row row-clickable"
+                  data-nrow
+                  role="button"
+                  tabindex="0"
                   data-status={r.status}
+                  data-kind={r.kind ?? 'full'}
                   data-trigger={triggerKey(r.triggeredBy)}
                   data-date={r.completedAt ?? r.createdAt}
-                  data-search={`${r.id} ${(r.errorMessage ?? '').toLowerCase()}`}
+                  data-search={`${r.id} ${(rowLine(r) ?? '').toLowerCase()}`}
+                  data-rank={statusRank[r.status] ?? 9}
+                  data-bases={r.includedBases.length}
+                  data-records={countKey(r.recordCount)}
+                  data-attachments={countKey(r.attachmentCount)}
+                  data-dur={durationSec(r.startedAt, r.completedAt)}
                   onclick={`window.location='${detailHref(r)}'`}
                 >
-                  <td><Badge variant={sm.variant}>{r.status === 'running' && <span class="loading loading-spinner loading-xs"></span>}{sm.label}</Badge> <span class={`badge badge-sm ${kindBadgeClass(r.kind)}`}>{kindLabel(r.kind)}</span></td>
-                  <td>{active ? <span class="text-base-content/64">{r.status === 'running' ? 'in progress' : 'queued'}</span> : sinceLabel(r.completedAt)}</td>
-                  {/* ⚡ on webhook-triggered rows (web-instant-webhook) */}
-                  <td class="text-base-content/64">{triggerDisplayLabel(r.triggeredBy)}</td>
-                  <td class="text-right tabular-nums">{r.includedBases.length}</td>
-                  <td class="text-right tabular-nums">{ok ? nf.format(r.recordCount ?? 0) : '—'}</td>
-                  <td class="text-right tabular-nums">{ok ? nf.format(r.attachmentCount ?? 0) : '—'}</td>
-                  <td class="text-right tabular-nums text-base-content/64 mono-data">{active ? '—' : durationStr(r.startedAt, r.completedAt)}</td>
-                  <td class="text-right"><Button href={detailHref(r)} variant="ghost" size="sm" class="text-primary" onclick="event.stopPropagation()">Details →</Button></td>
+                  <td data-m="lead">
+                    <span class={`badge ${sm.badge}`}>{r.status === 'running' && <span class="loading loading-spinner loading-xs"></span>}{sm.label}</span>
+                  </td>
+                  {/* KIND — its own column, and its own facet. It was a second badge crammed beside
+                      the status one, which made "show me only the restores" impossible even though
+                      the data was right there. */}
+                  <td data-m="sub"><span class="bl-kind"><span class:list={['iconify size-3.5 opacity-70', kindOf(r).icon]} aria-hidden="true"></span>{kindOf(r).label}</span></td>
+                  {/* WHEN SAYS WHEN. It used to print "queued" / "in progress" / "paused" for active
+                      runs — the same word as the badge one cell to the left, so on those rows the
+                      status was stated twice and the time not at all. A running backup's most useful
+                      fact is how long it has been running; that is what this cell now carries. */}
+                  {/* `sub2`, NOT a second `sub`. The narrow row's areas are
+                      `'sub sub2 num go'` — two cells claiming `grid-area: sub` are placed in the
+                      SAME box and paint over each other, which is the "3m Bestore" in Oleh's
+                      screenshot: "3m ago" and "Restore" on the same pixels. The kind keeps `sub`
+                      because it comes first in the row; time takes the slot to its right and the
+                      pattern's own `·` separates them. */}
+                  <td data-m="sub2">{active || held
+                    ? <span class="tooltip" data-tip={fmtAbsolute(r.startedAt ?? r.createdAt)}>{r.startedAt ? `${durationStr(r.startedAt, nowIso)} so far` : since(r.createdAt)}</span>
+                    : <span class="tooltip" data-tip={fmtAbsolute(r.completedAt)}>{since(r.completedAt)}</span>}</td>
+                  {/* WHAT HAPPENED — the sentence, in the widest column, over two lines. It was a
+                      preview of itself at 176px. `clipTips` puts the full text back only on the rows
+                      that still clip, so 46 rows out of 57 stop carrying a tooltip that repeated
+                      nothing. An em-dash where a run has nothing to report: a clean scheduled backup
+                      genuinely has no story, and inventing one for it would bury the eleven that do. */}
+                  <td data-m="why" class="bl-what">{rowLine(r)
+                    ? <span class="bl-why">{rowLine(r)}</span>
+                    : <span class="row-nil text-base-content/45">—</span>}</td>
+                  <td data-m="off" class="bl-cx text-base-content/64">{triggerLabel(r.triggeredBy)}</td>
+                  <td data-m="off" class="bl-cx text-right tabular-nums">{r.includedBases.length}</td>
+                  {/* THE ONE NUMBER below 1280. Records is what "how much was written" means on a
+                      backup row; the column HEADER carries that word on desktop and disappears with
+                      the header here, so the cell carries it instead — the same label, moved, not a
+                      second wording. */}
+                  <td data-m="num" class="text-right tabular-nums">{countCell(r.recordCount)}</td>
+                  <td data-m="off" class="bl-cx text-right tabular-nums">{countCell(r.attachmentCount)}</td>
+                  <td data-m="off" class="bl-cx text-right tabular-nums text-base-content/64 mono-data">{active || held ? '—' : durationStr(r.startedAt, r.completedAt)}</td>
+                  {/* Unified clickable-row affordance — persistent grey chevron; the whole row opens the run. */}
+                  <td data-m="go" class="text-right"><span class="row-end"><span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span></span></td>
                 </tr>
               );
             })}
@@ -175,172 +287,93 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
       <div class="bl-nomatch" data-bl-nomatch hidden>
         <span class="bl-nomatch-ic"><span class="iconify lucide--search-x" aria-hidden="true"></span></span>
         <p class="bl-nomatch-title">No runs match these filters</p>
-        <Button type="button" variant="ghost" size="sm" data-bl-clear>Clear filters</Button>
+        <button type="button" class="btn btn-sm btn-ghost" data-bl-clear>Clear filters</button>
       </div>
 
-      <div class="bl-pager" data-bl-pager>
-        <div data-bl-pagesize-wrap>
-          <Select
-            label="Rows"
-            size="sm"
-            class="inline-flex w-auto min-w-0"
-            options={[{ value: '10', label: '10' }, { value: '20', label: '20' }, { value: '50', label: '50' }]}
-            value="20"
-          />
-        </div>
-        <div class="ml-auto text-sm text-base-content/70"><span class="mono-data" data-bl-range>1–20</span> of <span class="mono-data" data-bl-total>0</span></div>
-        <div class="bl-pager-nav">
-          <Button type="button" variant="ghost" size="sm" icon data-bl-prev aria-label="Previous page"><span class="iconify lucide--chevron-left size-4" aria-hidden="true"></span></Button>
-          <Button type="button" variant="ghost" size="sm" icon data-bl-next aria-label="Next page"><span class="iconify lucide--chevron-right size-4" aria-hidden="true"></span></Button>
-        </div>
-      </div>
+      <TablePager name="bl" sizes={[10, 20, 50]} selected={20} />
     </section>
   ) : (
     <section class="bl-empty">
       <span class="bl-empty-ic"><span class="iconify lucide--archive"></span></span>
       <p class="bl-empty-title">No backups yet</p>
       <p class="bl-empty-sub">Run your first backup, or wait for the next scheduled one. Each run lands here with full audit detail.</p>
-      <Button href="/backups/run?state=running" variant="primary" size="lg"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</Button>
+      <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('run-backup-now-modal').showModal()"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</button>
     </section>
   )}
+
+  {/* PROMOTION RECONCILE: web's REAL credits-warning modal (POST /api/spaces/:id/backup-runs),
+      not the fork's navigation-only `confirmHref` prototype. Opened by the header CTA (non-embedded)
+      and the empty-state button, both via getElementById('run-backup-now-modal').showModal(). On
+      success it reloads to redirectTo, so the new queued run appears and the live poll picks it up. */}
+  {spaceId && <RunBackupNowModal spaceId={spaceId} redirectTo="/backups" />}
 </div>
 
 <script>
+  import { createRunLog } from '../lib/runLog';
+  import { mountClipTips } from '../lib/clipTips';
+  import { createHomeLiveRender } from '../lib/backups/home-live';
   import { registerBackupHistoryLifecycle, makeFetchRuns } from '../lib/backups/widget-lifecycle';
-  import { backupRowHtml } from '../lib/backups/list-row';
-  import type { BackupRunSummary } from '../lib/backup-runs/types';
 
-  // Re-applies the active filter/search/page pass over whatever rows are in the
-  // DOM. Set by initBackupsList; called by the live-poll re-render below after
-  // it rebuilds the <tbody>.
-  let reflow = (): void => {};
-
-  // Client-side faceted filter / search / pagination over the loaded run rows. In
-  // production these become server query params; here the full list is rendered
-  // and we show/hide. Status & trigger are multi-select; date is a single range.
+  // Client-side search / click-sort / pagination over the loaded run rows, from the shared
+  // controller. FACETS are dropped in the apps/web promotion (FacetFilter belongs to the diverged
+  // schema surface — see the frontmatter import note), so `multiFacets` is empty and there is no
+  // `singleFacet`; createRunLog degrades to search + sort + pager, exactly as RestoreHistoryView.
   function initBackupsList() {
     const root = document.querySelector<HTMLElement>('[data-bl-list]');
-    if (!root) { reflow = () => {}; return; }
-    const searchEl = root.querySelector<HTMLInputElement>('[data-bl-search]')!;
-    const facets = Array.from(root.querySelectorAll<HTMLElement>('[data-bl-facet]'));
-    // Avoid querySelector<HTMLSelectElement>: worker-configuration.d.ts declares
-    // an HTMLRewriter `Element` global that breaks the generic constraint.
-    const pageSizeEl = root.querySelector('[data-bl-pagesize-wrap] select') as unknown as HTMLSelectElement;
-    const clearEls = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-bl-clear]'));
-    const rangeEl = root.querySelector<HTMLElement>('[data-bl-range]')!;
-    const totalEl = root.querySelector<HTMLElement>('[data-bl-total]')!;
-    const prevBtn = root.querySelector<HTMLButtonElement>('[data-bl-prev]')!;
-    const nextBtn = root.querySelector<HTMLButtonElement>('[data-bl-next]')!;
-    const pager = root.querySelector<HTMLElement>('[data-bl-pager]')!;
-    const noMatch = root.querySelector<HTMLElement>('[data-bl-nomatch]')!;
-    const tableWrap = root.querySelector<HTMLElement>('.bl-gridwrap')!;
-    const DAY = 86_400_000;
-    let page = 1;
-
-    const facetValues = (key: string): string[] => {
-      const f = facets.find((el) => el.dataset.blFacet === key);
-      if (!f) return [];
-      return Array.from(f.querySelectorAll<HTMLInputElement>('input:checked'))
-        .map((i) => i.value)
-        .filter((v) => v !== '');
-    };
-
-    type Filters = { status: string[]; trigger: string[]; date: string; q: string };
-    const getFilters = (): Filters => ({
-      status: facetValues('status'),
-      trigger: facetValues('trigger'),
-      date: facetValues('date')[0] || '',
-      q: (searchEl.value || '').trim().toLowerCase(),
+    if (!root) return;
+    const body = root.querySelector<HTMLElement>('[data-bl-body]')!;
+    // The sentence is clamped to two lines; `clipTips` gives the rest back ONLY where it actually
+    // clips, so the rows that fit stop carrying a tooltip repeating text already on screen.
+    const clipTips = mountClipTips({ observe: body, rows: () => Array.from(body.querySelectorAll<HTMLElement>('.bl-row')), selector: '.bl-why' });
+    const num = (row: HTMLElement, key: string) => Number(row.dataset[key] ?? -1);
+    createRunLog({
+      onAfterRender: () => clipTips.recheck(),
+      root,
+      name: 'bl',
+      rowSelector: '.bl-row',
+      sizes: [10, 20, 50],
+      defaultSize: 20,
+      // Facets dropped in the apps/web promotion (see the import note) — no FacetFilter emits
+      // `facetchange`, so the controller runs search + click-sort + pager only.
+      multiFacets: [],
+      // Values come off the row's data-* keys, never the cell text: "5d ago" and "2m 14s" do not
+      // compare, and an em-dash placeholder must not sort as a value (-1 = no number here).
+      sortValue: (row, col) => {
+        if (col === 0) return num(row, 'rank');
+        if (col === 1) return (row.dataset.kind || '').toLowerCase();
+        if (col === 2) return new Date(row.dataset.date as string).getTime() || 0;
+        // "What happened" sorts rows that HAVE a story above ones that do not — the eleven rows
+        // worth reading, first, on one click.
+        if (col === 3) return row.dataset.search?.trim() ? 0 : 1;
+        if (col === 4) return (row.dataset.trigger || '').toLowerCase();
+        if (col === 5) return num(row, 'bases');
+        if (col === 6) return num(row, 'records');
+        if (col === 7) return num(row, 'attachments');
+        if (col === 8) return num(row, 'dur');
+        return '';
+      },
     });
-    const anyFilter = (f: Filters) => !!(f.status.length || f.trigger.length || f.date || f.q);
-    const matches = (row: HTMLElement, f: Filters) => {
-      if (f.status.length && !f.status.includes(row.dataset.status as string)) return false;
-      if (f.trigger.length && !f.trigger.includes(row.dataset.trigger as string)) return false;
-      if (f.date) {
-        const age = (Date.now() - new Date(row.dataset.date as string).getTime()) / DAY;
-        if (age > Number(f.date)) return false;
-      }
-      if (f.q && !(row.dataset.search || '').includes(f.q)) return false;
-      return true;
-    };
-
-    // Reflect each facet's selection count on its trigger (badge + active style).
-    const syncFacets = (f: Filters) => {
-      facets.forEach((el) => {
-        const key = el.dataset.blFacet as string;
-        const n = key === 'date' ? (f.date ? 1 : 0) : (((f as Record<string, string[] | string>)[key] as string[]) || []).length;
-        const badge = el.querySelector<HTMLElement>('[data-bl-facet-count]')!;
-        const trigger = el.querySelector<HTMLElement>('[data-bl-facet-trigger]')!;
-        badge.textContent = String(n);
-        badge.hidden = n === 0;
-        trigger.classList.toggle('bl-facet-on', n > 0);
-      });
-    };
-
-    const render = () => {
-      // Re-query each pass so rows rebuilt by the live-poll re-render are seen.
-      const rows = Array.from(root.querySelectorAll<HTMLTableRowElement>('.bl-row'));
-      const f = getFilters();
-      const matched = rows.filter((r) => matches(r, f));
-      const size = Number(pageSizeEl.value);
-      const pages = Math.max(1, Math.ceil(matched.length / size));
-      if (page > pages) page = pages;
-      const start = (page - 1) * size;
-      const end = start + size;
-      rows.forEach((r) => (r.style.display = 'none'));
-      matched.slice(start, end).forEach((r) => (r.style.display = ''));
-
-      const empty = matched.length === 0;
-      totalEl.textContent = String(matched.length);
-      rangeEl.textContent = empty ? '0' : `${start + 1}–${Math.min(end, matched.length)}`;
-      prevBtn.disabled = page <= 1;
-      nextBtn.disabled = page >= pages;
-      noMatch.hidden = !empty;
-      tableWrap.style.display = empty ? 'none' : '';
-      pager.style.display = empty ? 'none' : '';
-      syncFacets(f);
-      clearEls.forEach((el) => (el.hidden = !anyFilter(f)));
-    };
-
-    searchEl.addEventListener('input', () => { page = 1; render(); });
-    facets.forEach((el) => el.addEventListener('change', () => { page = 1; render(); }));
-    pageSizeEl.addEventListener('change', () => { page = 1; render(); });
-    clearEls.forEach((el) => el.addEventListener('click', () => {
-      searchEl.value = '';
-      facets.forEach((fc) => fc.querySelectorAll<HTMLInputElement>('input').forEach((i) => {
-        if (i.type === 'checkbox') i.checked = false;
-        else if (i.type === 'radio') i.checked = i.value === '';
-      }));
-      page = 1;
-      render();
-    }));
-    prevBtn.addEventListener('click', () => { if (page > 1) { page--; render(); } });
-    nextBtn.addEventListener('click', () => { page++; render(); });
-    reflow = render;
-    render();
+    // `mountRefineCollapse` (the folded Filter button) is dropped with the facets — it exists only
+    // to collapse FacetFilter dropdowns, and this promotion ships none.
   }
   initBackupsList();
   document.addEventListener('astro:page-load', initBackupsList);
 
-  // Live progress: subscribe to the polled run store and re-render the table
-  // body in place so a run's status flips (running → succeeded / failed) and
-  // new runs appear without a full page reload. The hydration tag and the
-  // [data-backup-history] root (with data-space-id) live on the host page
-  // (backups.astro); in the design harness they're absent, so this no-ops.
+  // ── LIVE POLL — the §5 "must-refresh" guarantee ──────────────────────────────────────────────
+  // The host page (backups.astro) owns the `[data-backup-history]` + `data-space-id` wrapper and the
+  // `[data-backup-history-state]` hydration tag (UNCHANGED by this promotion). Registered ONCE at
+  // module top (ClientRouter keeps the document alive), `registerBackupHistoryLifecycle` hydrates the
+  // `$backupRuns` store from that tag, polls `/api/spaces/:id/backup-runs?limit=25` every 2s while any
+  // run is non-terminal, and re-arms on the `backup-run-started` event.
+  //
+  // The fork view dropped the in-place tbody rebuild the pre-promotion view carried, so this promotion
+  // reuses the SpaceHome/`home-live` strategy instead: `createHomeLiveRender` reloads ONCE on a run
+  // STATUS transition (running → succeeded/failed) or a new run appearing, and SSR repaints the whole
+  // table from the real feed. Per-tick count updates keep the `id:status` signature stable, so only
+  // meaningful transitions reload (its baseline guard also swallows the first hydration call). When the
+  // `[data-backup-history]` root is absent (design harness), setup returns null and this no-ops.
   registerBackupHistoryLifecycle({
-    render(runs: readonly BackupRunSummary[]) {
-      const tbody = document.querySelector<HTMLElement>('[data-bl-list] tbody');
-      if (!tbody) {
-        // Empty-state DOM has no table. Once the first run exists the panel
-        // structure must change (empty → table), which SSR owns — re-render
-        // via a one-time soft reload. Only the first-ever run for a Space hits
-        // this; subsequent updates are live (a tbody is always present).
-        if (runs.length > 0) window.location.reload();
-        return;
-      }
-      tbody.innerHTML = runs.map(backupRowHtml).join('');
-      reflow();
-    },
+    render: createHomeLiveRender(() => window.location.reload()),
     fetchRuns: makeFetchRuns(25),
   });
 </script>
@@ -349,45 +382,119 @@ const dateOpts: [string, string][] = [['', 'All time'], ['7', 'Last 7 days'], ['
   /* Composition + layout only. The controls, badges and table inside are daisyUI
      primitives (see /styleguide); the facet dropdowns are daisyUI `dropdown`. */
   .bl { display: flex; flex-direction: column; gap: 1.25rem; }
-  .bl-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  /* `.bl-head` is gone — the header is the shared `.page-head` (global.css) on all three listings
+     now. It was three byte-identical copies of one flex row, and the narrow behaviour Oleh asked
+     for had to be decided once rather than three times. */
 
-  .bl-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem 1.25rem; }
-  .bl-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-  .bl-panel-head h2 { font-size: .95rem; font-weight: 650; }
+  .bl-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 16px 20px 20px; }
+  .bl-panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 1rem; }
+  .bl-meta { margin-left: auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .bl-panel-head h2 { font-size: var(--t-16); font-weight: 650; }
 
-  .bl-toolbar { display: flex; align-items: center; gap: .55rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .bl-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 1rem; }
 
-  /* Faceted filter popover — opens menu on focus within. */
-  .bl-facet-popover { position: relative; display: inline-block; }
-  .bl-facet-trigger {
-    display: inline-flex; align-items: center; gap: .375rem; min-height: 2rem; padding: 0 .75rem;
-    border-radius: var(--radius-field, .5rem); border: 1px solid var(--color-base-300);
-    background: var(--color-neutral, var(--color-base-200)); font-size: .875rem; font-weight: 500; cursor: pointer;
+  .bl-tablewrap { overflow-x: auto; }
+  .bl-tablewrap :is(th, td) { white-space: nowrap; }
+  /* …except the prose column, which is the one cell in the table that is meant to wrap. */
+  .bl-tablewrap td.bl-what { white-space: normal; }
+
+  /* WHAT HAPPENED — its own column now, and the widest one.
+     The old rule capped this at 11rem/176px because it lived INSIDE the status cell and was not
+     allowed to drive that column's width. It was a preview of itself: 176px against a 760px natural
+     width, so 23% was on screen and 77% was behind a hover — on the eleven rows in fifty-seven that
+     have anything to say. In its own column it gets the table's slack and two lines, and `clipTips`
+     restores the full text only where it still clips. 12px is the floor, not below it: prose. */
+  /* THE SLACK GOES HERE. `width: 100%` on ONE cell of an auto-layout table is the standard way to
+     say "this column absorbs whatever the others do not need" — the browser gives the fixed columns
+     their content width and hands the remainder to this one. `max-width: 0` was tried first and does
+     the opposite: it collapses the cell to its minimum content width and hands the slack to the
+     neighbours, which is how the prose column came out NARROWER (155px) than the 176px it had
+     inside the status cell. Measured both ways. */
+  .bl-what-h, .bl-what { width: 100%; }
+  .bl-why {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+    overflow: hidden; font-size: var(--t-12); line-height: 1.45;
+    color: oklch(from var(--color-base-content) l c h / .65);
   }
-  .bl-facet-trigger.bl-facet-on { background: color-mix(in oklch, var(--color-primary) 14%, transparent); border-color: color-mix(in oklch, var(--color-primary) 30%, transparent); color: var(--color-primary); }
-  .bl-facet-popover:not(:focus-within) .bl-facet-menu { display: none; }
-  .bl-facet-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.1rem; height: 1.1rem; padding: 0 .25rem; border-radius: 999px; font-size: .68rem; font-weight: 700; color: var(--color-primary-content, #fff); background: var(--color-primary); }
-  .bl-facet-menu { z-index: 20; position: absolute; left: 0; margin-top: .4rem; width: 13rem; border: 1px solid var(--color-base-300); border-radius: .7rem; background: var(--color-base-100); padding: .35rem; box-shadow: 0 10px 28px oklch(0 0 0 / .14); }
-  .bl-facet-opt { display: flex; align-items: center; gap: .6rem; padding: .4rem .5rem; border-radius: .45rem; font-size: .82rem; cursor: pointer; user-select: none; }
-  .bl-facet-opt:hover { background: oklch(from var(--color-base-200) l c h / .6); }
+  /* The kind cell — a glyph and a word, not a badge. A badge is for a STATE that changes; the kind
+     of a run never changes, so wearing badge chrome made every row look like it had two states. */
+  /* The flex is on a SPAN INSIDE the cell, never on the `<td>`. `display: flex` on a table cell
+     takes it out of the table formatting context — it stops being a table-cell, and column
+     alignment stops being something the table guarantees. It looked correct here, which is exactly
+     why it is worth naming: it was correct by coincidence. */
+  .bl-kind { display: inline-flex; align-items: center; gap: 4px; color: oklch(from var(--color-base-content) l c h / .85); white-space: nowrap; }
+  /* Row hover + cursor now come from the shared .row-clickable (styles/components/row-actions.css). */
 
-  .bl-gridwrap { overflow-x: auto; }
-  .bl-gridwrap :is(th, td) { white-space: nowrap; }
-  .bl-row { cursor: pointer; }
-  .bl-row:hover { background: oklch(from var(--color-base-200) l c h / .5); }
-
-  .bl-pager { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; padding-top: .9rem; border-top: 1px solid var(--color-base-300); }
-  .bl-pager-nav { display: inline-flex; gap: .35rem; }
+  /* The pager's own metrics live in TablePager (.tpg) — the old .bl-pager rule was also off the
+     4px grid (.9rem / .35rem), so dropping it fixes that as a side effect. */
 
   /* No-match state (distinct from the no-runs-at-all empty) */
-  .bl-nomatch { display: flex; flex-direction: column; align-items: center; text-align: center; gap: .55rem; padding: 2.5rem 1rem; }
+  .bl-nomatch { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 2.5rem 1rem; }
   .bl-nomatch-ic { width: 2.5rem; height: 2.5rem; border-radius: .7rem; display: grid; place-items: center; background: var(--color-base-200); }
-  .bl-nomatch-ic .iconify { font-size: 1.2rem; color: oklch(from var(--color-base-content) l c h / .6); }
-  .bl-nomatch-title { font-size: .9rem; font-weight: 600; }
+  .bl-nomatch-ic .iconify { font-size: 1.2rem; color: oklch(from var(--color-base-content) l c h / .65); }
+  .bl-nomatch-title { font-size: var(--t-14); font-weight: 600; }
 
-  .bl-empty { border: 1px dashed var(--color-base-300); border-radius: .85rem; background: oklch(from var(--color-base-200) l c h / .3); padding: 3rem 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; }
-  .bl-empty-ic { width: 3rem; height: 3rem; border-radius: .8rem; display: grid; place-items: center; background: var(--color-base-100); border: 1px solid var(--color-base-300); margin-bottom: .3rem; }
+  .bl-empty { border: 1px dashed var(--color-base-300); border-radius: .85rem; background: oklch(from var(--color-base-200) l c h / .35); padding: 3rem 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; }
+  .bl-empty-ic { width: 3rem; height: 3rem; border-radius: .8rem; display: grid; place-items: center; background: var(--color-base-100); border: 1px solid var(--color-base-300); margin-bottom: 4px; }
   .bl-empty-ic .iconify { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .55); }
-  .bl-empty-title { font-size: 1rem; font-weight: 650; }
-  .bl-empty-sub { font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .6); max-width: 42ch; margin-bottom: .6rem; }
+  .bl-empty-title { font-size: var(--t-16); font-weight: 650; }
+  .bl-empty-sub { font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); max-width: 42ch; margin-bottom: 8px; }
+
+  /* `.bl-numcap` is gone with the fold. It existed because a folded row has no column headers, so
+     `12,407` needed the word `records` under it. The table keeps its headers at every width now. */
+
+  /* ── Below the 1280 product boundary ──────────────────────────────────────────────────────────
+     These live HERE, not in global.css, and that is not a preference. Astro scopes every selector
+     in this block with a `[data-astro-cid-…]` attribute, so `.bl-tablewrap :is(th, td)` above
+     computes as (0,4,1) and a global `[data-mobile-rows] .table tbody td` computes as (0,2,2) —
+     the global rule LOSES on specificity while looking correct in both files. That is PARKED
+     P24 §5 / P30 §13 in its other direction: the shared sheet is not automatically the stronger
+     one. A media query adds no specificity, so these win by ORDER over the base rules above. */
+  @media (max-width: 1279.98px) {
+    /* THE COLUMNS THAT CANNOT EARN THEIR WIDTH ARE CUT, NOT SQUEEZED. Oleh: «якщо якась колонка
+       не влазить — ховаємо її повністю». Measured per-column min-content at 390 before the cut:
+       Status 75 · Kind 58 · When 65 · What happened 127 · Trigger 81 · Bases 67 · Records 84 ·
+       Files 61 · Duration 89 · chevron 32 = 740 in 332 of room, i.e. 2.2 screens of panning.
+       The four cut are the four a reader does not pan sideways to find:
+         Trigger (81)  — it is a FACET; you filter by it, you do not read down it.
+         Bases (67)    — a count of what was in scope, which the run's own page states properly.
+         Files (61)    — the second number on a row that already carries the first one.
+         Duration (89) — how long it took matters after something went wrong, and that is the
+                         detail page the row opens.
+       298px removed, and what stays is the four facts the log is scanned for plus its one number.
+       Nothing is truncated to fit: a cut column is absent, not abbreviated. */
+    .bl-cx { display: none; }
+
+    /* EVERY REMAINING COLUMN GETS A MEASURED FLOOR — `data-narrow-pan`'s contract. Without floors
+       a table in a scroller hands its slack to whichever column asks last, which is the 0px-track
+       failure the pan rule was written for. On the 4px grid, each one its measured min-content
+       rounded up to the next multiple of 4 with one step of headroom for a longer value:
+       Status 96 (`Cancelled` + badge padding) · Kind 88 (glyph + `Schema`) · When 88 (`3m ago so
+       far`) · Records 88 (`1,204,556`). */
+    .bl-tablewrap th:nth-child(1), .bl-tablewrap td:nth-child(1) { min-width: 96px; }
+    .bl-tablewrap th:nth-child(2), .bl-tablewrap td:nth-child(2) { min-width: 88px; }
+    .bl-tablewrap th:nth-child(3), .bl-tablewrap td:nth-child(3) { min-width: 88px; }
+    .bl-tablewrap th:nth-child(7), .bl-tablewrap td:nth-child(7) { min-width: 88px; }
+    /* WHAT HAPPENED keeps a real measure and stops being the slack column. `width: 100%` above
+       hands it the remainder, which inside a horizontal scroller resolves to the widest CELL and
+       drags the table out to the longest sentence in the log — the `1fr`-inside-max-content trap
+       this file records on `.cl-c-what`. A fixed 12rem truncates it to two clamped lines exactly
+       as it does at 1440, and the row opens the page that carries the whole sentence. 12rem is the
+       same number `RestoreHistoryView` gives its own prose column — one measure for prose inside a
+       pan, so the two logs stay the two views of one thing they are meant to be. */
+    .bl-what-h, .bl-what { width: 12rem; min-width: 12rem; max-width: 12rem; }
+    /* The search shares its row with the folded `Filter` button now, instead of claiming a whole one.
+       The old `flex: 1 0 100%` was written when four facets sat beside it and wrapping left "Status"
+       alone on row two with 260px of white space; with `mountRefineCollapse` there is one control
+       beside it, and 192px of search plus a 90px button fits at 390. */
+    .bl-toolbar > .input { flex: 1 1 12rem; }
+    /* REFRESH GOES BACK TO THE RIGHT END OF THE HEADING'S OWN ROW (Oleh, 2026-08-13):
+       «в нас є місце і ця кнопка має бути в правому куті разом з каунтером». The two rules that
+       used to be here — `flex-wrap: wrap` plus `h2 { flex: 1 0 100% }` — forced the heading to
+       claim a whole line, which pushed `updated 3s ago · Refresh` onto a second row directly
+       UNDER the heading, reading as a subtitle. Measured at 390: `Backup history` is 104px and
+       the stamp-plus-button pair is 163, so 104 + 12 + 163 = 279 inside 292 of panel width. The
+       room Oleh says is there, is there. Nothing to override — the base rule is already one row
+       with `margin-left: auto` on the meta — so the two rules are simply deleted. */
+  }
 </style>

@@ -30,3 +30,13 @@ Audited during the ui-only → apps/web promotion pass. The read/audit frontend 
 - Orphan cleanup of `BackupHistoryWidget` (only used by the now-orphaned `DashboardView`) is the deferred
   "separate pass" (cascades into stories/classification/`widget-lifecycle.test.ts`/cancel+delete-button libs);
   `RunBackupButton` is still actively used by `backups.astro`, so it stays.
+
+
+## Forward-sync: grown views promoted (Phase 7.5 · autumn/cursor-ui-implementation-test, 2026-08-20)
+Ported from `web-ui-sync-promotion` ref `cdebe195` / ui-only@7c7202d7 (did **not** merge that branch).
+- [x] **`BackupsListView.astro`** — grown audit table; FacetFilter DROPPED → search + sort + pager via `createRunLog`. `embedded`+`spaceId` kept so `backups.astro` owns header + `[data-backup-history]` poll. Live poll via `home-live` reload-on-transition.
+- [x] **`BackupRunDetailView.astro`** — grown run-detail + Drawer; REAL `RunBackupNowModal` (`spaceId`+`redirectTo`); REAL cancel via `postCancelRun` (fork Pause/confirmHref cancel dropped — no pause API).
+- [x] **`BackupRunBaseView.astro`** — grown per-base leaf + Drawer; `spaceId` for real modal.
+- [x] Deps: `copyId.ts`, `ui/Drawer` (+story+classification+global.css), `format.backupRunTitle` (+tests). `entityIcon` already on branch via Data.
+- [ ] List faceted-filter dropdowns (needs schema-surface FacetFilter)
+- [ ] Wire Delete / Retry failed (still stubbed)
