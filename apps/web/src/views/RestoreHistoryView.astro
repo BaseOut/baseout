@@ -62,11 +62,18 @@ const since = (iso: string | null): string => fmtRelative(iso) ?? '—';
 // different red from a backup that failed: they are rows in the same log.
 const statusMeta: Record<string, { label: string; badge: string }> = {
   succeeded: { label: 'Succeeded', badge: 'badge-soft badge-success' },
-  running: { label: 'Running', badge: 'badge-soft badge-warning' },
+  // Oleh ruling 5 / D19: Running is PRIMARY (blue), not warning amber (item 15b).
+  running: { label: 'Running', badge: 'badge-soft badge-primary' },
   queued: { label: 'Queued', badge: 'badge-ghost' },
   failed: { label: 'Failed', badge: 'badge-soft badge-error' },
   cancelled: { label: 'Cancelled', badge: 'badge-ghost' },
 };
+/**
+ * D43 — unknown statuses must not be guessed as Cancelled (X08-F5). See SourcesView /
+ * BackupsListView for the same neutral-unknown pattern.
+ */
+const statusUnknown = { label: 'Unknown', badge: 'badge-ghost' };
+const metaOf = (s: string) => statusMeta[s] ?? statusUnknown;
 const statusRank: Record<string, number> = { failed: 0, cancelled: 1, running: 2, queued: 3, succeeded: 4 };
 
 // The count rule from `pattern-audit-table`, unchanged: a row never prints `—` for data that
@@ -139,7 +146,7 @@ const outcomeAddsInfo = (status: string, outcome: string): boolean =>
 
         {/* Status/Outcome/Date FacetFilters dropped in the apps/web promotion (see the import note):
             search + click-sort + pager remain, which cover the empty/small log this Space has today. */}
-        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-rh-clear hidden>
+        <button type="button" class="btn btn-sm btn-ghost gap-1" data-rh-clear hidden>
           <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
         </button>
       </div>
@@ -164,7 +171,7 @@ const outcomeAddsInfo = (status: string, outcome: string): boolean =>
           <tbody data-rh-body>
             {ordered.map((r) => {
               const m = r.restore!;
-              const sm = statusMeta[r.status] ?? statusMeta.cancelled;
+              const sm = metaOf(r.status);
               const active = r.status === 'running' || r.status === 'queued';
               const line = restoreRunLine(m);
               return (

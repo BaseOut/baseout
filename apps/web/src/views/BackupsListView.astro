@@ -56,12 +56,22 @@ const durationStr = (start: string | null, end: string | null): string =>
 const statusMeta: Record<string, { label: string; badge: string }> = {
   succeeded: { label: 'Succeeded', badge: 'badge-soft badge-success' },
   trial_succeeded: { label: 'Trial run', badge: 'badge-soft badge-success' },
-  running: { label: 'Running', badge: 'badge-soft badge-warning' },
+  trial_complete: { label: 'Trial run', badge: 'badge-soft badge-success' },
+  trial_truncated: { label: 'Trial run', badge: 'badge-soft badge-warning' },
+  // Oleh ruling 5 / D19: Running is PRIMARY (blue), not warning amber (X-M21 / item 15b).
+  running: { label: 'Running', badge: 'badge-soft badge-primary' },
   paused: { label: 'Paused', badge: 'badge-soft badge-warning' },
   queued: { label: 'Queued', badge: 'badge-ghost' },
   failed: { label: 'Failed', badge: 'badge-soft badge-error' },
   cancelled: { label: 'Cancelled', badge: 'badge-ghost' },
 };
+/**
+ * D43 — unknown statuses must not be guessed as Cancelled (X08-F5). Cancelled asserts a person
+ * acted; borrowing it labels trial terminals and novel engine statuses as if someone stopped them.
+ * Neutral unknown matches SourcesView / list-row.ts:statusMetaFor.
+ */
+const statusUnknown = { label: 'Unknown', badge: 'badge-ghost' };
+const metaOf = (s: string) => statusMeta[s] ?? statusUnknown;
 const triggerLabel = (t: string) =>
   t.startsWith('schedule') ? 'Scheduled' : t.startsWith('webhook') ? 'Webhook' : t.startsWith('onboarding') ? 'Trial' : 'Manual';
 // Normalised key for the trigger filter (data-trigger on each row).
@@ -166,7 +176,7 @@ const detailHref = (r: BackupRunSummary) =>
             note): search + click-sort + pager remain via createRunLog, exactly as RestoreHistoryView
             degrades. Restoring faceted filters is a schema-surface follow-up (needs FacetFilter + its
             Airtable-glyph cluster promoted first). */}
-        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-bl-clear hidden>
+        <button type="button" class="btn btn-sm btn-ghost gap-1" data-bl-clear hidden>
           <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
         </button>
       </div>
@@ -214,7 +224,7 @@ const detailHref = (r: BackupRunSummary) =>
           </thead>
           <tbody data-bl-body>
             {orderedRuns.map((r) => {
-              const sm = statusMeta[r.status] ?? statusMeta.cancelled;
+              const sm = metaOf(r.status);
               const active = r.status === 'running' || r.status === 'queued';
               const held = r.status === 'paused';
               // Sort keys live on the row as data, never as cell text: "5d ago" and "2m 14s" do not

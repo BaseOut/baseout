@@ -33,8 +33,8 @@ const statusMeta: Record<string, { variant: 'success' | 'warning' | 'error' | 'd
  * `statusMeta[x].label` was indexed with no fallback at two sites in this file and two in its twin,
  * and the comment above names that exact hazard — *"a lookup that returns `undefined` and throws on
  * `.label`"* — then fixes it for one value by adding a map entry. Four other views in this tree
- * already write `?? statusMeta.<default>`: `BackupsListView:188`, `RestoreHistoryView:171`,
- * `ReportsView:133`, `ReportDefinitionView:207`. Sources and Destinations were the only two without.
+ * already write a neutral unknown: `BackupsListView`, `RestoreHistoryView`,
+ * `ReportsView`, `ReportDefinitionView`. Sources and Destinations were the only two without.
  *
  * The fallback is a NEW neutral entry, not an alias onto an existing status, and that is the whole
  * point: every entry in this map is success or warning, so borrowing one would either claim a
