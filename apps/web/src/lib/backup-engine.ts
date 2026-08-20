@@ -526,6 +526,44 @@ export type GetSchemaResult =
     }
   | SchemaDocsError;
 
+// Data browse / media wire shapes (Slice A) — defined in data-browse/engine-shapes
+// so pure mappers stay free of the Fetcher client. Re-exported here for proxies.
+export type {
+  DataRecordRow,
+  GetDataRecordsResult,
+  DataRecordsQuery,
+  DataChangelogRunRollup,
+  DataChangelogChangeRow,
+  GetDataChangelogResult,
+  DataChangelogQuery,
+  DataCommentRow,
+  GetDataCommentsResult,
+  DataCommentsQuery,
+  MediaAssetRef,
+  MediaAssetView,
+  GetMediaResult,
+  GetMediaTotalsResult,
+  GetMediaAssetResult,
+  MediaQuery,
+} from "./data-browse/engine-shapes";
+import type {
+  DataRecordRow,
+  GetDataRecordsResult,
+  DataRecordsQuery,
+  DataChangelogRunRollup,
+  DataChangelogChangeRow,
+  GetDataChangelogResult,
+  DataChangelogQuery,
+  DataCommentRow,
+  GetDataCommentsResult,
+  DataCommentsQuery,
+  MediaAssetView,
+  GetMediaResult,
+  GetMediaTotalsResult,
+  GetMediaAssetResult,
+  MediaQuery,
+} from "./data-browse/engine-shapes";
+
 // Health tab (server-schema-health-scoring / web-health-tab).
 export interface HealthOverviewMetricView {
   ruleId: string;
@@ -849,6 +887,24 @@ export interface BackupEngineClient {
   ): Promise<PatchChatThreadResult>;
   sendChatMessage(spaceId: string, threadId: string, message: string): Promise<SendChatMessageResult>;
   getRunDetail(runId: string): Promise<EngineRunDetailResult>;
+  /** Keyset-paginated record page for one table (Data ▸ Records). */
+  getDataRecords(
+    spaceId: string,
+    tableId: string,
+    query?: DataRecordsQuery,
+  ): Promise<GetDataRecordsResult>;
+  /** Space-wide record data changelog — rollup (default) or per-run rows. */
+  getDataChangelog(spaceId: string, query?: DataChangelogQuery): Promise<GetDataChangelogResult>;
+  /** Keyset-paginated record-comment feed (Data ▸ Comments). */
+  getDataComments(spaceId: string, query?: DataCommentsQuery): Promise<GetDataCommentsResult>;
+  /** Captured-attachment listing (Data ▸ Attachments). */
+  getMedia(spaceId: string, query?: MediaQuery): Promise<GetMediaResult>;
+  /** Count + summed size for the current media filter. */
+  getMediaTotals(spaceId: string, query?: MediaQuery): Promise<GetMediaTotalsResult>;
+  /** One captured file's detail (all refs). */
+  getMediaAsset(spaceId: string, assetId: string): Promise<GetMediaAssetResult>;
+  /** Raw download passthrough — streams stored object or BYOS locator JSON. */
+  mediaDownload(spaceId: string, assetId: string): Promise<Response>;
 }
 
 const KNOWN_SCHEMA_DOCS_ERROR_CODES: ReadonlySet<SchemaDocsError["code"]> = new Set([
@@ -858,6 +914,17 @@ const KNOWN_SCHEMA_DOCS_ERROR_CODES: ReadonlySet<SchemaDocsError["code"]> = new 
   "backend_not_implemented",
   "document_not_found",
 ]);
+
+/** Build `?a=1&b=2` from sparse params (omits nullish / empty). */
+function engineQuery(params: Record<string, string | number | undefined | null>): string {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null || v === "") continue;
+    sp.set(k, String(v));
+  }
+  const qs = sp.toString();
+  return qs ? `?${qs}` : "";
+}
 
 /**
  * Shared fetch + JSON + error-mapping for the Schema Docs broker routes. On a
@@ -1677,6 +1744,97 @@ export function createBackupEngine(
           ? (rawCode as EngineRunDetailError["code"])
           : "engine_error";
       return { ok: false, code, status: res.status };
+    },
+
+    async getDataRecords(spaceId, tableId, query) {
+      const qs = engineQuery({ ...query });
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/data/tables/${encodeURIComponent(tableId)}/records${qs}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        records: (res.body.records ?? []) as DataRecordRow[],
+        nextCursor: (res.body.nextCursor ?? null) as string | null,
+        total: Number(res.body.total ?? 0),
+        approximate: Boolean(res.body.approximate),
+        filterErrors: (res.body.filterErrors ?? []) as string[],
+      };
+    },
+
+    async getDataChangelog(spaceId, query) {
+      const qs = engineQuery({ ...query });
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/data/changelog${qs}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      if (res.body.mode === "rows") {
+        return {
+          ok: true,
+          mode: "rows" as const,
+          runId: String(res.body.runId ?? ""),
+          changeType: String(res.body.changeType ?? "updated"),
+          rows: (res.body.rows ?? []) as DataChangelogChangeRow[],
+          nextCursor: (res.body.nextCursor ?? null) as string | null,
+        };
+      }
+      return {
+        ok: true,
+        mode: "rollup" as const,
+        runs: (res.body.runs ?? []) as DataChangelogRunRollup[],
+        nextCursor: (res.body.nextCursor ?? null) as string | null,
+      };
+    },
+
+    async getDataComments(spaceId, query) {
+      const qs = engineQuery({ ...query });
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/data/comments${qs}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        comments: (res.body.comments ?? []) as DataCommentRow[],
+        nextCursor: (res.body.nextCursor ?? null) as string | null,
+        total: Number(res.body.total ?? 0),
+        approximate: Boolean(res.body.approximate),
+      };
+    },
+
+    async getMedia(spaceId, query) {
+      const qs = engineQuery({ ...query });
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/media${qs}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        items: (res.body.items ?? []) as MediaAssetView[],
+        nextCursor: (res.body.nextCursor ?? null) as string | null,
+      };
+    },
+
+    async getMediaTotals(spaceId, query) {
+      const qs = engineQuery({ ...query });
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/media/totals${qs}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        count: Number(res.body.count ?? 0),
+        sizeBytes: Number(res.body.sizeBytes ?? 0),
+      };
+    },
+
+    async getMediaAsset(spaceId, assetId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/media/${encodeURIComponent(assetId)}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return { ok: true, asset: res.body.asset as MediaAssetView };
+    },
+
+    async mediaDownload(spaceId, assetId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/media/${encodeURIComponent(assetId)}/download`;
+      return options.binding.fetch(`https://engine${path}`, {
+        method: "GET",
+        headers: { "x-internal-token": options.internalToken },
+      });
     },
   };
 }
