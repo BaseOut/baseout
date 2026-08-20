@@ -71,7 +71,7 @@
 | **5** | Auth visual convergence | Promote Login/Welcome/Association; auth scroll contract; keep better-auth | **DONE** · `a11f2edd` |
 | **6** | Inbox full page | Promote `InboxView` → `/inbox`; reuse notification proxies | **DONE** · `d94fa4cc` |
 | **7** | Visual sync of LIVE surfaces | Restore → Sources → Destinations → Home → Backups; preserve polls & contracts | **DONE** · Restore `099360f3` · Sources `c962d74b` · Destinations `a72e57e4` · Home `a541120a` · Backups `598f11b5` |
-| **8** | Reports | Overturn V1 trim — finish engine + `web-reports-page`; restore `/reports` nav to match ui-only | **DONE** · backend `fdfd1e90` (from `4d3ff862`) · UI this Phase 8 commit · migration **0038** not applied to remote DB |
+| **8** | Reports | Overturn V1 trim — finish engine + `web-reports-page`; restore `/reports` nav to match ui-only | **DONE** · backend `fdfd1e90` (from `4d3ff862`) · UI `9c4f1c63` · migration **0038** not applied to remote DB |
 | **9** | Schema Automations / Interfaces | Engine `server-automations-interfaces-docs` then web tabs | Engine 0/40 — **included** |
 | **10** | Support portal | `apps/support` from ui-only | **BLOCKED** client Q#6 |
 | **11** | Billing / usage | | **BLOCKED** client Q#4 + no fork design |
