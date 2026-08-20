@@ -111,7 +111,7 @@ const lanes = [
         aria-controls="ibx-panel-activity"
       >
         <span class="ibx-tab-label">Activity</span>
-        <span class="badge badge-sm badge-neutral badge-soft" data-tab-count="activity" hidden></span>
+        <span class="badge badge-sm badge-ghost" data-tab-count="activity" hidden></span>
       </button>
     </div>
 
@@ -180,7 +180,7 @@ const lanes = [
           <div class="ff-group">Show</div>
           <label class="ff-opt" data-inbox-menu-lane="attention">
             <span class="ff-label">Handled</span>
-            <span class="badge badge-sm badge-neutral badge-soft" data-inbox-handled-count hidden>0</span>
+            <span class="badge badge-sm badge-ghost" data-inbox-handled-count hidden>0</span>
             <input type="checkbox" class="toggle toggle-sm toggle-primary" data-inbox-show-handled />
           </label>
           <label class="ff-opt" data-inbox-menu-lane="activity" hidden>
@@ -273,7 +273,7 @@ const lanes = [
                           HAS more than one Space; CSS also drops it once the list is filtered to a
                           single Space, where it would repeat the trigger on every row. */}
                       {multiSpace && g.lead.space && (
-                        <span class="badge badge-sm badge-neutral badge-soft ibx-space">
+                        <span class="badge badge-sm badge-ghost ibx-space">
                           <span class="iconify lucide--layers size-3" aria-hidden="true"></span>
                           {g.lead.space}
                         </span>
@@ -379,7 +379,7 @@ const lanes = [
                     <span class:list={['ibx-copy', reason === 'resolved' && 'ibx-copy-resolved']} set:html={emph(item.title)} />
                   </a>
                   <p class="mt-1">
-                    <span class="badge badge-sm badge-soft badge-neutral">{HANDLED_LABEL[reason]}</span>
+                    <span class="badge badge-sm badge-ghost">{HANDLED_LABEL[reason]}</span>
                   </p>
                 </div>
 
