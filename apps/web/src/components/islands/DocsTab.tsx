@@ -20,6 +20,7 @@ import {
 } from '../../lib/schema-docs/editor-logic'
 import DocBodyEditor from './DocBodyEditor'
 import DocDiagram from './DocDiagram'
+import { setButtonLoading } from '../../lib/ui'
 
 export interface DocsTabEntity {
   type: SchemaDocTargetType
@@ -52,6 +53,9 @@ export default function DocsTab({ spaceId, initialDocs, aiEnabled, entities, sco
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [newTitle, setNewTitle] = React.useState('')
+  const saveBtnRef = React.useRef<HTMLButtonElement>(null)
+  const createBtnRef = React.useRef<HTMLButtonElement>(null)
+  const deleteBtnRef = React.useRef<HTMLButtonElement>(null)
 
   const refreshList = React.useCallback(async () => {
     const res = await fetch(`${base}/documents`)
@@ -73,6 +77,8 @@ export default function DocsTab({ spaceId, initialDocs, aiEnabled, entities, sco
     e.preventDefault()
     const title = newTitle.trim()
     if (!title) return
+    const btn = createBtnRef.current
+    if (btn) setButtonLoading(btn, true)
     setBusy(true)
     setError(null)
     try {
@@ -87,12 +93,15 @@ export default function DocsTab({ spaceId, initialDocs, aiEnabled, entities, sco
       await refreshList()
       setEditor(toEditorState(data.document))
     } finally {
+      if (btn) setButtonLoading(btn, false)
       setBusy(false)
     }
   }
 
   async function saveDoc() {
     if (!editor) return
+    const btn = saveBtnRef.current
+    if (btn) setButtonLoading(btn, true)
     setBusy(true)
     setError(null)
     try {
@@ -111,6 +120,7 @@ export default function DocsTab({ spaceId, initialDocs, aiEnabled, entities, sco
       await refreshList()
       setEditor(null)
     } finally {
+      if (btn) setButtonLoading(btn, false)
       setBusy(false)
     }
   }
@@ -118,6 +128,8 @@ export default function DocsTab({ spaceId, initialDocs, aiEnabled, entities, sco
   async function deleteDoc() {
     if (!editor) return
     if (!confirm('Delete this document? This cannot be undone.')) return
+    const btn = deleteBtnRef.current
+    if (btn) setButtonLoading(btn, true)
     setBusy(true)
     try {
       const res = await fetch(`${base}/documents/${editor.id}`, { method: 'DELETE' })
@@ -125,6 +137,7 @@ export default function DocsTab({ spaceId, initialDocs, aiEnabled, entities, sco
       await refreshList()
       setEditor(null)
     } finally {
+      if (btn) setButtonLoading(btn, false)
       setBusy(false)
     }
   }
@@ -172,17 +185,16 @@ export default function DocsTab({ spaceId, initialDocs, aiEnabled, entities, sco
                 <span className="badge badge-secondary badge-sm">Soon</span>
               </button>
             )}
-            <button type="button" className="btn btn-ghost btn-sm text-error" onClick={deleteDoc} disabled={busy}>
+            <button type="button" className="btn btn-ghost btn-sm text-error" ref={deleteBtnRef} onClick={deleteDoc} disabled={busy}>
               Delete
             </button>
-            <button type="button" className="btn btn-primary btn-sm" onClick={saveDoc} disabled={busy}>
-              {busy && <span className="loading loading-spinner loading-sm" />}
+            <button type="button" className="btn btn-primary btn-sm" ref={saveBtnRef} onClick={saveDoc} disabled={busy}>
               Save
             </button>
           </div>
         </div>
 
-        {error && <div className="alert alert-error text-sm">{error}</div>}
+        {error && <div className="alert alert-soft alert-error text-sm" role="note">{error}</div>}
 
         <input
           className="input input-bordered w-full text-lg font-semibold"
@@ -300,14 +312,13 @@ export default function DocsTab({ spaceId, initialDocs, aiEnabled, entities, sco
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
           />
-          <button type="submit" className="btn btn-primary btn-sm" disabled={busy || !newTitle.trim()}>
-            {busy && <span className="loading loading-spinner loading-sm" />}
+          <button type="submit" className="btn btn-primary btn-sm" ref={createBtnRef} disabled={busy || !newTitle.trim()}>
             New document
           </button>
         </form>
       </div>
 
-      {error && <div className="alert alert-error mb-3 text-sm">{error}</div>}
+      {error && <div className="alert alert-soft alert-error mb-3 text-sm" role="note">{error}</div>}
 
       {docs.length === 0 ? (
         <div className="rounded-box border border-dashed border-base-300 p-10 text-center">
