@@ -250,12 +250,42 @@ describe('postCancelRun', () => {
     const fetchImpl = vi.fn(async () => {
       throw new TypeError('network')
     })
+    const toast = vi.fn()
 
     await expect(
-      postCancelRun(SPACE_ID, RUN_ID, btn, { fetchImpl }),
+      postCancelRun(SPACE_ID, RUN_ID, btn, { fetchImpl, toast }),
     ).resolves.toBeUndefined()
 
     expect(btn.disabled).toBe(false)
     expect(btn.getAttribute('aria-busy')).toBe('false')
+    expect(toast).toHaveBeenCalledWith(
+      'Could not cancel the backup. Try again.',
+      null,
+    )
+  })
+
+  it('toasts when the cancel response is not OK', async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response('nope', { status: 500 }),
+    ) as unknown as typeof fetch
+    const toast = vi.fn()
+
+    await postCancelRun(SPACE_ID, RUN_ID, btn, { fetchImpl, toast })
+
+    expect(toast).toHaveBeenCalledWith(
+      'Could not cancel the backup. Try again.',
+      null,
+    )
+  })
+
+  it('does not toast on a successful cancel', async () => {
+    const fetchImpl = vi.fn(
+      async () => new Response('{}', { status: 200 }),
+    ) as unknown as typeof fetch
+    const toast = vi.fn()
+
+    await postCancelRun(SPACE_ID, RUN_ID, btn, { fetchImpl, toast })
+
+    expect(toast).not.toHaveBeenCalled()
   })
 })

@@ -37,6 +37,7 @@ import {
 import { isCancellable } from '../../lib/backups/cancel-button'
 import { isDeletable } from '../../lib/backups/delete-button'
 import type { BackupRunSummary } from '../../lib/backup-runs/types'
+import UndoToast from '../ui/UndoToast.astro'
 
 interface Props {
   spaceId: string
@@ -242,6 +243,8 @@ function destinationLabel(
     </ol>
   )}
 </section>
+
+<UndoToast />
 
 <script
   type="application/json"
