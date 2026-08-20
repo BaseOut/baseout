@@ -1,0 +1,1314 @@
+---
+/**
+ * ReportDefinitionView — the report page (v2). A report is a saved DEFINITION; this page shows, in tabs:
+ *   • Most Recent — the latest run rendered inline (ReportBodyKpi + the shared EntityPanel), so opening a
+ *     report gives instant value (client 2026-07-14). Default tab.
+ *   • History — the run trail; a run opens its rendered document at /reports/run/<id>.
+ *   • Settings — the definition (sections · scope · window · the ONE embedded schedule), with a LIVE
+ *     PREVIEW beside the form that reacts to the section + base choices using current data.
+ * The old separate Schedules manager folds in as the Schedule block of Settings. See storybook `pattern-report`.
+ *
+ * Model (CONFIRMED by the client 2026-07-13): one schedule per report; the run history lives under the
+ * report; Daily dropped (covered by the "on each backup" cadences).
+ */
+import { fmtDay, fmtDayShort, fmtRelative } from '../lib/time';
+import type { ReportDefinition, ReportSummary, ReportCadence, ReportDetail, ReportSectionKey } from '../lib/reports/types';
+import type { SchemaEntity, SchemaDoc } from '../components/schema/schemaEntities';
+import { SECTION_ORDER, SECTION_LABEL, scopeLabel, cadenceLabel } from '../lib/reports/view2';
+import RecipientInput from '../components/reports/RecipientInput.astro';
+import ReportBodyKpi from '../components/reports/ReportBodyKpi.astro';
+import EntityPanel from '../components/schema/EntityPanel.astro';
+import PanelHost from '../components/ui/PanelHost.astro';
+import Table from '../components/ui/Table.astro';
+import ConfirmModal from '../components/ui/ConfirmModal.astro';
+import { CONFIRM_DESTRUCTIVE } from '../lib/ui';
+import UndoToast from '../components/ui/UndoToast.astro';
+import { describeReportDeletion } from '../lib/reports/deleteReport';
+import Badge from '../components/ui/Badge.astro';
+// The badge vocabulary is IMPORTED, not re-declared. Four maps here were a verbatim second copy of
+// the ones in `lib/reports/view`, which is exactly how the preview miniature and the report body it
+// previews get to disagree about what a status looks like.
+import { backupBadge, connBadge, changeToneOf, toneBadgeOf, UNKNOWN_BADGE, type ReportBadgeVariant } from '../lib/reports/view';
+
+interface Member { email: string; name: string }
+interface Props {
+  def: ReportDefinition;
+  /** true → the create screen (/reports/new): defaults, no history, Save = "Create report". */
+  isNew?: boolean;
+  baseNames?: Record<string, string>;
+  members?: Member[];
+  /** The latest run's rendered document — the Most Recent tab (null → "not run yet" / fallback). */
+  latest?: ReportDetail | null;
+  /** A "current data" snapshot for the Settings live preview (null → preview hidden). */
+  current?: ReportDetail | null;
+  /** Schema data for the mounted parity EntityPanel (Most Recent's schema references). */
+  schemaIndex?: SchemaEntity[];
+  docs?: SchemaDoc[];
+  changelog?: any[];
+  automations?: any[];
+  interfaces?: any[];
+  chatThreads?: any[];
+  /** Active Space id for generate / save / delete proxies. */
+  spaceId?: string | null;
+}
+const {
+  def, isNew = false, baseNames = {}, members = [], latest = null, current = null,
+  schemaIndex = [], docs = [], changelog = [], automations = [], interfaces = [], chatThreads = [],
+  spaceId = null,
+} = Astro.props;
+
+
+// D06 — the deletion consequence, from the SAME derivation the Reports list uses. Two surfaces
+// delete a report; one function writes the sentence, so they cannot disagree about what it costs.
+const del = describeReportDeletion(def);
+
+const runWindow = (r: ReportSummary) => `${fmtDayShort(r.windowStart)} – ${fmtDay(r.windowEnd)}`;
+// D09 — `since()` was a private 4th copy of the relative formatter. One rule, one reader.
+const since = (iso: string | null): string => fmtRelative(iso) ?? '—';
+const statusMeta: Record<string, { label: string; badge: ReportBadgeVariant }> = {
+  healthy: { label: 'Healthy', badge: 'success' },
+  issues: { label: 'Issues', badge: 'warning' },
+  failed: { label: 'Failed', badge: 'error' },
+};
+/**
+ * D43 — the fallback is a NEW neutral entry, never an alias onto an existing status. Reference
+ * implementation and the full argument: `SourcesView.astro:36-51`.
+ *
+ * This was `?? statusMeta.issues`, so an unrecognised run status was reported as **Issues** — it
+ * asserts the report ran and that it found problems, and also feeds `statusKey` below, which is the
+ * string the row filters and sorts on. Neutral paint is the `Badge` primitive's `default`, which
+ * is `badge-ghost` (17.4:1) — never `badge-soft badge-neutral` (1.34:1 dark / 4.35:1 light — X08-F6).
+ */
+const statusUnknown: { label: string; badge: ReportBadgeVariant } = { label: 'Unknown', badge: 'default' };
+const metaOf = (s: string) => statusMeta[s] ?? statusUnknown;
+
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const ord = (n: number) => `${n}${['th', 'st', 'nd', 'rd'][(((n % 100) >> 3) ^ 1) && n % 10] || 'th'}`;
+// Cadence v2: no Daily; "after backup" split into data vs schema (event triggers, no time).
+const cadenceOpts: [ReportCadence, string][] = [
+  ['data_backup', 'On each data backup'], ['schema_backup', 'On each schema backup'], ['weekly', 'Weekly'], ['monthly', 'Monthly'],
+];
+const sched = def.schedule;
+const curCad: ReportCadence = sched?.cadence ?? 'data_backup';
+/**
+ * History runs, PERIOD-ORDERED (newest first) as the default arrangement — stated here rather than
+ * assumed of the caller, because "which run was that" is answered by the period the run covers, and
+ * a trail whose default order depends on what the fixture happened to hand us is not a default. The
+ * Period header carries a matching `data-sort-dir="desc"` so the shared caret states the order the
+ * server actually rendered; from the first click on, tableSort.ts owns it.
+ */
+const runs = (def.runs ?? []).slice().sort((a, b) => b.windowEnd.localeCompare(a.windowEnd));
+const hasRuns = runs.length > 0;
+const latestRun = runs[0] ?? null;
+
+/**
+ * THE HISTORY COLUMNS, AS DATA (catalog `table`). Six hand-numbered `data-sort-col="0"…"5"` values
+ * sat on one 300-character line and were kept in step with the `data-sort-${col}` reader 700 lines
+ * below by memory alone; the index is the array position now. The seventh was `<th></th>` — the
+ * unnamed column carrying every row's only exit.
+ *
+ * WHAT THE VESSEL CANNOT EXPRESS, and it is deliberate rather than forgotten: `Period` carried a
+ * literal `data-sort-dir="desc"` in its markup. There is no `TableColumn` field for an initial
+ * direction, so it is re-applied by `initReportHistory` below — see the note there, which also
+ * records that the attribute was only ever a caret, never a state `wireTableSort` knew about.
+ */
+const historyColumns = [
+  { label: 'Period', sort: true },
+  { label: 'Status', sort: true },
+  { label: 'Trigger', sort: true },
+  { label: 'Backups', sort: true, align: 'end' as const },
+  { label: 'Generated', sort: true },
+  { label: 'Delivery', sort: true },
+  { label: '', srLabel: 'Open run' },
+];
+
+// Live-preview support: resolve a base NAME → id (rows carry the name), and small tone→badge maps.
+const baseIdByName: Record<string, string> = Object.fromEntries(Object.entries(baseNames).map(([id, n]) => [n, id]));
+const baseOfLocation = (loc: string) => baseIdByName[(loc || '').split(' ▸ ')[0]] || '';
+const sectionIcon: Record<ReportSectionKey, string> = { backups: 'lucide--database-backup', connections: 'lucide--plug-zap', schema: 'lucide--list-tree', docs: 'lucide--file-text', trends: 'lucide--trending-up', dataHealth: 'lucide--database' };
+const nf = new Intl.NumberFormat('en-US');
+// Tiny inline sparkline (points string for a 100x24 viewBox) — makes the preview Trends read as charts,
+// not a table. Drawn from the metric's real series; decorative-scale, not a precise chart.
+function sparkPoints(data: number[]): string {
+  if (!data || data.length < 2) return '';
+  const min = Math.min(...data), max = Math.max(...data);
+  const range = max - min || 1;
+  const n = data.length;
+  return data.map((v, i) => `${((i / (n - 1)) * 100).toFixed(1)},${(23 - ((v - min) / range) * 21).toFixed(1)}`).join(' ');
+}
+// Default tab: create → Settings; otherwise the latest run (Most Recent). Rendered as
+// `tab-active` + the matching un-`hidden` panel below, which is the landing state
+// `wireSectionTabs` is documented to leave alone when no `?tab=` is present (D07 item 5).
+// The definition's scope, in the names a reader knows. `baseNames` is already here for `scopeLabel`;
+// the report body needs the same list so its scope line can name bases instead of `b-sales`.
+const scopeBaseNames = def.baseScope ? def.baseScope.map((id) => baseNames[id] ?? id) : null;
+
+---
+
+<div class="mx-auto max-w-[1200px] rpd" data-rpd data-space-id={spaceId ?? ''} data-report-id={def.id} data-is-new={isNew ? '1' : '0'} data-latest-run={latest?.id ?? ''}>
+  {/* Breadcrumbs — daisyUI primitive (catalog) + a ghost square back button, matching the Backups pages. */}
+  <div class="flex items-center gap-2">
+    <a href="/reports" class="btn btn-sm btn-square btn-ghost" aria-label="Back to Reports"><span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span></a>
+    <div class="breadcrumbs text-sm py-0">
+      <ul>
+        <li><a href="/reports">Reports</a></li>
+        <li>{isNew ? 'New report' : def.name}</li>
+      </ul>
+    </div>
+  </div>
+
+  <header class="rpd-head">
+    <div class="min-w-0">
+      <h1 class="text-title">{isNew ? 'New report' : def.name}{def.isDefault && <Badge size="sm" class="ml-2 align-middle">Default</Badge>}</h1>
+      <p class="text-sm text-base-content/65 mt-1">{isNew ? 'Name it, pick the sections and bases, and set one delivery schedule.' : `${scopeLabel(def, baseNames)} · ${cadenceLabel(sched)}`}</p>
+    </div>
+    {!isNew && (
+      <div class="rpd-actions shrink-0">
+        {/* SOLID, not soft (`decision-button-system`). "Run now" is one action, and it rendered at
+            two weights on one page: soft here, solid in both empty states below. Solid is the
+            correct one — it is the thing this page exists to let you do, and the empty states
+            already said so. The two are never competing hierarchies: when an empty state shows,
+            its button and this one point at the same action, so matching weights is the fix, not
+            a second primary. */}
+        <button type="button" class="btn btn-primary btn-sm" data-rpd-run><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run now</button>
+        <div class="dropdown dropdown-end">
+          <div tabindex="0" role="button" class="btn btn-ghost btn-sm btn-square" aria-label="Report actions"><span class="iconify lucide--ellipsis size-4" aria-hidden="true"></span></div>
+          <ul tabindex="0" class="dropdown-content row-menu-panel">
+            <li><button type="button" data-rpd-dup><span class="iconify lucide--copy size-3.5 opacity-70"></span>Duplicate</button></li>
+            {!def.isDefault && <li><button type="button" class="text-error" data-rpd-del data-del-toast={del.toast}><span class="iconify lucide--trash-2 size-3.5"></span>Delete</button></li>}
+          </ul>
+        </div>
+      </div>
+    )}
+  </header>
+
+  {/* Tabs — Most Recent (default) · History · Settings. HIDDEN while creating (Oleh 2026-07-24): a
+      lone "Settings" tab presents no choice, so it reads as navigation the user is failing to find
+      something behind. A new report has exactly one thing to do; the tab bar returns once the report
+      exists and there are runs to look at. */}
+  <div role="tablist" class="tabs tabs-border rpd-tabs" data-rpd-tabs hidden={isNew}>
+    {!isNew && <button type="button" role="tab" class="tab tab-active" data-tab="recent"><span class="iconify lucide--sparkles size-4 mr-1.5" aria-hidden="true"></span>Most Recent</button>}
+    {!isNew && <button type="button" role="tab" class="tab" data-tab="history"><span class="iconify lucide--history size-4 mr-1.5" aria-hidden="true"></span>History{runs.length > 0 && <Badge size="sm" class="ml-1.5">{runs.length}</Badge>}</button>}
+    <button type="button" role="tab" class:list={['tab', isNew && 'tab-active']} data-tab="settings"><span class="iconify lucide--settings-2 size-4 mr-1.5" aria-hidden="true"></span>Settings</button>
+  </div>
+
+  {/* ── Most Recent — the latest run, inline ──────────────────────────────────────── */}
+  {!isNew && (
+    <div data-panel="recent">
+      {hasRuns && latest ? (
+        <>
+          <div class="rpd-recent-bar">
+            <span class="rpd-recent-meta"><span class="iconify lucide--clock size-3.5 opacity-60" aria-hidden="true"></span>Generated {since(latestRun?.generatedAt ?? null)} · {runWindow(latestRun!)}</span>
+            {/* Run now lives in the page header (rpd-actions) — no duplicate here; just the deep link. */}
+            <a href={`/reports/run/${latestRun!.id}`} class="btn btn-ghost btn-sm gap-1 ml-auto"><span class="iconify lucide--maximize-2 size-3.5 opacity-70" aria-hidden="true"></span>Open full page</a>
+          </div>
+          <div class="flex flex-col gap-5"><ReportBodyKpi report={latest} sections={def.sections} baseScope={def.baseScope} baseScopeNames={scopeBaseNames} /></div>
+        </>
+      ) : hasRuns && latestRun ? (
+        /* A run exists but its rendered document isn't loaded in this preview — link out. */
+        <section class="rpd-empty">
+          <span class="rpd-empty-ic"><span class="iconify lucide--file-chart-column"></span></span>
+          <p class="rpd-empty-title">Latest run · {runWindow(latestRun)}</p>
+          <p class="rpd-empty-sub">Generated {since(latestRun.generatedAt)}. Open it for the full breakdown.</p>
+          <a href={`/reports/run/${latestRun.id}`} class="btn btn-primary btn-sm"><span class="iconify lucide--maximize-2 size-4" aria-hidden="true"></span>Open full report</a>
+        </section>
+      ) : (
+        <section class="rpd-empty">
+          <span class="rpd-empty-ic"><span class="iconify lucide--sparkles"></span></span>
+          <p class="rpd-empty-title">Not run yet</p>
+          <p class="rpd-empty-sub">Run this report now to see its latest snapshot here, or wait for its schedule.</p>
+          <button type="button" class="btn btn-primary btn-sm" data-rpd-run><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run now</button>
+        </section>
+      )}
+    </div>
+  )}
+
+  {/* ── History ─────────────────────────────────────────────────────────────────── */}
+  {!isNew && (
+    <div data-panel="history" hidden>
+      {runs.length > 0 ? (
+        <section class="rpd-card">
+          {/* THE ONE TABLE (catalog `table`) — `Table.astro` now. The `<thead>`, the six
+              `data-sort-col` indices, `data-mobile-rows` and the `TablePager` below all left this
+              file, and the header arrives with `scope="col"`, a live `aria-sort` and a sortable
+              column that is a real `<button>`. History was the one Reports table with NO sort at
+              all, which is backwards — it is the trail you search when you are asking "did the one
+              covering last month go out" — and until now that sort was mouse-only.
+
+              `narrow="fold"` — below 1280 this table becomes the shared narrow row
+              (`pattern-mobile-row`). The cells keep their `data-sort-*` keys, the row keeps its
+              conditional `role`/`onclick`, so sort and the deliberate non-opening of a failed run
+              both survive. */}
+          <Table
+            class="rpd-tablewrap"
+            name="rpdruns"
+            columns={historyColumns}
+            rowCount={runs.length}
+            growth="paged"
+            rowSelector=".rpd-row"
+            narrow="fold"
+            narrowReason="A run of this report is identified by the PERIOD it covers, and the six cells beside it are one badge, one trigger word, one count, one stamp and one delivery ratio — read across a row, never down a column. Measured on this very table before the fold: at 1280, the app's own boundary, 169px was hidden and `Delivery` was gone; at 540, 483px and four of six facts including `Generated`, the column that says whether the run produced anything."
+            pager={{ sizes: [10, 20, 50], selected: 20 }}
+          >
+                {runs.map((r) => {
+                  const sm = metaOf(r.status);
+                  const running = r.generationState === 'running';
+                  const genFailed = r.generationState === 'failed';
+                  const href = `/reports/run/${r.id}`;
+                  // The Status cell shows the GENERATION state when there is one, so the sort key is
+                  // the label actually on screen — sorting by `r.status` would group a row labelled
+                  // "Failed to generate" with the healthy ones.
+                  const statusKey = genFailed ? 'failed to generate' : running ? 'generating' : sm.label.toLowerCase();
+                  return (
+                    <tr
+                      class="rpd-row row-clickable"
+                      data-nrow
+                      data-rpd-run-row
+                      data-sort-0={new Date(r.windowEnd).getTime()}
+                      data-sort-1={statusKey}
+                      data-sort-2={r.trigger.kind === 'scheduled' ? 'scheduled' : 'run now'}
+                      data-sort-3={r.backupsOk}
+                      data-sort-4={r.generatedAt ? new Date(r.generatedAt).getTime() : 0}
+                      data-sort-5={r.delivery ? r.delivery.delivered : -1}
+                      role={genFailed || running ? undefined : 'button'}
+                      tabindex={genFailed || running ? undefined : 0}
+                      onclick={genFailed || running ? undefined : `window.location='${href}'`}
+                    >
+                      <td data-m="lead" class="font-medium">{runWindow(r)}{r.adHoc && <Badge size="sm" class="ml-1.5">Ad hoc</Badge>}</td>
+                      <td data-m="sub">{genFailed ? <Badge variant="error">Failed to generate</Badge> : running ? <Badge variant="primary" class="gap-1"><span class="loading loading-spinner loading-sm" aria-hidden="true"></span>Generating</Badge> : <Badge variant={sm.badge}>{sm.label}</Badge>}</td>
+                      <td data-m="off" class="text-base-content/65">{r.trigger.kind === 'scheduled' ? 'Scheduled' : 'Run now'}{r.trigger.by && <span class="text-base-content/65"> · {r.trigger.by}</span>}</td>
+                      <td data-m="num" class="text-right tabular-nums">{genFailed ? <span class="text-base-content/35">—</span> : <span><span class="text-success">{r.backupsOk}</span>{r.backupsFailed > 0 && <span class="text-error"> / {r.backupsFailed} failed</span>}</span>}</td>
+                      <td data-m="sub2" class="text-base-content/65">{running ? 'in progress' : since(r.generatedAt)}</td>
+                      {/* DELIVERY. The model has carried `failures: {email, reason}[]` with a doc
+                          comment saying "expandable on the row" since it was written, and the cell
+                          rendered "Delivered 4/5" — the reader could see that someone missed the
+                          report but not who, or why, without leaving the trail. It is now the
+                          catalog `dropdown`, expanding in place: 1–5 lines about one cell belong
+                          on the cell, not in a drawer. `—` still means genuinely nothing: this
+                          run was never emailed. */}
+                      <td data-m="off" class="text-base-content/65">{!r.delivery
+                        ? <span class="text-base-content/35">—</span>
+                        : (r.delivery.failures?.length ?? 0) === 0
+                          ? <span class="inline-flex items-center gap-1"><span class="iconify lucide--mail-check size-3.5 opacity-70" aria-hidden="true"></span><span class="tabular-nums">{`Delivered ${r.delivery.delivered} of ${r.delivery.sent}`}</span></span>
+                          : (
+                            <span class="dropdown dropdown-end rpd-del">
+                              <button type="button" tabindex="0" class="btn btn-sm btn-ghost gap-1" onclick="event.stopPropagation()" aria-label={`Show the ${r.delivery.failures!.length} failed ${r.delivery.failures!.length === 1 ? 'delivery' : 'deliveries'}`}>
+                                <span class="iconify lucide--mail-warning size-4 text-error" aria-hidden="true"></span>
+                                <span class="tabular-nums">{`Delivered ${r.delivery.delivered} of ${r.delivery.sent}`}</span>
+                                <span class="iconify lucide--chevron-down size-3.5 opacity-60" aria-hidden="true"></span>
+                              </button>
+                              <span tabindex="0" class="dropdown-content rpd-delpanel rounded-box shadow" onclick="event.stopPropagation()">
+                                <span class="rpd-delhead">{`${r.delivery.failures!.length} ${r.delivery.failures!.length === 1 ? 'recipient' : 'recipients'} didn’t receive it`}</span>
+                                {r.delivery.failures!.map((f) => (
+                                  <span class="rpd-delrow">
+                                    <span class="rpd-delmail">{f.email}</span>
+                                    <span class="rpd-delwhy">{f.reason}</span>
+                                  </span>
+                                ))}
+                              </span>
+                            </span>
+                          )}</td>
+                      <td data-m="go" class="text-right">{genFailed ? <span class="row-end"><button type="button" class="btn btn-ghost btn-sm gap-1 text-error" data-rpd-retry onclick="event.stopPropagation()"><span class="iconify lucide--rotate-ccw size-4" aria-hidden="true"></span>Retry</button></span> : running ? <span class="text-base-content/35 text-sm pr-2">—</span> : <span class="row-end"><span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span></span>}</td>
+                    </tr>
+                  );
+                })}
+          {/* A report on a weekly schedule accumulates 52 runs a year and never prunes — the
+              definition of a set that can grow, so `growth="paged"` and the pager the vessel
+              requires with it (catalog `table`). Nothing filters this trail, so it has no `empty`
+              slot: the zero case is the `rpd-empty` section outside this branch. */}
+          </Table>
+        </section>
+      ) : (
+        <section class="rpd-empty">
+          <span class="rpd-empty-ic"><span class="iconify lucide--history"></span></span>
+          <p class="rpd-empty-title">No runs yet</p>
+          <p class="rpd-empty-sub">This report hasn't been generated yet. Run it now, or wait for its schedule.</p>
+          <button type="button" class="btn btn-primary btn-sm" data-rpd-run><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run now</button>
+        </section>
+      )}
+    </div>
+  )}
+
+  {/* ── Settings — the definition form + a live preview using current data ─────────── */}
+  <div data-panel="settings" hidden={!isNew}>
+    <div class="rpd-settings-grid" data-creating={isNew ? "" : undefined}>
+      <section class="rpd-card rpd-form">
+        <div class="rpd-step" id="rpd-step-1" data-rpd-step="1">
+          <h3 class="rpd-step-h"><span class="step-n" aria-hidden="true">1</span>What it covers</h3>
+        <label class="rpd-field">
+          <span class="rpd-label">Name</span>
+          <input type="text" class="input input-sm w-full" data-rpd-name value={isNew ? '' : def.name} placeholder="e.g. Full Sales CRM Report" />
+        </label>
+
+        <div class="rpd-field">
+          <span class="rpd-label">Sections to include</span>
+          <div class="rpd-checks">
+            {SECTION_ORDER.map((key) => (
+              <label class="rpd-check"><input type="checkbox" class="checkbox checkbox-sm" data-rpd-section={key} checked={isNew ? true : def.sections.includes(key)} /> {SECTION_LABEL[key]}</label>
+            ))}
+          </div>
+        </div>
+
+        <div class="rpd-field">
+          <span class="rpd-label">Bases</span>
+          <div class="rpd-radios">
+            <label class="rpd-radio"><input type="radio" name="rpd-scope" class="radio radio-sm radio-primary" data-rpd-scope="all" checked={isNew ? true : def.baseScope === null} /> All bases in this Space</label>
+            <label class="rpd-radio"><input type="radio" name="rpd-scope" class="radio radio-sm radio-primary" data-rpd-scope="some" checked={!isNew && def.baseScope !== null} /> Specific bases</label>
+          </div>
+          {/* Live base picker — shown when "Specific bases" is chosen; the preview filters to the ticked bases. */}
+          <div class="rpd-basepick" data-rpd-basepick hidden={isNew ? true : def.baseScope === null}>
+            {Object.entries(baseNames).map(([id, name]) => (
+              <label class="rpd-check"><input type="checkbox" class="checkbox checkbox-sm" data-rpd-base={id} checked={def.baseScope === null ? true : def.baseScope.includes(id)} /> {name}</label>
+            ))}
+          </div>
+        </div>
+
+        <div class="rpd-field">
+          <span class="rpd-label">Time window</span>
+          <div class="rpd-radios">
+            <label class="rpd-radio"><input type="radio" name="rpd-window" class="radio radio-sm radio-primary" data-rpd-window="since_last" checked={isNew ? true : def.window.kind === 'since_last'} /> Since the last report</label>
+            <label class="rpd-radio"><input type="radio" name="rpd-window" class="radio radio-sm radio-primary" data-rpd-window="rolling" checked={!isNew && def.window.kind === 'rolling'} /> A rolling window</label>
+            {/* Rolling needs a length — "last X days" (client 2026-07-14). Revealed only when rolling is picked. */}
+            <div class="rpd-window-sub" data-rpd-window-sub hidden={isNew || def.window.kind !== 'rolling'}>
+              <span class="rpd-window-sub-lead">Last</span>
+              <input type="number" min="1" max="365" class="input input-sm rpd-window-days" data-rpd-window-days value={!isNew && def.window.kind === 'rolling' ? def.window.days : 30} aria-label="Number of days in the rolling window" />
+              <span class="rpd-window-sub-unit">days</span>
+            </div>
+          </div>
+        </div>
+
+        </div>
+        <div class="rpd-step" id="rpd-step-2" data-rpd-step="2">
+          <h3 class="rpd-step-h"><span class="step-n" aria-hidden="true">2</span>When it sends</h3>
+        <div class="rpd-field">
+          <span class="rpd-label">Delivery schedule</span>
+          {/* Radios, not a segmented control (Oleh 2026-07-24). Four options with labels as long as
+              "On each schema backup" cannot fit one row inside a form column — it wrapped and read as
+              broken at any width. And it is a SUBMITTED VALUE, which in this very form is already
+              expressed as radios twice above (Bases, Time window); a segmented control is for
+              switching how a body renders, not for holding a value. */}
+          <div class="rpd-radios rpd-cadence" data-rpd-cadence>
+            {cadenceOpts.map(([v, label]) => (
+              <label class="rpd-radio"><input type="radio" name="rpd-cadence" class="radio radio-sm radio-primary" checked={v === curCad} data-rpd-cad={v} /> {label}</label>
+            ))}
+          </div>
+          {/* weekly/monthly reveal day+time; the two backup cadences are event triggers (no time). */}
+          <div class="rpd-cadence-fields" data-rpd-cadfields hidden={curCad === 'data_backup' || curCad === 'schema_backup'}>
+            <label class="rpd-inline" data-rpd-dow hidden={curCad !== 'weekly'}>
+              <span class="rpd-label-sm">Day</span>
+              <select class="select select-sm" data-rpd-day-week>{DOW.map((d, i) => <option value={i} selected={i === (sched?.day ?? 1)}>{d}</option>)}</select>
+            </label>
+            <label class="rpd-inline" data-rpd-dom hidden={curCad !== 'monthly'}>
+              <span class="rpd-label-sm">Day of month</span>
+              <select class="select select-sm" data-rpd-day-month>{Array.from({ length: 28 }, (_, i) => <option value={i + 1} selected={i + 1 === (sched?.day ?? 1)}>{ord(i + 1)}</option>)}</select>
+            </label>
+            <label class="rpd-inline" data-rpd-time hidden={curCad === 'data_backup' || curCad === 'schema_backup'}>
+              <span class="rpd-label-sm">Time</span>
+              <input type="time" class="input input-sm" data-rpd-time-in value={sched?.time ?? '09:00'} />
+              {/* D09 item 2 — a time input with no zone beside it asks the user to guess whose
+                  09:00 this is. The zone is stated once, here, where the value is typed. */}
+                </label>
+          </div>
+          <p class="rpd-echo" data-rpd-echo></p>
+        </div>
+
+        </div>
+        <div class="rpd-step" id="rpd-step-3" data-rpd-step="3">
+          <h3 class="rpd-step-h"><span class="step-n" aria-hidden="true">3</span>Where it goes</h3>
+        <div class="rpd-field">
+          <span class="rpd-label">Format</span>
+          <div class="rpd-checks">
+            <label class="rpd-check"><input type="checkbox" class="checkbox checkbox-sm" data-rpd-fmt="pdf" checked={isNew ? true : (sched?.formats.includes('pdf') ?? true)} /> PDF attachment</label>
+            <label class="rpd-check"><input type="checkbox" class="checkbox checkbox-sm" data-rpd-fmt="html" checked={!isNew && (sched?.formats.includes('html') ?? false)} /> HTML link</label>
+          </div>
+        </div>
+
+        <div class="rpd-field">
+          <span class="rpd-label">Recipients</span>
+          <RecipientInput name="rpd-rcpt" members={members} initial={isNew ? [] : (sched?.recipients ?? [])} />
+        </div>
+
+        <label class="rpd-field-row">
+          <span>
+            <span class="rpd-label">Don't send if nothing changed</span>
+            <span class="rpd-hint-sm">Skips the email when the period had no backups, issues, or changes.</span>
+          </span>
+          <input type="checkbox" class="toggle toggle-sm toggle-primary" data-rpd-suppress checked={isNew ? true : (sched?.suppressEmpty ?? true)} />
+        </label>
+
+        </div>
+        <div class="rpd-form-foot">
+          <span class="rpd-unsaved" data-rpd-unsaved hidden><span class="iconify lucide--circle-dot size-3.5" aria-hidden="true"></span>Unsaved changes</span>
+          {/* The save gate's message, where a sighted reader is looking when they press Save. The
+              `sr-only` live region below carries the same words for a screen reader; it used to be
+              the ONLY channel, which meant the page said nothing at all to most people. */}
+          <span class="rpd-save-error" data-rpd-save-error role="alert" hidden></span>
+          {/* X11-F3 — `Cancel` used to be a plain link one line below the words `Unsaved changes`:
+              the page said there was unsaved work and then offered a control that threw it away
+              without a word. `data-exit-guard` opts this in-surface link INTO the shared guard
+              (lib/exitGuard.ts), which leaves every other link in here free to navigate. The href is
+              untouched, so with the script absent Cancel is still a plain navigation. */}
+          <a href="/reports" class="btn btn-ghost btn-sm" data-exit-guard>Cancel</a>
+          <button type="button" class="btn btn-primary btn-sm" data-rpd-save>{isNew ? 'Create report' : 'Save changes'}</button>
+        </div>
+      </section>
+
+      {/* Live preview — what this report looks like using CURRENT data; reacts to sections + base scope. */}
+      {current ? (
+        <aside class="rpd-prev" data-rpd-prev aria-label="Report preview">
+          <div class="rpd-prev-head">
+            <span class="rpd-prev-title"><span class="iconify lucide--eye size-3.5 opacity-70" aria-hidden="true"></span>Preview</span>
+            <span class="rpd-prev-sub">This is what you'll see on the report</span>
+            <span class="rpd-prev-readonly ml-auto"><span class="iconify lucide--lock size-3 opacity-70" aria-hidden="true"></span>Read-only</span>
+          </div>
+          <div class="rpd-prev-body">
+            <div class="rpd-prev-sheet" aria-hidden="true">
+            <div class="rpd-prev-strip">
+              {current.strip.map((s) => (
+                <div class="rpd-prev-tile" data-prev-section={s.label.toLowerCase().includes('backup') ? 'backups' : s.label.toLowerCase().includes('connection') ? 'connections' : s.label.toLowerCase().includes('schema') ? 'schema' : 'docs'}>
+                  <div class="rpd-prev-tile-top"><span class="rpd-prev-tile-label">{s.label}</span><span class:list={['iconify rpd-prev-tile-ic', s.icon]} aria-hidden="true"></span></div>
+                  <span class="rpd-prev-tile-val tabular-nums">{s.value}</span>
+                </div>
+              ))}
+            </div>
+
+            {SECTION_ORDER.map((key) => {
+              const secData =
+                key === 'backups' ? current.backupSummary
+                : key === 'connections' ? current.connectionHealth
+                : key === 'schema' ? current.schemaHealth
+                : key === 'docs' ? current.documentation
+                : null;
+              return (
+                <div class="rpd-prev-card" data-prev-section={key}>
+                  <div class="rpd-prev-card-head">
+                    <span class:list={['iconify size-3.5 opacity-70', sectionIcon[key]]} aria-hidden="true"></span>
+                    <span class="rpd-prev-card-title">{SECTION_LABEL[key]}</span>
+                    {secData ? (
+                      <Badge size="sm" class="ml-auto" variant={toneBadgeOf(secData.tone)}>{secData.statusLabel}</Badge>
+                    ) : key === 'trends' ? (
+                      <Badge size="sm" class="ml-auto">{current.trends?.metrics.length ?? 0} metrics</Badge>
+                    ) : (
+                      <Badge size="sm" class="ml-auto">{current.dataHealth?.records.byBase.length ?? 0} bases</Badge>
+                    )}
+                  </div>
+                  <div class="rpd-prev-rows">
+                    {key === 'backups' && current.backupSummary.rows.slice(0, 4).map((r) => (
+                      <div class="rpd-prev-row" data-prev-base={baseIdByName[r.baseName] || ''}>
+                        <Badge size="sm" variant={(backupBadge[r.outcome] ?? UNKNOWN_BADGE).badge}>{(backupBadge[r.outcome] ?? UNKNOWN_BADGE).label}</Badge>
+                        <span class="rpd-prev-row-name">{r.baseName}</span>
+                        <span class="ml-auto tabular-nums text-base-content/65">{r.records !== null ? nf.format(r.records) : '—'}</span>
+                      </div>
+                    ))}
+                    {key === 'connections' && current.connectionHealth.rows.slice(0, 4).map((r) => (
+                      <div class="rpd-prev-row">
+                        <Badge size="sm" variant={(connBadge[r.status] ?? UNKNOWN_BADGE).badge}>{(connBadge[r.status] ?? UNKNOWN_BADGE).label}</Badge>
+                        <span class="rpd-prev-row-name">{r.name} <span class="text-base-content/65 capitalize">· {r.kind}</span></span>
+                      </div>
+                    ))}
+                    {key === 'schema' && current.schemaHealth.rows.slice(0, 4).map((r) => (
+                      <div class="rpd-prev-row" data-prev-base={baseOfLocation(r.location)}>
+                        <Badge size="sm" variant={changeToneOf(r.tone)}>{r.change}</Badge>
+                        <span class="rpd-prev-row-name">{r.entityName} <span class="text-base-content/65">· {r.location}</span></span>
+                      </div>
+                    ))}
+                    {key === 'docs' && current.documentation.rows.slice(0, 4).map((r) => (
+                      <div class="rpd-prev-row">
+                        {r.action === 'created' ? <Badge size="sm" variant="success">Created</Badge> : <span class="badge badge-sm badge-ghost">Updated</span>}
+                        <span class="rpd-prev-row-name">{r.title}</span>
+                      </div>
+                    ))}
+                    {key === 'trends' && (
+                      <div class="rpd-prev-sparks">
+                        {(current.trends?.metrics ?? []).slice(0, 6).map((m) => (
+                          <div class="rpd-prev-spark-card">
+                            <div class="rpd-prev-spark-top"><span class="rpd-prev-spark-lbl">{m.label}</span><span class="rpd-prev-spark-val tabular-nums">{nf.format(m.current)}</span></div>
+                            <svg class="rpd-prev-spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+                              <polygon class="rpd-prev-spark-area" points={`${sparkPoints(m.overall)} 100,24 0,24`} />
+                              <polyline class="rpd-prev-spark-line" points={sparkPoints(m.overall)} />
+                            </svg>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {key === 'dataHealth' && (current.dataHealth?.records.byBase ?? []).slice(0, 4).map((b) => (
+                      <div class="rpd-prev-row">
+                        <span class="rpd-prev-row-name">{b.baseName}</span>
+                        <span class="ml-auto tabular-nums text-base-content/65">{nf.format(b.recordCount)} · {b.storage}</span>
+                      </div>
+                    ))}
+                    <p class="rpd-prev-empty" data-prev-empty hidden>No rows for the selected bases.</p>
+                  </div>
+                </div>
+              );
+            })}
+            </div>
+          </div>
+        </aside>
+      ) : null}
+    </div>
+  </div>
+
+  <div class="sr-only" role="status" aria-live="polite" data-rpd-live></div>
+</div>
+
+{/* The ONE panel host (decision-one-stack-one-entity-one-drawer) — see the note in ReportDetailView.
+    Same guard as the panel below; `tablegap` stays at the 64 default because a report has no tree
+    gutter behind the stack to keep visible. */}
+{/* mincontent 720: the rendered report body overflows its own column below 702 and its tables paint
+    past the content edge below 678 — measured on this view. See PanelHost's header. */}
+{/* D06 — the same confirm the list row opens, on the page that owns the report. The alert carries
+    both halves: the mailing that stops (not undoable) and the definition that comes back if you act
+    inside the window (undoable). */}
+{!isNew && !def.isDefault && (
+  <ConfirmModal id="rpd-del-modal" title="Delete this report?" cancelLabel="Keep it" confirmLabel={del.confirmLabel} confirmClass={CONFIRM_DESTRUCTIVE} confirmIcon="lucide--trash-2">
+    <p class="text-sm text-base-content/65">{del.lead}</p>
+    <div role="alert" class="alert alert-soft alert-warning mt-3">
+      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+      <span>{del.consequence}</span>
+    </div>
+  </ConfirmModal>
+)}
+
+{/* D30 / X11-F3 — the ONE question this page asks on the way out, for Cancel, for a sidebar link,
+    and for browser Back alike. The lead states the fact and the alert states the consequence of the
+    SAME fact — the catalog records a case where a lead and its alert disagreed and the reader could
+    not tell which one the button would act on. Soft warning, not the loud variant: this discards one
+    unsaved edit and leaves the report, the schedule and the account exactly as they were. */}
+<ConfirmModal
+  id="rpd-exit-modal"
+  title="Leave without saving?"
+  cancelLabel="Keep editing"
+  confirmLabel="Discard and leave"
+  confirmClass={CONFIRM_DESTRUCTIVE}
+  confirmIcon="lucide--log-out"
+>
+  <p class="text-sm text-base-content/65">This report has changes you have not saved.</p>
+  <div role="alert" class="alert alert-soft alert-warning mt-3">
+    <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+    <span>Your changes will be discarded. Baseout keeps no draft of an edit, so nothing is held for you to come back to — the report keeps the settings it had before you opened this page.</span>
+  </div>
+</ConfirmModal>
+
+{/* THE TOAST HOST — mounted for any saved report, not only a deletable one.
+    Its condition used to be `!isNew && !def.isDefault`, which is DELETE's precondition (the default
+    report cannot be deleted) rather than the toast's. Delete was the only caller, so the mount
+    quietly encoded one verb's rule; the moment Run now and Retry started reporting their outcome
+    here, both went silent on the default report and nowhere else — with no error, because
+    `showUndoToast` returns early when its root is missing. A shared component's mount condition
+    belongs to the component, not to whoever happened to need it first. */}
+{!isNew && <UndoToast />}
+
+{schemaIndex.length > 0 && <PanelHost section="reports" mincontent={720} />}
+
+{/* Shared entity panel — a Most Recent schema reference opens the SAME drawer as Schema/Docs. It
+    contributes the `entity:` kind to the host above and renders no chrome of its own. */}
+{schemaIndex.length > 0 && (
+  <EntityPanel index={schemaIndex} docs={docs} changelog={changelog} automations={automations} interfaces={interfaces} chatThreads={chatThreads} aiState="ready" />
+)}
+
+<script is:inline>
+  const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  function initReportDef() {
+    const root = document.querySelector('[data-rpd]');
+    if (!root || root.dataset.rpdWired) return;
+    root.dataset.rpdWired = '1';
+    const live = root.querySelector('[data-rpd-live]');
+    const say = (m) => { if (live) live.textContent = m; };
+
+    // Tabs — DELETED from here. They were a private nine-line copy of `pattern-section-tabs` that
+    // read no URL and wrote none, which made these the only unlinkable tabs in the app (D07 item 5).
+    // They are now `wireSectionTabs` in the bundled script block below, because this block is
+    // `is:inline` and cannot import. It also finally dispatches `app:tabchange`, which is what
+    // `PanelHost` listens for — an entity drawer opened from Most Recent used to survive a switch
+    // to Settings and float over rows that no longer existed.
+
+    // Parity: the Most Recent tab renders ReportBodyKpi, whose schema-health rows carry data-rpt-entity;
+    // wire them to open the SAME shared EntityPanel (ReportDetailView does this for the run page).
+    root.querySelectorAll('[data-rpt-entity]').forEach((el) => {
+      if (el.dataset.rptWired) return;
+      el.dataset.rptWired = '1';
+      const open = () => { const id = el.dataset.rptEntity; if (id) document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id } })); };
+      el.addEventListener('click', open);
+      // The Enter/Space half moved to the bundled <script> below: D46 makes `lib/wireRowKeys` the
+      // one implementation, and this block is `is:inline`, so it cannot import it.
+    });
+
+    // Cadence progressive disclosure + next-run echo (mirrors the old schedule editor, v2 cadence).
+    const cadence = root.querySelector('[data-rpd-cadence]');
+    const cadTabs = cadence ? Array.from(cadence.querySelectorAll('[data-rpd-cad]')) : [];
+    const fields = root.querySelector('[data-rpd-cadfields]');
+    const dow = root.querySelector('[data-rpd-dow]');
+    const dom = root.querySelector('[data-rpd-dom]');
+    const timeWrap = root.querySelector('[data-rpd-time]');
+    const dayWeek = root.querySelector('[data-rpd-day-week]');
+    const timeIn = root.querySelector('[data-rpd-time-in]');
+    const echo = root.querySelector('[data-rpd-echo]');
+    let cad = cadence?.querySelector('[data-rpd-cad]:checked')?.dataset.rpdCad || 'data_backup';
+
+    const applyCadence = () => {
+      if (!fields) return;
+      const isEvent = cad === 'data_backup' || cad === 'schema_backup';
+      fields.hidden = isEvent;
+      if (dow) dow.hidden = cad !== 'weekly';
+      if (dom) dom.hidden = cad !== 'monthly';
+      if (timeWrap) timeWrap.hidden = isEvent;
+      if (!echo) return;
+      const t = timeIn?.value || '09:00';
+      const dw = dayWeek ? DOW[Number(dayWeek.value)] : 'Mon';
+      if (cad === 'data_backup') echo.textContent = 'Sends as soon as each data backup finishes. Next: after the next data backup.';
+      else if (cad === 'schema_backup') echo.textContent = 'Sends as soon as each schema backup finishes. Next: after the next schema backup.';
+      else if (cad === 'weekly') echo.textContent = `Every ${dw} at ${t}. Next: next ${dw} at ${t}.`;
+      else echo.textContent = `Monthly at ${t}. Next: on the chosen day at ${t}.`;
+    };
+    // Radios own their own selected state now — the handler only has to react to it.
+    cadTabs.forEach((tb) => tb.addEventListener('change', () => {
+      cad = tb.dataset.rpdCad || 'data_backup';
+      applyCadence();
+      markDirty();
+    }));
+    [dayWeek, timeIn].forEach((el) => el?.addEventListener('change', applyCadence));
+    applyCadence();
+
+    // ── Live preview — react to section checkboxes + a live base picker (client 2026-07-14) ──
+    const prev = root.querySelector('[data-rpd-prev]');
+    const basePick = root.querySelector('[data-rpd-basepick]');
+    const baseChecks = Array.from(root.querySelectorAll('[data-rpd-base]'));
+    const scopeSome = () => !!root.querySelector('[data-rpd-scope="some"]')?.checked;
+    const toggleBasePicker = () => { if (basePick) basePick.hidden = !scopeSome(); };
+    toggleBasePicker();
+    if (prev) {
+      const sectionChecks = Array.from(root.querySelectorAll('[data-rpd-section]'));
+      const applyPreview = () => {
+        // sections: show a preview block only if its checkbox is on
+        const on = new Set(sectionChecks.filter((c) => c.checked).map((c) => c.dataset.rpdSection));
+        prev.querySelectorAll('[data-prev-section]').forEach((el) => { el.hidden = !on.has(el.dataset.prevSection); });
+        // bases: "all" → every row; "some" → only rows whose base is ticked (untagged rows always show)
+        const some = scopeSome();
+        const selected = new Set(baseChecks.filter((c) => c.checked).map((c) => c.dataset.rpdBase));
+        prev.querySelectorAll('[data-prev-base]').forEach((row) => {
+          const b = row.dataset.prevBase;
+          row.hidden = !!(some && b && !selected.has(b));
+        });
+        // per-card "no rows for the selected bases" hint (only for cards that have base-tagged rows)
+        prev.querySelectorAll('.rpd-prev-card').forEach((card) => {
+          const rows = Array.from(card.querySelectorAll('.rpd-prev-row'));
+          const tagged = rows.some((r) => r.dataset.prevBase);
+          const anyVisible = rows.some((r) => !r.hidden);
+          const emptyEl = card.querySelector('[data-prev-empty]');
+          if (emptyEl) emptyEl.hidden = !(tagged && rows.length > 0 && !anyVisible);
+        });
+      };
+      sectionChecks.forEach((c) => c.addEventListener('change', () => { applyPreview(); markDirty(); }));
+      root.querySelectorAll('[data-rpd-scope]').forEach((r) => r.addEventListener('change', () => { toggleBasePicker(); applyPreview(); markDirty(); }));
+      baseChecks.forEach((c) => c.addEventListener('change', () => { applyPreview(); markDirty(); }));
+      applyPreview();
+
+    } else {
+      root.querySelectorAll('[data-rpd-scope]').forEach((r) => r.addEventListener('change', () => { toggleBasePicker(); markDirty(); }));
+    }
+
+    // ── Rolling window sub-config: "Last X days" is only meaningful for a rolling window ──
+    const windowSub = root.querySelector('[data-rpd-window-sub]');
+    const syncWindowSub = () => {
+      const rolling = root.querySelector('[data-rpd-window="rolling"]');
+      if (windowSub) windowSub.hidden = !(rolling && rolling.checked);
+    };
+    root.querySelectorAll('[data-rpd-window]').forEach((r) => r.addEventListener('change', syncWindowSub));
+    syncWindowSub();
+
+    // ── Unsaved-changes indicator (the preview invites tweaking; make Save's job clear) ──
+    const unsaved = root.querySelector('[data-rpd-unsaved]');
+    let dirty = false;
+    function markDirty() { if (dirty) return; dirty = true; if (unsaved) unsaved.hidden = false; }
+    root.querySelectorAll('[data-rpd-name], [data-rpd-window], [data-rpd-window-days], [data-rpd-fmt], [data-rpd-suppress], [data-rpd-day-week], [data-rpd-day-month], [data-rpd-time-in]')
+      .forEach((el) => { el.addEventListener('change', markDirty); el.addEventListener('input', markDirty); });
+    // recipient edits also count
+    document.addEventListener('input', (e) => { if ((e.target).closest?.('[data-rcp]')) markDirty(); });
+
+    // Row keyboard for history rows lives in the bundled <script> below (D46 — one implementation,
+    // and this block is `is:inline` so it cannot import). It matters more here than anywhere: the
+    // History table is sorted and paged, so the rows this loop used to see were replaced the first
+    // time anyone touched a column header, and the replacements had no keyboard at all.
+
+    // ── SAVE IS GATED (2026-08-11, D13/J07-F4) ────────────────────────────────────────────────
+    // The whole handler used to be `dirty = false; say('Saved.')` — no name check, no recipients,
+    // no format, no sections. So "Create report" accepted a nameless report with nobody to send it
+    // to, announced that it had saved one, and stayed on the page. A report with no name and no
+    // recipients is not a report.
+    //
+    // The gate is the same shape the restore form uses: compute what is MISSING, block the verb,
+    // and name the first missing thing. And it is announced BOTH ways — the `sr-only` live region
+    // was the only channel here, so a sighted user got no message at all (J07-F18's other half).
+    const problems = () => {
+      const out = [];
+      const nameEl = root.querySelector('[data-rpd-name]');
+      if (!nameEl || !nameEl.value.trim()) out.push({ field: 'name', el: nameEl, msg: 'Give the report a name.' });
+      const secOn = Array.from(root.querySelectorAll('[data-rpd-section]')).filter((c) => c.checked);
+      if (secOn.length === 0) out.push({ field: 'sections', el: root.querySelector('[data-rpd-section]'), msg: 'Pick at least one section — a report with none has nothing to say.' });
+      const rcpts = root.querySelectorAll('[data-rcp] .rcp-chip').length;
+      const bad = root.querySelectorAll('[data-rcp] .rcp-chip[data-kind="invalid"]').length;
+      if (rcpts === 0) out.push({ field: 'recipients', el: root.querySelector('[data-rcp-input]'), msg: 'Add at least one recipient — nobody receives this yet.' });
+      else if (bad > 0) out.push({ field: 'recipients', el: root.querySelector('[data-rcp-input]'), msg: `${bad} recipient${bad === 1 ? ' is' : 's are'} not a valid email. Click the red chip${bad === 1 ? '' : 's'} to fix.` });
+      const fmtOn = Array.from(root.querySelectorAll('[data-rpd-fmt]')).filter((c) => c.checked);
+      if (fmtOn.length === 0) out.push({ field: 'format', el: root.querySelector('[data-rpd-fmt]'), msg: 'Pick at least one format — PDF, HTML, or both.' });
+      return out;
+    };
+    const saveErr = root.querySelector('[data-rpd-save-error]');
+    const showProblem = (p) => {
+      if (saveErr) { saveErr.hidden = !p; saveErr.textContent = p ? p.msg : ''; }
+      // Take the reader TO the thing that is missing. A message about a field two screens away is a
+      // message about nothing.
+      if (p && p.el) { p.el.scrollIntoView({ block: 'center', behavior: 'smooth' }); if (p.el.focus) p.el.focus({ preventScroll: true }); }
+    };
+
+    // Stubs removed — Run now / Save / Delete are wired in the bundled <script> below
+    // (this block is is:inline and cannot import the proxy helpers). Validation stays here
+    // via `problems()`; Save dispatches `reports:save` for the module script to persist.
+    root.querySelector('[data-rpd-save]')?.addEventListener('click', () => {
+      const bad = problems();
+      if (bad.length) { showProblem(bad[0]); say(bad[0].msg); return; }
+      showProblem(null);
+      root.dispatchEvent(new CustomEvent('reports:save', { bubbles: true }));
+    });
+    // Clearing the offending field clears the message — an error that outlives its cause is noise.
+    root.addEventListener('input', () => { if (saveErr && !saveErr.hidden && problems().length === 0) showProblem(null); });
+    root.addEventListener('change', () => { if (saveErr && !saveErr.hidden && problems().length === 0) showProblem(null); });
+    root.querySelector('[data-rpd-dup]')?.addEventListener('click', () => say('Duplicate is not wired yet — create a new report from Settings instead.'));
+    // Delete is NOT wired here (audit D06). It went straight to `/reports` on the click — no
+    // question asked about a report with a live external mailing. It now opens `rpd-del-modal` and
+    // then offers Undo, and both need module imports, so the wiring lives in the second <script>
+    // block below (this one is `define:vars`, which Astro never bundles).
+  }
+  initReportDef();
+  document.addEventListener('astro:page-load', initReportDef);
+</script>
+
+<script>
+  /**
+   * Tabs, history sort + pager. A SECOND script block on purpose — the one above is `is:inline`,
+   * which Astro never bundles, so it cannot `import`. The tab controller, the shared sorter and the
+   * shared pager all arrive as modules, so they wire from here.
+   */
+  import { wireSectionTabs } from '../components/ui/sectionTabs';
+  import { wireTableSort } from '../components/schema/tableSort';
+  import { createPager } from '../components/ui/tablePager';
+  import { showUndoToast } from '../components/ui/undoToast';
+  import { wireExitGuard } from '../lib/exitGuard';
+  import { wireRowKeys } from '../lib/wireRowKeys';
+  import { generateReport, deleteReport, saveReportDefinition } from '../lib/reports/clientApi';
+
+  function spaceAndReport(): { spaceId: string; reportId: string; isNew: boolean; latestRun: string } {
+    const root = document.querySelector<HTMLElement>('[data-rpd]');
+    return {
+      spaceId: root?.dataset.spaceId || '',
+      reportId: root?.dataset.reportId || '',
+      isNew: root?.dataset.isNew === '1',
+      latestRun: root?.dataset.latestRun || '',
+    };
+  }
+
+  function collectDefinitionPayload(root: HTMLElement): Record<string, unknown> {
+    const name = (root.querySelector('[data-rpd-name]') as HTMLInputElement | null)?.value.trim() || '';
+    const sections = Array.from(root.querySelectorAll<HTMLInputElement>('[data-rpd-section]:checked')).map(
+      (c) => c.dataset.rpdSection,
+    );
+    const windowKind =
+      (root.querySelector('[data-rpd-window]:checked') as HTMLInputElement | null)?.dataset.rpdWindow ||
+      'since_last';
+    const windowDaysRaw = (root.querySelector('[data-rpd-window-days]') as HTMLInputElement | null)?.value;
+    const windowDays = windowKind === 'rolling' ? Number(windowDaysRaw || 30) : null;
+    const baseScopeSome = !!(root.querySelector('[data-rpd-scope="some"]') as HTMLInputElement | null)?.checked;
+    const baseScope = baseScopeSome
+      ? Array.from(root.querySelectorAll<HTMLInputElement>('[data-rpd-base]:checked')).map((c) => c.dataset.rpdBase!)
+      : null;
+    const cadence =
+      (root.querySelector('[data-rpd-cad]:checked') as HTMLInputElement | null)?.dataset.rpdCad || null;
+    const formats = Array.from(root.querySelectorAll<HTMLInputElement>('[data-rpd-fmt]:checked')).map(
+      (c) => c.dataset.rpdFmt,
+    );
+    const recipients = Array.from(root.querySelectorAll<HTMLElement>('[data-rcp] .rcp-chip')).map((chip) => ({
+      kind: (chip.dataset.kind === 'member' ? 'member' : 'external') as 'member' | 'external',
+      email: chip.dataset.email || chip.textContent?.trim() || '',
+      name: chip.dataset.name || undefined,
+    })).filter((r) => r.email);
+    const scheduleDay =
+      cadence === 'weekly'
+        ? Number((root.querySelector('[data-rpd-day-week]') as HTMLSelectElement | null)?.value || 1)
+        : cadence === 'monthly'
+          ? Number((root.querySelector('[data-rpd-day-month]') as HTMLSelectElement | null)?.value || 1)
+          : null;
+    const scheduleTime =
+      cadence === 'weekly' || cadence === 'monthly'
+        ? (root.querySelector('[data-rpd-time-in]') as HTMLInputElement | null)?.value || '09:00'
+        : null;
+    const suppress = !!(root.querySelector('[data-rpd-suppress]') as HTMLInputElement | null)?.checked;
+    return {
+      name,
+      sections,
+      baseScope,
+      windowKind,
+      windowDays,
+      scheduleCadence: cadence,
+      scheduleDay,
+      scheduleTime,
+      scheduleFormats: formats,
+      scheduleRecipients: recipients,
+      scheduleSuppressEmpty: suppress,
+      scheduleEnabled: true,
+    };
+  }
+
+  /**
+   * D46 — Enter/Space for both of this page's clickable-row families, from the ONE implementation.
+   *
+   * Both used to be per-row `keydown` loops in the `is:inline` block above, which could not import
+   * a module. Two things are fixed by moving them here: the History rows are sorted and paged, so
+   * the nodes those loops wired stop existing the moment a header is clicked; and `.rpd-row` rows
+   * for a running or failed generation deliberately carry NO `role="button"` — `requireRole` keeps
+   * them inert, which the old `.rpd-row[role="button"]` selector only achieved at init time.
+   *
+   * `.rpd-row` IS GONE FROM HERE: `Table.astro` mounts it from `rowSelector=".rpd-row"`, rooted on
+   * the table wrapper. Keeping this call as well would put two handlers on one keypress — neither
+   * stops propagation and `wireRowKeys` idempotence is keyed per (root, selector), so Enter would
+   * have called `row.click()` twice. `requireRole` is still the default in the vessel's mount, so
+   * the running / failed-generation rows stay inert exactly as before.
+   */
+  function initReportDefRowKeys() {
+    const root = document.querySelector<HTMLElement>('[data-rpd]');
+    if (!root) return;
+    wireRowKeys(root, {
+      rowSelector: '[data-rpt-entity]',
+      onActivate: (row) => {
+        const id = row.dataset.rptEntity;
+        if (id) document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id } }));
+      },
+    });
+  }
+  initReportDefRowKeys();
+  document.addEventListener('astro:page-load', initReportDefRowKeys);
+
+  /**
+   * D30 / X11-F3 — THE EXIT GUARD.
+   *
+   * The page had already computed the predicate: `[data-rpd-unsaved]` is un-hidden by `markDirty()`
+   * and re-hidden by a successful Save, in the `is:inline` block above. That element IS the dirty
+   * state, so the guard reads it rather than keeping a second copy that could disagree with the
+   * words on screen — and it is the only way to share the state at all, since an `is:inline` block
+   * is never bundled and cannot export anything.
+   *
+   * `beforeUnload: true` here and on `SchemaDocs` only. D30's amendment is explicit that a blanket
+   * `beforeunload` is the wrong instrument; these two are the exception because what they lose is
+   * authored work with no draft behind it.
+   */
+  function initReportExitGuard() {
+    const root = document.querySelector<HTMLElement>('[data-rpd]');
+    if (!root || !document.getElementById('rpd-exit-modal') || root.dataset.rpdGuardWired) return;
+    root.dataset.rpdGuardWired = '1';
+    const unsaved = root.querySelector<HTMLElement>('[data-rpd-unsaved]');
+    wireExitGuard({
+      root,
+      dialogId: 'rpd-exit-modal',
+      beforeUnload: true,
+      somethingToLose: () => !!unsaved && !unsaved.hidden,
+    });
+  }
+  initReportExitGuard();
+  document.addEventListener('astro:page-load', initReportExitGuard);
+
+  /**
+   * D07 item 5 — the report's tabs join `pattern-section-tabs`, so `?tab=history` is a link a
+   * person can send and the address bar always describes what is on screen.
+   *
+   * Skipped on the CREATE form, which renders exactly one tab (Settings) inside a hidden tablist:
+   * wiring it would stamp `?tab=settings` onto `/reports/new`, a coordinate in a flow that has no
+   * other position to be in.
+   *
+   * No `searchSelector` — these panels hold no search input, and claiming "/" here would steal the
+   * key from the page without focusing anything.
+   */
+  function initReportDefTabs() {
+    const root = document.querySelector<HTMLElement>('[data-rpd]');
+    if (!root) return;
+    if (root.querySelectorAll('[data-tab]').length < 2) return;
+    wireSectionTabs({ root });
+  }
+  initReportDefTabs();
+  document.addEventListener('astro:page-load', initReportDefTabs);
+
+  /**
+   * DELETE — confirm, then undo (audit D06).
+   *
+   * The removal is provisional: leaving the report page is what "committing" looks like here, so the
+   * navigation waits for the undo window to close instead of happening on the confirm click. Undo
+   * cancels it and leaves you where you were. Nothing is authored in this handler — the dialog's two
+   * sentences are server-rendered from `describeReportDeletion`, and the toast line rides on the
+   * trigger's `data-del-toast`.
+   */
+  function initReportDelete() {
+    const btn = document.querySelector<HTMLElement>('[data-rpd-del]');
+    const dlg = document.getElementById('rpd-del-modal') as HTMLDialogElement | null;
+    if (!btn || !dlg || btn.dataset.rpdDelWired) return;
+    btn.dataset.rpdDelWired = '1';
+    btn.addEventListener('click', () => dlg.showModal());
+    dlg.addEventListener('close', () => {
+      if (dlg.returnValue !== 'confirm') return;
+      const { spaceId, reportId } = spaceAndReport();
+      showUndoToast(
+        btn.dataset.delToast || 'Report deleted',
+        { label: 'Undo', run: () => {} },
+        async () => {
+          if (!spaceId || !reportId || reportId === 'new') {
+            window.location.href = '/reports';
+            return;
+          }
+          const res = await deleteReport(spaceId, reportId);
+          if (!res.ok) {
+            showUndoToast(`Could not delete: ${res.error}`, null);
+            return;
+          }
+          window.location.href = '/reports';
+        },
+      );
+    });
+  }
+  initReportDelete();
+  document.addEventListener('astro:page-load', initReportDelete);
+
+  function initReportVerbs() {
+    const root = document.querySelector<HTMLElement>('[data-rpd]') ?? document.body;
+    if (root.dataset.rpdVerbsWired) return;
+    root.dataset.rpdVerbsWired = '1';
+
+    document.querySelectorAll<HTMLElement>('[data-rpd-retry], [data-rpd-run]').forEach((b) => {
+      if (b.dataset.wiredRun) return;
+      b.dataset.wiredRun = '1';
+      b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const { spaceId, reportId } = spaceAndReport();
+        if (!spaceId || !reportId || reportId === 'new') {
+          showUndoToast('Save the report before running it.', null);
+          return;
+        }
+        const res = await generateReport(spaceId, reportId, b as HTMLButtonElement);
+        if (!res.ok) {
+          showUndoToast(`Could not queue report: ${res.error}`, null);
+          return;
+        }
+        showUndoToast('Report queued. It will appear in History when it finishes.', null);
+        window.setTimeout(() => window.location.reload(), 1200);
+      });
+    });
+
+    root.addEventListener('reports:save', async () => {
+      const { spaceId, reportId, isNew } = spaceAndReport();
+      const rpd = document.querySelector<HTMLElement>('[data-rpd]');
+      if (!rpd || !spaceId) {
+        showUndoToast('Save failed — missing Space context.', null);
+        return;
+      }
+      const payload = collectDefinitionPayload(rpd);
+      const saveBtn = rpd.querySelector<HTMLButtonElement>('[data-rpd-save]');
+      const res = await saveReportDefinition(spaceId, isNew ? null : reportId, payload, saveBtn);
+      if (!res.ok) {
+        showUndoToast(`Could not save: ${res.error}`, null);
+        return;
+      }
+      const unsaved = rpd.querySelector<HTMLElement>('[data-rpd-unsaved]');
+      if (unsaved) unsaved.hidden = true;
+      showUndoToast('Report saved.', null);
+      if (isNew || res.id !== reportId) {
+        window.location.href = `/reports/${encodeURIComponent(res.id)}?tab=settings`;
+      }
+    });
+  }
+  initReportVerbs();
+  document.addEventListener('astro:page-load', initReportVerbs);
+
+  function initReportHistory() {
+    const root = document.querySelector<HTMLElement>('[data-panel="history"]');
+    if (!root || root.dataset.rpdHistWired) return;
+    const tbody = root.querySelector<HTMLElement>('tbody');
+    if (!tbody) return;
+    root.dataset.rpdHistWired = '1';
+    const rows = Array.from(root.querySelectorAll<HTMLElement>('[data-rpd-run-row]'));
+    // `thead [data-sort-col]`, NOT `th[data-sort-col]`: the vessel puts the attribute on the
+    // `<button>` inside the header cell, which is what makes the sort reachable by keyboard.
+    const headers = Array.from(root.querySelectorAll<HTMLElement>('thead [data-sort-col]'));
+    /**
+     * THE INITIAL CARET, which the vessel has no prop for.
+     *
+     * `<th data-sort-col="0" data-sort-dir="desc">Period</th>` used to declare it in markup. It was
+     * never a state `wireTableSort` knew about — that module starts at `col = -1`, so the first
+     * click on Period sorted ASCENDING while the caret had been claiming descending — it was a
+     * static claim about the SERVER's order, which `runs` really is (`windowEnd` descending, in the
+     * frontmatter). Re-applied here rather than dropped, so History still opens saying how it is
+     * sorted; `tableA11y`'s observer now mirrors it into `aria-sort="descending"` on the `<th>`,
+     * which the markup version never produced. Surfaced as a vessel gap: `TableColumn` has no
+     * `initialSort`, and a caller that needs one has to reach past the header it cannot write.
+     */
+    headers[0]?.setAttribute('data-sort-dir', 'desc');
+
+    const render = () => {
+      // Nothing filters this trail, so the pager's list is simply every run in its current order.
+      const win = new Set(pager.window(rows));
+      rows.forEach((r) => { r.style.display = win.has(r) ? '' : 'none'; });
+    };
+    const pager = createPager({
+      root, name: 'rpdruns', sizes: [10, 20, 50], defaultSize: 20,
+      storageKey: 'reports-rpdruns-pagesize', onChange: () => render(),
+    });
+    wireTableSort(
+      root,
+      () => [{ headers, container: tbody, items: () => rows }],
+      (item, col) => {
+        // Raw attribute, not dataset: `data-sort-0` is not camel-cased to `sort0`.
+        const v = item.getAttribute(`data-sort-${col}`) || '';
+        const n = Number(v);
+        return Number.isFinite(n) && v !== '' ? n : String(v);
+      },
+      // A new order means page 1 is a different set of runs.
+      () => { pager.reset(); reorder(); render(); },
+    );
+    // wireTableSort reorders the DOM; `rows` must follow it, or the next page window would be taken
+    // from the OLD order and the pager would show rows that are no longer where it thinks they are.
+    const reorder = () => {
+      const now = Array.from(tbody.querySelectorAll<HTMLElement>('[data-rpd-run-row]'));
+      rows.splice(0, rows.length, ...now);
+    };
+    render();
+  }
+  initReportHistory();
+  document.addEventListener('astro:page-load', initReportHistory);
+</script>
+
+<style>
+  .rpd { display: flex; flex-direction: column; gap: 1rem; }
+  .rpd-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .rpd-actions { display: inline-flex; align-items: center; gap: .5rem; }
+  .rpd-tabs { display: flex; border-bottom: 1px solid var(--color-base-300); }
+
+  .rpd-recent-bar { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .rpd-recent-meta { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  .rpd-card { border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: var(--color-base-100); }
+  /* `.rpd-tablewrap`'s OWN RULES MOVED to the `is:global` block at the end of this file, because
+     `Table.astro` renders the `<thead>` now and a scoped selector naming `th` is stamped with THIS
+     view's cid while the header carries the vessel's — it matches nothing, with all four gates
+     green (`infra-astro-scoped-styles-child-component`). The `overflow-x` companion travels with it
+     so the table's metrics read in one place. Only the narrow inset below stays here: it names no
+     `th`, and `.rpd-tablewrap` is the vessel's ROOT element, which does inherit this view's cid. */
+  /* THE ROW NEEDS ITS OWN INSET HERE, because the card around it has none.
+     `pattern-mobile-row` sets `padding: 12px 4px` on the row, and 4px is right where the CONTAINER
+     supplies the gutter — which is what `.bl-panel` does on the audit tables the pattern was written
+     for. Reports' wrappers have `padding: 0`, so at 375 the row's text started **17px** from the
+     viewport edge (12 page gutter + 4 row + 1 border) and read as flush against the screen. Oleh:
+     «маленькі відступи справа зліва недостатні». 12px puts it on the same inset the rest of the
+     app's narrow lists have, and it is on the 4px grid. Scoped to the narrow band: above it the
+     table has real cells with their own padding and needs none of this. */
+  @media (max-width: 1279.98px) {
+    .rpd-tablewrap { padding-inline: 12px; }
+  }
+
+  /* NO LIVE PREVIEW ON A NARROW SCREEN (Oleh: «я думаю, нам взагалі воно не потрібно на мобільному
+     екрані»), and the measurement agrees with him. The preview is a SIDE-BY-SIDE device: at 1440 it
+     takes two fifths of the width and you watch it change as you edit. Below the boundary the grid
+     collapses to one column, so it stops being a preview and becomes a **476px-wide second copy of
+     the report stacked under the form** — the same document the Most Recent tab already renders one
+     tap away, restated in full underneath the fields it is supposed to be reacting to.
+     `display: none`, not visually-hidden: it is a duplicate, so there is nothing here a screen
+     reader loses that the tab beside it does not already carry. */
+  @media (max-width: 1279.98px) {
+    /* `aside.` — SOURCE ORDER, for the third time this week. `.rpd-prev`'s own declarations sit
+       ~40 lines BELOW this block, and a media query changes WHEN a rule is considered, never
+       whether it wins: at equal specificity the later rule took it and the preview stayed
+       `display: flex`, 812px tall. Measured after the first attempt, which is the only reason this
+       comment exists. (0,1,1) beats (0,1,0) regardless of order. */
+    aside.rpd-prev { display: none; }
+  }
+
+  /* Delivery failures, expanded on the row — the catalog `dropdown` panel chrome. The trigger is a
+     ghost button so the cell still reads as data rather than as a second action column; the panel
+     carries the standard card border/background/radius, and its own click never reaches the row. */
+  .rpd-del { display: inline-flex; }
+  /* Chrome comes from the catalog `dropdown` entry, which is explicit that a popover must not
+     hand-roll it: `rounded-box` + `shadow` are on the element's class list, so the radius is the
+     --radius-box token rather than a 47th literal and the elevation is the shared one. Only the
+     layout of the panel's contents lives here. */
+  .rpd-delpanel { display: flex; flex-direction: column; gap: 8px; z-index: 10; margin-top: 4px; width: 18rem; white-space: normal; padding: 12px; border: 1px solid var(--color-base-300); background: var(--color-base-100); }
+  .rpd-delhead { font-size: var(--t-11); font-weight: 650; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rpd-delrow { display: flex; flex-direction: column; }
+  .rpd-delmail { font-size: var(--t-13); font-weight: 600; overflow-wrap: anywhere; color: var(--color-base-content); }
+  .rpd-delwhy { font-size: var(--t-12); color: var(--color-error); }
+  /* Small red text on white fails AA with the raw error token — the same light-theme correction
+     the backups drawers already carry. */
+  :global([data-theme="baseout-light"]) .rpd-delwhy { color: oklch(from var(--color-error) calc(l - 0.06) c h); }
+
+  /* Settings — form beside a live preview; stacks on a narrow viewport. */
+  /* Preview is the wider column (~2/3) so the user sees what to expect; the form is the narrower ~1/3. */
+  /* Editing an existing report: the preview leads, because you are checking output. CREATING one:
+     the form leads (Oleh 2026-07-24) — at 2fr the preview took two thirds of the screen to show a
+     document that does not exist yet, which is why it read as the thing to pay attention to. */
+  .rpd-settings-grid { display: grid; grid-template-columns: minmax(20rem, 1fr) minmax(0, 2fr); gap: 1rem; align-items: start; }
+  /* Editing an existing report: the preview leads, because you are checking output. CREATING one:
+     the form leads (Oleh 2026-07-24) — at 2fr the preview took two thirds of the screen to show a
+     document that does not exist yet, which is why it read as the thing to pay attention to. */
+  .rpd-settings-grid[data-creating] { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+  /* One narrow rule for both templates. There were two: this one and an identical
+     `.rpd-settings-grid { 1fr }` seventeen lines below, whose whole contribution was to re-declare
+     what this line already says (the `[data-creating]` half of this selector is (0,2,0) and the
+     duplicate could never have reached it anyway). Deleted rather than kept as a second place to
+     change — measured before and after at 1200: single column both times. */
+  @media (max-width: 1279.98px) { .rpd-settings-grid, .rpd-settings-grid[data-creating] { grid-template-columns: 1fr; } }
+
+  .rpd-step { display: flex; flex-direction: column; gap: 1.25rem; scroll-margin-top: 88px; }
+  .rpd-step + .rpd-step { padding-top: 1.25rem; border-top: 1px solid var(--color-base-300); }
+  /* A numbered heading, not a rail (Oleh 2026-07-24). A sticky step rail beside the form was tried
+     and was more machinery than the problem deserved: the headings already exist, so numbering them
+     is enough to say "these are filled in order, top to bottom". */
+  .rpd-step-h { display: flex; align-items: center; gap: 8px; font-size: var(--t-12); font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); margin: 0; }
+  /* The numeral carries the ordering, so it is the one thing in the heading that should catch the
+     eye — at base-300/60% it disappeared into a muted uppercase label (Oleh 2026-07-24). Lifted to
+     the app's soft-primary, the same recipe an active facet or a selected segment uses, so it reads
+     as "notable" without becoming a badge: the heading TEXT stays muted, only the number lifts.
+     It is `.step-n` now (styles/components/step-number.css) and shared with the Restore wizard,
+     which had grown its own copy differing in five metrics. The 14%/34% tints stated here were also
+     off the alpha ladder; the shared rule uses .16 and .35. */
+  .rpd-step-h > .step-n { letter-spacing: 0; }
+
+  .rpd-form { padding: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; }
+  /* ONE LEFT EDGE BELOW 1280 (2026-08-13). 20px put every field label on **33** while the History
+     tab's rows — same URL, one tap away — sit on **29** (12 gutter + 1 border + 16). 16 here makes
+     Settings, New report and the run lists share one inset. This block sits BELOW the declaration
+     it overrides on purpose: a media query changes when a rule is considered, not whether it wins,
+     and at equal specificity the later rule takes it. Verified by computed value, not by source. */
+  @media (max-width: 1279.98px) {
+    .rpd-form { padding-inline: 16px; }
+  }
+  .rpd-field { display: flex; flex-direction: column; gap: .5rem; }
+  /* THE COMMENT THAT WAS HERE WAS WRONG, and it is replaced rather than deleted because a wrong
+     explanation in a file is worse than none — the next reader would have chased daisyUI.
+
+     What I wrote: "something in the base layer styles a bare `label` as a centred flex box", so I
+     raised this selector from (0,1,0) to (0,1,1) and measured at 390, where it read correct.
+     Oleh's next screenshot showed it still broken.
+
+     What it actually is: **our own rule**, `#layout-content label:has(> .toggle)` in
+     `global.css:630` — the 2026-08-10 tap-target pass — at **(1,1,1)**. An id beats anything this
+     file can write, so `label.` moved (0,1,1) → (0,2,1) and changed nothing at all. And the
+     centring only shows where the row has FREE SPACE to distribute: at 390 the label span already
+     fills the row, so `center` and `space-between` land in the same place. 390 was the one width
+     where the bug is invisible, and it is the only width I checked.
+
+     Fixed in `global.css`, not here: the packing now applies only to a label whose sole child IS
+     the switch. This declaration was always correct and is left exactly as it was. */
+  label.rpd-field-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+  .rpd-label { font-size: var(--t-13); font-weight: 650; }
+  /* Both at the 12px floor (were .72rem/11.52px and .74rem/11.84px). These are FORM chrome — the
+     labels above the schedule selects and the hint under a checkbox — so they are lifted, not
+     excused: the audit ruled a reference surface does not get to sit under a stated rule. */
+  .rpd-label-sm { font-size: var(--t-12); font-weight: 600; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rpd-hint-sm { display: block; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin-top: 4px; }
+  .rpd-checks { display: flex; flex-direction: column; gap: .5rem; }
+  .rpd-check { display: flex; align-items: center; gap: .5rem; font-size: var(--t-14); }
+  .rpd-radios { display: flex; flex-direction: column; gap: .5rem; }
+  .rpd-radio { display: flex; align-items: center; gap: .5rem; font-size: var(--t-14); }
+  /* Rolling-window "Last X days" sub-config — indented under the rolling radio so it reads as its child. */
+  .rpd-window-sub { display: flex; align-items: center; gap: .5rem; margin-left: 1.5rem; font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rpd-window-sub[hidden] { display: none; }
+  .rpd-window-days { width: 4.5rem; text-align: right; }
+  .rpd-basepick { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; margin-left: 24px; }
+  .rpd-sep { height: 1px; background: var(--color-base-300); }
+  .rpd-cadence { margin-bottom: .25rem; }
+  .rpd-cadence-fields { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; margin-top: .5rem; }
+  .rpd-inline { display: flex; flex-direction: column; gap: .25rem; }
+  .rpd-echo { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin-top: .5rem; }
+  .rpd-form-foot { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; padding-top: .5rem; border-top: 1px solid var(--color-base-300); }
+  /* LEFT-ALIGNED BELOW THE BOUNDARY (Oleh: «тут треба вирівнювання по лівому краю»).
+     `flex-end` is the desktop convention and stays there — a wide form has its fields on one side
+     and its verbs on the other, and the eye has somewhere to rest between them. In a single narrow
+     column there is no other side: every label, checkbox and toggle above sits on the left edge and
+     the two buttons alone jumped to the right, so the primary action ended up diagonally opposite
+     everything it applies to. One left edge for the whole form. The status spans keep their place
+     ahead of the verbs — state first, then what you can do about it. */
+  @media (max-width: 1279.98px) {
+    .rpd-form-foot { justify-content: flex-start; flex-wrap: wrap; }
+  }
+  .rpd-save-error { margin-right: auto; display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); color: var(--color-error); }
+  .rpd-unsaved { margin-right: auto; display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); color: var(--color-warning); }
+
+  /* Live preview — framed as a READ-ONLY document on a canvas, visually distinct from the editable form:
+     a dashed frame, a dotted backdrop, and a non-interactive "sheet" so it never looks editable. */
+  /* Fill the viewport height (sticky) so the preview reads as a full document, not a stubby cut-off panel. */
+  .rpd-prev { position: sticky; top: 1rem; height: calc(100vh - 2rem); display: flex; flex-direction: column; border: 1px dashed var(--color-base-300); border-radius: var(--r-12); background: var(--color-base-100); overflow: hidden; }
+  .rpd-prev-head { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; padding: .75rem 1rem; border-bottom: 1px solid var(--color-base-300); }
+  .rpd-prev-title { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-13); font-weight: 650; }
+  .rpd-prev-sub { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rpd-prev-readonly { display: inline-flex; align-items: center; gap: .25rem; font-size: var(--t-12); font-weight: 600; letter-spacing: .03em; text-transform: uppercase; padding: .12rem .5rem; border-radius: 999px; color: oklch(from var(--color-base-content) l c h / .65); background: var(--color-base-200); border: 1px solid var(--color-base-300); }
+  /* The canvas: a recessed dotted backdrop that reads as a preview surface, not an editable panel. */
+  .rpd-prev-body { flex: 1 1 auto; min-height: 0; padding: 1rem; overflow-y: auto;
+    background-color: oklch(from var(--color-base-200) l c h / .55);
+    background-image: radial-gradient(oklch(from var(--color-base-content) l c h / .07) 1px, transparent 1.4px);
+    background-size: 12px 12px; }
+  /* The sheet: the report rendering itself — NON-INTERACTIVE (look, don't touch). */
+  .rpd-prev-sheet { pointer-events: none; user-select: none; display: flex; flex-direction: column; gap: .75rem; }
+  .rpd-prev-sheet > * { flex: none; }
+  .rpd-prev-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+  .rpd-prev-tile { display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border: 1px solid var(--color-base-300); border-radius: var(--r-8); background: var(--color-base-100); }
+  .rpd-prev-tile-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .rpd-prev-tile-label { font-size: .68rem; /* ds-ok: inside the report MINIATURE, not panel chrome — a thumbnail renders its document small on purpose; lifting it to 12px would stop it reading as a preview */ font-weight: 600; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rpd-prev-tile-ic { font-size: var(--t-14); color: var(--color-primary); flex: none; }
+  .rpd-prev-tile-val { font-size: var(--t-16); font-weight: 700; letter-spacing: -.01em; }
+  .rpd-prev-card { border: 1px solid var(--color-base-300); border-radius: var(--r-8); background: var(--color-base-100); overflow: hidden; box-shadow: 0 1px 3px oklch(0 0 0 / .07); }
+  .rpd-prev-card-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px; border-bottom: 1px solid var(--color-base-300); }
+  .rpd-prev-card-title { font-size: var(--t-12); font-weight: 600; }
+  .rpd-prev-rows { display: flex; flex-direction: column; }
+  .rpd-prev-row { display: flex; align-items: center; gap: 8px; padding: 8px 8px; font-size: var(--t-12); border-top: 1px solid oklch(from var(--color-base-300) l c h / .55); }
+  .rpd-prev-row:first-child { border-top: 0; }
+  .rpd-prev-row-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rpd-prev-empty { padding: .5rem .6rem; font-size: .74rem; /* ds-ok: miniature interior, see .rpd-prev-tile-label */ color: oklch(from var(--color-base-content) l c h / .65); }
+  /* Trends preview reads as little charts (not a table) — a grid of tiny sparkline cards. */
+  .rpd-prev-sparks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 8px 8px; }
+  .rpd-prev-spark-card { display: flex; flex-direction: column; gap: 4px; padding: 4px 8px; border: 1px solid oklch(from var(--color-base-300) l c h / .65); border-radius: var(--r-6); background: oklch(from var(--color-base-200) l c h / .35); }
+  .rpd-prev-spark-top { display: flex; align-items: baseline; justify-content: space-between; gap: 4px; }
+  .rpd-prev-spark-lbl { font-size: .64rem; /* ds-ok: miniature interior, see .rpd-prev-tile-label */ color: oklch(from var(--color-base-content) l c h / .65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rpd-prev-spark-val { font-size: .72rem; /* ds-ok: miniature interior, see .rpd-prev-tile-label */ font-weight: 650; flex: none; }
+  .rpd-prev-spark { width: 100%; height: 18px; display: block; }
+  .rpd-prev-spark-line { fill: none; stroke: var(--color-primary); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+  .rpd-prev-spark-area { fill: color-mix(in oklch, var(--color-primary) 14%, transparent); stroke: none; }
+
+  .rpd-empty { border: 1px dashed var(--color-base-300); border-radius: var(--r-12); background: oklch(from var(--color-base-200) l c h / .35); padding: 2.5rem 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; }
+  .rpd-empty-ic { width: 2.75rem; height: 2.75rem; border-radius: var(--r-8); display: grid; place-items: center; background: var(--color-base-100); border: 1px solid var(--color-base-300); margin-bottom: 4px; }
+  .rpd-empty-ic .iconify { font-size: 1.3rem; color: oklch(from var(--color-base-content) l c h / .35); }
+  .rpd-empty-title { font-size: var(--t-16); font-weight: 650; }
+  .rpd-empty-sub { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); max-width: 46ch; margin-bottom: 8px; }
+</style>
+
+<style is:global>
+  /*
+   * ONE RULE, AND IT HAS TO BE GLOBAL.
+   *
+   * These preview badges are `<Badge>` components now, and an Astro SCOPED rule does not reach the
+   * root element a child component renders — the repo has lost rules to exactly this twice, and both
+   * gates stay green while the declaration quietly does nothing. The selector is already prefixed
+   * with this view's own `.rpd-prev-row`, so global costs nothing in reach.
+   *
+   * What it does: keep the change/status badge on one line (e.g. "Formula changed") so the name
+   * beside it ellipsises instead of the badge wrapping.
+   */
+  .rpd-prev-row .badge { flex: none; white-space: nowrap; }
+
+  /* ── THE HISTORY TABLE'S OWN RULES, GLOBAL FOR THE SAME REASON AS THE BADGE ABOVE ──────────────
+     `Table.astro` renders the `<thead>`, so every `<th>` carries the VESSEL's `data-astro-cid-…`
+     and a scoped `.rpd-tablewrap :is(th, td)` matches the `td` half only — silently, with ds-lint,
+     typecheck, css-guard and smoke all green. The `.rpd-` prefix is unique to this view, so
+     `is:global` costs no reach.
+
+     `auto`, NOT `clip` — the same S1 as the Reports list (`ReportsView.astro`), measured on this
+     very table: at **1280, the app's own boundary**, 169px was hidden and `Delivery` was gone; at
+     540, 483px and four of six facts including `Generated`, the column that says whether the run
+     produced anything. `clip` is not a scroll container, so none of it could be reached by any
+     means. `narrow="fold"` is the answer below 1280; `auto` covers the band above it. */
+  .rpd-tablewrap { overflow-x: auto; }
+  .rpd-tablewrap :is(th, td) { white-space: nowrap; }
+</style>

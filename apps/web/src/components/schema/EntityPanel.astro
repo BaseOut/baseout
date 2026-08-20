@@ -1,0 +1,56 @@
+---
+/**
+ * EntityPanel — Phase 8 stub for Reports.
+ *
+ * The full Schema EntityPanel (Automations/Interfaces/Chat parity drawer) lands
+ * with Phase 9 (`server-automations-interfaces-docs` + Schema re-arch). Reports
+ * mounts this stub so schema-health refs can fire `schema:openEntity` without
+ * dragging the deferred Schema cluster onto this branch. When an entity is
+ * requested we surface an honest "soon" note instead of a silent no-op.
+ *
+ * Props match the ui-only EntityPanel surface so ReportDefinitionView /
+ * ReportDetailView stay verbatim on the call site.
+ */
+interface Props {
+  index?: unknown[];
+  docs?: unknown[];
+  changelog?: unknown[];
+  automations?: unknown[];
+  interfaces?: unknown[];
+  chatThreads?: unknown[];
+  aiState?: string;
+}
+const {
+  index: _index = [],
+  docs: _docs = [],
+  changelog: _changelog = [],
+  automations: _automations = [],
+  interfaces: _interfaces = [],
+  chatThreads: _chatThreads = [],
+  aiState: _aiState = 'ready',
+} = Astro.props;
+---
+
+<dialog id="report-entity-soon" class="modal">
+  <div class="modal-box max-w-md">
+    <h3 class="font-semibold text-lg">Schema detail</h3>
+    <p class="py-3 text-sm text-base-content/70">
+      Opening a schema entity from a report lands with Schema Automations /
+      Interfaces (Phase 9). The report document itself is live; this drawer is
+      not yet wired on this branch.
+    </p>
+    <div class="modal-action">
+      <form method="dialog">
+        <button class="btn" type="submit">Close</button>
+      </form>
+    </div>
+  </div>
+  <form method="dialog" class="modal-backdrop"><button type="submit">close</button></form>
+</dialog>
+
+<script>
+  const dlg = document.getElementById('report-entity-soon') as HTMLDialogElement | null;
+  document.addEventListener('schema:openEntity', () => {
+    dlg?.showModal();
+  });
+</script>

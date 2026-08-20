@@ -1,0 +1,47 @@
+---
+/**
+ * UndoToast — the page-level mount point for catalog `pattern-undo-toast`.
+ *
+ * Render it ONCE per page; drive it from `undoToast.ts` (`showUndoToast`). It is deliberately a
+ * sibling of everything else, pinned to the viewport by daisyUI's own `toast` positioner, so nothing
+ * can hide it by hiding its parent — the mistake `PanelHost` records in its own header, where the
+ * toast lived inside a wrap that goes `hidden` at exactly the moment the undo is needed.
+ *
+ * BUILT FROM THE CATALOG, WITH NO CLASS FAMILY OF ITS OWN. `toast toast-bottom toast-center` is the
+ * daisyUI primitive; the pill, its colours and the ghost Undo button are utilities on the design
+ * tokens; the ONLY bespoke CSS is the countdown keyframe, which is a keyframe name and not a
+ * component nobody else can reuse. That is the point: a fourth `.xx-*` family for a pattern the
+ * catalog already documents would have made the census read `118` where it reads `117`, and this
+ * component exists to REMOVE variance, not to add a prefix.
+ *
+ * Geometry and colour deliberately match `PanelHost`'s `.ph-undo` to the pixel — neutral pill,
+ * 12/16 padding, 12px radius, 13px text, a 2px primary bar draining from the left. Two toasts that
+ * look like two components is exactly the variance this repo is trying to remove; the difference is
+ * that this one is callable from a page that mounts no panel host.
+ */
+---
+
+<div class="toast toast-bottom toast-center z-[600]" data-undo-toast hidden>
+  <div role="status" aria-live="polite" class="relative flex items-center gap-2 overflow-hidden rounded-xl bg-neutral px-4 py-3 text-[length:var(--t-13)] text-neutral-content shadow-lg">
+    <span class="iconify lucide--rotate-ccw size-4" data-undo-toast-ic aria-hidden="true"></span>
+    <span class="min-w-0 overflow-hidden text-ellipsis" data-undo-toast-label></span>
+    <button type="button" class="btn btn-sm btn-ghost text-primary" data-undo-toast-act hidden></button>
+    {/* The bar is a DEADLINE, so `undoToast.ts` draws it only when there is an action to be late
+        for, and animates a TRANSFORM — animating width would reflow the pill every frame. */}
+    <span class="absolute bottom-0 left-0 right-0 h-[2px] origin-left bg-primary" data-undo-toast-bar aria-hidden="true"></span>
+  </div>
+</div>
+
+<style is:global>
+  /* `is:global` because the bar's animation is assigned from `undoToast.ts` at runtime, and a scoped
+     keyframe would not be in scope for a style set on the element by script. Uniquely prefixed. */
+  @keyframes baseout-undo-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  /* Reduced motion gets a STATIC FULL BAR, not an absent one — the deadline is still information,
+     it just stops moving. The bar carries NO inline transform for this reason: the first version
+     set `style="transform: scaleX(0)"` on the element, and an inline declaration beats this rule,
+     so reduced-motion users saw no bar at all. Nothing needs the hidden initial state — the toast
+     is `hidden` until `showUndoToast` runs, and that assigns the animation in the same call. */
+  @media (prefers-reduced-motion: reduce) {
+    [data-undo-toast-bar] { animation: none !important; transform: scaleX(1); }
+  }
+</style>

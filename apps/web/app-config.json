@@ -37,6 +37,11 @@
         "icon": "iconify lucide--database"
       },
       {
+        "label": "Reports",
+        "href": "/reports",
+        "icon": "iconify lucide--file-text"
+      },
+      {
         "label": "Actions",
         "href": "/actions",
         "icon": "iconify lucide--square-pen"

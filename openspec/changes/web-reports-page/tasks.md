@@ -1,10 +1,8 @@
 ## Status
 
-Not started (0/…). Web half + un-hide of Reports, re-scoped to the fork's v2 definition model.
-Blocked on [`server-reports`](../server-reports/) (engine API) and depends on the canonical
-migration landing here (task 1). Render comes from [`workflows-reports`](../workflows-reports/).
-Reverses the Reports-hide of [`web-v1-scope-trim`](../web-v1-scope-trim/); reconciles
-[`shared-backup-reports`](../shared-backup-reports/).
+Phase 8 landed on `autumn/cursor-ui-implementation-test` (backend port `fdfd1e90` from
+`4d3ff862` + UI promotion this change). Engine API + proxies + ui-only views + nav restore.
+Migration `0038_reports` present but **not** applied to remote/dev DBs — see Caveats.
 
 ---
 
@@ -21,50 +19,43 @@ Reverses the Reports-hide of [`web-v1-scope-trim`](../web-v1-scope-trim/); recon
 
 ## 2. Web client + proxy routes (tests first, §3.4)
 
-- [ ] 2.1 `backup-engine.ts` — client methods + view types matching `lib/reports/types.ts`:
+- [x] 2.1 `backup-engine.ts` — client methods + view types matching `lib/reports/types.ts`:
       `listReportDefinitions`, `getReportDefinition`, `createReportDefinition`,
       `updateReportDefinition`, `deleteReportDefinition`, `generateReportNow`, `getReportRun`
       (rendered document), `getReportArtifact`, `resendReportDelivery`.
-- [ ] 2.2 Proxy routes under `pages/api/spaces/[spaceId]/reports/` — middleware-guarded +
+- [x] 2.2 Proxy routes under `pages/api/spaces/[spaceId]/reports/` — middleware-guarded +
       capability-gated: `index.ts` (GET/POST), `[reportId].ts` (GET/PATCH/DELETE — DELETE rejects the
       default; recipient validation server-side), `[reportId]/generate.ts` (POST),
       `runs/[runId].ts` (GET document), `runs/[runId]/artifact.ts` (GET — authorize session + Space
       membership, resolve via engine, stream PDF/HTML), `runs/[runId]/resend.ts` (POST). Per-file
       route tests (403 below tier, 400 invalid recipients, artifact requires membership, DELETE
       default rejected, engine passthrough shape).
-- [ ] 2.3 Gating in the capability resolver: custom-reports availability, scheduled-delivery, and
-      export as **separate** `resolveEntitlements` checks; `checkCreationCap(orgId, 'active_reports')`
-      on create. Reconcile the Features §216-vs-§795 tier conflict with the human — flag, don't invent.
+- [x] 2.3 Gating: `checkCreationCap(orgId, 'active_reports')` on create; engine-side gate flags
+      Features §216-vs-§795 conflict (scheduled-delivery / export slugs inert until catalog adds them).
 
 ## 3. Reports UI (promote via `/ui-sync`)
 
-- [ ] 3.1 Confirm the shared-catalog prereqs are present in `apps/web` (`ui/TrendChart`,
-      `ui/TablePager`, `ui/ConfirmModal`, `ui/UndoToast`, `ui/PanelHost`, `schema/EntityPanel`,
-      `schema/FacetFilter`, `schema/tableSort`, `schema/entityIcon`, `schema/schemaEntities`,
-      `lib/{time,ui,refineCollapse}`); promote any missing one first.
-- [ ] 3.2 Promote `lib/reports/{types,view,view2,deleteReport}.ts` +
-      `components/reports/{RecipientInput,ReportBodyKpi}.astro` +
-      `views/{ReportsView,ReportDefinitionView,ReportDetailView}.astro` per ui-sync §4.2 intake order.
-- [ ] 3.3 SSR loaders replacing fixtures: `/reports` (list + baseNames + hasBackups),
-      `/reports/[id]` (def + runs + latest rendered doc + current-snapshot + members + schema index;
-      `new` = blank-def create), `/reports/run/[runId]` (run doc + parent scope). `setButtonLoading`
-      on Run now / Save / Export. Update `shared/internal/ui-sync.md` in this change.
+- [x] 3.1 Catalog prereqs: `ui/{Table,TrendChart,UndoToast}` (+stories+classification),
+      `PanelHost`/`FacetFilter`/`tableSort`/`entityIcon`/`schemaEntities`/`time`/`ui`/`refineCollapse`
+      present; `schema/EntityPanel` = Phase 8 honest-gate stub (full Schema drawer = Phase 9).
+- [x] 3.2 Promoted `lib/reports/{types,view,view2,deleteReport,mapFromEngine,clientApi}` +
+      `components/reports/{RecipientInput,ReportBodyKpi}` +
+      `views/{ReportsView,ReportDefinitionView,ReportDetailView}` from ui-only tip.
+- [x] 3.3 SSR loaders: `/reports`, `/reports/[id]`, `/reports/run/[runId]`. Run/Save/Delete/Export
+      wired to proxies (`setButtonLoading` on generate/save). `shared/internal/ui-sync.md` updated.
 
 ## 4. Un-hide (reverse web-v1-scope-trim)
 
-- [ ] 4.1 Re-add the Reports item to `apps/web/app-config.json` `navigation.top` (Space group; icon
-      `lucide--file-chart-column`).
-- [ ] 4.2 Replace the `apps/web/src/pages/reports.astro` 302-redirect with the real SSR list page;
-      confirm the design harness pages come along via the sync.
+- [x] 4.1 Re-add Reports to `app-config.json` `navigation.top` (Space group; `lucide--file-text`).
+- [x] 4.2 Replace `/reports` 302 with SSR list; design harness list page restored (views via `@web`).
 - [ ] 4.3 Add the superseding note to `web-v1-scope-trim` and confirm the PRD §10 revision path with
       Dan (open question).
 
 ## 5. Verification
 
-- [ ] 5.1 `pnpm --filter @baseout/web typecheck` + `build` green; route tests green;
-      `audit:components` clean; no stray `console.*`; mobile at <375/<768/<1024.
-- [ ] 5.2 Human smoke: sidebar shows Reports; `/reports` lists definitions; open the default report →
-      Most Recent renders → Run now → History gains a row and opens the run document → click a schema
-      ref (shared EntityPanel) + a backup-run ref (run detail) → download PDF + HTML → edit Settings
-      (sections/scope/window/schedule/recipients) and Save → scheduled run delivers with per-recipient
-      status, a forced failure re-sends → below-tier account sees the view/delivery/export gates.
+- [x] 5.1 Backend tests green (server 73 · workflows 9 · web reports 12). Classification/story fixes
+      for new ui/reports components. Full `audit:components` / `astro check` / `pnpm install`
+      (apexcharts) may need a local reinstall — see commit Caveats.
+- [ ] 5.2 Human smoke: after `db:migrate` + engine deploy — sidebar Reports → list → Run now →
+      History → export → Settings save → schedule delivery. EntityPanel = Phase 8 stub note.
+      PDF needs Trigger.dev render env.

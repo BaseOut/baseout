@@ -104,5 +104,14 @@
   ],
   "src/views/schema/RelationshipsTab.astro": [
     "Moved verbatim from the pre-split SchemaView.astro (web-relationships-tab): base `select`, Include-removed `toggle`, `input` search, `btn` actions, and relationship groups rendered as innerHTML in the lazy-load client script."
+  ],
+  "src/views/ReportsView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier, Phase 8 / web-reports-page): report DEFINITION list composed from ui Table/Badge/ConfirmModal/UndoToast + schema FacetFilter. Catalog pattern-report / pattern-audit-table; not a single Storybook vessel."
+  ],
+  "src/views/ReportDefinitionView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier, Phase 8): Most Recent \u00b7 History \u00b7 Settings tabs with RecipientInput + ReportBodyKpi + Table. EntityPanel is the Phase 8 stub (full Schema drawer = Phase 9)."
+  ],
+  "src/views/ReportDetailView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier, Phase 8): single run document shell around ReportBodyKpi with Export dropdown; EntityPanel stub for schema refs."
   ]
 }

@@ -9,23 +9,23 @@
   },
   "backups/RunBackupNowModal.astro": {
     "classification": "daisyui-direct-styleguide",
-    "rationale": "Thin product configuration of the ConfirmModal primitive — the credits-warning confirm for an on-demand backup. Documented via the confirm-modal styleguide entry; not a standalone pattern."
+    "rationale": "Thin product configuration of the ConfirmModal primitive \u2014 the credits-warning confirm for an on-demand backup. Documented via the confirm-modal styleguide entry; not a standalone pattern."
   },
   "data/DataBrowse.astro": {
     "classification": "daisyui-direct-styleguide",
-    "rationale": "Data ▸ Records grid (Slice A Task 4, ui-only@9cf5b1ef): the record-browsing counterpart to Schema Browse. daisyUI-direct markup (table/input/badge/tabs) over an embedded SSR snapshot; the views/presets/filter-builder controller lives in its client <script>. Composes FacetFilter, TablePager, and patterns/ExportControl. Styles in <style is:global>."
+    "rationale": "Data \u25b8 Records grid (Slice A Task 4, ui-only@9cf5b1ef): the record-browsing counterpart to Schema Browse. daisyUI-direct markup (table/input/badge/tabs) over an embedded SSR snapshot; the views/presets/filter-builder controller lives in its client <script>. Composes FacetFilter, TablePager, and patterns/ExportControl. Styles in <style is:global>."
   },
   "data/DataChangelog.astro": {
     "classification": "daisyui-direct-styleguide",
-    "rationale": "Data ▸ Changelog (Slice A Task 4, ui-only@9cf5b1ef): run-over-run record changes on the shared changelog row grid. daisyUI-direct markup composing FacetFilter, DateRangePicker, TablePager and patterns/ExportControl; run-detail drill-in registers a panel kind in the shared PanelHost. Styles in <style is:global>."
+    "rationale": "Data \u25b8 Changelog (Slice A Task 4, ui-only@9cf5b1ef): run-over-run record changes on the shared changelog row grid. daisyUI-direct markup composing FacetFilter, DateRangePicker, TablePager and patterns/ExportControl; run-detail drill-in registers a panel kind in the shared PanelHost. Styles in <style is:global>."
   },
   "data/DataComments.astro": {
     "classification": "daisyui-direct-styleguide",
-    "rationale": "Data ▸ Comments feed (Slice A Task 9, ui-only@9cf5b1ef; fed by server-comments-read): captured record comments on the shared changelog row grid, newest-first, grouped by date/base/table. daisyUI-direct markup composing FacetFilter, DateRangePicker, TablePager and patterns/ExportControl; each row opens the record panel via PanelHost. Styles in <style is:global>, every selector qualified by the .cm feed-root class so the shared .cl-* grid overrides never reach the sibling feeds."
+    "rationale": "Data \u25b8 Comments feed (Slice A Task 9, ui-only@9cf5b1ef; fed by server-comments-read): captured record comments on the shared changelog row grid, newest-first, grouped by date/base/table. daisyUI-direct markup composing FacetFilter, DateRangePicker, TablePager and patterns/ExportControl; each row opens the record panel via PanelHost. Styles in <style is:global>, every selector qualified by the .cm feed-root class so the shared .cl-* grid overrides never reach the sibling feeds."
   },
   "data/DataMedia.astro": {
     "classification": "daisyui-direct-styleguide",
-    "rationale": "Data ▸ Attachments listing (Slice A Task 4, ui-only@9cf5b1ef): captured files as a table/grid with class/base/table/date facets. daisyUI-direct markup composing MediaThumb, FacetFilter, DateRangePicker, TablePager and patterns/ExportControl. Styles in <style is:global>."
+    "rationale": "Data \u25b8 Attachments listing (Slice A Task 4, ui-only@9cf5b1ef): captured files as a table/grid with class/base/table/date facets. daisyUI-direct markup composing MediaThumb, FacetFilter, DateRangePicker, TablePager and patterns/ExportControl. Styles in <style is:global>."
   },
   "data/LockedTab.astro": {
     "classification": "daisyui-direct-styleguide",
@@ -33,7 +33,7 @@
   },
   "data/MediaPanel.astro": {
     "classification": "daisyui-direct-styleguide",
-    "rationale": "Data ▸ Attachment detail sheet (Slice A Task 4, ui-only@9cf5b1ef): the asset: kind registered into the shared PanelHost stack. daisyUI-direct markup; opened from an Attachments row/tile. Styles in <style is:global>."
+    "rationale": "Data \u25b8 Attachment detail sheet (Slice A Task 4, ui-only@9cf5b1ef): the asset: kind registered into the shared PanelHost stack. daisyUI-direct markup; opened from an Attachments row/tile. Styles in <style is:global>."
   },
   "data/MediaThumb.astro": {
     "classification": "daisyui-direct-styleguide",
@@ -41,7 +41,7 @@
   },
   "data/RecordPanel.astro": {
     "classification": "daisyui-direct-styleguide",
-    "rationale": "Data ▸ record detail sheet (Slice A Task 4, ui-only@9cf5b1ef): the record: kind registered into the shared PanelHost stack, opened from a Browse row / changelog record. daisyUI-direct markup rendering the shared record body (recordReadBody.ts). Styles in <style is:global>."
+    "rationale": "Data \u25b8 record detail sheet (Slice A Task 4, ui-only@9cf5b1ef): the record: kind registered into the shared PanelHost stack, opened from a Browse row / changelog record. daisyUI-direct markup rendering the shared record body (recordReadBody.ts). Styles in <style is:global>."
   },
   "data/StaticImport.astro": {
     "classification": "daisyui-direct-styleguide",
@@ -97,13 +97,13 @@
     "classification": "storybook-pattern",
     "styleguideId": "pattern-table-toolbar",
     "designHarnessPath": "pages/integrations/configure/bases.astro",
-    "rationale": "LEGACY rollback target for the workspace-grouped picker promotion (2026-07-29) — superseded by integrations/BaseSelectionTable.astro; unrouted, kept per the ui-sync promotion convention."
+    "rationale": "LEGACY rollback target for the workspace-grouped picker promotion (2026-07-29) \u2014 superseded by integrations/BaseSelectionTable.astro; unrouted, kept per the ui-sync promotion convention."
   },
   "patterns/ConnectionHealthBanner.astro": {
     "classification": "storybook-pattern",
     "styleguideId": "pattern-connection-health",
     "designHarnessPath": "pages/connection-banner.astro",
-    "rationale": "App-shell connection-health warning bar composed from daisyUI alert-soft, the Button primitive, and Lucide icons; Storybook documents the state matrix, apps/design validates the collapse↔pill behavior."
+    "rationale": "App-shell connection-health warning bar composed from daisyUI alert-soft, the Button primitive, and Lucide icons; Storybook documents the state matrix, apps/design validates the collapse\u2194pill behavior."
   },
   "patterns/ConnectionHealthPill.astro": {
     "classification": "storybook-pattern",
@@ -127,7 +127,7 @@
     "classification": "storybook-pattern",
     "styleguideId": "pattern-export-control",
     "designHarnessPath": "pages/schema.astro",
-    "rationale": "One export affordance per Schema tab, repurposing catalog primitives — the daisyUI dropdown/join/btn set plus the shared ff-trigger/ff-panel facet language — and replacing the per-tab divergent format pickers with a single scope-aware, format-named control."
+    "rationale": "One export affordance per Schema tab, repurposing catalog primitives \u2014 the daisyUI dropdown/join/btn set plus the shared ff-trigger/ff-panel facet language \u2014 and replacing the per-tab divergent format pickers with a single scope-aware, format-named control."
   },
   "patterns/MetaBlock.astro": {
     "classification": "storybook-pattern",
@@ -169,7 +169,7 @@
     "classification": "storybook-pattern",
     "styleguideId": "pattern-entity-typeahead",
     "designHarnessPath": "pages/schema.astro",
-    "rationale": "Shared entity typeahead (ui-only@9a8b448) — one search field that filters in place and offers a grouped dropdown; reused by the base picker and Schema Browse; styles in global.css."
+    "rationale": "Shared entity typeahead (ui-only@9a8b448) \u2014 one search field that filters in place and offers a grouped dropdown; reused by the base picker and Schema Browse; styles in global.css."
   },
   "schema/FacetFilter.astro": {
     "classification": "daisyui-direct-styleguide",
@@ -223,7 +223,7 @@
   "ui/ConfirmModal.astro": {
     "classification": "ui-primitive-storybook",
     "styleguideId": "confirm-modal",
-    "rationale": "Reusable confirmation-dialog primitive built on the Modal primitive (daisyUI dialog) — Cancel + a confirm action with an optional consequence Alert."
+    "rationale": "Reusable confirmation-dialog primitive built on the Modal primitive (daisyUI dialog) \u2014 Cancel + a confirm action with an optional consequence Alert."
   },
   "ui/CreateSpaceModal.astro": {
     "classification": "storybook-pattern",
@@ -280,7 +280,7 @@
   },
   "ui/TablePager.astro": {
     "classification": "daisyui-direct-styleguide",
-    "rationale": "The one list pager (pattern-table-toolbar, ui-only@9cf5b1ef): a daisyUI Select (rows-per-page) + '1–N of M' range + prev/next btn-square-ghost buttons. Inert markup paired with createPager (./tablePager) for behaviour; a shared daisyUI composition rather than a bespoke Storybook primitive. Global .tpg styles (is:global) so runtime-innerHTML pagers reach them."
+    "rationale": "The one list pager (pattern-table-toolbar, ui-only@9cf5b1ef): a daisyUI Select (rows-per-page) + '1\u2013N of M' range + prev/next btn-square-ghost buttons. Inert markup paired with createPager (./tablePager) for behaviour; a shared daisyUI composition rather than a bespoke Storybook primitive. Global .tpg styles (is:global) so runtime-innerHTML pagers reach them."
   },
   "ui/Tabs.astro": {
     "classification": "ui-primitive-storybook",
@@ -296,5 +296,34 @@
     "classification": "ui-primitive-storybook",
     "styleguideId": "checkbox-toggle",
     "rationale": "Reusable boolean switch primitive backed by daisyUI toggle styling."
+  },
+  "reports/RecipientInput.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Report schedule recipient chips (web-reports-page / Phase 8, ui-only tip): daisyUI-direct chip input with member autocomplete + external email commit. Catalog pattern-recipient-input; styles in is:global .rcp-*.",
+    "styleguideId": "pattern-recipient-input"
+  },
+  "reports/ReportBodyKpi.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Report document body (web-reports-page / Phase 8, ui-only tip): KPI strip + section cards composed from ui Table/Badge/TrendChart and schema FacetFilter. Catalog pattern-report; not a single Storybook vessel.",
+    "styleguideId": "pattern-report"
+  },
+  "schema/EntityPanel.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 8 honest-gate stub for Reports schema refs. Full EntityPanel (Automations/Interfaces/Chat) lands Phase 9; this modal notes the gap when schema:openEntity fires. daisyUI modal composition."
+  },
+  "ui/Table.astro": {
+    "classification": "ui-primitive-storybook",
+    "rationale": "The one table vessel (catalog table / pattern-audit-table). Promoted with Reports (Phase 8) from ui-only; owns header/sort/keyboard/pager/narrow contract.",
+    "styleguideId": "table"
+  },
+  "ui/TrendChart.astro": {
+    "classification": "ui-primitive-storybook",
+    "rationale": "The one time-series chart (catalog pattern-trend-chart). ApexCharts island reading --color-* tokens; compact sparkline + full chart. First consumer: Reports Trends/Data health.",
+    "styleguideId": "pattern-trend-chart"
+  },
+  "ui/UndoToast.astro": {
+    "classification": "ui-primitive-storybook",
+    "rationale": "Page-level undo toast mount (catalog pattern-undo-toast). daisyUI toast positioner + showUndoToast helper; promoted with Reports destructive flows.",
+    "styleguideId": "pattern-undo-toast"
   }
 }

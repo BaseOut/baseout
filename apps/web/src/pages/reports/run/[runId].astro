@@ -1,0 +1,70 @@
+---
+/**
+ * A single report RUN's rendered document — /reports/run/[runId].
+ * Breadcrumb: Reports / ‹definition› / ‹window›. EntityPanel = Phase 8 stub.
+ */
+import { env } from 'cloudflare:workers';
+import SidebarLayout from '../../../layouts/SidebarLayout.astro';
+import ReportDetailView from '../../../views/ReportDetailView.astro';
+import NotFoundView from '../../../views/NotFoundView.astro';
+import { getBreadcrumbs } from '../../../lib/config';
+import { createBackupEngine } from '../../../lib/backup-engine';
+import { mapDefinitionFromEngine, mapDetailFromEngine } from '../../../lib/reports/mapFromEngine';
+import type { ReportDetail, ReportSectionKey } from '../../../lib/reports/types';
+
+export const prerender = false;
+
+const { runId } = Astro.params;
+const breadcrumbs = getBreadcrumbs('/reports');
+const { account } = Astro.locals;
+const spaceId = account?.space?.id ?? null;
+
+let report: ReportDetail | null = null;
+let parentReportId: string | null = null;
+let parentReportName: string | null = null;
+let parentSections: ReportSectionKey[] | null = null;
+let parentWindow: import('../../../lib/reports/types').ReportDefinition['window'] | null = null;
+let parentBaseScope: string[] | null = null;
+
+if (spaceId && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN && runId) {
+  try {
+    const engine = createBackupEngine({
+      binding: env.BACKUP_ENGINE,
+      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    });
+    const runRes = await engine.getReportRun(spaceId, runId);
+    if (runRes.ok) {
+      report = mapDetailFromEngine(runRes.document, runRes.run);
+      parentReportId = runRes.run.reportDefinitionId;
+      const defRes = await engine.getReportDefinition(spaceId, runRes.run.reportDefinitionId);
+      if (defRes.ok) {
+        const def = mapDefinitionFromEngine(defRes.definition, defRes.runs);
+        parentReportName = def.name;
+        parentSections = def.sections;
+        parentWindow = def.window;
+        parentBaseScope = def.baseScope;
+      }
+    }
+  } catch {
+    report = null;
+  }
+}
+---
+
+{report ? (
+  <SidebarLayout pageTitle={parentReportName ?? 'Report'} breadcrumbs={breadcrumbs}>
+    <ReportDetailView
+      report={report}
+      parentReportId={parentReportId}
+      parentReportName={parentReportName}
+      parentSections={parentSections}
+      parentWindow={parentWindow}
+      parentBaseScope={parentBaseScope}
+      spaceId={spaceId}
+    />
+  </SidebarLayout>
+) : (
+  <SidebarLayout pageTitle="Report run not found" breadcrumbs={breadcrumbs}>
+    <NotFoundView />
+  </SidebarLayout>
+)}

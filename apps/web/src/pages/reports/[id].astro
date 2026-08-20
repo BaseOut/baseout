@@ -1,0 +1,112 @@
+---
+/**
+ * Report definition page — /reports/[id] (Most Recent · History · Settings).
+ * /reports/new opens create mode. EntityPanel is the Phase 8 stub (schema drawer → Phase 9).
+ */
+import { env } from 'cloudflare:workers';
+import { eq } from 'drizzle-orm';
+import SidebarLayout from '../../layouts/SidebarLayout.astro';
+import ReportDefinitionView from '../../views/ReportDefinitionView.astro';
+import NotFoundView from '../../views/NotFoundView.astro';
+import { getBreadcrumbs } from '../../lib/config';
+import { createBackupEngine } from '../../lib/backup-engine';
+import { mapDefinitionFromEngine, mapDetailFromEngine } from '../../lib/reports/mapFromEngine';
+import type { ReportDefinition, ReportDetail } from '../../lib/reports/types';
+import { atBases, backupConfigurationBases, backupConfigurations } from '../../db/schema';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const breadcrumbs = getBreadcrumbs('/reports');
+const { account, db } = Astro.locals;
+const spaceId = account?.space?.id ?? null;
+const isNew = id === 'new';
+
+const blankDef: ReportDefinition = {
+  id: 'new',
+  name: '',
+  sections: ['backups', 'connections', 'schema', 'docs'],
+  baseScope: null,
+  window: { kind: 'since_last' },
+  schedule: {
+    cadence: 'data_backup',
+    recipients: [],
+    formats: ['pdf'],
+    suppressEmpty: true,
+    enabled: true,
+    lastDelivery: null,
+  },
+  runs: [],
+};
+
+let def: ReportDefinition | null = isNew ? blankDef : null;
+let latest: ReportDetail | null = null;
+let current: ReportDetail | null = null;
+let baseNames: Record<string, string> = {};
+let members: { email: string; name: string }[] = [];
+
+if (spaceId && db && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN && id && !isNew) {
+  try {
+    const engine = createBackupEngine({
+      binding: env.BACKUP_ENGINE,
+      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    });
+    const res = await engine.getReportDefinition(spaceId, id);
+    if (res.ok) {
+      def = mapDefinitionFromEngine(res.definition, res.runs);
+      const newest = res.runs[0];
+      if (newest) {
+        const runRes = await engine.getReportRun(spaceId, newest.id);
+        if (runRes.ok) {
+          latest = mapDetailFromEngine(runRes.document, runRes.run);
+          // Settings live preview: same latest document standing in as "current data"
+          // until a dedicated current-snapshot endpoint exists.
+          current = latest;
+        }
+      }
+    }
+  } catch {
+    def = null;
+  }
+}
+
+if (spaceId && db) {
+  try {
+    const bases = await db
+      .select({ id: atBases.id, name: atBases.name })
+      .from(backupConfigurationBases)
+      .innerJoin(
+        backupConfigurations,
+        eq(backupConfigurations.id, backupConfigurationBases.backupConfigurationId),
+      )
+      .innerJoin(atBases, eq(atBases.id, backupConfigurationBases.atBaseId))
+      .where(eq(backupConfigurations.spaceId, spaceId));
+    baseNames = Object.fromEntries(bases.map((b) => [b.id, b.name]));
+  } catch {
+    baseNames = {};
+  }
+}
+
+const user = account?.user;
+if (user?.email) {
+  members = [{ email: user.email, name: user.name ?? user.email }];
+}
+---
+
+{def ? (
+  <SidebarLayout pageTitle={isNew ? 'New report' : def.name} breadcrumbs={breadcrumbs}>
+    <ReportDefinitionView
+      def={def}
+      isNew={isNew}
+      baseNames={baseNames}
+      members={members}
+      latest={latest}
+      current={current}
+      spaceId={spaceId}
+    />
+  </SidebarLayout>
+) : (
+  <SidebarLayout pageTitle="Report not found" breadcrumbs={breadcrumbs}>
+    <NotFoundView />
+  </SidebarLayout>
+)}

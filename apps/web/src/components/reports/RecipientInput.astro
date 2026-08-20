@@ -1,0 +1,202 @@
+---
+/**
+ * RecipientInput — the email-chips field for a report schedule. See storybook `pattern-recipient-input`.
+ *
+ * Two chip kinds in one input: a Space MEMBER (avatar chip, picked from the autocomplete) and an
+ * arbitrary EXTERNAL email (envelope chip, free-typed). Gmail mechanics: commit on Enter/Tab/comma/blur,
+ * paste splits many, validate + de-dupe on commit, invalid → red editable chip, ✕/Backspace removes,
+ * an optional live count. No hard cap by default (the spec sets none).
+ *
+ * ASSUMPTION(reports C2): both members and arbitrary external emails; NO recipient cap (spec sets
+ * none); external unrestricted in V1 (privacy guard is an open client question).
+ *
+ * Chips are injected at runtime, so styles are is:global with a unique .rcp- prefix (Astro scoped
+ * styles never reach innerHTML-injected DOM).
+ */
+interface Member { email: string; name: string }
+interface InitialChip { kind: 'member' | 'external'; email: string; name?: string }
+interface Props {
+  /** Unique id for this field (a page may have several). */
+  name: string;
+  /** Space members for the autocomplete. */
+  members?: Member[];
+  /** Max recipients. */
+  cap?: number;
+  /** Recipients already on this field (edit mode) — seeded as chips on mount. */
+  initial?: InitialChip[];
+}
+const { name, members = [], cap = 0, initial = [] } = Astro.props;
+---
+
+<div class="rcp" data-rcp={name} data-rcp-cap={cap} data-rcp-initial={JSON.stringify(initial)}>
+  <div class="rcp-box" data-rcp-box>
+    {/* Chips are inserted before the input at runtime. */}
+    <input
+      type="text"
+      class="rcp-input"
+      data-rcp-input
+      placeholder="Add people or emails…"
+      aria-label="Add recipients"
+      autocomplete="off"
+    />
+    <div class="rcp-ac" data-rcp-ac hidden>
+      {members.map((m) => (
+        <button type="button" class="rcp-ac-opt" data-rcp-member={m.email} data-rcp-name={m.name}>
+          <span class="rcp-ac-av">{m.name.slice(0, 1)}</span>
+          <span class="rcp-ac-name">{m.name}</span>
+          <span class="rcp-ac-email">{m.email}</span>
+        </button>
+      ))}
+    </div>
+  </div>
+  <div class="rcp-foot">
+    <span class="rcp-hint" data-rcp-error hidden></span>
+    <span class="rcp-count" data-rcp-count>{cap > 0 ? `0 / ${cap}` : '0'}</span>
+  </div>
+</div>
+
+<script>
+  import { RECIPIENT_CHIP_BADGE } from '../../lib/reports/view';
+
+  type ChipKind = 'member' | 'external' | 'invalid';
+  const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function initRcp() {
+    document.querySelectorAll<HTMLElement>('[data-rcp]').forEach((root) => {
+      if (root.dataset.rcpWired) return;
+      root.dataset.rcpWired = '1';
+      const cap = Number(root.dataset.rcpCap || 0); // 0 = no limit
+      const box = root.querySelector<HTMLElement>('[data-rcp-box]')!;
+      const input = root.querySelector<HTMLInputElement>('[data-rcp-input]')!;
+      const ac = root.querySelector<HTMLElement>('[data-rcp-ac]')!;
+      const acOpts = Array.from(ac.querySelectorAll<HTMLButtonElement>('[data-rcp-member]'));
+      const countEl = root.querySelector<HTMLElement>('[data-rcp-count]')!;
+      const errEl = root.querySelector<HTMLElement>('[data-rcp-error]')!;
+
+      const emails = () => Array.from(box.querySelectorAll<HTMLElement>('.rcp-chip')).map((c) => c.dataset.email || '');
+      const count = () => box.querySelectorAll('.rcp-chip').length;
+
+      const sync = () => {
+        countEl.textContent = cap ? `${count()} / ${cap}` : String(count());
+        if (cap) countEl.classList.toggle('rcp-count-full', count() >= cap);
+      };
+      const flash = (msg: string) => { errEl.textContent = msg; errEl.hidden = false; window.setTimeout(() => (errEl.hidden = true), 2600); };
+
+      const chip = (label: string, kind: ChipKind, email: string, memberName?: string) => {
+        const el = document.createElement('span');
+        el.className = `rcp-chip badge gap-1 ${RECIPIENT_CHIP_BADGE[kind]}`;
+        el.dataset.email = email;
+        el.dataset.kind = kind;
+        const icon = kind === 'member' ? 'lucide--user-round' : kind === 'invalid' ? 'lucide--triangle-alert' : 'lucide--mail';
+        el.innerHTML = `<span class="iconify ${icon} size-3" aria-hidden="true"></span><span class="rcp-chip-label">${label}</span><button type="button" class="rcp-chip-x" aria-label="Remove ${label}"><span class="iconify lucide--x size-3"></span></button>`;
+        el.querySelector('.rcp-chip-x')!.addEventListener('click', () => { el.remove(); sync(); });
+        // An invalid chip is editable — click it to drop the text back into the input to fix.
+        if (kind === 'invalid') el.querySelector('.rcp-chip-label')!.addEventListener('click', () => { input.value = email; el.remove(); sync(); input.focus(); });
+        box.insertBefore(el, input);
+        sync();
+      };
+
+      const add = (raw: string, memberName?: string): boolean => {
+        const val = raw.trim().replace(/[,;]+$/, '').trim();
+        if (!val) return false;
+        if (cap && count() >= cap) { flash(`Up to ${cap} recipients.`); return false; }
+        if (emails().includes(val.toLowerCase())) { flash('Already added.'); return false; }
+        if (memberName) { chip(memberName, 'member', val.toLowerCase(), memberName); return true; }
+        if (EMAIL.test(val)) { chip(val, 'external', val.toLowerCase()); return true; }
+        chip(val, 'invalid', val.toLowerCase()); flash('That doesn’t look like an email — click the chip to fix it.'); return true;
+      };
+
+      const commit = () => {
+        const parts = input.value.split(/[\s,;\n]+/).filter(Boolean);
+        if (!parts.length) return;
+        let added = false;
+        parts.forEach((p) => { if (add(p)) added = true; });
+        if (added) input.value = '';
+        hideAc();
+      };
+
+      // ── autocomplete over members ──
+      const showAc = () => {
+        const q = input.value.trim().toLowerCase();
+        const chosen = new Set(emails());
+        let any = false;
+        acOpts.forEach((o) => {
+          const em = (o.dataset.rcpMember || '').toLowerCase();
+          const nm = (o.dataset.rcpName || '').toLowerCase();
+          const show = !chosen.has(em) && (!q || em.includes(q) || nm.includes(q));
+          o.style.display = show ? '' : 'none';
+          if (show) any = true;
+        });
+        ac.hidden = !any;
+      };
+      const hideAc = () => { ac.hidden = true; };
+      acOpts.forEach((o) => o.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        add(o.dataset.rcpMember || '', o.dataset.rcpName || '');
+        input.value = ''; input.focus(); showAc();
+      }));
+
+      input.addEventListener('input', showAc);
+      input.addEventListener('focus', showAc);
+      input.addEventListener('paste', (e) => {
+        const text = e.clipboardData?.getData('text') || '';
+        if (/[\s,;\n]/.test(text)) { e.preventDefault(); input.value = text; commit(); }
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === 'Tab' || e.key === ',') {
+          if (e.key === 'Tab' && !input.value.trim()) return; // let Tab move focus when empty
+          e.preventDefault(); commit();
+        } else if (e.key === 'Backspace' && !input.value) {
+          const last = box.querySelectorAll<HTMLElement>('.rcp-chip'); const el = last[last.length - 1];
+          if (el) { el.remove(); sync(); }
+        }
+      });
+      input.addEventListener('blur', () => { window.setTimeout(hideAc, 120); if (input.value.trim()) commit(); });
+
+      // Seed the recipients already on this field (edit mode) as chips.
+      try {
+        const seed = JSON.parse(root.dataset.rcpInitial || '[]') as Array<{ kind: string; email: string; name?: string }>;
+        seed.forEach((r) => add(r.email, r.kind === 'member' ? (r.name || r.email) : undefined));
+        input.value = '';
+      } catch { /* no seed */ }
+      sync();
+    });
+  }
+  initRcp();
+  document.addEventListener('astro:page-load', initRcp);
+</script>
+
+<style is:global>
+  /* Runtime-injected chips → global styles (Astro scoped styles never reach innerHTML DOM). */
+  .rcp-box { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 40px; padding: 4px 8px;
+    border: 1px solid var(--color-base-300); border-radius: var(--r-8); background: var(--color-base-100); position: relative; }
+  .rcp-box:focus-within { border-color: color-mix(in oklch, var(--color-primary) 55%, var(--color-base-300)); }
+  .rcp-input { flex: 1 1 8rem; min-width: 8rem; border: none; outline: none; background: transparent; font-size: var(--t-14); padding: 2px 4px; color: inherit; }
+  .rcp-chip { cursor: default; }
+  .rcp-chip .rcp-chip-label { cursor: inherit; }
+  .rcp-chip[data-kind="invalid"] .rcp-chip-label { cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
+  .rcp-chip-x { display: inline-flex; opacity: .6; }
+  .rcp-chip-x:hover { opacity: 1; }
+  /* A 12.0px REMOVE BUTTON (2026-08-13). Measured on Settings and New report at 390: the only
+     control on either surface under the SM floor, and the one that destroys a recipient. On a
+     phone that is a 12px target for a destructive action, with no undo behind it.
+     28 below 1280 — the same floor `btn-sm` holds — and the chip grows with it, which is the
+     right direction on touch: a removable chip you can actually hit. Above the boundary the
+     pointer is a mouse and the quiet 12px glyph stays exactly as it was. Placed after the
+     declaration it overrides, because at equal specificity the later rule is the one that wins. */
+  @media (max-width: 1279.98px) {
+    .rcp-chip-x { align-items: center; justify-content: center; min-width: 28px; min-height: 28px; }
+  }
+  .rcp-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; padding: 0 2px; }
+  .rcp-hint { font-size: var(--t-11); color: var(--color-error); }
+  .rcp-count { margin-left: auto; font-size: var(--t-11); color: oklch(from var(--color-base-content) l c h / .65); font-variant-numeric: tabular-nums; }
+  .rcp-count-full { color: var(--color-warning); font-weight: 600; }
+  .rcp-ac { position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; width: min(20rem, 100%);
+    border: 1px solid var(--color-base-300); border-radius: var(--r-8); background: var(--color-base-100);
+    padding: 4px; box-shadow: 0 10px 28px oklch(0 0 0 / .14); max-height: 240px; overflow-y: auto; }
+  .rcp-ac-opt { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border-radius: var(--r-6); font-size: var(--t-13); text-align: left; }
+  .rcp-ac-opt:hover { background: oklch(from var(--color-base-200) l c h / .65); }
+  .rcp-ac-av { display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; flex: none;
+    background: color-mix(in oklch, var(--color-primary) 20%, var(--color-base-200)); color: var(--color-primary); font-size: var(--t-11); font-weight: 600; }
+  .rcp-ac-email { margin-left: auto; color: oklch(from var(--color-base-content) l c h / .65); font-size: var(--t-11); }
+</style>

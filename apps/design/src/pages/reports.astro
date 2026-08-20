@@ -1,4 +1,22 @@
 ---
-// Reports is out of V1 scope (web-v1-scope-trim) — mirror of the production redirect.
-return Astro.redirect('/', 302);
+// Reports page (ReportsView, v2) — the list of report DEFINITIONS. Harness fixture; the engineer wires
+// GET /spaces/:id/reports. ?fixture=empty → no backups (the wholesale degrade).
+// D17 dropped `?fixture=noreports`: a Space auto-has a default "Full <Space> Report", so
+// "has backups, zero report definitions" is not a state the product can reach.
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import ReportsView from '@web/views/ReportsView.astro';
+import { getBreadcrumbs } from '@web/lib/config';
+import { reportDefinitions, reportDefinitionsEmpty } from '../fixtures/reports';
+import { schemaBases } from '../fixtures/schema-lab';
+
+const breadcrumbs = getBreadcrumbs('/reports');
+const fixture = Astro.url.searchParams.get('fixture');
+const definitions = fixture === 'empty' ? reportDefinitionsEmpty : reportDefinitions;
+const hasBackups = fixture !== 'empty';
+// base id → name, for the scope summary in the list.
+const baseNames = Object.fromEntries(schemaBases.map((b) => [b.id, b.name]));
 ---
+
+<SidebarLayout pageTitle="Reports" breadcrumbs={breadcrumbs} spaceScoped={true}>
+  <ReportsView definitions={definitions} baseNames={baseNames} hasBackups={hasBackups} />
+</SidebarLayout>
