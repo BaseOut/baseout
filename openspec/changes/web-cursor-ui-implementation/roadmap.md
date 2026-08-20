@@ -39,7 +39,7 @@
 | Restore | **LIVE** | Built | restore paths | Later visual sync |
 | Schema — Browse / Visualize / Relationships / Health / Docs / Chat / Changelog* | **LIVE** (most tabs) | Re-architected (deferred) | yes | **Keep live shell**; Schema re-arch deferred (ledger) |
 | Schema — Automations / Interfaces | **SOON** | **BUILT** | engine **0/40** unbuilt | **In program** — `server-automations-interfaces-docs` first, then `web-automations-interfaces-tabs` |
-| Data — Browse / Changelog / Comments / Docs / Chat | **SOON** (all 5) | **BUILT** (+ Attachments/Media) | records/changelog/media/docs/chat **exist**; comments **read** missing (sync only) | **Slice 1–2** (see §2) |
+| Data — Browse / Changelog / Comments / Docs / Chat | **LIVE** (Slice A done) | **BUILT** (+ Attachments/Media) | records/changelog/media/docs/chat + comments read | **DONE** on this branch — zero SoonTabs |
 | Actions | **LIVE** (landing) | Built | n/a (static + feedback) | Low priority polish |
 | Reports | redirects `/` (V1 trim) | **BUILT** + in nav | `shared-backup-reports` incomplete | **Match ui-only** — restore nav + build (`web-reports-page` + engine) |
 | Sources / Destinations | **LIVE** | Built | connections | Later visual sync; provider “coming soon” badges = **HONEST** (V2 platforms) |
@@ -64,8 +64,8 @@
 | Phase | Name | What | Depends on |
 |---|---|---|---|
 | **0** | Guardrails | Commit plan artifacts on this branch; ledger tip `9cf5b1ef`; confirm Reports scope conflict; no promotion-branch merge | Approval of this doc |
-| **1** | **Slice A — Data SoonTab un-gates (part 1)** | Promote ui-only Data UI for **Browse + Changelog + Attachments/Media** over existing engine routes; proxies + mappers + tests; Storybook/daisyUI only | Phase 0 · **Plan:** [`docs/superpowers/plans/2026-08-20-slice-a-data-soon-tabs.md`](../../../docs/superpowers/plans/2026-08-20-slice-a-data-soon-tabs.md) (Tasks 1–6) |
-| **2** | **Slice A — Data SoonTab un-gates (part 2)** | **Comments** read path + Comments panel; then **Docs + Chat** | Phase 1 · same plan (Tasks 7–11) |
+| **1** | **Slice A — Data SoonTab un-gates (part 1)** | Promote ui-only Data UI for **Browse + Changelog + Attachments/Media** over existing engine routes; proxies + mappers + tests; Storybook/daisyUI only | Phase 0 · **DONE** · Plan: [`docs/superpowers/plans/2026-08-20-slice-a-data-soon-tabs.md`](../../../docs/superpowers/plans/2026-08-20-slice-a-data-soon-tabs.md) (Tasks 1–6) |
+| **2** | **Slice A — Data SoonTab un-gates (part 2)** | **Comments** read path + Comments panel; then **Docs + Chat** | Phase 1 · **DONE** · same plan (Tasks 7–11) — zero SoonTabs on DataView |
 | **3** | Design harness sync | `/ui-sync` Stage-1 at `9cf5b1ef` into `apps/design` (verbatim + ledger); reconcile reverse/diverged first | Can parallel after Phase 0 |
 | **4** | Settings hub | Promote ui-only Settings catalog; wire real rows; honest-gate the rest | Phase 3 helpful |
 | **5** | Auth visual convergence | Promote Login/Welcome/2FA/Association views; keep better-auth contracts | Phase 3 |
