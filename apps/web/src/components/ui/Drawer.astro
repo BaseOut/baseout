@@ -10,11 +10,14 @@
  * once here. The panel surface uses theme tokens; the body/footer are slots, so the
  * host keeps its own content + scoped CSS.
  *
+ * A11y (audit X06-F2 / D45): this drawer does NOT implement a focus trap, `inert`, or
+ * restore — so it must not claim `aria-modal="true"`. The honest attribute is `false`
+ * until a real trap lands (rejected cheaper path: drop the claim rather than build one).
+ *
  * PROMOTION NOTE (ui-only → apps/web): the fork ships the `.sb-drawer*` / `.sb-bottom-*`
  * rules in a scoped block here. Tracked components carry no scoped style
  * (component-classification governance), so those rules live in styles/global.css instead.
- */
-interface Props {
+ */interface Props {
   /** Unique id; the matching checkbox the open/close triggers toggle. */
   id: string;
   /** Heading shown in the panel header. */
@@ -36,7 +39,7 @@ const hasFooter = Astro.slots.has('footer');
   <div class="sb-drawer sb-drawer-bottom">
     <input id={id} type="checkbox" class="drawer-toggle sb-bottom-toggle" data-sb-drawer-toggle />
     <label for={id} class="sb-bottom-scrim" aria-label="Close"></label>
-    <aside class="sb-bottom-panel" role="dialog" aria-label={title} aria-modal="true" style={`height:${height}`}>
+    <aside class="sb-bottom-panel" role="dialog" aria-label={title} aria-modal="false" style={`height:${height}`}>
       <header class="sb-drawer-head">
         <div class="sb-drawer-headrow">
           <span class="sb-drawer-titleic" data-sb-drawer-titleic hidden></span>
@@ -57,7 +60,7 @@ const hasFooter = Astro.slots.has('footer');
     <input id={id} type="checkbox" class="drawer-toggle" data-sb-drawer-toggle />
     <div class="drawer-side">
       <label for={id} aria-label="Close" class="drawer-overlay"></label>
-      <aside class={`sb-drawer-panel ${width}`} role="dialog" aria-label={title} aria-modal="true">
+      <aside class={`sb-drawer-panel ${width}`} role="dialog" aria-label={title} aria-modal="false">
         <header class="sb-drawer-head">
           <div class="sb-drawer-headrow">
             <span class="sb-drawer-titleic" data-sb-drawer-titleic hidden></span>
