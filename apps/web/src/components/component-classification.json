@@ -47,6 +47,10 @@
     "classification": "daisyui-direct-styleguide",
     "rationale": "Static-Space Browse fallback (Slice A Task 4, ui-only@9cf5b1ef): a simple CSV import/review table for Spaces that store files rather than a queryable store. daisyUI-direct markup; not mounted on the managed_pg dynamic path. Styles in <style is:global>."
   },
+  "integrations/AccessScopeNote.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "The read-only access-scope note (web-sources / Phase 7.2) shown on the Source connect form: a daisyUI rounded-box note (full variant) + a marked 'Read-only' subhead fragment (mark variant) carrying the monochrome Airtable glyph. daisyUI-direct markup documented via the design harness `pattern-access-scope` entry; .asn styles live in global.css per catalog governance."
+  },
   "integrations/BasePickerRow.astro": {
     "classification": "storybook-pattern",
     "styleguideId": "pattern-base-picker",

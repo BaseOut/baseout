@@ -14,6 +14,38 @@ import type { SourceSummary, SourceStatus } from '../stores/sources';
 import type { DestinationSummary } from '../stores/destinations';
 import { destinationMeta, isManagedDestination } from './provider-catalog';
 
+/**
+ * Format an ISO timestamp for display in the registry views, in UTC so the output
+ * is deterministic regardless of the server's zone (the views render these strings
+ * verbatim). Returns '' for a missing / unparseable value so a caller can drop the
+ * clause rather than print "Invalid Date".
+ */
+function formatDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(d);
+}
+
+function formatDateTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const date = formatDate(iso);
+  const time = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(d);
+  return `${date} at ${time} UTC`;
+}
+
 /** Map the active Space's Airtable connection → one SourceSummary (null if none). */
 export function toSourceSummary(
   state: IntegrationsState,
@@ -25,6 +57,14 @@ export function toSourceSummary(
 
   const includedCount = state.bases.filter((b) => b.isIncluded).length;
   const status: SourceStatus = airtable.status === 'active' ? 'connected' : 'reconnect';
+
+  // When access broke, from the connection's own timestamps (real data): 'invalid' stamps
+  // invalidatedAt, 'pending_reauth' stamps pendingReauthAt. Only meaningful for a broken
+  // source; healthy connections carry neither, so the view drops the "on <when>" clause.
+  const accessLostAt =
+    status === 'reconnect'
+      ? formatDateTime(airtable.invalidatedAt ?? airtable.pendingReauthAt)
+      : null;
 
   return {
     id: spaceId,
@@ -48,8 +88,13 @@ export function toSourceSummary(
         status: status === 'connected' ? 'ok' : 'paused',
       },
     ],
+    // lastChecked is honestly gated: the connections table has no "status last verified"
+    // column (last_used_at is "used", not "checked"), so the detail view renders "—" until a
+    // per-source health-check timestamp lands (shared-sources "Engineer" handoff). Not faked.
     lastChecked: null,
-    addedAt: '',
+    accessLostAt,
+    // When the connection was created — the source's "added" date. Real data.
+    addedAt: formatDate(airtable.createdAt),
   };
 }
 

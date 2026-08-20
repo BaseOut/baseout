@@ -1,0 +1,82 @@
+---
+/**
+ * AccessScopeNote — the read-only guarantee, stated ONCE.
+ *
+ * Built from `pattern-access-scope` (apps/design/src/lib/storybook.ts). That entry owns the
+ * canonical sentence, the literal scopes, the three-state mark rule and the placement priority;
+ * this file is only its rendering. Before this component the product printed the same claim in
+ * six different wordings across eight connect-flow strings — different words on different screens
+ * is what turns a factual claim into marketing.
+ *
+ * Two variants, and there is no third:
+ *   · `full` (default) — the connect-time statement: one sentence + what we request and what we
+ *     do not, in Airtable's own scope names. Belongs where the CREDENTIAL DECISION is made (the
+ *     source connect form, the wizard's source drawer) — once per surface, never as a standing
+ *     banner. The scope rows are grouped the way Airtable's OWN authorization screen groups them
+ *     ("will be able to see / edit / manage"), because the user reads that screen seconds later:
+ *     if our page says read-only and the next screen says "will be able to edit", we lose there.
+ *   · `mark` — the short "Read-only" carrying the Airtable mark, for the Schema / Data page
+ *     subheads, so the subtitle participates in the same visual language as the marked values.
+ *
+ * The mark is the existing monochrome brand glyph (`components/schema/airtableGlyph.ts`) — the
+ * sanctioned exception to the Lucide-only rule, same as the social-login logos. Imported, never
+ * redrawn, so every surface renders the identical glyph.
+ *
+ * The `mark` markup is written with NO whitespace inside the flex row: a trailing text node
+ * renders as a visible gap before whatever punctuation the caller writes after it ("Read-only .").
+ * And no `{/* … *​/}` comment may sit inside either ternary branch — that is an SSR 500 every gate
+ * passes silently (see MEMORY: infra-astro-comment-in-expression-ssr500).
+ *
+ * NOT for: Restore. Restore genuinely writes to Airtable (`schema.bases:write` +
+ * `data.records:write`) and says so in its own sentence rather than sheltering under this claim.
+ *
+ * PROMOTION NOTE (web-sources): the component's scoped style rules were moved to styles/global.css
+ * (`.asn` / `.asn-mark` / `.asn-glyph`) — apps/web forbids component-level scoped style rules in
+ * tracked components (component-classification test). Markup is otherwise verbatim from the fork.
+ */
+import { AIRTABLE_GLYPH } from '../schema/airtableGlyph';
+
+interface Props {
+  /** `full` = the connect-time statement · `mark` = the marked "Read-only" subhead fragment. */
+  variant?: 'full' | 'mark';
+  /** Extra classes on the root (spacing at the call site, never inside). */
+  class?: string;
+}
+const { variant = 'full', class: cls = '' } = Astro.props;
+
+const READ = ['schema.bases:read', 'data.records:read', 'data.recordComments:read'];
+const WRITE = ['schema.bases:write', 'data.records:write', 'data.recordComments:write'];
+---
+
+{variant === 'mark' ? (
+  <span class={`asn-mark ${cls}`.trim()}><span class="asn-glyph" aria-hidden="true" set:html={AIRTABLE_GLYPH} /><span>Read-only</span></span>
+) : (
+  <div class={`asn rounded-box border border-base-300 bg-base-100 p-4 ${cls}`.trim()}>
+    <div class="flex items-start gap-2">
+      <span class="iconify lucide--lock size-4 mt-0.5 text-base-content/60" aria-hidden="true"></span>
+      <div class="min-w-0">
+        <p class="text-[length:var(--t-13)] leading-relaxed">
+          Baseout only reads your Airtable. We never ask for permission to change your bases.
+        </p>
+        <p class="mt-3 text-[length:var(--t-12)] text-base-content/55">If you connect with OAuth, Airtable's authorization screen will show the same thing:</p>
+        <div class="mt-2 grid gap-2 text-[length:var(--t-12)]">
+          <div class="flex items-start gap-1.5 text-base-content/70">
+            <span class="iconify lucide--check size-3.5 mt-0.5 shrink-0 text-success" aria-hidden="true"></span>
+            <span>Baseout <b>will be able to see</b>: {READ.map((s, i) => (<>{i > 0 ? ' · ' : ''}<code class="font-mono">{s}</code></>))}</span>
+          </div>
+          <div class="flex items-start gap-1.5 text-base-content/70">
+            <span class="iconify lucide--x size-3.5 mt-0.5 shrink-0 text-base-content/40" aria-hidden="true"></span>
+            <span>Baseout <b>will not be able to edit</b>: {WRITE.map((s, i) => (<>{i > 0 ? ' · ' : ''}<code class="font-mono">{s}</code></>))}</span>
+          </div>
+          <div class="flex items-start gap-1.5 text-base-content/70">
+            <span class="iconify lucide--x size-3.5 mt-0.5 shrink-0 text-base-content/40" aria-hidden="true"></span>
+            <span>Baseout <b>will not be able to manage</b> your workspaces, collaborators or webhooks.</span>
+          </div>
+        </div>
+        <p class="mt-3 text-[length:var(--t-12)] text-base-content/55">
+          Attachments come with the records and comments they belong to — Airtable has no separate attachment scope.
+        </p>
+      </div>
+    </div>
+  </div>
+)}

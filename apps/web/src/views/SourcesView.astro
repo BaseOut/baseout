@@ -1,154 +1,225 @@
 ---
 /**
  * SourcesView — account-level Sources registry (skeleton).
+ *
+ * The account's Airtable connections, in account Settings next to Destinations.
+ * Dense status table; "in use by N Spaces" is the reuse indicator (the count
+ * links into the source's per-Space usage table). A broken source surfaces
+ * loudly.
+ *
+ * ONE FAMILY WITH DestinationsView (audit D12). "Mirrors DestinationsView" was already written
+ * here, which makes every divergence between the two unintended BY DEFINITION — and six of
+ * fifteen shared jobs had drifted anyway. The two files now share one `.reg-*` class vocabulary
+ * and one sort/keyboard controller, byte for byte, so the next divergence shows up in a diff
+ * instead of hiding behind two spellings of the same rule.
  */
 import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
-import Alert from '../components/ui/Alert.astro';
-import ConfirmModal from '../components/ui/ConfirmModal.astro';
-import EmptyState from '../components/ui/EmptyState.astro';
-import PageHeader from '../components/ui/PageHeader.astro';
 import type { SourceSummary } from '../stores/sources';
-import { SOURCE_PLATFORMS } from '../lib/provider-catalog';
 
 interface Props {
   sources: SourceSummary[];
   notice?: string | null;
-  addHref?: string;
-  rowHref?: string | null;
 }
-const { sources, notice = null, addHref = '/sources/new', rowHref = null } = Astro.props;
-
-const comingSoonPlatforms = SOURCE_PLATFORMS.filter((p) => p.availability === 'coming_soon');
+const { sources, notice = null } = Astro.props;
 
 const statusMeta: Record<string, { variant: 'success' | 'warning' | 'error' | 'default'; label: string; dot: boolean }> = {
   connected: { variant: 'success', label: 'Connected', dot: true },
   reconnect: { variant: 'warning', label: 'Reconnect', dot: false },
+  // `connecting` came from DestinationsView (audit D12): the two registries model the same
+  // lifecycle, so a status one of them can render and the other cannot is a lookup that returns
+  // `undefined` and throws on `.label`. SourceStatus does not carry it TODAY — this is the map
+  // that will not need editing when it does.
+  connecting: { variant: 'warning', label: 'Connecting', dot: true },
   needs_connection: { variant: 'warning', label: 'Needs connection', dot: false },
 };
+/**
+ * A status the map does not know must not take the page down, and must not be GUESSED.
+ *
+ * `statusMeta[x].label` was indexed with no fallback at two sites in this file and two in its twin,
+ * and the comment above names that exact hazard — *"a lookup that returns `undefined` and throws on
+ * `.label`"* — then fixes it for one value by adding a map entry. Four other views in this tree
+ * already write `?? statusMeta.<default>`: `BackupsListView:188`, `RestoreHistoryView:171`,
+ * `ReportsView:133`, `ReportDefinitionView:207`. Sources and Destinations were the only two without.
+ *
+ * The fallback is a NEW neutral entry, not an alias onto an existing status, and that is the whole
+ * point: every entry in this map is success or warning, so borrowing one would either claim a
+ * connection is fine when we do not know, or tell someone to reconnect something that may be
+ * healthy. A registry that meets a state it does not understand says so.
+ */
+const statusUnknown = { variant: 'default' as const, label: 'Unknown', dot: false };
+const metaOf = (s: string) => statusMeta[s] ?? statusUnknown;
 const needsAttention = sources.filter((s) => s.status === 'reconnect');
 const affectedSpaces = [...new Set(needsAttention.flatMap((s) => s.inUseBy.map((u) => u.spaceName)))];
 const detailHref = (s: SourceSummary) =>
   s.status === 'needs_connection'
     ? `/sources/detail?id=${s.id}&new=1&method=${s.auth}`
     : `/sources/detail?id=${s.id}`;
-
-const registryColumns = 'minmax(0,1.4fr) minmax(0,1.2fr) 9.5rem 7rem 5rem 11rem';
 ---
 
 <div class="mx-auto max-w-5xl space-y-6">
-  <PageHeader title="Sources" description="The Airtable connections on your account. Connect once, reuse across Spaces.">
-    <Button slot="actions" href={addHref} variant="primary">Add source</Button>
-  </PageHeader>
+  {/* THE SHARED `.page-head` (global.css), not a fifth copy of the same flex row (Oleh,
+      2026-08-13: `Add source` goes top-right, description left). This header was
+      `flex items-end justify-between gap-4 flex-wrap` — byte-identical to the three that
+      `24cb796` folded into `.page-head`, and to Destinations' — so it inherited none of the narrow
+      behaviour that was decided there and answered the question a fourth and fifth time by accident.
+      Two real differences come with the shared class: `align-items` goes end → flex-start (a
+      one-line title beside a two-line description was bottom-aligning the button against the
+      description's last line), and the text side gets `flex: 1 1 11rem; min-width: 0`, which is
+      what makes the row break from CONTENT rather than at a width someone picked. */}
+  <header class="page-head">
+    <div class="page-head-txt">
+      <h1 class="text-title">Sources</h1>
+      <p class="text-sm text-base-content/60 mt-1">The Airtable connections on your account. Connect once, reuse across Spaces.</p>
+    </div>
+    {/* D17 — one primary. The registry drew TWO identical `Add source` buttons in the empty state,
+        here and in the card below. The header yields (the same way Backups' does), so the single
+        primary sits next to the sentence explaining why the list is empty. */}
+    {sources.length > 0 && <Button href="/sources/new" variant="primary">Add source</Button>} {/* ds-ok: page-header CTA is the documented md exception */}
+  </header>
 
   {notice && (
-    <Alert variant="success">{notice}</Alert>
+    <div role="alert" class="alert alert-soft alert-success"><span class="iconify lucide--circle-check size-4" aria-hidden="true"></span><span class="flex-1">{notice}</span><button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Dismiss" onclick="this.closest('.alert').remove()"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button></div>
   )}
 
   {needsAttention.length > 0 && (
-    <Alert variant="warning" title={`${needsAttention.length} source${needsAttention.length === 1 ? '' : 's'} need${needsAttention.length === 1 ? 's' : ''} reconnecting.`}>
-      Backups from {needsAttention.length === 1 ? 'it are' : 'them are'} paused, affecting {affectedSpaces.length} Space{affectedSpaces.length === 1 ? '' : 's'}.
-    </Alert>
-  )}
-
-  {sources.length === 0 ? (
-    <EmptyState
-      icon="lucide--database"
-      title="No sources yet"
-      description="Connect Airtable once, then reuse it across every Space."
-      actionHref={addHref}
-      actionLabel="Add source"
-    />
-  ) : (
-    <div class="overflow-hidden rounded-box border border-base-300 bg-base-100" role="table">
-      <div class="grid items-center gap-3 border-b border-base-300 bg-base-200/50 px-4 py-3 text-xs font-bold uppercase tracking-wider text-base-content/55" style={`grid-template-columns: ${registryColumns};`} role="row">
-        <span>Name</span><span>Authorized as</span><span>Status</span><span>In use by</span><span class="text-right">Bases</span><span class="text-right">Actions</span>
-      </div>
-      {sources.map((s) => (
-        <div class="grid items-center gap-3 border-b border-base-300/50 px-4 py-3 text-sm text-base-content transition-colors last:border-b-0 hover:bg-base-200/50" style={`grid-template-columns: ${registryColumns};`} role="row">
-          <a href={rowHref ?? detailHref(s)} class="min-w-0 font-semibold text-base-content no-underline">{s.name}<span class="block text-xs font-normal text-base-content/50">{s.auth === 'pat' ? 'Personal access token' : 'OAuth'}</span></a>
-          <span class="inline-flex min-w-0 items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap text-base-content/75"><img src="/airtable.svg" alt="" width="15" height="15" class="rounded-sm" />{s.account}</span>
-          <span><Badge variant={statusMeta[s.status].variant} dot={statusMeta[s.status].dot}>{statusMeta[s.status].label}</Badge></span>
-          <span class="text-base-content/70">{s.inUseBy.length} Space{s.inUseBy.length === 1 ? '' : 's'}</span>
-          <span class="text-right font-mono tabular-nums text-base-content/70">{s.basesAvailable}</span>
-          <span class="flex items-center justify-end gap-2">
-            {s.auth === 'oauth' && s.status === 'reconnect' && (
-              <form method="POST" action="/api/connections/airtable/start" data-airtable-reconnect data-astro-reload>
-                <Button type="submit" variant="primary" size="sm" data-reconnect-btn>
-                  <span class="iconify lucide--rotate-cw" aria-hidden="true"></span> Reconnect
-                </Button>
-              </form>
-            )}
-            {s.auth === 'oauth' && s.status === 'connected' && (
-              <>
-                <form method="POST" action="/api/connections/airtable/start" data-airtable-reconnect data-astro-reload>
-                  <Button type="submit" variant="ghost" size="sm" data-reconnect-btn title="Re-run the Airtable authorization (e.g. to grant newly added permissions)">
-                    <span class="iconify lucide--rotate-cw" aria-hidden="true"></span> Reconnect
-                  </Button>
-                </form>
-                <Button type="button" variant="danger-ghost" size="sm" data-disconnect-open>
-                  <span class="iconify lucide--unplug" aria-hidden="true"></span> Disconnect
-                </Button>
-              </>
-            )}
-          </span>
-        </div>
-      ))}
+    <div role="alert" class="alert alert-soft alert-warning">
+      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+      <span>
+        <b>{needsAttention.length} source{needsAttention.length === 1 ? '' : 's'} need{needsAttention.length === 1 ? 's' : ''} reconnecting.</b>
+        {' '}Backups from {needsAttention.length === 1 ? 'it are' : 'them are'} paused, affecting {affectedSpaces.length} Space{affectedSpaces.length === 1 ? '' : 's'}.
+      </span>
     </div>
   )}
 
-  <ConfirmModal id="disconnect-airtable-modal" title="Disconnect Airtable?" confirmClass="btn-outline btn-error">
-    <p>Backups from this connection pause until you reconnect. Your backed-up data is not deleted.</p>
-    <Button slot="confirm" type="button" variant="danger" data-disconnect-confirm>
-      <span class="iconify lucide--unplug" aria-hidden="true"></span> Disconnect
-    </Button>
-  </ConfirmModal>
-
-  {comingSoonPlatforms.length > 0 && (
-    <section class="mt-6">
-      <h2 class="mb-3 text-xs font-bold uppercase tracking-wider text-base-content/50">More sources coming soon</h2>
-      <div class="grid gap-2 sm:grid-cols-[repeat(auto-fill,minmax(15rem,1fr))]">
-        {comingSoonPlatforms.map((p) => (
-          <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5 opacity-70">
-            <span class="min-w-0 text-sm font-semibold">{p.label}<span class="block text-xs font-normal text-base-content/50">{p.note}</span></span>
-            <Badge variant="default">Coming soon</Badge>
-          </div>
-        ))}
+  {sources.length === 0 ? (
+    <div class="reg-empty">
+      <img src="/airtable.svg" alt="" width="28" height="28" class="reg-empty-ic" />
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium">No sources yet</p>
+        <p class="text-xs text-base-content/65 mt-0.5">Connect Airtable once, then reuse it across every Space.</p>
       </div>
-    </section>
+      <Button href="/sources/new" variant="primary" size="sm" class="shrink-0">Add source</Button>
+    </div>
+  ) : (
+    <div class="tbl-frame reg-tableframe">
+      {/* THE FRAME AND THE SCROLLER ARE TWO ELEMENTS NOW, and that is what `data-narrow-pan`
+          requires rather than a preference. `panRail` mounts its sticky bar with
+          `pan.parentNode.insertBefore(rail, pan)` (panRail.ts:81) — a SIBLING immediately before the
+          scroller. While `tbl-frame` and the scroller were one element the rail was therefore
+          inserted OUTSIDE the card, and it painted across the card's top border and its rounded
+          corners. Every other panned surface in the app already has this shape (`.bl-panel` >
+          `.bl-tablewrap`, `.rh-panel` > `.rh-tablewrap`); the registries were the exception because
+          they never had a panel around the table. Screenshotted, not reasoned about.
+          `data-narrow-pan` — this registry was already panning, with the affordance missing. Measured
+          at 390: the table is 620px inside 364 of room (Name 147 · Authorized as 139 · Status 109 ·
+          In use by 97 · Bases 79 · chevron 48), and `overflow-x: auto` alone was silently turning
+          that into a sideways scroll with nothing on screen to say so. The shared hook mounts
+          `panRail`'s sticky top scrollbar, which is the only thing that was missing.
+          NO COLUMN IS CUT and no column needs a written floor: every cell here is `white-space:
+          nowrap` (below), so each column already sits at its own min-content and none of them can
+          collapse to a 0px track — that is what the floors on Home and Backups had to state by hand
+          because those tables have wrapping prose in them and this one has none. Adding min-widths
+          on top would be six numbers restating what nowrap already computes.
+          THIS COMMENT LIVES INSIDE THE `<div>` ON PURPOSE. It was written one line higher, as the
+          first child of the `sources.length === 0 ? … : ( … )` branch, and that is the exact shape
+          `infra-astro-comment-in-expression-ssr500` documents: `/sources` and `/destinations` both
+          returned **HTTP 500 with a 75-byte empty body**, with typecheck and ds-lint green. Only
+          `curl` (and `pnpm smoke`, which exists for this) sees it. */}
+      <div class="reg-tablewrap" data-narrow-pan>
+      <table class="table text-sm">
+        {/* THE ONE TABLE (catalog `table`, "THE ONE RECIPE"): `.tbl-colhead` for the label type,
+            `data-sort-col` + tableSort.ts for the behaviour and the caret. Sources and Destinations
+            are deliberately parallel objects, so their headers are built the same way here and in
+            DestinationsView — a registry you cannot order by Status is a registry you cannot
+            triage. No pager: this list is capped at the account's connections (a handful), and a
+            pager over a set that cannot grow is chrome. */}
+        <thead class="tbl-colhead">
+          <tr>
+            <th data-sort-col="0">Name</th><th data-sort-col="1">Authorized as</th><th data-sort-col="2">Status</th><th data-sort-col="3">In use by</th><th class="text-right" data-sort-col="4">Bases</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {sources.map((s) => (
+            <tr
+              class="reg-row row-clickable"
+              role="button"
+              tabindex="0"
+              data-reg-row
+              data-sort-0={s.name.toLowerCase()}
+              data-sort-1={s.account.toLowerCase()}
+              data-sort-2={metaOf(s.status).label.toLowerCase()}
+              data-sort-3={s.inUseBy.length}
+              data-sort-4={s.basesAvailable}
+              onclick={`window.location='${detailHref(s)}'`}
+            >
+              <td>
+                <div class="flex flex-col">
+                  <span class="font-semibold">{s.name}</span>
+                  <span class="text-xs text-base-content/66">{s.auth === 'pat' ? 'Personal access token' : 'OAuth'}</span>
+                </div>
+              </td>
+              <td><span class="inline-flex items-center gap-1.5 text-base-content/75"><img src="/airtable.svg" alt="" width="15" height="15" class="rounded-[3px]" />{s.account}</span></td>
+              <td><Badge variant={metaOf(s.status).variant} dot={metaOf(s.status).dot}>{metaOf(s.status).label}</Badge></td>
+              <td class="text-base-content/70">{s.inUseBy.length} Space{s.inUseBy.length === 1 ? '' : 's'}</td>
+              <td class="text-right tabular-nums text-base-content/70">{s.basesAvailable}</td>
+              <td class="text-right"><span class="row-end"><span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span></span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+    </div>
   )}
 </div>
 
 <script>
-  import { setButtonLoading } from '../lib/ui';
+  import { wireTableSort } from '../components/schema/tableSort';
 
-  // Spinner while the browser redirects to Airtable's consent screen
-  // (mirrors SourceAddView's data-airtable-connect pattern).
-  document.addEventListener('submit', (event) => {
-    const form = (event.target as HTMLElement | null)?.closest('[data-airtable-reconnect]');
-    if (!(form instanceof HTMLFormElement)) return;
-    const btn = form.querySelector('[data-reconnect-btn]');
-    if (btn instanceof HTMLButtonElement) setButtonLoading(btn, true);
-  });
-
-  // Disconnect: confirm via the catalog ConfirmModal, then POST the
-  // disconnect route. Reload lands the row in its Reconnect state.
-  const modal = document.getElementById('disconnect-airtable-modal') as HTMLDialogElement | null;
-  document.querySelectorAll('[data-disconnect-open]').forEach((b) =>
-    b.addEventListener('click', () => modal?.showModal()),
-  );
-  document.querySelector('[data-disconnect-confirm]')?.addEventListener('click', async (event) => {
-    const btn = event.currentTarget as HTMLButtonElement;
-    setButtonLoading(btn, true);
-    try {
-      const res = await fetch('/api/connections/airtable/disconnect', { method: 'POST' });
-      if (res.ok) {
-        window.location.reload();
-        return;
-      }
-      modal?.close();
-    } finally {
-      setButtonLoading(btn, false);
-    }
-  });
+  function initRegistrySort() {
+    const table = document.querySelector<HTMLElement>('.reg-tablewrap table');
+    if (!table || table.dataset.regWired) return;
+    table.dataset.regWired = '1';
+    const tbody = table.querySelector<HTMLElement>('tbody');
+    if (!tbody) return;
+    const headers = Array.from(table.querySelectorAll<HTMLElement>('th[data-sort-col]'));
+    const rows = () => Array.from(tbody.querySelectorAll<HTMLElement>('[data-reg-row]'));
+    // Keyboard: Enter/Space opens the source (the inline onclick navigates). The rest of
+    // `pattern-row-actions` (role=button + tabindex) is on the <tr> in the markup above.
+    // Bound once here, not on every sort: wireTableSort MOVES the same elements, it does not
+    // rebuild them, so the listeners survive a re-order. Identical to DestinationsView.
+    rows().forEach((row) => row.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      row.click();
+    }));
+    wireTableSort(table, () => [{ headers, container: tbody, items: rows }], (item, col) => {
+      // Read the raw attribute: `data-sort-0` does NOT map to dataset.sort0 (a digit after the
+      // hyphen isn't camel-cased), so dataset access would silently return undefined and no-op.
+      const v = item.getAttribute(`data-sort-${col}`) || '';
+      const n = Number(v);
+      return Number.isFinite(n) && v !== '' ? n : String(v);
+    });
+  }
+  initRegistrySort();
+  document.addEventListener('astro:page-load', initRegistrySort);
 </script>
+
+<style>
+  .reg-empty { display: flex; align-items: center; gap: .75rem; padding: 1rem; border: 1px dashed var(--color-base-300); border-radius: .7rem; background: oklch(from var(--color-base-200) l c h / .35); }
+  .reg-empty-ic { border-radius: 7px; flex: none; opacity: .8; }
+
+  /* Table is the daisyUI primitive; only the bordered wrap + clickable rows are bespoke. */
+  /* Chrome comes from the shared `tbl-frame` on the element (audit X-A): 1px base-300, 12px,
+     base-100. This rule keeps only what is local — the pan, which `tbl-frame` deliberately does not
+     set. Was a hand-written copy at `.7rem`, one of seven spellings of one radius. */
+  .reg-tablewrap { overflow-x: auto; }
+  .reg-tablewrap :is(th, td) { white-space: nowrap; }
+  /* The frame keeps the chrome (`tbl-frame`: 1px base-300, 12px radius, base-100) and the scroller
+     inside it keeps the pan, so `panRail`'s sticky bar lands INSIDE the card. It clips to the
+     radius, because a scroller whose content runs past the border must not paint over the corner
+     it is sitting in — the same job `.tbl-frame-flush` does for edge-to-edge grids. */
+  .reg-tableframe { overflow: clip; }
+  /* .reg-row hover/cursor from shared .row-clickable */
+  .reg-row :global(.badge) { white-space: nowrap; }
+</style>

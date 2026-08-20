@@ -33,6 +33,8 @@ const airtable = (o: Partial<ConnectionSummary> = {}): ConnectionSummary => ({
   isEnterprise: false,
   basesCount: 3,
   createdAt: '2026-04-15T00:00:00.000Z',
+  invalidatedAt: null,
+  pendingReauthAt: null,
   ...o,
 })
 
@@ -141,5 +143,42 @@ describe('toSourceSummary', () => {
     const s = toSourceSummary(state({ connections: [airtable({ status: 'invalid' })] }), 'space-1', 'Ops')
     expect(s?.status).toBe('reconnect')
     expect(s?.inUseBy[0].status).toBe('paused')
+  })
+
+  it('derives addedAt from the connection createdAt (UTC, real data)', () => {
+    const s = toSourceSummary(state({ connections: [airtable()] }), 'space-1', 'Ops')
+    expect(s?.addedAt).toBe('Apr 15, 2026')
+  })
+
+  it('sets accessLostAt from invalidatedAt when the source is broken', () => {
+    const s = toSourceSummary(
+      state({ connections: [airtable({ status: 'invalid', invalidatedAt: '2026-06-02T04:12:00.000Z' })] }),
+      'space-1',
+      'Ops',
+    )
+    expect(s?.accessLostAt).toBe('Jun 2, 2026 at 04:12 UTC')
+  })
+
+  it('falls back to pendingReauthAt for accessLostAt when there is no invalidatedAt', () => {
+    const s = toSourceSummary(
+      state({ connections: [airtable({ status: 'pending_reauth', pendingReauthAt: '2026-06-05T09:30:00.000Z' })] }),
+      'space-1',
+      'Ops',
+    )
+    expect(s?.accessLostAt).toBe('Jun 5, 2026 at 09:30 UTC')
+  })
+
+  it('leaves accessLostAt null for a healthy source', () => {
+    const s = toSourceSummary(
+      state({ connections: [airtable({ status: 'active', invalidatedAt: '2026-06-02T04:12:00.000Z' })] }),
+      'space-1',
+      'Ops',
+    )
+    expect(s?.accessLostAt).toBeNull()
+  })
+
+  it('leaves accessLostAt null when a broken source carries no timestamp (honest drop)', () => {
+    const s = toSourceSummary(state({ connections: [airtable({ status: 'invalid' })] }), 'space-1', 'Ops')
+    expect(s?.accessLostAt).toBeNull()
   })
 })

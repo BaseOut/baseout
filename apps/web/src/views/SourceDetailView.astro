@@ -1,6 +1,6 @@
 ---
 /**
- * SourceDetailView — a source's own management/health page (skeleton).
+ * SourceDetailView — a source's own management/health page.
  *
  * Identity (which Airtable account, auth type, bases available) + status/reconnect
  * INDEPENDENT of any Space (one reconnect heals every Space using it) + the
@@ -8,13 +8,25 @@
  * (# bases, destinations, schedule, last backup). Remove is guarded while in use.
  *
  * Status is "last-known-good" (no Airtable revoke webhook) — tied to "last checked".
+ *
+ * ONE FAMILY WITH DestinationDetailView (audit D12): same width, same block anatomy,
+ * same `.reg-*` vocabulary, same edit contract.
+ *
+ * EDIT EDITS (D12/J08-F4). This page's `Edit` was a link to `/sources/new` — a control
+ * that said Edit and did Create, minting a duplicate instead of changing the object you
+ * were looking at. It is now edit-in-place per `decision-panel-edit-mode-not-inline` /
+ * catalog `pattern-panel-edit-mode`: the canonical `.sch-modeswitch` pair turns each
+ * value into an input WHERE IT ALREADY SAT — one layout, two modes, nothing moves.
+ * Captured facts (the Airtable account, the base count, when we last checked) render
+ * identically in both modes with a "from capture" marker, never greyed: grey reads as
+ * "broken", and these are facts.
  */
+import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
-import Alert from '../components/ui/Alert.astro';
-import SectionPanel from '../components/ui/SectionPanel.astro';
-import DefinitionList from '../components/patterns/DefinitionList.astro';
-import EntityDetailHeader from '../components/patterns/EntityDetailHeader.astro';
-import type { SourceSummary } from '../stores/sources';
+import ConfirmModal from '../components/ui/ConfirmModal.astro';
+import { CONFIRM_DESTRUCTIVE } from '../lib/ui';
+import { describeRegistryRemoval } from '../lib/registry/removal';
+import type { SourceSummary, SourceStatus } from '../stores/sources';
 
 interface Props {
   source: SourceSummary;
@@ -23,119 +35,371 @@ interface Props {
 }
 const { source: s, reconnected = false } = Astro.props;
 
-const status = reconnected ? 'connected' : s.status;
+// Promotion (web-sources): widen to include the forward-looking `connecting` lifecycle state the
+// statusBadge below branches on — SourceStatus does not carry it TODAY (same note as SourcesView's
+// statusMeta), so annotate rather than invent it in the type. Keeps apps/web tsc strict-green.
+const status = (reconnected ? 'connected' : s.status) as SourceStatus | 'connecting';
 const needsReconnect = status === 'reconnect';
 const needsConnect = status === 'needs_connection';
 const inUseCount = s.inUseBy.length;
 const authLabel = s.auth === 'pat' ? 'Personal access token' : 'OAuth';
+// D06 — the Remove consequence, shared with DestinationDetailView through one derivation. Only
+// reachable when `inUseCount === 0`; the in-use guard below is unchanged and still owns the other case.
+const removal = describeRegistryRemoval({ kind: 'source', name: s.name, authLabel, basesAvailable: s.basesAvailable });
 const statusBadge =
   status === 'connected' ? { variant: 'success' as const, label: 'Connected', dot: true }
+  : status === 'connecting' ? { variant: 'warning' as const, label: 'Connecting', dot: true }
   : status === 'needs_connection' ? { variant: 'warning' as const, label: 'Needs connection', dot: false }
   : { variant: 'warning' as const, label: 'Reconnect required', dot: false };
 
-const usageStatus: Record<string, { cls: string; label: string }> = {
-  ok: { cls: 'is-ok', label: 'OK' },
-  failed: { cls: 'is-err', label: 'Failed' },
-  paused: { cls: 'is-warn', label: 'Paused' },
+/*
+ * The broken-source sentence. It used to say only that "Airtable access was lost" — not WHEN, and
+ * not WHAT to authorize, so a person could not tell which backups the gap covers or which of two
+ * Airtable logins to reconnect with. It now names the moment, the account, and the credential,
+ * then the blast radius, then the one action. Same order as the failure copy on the run pages.
+ *
+ * EVERY clause is dropped rather than faked when the model cannot carry it honestly:
+ *  · `lostWhen` when there is no timestamp;
+ *  · the "as <account>" clause when `account` is an ID rather than a name. Airtable only returns an
+ *    email with the `user.email:read` scope; without it the field holds a bare `usr…` id, and the
+ *    catalog `alert` rule this wave wrote is explicit — an alert names entities by their DISPLAY
+ *    NAME, never by id. "Reconnect as usrF0UNDER00000" is exactly the sentence that rule forbids,
+ *    and it is also useless: nobody recognises their own Airtable user id. The credential type is
+ *    still named, because that IS the actionable half ("the same personal access token").
+ */
+const lostWhen = s.accessLostAt ? ` on ${s.accessLostAt}` : '';
+// The field is a display handle ONLY when Airtable returned an email. Its own type says so: "email
+// if the `user.email:read` scope is granted, else the usr… id". Everything else it can hold — a
+// bare `usrF0UNDER00000`, the `token ••••` mask, `pending authorization` — is either an id or a
+// placeholder, and neither belongs in a sentence telling somebody which account to reconnect with.
+const accountIsName = s.account.includes('@');
+const asAccount = accountIsName ? ` as ${s.account}` : '';
+const scope =
+  inUseCount === 0
+    ? 'No Space uses this source yet.'
+    : `Backups from this source are paused for ${inUseCount === 1 ? 'the Space' : `all ${inUseCount} Spaces`} below.`;
+const brokenCopy = needsConnect
+  ? `This source isn’t connected yet. Authorize Airtable${asAccount} with ${s.auth === 'pat' ? 'a personal access token carrying schema and record read scopes' : 'the OAuth grant'}, then use it in a Space.`
+  : `Airtable access was lost${lostWhen}. ${scope} Reconnect${asAccount} with the same ${authLabel.toLowerCase()} to restore ${inUseCount === 1 ? 'it' : 'them all'}.`;
+
+const usageStatus: Record<string, { badge: string; label: string }> = {
+  ok: { badge: 'badge-soft badge-success', label: 'OK' },
+  failed: { badge: 'badge-soft badge-error', label: 'Failed' },
+  paused: { badge: 'badge-soft badge-warning', label: 'Paused' },
 };
-const connectionItems = [
-  { term: 'Authorized as', description: `${s.account} (${authLabel})` },
-  { term: 'Bases available', description: `${s.basesAvailable} bases this connection can see` },
-  { term: 'Status checked', description: `${s.lastChecked ?? '—'} · status reflects the last successful check, not live` },
-];
 ---
 
-<div class="mx-auto max-w-4xl space-y-6">
+<div class="mx-auto max-w-4xl space-y-6" data-reg-root data-mode="read">
+  <a href="/sources" class="back-link"><span class="iconify lucide--arrow-left" aria-hidden="true"></span> Sources</a>
+
   {reconnected && (
-    <Alert variant="success">{s.status === 'needs_connection' ? 'Connected. This source is ready to use in your Spaces.' : 'Reconnected. Backups from this source will resume on their next scheduled run.'}</Alert>
+    <div role="alert" class="alert alert-soft alert-success"><span class="iconify lucide--circle-check size-4" aria-hidden="true"></span><span class="flex-1">{s.status === 'needs_connection' ? 'Connected. This source is ready to use in your Spaces.' : 'Reconnected. Backups from this source will resume on their next scheduled run.'}</span><button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Dismiss" onclick="this.closest('.alert').remove()"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button></div>
   )}
 
-  <EntityDetailHeader
-    title={s.name}
-    description={`Airtable · ${authLabel} · ${s.account} · added ${s.addedAt}`}
-    backHref="/sources"
-    backLabel="Back to sources"
-    statusLabel={statusBadge.label}
-    statusVariant={statusBadge.variant}
-    statusDot={statusBadge.dot}
-  >
-    {(needsReconnect || needsConnect) && (
-      <form slot="actions" method="POST" action="/api/connections/airtable/start" data-astro-reload>
-        <input type="hidden" name="returnTo" value={`/sources/detail?id=${s.id}`} />
-        <Button type="submit" variant="primary">{needsConnect ? 'Connect' : 'Reconnect'}</Button>
-      </form>
-    )}
-    <Button slot="actions" href={`/sources/new?method=${s.auth}`} variant="secondary">Edit</Button>
-  </EntityDetailHeader>
+  <header class="flex flex-wrap items-start justify-between gap-4">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2">
+        <img src="/airtable.svg" alt="" width="26" height="26" class="reg-logo" />
+        <h1 class="text-title" data-reg-title>{s.name}</h1>
+        <Badge variant={statusBadge.variant} dot={statusBadge.dot}>{statusBadge.label}</Badge>
+      </div>
+      <p class="text-sm text-base-content/60 mt-1.5">Airtable · {authLabel} · {s.account} · added {s.addedAt}</p>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      {(needsReconnect || needsConnect) && (
+        <form method="POST" action="/api/connections/airtable/start" data-astro-reload data-airtable-connect>
+          <input type="hidden" name="returnTo" value={`/sources/detail?id=${s.id}`} />
+          <Button type="submit" variant="primary" size="sm" data-airtable-connect-btn>{needsConnect ? 'Connect' : 'Reconnect'}</Button>
+        </form>
+      )}
+      {/* The canonical segmented control from styles/global.css — never a local copy. */}
+      <span class="join sch-modeswitch" role="group" aria-label="Read or edit this source" data-reg-modes>
+        <button type="button" class="btn btn-sm join-item sch-mode-active" aria-pressed="true" data-reg-mode="read"><span class="iconify lucide--book-open size-3.5" aria-hidden="true"></span>Read</button>
+        <button type="button" class="btn btn-sm join-item" aria-pressed="false" data-reg-mode="edit"><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span>Edit</button>
+      </span>
+    </div>
+  </header>
 
   {(needsReconnect || needsConnect) && (
-    <Alert variant="warning">
-      {needsConnect
-        ? 'This source isn’t connected yet. Authorize Airtable, then use it in a Space.'
-        : `Airtable access was lost. Backups from this source are paused for ${inUseCount === 1 ? 'the Space' : `all ${inUseCount} Spaces`} below. Reconnect once to restore ${inUseCount === 1 ? 'it' : 'them all'}.`}
-    </Alert>
+    <div role="alert" class="alert alert-soft alert-warning">
+      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+      <span>{brokenCopy}</span>
+    </div>
   )}
 
-  <SectionPanel title="Connection">
-    <Button slot="actions" type="button" variant="ghost" size="sm" class="gap-1" data-refresh-bases><span class="iconify lucide--refresh-cw"></span> Refresh bases</Button>
-    <DefinitionList items={connectionItems} />
-    <p class="src-refresh-note hidden" data-refresh-note role="status"></p>
-  </SectionPanel>
+  <section class="reg-card">
+    <div class="flex items-center justify-between gap-3">
+      <h2 class="reg-card-title">Connection</h2>
+      {/* A re-check, not an edit — so it belongs to read mode only; two save contracts on one
+          card is exactly what `pattern-panel-edit-mode` forbids.
+          SOFT-PRIMARY for the reason written out on its twin in `DestinationDetailView`. Oleh
+          named the destination one; this is the SAME control in the same slot of the same card in
+          the same view family, and fixing only the one he photographed is how the two files drift.
+          Same class string, byte for byte. */}
+      <button type="button" class="btn btn-soft btn-primary btn-sm gap-1.5" data-reg-readonly data-refresh-bases><span class="iconify lucide--refresh-cw size-4" aria-hidden="true"></span> Refresh bases</button>
+    </div>
+    <dl class="reg-dl">
+      {/* The ONLY field Baseout owns here is the label. Everything below it is what Airtable
+          told us, so it renders identically in both modes (catalog `pattern-panel-edit-mode`). */}
+      <div>
+        <dt>Name</dt>
+        <dd>
+          <span class="sch-slot" data-reg-read="name">{s.name}</span>
+          <input type="text" class="input input-sm sch-slot-in" value={s.name} aria-label="Name" data-reg-input="name" />
+        </dd>
+      </div>
+      <div><dt>Authorized as <span class="sch-cap-mark" data-reg-editonly>from capture</span></dt><dd>{s.account} <span class="text-base-content/65">({authLabel})</span></dd></div>
+      <div><dt>Bases available <span class="sch-cap-mark" data-reg-editonly>from capture</span></dt><dd>{s.basesAvailable} bases this connection can see</dd></div>
+      <div><dt>Status checked <span class="sch-cap-mark" data-reg-editonly>from capture</span></dt><dd>{s.lastChecked ?? '—'} <span class="text-base-content/65">· status reflects the last successful check, not live</span></dd></div>
+    </dl>
+    <p class="reg-refresh-note hidden" data-refresh-note role="status"></p>
+    {/* Save stays explicit — a mode switch is not a licence to drop it. */}
+    <div class="reg-editbar" data-reg-editonly>
+      <button type="button" class="btn btn-sm btn-ghost" data-reg-cancel>Cancel</button>
+      <button type="button" class="btn btn-sm btn-primary" data-reg-save>Save</button>
+    </div>
+  </section>
 
-  <SectionPanel title={`In use by ${inUseCount} Space${inUseCount === 1 ? '' : 's'}`} class="overflow-hidden p-0">
+  <section class="reg-card reg-card--flush">
+    <div class="reg-card-pad flex items-center gap-2">
+      <h2 class="reg-card-title">In use by <span class="reg-count">{inUseCount} Space{inUseCount === 1 ? '' : 's'}</span></h2>
+    </div>
     {inUseCount > 0 ? (
-      <div role="table">
-        <div class="grid items-center gap-2 border-b border-base-300 bg-base-200/40 px-5 py-2.5 text-[0.68rem] font-bold uppercase tracking-wider text-base-content/50" style="grid-template-columns: minmax(0,1.3fr) 4rem minmax(0,1.3fr) 6rem 6rem 5rem;" role="row">
-          <span>Space</span><span class="text-right">Bases</span><span>Destination</span><span>Schedule</span><span>Last backup</span><span>Status</span>
-        </div>
-        {s.inUseBy.map((u) => (
-          <a href={`/integrations?space=${u.spaceId}`} class="grid items-center gap-2 border-t border-base-300/50 px-5 py-2.5 text-sm text-base-content no-underline transition-colors hover:bg-base-200/50" style="grid-template-columns: minmax(0,1.3fr) 4rem minmax(0,1.3fr) 6rem 6rem 5rem;" role="row">
-            <span class="truncate font-semibold">{u.spaceName}</span>
-            <span class="text-right font-mono tabular-nums text-base-content/75">{u.baseCount}</span>
-            <span class="truncate text-base-content/65">{u.destinations}</span>
-            <span class="truncate text-base-content/65">{u.schedule}</span>
-            <span class="truncate text-base-content/65">{u.lastBackup ?? '—'}</span>
-            <span><span class={`rounded-full px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide ${usageStatus[u.status].cls === 'is-ok' ? 'bg-success/15 text-success' : usageStatus[u.status].cls === 'is-err' ? 'bg-error/15 text-error' : 'bg-warning/15 text-warning'}`}>{usageStatus[u.status].label}</span></span>
-          </a>
-        ))}
+      <div class="reg-usewrap">
+        <table class="table text-sm">
+          {/* THE ONE TABLE (catalog `table`): `.tbl-colhead` for the label type, `data-sort-col` +
+              tableSort.ts for the behaviour and the caret — the same recipe the registry lists use.
+              Space / Bases / Status carry a sort key; Destination, Schedule and Last backup do not,
+              because the first two are free text and the third is a relative LABEL ("2h ago") with
+              no date behind it — sorting that as text puts "10m" before "2h". */}
+          <thead class="tbl-colhead">
+            <tr>
+              <th data-sort-col="0">Space</th><th class="text-right" data-sort-col="1">Bases</th><th>Destination</th><th>Schedule</th><th>Last backup</th><th data-sort-col="5">Status</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {s.inUseBy.map((u) => (
+              <tr
+                class="reg-userow row-clickable"
+                role="button"
+                tabindex="0"
+                data-sort-0={u.spaceName.toLowerCase()}
+                data-sort-1={u.baseCount}
+                data-sort-5={usageStatus[u.status].label.toLowerCase()}
+                onclick={`window.location='/integrations?space=${u.spaceId}'`}
+              >
+                <td class="font-semibold">{u.spaceName}</td>
+                <td class="text-right tabular-nums text-base-content/75">{u.baseCount}</td>
+                <td class="text-base-content/65">{u.destinations}</td>
+                <td class="text-base-content/65">{u.schedule}</td>
+                <td class="text-base-content/65">{u.lastBackup ?? '—'}</td>
+                <td><span class={`badge badge-sm ${usageStatus[u.status].badge}`}>{usageStatus[u.status].label}</span></td>
+                <td class="text-right"><span class="row-end"><span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span></span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     ) : (
-      <p class="px-5 py-4 text-sm text-base-content/55">No Spaces use this source yet.</p>
+      <p class="reg-card-pad text-sm text-base-content/65">No Spaces use this source yet.</p>
     )}
-    <p class="border-t border-base-300 px-5 py-3 text-xs text-base-content/55">{needsReconnect ? 'Reconnecting restores backups for every Space listed here.' : 'Each Space includes its own set of bases from this source.'}</p>
-  </SectionPanel>
+    <p class="reg-card-pad reg-note">{needsReconnect ? 'Reconnecting restores backups for every Space listed here.' : 'Each Space includes its own set of bases from this source.'}</p>
+  </section>
 
-  <SectionPanel title="Remove source" class="src-danger">
+  <section class="reg-card reg-danger">
     <div class="flex items-start justify-between gap-4 flex-wrap">
       <div class="min-w-0">
+        <h2 class="reg-card-title">Remove source</h2>
         <p class="text-sm text-base-content/60 mt-1">
           {inUseCount > 0
             ? `Remove is disabled while ${inUseCount} Space${inUseCount === 1 ? '' : 's'} use${inUseCount === 1 ? 's' : ''} this source. Move ${inUseCount === 1 ? 'it' : 'them'} to another source first.`
             : 'No Spaces use this source, so it can be removed.'}
         </p>
       </div>
-      <Button type="button" variant="outline" size="sm" class="shrink-0 border-error text-error" disabled={inUseCount > 0}>Remove</Button>
+      {/* `btn-sm` per `decision-density-sm-is-default` — this is a card action, not a page-header
+          CTA. `btn-outline btn-error` is the one surviving outline use the button catalog sanctions
+          (the quieter destructive). Same construction in DestinationDetailView. */}
+      {/* D06 — Remove asked nothing before it. It now opens the catalog `confirm-modal`; the guard
+          above is unchanged, so the dialog is only ever reachable at `inUseCount === 0`. NO undo
+          toast: re-adding a source means authorizing from scratch, and `pattern-undo-toast` forbids
+          offering an Undo that cannot actually restore. The dialog says so instead. */}
+      <button type="button" class="btn btn-outline btn-error btn-sm shrink-0" disabled={inUseCount > 0} data-reg-remove>Remove</button>
     </div>
-  </SectionPanel>
+    <p class="reg-note mt-3" data-reg-removed hidden role="status"></p>
+  </section>
+
+  <ConfirmModal id="reg-remove-modal" title={removal.title} cancelLabel="Keep it" confirmLabel={removal.confirmLabel} confirmClass={CONFIRM_DESTRUCTIVE} confirmIcon="lucide--trash-2">
+    <p class="text-sm text-base-content/70">{removal.lead}</p>
+    <div role="alert" class="alert alert-soft alert-warning mt-3">
+      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+      <span>{removal.consequence}</span>
+    </div>
+  </ConfirmModal>
 </div>
 
 <style>
-  .src-refresh-note { font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .6); margin-top: .7rem; }
-  .src-danger { border-color: oklch(from var(--color-error) l c h / .3); }
+  /* `.reg-*` is the ONE registry vocabulary (audit D12/D21) — it replaces the byte-identical
+     `.src-*` / `.dst-*` / `.use-*` families. This block is identical text in
+     DestinationDetailView; the two want to live in styles/global.css, which is outside this
+     change's file set, so identical-and-adjacent is the interim that keeps drift diffable. */
+  .back-link { display: inline-flex; align-items: center; gap: .25rem; font-size: var(--t-13); font-weight: 500; color: oklch(from var(--color-base-content) l c h / .65); text-decoration: none; }
+  .back-link:hover { color: var(--color-base-content); }
+  .back-link .iconify { font-size: .95rem; }
+  .reg-logo { border-radius: 7px; flex: none; }
+
+  .reg-card { border: 1px solid var(--color-base-300); border-radius: .7rem; padding: 1rem 1.25rem; background: var(--color-base-100); }
+  .reg-card--flush { padding: 0; overflow: hidden; }
+  .reg-card-pad { padding: 1rem 1.25rem; }
+  .reg-card--flush .reg-card-pad { padding-bottom: .75rem; }
+  .reg-card--flush .reg-note { padding-top: .75rem; }
+  .reg-card-title { font-size: var(--t-14); font-weight: 700; display: flex; align-items: center; gap: .5rem; }
+  .reg-count { font-size: var(--t-12); font-weight: 600; color: oklch(from var(--color-base-content) l c h / .65); background: oklch(from var(--color-base-200) l c h / .65); padding: 0 .5rem; border-radius: 999px; }
+  .reg-dl { margin-top: .75rem; display: flex; flex-direction: column; gap: .5rem; }
+  .reg-dl > div { display: grid; grid-template-columns: 9rem 1fr; gap: 1rem; font-size: var(--t-13); align-items: center; }
+  .reg-dl dt { display: flex; align-items: center; gap: .5rem; color: oklch(from var(--color-base-content) l c h / .65); }
+  .reg-dl dd { color: oklch(from var(--color-base-content) l c h / .85); }
+  .reg-refresh-note { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin-top: .75rem; }
+  .reg-note { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* Read/edit visibility. The read slot and the input are the SAME box (.sch-slot / .sch-slot-in
+     in styles/global.css: identical font-size, line-height, padding and min-height), so the row
+     does not change height when the mode flips — which is the whole point of the pattern. */
+  [data-reg-root][data-mode='read'] [data-reg-input] { display: none; }
+  [data-reg-root][data-mode='read'] [data-reg-editonly] { display: none; }
+  [data-reg-root][data-mode='edit'] [data-reg-read] { display: none; }
+  [data-reg-root][data-mode='edit'] [data-reg-readonly] { visibility: hidden; }
+  .reg-editbar { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--color-base-200); }
+
+  /* Spaces-using-this-object table = daisyUI table; wrap stays flush to the card. */
+  .reg-usewrap { overflow-x: auto; border-top: 1px solid var(--color-base-300); }
+  .reg-usewrap :is(th, td) { white-space: nowrap; }
+  /* .reg-userow hover/cursor from shared .row-clickable */
+
+  .reg-danger { border-color: oklch(from var(--color-error) l c h / .35); }
 </style>
 
 <script>
-  function wireSourceDetail() {
-    const btn = document.querySelector<HTMLButtonElement>('[data-refresh-bases]');
-    const note = document.querySelector<HTMLElement>('[data-refresh-note]');
-    if (btn && btn.dataset.wired !== '1') {
-      btn.dataset.wired = '1';
-      btn.addEventListener('click', () => {
-        // Harness: new-base detection is poll-only (no Airtable event); fake a re-check.
-        if (note) { note.textContent = 'Re-checked Airtable — no new bases since the last check.'; note.classList.remove('hidden'); }
+  import { wireTableSort } from '../components/schema/tableSort';
+  import { wireRegistryRemove } from '../lib/registry/removal';
+  import { setButtonLoading } from '../lib/ui';
+
+  /**
+   * The registry detail page's read/edit mode (audit D12), per catalog `pattern-panel-edit-mode`.
+   * IDENTICAL text in DestinationDetailView — it wants to be one module
+   * (`components/ui/registryEditMode.ts`), which is outside this change's file set.
+   *
+   * Contract, straight off the catalog entry: Read is the default mode · Cancel restores the
+   * values as they were on ENTERING edit mode · Escape inside edit mode cancels AND is swallowed,
+   * so it never reaches the page's own Escape · Save is explicit (a mode switch is not a licence
+   * to drop it) · captured rows are never inputs and never greyed.
+   */
+  function wireRegistryDetail(): void {
+    const root = document.querySelector<HTMLElement>('[data-reg-root]');
+    if (!root || root.dataset.regWired === '1') return;
+    root.dataset.regWired = '1';
+
+    const inputs = Array.from(root.querySelectorAll<HTMLInputElement>('[data-reg-input]'));
+    const modeButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-reg-mode]'));
+    /** The values as they were when edit mode was entered — what Cancel restores. */
+    let entryValues: string[] = [];
+
+    function paintValue(field: string, value: string): void {
+      const read = root!.querySelector<HTMLElement>(`[data-reg-read="${field}"]`);
+      if (read) read.textContent = value;
+      if (field === 'name') {
+        const title = root!.querySelector<HTMLElement>('[data-reg-title]');
+        if (title) title.textContent = value;
+      }
+    }
+
+    function setMode(mode: 'read' | 'edit'): void {
+      if (root!.dataset.mode === mode) return;
+      if (mode === 'edit') entryValues = inputs.map((i) => i.value);
+      root!.dataset.mode = mode;
+      modeButtons.forEach((b) => {
+        const on = b.dataset.regMode === mode;
+        b.classList.toggle('sch-mode-active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      if (mode === 'edit') inputs[0]?.focus();
+    }
+
+    modeButtons.forEach((b) =>
+      b.addEventListener('click', () => setMode(b.dataset.regMode === 'edit' ? 'edit' : 'read')),
+    );
+
+    root.querySelector<HTMLButtonElement>('[data-reg-cancel]')?.addEventListener('click', () => {
+      inputs.forEach((input, i) => { input.value = entryValues[i] ?? input.value; });
+      setMode('read');
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-reg-save]')?.addEventListener('click', () => {
+      // No backend in this harness: Save commits into the page it edited, which is the honest
+      // moment for the title to change. Refreshing resets to the fixture, as everywhere else.
+      inputs.forEach((input) => paintValue(input.dataset.regInput ?? '', input.value));
+      setMode('read');
+    });
+
+    root.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || root!.dataset.mode !== 'edit') return;
+      e.preventDefault();
+      e.stopPropagation();
+      inputs.forEach((input, i) => { input.value = entryValues[i] ?? input.value; });
+      setMode('read');
+    });
+
+    const refresh = root.querySelector<HTMLButtonElement>('[data-refresh-bases]');
+    const note = root.querySelector<HTMLElement>('[data-refresh-note]');
+    refresh?.addEventListener('click', () => {
+      // Harness: new-base detection is poll-only (no Airtable event); fake a re-check.
+      if (!note) return;
+      note.textContent = 'Re-checked Airtable — no new bases since the last check.';
+      note.classList.remove('hidden');
+    });
+
+    // Keyboard for the "In use by" rows — Enter/Space opens the Space (the inline onclick
+    // navigates). `pattern-row-actions` wants the whole anatomy; role=button + tabindex are on
+    // the <tr>. Same wiring as SourcesView / BackupsListView.
+    root.querySelectorAll<HTMLElement>('.reg-userow[role="button"]').forEach((row) => {
+      row.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        row.click();
+      });
+    });
+
+    // Click-sort on the "In use by" table — the same tableSort.ts the two registry LISTS use, so
+    // the caret and the keyboard behaviour are the one recipe rather than a third. Bound once,
+    // not per sort: wireTableSort MOVES the same <tr>s, it does not rebuild them, so the keydown
+    // listeners above survive a re-order.
+    const useTable = root.querySelector<HTMLElement>('.reg-usewrap table');
+    const useBody = useTable?.querySelector<HTMLElement>('tbody') ?? null;
+    if (useTable && useBody) {
+      const headers = Array.from(useTable.querySelectorAll<HTMLElement>('th[data-sort-col]'));
+      const items = () => Array.from(useBody.querySelectorAll<HTMLElement>('tr'));
+      wireTableSort(useTable, () => [{ headers, container: useBody, items }], (item, col) => {
+        // Read the raw attribute: `data-sort-0` does NOT map to dataset.sort0 (a digit after the
+        // hyphen isn't camel-cased), so dataset access would silently return undefined and no-op.
+        const v = item.getAttribute(`data-sort-${col}`) || '';
+        const n = Number(v);
+        return Number.isFinite(n) && v !== '' ? n : String(v);
       });
     }
   }
-  wireSourceDetail();
-  document.addEventListener('astro:after-swap', wireSourceDetail);
+
+  wireRegistryDetail();
+  document.addEventListener('astro:page-load', wireRegistryDetail);
+
+  // D06 — Remove confirms first. Shared with the other registry page (lib/registry/removal.ts).
+  const wireRemove = () => wireRegistryRemove('source');
+  wireRemove();
+  document.addEventListener('astro:page-load', wireRemove);
+
+  // Spinner while the browser redirects to Airtable's consent screen (real reconnect).
+  document.addEventListener('submit', (event) => {
+    const form = (event.target as HTMLElement | null)?.closest('[data-airtable-connect]');
+    if (!(form instanceof HTMLFormElement)) return;
+    const btn = form.querySelector('[data-airtable-connect-btn]');
+    if (btn instanceof HTMLButtonElement) setButtonLoading(btn, true);
+  });
 </script>

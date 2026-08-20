@@ -43,5 +43,9 @@ export interface SourceSummary {
   inUseBy: SourceSpaceUsage[];
   /** when status was last verified (status is last-known-good, not live) */
   lastChecked: string | null;
+  /** When Airtable access stopped working, for a source in `reconnect`. Null while it is healthy.
+   *  Without it the broken-source banner can say access was lost but not WHEN, which is the first
+   *  thing a person needs in order to know which backups the gap covers. */
+  accessLostAt?: string | null;
   addedAt: string;
 }

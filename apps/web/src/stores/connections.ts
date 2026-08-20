@@ -15,6 +15,10 @@ export interface ConnectionSummary {
   isEnterprise: boolean
   basesCount: number
   createdAt: string
+  /** When the connection was auto-invalidated (status → 'invalid'); null while healthy. */
+  invalidatedAt: string | null
+  /** When the connection first flipped to 'pending_reauth' (start of the grace window); null while healthy. */
+  pendingReauthAt: string | null
 }
 
 export interface BaseSummary {

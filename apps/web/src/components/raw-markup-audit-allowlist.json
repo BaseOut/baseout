@@ -1,70 +1,70 @@
 {
   "src/views/ActionsView.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier, web-actions promotion): pattern-upcoming-section landing uses alert/badge/card/btn/textarea primitives directly \u2014 announce block, named operations, capability note, and feedback form. No single Storybook pattern covers the composition."
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier, web-actions promotion): pattern-upcoming-section landing uses alert/badge/card/btn/textarea primitives directly — announce block, named operations, capability note, and feedback form. No single Storybook pattern covers the composition."
   ],
   "src/views/AiKeysPanel.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier): the BYOK AI-keys panel (web-settings promotion, extracted from the pre-hub settings/ai-keys page) uses daisyUI alert/btn/input primitives directly for the entitlement banners, per-provider forms and the revoke confirm \u2014 composed with the ui Card/Badge/Button/TextInput/Alert/Modal primitives. Mounted in the Settings hub Developer pane; wired to the live /api/ai-keys routes. Not a single Storybook component."
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the BYOK AI-keys panel (web-settings promotion, extracted from the pre-hub settings/ai-keys page) uses daisyUI alert/btn/input primitives directly for the entitlement banners, per-provider forms and the revoke confirm — composed with the ui Card/Badge/Button/TextInput/Alert/Modal primitives. Mounted in the Settings hub Developer pane; wired to the live /api/ai-keys routes. Not a single Storybook component."
   ],
   "src/views/AiKeysView.legacy.astro": [
     "Pre-hub /settings/ai-keys page body, kept as the rollback target for the web-settings promotion. Same daisyUI-direct composition (alert/btn/input + ui Card/Badge/Button/TextInput/Alert/Modal) as the live AiKeysPanel; not routed."
   ],
   "src/views/ApiTokensPanel.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier): the API-token panel (web-api-tokens, lifted into the Settings hub by the web-settings promotion) uses a daisyUI table for the token list plus btn/alert/input primitives for the create form and the plaintext-once + revoke modals \u2014 composed with the ui Card/Badge/Button/Checkbox/Modal/Select/TextInput primitives. Mounted in the Settings hub Developer pane; wired to the live /api/tokens routes. Not a single Storybook component."
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the API-token panel (web-api-tokens, lifted into the Settings hub by the web-settings promotion) uses a daisyUI table for the token list plus btn/alert/input primitives for the create form and the plaintext-once + revoke modals — composed with the ui Card/Badge/Button/Checkbox/Modal/Select/TextInput primitives. Mounted in the Settings hub Developer pane; wired to the live /api/tokens routes. Not a single Storybook component."
   ],
   "src/views/AuthAssociationView.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier, web-login-methods / web-auth-convergence): domain-association fork on /welcome \u2014 two equal-weight cards (alert/badge/btn) composed with Button catalog primitive; wired to POST /api/onboarding/join-request. Not a single Storybook component."
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier, web-login-methods / web-auth-convergence): domain-association fork on /welcome — two equal-weight cards (alert/badge/btn) composed with Button catalog primitive; wired to POST /api/onboarding/join-request. Not a single Storybook component."
   ],
   "src/views/BackupsListView.astro": [
-    "daisyUI `table` primitive on the backup-history table: no Storybook table component exists, and the `.table` class supplies the cell padding the dense run table needs. Per CLAUDE.md \u00a74.2 this is sanctioned daisyUI-direct-in-view (the audit's escape hatch), not a custom component."
+    "daisyUI `table` primitive on the backup-history table: no Storybook table component exists, and the `.table` class supplies the cell padding the dense run table needs. Per CLAUDE.md §4.2 this is sanctioned daisyUI-direct-in-view (the audit's escape hatch), not a custom component."
   ],
   "src/views/DataView.astro": [
-    "The Data phase-1 shell (web-data-page 2.1, promoted from ui-only@8d9d1cd): the flat 5-tab bar reuses the Schema shell's daisyUI `tab` primitives inside `tabs tabs-border` (SB_ENTRIES: 'pattern-section-tabs' \u2014 the shared wireSectionTabs controller) and the shared `.sch-*` shell classes in global.css; the empty state uses catalog btn. Panels render views/schema/SoonTab.astro (reused, not recreated)."
+    "The Data phase-1 shell (web-data-page 2.1, promoted from ui-only@8d9d1cd): the flat 5-tab bar reuses the Schema shell's daisyUI `tab` primitives inside `tabs tabs-border` (SB_ENTRIES: 'pattern-section-tabs' — the shared wireSectionTabs controller) and the shared `.sch-*` shell classes in global.css; the empty state uses catalog btn. Panels render views/schema/SoonTab.astro (reused, not recreated)."
   ],
   "src/views/IntegrationsSetupWizard.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier): the Options step's cleanup-schedule block uses a soft-info `alert` and a `select` cutoff control directly \u2014 a small informational retention ladder, not a reusable Storybook component."
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the Options step's cleanup-schedule block uses a soft-info `alert` and a `select` cutoff control directly — a small informational retention ladder, not a reusable Storybook component."
   ],
   "src/views/LoginView.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier, web-auth-convergence): passwordless sign-in surface \u2014 alert/btn-soft + TextInput/Button catalog primitives; Airtable SSO mark via schema/airtableGlyph. Fork markup with real better-auth wiring (magic-link + gated oauth2). Not a single Storybook component."
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier, web-auth-convergence): passwordless sign-in surface — alert/btn-soft + TextInput/Button catalog primitives; Airtable SSO mark via schema/airtableGlyph. Fork markup with real better-auth wiring (magic-link + gated oauth2). Not a single Storybook component."
   ],
   "src/views/LoginView.legacy.astro": [
     "Pre-convergence /login page body, kept as the rollback target for web-auth-convergence. Same auth-card composition as the prior inlined login.astro; not routed."
   ],
   "src/views/RestoreHistoryView.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier): the restore-history log uses btn/badge/input/table primitives directly, with the ui TablePager for paging and backups/LiveRefresh for the freshness stamp. The sortable audit table mirrors the Backups log \u2014 not a single Storybook component. (Status/Outcome/Date FacetFilter dropdowns are dropped pending the schema-surface FacetFilter promotion \u2014 see the view's import note.)"
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the restore-history log uses btn/badge/input/table primitives directly, with the ui TablePager for paging and backups/LiveRefresh for the freshness stamp. The sortable audit table mirrors the Backups log — not a single Storybook component. (Status/Outcome/Date FacetFilter dropdowns are dropped pending the schema-surface FacetFilter promotion — see the view's import note.)"
   ],
   "src/views/RestoreView.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier): the restore flow uses btn/alert/badge/table/select/input/checkbox/radio/stats/breadcrumbs primitives directly. The per-base picker, staged steps, and outcome panel are a bespoke Pattern composition mirroring the backup-audit tables \u2014 not covered by a single Storybook component."
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the restore flow uses btn/alert/badge/table/select/input/checkbox/radio/stats/breadcrumbs primitives directly. The per-base picker, staged steps, and outcome panel are a bespoke Pattern composition mirroring the backup-audit tables — not covered by a single Storybook component."
   ],
   "src/views/RestoreView.legacy.astro": [
     "Rollback target for the ui-only@5572f8f RestoreView promotion (ui-sync Stage 2.5). The pre-promotion view kept verbatim; same daisyUI-direct primitives as the live RestoreView, retained only as the revert path."
   ],
   "src/views/SchemaView.astro": [
-    "The Schema shell (web-schema-round3-shell): the clustered tab bar uses the daisyUI `tab` primitive inside `tabs tabs-border` cluster containers (icon-carrying buttons \u2014 the header-only ui/Tabs.astro carries no content panels, CLAUDE.md \u00a74.2), the chat launcher is a catalog Ghost Button (`btn btn-ghost`), and the shared entity modal uses `modal`/`btn`."
+    "The Schema shell (web-schema-round3-shell): the clustered tab bar uses the daisyUI `tab` primitive inside `tabs tabs-border` cluster containers (icon-carrying buttons — the header-only ui/Tabs.astro carries no content panels, CLAUDE.md §4.2), the chat launcher is a catalog Ghost Button (`btn btn-ghost`), and the shared entity modal uses `modal`/`btn`."
   ],
   "src/views/SecurityPanel.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier): the 2FA lifecycle + linked-accounts panel (promoted from ui-only into the Settings hub, web-settings) uses daisyUI alert/badge + the shared stepper directly, composed with the ui Card/Button/Badge/Checkbox/CodeInput primitives. Rendered only when the caller supplies 2FA state; apps/web gates it off (SecurityPanel backend deferred) so the Security pane shows an honest note instead. Not a single Storybook component."
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the 2FA lifecycle + linked-accounts panel (promoted from ui-only into the Settings hub, web-settings) uses daisyUI alert/badge + the shared stepper directly, composed with the ui Card/Button/Badge/Checkbox/CodeInput primitives. Rendered only when the caller supplies 2FA state; apps/web gates it off (SecurityPanel backend deferred) so the Security pane shows an honest note instead. Not a single Storybook component."
   ],
   "src/views/SettingsHub.legacy.astro": [
     "Pre-hub /settings page body, kept as the rollback target for the web-settings promotion. Same daisyUI-direct composition (table/btn/alert/input + ui Card/Badge/Button/Checkbox/Modal/Select/TextInput) as the live ApiTokensPanel; not routed."
   ],
   "src/views/SettingsView.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier): the Settings hub (web-settings promotion of the ui-only redesign) is a bespoke two-pane category composition \u2014 a category rail + a settings-row pane \u2014 using daisyUI input/select/toggle/badge/btn/alert primitives directly, composed with the ui Card/Avatar/ConfirmModal primitives and the ApiTokensPanel/AiKeysPanel/SecurityPanel views. Not a single Storybook component."
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the Settings hub (web-settings promotion of the ui-only redesign) is a bespoke two-pane category composition — a category rail + a settings-row pane — using daisyUI input/select/toggle/badge/btn/alert primitives directly, composed with the ui Card/Avatar/ConfirmModal primitives and the ApiTokensPanel/AiKeysPanel/SecurityPanel views. Not a single Storybook component."
   ],
   "src/views/SpaceHomeView.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier): the two-region Home (primary + sticky status rail) uses alert/btn/badge and a daisyUI `table` for the backup-history + schema previews directly. The status rail, vertical pipeline, and KPI strip are a bespoke dashboard composition \u2014 not a single Storybook component."
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the two-region Home (primary + sticky status rail) uses alert/btn/badge and a daisyUI `table` for the backup-history + schema previews directly. The status rail, vertical pipeline, and KPI strip are a bespoke dashboard composition — not a single Storybook component."
   ],
   "src/views/WelcomeView.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier, web-auth-convergence): first-run onboarding form \u2014 per-field auth-form-note refusals from welcomeForm.ts + TextInput/Select/Checkbox/Button catalog primitives. Fork markup with real POST /api/onboarding/complete. Not a single Storybook component."
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier, web-auth-convergence): first-run onboarding form — per-field auth-form-note refusals from welcomeForm.ts + TextInput/Select/Checkbox/Button catalog primitives. Fork markup with real POST /api/onboarding/complete. Not a single Storybook component."
   ],
   "src/views/WelcomeView.legacy.astro": [
     "Pre-convergence /welcome page body, kept as the rollback target for web-auth-convergence. Same auth-card composition as the prior inlined welcome.astro; not routed."
   ],
   "src/views/schema/BrowseTab.astro": [
-    "Moved verbatim from the pre-split SchemaView.astro (web-schema-round3-shell \u00a72.1): the Fields visibility `dropdown` + `input`/`checkbox` tree, the `toggle` Include-removed control, and Card-hosted entity tree (shared-schema-docs \u00a74).",
-    "The detail panel renders the canonical entity anatomy (badge chips, alert-soft removed notice, capped lists) as innerHTML in the client script \u2014 dynamic content, daisyUI classes only."
+    "Moved verbatim from the pre-split SchemaView.astro (web-schema-round3-shell §2.1): the Fields visibility `dropdown` + `input`/`checkbox` tree, the `toggle` Include-removed control, and Card-hosted entity tree (shared-schema-docs §4).",
+    "The detail panel renders the canonical entity anatomy (badge chips, alert-soft removed notice, capped lists) as innerHTML in the client script — dynamic content, daisyUI classes only."
   ],
   "src/views/schema/ChangelogTab.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier, web-schema-changelog vanilla-in-view decision): base/kind `select`, Include-removed `toggle`, `input` search, and the day-grouped feed rows (`badge` kind chips, breadcrumb, before\u2192after delta, warning line) rendered as innerHTML in the lazy-load client script \u2014 same shape as RelationshipsTab/HealthTab."
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier, web-schema-changelog vanilla-in-view decision): base/kind `select`, Include-removed `toggle`, `input` search, and the day-grouped feed rows (`badge` kind chips, breadcrumb, before→after delta, warning line) rendered as innerHTML in the lazy-load client script — same shape as RelationshipsTab/HealthTab."
   ],
   "src/views/schema/ChatTab.astro": [
     "Moved verbatim from the pre-split SchemaView.astro (web-chat-tab): thread `menu`, context `select`, composer `textarea`/`btn`, and conversation bubbles rendered as innerHTML in the client script."
@@ -74,5 +74,14 @@
   ],
   "src/views/schema/RelationshipsTab.astro": [
     "Moved verbatim from the pre-split SchemaView.astro (web-relationships-tab): base `select`, Include-removed `toggle`, `input` search, `btn` actions, and relationship groups rendered as innerHTML in the lazy-load client script."
+  ],
+  "src/views/SourcesView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the account-level Sources registry (web-sources / Phase 7.2, ui-only@7c7202d7 via 998909a6) uses the daisyUI `table` primitive for the dense connection list and soft `alert` rows for the notice + reconnect banner, composed with the ui Badge/Button primitives and the shared tableSort. One family with DestinationsView; not a single Storybook component."
+  ],
+  "src/views/SourceAddView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the add-source form (Phase 7.2, tip SourceAddView chrome + real airtable/start OAuth) uses `btn` (Cancel/submit) and shared `.sb-segtrack` segmented control, composed with ui TextInput/Alert and integrations AccessScopeNote. PAT honestly gated; not a single Storybook component."
+  ],
+  "src/views/SourceDetailView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the source detail/health page (Phase 7.2) uses `table` (in-use-by), `alert` (broken-source banner), `badge`, `btn`, and `input` (the sch-slot read/edit box) directly, composed with ui Badge/Button/ConfirmModal, shared tableSort, and lib/registry/removal. Reconnect posts to api/connections/airtable/start; not a single Storybook component."
   ]
 }

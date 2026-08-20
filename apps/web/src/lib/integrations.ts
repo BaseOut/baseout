@@ -158,6 +158,8 @@ export async function getIntegrationsState(
         displayName: connections.displayName,
         platformConfig: connections.platformConfig,
         createdAt: connections.createdAt,
+        invalidatedAt: connections.invalidatedAt,
+        pendingReauthAt: connections.pendingReauthAt,
         platformSlug: platforms.slug,
         platformName: platforms.name,
       })
@@ -297,6 +299,16 @@ export async function getIntegrationsState(
         row.createdAt instanceof Date
           ? row.createdAt.toISOString()
           : String(row.createdAt),
+      // When access broke — feeds the account-level Source's "access was lost on <when>"
+      // banner (registry-mappers.toSourceSummary). Both are null while the connection is healthy.
+      invalidatedAt:
+        row.invalidatedAt instanceof Date
+          ? row.invalidatedAt.toISOString()
+          : (row.invalidatedAt as string | null | undefined) ?? null,
+      pendingReauthAt:
+        row.pendingReauthAt instanceof Date
+          ? row.pendingReauthAt.toISOString()
+          : (row.pendingReauthAt as string | null | undefined) ?? null,
     }
   })
 

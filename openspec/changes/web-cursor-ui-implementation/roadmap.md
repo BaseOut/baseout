@@ -66,11 +66,11 @@
 | **0** | Guardrails | Commit plan artifacts on this branch; ledger tip `9cf5b1ef`; confirm Reports scope conflict; no promotion-branch merge | Approval of this doc |
 | **1** | **Slice A — Data SoonTab un-gates (part 1)** | Promote ui-only Data UI for **Browse + Changelog + Attachments/Media** over existing engine routes; proxies + mappers + tests; Storybook/daisyUI only | Phase 0 · **DONE** · Plan: [`docs/superpowers/plans/2026-08-20-slice-a-data-soon-tabs.md`](../../../docs/superpowers/plans/2026-08-20-slice-a-data-soon-tabs.md) (Tasks 1–6) |
 | **2** | **Slice A — Data SoonTab un-gates (part 2)** | **Comments** read path + Comments panel; then **Docs + Chat** | Phase 1 · **DONE** · same plan (Tasks 7–11) — zero SoonTabs on DataView |
-| **3** | Design harness sync | `/ui-sync` Stage-1 at `9cf5b1ef` into `apps/design` (verbatim + ledger); reconcile reverse/diverged first | Can parallel after Phase 0 |
-| **4** | Settings hub | Promote ui-only Settings catalog; wire real rows; honest-gate the rest | **DONE** 2026-08-20 · `web-settings` |
-| **5** | Auth visual convergence | Promote Login/Welcome/2FA/Association views; keep better-auth contracts | Phase 3 |
-| **6** | Inbox full page | Promote `InboxView` → `/inbox`; reuse notification proxies | Phase 3 |
-| **7** | Visual sync of LIVE surfaces | Home / Backups / Restore / Sources / Destinations — only where ui-only diverged; preserve polls & contracts | Phase 3 |
+| **3** | Design harness sync | `/ui-sync` Stage-1 into `apps/design`; reconcile reverse/diverged first | **DEFERRED** (large tip drift; promote-per-surface instead) |
+| **4** | Settings hub | Promote ui-only Settings catalog; wire real rows; honest-gate the rest | **DONE** · `2390c175` |
+| **5** | Auth visual convergence | Promote Login/Welcome/Association; auth scroll contract; keep better-auth | **DONE** · `a11f2edd` |
+| **6** | Inbox full page | Promote `InboxView` → `/inbox`; reuse notification proxies | **DONE** · `d94fa4cc` |
+| **7** | Visual sync of LIVE surfaces | Restore → Sources → Destinations → Home → Backups; preserve polls & contracts | **IN PROGRESS** · Restore `099360f3` · Sources (this commit) |
 | **8** | Reports | Overturn V1 trim — finish engine + `web-reports-page`; restore `/reports` nav to match ui-only | `shared-backup-reports` |
 | **9** | Schema Automations / Interfaces | Engine `server-automations-interfaces-docs` then web tabs | Engine 0/40 — **included** |
 | **10** | Support portal | `apps/support` from ui-only | **BLOCKED** client Q#6 |

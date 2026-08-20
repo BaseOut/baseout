@@ -757,3 +757,126 @@ html:has([data-schema][data-chat="drawer"]) {
    (catalog components carry no scoped style; global per governance). */
 .lr { display: inline-flex; align-items: center; gap: 8px; }
 .lr-stamp { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .55); white-space: nowrap; }
+
+/* ── Registry surfaces (web-sources promotion, ui-only@7c7202d7) ─────────────────────────────
+   Shared global classes the Sources views (and their Destinations twins) key off. Copied from the
+   fork's styles/global.css so the promoted views render as designed; the fork's per-view `.reg-*`
+   vocabulary stays scoped inside each view's own <style> block. */
+
+/* .tbl-frame — the bordered table card (12px radius, base-100, 1px base-300). */
+.tbl-frame {
+  border: 1px solid var(--color-base-300);
+  border-radius: 12px;
+  background: var(--color-base-100);
+}
+/* Edge-to-edge grid inside the frame: `clip` (not `hidden`) so a sticky header keeps sticking. */
+.tbl-frame-flush { overflow: clip; }
+
+/* .page-head — the page title + description + one short right-hung CTA (Oleh, 2026-08-13). One
+   rule, no @media: the description's `flex: 1 1 11rem` basis makes the row break from content. */
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.page-head-txt { flex: 1 1 11rem; min-width: 0; }
+.page-head > .btn { flex: none; align-self: flex-start; width: auto; }
+
+/* .sch-slot / .sch-slot-in — the read value and its edit input as the SAME box, so a mode flip
+   never changes row height (catalog `pattern-panel-edit-mode`). Only fields Baseout OWNS get a
+   slot; captured Airtable facts render identically in both modes and never grey out. */
+.sch-slot {
+  display: block; box-sizing: border-box;
+  font-size: var(--t-13); line-height: 1.5; white-space: pre-wrap;
+  padding: 4px 8px; margin: 0 -8px; width: calc(100% + 16px);
+  border: 1px solid transparent; border-radius: 8px;
+  min-height: 32px;
+}
+.sch-slot.is-multi { min-height: 76px; }
+.sch-slot.is-empty { color: oklch(from var(--color-base-content) l c h / .45); }
+.sch-slot-in {
+  display: block; box-sizing: border-box;
+  font-size: var(--t-13); line-height: 1.5;
+  padding: 4px 8px; margin: 0 -8px; width: calc(100% + 16px);
+  border-radius: 8px; min-height: 32px; height: auto;
+}
+textarea.sch-slot-in { min-height: 76px; resize: vertical; }
+/* "from capture" — a quiet marker on a section LABEL, never a disabled control. */
+.sch-cap-mark {
+  margin-left: auto; font-size: var(--t-12); font-weight: 600; letter-spacing: .03em;
+  text-transform: none; padding: 0 8px; border-radius: 999px;
+  color: oklch(from var(--color-base-content) l c h / .55);
+  background: oklch(from var(--color-base-content) l c h / .08);
+}
+
+/* .sch-modeswitch / .sch-mode-active — the canonical Read/Edit segmented control (the fork's
+   legacy aliases target surfaces not yet in apps/web and are omitted). */
+.sch-modeswitch .btn {
+  background: var(--color-base-100);
+  border-color: var(--color-base-300);
+  font-weight: 500;
+  box-shadow: none;
+}
+.sch-modeswitch .btn:hover { background: var(--color-base-200); }
+.sch-modeswitch .sch-mode-active {
+  background: color-mix(in oklch, var(--color-primary) 14%, transparent);
+  color: var(--color-primary);
+  border-color: color-mix(in oklch, var(--color-primary) 30%, var(--color-base-100));
+  font-weight: 600;
+  position: relative;
+  z-index: 1;
+}
+.sch-modeswitch .sch-mode-active:hover {
+  background: color-mix(in oklch, var(--color-primary) 20%, transparent);
+  color: var(--color-primary);
+}
+
+/* AccessScopeNote (components/integrations/AccessScopeNote.astro) — moved out of the fork's scoped
+   <style> (tracked components carry no scoped style; global per governance). */
+.asn code { font-size: var(--t-11); }
+.asn-mark { display: inline-flex; align-items: center; gap: .25rem; }
+.asn-glyph svg { width: 12px; height: 12px; opacity: .7; vertical-align: -1px; }
+.asn-glyph { display: inline-flex; align-items: center; }
+
+/* ── Segmented control, TRACK density — `.sb-segtrack` / `.sb-seg` / `.sb-seg-on` ──────────────
+   Catalog `pattern-segmented-control` track density (ui-only tip; SourceAddView). Soft-primary
+   selected paint — do not reintroduce local `.reg-seg` / `.method-tab` copies. */
+.sb-segtrack {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--r-12, 12px);
+  background: var(--color-base-200);
+}
+.sb-segtrack > * { flex: 1 1 0; min-width: 0; }
+.sb-seg {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--r-8, 8px);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-13);
+  font-weight: 600;
+  line-height: 1.25;
+  color: oklch(from var(--color-base-content) l c h / .65);
+  white-space: nowrap;
+  transition: background .12s ease, color .12s ease;
+}
+.sb-seg:hover { color: var(--color-base-content); }
+.sb-seg.sb-seg-on,
+.sb-seg[aria-selected="true"],
+.sb-seg:has(input:checked) {
+  background: var(--soft-primary-bg, oklch(from var(--color-primary) l c h / .16));
+  color: var(--soft-primary-fg, var(--color-primary));
+}
+.sb-seg.sb-seg-on:hover,
+.sb-seg[aria-selected="true"]:hover,
+.sb-seg:has(input:checked):hover {
+  background: var(--soft-primary-bg-hover, oklch(from var(--color-primary) l c h / .22));
+  color: var(--soft-primary-fg, var(--color-primary));
+}
+.sb-seg:focus-visible,
+.sb-seg:has(input:focus-visible) { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.sb-segtrack-sm .sb-seg { padding: 4px 8px; border-radius: var(--r-6, 6px); font-size: var(--t-12); gap: 4px; }
