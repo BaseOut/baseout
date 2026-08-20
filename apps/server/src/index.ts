@@ -66,6 +66,7 @@ import { spacesDataRecordHistoryHandler } from "./pages/api/internal/spaces/data
 import { spacesDataRecordLinksHandler } from "./pages/api/internal/spaces/data-record-links";
 import { spacesDataRecordProvenanceHandler } from "./pages/api/internal/spaces/data-record-provenance";
 import { spacesDataChangelogHandler } from "./pages/api/internal/spaces/data-changelog";
+import { spacesDataCommentsHandler } from "./pages/api/internal/spaces/data-comments";
 import { spacesDataSearchHandler } from "./pages/api/internal/spaces/data-search";
 import {
   spacesDataExportHandler,
@@ -203,6 +204,8 @@ const SPACES_DATA_RECORD_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/data\/records\/([^/]+)$/;
 const SPACES_DATA_CHANGELOG_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/data\/changelog$/;
+const SPACES_DATA_COMMENTS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/data\/comments$/;
 const SPACES_DATA_SEARCH_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/data\/search$/;
 const SPACES_DATA_EXPORT_JOB_RE =
@@ -708,6 +711,11 @@ export default {
       const dataChangelog = SPACES_DATA_CHANGELOG_RE.exec(url.pathname);
       if (dataChangelog) {
         return await spacesDataChangelogHandler(request, env, ctx, locals, dataChangelog[1]!);
+      }
+      // Comments feed (checked before bare data-record; path is $-anchored).
+      const dataComments = SPACES_DATA_COMMENTS_RE.exec(url.pathname);
+      if (dataComments) {
+        return await spacesDataCommentsHandler(request, env, ctx, locals, dataComments[1]!);
       }
       const dataSearch = SPACES_DATA_SEARCH_RE.exec(url.pathname);
       if (dataSearch) {
