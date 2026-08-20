@@ -80,15 +80,23 @@ const hasFooter = Astro.slots.has('footer');
 )}
 
 <script>
-  // Esc closes any open drawer (daisyUI's checkbox-driven drawer has no native Esc).
+  // Esc closes any open drawer via the shared escape stack (item 29) — daisyUI's
+  // checkbox drawer has no native Esc. Return false when none are open so panels /
+  // other stack owners still get the key.
+  import { pushEscape } from '../../lib/escapeStack';
+
+  let drawerEscPushed = false;
   function wireDrawerEsc() {
-    if ((window as any).__sbDrawerEscWired) return;
-    (window as any).__sbDrawerEscWired = true;
-    document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape') return;
-      document
-        .querySelectorAll<HTMLInputElement>('.sb-drawer .drawer-toggle:checked')
-        .forEach((cb) => { cb.checked = false; });
+    if (drawerEscPushed) return;
+    drawerEscPushed = true;
+    pushEscape({
+      label: 'drawer',
+      onEscape: () => {
+        const open = document.querySelectorAll<HTMLInputElement>('.sb-drawer .drawer-toggle:checked');
+        if (!open.length) return false;
+        open.forEach((cb) => { cb.checked = false; });
+        return true;
+      },
     });
   }
   wireDrawerEsc();
