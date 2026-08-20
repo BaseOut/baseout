@@ -45,6 +45,10 @@ let changelog: DataChangeEntry[] = [];
 let runTotals: Record<string, { created: number; updated: number; deleted: number }> = {};
 let assets: MediaAsset[] = [];
 let landingTableId: string | undefined;
+/** Primary field id per table — Browse client pagination uses this when mapping proxy pages. */
+let primaryByTable: Record<string, string | undefined> = {};
+/** nextCursor after SSR page-1 for the landing table (`null` = exhausted). */
+let recordsNextCursor: string | null | undefined = undefined;
 
 if (spaceId && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
   const engine = createBackupEngine({
@@ -59,6 +63,7 @@ if (spaceId && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
     const mapped = mapSchemaToData(schemaRes);
     bases = mapped.bases;
     tables = mapped.tables;
+    primaryByTable = mapped.primaryByTable;
     landingTableId = tables[0]?.id;
 
     if (landingTableId) {
@@ -66,6 +71,7 @@ if (spaceId && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
       const recRes = await engine.getDataRecords(spaceId, landingTableId, { limit: 50 });
       if (recRes.ok) {
         records = mapRecords(recRes.records, landingTableId, mapped.primaryByTable[landingTableId]);
+        recordsNextCursor = recRes.nextCursor;
       }
 
       // Changelog — rollup totals for every run + a sample of the latest run's rows.
@@ -140,6 +146,7 @@ const hasData = tables.length > 0 || lastSyncedAt !== null;
       lastSyncedRunId={lastSyncedRunId}
       managedPg={managedPg}
       mode={mode}
+      spaceId={spaceId}
       bases={bases}
       tables={tables}
       records={records}
@@ -147,6 +154,8 @@ const hasData = tables.length > 0 || lastSyncedAt !== null;
       runTotals={runTotals}
       assets={assets}
       landingTableId={landingTableId}
+      primaryByTable={primaryByTable}
+      recordsNextCursor={recordsNextCursor}
       loadState="ready"
     />
   )}

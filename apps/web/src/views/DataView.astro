@@ -53,6 +53,12 @@ interface Props {
   assets?: MediaAsset[];
   /** Which table Browse opens on (defaults to the first). */
   landingTableId?: string;
+  /** Active Space id — Browse client cursor fetches against `/api/spaces/:spaceId/data/records`. */
+  spaceId?: string | null;
+  /** Primary field id per table (for mapping proxy record pages). */
+  primaryByTable?: Record<string, string | undefined>;
+  /** SSR page-1 `nextCursor` for the landing table (`null` = no further pages). */
+  recordsNextCursor?: string | null;
   /** Async surface state for Browse (SSR page-1 is `ready`). */
   loadState?: 'ready' | 'loading' | 'error';
 }
@@ -69,6 +75,9 @@ const {
   runTotals = {},
   assets = [],
   landingTableId,
+  spaceId = null,
+  primaryByTable = {},
+  recordsNextCursor,
   loadState = 'ready',
 } = Astro.props;
 
@@ -135,7 +144,16 @@ const fmtStamp = (iso: string) => {
         {isStatic ? (
           <StaticImport bases={bases} tables={tables} records={records} />
         ) : showData ? (
-          <DataBrowse bases={bases} tables={tables} records={records} landingTableId={landingTableId} loadState={loadState} />
+          <DataBrowse
+            spaceId={spaceId ?? undefined}
+            bases={bases}
+            tables={tables}
+            records={records}
+            landingTableId={landingTableId}
+            primaryByTable={primaryByTable}
+            recordsNextCursor={recordsNextCursor}
+            loadState={loadState}
+          />
         ) : (
           <div class="sch-empty">
             <span class="sch-empty-ic"><span class="iconify lucide--database"></span></span>

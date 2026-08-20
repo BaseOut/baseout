@@ -118,6 +118,9 @@ export function mapRecords(
   })
 }
 
+/** Preferred shared name for SSR + client cursor fetches (alias of `mapRecords`). */
+export const mapRecordRows = mapRecords
+
 /** Rollup runs → per-run TRUE totals (created/updated/deleted). */
 export function mapRunTotals(
   runs: DataChangelogRunRollup[],

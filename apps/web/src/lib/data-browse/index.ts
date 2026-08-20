@@ -3,3 +3,4 @@
  */
 export * from './engine-shapes'
 export * from './map'
+export * from './records-cursor'

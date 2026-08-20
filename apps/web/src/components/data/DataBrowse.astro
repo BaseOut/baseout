@@ -60,11 +60,29 @@ interface Props {
   viewGroups?: ViewGroup[];
   /** Which table Browse opens on (defaults to the first). The `big` fixture points here. */
   landingTableId?: string;
+  /** Active Space id — client cursor pages hit `/api/spaces/:spaceId/data/records`. */
+  spaceId?: string;
+  /** Primary field id per table (maps proxy `DataRecordRow` → grid Rec). */
+  primaryByTable?: Record<string, string | undefined>;
+  /** SSR page-1 nextCursor for the landing table (`null` = exhausted). */
+  recordsNextCursor?: string | null;
   /** Async surface state. In production the grid streams row windows over a cursor, so a fetch can be
    *  in-flight ('loading') or fail ('error'). The harness sets this via ?fixture=loading|error. */
   loadState?: 'ready' | 'loading' | 'error';
 }
-const { bases, tables, records, comments = [], views = [], viewGroups = [], landingTableId, loadState = 'ready' } = Astro.props;
+const {
+  bases,
+  tables,
+  records,
+  comments = [],
+  views = [],
+  viewGroups = [],
+  landingTableId,
+  spaceId,
+  primaryByTable = {},
+  recordsNextCursor,
+  loadState = 'ready',
+} = Astro.props;
 const landing = tables.find((t) => t.id === landingTableId) ?? tables[0];
 
 // Comment-presence filter (comments-explorer): derive the SET of record ids with at least one
@@ -87,7 +105,12 @@ const initialView = views.find((v) => v.pinned) ?? views[0];
 const initialLocked = !!initialView?.saved;
 
 // Embedded snapshot the client grid renders from (tables + records + base names + views).
+// `cursors` seeds SSR page-1 for the landing table; further pages + other tables fetch via the proxy.
+// Server-side filters are deferred — client filter/sort/search stay on accumulated rows.
 const snapshot = {
+  spaceId: spaceId ?? '',
+  primaryByTable,
+  cursors: landing && recordsNextCursor !== undefined ? { [landing.id]: recordsNextCursor } : ({} as Record<string, string | null>),
   baseName: Object.fromEntries(bases.map((b) => [b.id, b.name])),
   tables: tables.map((t) => ({ id: t.id, baseId: t.baseId, name: t.name, approx: t.approxRecordCount, fields: t.fields })),
   records: records.map((r) => ({ id: r.id, tableId: r.tableId, primary: r.primary, cells: r.cells, linked: r.linked })),
@@ -659,6 +682,8 @@ const fieldIconSvg = (type?: string) => {
   import { createPager } from '../ui/tablePager';
   import { clampBelow } from '../ui/popoverPlace';
   import { pushEscape } from '../../lib/escapeStack';
+  import { setButtonLoading } from '../../lib/ui';
+  import { ensureRecordsCover } from '../../lib/data-browse/records-cursor';
   import type { CellAttachment } from './dataTypes';
 
   // ── Types ───────────────────────────────────────────────────────────────────
@@ -672,7 +697,18 @@ const fieldIconSvg = (type?: string) => {
   type CommentFilter = 'all' | 'with' | 'without';
   type SavedViewJSON = { id: string; name: string; tableId: string; pinned: boolean; groupId?: string; hiddenFieldIds?: string[]; filters?: { fieldId: string; op: string; val?: string; val2?: string }[]; sortFieldId?: string; sortDir?: 1 | -1; query?: string; showRecordId?: boolean; colOrder?: string[]; commentFilter?: CommentFilter; saved?: boolean };
   type ViewGroupJSON = { id: string; name: string };
-  type Snap = { baseName: Record<string, string>; tables: Table[]; records: Rec[]; landing: string; views: SavedViewJSON[]; viewGroups: ViewGroupJSON[]; commentedRecordIds?: string[] };
+  type Snap = {
+    spaceId?: string;
+    primaryByTable?: Record<string, string | undefined>;
+    cursors?: Record<string, string | null>;
+    baseName: Record<string, string>;
+    tables: Table[];
+    records: Rec[];
+    landing: string;
+    views: SavedViewJSON[];
+    viewGroups: ViewGroupJSON[];
+    commentedRecordIds?: string[];
+  };
   // A single condition (leaf) — one field/operator/value predicate.
   type Cond = { kind: 'cond'; field: Field; op: string; val: string; val2?: string };
   // A group of conditions/sub-groups joined by ONE conjunction (all siblings AND-ed or all OR-ed).
@@ -768,6 +804,11 @@ const fieldIconSvg = (type?: string) => {
 
     const tableById = new Map(snap.tables.map((t) => [t.id, t]));
     const recById = new Map((snap.records || []).map((r) => [r.id, r]));
+    if (!Array.isArray(snap.records)) snap.records = [];
+    const spaceId = snap.spaceId || '';
+    const primaryByTable: Record<string, string | undefined> = snap.primaryByTable || {};
+    // Per-table nextCursor from SSR / subsequent fetches (`null` = exhausted).
+    const cursors: Record<string, string | null | undefined> = { ...(snap.cursors || {}) };
     // Comment-presence filter (comments-explorer) — computed ONCE from the server-derived list, not
     // per row. A record id absent here has zero comments; that is a fact of the capture, not a guess.
     const commentedIds = new Set(snap.commentedRecordIds || []);
@@ -1143,22 +1184,92 @@ const fieldIconSvg = (type?: string) => {
     // ephemeral (not persisted — a reload starts at page 1); `pageSize` is a user preference
     // persisted under its own key, deliberately kept OUT of the preset config/baseline/dirty diff.
     const pagerEl = q<HTMLElement>('[data-pager="dg"]');
+    const pagerNextBtn = () => root.querySelector<HTMLButtonElement>('[data-pager="dg"] [data-pager-next]');
     const pager = createPager({
       root, name: 'dg', sizes: PAGE_SIZES, defaultSize: DEFAULT_PAGE_SIZE,
-      storageKey: PAGE_SIZE_KEY, onChange: () => renderBody(),
+      storageKey: PAGE_SIZE_KEY, onChange: () => { void onPagerChange(); },
     });
 
     // ── Async surface state — loading skeleton / load error with in-context Retry ──
     const skeletonEl = q<HTMLElement>('[data-dg-skeleton]');
     const errorEl = q<HTMLElement>('[data-dg-error]');
     let loadState = (root.dataset.dgLoadstate as 'ready' | 'loading' | 'error') || 'ready';
+    let fetchGen = 0;
     function applyLoadState() {
       const busy = loadState !== 'ready';
       skeletonEl.hidden = loadState !== 'loading';
       errorEl.hidden = loadState !== 'error';
       if (busy) { wrap.hidden = true; emptyEl.hidden = true; pagerEl.hidden = true; }
     }
-    q('[data-dg-retry]').addEventListener('click', () => { loadState = 'ready'; applyLoadState(); pager.reset(); renderGrid(); });
+    function loadedCountFor(tid: string): number {
+      return snap.records.filter((r) => r.tableId === tid).length;
+    }
+    function mergeFetched(tid: string, added: Rec[], nextCursor: string | null) {
+      const seen = new Set(snap.records.filter((r) => r.tableId === tid).map((r) => r.id));
+      for (const r of added) {
+        if (seen.has(r.id)) continue;
+        snap.records.push(r);
+        recById.set(r.id, r);
+        seen.add(r.id);
+      }
+      cursors[tid] = nextCursor;
+    }
+    /** Fetch cursor pages until `needCount` rows for `tid` are loaded (or exhausted). */
+    async function ensureCoverage(tid: string, needCount: number, btn?: HTMLButtonElement | null): Promise<boolean> {
+      if (!spaceId) return true;
+      const loaded = loadedCountFor(tid);
+      if (loaded >= needCount) return true;
+      if (cursors[tid] === null && loaded > 0) return true;
+      const gen = ++fetchGen;
+      if (btn) setButtonLoading(btn, true);
+      loadState = 'loading';
+      applyLoadState();
+      try {
+        const res = await ensureRecordsCover({
+          spaceId,
+          tableId: tid,
+          needCount,
+          loadedCount: loadedCountFor(tid),
+          nextCursor: cursors[tid],
+          primaryFieldId: primaryByTable[tid],
+          pageLimit: 50,
+        });
+        if (gen !== fetchGen) return false;
+        if (!res.ok) {
+          loadState = 'error';
+          applyLoadState();
+          return false;
+        }
+        mergeFetched(tid, res.added as Rec[], res.nextCursor);
+        loadState = 'ready';
+        applyLoadState();
+        return true;
+      } catch {
+        if (gen !== fetchGen) return false;
+        loadState = 'error';
+        applyLoadState();
+        return false;
+      } finally {
+        if (btn) setButtonLoading(btn, false);
+      }
+    }
+    async function onPagerChange() {
+      const tid = active().tableId;
+      const need = pager.page * pager.pageSize;
+      const next = pagerNextBtn();
+      // Spinner on Next when this change advances past loaded rows.
+      const useBtn = loadedCountFor(tid) < need ? next : null;
+      const ok = await ensureCoverage(tid, need, useBtn);
+      if (ok) renderBody();
+    }
+    q('[data-dg-retry]').addEventListener('click', (ev) => {
+      const btn = ev.currentTarget as HTMLButtonElement;
+      void (async () => {
+        pager.reset();
+        const ok = await ensureCoverage(active().tableId, pager.pageSize, btn);
+        if (ok) renderGrid();
+      })();
+    });
 
     // A built-in "Record ID" column (leading), toggled per preset — the id + a copy button.
     const idHeadHtml = () => active().showRecId ? '<th scope="col" class="dg-idhead" aria-label="Record ID"><span class="iconify lucide--hash size-3 dg-th-ic" aria-hidden="true"></span>RECORD ID</th>' : '';
@@ -1198,6 +1309,23 @@ const fieldIconSvg = (type?: string) => {
       const t = activeTable();
       const filtering = groupHasReady(v.filterTree) || !!v.query || v.commentFilter !== 'all';
       const empty = rows.length === 0;
+
+      // When not filtering and more server pages may exist, prefer approx so Next stays enabled
+      // (createPager only sees loaded rows). Client filters stay on accumulated rows only.
+      if (!filtering && cursors[t.id] !== null && t.approx > rows.length) {
+        const total = t.approx;
+        const pages = Math.max(1, Math.ceil(total / pager.pageSize));
+        const start = (pager.page - 1) * pager.pageSize;
+        const rangeEl = root.querySelector('[data-pager="dg"] [data-pager-range]');
+        const totalEl = root.querySelector('[data-pager="dg"] [data-pager-total]');
+        const prevBtn = root.querySelector<HTMLButtonElement>('[data-pager="dg"] [data-pager-prev]');
+        const nextBtn = pagerNextBtn();
+        if (rangeEl) rangeEl.textContent = total === 0 ? '0' : `${start + 1}–${Math.min(start + pager.pageSize, total)}`;
+        if (totalEl) totalEl.textContent = total.toLocaleString();
+        if (prevBtn) prevBtn.disabled = pager.page <= 1;
+        if (nextBtn) nextBtn.disabled = pager.page >= pages;
+        if (pagerEl) pagerEl.hidden = false;
+      }
 
       // Publish the logical count to the export control (unfiltered ⇒ the approx table size; filtered ⇒
       // the full match count). Only re-announce when it changes, so re-renders don't spam.
@@ -1682,12 +1810,15 @@ const fieldIconSvg = (type?: string) => {
 
     // ── Views: load / switch / lifecycle ─────────────────────────────────────────
     // Load the active view's config into the toolbar + grid.
-    function loadActiveView() {
+    async function loadActiveView() {
       const v = active();
       searchInput.value = v.query;
       pager.reset();
       syncFacetsToActive();
-      renderFilter(); renderGrid();
+      renderFilter();
+      // Table switch / preset open: fetch page-1 when this table has no/few SSR rows.
+      const ok = await ensureCoverage(v.tableId, pager.pageSize);
+      if (ok) renderGrid();
     }
     // Open a preset as a tab (or just re-activate it if already open) — a library-row click and a tab
     // click both route here. Opening pushes it onto the tab bar; the preset always lives in the library.
@@ -2214,7 +2345,9 @@ const fieldIconSvg = (type?: string) => {
     });
 
     // ── Initial paint ─────────────────────────────────────────────────────────
-    loadActiveView(); renderViews(); applyLoadState();
+    renderViews();
+    applyLoadState();
+    void loadActiveView();
   }
   wireDataBrowse();
   document.addEventListener('astro:after-swap', wireDataBrowse);
