@@ -41,12 +41,14 @@ Delegated elsewhere (struck here, tracked there): items 1 + 6 → [`web-auth-con
 ## 5. Vessel adoption — batched by surface family (Schema → Data → Backups/Restore → Reports → registries)
 
 - [x] 5.1 **Item 13 — `Alert` adoption, scope A (Schema→Data start)** — vessel restored + DataBrowse `showAlert`, BrowseTab/mediaReadBody/Retention/SourceAdd. Registries/Backups/Reports still open → continues under 5.2.
-- [ ] 5.2 **Item 13 — scope B** — outstanding (registries, Backups/Restore, Reports, wizard).
-- [x] 5.3 **Item 14 — `EmptyState` adoption (Data clear wins)** — 46ch cap; DataView gates; DataChangelog/Comments/Media; SoonTab. Other families remain.
-- [ ] 5.4 **Item 15 — `Badge` as the only path** — vessel present; raw class sweep outstanding.
+- [x] 5.2 **Item 13 — scope B (registries + Backups)** — Sources/Dest (+ detail ConfirmModal), BackupRunDetail/Base on Alert. Reports/Home/Settings + wizard switch-confirm remain → residue.
+- [x] 5.3 **Item 14 — `EmptyState` adoption (Data + Backups/Restore)** — 46ch; Data gates/tabs; BackupsListView + RestoreHistoryView (+ action slot). Registry `.reg-empty` left deliberate.
+- [ ] 5.4 **Item 15 — `Badge` as the only path** — vessel present; **banned soft+neutral → ghost** (Inbox ×4, Won't retry ×2). Full raw-class sweep still outstanding.
 - [x] 5.5 **Item 15b — `Running` is PRIMARY (blue)** — landed this session (`list-row.ts`, Backups/Restore/Run detail views).
 - [x] 5.6 **Item 35 — `setButtonLoading` (DocsTab)** — DocsTab Save/Delete/New converged. Other one-offs remain (track under residue / follow-up).
-- [ ] 5.7 **Item 21** — connect wizard Alert — outstanding.
+- [ ] 5.7 **Item 21** — connect wizard Alert — **partial**: cleanup schedule + BaseSelectionTable; `.switch-confirm` / `.bases-reset-note` remain.
+- [x] 5.8 **Item 16 — cancel failure toast** — `postCancelRun` toasts on !ok/throw; UndoToast mounted on run detail + history widget.
+- [x] 5.9 **Item 29 — Escape (Drawer + wizard)** — `pushEscape` on Drawer + wizard drawer-shell. inbox/Schema/DataBrowse remain.
 
 ## 6. Tables, toolbars and headers
 
@@ -87,6 +89,15 @@ Delegated elsewhere (struck here, tracked there): items 1 + 6 → [`web-auth-con
 - [x] **Item 14 (Data wins)** — EmptyState on Data gates/tab empties + 46ch.
 - [x] **Item 35 (DocsTab)** — `setButtonLoading` on Save/Delete/New.
 - [x] **Item 18 (Home glyph)** — `.hm-conn-badge .iconify` → `var(--t-12)`.
+
+## 13. Closed this pass (scope B + toast + Escape)
+
+- [x] **Item 13 scope B** — Alert on registries + backup run banners + BaseSelectionTable + wizard cleanup.
+- [x] **Item 14 Backups/Restore** — EmptyState (+ action slot).
+- [x] **Item 15 banned-pair batch** — Inbox + Won't retry → `badge-ghost`.
+- [x] **Item 16** — cancel failure toast.
+- [x] **Item 29 (Drawer + wizard)** — `pushEscape`.
+- [x] **Item 21 (partial)** — cleanup + picker; switch-confirm remains.
 
 ## 10. Verification
 

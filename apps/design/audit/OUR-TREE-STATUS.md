@@ -13,9 +13,9 @@
 
 | Verdict | N | Items |
 |---|---|---|
-| already-satisfied | 18 | 1–7, 9, 10b, 15b, 17, 23, 28, 30, 36½ (+ prior auth/focus/wireRowKeys) |
+| already-satisfied | 19 | 1–7, 9, 10b, 15b, 16, 17, 23, 28, 30, 36½ (+ prior auth/focus/wireRowKeys) |
 | owned-by-\<change\> / skip | 3 | 11→automations · 19→sync-reconcile · 20→support(Q#6) |
-| outstanding | ~20 | 8, 12–16, 18, 21–22, 24–27, 29, 31–35, 37–41 (several partial) |
+| outstanding | ~18 | 8, 12–15, 18, 21–22, 24–27, 29, 31–35, 37–41 (several partial) |
 
 See `census.md` for per-item evidence (file:line).
 
@@ -37,7 +37,7 @@ See `census.md` for per-item evidence (file:line).
 | Audit claim | Our-tree check |
 |---|---|
 | Item 26: 19 of 25 header constructions (not 18/24) | Confirmed directionally — vessel path has `aria-sort` (`Table.astro`); hand-built tables still lack it. Full 19/25 file ledger deferred to item-26 PR. |
-| Item 29: 8 Escape sites (not 5) | Confirmed: `escapeStack` exists but Drawer (`:84`), SchemaView, inbox-client, IntegrationsSetupWizard, DataBrowse local handlers still compete. |
+| Item 29: 8 Escape sites (not 5) | Confirmed directionally. Drawer + wizard drawer-shell now on `escapeStack`; inbox / Schema / DataBrowse / registryEditMode still compete. |
 
 ---
 
@@ -72,3 +72,4 @@ Every S1 in `REGISTER.md` / findings rides a ship-order item or a delegated chan
 | 2026-08-20 | Census | `census.md` + this file. Item 5 struck (already fixed at PanelHost:688). |
 | 2026-08-20 | Items 3, 4, 10b, 15b, 36½ | Settings `spaceCategory`; Backups/RestoreHistory `metaOf`; Drawer `aria-modal=false`; Running→primary; Clear filters drop `text-error`. |
 | 2026-08-20 | Items 2, 7, 23 + vessel starts | `registryEditMode`; `?name=`; Alert vessel + Schema→Data; EmptyState Data; DocsTab `setButtonLoading`; Home `--t-12` glyph. Outstanding ~20. |
+| 2026-08-20 | Items 13B / 14B / 15 banned / 16 / 21½ / 29½ | Alert registries+backups+picker+wizard cleanup; EmptyState Backups/Restore; Inbox+Won't-retry → ghost; cancel toast; Drawer+wizard Escape. Outstanding ~18. **Phase 12 pause OK.** |
