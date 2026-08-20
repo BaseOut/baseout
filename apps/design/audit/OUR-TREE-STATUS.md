@@ -25,8 +25,8 @@ See `census.md` for per-item evidence (file:line).
 
 | Claim in proposal | This tree |
 |---|---|
-| Item 3 fixed at `settingsCatalog.ts:166` | **FALSE** — `:166` is account-email `readOnly`. Space category still always emitted (`:258-328`). **outstanding.** |
-| Item 4 fixed (all four sites) | **PARTIAL** — Sources/Dest/Reports/`list-row` fixed; `BackupsListView.astro:217` + `RestoreHistoryView.astro:167` still `?? statusMeta.cancelled`. |
+| Item 3 fixed at `settingsCatalog.ts:166` | **Was false at census; closed later** — `spaceCategory(!space)` + Create Space trigger. |
+| Item 4 fixed (all four sites) | **TRUE now** — Backups/RestoreHistory `metaOf` landed. |
 | Item 9 fixed (`toneDotOf`) | **TRUE** — `lib/reports/view.ts:71-73` + `ReportBodyKpi.astro:238`. |
 | Item 5 outstanding (no `left`) | **FALSE** — `PanelHost.astro:688` has `left: 0` + `pointer-events: none`. **already-satisfied.** |
 
