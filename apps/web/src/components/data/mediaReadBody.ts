@@ -143,7 +143,7 @@ export function mediaReadBody(a: AssetRowData, ctx: MediaBodyCtx): string {
       ? ` The copy written to ${esc(a.provider)} at capture time is unaffected.`
       : '';
   const gone = ctx.syncedAt && a.lastseen && a.lastseen < ctx.syncedAt
-    ? `<div class="alert alert-soft alert-warning mp-gone" role="status"><span class="iconify lucide--trash-2 size-4" aria-hidden="true"></span><span>This file is no longer attached in Airtable (last seen in the ${esc(fmtDay(a.lastseen))} capture).${kept}</span></div>`
+    ? `<div class="ui-alert alert alert-soft alert-warning mp-gone" role="note" data-ui-alert data-severity="warning" data-trigger="static"><span class="iconify lucide--trash-2 size-4 shrink-0" aria-hidden="true"></span><span class="ui-alert-body"><span data-alert-text>This file is no longer attached in Airtable (last seen in the ${esc(fmtDay(a.lastseen))} capture).${kept}</span></span></div>`
     : '';
 
   // Metadata. A row is OMITTED rather than printed as "Unknown" — an empty value teaches people

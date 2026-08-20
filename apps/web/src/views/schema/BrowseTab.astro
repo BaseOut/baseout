@@ -285,7 +285,7 @@ const entityIndex = buildEntityPanelIndex(schema)
       if (info.removedAt || info.status === 'removed') {
         const when = info.removedAt ? ` (deleted ${esc(fmtDate(info.removedAt))})` : ''
         parts.push(
-          `<div role="status" class="alert alert-soft alert-warning mb-3"><span class="iconify lucide--trash-2 size-4"></span><span>This ${esc(info.kind)} no longer exists in Airtable${when}. Showing the last backup.</span></div>`,
+          `<div class="ui-alert alert alert-soft alert-warning mb-3" role="note" data-ui-alert data-severity="warning" data-trigger="static"><span class="iconify lucide--trash-2 size-4 shrink-0" aria-hidden="true"></span><span class="ui-alert-body"><span data-alert-text>This ${esc(info.kind)} no longer exists in Airtable${when}. Showing the last backup.</span></span></div>`,
         )
       }
       const loc =

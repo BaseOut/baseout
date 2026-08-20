@@ -61,9 +61,7 @@ const failure = connectFailure(connectError, 'Airtable');
       <div data-method="oauth" class="mt-4">
         <p class="reg-hint">You approve read-only access on Airtable, then return here.</p>
         {failure && (
-          <Alert variant="error" class="mt-4" title={failure.message}>
-            <span class="block text-xs opacity-75" data-reg-form-error-code>Reference: {failure.code}</span>
-          </Alert>
+          <Alert severity="error" trigger="static" class="mt-4" title={failure.message} message={`Reference: ${failure.code}`} />
         )}
         <form method="POST" action="/api/connections/airtable/start" class="mt-4" data-airtable-connect data-astro-reload>
           <input type="hidden" name="returnTo" value="/sources/new" />

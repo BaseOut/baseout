@@ -43,6 +43,7 @@
  */
 import FacetFilter from '../schema/FacetFilter.astro';
 import ExportControl from '../patterns/ExportControl.astro';
+import Alert from '../ui/Alert.astro';
 import TablePager from '../ui/TablePager.astro';
 import { AIRTABLE_FIELD_ICONS, airtableIconKey } from '../schema/airtableFieldIcons';
 import type { DataBase, DataTable, DataRecord, DataComment, SavedView, ViewGroup } from './dataTypes';
@@ -309,10 +310,9 @@ const fieldIconSvg = (type?: string) => {
         ))}
       </div>
 
-      {/* Load error — the fetch failed; recover in-context with Retry, don't dead-end. */}
-      <div class="dg-empty dg-error" data-dg-error hidden role="alert">
-        <span class="iconify lucide--triangle-alert size-6 text-error opacity-80" aria-hidden="true"></span>
-        <p>Couldn't load records.</p>
+      {/* Load error — Alert vessel + showAlert (D42 write/reveal); Retry recovers in-context. */}
+      <div class="dg-empty dg-error" data-dg-error-panel hidden>
+        <Alert id="dg-load-error" severity="error" trigger="runtime" hidden message="" class="dg-error-alert" />
         <button type="button" class="btn btn-sm btn-primary gap-1.5" data-dg-retry><span class="iconify lucide--rotate-ccw size-3.5" aria-hidden="true"></span>Retry</button>
       </div>
     </div>
@@ -683,6 +683,7 @@ const fieldIconSvg = (type?: string) => {
   import { clampBelow } from '../ui/popoverPlace';
   import { pushEscape } from '../../lib/escapeStack';
   import { setButtonLoading } from '../../lib/ui';
+  import { hideAlert, showAlert } from '../ui/alert';
   import { ensureRecordsCover } from '../../lib/data-browse/records-cursor';
   import type { CellAttachment } from './dataTypes';
 
@@ -1192,13 +1193,20 @@ const fieldIconSvg = (type?: string) => {
 
     // ── Async surface state — loading skeleton / load error with in-context Retry ──
     const skeletonEl = q<HTMLElement>('[data-dg-skeleton]');
-    const errorEl = q<HTMLElement>('[data-dg-error]');
+    const errorPanel = q<HTMLElement>('[data-dg-error-panel]');
+    const errorEl = q<HTMLElement>('#dg-load-error');
     let loadState = (root.dataset.dgLoadstate as 'ready' | 'loading' | 'error') || 'ready';
     let fetchGen = 0;
     function applyLoadState() {
       const busy = loadState !== 'ready';
       skeletonEl.hidden = loadState !== 'loading';
-      errorEl.hidden = loadState !== 'error';
+      if (loadState === 'error') {
+        errorPanel.hidden = false;
+        showAlert(errorEl, "Couldn't load records.");
+      } else {
+        hideAlert(errorEl, true);
+        errorPanel.hidden = true;
+      }
       if (busy) { wrap.hidden = true; emptyEl.hidden = true; pagerEl.hidden = true; }
     }
     function loadedCountFor(tid: string): number {
