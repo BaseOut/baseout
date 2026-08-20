@@ -691,3 +691,69 @@ html:has([data-schema][data-chat="drawer"]) {
     color: var(--color-base-content);
   }
 }
+
+/* ── restore promotion (views/RestoreView.astro + views/RestoreHistoryView.astro, promoted from
+   ui-only@5572f8f 2026-08-12) — the shared tokens/classes those views + components/ui/TablePager
+   + components/backups/LiveRefresh reference. Global per catalog governance (same convention as the
+   base-picker/entity-typeahead promoted blocks above). The fork's app-wide 1279.98px type-scale
+   rung-shift is deliberately NOT brought over — it would restyle every surface, out of scope. ── */
+:root {
+  --t-11: 11px;
+  --t-12: 12px;
+  --t-13: 13px;
+  --t-14: 14px;
+  --t-16: 16px;
+  --t-18: 18px;
+  --t-20: 20px;
+  --t-24: 24px;
+  --t-32: 32px;
+}
+
+/* The column-label band's TYPE — the small-caps uppercase table head shared by both restore tables
+   and the audit tables (pattern-audit-table). */
+.tbl-colhead > span,
+.tbl-colhead th {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: oklch(from var(--color-base-content) l c h / .55);
+  white-space: nowrap;
+}
+/* A sortable header wraps its label in a <button>; the UA reset drops font/case, so inherit it back. */
+.tbl-colhead th :is(button, a, span) {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+}
+
+/* The numbered-step marker (pattern-numbered-form-steps), from styles/components/step-number.css. */
+.step-n {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 999px;
+  background: oklch(from var(--color-primary) l c h / 0.16);
+  border: 1px solid oklch(from var(--color-primary) l c h / 0.35);
+  color: var(--color-primary);
+  font-size: var(--t-12);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Clickable audit-log rows (RestoreHistoryView) — cursor, hover tint, focus ring, and the
+   hover-revealed trailing chevron affordance. */
+.row-clickable { cursor: pointer; }
+.row-clickable:hover { background: oklch(from var(--color-base-200) l c h / .55); }
+.row-clickable:focus-visible { outline: 2px solid oklch(from var(--color-primary) l c h / .55); outline-offset: -2px; }
+.row-end { display: inline-flex; align-items: center; justify-content: flex-end; }
+.row-go { display: inline-grid; place-items: center; opacity: 0; color: oklch(from var(--color-base-content) l c h / .55); transition: opacity .12s ease; }
+.row-clickable:hover .row-go, .row-clickable:focus-visible .row-go { opacity: .7; }
+
+/* LiveRefresh (components/backups/LiveRefresh.astro) — moved out of the fork's scoped <style>
+   (catalog components carry no scoped style; global per governance). */
+.lr { display: inline-flex; align-items: center; gap: 8px; }
+.lr-stamp { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .55); white-space: nowrap; }

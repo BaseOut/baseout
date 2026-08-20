@@ -1,78 +1,192 @@
 ---
 /**
- * RestoreView — restore one base from a backup, base-by-base, into NEW tables.
+ * RestoreView — restore one base from a named, dated, health-graded snapshot.
  *
  * Client model (Q3, 2026-06-19): restore is a rare, last-resort, best-effort need —
  * NOT the headline (the value is the external backup + documentation + insights).
- * Flow: pick ONE base → pick which of its tables to restore (all by default) →
- * choose the target (an existing base, or a brand-new base). Restore ALWAYS creates
- * NEW tables — it never inserts back into the original. Records recreate well;
- * structure rebuild is only partial (an Airtable API limit), so it's best-effort and
- * guides the user to finish the rest manually.
+ * D05 settled that "rare" and "high-stakes" are not in conflict: rare in the value
+ * story, rigorous on the page. Restore is the only place the product writes into a
+ * customer's live Airtable, so it is the most guarded flow in the app.
  *
- * Two states: the FORM (pick base → tables → target) and, when `outcome` is set, the
- * RESULT — what was recreated and what to finish by hand. The result is the honest
- * part: Airtable's API recreates records but cannot rebuild Formula fields, returns
- * some fields as plain text, and drops linked-record relationships (verified against
- * the On2Air restore docs, 2026-06-19), so the outcome lists exactly that.
+ * THE CONTRACT (catalog `pattern-restore-flow`) — five steps, and the state flows
+ * through all of them: ① a snapshot (newest clean one preselected) → ② a base, carried
+ * in from the run pages as `?base=` → ③ its tables → ④ attachments → ⑤ a target, which
+ * defaults to a NEW base (the non-destructive default, specs/09-restore.md:42-44) →
+ * confirm in plain words. Restore ALWAYS creates NEW tables — it never inserts back
+ * into the original. Records recreate well; structure rebuild is only partial (an
+ * Airtable API limit), so it is best-effort and guides the user to finish the rest.
+ *
+ * FOUR STATES, one request: the FORM, the RUNNING panel, the FAILED panel, and — when
+ * `outcome` is set — the RESULT. Every sentence about the request on all four comes
+ * out of `lib/restore/request.ts`; nothing here writes its own. The result is the
+ * honest part: Airtable's API recreates records but cannot rebuild Formula fields,
+ * returns some fields as plain text, and drops linked-record relationships (verified
+ * against the On2Air restore docs, 2026-06-19), so the outcome lists exactly that.
+ *
+ * WIDTH — 920px, deliberately (D05 item 9, ACCEPTED). The audit asked whether it should
+ * match the 1200px audit pages; the spec asks this page to be CALM, and a narrower
+ * measure is how it stays calm. Do not "fix" it to 1200.
  *
  * Primitives are catalog (breadcrumbs / alert / radio / checkbox / select / input /
- * badge / stats / table / button); the per-base picker, the staged sections and the
- * outcome panel are the bespoke composition (a Pattern), mirroring the backup audit
- * tables. Harness fixture.
+ * badge / stats / table / TablePager / ConfirmModal / progress / button); the staged
+ * sections and the outcome panel are the documented Pattern.
  */
-interface RestoreTable {
-  id: string;
-  name: string;
-  records: number;
-  fields: number;
-}
-interface RestoreBase {
-  id: string;
-  name: string;
-  tables: RestoreTable[];
-}
-interface ExistingBase {
-  id: string;
-  name: string;
-}
-/** One thing the restore couldn't rebuild automatically (Airtable API limit). */
-interface RestoreManualItem {
-  table: string;
-  field: string;
-  kind: 'formula' | 'text' | 'link';
-  detail: string;
-}
-interface RestoreOutcome {
-  /** Source base that was restored. */
-  baseName: string;
-  /** Where it landed. */
-  targetName: string;
-  targetIsNew: boolean;
-  /** Open the restored base in Airtable. */
-  targetUrl: string;
-  tablesRestored: number;
-  recordsRestored: number;
-  /** How attachments were brought back (client Q6, 2026-06-20). */
-  attachmentsMode: 'attachments' | 'links';
-  attachmentsRestored: number;
-  /** Structure that needs a manual touch-up; empty = a clean restore. */
-  manual: RestoreManualItem[];
-}
+import TablePager from '../components/ui/TablePager.astro';
+import ConfirmModal from '../components/ui/ConfirmModal.astro';
+import {
+  baseCoverage,
+  describeRestoreRequest,
+  fileCountLabel,
+  newBaseName,
+  tableCountLabel,
+  snapshotIsClean,
+  snapshotSizeLine,
+  snapshotWarning,
+  type ExistingBaseDef,
+  type RestoreBaseDef,
+  type RestoreFailure,
+  type RestoreManualItem,
+  type RestoreOutcome,
+  type RestoreProgress,
+  type RestoreSnapshot,
+  type SnapshotStatus,
+} from '../lib/restore/request';
+
 interface Props {
   /** The run/backup this restore is sourced from (for the breadcrumb + context). */
   runId?: string;
-  /** Bases captured in that backup, each with its tables. */
-  bases?: RestoreBase[];
+  /** Restorable snapshots, newest first. */
+  snapshots?: RestoreSnapshot[];
+  /** Bases captured across those snapshots, each with its tables. */
+  bases?: RestoreBaseDef[];
   /** Bases the user could restore INTO (their live Airtable bases). */
-  existingBases?: ExistingBase[];
-  /** When set, render the RESULT state instead of the form. */
+  existingBases?: ExistingBaseDef[];
+  /** Where the backup lives — the dependency the "as links" attachments option leans on. */
+  destinationLabel?: string;
+  /**
+   * Does that destination actually hold the ATTACHMENT FILES, or only the records?
+   *
+   * Dan, 2026-08-11: *"we can only do restore as attachment if they are using Baseout to back up
+   * their attachments. If they don't have that configured then we can only restore as links."*
+   * Nothing in the model carried this, so step 4 offered a re-upload of files the product may not
+   * possess — a control whose availability was decided by a fact nobody held.
+   * FOR THE CLIENT'S ENGINEER: this is the destination's attachment-backup setting.
+   */
+  destinationStoresFiles?: boolean;
+  /** Airtable workspace the new base lands in; the clause is dropped when absent. */
+  workspaceName?: string | null;
+  /**
+   * Workspaces we can already name, for the new-base target. Empty is a real state: a connection
+   * whose scope does not return them leaves only the typed-id path.
+   */
+  workspaces?: { id: string; name: string }[];
+  /** The workspace the request carries (`?wsp=`) — an id from the list, or one typed in. */
+  selectedWorkspaceId?: string | null;
+  /** Scope carried in from the run pages: our base id OR the Airtable base id. */
+  selectedBaseId?: string | null;
+  /**
+   * The tables the request actually carries (`?tables=`). Null means "all of them", which
+   * is the form's default. This is a PROP rather than something the view re-derives: the
+   * running and failed panels restate the request, and a view that recomputed the scope
+   * from the base would print "4 tables" beside a progress line reading "2 of 3".
+   */
+  selectedTableIds?: string[] | null;
+  /** Snapshot carried in (?snap=, falling back to ?run=). */
+  selectedSnapshotId?: string | null;
+  /** Attachments mode the request carries. */
+  attachmentsMode?: 'attachments' | 'links';
+  /** Target kind + name the request carries. */
+  targetKind?: 'new' | 'existing';
+  targetName?: string | null;
+  /** Which state to render. */
+  state?: 'form' | 'running' | 'failed';
+  progress?: RestoreProgress | null;
+  failure?: RestoreFailure | null;
+  /** When set, render the RESULT state instead. */
   outcome?: RestoreOutcome | null;
 }
-const { runId = 'run_2026_06_15_daily', bases = [], existingBases = [], outcome = null } = Astro.props;
+const {
+  runId = 'run_2026_06_15_daily',
+  snapshots = [],
+  bases = [],
+  existingBases = [],
+  destinationLabel = 'your backup destination',
+  destinationStoresFiles = true,
+  workspaceName = null,
+  workspaces = [],
+  selectedWorkspaceId = null,
+  selectedBaseId = null,
+  selectedTableIds = null,
+  selectedSnapshotId = null,
+  attachmentsMode = 'attachments',
+  targetKind = 'new',
+  targetName = null,
+  state = 'form',
+  progress = null,
+  failure = null,
+  outcome = null,
+} = Astro.props;
 const nf = new Intl.NumberFormat('en-US');
 const backHref = `/backups/run?id=${runId}`;
-const doneHref = `/restore?run=${runId}&done=1`;
+
+// ── The initial request, server-side. The controller recomputes it from the same
+// functions on every change, so the first paint and every later one agree by construction.
+// ── BASE FIRST, THEN THE BACKUP (2026-08-11) ──────────────────────────────────────────────────
+// The resolution order follows the form's order, and the fallbacks matter: `?base=` may be our id
+// OR the Airtable base id, because the run pages carry `atBaseId` and never learned ours; and a
+// base is only a valid start if some snapshot holds it, so `restorable` bases are what we fall back
+// through. The snapshot then has to hold THAT base — a URL naming a base and a backup that never
+// captured it resolves to the newest backup that did, rather than rendering an impossible request.
+const restorable = bases.filter((b) => snapshots.some((s) => s.baseIds.includes(b.id)));
+const activeBase =
+  (selectedBaseId ? restorable.find((b) => b.id === selectedBaseId || b.atBaseId === selectedBaseId) : null) ??
+  restorable[0] ??
+  null;
+const forBase = activeBase ? snapshots.filter((s) => s.baseIds.includes(activeBase.id)) : [];
+const snapshot =
+  forBase.find((s) => s.runId === selectedSnapshotId) ??
+  forBase.find((s) => snapshotIsClean(s)) ??
+  forBase[0] ??
+  null;
+const inSnapshot = snapshot ? bases.filter((b) => snapshot.baseIds.includes(b.id)) : [];
+const capturedNames = inSnapshot.map((b) => b.name);
+// The scope the request actually carries — not "every table this base has".
+const chosenTables = activeBase
+  ? activeBase.tables.filter((t) => (selectedTableIds === null ? true : selectedTableIds.includes(t.id)))
+  : [];
+const targetIsNew = targetKind !== 'existing';
+const copy =
+  snapshot && activeBase
+    ? describeRestoreRequest(
+        {
+          snapshot,
+          baseName: activeBase.name,
+          tableNames: chosenTables.map((t) => t.name),
+          records: chosenTables.reduce((s, t) => s + t.records, 0),
+          attachments: chosenTables.reduce((s, t) => s + t.attachments, 0),
+          attachmentsMode,
+          destinationLabel,
+          destinationStoresFiles,
+          target: targetIsNew
+            ? { kind: 'new', name: targetName ?? newBaseName(activeBase.name, snapshot) }
+            : { kind: 'existing', name: targetName ?? (existingBases[0]?.name ?? '') },
+          workspaceName,
+        },
+        capturedNames,
+      )
+    : null;
+const initialAttachments = chosenTables.reduce((s, t) => s + t.attachments, 0);
+
+// The model the controller reads. `<` is escaped so a base named with a tag cannot close
+// the script element.
+const modelJson = JSON.stringify({ snapshots, bases, existingBases, destinationLabel, destinationStoresFiles, workspaceName, workspaces }).replace(/</g, '\\u003c');
+
+const SNAP_BADGE: Record<SnapshotStatus, { label: string; cls: string }> = {
+  succeeded: { label: 'Succeeded', cls: 'badge-soft badge-success' },
+  partial: { label: 'Partial', cls: 'badge-soft badge-warning' },
+  failed: { label: 'Failed', cls: 'badge-soft badge-error' },
+  cancelled: { label: 'Cancelled', cls: 'badge-ghost' },
+};
 
 // Manual-item kind → a soft, semantic tag (calm warning tone for all — they all need
 // attention; the "What to do" column carries the specifics). No outline (interface rule).
@@ -81,6 +195,11 @@ const kindMeta: Record<RestoreManualItem['kind'], string> = {
   text: 'Restored as text',
   link: 'Relationship',
 };
+
+const isForm = !outcome && state === 'form';
+const isRunning = !outcome && state === 'running';
+const isFailed = !outcome && state === 'failed';
+const retryHref = `/restore?run=${runId}`;
 ---
 
 <div class="mx-auto max-w-[920px]" data-restore>
@@ -96,120 +215,362 @@ const kindMeta: Record<RestoreManualItem['kind'], string> = {
     </div>
   </div>
 
-  {!outcome && (
+  {isForm && snapshot && activeBase && copy && (
     <Fragment>
+      <script type="application/json" data-rs-model is:inline set:html={modelJson}></script>
+
       <header class="mt-3">
-        <h1 class="text-title">Restore from this backup</h1>
-        <p class="text-sm text-base-content/60 mt-1">Bring a base back from this backup. Restore is base-by-base and always creates new tables.</p>
+        <h1 class="text-title">Restore from a backup</h1>
+        <p class="text-sm text-base-content/60 mt-1">Bring a base back from a backup. Restore is base-by-base and always creates new tables.</p>
+        <p class="text-sm text-base-content/60 mt-1">Restore writes to Airtable. It needs a token with write access.</p>
       </header>
 
-      {/* Best-effort heads-up — persistent (reflects how restore actually works) */}
+      {/* Best-effort heads-up — persistent (reflects how restore actually works). D05 protects
+          this framing: it is the honest description of what the Airtable API can and cannot do. */}
       <div role="alert" class="alert alert-soft alert-warning mt-4">
         <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
         <span>Restore is <b>best-effort</b>. We recreate your records into <b>new tables</b> (never overwriting the original) and rebuild what structure we can — some field types and relationships may need a manual touch-up. We’ll guide you through the rest.</span>
       </div>
 
-      {/* STEP 1 — pick a base */}
-      <section class="rs-step">
-        <div class="rs-step-head"><span class="rs-step-n">1</span><h2>Choose a base to restore</h2></div>
-        <fieldset class="rs-bases" data-rs-bases>
-          <legend class="sr-only">Base</legend>
-          {bases.map((b, i) => (
-            <label class="rs-base">
-              <input type="radio" name="rs-base" value={b.id} class="radio radio-sm radio-primary" data-rs-base-radio data-base={b.id} checked={i === 0} />
-              <span class="rs-base-ic"><span class="iconify lucide--database" aria-hidden="true"></span></span>
-              <span class="min-w-0 flex-1">
-                <span class="rs-base-name">{b.name}</span>
-                <span class="rs-base-sub">{b.tables.length} table{b.tables.length === 1 ? '' : 's'} · {nf.format(b.tables.reduce((s, t) => s + t.records, 0))} records</span>
-              </span>
-            </label>
-          ))}
-        </fieldset>
-      </section>
+      <div data-rs-form>
+        {/* STEP 1 — THE BASE, and it comes first now (2026-08-11, Dan's video).
+            The reason is a data dependency, not a preference: which backups exist depends on which
+            base you are asking about. A base added to the Space later has less history, and a base
+            the newest run failed to reach has a freshest copy older than a reader would assume.
+            Snapshot-first could not express either — it showed the bases in ONE backup and hid the
+            rest behind a footnote reading "2 bases are not in this backup", which conflates "not in
+            THIS backup" with "not in ANY backup".
+            Every base is listed, and each says what is actually true of it (lib/restore/request.ts,
+            `baseCoverage`). That is the payoff; the reorder without it would buy nothing. */}
+        <section class="rs-step">
+          <div class="rs-step-head"><span class="step-n">1</span><h2>Choose a base to restore</h2><span class="rs-step-hint">Which backups you can restore from depends on the base.</span></div>
+          <fieldset class="rs-bases" data-rs-bases>
+            <legend class="sr-only">Base</legend>
+            {bases.map((b) => {
+              const cov = baseCoverage(b.id, b.name, snapshots);
+              const dead = cov.kind === 'not-backed-up';
+              return (
+                <label class="rs-base" data-rs-baseopt data-base={b.id} data-cov={cov.kind} aria-disabled={dead ? 'true' : undefined}>
+                  <input type="radio" name="rs-base" value={b.id} class="radio radio-sm radio-primary" data-rs-base-radio data-base={b.id} checked={b.id === activeBase.id} disabled={dead} />
+                  <span class="rs-base-ic"><span class="iconify lucide--database concept-ic-base" aria-hidden="true"></span></span>
+                  <span class="min-w-0 flex-1">
+                    <span class="rs-base-name">{b.name}</span>
+                    <span class="rs-base-sub">{b.tables.length} table{b.tables.length === 1 ? '' : 's'} · {nf.format(b.tables.reduce((s, t) => s + t.records, 0))} records</span>
+                    {/* THE COVERAGE SENTENCE, in place. A base with nothing to restore is not
+                        hidden and does not rely on a hover to explain itself — the reason sits on
+                        the row and carries the way to fix it. */}
+                    <span class:list={['rs-base-cov', `is-${cov.kind}`]}>
+                      {cov.kind !== 'restorable' && <span class="iconify lucide--circle-alert size-3.5" aria-hidden="true"></span>}
+                      <span>{cov.line}</span>
+                      {dead && <a href="/sources" class="rs-base-fix">Backup scope</a>}
+                    </span>
+                  </span>
+                </label>
+              );
+            })}
+          </fieldset>
+        </section>
 
-      {/* STEP 2 — pick tables (per base; default all) */}
-      <section class="rs-step">
-        <div class="rs-step-head"><span class="rs-step-n">2</span><h2>Choose tables</h2><span class="rs-step-hint">All selected by default — uncheck any you don’t need.</span></div>
-        <div class="rs-tablebar">
-          <p class="rs-count"><span data-rs-count>0</span> of <span data-rs-total>0</span> tables selected</p>
-          <div class="ml-auto flex items-center gap-1">
-            <button type="button" class="btn btn-ghost btn-sm text-primary" data-rs-all>Select all</button>
-            <button type="button" class="btn btn-ghost btn-sm text-error gap-1.5" data-rs-clear hidden><span class="iconify lucide--x size-4" aria-hidden="true"></span>Clear</button>
-          </div>
-        </div>
-        {bases.map((b) => (
-          <div class="rs-tablewrap" data-rs-tables={b.id} hidden>
+        {/* STEP 2 — THE BACKUP, narrowed to the base above. A restore still starts from a NAMED,
+            DATED, HEALTH-GRADED snapshot; what changed is that the list only offers snapshots that
+            actually hold the chosen base, so "restore Product Roadmap from Tuesday" cannot be
+            selected when Tuesday's run never reached it. Rows for other bases stay in the DOM and
+            are hidden, so switching base is a re-render rather than a fetch. */}
+        <section class="rs-step">
+          <div class="rs-step-head"><span class="step-n">2</span><h2>Choose a backup to restore from</h2><span class="rs-step-hint" data-rs-snap-hint>The newest clean backup of this base is selected.</span></div>
+          <div class="rs-snapwrap">
+            {/* THE ONE TABLE (catalog `table` + `pattern-audit-table`): the same columns and the
+                same soft status badges as the Backups log, because this IS the Backups log
+                filtered to what can be restored. */}
             <table class="table text-sm">
-              <thead>
-                <tr class="text-xs uppercase tracking-wider text-base-content/60">
-                  <th class="w-10"></th><th>Table</th><th class="text-right">Records</th><th class="text-right">Fields</th>
+              <thead class="tbl-colhead">
+                <tr>
+                  <th class="w-10"></th><th>When</th><th>From run</th><th class="rs-snap-size">Size</th><th>Status</th>
                 </tr>
               </thead>
-              <tbody>
-                {b.tables.map((t) => (
-                  <tr>
-                    <td><input type="checkbox" class="checkbox checkbox-sm" value={t.id} checked data-rs-table data-base={b.id} /></td>
-                    <td class="font-medium"><span class="inline-flex items-center gap-2"><span class="iconify lucide--table-2 text-base-content/45" aria-hidden="true"></span>{t.name}</span></td>
-                    <td class="text-right tabular-nums">{nf.format(t.records)}</td>
-                    <td class="text-right tabular-nums">{nf.format(t.fields)}</td>
-                  </tr>
-                ))}
+              <tbody data-rs-snapbody>
+                {snapshots.map((s) => {
+                  const warn = snapshotWarning(s, bases.filter((b) => s.baseIds.includes(b.id)).map((b) => b.name));
+                  const meta = SNAP_BADGE[s.status];
+                  return (
+                    <tr data-rs-snaprow data-bases={s.baseIds.join(',')} hidden={!s.baseIds.includes(activeBase.id)}>
+                      <td><input type="radio" name="rs-snap" value={s.runId} class="radio radio-sm radio-primary" data-rs-snap-radio checked={s.runId === snapshot.runId} aria-label={`Backup taken ${s.takenAtLabel}`} /></td>
+                      <td class="font-medium mono-data">{s.takenAtLabel}</td>
+                      <td class="mono-data text-base-content/70">{s.runId}</td>
+                      <td class="rs-snap-size text-base-content/70">{snapshotSizeLine(s)}</td>
+                      <td>
+                        <span class={`badge ${meta.cls}`}>{meta.label}</span>
+                        {/* The caveat, ON THE ROW — a snapshot picked deliberately out of a failed
+                            run has to say so before it is chosen, not only at confirm. Truncated,
+                            full text on the catalog `tooltip`, never a native title=. */}
+                        {warn && <span class="rs-snap-why tooltip tooltip-left" data-tip={warn}>{warn}</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
-        ))}
-      </section>
+        </section>
 
-      {/* STEP 3 — attachments (client Q6): re-upload the files, or link to them in the backup destination */}
-      <section class="rs-step">
-        <div class="rs-step-head"><span class="rs-step-n">3</span><h2>Attachments</h2><span class="rs-step-hint">How should we bring attachments back?</span></div>
-        <div class="rs-targets" data-rs-att>
-          <label class="rs-target">
-            <input type="radio" name="rs-att" value="attachments" class="radio radio-sm radio-primary" checked />
-            <span class="min-w-0 flex-1">
-              <span class="rs-target-name">Restore as attachments</span>
-              <span class="rs-target-sub">Re-upload the files back into the new Airtable tables.</span>
-            </span>
-          </label>
-          <label class="rs-target">
-            <input type="radio" name="rs-att" value="links" class="radio radio-sm radio-primary" />
-            <span class="min-w-0 flex-1">
-              <span class="rs-target-name">Restore as links</span>
-              <span class="rs-target-sub">Add links to the files kept in your backup destination — nothing is re-uploaded.</span>
-            </span>
-          </label>
+        {/* STEP 3 — pick tables (per base; default all) */}
+        <section class="rs-step">
+          <div class="rs-step-head"><span class="step-n">3</span><h2>Choose tables</h2><span class="rs-step-hint">All selected by default — uncheck any you don’t need.</span></div>
+          {/* A base with 200 tables rendered all 200 here, unfiltered and unpaged — the list was a
+              promise that the data stays small. Filter + TablePager, the shared pair (D15). */}
+          <div class="rs-tablebar">
+            <label class="input input-sm w-[14rem] max-w-full">
+              <span class="iconify lucide--search size-4 opacity-50" aria-hidden="true"></span>
+              <input type="search" class="grow" data-rs-search placeholder="Filter tables…" aria-label="Filter tables by name" />
+            </label>
+            <p class="rs-count"><span data-rs-count>{chosenTables.length}</span> of <span data-rs-total>{activeBase.tables.length}</span> tables selected</p>
+            <div class="ml-auto flex items-center gap-1">
+              <button type="button" class="btn btn-ghost btn-sm text-primary" data-rs-all>Select all</button>
+              <button type="button" class="btn btn-ghost btn-sm text-error gap-1.5" data-rs-clear hidden><span class="iconify lucide--x size-4" aria-hidden="true"></span>Clear</button>
+            </div>
+          </div>
+          {bases.map((b) => (
+            <div class="rs-tablewrap" data-rs-tables={b.id} hidden={b.id !== activeBase.id}>
+              {/* THE ONE TABLE (catalog `table`): `.tbl-colhead` type + `wireTableSort` behaviour. */}
+              <table class="table text-sm">
+                <thead class="tbl-colhead">
+                  <tr>
+                    <th class="w-10"></th><th data-sort-col="1">Table</th><th class="text-right" data-sort-col="2">Records</th><th class="text-right" data-sort-col="3">Fields</th><th class="text-right" data-sort-col="4">Attachments</th>
+                  </tr>
+                </thead>
+                <tbody data-rs-body={b.id}>
+                  {b.tables.map((t) => (
+                    <tr data-rs-row data-name={t.name.toLowerCase()} data-records={t.records} data-fields={t.fields} data-attachments={t.attachments}>
+                      <td><input type="checkbox" class="checkbox checkbox-sm" value={t.id} checked={b.id !== activeBase.id || selectedTableIds === null || selectedTableIds.includes(t.id)} data-rs-table data-base={b.id} /></td>
+                      <td class="font-medium"><span class="inline-flex items-center gap-2"><span class="iconify lucide--table-2 text-base-content/45" aria-hidden="true"></span>{t.name}</span></td>
+                      <td class="text-right tabular-nums">{nf.format(t.records)}</td>
+                      <td class="text-right tabular-nums">{nf.format(t.fields)}</td>
+                      <td class="text-right tabular-nums">{nf.format(t.attachments)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+          <p class="rs-nomatch" data-rs-nomatch hidden>No tables match that filter.</p>
+          <TablePager name="rs" sizes={[10, 25, 50]} selected={25} />
+        </section>
+
+        {/* STEP 4 — attachments (client Q6): re-upload the files, or link to them in the backup
+            destination. Both options carry the COUNT they act on, and the links option names the
+            destination it depends on — a link is only as durable as the thing it points at. */}
+        <section class="rs-step">
+          <div class="rs-step-head"><span class="step-n">4</span><h2>Attachments</h2><span class="rs-step-hint"><span data-rs-att-count>{fileCountLabel(initialAttachments)}</span> in the selected tables.</span></div>
+          <div class="rs-targets" data-rs-att>
+            {/* THE RE-UPLOAD IS CONDITIONAL, and until 2026-08-11 nothing said so. It requires that
+                the destination actually holds the FILES; a destination backing up records only has
+                nothing to re-upload, so the product was offering "Restore as attachments — 84 files"
+                it could not deliver.
+
+                It is NOT a greyed radio with the reason on a hover. That is the weakest shape
+                available — NN/g measures disabled controls as poorly contrasted and often not
+                focusable, and the tooltip carrying the reason does not exist on touch at all. The
+                option stays visible, states the reason in place, and carries the way to turn it on:
+                the same treatment this app gives a capability that is OFF rather than forbidden. */}
+            <label class="rs-target" data-cap={destinationStoresFiles ? undefined : 'off'}>
+              <input type="radio" name="rs-att" value="attachments" class="radio radio-sm radio-primary" checked={destinationStoresFiles && attachmentsMode !== 'links'} disabled={!destinationStoresFiles} />
+              <span class="min-w-0 flex-1">
+                <span class="rs-target-name">Restore as attachments — <span data-rs-att-count>{fileCountLabel(initialAttachments)}</span></span>
+                <span class="rs-target-sub">Re-upload the files back into the new Airtable tables. They stop depending on your backup destination.</span>
+                {!destinationStoresFiles && (
+                  <span role="alert" class="alert alert-soft alert-warning rs-cap-off">
+                    <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
+                    <span>
+                      Your backups of this Space keep <b>records only</b>, so there are no files to re-upload.
+                      <a href="/destinations" class="rs-cap-fix">Turn on attachment backup for {destinationLabel}</a> and it becomes available on the next run.
+                    </span>
+                  </span>
+                )}
+              </span>
+            </label>
+            <label class="rs-target">
+              <input type="radio" name="rs-att" value="links" class="radio radio-sm radio-primary" checked={!destinationStoresFiles || attachmentsMode === 'links'} />
+              <span class="min-w-0 flex-1">
+                <span class="rs-target-name">Restore as links — <span data-rs-att-count>{fileCountLabel(initialAttachments)}</span></span>
+                <span class="rs-target-sub">{destinationStoresFiles ? `Add links to the files kept in ${destinationLabel} — nothing is re-uploaded. The links stop working if that destination is disconnected or its files are removed.` : "The field is restored as links rather than files. This Space's backups keep records only, so there is nothing to re-upload."}</span>
+              </span>
+            </label>
+          </div>
+        </section>
+
+        {/* STEP 5 — target. A NEW base is the default (specs/09-restore.md:42-44 — restore is
+            always non-destructive); restoring into an existing base is the explicit choice. */}
+        <section class="rs-step">
+          <div class="rs-step-head"><span class="step-n">5</span><h2>Where should it restore?</h2></div>
+          <div class="rs-targets" data-rs-target>
+            <label class="rs-target">
+              <input type="radio" name="rs-target" value="new" class="radio radio-sm radio-primary" checked={targetIsNew} />
+              <span class="min-w-0 flex-1">
+                <span class="rs-target-name">Create a new base<span class="rs-tag">Default</span></span>
+                <span class="rs-target-sub">A fresh base is created to hold the restored tables. Nothing you already have is touched.</span>
+                <input type="text" class="input input-sm mt-2 w-full max-w-sm" value={targetIsNew && targetName ? targetName : newBaseName(activeBase.name, snapshot)} placeholder={newBaseName(activeBase.name, snapshot)} data-rs-newname aria-label="New base name" required disabled={!targetIsNew} />
+                <span class="rs-err" data-rs-name-error hidden>Give the new base a name.</span>
+
+                {/* THE WORKSPACE — and it lives HERE, inside this branch, because only a NEW base
+                    needs one. Restoring into an existing base already has its workspace.
+
+                    Dan asked for a typed workspace id plus a "how to find it" explainer, on the
+                    premise that we only ever get ids and never names. That is true of the RESTORE
+                    model — `workspaceName` is `string | null` and production does not supply it,
+                    which is why the confirm's "in your Airtable workspace ‹name›" has been true
+                    only in the harness. But it is not true of the app: `workspaceId`/`workspaceName`
+                    are carried on bases across the Schema section and the base picker already
+                    groups by them. So the honest build is the list we can resolve, with the typed
+                    id as the escape hatch rather than as the only route. (Open with Dan: Q14.) */}
+                <span class="rs-wsp" data-rs-wsp>
+                  <span class="rs-wsp-label">Airtable workspace</span>
+                  <select class="select select-sm w-full max-w-sm" data-rs-wsp-select aria-label="Airtable workspace" disabled={!targetIsNew}>
+                    {workspaces.map((w) => <option value={w.id} selected={selectedWorkspaceId === w.id}>{w.name}</option>)}
+                    {/* The escape hatch is an OPTION rather than a second always-visible field, so
+                        the common case is one choice and the rare case is still reachable. */}
+                    <option value="__other" selected={workspaces.length === 0 || (!!selectedWorkspaceId && !workspaces.some((w) => w.id === selectedWorkspaceId))}>Another workspace — enter an ID…</option>
+                  </select>
+                  <span class="rs-wsp-manual" data-rs-wsp-manual hidden={workspaces.length > 0 && !(selectedWorkspaceId && !workspaces.some((w) => w.id === selectedWorkspaceId))}>
+                    <input type="text" class="input input-sm w-full max-w-sm mono-data" data-rs-wsp-id aria-label="Airtable workspace ID" placeholder="wspXXXXXXXXXXXXXX" value={selectedWorkspaceId && !workspaces.some((w) => w.id === selectedWorkspaceId) ? selectedWorkspaceId : ''} disabled={!targetIsNew} />
+                    <span class="rs-wsp-help">Open the workspace in Airtable — the ID is the <code>wsp…</code> part of the URL, right after <code>airtable.com/</code>.</span>
+                    <span class="rs-err" data-rs-wsp-error hidden>Enter a workspace ID, or pick one from the list.</span>
+                  </span>
+                </span>
+              </span>
+            </label>
+            <label class="rs-target">
+              <input type="radio" name="rs-target" value="existing" class="radio radio-sm radio-primary" checked={!targetIsNew} />
+              <span class="min-w-0 flex-1">
+                <span class="rs-target-name">Into an existing base</span>
+                <span class="rs-target-sub">New tables are added to a base you already have. Nothing already in it is changed or removed.</span>
+                <select class="select select-sm mt-2 w-full max-w-sm" data-rs-existing aria-label="Target base" disabled={targetIsNew}>
+                  {existingBases.map((e) => <option value={e.id} selected={!targetIsNew && targetName === e.name}>{e.name}</option>)}
+                </select>
+              </span>
+            </label>
+          </div>
+        </section>
+
+        {/* THE REQUEST, restated as you build it. Same object the confirm dialog renders — one
+            derivation, `lib/restore/request.ts`, so the two can never disagree. */}
+        <section class="rs-step">
+          <div class="rs-step-head"><span class="step-n">6</span><h2>Check what will happen</h2></div>
+          <div class="rs-alert-slot" data-rs-sum-warn hidden={copy.snapshotWarning === null}>
+            <div role="alert" class="alert alert-soft alert-warning">
+              <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+              <span data-rs-sum-warn-text>{copy.snapshotWarning ?? ''}</span>
+            </div>
+          </div>
+          <dl class="rs-sum">
+            <dt>What</dt><dd data-rs-sum-what>{copy.what}</dd>
+            <dt>From when</dt><dd data-rs-sum-when>{copy.when}</dd>
+            <dt>Where</dt><dd data-rs-sum-where>{copy.where}</dd>
+          </dl>
+        </section>
+
+        {/* Footer */}
+        <div class="rs-foot">
+          <a href={backHref} class="btn btn-sm btn-ghost">Cancel</a>
+          <button type="button" class="btn btn-sm btn-primary" data-rs-go><span class="iconify lucide--rotate-ccw size-4" aria-hidden="true"></span>Restore <span data-rs-go-count>{tableCountLabel(chosenTables.length)}</span></button>
+        </div>
+      </div>
+
+      {/* THE CONFIRM (catalog `confirm-modal`) — the last gate before the only write this
+          product makes into a customer's live Airtable. It names all seven facts D05 item 4
+          enumerates, every one of them out of the same derivation the page above renders. */}
+      <ConfirmModal id="restore-confirm-modal" title="Restore into Airtable?" cancelLabel="Cancel" confirmLabel="Restore now">
+        <div class="rs-cbody">
+          <p class="rs-chead" data-rc-headline>{copy.headline}</p>
+          <div data-rc-warn hidden={copy.snapshotWarning === null}>
+            <div role="alert" class="alert alert-soft alert-warning">
+              <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+              <span data-rc-warn-text>{copy.snapshotWarning ?? ''}</span>
+            </div>
+          </div>
+          <dl class="rs-sum">
+            <dt>What</dt><dd data-rc-what>{copy.what}</dd>
+            <dt>From when</dt><dd data-rc-when>{copy.when}</dd>
+            <dt>Where</dt><dd data-rc-where>{copy.where}</dd>
+            <dt>What is there now</dt><dd data-rc-existing>{copy.existing}</dd>
+            <dt>Permission</dt><dd data-rc-permission>{copy.permission}</dd>
+            <dt>Credits</dt><dd data-rc-credits>{copy.credits}</dd>
+          </dl>
+          {/* The consequence, in a soft alert — the shape D06 propagates to the other five
+              destructive surfaces. */}
+          <div role="alert" class="alert alert-soft alert-error">
+            <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
+            <span data-rc-irreversible>{copy.irreversible}</span>
+          </div>
+        </div>
+        <Fragment slot="confirm">
+          <button type="button" class="btn btn-primary" data-rs-confirm><!-- ds-ok: matches ConfirmModal.astro:51, whose own Cancel is unsized md — see the catalog `confirm-modal` entry; sizing belongs to the component, not to this caller --><span class="iconify lucide--rotate-ccw size-4" aria-hidden="true"></span>Restore now</button>
+        </Fragment>
+      </ConfirmModal>
+    </Fragment>
+  )}
+
+  {isForm && !(snapshot && activeBase) && (
+    <section class="rs-empty">
+      <span class="rs-empty-ic"><span class="iconify lucide--archive-restore" aria-hidden="true"></span></span>
+      <p class="rs-empty-title">Nothing to restore from yet</p>
+      <p class="rs-empty-sub">A restore starts from a completed backup. Run one, or wait for the next scheduled backup, and it will be restorable from here.</p>
+      {/* btn-sm, not btn-lg. This was the app's last 48px control (wave C, 2026-08-11) and it sat in
+          an empty state, which is the one place D17 already ruled on: the Backups empty state
+          carried exactly this pair — a header CTA at md plus a second copy at btn-lg — and was
+          resolved to a single btn-sm inside the card. The rule never reached this file because
+          nothing changed here after it was written. Every empty state in the app is now btn-sm. */}
+      <a href="/backups" class="btn btn-primary btn-sm">Go to Backups</a>
+    </section>
+  )}
+
+  {/* A RESTORE IS A RUN (D05 item 5) — so it has an in-flight state and a failed state, and
+      it lands in the same audit log as every backup run. Both panels RESTATE the request
+      rather than describing "a restore" in the abstract. */}
+  {isRunning && copy && (
+    <Fragment>
+      <header class="mt-3">
+        <div class="flex items-center gap-2.5 flex-wrap">
+          <h1 class="text-title">Restore running</h1>
+          <span class="badge badge-soft badge-warning"><span class="loading loading-spinner loading-xs"></span>Running</span>
+        </div>
+        <p class="text-sm text-base-content/60 mt-1">{copy.line}</p>
+      </header>
+
+      <section class="rs-run">
+        <p class="rs-run-line">{progress ? `${nf.format(progress.tablesDone)} of ${nf.format(progress.tablesTotal)} tables · ${nf.format(progress.recordsDone)} of ${nf.format(progress.recordsTotal)} records written` : 'Starting up.'}</p>
+        <progress class="progress progress-primary w-full" value={progress ? progress.recordsDone : 0} max={progress ? progress.recordsTotal : 1}></progress>
+        <p class="rs-run-sub">Restore runs on the server — you can leave this page. It appears in your Backups log with every other run.</p>
+        <div class="rs-foot">
+          <a href="/backups" class="btn btn-sm btn-soft btn-primary">Open the Backups log</a>
         </div>
       </section>
+    </Fragment>
+  )}
 
-      {/* STEP 4 — target */}
-      <section class="rs-step">
-        <div class="rs-step-head"><span class="rs-step-n">4</span><h2>Where should it restore?</h2></div>
-        <div class="rs-targets" data-rs-target>
-          <label class="rs-target">
-            <input type="radio" name="rs-target" value="existing" class="radio radio-sm radio-primary" checked />
-            <span class="min-w-0 flex-1">
-              <span class="rs-target-name">Into an existing base</span>
-              <span class="rs-target-sub">New tables are added to a base you already have.</span>
-              <select class="select select-sm mt-2 w-full max-w-sm" data-rs-existing aria-label="Target base">
-                {existingBases.map((e) => <option value={e.id}>{e.name}</option>)}
-              </select>
-            </span>
-          </label>
-          <label class="rs-target">
-            <input type="radio" name="rs-target" value="new" class="radio radio-sm radio-primary" />
-            <span class="min-w-0 flex-1">
-              <span class="rs-target-name">Create a new base</span>
-              <span class="rs-target-sub">A fresh base is created to hold the restored tables.</span>
-              <input type="text" class="input input-sm mt-2 w-full max-w-sm" placeholder="Restored — Sales CRM" data-rs-newname aria-label="New base name" disabled />
-            </span>
-          </label>
+  {isFailed && copy && (
+    <Fragment>
+      <header class="mt-3">
+        <div class="flex items-center gap-2.5 flex-wrap">
+          <h1 class="text-title">Restore failed</h1>
+          <span class="badge badge-soft badge-error"><span class="iconify lucide--circle-alert size-3.5" aria-hidden="true"></span>Failed</span>
         </div>
-      </section>
+        <p class="text-sm text-base-content/60 mt-1">{copy.line}</p>
+      </header>
 
-      {/* Footer */}
+      {/* The failure, above the content it explains (catalog `alert`, usageDo) — what stopped,
+          why, what WAS written, and what to do next, in that order. What landed is stated as a
+          number: a restore that wrote three tables before it stopped still wrote them. */}
+      <div role="alert" class="alert alert-soft alert-error mt-4">
+        <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
+        <span class="flex-1">
+          <b>{failure ? failure.message : 'The restore stopped before it finished.'}</b>{' '}
+          {failure ? `${nf.format(failure.tablesWritten)} ${failure.tablesWritten === 1 ? 'table was' : 'tables were'} written with ${nf.format(failure.recordsWritten)} ${failure.recordsWritten === 1 ? 'record' : 'records'} before it stopped — they are in Airtable and are not removed automatically. Delete them by hand before restoring again, or the retry adds a second copy.` : ''}
+        </span>
+      </div>
+
       <div class="rs-foot">
-        <a href={backHref} class="btn btn-ghost">Cancel</a>
-        <button type="button" class="btn btn-primary" data-rs-go data-done-href={doneHref}><span class="iconify lucide--rotate-ccw size-4" aria-hidden="true"></span>Restore <span data-rs-go-count>0</span> tables</button>
+        <a href="/backups" class="btn btn-sm btn-ghost">Back to Backups</a>
+        <a href={retryHref} class="btn btn-sm btn-primary"><span class="iconify lucide--rotate-ccw size-4" aria-hidden="true"></span>Set up the restore again</a>
       </div>
     </Fragment>
   )}
@@ -224,6 +585,9 @@ const kindMeta: Record<RestoreManualItem['kind'], string> = {
         <p class="text-sm text-base-content/60 mt-1">
           Restored <b>{outcome.baseName}</b> into <b>{outcome.targetName}</b>{outcome.targetIsNew && <span class="text-base-content/55"> (new base)</span>} — always as new tables.
         </p>
+        {/* The request that was actually made, restated (D05 item 2) — the result screen must
+            answer "restored from WHEN", which the sentence above never said. */}
+        {outcome.requestLine && <p class="text-sm text-base-content/55 mt-1">{outcome.requestLine}</p>}
       </header>
 
       {outcome.manual.length > 0 ? (
@@ -268,8 +632,8 @@ const kindMeta: Record<RestoreManualItem['kind'], string> = {
           <div class="ro-panel-head"><h2>Finish these by hand</h2><p>Airtable’s API can’t rebuild these. Open the restored base and adjust each one.</p></div>
           <div class="ro-tablewrap">
             <table class="table text-sm">
-              <thead>
-                <tr class="text-xs uppercase tracking-wider text-base-content/60">
+              <thead class="tbl-colhead">
+                <tr>
                   <th>Table</th><th>Field</th><th>Issue</th><th>What to do</th>
                 </tr>
               </thead>
@@ -288,9 +652,15 @@ const kindMeta: Record<RestoreManualItem['kind'], string> = {
         </section>
       )}
 
+      {/* SM, like every other control in the app. These two were the section's last unsized (md,
+          40px) controls and `ds-audit` had been flagging them since the sizing rule was written —
+          the documented exception is a PAGE-HEADER CTA, and a result-screen footer is not one.
+          Reading the terminal action as "important, therefore bigger" is how a size ladder becomes
+          a suggestion; if the post-restore action deserves more weight than every other primary in
+          the product, that is a catalog decision, not a per-file one. */}
       <div class="rs-foot">
-        <a href="/backups" class="btn btn-ghost">Back to Backups</a>
-        <a href={outcome.targetUrl} target="_blank" rel="noreferrer" class="btn btn-primary"><span class="iconify lucide--external-link size-4" aria-hidden="true"></span>Open the restored base</a>
+        <a href="/backups" class="btn btn-ghost btn-sm">Back to Backups</a>
+        <a href={outcome.targetUrl} target="_blank" rel="noreferrer" class="btn btn-primary btn-sm"><span class="iconify lucide--external-link size-4" aria-hidden="true"></span>Open the restored base</a>
       </div>
     </Fragment>
   )}
@@ -299,34 +669,126 @@ const kindMeta: Record<RestoreManualItem['kind'], string> = {
 <style>
   [data-restore] { display: flex; flex-direction: column; }
 
-  .rs-step { margin-top: 1.5rem; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem 1.25rem; }
-  .rs-step-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .9rem; flex-wrap: wrap; }
-  .rs-step-n { width: 1.5rem; height: 1.5rem; border-radius: 999px; display: grid; place-items: center; flex: none; font-size: .8rem; font-weight: 700; background: oklch(from var(--color-primary) l c h / .14); color: var(--color-primary); }
-  .rs-step-head h2 { font-size: .95rem; font-weight: 650; }
-  .rs-step-hint { font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .6); }
+  .rs-step { margin-top: 1.5rem; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 16px 20px 20px; }
+  .rs-step-head { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  /* The step numeral is `.step-n`, in styles/components/step-number.css — one element, one rule,
+     shared with the Reports definition form. It was a private copy here that differed from that one
+     in five metrics at once. */
+  .rs-step-head h2 { font-size: var(--t-16); font-weight: 650; }
+  .rs-step-hint { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
 
   /* Base picker (radio cards) — same language as the wizard option rows */
   .rs-bases { display: grid; gap: .5rem; }
-  .rs-base { display: flex; align-items: center; gap: .65rem; padding: .6rem .7rem; border: 1px solid var(--color-base-300); border-radius: .55rem; cursor: pointer; transition: border-color .12s ease, background .12s ease; }
-  .rs-base:hover { background: oklch(from var(--color-base-200) l c h / .5); }
-  .rs-base:has(input:checked) { border-color: oklch(from var(--color-primary) l c h / .55); background: oklch(from var(--color-primary) l c h / .05); }
-  .rs-base-ic { width: 2rem; height: 2rem; border-radius: .5rem; display: grid; place-items: center; background: oklch(from var(--color-base-200) l c h / .8); flex: none; }
-  .rs-base-ic .iconify { font-size: 1rem; color: oklch(from var(--color-base-content) l c h / .65); }
-  .rs-base-name { display: block; font-size: .875rem; font-weight: 600; }
-  .rs-base-sub { display: block; font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); margin-top: .05rem; }
+  /* ONE OPTION ROW, ONE SET OF METRICS (2026-08-11, wave C). `.rs-base` and `.rs-target` are the
+     same component — a selectable card holding a radio, a title and a sub-line — and they sat 60
+     lines apart in this file with two radii (.55 / .6), two paddings (8px 12px / 12px) and two
+     alignments (center / flex-start). Nobody chose that; it is what two hand-typed copies of one
+     idea look like after a few months. They now share every metric, and `flex-start` is the right
+     one for both because the base row grew a third line (its coverage sentence). */
+  .rs-base { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--color-base-300); border-radius: .55rem; cursor: pointer; transition: border-color .12s ease, background .12s ease; }
+  .rs-base:hover { background: oklch(from var(--color-base-200) l c h / .55); }
+  .rs-base:has(input:checked) { border-color: oklch(from var(--color-primary) l c h / .55); background: oklch(from var(--color-primary) l c h / .08); }
+  .rs-base-ic { width: 2rem; height: 2rem; border-radius: .55rem; display: grid; place-items: center; background: oklch(from var(--color-base-200) l c h / .85); flex: none; }
+  .rs-base-ic .iconify { font-size: var(--t-16); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rs-base-name { display: block; font-size: var(--t-14); font-weight: 600; }
+  .rs-base-sub { display: block; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin-top: 2px; }
 
-  .rs-tablebar { display: flex; align-items: center; gap: .75rem; margin-bottom: .25rem; }
-  .rs-count { font-size: .8rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .7); }
+  /* THE COVERAGE SENTENCE (2026-08-11). A third line on the row saying what is actually true of
+     this base's backups. It is `in place` rather than a tooltip on purpose: the two states worth
+     reading are the ones a reader must see BEFORE choosing, and a hover cannot deliver that. */
+  .rs-base-cov { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rs-base-cov.is-last-attempt-failed { color: var(--color-warning); }
+  .rs-base-cov.is-not-backed-up { color: oklch(from var(--color-base-content) l c h / .55); }
+  .rs-base-fix { color: var(--color-primary); text-decoration: underline; text-underline-offset: 2px; }
+  /* A base no backup holds is NOT hidden and NOT merely greyed with a hover to explain it. It stays
+     on the list, states the reason and carries the way to fix it — the shape this app uses for a
+     capability that is off rather than forbidden. The row simply cannot be chosen, because there is
+     genuinely nothing to restore from. */
+  .rs-base[data-cov='not-backed-up'] { cursor: default; background: oklch(from var(--color-base-200) l c h / .35); }
+  .rs-base[data-cov='not-backed-up']:hover { background: oklch(from var(--color-base-200) l c h / .35); }
+  .rs-base[data-cov='not-backed-up'] .rs-base-name { color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* A capability that is OFF — stated in place with the way to switch it on, never a bare disabled
+     control leaning on a hover nobody on a touch screen will ever get.
+     IT IS THE CATALOG `alert`, soft + warning, like the other 20 in the app (Oleh, 2026-08-11). It
+     shipped as loose coloured text with a bare icon, which is what an alert looks like when nobody
+     reaches for the component: four lines of unbroken amber running the full width of the card, with
+     a naked link under it. An alert gives it the tinted plate, the gutter and the reading measure the
+     rest of the product already uses — and the link stops being a word on its own line by carrying
+     the sentence that says what it does. */
+  .rs-cap-off { margin-top: 8px; font-size: var(--t-12); text-align: start; }
+  .rs-cap-fix { color: inherit; text-decoration: underline; text-underline-offset: 2px; font-weight: 600; }
+  .rs-cap-fix:hover { text-decoration-thickness: 2px; }
+  .rs-target[data-cap='off'] { cursor: default; }
+  .rs-target[data-cap='off'] .rs-target-name { color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* The workspace, inside the new-base branch. */
+  .rs-wsp { display: block; margin-top: 12px; }
+  .rs-wsp-label { display: block; font-size: var(--t-12); font-weight: 600; color: oklch(from var(--color-base-content) l c h / .65); margin-bottom: 4px; }
+  .rs-wsp-manual { display: block; margin-top: 8px; }
+  .rs-wsp-help { display: block; margin-top: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .55); }
+  .rs-wsp-help code { font-size: var(--t-12); }
+
+  .rs-tablebar { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+  .rs-count { font-size: var(--t-13); font-weight: 600; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rs-nomatch { padding: 24px 4px; font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); }
   .rs-tablewrap { overflow-x: auto; }
   .rs-tablewrap :is(th, td) { white-space: nowrap; }
 
+  /* Snapshot list — the audit table, scrolled rather than paged: this list is short by
+     construction (restorable backups), and a pager here would out-weigh the page. */
+  .rs-snapwrap { overflow: auto; max-height: 320px; }
+  .rs-snapwrap :is(th, td) { white-space: nowrap; }
+  /* …EXCEPT Size. Five nowrap columns summed to 961px inside an 878px holder at 1440, which
+     put the failed row's warning 83px past the visible edge with no scroll affordance — the
+     one sentence on this page that exists to stop a restore, cut off. Size is three facts
+     joined by dots and the only cell here that can wrap without losing meaning, so it is the
+     one that gives. The warning's own 176px cap stays: per `pattern-audit-table`, explanatory
+     text in a cell never drives column width. */
+  .rs-snapwrap .rs-snap-size { white-space: normal; min-width: 9rem; }
+  /* The row-level caveat. Same construction and the same 176px ceiling as `.bl-why` on the
+     Backups log, so one sentence does not drive a column's width; `display:block` overrides
+     the `tooltip` class's inline-block, which would keep it on the badge's line. */
+  .rs-snap-why { display: block; max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  .rs-note { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rs-note .iconify { flex: none; margin-top: 1px; }
+
   /* Target (radio cards) */
   .rs-targets { display: grid; gap: .5rem; }
-  .rs-target { display: flex; align-items: flex-start; gap: .65rem; padding: .8rem .85rem; border: 1px solid var(--color-base-300); border-radius: .6rem; cursor: pointer; transition: border-color .12s ease, background .12s ease; }
-  .rs-target:has(input:checked) { border-color: oklch(from var(--color-primary) l c h / .55); background: oklch(from var(--color-primary) l c h / .05); }
-  .rs-target input[type="radio"] { margin-top: .15rem; }
-  .rs-target-name { display: block; font-size: .875rem; font-weight: 600; }
-  .rs-target-sub { display: block; font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); margin-top: .05rem; }
+  .rs-target { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--color-base-300); border-radius: .55rem; cursor: pointer; transition: border-color .12s ease, background .12s ease; }
+  .rs-target:has(input:checked) { border-color: oklch(from var(--color-primary) l c h / .55); background: oklch(from var(--color-primary) l c h / .08); }
+  .rs-target input[type="radio"] { margin-top: 2px; }
+  .rs-target-name { display: block; font-size: var(--t-14); font-weight: 600; }
+  .rs-target-sub { display: block; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin-top: 2px; }
+  /* "Default" marker on the non-destructive option — a word, not a badge: a badge here would
+     read as a status of the base rather than as a property of the choice. */
+  .rs-tag { margin-left: 8px; font-size: var(--t-11); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--color-primary); }
+  .rs-err { display: block; margin-top: 4px; font-size: var(--t-12); color: var(--color-error); }
+
+  /* The request restatement — a two-column definition list at the page's measure. */
+  .rs-alert-slot { margin-bottom: 16px; }
+  .rs-sum { display: grid; grid-template-columns: 132px 1fr; gap: 8px 16px; font-size: var(--t-13); }
+  .rs-sum dt { font-weight: 600; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rs-sum dd { color: oklch(from var(--color-base-content) l c h / .85); }
+  @media (max-width: 640px) {
+    .rs-sum { grid-template-columns: 1fr; gap: 4px 0; }
+    .rs-sum dd { margin-bottom: 8px; }
+  }
+
+  .rs-cbody { display: flex; flex-direction: column; gap: 16px; }
+  .rs-chead { font-size: var(--t-14); font-weight: 600; }
+
+  /* Running / failed panels */
+  .rs-run { margin-top: 16px; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+  .rs-run-line { font-size: var(--t-13); font-weight: 600; }
+  .rs-run-sub { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  .rs-empty { margin-top: 24px; border: 1px dashed var(--color-base-300); border-radius: .85rem; background: oklch(from var(--color-base-200) l c h / .35); padding: 48px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; }
+  .rs-empty-ic { width: 48px; height: 48px; border-radius: .8rem; display: grid; place-items: center; background: var(--color-base-100); border: 1px solid var(--color-base-300); margin-bottom: 4px; }
+  .rs-empty-ic .iconify { font-size: var(--t-20); color: oklch(from var(--color-base-content) l c h / .55); }
+  .rs-empty-title { font-size: var(--t-16); font-weight: 650; }
+  .rs-empty-sub { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); max-width: 46ch; margin-bottom: 8px; }
 
   .rs-foot { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.5rem; }
 
@@ -335,95 +797,16 @@ const kindMeta: Record<RestoreManualItem['kind'], string> = {
      the bespoke panels on this page and the run-detail summary. */
   .ro-summary { margin-top: 1rem; }
   .ro-summary .stats { border-radius: .85rem; }
-  .ro-panel { margin-top: 1rem; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem 1.25rem; }
+  .ro-panel { margin-top: 1rem; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 16px 20px 20px; }
   .ro-panel-head { margin-bottom: 1rem; }
-  .ro-panel-head h2 { font-size: .95rem; font-weight: 650; }
-  .ro-panel-head p { font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .6); margin-top: .2rem; }
+  .ro-panel-head h2 { font-size: var(--t-16); font-weight: 650; }
+  .ro-panel-head p { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); margin-top: 4px; }
   .ro-tablewrap { overflow-x: auto; }
   .ro-tablewrap :is(th) { white-space: nowrap; }
 </style>
 
 <script>
-  function wireRestore() {
-    const root = document.querySelector<HTMLElement>('[data-restore]');
-    if (!root) return;
-    // Concrete HTMLElement|Document, not ParentNode: worker-configuration.d.ts
-    // (Cloudflare HTMLRewriter) augments ParentNode, so direct root.querySelector<T>
-    // generics conflict with lib.dom here. Mirror IntegrationsSetupWizard's helper.
-    const $ = <T extends HTMLElement = HTMLElement>(s: string, r: HTMLElement | Document = root) => r.querySelector<T>(s);
-    const $$ = <T extends HTMLElement = HTMLElement>(s: string, r: HTMLElement | Document = root) => Array.from(r.querySelectorAll<T>(s));
-    const baseRadios = Array.from(root.querySelectorAll<HTMLInputElement>('[data-rs-base-radio]'));
-    const countEl = root.querySelector<HTMLElement>('[data-rs-count]');
-    const totalEl = root.querySelector<HTMLElement>('[data-rs-total]');
-    const goCountEl = root.querySelector<HTMLElement>('[data-rs-go-count]');
-    const clearBtn = root.querySelector<HTMLButtonElement>('[data-rs-clear]');
-    const goBtn = root.querySelector<HTMLButtonElement>('[data-rs-go]');
-    // Outcome state has no form — nothing to wire.
-    if (baseRadios.length === 0) return;
-
-    const activeBase = () => baseRadios.find((r) => r.checked)?.dataset.base ?? null;
-    const tablesFor = (base: string) =>
-      Array.from(root.querySelectorAll<HTMLInputElement>(`[data-rs-table][data-base="${base}"]`));
-
-    // Show only the active base's table list.
-    function showTables() {
-      const base = activeBase();
-      $$('[data-rs-tables]').forEach((w) => {
-        w.hidden = w.dataset.rsTables !== base;
-      });
-      refreshCount();
-    }
-
-    function refreshCount() {
-      const base = activeBase();
-      if (!base) return;
-      const boxes = tablesFor(base);
-      const checked = boxes.filter((b) => b.checked).length;
-      if (countEl) countEl.textContent = String(checked);
-      if (totalEl) totalEl.textContent = String(boxes.length);
-      if (goCountEl) goCountEl.textContent = String(checked);
-      if (clearBtn) clearBtn.hidden = checked === 0;
-      if (goBtn) goBtn.toggleAttribute('disabled', checked === 0);
-    }
-
-    baseRadios.forEach((r) => r.addEventListener('change', showTables));
-    root.querySelectorAll<HTMLInputElement>('[data-rs-table]').forEach((b) => b.addEventListener('change', refreshCount));
-    root.querySelector('[data-rs-all]')?.addEventListener('click', () => {
-      const base = activeBase(); if (!base) return;
-      tablesFor(base).forEach((b) => (b.checked = true));
-      refreshCount();
-    });
-    clearBtn?.addEventListener('click', () => {
-      const base = activeBase(); if (!base) return;
-      tablesFor(base).forEach((b) => (b.checked = false));
-      refreshCount();
-    });
-
-    // Restore → the outcome state (demo: navigate to the result page, carrying the
-    // chosen attachments mode so the outcome reflects it).
-    goBtn?.addEventListener('click', () => {
-      if (goBtn.hasAttribute('disabled')) return;
-      const href = goBtn.dataset.doneHref;
-      if (!href) return;
-      const att = root.querySelector<HTMLInputElement>('input[name="rs-att"]:checked')?.value ?? 'attachments';
-      location.assign(`${href}&att=${att}`);
-    });
-
-    // Target: enable the matching field, disable the other.
-    // <select>: HTMLSelectElement trips the worker-config DOM-type shadow, so type
-    // it loosely (HTMLElement) and toggle the `disabled` attribute instead of the prop.
-    const existingSel = $('[data-rs-existing]');
-    const newName = $<HTMLInputElement>('[data-rs-newname]');
-    root.querySelectorAll<HTMLInputElement>('input[name="rs-target"]').forEach((r) =>
-      r.addEventListener('change', () => {
-        const existing = root.querySelector<HTMLInputElement>('input[name="rs-target"][value="existing"]')?.checked;
-        if (existingSel) existingSel.toggleAttribute('disabled', !existing);
-        if (newName) newName.disabled = !!existing;
-      }),
-    );
-
-    showTables();
-  }
+  import { wireRestore } from '../lib/restore/controller';
   wireRestore();
   document.addEventListener('astro:after-swap', wireRestore);
 </script>

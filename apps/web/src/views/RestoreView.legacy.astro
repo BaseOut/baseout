@@ -1,0 +1,429 @@
+---
+/**
+ * RestoreView — restore one base from a backup, base-by-base, into NEW tables.
+ *
+ * Client model (Q3, 2026-06-19): restore is a rare, last-resort, best-effort need —
+ * NOT the headline (the value is the external backup + documentation + insights).
+ * Flow: pick ONE base → pick which of its tables to restore (all by default) →
+ * choose the target (an existing base, or a brand-new base). Restore ALWAYS creates
+ * NEW tables — it never inserts back into the original. Records recreate well;
+ * structure rebuild is only partial (an Airtable API limit), so it's best-effort and
+ * guides the user to finish the rest manually.
+ *
+ * Two states: the FORM (pick base → tables → target) and, when `outcome` is set, the
+ * RESULT — what was recreated and what to finish by hand. The result is the honest
+ * part: Airtable's API recreates records but cannot rebuild Formula fields, returns
+ * some fields as plain text, and drops linked-record relationships (verified against
+ * the On2Air restore docs, 2026-06-19), so the outcome lists exactly that.
+ *
+ * Primitives are catalog (breadcrumbs / alert / radio / checkbox / select / input /
+ * badge / stats / table / button); the per-base picker, the staged sections and the
+ * outcome panel are the bespoke composition (a Pattern), mirroring the backup audit
+ * tables. Harness fixture.
+ */
+interface RestoreTable {
+  id: string;
+  name: string;
+  records: number;
+  fields: number;
+}
+interface RestoreBase {
+  id: string;
+  name: string;
+  tables: RestoreTable[];
+}
+interface ExistingBase {
+  id: string;
+  name: string;
+}
+/** One thing the restore couldn't rebuild automatically (Airtable API limit). */
+interface RestoreManualItem {
+  table: string;
+  field: string;
+  kind: 'formula' | 'text' | 'link';
+  detail: string;
+}
+interface RestoreOutcome {
+  /** Source base that was restored. */
+  baseName: string;
+  /** Where it landed. */
+  targetName: string;
+  targetIsNew: boolean;
+  /** Open the restored base in Airtable. */
+  targetUrl: string;
+  tablesRestored: number;
+  recordsRestored: number;
+  /** How attachments were brought back (client Q6, 2026-06-20). */
+  attachmentsMode: 'attachments' | 'links';
+  attachmentsRestored: number;
+  /** Structure that needs a manual touch-up; empty = a clean restore. */
+  manual: RestoreManualItem[];
+}
+interface Props {
+  /** The run/backup this restore is sourced from (for the breadcrumb + context). */
+  runId?: string;
+  /** Bases captured in that backup, each with its tables. */
+  bases?: RestoreBase[];
+  /** Bases the user could restore INTO (their live Airtable bases). */
+  existingBases?: ExistingBase[];
+  /** When set, render the RESULT state instead of the form. */
+  outcome?: RestoreOutcome | null;
+}
+const { runId = 'run_2026_06_15_daily', bases = [], existingBases = [], outcome = null } = Astro.props;
+const nf = new Intl.NumberFormat('en-US');
+const backHref = `/backups/run?id=${runId}`;
+const doneHref = `/restore?run=${runId}&done=1`;
+
+// Manual-item kind → a soft, semantic tag (calm warning tone for all — they all need
+// attention; the "What to do" column carries the specifics). No outline (interface rule).
+const kindMeta: Record<RestoreManualItem['kind'], string> = {
+  formula: 'Formula',
+  text: 'Restored as text',
+  link: 'Relationship',
+};
+---
+
+<div class="mx-auto max-w-[920px]" data-restore>
+  {/* Breadcrumbs — catalog */}
+  <div class="flex items-center gap-2">
+    <a href={backHref} class="btn btn-sm btn-square btn-ghost" aria-label="Back to backup run"><span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span></a>
+    <div class="breadcrumbs text-sm py-0">
+      <ul>
+        <li><a href="/backups">Backups</a></li>
+        <li><a href={backHref}>Backup run</a></li>
+        <li>Restore</li>
+      </ul>
+    </div>
+  </div>
+
+  {!outcome && (
+    <Fragment>
+      <header class="mt-3">
+        <h1 class="text-title">Restore from this backup</h1>
+        <p class="text-sm text-base-content/60 mt-1">Bring a base back from this backup. Restore is base-by-base and always creates new tables.</p>
+      </header>
+
+      {/* Best-effort heads-up — persistent (reflects how restore actually works) */}
+      <div role="alert" class="alert alert-soft alert-warning mt-4">
+        <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
+        <span>Restore is <b>best-effort</b>. We recreate your records into <b>new tables</b> (never overwriting the original) and rebuild what structure we can — some field types and relationships may need a manual touch-up. We’ll guide you through the rest.</span>
+      </div>
+
+      {/* STEP 1 — pick a base */}
+      <section class="rs-step">
+        <div class="rs-step-head"><span class="rs-step-n">1</span><h2>Choose a base to restore</h2></div>
+        <fieldset class="rs-bases" data-rs-bases>
+          <legend class="sr-only">Base</legend>
+          {bases.map((b, i) => (
+            <label class="rs-base">
+              <input type="radio" name="rs-base" value={b.id} class="radio radio-sm radio-primary" data-rs-base-radio data-base={b.id} checked={i === 0} />
+              <span class="rs-base-ic"><span class="iconify lucide--database" aria-hidden="true"></span></span>
+              <span class="min-w-0 flex-1">
+                <span class="rs-base-name">{b.name}</span>
+                <span class="rs-base-sub">{b.tables.length} table{b.tables.length === 1 ? '' : 's'} · {nf.format(b.tables.reduce((s, t) => s + t.records, 0))} records</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      </section>
+
+      {/* STEP 2 — pick tables (per base; default all) */}
+      <section class="rs-step">
+        <div class="rs-step-head"><span class="rs-step-n">2</span><h2>Choose tables</h2><span class="rs-step-hint">All selected by default — uncheck any you don’t need.</span></div>
+        <div class="rs-tablebar">
+          <p class="rs-count"><span data-rs-count>0</span> of <span data-rs-total>0</span> tables selected</p>
+          <div class="ml-auto flex items-center gap-1">
+            <button type="button" class="btn btn-ghost btn-sm text-primary" data-rs-all>Select all</button>
+            <button type="button" class="btn btn-ghost btn-sm text-error gap-1.5" data-rs-clear hidden><span class="iconify lucide--x size-4" aria-hidden="true"></span>Clear</button>
+          </div>
+        </div>
+        {bases.map((b) => (
+          <div class="rs-tablewrap" data-rs-tables={b.id} hidden>
+            <table class="table text-sm">
+              <thead>
+                <tr class="text-xs uppercase tracking-wider text-base-content/60">
+                  <th class="w-10"></th><th>Table</th><th class="text-right">Records</th><th class="text-right">Fields</th>
+                </tr>
+              </thead>
+              <tbody>
+                {b.tables.map((t) => (
+                  <tr>
+                    <td><input type="checkbox" class="checkbox checkbox-sm" value={t.id} checked data-rs-table data-base={b.id} /></td>
+                    <td class="font-medium"><span class="inline-flex items-center gap-2"><span class="iconify lucide--table-2 text-base-content/45" aria-hidden="true"></span>{t.name}</span></td>
+                    <td class="text-right tabular-nums">{nf.format(t.records)}</td>
+                    <td class="text-right tabular-nums">{nf.format(t.fields)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
+      </section>
+
+      {/* STEP 3 — attachments (client Q6): re-upload the files, or link to them in the backup destination */}
+      <section class="rs-step">
+        <div class="rs-step-head"><span class="rs-step-n">3</span><h2>Attachments</h2><span class="rs-step-hint">How should we bring attachments back?</span></div>
+        <div class="rs-targets" data-rs-att>
+          <label class="rs-target">
+            <input type="radio" name="rs-att" value="attachments" class="radio radio-sm radio-primary" checked />
+            <span class="min-w-0 flex-1">
+              <span class="rs-target-name">Restore as attachments</span>
+              <span class="rs-target-sub">Re-upload the files back into the new Airtable tables.</span>
+            </span>
+          </label>
+          <label class="rs-target">
+            <input type="radio" name="rs-att" value="links" class="radio radio-sm radio-primary" />
+            <span class="min-w-0 flex-1">
+              <span class="rs-target-name">Restore as links</span>
+              <span class="rs-target-sub">Add links to the files kept in your backup destination — nothing is re-uploaded.</span>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      {/* STEP 4 — target */}
+      <section class="rs-step">
+        <div class="rs-step-head"><span class="rs-step-n">4</span><h2>Where should it restore?</h2></div>
+        <div class="rs-targets" data-rs-target>
+          <label class="rs-target">
+            <input type="radio" name="rs-target" value="existing" class="radio radio-sm radio-primary" checked />
+            <span class="min-w-0 flex-1">
+              <span class="rs-target-name">Into an existing base</span>
+              <span class="rs-target-sub">New tables are added to a base you already have.</span>
+              <select class="select select-sm mt-2 w-full max-w-sm" data-rs-existing aria-label="Target base">
+                {existingBases.map((e) => <option value={e.id}>{e.name}</option>)}
+              </select>
+            </span>
+          </label>
+          <label class="rs-target">
+            <input type="radio" name="rs-target" value="new" class="radio radio-sm radio-primary" />
+            <span class="min-w-0 flex-1">
+              <span class="rs-target-name">Create a new base</span>
+              <span class="rs-target-sub">A fresh base is created to hold the restored tables.</span>
+              <input type="text" class="input input-sm mt-2 w-full max-w-sm" placeholder="Restored — Sales CRM" data-rs-newname aria-label="New base name" disabled />
+            </span>
+          </label>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <div class="rs-foot">
+        <a href={backHref} class="btn btn-ghost">Cancel</a>
+        <button type="button" class="btn btn-primary" data-rs-go data-done-href={doneHref}><span class="iconify lucide--rotate-ccw size-4" aria-hidden="true"></span>Restore <span data-rs-go-count>0</span> tables</button>
+      </div>
+    </Fragment>
+  )}
+
+  {outcome && (
+    <Fragment>
+      <header class="ro-head mt-3">
+        <div class="flex items-center gap-2.5 flex-wrap">
+          <h1 class="text-title">Restore complete</h1>
+          <span class="badge badge-soft badge-success"><span class="iconify lucide--circle-check size-3.5" aria-hidden="true"></span>Done</span>
+        </div>
+        <p class="text-sm text-base-content/60 mt-1">
+          Restored <b>{outcome.baseName}</b> into <b>{outcome.targetName}</b>{outcome.targetIsNew && <span class="text-base-content/55"> (new base)</span>} — always as new tables.
+        </p>
+      </header>
+
+      {outcome.manual.length > 0 ? (
+        <div role="alert" class="alert alert-soft alert-warning mt-4">
+          <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+          <span>Your records are all in. <b>{outcome.manual.length} item{outcome.manual.length === 1 ? '' : 's'}</b> couldn’t be rebuilt automatically — Airtable’s API can’t recreate some structure. Finish them by hand below.</span>
+        </div>
+      ) : (
+        <div role="alert" class="alert alert-soft alert-success mt-4">
+          <span class="iconify lucide--circle-check size-4" aria-hidden="true"></span>
+          <span>Everything restored cleanly — no manual steps needed.</span>
+        </div>
+      )}
+
+      {/* Headline numbers — catalog Stats */}
+      <section class="ro-summary">
+        <div class="stats w-full border border-base-300 bg-base-100">
+          <div class="stat">
+            <div class="stat-title">Tables recreated</div>
+            <div class="stat-value text-2xl tabular-nums">{nf.format(outcome.tablesRestored)}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-title">Records restored</div>
+            <div class="stat-value text-2xl tabular-nums">{nf.format(outcome.recordsRestored)}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-title">Attachments</div>
+            <div class="stat-value text-2xl tabular-nums">{nf.format(outcome.attachmentsRestored)}</div>
+            <div class="stat-desc">{outcome.attachmentsMode === 'links' ? 'as links' : 'as attachments'}</div>
+          </div>
+          <div class="stat">
+            <div class="stat-title">Needs attention</div>
+            <div class={`stat-value text-2xl tabular-nums ${outcome.manual.length > 0 ? 'text-warning' : ''}`}>{outcome.manual.length}</div>
+            {outcome.manual.length > 0 && <div class="stat-desc">finish by hand</div>}
+          </div>
+        </div>
+      </section>
+
+      {/* What to finish manually — the honest part of restore */}
+      {outcome.manual.length > 0 && (
+        <section class="ro-panel">
+          <div class="ro-panel-head"><h2>Finish these by hand</h2><p>Airtable’s API can’t rebuild these. Open the restored base and adjust each one.</p></div>
+          <div class="ro-tablewrap">
+            <table class="table text-sm">
+              <thead>
+                <tr class="text-xs uppercase tracking-wider text-base-content/60">
+                  <th>Table</th><th>Field</th><th>Issue</th><th>What to do</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outcome.manual.map((m) => (
+                  <tr>
+                    <td class="font-medium"><span class="inline-flex items-center gap-2"><span class="iconify lucide--table-2 text-base-content/45" aria-hidden="true"></span>{m.table}</span></td>
+                    <td class="mono-data text-base-content/80">{m.field}</td>
+                    <td><span class="badge badge-soft badge-warning">{kindMeta[m.kind]}</span></td>
+                    <td class="text-base-content/70">{m.detail}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      <div class="rs-foot">
+        <a href="/backups" class="btn btn-ghost">Back to Backups</a>
+        <a href={outcome.targetUrl} target="_blank" rel="noreferrer" class="btn btn-primary"><span class="iconify lucide--external-link size-4" aria-hidden="true"></span>Open the restored base</a>
+      </div>
+    </Fragment>
+  )}
+</div>
+
+<style>
+  [data-restore] { display: flex; flex-direction: column; }
+
+  .rs-step { margin-top: 1.5rem; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem 1.25rem; }
+  .rs-step-head { display: flex; align-items: center; gap: .6rem; margin-bottom: .9rem; flex-wrap: wrap; }
+  .rs-step-n { width: 1.5rem; height: 1.5rem; border-radius: 999px; display: grid; place-items: center; flex: none; font-size: .8rem; font-weight: 700; background: oklch(from var(--color-primary) l c h / .14); color: var(--color-primary); }
+  .rs-step-head h2 { font-size: .95rem; font-weight: 650; }
+  .rs-step-hint { font-size: .78rem; color: oklch(from var(--color-base-content) l c h / .6); }
+
+  /* Base picker (radio cards) — same language as the wizard option rows */
+  .rs-bases { display: grid; gap: .5rem; }
+  .rs-base { display: flex; align-items: center; gap: .65rem; padding: .6rem .7rem; border: 1px solid var(--color-base-300); border-radius: .55rem; cursor: pointer; transition: border-color .12s ease, background .12s ease; }
+  .rs-base:hover { background: oklch(from var(--color-base-200) l c h / .5); }
+  .rs-base:has(input:checked) { border-color: oklch(from var(--color-primary) l c h / .55); background: oklch(from var(--color-primary) l c h / .05); }
+  .rs-base-ic { width: 2rem; height: 2rem; border-radius: .5rem; display: grid; place-items: center; background: oklch(from var(--color-base-200) l c h / .8); flex: none; }
+  .rs-base-ic .iconify { font-size: 1rem; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rs-base-name { display: block; font-size: .875rem; font-weight: 600; }
+  .rs-base-sub { display: block; font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); margin-top: .05rem; }
+
+  .rs-tablebar { display: flex; align-items: center; gap: .75rem; margin-bottom: .25rem; }
+  .rs-count { font-size: .8rem; font-weight: 600; color: oklch(from var(--color-base-content) l c h / .7); }
+  .rs-tablewrap { overflow-x: auto; }
+  .rs-tablewrap :is(th, td) { white-space: nowrap; }
+
+  /* Target (radio cards) */
+  .rs-targets { display: grid; gap: .5rem; }
+  .rs-target { display: flex; align-items: flex-start; gap: .65rem; padding: .8rem .85rem; border: 1px solid var(--color-base-300); border-radius: .6rem; cursor: pointer; transition: border-color .12s ease, background .12s ease; }
+  .rs-target:has(input:checked) { border-color: oklch(from var(--color-primary) l c h / .55); background: oklch(from var(--color-primary) l c h / .05); }
+  .rs-target input[type="radio"] { margin-top: .15rem; }
+  .rs-target-name { display: block; font-size: .875rem; font-weight: 600; }
+  .rs-target-sub { display: block; font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); margin-top: .05rem; }
+
+  .rs-foot { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1.5rem; }
+
+  /* ── Outcome (result) state ─────────────────────────────────────────────── */
+  /* daisyUI stats rounds to --radius-box (6px); lift it to .85rem to agree with
+     the bespoke panels on this page and the run-detail summary. */
+  .ro-summary { margin-top: 1rem; }
+  .ro-summary .stats { border-radius: .85rem; }
+  .ro-panel { margin-top: 1rem; border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem 1.25rem; }
+  .ro-panel-head { margin-bottom: 1rem; }
+  .ro-panel-head h2 { font-size: .95rem; font-weight: 650; }
+  .ro-panel-head p { font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .6); margin-top: .2rem; }
+  .ro-tablewrap { overflow-x: auto; }
+  .ro-tablewrap :is(th) { white-space: nowrap; }
+</style>
+
+<script>
+  function wireRestore() {
+    const root = document.querySelector<HTMLElement>('[data-restore]');
+    if (!root) return;
+    // Concrete HTMLElement|Document, not ParentNode: worker-configuration.d.ts
+    // (Cloudflare HTMLRewriter) augments ParentNode, so direct root.querySelector<T>
+    // generics conflict with lib.dom here. Mirror IntegrationsSetupWizard's helper.
+    const $ = <T extends HTMLElement = HTMLElement>(s: string, r: HTMLElement | Document = root) => r.querySelector<T>(s);
+    const $$ = <T extends HTMLElement = HTMLElement>(s: string, r: HTMLElement | Document = root) => Array.from(r.querySelectorAll<T>(s));
+    const baseRadios = Array.from(root.querySelectorAll<HTMLInputElement>('[data-rs-base-radio]'));
+    const countEl = root.querySelector<HTMLElement>('[data-rs-count]');
+    const totalEl = root.querySelector<HTMLElement>('[data-rs-total]');
+    const goCountEl = root.querySelector<HTMLElement>('[data-rs-go-count]');
+    const clearBtn = root.querySelector<HTMLButtonElement>('[data-rs-clear]');
+    const goBtn = root.querySelector<HTMLButtonElement>('[data-rs-go]');
+    // Outcome state has no form — nothing to wire.
+    if (baseRadios.length === 0) return;
+
+    const activeBase = () => baseRadios.find((r) => r.checked)?.dataset.base ?? null;
+    const tablesFor = (base: string) =>
+      Array.from(root.querySelectorAll<HTMLInputElement>(`[data-rs-table][data-base="${base}"]`));
+
+    // Show only the active base's table list.
+    function showTables() {
+      const base = activeBase();
+      $$('[data-rs-tables]').forEach((w) => {
+        w.hidden = w.dataset.rsTables !== base;
+      });
+      refreshCount();
+    }
+
+    function refreshCount() {
+      const base = activeBase();
+      if (!base) return;
+      const boxes = tablesFor(base);
+      const checked = boxes.filter((b) => b.checked).length;
+      if (countEl) countEl.textContent = String(checked);
+      if (totalEl) totalEl.textContent = String(boxes.length);
+      if (goCountEl) goCountEl.textContent = String(checked);
+      if (clearBtn) clearBtn.hidden = checked === 0;
+      if (goBtn) goBtn.toggleAttribute('disabled', checked === 0);
+    }
+
+    baseRadios.forEach((r) => r.addEventListener('change', showTables));
+    root.querySelectorAll<HTMLInputElement>('[data-rs-table]').forEach((b) => b.addEventListener('change', refreshCount));
+    root.querySelector('[data-rs-all]')?.addEventListener('click', () => {
+      const base = activeBase(); if (!base) return;
+      tablesFor(base).forEach((b) => (b.checked = true));
+      refreshCount();
+    });
+    clearBtn?.addEventListener('click', () => {
+      const base = activeBase(); if (!base) return;
+      tablesFor(base).forEach((b) => (b.checked = false));
+      refreshCount();
+    });
+
+    // Restore → the outcome state (demo: navigate to the result page, carrying the
+    // chosen attachments mode so the outcome reflects it).
+    goBtn?.addEventListener('click', () => {
+      if (goBtn.hasAttribute('disabled')) return;
+      const href = goBtn.dataset.doneHref;
+      if (!href) return;
+      const att = root.querySelector<HTMLInputElement>('input[name="rs-att"]:checked')?.value ?? 'attachments';
+      location.assign(`${href}&att=${att}`);
+    });
+
+    // Target: enable the matching field, disable the other.
+    // <select>: HTMLSelectElement trips the worker-config DOM-type shadow, so type
+    // it loosely (HTMLElement) and toggle the `disabled` attribute instead of the prop.
+    const existingSel = $('[data-rs-existing]');
+    const newName = $<HTMLInputElement>('[data-rs-newname]');
+    root.querySelectorAll<HTMLInputElement>('input[name="rs-target"]').forEach((r) =>
+      r.addEventListener('change', () => {
+        const existing = root.querySelector<HTMLInputElement>('input[name="rs-target"][value="existing"]')?.checked;
+        if (existingSel) existingSel.toggleAttribute('disabled', !existing);
+        if (newName) newName.disabled = !!existing;
+      }),
+    );
+
+    showTables();
+  }
+  wireRestore();
+  document.addEventListener('astro:after-swap', wireRestore);
+</script>

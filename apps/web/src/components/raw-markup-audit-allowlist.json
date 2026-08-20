@@ -29,8 +29,14 @@
   "src/views/LoginView.legacy.astro": [
     "Pre-convergence /login page body, kept as the rollback target for web-auth-convergence. Same auth-card composition as the prior inlined login.astro; not routed."
   ],
+  "src/views/RestoreHistoryView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier): the restore-history log uses btn/badge/input/table primitives directly, with the ui TablePager for paging and backups/LiveRefresh for the freshness stamp. The sortable audit table mirrors the Backups log \u2014 not a single Storybook component. (Status/Outcome/Date FacetFilter dropdowns are dropped pending the schema-surface FacetFilter promotion \u2014 see the view's import note.)"
+  ],
   "src/views/RestoreView.astro": [
     "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier): the restore flow uses btn/alert/badge/table/select/input/checkbox/radio/stats/breadcrumbs primitives directly. The per-base picker, staged steps, and outcome panel are a bespoke Pattern composition mirroring the backup-audit tables \u2014 not covered by a single Storybook component."
+  ],
+  "src/views/RestoreView.legacy.astro": [
+    "Rollback target for the ui-only@5572f8f RestoreView promotion (ui-sync Stage 2.5). The pre-promotion view kept verbatim; same daisyUI-direct primitives as the live RestoreView, retained only as the revert path."
   ],
   "src/views/SchemaView.astro": [
     "The Schema shell (web-schema-round3-shell): the clustered tab bar uses the daisyUI `tab` primitive inside `tabs tabs-border` cluster containers (icon-carrying buttons \u2014 the header-only ui/Tabs.astro carries no content panels, CLAUDE.md \u00a74.2), the chat launcher is a catalog Ghost Button (`btn btn-ghost`), and the shared entity modal uses `modal`/`btn`."

@@ -3,6 +3,10 @@
     "classification": "daisyui-direct-styleguide",
     "rationale": "Backup-cadence control (web-instant-webhook) composed from daisyUI radio rows (the wizard's schedule pattern) plus the Select and Button primitives; the Instant tier/dynamic-DB gating and save-error mapping live in lib/backups/frequency-picker.ts."
   },
+  "backups/LiveRefresh.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Freshness stamp + soft-primary Refresh button (ui-only@5572f8f promotion) shown in the Backups/Restore log toolbars while a run is in flight; a thin daisyUI Button composition (btn btn-sm btn-soft btn-primary) with a live 'updated Ns ago' stamp, not a standalone Storybook pattern. Styles live in global.css per catalog governance."
+  },
   "backups/RunBackupNowModal.astro": {
     "classification": "daisyui-direct-styleguide",
     "rationale": "Thin product configuration of the ConfirmModal primitive — the credits-warning confirm for an on-demand backup. Documented via the confirm-modal styleguide entry; not a standalone pattern."

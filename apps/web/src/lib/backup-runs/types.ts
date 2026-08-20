@@ -19,6 +19,8 @@
  * (with apps/web-only codes mapped inline by the route).
  */
 
+import type { RestoreRunMeta } from '../restore/request';
+
 export interface BackupRunsStartInput {
   spaceId: string;
   organizationId: string;
@@ -75,6 +77,13 @@ export interface BackupRunSummary {
   status: string;
   /** server-backup-scope: 'full' = schema + data; 'schema' = schema-only run. */
   kind: string;
+  /**
+   * Set on restore rows only (kind === 'restore') — the source run, scope, target, outcome and
+   * manual-fixup count. Rendered through `restoreRunLine` (lib/restore/request.ts); RestoreHistoryView
+   * reads it. Added by the ui-only@5572f8f restore promotion (2026-08-12); additive/optional so the
+   * backup-history consumers are untouched.
+   */
+  restore?: RestoreRunMeta | null;
   isTrial: boolean;
   triggeredBy: string;
   recordCount: number | null;

@@ -1,0 +1,56 @@
+---
+/**
+ * LiveRefresh — a manual Refresh control + an "updated Ns ago" freshness stamp.
+ *
+ * An in-progress run (and the list that shows it) is a load-time snapshot. We
+ * deliberately DON'T auto-poll — the old auto-polling history widget lagged and
+ * was removed — so the user refreshes on demand and the stamp shows how stale the
+ * view is. On refresh, a finished run flips to done/failed. (Flow:
+ * backups-running-refresh.)
+ *
+ * Reusable: the running run-detail header and the Backups list toolbar both use it.
+ * In the prototype Refresh reloads the page; the real app re-fetches the run query.
+ *
+ * PROMOTION NOTE (ui-only@5572f8f, 2026-08-12): the fork's scoped style block
+ * (`.lr`, `.lr-stamp`) moved to `styles/global.css` — the component-classification
+ * audit forbids scoped style blocks in a catalog component (daisyUI utilities / global
+ * styles only). The classes are unchanged.
+ */
+interface Props {
+  class?: string;
+}
+const { class: className = '' } = Astro.props;
+---
+
+<span class={`lr ${className}`} data-live-refresh>
+  {/* STAMP FIRST, THEN THE BUTTON (Oleh, 2026-08-11). The pair reads as one thought — *this is how
+      stale the view is, and here is how to un-stale it* — so the fact comes before the remedy.
+      SOFT-PRIMARY: the app's secondary is `btn-soft btn-primary` — a translucent primary tint with
+      primary text — so the control reads as pressable and not as muted meta text. Not solid either;
+      the page's primary is `Run backup now`. */}
+  <span class="lr-stamp">updated <span data-lr-stamp>just now</span></span>
+  <button type="button" class="btn btn-sm btn-soft btn-primary gap-1.5" data-lr-refresh aria-label="Refresh">
+    <span class="iconify lucide--refresh-cw size-3.5" aria-hidden="true"></span>Refresh
+  </button>
+</span>
+
+<script>
+  function wireLiveRefresh() {
+    document.querySelectorAll<HTMLElement>('[data-live-refresh]').forEach((el) => {
+      if (el.dataset.lrWired) return;
+      el.dataset.lrWired = '1';
+      const stamp = el.querySelector<HTMLElement>('[data-lr-stamp]');
+      const start = Date.now();
+      const tick = () => {
+        if (!stamp) return;
+        const s = Math.round((Date.now() - start) / 1000);
+        stamp.textContent = s < 5 ? 'just now' : s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`;
+      };
+      tick();
+      window.setInterval(tick, 1000);
+      el.querySelector('[data-lr-refresh]')?.addEventListener('click', () => location.reload());
+    });
+  }
+  wireLiveRefresh();
+  document.addEventListener('astro:page-load', wireLiveRefresh);
+</script>
