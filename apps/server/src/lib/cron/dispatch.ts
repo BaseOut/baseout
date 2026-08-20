@@ -24,12 +24,15 @@ export type CronJob =
   // shared-service-runs: 90-day self-prune of the service_runs log; piggybacks
   // the daily cron rather than adding a third expression (design D4/D6).
   | "service-runs-prune"
-  | "webhook-renewal";
+  | "webhook-renewal"
+  // server-reports task 4.1: weekly/monthly report schedule sweep; piggybacks
+  // the hourly cron (a report due at HH:MM fires within the hour).
+  | "report-schedule-sweep";
 
 const CRON_JOBS: Record<string, CronJob[]> = {
   [OAUTH_REFRESH_CRON]: ["oauth-refresh-sweep", "run-reconciliation"],
   [KEEPALIVE_CRON]: ["oauth-keepalive", "connection-auto-invalidate", "service-runs-prune"],
-  [WEBHOOK_RENEWAL_CRON]: ["webhook-renewal"],
+  [WEBHOOK_RENEWAL_CRON]: ["webhook-renewal", "report-schedule-sweep"],
 };
 
 export function resolveCronJobs(cron: string): CronJob[] {

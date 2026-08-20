@@ -55,6 +55,7 @@ import {
 } from "../../../../lib/runs/complete";
 import { ingestRunUsage, type UsageIngestDeps } from "../../../../lib/runs/usage-ingest";
 import { ingestSpaceDbSize, type DbSizeIngestDeps } from "../../../../lib/runs/db-size";
+import { fireEventReports } from "../../../../lib/reports/after-backup";
 import { resolveEntitlements } from "../../../../lib/entitlements/resolve";
 import {
   evaluateUsageForOrg,
@@ -493,7 +494,7 @@ function usageEnforcementDeps(db: MasterDb, env: Env): UsageEnforcementDeps {
 export async function runsCompleteHandler(
   request: Request,
   env: Env,
-  _ctx: ExecutionContext,
+  ctx: ExecutionContext,
   locals: AppLocals,
   runId: string,
 ): Promise<Response> {
@@ -645,13 +646,15 @@ export async function runsCompleteHandler(
     // the reconciliation sweep (task 3.5) is the authority that heals drift.
     if (result.kind !== "noop" && !parsed.incremental) {
       let spaceId: string | undefined;
+      let backupKind: string | undefined;
       try {
         const runRows = await db
-          .select({ spaceId: backupRuns.spaceId })
+          .select({ spaceId: backupRuns.spaceId, kind: backupRuns.kind })
           .from(backupRuns)
           .where(eq(backupRuns.id, runId))
           .limit(1);
         spaceId = runRows[0]?.spaceId;
+        backupKind = runRows[0]?.kind;
       } catch {
         // ignore — nothing to attribute against.
       }
@@ -680,6 +683,20 @@ export async function runsCompleteHandler(
             );
           } catch {
             // best-effort; the sweep re-derives exact levels.
+          }
+          // server-reports task 4.2: fire event-cadence reports for this
+          // finalized backup (data_backup after full, schema_backup after
+          // schema). Best-effort + deferred via waitUntil so a slow assembly
+          // never delays the completion response; the one-running guard
+          // debounces. A hook failure must not turn a completion into an error.
+          if (backupKind) {
+            const kindForReport = backupKind;
+            ctx.waitUntil(
+              fireEventReports(env, db, { spaceId, backupKind: kindForReport }).then(
+                () => undefined,
+                () => undefined,
+              ),
+            );
           }
         }
         // 4.2: now that this base's meters have landed, evaluate warn-90 /

@@ -905,6 +905,23 @@ export interface BackupEngineClient {
   getMediaAsset(spaceId: string, assetId: string): Promise<GetMediaAssetResult>;
   /** Raw download passthrough — streams stored object or BYOS locator JSON. */
   mediaDownload(spaceId: string, assetId: string): Promise<Response>;
+
+  // Reports (web-reports-page task 2.1) — over the server-reports engine API.
+  /** List a Space's report definitions, each with its latest run. */
+  listReportDefinitions(spaceId: string): Promise<ListReportsResult>;
+  /** One definition + its run history. */
+  getReportDefinition(spaceId: string, defId: string): Promise<GetReportResult>;
+  createReportDefinition(spaceId: string, input: ReportDefinitionInput): Promise<MutateReportResult>;
+  updateReportDefinition(spaceId: string, defId: string, patch: ReportDefinitionInput): Promise<MutateReportResult>;
+  deleteReportDefinition(spaceId: string, defId: string): Promise<DeleteReportResult>;
+  /** Run-now; optional { windowStart, windowEnd } override → ad-hoc. */
+  generateReportNow(spaceId: string, defId: string, body?: Record<string, unknown>): Promise<GenerateReportResult>;
+  /** A run's rendered document JSON + the run row. */
+  getReportRun(spaceId: string, runId: string): Promise<GetReportRunResult>;
+  /** Raw artifact passthrough (pdf|html) — caller streams the Response. */
+  getReportArtifact(spaceId: string, runId: string, format: "pdf" | "html"): Promise<Response>;
+  /** Re-send failed deliveries for a run. */
+  resendReportDelivery(spaceId: string, runId: string): Promise<ResendReportResult>;
 }
 
 const KNOWN_SCHEMA_DOCS_ERROR_CODES: ReadonlySet<SchemaDocsError["code"]> = new Set([
@@ -967,6 +984,165 @@ async function schemaDocsRequest(
       ? (rawCode as SchemaDocsError["code"])
       : "engine_error";
   const out: SchemaDocsError = { ok: false, code, status: res.status };
+  if (typeof parsed.message === "string") out.message = parsed.message;
+  return out;
+}
+
+// --- Reports (web-reports-page task 2.1) ---------------------------------
+
+/** Schedule recipient — matches lib/reports/types.ts `Recipient`. */
+export interface ReportRecipient {
+  kind: "member" | "external";
+  email: string;
+  name?: string;
+}
+
+/** A report definition as returned by the engine (wire shape). */
+export interface ReportDefinitionView {
+  id: string;
+  spaceId: string;
+  name: string;
+  sections: string[];
+  baseScope: string[] | null;
+  windowKind: string;
+  windowDays: number | null;
+  isDefault: boolean;
+  scheduleCadence: string | null;
+  scheduleDay: number | null;
+  scheduleTime: string | null;
+  scheduleFormats: string[];
+  scheduleRecipients: ReportRecipient[];
+  scheduleSuppressEmpty: boolean;
+  scheduleEnabled: boolean;
+  nextRunAt: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  modifiedAt: string;
+}
+
+/** A report run row (history). */
+export interface ReportRunView {
+  id: string;
+  spaceId: string;
+  reportDefinitionId: string;
+  windowStart: string;
+  windowEnd: string;
+  adHoc: boolean;
+  triggerKind: string;
+  triggerBy: string | null;
+  generationState: string;
+  status: string | null;
+  backupsOk: number;
+  backupsFailed: number;
+  documentLocation: string | null;
+  artifactPdfLocation: string | null;
+  artifactHtmlLocation: string | null;
+  error: string | null;
+  createdAt: string;
+  generatedAt: string | null;
+}
+
+export interface ReportDefinitionWithLatestRun {
+  definition: ReportDefinitionView;
+  latestRun: ReportRunView | null;
+}
+
+/** Writable fields for create/update (the engine validates server-side). */
+export interface ReportDefinitionInput {
+  name: string;
+  sections: string[];
+  baseScope?: string[] | null;
+  windowKind: string;
+  windowDays?: number | null;
+  scheduleCadence?: string | null;
+  scheduleDay?: number | null;
+  scheduleTime?: string | null;
+  scheduleFormats?: string[];
+  scheduleRecipients?: ReportRecipient[];
+  scheduleSuppressEmpty?: boolean;
+  scheduleEnabled?: boolean;
+}
+
+export interface ReportsError {
+  ok: false;
+  code:
+    | "unauthorized"
+    | "invalid_request"
+    | "not_found"
+    | "already_running"
+    | "default_report_protected"
+    | "limit_reached"
+    | "capability_required"
+    | "storage_unavailable"
+    | "engine_unreachable"
+    | "engine_error";
+  status: number;
+  message?: string;
+}
+
+export type ListReportsResult =
+  | { ok: true; definitions: ReportDefinitionWithLatestRun[] }
+  | ReportsError;
+export type GetReportResult =
+  | { ok: true; definition: ReportDefinitionView; runs: ReportRunView[] }
+  | ReportsError;
+export type MutateReportResult =
+  | { ok: true; definition: ReportDefinitionView }
+  | ReportsError;
+export type DeleteReportResult = { ok: true } | ReportsError;
+export type GenerateReportResult = { ok: true; runId: string } | ReportsError;
+export type GetReportRunResult =
+  | { ok: true; run: ReportRunView; document: Record<string, unknown> | null }
+  | ReportsError;
+export type ResendReportResult =
+  | { ok: true; resent: number; failed: number }
+  | ReportsError;
+
+const KNOWN_REPORTS_ERROR_CODES: ReadonlySet<ReportsError["code"]> = new Set([
+  "unauthorized",
+  "invalid_request",
+  "not_found",
+  "already_running",
+  "default_report_protected",
+  "limit_reached",
+  "capability_required",
+  "storage_unavailable",
+]);
+
+/** Shared fetch + JSON + error-mapping for the Reports broker routes. */
+async function reportsRequest(
+  options: BackupEngineOptions,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<{ ok: true; body: Record<string, unknown> } | ReportsError> {
+  let res: Response;
+  try {
+    res = await options.binding.fetch(`https://engine${path}`, {
+      method,
+      headers: {
+        "x-internal-token": options.internalToken,
+        accept: "application/json",
+        ...(body !== undefined ? { "content-type": "application/json" } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch {
+    return { ok: false, code: "engine_unreachable", status: 0 };
+  }
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = (await res.json()) as Record<string, unknown>;
+  } catch {
+    // non-JSON body (rare)
+  }
+  if (res.ok) return { ok: true, body: parsed };
+  const rawCode = typeof parsed.error === "string" ? parsed.error : undefined;
+  const code: ReportsError["code"] =
+    rawCode && KNOWN_REPORTS_ERROR_CODES.has(rawCode as ReportsError["code"])
+      ? (rawCode as ReportsError["code"])
+      : "engine_error";
+  const out: ReportsError = { ok: false, code, status: res.status };
   if (typeof parsed.message === "string") out.message = parsed.message;
   return out;
 }
@@ -1835,6 +2011,86 @@ export function createBackupEngine(
         method: "GET",
         headers: { "x-internal-token": options.internalToken },
       });
+    },
+
+    // Reports (web-reports-page task 2.1).
+    async listReportDefinitions(spaceId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/reports`;
+      const res = await reportsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        definitions: (res.body.definitions ?? []) as ReportDefinitionWithLatestRun[],
+      };
+    },
+
+    async getReportDefinition(spaceId, defId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/reports/${encodeURIComponent(defId)}`;
+      const res = await reportsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        definition: res.body.definition as ReportDefinitionView,
+        runs: (res.body.runs ?? []) as ReportRunView[],
+      };
+    },
+
+    async createReportDefinition(spaceId, input) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/reports`;
+      const res = await reportsRequest(options, "POST", path, input);
+      if (!res.ok) return res;
+      return { ok: true, definition: res.body.definition as ReportDefinitionView };
+    },
+
+    async updateReportDefinition(spaceId, defId, patch) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/reports/${encodeURIComponent(defId)}`;
+      const res = await reportsRequest(options, "PATCH", path, patch);
+      if (!res.ok) return res;
+      return { ok: true, definition: res.body.definition as ReportDefinitionView };
+    },
+
+    async deleteReportDefinition(spaceId, defId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/reports/${encodeURIComponent(defId)}`;
+      const res = await reportsRequest(options, "DELETE", path);
+      if (!res.ok) return res;
+      return { ok: true };
+    },
+
+    async generateReportNow(spaceId, defId, body) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/reports/${encodeURIComponent(defId)}/generate`;
+      const res = await reportsRequest(options, "POST", path, body ?? {});
+      if (!res.ok) return res;
+      return { ok: true, runId: res.body.runId as string };
+    },
+
+    async getReportRun(spaceId, runId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/reports/runs/${encodeURIComponent(runId)}`;
+      const res = await reportsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        run: res.body.run as ReportRunView,
+        document: (res.body.document ?? null) as Record<string, unknown> | null,
+      };
+    },
+
+    async getReportArtifact(spaceId, runId, format) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/reports/runs/${encodeURIComponent(runId)}/artifact?format=${format}`;
+      return options.binding.fetch(`https://engine${path}`, {
+        method: "GET",
+        headers: { "x-internal-token": options.internalToken },
+      });
+    },
+
+    async resendReportDelivery(spaceId, runId) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/reports/runs/${encodeURIComponent(runId)}/resend`;
+      const res = await reportsRequest(options, "POST", path, {});
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        resent: Number(res.body.resent ?? 0),
+        failed: Number(res.body.failed ?? 0),
+      };
     },
   };
 }

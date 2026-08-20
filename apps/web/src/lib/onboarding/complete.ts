@@ -9,6 +9,7 @@ import {
 } from '../../db/schema'
 import { and, eq, sql } from 'drizzle-orm'
 import { uniqueSlug } from '../slug'
+import { insertDefaultReport } from '../reports/default-report'
 
 export const REFERRAL_SOURCES = [
   'google',
@@ -279,7 +280,12 @@ export async function provisionOnboarding(
         status: 'setup_incomplete',
         onboardingStep: 1,
       })
-      .returning({ id: spaces.id })
+      .returning({ id: spaces.id, name: spaces.name })
+
+    await insertDefaultReport(tx, {
+      spaceId: space.id,
+      spaceName: space.name,
+    })
 
     await tx
       .insert(userPreferences)

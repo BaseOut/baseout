@@ -88,6 +88,14 @@ import {
 } from "./pages/api/internal/attachments/lookup";
 import { connectionsTokenHealthHandler } from "./pages/api/internal/connections/token-health";
 import { orgsAiCredentialHandler } from "./pages/api/internal/orgs/ai-credential";
+// Reports (server-reports task 3).
+import { spacesReportsHandler } from "./pages/api/internal/spaces/reports";
+import { spacesReportHandler } from "./pages/api/internal/spaces/report";
+import { spacesReportGenerateHandler } from "./pages/api/internal/spaces/report-generate";
+import { spacesReportRunHandler } from "./pages/api/internal/spaces/report-run";
+import { spacesReportRunArtifactHandler } from "./pages/api/internal/spaces/report-run-artifact";
+import { spacesReportRunResendHandler } from "./pages/api/internal/spaces/report-run-resend";
+import { reportsRunRenderedHandler } from "./pages/api/internal/reports/run-rendered";
 import { resolveCronJobs } from "./lib/cron/dispatch";
 import { withServiceRun, numericCounts, pruneServiceRuns } from "./lib/service-runs";
 import {
@@ -97,6 +105,7 @@ import {
 } from "./lib/cron/oauth-refresh-deps";
 import { runScheduledRunReconciliation } from "./lib/runs/reconcile-deps";
 import { runScheduledWebhookRenewal } from "./lib/cron/webhook-renewal-deps";
+import { runScheduledReportSweep } from "./lib/reports/sweep";
 
 const CONNECTIONS_WHOAMI_RE =
   /^\/api\/internal\/connections\/([^/]+)\/whoami$/;
@@ -232,6 +241,21 @@ const SPACES_NOTIFICATIONS_TRIAGE_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/notifications\/triage$/;
 const SPACES_NOTIFICATIONS_MUTE_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/notifications\/mute$/;
+// Reports (server-reports task 3). Order at dispatch: generate + runs/* before
+// the single-definition catch (all anchored, so specificity is belt-and-braces).
+const SPACES_REPORTS_RE = /^\/api\/internal\/spaces\/([^/]+)\/reports$/;
+const SPACES_REPORT_GENERATE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/reports\/([^/]+)\/generate$/;
+const SPACES_REPORT_RUN_ARTIFACT_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/reports\/runs\/([^/]+)\/artifact$/;
+const SPACES_REPORT_RUN_RESEND_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/reports\/runs\/([^/]+)\/resend$/;
+const SPACES_REPORT_RUN_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/reports\/runs\/([^/]+)$/;
+const SPACES_REPORT_SINGLE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/reports\/([^/]+)$/;
+const REPORTS_RUN_RENDERED_RE =
+  /^\/api\/internal\/reports\/runs\/([^/]+)\/rendered$/;
 // AI credential endpoint (shared-ai-byok task 3.3): the workflows Node runner
 // fetches the org's routing decision + (for byok) the decrypted key at run start.
 const ORGS_AI_CREDENTIAL_RE =
@@ -747,6 +771,46 @@ export default {
         return await spacesNotificationsHandler(request, env, ctx, locals, notifications[1]!);
       }
 
+      // Reports (server-reports task 3). Specific → general.
+      const reportGenerate = SPACES_REPORT_GENERATE_RE.exec(url.pathname);
+      if (reportGenerate) {
+        return await spacesReportGenerateHandler(
+          request, env, ctx, locals, reportGenerate[1]!, reportGenerate[2]!,
+        );
+      }
+      const reportRunArtifact = SPACES_REPORT_RUN_ARTIFACT_RE.exec(url.pathname);
+      if (reportRunArtifact) {
+        return await spacesReportRunArtifactHandler(
+          request, env, ctx, locals, reportRunArtifact[1]!, reportRunArtifact[2]!,
+        );
+      }
+      const reportRunResend = SPACES_REPORT_RUN_RESEND_RE.exec(url.pathname);
+      if (reportRunResend) {
+        return await spacesReportRunResendHandler(
+          request, env, ctx, locals, reportRunResend[1]!, reportRunResend[2]!,
+        );
+      }
+      const reportRun = SPACES_REPORT_RUN_RE.exec(url.pathname);
+      if (reportRun) {
+        return await spacesReportRunHandler(
+          request, env, ctx, locals, reportRun[1]!, reportRun[2]!,
+        );
+      }
+      const reportsCollection = SPACES_REPORTS_RE.exec(url.pathname);
+      if (reportsCollection) {
+        return await spacesReportsHandler(request, env, ctx, locals, reportsCollection[1]!);
+      }
+      const reportSingle = SPACES_REPORT_SINGLE_RE.exec(url.pathname);
+      if (reportSingle) {
+        return await spacesReportHandler(
+          request, env, ctx, locals, reportSingle[1]!, reportSingle[2]!,
+        );
+      }
+      const reportRendered = REPORTS_RUN_RENDERED_RE.exec(url.pathname);
+      if (reportRendered) {
+        return await reportsRunRenderedHandler(request, env, ctx, locals, reportRendered[1]!);
+      }
+
       // Incremental-run callbacks (server-instant-webhook Phase D): the
       // incremental-backup task advances its subscription's payload cursor
       // (monotonic) and signals payload-stream gaps (fallback → full re-read).
@@ -862,6 +926,8 @@ export default {
           await withServiceRun(db, "service_runs_prune", () => pruneServiceRuns(db));
         } else if (job === "webhook-renewal") {
           await withServiceRun(db, "webhook_renewal", async () => ({ counts: numericCounts(await runScheduledWebhookRenewal(env)) }));
+        } else if (job === "report-schedule-sweep") {
+          await withServiceRun(db, "report_schedule_sweep", () => runScheduledReportSweep(env, db));
         }
       }
     } finally {

@@ -1246,3 +1246,162 @@ export const airtableWebhookSubscriptions = baseout.table('airtable_webhook_subs
   unique('airtable_webhook_subscriptions_webhook_space_unique').on(table.webhookId, table.spaceId),
   index('airtable_webhook_subscriptions_space_idx').on(table.spaceId),
 ])
+
+// ---------------------------------------------------------------------------
+// Reports (openspec/changes/web-reports-page + server-reports)
+//
+// A report is a named DEFINITION (which sections, which bases, what window)
+// with exactly one embedded delivery SCHEDULE (1:1, or none for manual-only)
+// plus a RUN history; a run's rendered document is a versioned ReportDetail
+// JSON artifact. The engine (apps/server) MIRRORS these three tables and flips
+// run state / writes delivery rows — apps/web is the canonical writer per
+// CLAUDE.md §2. Data model: openspec/changes/server-reports/design.md.
+// ---------------------------------------------------------------------------
+
+/** A schedule recipient, stored in `report_definitions.schedule_recipients`. */
+export interface ReportRecipient {
+  kind: 'member' | 'external'
+  email: string
+  name?: string
+}
+
+export const reportDefinitions = baseout.table('report_definitions', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  // Which sections this report renders: subset of
+  // backups | connections | schema | docs | trends | dataHealth.
+  sections: jsonb('sections').$type<string[]>().notNull(),
+  // Array of Base ids; NULL = all bases in the Space.
+  baseScope: jsonb('base_scope').$type<string[]>(),
+  windowKind: text('window_kind').notNull().default('since_last'),
+  windowDays: integer('window_days'),
+  isDefault: boolean('is_default').notNull().default(false),
+  // NULL schedule_cadence = manual-only report.
+  scheduleCadence: text('schedule_cadence'),
+  scheduleDay: integer('schedule_day'),
+  scheduleTime: text('schedule_time'),
+  scheduleFormats: jsonb('schedule_formats')
+    .$type<string[]>()
+    .notNull()
+    .default(sql`'["pdf"]'::jsonb`),
+  scheduleRecipients: jsonb('schedule_recipients')
+    .$type<ReportRecipient[]>()
+    .notNull()
+    .default(sql`'[]'::jsonb`),
+  scheduleSuppressEmpty: boolean('schedule_suppress_empty').notNull().default(true),
+  scheduleEnabled: boolean('schedule_enabled').notNull().default(true),
+  // Computed on save for weekly/monthly; NULL for event cadences and manual.
+  nextRunAt: timestamp('next_run_at', { withTimezone: true }),
+  createdBy: text('created_by').references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  modifiedAt: timestamp('modified_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('report_definitions_space_id_idx').on(table.spaceId),
+  // One default report per Space.
+  uniqueIndex('report_definitions_default_uq')
+    .on(table.spaceId)
+    .where(sql`${table.isDefault}`),
+  // Scheduler scan for due weekly/monthly reports.
+  index('report_definitions_next_run_idx')
+    .on(table.nextRunAt)
+    .where(sql`${table.scheduleEnabled} AND ${table.nextRunAt} IS NOT NULL`),
+  check(
+    'report_definitions_window_kind_check',
+    sql`${table.windowKind} IN ('since_last', 'rolling', 'all_time')`,
+  ),
+  // window_days present iff window is rolling.
+  check(
+    'report_definitions_window_days_check',
+    sql`(${table.windowKind} = 'rolling') = (${table.windowDays} IS NOT NULL)`,
+  ),
+  check(
+    'report_definitions_schedule_cadence_check',
+    sql`${table.scheduleCadence} IS NULL OR ${table.scheduleCadence} IN ('data_backup', 'schema_backup', 'weekly', 'monthly')`,
+  ),
+])
+
+export const reportRuns = baseout.table('report_runs', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  spaceId: text('space_id')
+    .notNull()
+    .references(() => spaces.id, { onDelete: 'cascade' }),
+  reportDefinitionId: text('report_definition_id')
+    .notNull()
+    .references(() => reportDefinitions.id, { onDelete: 'cascade' }),
+  // Half-open window [window_start, window_end).
+  windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+  windowEnd: timestamp('window_end', { withTimezone: true }).notNull(),
+  // Manual window override; does not advance the since_last chain.
+  adHoc: boolean('ad_hoc').notNull().default(false),
+  triggerKind: text('trigger_kind').notNull(), // scheduled | manual
+  // Snapshot of member name / schedule name at generation time.
+  triggerBy: text('trigger_by'),
+  generationState: text('generation_state').notNull().default('running'), // running | generated | failed
+  status: text('status'), // healthy | issues | failed (NULL until generated)
+  backupsOk: integer('backups_ok').notNull().default(0),
+  backupsFailed: integer('backups_failed').notNull().default(0),
+  documentLocation: text('document_location'),
+  artifactPdfLocation: text('artifact_pdf_location'),
+  artifactHtmlLocation: text('artifact_html_location'),
+  error: text('error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  generatedAt: timestamp('generated_at', { withTimezone: true }),
+}, (table) => [
+  // History newest-first.
+  index('report_runs_definition_window_idx').on(
+    table.reportDefinitionId,
+    table.windowEnd.desc(),
+  ),
+  // One in-flight generation per definition (mirrors backup-run guard).
+  uniqueIndex('report_runs_one_running_uq')
+    .on(table.reportDefinitionId)
+    .where(sql`${table.generationState} = 'running'`),
+  index('report_runs_space_id_idx').on(table.spaceId),
+  check(
+    'report_runs_trigger_kind_check',
+    sql`${table.triggerKind} IN ('scheduled', 'manual')`,
+  ),
+  check(
+    'report_runs_generation_state_check',
+    sql`${table.generationState} IN ('running', 'generated', 'failed')`,
+  ),
+  check(
+    'report_runs_status_check',
+    sql`${table.status} IS NULL OR ${table.status} IN ('healthy', 'issues', 'failed')`,
+  ),
+])
+
+export const reportDeliveries = baseout.table('report_deliveries', {
+  id: text('id').primaryKey().default(sql`gen_random_uuid()`),
+  reportRunId: text('report_run_id')
+    .notNull()
+    .references(() => reportRuns.id, { onDelete: 'cascade' }),
+  recipientEmail: text('recipient_email').notNull(),
+  recipientKind: text('recipient_kind').notNull(), // member | external
+  format: text('format').notNull(), // pdf | html
+  status: text('status').notNull().default('pending'), // pending | sent | failed
+  error: text('error'),
+  sentAt: timestamp('sent_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('report_deliveries_run_id_idx').on(table.reportRunId),
+  check(
+    'report_deliveries_recipient_kind_check',
+    sql`${table.recipientKind} IN ('member', 'external')`,
+  ),
+  check(
+    'report_deliveries_format_check',
+    sql`${table.format} IN ('pdf', 'html')`,
+  ),
+  check(
+    'report_deliveries_status_check',
+    sql`${table.status} IN ('pending', 'sent', 'failed')`,
+  ),
+])
+
+export type ReportDefinitionRow = typeof reportDefinitions.$inferSelect
+export type ReportRunRow = typeof reportRuns.$inferSelect
+export type ReportDeliveryRow = typeof reportDeliveries.$inferSelect

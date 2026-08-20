@@ -1,6 +1,7 @@
 import type { AppDb } from '../db'
 import { spaces, userPreferences } from '../db/schema'
 import { and, eq, sql } from 'drizzle-orm'
+import { insertDefaultReport } from './reports/default-report'
 
 /**
  * Promote a Space from 'setup_incomplete' to 'active'. Idempotent: the WHERE
@@ -106,6 +107,11 @@ export async function createSpaceForOrg(
         onboardingStep: 1,
       })
       .returning({ id: spaces.id, name: spaces.name })
+
+    await insertDefaultReport(tx, {
+      spaceId: created.id,
+      spaceName: created.name,
+    })
 
     await tx
       .insert(userPreferences)

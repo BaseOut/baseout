@@ -106,6 +106,18 @@ export interface Env {
    * §2.4). Optional: absent binding degrades the download route to 503.
    */
   BACKUPS_R2?: R2Bucket;
+  /**
+   * Transactional email binding (server-reports task 5) — the SAME Cloudflare
+   * Email Service rail apps/web uses for magic links, NOT the marketing stack.
+   * Used ONLY to deliver scheduled/generated reports to recipients. Optional so
+   * environments without the binding degrade delivery to "not sent" rather than
+   * crash. Verified sender domain per PRD §20/§30.
+   */
+  EMAIL?: SendEmail;
+  /** From address for report emails, e.g. "Baseout Reports <reports@mail.baseout.com>". */
+  EMAIL_FROM?: string;
+  /** Base URL of apps/web, for report download + schedule-manage links in emails. */
+  PUBLIC_APP_URL?: string;
   /** Kill switch for post-sync AI description generation. Unset/anything-but-"false" = on. */
   AI_DESCRIPTIONS_ENABLED?: string;
   /** Workers AI model id override for descriptions. */
