@@ -1,0 +1,708 @@
+---
+/**
+ * PanelHost — the ONE stacking drawer host for a page that shows more than one KIND of sheet.
+ *
+ * Oleh's law, 2026-08-03: **no overlapping panels anywhere · one stack, up to 10 panels · an
+ * entity's drawer looks and behaves IDENTICALLY from every section.** The Data page used to mount
+ * FOUR independent stacks — RecordPanel, MediaPanel, DataChangelog and EntityPanel — each with its
+ * own `position: fixed; inset: 0` root at z-index 60/62/60/62, its own rail, its own ＋ and its own
+ * toast. They sat on top of one another, which is the defect the founder reported.
+ *
+ * This is NOT a new host. It is the generalisation of the one that already existed: `MediaPanel`
+ * was already a three-kind host with a discriminated panel union, a prefix-keyed `panelKey`, a
+ * prefix `canOpen` and a `buildPanel(id)` that dispatched on the id prefix. This file is that
+ * dispatch, lifted out so four components can share it, plus the control column `/schema` already
+ * had. The kinds themselves live with the components that own their `<template>` and their body —
+ * see `components/ui/panelHostRegistry.ts` for the contract.
+ *
+ * What the host owns: the single root · `panelsEl` · the control column (＋ · Collapse all ·
+ * Close all · count · shutter · whole-background drag) · the one toast · the one `createPanelStack`
+ * · Escape · `app:tabchange` · resize · and the three stack verbs in every panel header
+ * (`data-ps-close` / `data-ps-detach` / `data-ps-park`), which are stack-level, not content-level.
+ *
+ * WHERE THE KEYBOARD CONTRACT LIVES: not here. Grepping this file for `.focus(` returns nothing and
+ * always will — that is the design, not the gap the audit read it as (D45 item 1, 2026-08-14). Focus
+ * entering a sheet on open, Tab/Shift+Tab cycling INSIDE it, and the keyboard going back to whatever
+ * opened it on close are stack mechanics, identical for all four kinds, so they live once in
+ * `panelStack.ts` (`focusPanel` / `restoreFocus` / the capture-phase Tab handler, and the `opener`
+ * field on `StackPanel`). It is CONTAINMENT, never a trap: this host is non-modal by ruling — no
+ * scrim, `.ph-wrap` is `pointer-events: none`, the page behind stays clickable — so clicking the
+ * page is a real exit and Escape is the other. A kind that re-renders its own body wholesale has to
+ * hand the keyboard back to its sheet afterwards, because that swap destroys the node focus is on;
+ * `schema/entityPanelController.ts` and `data/RecordPanel.astro` each do so at their one swap.
+ *
+ * What a kind owns: its template, its body, its data snapshot, its own in-body reads, and its ＋
+ * picker (they are genuinely different questions — "which record", "which file in the FILTERED
+ * set", "which backup to compare").
+ *
+ * TABLEGAP is 64 on `/data` and 150 on `/schema`. That is deliberate and must not be "unified": the
+ * number is the width a page reserves to the LEFT of the drawer, and the Data listings need less
+ * peek than a schema tree does — Browse's left gutter (indent, chevrons, kind glyphs) is what says
+ * where you are, so it has to stay visible behind the stack. It is a PROP, not a constant, for
+ * exactly that reason.
+ *
+ * MINCONTENT is TABLEGAP's split-mode counterpart and became a prop for the same reason on
+ * 2026-08-06 — it was a bare 700 in this file while the host was mounting on five routes. It is the
+ * width the page CONTENT keeps once the panels take width for real, so it is a claim about a
+ * particular page and every number below was measured on that page, not copied:
+ *
+ *   data     700  Oleh's, 2026-08-05, measured on the Browse listing. Unchanged.
+ *   schema   800  A Browse row spends 480px before a single character of the entity name (twist 20 +
+ *                 kind glyph 20 + Type 152 + Status 144 + Tagged 128 + chevron 16 — all fixed), and
+ *                 the tree indents up to 136px more. Measured: the deepest row's name stops
+ *                 truncating at 772 and disappears entirely at 687, and the tree starts scrolling
+ *                 sideways below 674. 800 leaves the deepest field its full name. Data's 700 would
+ *                 leave it 84px — the left gutter that carries the orientation would have eaten the
+ *                 thing it orients you to.
+ *   reports  720  Measured on a report definition: the rendered document (`.rptk-body-inner`) starts
+ *                 overflowing its own column below 702, and its tables begin painting PAST the
+ *                 content edge — i.e. underneath the panels — below 678. 720 clears both. Note it is
+ *                 NOT 700: Data's number happens to land 18px under this page's own floor, which is
+ *                 exactly the drift a copied constant produces.
+ *
+ * `section` is the other per-page fact: the arrangement is cached under `panels:<section>` so that
+ * leaving Schema and coming back restores Schema's panels and not Data's. A tab switch inside a
+ * section costs nothing (see the `app:tabchange` note below); the SECTION boundary is the one that
+ * saves and restores.
+ */
+interface Props {
+  /** Which section's arrangement this host caches — `panels:<section>` in sessionStorage. */
+  section?: string;
+  /** Overlay-mode peek reserved to the LEFT of the stack, control column included. */
+  tablegap?: number;
+  /** SPLIT-mode floor: the width this page's CONTENT keeps, always. See the header for each number. */
+  mincontent?: number;
+}
+const { section = 'data', tablegap = 64, mincontent = 700 } = Astro.props;
+---
+
+{/* The three per-page numbers travel as data attributes: a component `<script>` is a separate bundle
+    and cannot read `Astro.props`. Read once, in `wirePanelHost`. */}
+<div class="ph-wrap" data-panelhost data-ph-section={section} data-ph-tablegap={String(tablegap)} data-ph-mincontent={String(mincontent)} hidden>
+  {/* Non-modal, exactly as all four predecessors were: no scrim, the page stays clickable behind. */}
+  <div class="ph-panels" data-ph-panels>
+    {/* The stack CONTROL COLUMN (pattern-multi-panel-drawer) — the same column `/schema` has, wearing
+        the same shared `ps-rail*` classes (styles/global.css). Stack-level verbs only; panel-level
+        actions stay in each panel's header. Its whole background is the stack-resize surface; the
+        shutter pill inside it is the visible affordance and the keyboard (←/→) route. ＋ is always
+        visible; the two bulk verbs are revealed on hover AND :focus-within, at reserved size. */}
+    <div class="ph-rail ps-rail" data-ph-rail hidden>
+      <div class="ps-rail-top">
+        <button type="button" class="btn btn-sm btn-primary btn-circle ps-rail-add tooltip tooltip-left" data-ph-add aria-label="Open another panel beside" data-tip="Open another panel beside">
+          <span class="iconify lucide--plus size-4" aria-hidden="true"></span>
+        </button>
+        {/* A hairline between the ＋ and the verbs below it. They are different KINDS of action —
+            ＋ adds a panel, the rest act on the panels already there — and at 40px wide with no gap
+            the two groups read as one column of four equal buttons. Oleh, 2026-08-06: the ＋ and the
+            split toggle sit close enough that he expected to mis-click. Cheaper than moving anything. */}
+        <span class="ps-rail-div" data-ph-split-div aria-hidden="true"></span>
+        {/* The split-view mode toggle (components/ui/splitView.ts). A MODE, not a verb — so it is
+            always visible (like ＋, unlike the two hover-revealed bulk verbs) and shows its state at
+            rest through `aria-pressed`, which is both the a11y fact and the styling hook.
+            The `data-tip` here is only the pre-hydration placeholder; `paintSplit()` owns it, and
+            what it says is the state the press moves you TO, never the one you are already in — a
+            tooltip that describes the status quo on a control whose whole job is to leave it made
+            you read the button backwards. `aria-pressed` is where the current state lives. */}
+        <button type="button" class="btn btn-sm btn-ghost btn-square ph-rail-mode tooltip tooltip-left" data-ph-split aria-pressed="false" aria-label="Turn on split view" data-tip="Turn on split view — panels sit beside the page">
+          <span class="iconify lucide--columns-2 size-4" aria-hidden="true"></span>
+        </button>
+        {/* Revealed at 3+ panels: a bulk verb that acts on one or two panels is a slower way to press
+            the control already in that panel's own header. `hidden` is driven from onLayout. */}
+        <button type="button" class="btn btn-sm btn-ghost btn-square ps-rail-bulk tooltip tooltip-left" data-ph-collapse-all aria-label="Collapse all panels" data-tip="Collapse all panels to strips">
+          <span class="iconify lucide--chevrons-right-left size-4" data-ph-fold-ic aria-hidden="true"></span>
+        </button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square ps-rail-bulk ps-rail-closeall tooltip tooltip-left" data-ph-close-all aria-label="Close all panels" data-tip="Close all panels">
+          <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+        </button>
+      </div>
+      <button type="button" class="ps-shutter tooltip tooltip-left" data-ph-shutter aria-label="Drag to resize all panels" data-tip="Drag to resize all panels equally">
+        <span class="ps-shutter-pill" aria-hidden="true"></span>
+      </button>
+      {/* The count sits at the FOOT of the column, not under the buttons: it is a readout, not a
+          verb, and pinning it to the bottom balances the control cluster at the top so the drag
+          surface between them reads as the column's own body. */}
+      <span class="ps-rail-count" data-ph-count aria-hidden="true" hidden></span>
+    </div>
+  </div>
+</div>
+{/* OUTSIDE `.ph-wrap`, not merely outside the panels row. `layout()` sets the wrap `hidden` the
+    moment the stack empties — which is exactly when "Closed 3 panels · Undo" needs to be on screen,
+    so a toast inside it was rendered 0x0 and the undo was unreachable. EntityPanel had already
+    learned this and says so in a comment above its own toast; the merge put this one back inside.
+    Sibling of the wrap, so nothing can hide it by hiding the drawer. */}
+{/* The ONE ＋ picker (components/ui/panelAddPicker.ts). It used to be three near-identical popovers,
+    one per kind, and the ＋ opened whichever belonged to the focused panel — so you could only add
+    what you were already looking at. It opens scoped to that panel's kind (the sensible default);
+    removing the chip searches every kind, grouped by kind. Sibling of the wrap for the same reason
+    the toast is: `layout()` hides the wrap the moment the stack empties. */}
+<div class="pk-pop" data-ph-addpop data-ph-pop hidden>
+  <div class="pk-pop-head"><span data-ph-addhead>Open another panel beside</span></div>
+  <label class="input input-sm pk-pop-search">
+    <span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span>
+    <input type="search" data-ph-addsearch placeholder="Search…" aria-label="Search what you can open" autocomplete="off" />
+  </label>
+  <div class="pk-pop-list" data-ph-addlist></div>
+</div>
+
+<div class="ph-undo" data-ph-undo hidden role="status">
+  <span class="iconify ph-undo-ic size-4" data-ph-undo-ic aria-hidden="true"></span>
+  <span class="ph-undo-label" data-ph-undo-label></span>
+  <button type="button" class="ph-undo-act" data-ph-undo-act hidden></button>
+  <span class="ph-undo-bar" data-ph-undo-bar aria-hidden="true"></span>
+</div>
+
+<script>
+  import { createPanelStack } from './panelStack';
+  import { kindFor, kindOfPanel, onKindsSettled, setPanelHost, type HostPanel } from './panelHostRegistry';
+  import { createPanelAddPicker } from './panelAddPicker';
+  import { isSplit, setSplit, applySplit } from './splitView';
+  import { MOBILE_MEDIA } from '../../lib/mobileNav';
+  import { refreshTooltip } from './tooltip';
+  import { pushEscape } from '../../lib/escapeStack';
+
+  function wirePanelHost() {
+    const root = document.querySelector<HTMLElement>('[data-panelhost]');
+    if (!root || root.dataset.phWired) return;
+    root.dataset.phWired = '1';
+    const panelsEl = root.querySelector<HTMLElement>('[data-ph-panels]')!;
+    const railEl = root.querySelector<HTMLElement>('[data-ph-rail]')!;
+    const railAdd = root.querySelector<HTMLElement>('[data-ph-add]')!;
+    const foldIc = document.querySelector<HTMLElement>('[data-ph-fold-ic]')!;
+    const collapseAllBtn = root.querySelector<HTMLElement>('[data-ph-collapse-all]')!;
+    const closeAllBtn = root.querySelector<HTMLElement>('[data-ph-close-all]')!;
+    const splitBtn = root.querySelector<HTMLElement>('[data-ph-split]')!;
+    const splitDiv = root.querySelector<HTMLElement>('[data-ph-split-div]')!;
+
+    // ── Split view (components/ui/splitView.ts) ───────────────────────────────────────────────
+    // The mode lives here because the stack is the thing it changes: the content floor and the page
+    // inset are both read off this one boolean. The sidebar collapse and the persisted flag are the
+    // module's; the arithmetic is the stack's.
+    //
+    // The flag is keyed by SECTION — a Data table and a report document are not the same trade, so
+    // each page gets its own answer. The argument is in `splitView.ts`.
+    const sectionName = root.dataset.phSection || 'data';
+    /**
+     * ── SPLIT IS A WIDE-ONLY MODE (Oleh, 2026-08-11) ────────────────────────────────────────────
+     *
+     * *«в нас буде завжди панель запінена на мобільному вью. Нема сенсу, тут неможливо відкрити дві
+     * паралельних. Тобто і кнопка split, і overlay має зникнути.»*
+     *
+     * He is describing something the stack already half-knew. Below the boundary `layout()` shows
+     * exactly ONE panel — every other is `display: none` — and `openBeside` drills in place instead
+     * of spawning. So split view at 400px was a toggle that reserved page width for panels that
+     * could never sit beside anything: it moved the content, changed nothing visible, and offered a
+     * mode as a choice when only one of its two states was reachable. A control that cannot do what
+     * it says is worse than no control.
+     *
+     * The PREFERENCE is not touched. `isSplit()` still reads what the user chose for this section;
+     * this only refuses to APPLY it while the window is too narrow to honour it, so a laptop that
+     * gets dragged narrow and back finds its layout where it left it. That is the same reasoning as
+     * rule 2 in `splitView.ts` — a layout mode must not undo a choice it did not make.
+     */
+    const narrowMq = window.matchMedia(MOBILE_MEDIA);
+    let split = isSplit(sectionName) && !narrowMq.matches;
+    const workEl = () => document.getElementById('layout-work');
+    /**
+     * `aria-pressed` = the state you are IN. The tooltip = the state the press moves you TO. They
+     * are deliberately opposite, because a toggle's hint is a promise about the click, not a
+     * readout — and the readout already exists, twice, in `aria-pressed` and in the lit control.
+     *
+     * `refreshTooltip` is what stops the bubble lying. The click that flips this also focuses the
+     * button, and `focusin` re-shows the tooltip with the OLD text BEFORE this runs, so without the
+     * repaint the hint sat under the pointer describing the mode you had just left.
+     */
+    function paintSplit() {
+      // `hidden`, not a CSS rule: the control must leave the TAB ORDER too, and a button you can
+      // still reach with the keyboard to turn on a mode the layout will refuse is the same defect
+      // in a quieter form. The hairline above it goes with it — it exists to separate ＋ from the
+      // group below, and with the group gone it would be a rule under a single button.
+      const avail = !narrowMq.matches;
+      splitBtn.hidden = !avail;
+      splitDiv.hidden = !avail;
+      /* ＋ IS THE ONE CONTROL THAT SURVIVES NARROW, so it is the one whose copy must survive with
+         it. Below the boundary it no longer opens anything BESIDE anything — `mobileOpen` replaces
+         — and a label reading "Open another panel beside" beside a stack that cannot hold two is
+         the same kind of lie the four hidden controls were, just written down instead of drawn.
+         Repainted from here because this function already owns every string the boundary changes,
+         and `refreshTooltip` for the same reason `paintSplit` needs it: the bubble can be on screen
+         when the window crosses. */
+      const addCopy = avail ? 'Open another panel beside' : 'Open something else here';
+      railAdd.setAttribute('aria-label', addCopy);
+      railAdd.setAttribute('data-tip', addCopy);
+      refreshTooltip(railAdd);
+      // The picker's own heading is the same sentence on a bigger surface — it opens FROM this
+      // button and must not contradict it.
+      const addHead = document.querySelector<HTMLElement>('[data-ph-addhead]');
+      if (addHead) addHead.textContent = addCopy;
+      if (!avail) return;
+      splitBtn.setAttribute('aria-pressed', split ? 'true' : 'false');
+      const tip = split
+        ? 'Turn off split view — panels go back to covering the page'
+        : 'Turn on split view — panels sit beside the page';
+      splitBtn.setAttribute('data-tip', tip);
+      splitBtn.setAttribute('aria-label', split ? 'Turn off split view' : 'Turn on split view');
+      refreshTooltip(splitBtn);
+    }
+    /** The page inset = the measured stack (control column included), or 0 when it is not showing.
+     *  The emptiness test is the PANEL COUNT, not `root.hidden`: `teardown()` fires `onEmpty` before
+     *  it hides the root, so a `hidden` test left a 40px column-shaped hole in the page after
+     *  "Close all" (caught in the browser — both gates were green).
+     *
+     *  MEASURE THE OCCUPANTS, NEVER THE ROW. This read used to be `panelsEl.getBoundingClientRect()
+     *  .width`, which was only ever right by accident: `.ph-panels` was shrink-to-fit, so its box
+     *  and its contents were the same number. `2cc56b4` gave that box `left: 0` for a real reason
+     *  (the sheets' `calc(100% - 40px)` was resolving against a parent their own width had sized —
+     *  four hosts, four left edges, 77.80px of spread at 390), and the same edit silently turned
+     *  this measurement into the VIEWPORT. Split then set `padding-right: 1728px` on a 1728px page:
+     *  the work column's content box went to zero and the whole page painted as one vertical strip
+     *  (reproduced on /data and /schema, 2026-08-18). A width fix and a width read shared one number
+     *  and nothing connected them — no gate models a CSS change arriving in a JS measurement, and
+     *  all four were green.
+     *
+     *  So take the distance from the row's right edge to the LEFTMOST painted child. The stack is
+     *  right-anchored (`justify-content: flex-end`) with the control column as the first flex child,
+     *  so that span is exactly rail + sheets, and it stays correct however many panels are open and
+     *  whatever `left` the row is given next. `width > 0` skips the closing panel's corpse, which
+     *  `closePanel` marks `hidden` on the same frame precisely so this read cannot count it. */
+    function syncSplitWidth(open: number) {
+      let px = 0;
+      if (split && open) {
+        const right = panelsEl.getBoundingClientRect().right;
+        let left = right;
+        for (const child of Array.from(panelsEl.children)) {
+          const r = child.getBoundingClientRect();
+          if (r.width > 0) left = Math.min(left, r.left);
+        }
+        px = Math.max(0, Math.round(right - left));
+      }
+      document.documentElement.style.setProperty('--ph-split-w', px + 'px');
+    }
+    // Restore on load: re-rails the sidebar, stamps the html attribute, locks the sidebar control.
+    // Called on the OFF path too — otherwise a section where split is off inherits the `data-split-
+    // view='on'` attribute and the LOCKED sidebar toggle from the section the user came from, since
+    // Astro's ClientRouter carries the root element's attributes across a soft swap.
+    applySplit(split, false);
+    paintSplit();
+
+    /**
+     * Crossing the boundary in a live window. Dragging a window past 1280 is the ordinary case here,
+     * not an edge one — this UI is built to live in a panel the user RESIZES.
+     *
+     * Narrowing must drop the mode without touching the stored preference; widening must put back
+     * exactly what that preference said, which is why the flag is re-read from `isSplit()` rather
+     * than remembered in a variable. Everything else — the page inset, the sidebar, the html
+     * attribute — is already downstream of `applySplit` + `layout`, so this only has to state the
+     * boolean and let the two functions that own the consequences run.
+     *
+     * `applySplit`, NOT `setSplit`, and that distinction is the whole reason the two were separated:
+     * `setSplit` persists, so narrowing through it overwrote the section's stored answer with `'0'`
+     * and a window dragged narrow and back came up split-off. Measured, not reasoned about.
+     */
+    narrowMq.addEventListener('change', (e) => {
+      const want = e.matches ? false : isSplit(sectionName);
+      if (want !== split) {
+        split = want;
+        applySplit(split, false);
+        if (!split) stack.unparkAuto();
+      }
+      paintSplit();
+      if (!root.hidden) stack.layout();
+    });
+
+    // ── The one toast (pattern-undo-toast) ────────────────────────────────────────────────────
+    // ONE duration drives both the countdown bar and the dismiss timer, so the bar can never lie
+    // about how long the offer stands.
+    const UNDO_MS = 4000;
+    let undoTimer = 0;
+    const toastEl = document.querySelector<HTMLElement>('[data-ph-undo]')!;
+    function restartCountdown(el: HTMLElement, ms: number) {
+      el.style.setProperty('--ph-undo-ms', ms + 'ms');
+      el.classList.remove('ph-undo-run'); void el.offsetWidth; el.classList.add('ph-undo-run');
+    }
+    function showToast(label: string, action: { label: string; run: () => void; icon?: string } | null, ms = UNDO_MS) {
+      const lbl = toastEl.querySelector<HTMLElement>('[data-ph-undo-label]'); if (lbl) lbl.textContent = label;
+      const btn = toastEl.querySelector<HTMLButtonElement>('[data-ph-undo-act]');
+      if (btn) { btn.hidden = !action; if (action) { btn.textContent = action.label; btn.onclick = () => { action.run(); hideToast(); }; } else btn.onclick = null; }
+      toastEl.classList.toggle('ph-undo-actionable', !!action);
+      const ic = toastEl.querySelector<HTMLElement>('[data-ph-undo-ic]');
+      // `icon` names the ACTION, not the fact that one exists: rotate-ccw only ever means "Undo".
+      if (ic) ic.className = `iconify ph-undo-ic ${action ? (action.icon || 'lucide--rotate-ccw') : 'lucide--info'} size-4`;
+      toastEl.hidden = false; restartCountdown(toastEl, ms);
+      window.clearTimeout(undoTimer); undoTimer = window.setTimeout(hideToast, ms);
+    }
+    function hideToast() { window.clearTimeout(undoTimer); toastEl.classList.remove('ph-undo-run'); toastEl.hidden = true; }
+
+    // The ONE picker, built after the stack (it asks the stack which kind to scope to). Declared
+    // here because the stack config below already needs a way to shut it.
+    let addPicker: ReturnType<typeof createPanelAddPicker> | null = null;
+    const closePicker = () => addPicker?.close();
+
+    // The Pin toast names WHAT was pinned, and a run, a record, a file and an entity are pinned for
+    // different reasons. `createPanelStack` reads `text.detached` at the moment it fires, so a getter
+    // over the panel being detached says the right sentence without widening the controller's API.
+    let detaching: HostPanel | null = null;
+
+    // ── The ONE stack. Every host hook below is a dispatch through the kind registry. ──────────
+    const stack = createPanelStack<HostPanel>({
+      root, panelsEl, railEl,
+      countEl: root.querySelector<HTMLElement>('[data-ph-count]'),
+      shutterEl: root.querySelector<HTMLElement>('[data-ph-shutter]'),
+      // The control column's whole background takes the same stack-resize drag as the pill.
+      // panelStack guards it on the event TARGET, so a pointerdown that started on a control never
+      // begins a drag.
+      resizeEl: railEl,
+      // The peek is per-PAGE (64 on Data, 150 on Schema) — see the file header. Do not unify, and
+      // do not restate it here: it arrives as a prop so the number lives in one place per page.
+      DEFW: 480, MINW: 360, TABLEGAP: Number(root.dataset.phTablegap) || 64,
+      // The content floor in split is per-PAGE for the same reason TABLEGAP is — see the file header
+      // for the three numbers and what each was measured against. Stated as CONTENT: the stack
+      // measures the 40px control column itself and adds it, so this never drifts from the CSS.
+      MINCONTENT: Number(root.dataset.phMincontent) || 700,
+      sessionKey: `panels:${sectionName}`,
+      isSplit: () => split,
+      // Budget against the WORK COLUMN, never the viewport: `window.innerWidth` overcounted by the
+      // full 256px sidebar. Harmless while the stack overlays, fatal in split.
+      containerW: () => workEl()?.getBoundingClientRect().width || window.innerWidth,
+      // The floor is a question asked of the PANEL, because this stack holds four kinds of sheet.
+      minwOf: (p) => kindOfPanel(p)?.minw ?? 360,
+      // ONE remembered width app-wide (catalog `pattern-side-panel-width`).
+      widthVar: '--panel-w',
+      cls: { collapsed: 'ps-collapsed', focus: 'ps-focus', anchor: 'ps-anchor', flash: 'ps-flash', atLimit: 'ps-atlimit', gripOn: 'ps-grip-on', dragging: 'ps-dragging', reordering: 'ps-reordering' },
+      // NEUTRAL hooks: one host can only pass ONE selector, and it has to match every kind it holds.
+      // Every sheet template stamps `data-ps-panel` / `data-ps-grip` / `data-ps-reorder` beside its
+      // own `data-{prefix}-*` hooks (those stay — other code and CSS use them).
+      reorderSel: '[data-ps-reorder]', panelSel: '[data-ps-panel]', gripSel: '[data-ps-grip]',
+      // `buildPanel` gets the KIND-PREFIXED id — the only thing available at clone time that says
+      // WHICH template this panel is and which controller to instantiate.
+      buildPanel: (id) => {
+        const k = kindFor(id)!;
+        const p = k.buildPanel(id);
+        p.kind = k.prefix;
+        return p;
+      },
+      loadInto: (p, id) => {
+        const k = kindOfPanel(p);
+        // A KIND cannot be reloaded into the wrong SHEET. Every route that crosses kinds builds a
+        // new panel; bail rather than leave a panel holding a stale body.
+        if (!k || !id.startsWith(k.prefix)) return;
+        k.loadInto(p, id);
+      },
+      render: (p) => kindOfPanel(p)?.render(p),
+      panelKey: (p) => kindOfPanel(p)?.panelKey(p) || '',
+      canOpen: (id) => { const k = kindFor(id); return !!k && (k.canOpen ? k.canOpen(id) : true); },
+      onMissing: (id) => { root.hidden = false; kindFor(id)?.onMissing?.(id); },
+      /**
+       * ── NARROW IS ONE PANEL, AND MEANS IT (Oleh, 2026-08-12) ────────────────────────────────
+       *
+       * *«зараз, коли користувач відкриває цю панель, в нього є змога відкрити ще одну всередині,
+       * яка перекриває наявну… накладаються панель на панель, і вся ця механіка забагована»*.
+       *
+       * This branch was the way in. A kind that can drill in place does; a kind that CANNOT — the
+       * five sheets are separate components, so an `ask:` id has no business inside an `entity:`
+       * sheet — used to `createPanel`, which is the one line in the narrow path that made the stack
+       * two panels deep. `layout()` then hid all but the focused one, so the second panel was
+       * invisible and fully alive: it kept its place in the stack, it took the focus, and Escape or
+       * Close revealed a panel underneath that the user had no way to know was still there.
+       *
+       * A hidden panel is worse than a visible one. It is the same object the rail controls used to
+       * promise and could not deliver, except this one the user could actually create.
+       *
+       * So a cross-kind open REPLACES. `closeAll()` is the silent teardown on purpose — it is the
+       * one written for "the context did this, not the user", which is exactly the case: the ask
+       * was "open X", and closing Y is the consequence of a rule, not an act to offer an Undo for.
+       * `open()` afterwards is the stack's own single-panel verb; it creates the anchor because the
+       * stack is now empty, and takes the right sheet from `kindFor(id)`.
+       *
+       * WHAT THIS COSTS, stated: the replaced panel does not come back with Back. Back is the
+       * sheet's own in-panel history and cannot cross a component boundary. Wide is untouched —
+       * this whole function only runs below the boundary.
+       */
+      mobileOpen: (source, id) => {
+        const k = kindFor(id); if (!k) return;
+        if (source && source.kind === k.prefix && k.mobileOpen) { k.mobileOpen(source, id); return; }
+        const ex = stack.panels().find((q) => kindOfPanel(q)?.panelKey(q) === id);
+        if (ex) { stack.setFocus(ex); stack.layout(); return; }
+        stack.closeAll();
+        stack.open(id);
+      },
+      onFocus: (p, active) => kindOfPanel(p)?.onFocus?.(p, active),
+      onDestroy: (p) => kindOfPanel(p)?.onDestroy?.(p),
+      toast: showToast, hideToast,
+      text: {
+        closed: 'Panel closed',
+        capReached: (m) => `Can't add another panel — maximum of ${m} reached.`,
+        evicted: (m) => `Closed oldest panel — ${m} max`,
+        evictedForRoom: (n) => n === 1
+          ? 'Closed the oldest panel — the list keeps its minimum width.'
+          : `Closed ${n} panels — the list keeps its minimum width.`,
+        get detached() {
+          return (detaching && kindOfPanel(detaching)?.detachedText)
+            || 'Pinned — this panel is yours now. The next thing you open starts a fresh anchor beside the list.';
+        },
+        closedAll: (n) => `Closed ${n} ${n === 1 ? 'panel' : 'panels'}`,
+      },
+      // The two bulk verbs name what they act on — the count is what makes a bulk verb safe to
+      // press — and they only exist once there are enough panels for "all" to mean anything.
+      onLayout: () => {
+        const n = stack.panels().length;
+        // No count threshold. These two are invisible at rest and revealed on hover, so hiding
+        // them below N buys nothing visually — at rest the column looks identical either way — and
+        // it costs the one thing that matters: the control vanishes exactly when the pointer
+        // arrives for it. A set of controls that changes shape as you add panels is the defect,
+        // not the chrome. They are simply always available, and always name their count.
+        const what = `all ${n} ${n === 1 ? 'panel' : 'panels'}`;
+        // ONE control, two directions. Folding everything is how you get the table back; the way
+        // OUT of that was dragging the shutter open, which is a gesture, not a verb. The glyph turns
+        // with the meaning: arrows toward each other fold, arrows apart unfold.
+        const folded = stack.allCollapsed();
+        foldIc.className = `iconify ${folded ? 'lucide--chevrons-left-right' : 'lucide--chevrons-right-left'} size-4`;
+        collapseAllBtn.setAttribute('data-tip', folded ? `Expand ${what}` : `Collapse ${what} to strips`);
+        collapseAllBtn.setAttribute('aria-label', folded ? `Expand ${what}` : `Collapse ${what}`);
+        closeAllBtn.setAttribute('data-tip', `Close ${what}`);
+        closeAllBtn.setAttribute('aria-label', `Close ${what}`);
+        syncSplitWidth(n);
+      },
+      flash: (el) => { el.classList.remove('ps-flash'); void el.offsetWidth; el.classList.add('ps-flash'); },
+      // `teardown()` hides the root without a `layout()`, so the page inset has to be released here
+      // as well — otherwise closing the last panel leaves a column-shaped hole in the page.
+      onEmpty: () => { closePicker(); syncSplitWidth(0); },
+    });
+
+    // ── The API the kinds call back through ───────────────────────────────────────────────────
+    /**
+     * A plain open lands in the ANCHOR — but only if the anchor can HOLD it. With one kind that was
+     * always true; with four it is not: the anchor on the Attachments tab is a file sheet, and a
+     * `record:` id loaded into it would silently no-op (`loadInto` refuses a foreign kind) leaving
+     * the user staring at the file they just clicked away from. A cross-kind plain open therefore
+     * opens BESIDE, which is also what the surface wants — the crumb describes the anchor, so
+     * replacing the anchor would throw away the thing the crumb is about.
+     * Caught in the browser, not by a gate: both linters were green with the click doing nothing.
+     */
+    function hostOpen(id: string, init?: (p: HostPanel) => void) {
+      const a = stack.anchorOf();
+      // `init` travels down BOTH branches. It used to be dropped here, so a record asked for at a
+      // particular comment lost the comment whenever the anchor happened to be another kind.
+      if (a && a.kind !== kindFor(id)?.prefix) { stack.openBeside(stack.focused(), id, init); return; }
+      stack.open(id, init);
+    }
+    setPanelHost({
+      open: (id, init) => hostOpen(id, init),
+      openBeside: (s, id, init) => stack.openBeside(s, id, init),
+      createPanel: (id, anchor, init) => stack.createPanel(id, anchor, init),
+      closePanel: (p) => stack.closePanel(p),
+      evictLRU: (a) => stack.evictLRU(a),
+      panels: () => stack.panels(),
+      focused: () => stack.focused(),
+      atCap: () => stack.atCap(),
+      layout: () => stack.layout(),
+      toast: showToast,
+      mounted: () => true,
+    });
+
+    // ── The stack verbs that live in every panel's header ─────────────────────────────────────
+    // Close / Pin / Collapse are STACK-level, not content-level, so the host answers them for every
+    // kind through the neutral hooks — rather than four copies of the same three branches.
+    // (The entity sheet's × stays with `makeEntityPanel`: it commits an open description edit first,
+    // then calls back into `closePanel` through its own `onClose`.)
+    panelsEl.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const sheet = target.closest<HTMLElement>('[data-ps-panel]');
+      if (!sheet) return;
+      const p = stack.panels().find((q) => q.el === sheet);
+      if (!p) return;
+      // A parked strip: click anywhere but its ✕ expands it back (auto-accordion / collapse-rail).
+      // stopPropagation so the owning kind's own delegate does not also read the click as content.
+      if (p.collapsed && !target.closest('[data-ps-close], [data-ep-close]')) {
+        e.stopPropagation(); stack.expandPanel(p.uid); return;
+      }
+      if (stack.focused() !== p) stack.setFocus(p);
+      if (target.closest('[data-ps-close]')) { e.stopPropagation(); stack.closePanel(p); return; }
+      if (target.closest('[data-ps-detach]')) { e.stopPropagation(); detaching = p; stack.detachPanel(p); detaching = null; return; }
+      if (target.closest('[data-ps-park]')) { e.stopPropagation(); stack.parkPanel(p.uid); return; }
+      if (target.closest('[data-ps-reorder]')) { e.stopPropagation(); return; } // the pointerdown drag owns it
+    });
+
+    // ── The control column ────────────────────────────────────────────────────────────────────
+    // ＋ opens ONE picker over every kind registered on this page (components/ui/panelAddPicker.ts),
+    // scoped by default to the ACTIVE TAB's source where that tab has one, else to the kind of the
+    // panel you are in — clearing the scope searches everything. It replaced a per-kind popover,
+    // which is why the ＋ could only ever add what you were already looking at.
+    addPicker = createPanelAddPicker({
+      pop: document.querySelector<HTMLElement>('[data-ph-addpop]')!,
+      input: document.querySelector<HTMLInputElement>('[data-ph-addsearch]')!,
+      list: document.querySelector<HTMLElement>('[data-ph-addlist]')!,
+      // The anchor is the fallback for a focused kind that offers nothing to search.
+      focusedKind: () => stack.focused()?.kind || stack.anchorOf()?.kind || null,
+      // First half of the picker's `TAB_SOURCE` key — the same section name split view is keyed by.
+      section: sectionName,
+    });
+    railEl.addEventListener('click', (e) => {
+      const t = e.target as HTMLElement;
+      if (t.closest('[data-ph-add]')) {
+        e.stopPropagation();
+        // Toggle: a second press on the ＋ closes what it opened. The picker's own visibility is
+        // the only record of that — a `data-ph-open` flag beside it was the same fact written twice.
+        if (addPicker!.isOpen()) { addPicker!.close(); return; }
+        addPicker!.open(railAdd.getBoundingClientRect());
+        return;
+      }
+      // Both bulk verbs close the picker first — it is anchored to a column that is about to change
+      // under it. Collapse all parks every panel and keeps its state; Close all tears the stack down
+      // THROUGH the undo toast, which restores all of them in order.
+      // The mode toggle. Switching ON collapses the left navigation ONCE, here — never on panel
+      // open (reflow under a clicking hand is the defect `decision-panels-overlay-not-reflow`
+      // exists to prevent). Switching OFF leaves the sidebar exactly where the user left it.
+      if (t.closest('[data-ph-split]')) {
+        e.stopPropagation(); closePicker();
+        split = !split; setSplit(sectionName, split); paintSplit();
+        // Switching split OFF hands the width back, so it must hand the PANELS back too. `collapsed`
+        // is stored on the panel and `layout()` only ever parks, so without this the strips the mode
+        // made stayed strips in a width that could hold them — the toggle looked like it ate panels.
+        // Only what the ACCORDION parked comes back (`autoParked`); a panel the user parked by hand,
+        // or via Collapse all, stays parked. `unparkAuto` re-lays-out, so anything that still does not
+        // fit is parked again on the same frame and the floor is never bent.
+        if (!split) stack.unparkAuto();
+        // The sidebar's own 300ms transition means the work column is still moving; re-layout after
+        // it settles so the budget is taken from the width the page actually ends up with.
+        stack.layout();
+        window.setTimeout(() => {
+          stack.layout();
+          // Switching split ON is an explicit act, so it may cost panels: ten strips at a 1440 laptop
+          // would leave 427px of listing, well under the floor. Resizing the window never does this.
+          //
+          // AFTER the sidebar has finished railing, and that is the whole point of it living in here.
+          // Enabling split widens the work column by the sidebar's 192px, but the rail animates over
+          // 300ms — so an eviction fired on the click read the OLD, narrower width and closed panels
+          // that were about to fit. Measured on /schema at 1440, 2026-08-06: five panels, space for
+          // five once railed, and four were closed. Everything in between is `layout()`, which only
+          // PARKS — non-destructive and reversible — so the delay costs nothing and buys the budget
+          // being taken from the width the page actually ends up with.
+          if (split) {
+            const closed = stack.evictForRoom();
+            // `evictLRU` removes the element but does NOT re-lay-out — the stack's other eviction
+            // caller happens to `layout()` right after for its own reasons, so nothing ever noticed.
+            // In split it is load-bearing: `--ph-split-w` is published from `onLayout`, so without
+            // this the page inset kept paying for the panels that were just closed. Measured on
+            // /schema at 1440: two evicted, inset 630 against a real stack of 538, painting a 92px
+            // seam and holding the content 54px under its own floor.
+            if (closed) stack.layout();
+            stack.announceEviction(closed);
+          }
+        }, 320);
+        return;
+      }
+      if (t.closest('[data-ph-collapse-all]')) { closePicker(); if (stack.allCollapsed()) stack.expandAll(); else stack.collapseAll(); return; }
+      if (t.closest('[data-ph-close-all]')) { closePicker(); stack.closeAllWithUndo(); return; }
+    });
+    // Any click outside the column dismisses the picker; the popover swallows its own.
+    document.addEventListener('click', (e) => {
+      if (!addPicker!.isOpen()) return;
+      if (railEl.contains(e.target as Node)) return;
+      if ((e.target as HTMLElement).closest('[data-ph-pop]')) return;
+      closePicker();
+    });
+
+    // ── Escape ────────────────────────────────────────────────────────────────────────────────
+    // ONE handler for the whole page. It asks the focused panel's KIND first — an open description
+    // editor, an in-place field view or a controller with its own Escape consumes the key — and
+    // closes the panel only when the kind declines. This replaces the two cross-stack hacks that
+    // used to guess at each other's DOM: DataChangelog peeking at `[data-recordpanel]:not([hidden])`
+    // (which after the merge would be present-but-empty, making Esc a silent no-op) and RecordPanel
+    // stopPropagation-ing the document `[data-entity-open]` delegate.
+    // It is an `escapeStack` entry, so "nothing open here" is answered with `false` and the press
+    // falls through to whatever is underneath instead of being spent on a hidden host.
+    pushEscape({
+      label: 'PanelHost',
+      onEscape: () => {
+        if (root.hidden) return false;
+        const p = stack.focused() || stack.panels()[stack.panels().length - 1];
+        if (!p) return false;
+        if (kindOfPanel(p)?.onEsc?.(p)) return true;
+        stack.closePanel(p);
+        return true;
+      },
+    });
+
+    // Leaving the tab abandons every panel's context — ONE listener now, so the stack closes once.
+    // Tabs inside a section no longer cost you your panels. They used to: this listener called
+    // `closeAll()`, so five minutes of arranging a view died the moment you looked at another tab
+    // (Dan + Oleh, Slack 2026-08-05). Dan believed Schema already kept them and Data did not —
+    // measured, and NEITHER did: both hosts carried this same line, so the two sections were equally
+    // lossy and Schema only hid it better. A tab is a change of what you are LOOKING at, not of what
+    // you are working with; the section boundary is the one that resets, and that is a real page load,
+    // so it needs no code. The picker still closes — it is scoped to the tab it was opened from.
+    // Re-layout because the tab's content can change the work column's width.
+    document.addEventListener('app:tabchange', () => { closePicker(); stack.layout(); });
+    window.addEventListener('resize', () => { if (!root.hidden) stack.layout(); });
+    // Restoring must wait for the KINDS, not for a clock. Every panel kind registers itself from its
+    // own module script, and module execution order across a page is not this file's to decide —
+    // `canOpen` answers "no" to every saved id until the kind that owns it exists. This used to be a
+    // `setTimeout(…, 0)` on the reasoning that one macrotask lands after every module. In dev Astro
+    // serves each component script as its OWN `<script type="module">`, so it does not: measured on
+    // `/schema`, the timer fired before `entity:` registered and both saved panels were dropped in
+    // silence. `onKindsSettled` fires after the last registration instead, whatever the ordering.
+    //     // Unsubscribe once the arrangement is fully back, and not before: a kind can register after the
+    // first burst settles (dev serves each component script as its own module), and dropping the
+    // subscription early would strand its panels. Holding it forever is the other failure — every
+    // later burst would run this closure over a torn-down stack — hence the explicit `off()`.
+    const offRestore = onKindsSettled(() => { if (stack.restoreSession() === 0) offRestore(); });
+    // …and unsubscribe unconditionally when the page goes away. A saved id whose kind never registers
+    // on THIS page keeps `pending` above zero forever — real on /data, where the host mounts on
+    // `hasData` while the entity and media kinds have guards of their own — so without this the
+    // callback outlives its stack and every later registration burst runs it over detached DOM.
+    document.addEventListener('astro:before-swap', () => offRestore(), { once: true });
+  }
+  wirePanelHost();
+  document.addEventListener('astro:after-swap', wirePanelHost);
+</script>
+
+<style is:global>
+  /* Global + a unique `.ph-` prefix: panel bodies are rendered via innerHTML, which scoped styles
+     never reach. The column, the shutter and the sheet STATE classes are the shared `ps-*` set in
+     styles/global.css — what is left here is only this host's own frame and its toast. */
+  .ph-wrap { position: fixed; inset: 0; z-index: 62; pointer-events: none; }
+  .ph-wrap[hidden] { display: none; }
+  /* Coplanar right-anchored stack (array[0] = anchor = leftmost); the control column is the first
+     flex child, so it sits at the outer edge of the leftmost sheet.
+
+     `left: 0` IS LOAD-BEARING (audit X-M3, D45). Without it this box had top/right/bottom and no
+     horizontal size, so it was SHRINK-TO-FIT — its width came from the sheets inside it. Those
+     sheets are the narrow panel, `width: calc(100% - 40px)` (16-responsive.md §8), and `100%` of a
+     shrink-to-fit parent means "100% of what I myself just made this parent", which is circular: the
+     sheet painted 288.79px at x=101.21 on /schema at 390 AND, identically, at 425 — viewport-
+     independent, against the certified 350 at x=40. With a second panel open the row exceeded
+     `max-width: 100vw`, the box clamped to the viewport, and the certified number appeared — which
+     is exactly why the same declaration measured correct on /data (two panels in the census sample)
+     and wrong on /schema. Four hosts, four widths, four left edges, 77.80px of spread at 390.
+     `left: 0` + `right: 0` makes the containing block the viewport, so `calc(100% - 40px)` resolves
+     against the viewport whatever is inside. `max-width: 100vw` is now redundant and kept only as
+     the belt on a box the sheets can no longer size.
+
+     THE POINTER-EVENTS SWAP IS PART OF THE SAME FIX, not tidying. This stack is NON-MODAL — no
+     scrim, the page stays clickable behind it (see the comment on `.ph-panels` in the markup). While
+     the box hugged its content, `pointer-events: auto` on it was harmless. Full-width, that same
+     declaration would make an invisible box swallow every click across the viewport, so the `auto`
+     moves down to the children that are actually painted and the wrapper goes back to `none` like
+     `.ph-wrap` above it. `> *` and not a class list: the sheets are appended here at runtime by four
+     different hosts, so a selector naming any of them would miss the next one. */
+  .ph-panels { position: absolute; top: 0; right: 0; bottom: 0; left: 0; display: flex; flex-direction: row; justify-content: flex-end; max-width: 100vw; pointer-events: none; }
+  .ph-panels > * { pointer-events: auto; }
+
+  /* FIXED, not absolute. It reads as a detail and is the whole bug: this toast used to live
+     inside `.ph-wrap` (`position: fixed; inset: 0`), which is what made `bottom: 24px` mean
+     the bottom of the SCREEN. Moving it out of the wrapper — needed, because `layout()` hides
+     the wrapper the moment the stack empties and the toast measured 0x0 — quietly re-based it
+     on the page, so it rendered at top 2945 of a 3000px document: fired, correct, unreadable
+     unless you scrolled the listing to its end (measured 2026-08-05). Anchoring it to the
+     viewport itself makes it independent of whatever ancestor it happens to sit under. */  .ph-undo { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 63; pointer-events: auto; display: flex; align-items: center; gap: 8px; max-width: min(92vw, 30rem); padding: 12px 16px; overflow: hidden; background: var(--color-neutral); color: var(--color-neutral-content); border-radius: var(--r-12); box-shadow: 0 8px 24px oklch(0 0 0 / .28); font-size: var(--t-13); } /* ds-ok: translateX(-50%) centering, not spacing */
+  .ph-undo[hidden] { display: none; }
+  .ph-undo-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .ph-undo-act { flex: none; margin-left: 4px; font-weight: 600; color: var(--color-primary); background: none; border: 0; cursor: pointer; padding: 4px 8px; border-radius: var(--r-6); font-size: var(--t-13); }
+  .ph-undo-act[hidden] { display: none; }
+  .ph-undo-act:hover { background: oklch(from var(--color-primary) l c h / .16); }
+  .ph-undo-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--color-primary); transform-origin: left center; transform: scaleX(0); }
+  .ph-undo:not(.ph-undo-actionable) .ph-undo-bar { display: none; }
+  .ph-undo.ph-undo-run.ph-undo-actionable .ph-undo-bar { animation: ph-undo-count var(--ph-undo-ms, 4000ms) linear forwards; }
+  @keyframes ph-undo-count { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  @media (prefers-reduced-motion: reduce) { .ph-undo.ph-undo-run .ph-undo-bar { animation: none; transform: scaleX(1); } }
+</style>

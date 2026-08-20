@@ -1,0 +1,1051 @@
+---
+/**
+ * RecordPanel — the record detail drawer for the Data page. Same component FAMILY as the
+ * Schema EntityPanel (the canonical detail-panel anatomy: right-anchored drawer + scrim,
+ * concept-icon tile + name in the header, crumbs sub-row, scroll-owning body, ESC / outside
+ * click closes) but self-contained for records rather than schema entities.
+ *
+ * Two sections (segmented): **Fields** — every backed-up value, type-aware, with cell
+ * provenance on computed/relational fields (pattern-cell-provenance); and **History** — the
+ * record's cross-backup diff timeline (pattern-record-history) with "view as of this backup".
+ * Linked / source rows PUSH that record onto a nav stack; Back pops. Presentational: opened by
+ * `data:openRecord { id }` (dispatched by the Browse grid + Everywhere rows).
+ */
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from '../schema/airtableFieldIcons';
+import type { DataBase, DataTable, DataRecord, DataComment } from './dataTypes';
+import { authorLabel, authorInitials, resolveMentions, commentStatus } from './commentText';
+
+interface Props {
+  bases: DataBase[];
+  tables: DataTable[];
+  records: DataRecord[];
+  /** In a static-only Space, per-record History is a locked (dynamic-only) capability. */
+  mode?: 'dynamic' | 'static' | 'both';
+  /** Docs that can tag records (B5 reverse links) — drives the "Referenced in" section.
+   *  `kind` is built now so chats can join the same list later without a reshape. */
+  docs?: { id: string; title: string; recordIds?: string[] }[];
+  /** Captured record comments — drives the in-panel Comments section (comments-explorer). */
+  comments?: DataComment[];
+  /** The Space's latest capture — what a comment's `lastSeenAt` is measured against. */
+  lastSyncedAt?: string;
+}
+const { bases, tables, records, mode = 'dynamic', docs = [], comments = [], lastSyncedAt } = Astro.props;
+
+// recordId → the docs that tag it (B5 "Referenced in"). Docs are the only source today;
+// chat threads will push { kind: 'chat' } refs into the same map when they gain record tags.
+const docRefs: Record<string, { id: string; title: string; kind: 'doc' }[]> = {};
+for (const d of docs) for (const rid of d.recordIds || []) (docRefs[rid] ||= []).push({ id: d.id, title: d.title, kind: 'doc' });
+
+// recordId → its comments, oldest first (a conversation reads down, unlike the stream, which is a
+// feed and reads newest-first). Everything the panel shows is resolved HERE — the mention-resolved
+// text, the author label, the three-state status — so the panel body cannot drift from the feed by
+// re-deriving the same rules a second time. `recordCaptured` is true by construction: a record with
+// a panel is a record we hold, which is exactly what makes "Deleted" sayable here.
+const recordIds = new Set(records.map((r) => r.id));
+const panelComments: Record<string, unknown[]> = {};
+for (const c of [...comments].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+  if (!recordIds.has(c.recordId)) continue;
+  (panelComments[c.recordId] ||= []).push({
+    id: c.id,
+    author: authorLabel(c.author),
+    initials: authorInitials(c.author),
+    // FULL text here, not the feed's one-line snippet: the panel is where someone came to read it.
+    text: resolveMentions(c.text, c.mentioned),
+    at: c.createdAt,
+    edited: !!c.lastUpdatedAt,
+    status: commentStatus(c, { recordCaptured: true, latestSyncAt: lastSyncedAt }),
+    lastSeenAt: c.lastSeenAt,
+    parentId: c.parentCommentId,
+    attachments: c.attachments ?? [],
+  });
+}
+
+const snapshot = {
+  baseName: Object.fromEntries(bases.map((b) => [b.id, b.name])),
+  tables: tables.map((t) => ({ id: t.id, baseId: t.baseId, name: t.name, fields: t.fields })),
+  records: records.map((r) => ({ id: r.id, tableId: r.tableId, primary: r.primary, cells: r.cells, linked: r.linked, history: r.history })),
+  docRefs,
+  comments: panelComments,
+};
+const iconsByType = Object.fromEntries(
+  tables.flatMap((t) => t.fields).map((f) => {
+    const k = airtableIconKey(f.type);
+    return [f.type, k ? `<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : ''];
+  }),
+);
+---
+
+{/* NO ROOT, NO RAIL, NO TOAST HERE ANY MORE (2026-08-04). This component used to mount its own
+    `position: fixed; inset: 0` drawer root, its own zero-width ＋ rail and its own undo toast — one
+    of the FOUR such stacks the Data page carried on top of each other. It is now a KIND registered
+    with the single `PanelHost` (components/ui/PanelHost.astro); the host owns the root, the panels
+    row, the control column and the toast. What is left here is what only this component can supply:
+    the record SHEET, its body, its snapshot, and its own ＋ picker. */}
+{/* The ＋ POPOVER that used to live here is gone (2026-08-05): there is one picker for the whole
+    host now (components/ui/panelAddPicker.ts), and this component contributes its rows to it —
+    Records, and Comments, which are not a panel kind and never become one. */}
+
+{/* A single panel, cloned per open panel. */}
+<template data-rp-tpl>
+  <aside class="rp-sheet" data-ps-panel data-rp-panel role="dialog" aria-modal="false" aria-label="Record details">
+    {/* Resize handle — variable width, drawer canon (mirrors the Schema EntityPanel .ep-grip). */}
+    <div class="rp-grip" data-ps-grip data-rp-grip aria-hidden="true"><span class="rp-grip-line"></span></div>
+    {/* Anchor lock scrim — shown on the anchor during a reorder drag ("docked, can't be reordered"). */}
+    <div class="rp-lock" aria-hidden="true"><span class="iconify lucide--lock size-5"></span><span>Docked to the table</span></div>
+    <header class="rp-head">
+      <div class="rp-head-row">
+        {/* THE HOLD SLOT (pattern-multi-panel-drawer), 1:1 with Schema EntityPanel: Pin first, then
+            the drag grip. Never both — the anchor cannot be reordered, so it shows Pin and every
+            other panel shows the grip. Both are ALWAYS laid out; see the CSS block below. */}
+        <button type="button" class="btn btn-sm btn-ghost btn-square rp-detach tooltip tooltip-bottom" data-ps-detach data-rp-detach aria-label="Pin this panel so the next record opens beside it" data-tip="Pin — next record opens beside"><span class="iconify lucide--pin size-3.5" aria-hidden="true"></span></button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square rp-reorder tooltip tooltip-bottom" data-ps-reorder data-rp-reorder aria-label="Drag to reorder" data-tip="Drag to reorder"><span class="iconify lucide--grip-vertical size-4" aria-hidden="true"></span></button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square rp-back tooltip tooltip-bottom" data-rp-back aria-label="Back" data-tip="Back" hidden>
+          <span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span>
+        </button>
+        {/* A record's own glyph (Oleh, 2026-07-30). This was `lucide--table-2` — the TABLE's glyph
+            standing in for a record, so a panel titled with a record name wore the icon of a
+            different concept. */}
+        <span class="rp-head-ic" data-rp-head-ic aria-hidden="true"><span class="iconify lucide--circle-dot concept-ic-record size-4"></span></span>
+        <div class="rp-head-title" data-rp-title></div>
+        {/* "View … in Airtable" as a corner icon (label in the tooltip) — declutters the header; set per view. */}
+        <a class="btn btn-sm btn-ghost btn-square rp-viewat tooltip tooltip-left" data-rp-viewat href="https://airtable.com" target="_blank" rel="noopener" aria-label="View record in Airtable" data-tip="View record in Airtable"><span class="iconify lucide--external-link size-4" aria-hidden="true"></span></a>
+        <button type="button" class="btn btn-sm btn-ghost btn-square rp-park tooltip tooltip-bottom" data-ps-park data-rp-park aria-label="Collapse to strip" data-tip="Collapse"><span class="iconify lucide--chevrons-left size-4" aria-hidden="true"></span></button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square rp-x tooltip tooltip-left" data-ps-close data-rp-closepanel aria-label="Close" data-tip="Close">
+          <span class="iconify lucide--x size-4" aria-hidden="true"></span>
+        </button>
+      </div>
+      {/* Ancestors on the left, record id pulled to the right corner of the same row (Oleh 2026-07-21). */}
+      <div class="rp-crumbrow" data-rp-crumbrow hidden>
+        <nav class="rp-crumbs sb-crumb-row" data-rp-crumbs aria-label="Breadcrumb"></nav>
+        <div class="rp-idchip" data-rp-idchip hidden></div>
+      </div>
+      {/* In-panel section jump-nav (3rd header row), shown only when the body scrolls — Schema parity. */}
+      <nav class="rp-secnav" data-rp-secnav aria-label="Sections" hidden></nav>
+      {/* "View record in Airtable" now lives at the TOP of the body (Schema-parity). */}
+    </header>
+    <div class="rp-body" data-rp-body></div>
+  </aside>
+</template>
+
+<script type="application/json" data-rp-snapshot set:html={JSON.stringify(snapshot)} />
+<script type="application/json" data-rp-icons set:html={JSON.stringify(iconsByType)} />
+<script type="application/json" data-rp-mode set:html={JSON.stringify(mode)} />
+
+<script>
+  import { registerPanelKind, host, type HostPanel } from '../ui/panelHostRegistry';
+  import { isNarrow } from '../../lib/mobileNav';
+  import { pkEsc } from '../ui/pickerSearch';
+  import type { PickerSource } from '../ui/panelAddPicker';
+  import { entityIconClass, entityIconMarkup } from '../schema/entityIcon';
+  import { wireRowKeys } from '../../lib/wireRowKeys';
+  import {
+    esc, family, ic, cellValue, provFormula, provLookup, linkedList,
+    secHead, ancestorCrumbs, renderRecordBody, paintLinked, crumb, sep, PAGE,
+    type Field, type Table, type Rec, type DocRef, type RecordBodyCtx, type PanelComment,
+  } from './recordReadBody';
+  type Snap = { baseName: Record<string, string>; tables: Table[]; records: Rec[]; docRefs?: Record<string, DocRef[]>; comments?: Record<string, PanelComment[]> };
+
+  const RP_MINW = 360;
+  // Every id this kind answers to is prefixed — ONE stack now holds record, asset, run and entity
+  // sheets, so a bare record id could collide with any of them.
+  const PREFIX = 'record:';
+  // Imported, not retyped — one boundary, one place it is written (lib/mobileNav.ts).
+  const isMobile = () => isNarrow();
+  // A live panel = one .rp-sheet with its OWN drill stack + view state.
+  type Panel = HostPanel & {
+    body: HTMLElement; titleEl: HTMLElement; crumbsEl: HTMLElement;
+    backBtn: HTMLElement; headIc: HTMLElement; grip: HTMLElement; idChip: HTMLElement; secnav: HTMLElement;
+    viewat: HTMLAnchorElement; crumbRow: HTMLElement;
+    stack: string[]; asOf: string | null; fieldQuery: string; linkTab: string;
+    fieldView: { fieldId: string; recId: string } | null; fieldTableCols: string[]; vtQuery: string;
+    pendingFocus: string | null; pendingComment: string | null; render: () => void;
+  };
+
+  function wireRecordPanel() {
+    // The sheet TEMPLATE is this kind's mount signal now — there is no `.rp-wrap` root any more.
+    const tpl = document.querySelector<HTMLTemplateElement>('[data-rp-tpl]');
+    if (!tpl || tpl.dataset.rpWired) return;
+    tpl.dataset.rpWired = '1';
+    const snap: Snap = JSON.parse(document.querySelector('[data-rp-snapshot]')?.textContent || '{}');
+    const icons: Record<string, string> = JSON.parse(document.querySelector('[data-rp-icons]')?.textContent || '{}');
+    const mode: string = JSON.parse(document.querySelector('[data-rp-mode]')?.textContent || '"dynamic"');
+    const staticMode = mode === 'static';
+    const recById = new Map((snap.records || []).map((r) => [r.id, r]));
+    const tableById = new Map((snap.tables || []).map((t) => [t.id, t]));
+    // Shared-body context (recordReadBody.ts) — RP is the full-affordance host: field rows open
+    // field-config, and "Referenced in" renders (both dropped for a DCP drill-hosted body).
+    const bodyCtx: RecordBodyCtx = { baseName: snap.baseName, tableById, recById, icons, staticMode, docRefs: snap.docRefs || {}, fieldClickable: true, showRefs: true, comments: snap.comments || {} };
+
+    const elToPanel = new WeakMap<HTMLElement, Panel>();
+    const topId = (p: Panel) => p.stack[p.stack.length - 1];
+
+    // Human label per Airtable field type (fallback = de-camelCased) — for the field-config view.
+    const TYPE_LABEL: Record<string, string> = {
+      singleLineText: 'Single line text', multilineText: 'Long text', email: 'Email', url: 'URL', phoneNumber: 'Phone',
+      number: 'Number', currency: 'Currency', percent: 'Percent', rating: 'Rating', duration: 'Duration', autoNumber: 'Auto number',
+      date: 'Date', dateTime: 'Date & time', createdTime: 'Created time', lastModifiedTime: 'Last modified',
+      singleSelect: 'Single select', multipleSelects: 'Multiple select', checkbox: 'Checkbox',
+      multipleRecordLinks: 'Link to record', multipleLookupValues: 'Lookup', rollup: 'Rollup', count: 'Count', formula: 'Formula',
+    };
+    const typeLabel = (t: string) => TYPE_LABEL[t] || t.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase());
+
+    // Fields/Linked/History/Referenced-in + their local helpers (esc/fmtDate/family/ic/cellValue/
+    // valuesAsOf/provFormula/linkedList/provLookup/secHead) now live in recordReadBody.ts (shared
+    // with the DCP drill host) — imported above.
+
+    // ── Field-config view (pushed into a panel's own stack; Back returns to the record) ──────────
+    // Two STACKED sections (not tabs): the field details, then a "Values" table of this field across
+    // records with its own search + an ＋ Add-column picker (the D3 client ask, Data-only).
+    // The table + footer (re-rendered alone on search, so the search input keeps focus).
+    const vtBody = (t: Table, f: Field, p: Panel): string => {
+      const primary = t.fields[0];
+      const extra = p.fieldTableCols.map((id) => t.fields.find((x) => x.id === id)).filter((x): x is Field => !!x);
+      const cols = [primary, ...(f.id === primary.id ? [] : [f]), ...extra];
+      const q = p.vtQuery.trim().toLowerCase();
+      const recs = snap.records.filter((r) => r.tableId === t.id && (!q || cols.some((c) => (r.cells[c.id]?.raw || '').toLowerCase().includes(q))));
+      const win = recs.slice(0, 50);
+      // THE VESSEL'S HEADER FACTS, EMITTED BY HAND — and why they are not `<Table>` or
+      // `tableHeadHtml()`. This table is a runtime `innerHTML` string (the panel body is replaced
+      // wholesale on every in-panel move), so `components/ui/Table.astro` has no reach here at all.
+      // `components/schema/schemaTableHead.ts` is the sanctioned runtime emitter for exactly that
+      // case — but it renders `label` as ESCAPED TEXT (schemaTableHead.ts:46-49), and every column
+      // head here carries the field's TYPE GLYPH before its name. `TableColumn.labelSlot`
+      // (lib/table/contract.ts:40) is the contract's answer to a head that is not a string, and the
+      // runtime emitter does not implement it. So `scope="col"` and the `.tbl-colhead` band — the
+      // two facts measured at 0 tree-wide — are copied here verbatim from Table.astro:127-134 and
+      // must stay copied. Migrate the moment `tableHeadHtml` learns `labelSlot`. The vessel's OTHER
+      // free guarantee — row activation — is hand-copied too; see the row comment below.
+      const head = cols.map((c) => `<th scope="col">${ic(bodyCtx, c.type)}${esc(c.name)}</th>`).join('');
+      // THE VESSEL'S ROW-ACTIVATION FACT, ALSO EMITTED BY HAND (Table.astro:25-26 · D46). A row that
+      // paints `cursor: pointer` and answers a click has promised it opens; `role="button"` +
+      // `tabindex="0"` are what let a keyboard accept that promise, and `.row-clickable` is the ONE
+      // focus ring for an openable row app-wide (styles/components/row-actions.css:16 — the hover
+      // there is out-specified by `.rp-vt tbody tr.rp-vt-row:hover` below, which is deliberate: this table
+      // keeps its softer in-panel hover and adopts only the ring). The Enter/Space half is
+      // `lib/wireRowKeys`, mounted ONCE from `document.body` at the bottom of this script — never
+      // from the wrap, because this string replaces the tbody on every keystroke of the search and
+      // any listener bound to these nodes would die on the first one.
+      // The empty row below stays a plain `<tr>`: it opens nothing, so it must not claim to.
+      const rows = win.map((r) => `<tr class="rp-vt-row row-clickable" role="button" tabindex="0" data-rp-open="${r.id}">${cols.map((c, i) => `<td class="${i === 0 ? 'rp-vt-primary' : ''}">${cellValue(r, c)}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="rp-vt-empty">No records match.</td></tr>`;
+      const shown = new Set(cols.map((c) => c.id));
+      const avail = t.fields.filter((x) => !shown.has(x.id));
+      const picker = avail.length ? `<select class="select select-sm rp-vt-add" data-rp-vt-add aria-label="Add a column"><option value="">＋ Add column…</option>${avail.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>` : '';
+      // THE CONTRACT, ANSWERED WHERE THE CALL SITE WOULD HAVE ANSWERED IT (lib/table/contract.ts).
+      //   growth: 'unpaged'. The set is `recs` — every record in the table — so it is NOT bounded by
+      //     the data model and `fixed` would be a lie; it is windowed to 50 above, twice the
+      //     PAGER_ROWS floor of 25.
+      //   growthReason: this is a PREVIEW of one field's values inside a drawer, not a browser. The
+      //     panel is already a drill INTO one record; the full, pageable set is Data ▸ Browse, and
+      //     the footer states "50 of N records" so the window is never mistaken for the total.
+      //     Search narrows it in place. A page-size select inside a 52vh scroller, under a section
+      //     that itself sits in a drawer over a listing, is a third pagination context on one screen.
+      //     THIS IS THE WEAKEST ANSWER OF THE THREE — see the report; records 51+ are unreachable
+      //     from here by anything except a search that guesses them.
+      //   narrow: 'pan' — the default, and already what `data-narrow-pan` below declares. A reader
+      //     compares one field's value DOWN the column across records; that IS the table's job.
+      // `data-table` is the vessel's structural hook (Table.astro:116-120) so this table is
+      // enumerable with the sixteen that go through the vessel rather than invisible beside them.
+      return `<div class="rp-vt-wrap" data-table="rp-vt" data-narrow-pan><table class="rp-vt"><thead class="tbl-colhead"><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>
+        <div class="rp-vt-foot">${picker}<span class="rp-vt-note">${win.length.toLocaleString()} of ${recs.length.toLocaleString()} records</span></div>`;
+    };
+    const renderValueTable = (t: Table, f: Field, p: Panel): string => {
+      const search = `<label class="input input-sm rp-vt-search"><span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span><input type="search" data-rp-vtsearch value="${esc(p.vtQuery)}" placeholder="Search records" aria-label="Search records" /></label>`;
+      return `<div class="rp-sec" data-rp-vtsec>${secHead('lucide--table-2', 'Values')}${search}<div data-rp-vtbody>${vtBody(t, f, p)}</div></div>`;
+    };
+    const renderFieldConfig = (rec: Rec, f: Field, p: Panel): string => {
+      const t = tableById.get(rec.tableId)!;
+      const row = (k: string, v: string) => `<div class="rp-fc-row"><span class="rp-fc-key">${esc(k)}</span><span class="rp-fc-val">${v}</span></div>`;
+      let out = row('Type', `${ic(bodyCtx, f.type)}<span>${esc(typeLabel(f.type))}</span>`);
+      out += row('Value on this record', cellValue(rec, f));
+      if (f.linkedTableId) { const lt = tableById.get(f.linkedTableId); out += row('Links to', `${ic(bodyCtx, 'multipleRecordLinks')}<span>${esc(lt?.name || '—')}</span>`); }
+      if (f.expression) out += row('Formula', `<code class="rp-fc-mono">${esc(f.expression)}</code>`);
+      if (f.aggregation) out += row('Rollup', esc(f.aggregation));
+      // Section 1: field details. Section 2: the values table (stacked, not a tab).
+      return `<div class="rp-sec">${secHead('lucide--info', 'Field')}<div class="rp-fc">${out}</div>
+        <div class="rp-fc-note">Full field settings — description, sync — live in <a class="rp-fc-link" href="/schema">Schema</a>.</div></div>${renderValueTable(t, f, p)}`;
+    };
+
+    // ── Per-panel render ─────────────────────────────────────────────────────────
+    // In-panel section jump-nav (Schema `.ep-secnav` parity): a chip per body section, shown only when
+    // the body actually scrolls; scroll-spy marks the active chip; a chip click scrolls to that section.
+    const spyByPanel = new WeakMap<Panel, EventListener>();
+    function wireSecNav(p: Panel) {
+      const old = spyByPanel.get(p); if (old) p.body.removeEventListener('scroll', old);
+      const secs = [...p.body.querySelectorAll<HTMLElement>('.rp-sec[id]')];
+      const scrolls = p.body.scrollHeight > p.body.clientHeight + 4;
+      if (!scrolls || secs.length < 2) { p.secnav.hidden = true; p.secnav.innerHTML = ''; return; }
+      p.secnav.hidden = false;
+      p.secnav.innerHTML = secs.map((s) => {
+        const label = s.querySelector('.rp-seclabel span:not(.rp-sec-ic):not(.rp-sec-count)')?.textContent || s.id;
+        return `<button type="button" class="rp-secnav-chip" data-rp-secnav-to="${s.id}">${esc(label)}</button>`;
+      }).join('');
+      const spy = () => {
+        const top = p.body.scrollTop; let active = secs[0];
+        for (const s of secs) { if (s.offsetTop - 12 <= top) active = s; }
+        if (top + p.body.clientHeight >= p.body.scrollHeight - 4) active = secs[secs.length - 1]; // bottom → last
+        p.secnav.querySelectorAll<HTMLElement>('.rp-secnav-chip').forEach((c) => c.classList.toggle('is-active', c.dataset.rpSecnavTo === active.id));
+      };
+      spyByPanel.set(p, spy); p.body.addEventListener('scroll', spy, { passive: true }); spy();
+    }
+
+    /**
+     * ── The keyboard must survive a body re-render (D45 item 1, second order) ───────────────────
+     *
+     * `panelStack` moves focus INTO a sheet on open, cycles Tab within it, and hands the keyboard
+     * back to the opener on Escape — verified on this host: opening from a comment row lands on
+     * `.rp-sheet`, and Escape restores to that exact `[data-cm-entry]`. But `makeRender` below
+     * replaces `p.body.innerHTML` wholesale on every in-panel move (drilling into a field config,
+     * Back out of it, re-rendering after an edit), which destroys the node the caret is on and
+     * drops `document.activeElement` to `document.body`. panelStack's Tab containment only engages
+     * while focus is INSIDE a panel, so the next Tab restarted at the top of the DOCUMENT and
+     * walked the listing this sheet covers — the overlay went keyboard-invisible without closing.
+     *
+     * Put focus back on the SHEET, not on a control: the sheet already carries `tabindex="-1"`
+     * from `focusPanel`, and landing there reads as "before the first item" to the containment
+     * handler, so the next Tab resumes at the top of this panel. Guarded on "was it in the body
+     * before the swap" — this stack is NON-MODAL, clicking the page behind is a legitimate exit,
+     * and a re-render that yanked the caret back would make the sheet stickier than a modal.
+     * The identical helper lives in `schema/entityPanelController.ts` for the entity sheet; both
+     * are three lines against the one `innerHTML` swap they own, which is cheaper and clearer than
+     * a shared abstraction over two different render functions.
+     */
+    const kbInBody = (p: Panel) => { const a = document.activeElement; return !!a && p.body.contains(a); };
+    function returnKbToSheet(p: Panel, was: boolean) {
+      if (!was) return;
+      const a = document.activeElement;
+      if (a && p.body.contains(a)) return; // something in the fresh body already claimed it
+      if (!p.el.hasAttribute('tabindex')) p.el.setAttribute('tabindex', '-1');
+      // `preventScroll`: the render sets `body.scrollTop` itself and deep links scroll a section
+      // into view — letting focus scroll as well fought both.
+      try { p.el.focus({ preventScroll: true }); } catch { p.el.focus(); }
+    }
+
+    function makeRender(p: Panel) {
+      return () => {
+        const rec = recById.get(topId(p));
+        if (!rec) return;
+        const heldKb = kbInBody(p);
+        const t = tableById.get(rec.tableId)!;
+        const fv = p.fieldView && p.fieldView.recId === rec.id ? t.fields.find((x) => x.id === p.fieldView!.fieldId) : null;
+        if (p.fieldView && !fv) p.fieldView = null;
+        // "View … in Airtable" is a header corner icon (label in the tooltip); set per view. TODO(engine):
+        // real Airtable ids for a working URL (placeholder host today, as before).
+        const setViewat = (label: string) => { p.viewat.dataset.tip = label; p.viewat.setAttribute('aria-label', label); p.viewat.hidden = false; };
+        // Back button: within-panel drill (a pushed stack, or a field view) reads "Back"; hidden once
+        // the panel's own drill stack is exhausted (Browse/Docs only ever open a fresh panel — no
+        // outside-origin exit anymore, see the removed `origin` mechanism).
+        const setBack = (within: boolean) => {
+          p.backBtn.hidden = !within;
+          if (within) { p.backBtn.dataset.tip = 'Back'; p.backBtn.setAttribute('aria-label', 'Back'); }
+        };
+        if (fv) {
+          p.titleEl.textContent = fv.name;
+          p.headIc.innerHTML = ic(bodyCtx, fv.type);
+          p.idChip.hidden = true;
+          p.crumbRow.hidden = false;
+          setViewat('View field in Airtable');
+          // Ancestors only (base ▸ table ▸ record); the field name lives in the title, not a tail crumb.
+          // The record segment used to pass an EMPTY icon, which still emitted the 14px crumb slot
+          // — so this trail read 🗄 Base ▸ ▤ Table ▸ ⬚ Record, holding a blank box open where a
+          // glyph belonged. It has one now.
+          p.crumbsEl.innerHTML = crumb(entityIconClass('base'), snap.baseName[t.baseId]) + sep + crumb(entityIconClass('table'), t.name) + sep + crumb(entityIconClass('record'), rec.primary);
+          setBack(true);
+          p.secnav.hidden = true;
+          p.body.innerHTML = renderFieldConfig(rec, fv, p);
+          p.body.scrollTop = 0;
+          returnKbToSheet(p, heldKb);
+          return;
+        }
+        p.titleEl.textContent = rec.primary;
+        p.headIc.innerHTML = entityIconMarkup('record', { size: 'size-4' });
+        p.idChip.hidden = false;
+        p.crumbRow.hidden = false;
+        setViewat('View record in Airtable');
+        // Right corner of the crumb row + one-click copy (tooltip-LEFT so it grows inward from the edge).
+        p.idChip.innerHTML = `<span class="rp-idlabel">ID</span><code class="rp-idval">${esc(rec.id)}</code><button type="button" class="rp-copyid tooltip tooltip-left" data-rp-copyid="${esc(rec.id)}" aria-label="Copy record ID" data-tip="Copy ID"><span class="iconify lucide--copy size-3.5" aria-hidden="true"></span></button>`;
+        // Ancestors only (base ▸ table); the record name lives in the title, not a tail crumb (Schema parity).
+        p.crumbsEl.innerHTML = ancestorCrumbs(bodyCtx, rec);
+        setBack(p.stack.length > 1);
+        p.body.innerHTML = renderRecordBody(bodyCtx, p, rec);
+        const lc = p.body.querySelector<HTMLElement>('[data-rp-linked]'); if (lc) paintLinked(bodyCtx, lc);
+        p.body.scrollTop = 0;
+        wireSecNav(p);
+        if (p.pendingFocus === 'history') { document.getElementById('rp-sec-history')?.scrollIntoView({ block: 'start' }); }
+        // Deep link from the Comments feed: land on the section, and on the exact comment when the
+        // feed named one. The highlight is a transient CUE, not a selection — it fades on its own,
+        // because nothing here is selectable and a permanent mark would look like state.
+        if (p.pendingFocus === 'comments') {
+          const target = p.pendingComment ? p.body.querySelector<HTMLElement>(`[data-rp-comment="${p.pendingComment}"]`) : null;
+          const sec = p.body.querySelector<HTMLElement>('#rp-sec-comments');
+          (target || sec)?.scrollIntoView({ block: target ? 'center' : 'start' });
+          if (target) {
+            target.classList.add('rp-cm-hit');
+            setTimeout(() => target.classList.remove('rp-cm-hit'), 2400);
+          }
+        }
+        p.pendingFocus = null;
+        p.pendingComment = null;
+        returnKbToSheet(p, heldKb);
+      };
+    }
+
+    // Stack geometry — the cap, the strip width, the accordion, the remembered width — is the
+    // HOST's now (components/ui/PanelHost.astro), stated once for all four kinds. MAXPANELS stays a
+    // local const only because the ＋-picker cap toast below quotes the number.
+    const MAXPANELS = 10;
+
+
+    // ── Panel factory (template clone + per-panel resize grip; NOT yet in the array) ─
+    const resetView = (p: Panel) => { p.asOf = null; p.fieldQuery = ''; p.linkTab = ''; };
+    const loadInto = (p: Panel, id: string) => { p.stack = [id]; resetView(p); p.fieldView = null; p.fieldTableCols = []; p.vtQuery = ""; };
+    function buildPanel(): Panel {
+      const el = tpl.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      const p: Panel = {
+        el, kind: PREFIX,
+        body: el.querySelector<HTMLElement>('[data-rp-body]')!,
+        titleEl: el.querySelector<HTMLElement>('[data-rp-title]')!,
+        crumbsEl: el.querySelector<HTMLElement>('[data-rp-crumbs]')!,
+        backBtn: el.querySelector<HTMLElement>('[data-rp-back]')!,
+        headIc: el.querySelector<HTMLElement>('[data-rp-head-ic]')!,
+        grip: el.querySelector<HTMLElement>('[data-rp-grip]')!,
+        idChip: el.querySelector<HTMLElement>('[data-rp-idchip]')!,
+        viewat: el.querySelector<HTMLAnchorElement>('[data-rp-viewat]')!,
+        crumbRow: el.querySelector<HTMLElement>('[data-rp-crumbrow]')!,
+        secnav: el.querySelector<HTMLElement>('[data-rp-secnav]')!,
+        stack: [], asOf: null, fieldQuery: '', linkTab: '', fieldView: null, fieldTableCols: [], vtQuery: '', pendingFocus: null, pendingComment: null, render: () => {},
+        uid: 0, anchor: false, w: 0, seq: 0, collapsed: false,
+      };
+      p.render = makeRender(p);
+      elToPanel.set(el, p);
+      // uid / width / seq + the per-panel resize grip are assigned & wired by createPanelStack.
+      return p;
+    }
+
+    // createPanel / open / openBeside / close+undo / evict / detach / park / reorder + shutter + resize-grip
+    // are all owned by createPanelStack (built below). The host keeps its content render + openFieldBeside.
+    // Open a FIELD's config in a 2nd panel (⌘/Ctrl-click a field) — mirrors Schema's open-beside.
+    function openFieldBeside(source: Panel, fieldId: string, recId: string) {
+      if (isMobile()) { source.fieldView = { fieldId, recId }; source.fieldTableCols = []; source.vtQuery = ""; source.render(); return; }
+      const spawn = (p: Panel) => { p.fieldView = { fieldId, recId }; p.fieldTableCols = []; p.vtQuery = ""; };
+      const make = () => { host.createPanel(PREFIX + recId, false, (q) => spawn(q as Panel)); host.layout(); };
+      if (host.atCap()) {
+        host.toast(`Can't add another panel — maximum of ${MAXPANELS} reached.`,
+          { label: 'Close oldest', icon: 'lucide--layers', run: () => { host.evictLRU(false); make(); } }, 6000);
+        return;
+      }
+      make();
+    }
+
+    // The toast is the HOST's — one surface for the whole page, so a record close and a file close
+    // cannot stack two countdown bars over each other.
+
+    // ── This component's KIND, registered with the ONE host (components/ui/PanelHost.astro) ─────
+    // Everything that used to be a `createPanelStack` call here — the panel array, the accordion, the
+    // resize grip, the rail, the cap-with-undo, Escape, `app:tabchange`, the resize listener — now
+    // happens ONCE, in the host, for all four kinds. What is registered below is only what nobody
+    // else can supply: how to build a `.rp-sheet`, what to put in it, and how to key it.
+    registerPanelKind<Panel>({
+      prefix: PREFIX,
+      minw: RP_MINW,
+      buildPanel,
+      loadInto: (p, id) => loadInto(p, id.slice(PREFIX.length)),
+      render: (p) => p.render(),
+      // A panel showing a FIELD config is deliberately unkeyed: it is a sub-view of a record, and a
+      // later open of that record must not silently focus a panel that is no longer showing it.
+      panelKey: (p) => (p.fieldView ? '' : PREFIX + topId(p)),
+      canOpen: (id) => recById.has(id.slice(PREFIX.length)),
+      onMissing: () => host.toast("This record isn't in this backup.", null),
+      mobileOpen: (p, id) => { if (p) { p.stack.push(id.slice(PREFIX.length)); resetView(p); p.fieldView = null; p.render(); } },
+      // Escape inside a field-config view pops back to the record rather than closing the panel —
+      // the kind consumes the key, the host closes only when every kind declines.
+      onEsc: (p) => { if (!p.fieldView) return false; p.fieldView = null; p.render(); return true; },
+      detachedText: 'Pinned — this panel is yours now. The next record you open starts a fresh anchor beside the grid.',
+      // Records + Comments (see `recordPickerSources` below). Records first: it is this kind's
+      // default scope when the ＋ is pressed with a record panel focused.
+      pickerSources: recordPickerSources,
+    });
+    // Name-preserving wrappers so the existing event handlers below stay untouched.
+    const openBeside = (source: Panel | null, id: string) => host.openBeside(source, PREFIX + id);
+    function doBack(p: Panel) {
+      if (p.fieldView) { p.fieldView = null; p.render(); return; }
+      if (p.stack.length > 1) { p.stack.pop(); resetView(p); p.render(); return; }
+    }
+
+    // ── Events (container-delegated; resolve the owning panel from the target) ─────
+    // Presentational: Browse/Docs/Chat only ever send `{ id }` / `{ id, focus }` — a plain open into
+    // the anchor (reused if already showing that record). No second "opened from elsewhere" mechanism
+    // (the Changelog drill now opens records in its OWN dcp- stack, see DataChangelog.astro).
+    document.addEventListener('data:openRecord', (ev) => {
+      const d = (ev as CustomEvent).detail;
+      const init = (q: unknown) => { const p = q as Panel; p.pendingFocus = d.focus ?? null; p.pendingComment = d.commentId ?? null; };
+      // `beside` is opt-in, so every other dispatcher of this event (Comments, Docs, Chat, the
+      // static import) keeps the plain open it has always had.
+      if (d.beside) host.openBeside(host.focused(), PREFIX + d.id, init);
+      else host.open(PREFIX + d.id, init);
+    });
+    // Escape, the parked-strip expand, focus-on-click and the three stack verbs (✕ / Pin /
+    // Collapse) are the HOST's — see `onEsc` above and PanelHost's `data-ps-*` delegate. Delegating
+    // from `document` (not from a panels container this component no longer owns) with the same
+    // `[data-rp-panel]` guard keeps every branch below reading exactly as it did.
+    document.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const panelEl = target.closest<HTMLElement>('[data-rp-panel]');
+      const p = panelEl ? elToPanel.get(panelEl) : null;
+      if (!p || p.collapsed) return;
+      const copyId = target.closest<HTMLElement>('[data-rp-copyid]');
+      if (copyId) {
+        navigator.clipboard?.writeText(copyId.dataset.rpCopyid!);
+        const ci = copyId.querySelector<HTMLElement>('.iconify');
+        if (ci) { copyId.classList.add('rp-copied'); ci.className = 'iconify lucide--check size-3.5'; setTimeout(() => { copyId.classList.remove('rp-copied'); ci.className = 'iconify lucide--copy size-3.5'; }, 1100); }
+        return;
+      }
+      const secTo = target.closest<HTMLElement>('[data-rp-secnav-to]');
+      if (secTo) { p.body.querySelector<HTMLElement>('#' + secTo.dataset.rpSecnavTo)?.scrollIntoView({ block: 'start', behavior: 'smooth' }); return; }
+      if (target.closest('[data-rp-back]')) { doBack(p); return; }
+      // A field NAME opens its config INSIDE this panel (pushed onto its stack).
+      // The `e.stopPropagation()` that used to guard this line is GONE (2026-08-04). It existed to
+      // stop EntityPanel's document-level `[data-entity-open]` delegate raising a SECOND drawer over
+      // this one — a cross-stack hack that, with one host, would swallow clicks the host should
+      // handle. The delegate now declines any `[data-entity-open]` inside a `[data-ps-panel]` that
+      // is not an entity sheet, which is the same rule stated once, positively, in one place.
+      const feOpen = target.closest<HTMLElement>('[data-entity-open]');
+      if (feOpen) {
+        e.preventDefault();
+        const fieldId = feOpen.dataset.entityOpen!; const recId = topId(p);
+        const me = e as MouseEvent;
+        if (me.metaKey || me.ctrlKey) openFieldBeside(p, fieldId, recId); // ⌘/Ctrl-click → 2nd panel
+        else { p.fieldView = { fieldId, recId }; p.fieldTableCols = []; p.vtQuery = ""; p.render(); } // plain click → in place
+        return;
+      }
+      const ltab = target.closest<HTMLElement>('[data-rp-linktab]');
+      if (ltab) { p.linkTab = ltab.dataset.rpLinktab!; p.render(); return; }
+      // Open beside (explicit ⧉ button) → load the linked record into a 2nd panel.
+      const ob = target.closest<HTMLElement>('[data-rp-openbeside]');
+      if (ob) { e.stopPropagation(); openBeside(p, ob.dataset.rpOpenbeside!); return; }
+      // Same ⧉, on a FIELD row: opens that field's config beside — the same branch ⌘/Ctrl-clicking
+      // the field name already takes (see the feOpen handler above), just without needing the modifier.
+      const fob = target.closest<HTMLElement>('[data-rp-fieldbeside]');
+      if (fob) { e.stopPropagation(); openFieldBeside(p, fob.dataset.rpFieldbeside!, topId(p)); return; }
+      // Expand provenance (scoped to this panel's field element).
+      const exp = target.closest<HTMLElement>('[data-rp-expand]');
+      if (exp) {
+        const fieldEl = exp.closest<HTMLElement>('[data-rp-field]')!;
+        const wrap = fieldEl.querySelector<HTMLElement>('[data-rp-provwrap]')!;
+        const opening = wrap.hidden;
+        exp.classList.toggle('rp-expand-on', opening);
+        if (opening && !wrap.dataset.built) {
+          const rec = recById.get(topId(p))!;
+          const f = tableById.get(rec.tableId)!.fields.find((x) => x.id === fieldEl.dataset.rpField)!;
+          const fam = family(f.type);
+          wrap.innerHTML = fam === 'formula' ? provFormula(bodyCtx, rec, f) : fam === 'link' ? linkedList(rec, f, rec.cells[f.id]?.linkedCount || 0) : provLookup(bodyCtx, rec, f);
+          wrap.dataset.built = '1';
+          const lc = wrap.querySelector<HTMLElement>('[data-rp-linked]'); if (lc) paintLinked(bodyCtx, lc);
+        }
+        wrap.hidden = !opening;
+        return;
+      }
+      // A "Referenced in" row (B5) → the Docs tab with that document open (SchemaDocs listens).
+      const refDoc = target.closest<HTMLElement>('[data-rp-refdoc]');
+      if (refDoc) { document.dispatchEvent(new CustomEvent('schema:openDoc', { detail: { id: refDoc.dataset.rpRefdoc } })); return; }
+      // A linked / source record: plain click = drill IN-PLACE; ⌘/Ctrl-click = open BESIDE.
+      const openRow = target.closest<HTMLElement>('[data-rp-open]');
+      if (openRow && openRow.dataset.rpOpen) {
+        if (e.metaKey || e.ctrlKey) { openBeside(p, openRow.dataset.rpOpen); }
+        else { p.stack.push(openRow.dataset.rpOpen); resetView(p); p.render(); }
+        return;
+      }
+      const more = target.closest<HTMLElement>('[data-rp-linkmore]');
+      if (more) { const c = more.closest<HTMLElement>('[data-rp-linked]')!; c.dataset.loaded = String(Number(c.dataset.loaded) + PAGE); paintLinked(bodyCtx, c); return; }
+      const viewas = target.closest<HTMLElement>('[data-rp-viewas]');
+      if (viewas) { p.asOf = viewas.dataset.rpViewas!; p.render(); return; }
+      const clear = target.closest<HTMLElement>('[data-rp-asof-clear]');
+      if (clear) { p.asOf = null; p.render(); return; }
+    });
+
+    /**
+     * ── Enter/Space on a value-table row (D46) ──────────────────────────────────────────────────
+     *
+     * The rows `vtBody()` paints carry `cursor: pointer` and are answered by the delegated click
+     * handler above (its `openRow` branch) — they were mouse-only until now. `lib/wireRowKeys` is
+     * the ONE implementation of the keyboard half, and this is the mount.
+     *
+     * ROOT = `document.body`, matching `ReportBodyKpi.astro:662`, and NOT the `.rp-vt-wrap`: that
+     * wrap is re-created by `vtBody()` on every keystroke of the values search and on every panel
+     * re-render, so a listener bound to it would be discarded by the first search — exactly the
+     * failure `wireRowKeys` documents. `document.body` outlives every panel this kind ever builds.
+     *
+     * SELECTOR is `tr[data-rp-open]`, not `[data-rp-open]`: the same attribute marks the linked /
+     * source rows in `recordReadBody.ts`, which are `<div class="rp-provrow">` and make NO keyboard
+     * promise — they carry neither the role nor a tabindex, so `requireRole` (default) would stand
+     * down for them anyway, and the tag keeps this wire honest about the rows it owns.
+     *
+     * ACTIVATION re-dispatches a real `click` rather than calling the drill directly, because the
+     * click branch is not a pure "open": it reads `metaKey`/`ctrlKey` and forks to `openBeside`
+     * beside. Copying those two flags onto the synthetic event is what makes ⌘/Ctrl-Enter do what
+     * ⌘/Ctrl-click does; `row.click()`, the default, would have silently dropped the modifier and
+     * always drilled in place. One behaviour, stated once, in the handler above.
+     *
+     * `skipInteractive` stays on (default). A cell today is escaped text or a `<span>` (see
+     * `cellValue`, recordReadBody.ts:106-114) so nothing inside a row can act for itself yet — the
+     * default costs this table nothing and is already correct the day a cell grows a control.
+     */
+    wireRowKeys(document.body, {
+      rowSelector: 'tr[data-rp-open]',
+      onActivate: (row, ev) => {
+        row.dispatchEvent(new MouseEvent('click', {
+          bubbles: true, cancelable: true, metaKey: ev.metaKey, ctrlKey: ev.ctrlKey,
+        }));
+      },
+    });
+
+    document.addEventListener('input', (e) => {
+      const target = e.target as HTMLElement;
+      const panelEl = target.closest<HTMLElement>('[data-rp-panel]');
+      const p = panelEl ? elToPanel.get(panelEl) : null;
+      if (!p) return;
+      const fs = target.closest<HTMLInputElement>('[data-rp-fieldsearch]');
+      if (fs) {
+        p.fieldQuery = fs.value.trim().toLowerCase();
+        p.body.querySelectorAll<HTMLElement>('[data-rp-fieldlist] .rp-field').forEach((row) => {
+          row.style.display = !p.fieldQuery || (row.dataset.fname || '').includes(p.fieldQuery) ? '' : 'none';
+        });
+        return;
+      }
+      const s = target.closest<HTMLElement>('[data-rp-linksearch]');
+      if (s) { const c = s.closest<HTMLElement>('[data-rp-linked]')!; paintLinked(bodyCtx, c); return; }
+      // Value-table search — re-render only the table body so the input keeps focus.
+      const vts = target.closest<HTMLInputElement>('[data-rp-vtsearch]');
+      if (vts && p.fieldView) {
+        p.vtQuery = vts.value;
+        const rec = recById.get(p.fieldView.recId); const t = rec ? tableById.get(rec.tableId) : null;
+        const f = t?.fields.find((x) => x.id === p.fieldView!.fieldId);
+        const bodyEl = vts.closest('[data-rp-vtsec]')?.querySelector<HTMLElement>('[data-rp-vtbody]');
+        if (t && f && bodyEl) bodyEl.innerHTML = vtBody(t, f, p);
+      }
+    });
+    // Value-table "＋ Add column" picker (a <select> → change).
+    document.addEventListener('change', (e) => {
+      const sel = (e.target as HTMLElement).closest<HTMLSelectElement>('[data-rp-vt-add]');
+      if (!sel || !sel.value) return;
+      const panelEl = sel.closest<HTMLElement>('[data-rp-panel]');
+      const p = panelEl ? elToPanel.get(panelEl) : null;
+      if (!p) return;
+      if (!p.fieldTableCols.includes(sel.value)) p.fieldTableCols.push(sel.value);
+      p.render();
+    });
+
+    // ── What this kind contributes to the host's ONE ＋ picker ──────────────────────────────────
+    // TWO sources, from one kind. The picker's outer axis is the KIND (Records · Comments ·
+    // Attachments · Backups · Schema); INSIDE a source the kind is constant again, so each source
+    // names the axis that still varies. For both of these that is the TABLE: a "Records" heading
+    // over a list of records prints one heading over everything, which is the failure the rule
+    // exists to prevent.
+    //
+    // COMMENTS ARE NOT A PANEL KIND, and must not become one — a comment thread lives inside the
+    // record panel. So a comment result opens ITS RECORD with that comment focused, through the
+    // `data:openRecord { focus, commentId }` contract that Comments already dispatches. This kind
+    // owns both sources because it owns the panel both land in.
+    const tableFacet = (recId: string) => recById.get(recId)?.tableId || '';
+    const tableGroup = (tid: string) => { const t = tableById.get(tid); return t ? `${snap.baseName[t.baseId]} · ${t.name}` : 'Unknown table'; };
+    const tableChip = (tid: string) => tableById.get(tid)?.name || 'Unknown table';
+    // BASE IS A FACET, NOT THE AXIS. The axis inside Records is the table; the base is what the
+    // picker OPENS pinned to, restoring the `All bases ⇄ this base` narrowing the record picker had
+    // before the ＋ was unified. Without it a multi-base Space had no way to scope to a base at all.
+    const baseFacet = (recId: string) => { const t = tableById.get(tableFacet(recId)); return t ? t.baseId : ''; };
+    /** The focused record panel's base — the picker's opening narrowing beneath the kind chip. */
+    const focusedBase = () => {
+      const f = host.focused();
+      if (!f || f.kind !== PREFIX) return null;
+      const bid = baseFacet(topId(f as Panel));
+      return bid ? { id: bid, name: snap.baseName[bid] || bid } : null;
+    };
+    /** Every captured comment, flattened out of the per-record map the panel body already reads. */
+    const allComments = () => Object.entries(snap.comments || {}).flatMap(([recId, list]) =>
+      (list || []).map((c) => ({ recId, c })));
+
+    function recordPickerSources(): PickerSource[] { return [
+      {
+        key: 'record',
+        label: () => 'Records',
+        axis: 'table',
+        groupLabel: tableGroup,
+        scopeLabel: tableChip,
+        defaultScope: () => { const b = focusedBase(); return b ? [{ key: 'base', value: b.id, label: b.name }] : []; },
+        rows: () => {
+          // Already-open records stay LISTED but inert — a row that disappears reads as "gone".
+          const openIds = new Set(host.panels().filter((p) => p.kind === PREFIX).map((p) => topId(p as Panel)));
+          return snap.records.map((r) => ({
+            id: r.id,
+            facets: { table: r.tableId, base: tableById.get(r.tableId)?.baseId || '' },
+            hay: `${r.primary} ${r.id}`.toLowerCase(),
+            // A record's NAME is its primary field. The id is searchable but is not what anyone
+            // would call the record, so it stays out of the `elsewhere` block's name test.
+            nameHay: r.primary.toLowerCase(),
+            disabled: openIds.has(r.id),
+            html: `<span class="rp-addname">${pkEsc(r.primary)}</span><code class="rp-addid">${pkEsc(r.id)}</code>`,
+          }));
+        },
+        open: (id) => openBeside(host.focused() as Panel | null, id),
+      },
+      {
+        key: 'comment',
+        label: () => 'Comments',
+        axis: 'table',
+        groupLabel: tableGroup,
+        scopeLabel: tableChip,
+        defaultScope: () => { const b = focusedBase(); return b ? [{ key: 'base', value: b.id, label: b.name }] : []; },
+        rows: () => allComments().map(({ recId, c }) => ({
+          id: c.id,
+          facets: { table: tableFacet(recId), base: baseFacet(recId) },
+          // The record's name is in the haystack but not repeated in the row: you search for a
+          // comment by what was SAID or by who said it, and the row has to fit a 360px popover.
+          hay: `${c.text} ${c.author} ${recById.get(recId)?.primary || ''}`.toLowerCase(),
+          // A comment has no name. What identifies it to a person is WHO said it, so that is the
+          // name test — which is exactly the quiet-case scenario: scoped `Records`, typing an
+          // author must be recognised as naming comments, not as a stray record match.
+          nameHay: `${c.author} ${c.text}`.toLowerCase(),
+          html:
+            `<span class="rp-addwho">${pkEsc(c.author)}</span>` +
+            `<span class="rp-addname">${pkEsc(c.text.replace(/\s+/g, ' ').trim())}</span>`,
+        })),
+        // The one route that already existed, unchanged: the record panel opens beside, focused on
+        // the Comments section, scrolled to this comment.
+        open: (id) => {
+          const hit = allComments().find(({ c }) => c.id === id);
+          if (!hit) return;
+          document.dispatchEvent(new CustomEvent('data:openRecord', {
+            detail: { id: hit.recId, focus: 'comments', commentId: id, beside: true },
+          }));
+        },
+      },
+    ]; }
+  }
+  wireRecordPanel();
+  document.addEventListener('astro:after-swap', wireRecordPanel);
+</script>
+
+<style is:global>
+  /* Global (.rp- prefix): the body is rendered via innerHTML, which scoped styles never reach. */
+    /* The ＋ rail, the shutter, the open-count AND the ＋ popover that used to live here are GONE:
+     the column is the host's (styles/global.css `.ps-rail*`) and the popover is the one add-picker
+     (`.pk-pop`, opened by PanelHost.astro). What stays is the INSIDE of the two rows this kind
+     contributes to it — the group heading, the row shell, the chips, "Show N more" and the footer
+     count are the shared `.pk-*` skin. */
+  .rp-addname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-13); }
+  .rp-addid { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); flex: none; }
+  /* A comment row leads with WHO said it — the one thing that distinguishes two comments on the
+     same record — and the text takes whatever width is left. */
+  .rp-addwho { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-12); font-weight: 550; color: oklch(from var(--color-base-content) l c h / .65); }
+  /* The panels ROW is the host's `.ph-panels`; what is left here is the sheet itself.
+     NO resting box-shadow here, deliberately: sheets are siblings in one stack, so a leftward
+     shadow (`-12px 0 …`) falls ON the neighbouring sheet, not on the page. `border-left` already
+     separates a sheet from what is behind it. Only the stack's LEFTMOST surface casts a shadow —
+     `.ps-rail` in styles/global.css:1055. (The `.ps-dragging` shadow below is a different thing:
+     a sheet lifted off the stack.) */
+  .rp-sheet { position: relative; flex: none; height: 100dvh; width: var(--panel-w, var(--drawer-w)); background: var(--color-base-100); border-left: 1px solid var(--color-base-300); display: flex; flex-direction: column; }
+  .rp-sheet.ps-focus .rp-head { border-bottom-color: oklch(from var(--color-primary) l c h / .45); }
+  /* The arrival flash is the ONE shared `.ps-flash` recipe in styles/global.css — this surface's copy
+     was its origin, so nothing about it changed here except where it is written down. */
+  /* Resize handle (macOS-style edge line) — drag to resize the drawer; same idiom as .ep-grip. */
+  .rp-grip { position: absolute; left: -4px; top: 0; bottom: 0; width: 8px; cursor: col-resize; z-index: 3; touch-action: none; }
+  .rp-grip-line { position: absolute; left: 3px; top: 0; bottom: 0; width: 2px; background: transparent; transition: background-color .12s ease; pointer-events: none; }
+  .rp-grip:hover .rp-grip-line, .rp-grip.ps-grip-on .rp-grip-line { background: oklch(from var(--color-primary) l c h / .65); }
+  .rp-head { border-bottom: 1px solid var(--color-base-300); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .rp-head-row { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+  .rp-head-ic { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: var(--r-8); background: var(--color-base-200); color: oklch(from var(--color-base-content) l c h / .85); flex: none; }
+  .rp-head-ic .iconify { font-size: var(--t-16); opacity: .8; }
+  .rp-head-title { font-size: var(--t-16); font-weight: 650; letter-spacing: -0.15px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .rp-crumbrow { display: flex; align-items: center; gap: 12px; }
+  .rp-crumbrow[hidden] { display: none; }
+  .rp-viewat[hidden] { display: none; }
+  .rp-crumbs { min-width: 0; overflow: hidden; flex: 0 1 auto; }
+  .rp-crumbs .sb-crumb-cur { color: var(--color-base-content); font-weight: 550; }
+  /* In-panel section jump-nav (mirror Schema .ep-secnav). */
+  .rp-secnav { display: flex; align-items: center; gap: 4px; overflow-x: auto; }
+  .rp-secnav[hidden] { display: none; }
+  .rp-secnav-chip { flex: none; padding: 2px 8px; font-size: var(--t-12); font-weight: 550; border: 0; background: none; border-radius: var(--r-6); cursor: pointer; color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; }
+  .rp-secnav-chip:hover { background: var(--color-base-200); color: var(--color-base-content); }
+  .rp-secnav-chip.is-active { background: color-mix(in oklch, var(--color-primary) 16%, transparent); color: var(--color-primary); font-weight: 650; }
+  /* Record id + copy chip in the header. */
+  .rp-idchip { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
+  .rp-idchip[hidden] { display: none; }
+  .rp-idlabel { font-size: var(--t-11); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); } /* ds-ok: id label, menu-title scale */
+  .rp-idval { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); overflow: hidden; text-overflow: ellipsis; }
+  .rp-copyid { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: none; border: 0; background: none; border-radius: var(--r-6); cursor: pointer; color: oklch(from var(--color-base-content) l c h / .65); transition: color .4s ease, background-color .4s ease; }
+  .rp-copyid:hover { background: oklch(from var(--color-base-content) l c h / .08); color: var(--color-base-content); }
+  .rp-copied { color: var(--color-success); background: oklch(from var(--color-success) l c h / .16); transition: none; }
+  .rp-copied .iconify { animation: rp-copypop .32s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes rp-copypop { 0% { transform: scale(.3); opacity: 0; } 60% { transform: scale(1.3); } 100% { transform: scale(1); opacity: 1; } }
+  /* Mobile: one full-width column, minus the 40px the control column keeps (Schema parity). */
+  /* ONE SPELLING OF THE NARROW PANEL — `width: calc(100% - 40px)`, 16-responsive.md §8. See the
+     long note in EntityPanel.astro: `vw` counts the scrollbar, and setting the custom property lost
+     to panelStack's inline `--panel-w` after any drag. Below `.rp-sheet`'s base width (:632). */
+  @media (max-width: 1279.98px) { .rp-sheet { width: calc(100% - 40px); } .rp-grip, .rp-reorder { display: none; } }
+
+  /* ── Multi-panel chrome (ports Schema EntityPanel panel-state styles) ─────────────────────────── */
+  /* Reorder handle (pattern-panel-reorder): a ⠿ grip, quiet until header-hover; drag live-swaps order. */
+
+  /* ── The "hold" slot — how this panel is held (pattern-multi-panel-drawer) ─────────────────
+     One leading slot, one control: a movable panel shows its drag grip, the anchored one shows
+     Pin, and they are already mutually exclusive (see the anchor rules above). Putting them in
+     the SAME place means the answer to "can I move this?" is always found in the same spot, and it
+     frees the slot Pin used to occupy among the unrelated right-hand actions (Oleh 2026-07-24). */
+  /* ALWAYS laid out and always visible (Oleh, 2026-08-04) — ported 1:1 from EntityPanel. The slot
+     used to collapse to zero width at rest and open on hover, which moved the title — and the Back
+     button — 32px sideways exactly as the pointer travelled toward them: the target left from under
+     the cursor reaching for it. Quiet at rest and full strength on hover keeps the grip from
+     shouting without ever changing the layout. */
+  .rp-reorder {
+    flex: none;
+    opacity: .3;
+    transition: opacity .12s ease;
+  }
+  .rp-head:hover .rp-reorder,
+  .rp-head:focus-within .rp-reorder,
+  .rp-reorder:focus-visible { opacity: 1; }
+  /* Visibility is owned by the hold-slot rule above; this only carries the grab affordance. */
+  .rp-reorder { cursor: grab; }
+  .rp-reorder.ps-grip-on { cursor: grabbing; }
+  /* Ghost background, primary COLOUR (Oleh, 2026-08-04): the soft plate was tried and read as a
+     filled control competing with the title beside it. Colour alone still lifts it out of the
+     neutral grey the other header icons sit in, which is all it needed. */
+  .rp-detach { flex: none; color: var(--color-primary); }
+  /* The dragged sheet stays OPAQUE (the drawer is non-modal over the grid): dashed accent + shadow. */
+  .rp-sheet.ps-dragging { outline: 2px dashed var(--color-primary); outline-offset: -2px; z-index: 5; box-shadow: -12px 0 40px oklch(0 0 0 / .35); }
+  /* The ANCHOR slot — docked to the grid; every plain open lands in THIS panel. Encoded by POSITION, not
+     a badge, with an accent line along the top. Pin frees the slot. A non-anchor panel shows its drag
+     grip; the anchor hides it and shows Pin. */
+  .rp-sheet:not(.ps-anchor) .rp-detach,
+  .rp-sheet.ps-anchor .rp-reorder,
+  /* NOT in the hide list: the resize grip. A parked strip can be dragged back out, the same as on
+     Attachments — three of the four hosts used to suppress it and one did not, so the identical
+     drawer behaved differently depending on which section you opened it from (found 2026-08-05,
+     against `decision-one-stack-one-entity-one-drawer`). */
+  .rp-sheet.ps-collapsed .rp-detach,
+  .rp-sheet.ps-collapsed .rp-park,
+  .rp-sheet.ps-collapsed .rp-lock { display: none !important; }
+  /* The diagonal hatch is gone (Oleh, 2026-08-04). It was drawn when the anchor's only signal was
+     "this one is fixed"; now the pin button states the same fact in words and in a control you can
+     act on, so the texture was a second, quieter voice saying it. The accent line stays: it marks
+     WHICH panel is the anchor at a glance, which the button alone cannot do from across the row. */
+  .rp-sheet.ps-anchor .rp-head {
+    box-shadow: inset 0 2px 0 var(--color-primary);
+  }
+  /* Anchor lock scrim — the anchor withdraws during a reorder drag (not a drop target, never moves). An
+     OPAQUE inner scrim, never `opacity` on the sheet (which would let the grid bleed through). */
+  .rp-lock { display: none; }
+  .ps-reordering .rp-sheet.ps-anchor .rp-lock {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    position: absolute; inset: 0; z-index: 6; cursor: not-allowed; text-align: center; padding: 16px;
+    font-size: var(--t-13); background: oklch(from var(--color-base-100) l c h / .85); color: oklch(from var(--color-base-content) l c h / .65);
+    animation: rp-scrim-in .12s ease;
+  }
+  @keyframes rp-scrim-in { from { opacity: 0; } to { opacity: 1; } }
+  /* Collapse-to-rail (pattern-panel-collapse-rail): a parked panel is a ~46px vertical strip — ✕ (top) ·
+     icon tile · rotated name. Click the strip to expand; the ✕ closes. Also the auto-accordion overflow. */
+  .rp-sheet.ps-collapsed { width: 46px !important; min-width: 46px; }
+  .rp-sheet.ps-collapsed .rp-body,
+  .rp-sheet.ps-collapsed .rp-crumbrow,
+  .rp-sheet.ps-collapsed .rp-viewat,
+  .rp-sheet.ps-collapsed .rp-secnav,
+  .rp-sheet.ps-collapsed .rp-reorder,
+  .rp-sheet.ps-collapsed .rp-back { display: none !important; }
+  .rp-sheet.ps-collapsed .rp-head { padding: 8px 0; height: 100%; border-bottom: 0; }
+  .rp-sheet.ps-collapsed .rp-head-row { flex-direction: column; align-items: center; gap: 12px; height: 100%; min-height: 0; }
+  .rp-sheet.ps-collapsed .rp-x { order: -1; }
+  .rp-sheet.ps-collapsed .rp-head-title { display: block; flex: 0 1 auto; writing-mode: vertical-rl; transform: rotate(180deg); overflow: hidden; max-height: 100%; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Undo / info toast (pattern-undo-toast): one surface — an Undo offer (draining bar) or a bare fact. */
+  /* The undo toast is the host's single `.ph-undo` — one surface for the page, so two kinds can
+     never stack two countdown bars over each other. */
+
+  /* Field-config sub-view (pushed into the drawer's own stack). */
+  .rp-fc { display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: var(--r-12); overflow: hidden; }
+  .rp-fc-row { display: flex; align-items: flex-start; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--color-base-200); }
+  .rp-fc-row:last-child { border-bottom: 0; }
+  .rp-fc-key { flex: none; width: 140px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); padding-top: 2px; }
+  .rp-fc-val { flex: 1; min-width: 0; font-size: var(--t-13); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .rp-fc-val .rp-fic { display: inline-flex; opacity: .8; }
+  .rp-fc-mono { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--t-12); background: var(--color-base-200); padding: 2px 8px; border-radius: var(--r-6); }
+  .rp-fc-note { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin-top: 8px; }
+  /* Field "Show as table" segment + value-table. */
+  .rp-fc-seg { display: inline-flex; gap: 2px; padding: 2px; background: var(--color-base-200); border-radius: var(--r-8); align-self: flex-start; }
+  .rp-fc-segbtn { padding: 4px 12px; font-size: var(--t-12); font-weight: 550; border: 0; background: none; border-radius: var(--r-6); cursor: pointer; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rp-fc-segon { background: var(--color-base-100); color: var(--color-base-content); box-shadow: 0 1px 2px oklch(0 0 0 / .08); }
+  .rp-vt-wrap { border: 1px solid var(--color-base-300); border-radius: var(--r-12); overflow: auto; max-height: 52vh; }
+  .rp-vt { width: 100%; border-collapse: collapse; font-size: var(--t-13); }
+  .rp-vt thead th { position: sticky; top: 0; z-index: 1; background: var(--color-base-200); text-align: left; padding: 4px 12px; font-size: var(--t-11); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; } /* ds-ok: data-table header micro-label, 11px like the Browse grid */
+  .rp-vt thead th .rp-fic { margin-right: 4px; opacity: .7; }
+  .rp-vt td { padding: 4px 12px; border-top: 1px solid var(--color-base-200); white-space: nowrap; }
+  /* Only a row that OPENS gets the openable treatment — scoped to `.rp-vt-row` so the "No records
+     match." row, which is also a `<tr>` in this tbody, stops painting `cursor: pointer` for a click
+     it never answers. The FOCUS RING is not written here: these rows carry `.row-clickable`, the one
+     openable-row treatment app-wide (styles/components/row-actions.css:14-16). Its `:hover` is
+     deliberately out-specified by the rule below — a drawer over a listing wants the softer wash,
+     and the ring is the only part of that recipe this table needs to inherit. Keep both selectors
+     at this specificity: `.row-clickable:hover` is a single class, and dropping `.rp-vt tbody`
+     would leave the winner decided by stylesheet order between global.css and this block. */
+  .rp-vt tbody tr.rp-vt-row { cursor: pointer; }
+  .rp-vt tbody tr.rp-vt-row:hover { background: oklch(from var(--color-base-200) l c h / .55); }
+  .rp-vt-primary { font-weight: 600; }
+  .rp-vt-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .rp-vt-note { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rp-fc-link { color: var(--color-primary); }
+
+  /* Stacked sections (Fields → Linked records → History) that scroll as one. */
+  .rp-body { flex: 1; overflow-y: auto; min-height: 0; padding: 16px; display: flex; flex-direction: column; gap: 20px; }
+  .rp-sec { display: flex; flex-direction: column; gap: 8px; }
+  .rp-seclabel { display: flex; align-items: center; gap: 6px; font-size: var(--t-11); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); } /* ds-ok: 6px optical icon↔label gap */
+  .rp-sec-ic { opacity: .7; }
+  .rp-sec-count { font-size: var(--t-11); font-weight: 600; color: oklch(from var(--color-base-content) l c h / .65); font-variant-numeric: tabular-nums; }
+  /* Participants (comments-explorer spec: "count, participants, latest snippet"). Extends the
+     header grammar rather than a second header style — normal case + weight so names don't read
+     as a heading, truncated so a long author list never breaks the row onto a second line. */
+  .rp-sec-meta { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; letter-spacing: normal; font-weight: 500; font-size: var(--t-11); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rp-sec-meta::before { content: '· '; }
+
+  /* Comments (comments-explorer). A conversation, not a feed: oldest first, full text, replies
+     indented under their parent. The stream on the Data tab stays one dense line per comment and
+     links in here — the two are deliberately different shapes for the same data. */
+  .rp-cmlist { display: flex; flex-direction: column; gap: 12px; }
+  .rp-cm { display: flex; gap: 8px; padding: 4px 0; border-radius: var(--r-6); }
+  /* A reply is indented by exactly the chip + gap, so its text lines up under the parent's text. */
+  .rp-cm-reply { margin-left: 32px; }
+  .rp-cm-ini {
+    flex: none; display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 9999px; margin-top: 1px;
+    background: oklch(from var(--color-base-content) l c h / .08);
+    color: oklch(from var(--color-base-content) l c h / .65);
+    font-size: var(--t-12); font-weight: 650;
+  }
+  /* No name, no chip — but the SLOT stays, because in a threaded conversation the text of every
+     comment lines up on one left edge and a reply is indented by exactly the chip's width. Losing
+     the box would ragged the whole thread rather than just that one comment. */
+  .rp-cm-noini { flex: none; width: 24px; height: 24px; }
+  .rp-cm-main { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .rp-cm-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .rp-cm-author { font-size: var(--t-13); font-weight: 650; color: var(--color-base-content); }
+  .rp-cm-at { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rp-cm-edited { font-size: var(--t-12); font-style: italic; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rp-cm-text { font-size: var(--t-13); line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .85); white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* Attachment chips (founder, 2026-07-31) — one per file, ONE line: type glyph + filename + size.
+     No thumbnail (unlike Twist/Linear) — vertical space in a stacked panel is the scarce thing.
+     A chip is still not an upload control, but it OPENS the asset now (founder, 2026-07-31): the
+     "our stored copy vs. Airtable's expiring URL" question is settled by the Attachments tab, which
+     holds our copy. The affordance is conditional and that is the point — `.rp-cm-att-open` is added
+     by MediaPanel only when the asset is actually present on the page, so a chip either looks
+     interactive AND is, or looks exactly as inert as it did before. Never a live-looking dead link. */
+  .rp-cm-atts { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+  .rp-cm-att { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 8px; border-radius: var(--r-6); background: oklch(from var(--color-base-content) l c h / .08); font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); cursor: default; } /* ds-ok: 6px optical icon↔filename gap, matches .rp-seclabel */
+  .rp-cm-att-open { cursor: pointer; }
+  .rp-cm-att-open:hover { background: oklch(from var(--color-base-content) l c h / .08); }
+  .rp-cm-att-open:hover .rp-cm-att-name { color: var(--color-base-content); }
+  .rp-cm-att-ic { flex: none; opacity: .6; }
+  .rp-cm-att-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: oklch(from var(--color-base-content) l c h / .85); }
+  .rp-cm-att-size { flex: none; margin-left: auto; padding-left: 8px; font-variant-numeric: tabular-nums; color: oklch(from var(--color-base-content) l c h / .65); }
+  /* Empty state (comments-explorer spec gap, 2026-07-31) — unobtrusive, same register `.rp-empty`
+     already uses for "No source records": muted text, no border, no icon tile (that heavier
+     treatment is reserved for a capability lock, e.g. `.rp-locked` on static-mode History). */
+  .rp-cm-emptysec { font-size: var(--t-12); }
+  /* Deep-link cue. Transient on purpose: nothing in this list is selectable, so a mark that stayed
+     would read as state the user has to dismiss. */
+  .rp-cm-hit { background: color-mix(in oklch, var(--color-primary) 14%, transparent); box-shadow: 0 0 0 4px color-mix(in oklch, var(--color-primary) 14%, transparent); transition: background .4s ease, box-shadow .4s ease; }
+  @media (prefers-reduced-motion: reduce) { .rp-cm-hit { transition: none; } }
+  .rp-fieldsearch { width: 100%; }
+  .rp-list { border: 1px solid var(--color-base-300); border-radius: var(--r-12); overflow: hidden; background: oklch(from var(--color-base-200) l c h / .45); }
+  /* Clickable field name → its config; reads as a quiet link, not a button. */
+  .rp-fname-btn { border: 0; background: none; cursor: pointer; text-align: left; padding: 0; font: inherit; }
+  .rp-fname-btn:hover { color: var(--color-primary); text-decoration: underline; }
+
+  /* Linked records — tabs (one per link field) + the active list. */
+  .rp-linktabs { display: flex; align-items: stretch; gap: 2px; border-bottom: 1px solid var(--color-base-300); overflow-x: auto; }
+  .rp-linktab { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: var(--t-12); font-weight: 550; border: 0; border-bottom: 2px solid transparent; background: none; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; }
+  .rp-linktab:hover { color: var(--color-base-content); }
+  .rp-linktab-on { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+  .rp-linktab-n { font-size: var(--t-11); font-variant-numeric: tabular-nums; opacity: .7; }
+
+  .rp-field { border-top: 1px solid var(--color-base-200); }
+  .rp-field:first-child { border-top: 0; }
+  .rp-fieldrow { display: flex; align-items: center; gap: 8px; padding: 12px; }
+  .rp-fic { display: inline-grid; place-items: center; width: 16px; flex: none; opacity: .65; }
+  .rp-fic svg { width: 13px; height: 13px; }
+  .rp-fname { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); width: 40%; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rp-fval { flex: 1; font-size: var(--t-13); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .rp-num { font-family: var(--font-mono, ui-monospace); font-variant-numeric: tabular-nums; }
+  /* Single-select value chip — readable full-contrast text on a subtle tint (matches the grid). */
+  .rp-selval { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--r-6); font-size: var(--t-12); background: color-mix(in oklch, var(--color-base-content) 10%, transparent); color: var(--color-base-content); }
+  .rp-empty { color: oklch(from var(--color-base-content) l c h / .65); }
+  .rp-expand { display: grid; place-items: center; width: 24px; height: 24px; border: 0; background: none; border-radius: var(--r-6); cursor: pointer; color: oklch(from var(--color-base-content) l c h / .65); flex: none; }
+  .rp-expand:hover { background: oklch(from var(--color-base-content) l c h / .08); }
+  .rp-expand .iconify { transition: transform .15s ease; }
+  .rp-expand-on .iconify { transform: rotate(90deg); }
+  /* ⧉ field-row open-beside (canon control, same treatment as .rp-openbeside / .ep-beside /
+     .dcp-openbeside). Unlike EntityPanel's row it does NOT need absolute positioning + a swap with
+     inert meta: `.rp-fval` already truncates and yields its own width, so this is a plain flex
+     sibling placed before the (optional) provenance-expand chevron — both stay reachable on hover,
+     the row height never changes, and opacity/pointer-events (never display:none) keep it in the
+     tab order for keyboard reach. */
+  .rp-fieldbeside { opacity: 0; pointer-events: none; transition: opacity .1s; flex: none; }
+  .rp-fieldrow:hover .rp-fieldbeside, .rp-fieldbeside:focus-visible { opacity: 1; pointer-events: auto; }
+  .rp-fieldbeside:hover { color: var(--color-primary); background: var(--color-base-200); }
+
+  /* Provenance panels — one visual family (label header + row list). */
+  .rp-provwrap { padding: 0 12px 12px 36px; }
+  .rp-prov { border: 1px solid var(--color-base-300); border-radius: var(--r-12); overflow: hidden; background: var(--color-base-100); }
+  .rp-provhead { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--color-base-200); font-size: var(--t-12); background: oklch(from var(--color-base-200) l c h / .45); }
+  .rp-provexpr { font-family: var(--font-mono, ui-monospace); font-size: var(--t-12); }
+  .rp-provname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rp-provcount, .rp-provval { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); font-family: var(--font-mono, ui-monospace); }
+  .rp-provvia { color: oklch(from var(--color-base-content) l c h / .65); display: flex; flex-wrap: wrap; gap: 8px; }
+  .rp-provagg { margin-left: auto; font-size: var(--t-11); }
+  .rp-provrow { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--color-base-200); font-size: var(--t-13); }
+  .rp-provrow:first-child { border-top: 0; }
+  /* "Referenced in" rows (B5) — provrow language + a doc icon and a quiet kind tag. */
+  .rp-ref-ic { opacity: .6; flex: none; }
+  .rp-refkind { flex: none; font-size: var(--t-12); font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rp-provlink { cursor: pointer; }
+  .rp-provlink:hover { background: var(--color-base-200); }
+  .rp-provrow .rp-provname { flex: 1; }
+  /* Open-beside ⧉ — hover-revealed on a linked row; opens that record in a 2nd panel. */
+  /* ⧉ open-beside — the canon treatment (matches .ep-beside / .dcp-openbeside): daisyUI btn sizing,
+     revealed on row hover AND on keyboard focus. Reveal via OPACITY, not display: `display: none`
+     removed the button from the tab order entirely, so it was unreachable by keyboard, and the row
+     reflowed on hover. pointer-events is off at rest so the invisible button can never swallow a
+     click meant for the row itself (the row is what drills in place). */
+  .rp-openbeside { opacity: 0; pointer-events: none; transition: opacity .1s; flex: none; }
+  .rp-provrow:hover .rp-openbeside, .rp-openbeside:focus-visible { opacity: 1; pointer-events: auto; }
+  .rp-openbeside:hover { color: var(--color-primary); background: var(--color-base-200); }
+  .rp-linksearch { margin: 8px 12px; width: calc(100% - 24px); }
+  .rp-linkrows { max-height: 240px; overflow-y: auto; }
+  /* Placeholder linked rows (preview synthesis past the sample) — muted + inert, clearly not openable. */
+  .rp-provrow-ph { color: oklch(from var(--color-base-content) l c h / .65); cursor: default; }
+  .rp-linknote { padding: 8px 12px; font-size: var(--t-12); line-height: 1.4; color: oklch(from var(--color-base-content) l c h / .65); border-top: 1px solid var(--color-base-200); }
+  .rp-loadmore { padding: 8px 12px; text-align: center; font-size: var(--t-12); color: var(--color-primary); cursor: pointer; border-top: 1px solid var(--color-base-200); }
+  .rp-loadmore[hidden] { display: none; }
+
+  /* History timeline */
+  .rp-histhead { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 8px; }
+  .rp-histttl { font-size: var(--t-11); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); }
+  .rp-histrange { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .rp-histentry { border-top: 1px solid var(--color-base-200); padding: 12px; }
+  .rp-histentry:first-child { border-top: 0; }
+  .rp-histtop { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .rp-histrun { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); font-family: var(--font-mono, ui-monospace); }
+  .rp-viewas { margin-left: auto; font-size: var(--t-11); color: var(--color-primary); border: 0; background: none; cursor: pointer; }
+  .rp-histbody { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+  .rp-diff { display: flex; align-items: center; gap: 8px; font-size: var(--t-12); }
+  .rp-difflbl { width: 8rem; flex: none; color: oklch(from var(--color-base-content) l c h / .65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rp-diffold { padding: 2px 8px; border-radius: var(--r-6); text-decoration: line-through; background: color-mix(in oklch, var(--color-error) 15%, transparent); }
+  .rp-diffnew { padding: 2px 8px; border-radius: var(--r-6); background: color-mix(in oklch, var(--color-success) 16%, transparent); }
+  .rp-tomb { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  .rp-asof { display: flex; align-items: center; gap: 8px; font-size: var(--t-12); padding: 8px 12px; margin-bottom: 12px; border-radius: var(--r-8); background: color-mix(in oklch, var(--color-warning) 12%, transparent); color: oklch(from var(--color-base-content) l c h / .85); }
+  .rp-asof-x { border: 0; background: none; color: var(--color-primary); cursor: pointer; font-size: var(--t-12); }
+
+  /* Locked (dynamic-only) History in a static Space. */
+  .rp-locked { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; padding: 32px 16px; border: 1px dashed var(--color-base-300); border-radius: var(--r-12); background: oklch(from var(--color-base-200) l c h / .35); }
+  .rp-locked-ic { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: var(--r-12); background: var(--color-base-200); }
+  .rp-locked-ic .iconify { opacity: .6; }
+  .rp-locked-title { font-size: var(--t-14); font-weight: 650; }
+  .rp-locked-what { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); max-width: 40ch; }
+</style>

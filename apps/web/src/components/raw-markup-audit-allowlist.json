@@ -1,4 +1,7 @@
 {
+  "src/views/ActionsView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier, web-actions promotion): pattern-upcoming-section landing uses alert/badge/card/btn/textarea primitives directly — announce block, named operations, capability note, and feedback form. No single Storybook pattern covers the composition."
+  ],
   "src/views/BackupsListView.astro": [
     "daisyUI `table` primitive on the backup-history table: no Storybook table component exists, and the `.table` class supplies the cell padding the dense run table needs. Per CLAUDE.md §4.2 this is sanctioned daisyUI-direct-in-view (the audit's escape hatch), not a custom component."
   ],

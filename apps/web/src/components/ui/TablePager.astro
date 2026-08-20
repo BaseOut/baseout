@@ -1,0 +1,59 @@
+---
+/**
+ * TablePager — the ONE pager for every long list (catalog: pattern-table-toolbar).
+ *
+ * Construction (rows-per-page select · "1–50 of 1,240" · prev/next square-ghost) was hand-copied
+ * into four surfaces before Schema needed it on five more; it is a component now. Pair it with
+ * `createPager` from ./tablePager — the markup here is inert on its own.
+ *
+ * The four earlier copies (Backups · the Data record grid · the Changelog run list · its drill) are
+ * all migrated onto this file — there is no second pager left to drift from. A host that rebuilds
+ * its body as innerHTML (the drill) uses `pagerHtml` from ./tablePager instead of this component and
+ * keeps its own per-panel page; the markup it emits is the same, `tpg-tight` being its one metric.
+ *
+ * The default page size is the only per-surface decision: Backups 20 · Data record grid 50 ·
+ * Changelog run list 20 · Changelog drill 25 · Schema Browse (Flat) 50 · Schema tables 25.
+ */
+interface Props {
+  /** Unique per surface — `createPager` finds this pager by it. */
+  name: string;
+  /** Offered page sizes, low → high. */
+  sizes: number[];
+  /** Which of `sizes` is selected before the user's stored preference loads. */
+  selected: number;
+  /** Extra classes on the wrapper (spacing is owned by the pager, so this is rarely needed). */
+  class?: string;
+}
+const { name, sizes, selected, class: cls = '' } = Astro.props;
+---
+
+<div class:list={['tpg', cls]} data-pager={name}>
+  <label class="inline-flex items-center gap-2 text-xs font-medium text-base-content/65">Rows
+    <select class="select select-sm" data-pager-size aria-label="Rows per page">
+      {sizes.map((n) => <option value={n} selected={n === selected}>{n}</option>)}
+    </select>
+  </label>
+  <div class="ml-auto text-sm text-base-content/65">
+    <span class="mono-data" data-pager-range>1–{selected}</span> of <span class="mono-data" data-pager-total>0</span>
+  </div>
+  <div class="tpg-btns">
+    <button type="button" class="btn btn-sm btn-square btn-ghost" data-pager-prev aria-label="Previous page">
+      <span class="iconify lucide--chevron-left size-4" aria-hidden="true"></span>
+    </button>
+    <button type="button" class="btn btn-sm btn-square btn-ghost" data-pager-next aria-label="Next page">
+      <span class="iconify lucide--chevron-right size-4" aria-hidden="true"></span>
+    </button>
+  </div>
+</div>
+
+<style is:global>
+  /* is:global + a unique .tpg prefix — the Changelog drill builds its pager as runtime innerHTML,
+     which a scoped style block would never reach. Same metrics as the .dg-/.dc- pagers it replaces. */
+  .tpg { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-base-300); }
+  .tpg[hidden] { display: none; }
+  .tpg-btns { display: inline-flex; gap: 4px; }
+  /* Inside a panel the list already ends against the panel's own padding, so the pager needs the
+     rule but not the 12px lead-in — the Changelog drill's deliberate metric, now a modifier rather
+     than a second copy of the whole rule. */
+  .tpg-tight { margin-top: 4px; }
+</style>

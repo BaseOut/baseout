@@ -1,0 +1,60 @@
+---
+/**
+ * MediaThumb — the one square preview for a captured file (catalog: `pattern-media-thumb`).
+ *
+ * A thin wrapper over `mediaThumbHtml()` in ./mediaFormat: the markup has to exist as a STRING
+ * as well, because the asset panel builds its body as innerHTML. One builder, two call shapes.
+ *
+ * Two sizes and no third: `sm` = 32px (a listing cell), `lg` = 112px tall and full-track wide
+ * (a gallery tile / the panel preview). Both land on the 4px grid (8×4 and 28×4).
+ */
+import { mediaThumbHtml, type ThumbSize } from './mediaFormat';
+import type { MediaAsset } from './dataTypes';
+
+interface Props {
+  asset: Pick<MediaAsset, 'id' | 'filename' | 'type' | 'thumbUrl'>;
+  size?: ThumbSize;
+  /** Off when the surrounding row/tile already names the file right beside it. */
+  tip?: boolean;
+}
+const { asset, size = 'sm', tip = true } = Astro.props;
+---
+
+<Fragment set:html={mediaThumbHtml(asset, { size, tip })} />
+
+<style is:global>
+  /* is:global + the unique `.md-thumb` prefix: this exact markup is also emitted as innerHTML by
+     the asset panel, which a scoped style block would never reach. */
+  /* `vertical-align: middle` is load-bearing, not cosmetic. The box is inline-level, so it sits on
+     the text baseline. With a glyph inside, the iconify span supplies a baseline and the line box
+     is 49px; with an <img> (display:block, no baseline of its own) the box's baseline becomes its
+     bottom margin edge, so the line box reserves descender space UNDER it and the row grows to
+     53px. That made row height depend on whether a file happened to have a preview — measured
+     2026-07-31 as [53,53,49,49,…]. Aligning to the middle takes the box off the baseline entirely
+     and every row lands on one height, thumbnail or glyph. */
+  .md-thumb {
+    position: relative;
+    display: inline-flex;
+    vertical-align: middle;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    overflow: hidden;
+    aspect-ratio: 1;
+    background: var(--color-base-200);
+    border: 1px solid var(--color-base-300);
+  }
+  /* A tile is not square — it fills its track and keeps a fixed height, so `aspect-ratio` must not
+     fight the explicit box. The square rule stays for the 32px cell. */
+  .md-thumb-lg { aspect-ratio: auto; border-radius: var(--r-8); }
+  .md-thumb-sm { border-radius: var(--r-6); }
+  .md-thumb-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* The degraded state is DESIGNED: a quiet type glyph in the same box the image would occupy, so
+     nothing reflows. No gradient, no illustration, no onerror swap. */
+  .md-thumb-gl { opacity: .38; color: var(--color-base-content); }
+  .md-thumb-sm .md-thumb-gl { font-size: var(--t-16); }
+  .md-thumb-lg .md-thumb-gl { font-size: var(--t-32); }
+  /* Format chip stamped into the lower-left — what carries file type on this surface, which is why
+     there is no per-row category pill anywhere in the tab. */
+  .md-thumb-fmt { position: absolute; left: 4px; bottom: 4px; font-size: var(--t-12); }
+</style>

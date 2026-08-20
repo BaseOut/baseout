@@ -1,0 +1,502 @@
+---
+/**
+ * MediaPanel — the asset detail drawer for the Data page's Attachments tab (`media-library`).
+ *
+ * A NEW SHEET KIND on the EXISTING stacking controller (`components/ui/panelStack.ts`,
+ * `pattern-multi-panel-drawer`), never a fourth hand-rolled controller: the app had three that had
+ * already drifted, they were merged into one in 2026-07-22, and adding a fourth would undo that.
+ * Everything here is content; the panel array, the auto-accordion, the resize grip, the park/close
+ * mechanics and the cap-with-undo all come from `createPanelStack`.
+ *
+ * It reads its content off the LISTING ROW's dataset rather than from a second JSON snapshot of the
+ * assets. That is deliberate: the listing, the gallery and this panel are then three projections of
+ * ONE server-rendered set, and the 10,000-asset volume fixture does not ship the same objects twice.
+ *
+ * Since 2026-08-03 the asset BODY is a module (`./mediaReadBody.ts`), not a closure in here — a host
+ * can only render a kind whose body is one. This file keeps the CHROME (header, crumb row, rail,
+ * ＋ picker, toast) and the event wiring; the crumbs and header glyph it assigns come from that
+ * module's own chrome builders, so the two can never drift.
+ *
+ * ── ONE kind, in the ONE host (2026-08-04) ───────────────────────────────────────────────────
+ * This file used to be a three-kind host in miniature: it held `asset:`, `record:` and `entity:`
+ * panels in its OWN `createPanelStack`, because a file's Where-trail has to be able to open a record
+ * and a base without raising a second `position: fixed` drawer over this one. That was the right fix
+ * for two stacks and the wrong shape for four. `PanelHost.astro` is now the single host for the whole
+ * Data page, and this file registers exactly ONE kind with it: `asset:`.
+ *
+ * Everything that made it a host is gone with the duplication: the drawer root, the rail, the ＋
+ * button, the toast, the `createPanelStack` call, the cloned `.ep-sheet` + `makeEntityPanel`
+ * instantiation, the reduced record body, and the per-panel visit stack that Back popped. A record
+ * crumb now opens the REAL record drawer (`RecordPanel`'s kind) and a base/table/field crumb opens
+ * the REAL Schema entity drawer (`EntityPanel`'s kind), in the same stack, beside this file —
+ * which is the law it was reaching for: an entity's drawer is IDENTICAL from every section.
+ *
+ * The action ladder (in the body module now) is the button system, and it is honest about what we hold:
+ *  · Primary solid **Download** — ONLY when a Baseout-managed copy of the bytes exists.
+ *  · Secondary soft **Open in {provider}** — a BYOS Space's copy lives in the customer's Drive.
+ *  · Tertiary ghost **View in Airtable** — the source record, when it is still reachable.
+ * When we hold no bytes there is NO Download button. Not a disabled one: a disabled primary
+ * advertises a capability the product does not have and invites a support ticket.
+ */
+interface Props {
+  /** Static-only Spaces have files, not an Airtable connection — the panel never opens there. */
+  mode?: 'dynamic' | 'static' | 'both';
+}
+const { mode = 'dynamic' } = Astro.props;
+---
+
+{/* NO ROOT, NO RAIL, NO TOAST (2026-08-04) — see the note at the top of this file. What is left is
+    this kind's sheet template and its own ＋ picker; the host owns everything else. `data-mediamode`
+    keeps the static/dynamic flag on the page for the kind registration below to read. */}
+<span data-mediamode={mode} hidden></span>
+{/* The ＋ POPOVER that used to live here is gone (2026-08-05): one picker serves the whole host
+    (components/ui/panelAddPicker.ts) and this component contributes the Attachments rows to it. */}
+
+<template data-mp-tpl>
+  <aside class="mp-sheet" data-ps-panel data-mp-panel role="dialog" aria-modal="false" aria-label="File details">
+    <div class="mp-grip" data-ps-grip data-mp-grip aria-hidden="true"><span class="mp-grip-line"></span></div>
+    {/* Anchor lock scrim — shown on the anchor during a reorder drag ("docked, can't be reordered"). */}
+    <div class="mp-lock" aria-hidden="true"><span class="iconify lucide--lock size-5"></span><span>Docked to the file list</span></div>
+    <header class="mp-head">
+      <div class="mp-head-row">
+        {/* THE HOLD SLOT (pattern-multi-panel-drawer), 1:1 with Schema EntityPanel: Pin first, then
+            the drag grip. Never both, and both ALWAYS laid out. See the CSS block below. */}
+        <button type="button" class="btn btn-sm btn-ghost btn-square mp-detach tooltip tooltip-bottom" data-ps-detach data-mp-detach aria-label="Pin this panel so the next file opens beside it" data-tip="Pin — next file opens beside"><span class="iconify lucide--pin size-3.5" aria-hidden="true"></span></button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square mp-reorder tooltip tooltip-bottom" data-ps-reorder data-mp-reorder aria-label="Drag to reorder" data-tip="Drag to reorder"><span class="iconify lucide--grip-vertical size-4" aria-hidden="true"></span></button>
+        <span class="mp-head-ic" data-mp-head-ic aria-hidden="true"><span class="iconify lucide--paperclip concept-ic-asset size-4"></span></span>
+        <div class="mp-head-title" data-mp-title></div>
+        <button type="button" class="btn btn-sm btn-ghost btn-square mp-park tooltip tooltip-bottom" data-ps-park data-mp-park aria-label="Collapse to strip" data-tip="Collapse"><span class="iconify lucide--chevrons-left size-4" aria-hidden="true"></span></button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square mp-x tooltip tooltip-left" data-ps-close data-mp-closepanel aria-label="Close" data-tip="Close"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button>
+      </div>
+      <nav class="mp-crumbs sb-crumb-row" data-mp-crumbs aria-label="Breadcrumb"></nav>
+    </header>
+    <div class="mp-body" data-mp-body></div>
+  </aside>
+</template>
+
+<script>
+  import { registerPanelKind, host, type HostPanel } from '../ui/panelHostRegistry';
+  // The asset BODY is a module (Stage 3) — a host can only render a kind whose body is one.
+  // `assetCrumbs` / `ASSET_HEAD_ICON` come back as CHROME builders, assigned into this panel's own
+  // header slots below; they are deliberately not part of the body string.
+  import {
+    mediaReadBody, assetCrumbs, parseSrc, ASSET_HEAD_ICON,
+    type MediaBodyCtx, type AssetRowData,
+  } from './mediaReadBody';
+  import { attGlyph } from './mediaFormat';
+  import type { PickerSource } from '../ui/panelAddPicker';
+
+  /** Ids are ALWAYS kind-prefixed: one stack holds asset, record, run and entity sheets. */
+  const PREFIX = 'asset:';
+  /** A `.mp-sheet`. The record/entity unions this type used to carry are gone with the mini-host. */
+  type MediaP = HostPanel & {
+    body: HTMLElement; titleEl: HTMLElement; crumbsEl: HTMLElement; headIc: HTMLElement;
+    id: string; render: () => void;
+  };
+
+  const esc = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+
+  function wireMediaPanel() {
+    // The sheet TEMPLATE is this kind's mount signal — there is no `.mp-wrap` root any more.
+    const tpl = document.querySelector<HTMLTemplateElement>('[data-mp-tpl]');
+    if (!tpl || tpl.dataset.mpWired) return;
+    tpl.dataset.mpWired = '1';
+    const elToPanel = new WeakMap<HTMLElement, MediaP>();
+    // The listing row IS the model — see the file header.
+    const rowOf = (id: string) => document.querySelector<HTMLElement>(`[data-md-row][data-id="${CSS.escape(id)}"]`);
+    const syncedAt = document.querySelector<HTMLElement>('[data-datamedia]')?.dataset.synced || '';
+    // Whether a record crumb can lead anywhere: the record drawer publishes the page's one record
+    // snapshot, and a Space with no data does not render it. An inert crumb beats a dead link.
+    const recIds: Set<string> = (() => {
+      const snap = JSON.parse(document.querySelector('[data-rp-snapshot]')?.textContent || '{}');
+      return new Set(((snap.records || []) as { id: string }[]).map((r) => r.id));
+    })();
+
+    // ── Body ──────────────────────────────────────────────────────────────────
+    // The asset body is `mediaReadBody` (./mediaReadBody.ts). What is left here is the CONTEXT this
+    // kind resolves for it — nothing else.
+    const mediaCtx: MediaBodyCtx = { syncedAt, hasRecord: (id: string) => recIds.has(id) };
+
+    function renderAssetView(p: MediaP) {
+      const r = rowOf(p.id);
+      if (!r) return;
+      const a = r.dataset as AssetRowData;
+      // CHROME first, then the body. Header icon, title and crumbs are slots every kind has; only
+      // the last line is this kind's body.
+      p.headIc.innerHTML = ASSET_HEAD_ICON;
+      p.titleEl.textContent = a.name || p.id;
+      p.crumbsEl.innerHTML = assetCrumbs(parseSrc(a.src));
+      p.body.innerHTML = mediaReadBody(a, mediaCtx);
+      p.body.scrollTop = 0;
+    }
+
+    function buildPanel(): MediaP {
+      const el = tpl!.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      const p: MediaP = {
+        el, kind: PREFIX,
+        body: el.querySelector<HTMLElement>('[data-mp-body]')!,
+        titleEl: el.querySelector<HTMLElement>('[data-mp-title]')!,
+        crumbsEl: el.querySelector<HTMLElement>('[data-mp-crumbs]')!,
+        headIc: el.querySelector<HTMLElement>('[data-mp-head-ic]')!,
+        id: '', render: () => {},
+        uid: 0, anchor: false, w: 0, seq: 0, collapsed: false,
+      };
+      p.render = () => renderAssetView(p);
+      elToPanel.set(el, p);
+      return p;
+    }
+
+    // ── This component's KIND, registered with the ONE host ───────────────────────────────────
+    registerPanelKind<MediaP>({
+      prefix: PREFIX,
+      // The shared 360 floor (pattern-side-panel-width). The 320 exception belongs to the SCHEMA
+      // drawer's own geometry (110 of table peek); a file sheet sits over the Attachments listing.
+      minw: 360,
+      buildPanel,
+      loadInto: (p, id) => { p.id = id.slice(PREFIX.length); },
+      render: (p) => p.render(),
+      panelKey: (p) => (p.id ? PREFIX + p.id : ''),
+      canOpen: (id) => !!rowOf(id.slice(PREFIX.length)),
+      onMissing: () => host.toast("That file isn't in this backup.", null),
+      detachedText: 'Pinned — this panel is yours now. The next file you open starts a fresh anchor beside the list.',
+      pickerSources: mediaPickerSources,
+    });
+
+    // ── What this kind contributes to the host's ONE ＋ picker ──────────────────────────────────
+    // The rows are the CURRENTLY FILTERED files, read off `data-md-match` — the flag DataMedia
+    // stamps in its own apply(). Deliberately not "every asset in the Space": the ＋ continues the
+    // set the user has already narrowed on the page behind it, so the picker can never offer a file
+    // the listing is hiding. Files already open are listed but inert, so a repeat search does not
+    // read as "that file is gone".
+    //
+    // AXIS = TABLE. Kind is the picker's OUTER axis now, so inside this source every row is a file
+    // and a "Files" heading would name nothing. Format is not the axis either: it is already a facet
+    // on the listing behind this picker, and repeating a filter the user can see does not help them
+    // find a file. What varies, and what a person means by "where is it", is the table it hangs off.
+    const matchedRows = () => Array.from(document.querySelectorAll<HTMLElement>('[data-md-row][data-md-match="1"]'));
+    /**
+     * A field-level heading. The NAME comes out of the row's own `data-src` (`f`), which the row
+     * already carries for the crumbs — no new per-row attribute, which matters at 10,000 rows and is
+     * the reason `data-fields` (the id) was the only field attribute on the row until now.
+     *
+     * The two exceptions are the listing's own, word for word, so the ＋ and the group-by-field
+     * control behind it never name the same thing differently: a file with NO field id is
+     * "Comment attachments" — named for what those files are, not for what they lack — and a field
+     * whose name did not survive the capture is "Field not in this backup".
+     */
+    const fieldLabel = (fid: string): string => {
+      if (!fid) return 'Comment attachments';
+      const row = matchedRows().find((r) => (r.dataset.fields || '') === fid);
+      return parseSrc(row?.dataset.src)?.f || 'Field not in this backup';
+    };
+    function mediaPickerSources(): PickerSource[] { return [{
+      key: 'asset',
+      // The inherited listing narrowing is stated by the LABEL, which is also the group heading and
+      // the scope chip — one sentence, in the one place scope is named. It follows the FACT rather
+      // than dressing it up: plain `Attachments` when the listing behind is unfiltered (the honest
+      // default), and it names the listing only when a filter there really is hiding something.
+      label: () => {
+        const shown = matchedRows().length;
+        const total = document.querySelectorAll('[data-md-row]').length;
+        return shown === total ? 'Attachments' : `Attachments in this listing (${shown.toLocaleString()} of ${total.toLocaleString()})`;
+      },
+      // TWO LEVELS, BECAUSE A FILE HANGS OFF A FIELD (2026-08-08, Dan: "we also have a field level
+      // where attachments are inside of fields … so we could drill down into specific fields or we
+      // could stay here"). `root → table → files` could only answer "which file in this table",
+      // which in a table with six attachment fields is the whole table again.
+      //
+      // THE TABLE LEVEL IS THE "STAY HERE" STATE, not a step that is skipped: it lists every field
+      // of the table as a heading with its files under it, so staying costs nothing and drilling is
+      // one click. Nothing was replaced by a forced field choice.
+      axis: (sc) => (sc.some((s) => s.key === 'table') ? 'field' : 'table'),
+      groupLabel: (v, ax) => {
+        if (ax === 'field') return fieldLabel(v);
+        const row = matchedRows().find((r) => (r.dataset.tables || '') === v);
+        return row ? `${row.dataset.basename || ''} · ${row.dataset.tablename || ''}` : 'Unknown table';
+      },
+      // The chip says the LEAF — the path in front of it already carries the base and the table.
+      scopeLabel: (v, ax) => (ax === 'field'
+        ? fieldLabel(v)
+        : matchedRows().find((r) => (r.dataset.tables || '') === v)?.dataset.tablename || 'Unknown table'),
+      // Fieldless files sort LAST at the field level, and never fire at the table level (every file
+      // has a table). Same order the listing's own group-by-field uses: the exception is met after
+      // the fields, not filed under whatever letter a sentinel would have started with.
+      groupOrder: (a, b) => (a === '' ? 1 : b === '' ? -1 : 0),
+      // Same shape as the record source: the base is a FACET the picker opens pinned to, never the
+      // axis. `data-bases` is the base id, which is what the record rows carry too — one join key,
+      // so a base chip means the same thing whichever kind the search widens into.
+      defaultScope: () => {
+        const f = host.focused();
+        const r = f && f.kind === PREFIX ? rowOf((f as MediaP).id) : null;
+        const id = r?.dataset.bases || '';
+        return id ? [{ key: 'base', value: id, label: r?.dataset.basename || id }] : [];
+      },
+      rows: () => {
+        const openIds = new Set(host.panels().filter((p) => p.kind === PREFIX).map((p) => (p as MediaP).id));
+        return matchedRows().map((r) => {
+          const open = openIds.has(r.dataset.id || '');
+          const meta = [r.dataset.kindlabel, r.dataset.sizetext].filter(Boolean).join(' · ');
+          return {
+            id: r.dataset.id || '',
+            // `field` is the FIELD ID and is legitimately '' — Airtable's comment payload carries
+            // no field id, so a comment attachment hangs off none. It is grouped as its own honest
+            // heading rather than given a sentinel; see `fieldLabel`.
+            facets: { table: r.dataset.tables || '', base: r.dataset.bases || '', field: r.dataset.fields || '' },
+            // A file's haystack IS its filename, so the name test needs no separate string —
+            // `nameHay` defaults to `hay`. Left implicit rather than restated: one number in two
+            // places is how four of this week's defects started.
+            hay: (r.dataset.name || '').toLowerCase(),
+            disabled: open,
+            html:
+              `<span class="iconify ${attGlyph({ filename: r.dataset.name, type: r.dataset.type })} size-4 mp-addrow-ic" aria-hidden="true"></span>` +
+              `<span class="mp-addname">${esc(r.dataset.name || '')}</span>` +
+              `<span class="mp-addmeta">${esc(open ? 'open' : meta)}</span>`,
+          };
+        });
+      },
+      open: (id) => host.openBeside(host.focused(), PREFIX + id),
+    }]; }
+
+    // A plain open lands in the ANCHOR (slot 0); ⌘/Ctrl-click and middle-click ask for a panel beside.
+    document.addEventListener('data:openAsset', (ev) => {
+      const d = (ev as CustomEvent).detail as { id: string; beside?: boolean };
+      if (d.beside) host.openBeside(host.focused(), PREFIX + d.id); else host.open(PREFIX + d.id);
+    });
+    // The LISTING's Where column asks for a record / a base·table·field. Both used to be MediaPanel's
+    // own reduced sheets; both are now the REAL drawer, in the same stack. The two event names stay
+    // (DataMedia dispatches them) — what changed is only which kind answers.
+    document.addEventListener('data:openMediaRecord', (ev) => {
+      const d = (ev as CustomEvent).detail as { id: string; beside?: boolean };
+      if (!d?.id) return;
+      if (d.beside) host.openBeside(host.focused(), 'record:' + d.id); else host.open('record:' + d.id);
+    });
+    // ALWAYS open-beside, even on a plain click: `open()` reuses the ANCHOR, and the anchor is the
+    // file you are reading — replacing it with a base would throw away the thing the crumb describes.
+    document.addEventListener('data:openMediaEntity', (ev) => {
+      const d = (ev as CustomEvent).detail as { id: string };
+      if (!d?.id) return;
+      host.openBeside(host.focused(), 'entity:' + d.id);
+    });
+    // A file chip inside a comment thread opens THAT asset here (founder, 2026-07-31). The chip is
+    // rendered by the shared `recordReadBody`, so this one delegated listener serves every host of
+    // that body instead of three copies.
+    //
+    // HONESTY: a chip only becomes interactive when the asset really is on this page. `rowOf()` is
+    // the same lookup the panel uses for everything else, so a chip for a file the Attachments tab
+    // does not hold stays exactly as inert as it was — never a link that looks live and does nothing.
+    const chipOf = (t: EventTarget | null) => (t as HTMLElement | null)?.closest?.<HTMLElement>('[data-rb-asset]') || null;
+    const markChip = (el: HTMLElement) => {
+      const id = el.dataset.rbAsset || '';
+      el.classList.toggle('rp-cm-att-open', !!(id && rowOf(id)));
+    };
+    document.addEventListener('pointerover', (e) => { const c = chipOf(e.target); if (c && !c.dataset.rbChecked) { c.dataset.rbChecked = '1'; markChip(c); } });
+    document.addEventListener('click', (e) => {
+      const chip = chipOf(e.target);
+      if (!chip) return;
+      const id = chip.dataset.rbAsset || '';
+      if (!id || !rowOf(id)) return;
+      e.preventDefault(); e.stopPropagation();
+      const me = e as MouseEvent;
+      if (me.metaKey || me.ctrlKey) host.openBeside(host.focused(), PREFIX + id); else host.open(PREFIX + id);
+    });
+
+    // ── This kind's own in-sheet reads. Escape, focus, the parked-strip expand and the three stack
+    // verbs (✕ / Pin / Collapse) are the HOST's — see PanelHost's `data-ps-*` delegate. ──
+    document.addEventListener('click', (e) => {
+      const target = e.target as HTMLElement;
+      const panelEl = target.closest<HTMLElement>('[data-mp-panel]');
+      const p = panelEl ? elToPanel.get(panelEl) : null;
+      if (!p || p.collapsed) return;
+      // ── The correlation trail is a LINK (media-library spec) ─────────────────────────────
+      // A base / table / field crumb opens the FULL Schema entity panel beside; a record crumb opens
+      // the FULL record drawer beside. Always beside, never in place: both are a different SHEET, and
+      // an in-place open would discard the file you are reading.
+      const entCrumb = target.closest<HTMLElement>('[data-mp-openentity]');
+      if (entCrumb) { host.openBeside(p, 'entity:' + entCrumb.dataset.mpOpenentity!); return; }
+      const recCrumb = target.closest<HTMLElement>('[data-mp-openrec]');
+      if (recCrumb) { host.openBeside(p, 'record:' + recCrumb.dataset.mpOpenrec!); return; }
+      // There is no backend in this mirror, and a button that silently does nothing is worse than
+      // one that says so — the honest-signal pattern used throughout this repo.
+      if (target.closest('[data-mp-download]')) { host.toast('Download is faked in this preview — no file is fetched.', null); return; }
+      if (target.closest('[data-mp-openprovider]')) { host.toast('Opening the destination copy is faked in this preview.', null); return; }
+    });
+
+    // Middle-click a crumb → open beside (browser-tab convention), in this same stack.
+    const MIDCLICK_SEL = '[data-mp-openentity], [data-mp-openrec]';
+    document.addEventListener('mousedown', (e) => { if ((e as MouseEvent).button === 1 && (e.target as HTMLElement).closest(MIDCLICK_SEL)) e.preventDefault(); });
+    document.addEventListener('auxclick', (e) => {
+      const me = e as MouseEvent; if (me.button !== 1) return;
+      const target = e.target as HTMLElement;
+      const hit = target.closest<HTMLElement>(MIDCLICK_SEL);
+      if (!hit) return;
+      const ent = hit.dataset.mpOpenentity;
+      const id = ent ? 'entity:' + ent : 'record:' + hit.dataset.mpOpenrec;
+      if (!ent && !hit.dataset.mpOpenrec) return;
+      me.preventDefault();
+      const panelEl = target.closest<HTMLElement>('[data-mp-panel]');
+      host.openBeside(panelEl ? elToPanel.get(panelEl) || null : null, id);
+    });
+  }
+  wireMediaPanel();
+  document.addEventListener('astro:after-swap', wireMediaPanel);
+</script>
+
+<style is:global>
+  /* Global + a unique `.mp-` prefix: the body is rendered via innerHTML, which scoped styles never
+     reach. Geometry constants (46px strip, the width var) are the stack controller's, not ours. */
+  /* The drawer root, the panels row, the rail, the shutter, the open-count AND the ＋ popover are
+     the HOST's now (components/ui/PanelHost.astro + the shared `.ps-rail*` / `.pk-pop*` sets in
+     styles/global.css). What is left below is the inside of this kind's rows, and its sheet. */
+  /* The row shell, the table headings, the chips, "Show N more" and the footer count are the
+     shared `.pk-*` skin (pickerSearch.ts + styles/global.css), including the "already open =
+     dimmed, not removed" state (`.pk-opt-off`) — a file vanishing reads as "it's gone". Only the
+     inside of a file row is this component's own. */
+  .mp-addrow-ic { flex: none; opacity: .6; }
+  .mp-addname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-13); }
+  .mp-addmeta { flex: none; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* NO resting box-shadow here, deliberately: sheets are siblings in one stack, so a leftward
+     shadow (`-12px 0 …`) falls ON the neighbouring sheet, not on the page. `border-left` already
+     separates a sheet from what is behind it. Only the stack's LEFTMOST surface casts a shadow —
+     `.ps-rail` in styles/global.css:1055. The `.ps-focus` variant went with it — it was only a
+     heavier version of the same misplaced shadow, so this surface now carries no focus mark at all
+     (RecordPanel/DataChangelog mark focus with a head border-bottom; unresolved here on purpose). */
+  .mp-sheet {
+    position: relative; pointer-events: auto; display: flex; flex-direction: column;
+    width: var(--panel-w, 480px); flex: none; height: 100%;
+    background: var(--color-base-100); border-left: 1px solid var(--color-base-300);
+  }
+  /* Collapse-to-rail (pattern-panel-collapse-rail): a parked panel is a ~46px vertical strip —
+     ✕ (top) · icon · rotated name. This surface used to hide the title outright, which left the
+     strip anonymous: a stack of identical 46px slivers you have to expand one by one to find the
+     file you parked. Brought onto the documented behaviour, matching RecordPanel. CSS only.
+     The state class is the app-wide neutral one now, so the two rules that carry no content prefix
+     are scoped to THIS container: four stacks still mount on the Data page, and a bare `.ps-collapsed`
+     would reach into all of them. `> .ps-collapsed` keeps exactly the reach `.mp-collapsed` had — this
+     host's own sheets plus the entity sheet it hosts. */
+  .mp-sheet.ps-collapsed { width: 46px; overflow: hidden; }
+  /* The strip is ✕ · icon · rotated name and nothing else — Back belongs to the expanded header. */
+  .mp-sheet.ps-collapsed .mp-crumbs, .mp-sheet.ps-collapsed .mp-body, .mp-sheet.ps-collapsed .mp-park { display: none !important; }
+  .mp-sheet.ps-collapsed .mp-head { padding: 8px 0; height: 100%; border-bottom: 0; }
+  .mp-sheet.ps-collapsed .mp-head-row { flex-direction: column; align-items: center; gap: 12px; height: 100%; min-height: 0; }
+  /* The ✕ goes to the TOP of the strip; the rotated name fills what is left below the icon. */
+  .mp-sheet.ps-collapsed .mp-x { order: -1; }
+  .mp-sheet.ps-collapsed .mp-head-title { display: block; flex: 0 1 auto; writing-mode: vertical-rl; transform: rotate(180deg); overflow: hidden; max-height: 100%; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* The `.ep-sheet` this file used to clone and host itself is an ordinary panel of the ONE host
+     now, styled entirely by EntityPanel's own `is:global` rules. Nothing about it belongs here. */
+  .mp-grip { position: absolute; left: -3px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 2; }
+  .mp-grip-line { position: absolute; left: 3px; top: 0; bottom: 0; width: 2px; background: transparent; }
+  .mp-grip:hover .mp-grip-line, .ps-grip-on .mp-grip-line { background: var(--color-primary); }
+  /* The arrival flash is the ONE shared `.ps-flash` recipe in styles/global.css. This surface used to
+     wash the whole sheet background instead, which repainted the body under the file the user opened
+     the panel to look at; it is now the same leading-edge sweep as every other panel. */
+
+  .mp-head { display: flex; flex-direction: column; gap: 4px; padding: 12px 12px 8px; border-bottom: 1px solid var(--color-base-300); }
+  /* Focus, PORTED from `.rp-sheet.ps-focus .rp-head` because removing the drop shadow removed a
+     capability, not a decoration: on this host the heavier shadow was the ONLY thing marking the
+     focused sheet. Two of the four stack hosts already recolour the head hairline instead, and a
+     hairline cannot land on the neighbouring sheet the way a leftward shadow does. */
+  .mp-sheet.ps-focus .mp-head { border-bottom-color: oklch(from var(--color-primary) l c h / .45); }
+  .mp-head-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+
+  /* ── The "hold" slot — how this panel is held (pattern-multi-panel-drawer) ─────────────────
+     One leading slot, one control: a movable panel shows its drag grip, the anchored one shows
+     Pin, and they are mutually exclusive (see the anchor rules below). */
+  /* ALWAYS laid out and always visible (Oleh, 2026-08-04) — ported 1:1 from EntityPanel. The slot
+     used to collapse to zero width at rest and open on hover, which moved the title — and the Back
+     button — 32px sideways exactly as the pointer travelled toward them: the target left from under
+     the cursor reaching for it. Quiet at rest and full strength on hover keeps the grip from
+     shouting without ever changing the layout. */
+  .mp-reorder {
+    flex: none;
+    opacity: .3;
+    transition: opacity .12s ease;
+  }
+  .mp-head:hover .mp-reorder,
+  .mp-head:focus-within .mp-reorder,
+  .mp-reorder:focus-visible { opacity: 1; }
+  /* Visibility is owned by the hold-slot rule above; this only carries the grab affordance. */
+  .mp-reorder { cursor: grab; }
+  .mp-reorder.ps-grip-on { cursor: grabbing; }
+  /* Ghost background, primary COLOUR (Oleh, 2026-08-04): the soft plate was tried and read as a
+     filled control competing with the title beside it. */
+  .mp-detach { flex: none; color: var(--color-primary); }
+
+  /* The ANCHOR slot — docked to the file list; every plain open lands in THIS panel. Encoded by
+     POSITION, not a badge: an accent line along its top, and it shows Pin where a movable panel
+     shows its grip. Deliberately NOT an accent left border — that pixel belongs to the resize grip,
+     whose hover state is the same primary colour. */
+  .mp-sheet:not(.ps-anchor) .mp-detach,
+  .mp-sheet.ps-anchor .mp-reorder,
+  .mp-sheet.ps-collapsed .mp-detach,
+  .mp-sheet.ps-collapsed .mp-reorder,
+  .mp-sheet.ps-collapsed .mp-lock { display: none !important; }
+  /* The diagonal hatch is gone (Oleh, 2026-08-04) — the pin button states "this one is fixed" in
+     words and in a control you can act on. The accent line stays: it marks WHICH panel is the
+     anchor at a glance, which the button alone cannot do from across the row. */
+  .mp-sheet.ps-anchor .mp-head {
+    box-shadow: inset 0 2px 0 var(--color-primary);
+  }
+  /* The dragged sheet stays OPAQUE (the drawer is non-modal over the listing): dashed accent + shadow. */
+  .mp-sheet.ps-dragging { outline: 2px dashed var(--color-primary); outline-offset: -2px; z-index: 5; box-shadow: -12px 0 40px oklch(0 0 0 / .35); }
+  /* Anchor lock scrim — the anchor withdraws during a reorder drag (never a drop target, never
+     moves). An OPAQUE inner scrim, never `opacity` on the sheet, which would let the list bleed through. */
+  .mp-lock { display: none; }
+  .ps-reordering .mp-sheet.ps-anchor .mp-lock {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    position: absolute; inset: 0; z-index: 6; cursor: not-allowed; text-align: center; padding: 16px;
+    font-size: var(--t-13); background: oklch(from var(--color-base-100) l c h / .85); color: oklch(from var(--color-base-content) l c h / .65);
+  }
+
+  .mp-head-ic { display: inline-flex; opacity: .8; }
+  .mp-head-title { flex: 1; min-width: 0; font-size: var(--t-14); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mp-crumbs { padding-left: 4px; }
+
+  .mp-body { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px 24px; }
+
+  .mp-preview { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: var(--color-base-200); }
+  /* The panel preview is the SAME 112px large variant, not a third size — the catalog entry allows
+     exactly two, and stretching it to the panel width would have invented one. */
+  .mp-preview .md-thumb { width: 112px; }
+  .mp-preview-gl { font-size: var(--t-32); opacity: .35; }
+  .mp-preview-note { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  .mp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .mp-gone { margin-bottom: 12px; font-size: var(--t-12); }
+
+  .mp-sec { margin-top: 20px; }
+  .mp-seclabel { display: flex; align-items: center; gap: 4px; font-size: var(--t-11); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); }
+  .mp-rows { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+  /* 136px, not 7rem: "Captured by Baseout" (D09 item 8) needs the room, and the key column is a
+     measured width on the 4px grid rather than an eyeballed rem. */
+  .mp-row { display: grid; grid-template-columns: 136px minmax(0, 1fr); gap: 12px; align-items: baseline; font-size: var(--t-14); }
+  .mp-row-k { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .mp-row-v { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  /* D09 item 8 — one line saying what the capture date is NOT. Airtable ships no attachment
+     timestamp, so without it "Captured" reads as the file's own age. */
+  .mp-note { margin-top: 8px; font-size: var(--t-12); line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* ONE source row — there is no list here any more, and no count: an attachment id lives in
+     exactly one base ▸ table ▸ (field) ▸ record. The row WRAPS rather than truncating, because in a
+     480px sheet this trail IS the answer the panel exists to give; the listing is where it has to
+     stay on one line. */
+  .mp-trails { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+  .mp-trail { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 8px; border-radius: var(--r-8); }
+  .mp-trail:hover { background: var(--color-base-200); }
+  .mp-trail-crumbs { flex: 1; min-width: 0; flex-wrap: wrap; row-gap: 4px; }
+  .mp-trail-gone { opacity: .4; cursor: help; }
+  /* A navigating crumb is a REAL interactive element, not bare text that happens to respond: it
+     gets a ghost-hover wash and a pointer, so "this opens the record" is legible before the click.
+     `.sb-crumb-link` already carries the cursor + colour shift; this adds the wash and the hit box
+     the catalog asks for on a clickable value. */
+  .mp-trail .sb-crumb-link { border-radius: var(--r-4); padding: 2px 4px; margin: -2px -4px; } /* ds-ok: 2px optical hit-box inset on a 4px-grid control */
+  .mp-trail .sb-crumb-link:hover { background: oklch(from var(--color-base-content) l c h / .08); }
+  .mp-trail .sb-crumb-link:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+
+  /* Mobile: one full-width column, minus the 40px the host's control column keeps. */
+  @media (max-width: 1279.98px) {
+    .mp-sheet { width: calc(100% - 40px); }
+    .mp-grip, .mp-reorder { display: none; }
+  }
+</style>
