@@ -36,11 +36,22 @@ describe('buildCategories — identity is a prop, never a literal', () => {
     expect(findRow(cats, 'space-name')?.value).toBe('Growth Ops');
   });
 
-  it('renders empty strings (not a literal) when org/space are absent', () => {
-    const noOrg = buildCategories({ user: subject.user, org: null, space: null });
+  it('renders empty strings (not a literal) when org is absent', () => {
+    const noOrg = buildCategories({ user: subject.user, org: null, space: subject.space });
     expect(findRow(noOrg, 'org-name')?.value).toBe('');
     expect(findRow(noOrg, 'org-slug')?.value).toBe('');
-    expect(findRow(noOrg, 'space-name')?.value).toBe('');
+  });
+
+  it('replaces the Space pane with Create Space when space is null (S32-F1)', () => {
+    const noSpace = buildCategories({ user: subject.user, org: subject.org, space: null });
+    expect(findRow(noSpace, 'space-name')).toBeUndefined();
+    expect(findRow(noSpace, 'space-delete')).toBeUndefined();
+    expect(findRow(noSpace, 'space-autoadd')).toBeUndefined();
+    const create = findRow(noSpace, 'space-create');
+    expect(create?.control).toBe('button');
+    expect(create?.trigger).toBe('create-space');
+    expect(create?.note).toBeUndefined();
+    expect(noSpace.find((c) => c.id === 'space')?.sections[0]?.title).toBe('No Space yet');
   });
 
   it('exposes the seven categories in order, with Security row-less', () => {

@@ -164,8 +164,15 @@ const destructiveRows = current.sections
               {(row.control === 'button' || row.control === 'avatar') && row.action === 'billing-portal' && (
                 <button type="button" class="btn btn-sm btn-soft btn-primary" data-set-portal>{row.cta}</button>
               )}
+              {/* `trigger` hands the row to an affordance the shell already has (Create Space),
+                  instead of a deferred `note`. `data-create-space` is picked up by AppShellSidebar. */}
               {(row.control === 'button' || row.control === 'avatar') && !row.action && (
-                <button type="button" class:list={['btn', 'btn-sm', row.danger ? 'btn-ghost text-error' : 'btn-soft btn-primary']} data-set-action={row.note}>{row.cta}</button>
+                <button
+                  type="button"
+                  class:list={['btn', 'btn-sm', row.danger ? 'btn-ghost text-error' : 'btn-soft btn-primary']}
+                  data-set-action={row.trigger ? undefined : row.note}
+                  data-create-space={row.trigger === 'create-space' ? '' : undefined}
+                >{row.cta}</button>
               )}
               {/* D06 — the `destructive` control kind. It is the only row that asks first. */}
               {row.control === 'destructive' && (

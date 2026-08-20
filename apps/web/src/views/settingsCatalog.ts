@@ -84,6 +84,15 @@ export interface SettingsRow {
    * to `/api/billing/portal` and hands off to Stripe (settingsControls.ts).
    */
   action?: 'billing-portal';
+  /**
+   * `button` rows only: hand this row to an affordance that ALREADY exists elsewhere in the shell
+   * instead of printing a deferred `note`. Today the one value is `create-space`, which stamps the
+   * `data-create-space` attribute the sidebar's document-level delegate already listens for
+   * (`AppShellSidebar.astro`), so the row opens the real `CreateSpaceModal`.
+   *
+   * A row with a `trigger` must not also carry a `note`: it is not deferred. (Audit S32-F1 / D17.)
+   */
+  trigger?: 'create-space';
 }
 
 export interface SettingsSection {
@@ -121,6 +130,121 @@ export function initialsOf(name: string): string {
     .join('')
     .toUpperCase()
     .slice(0, 2);
+}
+
+/**
+ * The Space category — a function rather than a literal in `buildCategories`.
+ *
+ * A Space may not exist yet. Emitting the full category regardless showed a blank name field,
+ * confident defaults, and a red **Delete Space** card for an object the user does not have
+ * (audit S32-F1, S1). No Space → no editable rows and no destroy action. The category STAYS on
+ * the rail (D08 forbids a named dead end) and its pane offers the one real exit: Create Space
+ * via the sidebar's existing `[data-create-space]` delegate.
+ */
+function spaceCategory(space: SettingsSubject['space']): SettingsCategory {
+  if (!space) {
+    return {
+      id: 'space',
+      label: 'Space',
+      icon: 'lucide--layers',
+      scope: 'Per space',
+      sections: [
+        {
+          title: 'No Space yet',
+          help:
+            'A Space binds one Airtable connection to a backup schedule, and everything on this page ' +
+            'is a setting on that Space. Create one and these settings appear.',
+          rows: [
+            {
+              id: 'space-create',
+              label: 'Create a Space',
+              desc: 'Pick the Airtable connection to back up and the bases inside it. You can change every default here afterwards.',
+              control: 'button',
+              cta: 'Create Space',
+              trigger: 'create-space',
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  return {
+    id: 'space',
+    label: 'Space',
+    icon: 'lucide--layers',
+    scope: 'Per space',
+    sections: [
+      {
+        title: 'This Space',
+        rows: [
+          {
+            id: 'space-name',
+            label: 'Space name',
+            desc: 'A Space is bound to one platform — currently Airtable.',
+            control: 'text',
+            value: space.name,
+            gated: true,
+          },
+          {
+            id: 'space-autoadd',
+            label: 'Auto-add new bases',
+            desc: 'Back up bases that appear in the source after this Space was set up. Configured per backup on the Backups screen.',
+            control: 'toggle',
+            on: true,
+            gated: true,
+          },
+        ],
+      },
+      {
+        title: 'Defaults',
+        help: 'Starting points for new backups in this Space. Configured where each thing lives.',
+        rows: [
+          {
+            id: 'space-schedule',
+            label: 'Backup schedule',
+            desc: 'How often data and schema are captured. Set on the Backups screen.',
+            control: 'link',
+            cta: 'Open Backups',
+            href: '/backups',
+          },
+          {
+            id: 'space-destination',
+            label: 'Storage destination',
+            desc: 'Where new backups are written. Managed under Destinations.',
+            control: 'link',
+            cta: 'Open Destinations',
+            href: '/destinations',
+          },
+          {
+            id: 'space-retention',
+            label: 'Data retention',
+            desc: 'How long a backup is kept before cleanup reclaims it.',
+            control: 'link',
+            cta: 'Edit retention',
+            href: '/retention',
+          },
+        ],
+      },
+      {
+        title: 'Danger zone',
+        danger: true,
+        rows: [
+          {
+            id: 'space-delete',
+            label: 'Delete Space',
+            desc: 'Deletes every backup this Space has taken, with its schedules and reports. This cannot be undone.',
+            control: 'destructive',
+            cta: 'Delete Space',
+            danger: true,
+            consequence:
+              'Every backup this Space has taken is deleted from Baseout, along with its schedules, its reports and their run history. Your Airtable bases are not touched — but the copies that exist only here are the ones you would restore from, and after this there is nothing to restore. The source and destination connections stay in your account for other Spaces to use. There is no undo.',
+            note: 'Deleting a Space isn’t available in-app yet — contact support. Nothing was deleted.',
+          },
+        ],
+      },
+    ],
+  };
 }
 
 export function buildCategories(subject: SettingsSubject): SettingsCategory[] {
@@ -255,85 +379,9 @@ export function buildCategories(subject: SettingsSubject): SettingsCategory[] {
         },
       ],
     },
+    spaceCategory(space),
     {
-      id: 'space',
-      label: 'Space',
-      icon: 'lucide--layers',
-      scope: 'Per space',
-      sections: [
-        {
-          title: 'This Space',
-          rows: [
-            {
-              id: 'space-name',
-              label: 'Space name',
-              desc: 'A Space is bound to one platform — currently Airtable.',
-              control: 'text',
-              value: space?.name ?? '',
-              gated: true,
-            },
-            {
-              id: 'space-autoadd',
-              label: 'Auto-add new bases',
-              desc: 'Back up bases that appear in the source after this Space was set up. Configured per backup on the Backups screen.',
-              control: 'toggle',
-              on: true,
-              gated: true,
-            },
-          ],
-        },
-        {
-          title: 'Defaults',
-          help: 'Starting points for new backups in this Space. Configured where each thing lives.',
-          rows: [
-            {
-              id: 'space-schedule',
-              label: 'Backup schedule',
-              desc: 'How often data and schema are captured. Set on the Backups screen.',
-              control: 'link',
-              cta: 'Open Backups',
-              href: '/backups',
-            },
-            {
-              id: 'space-destination',
-              label: 'Storage destination',
-              desc: 'Where new backups are written. Managed under Destinations.',
-              control: 'link',
-              cta: 'Open Destinations',
-              href: '/destinations',
-            },
-            {
-              id: 'space-retention',
-              label: 'Data retention',
-              desc: 'How long a backup is kept before cleanup reclaims it.',
-              control: 'link',
-              cta: 'Edit retention',
-              href: '/retention',
-            },
-          ],
-        },
-        {
-          title: 'Danger zone',
-          danger: true,
-          rows: [
-            {
-              id: 'space-delete',
-              label: 'Delete Space',
-              desc: 'Deletes every backup this Space has taken, with its schedules and reports. This cannot be undone.',
-              control: 'destructive',
-              cta: 'Delete Space',
-              danger: true,
-              consequence:
-                'Every backup this Space has taken is deleted from Baseout, along with its schedules, its reports and their run history. Your Airtable bases are not touched — but the copies that exist only here are the ones you would restore from, and after this there is nothing to restore. The source and destination connections stay in your account for other Spaces to use. There is no undo.',
-              note: 'Deleting a Space isn’t available in-app yet — contact support. Nothing was deleted.',
-            },
-          ],
-        },
-      ],
-    },
-    {
-      id: 'billing',
-      label: 'Billing',
+      id: 'billing',      label: 'Billing',
       icon: 'lucide--credit-card',
       scope: 'Per org · admin',
       sections: [
