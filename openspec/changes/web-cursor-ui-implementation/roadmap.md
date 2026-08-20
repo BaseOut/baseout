@@ -75,7 +75,7 @@
 | **9** | Schema Automations / Interfaces | Engine manual-CRUD + web tabs | **DONE** on this branch — engine `13b51873`/`33c7e667` + web proxies `6e4a2712` + UI tabs (this commit). Capture funnel (`server-automations-interfaces-docs`) still deferred. |
 | **10** | Support portal | `apps/support` from ui-only | **SKIP FOR NOW** (Q#6 — support channel not decided; revisit later) |
 | **11** | Billing / usage | Phase 1 portal rows now; usage/meters from pricing guide + honest gates (no fork Usage view) | **UNBLOCKED 2026-08-20** — build from PRD/`pricing-guide` / placeholders; do not wait on Q#4 |
-| **12** | Design-audit convergence | 41-item ship order (`web-design-audit-convergence`) | **IN PROGRESS** — census done; vessels started (#13/#14/#15b/#2/#7/#23/#18/#35…); ~20 ship items still open (Badge sweep, Escape owner, tables, D15 gate) |
+| **12** | Design-audit convergence | 41-item ship order (`web-design-audit-convergence`) | **PAUSED for program close** — census + vessels advanced; item **16** closed; ~18 long-tail + D15 gate remain (`census.md`) |
 | **13** | Schema re-architecture | Fork Schema set + EntityPanel; Docs/Chat kept on live product paths | **NEARLY DONE** — Slices 0–5 landed (`cbec58d0`); Slice 6 docs; archive after smoke. OpenSpec `web-schema-rearch` |
 
 ### Slice A detail (first code after approval)
