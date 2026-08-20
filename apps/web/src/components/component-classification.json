@@ -207,6 +207,11 @@
     "styleguideId": "checkbox-toggle",
     "rationale": "Reusable boolean input primitive backed by daisyUI checkbox styling."
   },
+  "ui/CodeInput.astro": {
+    "classification": "ui-primitive-storybook",
+    "styleguideId": "code-input",
+    "rationale": "Short numeric-code primitive (2FA challenge, code-gated disable). One real input painted as N aria-hidden cells (styles/components/code-input.css) so paste/backspace/auto-advance stay native and AT hears one labelled field. Promoted from ui-only as a Settings SecurityPanel dependency (web-settings); full AuthChallengeView promotion is a later phase."
+  },
   "ui/ConfirmModal.astro": {
     "classification": "ui-primitive-storybook",
     "styleguideId": "confirm-modal",

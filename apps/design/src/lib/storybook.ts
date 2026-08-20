@@ -982,6 +982,100 @@ export const SB_ENTRIES: SBEntry[] = [
     ],
   },
   {
+    id: 'code-input',
+    group: 'Primitives',
+    name: 'Code input (6-digit)',
+    summary: 'One input, painted as six boxes — for a 2FA code the user types or pastes.',
+    description:
+      'A short numeric code (TOTP, email OTP) needs to <em>look</em> like N boxes and <em>behave</em> like one field. This is exactly what it is: a single <code>&lt;input&gt;</code> that carries the whole value, laid over N presentational cells that mirror its characters. Auto-advance, backspace and paste are therefore the browser\'s own behaviour, not re-implemented keyboard handling — a user who pastes all six digits out of their authenticator gets them, and a screen reader announces <strong>one</strong> labelled field, not six unlabelled ones. Add <code>autocomplete="one-time-code"</code> so iOS/Android offer the SMS/authenticator code. The second call site promised here now exists, unchanged and unforked: Settings &rsaquo; Security uses it twice — to VERIFY an enrolment (the step that turns 2FA on) and to confirm the code-gated disable.',
+    reference: 'components/ui/CodeInput.astro · lib/auth/codeInput.ts',
+    props: [
+      { name: 'name', type: 'string', default: "'code'", description: 'Form field name of the real input.' },
+      { name: 'length', type: 'number', default: '6', description: 'Number of cells; the input maxlength follows it.' },
+      { name: 'label', type: 'string', default: "'Verification code'", description: 'Accessible label for the single control.' },
+      { name: 'invalid', type: 'boolean', default: 'false', description: 'Paints every cell with the error border; pair with the reason below the field.' },
+      { name: 'disabled', type: 'boolean', default: 'false', description: 'Lockout / submitting — cells dim and the input stops accepting.' },
+      { name: 'autofocus', type: 'boolean', default: 'false', description: 'Focus on mount — true on the challenge screen, where typing the code is the only job.' },
+      { name: 'hint', type: 'string', default: '—', description: 'Helper or error line under the field (fieldset-label).' },
+    ],
+    guides: [
+      {
+        title: 'Behaviour it must keep',
+        note: 'These are not optional polish — each one is a support ticket if it is missing. Because the control is one native input, you get most of them for free; the only bespoke part is painting the cells.',
+        rows: [
+          { token: 'Auto-advance', use: 'Typing a digit moves the highlight to the next cell.', why: 'Falls out of a single input: the caret moves, the active cell is derived from its position.' },
+          { token: 'Paste-tolerant', use: 'Pasting "482913" fills all six cells.', why: 'The commonest real interaction — people copy the code out of the authenticator. Six separate inputs would drop five digits.' },
+          { token: 'Backspace', use: 'Deletes the last digit and moves back one cell; it never gets stuck on an empty box.', why: 'Native deletion on one value; six inputs need bespoke focus juggling that always has an edge case.' },
+          { token: 'Numeric only', use: 'inputmode="numeric" + non-digits stripped on input.', why: 'Mobile shows the number pad, and a stray letter cannot silently break the submit.' },
+          { token: 'One control to AT', use: 'One labelled input; the cells are aria-hidden decoration.', why: 'A screen reader says "Verification code, edit" once, instead of six anonymous fields.' },
+        ],
+      },
+      {
+        title: 'Sizing',
+        default: 'Cell 40×44px',
+        note: 'The cell is a display surface, not a control the pointer aims at — the real target is the whole field. 40×44px keeps the digit at 18px (well clear of the 12px floor) and the six cells inside a 360px auth card at a 12px gap. Do not shrink below it to fit more cells; drop to a shorter code instead.',
+        rows: [
+          { token: 'Cell · 40×44px, 12px gap', use: 'The only size. Six cells fit the 360px auth card with room to breathe.', why: 'On the 4px grid, and the digit stays large enough to proofread before submitting.' },
+        ],
+      },
+    ],
+    usageDo: [
+      'Autofocus it when entering the code is the screen\'s only job (the 2FA challenge).',
+      'Put the failure reason under the field as a fieldset-label, and say what to do — "That code didn\'t work — codes refresh every 30 seconds".',
+      'Give the user a way out beside it (a backup code) — a code field with no escape hatch strands anyone whose phone is gone.',
+      'Disable it during a lockout and show the wait, never a dead end.',
+    ],
+    usageDont: [
+      "Don't build it as N separate inputs — paste and backspace break, and AT hears six anonymous fields.",
+      "Don't auto-submit on the last digit without showing what happened; the user must see the result of their own typing.",
+      "Don't use it for anything longer than a short code — that's a plain input.",
+    ],
+    examples: [
+      {
+        label: 'Resting, partly filled',
+        html: `
+<div class="code-input" aria-hidden="true">
+  <span class="code-cell code-cell-filled">4</span>
+  <span class="code-cell code-cell-filled">8</span>
+  <span class="code-cell code-cell-filled">2</span>
+  <span class="code-cell code-cell-active"></span>
+  <span class="code-cell"></span>
+  <span class="code-cell"></span>
+</div>`,
+      },
+      {
+        label: 'Invalid — with the human reason',
+        html: `
+<div>
+  <div class="code-input code-input-invalid" aria-hidden="true">
+    <span class="code-cell code-cell-filled">1</span>
+    <span class="code-cell code-cell-filled">1</span>
+    <span class="code-cell code-cell-filled">1</span>
+    <span class="code-cell code-cell-filled">1</span>
+    <span class="code-cell code-cell-filled">1</span>
+    <span class="code-cell code-cell-filled">1</span>
+  </div>
+  <p class="fieldset-label text-error mt-2">That code didn't work — codes refresh every 30 seconds.</p>
+</div>`,
+      },
+      {
+        label: 'Locked out — disabled, with the wait',
+        html: `
+<div>
+  <div class="code-input code-input-disabled" aria-hidden="true">
+    <span class="code-cell"></span>
+    <span class="code-cell"></span>
+    <span class="code-cell"></span>
+    <span class="code-cell"></span>
+    <span class="code-cell"></span>
+    <span class="code-cell"></span>
+  </div>
+  <p class="fieldset-label mt-2">Try again in 4:38. You can use a backup code now.</p>
+</div>`,
+      },
+    ],
+  },
+  {
     id: 'card',
     group: 'Primitives',
     name: 'Card',

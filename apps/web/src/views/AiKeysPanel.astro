@@ -1,0 +1,303 @@
+---
+/**
+ * AiKeysPanel — the BYOK (AI provider keys) surface (shared-ai-byok), lifted from the pre-hub
+ * `pages/settings/ai-keys.astro` and mounted inside the Settings hub's Developer pane
+ * (web-settings promotion). The entitlement + role gate, the DISPLAY-ONLY key columns, and the
+ * save/rotate/revoke client `<script>` are UNCHANGED — the SSR (resolveEntitlements, DB query,
+ * provider-card assembly) now runs in the caller and arrives as props.
+ *
+ * SECURITY: the plaintext key is WRITE-ONLY — sent once, encrypted at rest, cleared from the DOM
+ * after submit; SSR only ever reads provider/last_four/status/label/model (never key_enc). Gating
+ * mirrors the API: `byo_ai_key` (Plus+, resolved via resolveEntitlements) + owner/admin for
+ * mutations; un-entitled / non-admin get a disabled read-only view.
+ */
+import Card from '../components/ui/Card.astro';
+import Badge from '../components/ui/Badge.astro';
+import Button from '../components/ui/Button.astro';
+import TextInput from '../components/ui/TextInput.astro';
+import Alert from '../components/ui/Alert.astro';
+import Modal from '../components/ui/Modal.astro';
+
+export interface AiKeyView {
+  provider: string;
+  label: string | null;
+  modelDefault: string | null;
+  lastFour: string;
+  status: string;
+  lastValidatedAt: Date | string | null;
+}
+
+export interface AiProviderCard {
+  id: string;
+  meta: { label: string; keyPlaceholder: string; modelPlaceholder: string };
+  key: AiKeyView | null;
+}
+
+interface Props {
+  entitled: boolean;
+  canManage: boolean;
+  formDisabled: boolean;
+  providerCards: AiProviderCard[];
+}
+
+const { entitled, canManage, formDisabled, providerCards } = Astro.props;
+
+const statusVariant: Record<string, 'success' | 'error' | 'warning'> = {
+  active: 'success',
+  invalid: 'error',
+  disabled: 'warning',
+};
+
+const fmtDate = (d: Date | string | null) => {
+  if (!d) return '—';
+  const dt = typeof d === 'string' ? new Date(d) : d;
+  return Number.isNaN(dt.getTime()) ? '—' : dt.toISOString().slice(0, 10);
+};
+---
+
+<div class="space-y-6">
+  <Card variant="outlined">
+    <div class="flex items-center gap-3 mb-3">
+      <span class="iconify lucide--sparkles size-5 text-primary" aria-hidden="true"></span>
+      <h3 class="text-lg font-bold">AI keys</h3>
+    </div>
+    <p class="text-sm opacity-70">
+      Bring your own AI provider credentials. When a key is set, Baseout's AI
+      features (Schema Chat, health scoring) call that provider with your key
+      instead of the included Baseout AI. Keys are encrypted at rest — only the
+      last four characters are ever shown back.
+    </p>
+  </Card>
+
+  {!entitled && (
+    <Alert
+      variant="warning"
+      title="Available on Plus and above"
+      actionHref="/settings?tab=billing"
+      actionLabel="View plans"
+    >
+      Bring-your-own-key lets your Organization use its own Anthropic, OpenAI,
+      or Cloudflare credentials for AI features. It's included on Plus and above.
+    </Alert>
+  )}
+
+  {entitled && !canManage && (
+    <Alert variant="info" title="Read-only">
+      Only Organization owners and admins can add or revoke AI keys. You can
+      view the current status below.
+    </Alert>
+  )}
+
+  {providerCards.map(({ id, meta, key }) => (
+    <Card variant="outlined">
+      <div class="flex items-start justify-between gap-3 mb-4">
+        <div class="min-w-0">
+          <h4 class="font-bold">{meta.label}</h4>
+          {key ? (
+            <p class="text-xs opacity-70 font-mono">Key ••••{key.lastFour}</p>
+          ) : (
+            <p class="text-xs opacity-60">No key configured</p>
+          )}
+        </div>
+        {key ? (
+          <Badge variant={statusVariant[key.status] ?? 'default'} size="sm">{key.status}</Badge>
+        ) : (
+          <Badge variant="default" size="sm">not configured</Badge>
+        )}
+      </div>
+
+      {key && (
+        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs mb-4">
+          <dt class="opacity-60">Last four</dt>
+          <dd class="font-mono">••••{key.lastFour}</dd>
+          <dt class="opacity-60">Last validated</dt>
+          <dd>{fmtDate(key.lastValidatedAt)}</dd>
+          {key.label && (<><dt class="opacity-60">Label</dt><dd>{key.label}</dd></>)}
+          {key.modelDefault && (<><dt class="opacity-60">Model</dt><dd class="font-mono break-all">{key.modelDefault}</dd></>)}
+        </dl>
+      )}
+
+      <form class="ai-key-form space-y-3" data-provider={id} novalidate>
+        <TextInput
+          label={key ? 'New key (rotate)' : 'API key'}
+          type="password"
+          name="key"
+          autocomplete="off"
+          placeholder={meta.keyPlaceholder}
+          hint="Sent once and encrypted at rest. Only the last four characters are ever shown."
+          inputClass="font-mono"
+          disabled={formDisabled}
+        />
+        <div class="grid gap-3 sm:grid-cols-2">
+          <TextInput
+            label="Label (optional)"
+            name="label"
+            placeholder="e.g. Production key"
+            value={key?.label ?? ''}
+            disabled={formDisabled}
+          />
+          <TextInput
+            label="Default model (optional)"
+            name="modelDefault"
+            placeholder={meta.modelPlaceholder}
+            value={key?.modelDefault ?? ''}
+            inputClass="font-mono"
+            disabled={formDisabled}
+          />
+        </div>
+        <div class="ai-key-error alert alert-error text-sm hidden" role="alert">
+          <span class="ai-key-error-text"></span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <Button type="submit" variant="primary" size="sm" class="ai-key-save-btn" disabled={formDisabled}>
+            {key ? 'Rotate key' : 'Save key'}
+          </Button>
+          {key && key.status === 'active' && (
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm text-error ai-key-revoke-btn"
+              data-provider={id}
+              data-provider-label={meta.label}
+              disabled={formDisabled ? true : undefined}
+            >
+              Revoke
+            </button>
+          )}
+        </div>
+      </form>
+    </Card>
+  ))}
+</div>
+
+<Modal id="ai-key-revoke-modal" title="Revoke AI key?" size="sm">
+  <p class="text-sm">
+    The active <span id="ai-key-revoke-provider" class="font-medium"></span> key
+    will be disabled immediately and AI features fall back to the included
+    Baseout AI. You can add a new key any time.
+  </p>
+  <div id="ai-key-revoke-error" class="alert alert-error text-sm hidden mt-3" role="alert">
+    <span id="ai-key-revoke-error-text"></span>
+  </div>
+  <div class="modal-action">
+    <form method="dialog"><button class="btn">Cancel</button></form>
+    <button type="button" id="ai-key-revoke-confirm" class="btn btn-outline btn-error">
+      Revoke
+    </button>
+  </div>
+</Modal>
+
+<script>
+  import { setButtonLoading } from '../lib/ui';
+  import { showFormError, hideFormError } from '../lib/auth-utils';
+
+  // Server error codes → human copy (see /api/ai-keys handlers).
+  const POST_ERRORS: Record<string, string> = {
+    not_entitled: 'Bring-your-own-key is available on Plus and above.',
+    forbidden: 'Only Organization owners and admins can manage AI keys.',
+    invalid_provider: 'Unknown provider.',
+    invalid_key: 'Enter a valid API key.',
+  };
+
+  // ── Save / Rotate ──
+  document.querySelectorAll<HTMLFormElement>('.ai-key-form').forEach((form) => {
+    const provider = form.dataset.provider ?? '';
+    const saveBtn = form.querySelector<HTMLButtonElement>('.ai-key-save-btn');
+    const errorEl = form.querySelector<HTMLElement>('.ai-key-error');
+    const errorText = form.querySelector<HTMLElement>('.ai-key-error-text');
+    const keyInput = form.querySelector<HTMLInputElement>('input[name="key"]');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!saveBtn || !errorEl || !errorText || !keyInput) return;
+      hideFormError(errorEl);
+
+      const key = keyInput.value.trim();
+      if (!key) {
+        showFormError(errorEl, errorText, 'Enter an API key to save.');
+        return;
+      }
+      const data = new FormData(form);
+      const label = String(data.get('label') ?? '').trim();
+      const modelDefault = String(data.get('modelDefault') ?? '').trim();
+
+      setButtonLoading(saveBtn, true);
+      try {
+        const res = await fetch('/api/ai-keys', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider,
+            key,
+            ...(label ? { label } : {}),
+            ...(modelDefault ? { modelDefault } : {}),
+          }),
+        });
+        // Drop the plaintext from the DOM regardless of outcome (security).
+        keyInput.value = '';
+        const body = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          code?: string;
+          error?: string;
+        };
+        if (res.ok && body.ok) {
+          // Reload so SSR re-renders the new last_four / status — the plaintext
+          // exists nowhere on the page.
+          location.reload();
+          return;
+        }
+        showFormError(
+          errorEl,
+          errorText,
+          POST_ERRORS[body.code ?? ''] ?? body.error ?? 'Could not save the key. Try again.',
+        );
+      } catch {
+        keyInput.value = '';
+        showFormError(errorEl, errorText, 'Network error. Try again.');
+      } finally {
+        setButtonLoading(saveBtn, false);
+      }
+    });
+  });
+
+  // ── Revoke (shared confirm modal) ──
+  const revokeModal = document.getElementById('ai-key-revoke-modal') as HTMLDialogElement | null;
+  const revokeProviderLabel = document.getElementById('ai-key-revoke-provider');
+  const revokeConfirm = document.getElementById('ai-key-revoke-confirm') as HTMLButtonElement | null;
+  const revokeError = document.getElementById('ai-key-revoke-error');
+  const revokeErrorText = document.getElementById('ai-key-revoke-error-text');
+  let revokeProvider: string | null = null;
+
+  document.querySelectorAll<HTMLButtonElement>('.ai-key-revoke-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      revokeProvider = btn.dataset.provider ?? null;
+      if (revokeProviderLabel) revokeProviderLabel.textContent = btn.dataset.providerLabel ?? 'this provider';
+      if (revokeError) hideFormError(revokeError);
+      revokeModal?.showModal();
+    });
+  });
+
+  revokeConfirm?.addEventListener('click', async () => {
+    if (!revokeProvider || !revokeConfirm) return;
+    setButtonLoading(revokeConfirm, true);
+    try {
+      const res = await fetch('/api/ai-keys', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: revokeProvider }),
+      });
+      if (res.ok) {
+        location.reload();
+        return;
+      }
+      if (revokeError && revokeErrorText) {
+        showFormError(revokeError, revokeErrorText, 'Could not revoke the key. Try again.');
+      }
+    } catch {
+      if (revokeError && revokeErrorText) {
+        showFormError(revokeError, revokeErrorText, 'Could not revoke the key. Try again.');
+      }
+    } finally {
+      setButtonLoading(revokeConfirm, false);
+    }
+  });
+</script>

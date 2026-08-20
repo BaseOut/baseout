@@ -2,6 +2,15 @@
   "src/views/ActionsView.astro": [
     "daisyUI-direct in a view (CLAUDE.md §4.2 second tier, web-actions promotion): pattern-upcoming-section landing uses alert/badge/card/btn/textarea primitives directly — announce block, named operations, capability note, and feedback form. No single Storybook pattern covers the composition."
   ],
+  "src/views/AiKeysPanel.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the BYOK AI-keys panel (web-settings promotion, extracted from the pre-hub settings/ai-keys page) uses daisyUI alert/btn/input primitives directly for the entitlement banners, per-provider forms and the revoke confirm — composed with the ui Card/Badge/Button/TextInput/Alert/Modal primitives. Mounted in the Settings hub Developer pane; wired to the live /api/ai-keys routes. Not a single Storybook component."
+  ],
+  "src/views/AiKeysView.legacy.astro": [
+    "Pre-hub /settings/ai-keys page body, kept as the rollback target for the web-settings promotion. Same daisyUI-direct composition (alert/btn/input + ui Card/Badge/Button/TextInput/Alert/Modal) as the live AiKeysPanel; not routed."
+  ],
+  "src/views/ApiTokensPanel.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the API-token panel (web-api-tokens, lifted into the Settings hub by the web-settings promotion) uses a daisyUI table for the token list plus btn/alert/input primitives for the create form and the plaintext-once + revoke modals — composed with the ui Card/Badge/Button/Checkbox/Modal/Select/TextInput primitives. Mounted in the Settings hub Developer pane; wired to the live /api/tokens routes. Not a single Storybook component."
+  ],
   "src/views/BackupsListView.astro": [
     "daisyUI `table` primitive on the backup-history table: no Storybook table component exists, and the `.table` class supplies the cell padding the dense run table needs. Per CLAUDE.md §4.2 this is sanctioned daisyUI-direct-in-view (the audit's escape hatch), not a custom component."
   ],
@@ -13,6 +22,15 @@
   ],
   "src/views/IntegrationsSetupWizard.astro": [
     "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the Options step's cleanup-schedule block uses a soft-info `alert` and a `select` cutoff control directly — a small informational retention ladder, not a reusable Storybook component."
+  ],
+  "src/views/SecurityPanel.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the 2FA lifecycle + linked-accounts panel (promoted from ui-only into the Settings hub, web-settings) uses daisyUI alert/badge + the shared stepper directly, composed with the ui Card/Button/Badge/Checkbox/CodeInput primitives. Rendered only when the caller supplies 2FA state; apps/web gates it off (SecurityPanel backend deferred) so the Security pane shows an honest note instead. Not a single Storybook component."
+  ],
+  "src/views/SettingsHub.legacy.astro": [
+    "Pre-hub /settings page body, kept as the rollback target for the web-settings promotion. Same daisyUI-direct composition (table/btn/alert/input + ui Card/Badge/Button/Checkbox/Modal/Select/TextInput) as the live ApiTokensPanel; not routed."
+  ],
+  "src/views/SettingsView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the Settings hub (web-settings promotion of the ui-only redesign) is a bespoke two-pane category composition — a category rail + a settings-row pane — using daisyUI input/select/toggle/badge/btn/alert primitives directly, composed with the ui Card/Avatar/ConfirmModal primitives and the ApiTokensPanel/AiKeysPanel/SecurityPanel views. Not a single Storybook component."
   ],
   "src/views/SpaceHomeView.astro": [
     "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the two-region Home (primary + sticky status rail) uses alert/btn/badge and a daisyUI `table` for the backup-history + schema previews directly. The status rail, vertical pipeline, and KPI strip are a bespoke dashboard composition — not a single Storybook component."

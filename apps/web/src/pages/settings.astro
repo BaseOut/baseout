@@ -1,32 +1,46 @@
 ---
+/**
+ * /settings — the unified Settings hub (web-settings promotion of the ui-only@7c7202d7 redesign).
+ *
+ * This page is now a thin SSR loader: it resolves the signed-in subject and the two live sections'
+ * data (API tokens — web-api-tokens; AI provider keys — shared-ai-byok) and hands them to
+ * SettingsView, which renders the category hub. The token + AI-key CRUD (and their real routes)
+ * are UNCHANGED — the query/mapping moved here verbatim from the pre-hub pages, and the markup +
+ * client scripts live in ApiTokensPanel / AiKeysPanel. The pre-hub bodies are preserved at
+ * views/SettingsHub.legacy.astro + views/AiKeysView.legacy.astro (rollback targets, not routed).
+ */
 import { desc, eq } from 'drizzle-orm';
+import { getBool } from '@baseout/db-schema';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
-import Card from '../components/ui/Card.astro';
-import Badge from '../components/ui/Badge.astro';
-import Button from '../components/ui/Button.astro';
-import Checkbox from '../components/ui/Checkbox.astro';
-import Modal from '../components/ui/Modal.astro';
-import Select from '../components/ui/Select.astro';
-import TextInput from '../components/ui/TextInput.astro';
-import { apiTokens } from '../db/schema';
+import SettingsView, {
+  type SettingsTokensProps,
+  type SettingsAiKeysProps,
+} from '../views/SettingsView.astro';
+import type { TokenRowView } from '../views/ApiTokensPanel.astro';
+import { apiTokens, aiProviderKeys, AI_PROVIDERS, type AiProvider } from '../db/schema';
+import { resolveEntitlements } from '../lib/entitlements/resolve';
 import { getBreadcrumbs } from '../lib/config';
 
 const breadcrumbs = getBreadcrumbs('/settings');
 
 const { account, db } = Astro.locals;
 const orgId = account?.organization?.id;
-if (!orgId || !db) return Astro.redirect('/login');
+if (!orgId || !db || !account) return Astro.redirect('/login');
 
-// API tokens (web-api-tokens): owner/admin manage; members see the list
-// read-only — prefix/name/status are not secrets (design D2).
-const role = account?.membership?.role ?? 'member';
+const active = Astro.url.searchParams.get('tab') ?? 'account';
+
+// Owner/admin manage; members see a read-only list (design D2).
+const role = account.membership?.role ?? 'member';
 const canManage = role === 'owner' || role === 'admin';
 
-const spaces = account?.spaces ?? [];
+const spaces = account.spaces ?? [];
 const spaceNameById = new Map(spaces.map((s) => [s.id, s.name]));
 
+const fmt = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : '—');
+
+// ── API tokens (web-api-tokens): org-scoped, DISPLAY columns only (never token_hash) ──
 const now = new Date();
-const tokenRows = (
+const tokenRows: TokenRowView[] = (
   await db
     .select({
       id: apiTokens.id,
@@ -44,22 +58,19 @@ const tokenRows = (
     .orderBy(desc(apiTokens.createdAt))
 ).map((t) => {
   const expired = t.expiresAt !== null && t.expiresAt.getTime() <= now.getTime();
-  const status = !t.isActive ? 'revoked' : expired ? 'expired' : 'active';
+  const status: TokenRowView['status'] = !t.isActive ? 'revoked' : expired ? 'expired' : 'active';
   return {
-    ...t,
-    status,
+    id: t.id,
+    name: t.name,
+    tokenPrefix: t.tokenPrefix,
+    scopes: t.scopes,
     spaceLabel: t.spaceId === null ? 'All Spaces' : (spaceNameById.get(t.spaceId) ?? 'Unknown Space'),
+    status,
+    expires: fmt(t.expiresAt),
+    lastUsed: fmt(t.lastUsedAt),
+    created: fmt(t.createdAt),
   };
 });
-
-const statusVariant: Record<string, 'success' | 'error' | 'warning'> = {
-  active: 'success',
-  revoked: 'error',
-  expired: 'warning',
-};
-
-const fmt = (d: Date | null) =>
-  d ? d.toISOString().slice(0, 10) : '—';
 
 const spaceOptions = [
   { value: '', label: 'All Spaces' },
@@ -71,305 +82,79 @@ const expiryOptions = [
   { value: '90', label: '90 days' },
   { value: '365', label: '1 year' },
 ];
-// Must stay in lockstep with ALLOWED_SCOPES in src/pages/api/tokens/index.ts
-// (and apps/api's Scope union).
+// Must stay in lockstep with ALLOWED_SCOPES in src/pages/api/tokens/index.ts.
 const scopeOptions = [
   { value: 'org:read', label: 'Organization (org:read)' },
   { value: 'backups:read', label: 'Backups (backups:read)' },
   { value: 'schema:read', label: 'Schema (schema:read)' },
 ];
+
+const tokens: SettingsTokensProps = {
+  canManage,
+  tokenRows,
+  spaceOptions,
+  expiryOptions,
+  scopeOptions,
+};
+
+// ── AI keys (shared-ai-byok): Plus+ entitlement gate (fail-closed), DISPLAY columns only ──
+let entitled = false;
+const resolution = await resolveEntitlements(db, orgId);
+if (resolution) {
+  try {
+    entitled = getBool(resolution.entitlements, 'byo_ai_key');
+  } catch {
+    entitled = false;
+  }
+}
+const formDisabled = !entitled || !canManage;
+
+const keyRows = await db
+  .select({
+    provider: aiProviderKeys.provider,
+    label: aiProviderKeys.label,
+    modelDefault: aiProviderKeys.modelDefault,
+    lastFour: aiProviderKeys.lastFour,
+    status: aiProviderKeys.status,
+    lastValidatedAt: aiProviderKeys.lastValidatedAt,
+  })
+  .from(aiProviderKeys)
+  .where(eq(aiProviderKeys.organizationId, orgId))
+  .orderBy(aiProviderKeys.provider);
+
+type KeyRow = (typeof keyRows)[number];
+// One display row per provider — the active key wins over disabled/invalid.
+const byProvider = new Map<string, KeyRow>();
+for (const r of keyRows) {
+  const existing = byProvider.get(r.provider);
+  if (!existing || r.status === 'active') byProvider.set(r.provider, r);
+}
+
+const PROVIDER_META: Record<AiProvider, { label: string; keyPlaceholder: string; modelPlaceholder: string }> = {
+  anthropic: { label: 'Anthropic', keyPlaceholder: 'sk-ant-…', modelPlaceholder: 'claude-opus-4-…' },
+  openai: { label: 'OpenAI', keyPlaceholder: 'sk-…', modelPlaceholder: 'gpt-4o-…' },
+  cloudflare: { label: 'Cloudflare Workers AI', keyPlaceholder: 'API token', modelPlaceholder: '@cf/meta/llama-…' },
+};
+
+const aiKeys: SettingsAiKeysProps = {
+  entitled,
+  canManage,
+  formDisabled,
+  providerCards: AI_PROVIDERS.map((id) => ({
+    id,
+    meta: PROVIDER_META[id],
+    key: byProvider.get(id) ?? null,
+  })),
+};
 ---
 
 <SidebarLayout pageTitle="Settings" breadcrumbs={breadcrumbs}>
-  <div class="space-y-8">
-    <Card variant="outlined">
-      <div class="flex items-center gap-3 mb-4">
-        <span class="material-symbols-outlined icon-xl text-primary">tune</span>
-        <h3 class="text-lg font-bold">Account Settings</h3>
-      </div>
-      <p class="text-sm opacity-70">
-        Baseout uses passwordless magic-link sign-in — there is no password to manage.
-        Additional account controls will appear here as they are added.
-      </p>
-    </Card>
-
-    <Card variant="outlined">
-      <div class="flex items-center justify-between gap-4 flex-wrap">
-        <div class="flex items-center gap-3">
-          <span class="material-symbols-outlined icon-xl text-primary">vpn_key</span>
-          <div>
-            <h3 class="text-lg font-bold">AI keys</h3>
-            <p class="text-sm opacity-70">
-              Bring your own Anthropic, OpenAI, or Cloudflare credentials for
-              Baseout's AI features (Plus and above).
-            </p>
-          </div>
-        </div>
-        <Button href="/settings/ai-keys" variant="outline" size="sm">Manage AI keys</Button>
-      </div>
-    </Card>
-
-    <Card variant="outlined">
-      <div class="flex items-center gap-3 mb-4">
-        <span class="material-symbols-outlined icon-xl text-primary">key</span>
-        <h3 class="text-lg font-bold">API tokens</h3>
-      </div>
-      <p class="text-sm opacity-70 mb-4">
-        Bearer tokens for the Baseout API and MCP server. The full token is shown
-        once at creation — only its name and prefix are stored.
-        {!canManage && ' Ask an Organization owner or admin to create or revoke tokens.'}
-      </p>
-
-      {canManage && (
-        <form id="token-create-form" class="mb-6 space-y-4" novalidate>
-          <div class="grid gap-4 md:grid-cols-3">
-            <TextInput
-              label="Name"
-              name="name"
-              id="token-name"
-              placeholder="e.g. CI reader"
-              required
-            />
-            <Select
-              label="Space"
-              name="spaceId"
-              id="token-space"
-              options={spaceOptions}
-              hint="Which Space the token can read"
-            />
-            <Select
-              label="Expiry"
-              name="expiresInDays"
-              id="token-expiry"
-              options={expiryOptions}
-            />
-          </div>
-          <div>
-            <span class="label-text block mb-2">Scopes</span>
-            <div class="flex flex-wrap gap-4">
-              {scopeOptions.map((s) => (
-                <Checkbox label={s.label} name="scopes" value={s.value} checked />
-              ))}
-            </div>
-          </div>
-          <div
-            id="token-form-error"
-            class="alert alert-error text-sm hidden"
-            role="alert"
-          >
-            <span id="token-form-error-text"></span>
-          </div>
-          <Button type="submit" variant="primary" id="token-create-btn">
-            Create token
-          </Button>
-        </form>
-      )}
-
-      {tokenRows.length === 0 ? (
-        <p class="text-sm opacity-60">No API tokens yet.</p>
-      ) : (
-        <div class="overflow-x-auto">
-          <table class="table text-sm">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Token</th>
-                <th>Scopes</th>
-                <th>Space</th>
-                <th>Status</th>
-                <th>Expires</th>
-                <th>Last used</th>
-                <th>Created</th>
-                {canManage && <th></th>}
-              </tr>
-            </thead>
-            <tbody>
-              {tokenRows.map((t) => (
-                <tr>
-                  <td class="font-medium">{t.name}</td>
-                  <td><code class="text-xs">{t.tokenPrefix}…</code></td>
-                  <td class="text-xs">{t.scopes.join(', ')}</td>
-                  <td>{t.spaceLabel}</td>
-                  <td><Badge variant={statusVariant[t.status]} size="sm">{t.status}</Badge></td>
-                  <td>{fmt(t.expiresAt)}</td>
-                  <td>{fmt(t.lastUsedAt)}</td>
-                  <td>{fmt(t.createdAt)}</td>
-                  {canManage && (
-                    <td>
-                      {t.status === 'active' && (
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-xs text-error token-revoke-btn"
-                          data-token-id={t.id}
-                          data-token-name={t.name}
-                        >
-                          Revoke
-                        </button>
-                      )}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
-  </div>
-
-  <!-- Plaintext-once display (design D3): the token value is injected client-side
-       after the create response and exists nowhere else in the DOM. -->
-  <Modal id="token-created-modal" title="API token created" size="lg">
-    <div class="space-y-4">
-      <div class="alert alert-warning text-sm" role="alert">
-        Copy this token now — you won't be able to see it again.
-      </div>
-      <div class="join w-full">
-        <input
-          id="token-created-value"
-          type="text"
-          readonly
-          class="input input-bordered join-item w-full font-mono text-xs"
-          aria-label="New API token"
-        />
-        <button type="button" id="token-copy-btn" class="btn btn-primary join-item">
-          Copy
-        </button>
-      </div>
-    </div>
-    <div class="modal-action">
-      <button type="button" id="token-created-done" class="btn">Done</button>
-    </div>
-  </Modal>
-
-  <Modal id="token-revoke-modal" title="Revoke token?" size="sm">
-    <p class="text-sm">
-      <span id="token-revoke-name" class="font-medium"></span> will stop
-      authenticating immediately. This cannot be undone.
-    </p>
-    <div
-      id="token-revoke-error"
-      class="alert alert-error text-sm hidden mt-3"
-      role="alert"
-    >
-      <span id="token-revoke-error-text"></span>
-    </div>
-    <div class="modal-action">
-      <form method="dialog"><button class="btn">Cancel</button></form>
-      <button type="button" id="token-revoke-confirm" class="btn btn-outline btn-error">
-        Revoke
-      </button>
-    </div>
-  </Modal>
+  <SettingsView
+    active={active}
+    user={account.user}
+    org={account.organization}
+    space={account.space}
+    tokens={tokens}
+    aiKeys={aiKeys}
+  />
 </SidebarLayout>
-
-<script>
-  import { setButtonLoading } from '../lib/ui';
-  import { showFormError, hideFormError } from '../lib/auth-utils';
-
-  const form = document.getElementById('token-create-form') as HTMLFormElement | null;
-  const createBtn = document.getElementById('token-create-btn') as HTMLButtonElement | null;
-  const formError = document.getElementById('token-form-error');
-  const formErrorText = document.getElementById('token-form-error-text');
-
-  const createdModal = document.getElementById('token-created-modal') as HTMLDialogElement | null;
-  const createdValue = document.getElementById('token-created-value') as HTMLInputElement | null;
-  const copyBtn = document.getElementById('token-copy-btn') as HTMLButtonElement | null;
-  const doneBtn = document.getElementById('token-created-done');
-
-  const CREATE_ERRORS: Record<string, string> = {
-    invalid_name: 'Enter a name between 1 and 100 characters.',
-    invalid_scopes: 'Pick at least one scope.',
-    invalid_space: 'That Space is not part of this Organization.',
-    invalid_expiry: 'Pick one of the offered expiry presets.',
-    forbidden: 'Only Organization owners and admins can create tokens.',
-  };
-
-  form?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!createBtn || !formError || !formErrorText) return;
-    hideFormError(formError);
-    const data = new FormData(form);
-    const scopes = data.getAll('scopes').map(String);
-    const spaceId = String(data.get('spaceId') ?? '');
-    const expiry = String(data.get('expiresInDays') ?? '');
-    setButtonLoading(createBtn, true);
-    try {
-      const res = await fetch('/api/tokens', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: String(data.get('name') ?? ''),
-          scopes,
-          ...(spaceId ? { spaceId } : {}),
-          ...(expiry ? { expiresInDays: Number(expiry) } : {}),
-        }),
-      });
-      const body = (await res.json()) as { token?: string; error?: string };
-      if (res.status === 201 && body.token) {
-        if (createdValue) createdValue.value = body.token;
-        createdModal?.showModal();
-        return;
-      }
-      showFormError(
-        formError,
-        formErrorText,
-        CREATE_ERRORS[body.error ?? ''] ?? 'Could not create the token. Try again.',
-      );
-    } catch {
-      showFormError(formError, formErrorText, 'Network error. Try again.');
-    } finally {
-      setButtonLoading(createBtn, false);
-    }
-  });
-
-  copyBtn?.addEventListener('click', async () => {
-    if (!createdValue) return;
-    await navigator.clipboard.writeText(createdValue.value);
-    copyBtn.textContent = 'Copied';
-    setTimeout(() => (copyBtn.textContent = 'Copy'), 1500);
-  });
-
-  // Reload on close so the SSR list picks up the new row — and the plaintext
-  // leaves the page with the modal (design D3).
-  doneBtn?.addEventListener('click', () => location.reload());
-  createdModal?.addEventListener('close', () => location.reload());
-
-  // ── Revoke ──
-  const revokeModal = document.getElementById('token-revoke-modal') as HTMLDialogElement | null;
-  const revokeName = document.getElementById('token-revoke-name');
-  const revokeConfirm = document.getElementById('token-revoke-confirm') as HTMLButtonElement | null;
-  const revokeError = document.getElementById('token-revoke-error');
-  const revokeErrorText = document.getElementById('token-revoke-error-text');
-  let revokeTokenId: string | null = null;
-
-  document.querySelectorAll<HTMLButtonElement>('.token-revoke-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      revokeTokenId = btn.dataset.tokenId ?? null;
-      if (revokeName) revokeName.textContent = btn.dataset.tokenName ?? 'This token';
-      if (revokeError) hideFormError(revokeError);
-      revokeModal?.showModal();
-    });
-  });
-
-  revokeConfirm?.addEventListener('click', async () => {
-    if (!revokeTokenId || !revokeConfirm) return;
-    setButtonLoading(revokeConfirm, true);
-    try {
-      const res = await fetch(`/api/tokens/${revokeTokenId}/revoke`, { method: 'POST' });
-      if (res.ok) {
-        location.reload();
-        return;
-      }
-      if (revokeError && revokeErrorText) {
-        showFormError(revokeError, revokeErrorText, 'Could not revoke the token. Try again.');
-      }
-    } catch {
-      if (revokeError && revokeErrorText) {
-        showFormError(revokeError, revokeErrorText, 'Network error. Try again.');
-      }
-    } finally {
-      setButtonLoading(revokeConfirm, false);
-    }
-  });
-</script>

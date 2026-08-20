@@ -1,0 +1,292 @@
+---
+/**
+ * SettingsView — the configuration hub (specs/12-settings.md).
+ *
+ * Promoted from the ui-only@7c7202d7 redesign into apps/web (web-settings). The two-pane category
+ * hub, the drill-down, the commit-flash controls and the destructive-confirm are the fork's; the
+ * DATA is reconciled to apps/web's real routes. Four sections are live: API tokens + AI keys render
+ * as real panels in the Developer pane (`/api/tokens/*`, `/api/ai-keys`); billing "Open portal"
+ * posts to `/api/billing/portal`; usage / retention / schedule / destinations are real `<a href>`s
+ * to the pages that own them. Everything without a route yet is GATED honestly (the catalog's
+ * `gated` renders text read-only and select/toggle disabled — never a fake "Saved"), and deferred
+ * actions print an honest note.
+ *
+ * IDENTITY IS A PROP (audit S1): `user`, `org`, `space` arrive from `Astro.locals.account`.
+ * SINGLE-OPERATOR V1 (audit decision D18): no members/roles model.
+ */
+import Card from '../components/ui/Card.astro';
+import Avatar from '../components/ui/Avatar.astro';
+import SecurityPanel from './SecurityPanel.astro';
+import ApiTokensPanel, { type TokenRowView } from './ApiTokensPanel.astro';
+import AiKeysPanel, { type AiProviderCard } from './AiKeysPanel.astro';
+import ConfirmModal from '../components/ui/ConfirmModal.astro';
+import { CONFIRM_DESTRUCTIVE } from '../lib/ui';
+import type { SecurityPanelProps } from '../lib/auth/types';
+import { buildCategories, buildSettingsLinks, initialsOf, type SettingsSubject } from './settingsCatalog';
+
+export interface SettingsTokensProps {
+  canManage: boolean;
+  tokenRows: TokenRowView[];
+  spaceOptions: Array<{ value: string; label: string }>;
+  expiryOptions: Array<{ value: string; label: string }>;
+  scopeOptions: Array<{ value: string; label: string }>;
+}
+
+export interface SettingsAiKeysProps {
+  entitled: boolean;
+  canManage: boolean;
+  formDisabled: boolean;
+  providerCards: AiProviderCard[];
+}
+
+interface Props extends SettingsSubject {
+  /** Which category is open. The rail passes it via ?tab=. */
+  active?: string;
+  /**
+   * Props for the Security category. apps/web has not wired the 2FA backend yet (SecurityPanel
+   * deferred at the Auth promotion), so the page passes nothing and the pane shows an honest note.
+   */
+  security?: SecurityPanelProps;
+  /** Real API-token data for the Developer pane (web-api-tokens). */
+  tokens: SettingsTokensProps;
+  /** Real AI-provider-key data for the Developer pane (shared-ai-byok). */
+  aiKeys: SettingsAiKeysProps;
+}
+const { active = 'account', user, org, space, security, tokens, aiKeys } = Astro.props;
+
+const CATEGORIES = buildCategories({ user, org, space });
+const current = CATEGORIES.find((c) => c.id === active) ?? CATEGORIES[0];
+const initials = initialsOf(user.name);
+
+/**
+ * THE NARROW TIER IS A DRILL-DOWN, NOT A TAB SWAP (catalog `pattern-mobile-drilldown`). `active`
+ * says WHICH category the pane renders; the raw URL says whether the reader has CHOSEN yet.
+ */
+const { drilled, listHref, tabHref } = buildSettingsLinks(Astro.url);
+
+// D06 — the destructive rows of the OPEN category. Their dialogs render once, below the pane.
+const destructiveRows = current.sections
+  .flatMap((s) => s.rows)
+  .filter((r) => r.control === 'destructive');
+---
+
+<div class="set" data-settings-root data-drill={drilled ? 'section' : 'list'}>
+  {/* Left rail — the spec's category nav. Below 1280 this same element is the DRILL LIST. */}
+  <nav class="set-rail" data-mobile-rows aria-label="Settings categories">
+    {/* The spec's cross-settings search slot: present, honestly inert, list-only. */}
+    <label class="input input-sm set-search">
+      <span class="iconify lucide--search size-4 opacity-50" aria-hidden="true"></span>
+      <input type="search" placeholder="Search settings…" aria-label="Search settings" disabled />
+    </label>
+    {CATEGORIES.map((c) => (
+      <a class:list={['set-railitem', c.id === current.id && 'set-railitem-on']} href={tabHref(c.id)} aria-current={c.id === current.id ? 'page' : undefined} data-nrow>
+        <span class="set-railname" data-m="lead">
+          <span class={`iconify ${c.icon} size-4 set-railicon`} aria-hidden="true"></span>
+          <span class="set-raillabel">{c.label}</span>
+        </span>
+        <span class="set-railscope" data-m="sub">{c.scope}</span>
+        <span class="set-railgo" data-m="go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+      </a>
+    ))}
+  </nav>
+
+  <div class="set-pane">
+    {/* THE WAY BACK — the pane's first child so it is reachable without scrolling. Hidden above 1280. */}
+    <a class="set-back" href={listHref}>
+      <span class="iconify lucide--chevron-left size-4" aria-hidden="true"></span>All settings
+    </a>
+
+    <header class="set-panehead">
+      <h2 class="set-panetitle">{current.label}</h2>
+      <p class="set-panesub">{current.scope}</p>
+    </header>
+
+
+    {current.id === 'security' && security && <SecurityPanel {...security} />}
+
+    {current.id === 'security' && !security && (
+      <div class="alert alert-soft set-note" role="status">
+        <span class="iconify lucide--info size-4" aria-hidden="true"></span>
+        <span>Two-factor authentication and linked sign-in are coming soon.</span>
+      </div>
+    )}
+
+    {/* Developer — the two live panels wired to real routes (web-api-tokens, shared-ai-byok). They
+        render before the not-yet-built remainder (webhook secret, SQL details) below. */}
+    {current.id === 'developer' && <ApiTokensPanel {...tokens} />}
+    {current.id === 'developer' && <AiKeysPanel {...aiKeys} />}
+
+    {current.sections.map((sec) => (
+      <Card variant="outlined" class:list={['set-card', sec.danger && 'set-card-danger']}>
+        <div class="set-sechead">
+          <h3 class="set-sectitle">{sec.title}</h3>
+          {sec.help && <p class="set-sechelp">{sec.help}</p>}
+        </div>
+        {sec.rows.map((row) => (
+          <div class="set-row">
+            <div class="set-rowlead">
+              {row.control === 'avatar' && (
+                <span class="set-avatar" data-set-avatar>
+                  <Avatar src={user.image ?? undefined} initials={initials} size="lg" alt="" />
+                </span>
+              )}
+              <div class="set-rowtext">
+                <span class="set-rowname">{row.label}</span>
+                <span class="set-rowdesc">{row.desc}</span>
+                {/* Deferred-action answers and refused input land here — one slot per row. */}
+                <span class="set-rownote" data-set-note hidden></span>
+              </div>
+            </div>
+            <div class="set-rowctl">
+              <span class="set-flag" data-set-flag aria-hidden="true">
+                <span class="iconify lucide--check size-4"></span>Saved
+              </span>
+              {/* apps/web reconcile: a `gated` text row (no persistence route yet) renders read-only,
+                  same as a `readOnly` fact — never a fake save. */}
+              {row.control === 'text' && (row.readOnly || row.gated) && (
+                <input type="text" class="input input-sm set-input" value={row.value} readonly aria-label={row.label} />
+              )}
+              {row.control === 'text' && !(row.readOnly || row.gated) && (
+                <input type="text" class="input input-sm set-input" value={row.value} aria-label={row.label} data-set-text data-set-id={row.id} />
+              )}
+              {row.control === 'select' && (
+                <select class="select select-sm set-input" aria-label={row.label} data-set-select disabled={row.gated}>
+                  {(row.options ?? []).map((opt) => <option selected={opt === row.value}>{opt}</option>)}
+                </select>
+              )}
+              {row.control === 'toggle' && (
+                <label>
+                  <input type="checkbox" class="toggle toggle-sm toggle-primary" checked={row.on} aria-label={row.label} data-set-toggle disabled={row.gated} />
+                </label>
+              )}
+              {/* The billing "Open portal" button is a REAL mutation (settingsControls posts to
+                  /api/billing/portal). Every other button/avatar is a deferred action + honest note. */}
+              {(row.control === 'button' || row.control === 'avatar') && row.action === 'billing-portal' && (
+                <button type="button" class="btn btn-sm btn-soft btn-primary" data-set-portal>{row.cta}</button>
+              )}
+              {(row.control === 'button' || row.control === 'avatar') && !row.action && (
+                <button type="button" class:list={['btn', 'btn-sm', row.danger ? 'btn-ghost text-error' : 'btn-soft btn-primary']} data-set-action={row.note}>{row.cta}</button>
+              )}
+              {/* D06 — the `destructive` control kind. It is the only row that asks first. */}
+              {row.control === 'destructive' && (
+                <button type="button" class:list={['btn', 'btn-sm', CONFIRM_DESTRUCTIVE]} data-set-destructive={`set-confirm-${row.id}`} data-set-note-text={row.note}>{row.cta}</button>
+              )}
+              {/* apps/web reconcile: a `link` row with a real `href` navigates; otherwise it prints
+                  an honest deferred-action note. */}
+              {row.control === 'link' && row.href && (
+                <a class="btn btn-sm btn-ghost gap-2" href={row.href}>{row.cta}<span class="iconify lucide--chevron-right size-4" aria-hidden="true"></span></a>
+              )}
+              {row.control === 'link' && !row.href && (
+                <button type="button" class="btn btn-sm btn-ghost gap-2" data-set-action={row.note}>{row.cta}<span class="iconify lucide--chevron-right size-4" aria-hidden="true"></span></button>
+              )}
+            </div>
+          </div>
+        ))}
+      </Card>
+    ))}
+  </div>
+
+  {/* One dialog per destructive row in the OPEN category, rendered outside the rows. */}
+  {destructiveRows.map((row) => (
+    <ConfirmModal id={`set-confirm-${row.id}`} title={`${row.cta}?`} cancelLabel="Keep it" confirmLabel={row.cta ?? 'Delete'} confirmClass={CONFIRM_DESTRUCTIVE} confirmIcon="lucide--trash-2">
+      <p class="text-sm text-base-content/70">{row.desc}</p>
+      <div role="alert" class="alert alert-soft alert-error mt-3">
+        <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+        <span>{row.consequence}</span>
+      </div>
+    </ConfirmModal>
+  ))}
+
+  <span class="sr-only" role="status" aria-live="polite" data-set-live></span>
+</div>
+
+<script>
+  import { initSettingsControls } from './settingsControls';
+  initSettingsControls();
+  document.addEventListener('astro:after-swap', initSettingsControls);
+</script>
+
+<style is:global>
+  /*
+   * Danger zone (D06) — the SAME error border the registry pages put on their Remove blocks
+   * (`.reg-danger`), so the destructive part of a page looks identical wherever it appears.
+   * `is:global` because the class lands on `Card.astro`'s own root `<div>`, which an Astro SCOPED
+   * rule never reaches. Two selectors deep to beat Card's own `border-base-300/50` utility.
+   */
+  .set .set-card-danger { border-color: oklch(from var(--color-error) l c h / .35); }
+</style>
+
+<style>
+  /* Two panes, per the spec. The rail is navigation; the pane gets everything else. */
+  .set { display: grid; grid-template-columns: var(--rail-m) minmax(0, 1fr); gap: 24px; align-items: start; }
+  .set-rail { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 2px; }
+  .set-search { margin-bottom: 8px; }
+
+  .set-railitem { border-radius: 8px; color: inherit; text-decoration: none; transition: background .12s ease; }
+  .set-railitem:hover { background: oklch(from var(--color-base-content) l c h / .08); }
+  .set-railitem-on { background: color-mix(in oklch, var(--color-primary) 12%, transparent); color: var(--color-primary); }
+  .set-rail .set-railname { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .set-railname { font-size: var(--t-14); font-weight: 600; }
+  .set-railscope { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .45); }
+  .set-railitem-on .set-railscope { color: color-mix(in oklch, var(--color-primary) 70%, var(--color-base-content)); }
+  .set-railgo { color: oklch(from var(--color-base-content) l c h / .45); }
+
+  @media not all and (max-width: 1279.98px) {
+    .set-railitem { display: grid; grid-template-columns: auto minmax(0, max-content); grid-template-areas: 'ico name' 'ico scope'; align-items: center; justify-content: start; column-gap: 12px; padding: 8px 12px; }
+    .set-rail .set-railname { display: contents; }
+    .set-railicon { grid-area: ico; }
+    .set-raillabel { grid-area: name; }
+    .set-railscope { grid-area: scope; }
+    .set-railgo { display: none; }
+  }
+
+  .set-back { display: none; align-self: flex-start; align-items: center; gap: 4px; min-height: var(--touch-min); height: auto; margin-inline-start: -4px; padding-inline: 4px; font-size: var(--t-14); font-weight: 500; color: var(--color-primary); text-decoration: none; }
+  .set-back:hover { text-decoration: underline; }
+
+  .set-pane { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .set-panehead { display: flex; flex-direction: column; gap: 4px; }
+  .set-panetitle { font-size: var(--t-20); font-weight: 600; margin: 0; }
+  .set-panesub { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .55); margin: 0; }
+  .set-note { font-size: var(--t-13); }
+
+  .set-card { padding: 20px; }
+  .set-sechead { display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }
+  .set-sectitle { font-size: var(--t-16); font-weight: 600; margin: 0; }
+  .set-sechelp { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .55); margin: 0; }
+
+  /* The repeating unit (pattern-settings-row): text on the left, control right-aligned. */
+  .set-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 12px 0; border-top: 1px solid var(--color-base-300); }
+  .set-rowlead { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .set-rowtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .set-rowname { display: flex; align-items: center; gap: 8px; font-size: var(--t-14); font-weight: 500; }
+  .set-rowdesc { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .55); }
+  .set-rownote { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .85); }
+  .set-rownote-error { color: var(--color-error); }
+  .set-rowctl { flex: none; display: flex; align-items: center; gap: 8px; }
+  .set-input { width: 15rem; max-width: 40vw; }
+  .set-avatar { flex: none; display: inline-flex; }
+
+  /* Commit confirmation. Opacity rather than display, so the control column never shifts. */
+  .set-flag { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); font-weight: 500; color: var(--color-success); opacity: 0; transition: opacity .16s ease; }
+  .set-flag-on { opacity: 1; }
+
+  @media (max-width: 639.98px) {
+    .set-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .set-input { width: 100%; max-width: none; }
+  }
+
+  /* ── Below the 1280 PRODUCT boundary: THE DRILL-DOWN (catalog: pattern-mobile-drilldown) ── */
+  @media (max-width: 1279.98px) {
+    .set { grid-template-columns: 1fr; }
+    .set-rail { position: static; gap: 0; }
+    .set-search { width: 100%; }
+    .set-rail .set-railscope { padding-inline-start: 24px; }
+
+    .set[data-drill='list'] .set-pane { display: none; }
+    .set[data-drill='section'] .set-rail { display: none; }
+    .set-back { display: inline-flex; }
+
+    .set[data-drill='list'] .set-railitem-on { background: transparent; color: inherit; }
+    .set[data-drill='list'] .set-railitem-on .set-railscope { color: oklch(from var(--color-base-content) l c h / .45); }
+  }
+</style>

@@ -52,6 +52,7 @@
 @import "./components/space-pipeline-hero.css";
 @import "./components/base-selection.css";
 @import "./components/auth.css";
+@import "./components/code-input.css";
 @import "./components/brand-logo.css";
 /* facet-filter before export-control: .xp-panel overrides .ff-panel at equal specificity. */
 @import "./components/facet-filter.css";

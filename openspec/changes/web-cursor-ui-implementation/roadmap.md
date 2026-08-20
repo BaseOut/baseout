@@ -43,7 +43,7 @@
 | Actions | **LIVE** (landing) | Built | n/a (static + feedback) | Low priority polish |
 | Reports | redirects `/` (V1 trim) | **BUILT** + in nav | `shared-backup-reports` incomplete | **Match ui-only** — restore nav + build (`web-reports-page` + engine) |
 | Sources / Destinations | **LIVE** | Built | connections | Later visual sync; provider “coming soon” badges = **HONEST** (V2 platforms) |
-| Settings | **LIVE** (pre-hub page) | Catalog hub **BUILT** | partial | Promote Settings hub + wire remaining rows |
+| Settings | **LIVE** (hub — Phase 4) | Catalog hub **BUILT** | partial | Hub LIVE; remaining gated rows need prefs/2FA backends |
 | Help | stub (“chat coming soon”) | Support portal separate app | — | `support` change; **BLOCKED** client Q#6 |
 | Inbox (full page) | missing (dropdown may exist via layout work) | **BUILT** | notifications APIs exist | Promote `/inbox` after shell sync |
 | Auth (login/welcome/2FA) | **LIVE** (page markup) | Redesigned views | better-auth | Promote views; keep auth logic |
@@ -67,7 +67,7 @@
 | **1** | **Slice A — Data SoonTab un-gates (part 1)** | Promote ui-only Data UI for **Browse + Changelog + Attachments/Media** over existing engine routes; proxies + mappers + tests; Storybook/daisyUI only | Phase 0 · **DONE** · Plan: [`docs/superpowers/plans/2026-08-20-slice-a-data-soon-tabs.md`](../../../docs/superpowers/plans/2026-08-20-slice-a-data-soon-tabs.md) (Tasks 1–6) |
 | **2** | **Slice A — Data SoonTab un-gates (part 2)** | **Comments** read path + Comments panel; then **Docs + Chat** | Phase 1 · **DONE** · same plan (Tasks 7–11) — zero SoonTabs on DataView |
 | **3** | Design harness sync | `/ui-sync` Stage-1 at `9cf5b1ef` into `apps/design` (verbatim + ledger); reconcile reverse/diverged first | Can parallel after Phase 0 |
-| **4** | Settings hub | Promote ui-only Settings catalog; wire real rows; honest-gate the rest | Phase 3 helpful |
+| **4** | Settings hub | Promote ui-only Settings catalog; wire real rows; honest-gate the rest | **DONE** 2026-08-20 · `web-settings` |
 | **5** | Auth visual convergence | Promote Login/Welcome/2FA/Association views; keep better-auth contracts | Phase 3 |
 | **6** | Inbox full page | Promote `InboxView` → `/inbox`; reuse notification proxies | Phase 3 |
 | **7** | Visual sync of LIVE surfaces | Home / Backups / Restore / Sources / Destinations — only where ui-only diverged; preserve polls & contracts | Phase 3 |
