@@ -1,20 +1,18 @@
 ## Status
 
-PROPOSED — 0/13. **Phase 1 (5 tasks) is unblocked and is a one-file diff. Phases 2–4 are BLOCKED on client question #4** (*are locks a capability statement or a price prompt?*), which the audit calls *"the expensive one"* and which has never been sent.
-
-**Phases 2–4 are additionally blocked on a design that does not exist.** Confirmed at `ui-only@252005be`: no `UsageView`, no plan-cards view, no meter component. The fork's `usage-and-billing` is a design *proposal*. Do not hand-build these — see [`design.md`](./design.md) Risks.
-
-Data layer is [`shared-entitlements`](../shared-entitlements/) (also unlanded).
+Phase 1 **DONE** 2026-08-20 on `autumn/cursor-ui-implementation-test`. Phases 2–4 remain for usage meters / plan checkout when `shared-entitlements` + a real Usage design land — build from `pricing-guide` / honest placeholders; do not wait on client #4 for portal rows (already shipped).
 
 ---
 
 ## 1. Unblocked — the three rows that need no answer (one file)
 
-- [ ] 1.1 `views/settingsCatalog.ts` — `billing-email`: gated text row → `control: 'button'`, `action: 'billing-portal'`, copy naming Stripe as the owner. Nobody intends to build an in-app billing-email editor; the gate was inventing a gap (design D1).
-- [ ] 1.2 Same file — `billing-invoices`: note → `action: 'billing-portal'`. Replaces the "open it from Payment method above" navigation puzzle with the button that does it.
-- [ ] 1.3 Same file — `billing-plan`: keep the note but name the portal explicitly as the place plan changes happen.
-- [ ] 1.4 **No new control type and no new client code** — all three reuse the `data-set-portal` handler `settingsControls` already ships (design D2). Verify `setButtonLoading` + revert-on-error still apply to the new rows.
-- [ ] 1.5 Update `views/settingsCatalog.test.ts` for the changed row shapes (the catalog test asserts them).
+- [x] 1.1 `views/settingsCatalog.ts` — `billing-email`: gated text row → `control: 'button'`, `action: 'billing-portal'`, copy naming Stripe as the owner. Nobody intends to build an in-app billing-email editor; the gate was inventing a gap (design D1).
+- [x] 1.2 Same file — `billing-invoices`: note → `action: 'billing-portal'`. Replaces the "open it from Payment method above" navigation puzzle with the button that does it.
+- [x] 1.3 Same file — `billing-plan`: portal button + note naming Stripe as the place plan changes happen.
+- [x] 1.4 **No new control type and no new client code** — all three reuse the `data-set-portal` handler `settingsControls` already ships (design D2). Verify `setButtonLoading` + revert-on-error still apply to the new rows.
+- [x] 1.5 Update `views/settingsCatalog.test.ts` for the changed row shapes (the catalog test asserts them).
+
+Also: `billing-overage` toggle replaced with read-only limit-behaviour fact (warn @ 90% / enforce @ 100% per `pricing-guide`).
 
 ## 2. ⛔ BLOCKED on #4 — send the question first
 

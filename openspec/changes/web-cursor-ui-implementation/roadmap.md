@@ -66,17 +66,17 @@
 | **0** | Guardrails | Commit plan artifacts on this branch; ledger tip `9cf5b1ef`; confirm Reports scope conflict; no promotion-branch merge | Approval of this doc |
 | **1** | **Slice A — Data SoonTab un-gates (part 1)** | Promote ui-only Data UI for **Browse + Changelog + Attachments/Media** over existing engine routes; proxies + mappers + tests; Storybook/daisyUI only | Phase 0 · **DONE** · Plan: [`docs/superpowers/plans/2026-08-20-slice-a-data-soon-tabs.md`](../../../docs/superpowers/plans/2026-08-20-slice-a-data-soon-tabs.md) (Tasks 1–6) |
 | **2** | **Slice A — Data SoonTab un-gates (part 2)** | **Comments** read path + Comments panel; then **Docs + Chat** | Phase 1 · **DONE** · same plan (Tasks 7–11) — zero SoonTabs on DataView |
-| **3** | Design harness sync | `/ui-sync` Stage-1 into `apps/design`; reconcile reverse/diverged first | **DEFERRED** (large tip drift; promote-per-surface instead) |
+| **3** | Design harness sync | `/ui-sync` Stage-1 into `apps/design`; reconcile reverse/diverged first | **REVISIT AFTER PROGRAM** (large tip drift; promote-per-surface used instead — do not drop) |
 | **4** | Settings hub | Promote ui-only Settings catalog; wire real rows; honest-gate the rest | **DONE** · `2390c175` |
 | **5** | Auth visual convergence | Promote Login/Welcome/Association; auth scroll contract; keep better-auth | **DONE** · `a11f2edd` |
 | **6** | Inbox full page | Promote `InboxView` → `/inbox`; reuse notification proxies | **DONE** · `d94fa4cc` |
 | **7** | Visual sync of LIVE surfaces | Restore → Sources → Destinations → Home → Backups; preserve polls & contracts | **DONE** · Restore `099360f3` · Sources `c962d74b` · Destinations `a72e57e4` · Home `a541120a` · Backups `598f11b5` |
 | **8** | Reports | Overturn V1 trim — finish engine + `web-reports-page`; restore `/reports` nav to match ui-only | **DONE** · backend `fdfd1e90` (from `4d3ff862`) · UI `9c4f1c63` · migration **0038** not applied to remote DB |
 | **9** | Schema Automations / Interfaces | Engine manual-CRUD + web tabs | **DONE** on this branch — engine `13b51873`/`33c7e667` + web proxies `6e4a2712` + UI tabs (this commit). Capture funnel (`server-automations-interfaces-docs`) still deferred. |
-| **10** | Support portal | `apps/support` from ui-only | **BLOCKED** client Q#6 |
-| **11** | Billing / usage | | **BLOCKED** client Q#4 + no fork design |
-| **12** | Design-audit convergence | 41-item ship order (`web-design-audit-convergence`) | After major promotions stabilize |
-| **13** | Schema re-architecture | Full fork Schema component set | Explicitly deferred |
+| **10** | Support portal | `apps/support` from ui-only | **SKIP FOR NOW** (Q#6 — support channel not decided; revisit later) |
+| **11** | Billing / usage | Phase 1 portal rows now; usage/meters from pricing guide + honest gates (no fork Usage view) | **UNBLOCKED 2026-08-20** — build from PRD/`pricing-guide` / placeholders; do not wait on Q#4 |
+| **12** | Design-audit convergence | 41-item ship order (`web-design-audit-convergence`) | **NEXT** — promotions 4–9 landed; holdup was sequencing only |
+| **13** | Schema re-architecture | Full fork Schema component set (~24 components + EntityPanel) | **UNBLOCKED 2026-08-20** — prior deferral was risk/size, not a missing dependency |
 
 ### Slice A detail (first code after approval)
 

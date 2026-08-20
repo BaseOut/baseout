@@ -34,7 +34,6 @@ describe('buildCategories — identity is a prop, never a literal', () => {
     expect(findRow(cats, 'org-name')?.value).toBe('Acme Analytics');
     expect(findRow(cats, 'org-slug')?.value).toBe('acme');
     expect(findRow(cats, 'space-name')?.value).toBe('Growth Ops');
-    expect(findRow(cats, 'billing-email')?.value).toBe('ada@example.com');
   });
 
   it('renders empty strings (not a literal) when org/space are absent', () => {
@@ -63,6 +62,9 @@ describe('buildCategories — apps/web wiring vs honest gating', () => {
 
   it('wires the real routes: billing portal action, and real hrefs', () => {
     expect(findRow(cats, 'billing-method')?.action).toBe('billing-portal');
+    expect(findRow(cats, 'billing-email')?.action).toBe('billing-portal');
+    expect(findRow(cats, 'billing-invoices')?.action).toBe('billing-portal');
+    expect(findRow(cats, 'billing-plan')?.action).toBe('billing-portal');
     expect(findRow(cats, 'billing-usage')?.href).toBe('/reports');
     expect(findRow(cats, 'space-retention')?.href).toBe('/retention');
     expect(findRow(cats, 'space-schedule')?.href).toBe('/backups');
@@ -70,11 +72,15 @@ describe('buildCategories — apps/web wiring vs honest gating', () => {
   });
 
   it('gates the rows with no persistence route (never a fake save)', () => {
-    for (const id of ['account-name', 'org-name', 'org-slug', 'space-name', 'space-autoadd', 'billing-email', 'billing-overage', 'notify-failed', 'notify-quiet']) {
+    for (const id of ['account-name', 'org-name', 'org-slug', 'space-name', 'space-autoadd', 'notify-failed', 'notify-quiet']) {
       expect(findRow(cats, id)?.gated, `${id} must be gated`).toBe(true);
     }
     // The account email stays a read-only fact, not a gated control.
     expect(findRow(cats, 'account-email')?.readOnly).toBe(true);
+    // Limit behaviour is a pricing-model fact (warn/enforce), not a customer toggle.
+    expect(findRow(cats, 'billing-overage')?.readOnly).toBe(true);
+    expect(findRow(cats, 'billing-overage')?.gated).toBeUndefined();
+    expect(findRow(cats, 'billing-email')?.gated).toBeUndefined();
   });
 
   it('drops the fixture "API tokens" link — the real panel supersedes it', () => {
