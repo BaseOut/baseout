@@ -1,11 +1,20 @@
 ---
 /**
- * /data — the Data page (web-data-page 2.1, phase-1 shell). Space-scoped;
- * auth via middleware like every interior page. Mirrors /schema's loader
- * shape: engine schema read decides `hasData` (tables captured), the latest
- * succeeded backup run stamps freshness. No tier gate on the shell — every
- * panel is a designed soon-state and exposes no record data; the read-API
- * promotion adds the capability gate with the data it gates (task 1.3).
+ * /data — the Data page (Slice A Task 5 / web-data-page Stage-3 wiring). Space-scoped;
+ * auth via middleware like every interior page. Mirrors /schema's loader shape and adds:
+ *
+ *  - `getSchema` decides `managedPg` — the per-Space read routes are managed_pg-only, so a
+ *    readable schema means the Data read API can serve this Space; a 501
+ *    (`backend_not_implemented`) means it cannot, and the record-data tabs render their
+ *    honest managed-Postgres / LockedTab state (never fixtures).
+ *  - `mode` from `backup_configurations.mode` when present (else `dynamic` with honest
+ *    degrade on 501). Static Spaces get StaticImport / LockedTab on A1 panels.
+ *  - `hasData` (show the tabs at all) = captured tables exist OR a backup has succeeded.
+ *  - When available, page-1 Records + Changelog sample + Attachments are read through the
+ *    engine and mapped via `lib/data-browse/map`. Deeper pagination / filters ride the
+ *    `/api/spaces/:id/data/*` proxies (setButtonLoading on any network-waiting button).
+ *
+ * Comments/Docs/Chat stay SoonTab until A2.
  */
 import { env } from 'cloudflare:workers';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
@@ -13,37 +22,108 @@ import DataView from '../views/DataView.astro';
 import EmptyState from '../components/ui/EmptyState.astro';
 import { getBreadcrumbs } from '../lib/config';
 import { createBackupEngine } from '../lib/backup-engine';
-import { backupRuns } from '../db/schema/core';
+import {
+  mapSchemaToData,
+  mapRecords,
+  mapRunTotals,
+  mapChangelogRows,
+  mapMediaAssets,
+} from '../lib/data-browse/map';
+import type { DataBase, DataTable, DataRecord, DataChangeEntry, MediaAsset, DataMode } from '../components/data/dataTypes';
+import { backupRuns, backupConfigurations } from '../db/schema/core';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
 const breadcrumbs = getBreadcrumbs('/data');
 const { account, db } = Astro.locals;
 const spaceId = account?.space?.id ?? null;
 
-// `hasData` = the per-Space DB holds captured tables (same read /schema uses).
-// Engine unavailability degrades to the pre-first-backup empty state — never
-// an error page for a shell of soon-states.
-let hasData = false;
+let managedPg = false;
+let bases: DataBase[] = [];
+let tables: DataTable[] = [];
+let records: DataRecord[] = [];
+let changelog: DataChangeEntry[] = [];
+let runTotals: Record<string, { created: number; updated: number; deleted: number }> = {};
+let assets: MediaAsset[] = [];
+let landingTableId: string | undefined;
+
 if (spaceId && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
   const engine = createBackupEngine({
     binding: env.BACKUP_ENGINE,
     internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
   });
+
   const schemaRes = await engine.getSchema(spaceId);
-  if (schemaRes.ok) hasData = schemaRes.tables.length > 0;
+  if (schemaRes.ok) {
+    // A readable schema means this Space's backend (managed_pg) serves the Data read API.
+    managedPg = true;
+    const mapped = mapSchemaToData(schemaRes);
+    bases = mapped.bases;
+    tables = mapped.tables;
+    landingTableId = tables[0]?.id;
+
+    if (landingTableId) {
+      // Records — page 1 of the landing table (deeper pages via the proxy).
+      const recRes = await engine.getDataRecords(spaceId, landingTableId, { limit: 50 });
+      if (recRes.ok) {
+        records = mapRecords(recRes.records, landingTableId, mapped.primaryByTable[landingTableId]);
+      }
+
+      // Changelog — rollup totals for every run + a sample of the latest run's rows.
+      const rollupRes = await engine.getDataChangelog(spaceId, { limit: 50 });
+      if (rollupRes.ok && rollupRes.mode === 'rollup') {
+        runTotals = mapRunTotals(rollupRes.runs);
+        const top = rollupRes.runs[0];
+        if (top) {
+          const runAt = top.startedAt ?? top.completedAt ?? '';
+          const counts = { created: top.createdCount, updated: top.updatedCount, deleted: top.deletedCount };
+          const types = (['created', 'updated', 'deleted'] as const).filter((t) => counts[t] > 0);
+          for (const changeType of types) {
+            const rowsRes = await engine.getDataChangelog(spaceId, { runId: top.runId, changeType, limit: 25 });
+            if (rowsRes.ok && rowsRes.mode === 'rows') {
+              changelog = changelog.concat(mapChangelogRows(rowsRes.rows, top.runId, runAt));
+            }
+          }
+        }
+      }
+
+      // Attachments — newest-first page 1 (deeper pages via the proxy).
+      const mediaRes = await engine.getMedia(spaceId, { limit: 50 });
+      if (mediaRes.ok) assets = mapMediaAssets(mediaRes.items);
+    }
+  }
+  // 501 backend_not_implemented (and any other non-ok) → managedPg stays false → honest empty.
 }
 
 // Freshness stamp — the data reflects the latest completed backup run.
 let lastSyncedAt: string | null = null;
+let lastSyncedRunId: string | null = null;
 if (db && spaceId) {
   const [latest] = await db
-    .select({ completedAt: backupRuns.completedAt })
+    .select({ id: backupRuns.id, completedAt: backupRuns.completedAt })
     .from(backupRuns)
     .where(and(eq(backupRuns.spaceId, spaceId), eq(backupRuns.status, 'succeeded'), isNotNull(backupRuns.completedAt)))
     .orderBy(desc(backupRuns.completedAt))
     .limit(1);
   lastSyncedAt = latest?.completedAt?.toISOString() ?? null;
+  lastSyncedRunId = latest?.id ?? null;
 }
+
+// Backup mode — when config is missing, default dynamic and rely on managedPg gate for 501.
+let mode: DataMode = 'dynamic';
+if (db && spaceId) {
+  const [cfg] = await db
+    .select({ mode: backupConfigurations.mode })
+    .from(backupConfigurations)
+    .where(eq(backupConfigurations.spaceId, spaceId))
+    .limit(1);
+  if (cfg?.mode === 'static' || cfg?.mode === 'dynamic' || cfg?.mode === 'both') {
+    mode = cfg.mode;
+  }
+}
+
+// Show the tab shell when there is anything to browse: captured tables, or a succeeded backup
+// (a non-managed_pg Space with backups still gets the shell + the managed-Postgres explainer).
+const hasData = tables.length > 0 || lastSyncedAt !== null;
 ---
 
 <SidebarLayout pageTitle="Data" breadcrumbs={breadcrumbs} spaceScoped={true}>
@@ -54,6 +134,20 @@ if (db && spaceId) {
       description="Select a Space to browse its backed-up data."
     />
   ) : (
-    <DataView hasData={hasData} lastSyncedAt={lastSyncedAt} />
+    <DataView
+      hasData={hasData}
+      lastSyncedAt={lastSyncedAt}
+      lastSyncedRunId={lastSyncedRunId}
+      managedPg={managedPg}
+      mode={mode}
+      bases={bases}
+      tables={tables}
+      records={records}
+      changelog={changelog}
+      runTotals={runTotals}
+      assets={assets}
+      landingTableId={landingTableId}
+      loadState="ready"
+    />
   )}
 </SidebarLayout>

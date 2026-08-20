@@ -5,27 +5,77 @@
  * shell — the same tab grammar (`.sch-tabbar` / `.sch-panel` + `wireSectionTabs`), the same
  * empty/soon states, the same freshness stamp.
  *
- * PHASE-1 SHELL (web-data-page 2.1, promoted from ui-only@8d9d1cd via /ui-sync): the page,
- * nav, tabs, freshness stamp, and empty state are live; every panel renders its designed
- * soon-state until its backend ships (server-data-browse §3 read routes; the comments read
- * route rides server-comments' read-path follow-up). Header/tabbar/empty markup and DOM
- * hooks (`data-dataview`, `data-tab`/`data-panel` names browse|changelog|comments|docs|chat)
- * are verbatim from the fork's DataView, so the full panel promotion later swaps CONTENT
- * inside the panels without touching ids, tab wiring, or deep links (`?tab=` is already
- * addressable via sectionTabs).
+ * Slice A Task 5 (A1): Records / Attachments / Changelog render the REAL fork components
+ * (DataBrowse / DataMedia / DataChangelog) over engine data the loader maps through
+ * `lib/data-browse/map`. Those routes are managed_pg-only — when `managedPg` is false the
+ * record-data panels render an honest empty/LockedTab state (never fixtures). Static mode
+ * uses StaticImport + LockedTab. Comments / Docs / Chat stay SoonTab until A2.
+ *
+ * DOM hooks (`data-dataview`, `data-tab`/`data-panel`) keep `browse|changelog|comments|docs|chat`
+ * and add `attachments` so `?tab=` deep links stay stable.
  */
+import DataBrowse from '../components/data/DataBrowse.astro';
+import DataChangelog from '../components/data/DataChangelog.astro';
+import DataMedia from '../components/data/DataMedia.astro';
+import LockedTab from '../components/data/LockedTab.astro';
+import StaticImport from '../components/data/StaticImport.astro';
+import RecordPanel from '../components/data/RecordPanel.astro';
+import MediaPanel from '../components/data/MediaPanel.astro';
+import PanelHost from '../components/ui/PanelHost.astro';
 import SoonTab from './schema/SoonTab.astro';
+import type {
+  DataBase,
+  DataTable,
+  DataRecord,
+  DataChangeEntry,
+  MediaAsset,
+  DataMode,
+} from '../components/data/dataTypes';
 
 interface Props {
   /** True once at least one completed backup captured tables for this Space. */
   hasData: boolean;
   /** When the browsed data was last synced (latest succeeded backup run). */
   lastSyncedAt?: string | null;
+  /** Latest succeeded run id (optional freshness / deep-link context). */
+  lastSyncedRunId?: string | null;
+  /** True when this Space's backend serves the Data read API (managed_pg). */
+  managedPg?: boolean;
+  /** Backup configuration mode — static Spaces get LockedTab / StaticImport. */
+  mode?: DataMode;
+  bases?: DataBase[];
+  tables?: DataTable[];
+  records?: DataRecord[];
+  changelog?: DataChangeEntry[];
+  /** Per-run TRUE totals for the changelog rollup. */
+  runTotals?: Record<string, { created: number; updated: number; deleted: number }>;
+  /** Every captured attachment across the Space (media-library). */
+  assets?: MediaAsset[];
+  /** Which table Browse opens on (defaults to the first). */
+  landingTableId?: string;
+  /** Async surface state for Browse (SSR page-1 is `ready`). */
+  loadState?: 'ready' | 'loading' | 'error';
 }
-const { hasData, lastSyncedAt = null } = Astro.props;
+const {
+  hasData,
+  lastSyncedAt = null,
+  lastSyncedRunId = null,
+  managedPg = false,
+  mode = 'dynamic',
+  bases = [],
+  tables = [],
+  records = [],
+  changelog = [],
+  runTotals = {},
+  assets = [],
+  landingTableId,
+  loadState = 'ready',
+} = Astro.props;
 
-// Freshness stamp — the whole page reflects one synced backup, so it lives at the title
-// level (once), right-aligned, exactly like Schema's "Schema as of …".
+const isStatic = mode === 'static';
+// Live record-data panels only when the Space can serve managed_pg reads and is not static-only.
+const showData = hasData && managedPg && !isStatic;
+
 const fmtStamp = (iso: string) => {
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
@@ -34,8 +84,7 @@ const fmtStamp = (iso: string) => {
 };
 ---
 
-<div class="sch" data-dataview>
-  {/* Page header — title + the page-wide freshness stamp (applies to every tab). */}
+<div class="sch" data-dataview data-mode={mode} data-managed-pg={managedPg ? '1' : '0'}>
   <header class="sch-head">
     <div class="min-w-0">
       <h1 class="text-title">Data</h1>
@@ -43,7 +92,7 @@ const fmtStamp = (iso: string) => {
     </div>
     <div class="sch-head-r">
       {hasData && lastSyncedAt && (
-        <p class="sch-stamp tooltip tooltip-left" data-tip="Data is captured at backup time and may drift from Airtable until the next run.">
+        <p class="sch-stamp tooltip tooltip-left" data-tip="Data is captured at backup time and may drift from Airtable until the next run." data-run-id={lastSyncedRunId ?? undefined}>
           <span class="iconify lucide--refresh-cw size-3.5" aria-hidden="true"></span>
           Synced as of {fmtStamp(lastSyncedAt)}
         </p>
@@ -53,35 +102,81 @@ const fmtStamp = (iso: string) => {
 
   {hasData ? (
     <>
-      {/* Tab bar — same daisyUI `tabs tabs-border` pattern as Schema, flat 5-tab row. */}
+      {/* Tab bar — ui-only clustered construction (`pattern-section-nav`). Keys stay flat for
+          `wireSectionTabs` / `?tab=` deep links; grouping is presentation only. */}
       <div class="sch-tabbar" role="tablist" aria-label="Data sections">
-        <div class="sch-gtabs tabs tabs-border">
-          <button type="button" class="tab tab-active" role="tab" data-tab="browse"><span class="iconify lucide--table-2 size-4" aria-hidden="true"></span>Browse</button>
-          <button type="button" class="tab" role="tab" data-tab="changelog"><span class="iconify lucide--history size-4" aria-hidden="true"></span>Changelog</button>
-          <button type="button" class="tab" role="tab" data-tab="comments"><span class="iconify lucide--message-square-text size-4" aria-hidden="true"></span>Comments</button>
-          <button type="button" class="tab" role="tab" data-tab="docs"><span class="iconify lucide--book-text size-4" aria-hidden="true"></span>Docs</button>
-          <button type="button" class="tab" role="tab" data-tab="chat"><span class="iconify lucide--messages-square size-4" aria-hidden="true"></span>Chat</button>
+        <div class="sch-group">
+          <span class="sch-glabel">Data Elements</span>
+          <div class="sch-gtabs tabs tabs-border">
+            <button type="button" class="tab tab-active" role="tab" data-tab="browse"><span class="iconify lucide--table-2 size-4" aria-hidden="true"></span>Records</button>
+            <button type="button" class="tab" role="tab" data-tab="attachments"><span class="iconify lucide--paperclip size-4" aria-hidden="true"></span>Attachments</button>
+            <button type="button" class="tab" role="tab" data-tab="comments"><span class="iconify lucide--message-square-text size-4" aria-hidden="true"></span>Comments</button>
+          </div>
+        </div>
+        <span class="sch-tabdiv" aria-hidden="true"></span>
+        <div class="sch-group">
+          <span class="sch-glabel">Between backups</span>
+          <div class="sch-gtabs tabs tabs-border">
+            <button type="button" class="tab" role="tab" data-tab="changelog"><span class="iconify lucide--history size-4" aria-hidden="true"></span>Changelog</button>
+          </div>
+        </div>
+        <span class="sch-tabdiv" aria-hidden="true"></span>
+        <div class="sch-group">
+          <span class="sch-glabel">Knowledge</span>
+          <div class="sch-gtabs tabs tabs-border">
+            <button type="button" class="tab" role="tab" data-tab="docs"><span class="iconify lucide--book-text size-4" aria-hidden="true"></span>Docs</button>
+            <button type="button" class="tab" role="tab" data-tab="chat"><span class="iconify lucide--messages-square size-4" aria-hidden="true"></span>Chat</button>
+          </div>
         </div>
       </div>
 
-      {/* Panels — full width. Phase 1 renders the designed soon-states; each panel's real
-          content lands with its backend (never fixture data in prod — /ui-sync Stage 3). */}
+      {/* Records (Browse) — real grid, StaticImport, or managed-Postgres gate. */}
       <div class="sch-panel" data-panel="browse">
-        <SoonTab
-          icon="lucide--table-2"
-          title="Record browsing is on its way"
-          description="The grid over your backed-up rows — filters, sorts, and record detail — lands with the data read API. Your records are already captured; this is where you'll open them."
-        />
+        {isStatic ? (
+          <StaticImport bases={bases} tables={tables} records={records} />
+        ) : showData ? (
+          <DataBrowse bases={bases} tables={tables} records={records} landingTableId={landingTableId} loadState={loadState} />
+        ) : (
+          <div class="sch-empty">
+            <span class="sch-empty-ic"><span class="iconify lucide--database"></span></span>
+            <p class="sch-empty-title">Record browsing is available on managed Postgres Spaces</p>
+            <p class="sch-empty-sub">The record browser reads your rows from a Baseout-managed Postgres store. This Space backs up to a different destination, so there's nothing to query here yet. Switch it to a managed Postgres backend to browse, trace, and search records.</p>
+            <a href="/backups" class="btn btn-primary btn-sm mt-1"><span class="iconify lucide--archive size-4" aria-hidden="true"></span>Go to Backups</a>
+          </div>
+        )}
       </div>
 
+      {/* Attachments — captured files, LockedTab, or managed-Postgres gate. */}
+      <div class="sch-panel" data-panel="attachments" hidden>
+        {isStatic ? (
+          <LockedTab title="Attachments need a dynamic backup" what="Files attached to records and comments are downloaded from Airtable at backup time. Your Space stores static files you uploaded, so there is nothing to fetch — switch to a dynamic backup to see them." />
+        ) : showData ? (
+          <DataMedia bases={bases} tables={tables} assets={assets} records={records} lastSyncedAt={lastSyncedAt ?? undefined} />
+        ) : (
+          <div class="sch-empty">
+            <span class="sch-empty-ic"><span class="iconify lucide--paperclip"></span></span>
+            <p class="sch-empty-title">Attachments are available on managed Postgres Spaces</p>
+            <p class="sch-empty-sub">Files captured from your records and comments are indexed in a Baseout-managed Postgres store. This Space backs up elsewhere, so there's nothing to list here yet.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Changelog — run-over-run changes, LockedTab, or managed-Postgres gate. */}
       <div class="sch-panel" data-panel="changelog" hidden>
-        <SoonTab
-          icon="lucide--history"
-          title="Data changelog is on its way"
-          description="Run-over-run record changes — created, updated, deleted, with per-field before → after — appear here once the data change feed ships."
-        />
+        {isStatic ? (
+          <LockedTab title="Change tracking needs a dynamic backup" what="The Changelog compares every backup in a live database. Your Space stores static files, so there's nothing to diff — switch to a dynamic backup to see what changed between runs." />
+        ) : showData ? (
+          <DataChangelog bases={bases} tables={tables} changelog={changelog} records={records} runTotals={runTotals} now={lastSyncedAt ?? undefined} />
+        ) : (
+          <div class="sch-empty">
+            <span class="sch-empty-ic"><span class="iconify lucide--history"></span></span>
+            <p class="sch-empty-title">The data changelog is available on managed Postgres Spaces</p>
+            <p class="sch-empty-sub">Run-over-run record changes — created, updated, deleted — are computed in a Baseout-managed Postgres store. This Space backs up to a different destination, so there's nothing to diff here yet.</p>
+          </div>
+        )}
       </div>
 
+      {/* Comments / Docs / Chat — SoonTab until Slice A2. */}
       <div class="sch-panel" data-panel="comments" hidden>
         <SoonTab
           icon="lucide--message-square-text"
@@ -102,7 +197,7 @@ const fmtStamp = (iso: string) => {
         <SoonTab
           icon="lucide--messages-square"
           title="Data chat is on its way"
-          description="Ask questions about the records inside your backups. Ships with the data read API and the AI controls."
+          description="Ask questions about the records inside your backups. Ships with the AI controls."
         />
       </div>
     </>
@@ -116,15 +211,18 @@ const fmtStamp = (iso: string) => {
   )}
 </div>
 
+{/* ONE panel stack for the live record-data tabs (Oleh's law). No EntityPanel / QuickAskDock. */}
+{showData && <PanelHost mincontent={700} />}
+{showData && <RecordPanel bases={bases} tables={tables} records={records} mode={mode} lastSyncedAt={lastSyncedAt ?? undefined} />}
+{showData && <MediaPanel mode={mode} />}
+
 <script>
-  // Tab toggle — the shared controller (pattern-section-tabs): URL-addressable
-  // (`/data?tab=comments`), replaceState on change, `app:tabchange` dispatch.
   import { wireSectionTabs } from '../components/ui/sectionTabs';
 
   function wireDataTabs() {
     const root = document.querySelector<HTMLElement>('[data-dataview]');
     if (!root) return;
-    wireSectionTabs({ root });
+    wireSectionTabs({ root, searchSelector: '[data-sch-search]' });
   }
   wireDataTabs();
   document.addEventListener('astro:after-swap', wireDataTabs);
