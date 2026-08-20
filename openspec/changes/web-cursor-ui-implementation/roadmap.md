@@ -64,8 +64,8 @@
 | Phase | Name | What | Depends on |
 |---|---|---|---|
 | **0** | Guardrails | Commit plan artifacts on this branch; ledger tip `9cf5b1ef`; confirm Reports scope conflict; no promotion-branch merge | Approval of this doc |
-| **1** | **Slice A — Data SoonTab un-gates (part 1)** | Promote ui-only Data UI for **Browse + Changelog + Attachments/Media** over existing engine routes; proxies + mappers + tests; Storybook/daisyUI only | Phase 0 |
-| **2** | **Slice A — Data SoonTab un-gates (part 2)** | **Comments** read path (`server-comments-read` or equivalent) + promote Comments panel; then **Docs + Chat** reusing Schema Docs/Chat (`web-data-docs-chat`, corrected for main baseline) | Phase 1 |
+| **1** | **Slice A — Data SoonTab un-gates (part 1)** | Promote ui-only Data UI for **Browse + Changelog + Attachments/Media** over existing engine routes; proxies + mappers + tests; Storybook/daisyUI only | Phase 0 · **Plan:** [`docs/superpowers/plans/2026-08-20-slice-a-data-soon-tabs.md`](../../../docs/superpowers/plans/2026-08-20-slice-a-data-soon-tabs.md) (Tasks 1–6) |
+| **2** | **Slice A — Data SoonTab un-gates (part 2)** | **Comments** read path + Comments panel; then **Docs + Chat** | Phase 1 · same plan (Tasks 7–11) |
 | **3** | Design harness sync | `/ui-sync` Stage-1 at `9cf5b1ef` into `apps/design` (verbatim + ledger); reconcile reverse/diverged first | Can parallel after Phase 0 |
 | **4** | Settings hub | Promote ui-only Settings catalog; wire real rows; honest-gate the rest | Phase 3 helpful |
 | **5** | Auth visual convergence | Promote Login/Welcome/2FA/Association views; keep better-auth contracts | Phase 3 |
