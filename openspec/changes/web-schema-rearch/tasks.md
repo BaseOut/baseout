@@ -25,6 +25,7 @@
 ## 3. Remaining tabs
 
 - [ ] 3.1 Visualize / Relationships / Health / Changelog / Docs / Chat — one tab per sub-slice, preserve proxies
+  - [x] Visualize + Relationships chips: dispatch `schema:openEntity` (live islands/`*Tab`; tip body swap still pending — tip SchemaCanvas/SchemaRelationships need API mappers, not fixture SSR)
 - [ ] 3.2 A&I: integrate Phase 9 CRUD into new shell (no regression)
 - [ ] 3.3 QuickAskDock (global launcher)
 

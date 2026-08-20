@@ -58,7 +58,7 @@ Most fork Schema components already exist under `apps/design/src/components/sche
 | **1** | EntityPanel promote + mapper + mount on Schema (+ Reports stub replacement); docs-by-entity; Internal Save honest-gated | **DONE** (`8bc16054`) |
 | **2** | Shell/nav → fork SchemaView chrome + PanelHost; keep tab modules mounted | **DONE** |
 | **3** | Browse → `SchemaBrowse` + drop inline `#entity-detail` | **DONE** |
-| **4** | Remaining tabs (Visualize/Relationships/Health/Changelog/Docs/Chat) one-by-one | next |
+| **4** | Remaining tabs (Visualize/Relationships/Health/Changelog/Docs/Chat) one-by-one | **IN PROGRESS** — openEntity aligned on live Visualize/Relationships; full tip body swaps still next |
 | **5** | A&I integration into new shell (no CRUD regression); QuickAskDock | next |
 | **6** | Allowlist/stories polish; roadmap DONE; archive readiness | next |
 

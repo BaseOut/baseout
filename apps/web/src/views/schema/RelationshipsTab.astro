@@ -234,14 +234,12 @@ const { hasSchema, healthBases } = Astro.props
       content.innerHTML = renderRelationships(lastData)
     }
 
-    // Click-through: an entity chip opens the shared detail modal.
+    // Click-through: an entity chip opens EntityPanel (schema:openEntity).
     content?.addEventListener('click', (e) => {
       const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-entity-id]')
-      if (!chip) return
+      if (!chip?.dataset.entityId) return
       document.dispatchEvent(
-        new CustomEvent('open-entity-detail', {
-          detail: { type: chip.dataset.entityType, id: chip.dataset.entityId, name: chip.dataset.entityName },
-        }),
+        new CustomEvent('schema:openEntity', { detail: { id: chip.dataset.entityId } }),
       )
     })
 

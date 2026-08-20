@@ -31,8 +31,7 @@ import FieldsFilter from './FieldsFilter';
  * - Relationships mode fetches the live per-base feed via
  *   /api/spaces/:spaceId/relationships (adapted client-side) when `spaceId` is
  *   provided; the `relationships` prop remains for embedded/story use.
- * - Node click opens the shared entity modal (`open-entity-detail`), the same
- *   event Browse/Relationships use.
+ * - Node click opens EntityPanel via `schema:openEntity` (same as Browse).
  * - The design's "Add to doc" + "Export" dropdowns are NOT ported — both were
  *   non-functional prototypes; real doc persistence + tiered export are deferred
  *   follow-ups in the openspec change.
@@ -1186,16 +1185,11 @@ function Canvas({ tables, bases, baseHealth, spaceId, genState = 'ready', embed 
     setSelectedEdgeId(null);
     if (embed || typeof document === 'undefined') return;
     // App-layer entity nodes hand off to their tab; the table/field substrate opens the
-    // SHARED entity modal (`open-entity-detail` — the same event Browse/Relationships use).
+    // shared EntityPanel (`schema:openEntity` — same event SchemaBrowse uses).
     if (node.type === 'appEntity') { openAppEntity((node.data as AppEntityData)?.kind, node.id); return; }
     const isField = node.id.startsWith('fld:');
     const id = isField ? node.id.slice(4) : node.id;
-    const d = node.data as { name?: string; table?: SchemaTable } | undefined;
-    document.dispatchEvent(
-      new CustomEvent('open-entity-detail', {
-        detail: { type: isField ? 'field' : 'table', id, name: d?.name ?? d?.table?.name ?? id },
-      }),
-    );
+    document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id } }));
   }, [embed, openAppEntity]);
   const onPaneClick = useCallback(() => { setSelectedId(null); setSelectedEdgeId(null); setEdgeTip(null); }, []);
 
