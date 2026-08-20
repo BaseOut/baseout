@@ -60,7 +60,7 @@ Most fork Schema components already exist under `apps/design/src/components/sche
 | **3** | Browse → `SchemaBrowse` + drop inline `#entity-detail` | **DONE** |
 | **4** | Remaining tabs (Visualize/Relationships/Health/Changelog/Docs/Chat) one-by-one | **DONE** — Visualize/Relationships/Health/Changelog tip+mappers; Docs/Chat **kept live** (Plate + chat poll) |
 | **5** | A&I integration into new shell (no CRUD regression); QuickAskDock | **DONE** — QuickAskDock mounted; A&I already in shell (Phase 9 CRUD preserved) |
-| **6** | Allowlist/stories polish; roadmap DONE; archive readiness | next |
+| **6** | Allowlist/stories polish; roadmap DONE; archive readiness | **DONE** for code path — roadmap/ledger updated; archive when human smoke + `opsx:archive` |
 
 ## Slice 1 detail
 
