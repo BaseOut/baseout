@@ -188,7 +188,7 @@
   "ui/Alert.astro": {
     "classification": "ui-primitive-storybook",
     "styleguideId": "alert",
-    "rationale": "Reusable inline notice primitive backed by daisyUI soft alert classes."
+    "rationale": "D42 one-alert vessel: alert-soft + fixed glyph/role by severity+trigger; showAlert() owns write/reveal order (apps/web/src/components/ui/alert.ts)."
   },
   "ui/Avatar.astro": {
     "classification": "ui-primitive-storybook",

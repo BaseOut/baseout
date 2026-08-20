@@ -1,51 +1,133 @@
 ---
+/**
+ * Alert — the ONE banner vessel (audit D42, `alert` catalog entry).
+ *
+ * The vessel owns the variant (`alert alert-soft alert-{severity}`, never solid), one glyph per
+ * severity, the ARIA role (from the TRIGGER as well as severity — `static`/`overlay` → `note`,
+ * `runtime` → live `alert`/`status`), the `[hidden]` behaviour daisyUI's author sheet otherwise
+ * beats, and the announce order via `./alert.ts` (`showAlert()` is the required writer for a
+ * `runtime` banner). A required-ish `message` keeps a writer-less banner from existing.
+ *
+ * BASEOUT SUPERSET (ui-sync 986f6c09): the fork's strict Alert took `severity` + a required
+ * `message` only. This repo still has ~11 callers on the older `variant` + slot + `actionHref`
+ * shape (3 live, 8 `.legacy`), so this vessel accepts BOTH — `variant` aliases `severity`,
+ * `message` is optional and falls back to the default slot, and `actionHref`/`actionLabel` render
+ * the trailing action. New converged views use `severity`/`message`/`trigger`/`hidden`; old callers
+ * keep working unchanged. Drop the back-compat props once every caller is on the new API.
+ */
 import { cn } from '../../lib/ui';
 
+type Severity = 'info' | 'warning' | 'error' | 'success';
+type Trigger = 'static' | 'runtime' | 'overlay';
+
 interface Props {
-  variant?: 'info' | 'success' | 'warning' | 'error';
-  icon?: string;
+  /** The banner severity. `variant` is a back-compat alias. */
+  severity?: Severity;
+  /** @deprecated back-compat alias for `severity`. */
+  variant?: Severity;
+  /** The banner text. Optional only for back-compat callers that slot their body instead. */
+  message?: string;
+  /** Optional bold lead line above the message. */
   title?: string;
-  actionHref?: string;
-  actionLabel?: string;
+  /** How the banner arrives — decides whether a LIVE role fires. Default: `static`. */
+  trigger?: Trigger;
+  /** Adds the standard ghost × . */
   dismissible?: boolean;
+  /** Escape hatch for the glyph. Lucide token, e.g. `lucide--info`. */
+  icon?: string;
+  /** Render concealed; reveal with `showAlert()` from `./alert.ts`. */
+  hidden?: boolean;
+  id?: string;
+  /** Last-resort role override. */
+  role?: 'alert' | 'status' | 'note';
+  /** Back-compat: trailing action link. */
+  actionHref?: string;
+  /** Back-compat: trailing action label (rendered with `actionHref`). */
+  actionLabel?: string;
   class?: string;
 }
 
+const GLYPH: Record<Severity, string> = {
+  error: 'lucide--circle-x',
+  warning: 'lucide--triangle-alert',
+  info: 'lucide--info',
+  success: 'lucide--circle-check',
+};
+
+/** Severity picks assertive vs polite — but only ever for a `runtime` trigger. */
+const LIVE_ROLE: Record<Severity, 'alert' | 'status'> = {
+  error: 'alert',
+  warning: 'alert',
+  info: 'status',
+  success: 'status',
+};
+
 const {
-  variant = 'info',
-  icon,
+  severity,
+  variant,
+  message,
   title,
+  trigger = 'static',
+  dismissible = false,
+  icon,
+  hidden = false,
+  id,
+  role,
   actionHref,
   actionLabel,
-  dismissible = false,
   class: className = '',
 } = Astro.props;
 
-const iconMap: Record<NonNullable<Props['variant']>, string> = {
-  info: 'lucide--info',
-  success: 'lucide--circle-check',
-  warning: 'lucide--triangle-alert',
-  error: 'lucide--circle-x',
-};
-
-const classes = cn('alert alert-soft', `alert-${variant}`, className);
-const iconClass = icon ?? iconMap[variant];
+const sev: Severity = severity ?? variant ?? 'info';
+const resolvedRole = role ?? (trigger === 'runtime' ? LIVE_ROLE[sev] : 'note');
+const glyph = icon ?? GLYPH[sev];
 ---
 
-<div role="alert" class={classes}>
-  <span class={`iconify ${iconClass} size-4 shrink-0`} aria-hidden="true"></span>
-  <span class="min-w-0 flex-1">
-    {title && <strong class="mr-1 font-semibold">{title}</strong>}
+<div
+  id={id}
+  class={cn('ui-alert alert alert-soft', `alert-${sev}`, className)}
+  role={resolvedRole}
+  hidden={hidden}
+  data-ui-alert
+  data-severity={sev}
+  data-trigger={trigger}
+>
+  <span class={cn('iconify', glyph, 'size-4 shrink-0')} aria-hidden="true"></span>
+  <span class="ui-alert-body">
+    {title && <span class="ui-alert-title">{title}</span>}
+    {message !== undefined && <span data-alert-text>{message}</span>}
     <slot />
   </span>
+  <slot name="action" />
   {actionHref && actionLabel && (
-    <a href={actionHref} class={`btn btn-sm ${variant === 'error' ? 'btn-ghost' : `btn-${variant}`}`}>
+    <a href={actionHref} class={cn('btn btn-sm', sev === 'error' ? 'btn-ghost' : `btn-${sev}`)}>
       {actionLabel}
     </a>
   )}
   {dismissible && (
-    <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Dismiss" onclick="this.closest('[role=alert]')?.remove()">
+    <button
+      type="button"
+      class="btn btn-sm btn-ghost btn-square ui-alert-x"
+      data-ui-alert-dismiss
+      aria-label="Dismiss"
+    >
       <span class="iconify lucide--x size-4" aria-hidden="true"></span>
     </button>
   )}
 </div>
+
+<style is:global>
+  /* daisyUI's `.alert` sets `display: grid` from an AUTHOR sheet, which outranks the user-agent
+     `[hidden] { display: none }`. So a `hidden` alert stays VISIBLE unless the vessel says so.
+     Prefixed `.ui-alert*` classes, so `is:global` is safe (the audit forbids scoped style blocks). */
+  .ui-alert[hidden] { display: none; }
+
+  .ui-alert-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+  .ui-alert-title { font-weight: 600; }
+  .ui-alert-x { justify-self: end; }
+</style>
+
+<script>
+  import { wireAlertDismiss } from './alert';
+  wireAlertDismiss();
+</script>
