@@ -194,7 +194,7 @@ const absTime = (iso: string | null): string => fmtDateTime(iso) || '—';
 const runStatusMeta: Record<string, { label: string; badge: string }> = {
   succeeded: { label: 'Succeeded', badge: 'badge-soft badge-success' },
   trial_succeeded: { label: 'Trial run', badge: 'badge-soft badge-success' },
-  running: { label: 'Running', badge: 'badge-soft badge-warning' },
+  running: { label: 'Running', badge: 'badge-soft badge-primary' },
   paused: { label: 'Paused', badge: 'badge-soft badge-warning' },
   queued: { label: 'Queued', badge: 'badge-ghost' },
   failed: { label: 'Failed', badge: 'badge-soft badge-error' },
@@ -210,7 +210,7 @@ const drillDest = run.destProvider === 'Amazon S3' ? 's3' : run.destProvider ===
 
 const baseStatusMeta: Record<string, { label: string; badge: string }> = {
   ok: { label: 'Backed up', badge: 'badge-soft badge-success' },
-  running: { label: 'Running', badge: 'badge-soft badge-warning' },
+  running: { label: 'Running', badge: 'badge-soft badge-primary' },
   failed: { label: 'Failed', badge: 'badge-soft badge-error' },
   pending: { label: 'Pending', badge: 'badge-ghost' },
 };

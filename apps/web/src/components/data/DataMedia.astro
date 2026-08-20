@@ -323,7 +323,7 @@ const COMMENT_LOC_IC = '<span class="iconify lucide--message-square-text size-3 
         <FacetFilter label="Storage" name="mdstore" groups={storeGroups} />
         <FacetFilter single label="Size" name="mdsize" groups={sizeGroups} labelTrigger />
         <DateRangePicker name="mddate" presets={[7, 30, 90]} eventPresets={eventPresets} anchor={lastSyncedAt ?? null} />
-        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-md-clear hidden>
+        <button type="button" class="btn btn-sm btn-ghost gap-1" data-md-clear hidden>
           <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
         </button>
         <div class="sch-tb-right">
@@ -595,7 +595,7 @@ const COMMENT_LOC_IC = '<span class="iconify lucide--message-square-text size-3 
             between a filter the user understands and a bug they report. It names the cause and the
             undo; it does not apologise. */}
         <p class="md-nomatch-note" data-md-nomatch-field hidden>Comment attachments have no field, so a Fields filter leaves them out. Clear <strong>Fields</strong> to bring them back.</p>
-        <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-md-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+        <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-md-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
       </div>
     </div>
   ) : (

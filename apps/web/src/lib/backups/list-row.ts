@@ -22,7 +22,7 @@
 import type { BackupRunSummary } from '../backup-runs/types'
 import { kindBadgeClass, kindLabel } from './format'
 
-export type BadgeVariant = 'success' | 'warning' | 'error' | 'default'
+export type BadgeVariant = 'success' | 'warning' | 'error' | 'default' | 'primary'
 export interface StatusMeta {
   label: string
   variant: BadgeVariant
@@ -32,7 +32,8 @@ const STATUS_META: Record<string, StatusMeta> = {
   succeeded: { label: 'Succeeded', variant: 'success' },
   trial_complete: { label: 'Trial run', variant: 'success' },
   trial_truncated: { label: 'Trial run', variant: 'warning' },
-  running: { label: 'Running', variant: 'warning' },
+  // Oleh ruling 5 / D19: Running is PRIMARY (blue), not warning amber.
+  running: { label: 'Running', variant: 'primary' },
   queued: { label: 'Queued', variant: 'default' },
   failed: { label: 'Failed', variant: 'error' },
   paused: { label: 'Paused', variant: 'warning' },
@@ -116,6 +117,7 @@ const badgeClass: Record<BadgeVariant, string> = {
   warning: 'badge-soft badge-warning',
   error: 'badge-soft badge-error',
   default: 'badge-ghost',
+  primary: 'badge-soft badge-primary',
 }
 
 function esc(s: string): string {

@@ -182,7 +182,7 @@ const clSchema = {
       )
       if (filtered.length === 0) {
         if (entries.length > 0) {
-          return '<div class="flex flex-col items-start gap-2"><p class="text-base-content/50">No changes match these filters.</p><button type="button" class="btn btn-ghost btn-sm text-error gap-1" data-cl-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button></div>'
+          return '<div class="flex flex-col items-start gap-2"><p class="text-base-content/50">No changes match these filters.</p><button type="button" class="btn btn-ghost btn-sm gap-1" data-cl-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button></div>'
         }
         return '<p class="text-base-content/50">No schema changes recorded for this base yet. Changes appear once a backup captures a difference — from your second backup on.</p>'
       }

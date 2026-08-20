@@ -102,7 +102,7 @@ const absTime = (iso: string | null): string => fmtDateTime(iso) || '—';
 // shape as BackupRunDetailView / BackupsListView so the whole audit trail agrees.
 const baseStatusMeta: Record<string, { label: string; badge: string }> = {
   ok: { label: 'Backed up', badge: 'badge-soft badge-success' },
-  running: { label: 'Running', badge: 'badge-soft badge-warning' },
+  running: { label: 'Running', badge: 'badge-soft badge-primary' },
   failed: { label: 'Failed', badge: 'badge-soft badge-error' },
   pending: { label: 'Pending', badge: 'badge-ghost' },
 };
@@ -110,7 +110,7 @@ const bsm = baseStatusMeta[base.status] ?? baseStatusMeta.pending;
 
 const tableStatusMeta: Record<string, { label: string; badge: string }> = {
   ok: { label: 'Backed up', badge: 'badge-soft badge-success' },
-  running: { label: 'Running', badge: 'badge-soft badge-warning' },
+  running: { label: 'Running', badge: 'badge-soft badge-primary' },
   failed: { label: 'Failed', badge: 'badge-soft badge-error' },
   pending: { label: 'Pending', badge: 'badge-ghost' },
 };

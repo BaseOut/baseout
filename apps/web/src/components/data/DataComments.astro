@@ -253,7 +253,7 @@ const TABLE_IC = entityIconMarkup('table', { extraClass: 'cl-loc-appic' });
             should also have", and it is built from data both tabs already hold — the Space's own
             as-of, which is on `data-synced` here and drives the anchor above. */}
         <DateRangePicker name="cmdate" presets={[7, 30, 90]} eventPresets={eventPresets} anchor={lastSyncedAt ?? null} />
-        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-cm-clear hidden>
+        <button type="button" class="btn btn-sm btn-ghost gap-1" data-cm-clear hidden>
           <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
         </button>
         <div class="sch-tb-right">
@@ -525,7 +525,7 @@ const TABLE_IC = entityIconMarkup('table', { extraClass: 'cl-loc-appic' });
       <div class="cl-nomatch" data-cm-nomatch hidden>
         <span class="iconify lucide--search-x size-6 opacity-50" aria-hidden="true"></span>
         <p>No comments match these filters.</p>
-        <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-cm-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+        <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-cm-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
       </div>
     </>
   ) : (

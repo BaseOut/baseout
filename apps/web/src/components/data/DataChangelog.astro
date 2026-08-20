@@ -143,7 +143,7 @@ const ctypeGroups: FacetGroup[] = [{ items: ORDER.map((t) => ({ value: t, label:
             as-of. It was a select counting back from a value the screen never printed; two Data
             tabs answering one question with two controls is the variance this decision ends. */}
         <DateRangePicker name="dcdate" presets={[7, 30, 90]} anchor={now != null ? String(now) : null} />
-        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-dc-clear hidden>
+        <button type="button" class="btn btn-sm btn-ghost gap-1" data-dc-clear hidden>
           <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
         </button>
         <div class="sch-tb-right">
@@ -235,7 +235,7 @@ const ctypeGroups: FacetGroup[] = [{ items: ORDER.map((t) => ({ value: t, label:
       <div class="dc-nomatch" data-dc-nomatch hidden>
         <span class="iconify lucide--search-x size-6 opacity-50" aria-hidden="true"></span>
         <p>No runs match these filters.</p>
-        <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-dc-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+        <button type="button" class="btn btn-sm btn-ghost gap-1.5" data-dc-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
       </div>
 
       {/* NO ROOT, NO RAIL, NO TOAST, NO ＋ POPOVER (2026-08-04/05). This surface used to mount its

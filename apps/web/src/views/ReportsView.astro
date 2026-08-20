@@ -144,7 +144,7 @@ const statusOpts = [
         {cadenceOpts.length > 0 && <FacetFilter label="Schedule" name="rplcadence" groups={[{ items: cadenceOpts }]} />}
         {statusOpts.length > 0 && <FacetFilter label="Last run" name="rplstatus" groups={[{ items: statusOpts }]} />}
 
-        <button type="button" class="btn btn-sm btn-ghost text-error gap-1" data-rpl-clear hidden>
+        <button type="button" class="btn btn-sm btn-ghost gap-1" data-rpl-clear hidden>
           <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
         </button>
         <div class="ml-auto text-sm text-base-content/65">Showing <span class="mono-data" data-rpl-shown>0</span> of <span class="mono-data" data-rpl-total>0</span></div>
