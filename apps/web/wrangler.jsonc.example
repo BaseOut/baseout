@@ -102,22 +102,23 @@
   // stays as defense-in-depth.
   //
   // `remote: true` is REQUIRED for the binding to resolve to the deployed
-  // baseout-server-dev Worker during local dev. Without it, modern Wrangler
-  // (4.x) doesn't wire service bindings to deployed siblings even under the
-  // legacy `wrangler dev --remote` flag — `binding.fetch()` returns 403
-  // because the binding has nothing to forward to. See:
+  // sibling Worker during local `wrangler dev --remote`. Without it, modern
+  // Wrangler (4.x) leaves the binding unbound and `binding.fetch()` returns
+  // 403. See:
   // https://developers.cloudflare.com/workers/development-testing/#remote-bindings
   //
   // `remote: true` is local-dev-only — deployed Workers always resolve the
-  // binding to the named sibling Worker in the same account regardless.
+  // binding to the named sibling in the same account regardless.
   //
-  // Staging + production service blocks are deferred to a follow-up openspec
-  // change — those Workers (baseout-server-staging, baseout-server) aren't
-  // deployed yet, so resolving the binding would fail at deploy.
+  // Target is `baseout-server` (the live Openside Worker). Do NOT point at
+  // `baseout-server-dev` — that parallel script name collides on DO namespaces
+  // (CF 10065) and is not how Production/Previews are separated on the account.
+  // Local engine: `pnpm --filter @baseout/server deploy` (top-level name),
+  // NOT `deploy:dev`. See shared/internal/ops-setup.md § Local engine binding.
   "services": [
     {
       "binding": "BACKUP_ENGINE",
-      "service": "baseout-server-dev",
+      "service": "baseout-server",
       "remote": true
     }
   ],
