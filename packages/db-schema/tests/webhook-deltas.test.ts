@@ -11,8 +11,8 @@ import * as pg from "../src/space/pg";
 import * as sqlite from "../src/space/sqlite";
 
 describe("SPACE_SCHEMA_VERSION", () => {
-  test("at 13 (v11 comment attachments, v12 base collaborators, v13 data-browse export jobs)", () => {
-    expect(SPACE_SCHEMA_VERSION).toBe(13);
+  test("at 14 (v14 automations/interfaces manual CRUD entity tags + partial uniques)", () => {
+    expect(SPACE_SCHEMA_VERSION).toBe(14);
   });
 });
 

@@ -15,6 +15,7 @@
  * - Time lives on bo_at_base_runs; lifecycle *_run columns reference
  *   bo_at_base_runs.id and derive their timestamp by joining that row.
  */
+import { sql } from 'drizzle-orm'
 import {
   pgTable, text, integer, bigint, boolean, jsonb, timestamp, uuid,
   primaryKey, index, uniqueIndex,
@@ -335,12 +336,19 @@ export const automations = pgTable('bo_at_automations', {
   submittedVia: text('submitted_via'),
   firstSeenAt: timestamp('first_seen_at', { withTimezone: true }),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
-}, (t) => ({ byBase: index('bo_at_automations_base_idx').on(t.baseId) }))
+}, (t) => ({
+  byBase: index('bo_at_automations_base_idx').on(t.baseId),
+  // Partial UNIQUE for manual-CRUD 409 + Phase F ON CONFLICT (null ids allowed).
+  uniqEntity: uniqueIndex('bo_at_automations_base_entity_uq')
+    .on(t.baseId, t.airtableEntityId)
+    .where(sql`${t.airtableEntityId} IS NOT NULL`),
+}))
 
 // Interface apps only (pbd… containers) — server-interfaces-normalize.
 // Pages and forms are separate tables (below); no `type` discriminator. MCP
 // capture is run-driven, so lifecycle uses the run-based set (not the
 // submission-driven first_seen_at/last_seen_at the inbound tables use).
+// Page→parent lives on bo_at_pages.interface_id (not a parent_id on this table).
 export const interfaces = pgTable('bo_at_interfaces', {
   id: uuid('id').defaultRandom().primaryKey(),
   baseId: text('base_id').notNull(),
@@ -349,7 +357,12 @@ export const interfaces = pgTable('bo_at_interfaces', {
   definition: jsonb('definition'),                    // slimmed — normalized keys stripped; unknown keys pass through
   submittedVia: text('submitted_via'),
   ...lifecycle,
-}, (t) => ({ byBase: index('bo_at_interfaces_base_idx').on(t.baseId) }))
+}, (t) => ({
+  byBase: index('bo_at_interfaces_base_idx').on(t.baseId),
+  uniqEntity: uniqueIndex('bo_at_interfaces_base_entity_uq')
+    .on(t.baseId, t.airtableEntityId)
+    .where(sql`${t.airtableEntityId} IS NOT NULL`),
+}))
 
 // Interface pages (pag…) — one row per non-form page. Parentage, page type, and
 // source table are real columns (design Decision 1); table/field usage lives in
@@ -369,6 +382,28 @@ export const pages = pgTable('bo_at_pages', {
 }, (t) => ({
   byBase: index('bo_at_pages_base_idx').on(t.baseId),
   byInterface: index('bo_at_pages_interface_idx').on(t.interfaceId),
+  uniqEntity: uniqueIndex('bo_at_pages_base_entity_uq')
+    .on(t.baseId, t.airtableEntityId)
+    .where(sql`${t.airtableEntityId} IS NOT NULL`),
+}))
+
+// Tagged Tables/Fields on Automations & Interfaces (manual-crud + future MCP
+// auto tags). Modeled on bo_at_document_tags; entity_kind discriminates the
+// parent table (automation → bo_at_automations; interface → apps OR pages by
+// entity_id uuid). source='auto' rows are MCP/reconcile-owned; source='manual'
+// are user-authored and never replaced by auto sync.
+export const entityTags = pgTable('bo_at_entity_tags', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  entityKind: text('entity_kind').notNull(),          // automation|interface
+  entityId: uuid('entity_id').notNull(),              // → automations.id | interfaces.id | pages.id
+  targetType: text('target_type').notNull(),          // table|field
+  targetId: text('target_id').notNull(),              // Airtable tbl… / fld…
+  source: text('source').notNull().default('manual'), // auto|manual
+  addedAt: timestamp('added_at', { withTimezone: true }),
+}, (t) => ({
+  byEntity: index('bo_at_entity_tags_entity_idx').on(t.entityKind, t.entityId),
+  byTarget: index('bo_at_entity_tags_target_idx').on(t.targetType, t.targetId),
+  uniq: uniqueIndex('bo_at_entity_tags_uq').on(t.entityKind, t.entityId, t.targetType, t.targetId),
 }))
 
 // Forms (pag…, pageType='form') — standalone (interface_id null) or interface-owned.

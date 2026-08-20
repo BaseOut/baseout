@@ -55,4 +55,10 @@ export { spacePgDdlStatementsIdempotent } from './pg-ddl-upgrade'
 // Spaces. The pg_trgm value-search index is deferred until extension
 // availability is confirmed on the managed per-Space provider — record-search
 // ships the bounded-ILIKE + scan-budget fallback (`partial` flag) meanwhile.
-export const SPACE_SCHEMA_VERSION = 13
+// v14: Automations/Interfaces manual CRUD (server-automations-interfaces-manual-crud)
+// — bo_at_entity_tags + partial UNIQUE (base_id, airtable_entity_id) WHERE
+// airtable_entity_id IS NOT NULL on automations/interfaces/pages. Page→parent
+// already lives on bo_at_pages.interface_id (server-interfaces-normalize); no
+// parent_id column on bo_at_interfaces. Purely additive (new table + indexes);
+// the idempotent DDL covers existing Spaces.
+export const SPACE_SCHEMA_VERSION = 14

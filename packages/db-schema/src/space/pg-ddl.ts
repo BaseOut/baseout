@@ -618,7 +618,24 @@ CREATE UNIQUE INDEX "bo_at_schema_versions_base_hash_uq" ON "bo_at_schema_versio
 CREATE INDEX "bo_at_synced_view_candidates_base_idx" ON "bo_at_synced_view_candidates" USING btree ("base_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "bo_at_synced_view_candidates_pair_uq" ON "bo_at_synced_view_candidates" USING btree ("base_id","source_table_id","dest_table_id");--> statement-breakpoint
 CREATE INDEX "bo_at_tables_base_idx" ON "bo_at_tables" USING btree ("base_id");--> statement-breakpoint
-CREATE INDEX "bo_at_views_table_idx" ON "bo_at_views" USING btree ("table_id");`;
+CREATE INDEX "bo_at_views_table_idx" ON "bo_at_views" USING btree ("table_id");
+--> statement-breakpoint
+CREATE TABLE "bo_at_entity_tags" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"entity_kind" text NOT NULL,
+	"entity_id" uuid NOT NULL,
+	"target_type" text NOT NULL,
+	"target_id" text NOT NULL,
+	"source" text DEFAULT 'manual' NOT NULL,
+	"added_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE INDEX "bo_at_entity_tags_entity_idx" ON "bo_at_entity_tags" USING btree ("entity_kind","entity_id");--> statement-breakpoint
+CREATE INDEX "bo_at_entity_tags_target_idx" ON "bo_at_entity_tags" USING btree ("target_type","target_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_entity_tags_uq" ON "bo_at_entity_tags" USING btree ("entity_kind","entity_id","target_type","target_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_automations_base_entity_uq" ON "bo_at_automations" USING btree ("base_id","airtable_entity_id") WHERE "bo_at_automations"."airtable_entity_id" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_interfaces_base_entity_uq" ON "bo_at_interfaces" USING btree ("base_id","airtable_entity_id") WHERE "bo_at_interfaces"."airtable_entity_id" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX "bo_at_pages_base_entity_uq" ON "bo_at_pages" USING btree ("base_id","airtable_entity_id") WHERE "bo_at_pages"."airtable_entity_id" IS NOT NULL;`;
 
 /** Split SPACE_PG_DDL into individual executable statements. */
 export function spacePgDdlStatements(): string[] {

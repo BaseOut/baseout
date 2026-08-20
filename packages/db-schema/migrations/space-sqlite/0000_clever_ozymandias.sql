@@ -500,3 +500,123 @@ CREATE TABLE `bo_at_views` (
 );
 --> statement-breakpoint
 CREATE INDEX `bo_at_views_table_idx` ON `bo_at_views` (`table_id`);
+--> statement-breakpoint
+CREATE TABLE `bo_at_base_access` (
+	`id` text PRIMARY KEY NOT NULL,
+	`principal_id` text NOT NULL,
+	`base_id` text NOT NULL,
+	`interface_id` text DEFAULT '' NOT NULL,
+	`scope` text NOT NULL,
+	`permission_level` text,
+	`granted_by_user_id` text,
+	`airtable_created_time` text,
+	`status` text DEFAULT 'active' NOT NULL,
+	`first_seen_run` text,
+	`last_seen_run` text,
+	`first_seen_at` text,
+	`last_seen_at` text
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_base_access_uq` ON `bo_at_base_access` (`base_id`,`interface_id`,`scope`,`principal_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_base_access_principal_idx` ON `bo_at_base_access` (`principal_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_base_access_base_idx` ON `bo_at_base_access` (`base_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_base_collab_meta` (
+	`base_id` text PRIMARY KEY NOT NULL,
+	`packages` text,
+	`raw` text,
+	`last_seen_run` text,
+	`last_seen_at` text
+);
+--> statement-breakpoint
+CREATE TABLE `bo_at_comment_attachments` (
+	`id` text PRIMARY KEY NOT NULL,
+	`airtable_comment_id` text NOT NULL,
+	`airtable_attachment_id` text NOT NULL,
+	`base_id` text NOT NULL,
+	`airtable_table_id` text NOT NULL,
+	`airtable_record_id` text NOT NULL,
+	`url` text,
+	`filename` text,
+	`size_bytes` integer,
+	`mime_type` text,
+	`content_hash` text,
+	`storage_key` text,
+	`upload_status` text DEFAULT 'pending' NOT NULL,
+	`status` text DEFAULT 'active' NOT NULL,
+	`first_seen_run` text,
+	`last_seen_run` text,
+	`first_seen_at` text,
+	`last_seen_at` text,
+	`uploaded_at` text
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_comment_attachments_uq` ON `bo_at_comment_attachments` (`airtable_comment_id`,`airtable_attachment_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_comment_attachments_comment_idx` ON `bo_at_comment_attachments` (`airtable_comment_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_comment_attachments_record_idx` ON `bo_at_comment_attachments` (`airtable_record_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_comment_attachments_status_idx` ON `bo_at_comment_attachments` (`status`,`upload_status`);--> statement-breakpoint
+CREATE TABLE `bo_at_entity_tags` (
+	`id` text PRIMARY KEY NOT NULL,
+	`entity_kind` text NOT NULL,
+	`entity_id` text NOT NULL,
+	`target_type` text NOT NULL,
+	`target_id` text NOT NULL,
+	`source` text DEFAULT 'manual' NOT NULL,
+	`added_at` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_entity_tags_entity_idx` ON `bo_at_entity_tags` (`entity_kind`,`entity_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_entity_tags_target_idx` ON `bo_at_entity_tags` (`target_type`,`target_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_entity_tags_uq` ON `bo_at_entity_tags` (`entity_kind`,`entity_id`,`target_type`,`target_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_export_jobs` (
+	`id` text PRIMARY KEY NOT NULL,
+	`scope` text NOT NULL,
+	`format` text NOT NULL,
+	`status` text DEFAULT 'queued' NOT NULL,
+	`output_location` text,
+	`row_count` integer,
+	`error` text,
+	`created_at` text,
+	`completed_at` text
+);
+--> statement-breakpoint
+CREATE INDEX `bo_at_export_jobs_status_idx` ON `bo_at_export_jobs` (`status`);--> statement-breakpoint
+CREATE TABLE `bo_at_invite_links` (
+	`id` text PRIMARY KEY NOT NULL,
+	`airtable_invite_id` text NOT NULL,
+	`base_id` text NOT NULL,
+	`interface_id` text DEFAULT '' NOT NULL,
+	`link_scope` text NOT NULL,
+	`invited_email` text,
+	`permission_level` text,
+	`referred_by_user_id` text,
+	`restricted_to_email_domains` text,
+	`type` text,
+	`airtable_created_time` text,
+	`status` text DEFAULT 'active' NOT NULL,
+	`first_seen_run` text,
+	`last_seen_run` text,
+	`first_seen_at` text,
+	`last_seen_at` text
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_invite_links_uq` ON `bo_at_invite_links` (`base_id`,`interface_id`,`link_scope`,`airtable_invite_id`);--> statement-breakpoint
+CREATE INDEX `bo_at_invite_links_base_idx` ON `bo_at_invite_links` (`base_id`);--> statement-breakpoint
+CREATE TABLE `bo_at_principals` (
+	`id` text PRIMARY KEY NOT NULL,
+	`principal_id` text NOT NULL,
+	`kind` text NOT NULL,
+	`email` text,
+	`name` text,
+	`first_seen_run` text,
+	`last_seen_run` text,
+	`first_seen_at` text,
+	`last_seen_at` text
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_principals_uq` ON `bo_at_principals` (`principal_id`);--> statement-breakpoint
+ALTER TABLE `bo_at_bases` ADD `workspace_id` text;--> statement-breakpoint
+ALTER TABLE `bo_at_bases` ADD `airtable_created_time` text;--> statement-breakpoint
+ALTER TABLE `bo_at_bases` ADD `own_permission_level` text;--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_automations_base_entity_uq` ON `bo_at_automations` (`base_id`,`airtable_entity_id`) WHERE "bo_at_automations"."airtable_entity_id" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_interfaces_base_entity_uq` ON `bo_at_interfaces` (`base_id`,`airtable_entity_id`) WHERE "bo_at_interfaces"."airtable_entity_id" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX `bo_at_pages_base_entity_uq` ON `bo_at_pages` (`base_id`,`airtable_entity_id`) WHERE "bo_at_pages"."airtable_entity_id" IS NOT NULL;
