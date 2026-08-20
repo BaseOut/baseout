@@ -48,11 +48,8 @@ export interface SchemaEntity {
   recordCount?: number;
   fieldCount?: number;
   // Descriptions (the Browse annotation block) — all optional, all real.
+  /** READ MIRROR of Airtable's own description, as of the last backup. Baseout never writes it. */
   airtableDescription?: string;
-  /** Edited-but-unpublished Airtable description (≠ airtableDescription ⇒ out of sync). */
-  airtableDraft?: string;
-  /** Airtable's live description changed since the last backup (drives stale warning). */
-  airtableExternallyChanged?: boolean;
   aiDescription?: string;
   /** AI-generated *technical* internal draft (more verbose than aiDescription) — seeds the
    *  Internal tab's Generate action. */
@@ -190,8 +187,6 @@ export function buildEntityIndex(
           isPrimary: f.isPrimary,
           health: fh,
           airtableDescription: f.airtableDescription,
-          airtableDraft: f.airtableDraft,
-          airtableExternallyChanged: f.airtableExternallyChanged,
           aiDescription: fAi,
           aiTechnicalDescription: f.technicalDescription,
           userDescription: f.userDescription,
@@ -269,8 +264,6 @@ export function buildEntityIndex(
         // Same live count the views' "N of M" denominator uses — the two can never disagree.
         fieldCount: liveFieldCount,
         airtableDescription: t.airtableDescription,
-        airtableDraft: t.airtableDraft,
-        airtableExternallyChanged: t.airtableExternallyChanged,
         aiDescription: ai,
         aiTechnicalDescription: t.technicalDescription,
         userDescription: t.userDescription,

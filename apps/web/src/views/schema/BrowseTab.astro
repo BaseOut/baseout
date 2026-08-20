@@ -357,6 +357,8 @@ const entityIndex = buildEntityPanelIndex(schema)
         const type = el.dataset.targetType!
         const id = el.dataset.targetId!
         const name = el.dataset.name ?? id
+        // Phase 13: also open the shared EntityPanel drawer (PanelHost).
+        document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id } }))
         const info = index[id]
         const head = info
           ? renderInfo(info)

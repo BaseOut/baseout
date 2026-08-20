@@ -12,6 +12,21 @@ import EntitySearch from './EntitySearch.astro'
 import { TRIGGER_TYPES } from './schemaTriggerTypes'
 import type { TypeaheadItem, TypeaheadGroups } from './typeaheadItems'
 
+/** Tag shape EntityPanel reverse-refs consume (fork SchemaAutomations parity). */
+export interface AutomationTag {
+  entityId: string
+  source: 'auto' | 'manual'
+}
+/** Listing row shape for EntityPanel reverse "Referenced by" (Phase 13). */
+export interface SchemaAutomation {
+  id: string
+  name: string
+  baseId?: string
+  status: 'active' | 'removed'
+  tags?: AutomationTag[]
+  removedAt?: string
+}
+
 interface Props {
   bases: { baseId: string; name: string }[]
   tagItems: TypeaheadItem[]

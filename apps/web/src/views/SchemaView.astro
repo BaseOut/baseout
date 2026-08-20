@@ -10,10 +10,13 @@
  *
  * Tab bodies live in ./schema/*Tab.astro (views tier, raw-markup allowlisted);
  * this shell owns the cluster tab bar (buttons toggling data-panel sections),
- * the shared entity modal, and the "/" search shortcut. Automations /
- * Interfaces are LIVE (web-automations-interfaces-tabs) over the manual-CRUD proxies.
+ * PanelHost + EntityPanel (Phase 13 Slice 1), and the "/" search shortcut.
+ * Automations / Interfaces are LIVE (web-automations-interfaces-tabs) over the
+ * manual-CRUD proxies.
  */
 import PageHeader from '../components/ui/PageHeader.astro'
+import PanelHost from '../components/ui/PanelHost.astro'
+import EntityPanel from '../components/schema/EntityPanel.astro'
 import BrowseTab from './schema/BrowseTab.astro'
 import ChangelogTab from './schema/ChangelogTab.astro'
 import RelationshipsTab from './schema/RelationshipsTab.astro'
@@ -33,6 +36,10 @@ import type {
 } from '../lib/backup-engine'
 import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities'
 import { isRemoved } from '../lib/schema-docs/deleted-filter'
+import {
+  mapDocSummariesToSchemaDocs,
+  mapEngineToEntityIndex,
+} from '../lib/schema-docs/map-entity-index'
 
 interface Props {
   spaceId: string
@@ -53,6 +60,7 @@ const { spaceId, level, docs, schema, state, lastBackupAt = null } = Astro.props
 
 const hasSchema = schema.bases.length > 0
 const aiEnabled = level === 'manual_ai'
+const aiState = aiEnabled ? 'ready' : level === 'none' ? 'locked' : 'no-credits'
 
 // Live bases only — removed bases have no current grade / relationships / chat scope.
 const healthBases = schema.bases.filter((b) => !isRemoved(b.status))
@@ -64,6 +72,9 @@ const entities: DocsTabEntity[] = [
   ...schema.fields.map((f) => ({ type: 'field' as const, id: f.fieldId, label: f.name })),
   ...schema.views.map((v) => ({ type: 'view' as const, id: v.viewId, label: v.name })),
 ]
+
+const schemaIndex = mapEngineToEntityIndex(schema, docs)
+const panelDocs = mapDocSummariesToSchemaDocs(docs)
 
 const fmtStamp = (iso: string) => {
   const d = new Date(iso)
@@ -185,20 +196,18 @@ const CLUSTERS = [
     <ChatTab hasSchema={hasSchema} aiEnabled={aiEnabled} healthBases={healthBases} />
   </div>
 
-  {/* Shared entity-detail modal — opened from any tab (Relationships click-through,
-      future Chat refs) via an `open-entity-detail` CustomEvent. Reuses the
-      docs-by-entity endpoint the Browse panel uses. */}
-  <dialog id="entity-modal" class="modal">
-    <div class="modal-box">
-      <form method="dialog">
-        <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2" aria-label="Close">✕</button>
-      </form>
-      <div id="entity-modal-body" class="text-sm">
-        <span class="loading loading-spinner loading-sm"></span>
-      </div>
-    </div>
-    <form method="dialog" class="modal-backdrop"><button>close</button></form>
-  </dialog>
+  {hasSchema && <PanelHost section="schema" tablegap={150} mincontent={800} />}
+  {hasSchema && (
+    <EntityPanel
+      index={schemaIndex}
+      docs={panelDocs}
+      changelog={[]}
+      automations={[]}
+      interfaces={[]}
+      chatThreads={[]}
+      aiState={aiState}
+    />
+  )}
 </section>
 
 <script>
@@ -239,48 +248,10 @@ const CLUSTERS = [
 </script>
 
 <script>
-  // Shared entity-detail modal (web-relationships-tab click-through). Any tab can
-  // open it by dispatching `open-entity-detail` with {type,id,name}; it reuses the
-  // Browse docs-by-entity endpoint to show the entity + its documents.
-  const emodal = document.getElementById('entity-modal') as HTMLDialogElement | null
-  const ebody = document.getElementById('entity-modal-body')
-  const eroot = document.querySelector<HTMLElement>('[data-schema-docs]')
-  if (emodal && ebody && eroot) {
-    const spaceId = eroot.dataset.spaceId!
-    const esc = (s: string) =>
-      String(s).replace(
-        /[&<>"]/g,
-        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
-      )
-    document.addEventListener('open-entity-detail', async (e) => {
-      const d = (e as CustomEvent).detail as { type: string; id: string; name?: string }
-      ebody.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
-      emodal.showModal()
-      let res: Response
-      try {
-        res = await fetch(
-          `/api/spaces/${spaceId}/docs-by-entity?targetType=${encodeURIComponent(d.type)}&targetId=${encodeURIComponent(d.id)}`,
-        )
-      } catch {
-        ebody.innerHTML = '<span class="text-error">Could not load entity.</span>'
-        return
-      }
-      if (!res.ok) {
-        ebody.innerHTML = '<span class="text-error">Could not load entity.</span>'
-        return
-      }
-      const data = (await res.json()) as { entityRemoved: boolean; documents: { title: string; excerpt?: string | null }[] }
-      const head = `<div class="mb-3 flex items-center gap-2"><span class="font-semibold text-base-content">${esc(d.name ?? d.id)}</span><span class="badge badge-ghost">${esc(d.type)}</span>${data.entityRemoved ? '<span class="badge badge-warning">removed from Airtable</span>' : ''}</div>`
-      const docs =
-        data.documents.length === 0
-          ? '<p class="text-base-content/50">No documents tag this entity yet.</p>'
-          : `<ul class="space-y-2">${data.documents
-              .map(
-                (doc) =>
-                  `<li class="rounded border border-base-300/60 p-3"><span class="font-medium">${esc(doc.title)}</span>${doc.excerpt ? `<span class="mt-1 block text-sm text-base-content/60">${esc(doc.excerpt)}</span>` : ''}</li>`,
-              )
-              .join('')}</ul>`
-      ebody.innerHTML = head + docs
-    })
-  }
+  // Bridge legacy `open-entity-detail` (Visualize / Relationships) → EntityPanel.
+  document.addEventListener('open-entity-detail', ((e: CustomEvent) => {
+    const d = e.detail as { id?: string; type?: string; name?: string }
+    if (!d?.id) return
+    document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id: d.id } }))
+  }) as EventListener)
 </script>

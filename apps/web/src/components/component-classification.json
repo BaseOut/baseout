@@ -319,7 +319,7 @@
   },
   "schema/EntityPanel.astro": {
     "classification": "daisyui-direct-styleguide",
-    "rationale": "Phase 8 honest-gate stub for Reports schema refs. Full EntityPanel (Automations/Interfaces/Chat) lands Phase 9; this modal notes the gap when schema:openEntity fires. daisyUI modal composition."
+    "rationale": "Phase 13 Schema EntityPanel (ui-only@7502f810 lineage): PanelHost entity: kind, Airtable descriptions read-only, Internal notes + Documentation via real docs APIs. daisyUI drawer/sheet composition; no custom vessel."
   },
   "ui/Table.astro": {
     "classification": "ui-primitive-storybook",

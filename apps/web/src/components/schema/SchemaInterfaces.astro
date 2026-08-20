@@ -10,6 +10,19 @@ import EmptyState from '../ui/EmptyState.astro'
 import Drawer from '../ui/Drawer.astro'
 import EntitySearch from './EntitySearch.astro'
 import type { TypeaheadItem, TypeaheadGroups } from './typeaheadItems'
+import type { AutomationTag } from './SchemaAutomations.astro'
+
+/** Listing row shape for EntityPanel reverse "Referenced by" (Phase 13). */
+export interface SchemaInterface {
+  id: string
+  name: string
+  type: 'interface' | 'page'
+  baseId?: string
+  parentId?: string
+  status: 'active' | 'removed'
+  tags?: AutomationTag[]
+  removedAt?: string
+}
 
 interface Props {
   bases: { baseId: string; name: string }[]
