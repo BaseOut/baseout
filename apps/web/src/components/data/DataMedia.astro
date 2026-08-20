@@ -51,6 +51,7 @@ import ExportControl from '../patterns/ExportControl.astro';
 import DateRangePicker from '../ui/DateRangePicker.astro';
 import TablePager from '../ui/TablePager.astro';
 import MediaThumb from './MediaThumb.astro';
+import EmptyState from '../ui/EmptyState.astro';
 import { KIND_LABEL, KIND_ICON, fmtSize, displayName, storeMarksHtml } from './mediaFormat';
 import { entityIconMarkup, entityIconClass } from '../schema/entityIcon';
 import type { DataBase, DataTable, DataRecord, MediaAsset } from './dataTypes';
@@ -599,11 +600,11 @@ const COMMENT_LOC_IC = '<span class="iconify lucide--message-square-text size-3 
       </div>
     </div>
   ) : (
-    <div class="md-empty">
-      <span class="md-empty-ic"><span class="iconify lucide--paperclip"></span></span>
-      <p class="md-empty-title">No attachments captured yet</p>
-      <p class="md-empty-sub">Files attached to records and comments in Airtable are downloaded with each backup and listed here — Airtable's own attachment links expire about two hours after they are issued, so the copy Baseout keeps is the one that lasts.</p>
-    </div>
+    <EmptyState
+      icon="lucide--paperclip"
+      title="No attachments captured yet"
+      description="Files attached to records and comments in Airtable are downloaded with each backup and listed here — Airtable's own attachment links expire about two hours after they are issued, so the copy Baseout keeps is the one that lasts."
+    />
   )}
 </div>
 
@@ -773,11 +774,7 @@ const COMMENT_LOC_IC = '<span class="iconify lucide--message-square-text size-3 
 
   .md-loc-gone { font-style: italic; color: oklch(from var(--color-base-content) l c h / .65); }
 
-  .md-empty, .md-nomatch { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; padding: 48px 24px; }
-  .md-empty-ic { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: var(--r-8); background: var(--color-base-200); }
-  .md-empty-ic .iconify { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .35); }
-  .md-empty-title { font-size: var(--t-16); font-weight: 650; }
-  .md-empty-sub { font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); max-width: 56ch; }
+  .md-nomatch { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 8px; padding: 48px 24px; }
   .md-nomatch p { font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); }
   /* Quieter and one step down the 14/12 scale — it explains the sentence above it, it is not a
      second headline. `max-width` keeps it to one comfortable measure rather than a full-width line

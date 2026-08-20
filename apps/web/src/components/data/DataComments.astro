@@ -35,6 +35,7 @@ import TablePager from '../ui/TablePager.astro';
 import DateRangePicker from '../ui/DateRangePicker.astro';
 import { fmtDay, fmtDayShort, fmtTime } from '../../lib/time';
 import Badge from '../ui/Badge.astro';
+import EmptyState from '../ui/EmptyState.astro';
 import { authorLabel, authorInitials, authorIsNamed, commentSnippet, commentStatus, COMMENT_STATUS_PAINT } from './commentText';
 import type { DataBase, DataTable, DataRecord, DataComment } from './dataTypes';
 import { entityIconMarkup, entityIconClass } from '../schema/entityIcon';
@@ -529,11 +530,11 @@ const TABLE_IC = entityIconMarkup('table', { extraClass: 'cl-loc-appic' });
       </div>
     </>
   ) : (
-    <div class="cl-empty">
-      <span class="cl-empty-ic"><span class="iconify lucide--message-square-text"></span></span>
-      <p class="cl-empty-title">No comments captured yet</p>
-      <p class="cl-empty-sub">Comments left on records in Airtable are captured with each backup and show up here — newest first, with the base, table, and record they belong to.</p>
-    </div>
+    <EmptyState
+      icon="lucide--message-square-text"
+      title="No comments captured yet"
+      description="Comments left on records in Airtable are captured with each backup and show up here — newest first, with the base, table, and record they belong to."
+    />
   )}
 </div>
 
