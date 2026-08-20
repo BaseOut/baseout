@@ -13,9 +13,9 @@
 
 | Verdict | N | Items |
 |---|---|---|
-| already-satisfied | 10 | 1, 5, 6, 9, 17, 28, 30 (+ partials on 4/8/10/12/26) |
+| already-satisfied | 18 | 1–7, 9, 10b, 15b, 17, 23, 28, 30, 36½ (+ prior auth/focus/wireRowKeys) |
 | owned-by-\<change\> / skip | 3 | 11→automations · 19→sync-reconcile · 20→support(Q#6) |
-| outstanding | 28 | 2–4, 7–8, 10, 12–16, 18, 21–27, 29, 31–41 |
+| outstanding | ~20 | 8, 12–16, 18, 21–22, 24–27, 29, 31–35, 37–41 (several partial) |
 
 See `census.md` for per-item evidence (file:line).
 
@@ -49,14 +49,15 @@ Every S1 in `REGISTER.md` / findings rides a ship-order item or a delegated chan
 |---|---|---|
 | S36-F1 / S36-F3 | already-satisfied | auth.css + Layout.astro · `web-auth-convergence` |
 | S36-F2 · S24-F9 · X13… | already-satisfied (auth half) | LoginView showFormError · connect deck still open |
-| S32-F1 | outstanding | settingsCatalog Space always emitted |
-| X08-F5 / X08-F8 | outstanding (partial) | Backups+RestoreHistory leftovers |
+| S32-F1 | already-satisfied | settingsCatalog spaceCategory(!space) |
+| X08-F5 / X08-F8 | already-satisfied | Backups+RestoreHistory metaOf |
 | X-M3 | already-satisfied | PanelHost.astro:688 |
 | X08-F7 | already-satisfied | toneDotOf |
 | X06-F1 | already-satisfied | panelStack focusPanel |
-| X06-F2 | outstanding | Drawer aria-modal=true |
+| X06-F2 | already-satisfied | Drawer aria-modal=false |
 | X10-F1/F2/F3 | owned-by-web-automations-interfaces-tabs | no ConfirmModal on delete |
 | S32-F2 / S32-F8 | owned-by-support | Q#6 |
+| S25-F1 / S25-F2 | already-satisfied | registryEditMode + ?name= |
 | X07-F5 / X07-F9 | already-satisfied | wireRowKeys |
 | X-M16 | already-satisfied | 0 btn-md |
 | X-M17 / toolbarFit | already-satisfied | toolbarFit wrap measurement |
@@ -70,3 +71,4 @@ Every S1 in `REGISTER.md` / findings rides a ship-order item or a delegated chan
 |---|---|---|
 | 2026-08-20 | Census | `census.md` + this file. Item 5 struck (already fixed at PanelHost:688). |
 | 2026-08-20 | Items 3, 4, 10b, 15b, 36½ | Settings `spaceCategory`; Backups/RestoreHistory `metaOf`; Drawer `aria-modal=false`; Running→primary; Clear filters drop `text-error`. |
+| 2026-08-20 | Items 2, 7, 23 + vessel starts | `registryEditMode`; `?name=`; Alert vessel + Schema→Data; EmptyState Data; DocsTab `setButtonLoading`; Home `--t-12` glyph. Outstanding ~20. |
