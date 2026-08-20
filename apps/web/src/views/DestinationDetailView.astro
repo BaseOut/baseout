@@ -1,17 +1,33 @@
 ---
 /**
- * DestinationDetailView — a destination's own management/health page (skeleton).
+ * DestinationDetailView — a destination's own management/health page.
  *
  * Status + reconnect live on the destination itself, not on any single backup:
  * reconnecting once restores backups for every Space using it. "In use by" lists the
- * linked Spaces; Remove is guarded while any Space depends on it. Editing happens here
- * with sections in place (no setup wizard re-run).
+ * linked Spaces; Remove is guarded while any Space depends on it.
+ *
+ * Phase 7.3 on autumn/cursor-ui-implementation-test (ref ecdde1d5 / ui-only@7c7202d7).
+ * BYOS Reconnect/Connect POSTs to api/connections/storage/<kebab>/authorize (Sources twin);
+ * Remove stays the shared wireRegistryRemove preview stub; account-level disconnect lands
+ * with shared-destinations (legacy keeps per-Space disconnect).
+ *
+ * ONE FAMILY WITH SourceDetailView (audit D12): same width (was max-w-3xl against the
+ * source's max-w-4xl), same block anatomy, same `.reg-*` vocabulary, same edit contract.
+ *
+ * EDIT EDITS (D12/J08-F4). This page's `Edit` was a link to `/destinations/new` — a
+ * control that said Edit and did Create, minting a duplicate instead of changing the
+ * object you were looking at. It is now edit-in-place per
+ * `decision-panel-edit-mode-not-inline` / catalog `pattern-panel-edit-mode`.
+ *
+ * THREE CONVERGENCES CAME FROM THE SOURCE SIDE: the in-use-by TABLE (this page showed
+ * inert ghost chips — the worst of the six measured divergences), the last-known-good
+ * caveat on status, and a re-check action in the Connection card header.
  */
+import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
-import Alert from '../components/ui/Alert.astro';
-import SectionPanel from '../components/ui/SectionPanel.astro';
-import DefinitionList from '../components/patterns/DefinitionList.astro';
-import EntityDetailHeader from '../components/patterns/EntityDetailHeader.astro';
+import ConfirmModal from '../components/ui/ConfirmModal.astro';
+import { CONFIRM_DESTRUCTIVE } from '../lib/ui';
+import { describeRegistryRemoval } from '../lib/registry/removal';
 import type { DestinationSummary } from '../stores/destinations';
 
 interface Props {
@@ -25,120 +41,344 @@ const status = reconnected ? 'connected' : d.status;
 const needsReconnect = status === 'reconnect';
 const needsConnect = status === 'needs_connection';
 const inUseCount = d.inUseBy.length;
-// BYOS providers have OAuth authorize + disconnect routes; managed (local_fs /
-// r2_managed) don't. Honest-pending: a destination is per-Space today, so
-// "disconnect" removes it from this Space (the account-level shared model is later).
-const isByos = d.provider !== 'local_fs' && d.provider !== 'r2_managed';
-const kindLabel = d.kind === 'database' ? 'Database' : 'File storage';
+const isDatabase = d.kind === 'database';
+const kindLabel = isDatabase ? 'Database' : 'File storage';
+// BYOS providers have OAuth authorize + disconnect under api/connections/storage/<kebab>/…
+// (DB type uses underscore; route folders use hyphens — google_drive → google-drive).
+const isByos = d.provider !== 'local_fs' && d.provider !== 'r2_managed' && d.kind === 'file';
+const storageRoute = d.provider.replaceAll('_', '-');
+// D06 — the Remove consequence, from the SAME derivation SourceDetailView uses (D12: these two must
+// not diverge). Only reachable when `inUseCount === 0`; the in-use guard below is unchanged.
+const removal = describeRegistryRemoval({ kind: 'destination', name: d.name, kindLabel, detail: d.detail });
 const statusBadge =
   status === 'connected' ? { variant: 'success' as const, label: 'Connected', dot: true }
   : status === 'connecting' ? { variant: 'warning' as const, label: 'Connecting', dot: true }
   : status === 'needs_connection' ? { variant: 'warning' as const, label: 'Needs connection', dot: false }
   : { variant: 'warning' as const, label: 'Reconnect required', dot: false };
-const connectionItems = [
-  { term: 'Type', description: `${kindLabel} · ${d.providerLabel}` },
-  { term: 'Writes to', description: d.detail },
-  { term: 'Per-Space subfolder', description: 'Each Space writes to its own subfolder under this destination.' },
-];
+
+// KIND-AWARE COPY (D12/J08-F10). This row used to say "Each Space writes to its own subfolder"
+// on every destination, including Postgres — which has no folders, and whose own create form
+// already says the true thing. One row, two kinds, one sentence each.
+const perSpace = isDatabase
+  ? { label: 'Per-Space schema', text: 'Baseout writes one schema per Space in this database.' }
+  : { label: 'Per-Space subfolder', text: 'Each Space writes to its own subfolder under this destination.' };
+const targetLabel = isDatabase ? 'Connection' : 'Writes to';
 ---
 
-<div class="mx-auto max-w-3xl space-y-6">
+<div class="mx-auto max-w-4xl space-y-6" data-reg-root data-mode="read">
+  <a href="/destinations" class="back-link"><span class="iconify lucide--arrow-left" aria-hidden="true"></span> Destinations</a>
+
   {reconnected && (
-    <Alert variant="success">{d.status === 'needs_connection' ? 'Connected. Link this destination to a Space to start backing up to it.' : 'Reconnected. Backups to this destination will resume on their next scheduled run.'}</Alert>
+    <div role="alert" class="alert alert-soft alert-success"><span class="iconify lucide--circle-check size-4" aria-hidden="true"></span><span class="flex-1">{d.status === 'needs_connection' ? 'Connected. Link this destination to a Space to start backing up to it.' : 'Reconnected. Backups to this destination will resume on their next scheduled run.'}</span><button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Dismiss" onclick="this.closest('.alert').remove()"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button></div>
   )}
 
-  <EntityDetailHeader
-    title={d.name}
-    description={`${kindLabel} · ${d.providerLabel} · ${d.detail} · added ${d.addedAt}`}
-    backHref="/destinations"
-    backLabel="Back to destinations"
-    statusLabel={statusBadge.label}
-    statusVariant={statusBadge.variant}
-    statusDot={statusBadge.dot}
-  >
-    {isByos && (needsReconnect || needsConnect) && (
-      <form slot="actions" method="POST" action={`/api/connections/storage/${d.provider}/authorize`} data-astro-reload>
-        <input type="hidden" name="returnTo" value={`/destinations/detail?id=${d.id}`} />
-        <Button type="submit" variant="primary">{needsConnect ? 'Connect' : 'Reconnect'}</Button>
-      </form>
-    )}
-    <Button slot="actions" href={`/destinations/new?type=${d.provider}`} variant="secondary">Edit</Button>
-  </EntityDetailHeader>
+  <header class="flex flex-wrap items-start justify-between gap-4">
+    <div class="min-w-0">
+      <div class="flex items-center gap-2">
+        <h1 class="text-title" data-reg-title>{d.name}</h1>
+        <Badge variant={statusBadge.variant} dot={statusBadge.dot}>{statusBadge.label}</Badge>
+      </div>
+      <p class="text-sm text-base-content/60 mt-1.5">{kindLabel} · {d.providerLabel} · {d.detail} · added {d.addedAt}</p>
+    </div>
+    <div class="flex items-center gap-2 shrink-0">
+      {/* Twin of SourceDetailView: real storage authorize (not the fork's ?reconnected=1 fixture link). */}
+      {isByos && (needsReconnect || needsConnect) && (
+        <form method="POST" action={`/api/connections/storage/${storageRoute}/authorize`} data-astro-reload data-storage-connect>
+          <input type="hidden" name="returnTo" value={`/destinations/detail?id=${d.id}`} />
+          <Button type="submit" variant="primary" size="sm" data-storage-connect-btn>{needsConnect ? 'Connect' : 'Reconnect'}</Button>
+        </form>
+      )}
+      {/* The canonical segmented control from styles/global.css — never a local copy. */}
+      <span class="join sch-modeswitch" role="group" aria-label="Read or edit this destination" data-reg-modes>
+        <button type="button" class="btn btn-sm join-item sch-mode-active" aria-pressed="true" data-reg-mode="read"><span class="iconify lucide--book-open size-3.5" aria-hidden="true"></span>Read</button>
+        <button type="button" class="btn btn-sm join-item" aria-pressed="false" data-reg-mode="edit"><span class="iconify lucide--pencil size-3.5" aria-hidden="true"></span>Edit</button>
+      </span>
+    </div>
+  </header>
 
-  {needsReconnect && (
-    <Alert variant="warning">This destination lost access. Backups to it are paused for {inUseCount === 1 ? 'the Space' : `all ${inUseCount} Spaces`} below. Reconnect once to restore {inUseCount === 1 ? 'it' : 'them all'}.</Alert>
+  {(needsReconnect || needsConnect) && (
+    <div role="alert" class="alert alert-soft alert-warning">
+      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+      <span>{needsConnect
+        ? 'This destination isn’t connected yet. Connect it, then link it to a Space to start backing up.'
+        : `This destination lost access. Backups to it are paused for ${inUseCount === 1 ? 'the Space' : `all ${inUseCount} Spaces`} below. Reconnect once to restore ${inUseCount === 1 ? 'it' : 'them all'}.`}</span>
+    </div>
   )}
 
-  {needsConnect && (
-    <Alert variant="warning">This destination isn’t connected yet. Connect it, then link it to a Space to start backing up.</Alert>
-  )}
+  <section class="reg-card">
+    <div class="flex items-center justify-between gap-3">
+      <h2 class="reg-card-title">Connection</h2>
+      {/* The twin of the source's "Refresh bases": same slot, same shape, same job (re-check the
+          connection). The VERB differs because a destination has no bases to rescan — that is
+          kind-aware copy, not drift. A re-check is not an edit, so it is read-mode only.
+          SOFT-PRIMARY, NOT GHOST (Oleh, 2026-08-13, on desktop): «вона не має бути біла, вона
+          зливається з текстом, вона має бути секондарі». A ghost button has no fill and no border,
+          so beside the `Connection` heading on the same line it read as a second heading rather
+          than as a control — there was nothing to say where the target began. `decision-button-
+          system` and the catalog's `button` entry both spell Secondary as `btn-soft btn-primary`
+          (outline is deprecated), and this is the same construction `LiveRefresh` uses for the same
+          verb on Backups and Restore. Ghost is for repeated/low-stakes actions in a dense toolbar,
+          which the catalog note warns is what soft must not become; this is ONE control in a card
+          header, not a toolbar row. */}
+      <button type="button" class="btn btn-soft btn-primary btn-sm gap-1.5" data-reg-readonly data-refresh-bases><span class="iconify lucide--refresh-cw size-4" aria-hidden="true"></span> Test connection</button>
+    </div>
+    <dl class="reg-dl">
+      {/* Name and the write target are Baseout's own; the type is what the provider is. */}
+      <div>
+        <dt>Name</dt>
+        <dd>
+          <span class="sch-slot" data-reg-read="name">{d.name}</span>
+          <input type="text" class="input input-sm sch-slot-in" value={d.name} aria-label="Name" data-reg-input="name" />
+        </dd>
+      </div>
+      <div><dt>Type <span class="sch-cap-mark" data-reg-editonly>from capture</span></dt><dd>{kindLabel} · {d.providerLabel}</dd></div>
+      <div>
+        <dt>{targetLabel}</dt>
+        <dd>
+          <span class="sch-slot" data-reg-read="detail">{d.detail}</span>
+          <input type="text" class="input input-sm sch-slot-in" value={d.detail} aria-label={targetLabel} data-reg-input="detail" />
+        </dd>
+      </div>
+      <div><dt>{perSpace.label}</dt><dd>{perSpace.text}</dd></div>
+    </dl>
+    {/* The source page's honesty about what a status word means, brought over (D12). No date
+        alongside it: DestinationSummary carries no `lastChecked`, and inventing one would be
+        exactly the fabrication the caveat exists to prevent. */}
+    <p class="reg-note reg-note--pad">Status reflects the last successful check, not live.</p>
+    <p class="reg-refresh-note hidden" data-refresh-note role="status"></p>
+    {/* Save stays explicit — a mode switch is not a licence to drop it. */}
+    <div class="reg-editbar" data-reg-editonly>
+      <button type="button" class="btn btn-sm btn-ghost" data-reg-cancel>Cancel</button>
+      <button type="button" class="btn btn-sm btn-primary" data-reg-save>Save</button>
+    </div>
+  </section>
 
-  <SectionPanel title="Connection">
-    <DefinitionList items={connectionItems} />
-  </SectionPanel>
-
-  <SectionPanel title={`In use by ${inUseCount} Space${inUseCount === 1 ? '' : 's'}`}>
+  <section class="reg-card reg-card--flush">
+    <div class="reg-card-pad flex items-center gap-2">
+      <h2 class="reg-card-title">In use by <span class="reg-count">{inUseCount} Space{inUseCount === 1 ? '' : 's'}</span></h2>
+    </div>
     {inUseCount > 0 ? (
-      <ul class="dst-chips">
-        {d.inUseBy.map((s) => (<li class="dst-chip"><span class="iconify lucide--folder" aria-hidden="true"></span>{s}</li>))}
-      </ul>
+      <div class="reg-usewrap">
+        {/* The same table the source page has shown all along, instead of the inert ghost chips
+            this page used to draw. ONE COLUMN, deliberately: `DestinationSummary.inUseBy` is
+            `string[]` — Space NAMES — so there is no baseCount, schedule, last-backup or spaceId
+            to render, and no id to link a row to. Adding a `DestinationSpaceUsage[]` to
+            stores/destinations.ts + the fixture is what fills the other five columns and makes
+            the rows clickable; that file is outside this change's set. No glyph in the column
+            (`decision-entity-glyphs`: the header already names the kind) and no chevron, because
+            a chevron that goes nowhere is the ghost chip's problem in a new shape. */}
+        <table class="table text-sm">
+          <thead class="tbl-colhead">
+            <tr><th data-sort-col="0">Space</th></tr>
+          </thead>
+          <tbody>
+            {d.inUseBy.map((spaceName) => (
+              <tr class="reg-userow" data-sort-0={spaceName.toLowerCase()}><td class="font-semibold">{spaceName}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     ) : (
-      <p class="text-sm text-base-content/55">No Spaces use this destination yet.</p>
+      <p class="reg-card-pad text-sm text-base-content/65">No Spaces use this destination yet.</p>
     )}
-    <p class="dst-note">{status === 'reconnect' ? 'Reconnecting restores backups for every Space listed here.' : 'Changing this connection affects every Space listed here.'}</p>
-  </SectionPanel>
+    <p class="reg-card-pad reg-note">{needsReconnect ? 'Reconnecting restores backups for every Space listed here.' : 'Changing this connection affects every Space listed here.'}</p>
+  </section>
 
-  <SectionPanel title="Disconnect destination" class="dst-danger">
+  <section class="reg-card reg-danger">
     <div class="flex items-start justify-between gap-4 flex-wrap">
       <div class="min-w-0">
+        <h2 class="reg-card-title">Remove destination</h2>
         <p class="text-sm text-base-content/60 mt-1">
-          {isByos
-            ? 'Disconnect this destination from the Space. Files already in your account are kept; future backups fall back to local disk until you connect another destination.'
-            : 'Managed destinations are switched by connecting a different destination, not disconnected here.'}
+          {inUseCount > 0
+            ? `Remove is disabled while ${inUseCount} Space${inUseCount === 1 ? '' : 's'} use${inUseCount === 1 ? 's' : ''} this destination. Unlink ${inUseCount === 1 ? 'it' : 'them'} first.`
+            : 'No Spaces use this destination, so it can be removed.'}
         </p>
-        <p class="text-sm text-error hidden mt-2" data-disconnect-error role="alert"></p>
       </div>
-      <Button type="button" variant="outline" size="sm" class="shrink-0 border-error text-error" disabled={!isByos} data-disconnect data-provider={d.provider}>Disconnect</Button>
+      {/* One button, `disabled` bound to the guard — the ternary rendered two identical elements.
+          `btn-sm` per `decision-density-sm-is-default` (a card action, not a page-header CTA);
+          `btn-outline btn-error` is the quieter destructive the button catalog still sanctions.
+          Written exactly as in SourceDetailView — the two registries must not diverge (D12). */}
+      {/* D06 — same construction as SourceDetailView, down to the dialog id: one act, two object
+          kinds, one recipe. NO undo toast — re-adding means connecting and authorizing again, and
+          `pattern-undo-toast` bans an Undo that cannot restore. */}
+      <button type="button" class="btn btn-outline btn-error btn-sm shrink-0" disabled={inUseCount > 0} data-reg-remove>Remove</button>
     </div>
-  </SectionPanel>
+    <p class="reg-note mt-3" data-reg-removed hidden role="status"></p>
+  </section>
+
+  <ConfirmModal id="reg-remove-modal" title={removal.title} cancelLabel="Keep it" confirmLabel={removal.confirmLabel} confirmClass={CONFIRM_DESTRUCTIVE} confirmIcon="lucide--trash-2">
+    <p class="text-sm text-base-content/70">{removal.lead}</p>
+    <div role="alert" class="alert alert-soft alert-warning mt-3">
+      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+      <span>{removal.consequence}</span>
+    </div>
+  </ConfirmModal>
 </div>
 
+<style>
+  /* `.reg-*` is the ONE registry vocabulary (audit D12/D21) — it replaces the byte-identical
+     `.src-*` / `.dst-*` / `.use-*` families. This block is identical text in SourceDetailView
+     (plus the one `.reg-note--pad` rule this page's extra caveat line needs); the two want to
+     live in styles/global.css, which is outside this change's file set, so
+     identical-and-adjacent is the interim that keeps drift diffable. */
+  .back-link { display: inline-flex; align-items: center; gap: .25rem; font-size: var(--t-13); font-weight: 500; color: oklch(from var(--color-base-content) l c h / .65); text-decoration: none; }
+  .back-link:hover { color: var(--color-base-content); }
+  .back-link .iconify { font-size: .95rem; }
+  .reg-logo { border-radius: 7px; flex: none; }
+
+  .reg-card { border: 1px solid var(--color-base-300); border-radius: .7rem; padding: 1rem 1.25rem; background: var(--color-base-100); }
+  .reg-card--flush { padding: 0; overflow: hidden; }
+  .reg-card-pad { padding: 1rem 1.25rem; }
+  .reg-card--flush .reg-card-pad { padding-bottom: .75rem; }
+  .reg-card--flush .reg-note { padding-top: .75rem; }
+  .reg-card-title { font-size: var(--t-14); font-weight: 700; display: flex; align-items: center; gap: .5rem; }
+  .reg-count { font-size: var(--t-12); font-weight: 600; color: oklch(from var(--color-base-content) l c h / .65); background: oklch(from var(--color-base-200) l c h / .65); padding: 0 .5rem; border-radius: 999px; }
+  .reg-dl { margin-top: .75rem; display: flex; flex-direction: column; gap: .5rem; }
+  .reg-dl > div { display: grid; grid-template-columns: 9rem 1fr; gap: 1rem; font-size: var(--t-13); align-items: center; }
+  .reg-dl dt { display: flex; align-items: center; gap: .5rem; color: oklch(from var(--color-base-content) l c h / .65); }
+  .reg-dl dd { color: oklch(from var(--color-base-content) l c h / .85); }
+  .reg-refresh-note { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin-top: .75rem; }
+  .reg-note { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .reg-note--pad { margin-top: .75rem; }
+
+  /* Read/edit visibility. The read slot and the input are the SAME box (.sch-slot / .sch-slot-in
+     in styles/global.css: identical font-size, line-height, padding and min-height), so the row
+     does not change height when the mode flips — which is the whole point of the pattern. */
+  [data-reg-root][data-mode='read'] [data-reg-input] { display: none; }
+  [data-reg-root][data-mode='read'] [data-reg-editonly] { display: none; }
+  [data-reg-root][data-mode='edit'] [data-reg-read] { display: none; }
+  [data-reg-root][data-mode='edit'] [data-reg-readonly] { visibility: hidden; }
+  .reg-editbar { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--color-base-200); }
+
+  /* Spaces-using-this-object table = daisyUI table; wrap stays flush to the card. */
+  .reg-usewrap { overflow-x: auto; border-top: 1px solid var(--color-base-300); }
+  .reg-usewrap :is(th, td) { white-space: nowrap; }
+
+  .reg-danger { border-color: oklch(from var(--color-error) l c h / .35); }
+</style>
+
 <script>
+  import { wireTableSort } from '../components/schema/tableSort';
+  import { wireRegistryRemove } from '../lib/registry/removal';
   import { setButtonLoading } from '../lib/ui';
 
-  // Per-Space disconnect (BYOS only): removes the storage_destinations row for the
-  // active Space + flips storageType back to local_fs, then returns to the registry.
-  document.addEventListener('click', async (event) => {
-    const btn = (event.target as HTMLElement | null)?.closest('[data-disconnect]');
-    if (!(btn instanceof HTMLButtonElement)) return;
-    const provider = btn.dataset.provider;
-    if (!provider) return;
-    const errEl = document.querySelector<HTMLElement>('[data-disconnect-error]');
-    setButtonLoading(btn, true);
-    try {
-      const res = await fetch(`/api/connections/storage/${provider}/disconnect`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-      });
-      if (res.ok) {
-        window.location.href = '/destinations';
-        return;
+  /**
+   * The registry detail page's read/edit mode (audit D12), per catalog `pattern-panel-edit-mode`.
+   * IDENTICAL text in SourceDetailView — it wants to be one module
+   * (`components/ui/registryEditMode.ts`), which is outside this change's file set.
+   *
+   * Contract, straight off the catalog entry: Read is the default mode · Cancel restores the
+   * values as they were on ENTERING edit mode · Escape inside edit mode cancels AND is swallowed,
+   * so it never reaches the page's own Escape · Save is explicit (a mode switch is not a licence
+   * to drop it) · captured rows are never inputs and never greyed.
+   */
+  function wireRegistryDetail(): void {
+    const root = document.querySelector<HTMLElement>('[data-reg-root]');
+    if (!root || root.dataset.regWired === '1') return;
+    root.dataset.regWired = '1';
+
+    const inputs = Array.from(root.querySelectorAll<HTMLInputElement>('[data-reg-input]'));
+    const modeButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-reg-mode]'));
+    /** The values as they were when edit mode was entered — what Cancel restores. */
+    let entryValues: string[] = [];
+
+    function paintValue(field: string, value: string): void {
+      const read = root!.querySelector<HTMLElement>(`[data-reg-read="${field}"]`);
+      if (read) read.textContent = value;
+      if (field === 'name') {
+        const title = root!.querySelector<HTMLElement>('[data-reg-title]');
+        if (title) title.textContent = value;
       }
-      if (errEl) {
-        errEl.textContent = 'Could not disconnect. Please try again.';
-        errEl.classList.remove('hidden');
-      }
-    } finally {
-      setButtonLoading(btn, false);
     }
+
+    function setMode(mode: 'read' | 'edit'): void {
+      if (root!.dataset.mode === mode) return;
+      if (mode === 'edit') entryValues = inputs.map((i) => i.value);
+      root!.dataset.mode = mode;
+      modeButtons.forEach((b) => {
+        const on = b.dataset.regMode === mode;
+        b.classList.toggle('sch-mode-active', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      if (mode === 'edit') inputs[0]?.focus();
+    }
+
+    modeButtons.forEach((b) =>
+      b.addEventListener('click', () => setMode(b.dataset.regMode === 'edit' ? 'edit' : 'read')),
+    );
+
+    root.querySelector<HTMLButtonElement>('[data-reg-cancel]')?.addEventListener('click', () => {
+      inputs.forEach((input, i) => { input.value = entryValues[i] ?? input.value; });
+      setMode('read');
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-reg-save]')?.addEventListener('click', () => {
+      // No backend in this harness: Save commits into the page it edited, which is the honest
+      // moment for the title to change. Refreshing resets to the fixture, as everywhere else.
+      inputs.forEach((input) => paintValue(input.dataset.regInput ?? '', input.value));
+      setMode('read');
+    });
+
+    root.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || root!.dataset.mode !== 'edit') return;
+      e.preventDefault();
+      e.stopPropagation();
+      inputs.forEach((input, i) => { input.value = entryValues[i] ?? input.value; });
+      setMode('read');
+    });
+
+    const refresh = root.querySelector<HTMLButtonElement>('[data-refresh-bases]');
+    const note = root.querySelector<HTMLElement>('[data-refresh-note]');
+    refresh?.addEventListener('click', () => {
+      // Harness: there is nothing to call; fake the re-check the real page will do.
+      if (!note) return;
+      note.textContent = 'Re-checked the connection — reachable, credentials still valid.';
+      note.classList.remove('hidden');
+    });
+
+    // Keyboard for the "In use by" rows — Enter/Space opens the Space (the inline onclick
+    // navigates). `pattern-row-actions` wants the whole anatomy; role=button + tabindex are on
+    // the <tr>. Same wiring as SourcesView / BackupsListView.
+    root.querySelectorAll<HTMLElement>('.reg-userow[role="button"]').forEach((row) => {
+      row.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        row.click();
+      });
+    });
+
+    // Click-sort on the "In use by" table — the same tableSort.ts the two registry LISTS use, so
+    // the caret and the keyboard behaviour are the one recipe rather than a third. Bound once,
+    // not per sort: wireTableSort MOVES the same <tr>s, it does not rebuild them, so the keydown
+    // listeners above survive a re-order.
+    const useTable = root.querySelector<HTMLElement>('.reg-usewrap table');
+    const useBody = useTable?.querySelector<HTMLElement>('tbody') ?? null;
+    if (useTable && useBody) {
+      const headers = Array.from(useTable.querySelectorAll<HTMLElement>('th[data-sort-col]'));
+      const items = () => Array.from(useBody.querySelectorAll<HTMLElement>('tr'));
+      wireTableSort(useTable, () => [{ headers, container: useBody, items }], (item, col) => {
+        // Read the raw attribute: `data-sort-0` does NOT map to dataset.sort0 (a digit after the
+        // hyphen isn't camel-cased), so dataset access would silently return undefined and no-op.
+        const v = item.getAttribute(`data-sort-${col}`) || '';
+        const n = Number(v);
+        return Number.isFinite(n) && v !== '' ? n : String(v);
+      });
+    }
+  }
+
+  wireRegistryDetail();
+  document.addEventListener('astro:page-load', wireRegistryDetail);
+
+  // D06 — Remove confirms first. Shared with the other registry page (lib/registry/removal.ts).
+  const wireRemove = () => wireRegistryRemove('destination');
+  wireRemove();
+  document.addEventListener('astro:page-load', wireRemove);
+
+  // Spinner while the browser redirects to the provider consent screen (real reconnect).
+  document.addEventListener('submit', (event) => {
+    const form = (event.target as HTMLElement | null)?.closest('[data-storage-connect]');
+    if (!(form instanceof HTMLFormElement)) return;
+    const btn = form.querySelector('[data-storage-connect-btn]');
+    if (btn instanceof HTMLButtonElement) setButtonLoading(btn, true);
   });
 </script>
-
-<style>
-  .dst-chips { margin-top: .75rem; display: flex; flex-wrap: wrap; gap: .4rem; }
-  .dst-chip { display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem; padding: .3rem .6rem; border: 1px solid var(--color-base-300); border-radius: 999px; background: oklch(from var(--color-base-200) l c h / .4); }
-  .dst-chip .iconify { font-size: .85rem; color: oklch(from var(--color-base-content) l c h / .5); }
-  .dst-note { margin-top: .75rem; font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .55); }
-
-  .dst-danger { border-color: oklch(from var(--color-error) l c h / .3); }
-</style>

@@ -7,16 +7,23 @@
  * type) with the PRIMARY selected by backup_configurations.storage_type
  * (shared-multi-destinations); the account-level model remains a follow-up
  * (web-nav-ia-restructure / shared-destinations "Engineer"). This renders the
- * current Space's destinations mapped into the registry shape, with a notice,
- * and offers swap-primary on connected non-primary rows.
+ * current Space's destinations mapped into the registry shape, with a notice.
+ *
+ * PROMOTION NOTE (Phase 7.3 / web-destinations, ui-only@7c7202d7 via ecdde1d5):
+ * the promoted registry is a READ table + notice (one family with SourcesView).
+ * The per-Space swap-primary control and the "what you can connect" provider
+ * grid the legacy view carried are NOT part of the account-level redesign and
+ * are DROPPED from this surface — the StoragePicker in the per-Space Backups
+ * config still owns primary selection, and account-level connect/reconnect
+ * lands with shared-destinations. The working `api/connections/storage/*`
+ * OAuth routes are unchanged (see DestinationsView.legacy.astro for the
+ * rollback that wired swap-primary here).
  */
-import { env } from 'cloudflare:workers';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import DestinationsView from '../views/DestinationsView.astro';
 import { getBreadcrumbs } from '../lib/config';
 import { EMPTY_INTEGRATIONS_STATE, getIntegrationsState } from '../lib/integrations';
 import { toDestinationSummaries } from '../lib/registry-mappers';
-import { getDestinationProviders, type DestinationEnv } from '../lib/provider-catalog';
 
 const breadcrumbs = getBreadcrumbs('/destinations');
 const { account, db } = Astro.locals;
@@ -28,20 +35,11 @@ const state =
   orgId && spaceId && db ? await getIntegrationsState(db, orgId, spaceId) : EMPTY_INTEGRATIONS_STATE;
 
 const destinations = toDestinationSummaries(state, spaceId ?? 'space', spaceName);
-// Availability resolves the env-gated BYOS providers (Box/Dropbox/OneDrive
-// become available only when their OAuth client id is configured).
-const providers = getDestinationProviders(env as unknown as DestinationEnv);
 
 const notice =
-  'Account-level Destinations (reused across Spaces) are on the roadmap. Today destinations are per-Space — connect several and pick which one is Primary (where backups write).';
+  'Account-level Destinations (reused across Spaces) are on the roadmap. Today destinations are per-Space — connect several and pick which one is Primary (where backups write) from the Space Backups settings.';
 ---
 
 <SidebarLayout pageTitle="Destinations" breadcrumbs={breadcrumbs}>
-  <DestinationsView
-    destinations={destinations}
-    notice={notice}
-    providers={providers}
-    spaceId={spaceId}
-    primaryType={state.policy.storageType}
-  />
+  <DestinationsView destinations={destinations} notice={notice} />
 </SidebarLayout>

@@ -1,42 +1,57 @@
 ---
 /**
- * DestinationAddView — add an account-level destination (skeleton).
+ * DestinationAddView — add an account-level destination.
+ *
+ * Step 1: pick a type. File storage is the required everyday store; a database is an
+ * optional, encouraged extra (soft upsell, never a blocker). Step 2 (when ?type is set):
+ * name it + point it somewhere. The created destination becomes a reusable account
+ * object, then linkable to Spaces.
+ *
+ * Phase 7.3 (ref ecdde1d5): fork type-picker + create form chrome. Create POSTs to the
+ * fork `/api/destinations` skeleton — real per-Space `api/connections/storage/*` connect
+ * stays on DestinationAddView.legacy / Backups config until shared-destinations.
+ *
+ * ONE FAMILY WITH SourceAddView (audit D12) — same width, same `.reg-*` vocabulary, same
+ * form contract. This form used to be a `<form method="POST">` with NO SUBMITTER AT ALL:
+ * the primary was an <a href="/destinations?status=added&type=…">, so typing
+ * "My analytics DB" and pressing it discarded every field and produced "Postgres". The
+ * primary is now `<button type="submit">` inside the form that owns the fields.
  */
-import BackLink from '../components/ui/BackLink.astro';
-import Button from '../components/ui/Button.astro';
-import { getDestinationProviders, type DestinationProvider } from '../lib/provider-catalog';
+import TextInput from '../components/ui/TextInput.astro';
 
 interface Props {
+  /** provider slug picked in step 1; null shows the type picker */
   selectedType?: string | null;
-  providers?: DestinationProvider[];
-  /** Active Space id — needed to connect a managed (no-OAuth) destination. */
-  spaceId?: string | null;
-  /** Provider types already connected for the active Space (multi-destination). */
-  connectedTypes?: string[];
-  /** The connected type backups currently write to, or null (e.g. r2_managed). */
-  primaryType?: string | null;
 }
-const {
-  selectedType = null,
-  providers = getDestinationProviders(),
-  spaceId = null,
-  connectedTypes = [],
-  primaryType = null,
-} = Astro.props;
+const { selectedType = null } = Astro.props;
 
-const fileTypes = providers.filter((p) => p.kind === 'file');
-const dbTypes = providers.filter((p) => p.kind === 'database');
-const sel = providers.find((p) => p.slug === selectedType && p.availability === 'available') ?? null;
+interface TypeDef { id: string; label: string; icon: string; kind: 'file' | 'database'; note: string; field: 'folder' | 'connection'; managed?: boolean; }
+const fileTypes: TypeDef[] = [
+  { id: 'r2', label: 'Baseout R2', icon: 'lucide--box', kind: 'file', note: 'Managed storage, zero setup', field: 'folder', managed: true },
+  { id: 'google_drive', label: 'Google Drive', icon: 'lucide--hard-drive', kind: 'file', note: 'Your own Drive', field: 'folder' },
+  { id: 'dropbox', label: 'Dropbox', icon: 'lucide--hard-drive', kind: 'file', note: 'Your own Dropbox', field: 'folder' },
+  { id: 'box', label: 'Box', icon: 'lucide--hard-drive', kind: 'file', note: 'Your own Box', field: 'folder' },
+  { id: 's3', label: 'Amazon S3', icon: 'lucide--cloud', kind: 'file', note: 'Your own S3 bucket', field: 'folder' },
+];
+const dbTypes: TypeDef[] = [
+  { id: 'postgres', label: 'Postgres', icon: 'lucide--database', kind: 'database', note: 'Self-hosted or cloud', field: 'connection' },
+  { id: 'neon', label: 'Neon', icon: 'lucide--database', kind: 'database', note: 'Serverless Postgres', field: 'connection' },
+  { id: 'supabase', label: 'Supabase', icon: 'lucide--database', kind: 'database', note: 'Postgres + APIs', field: 'connection' },
+  { id: 'byodb', label: 'Other database', icon: 'lucide--database', kind: 'database', note: 'Connection string', field: 'connection' },
+];
+const all = [...fileTypes, ...dbTypes];
+const sel = all.find((t) => t.id === selectedType) ?? null;
 
-const tierLabel = (t?: string) => (t === 'growth' ? 'Growth+' : t === 'pro' ? 'Pro+' : null);
-const isConnected = (slug: string) => connectedTypes.includes(slug);
-const iconFor = (p: DestinationProvider) =>
-  p.managed ? 'lucide--box' : p.slug === 's3' ? 'lucide--cloud' : p.kind === 'database' ? 'lucide--database' : 'lucide--hard-drive';
-const selIcon = sel ? iconFor(sel) : 'lucide--hard-drive';
+// Real service logos for known providers (the rest fall back to the Lucide icon).
+const destLogo: Record<string, string> = {
+  google_drive: '/brands/google-drive.svg',
+  dropbox: '/brands/dropbox.svg',
+  s3: '/brands/aws.svg',
+};
 ---
 
 <div class="mx-auto max-w-3xl space-y-6">
-  <BackLink href="/destinations" label="Destinations" />
+  <a href="/destinations" class="back-link"><span class="iconify lucide--arrow-left" aria-hidden="true"></span> Destinations</a>
 
   {!sel ? (
     <>
@@ -46,42 +61,31 @@ const selIcon = sel ? iconFor(sel) : 'lucide--hard-drive';
       </header>
 
       <section>
-        <h2 class="mb-3 flex items-center gap-2 text-base font-bold">File storage <span class="text-[0.7rem] font-semibold uppercase tracking-wide text-base-content/45">required for every backup</span></h2>
-        <div class="grid gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
+        {/* Required = badge-soft badge-warning (audit D19). Error red is reserved for FAILURE —
+            spending it on "you must fill this in" means the screen has no voice left when
+            something actually breaks. The catalog `badge` meta-tag rule was corrected for this. */}
+        <h2 class="reg-section-title">File storage <span class="badge badge-soft badge-warning badge-sm">Required</span></h2>
+        <div class="reg-grid">
           {fileTypes.map((t) => (
-            t.availability === 'available' ? (
-              <a href={`/destinations/new?type=${t.slug}`} class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 no-underline text-inherit transition-colors hover:border-primary/50 hover:bg-primary/5">
-                <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-base-200/80"><span class={`iconify ${iconFor(t)} text-lg text-base-content/70`} aria-hidden="true"></span></span>
-                <span class="min-w-0"><span class="flex items-center gap-1.5 text-sm font-semibold">{t.label}{t.managed && <span class="rounded-full bg-success/15 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-success">Managed</span>}{t.slug === primaryType ? <span class="rounded-full bg-primary/15 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-primary">Primary</span> : isConnected(t.slug) && <span class="inline-flex items-center gap-1 rounded-full bg-success/15 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-success"><span class="size-1.5 rounded-full bg-current"></span>Connected</span>}</span><span class="block text-xs text-base-content/50">{t.note}</span></span>
-              </a>
-            ) : (
-              <div class="flex cursor-not-allowed items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 opacity-60" aria-disabled="true" title="Coming soon">
-                <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-base-200/80"><span class={`iconify ${iconFor(t)} text-lg text-base-content/70`} aria-hidden="true"></span></span>
-                <span class="min-w-0"><span class="flex items-center gap-1.5 text-sm font-semibold">{t.label}<span class="rounded-full bg-base-content/10 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-base-content/60">{tierLabel(t.tier) ? `${tierLabel(t.tier)} · Coming soon` : 'Coming soon'}</span></span><span class="block text-xs text-base-content/50">{t.note}</span></span>
-              </div>
-            )
+            <a href={`/destinations/new?type=${t.id}`} class="reg-pick">
+              <span class="reg-ic">{destLogo[t.id] ? <img src={destLogo[t.id]} alt="" width="20" height="20" /> : <span class={`iconify ${t.icon}`} aria-hidden="true"></span>}</span>
+              <span class="min-w-0"><span class="reg-name">{t.label}{t.managed && <span class="badge badge-soft badge-success badge-sm">Managed</span>}</span><span class="reg-note">{t.note}</span></span>
+            </a>
           ))}
         </div>
       </section>
 
       <section>
-        <div class="mb-3">
-          <h2 class="flex items-center gap-2 text-base font-bold">Database <span class="rounded-full bg-primary/15 px-2 py-0.5 text-[0.68rem] font-bold uppercase tracking-wide text-primary">Recommended</span></h2>
-          <p class="mt-1 max-w-prose text-sm text-base-content/60">Add a database to query your backup with SQL and power live dashboards. Optional — your file backup runs without it.</p>
+        <div class="reg-db-head">
+          <h2 class="reg-section-title">Database <span class="badge badge-soft badge-primary badge-sm">Recommended</span></h2>
+          <p class="reg-db-blurb">Add a database to query your backup with SQL and power live dashboards. Optional — your file backup runs without it.</p>
         </div>
-        <div class="grid gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
+        <div class="reg-grid">
           {dbTypes.map((t) => (
-            t.availability === 'available' ? (
-              <a href={`/destinations/new?type=${t.slug}`} class="flex items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 no-underline text-inherit transition-colors hover:border-primary/50 hover:bg-primary/5">
-                <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10"><span class={`iconify ${iconFor(t)} text-lg text-primary`} aria-hidden="true"></span></span>
-                <span class="min-w-0"><span class="text-sm font-semibold">{t.label}</span><span class="block text-xs text-base-content/50">{t.note}</span></span>
-              </a>
-            ) : (
-              <div class="flex cursor-not-allowed items-center gap-3 rounded-lg border border-base-300 bg-base-100 p-3 opacity-60" aria-disabled="true" title="Coming soon">
-                <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-primary/10"><span class={`iconify ${iconFor(t)} text-lg text-primary`} aria-hidden="true"></span></span>
-                <span class="min-w-0"><span class="flex items-center gap-1.5 text-sm font-semibold">{t.label}<span class="rounded-full bg-base-content/10 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-base-content/60">{tierLabel(t.tier) ? `${tierLabel(t.tier)} · Coming soon` : 'Coming soon'}</span></span><span class="block text-xs text-base-content/50">{t.note}</span></span>
-              </div>
-            )
+            <a href={`/destinations/new?type=${t.id}`} class="reg-pick">
+              <span class="reg-ic reg-ic-db"><span class={`iconify ${t.icon}`} aria-hidden="true"></span></span>
+              <span class="min-w-0"><span class="reg-name">{t.label}</span><span class="reg-note">{t.note}</span></span>
+            </a>
           ))}
         </div>
       </section>
@@ -89,110 +93,205 @@ const selIcon = sel ? iconFor(sel) : 'lucide--hard-drive';
   ) : (
     <>
       <header class="flex items-center gap-3">
-        <span class="grid size-11 shrink-0 place-items-center rounded-lg bg-base-200/80"><span class={`iconify ${selIcon} text-xl text-base-content/70`} aria-hidden="true"></span></span>
+        <span class="reg-ic reg-ic-lg">{destLogo[sel.id] ? <img src={destLogo[sel.id]} alt="" width="24" height="24" /> : <span class={`iconify ${sel.icon}`} aria-hidden="true"></span>}</span>
         <div>
           <h1 class="text-xl font-bold tracking-tight leading-tight">Connect {sel.label}</h1>
-          <p class="text-sm text-base-content/55 leading-tight mt-0.5">{sel.kind === 'database' ? 'Database destination' : 'File storage destination'}</p>
+          <p class="text-sm text-base-content/65 leading-tight mt-0.5">{sel.kind === 'database' ? 'Database destination' : 'File storage destination'}</p>
         </div>
       </header>
 
-      {sel.managed ? (
-        /* Managed (local_fs / r2_managed) — no OAuth; connect for the active Space. */
-        <div class="flex max-w-lg flex-col gap-4">
-          <p class="flex items-center gap-2 rounded-lg border border-success/20 bg-success/10 px-3 py-2.5 text-sm text-base-content/75"><span class="iconify lucide--shield-check text-success" aria-hidden="true"></span> Managed by Baseout — no account to connect or folder to choose.</p>
-          <p class="text-sm text-error hidden" data-managed-error role="alert"></p>
-          <div class="mt-1 flex items-center justify-end gap-2">
-            <Button href="/destinations/new" variant="ghost" size="sm">Back</Button>
-            {sel.slug === primaryType ? (
-              <span class="rounded-full bg-primary/15 px-2 py-1 text-[0.68rem] font-bold uppercase tracking-wide text-primary">Current primary</span>
-            ) : (
-              <Button type="button" variant="primary" data-managed-connect data-slug={sel.slug} data-space-id={spaceId ?? ''}>Use {sel.label}</Button>
-            )}
-          </div>
-        </div>
-      ) : sel.kind === 'file' && isConnected(sel.slug) ? (
-        /* Already-connected BYOS provider — swap primary (the existing
-           data-managed-connect handler PATCHes storageType, which IS the
-           swap) or re-run OAuth via the demoted Reconnect action. */
-        <form method="POST" action={`/api/connections/storage/${sel.slug}/authorize`} class="flex max-w-lg flex-col gap-4" data-byos-connect data-astro-reload>
-          <input type="hidden" name="returnTo" value="/destinations" />
-          <p class="flex items-center gap-2 rounded-lg border border-success/20 bg-success/10 px-3 py-2.5 text-sm text-base-content/75">
-            <span class="iconify lucide--circle-check text-success" aria-hidden="true"></span>
-            {sel.label} is connected for this Space{sel.slug === primaryType ? ' and is the primary destination — backups write here.' : '.'}
+      {/* A real form: `method`/`action` so a no-JS submit still POSTs, and the client handler below
+          validates before it navigates. `novalidate` because the browser bubble cannot say WHICH
+          field in the app's own voice — the catalog `input` entry wants the reason under the field. */}
+      <form method="POST" action="/api/destinations" class="reg-form" novalidate data-astro-reload data-reg-form data-reg-kind="destination">
+        <input type="hidden" name="type" value={sel.id} />
+
+        {/* `input` catalog entry: label always visible, `required` marker from the primitive, error
+            text in the documented `fieldset-label text-error` shape below the field. */}
+        <div class="reg-field">
+          <TextInput
+            label="Name"
+            name="name"
+            size="sm"
+            required
+            placeholder={`${sel.label} backup`}
+            hint="A label you'll recognise when linking it to Spaces."
+            data-reg-required
+            data-reg-fieldname="Name"
+          />
+          <p class="fieldset-label text-error reg-err" data-reg-err-for="name" role="alert">
+            <span class="iconify lucide--circle-alert icon-sm" aria-hidden="true"></span><span data-reg-err-text></span>
           </p>
-          <p class="text-sm text-error hidden" data-managed-error role="alert"></p>
-          <div class="mt-1 flex items-center justify-end gap-2">
-            <Button href="/destinations/new" variant="ghost" size="sm">Back</Button>
-            <Button type="submit" variant="ghost" size="sm" data-byos-connect-btn>Reconnect</Button>
-            {sel.slug === primaryType ? (
-              <span class="rounded-full bg-primary/15 px-2 py-1 text-[0.68rem] font-bold uppercase tracking-wide text-primary">Current primary</span>
-            ) : (
-              <Button type="button" variant="primary" data-managed-connect data-slug={sel.slug} data-space-id={spaceId ?? ''}>Set as primary</Button>
-            )}
-          </div>
-        </form>
-      ) : sel.kind === 'file' ? (
-        /* BYOS file storage — real OAuth: POST → provider authorize → consent → callback → returnTo. */
-        <form method="POST" action={`/api/connections/storage/${sel.slug}/authorize`} class="flex max-w-lg flex-col gap-4" data-byos-connect data-astro-reload>
-          <input type="hidden" name="returnTo" value="/destinations" />
-          <p class="text-sm text-base-content/70">You'll authorize {sel.label} in a popup. Each Space writes to its own <span class="font-mono">/Baseout/&lt;Space&gt;</span> subfolder.</p>
-          <div class="mt-1 flex items-center justify-end gap-2">
-            <Button href="/destinations/new" variant="ghost" size="sm">Back</Button>
-            <Button type="submit" variant="primary" data-byos-connect-btn>Connect {sel.label}</Button>
-          </div>
-        </form>
-      ) : (
-        /* Database destinations aren't available yet. */
-        <div class="flex max-w-lg flex-col gap-4">
-          <p class="text-sm text-base-content/70">Database destinations are coming soon.</p>
-          <div class="mt-1 flex items-center justify-end gap-2">
-            <Button href="/destinations/new" variant="ghost" size="sm">Back</Button>
-          </div>
         </div>
-      )}
+
+        {sel.managed ? (
+          <div role="alert" class="alert alert-soft alert-success"><span class="iconify lucide--shield-check size-4" aria-hidden="true"></span><span>Managed by Baseout — no account to connect or folder to choose.</span></div>
+        ) : sel.field === 'folder' ? (
+          <div class="reg-field">
+            <TextInput
+              label="Folder"
+              name="folder"
+              size="sm"
+              required
+              placeholder="/Baseout"
+              class="reg-mono"
+              hint="Each Space writes to its own subfolder. You’ll authorize the account after saving."
+              data-reg-required
+              data-reg-fieldname="Folder"
+            />
+            <p class="fieldset-label text-error reg-err" data-reg-err-for="folder" role="alert">
+              <span class="iconify lucide--circle-alert icon-sm" aria-hidden="true"></span><span data-reg-err-text></span>
+            </p>
+          </div>
+        ) : (
+          <div class="reg-field">
+            <TextInput
+              label="Connection string"
+              name="connection"
+              type="password"
+              size="sm"
+              required
+              placeholder="postgres://user:••••@host:5432/db"
+              autocomplete="off"
+              class="reg-mono"
+              hint="Stored encrypted. Baseout writes one schema per Space."
+              data-reg-required
+              data-reg-fieldname="Connection string"
+            />
+            <p class="fieldset-label text-error reg-err" data-reg-err-for="connection" role="alert">
+              <span class="iconify lucide--circle-alert icon-sm" aria-hidden="true"></span><span data-reg-err-text></span>
+            </p>
+          </div>
+        )}
+
+        {/* Back steps within the flow; Cancel LEAVES it for the registry — the same contract as
+            SourceAddView, where Cancel used to point at the form's own URL. */}
+        <div class="reg-actions">
+          <a href="/destinations/new" class="btn btn-sm btn-ghost mr-auto"><span class="iconify lucide--arrow-left size-4" aria-hidden="true"></span>Back</a>
+          <a href="/destinations" class="btn btn-sm btn-ghost">Cancel</a>
+          <button type="submit" class="btn btn-sm btn-primary" data-reg-submit>
+            <span class="iconify lucide--check size-4" aria-hidden="true"></span>Create destination
+          </button>
+        </div>
+      </form>
     </>
   )}
 </div>
 
-<script>
-  import { connectLocalFs } from '../lib/backups/connect-local-fs';
-  import { saveBackupConfig } from '../lib/backups/save-config';
-  import { setButtonLoading } from '../lib/ui';
+<style>
+  .back-link { display: inline-flex; align-items: center; gap: .25rem; font-size: var(--t-13); font-weight: 500; color: oklch(from var(--color-base-content) l c h / .65); text-decoration: none; }
+  .back-link:hover { color: var(--color-base-content); }
+  .back-link .iconify { font-size: .95rem; }
 
-  // No-OAuth actions: managed connects (local_fs creates the destination row
-  // via connectLocalFs; r2_managed just sets the config's storageType) and
-  // "Set as primary" on an already-connected BYOS provider (also just sets
-  // storageType — that IS the primary swap). All return to the registry.
-  document.addEventListener('click', async (event) => {
-    const btn = (event.target as HTMLElement | null)?.closest('[data-managed-connect]');
-    if (!(btn instanceof HTMLButtonElement)) return;
-    const slug = btn.dataset.slug;
-    if (!slug) return;
-    const errEl = document.querySelector<HTMLElement>('[data-managed-error]');
-    setButtonLoading(btn, true);
-    try {
-      const res =
-        slug === 'local_fs'
-          ? await connectLocalFs()
-          : await saveBackupConfig({ spaceId: btn.dataset.spaceId ?? '', storageType: slug });
-      if (res.ok) {
-        window.location.href = '/destinations';
+  /* The type picker (step 1) — destination-only, there is no Source equivalent to converge with:
+     V1 is Airtable-only, so a Source has no type to pick. */
+  .reg-section-title { font-size: var(--t-16); font-weight: 700; display: flex; align-items: center; gap: .5rem; margin-bottom: .75rem; }
+  .reg-db-head { margin-bottom: .75rem; }
+  .reg-db-blurb { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); margin-top: .25rem; max-width: 46ch; }
+
+  .reg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: .5rem; }
+  .reg-pick { display: flex; align-items: center; gap: .75rem; padding: .75rem; border: 1px solid var(--color-base-300); border-radius: .65rem; background: var(--color-base-100); text-decoration: none; color: inherit; transition: border-color .12s ease, background .12s ease; }
+  .reg-pick:hover { border-color: oklch(from var(--color-primary) l c h / .55); background: oklch(from var(--color-primary) l c h / .08); }
+  .reg-ic { width: 2rem; height: 2rem; border-radius: .55rem; display: grid; place-items: center; background: oklch(from var(--color-base-200) l c h / .85); flex: none; }
+  .reg-ic .iconify { font-size: 1.1rem; color: oklch(from var(--color-base-content) l c h / .65); }
+  .reg-ic-db { background: oklch(from var(--color-primary) l c h / .08); }
+  .reg-ic-db .iconify { color: var(--color-primary); }
+  .reg-ic-lg { width: 2.5rem; height: 2.5rem; }
+  .reg-ic-lg .iconify { font-size: 1.35rem; }
+  .reg-name { display: flex; align-items: center; gap: .5rem; font-size: var(--t-14); font-weight: 600; }
+  .reg-note { display: block; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+
+  /* `.reg-*` is the ONE registry vocabulary shared by both create forms (audit D12/D21). It
+     replaces the byte-identical `.src-*` / `.dst-*` / `.add-*` families — the duplication was the
+     mechanism of the drift, not a symptom of it. Everything below is identical text in
+     SourceAddView, which is what makes the next divergence show up in a diff. */
+  .reg-form { display: flex; flex-direction: column; gap: 1.25rem; max-width: 30rem; }
+  .reg-field { display: flex; flex-direction: column; }
+  .reg-label { display: block; font-size: var(--t-13); font-weight: 600; }
+  .reg-hint { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .reg-mono { font-family: ui-monospace, monospace; }
+  .reg-actions { display: flex; align-items: center; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
+
+  /* Field-level error — hidden until the submit handler fills it in. `display:none` not [hidden],
+     because `.fieldset-label` sets its own display and would win. */
+  .reg-err { display: none; align-items: center; gap: .25rem; }
+  .reg-err.is-on { display: flex; }
+</style>
+
+<script>
+  /**
+   * The registry create-form submit contract (audit D12). IDENTICAL text in
+   * SourceAddView — it wants to be one module (`components/ui/registryForm.ts`), which is
+   * outside this change's file set; keeping the two byte-identical is the interim, and the
+   * divergence they used to carry is what this whole decision is about.
+   *
+   * What it guarantees: the primary is a real submit; every `[data-reg-required]` field that is
+   * blank stops the submit and gets its reason UNDER the field (catalog `input`); and the name
+   * the user typed travels to the registry instead of being thrown away.
+   */
+  function wireRegistryCreateForm(): void {
+    const form = document.querySelector<HTMLFormElement>('[data-reg-form]');
+    if (!form || form.dataset.regWired === '1') return;
+    form.dataset.regWired = '1';
+    const kind = form.dataset.regKind === 'destination' ? 'destination' : 'source';
+    const registry = kind === 'destination' ? '/destinations' : '/sources';
+
+    const errFor = (name: string) => form.querySelector<HTMLElement>(`[data-reg-err-for="${name}"]`);
+
+    function clearError(input: HTMLInputElement): void {
+      input.classList.remove('input-error');
+      input.removeAttribute('aria-invalid');
+      const box = input.name ? errFor(input.name) : null;
+      if (box) box.classList.remove('is-on');
+    }
+
+    function setError(input: HTMLInputElement, message: string): void {
+      input.classList.add('input-error');
+      input.setAttribute('aria-invalid', 'true');
+      const box = input.name ? errFor(input.name) : null;
+      if (!box) return;
+      const text = box.querySelector<HTMLElement>('[data-reg-err-text]');
+      if (text) text.textContent = message;
+      box.classList.add('is-on');
+    }
+
+    /** Only fields the user can actually see — a hidden branch of the form is not a blocker. */
+    const visibleRequired = (): HTMLInputElement[] =>
+      Array.from(form.querySelectorAll<HTMLInputElement>("[data-reg-required]")).filter(
+        (el) => el.offsetParent !== null,
+      );
+
+    form.addEventListener('input', (e) => {
+      const el = e.target;
+      if (el instanceof HTMLInputElement && el.hasAttribute('data-reg-required')) clearError(el);
+    });
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      let first: HTMLInputElement | null = null;
+      for (const input of visibleRequired()) {
+        if (input.value.trim()) {
+          clearError(input);
+          continue;
+        }
+        const label = input.getAttribute('data-reg-fieldname') || 'This field';
+        setError(input, `${label} is required.`);
+        if (!first) first = input;
+      }
+      if (first) {
+        first.focus();
         return;
       }
-      if (errEl) {
-        errEl.textContent = 'Could not connect that destination. Please try again.';
-        errEl.classList.remove('hidden');
-      }
-    } finally {
-      setButtonLoading(btn, false);
-    }
-  });
+      const data = new FormData(form);
+      const params = new URLSearchParams({ status: 'added' });
+      const name = String(data.get('name') ?? '').trim();
+      if (name) params.set('name', name);
+      const variant = String(data.get(kind === 'destination' ? 'type' : 'method') ?? '').trim();
+      if (variant) params.set(kind === 'destination' ? 'type' : 'method', variant);
+      window.location.assign(`${registry}?${params.toString()}`);
+    });
+  }
 
-  // BYOS connect: show a spinner while the browser redirects to the provider's consent screen.
-  document.addEventListener('submit', (event) => {
-    const form = (event.target as HTMLElement | null)?.closest('[data-byos-connect]');
-    if (!(form instanceof HTMLFormElement)) return;
-    const btn = form.querySelector('[data-byos-connect-btn]');
-    if (btn instanceof HTMLButtonElement) setButtonLoading(btn, true);
-  });
+  wireRegistryCreateForm();
+  document.addEventListener('astro:page-load', wireRegistryCreateForm);
 </script>

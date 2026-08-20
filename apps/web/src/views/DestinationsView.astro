@@ -1,38 +1,21 @@
 ---
 /**
  * DestinationsView — account-level Destinations registry (skeleton).
+ *
+ * Lives in account settings, not inside a Space: destinations are created once and
+ * reused. List is a dense status table (utility-admin density), with an "in use by N
+ * Spaces" column as the reuse indicator. A broken destination surfaces loudly at the
+ * top with "affects N Spaces". Reach a destination's own management via its row.
  */
 import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
-import Alert from '../components/ui/Alert.astro';
-import EmptyState from '../components/ui/EmptyState.astro';
-import PageHeader from '../components/ui/PageHeader.astro';
 import type { DestinationSummary } from '../stores/destinations';
-import type { DestinationProvider } from '../lib/provider-catalog';
 
 interface Props {
   destinations: DestinationSummary[];
   notice?: string | null;
-  addHref?: string;
-  rowHref?: string | null;
-  providers?: DestinationProvider[];
-  /** Active Space id — needed to swap the primary destination. */
-  spaceId?: string | null;
-  /**
-   * backup_configurations.storage_type — the type backups write to. Unlike
-   * the destinations' own `primary` flags this also covers row-less managed
-   * types (r2_managed), so the provider boxes can mark it Primary.
-   */
-  primaryType?: string | null;
 }
-const { destinations, notice = null, addHref = '/destinations/new', rowHref = null, providers = [], spaceId = null, primaryType = null } = Astro.props;
-
-const isConnectedType = (slug: string) => destinations.some((d) => d.provider === slug);
-
-
-const tierLabel = (t?: string) => (t === 'growth' ? 'Growth+' : t === 'pro' ? 'Pro+' : null);
-const availableProviders = providers.filter((p) => p.availability === 'available');
-const comingSoonProviders = providers.filter((p) => p.availability === 'coming_soon');
+const { destinations, notice = null } = Astro.props;
 
 const kindMeta: Record<string, { icon: string; label: string }> = {
   file: { icon: 'lucide--hard-drive', label: 'File storage' },
@@ -44,156 +27,187 @@ const statusMeta: Record<string, { variant: 'success' | 'warning' | 'error' | 'd
   connecting: { variant: 'warning', label: 'Connecting', dot: true },
   needs_connection: { variant: 'warning', label: 'Needs connection', dot: false },
 };
+/**
+ * A status the map does not know must not take the page down, and must not be GUESSED.
+ *
+ * `statusMeta[x].label` was indexed with no fallback at two sites in this file and two in its twin,
+ * and the comment above names that exact hazard — *"a lookup that returns `undefined` and throws on
+ * `.label`"* — then fixes it for one value by adding a map entry. Four other views in this tree
+ * already write `?? statusMeta.<default>`: `BackupsListView:188`, `RestoreHistoryView:171`,
+ * `ReportsView:133`, `ReportDefinitionView:207`. Sources and Destinations were the only two without.
+ *
+ * The fallback is a NEW neutral entry, not an alias onto an existing status, and that is the whole
+ * point: every entry in this map is success or warning, so borrowing one would either claim a
+ * connection is fine when we do not know, or tell someone to reconnect something that may be
+ * healthy. A registry that meets a state it does not understand says so.
+ */
+const statusUnknown = { variant: 'default' as const, label: 'Unknown', dot: false };
+const metaOf = (s: string) => statusMeta[s] ?? statusUnknown;
 const needsAttention = destinations.filter((d) => d.status === 'reconnect');
+
+/**
+ * A sort key for the Last write column, in MINUTES AGO.
+ *
+ * `DestinationSummary.lastWrite` is a relative LABEL, not a timestamp ("2h ago", and in the failure
+ * case the word "failed") — the type carries no date to sort on. Sorting the label as text would
+ * put "10m ago" before "2h ago" because "1" < "2", which is the opposite of what the column means.
+ * So the duration form is parsed and anything that is not a duration (a status word, never written)
+ * sorts to the end: it has no position on a time axis, and guessing one would invent data.
+ * When the real backend hands this column an ISO stamp, this function is what it replaces.
+ */
+const MINUTES: Record<string, number> = { m: 1, h: 60, d: 1440, w: 10_080 };
+function lastWriteRank(label: string): number {
+  const m = /^(\d+)\s*([mhdw])\b/.exec(label.trim());
+  return m ? Number(m[1]) * MINUTES[m[2]] : Number.MAX_SAFE_INTEGER;
+}
 const affectedSpaces = [...new Set(needsAttention.flatMap((d) => d.inUseBy))];
 const detailHref = (d: DestinationSummary) =>
   d.status === 'needs_connection'
     ? `/destinations/detail?id=${d.id}&new=1&type=${d.provider}`
     : `/destinations/detail?id=${d.id}`;
-
-const registryColumns = 'minmax(0,1.5fr) minmax(0,1fr) 9.5rem 6rem 6rem';
 ---
 
-<div class="mx-auto max-w-5xl space-y-6" data-destinations-root data-space-id={spaceId ?? ''}>
-  <PageHeader title="Destinations" description="Storage and databases your Spaces back up to. Set up once on your account, reuse across Spaces.">
-    <Button slot="actions" href={addHref} variant="primary">Add destination</Button>
-  </PageHeader>
+<div class="mx-auto max-w-5xl space-y-6">
+  {/* The shared `.page-head` (global.css) — identical to SourcesView's, which is the point: these
+      two registries declare themselves one family, so a header that differs between them is a
+      defect by definition. See the note in SourcesView for what the shared class changes. */}
+  <header class="page-head">
+    <div class="page-head-txt">
+      <h1 class="text-title">Destinations</h1>
+      <p class="text-sm text-base-content/60 mt-1">Storage and databases your Spaces back up to. Set up once on your account, reuse across Spaces.</p>
+    </div>
+    {/* D17 — one primary, resolved identically to SourcesView (these two registries are one family;
+        every divergence between them is unintended by definition). The header CTA yields to the
+        empty card's. */}
+    {destinations.length > 0 && <Button href="/destinations/new" variant="primary">Add destination</Button>} {/* ds-ok: page-header CTA is the documented md exception */}
+  </header>
 
   {notice && (
-    <Alert variant="success">{notice}</Alert>
+    <div role="alert" class="alert alert-soft alert-success"><span class="iconify lucide--circle-check size-4" aria-hidden="true"></span><span class="flex-1">{notice}</span><button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Dismiss" onclick="this.closest('.alert').remove()"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button></div>
   )}
 
   {needsAttention.length > 0 && (
-    <Alert variant="warning" title={`${needsAttention.length} destination${needsAttention.length === 1 ? '' : 's'} need${needsAttention.length === 1 ? 's' : ''} reconnecting.`}>
-      Backups to {needsAttention.length === 1 ? 'it are' : 'them are'} paused, affecting {affectedSpaces.length} Space{affectedSpaces.length === 1 ? '' : 's'}.
-    </Alert>
-  )}
-
-  {destinations.length === 0 ? (
-    <EmptyState
-      icon="lucide--hard-drive"
-      title="No destinations yet"
-      description="Add a file store (Google Drive, Dropbox, Box, S3) and optionally a database. You can reuse it across every Space."
-      actionHref={addHref}
-      actionLabel="Add destination"
-    />
-  ) : (
-    <div class="overflow-hidden rounded-box border border-base-300 bg-base-100" role="table">
-      <div class="grid items-center gap-3 border-b border-base-300 bg-base-200/50 px-4 py-3 text-xs font-bold uppercase tracking-wider text-base-content/55" style={`grid-template-columns: ${registryColumns};`} role="row">
-        <span>Name</span><span>Type</span><span>Status</span><span>In use by</span><span class="text-right">Last write</span>
-      </div>
-      {destinations.map((d) => (
-        <a href={rowHref ?? detailHref(d)} class="grid items-center gap-3 border-b border-base-300/50 px-4 py-3 text-sm text-base-content no-underline transition-colors last:border-b-0 hover:bg-base-200/50" style={`grid-template-columns: ${registryColumns};`} role="row">
-          <span class="min-w-0 font-semibold"><span class="inline-flex max-w-full items-center gap-1.5">{d.name}{d.primary && <Badge variant="primary">Primary</Badge>}</span><span class="block truncate text-xs font-normal text-base-content/50">{d.detail}</span></span>
-          <span class="inline-flex min-w-0 items-center gap-1.5 text-base-content/75"><span class={`iconify ${kindMeta[d.kind].icon} text-base opacity-50`} aria-hidden="true"></span>{d.providerLabel}</span>
-          <span><Badge variant={statusMeta[d.status].variant} dot={statusMeta[d.status].dot}>{statusMeta[d.status].label}</Badge></span>
-          <span class="text-base-content/70">{d.inUseBy.length} Space{d.inUseBy.length === 1 ? '' : 's'}</span>
-          <span class="text-right font-mono tabular-nums text-base-content/55">{d.lastWrite ?? '—'}</span>
-        </a>
-      ))}
+    <div role="alert" class="alert alert-soft alert-warning">
+      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+      <span>
+        <b>{needsAttention.length} destination{needsAttention.length === 1 ? '' : 's'} need{needsAttention.length === 1 ? 's' : ''} reconnecting.</b>
+        {' '}Backups to {needsAttention.length === 1 ? 'it are' : 'them are'} paused, affecting {affectedSpaces.length} Space{affectedSpaces.length === 1 ? '' : 's'}.
+      </span>
     </div>
   )}
 
-  {/* connect-local-dest handler lives at the foot of the file */}
-  {providers.length > 0 && (
-    <section class="mt-6">
-      <h2 class="mb-3 text-xs font-bold uppercase tracking-wider text-base-content/50">What you can connect</h2>
-      <div class="grid gap-2 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]">
-        {availableProviders.map((p) => {
-          const label = (
-            <span class="inline-flex min-w-0 items-center gap-1.5 text-sm font-semibold">{p.label}{p.managed && <span class="rounded-full bg-success/15 px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-success">Managed</span>}</span>
-          );
-          if (p.slug === primaryType) {
-            /* The destination backups currently write to. */
-            return (
-              <div class="flex items-center justify-between gap-2 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2.5">
-                {label}
-                <Badge variant="primary">Primary</Badge>
-              </div>
-            );
-          }
-          if (spaceId && (isConnectedType(p.slug) || p.slug === 'r2_managed')) {
-            /* Connected (or row-less managed R2) — the whole box selects it
-               as the primary destination via the data-set-primary handler. */
-            return (
-              <button
-                type="button"
-                class="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5 text-left transition-colors hover:border-primary/50 hover:bg-primary/5"
-                data-set-primary
-                data-provider={p.slug}
-                title={`Make ${p.label} the primary destination`}
-              >
-                {label}
-                <span class="inline-flex shrink-0 items-center gap-1.5">
-                  {isConnectedType(p.slug) && <Badge variant="success" dot>Connected</Badge>}
-                  <span class="text-xs font-semibold text-primary">Set primary</span>
-                </span>
-              </button>
-            );
-          }
-          if (p.slug === 'local_fs') {
-            return (
-              <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5">
-                {label}
-                <Button type="button" variant="tonal" size="sm" data-connect-local-dest>Connect</Button>
-              </div>
-            );
-          }
-          /* Not connected yet — the box starts the connect flow. */
-          return (
-            <a href={`/destinations/new?type=${p.slug}`} class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5 text-inherit no-underline transition-colors hover:border-primary/50 hover:bg-primary/5">
-              {label}
-              <Badge variant="success" dot>Available</Badge>
-            </a>
-          );
-        })}
-        {comingSoonProviders.map((p) => (
-          <div class="flex items-center justify-between gap-2 rounded-lg border border-base-300 bg-base-100 px-3 py-2.5 opacity-70">
-            <span class="inline-flex min-w-0 items-center gap-1.5 text-sm font-semibold">{p.label}{tierLabel(p.tier) && <span class="rounded-full bg-base-content/10 px-1.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide text-base-content/60">{tierLabel(p.tier)}</span>}</span>
-            <Badge variant="default">Coming soon</Badge>
-          </div>
-        ))}
+  {destinations.length === 0 ? (
+    <div class="reg-empty">
+      <span class="iconify lucide--hard-drive reg-empty-ic" aria-hidden="true"></span>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium">No destinations yet</p>
+        <p class="text-xs text-base-content/65 mt-0.5">Add a file store (Google Drive, Dropbox, Box, S3) and optionally a database. You can reuse it across every Space.</p>
       </div>
-    </section>
+      <Button href="/destinations/new" variant="primary" size="sm" class="shrink-0">Add destination</Button>
+    </div>
+  ) : (
+    <div class="tbl-frame reg-tableframe">
+      {/* Frame outside, scroller inside, `data-narrow-pan` on the scroller — identical to
+          SourcesView's, which is the point: these two declare themselves one family, so the
+          structure has to match byte for byte. `panRail` inserts its sticky bar as a SIBLING before
+          the scroller, so with the frame and the scroller as one element the rail painted across
+          the card's top border and its rounded corners (screenshotted at 390).
+          Measured at 390: 629px of table inside 364 of room (Name 145 · Type 119 · Status 109 ·
+          In use by 97 · Last write 110 · chevron 48). See the note on its twin for why no column is
+          cut, why no min-width floor is written, and why this comment sits inside the `<div>`
+          rather than above it (an SSR 500 with an empty body). */}
+      <div class="reg-tablewrap" data-narrow-pan>
+      <table class="table text-sm">
+        {/* Identical header construction to SourcesView — these two registries are parallel objects
+            and must not diverge (catalog `table`, "THE ONE RECIPE"). Last write sorts on the ISO
+            `addedAt`-style ordering the label hides: `lastWrite` is a relative STRING ("2 days
+            ago"), and sorting that lexically would order "10 minutes" before "2 days". Never
+            written sorts last, because "—" is not a date. */}
+        <thead class="tbl-colhead">
+          <tr>
+            <th data-sort-col="0">Name</th><th data-sort-col="1">Type</th><th data-sort-col="2">Status</th><th data-sort-col="3">In use by</th><th class="text-right" data-sort-col="4">Last write</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {destinations.map((d) => (
+            <tr
+              class="reg-row row-clickable"
+              role="button"
+              tabindex="0"
+              data-reg-row
+              data-sort-0={d.name.toLowerCase()}
+              data-sort-1={d.providerLabel.toLowerCase()}
+              data-sort-2={metaOf(d.status).label.toLowerCase()}
+              data-sort-3={d.inUseBy.length}
+              data-sort-4={d.lastWrite ? lastWriteRank(d.lastWrite) : Number.MAX_SAFE_INTEGER}
+              onclick={`window.location='${detailHref(d)}'`}
+            >
+              <td>
+                <div class="flex flex-col">
+                  <span class="font-semibold">{d.name}</span>
+                  <span class="text-xs text-base-content/66 truncate">{d.detail}</span>
+                </div>
+              </td>
+              <td><span class="inline-flex items-center gap-1.5 text-base-content/75"><span class={`iconify ${kindMeta[d.kind].icon} text-base-content/50`} aria-hidden="true"></span>{d.providerLabel}</span></td>
+              <td><Badge variant={metaOf(d.status).variant} dot={metaOf(d.status).dot}>{metaOf(d.status).label}</Badge></td>
+              <td class="text-base-content/70">{d.inUseBy.length} Space{d.inUseBy.length === 1 ? '' : 's'}</td>
+              <td class="text-right tabular-nums text-base-content/64">{d.lastWrite ?? '—'}</td>
+              <td class="text-right"><span class="row-end"><span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span></span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      </div>
+    </div>
   )}
 </div>
 
 <script>
-  import { connectLocalFs } from '../lib/backups/connect-local-fs';
-  import { saveBackupConfig } from '../lib/backups/save-config';
-  import { setButtonLoading } from '../lib/ui';
+  import { wireTableSort } from '../components/schema/tableSort';
 
-  // Connect the dev local-disk destination (managed, no OAuth) for the active
-  // Space, then reload so it shows in the registry. Delegated for ClientRouter.
-  document.addEventListener('click', async (event) => {
-    const btn = (event.target as HTMLElement | null)?.closest('[data-connect-local-dest]');
-    if (!(btn instanceof HTMLButtonElement)) return;
-    setButtonLoading(btn, true);
-    try {
-      const res = await connectLocalFs();
-      if (res.ok) window.location.reload();
-    } finally {
-      setButtonLoading(btn, false);
-    }
-  });
-
-  // Swap the primary destination: PATCH backup-config.storageType to the
-  // clicked row's provider, then reload so the Primary badge moves. The
-  // button sits inside the row's <a> — stop the navigation first.
-  document.addEventListener('click', async (event) => {
-    const btn = (event.target as HTMLElement | null)?.closest('[data-set-primary]');
-    if (!(btn instanceof HTMLButtonElement)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const provider = btn.dataset.provider;
-    const spaceId = document.querySelector<HTMLElement>('[data-destinations-root]')?.dataset.spaceId;
-    if (!provider || !spaceId) return;
-    setButtonLoading(btn, true);
-    try {
-      const res = await saveBackupConfig({ spaceId, storageType: provider });
-      if (res.ok) window.location.reload();
-    } finally {
-      setButtonLoading(btn, false);
-    }
-  });
+  function initRegistrySort() {
+    const table = document.querySelector<HTMLElement>('.reg-tablewrap table');
+    if (!table || table.dataset.regWired) return;
+    table.dataset.regWired = '1';
+    const tbody = table.querySelector<HTMLElement>('tbody');
+    if (!tbody) return;
+    const headers = Array.from(table.querySelectorAll<HTMLElement>('th[data-sort-col]'));
+    const rows = () => Array.from(tbody.querySelectorAll<HTMLElement>('[data-reg-row]'));
+    // Keyboard: Enter/Space opens the destination (the inline onclick navigates). The rest of
+    // `pattern-row-actions` (role=button + tabindex) is on the <tr> in the markup above.
+    // Bound once here, not on every sort: wireTableSort MOVES the same elements, it does not
+    // rebuild them, so the listeners survive a re-order. Identical to SourcesView.
+    rows().forEach((row) => row.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      row.click();
+    }));
+    wireTableSort(table, () => [{ headers, container: tbody, items: rows }], (item, col) => {
+      // Raw attribute, not dataset: `data-sort-0` is not camel-cased to `sort0`.
+      const v = item.getAttribute(`data-sort-${col}`) || '';
+      const n = Number(v);
+      return Number.isFinite(n) && v !== '' ? n : String(v);
+    });
+  }
+  initRegistrySort();
+  document.addEventListener('astro:page-load', initRegistrySort);
 </script>
+
+<style>
+  .reg-empty { display: flex; align-items: center; gap: .75rem; padding: 1rem; border: 1px dashed var(--color-base-300); border-radius: .7rem; background: oklch(from var(--color-base-200) l c h / .35); }
+  /* The type ladder governs text a person READS; this sizes a glyph, and it is the optical match
+     for the 28px airtable.svg the Sources empty state puts in the same slot. */
+  .reg-empty-ic { font-size: 1.4rem; color: oklch(from var(--color-base-content) l c h / .35); flex: none; } /* ds-ok */
+
+  /* Table is the daisyUI primitive; only the bordered wrap + clickable rows are bespoke. */
+  /* Chrome comes from the shared `tbl-frame` on the element (audit X-A): 1px base-300, 12px,
+     base-100. This rule keeps only what is local — the pan, which `tbl-frame` deliberately does not
+     set. Was a hand-written copy at `.7rem`, one of seven spellings of one radius. */
+  .reg-tablewrap { overflow-x: auto; }
+  /* Identical to SourcesView's: the frame keeps the chrome and clips to its own radius, the
+     scroller inside it keeps the pan, so `panRail`'s bar lands inside the card. */
+  .reg-tableframe { overflow: clip; }
+  .reg-tablewrap :is(th, td) { white-space: nowrap; }
+  /* .reg-row hover/cursor from shared .row-clickable */
+  .reg-row :global(.badge) { white-space: nowrap; }
+</style>

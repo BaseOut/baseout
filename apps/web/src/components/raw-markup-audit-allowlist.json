@@ -83,5 +83,14 @@
   ],
   "src/views/SourceDetailView.astro": [
     "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the source detail/health page (Phase 7.2) uses `table` (in-use-by), `alert` (broken-source banner), `badge`, `btn`, and `input` (the sch-slot read/edit box) directly, composed with ui Badge/Button/ConfirmModal, shared tableSort, and lib/registry/removal. Reconnect posts to api/connections/airtable/start; not a single Storybook component."
+  ],
+  "src/views/DestinationsView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the account-level Destinations registry (Phase 7.3 / web-destinations, ui-only@7c7202d7 via ecdde1d5) uses the daisyUI `table` primitive for the dense destination list and soft `alert` rows for the notice + reconnect banner, composed with the ui Badge/Button primitives and the shared tableSort. One family with SourcesView; not a single Storybook component."
+  ],
+  "src/views/DestinationAddView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the add-destination flow (Phase 7.3 / web-destinations) uses `btn` (Back/Cancel/submit) and soft `alert`/`badge` markers directly for the type picker + create form, composed with the ui TextInput primitive. Create posts to the fork contract skeleton (account-level connect lands with shared-destinations); not a single Storybook component."
+  ],
+  "src/views/DestinationDetailView.astro": [
+    "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the destination detail/health page (Phase 7.3 / web-destinations) uses `table` (in-use-by), `alert` (broken/reconnect banner), `badge`, `btn`, and `input` (the sch-slot read/edit box) directly, composed with ui Badge/Button/ConfirmModal, shared tableSort, and lib/registry/removal. BYOS Reconnect posts to api/connections/storage/<kebab>/authorize; not a single Storybook component."
   ]
 }
