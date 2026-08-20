@@ -63,7 +63,7 @@ function lastWriteRank(label: string): number {
 const affectedSpaces = [...new Set(needsAttention.flatMap((d) => d.inUseBy))];
 const detailHref = (d: DestinationSummary) =>
   d.status === 'needs_connection'
-    ? `/destinations/detail?id=${d.id}&new=1&type=${d.provider}`
+    ? `/destinations/detail?id=${d.id}&new=1&type=${d.provider}&name=${encodeURIComponent(d.name)}`
     : `/destinations/detail?id=${d.id}`;
 ---
 

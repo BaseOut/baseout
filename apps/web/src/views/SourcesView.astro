@@ -53,7 +53,7 @@ const needsAttention = sources.filter((s) => s.status === 'reconnect');
 const affectedSpaces = [...new Set(needsAttention.flatMap((s) => s.inUseBy.map((u) => u.spaceName)))];
 const detailHref = (s: SourceSummary) =>
   s.status === 'needs_connection'
-    ? `/sources/detail?id=${s.id}&new=1&method=${s.auth}`
+    ? `/sources/detail?id=${s.id}&new=1&method=${s.auth}&name=${encodeURIComponent(s.name)}`
     : `/sources/detail?id=${s.id}`;
 ---
 

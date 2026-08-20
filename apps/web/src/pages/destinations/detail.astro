@@ -20,14 +20,18 @@ const state =
   orgId && spaceId && db ? await getIntegrationsState(db, orgId, spaceId) : EMPTY_INTEGRATIONS_STATE;
 const summaries = toDestinationSummaries(state, spaceId ?? 'space', spaceName);
 const requestedId = Astro.url.searchParams.get('id');
-const destination =
+const destinationBase =
   summaries.find((d) => d.id === requestedId) ??
   summaries.find((d) => d.primary) ??
   summaries[0] ??
   null;
 
 // No destination connected for this Space → nothing to manage; offer to add one.
-if (!destination) return Astro.redirect('/destinations');
+if (!destinationBase) return Astro.redirect('/destinations');
+
+// S25-F2 — preserve the typed name across needs_connection → Connect round-trips (?name=).
+const nameOverride = Astro.url.searchParams.get('name')?.trim();
+const destination = nameOverride ? { ...destinationBase, name: nameOverride } : destinationBase;
 
 const reconnected = Astro.url.searchParams.get('reconnected') === '1';
 const breadcrumbs = getBreadcrumbs('/destinations');

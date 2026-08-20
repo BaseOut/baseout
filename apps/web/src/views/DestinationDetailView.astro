@@ -84,7 +84,7 @@ const targetLabel = isDatabase ? 'Connection' : 'Writes to';
       {/* Twin of SourceDetailView: real storage authorize (not the fork's ?reconnected=1 fixture link). */}
       {isByos && (needsReconnect || needsConnect) && (
         <form method="POST" action={`/api/connections/storage/${storageRoute}/authorize`} data-astro-reload data-storage-connect>
-          <input type="hidden" name="returnTo" value={`/destinations/detail?id=${d.id}`} />
+          <input type="hidden" name="returnTo" value={`/destinations/detail?id=${d.id}${needsConnect ? `&new=1&type=${d.provider}&name=${encodeURIComponent(d.name)}` : ''}`} />
           <Button type="submit" variant="primary" size="sm" data-storage-connect-btn>{needsConnect ? 'Connect' : 'Reconnect'}</Button>
         </form>
       )}
@@ -258,116 +258,14 @@ const targetLabel = isDatabase ? 'Connection' : 'Writes to';
 </style>
 
 <script>
-  import { wireTableSort } from '../components/schema/tableSort';
+  import { wireRegistryDetail } from '../lib/registry/registryEditMode';
   import { wireRegistryRemove } from '../lib/registry/removal';
   import { setButtonLoading } from '../lib/ui';
 
-  /**
-   * The registry detail page's read/edit mode (audit D12), per catalog `pattern-panel-edit-mode`.
-   * IDENTICAL text in SourceDetailView — it wants to be one module
-   * (`components/ui/registryEditMode.ts`), which is outside this change's file set.
-   *
-   * Contract, straight off the catalog entry: Read is the default mode · Cancel restores the
-   * values as they were on ENTERING edit mode · Escape inside edit mode cancels AND is swallowed,
-   * so it never reaches the page's own Escape · Save is explicit (a mode switch is not a licence
-   * to drop it) · captured rows are never inputs and never greyed.
-   */
-  function wireRegistryDetail(): void {
-    const root = document.querySelector<HTMLElement>('[data-reg-root]');
-    if (!root || root.dataset.regWired === '1') return;
-    root.dataset.regWired = '1';
-
-    const inputs = Array.from(root.querySelectorAll<HTMLInputElement>('[data-reg-input]'));
-    const modeButtons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-reg-mode]'));
-    /** The values as they were when edit mode was entered — what Cancel restores. */
-    let entryValues: string[] = [];
-
-    function paintValue(field: string, value: string): void {
-      const read = root!.querySelector<HTMLElement>(`[data-reg-read="${field}"]`);
-      if (read) read.textContent = value;
-      if (field === 'name') {
-        const title = root!.querySelector<HTMLElement>('[data-reg-title]');
-        if (title) title.textContent = value;
-      }
-    }
-
-    function setMode(mode: 'read' | 'edit'): void {
-      if (root!.dataset.mode === mode) return;
-      if (mode === 'edit') entryValues = inputs.map((i) => i.value);
-      root!.dataset.mode = mode;
-      modeButtons.forEach((b) => {
-        const on = b.dataset.regMode === mode;
-        b.classList.toggle('sch-mode-active', on);
-        b.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
-      if (mode === 'edit') inputs[0]?.focus();
-    }
-
-    modeButtons.forEach((b) =>
-      b.addEventListener('click', () => setMode(b.dataset.regMode === 'edit' ? 'edit' : 'read')),
-    );
-
-    root.querySelector<HTMLButtonElement>('[data-reg-cancel]')?.addEventListener('click', () => {
-      inputs.forEach((input, i) => { input.value = entryValues[i] ?? input.value; });
-      setMode('read');
-    });
-
-    root.querySelector<HTMLButtonElement>('[data-reg-save]')?.addEventListener('click', () => {
-      // No backend in this harness: Save commits into the page it edited, which is the honest
-      // moment for the title to change. Refreshing resets to the fixture, as everywhere else.
-      inputs.forEach((input) => paintValue(input.dataset.regInput ?? '', input.value));
-      setMode('read');
-    });
-
-    root.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || root!.dataset.mode !== 'edit') return;
-      e.preventDefault();
-      e.stopPropagation();
-      inputs.forEach((input, i) => { input.value = entryValues[i] ?? input.value; });
-      setMode('read');
-    });
-
-    const refresh = root.querySelector<HTMLButtonElement>('[data-refresh-bases]');
-    const note = root.querySelector<HTMLElement>('[data-refresh-note]');
-    refresh?.addEventListener('click', () => {
-      // Harness: there is nothing to call; fake the re-check the real page will do.
-      if (!note) return;
-      note.textContent = 'Re-checked the connection — reachable, credentials still valid.';
-      note.classList.remove('hidden');
-    });
-
-    // Keyboard for the "In use by" rows — Enter/Space opens the Space (the inline onclick
-    // navigates). `pattern-row-actions` wants the whole anatomy; role=button + tabindex are on
-    // the <tr>. Same wiring as SourcesView / BackupsListView.
-    root.querySelectorAll<HTMLElement>('.reg-userow[role="button"]').forEach((row) => {
-      row.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        e.preventDefault();
-        row.click();
-      });
-    });
-
-    // Click-sort on the "In use by" table — the same tableSort.ts the two registry LISTS use, so
-    // the caret and the keyboard behaviour are the one recipe rather than a third. Bound once,
-    // not per sort: wireTableSort MOVES the same <tr>s, it does not rebuild them, so the keydown
-    // listeners above survive a re-order.
-    const useTable = root.querySelector<HTMLElement>('.reg-usewrap table');
-    const useBody = useTable?.querySelector<HTMLElement>('tbody') ?? null;
-    if (useTable && useBody) {
-      const headers = Array.from(useTable.querySelectorAll<HTMLElement>('th[data-sort-col]'));
-      const items = () => Array.from(useBody.querySelectorAll<HTMLElement>('tr'));
-      wireTableSort(useTable, () => [{ headers, container: useBody, items }], (item, col) => {
-        // Read the raw attribute: `data-sort-0` does NOT map to dataset.sort0 (a digit after the
-        // hyphen isn't camel-cased), so dataset access would silently return undefined and no-op.
-        const v = item.getAttribute(`data-sort-${col}`) || '';
-        const n = Number(v);
-        return Number.isFinite(n) && v !== '' ? n : String(v);
-      });
-    }
-  }
-
-  wireRegistryDetail();
-  document.addEventListener('astro:page-load', wireRegistryDetail);
+  const wireDetail = () =>
+    wireRegistryDetail('Re-checked the connection — reachable, credentials still valid.');
+  wireDetail();
+  document.addEventListener('astro:page-load', wireDetail);
 
   // D06 — Remove confirms first. Shared with the other registry page (lib/registry/removal.ts).
   const wireRemove = () => wireRegistryRemove('destination');
