@@ -75,8 +75,8 @@
 | **9** | Schema Automations / Interfaces | Engine manual-CRUD + web tabs | **DONE** on this branch — engine `13b51873`/`33c7e667` + web proxies `6e4a2712` + UI tabs (this commit). Capture funnel (`server-automations-interfaces-docs`) still deferred. |
 | **10** | Support portal | `apps/support` from ui-only | **SKIP FOR NOW** (Q#6 — support channel not decided; revisit later) |
 | **11** | Billing / usage | Phase 1 portal rows now; usage/meters from pricing guide + honest gates (no fork Usage view) | **UNBLOCKED 2026-08-20** — build from PRD/`pricing-guide` / placeholders; do not wait on Q#4 |
-| **12** | Design-audit convergence | 41-item ship order (`web-design-audit-convergence`) | **NEXT** — promotions 4–9 landed; holdup was sequencing only |
-| **13** | Schema re-architecture | Full fork Schema component set (~24 components + EntityPanel) | **UNBLOCKED 2026-08-20** — prior deferral was risk/size, not a missing dependency |
+| **12** | Design-audit convergence | 41-item ship order (`web-design-audit-convergence`) | **IN PROGRESS** — census done (`census.md`); item 5 already on branch; closed this pass: **3, 4, 10b, 15b, 36(clear-filters half)**. ~28 ship items remain. Phase 13 can start in parallel. |
+| **13** | Schema re-architecture | Full fork Schema component set (~24 components + EntityPanel) | **UNBLOCKED 2026-08-20** — may start in parallel with Phase 12 remainder |
 
 ### Slice A detail (first code after approval)
 
