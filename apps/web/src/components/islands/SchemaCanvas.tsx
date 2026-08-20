@@ -19,7 +19,20 @@ import {
 import '@xyflow/react/dist/style.css';
 import dagre from '@dagrejs/dagre';
 import { AIRTABLE_FIELD_ICONS, airtableIconKey, fieldTypeLabel } from '../../lib/schema-docs/airtable-field-icons';
+import {
+  adaptEngineRelationships,
+  type EngineDerived,
+  type EngineSynced,
+  type RelEndpoint,
+  type RelType,
+  type SchemaRelationship,
+} from '../../lib/schema-docs/adapt-relationships';
 import FieldsFilter from './FieldsFilter';
+import { groupByWorkspace, UNKNOWN_WORKSPACE_ID } from '../schema/workspaceGroups';
+import { AIRTABLE_GLYPH } from '../schema/airtableGlyph';
+
+export type { SchemaRelationship };
+export { adaptEngineRelationships };
 
 /**
  * SchemaCanvas — the Visualize-tab ER diagram (React Flow island).
@@ -148,8 +161,10 @@ export interface SchemaTable {
 }
 interface Props {
   tables: SchemaTable[];
-  /** Bases in the Space (id + name) — labels the Display filter's Base section. */
-  bases?: { id: string; name: string }[];
+  /** Bases in the Space (id + name) — labels the Display filter's Base section. Optional
+   *  `workspaceId`/`workspaceName` (workspace-visual-grouping) drives the "Group by workspace"
+   *  toggle in Data mode; a base without either falls into a single "Workspace unknown" cluster. */
+  bases?: { id: string; name: string; workspaceId?: string; workspaceName?: string }[];
   /** AI capability for the Generate-description action: ready (Pro+, has credits),
    *  locked (below Pro+ → upsell), no-credits (Pro+ but out of credits). Harness: ?ai=. */
   genState?: 'ready' | 'locked' | 'no-credits';
@@ -168,6 +183,8 @@ interface Props {
   interfaces?: AppInterface[];
   /** Embedded, scoped, read-only mode (Docs mini-diagrams): hide the toolbar + minimap. */
   embed?: boolean;
+  /** Override for the initial "Group by workspace" state (e.g. harness `?wsgroup=1`). */
+  wsGroupDefault?: boolean;
 }
 
 type TableNodeData = {
@@ -182,6 +199,15 @@ const HEAD_H = 46;
 const ROW_H = 30;
 const FOOT_H = 26;
 const NODE_FIELD_CAP = 14; // show every field per node up to this; collapse the rest into "+N more"
+
+// Group-by-workspace (workspace-visual-grouping, CANVAS half) — a collapsed workspace band
+// folds to this small "puck" node; its size is unrelated to table nodes so it always reads
+// as a summary, never as "one more table".
+const WS_PUCK_W = 190;
+const WS_PUCK_H = 56;
+// localStorage key for the toolbar toggle — mirrors the `sch-<tab>-<thing>` convention used
+// by TablePager / QuickAskDock elsewhere in Schema ("vis" = the Visualize tab).
+const WS_GROUP_STORAGE_KEY = 'sch-vis-wsgroup';
 
 const HEALTH: Record<NonNullable<SchemaTable['health']>, string> = {
   green: 'var(--color-success)',
@@ -244,17 +270,8 @@ function nodeHeight(rows: number, hasFoot: boolean): number {
 
 // ── Relationships mode (Visualize) — the curated SchemaRelationship graph ──────
 // Table-level nodes + typed relationship edges. Distinct from the field-derived ER
-// edges above AND from the Relationships-tab table. Types mirror
-// SchemaRelationships.astro; the array is passed in as the `relationships` prop.
-type RelType = 'linkedRecords' | 'formulas' | 'rollups' | 'lookups' | 'lastModified' | 'syncedViews';
-interface RelEndpoint { id: string; name: string; kind: 'table' | 'field'; fieldType?: string; tableName?: string }
-interface RelLink { from: RelEndpoint; to: RelEndpoint; removed?: boolean; firstSeen?: string; removedAt?: string; note?: string }
-export interface SchemaRelationship {
-  id: string; type: RelType; baseId: string; baseName: string;
-  a: RelEndpoint; b: RelEndpoint; cardinality?: string; direction?: 'one' | 'two';
-  inferred?: boolean; validity: 'valid' | 'invalid'; hasRemovedHistory?: boolean;
-  provenance?: string; links?: RelLink[];
-}
+// edges above AND from the Relationships-tab table. SchemaRelationship + adaptEngineRelationships
+// live in lib/schema-docs/adapt-relationships (shared with the Relationships tab).
 const REL_TYPE_META: Record<RelType, { label: string; color: string; dashed: boolean }> = {
   linkedRecords: { label: 'Linked records', color: 'var(--color-base-content)', dashed: false },
   formulas: { label: 'Formulas', color: '#2563eb', dashed: true }, // ds-ok: ER-diagram edge/legend palette (6 distinguishable hues, no 1:1 theme token)
@@ -270,66 +287,10 @@ const REL_NODE_H = 44;
 // every render and re-fire the re-layout effect (React Flow "max update depth").
 const EMPTY_REL: SchemaRelationship[] = [];
 
-// Adapt the engine relationships payload (the guarded `/api/spaces/:id/relationships`
-// proxy — `derived` + `syncedViews`, same shape the Relationships tab consumes) to the
-// canvas's SchemaRelationship shape. Derived rows carry participant refs; the first two
-// become the drawable endpoints (rows with fewer can't be drawn as a cross-table edge).
-type EngineRef = { tableId?: string; fieldId?: string; name: string; removed: boolean };
-type EngineDerived = {
-  id: string;
-  type: 'linkedRecords' | 'formulas' | 'rollups' | 'lookups' | 'lastModified';
-  label: string;
-  refs: EngineRef[];
-  hasRemovedHistory: boolean;
-  valid: boolean;
-};
-type EngineSynced = {
-  id: string;
-  sourceTableId: string;
-  sourceTableName: string;
-  destTableId: string;
-  destTableName: string;
-  status: string;
-  origin: string;
-  inferred: boolean;
-  matchScore: number | null;
-};
-export function adaptEngineRelationships(
-  baseId: string,
-  baseName: string,
-  payload: { derived: EngineDerived[]; syncedViews: EngineSynced[] },
-): SchemaRelationship[] {
-  const out: SchemaRelationship[] = [];
-  const ep = (r: EngineRef): RelEndpoint => ({
-    id: r.tableId ?? r.fieldId ?? r.name,
-    name: r.name,
-    kind: r.tableId ? 'table' : 'field',
-  });
-  for (const d of payload.derived) {
-    const [a, b] = d.refs;
-    if (!a || !b) continue;
-    out.push({
-      id: d.id, type: d.type, baseId, baseName,
-      a: ep(a), b: ep(b),
-      validity: d.valid ? 'valid' : 'invalid',
-      hasRemovedHistory: d.hasRemovedHistory,
-    });
-  }
-  for (const s of payload.syncedViews) {
-    out.push({
-      id: s.id, type: 'syncedViews', baseId, baseName,
-      a: { id: s.sourceTableId, name: s.sourceTableName, kind: 'table' },
-      b: { id: s.destTableId, name: s.destTableName, kind: 'table' },
-      inferred: s.inferred, validity: 'valid',
-    });
-  }
-  return out;
-}
-
 // ── App-layer mode (Visualize) — Automations & Interfaces over the table/field substrate ──
 // Epic 4 / openspec visualize-automations-interfaces. Types mirror SchemaAutomations.astro /
-// SchemaInterfaces.astro (declared locally, like SchemaRelationship, so the React island never
-// imports a .astro). Structural typing accepts the wider .astro types SchemaView passes in.
+// SchemaInterfaces.astro (declared locally so the React island never imports a .astro).
+// Structural typing accepts the wider .astro types SchemaView passes in.
 type AppTag = { entityId: string; source?: 'auto' | 'manual' };
 export interface AppAutomation {
   id: string; name: string; group?: string; triggerType?: string;
@@ -511,11 +472,83 @@ function TableNode({ data, selected }: NodeProps<Node<TableNodeData>>) {
   );
 }
 
-// B1 — a labelled background container behind the tables of one base (dbdiagram "Table Groups").
-function BaseGroupNode({ data }: NodeProps<Node<{ name: string; w: number; h: number }>>) {
+// B1 — a labelled background container behind the tables of one base (dbdiagram "Table Groups"),
+// or a whole workspace band when "Group by workspace" is on. Collapsible when onToggleCollapse
+// is provided — caret folds the band to a WsPuckNode.
+type BaseGroupData = {
+  name: string;
+  w: number;
+  h: number;
+  unlabeled?: boolean;
+  wsKey?: string;
+  baseCount?: number;
+  /** 'workspace' when this container wraps a whole workspace (Group by workspace), 'base'
+   *  when it wraps a single base's tables (Group by base or ungrouped) — drives the
+   *  collapse caret's tooltip/aria copy only; the caret itself is gated on onToggleCollapse. */
+  kind?: 'base' | 'workspace';
+  onToggleCollapse?: () => void;
+};
+function BaseGroupNode({ data }: NodeProps<Node<BaseGroupData>>) {
+  // Any collapsible container — a base OR a workspace band — gets the caret + the invisible
+  // in/out handles the aggregated cross-group edges dock on when its counterpart collapses.
+  const collapsible = data.onToggleCollapse != null;
+  const kind = data.kind ?? (data.wsKey != null ? 'workspace' : 'base');
   return (
-    <div style={{ width: data.w, height: data.h, border: '1px dashed var(--color-base-300)', borderRadius: 14, background: 'oklch(from var(--color-base-200) l c h / .22)', pointerEvents: 'none', position: 'relative' }}>
-      <span style={{ position: 'absolute', top: 5, left: 13, fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-base-content)', opacity: 0.5 }}>{data.name}</span>
+    <div style={{ width: data.w, height: data.h, border: '1px dashed var(--color-base-300)', borderRadius: 'var(--r-12)', background: 'oklch(from var(--color-base-200) l c h / .16)', pointerEvents: 'none', position: 'relative' }}>
+      {collapsible && (
+        <>
+          <Handle id="in" type="target" position={Position.Top} style={{ background: 'transparent', border: 'none', width: 1, height: 1, top: 0 }} />
+          <Handle id="out" type="source" position={Position.Bottom} style={{ background: 'transparent', border: 'none', width: 1, height: 1, bottom: 0 }} />
+        </>
+      )}
+      {!data.unlabeled && (
+        <span style={{ position: 'absolute', top: 5, left: 13, fontSize: 11, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--color-base-content)', opacity: 0.5 }}>{data.name}</span>
+      )}
+      {collapsible && (
+        <button
+          type="button"
+          onClick={data.onToggleCollapse}
+          aria-label={`Collapse ${data.unlabeled ? `No ${kind}` : data.name}`}
+          className="tooltip tooltip-bottom"
+          data-tip={`Collapse ${kind}`}
+          style={{ position: 'absolute', top: 4, right: 10, pointerEvents: 'auto', background: 'var(--color-base-100)', border: '1px solid var(--color-base-300)', borderRadius: 999, width: 20, height: 20, display: 'grid', placeItems: 'center', cursor: 'pointer', opacity: 0.7 }}
+        >
+          {/* Diagonal-in / diagonal-out = the collapse/expand language elsewhere in the app. */}
+          <span aria-hidden className="iconify lucide--minimize-2 size-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+// The collapsed-workspace summary node — a compact "puck" with the workspace name + a
+// base-count badge; its expand caret reopens the full band. Cross-workspace aggregated
+// edges dock on the same generic in/out handles the (uncollapsed) workspace container uses,
+// so re-anchoring on collapse/expand is just a node-id swap, not a special edge case.
+// `kind` picks the right noun for the count badge: a collapsed BASE puck counts its tables,
+// a collapsed WORKSPACE puck counts its bases.
+type WsPuckData = { name: string; count: number; kind: 'base' | 'workspace'; onExpand?: () => void };
+function WsPuckNode({ data }: NodeProps<Node<WsPuckData>>) {
+  const noun = data.kind === 'base' ? 'table' : 'base';
+  return (
+    <div style={{ width: WS_PUCK_W, height: WS_PUCK_H, position: 'relative', display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', background: 'var(--color-base-100)', border: '1px dashed var(--color-base-300)', borderRadius: 'var(--r-12)', boxShadow: '0 1px 2px oklch(0 0 0 / 0.05)' }}>
+      <Handle id="in" type="target" position={Position.Top} style={{ background: 'transparent', border: 'none', width: 1, height: 1, top: 0 }} />
+      <Handle id="out" type="source" position={Position.Bottom} style={{ background: 'transparent', border: 'none', width: 1, height: 1, bottom: 0 }} />
+      <span aria-hidden className="iconify lucide--layers size-4" style={{ opacity: 0.55, flex: 'none', color: 'var(--color-base-content)' }} />
+      <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 640, fontSize: 13, color: 'var(--color-base-content)' }}>{data.name}</span>
+      <span className="badge badge-sm badge-ghost" style={{ flex: 'none' }}>{data.count} {noun}{data.count === 1 ? '' : 's'}</span>
+      {data.onExpand && (
+        <button
+          type="button"
+          onClick={data.onExpand}
+          aria-label={`Expand ${data.name}`}
+          className="tooltip tooltip-top"
+          data-tip={`Expand ${data.kind}`}
+          style={{ position: 'absolute', top: -8, right: -8, background: 'var(--color-base-100)', border: '1px solid var(--color-base-300)', borderRadius: 999, width: 20, height: 20, display: 'grid', placeItems: 'center', cursor: 'pointer' }}
+        >
+          <span aria-hidden className="iconify lucide--maximize-2 size-3" />
+        </button>
+      )}
     </div>
   );
 }
@@ -577,7 +610,7 @@ function AppFieldNode({ data, selected }: NodeProps<Node<AppFieldData>>) {
   );
 }
 
-const nodeTypes = { table: TableNode, baseGroup: BaseGroupNode, relTable: RelTableNode, appEntity: AppEntityNode, appField: AppFieldNode };
+const nodeTypes = { table: TableNode, baseGroup: BaseGroupNode, wsPuck: WsPuckNode, relTable: RelTableNode, appEntity: AppEntityNode, appField: AppFieldNode };
 
 // Shared canvas legend — one card, bottom-left, non-interactive. Keys the colour language of
 // the current Visualize mode (the same swatch colour used on nodes/edges), so every mode reads
@@ -629,7 +662,20 @@ function nodeFields(t: SchemaTable, hiddenTypes?: Set<string>, hiddenFields?: Se
 
 function layout(
   tables: SchemaTable[],
-  opts?: { hiddenTypes?: Set<string>; hiddenFields?: Set<string>; showRelationships?: boolean; hiddenRel?: Set<RelKind>; bases?: { id: string; name: string }[] },
+  opts?: {
+    hiddenTypes?: Set<string>;
+    hiddenFields?: Set<string>;
+    showRelationships?: boolean;
+    hiddenRel?: Set<RelKind>;
+    bases?: { id: string; name: string; workspaceId?: string; workspaceName?: string }[];
+    /** "Group by workspace" (workspace-visual-grouping, CANVAS half) — OFF by default. When
+     *  false the function is byte-identical to the pre-existing per-base grouping. */
+    groupByWorkspace?: boolean;
+    /** Collapsed GROUP keys, folded to a puck — a workspace id when groupByWorkspace is on,
+     *  a base id otherwise (a base is its own collapsible unit in Group-by-base mode). */
+    collapsedWorkspaces?: Set<string>;
+    onToggleWorkspace?: (groupKey: string) => void;
+  },
 ): { nodes: Node[]; edges: Edge[] } {
   const hiddenTypes = opts?.hiddenTypes;
   const hiddenFields = opts?.hiddenFields;
@@ -703,11 +749,29 @@ function layout(
   const present = Array.from(new Set(tables.map(baseOf)));
   const multi = present.length > 1;
 
+  // "Group by workspace" — GENERALIZES the grouping key from baseId to workspaceId. Only
+  // meaningful when there is more than one base to group in the first place; a single base
+  // never groups by anything, on or off. Reuses the same `groupByWorkspace`/`UNKNOWN_WORKSPACE_ID`
+  // helper the FacetFilter "Workspace unknown" grouping uses, so a base with no workspace lands
+  // in the exact same bucket everywhere in the app.
+  const groupWs = !!opts?.groupByWorkspace && multi;
+  const collapsedWs = opts?.collapsedWorkspaces ?? new Set<string>();
+  const onToggleWs = opts?.onToggleWorkspace;
+  const wsByBaseId = new Map<string, { id: string; name: string; unknown: boolean }>();
+  if (groupWs && bs) {
+    for (const g of groupByWorkspace(bs)) for (const b of g.items) wsByBaseId.set(b.id, { id: g.id, name: g.name, unknown: g.unknown });
+  }
+  const wsKeyOf = (bid: string) => (groupWs ? (wsByBaseId.get(bid)?.id ?? UNKNOWN_WORKSPACE_ID) : bid);
+
   // Final node-centre positions. Single base → one dagre run (unchanged). Multi-base → lay each
-  // base out on its own, then stack the bases into DISJOINT vertical bands separated by GROUP_GAP,
-  // so the labelled group boxes are always clearly separate rectangles (never overlap or touch).
+  // base out on its own, then stack the bases into DISJOINT vertical bands. Grouping OFF (or a
+  // single base): a GROUP_GAP separates every base band, exactly as before. Grouping ON: a base
+  // is separated from the next one by the smaller BASE_GAP when they share a workspace (so its
+  // sub-cluster reads as "inside" the workspace band) and by the larger WS_GAP when the
+  // workspace changes — the two gap sizes are what makes one wrapping box read as a single
+  // workspace instead of N adjacent base boxes.
   const pos = new Map<string, { x: number; y: number }>();
-  const PAD = 26, LABEL = 22, GROUP_GAP = 72;
+  const PAD = 26, LABEL = 22, GROUP_GAP = 72, BASE_GAP = 40, WS_GAP = 96;
   const groupNodes: Node[] = [];
 
   if (!multi) {
@@ -715,9 +779,51 @@ function layout(
     for (const t of tables) { const p = g.node(t.id); pos.set(t.id, { x: p.x, y: p.y }); }
   } else {
     let cursorY = 0; // running top of the next base band
+    let prevWsKey: string | null = null;
+    let wsAcc: { minX: number; minY: number; maxX: number; maxY: number; count: number; name: string; unknown: boolean } | null = null;
+    const flushWs = () => {
+      if (!wsAcc || prevWsKey == null) return;
+      const collapsed = collapsedWs.has(prevWsKey);
+      const key = prevWsKey;
+      if (collapsed) {
+        const cx = (wsAcc.minX + wsAcc.maxX) / 2, cy = (wsAcc.minY + wsAcc.maxY) / 2;
+        groupNodes.push({
+          // `grp-${key}` — same id family as a base container/puck (see below) so the
+          // cross-group edge aggregation can anchor on either kind of collapsed unit.
+          id: `grp-${key}`, type: 'wsPuck', draggable: false, selectable: false, zIndex: 5,
+          position: { x: cx - WS_PUCK_W / 2, y: cy - WS_PUCK_H / 2 },
+          data: { name: wsAcc.name, count: wsAcc.count, kind: 'workspace', onExpand: onToggleWs ? () => onToggleWs(key) : undefined },
+        });
+      } else {
+        groupNodes.push({
+          id: `grp-${key}`, type: 'baseGroup', draggable: false, selectable: false, zIndex: -1,
+          position: { x: wsAcc.minX, y: wsAcc.minY },
+          data: { name: wsAcc.name, w: wsAcc.maxX - wsAcc.minX, h: wsAcc.maxY - wsAcc.minY, unlabeled: wsAcc.unknown, wsKey: key, baseCount: wsAcc.count, kind: 'workspace', onToggleCollapse: onToggleWs ? () => onToggleWs(key) : undefined },
+        });
+      }
+    };
+
     for (const bid of present) {
       const bt = tables.filter((t) => baseOf(t) === bid && meta.has(t.id));
       if (!bt.length) continue;
+      const curWsKey = wsKeyOf(bid);
+      if (prevWsKey !== null) cursorY += groupWs && curWsKey === prevWsKey ? BASE_GAP : (groupWs ? WS_GAP : GROUP_GAP);
+      if (groupWs && curWsKey !== prevWsKey) flushWs();
+
+      // Group by Base (or ungrouped): this base itself is folded to a puck. Skip laying out
+      // its tables entirely — collapsed content is never given a position — and advance the
+      // cursor by the puck height instead of a table-band height.
+      if (!groupWs && collapsedWs.has(bid)) {
+        groupNodes.push({
+          id: `grp-${bid}`, type: 'wsPuck', draggable: false, selectable: false, zIndex: 5,
+          position: { x: 0, y: cursorY },
+          data: { name: bs?.find((b) => b.id === bid)?.name ?? bid, count: bt.length, kind: 'base', onExpand: onToggleWs ? () => onToggleWs(bid) : undefined },
+        });
+        prevWsKey = curWsKey;
+        cursorY += WS_PUCK_H;
+        continue;
+      }
+
       const g = buildGraph(bt);
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       for (const t of bt) {
@@ -729,27 +835,93 @@ function layout(
       const offY = cursorY - minY;   // place this base's content top at cursorY
       for (const t of bt) { const p = g.node(t.id); pos.set(t.id, { x: p.x + offX, y: p.y + offY }); }
       const wBand = maxX - minX, hBand = maxY - minY;
-      groupNodes.push({
-        id: `grp-${bid}`, type: 'baseGroup', draggable: false, selectable: false, zIndex: -1,
-        position: { x: -PAD, y: cursorY - PAD - LABEL },
-        data: { name: bs?.find((b) => b.id === bid)?.name ?? bid, w: wBand + PAD * 2, h: hBand + PAD * 2 + LABEL },
-      });
-      cursorY += hBand + PAD * 2 + LABEL + GROUP_GAP; // next base clears this box + a visible gap
+      const boxX = -PAD, boxY = cursorY - PAD - LABEL, boxW = wBand + PAD * 2, boxH = hBand + PAD * 2 + LABEL;
+
+      if (!groupWs) {
+        groupNodes.push({
+          id: `grp-${bid}`, type: 'baseGroup', draggable: false, selectable: false, zIndex: -1,
+          position: { x: boxX, y: boxY },
+          data: { name: bs?.find((b) => b.id === bid)?.name ?? bid, w: boxW, h: boxH, kind: 'base', onToggleCollapse: onToggleWs ? () => onToggleWs(bid) : undefined },
+        });
+      } else if (curWsKey !== prevWsKey || !wsAcc) {
+        const ws = wsByBaseId.get(bid);
+        wsAcc = { minX: boxX, minY: boxY, maxX: boxX + boxW, maxY: boxY + boxH, count: 1, name: ws?.name ?? 'No workspace', unknown: ws?.unknown ?? true };
+      } else {
+        wsAcc.minX = Math.min(wsAcc.minX, boxX); wsAcc.minY = Math.min(wsAcc.minY, boxY);
+        wsAcc.maxX = Math.max(wsAcc.maxX, boxX + boxW); wsAcc.maxY = Math.max(wsAcc.maxY, boxY + boxH);
+        wsAcc.count += 1;
+      }
+      prevWsKey = curWsKey;
+      cursorY += hBand + PAD * 2 + LABEL; // top of the NEXT base/workspace pre-gap (added above)
     }
+    if (groupWs) flushWs();
   }
 
-  const nodes: Node<TableNodeData>[] = tables.map((t) => {
-    const m = meta.get(t.id)!;
-    const p = pos.get(t.id) ?? { x: 0, y: 0 };
-    return {
-      id: t.id,
-      type: 'table',
-      position: { x: p.x - NODE_W / 2, y: p.y - m.h / 2 },
-      data: { table: t, rows: m.rows, hiddenCount: m.hidden },
-    };
-  });
+  const nodes: Node<TableNodeData>[] = tables
+    // `collapsedWs` holds collapsed GROUP keys — a workspace id in Group-by-workspace mode,
+    // a base id otherwise — so this hides a collapsed group's tables in EITHER mode.
+    .filter((t) => !collapsedWs.has(wsKeyOf(baseOf(t))))
+    .map((t) => {
+      const m = meta.get(t.id)!;
+      const p = pos.get(t.id) ?? { x: 0, y: 0 };
+      return {
+        id: t.id,
+        type: 'table' as const,
+        position: { x: p.x - NODE_W / 2, y: p.y - m.h / 2 },
+        data: { table: t, rows: m.rows, hiddenCount: m.hidden },
+      };
+    });
 
-  return { nodes: [...groupNodes, ...nodes], edges };
+  // Cross-workspace edges: draw each connection INDIVIDUALLY (table→table) when BOTH its
+  // workspaces are EXPANDED — seeing which tables link across workspaces is the whole point.
+  // Aggregation is a FALLBACK only for a COLLAPSED workspace: a puck hides the tables an
+  // individual edge would dock on, so those edges collapse into ONE labelled edge per unordered
+  // workspace pair, docked on the container/puck. Within-workspace edges render as before
+  // (and are dropped for a collapsed workspace, which shows no internals).
+  let finalEdges: Edge[] = edges;
+  if (multi && (groupWs || collapsedWs.size > 0)) {
+    const tableWsId = new Map<string, string>();
+    for (const t of tables) if (meta.has(t.id)) tableWsId.set(t.id, wsKeyOf(baseOf(t)));
+    const within: Edge[] = [];
+    const crossCount = new Map<string, number>();
+    const crossPair = new Map<string, [string, string]>();
+    for (const e of edges) {
+      const sw = tableWsId.get(e.source as string);
+      const tw = tableWsId.get(e.target as string);
+      if (!sw || !tw) { within.push(e); continue; }
+      if (sw === tw) {
+        if (!collapsedWs.has(sw)) within.push(e); // a collapsed workspace shows no internal edges
+        continue;
+      }
+      // Both workspaces expanded → keep the individual table→table edge.
+      if (!collapsedWs.has(sw) && !collapsedWs.has(tw)) { within.push(e); continue; }
+      // A workspace is collapsed → aggregate this pair to the container/puck.
+      const key = [sw, tw].sort().join('~~');
+      crossCount.set(key, (crossCount.get(key) ?? 0) + 1);
+      if (!crossPair.has(key)) crossPair.set(key, sw < tw ? [sw, tw] : [tw, sw]);
+    }
+    const aggEdges: Edge[] = [];
+    for (const [key, count] of crossCount) {
+      const [a, b] = crossPair.get(key)!;
+      aggEdges.push({
+        id: `ws-agg-${key}`,
+        source: `grp-${a}`, sourceHandle: 'out',
+        target: `grp-${b}`, targetHandle: 'in',
+        type: 'smoothstep',
+        interactionWidth: 24,
+        label: String(count),
+        labelStyle: { fontSize: 10.5, fontWeight: 700, fill: 'var(--color-base-content)' },
+        labelBgStyle: { fill: 'var(--color-base-100)', fillOpacity: 0.92 },
+        labelBgPadding: [5, 3] as [number, number],
+        labelBgBorderRadius: 999,
+        style: { stroke: 'var(--color-base-content)', strokeOpacity: 0.4, strokeWidth: 2 },
+        markerEnd: { type: 'arrowclosed' as any, color: 'var(--color-base-content)', width: 14, height: 14 },
+      });
+    }
+    finalEdges = [...within, ...aggEdges];
+  }
+
+  return { nodes: [...groupNodes, ...nodes], edges: finalEdges };
 }
 
 // Relationships mode layout — table-level nodes + typed relationship edges from the
@@ -960,21 +1132,45 @@ function appLayout(
   return { nodes, edges: liveEdges };
 }
 
-function Canvas({ tables, bases, baseHealth, spaceId, genState = 'ready', embed = false, relationships = EMPTY_REL, automations = EMPTY_AUTO, interfaces = EMPTY_IF }: Props) {
-  const initial = useMemo(() => layout(tables, { bases }), [tables, bases]);
+function Canvas({ tables, bases, baseHealth, spaceId, genState = 'ready', embed = false, relationships = EMPTY_REL, automations = EMPTY_AUTO, interfaces = EMPTY_IF, wsGroupDefault }: Props) {
+  // "Group by workspace" (workspace-visual-grouping, CANVAS half) — OFF by default, a per-user
+  // preference persisted in localStorage. `wsGroupDefault` overrides the stored preference.
+  const [groupByWs, setGroupByWs] = useState<boolean>(() => {
+    if (typeof wsGroupDefault === 'boolean') return wsGroupDefault;
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return false;
+    try { return localStorage.getItem(WS_GROUP_STORAGE_KEY) === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof localStorage === 'undefined') return;
+    try { localStorage.setItem(WS_GROUP_STORAGE_KEY, groupByWs ? '1' : '0'); } catch { /* best-effort — a preference, not correctness-critical */ }
+  }, [groupByWs]);
+  // Per-GROUP collapse (the "puck" affordance) — keyed by the current grouping unit (a
+  // workspace id when Group by workspace is on, a base id otherwise). Session-only.
+  const [collapsedWs, setCollapsedWs] = useState<Set<string>>(() => new Set());
+  const toggleWsCollapse = useCallback((id: string) => {
+    setCollapsedWs((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }, []);
+
+  const initial = useMemo(
+    () => layout(tables, { bases, groupByWorkspace: groupByWs, collapsedWorkspaces: collapsedWs, onToggleWorkspace: toggleWsCollapse }),
+    [tables, bases, groupByWs, collapsedWs, toggleWsCollapse],
+  );
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
   const rf = useReactFlow();
 
   // Display filter — a layers menu (NOT a single-select): show/hide bases, tables, field
   // types, and the relationship edges. Replaces the old base dropdown (founder request).
-  const baseList = useMemo(() => {
+  const baseList = useMemo((): { id: string; name: string; workspaceId?: string; workspaceName?: string }[] => {
     if (bases && bases.length) return bases;
     const ids = new Set<string>();
     tables.forEach((t) => t.baseId && ids.add(t.baseId));
     return Array.from(ids, (id) => ({ id, name: id }));
   }, [bases, tables]);
   const multiBase = baseList.length > 1;
+  // The toggle only earns its place when there is more than one workspace to group by.
+  const wsGroupCount = useMemo(() => (multiBase ? groupByWorkspace(baseList).length : 1), [baseList, multiBase]);
+  const showWsToggle = wsGroupCount > 1;
   const typeList = useMemo(() => {
     const set = new Set<string>();
     tables.forEach((t) => t.fields.forEach((f) => set.add(f.type)));
@@ -1095,17 +1291,19 @@ function Canvas({ tables, bases, baseHealth, spaceId, genState = 'ready', embed 
   const didMount = useRef(false);
   const prevVis = useRef(visibleTables);
   const prevMode = useRef(mode);
+  const prevGroupWs = useRef(groupByWs);
   useEffect(() => {
     if (!didMount.current) { didMount.current = true; prevVis.current = visibleTables; return; }
     const l = mode === 'relationships'
       ? relLayout(visibleTables, liveRels, { hiddenRelTypes })
       : mode === 'appLayer'
       ? appLayout(visibleTables, automations, interfaces, { hiddenKinds: hiddenAppKinds, includeRemoved: includeRemovedApp, expandFields })
-      : layout(visibleTables, { hiddenTypes, hiddenFields, hiddenRel, bases });
+      : layout(visibleTables, { hiddenTypes, hiddenFields, hiddenRel, bases, groupByWorkspace: groupByWs, collapsedWorkspaces: collapsedWs, onToggleWorkspace: toggleWsCollapse });
     setNodes(l.nodes);
     setEdges(l.edges);
-    // Re-fit when the visible SET changes (base/table toggles) or the mode switches.
-    if (prevVis.current !== visibleTables || prevMode.current !== mode) {
+    // Re-fit when the visible SET changes (base/table toggles), the mode switches, or the
+    // workspace-grouping toggle flips (it repositions the whole diagram, not just a filter).
+    if (prevVis.current !== visibleTables || prevMode.current !== mode || prevGroupWs.current !== groupByWs) {
       setSelectedId(null);
       setSelectedEdgeId(null);
       setHoveredEdgeId(null);
@@ -1114,7 +1312,8 @@ function Canvas({ tables, bases, baseHealth, spaceId, genState = 'ready', embed 
     }
     prevVis.current = visibleTables;
     prevMode.current = mode;
-  }, [visibleTables, hiddenTypes, hiddenFields, hiddenRel, hiddenRelTypes, hiddenAppKinds, includeRemovedApp, expandFields, mode, liveRels, automations, interfaces, setNodes, setEdges, rf]);
+    prevGroupWs.current = groupByWs;
+  }, [visibleTables, hiddenTypes, hiddenFields, hiddenRel, hiddenRelTypes, hiddenAppKinds, includeRemovedApp, expandFields, mode, liveRels, automations, interfaces, setNodes, setEdges, rf, groupByWs, collapsedWs, toggleWsCollapse, bases]);
 
   // "Open in Visualize" from a doc diagram switches to this tab and fires this event to scope
   // the canvas to that diagram's tables (so context is preserved). Embedded diagrams ignore it.
@@ -1158,6 +1357,7 @@ function Canvas({ tables, bases, baseHealth, spaceId, genState = 'ready', embed 
   const minimapColor = useCallback(
     (n: Node) => {
       if (n.type === 'baseGroup') return 'transparent';
+      if (n.type === 'wsPuck') return 'var(--color-base-300)';
       const h = (n.data as TableNodeData)?.table?.health;
       return h ? HEALTH[h] : 'var(--color-base-300)';
     },
@@ -1406,8 +1606,58 @@ function Canvas({ tables, bases, baseHealth, spaceId, genState = 'ready', embed 
         )}
 
         {/* Right cluster — the view-mode switch (right corner, like the Relationships Tree/Flat
-            toggle) + tab-specific actions (Add to doc + Export). */}
+            toggle). Export stays on the Astro ExportControl in VisualizeTab. */}
         <div className="sch-tb-right">
+        {/* Group by workspace (workspace-visual-grouping, CANVAS half) — Data mode only, and
+            only when there is more than one workspace to group by. */}
+        {mode === 'data' && showWsToggle && (
+          <div className="dropdown dropdown-end">
+            <div
+              tabIndex={0}
+              role="button"
+              className="btn btn-sm gap-1.5"
+              aria-label="Group the diagram by"
+              style={
+                groupByWs
+                  ? { background: 'color-mix(in oklch, var(--color-primary) 13%, transparent)', borderColor: 'color-mix(in oklch, var(--color-primary) 35%, transparent)', color: 'var(--color-primary)', boxShadow: 'none', fontWeight: 400 }
+                  : { background: 'var(--color-base-100)', borderColor: 'var(--color-base-300)', boxShadow: 'none', fontWeight: 400 }
+              }
+            >
+              {groupByWs
+                ? <span aria-hidden style={{ width: 15, height: 15, display: 'grid', placeItems: 'center' }} dangerouslySetInnerHTML={{ __html: AIRTABLE_GLYPH }} />
+                : <span aria-hidden className="iconify lucide--layers size-4" />}
+              <span className="tb-word" style={{ opacity: 0.7 }}>Group by</span>
+              <span style={{ fontWeight: 500 }}>{groupByWs ? 'Workspace' : 'Base'}</span>
+              <span aria-hidden className="iconify lucide--chevron-down size-3" style={{ opacity: 0.55 }} />
+            </div>
+            <div
+              tabIndex={0}
+              className="dropdown-content bg-base-100 rounded-box border border-base-300 shadow-lg"
+              style={{ zIndex: 20, marginTop: 4, padding: 6, width: 208, fontSize: 13 }}
+            >
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                style={{ width: '100%', justifyContent: 'flex-start', gap: 8, fontWeight: 400 }}
+                onClick={() => { setGroupByWs(false); (document.activeElement as HTMLElement | null)?.blur(); }}
+              >
+                <span aria-hidden className="iconify lucide--layers size-4" style={{ opacity: 0.6 }} />
+                <span style={{ flex: 1, textAlign: 'left' }}>Base</span>
+                {!groupByWs && <span aria-hidden className="iconify lucide--check size-4" style={{ color: 'var(--color-primary)' }} />}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                style={{ width: '100%', justifyContent: 'flex-start', gap: 8, fontWeight: 400 }}
+                onClick={() => { setGroupByWs(true); (document.activeElement as HTMLElement | null)?.blur(); }}
+              >
+                <span aria-hidden style={{ width: 15, height: 15, display: 'grid', placeItems: 'center', opacity: 0.75 }} dangerouslySetInnerHTML={{ __html: AIRTABLE_GLYPH }} />
+                <span style={{ flex: 1, textAlign: 'left' }}>Workspace</span>
+                {groupByWs && <span aria-hidden className="iconify lucide--check size-4" style={{ color: 'var(--color-primary)' }} />}
+              </button>
+            </div>
+          </div>
+        )}
         {/* Mode switch — Data ER diagram vs the Relationships graph (Automations & Interfaces later).
             Reuses the Relationships tab's .rl-modes segmented style (subtle, not filled-primary). */}
         <div className="join rl-modes" role="tablist" aria-label="Visualize mode">
@@ -1421,9 +1671,6 @@ function Canvas({ tables, bases, baseHealth, spaceId, genState = 'ready', embed 
             <span className="iconify lucide--zap size-4" aria-hidden="true" />Automations &amp; Interfaces
           </button>
         </div>
-        {/* The design's Add-to-doc + Export dropdowns are deferred (non-functional
-            prototypes in the source; real doc persistence + tiered export are
-            openspec follow-ups). */}
         </div>
       </div>
       )}
@@ -1568,10 +1815,10 @@ function Canvas({ tables, bases, baseHealth, spaceId, genState = 'ready', embed 
   );
 }
 
-export default function SchemaCanvas({ tables, bases, baseHealth, spaceId, genState, embed, relationships, automations, interfaces }: Props) {
+export default function SchemaCanvas({ tables, bases, baseHealth, spaceId, genState, embed, relationships, automations, interfaces, wsGroupDefault }: Props) {
   return (
     <ReactFlowProvider>
-      <Canvas tables={tables} bases={bases} baseHealth={baseHealth} spaceId={spaceId} genState={genState} embed={embed} relationships={relationships} automations={automations} interfaces={interfaces} />
+      <Canvas tables={tables} bases={bases} baseHealth={baseHealth} spaceId={spaceId} genState={genState} embed={embed} relationships={relationships} automations={automations} interfaces={interfaces} wsGroupDefault={wsGroupDefault} />
     </ReactFlowProvider>
   );
 }

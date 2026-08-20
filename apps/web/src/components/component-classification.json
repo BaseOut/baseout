@@ -165,6 +165,20 @@
     "designHarnessPath": "pages/welcome.astro",
     "rationale": "Setup flow stepper chrome for gated wizard surfaces."
   },
+  "reports/RecipientInput.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Report schedule recipient chips (web-reports-page / Phase 8, ui-only tip): daisyUI-direct chip input with member autocomplete + external email commit. Catalog pattern-recipient-input; styles in is:global .rcp-*.",
+    "styleguideId": "pattern-recipient-input"
+  },
+  "reports/ReportBodyKpi.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Report document body (web-reports-page / Phase 8, ui-only tip): KPI strip + section cards composed from ui Table/Badge/TrendChart and schema FacetFilter. Catalog pattern-report; not a single Storybook vessel.",
+    "styleguideId": "pattern-report"
+  },
+  "schema/EntityPanel.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 Schema EntityPanel (ui-only@7502f810 lineage): PanelHost entity: kind, Airtable descriptions read-only, Internal notes + Documentation via real docs APIs. daisyUI drawer/sheet composition; no custom vessel."
+  },
   "schema/EntitySearch.astro": {
     "classification": "storybook-pattern",
     "styleguideId": "pattern-entity-typeahead",
@@ -175,6 +189,10 @@
     "classification": "daisyui-direct-styleguide",
     "rationale": "Faceted single/multi-select filter trigger + menu (promoted with Data surface, ui-only@9cf5b1ef): daisyUI dropdown/checkbox/radio markup driving the Data toolbar's Base/Table/type/date facets. Client filtering + emitted events live in its <script>. Styles via shared facet-filter.css."
   },
+  "schema/RelationshipPanel.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 shared relationship detail overlay + declare-synced Drawer (ui-only tip). Opened via schema:openRelationship; Confirm/Dismiss wired to live mutate API."
+  },
   "schema/SchemaAutomations.astro": {
     "classification": "daisyui-direct-styleguide",
     "styleguideId": "pattern-schema-automations-interfaces",
@@ -182,12 +200,16 @@
   },
   "schema/SchemaBrowse.astro": {
     "classification": "daisyui-direct-styleguide",
-    "rationale": "Phase 13 Schema Browse (ui-only tip): Tree/Flat explorer with FacetFilter, EntitySearch, patterns/ExportControl, ui/Table + Badge. Rows use data-entity-open → EntityPanel. Scoped .br-* styles; real schema SSR index."
+    "rationale": "Phase 13 Schema Browse (ui-only tip): Tree/Flat explorer with FacetFilter, EntitySearch, patterns/ExportControl, ui/Table + Badge. Rows use data-entity-open \u2192 EntityPanel. Scoped .br-* styles; real schema SSR index."
   },
   "schema/SchemaInterfaces.astro": {
     "classification": "daisyui-direct-styleguide",
     "styleguideId": "pattern-schema-automations-interfaces",
     "rationale": "Schema Interfaces tab body (web-automations-interfaces-tabs): Interface\u25b8Page nesting, mergeInterfaceSources + provenanceBadges, catalog Drawer (page requires parent), Growth+ upsell. Lazy-fetches space interfaces proxy; no scoped style. Fixture-free Storybook (upsell story only)."
+  },
+  "schema/SchemaRelationships.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 Relationships tab (ui-only tip): Tree/Flat + FacetFilter + patterns/ExportControl + ui/Table. Rows open RelationshipPanel / EntityPanel. Real engine SSR via adaptEngineRelationships; Confirm/Dismiss/Declare hit relationship-mutate proxies."
   },
   "ui/Alert.astro": {
     "classification": "ui-primitive-storybook",
@@ -292,6 +314,11 @@
     "styleguideId": "select",
     "rationale": "Reusable select primitive backed by daisyUI select classes."
   },
+  "ui/Table.astro": {
+    "classification": "ui-primitive-storybook",
+    "rationale": "The one table vessel (catalog table / pattern-audit-table). Promoted with Reports (Phase 8) from ui-only; owns header/sort/keyboard/pager/narrow contract.",
+    "styleguideId": "table"
+  },
   "ui/TablePager.astro": {
     "classification": "daisyui-direct-styleguide",
     "rationale": "The one list pager (pattern-table-toolbar, ui-only@9cf5b1ef): a daisyUI Select (rows-per-page) + '1\u2013N of M' range + prev/next btn-square-ghost buttons. Inert markup paired with createPager (./tablePager) for behaviour; a shared daisyUI composition rather than a bespoke Storybook primitive. Global .tpg styles (is:global) so runtime-innerHTML pagers reach them."
@@ -310,25 +337,6 @@
     "classification": "ui-primitive-storybook",
     "styleguideId": "checkbox-toggle",
     "rationale": "Reusable boolean switch primitive backed by daisyUI toggle styling."
-  },
-  "reports/RecipientInput.astro": {
-    "classification": "daisyui-direct-styleguide",
-    "rationale": "Report schedule recipient chips (web-reports-page / Phase 8, ui-only tip): daisyUI-direct chip input with member autocomplete + external email commit. Catalog pattern-recipient-input; styles in is:global .rcp-*.",
-    "styleguideId": "pattern-recipient-input"
-  },
-  "reports/ReportBodyKpi.astro": {
-    "classification": "daisyui-direct-styleguide",
-    "rationale": "Report document body (web-reports-page / Phase 8, ui-only tip): KPI strip + section cards composed from ui Table/Badge/TrendChart and schema FacetFilter. Catalog pattern-report; not a single Storybook vessel.",
-    "styleguideId": "pattern-report"
-  },
-  "schema/EntityPanel.astro": {
-    "classification": "daisyui-direct-styleguide",
-    "rationale": "Phase 13 Schema EntityPanel (ui-only@7502f810 lineage): PanelHost entity: kind, Airtable descriptions read-only, Internal notes + Documentation via real docs APIs. daisyUI drawer/sheet composition; no custom vessel."
-  },
-  "ui/Table.astro": {
-    "classification": "ui-primitive-storybook",
-    "rationale": "The one table vessel (catalog table / pattern-audit-table). Promoted with Reports (Phase 8) from ui-only; owns header/sort/keyboard/pager/narrow contract.",
-    "styleguideId": "table"
   },
   "ui/TrendChart.astro": {
     "classification": "daisyui-direct-styleguide",

@@ -1,0 +1,344 @@
+---
+/**
+ * Relationships tab (web-relationships-tab) — lazy-loaded derived + synced-view
+ * relationships. Moved verbatim from the pre-split SchemaView.astro
+ * (web-schema-round3-shell §2.1); only the lazy-load trigger changed (button tab).
+ */
+import EmptyState from '../../components/ui/EmptyState.astro'
+import ExportControl from '../../components/patterns/ExportControl.astro'
+
+interface Props {
+  hasSchema: boolean
+  healthBases: { baseId: string; name: string }[]
+}
+
+const { hasSchema, healthBases } = Astro.props
+---
+
+      {!hasSchema ? (
+        <EmptyState
+          icon="lucide--share-2"
+          title="No schema to relate"
+          description="Relationships appear once a backup has captured this Space’s schema."
+        />
+      ) : (
+        <div data-relationships-tab class="space-y-4">
+          <div class="flex flex-wrap items-center gap-4">
+            {healthBases.length > 1 && (
+              <div class="flex items-center gap-2">
+                <label class="text-sm font-medium" for="rel-base-select">Base</label>
+                <select id="rel-base-select" class="select select-bordered select-sm w-64">
+                  {healthBases.map((b) => (
+                    <option value={b.baseId}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {healthBases.length === 1 && (
+              <input type="hidden" id="rel-base-select" value={healthBases[0].baseId} />
+            )}
+            <label class="flex cursor-pointer items-center gap-2 text-sm">
+              <input type="checkbox" id="rel-include-removed" class="toggle toggle-sm" />
+              <span>Include removed / dismissed</span>
+            </label>
+            <input
+              type="search"
+              id="rel-search"
+              data-sch-search
+              class="input input-sm input-bordered w-48"
+              placeholder="Filter relationships…"
+              aria-label="Filter relationships"
+            />
+            <button type="button" id="rel-new" class="btn btn-outline btn-sm gap-1">
+              <span class="iconify lucide--plus size-4" aria-hidden="true"></span> New synced view
+            </button>
+            {/* total starts at 0 — the feed is lazy-fetched; load() writes the real
+                total back onto data-export-total (ExportControl reads it live). */}
+            <div class="ml-auto">
+              <ExportControl tab="relationships" format="csv" noun="relationships" total={0} rowSelector="#rel-content li" />
+            </div>
+          </div>
+          <form id="rel-create-form" class="hidden flex-wrap items-end gap-2 rounded-box border border-base-300 p-3">
+            <div class="flex flex-col gap-1">
+              <span class="text-xs text-base-content/50">Source table</span>
+              <select id="rel-create-source" class="select select-bordered select-sm w-52"></select>
+            </div>
+            <span class="pb-2 text-base-content/40">→</span>
+            <div class="flex flex-col gap-1">
+              <span class="text-xs text-base-content/50">Destination table</span>
+              <select id="rel-create-dest" class="select select-bordered select-sm w-52"></select>
+            </div>
+            <button type="submit" class="btn btn-primary btn-sm">Create</button>
+            <button type="button" id="rel-create-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+            <span id="rel-create-status" class="text-xs text-base-content/50" role="status" aria-live="polite"></span>
+          </form>
+          <div id="rel-content" class="min-h-[12rem] text-sm text-base-content/60">
+            <span class="loading loading-spinner loading-sm"></span>
+          </div>
+        </div>
+      )}
+
+<script>
+  import { setButtonLoading } from '../../lib/ui'
+  // Relationships tab (web-relationships-tab): lazy-load a base's relationships
+  // (API-derived, grouped by type, + synced-view candidates) when first opened;
+  // refetch on base change / include-removed toggle. Inferred synced views get
+  // Confirm / Dismiss actions. Click-through to the entity sidebar + a full
+  // faceted filter bar are follow-ups.
+  const relTab = document.querySelector<HTMLElement>('[data-relationships-tab]')
+  const relRoot = document.querySelector<HTMLElement>('[data-schema-docs]')
+  if (relTab && relRoot) {
+    const spaceId = relRoot.dataset.spaceId!
+    const select = document.getElementById('rel-base-select') as
+      | HTMLSelectElement
+      | HTMLInputElement
+      | null
+    const includeRemoved = document.getElementById('rel-include-removed') as HTMLInputElement | null
+    const content = document.getElementById('rel-content')
+    const esc = (s: string) =>
+      String(s).replace(
+        /[&<>"]/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string,
+      )
+
+    type Ref = { tableId?: string; fieldId?: string; name: string; removed: boolean }
+    type Derived = {
+      id: string
+      type: 'linkedRecords' | 'formulas' | 'rollups' | 'lookups' | 'lastModified'
+      label: string
+      refs: Ref[]
+      hasRemovedHistory: boolean
+      valid: boolean
+    }
+    type Synced = {
+      id: string
+      sourceTableId: string
+      sourceTableName: string
+      destTableId: string
+      destTableName: string
+      status: string
+      origin: string
+      inferred: boolean
+      matchScore: number | null
+    }
+
+    const TYPE_LABELS: Record<string, string> = {
+      linkedRecords: 'Linked records',
+      formulas: 'Formulas',
+      rollups: 'Rollups',
+      lookups: 'Lookups',
+      lastModified: 'Last modified',
+    }
+    const TYPE_ORDER = ['linkedRecords', 'formulas', 'rollups', 'lookups', 'lastModified']
+
+    const badges = (d: Derived) => {
+      let b = ''
+      if (!d.valid) b += '<span class="badge badge-sm badge-error">invalid</span> '
+      if (d.hasRemovedHistory) b += '<span class="badge badge-sm badge-warning">has removed</span> '
+      return b
+    }
+
+    // Clickable entity chip → opens the shared detail modal (click-through).
+    const entityChip = (type: string, id: string | undefined, name: string, removed = false) => {
+      const label = esc(name) + (removed ? ' (removed)' : '')
+      return id
+        ? `<button type="button" class="link link-hover text-xs text-base-content/50" data-entity-type="${type}" data-entity-id="${esc(id)}" data-entity-name="${esc(name)}">${label}</button>`
+        : `<span class="text-xs text-base-content/40">${label}</span>`
+    }
+
+    const derivedRow = (d: Derived) =>
+      `<li class="flex flex-wrap items-center gap-2 rounded border border-base-300/60 px-3 py-2"><span class="font-medium text-base-content">${esc(d.label)}</span> ${badges(d)}${d.refs.length ? `<span class="flex flex-wrap items-center gap-2">${d.refs.map((r) => entityChip(r.tableId ? 'table' : 'field', r.tableId ?? r.fieldId, r.name, r.removed)).join('')}</span>` : ''}</li>`
+
+    const syncedRow = (s: Synced) => {
+      const statusBadge = s.inferred
+        ? '<span class="badge badge-sm badge-info">inferred</span>'
+        : s.status === 'confirmed'
+          ? '<span class="badge badge-sm badge-success">confirmed</span>'
+          : `<span class="badge badge-sm badge-ghost">${esc(s.status)}</span>`
+      const score =
+        s.matchScore != null ? `<span class="text-xs text-base-content/40">${s.matchScore}% match</span>` : ''
+      const actions = s.inferred
+        ? `<span class="ml-auto flex gap-1"><button type="button" class="btn btn-xs btn-success" data-rel-action="confirm" data-rel-id="${esc(s.id)}">Confirm</button><button type="button" class="btn btn-xs btn-ghost" data-rel-action="dismiss" data-rel-id="${esc(s.id)}">Dismiss</button></span>`
+        : ''
+      const src = `<button type="button" class="link link-hover font-medium text-base-content" data-entity-type="table" data-entity-id="${esc(s.sourceTableId)}" data-entity-name="${esc(s.sourceTableName)}">${esc(s.sourceTableName)}</button>`
+      const dst = `<button type="button" class="link link-hover font-medium text-base-content" data-entity-type="table" data-entity-id="${esc(s.destTableId)}" data-entity-name="${esc(s.destTableName)}">${esc(s.destTableName)}</button>`
+      return `<li class="flex flex-wrap items-center gap-2 rounded border border-base-300/60 px-3 py-2">${src} → ${dst} ${statusBadge} ${score}${s.origin === 'user' ? '<span class="badge badge-sm badge-ghost">manual</span>' : ''}${actions}</li>`
+    }
+
+    const renderRelationships = (data: { derived: Derived[]; syncedViews: Synced[] }) => {
+      const showRemoved = !!includeRemoved?.checked
+      const term =
+        (document.getElementById('rel-search') as HTMLInputElement | null)?.value.trim().toLowerCase() ?? ''
+      const match = (s: string) => term === '' || s.toLowerCase().includes(term)
+      let derived = showRemoved ? data.derived : data.derived.filter((d) => d.valid)
+      if (term) derived = derived.filter((d) => match(d.label) || d.refs.some((r) => match(r.name)))
+      let synced = data.syncedViews
+      if (term) synced = synced.filter((s) => match(s.sourceTableName) || match(s.destTableName))
+
+      const sections: string[] = []
+      for (const type of TYPE_ORDER) {
+        const rows = derived.filter((d) => d.type === type)
+        if (rows.length === 0) continue
+        sections.push(
+          `<div><h3 class="mb-2 text-sm font-semibold text-base-content">${TYPE_LABELS[type]} <span class="text-base-content/40">(${rows.length})</span></h3><ul class="space-y-2">${rows.map(derivedRow).join('')}</ul></div>`,
+        )
+      }
+      if (synced.length > 0) {
+        sections.push(
+          `<div><h3 class="mb-2 text-sm font-semibold text-base-content">Synced views <span class="text-base-content/40">(${synced.length})</span></h3><ul class="space-y-2">${synced.map(syncedRow).join('')}</ul></div>`,
+        )
+      }
+      // Distinguish "this base has none" from "your filters/search excluded them" —
+      // a base without links/lookups/rollups showing "no match" reads like a bug.
+      const nothingInBase = data.derived.length === 0 && data.syncedViews.length === 0
+      return sections.length === 0
+        ? nothingInBase
+          ? '<p class="text-base-content/50">No relationships in this base yet — linked records, lookups, rollups, formulas that reference other fields, and synced views appear here once the schema has them.</p>'
+          : '<p class="text-base-content/50">No relationships match these filters.</p>'
+        : `<div class="space-y-6">${sections.join('')}</div>`
+    }
+
+    let lastData: { derived: Derived[]; syncedViews: Synced[] } | null = null
+
+    const load = async () => {
+      if (!content || !select) return
+      const baseId = select.value
+      if (!baseId) {
+        content.innerHTML = '<p class="text-base-content/50">No base selected.</p>'
+        return
+      }
+      content.innerHTML = '<span class="loading loading-spinner loading-sm"></span>'
+      const q = includeRemoved?.checked ? '&includeDismissed=1' : ''
+      let res: Response
+      try {
+        res = await fetch(
+          `/api/spaces/${spaceId}/relationships?baseId=${encodeURIComponent(baseId)}${q}`,
+        )
+      } catch {
+        content.innerHTML = '<span class="text-error">Could not load relationships.</span>'
+        return
+      }
+      if (res.status === 403) {
+        content.innerHTML =
+          '<p class="text-base-content/60">Relationships are available on the Launch plan and above.</p>'
+        return
+      }
+      if (!res.ok) {
+        content.innerHTML = '<span class="text-error">Could not load relationships.</span>'
+        return
+      }
+      lastData = (await res.json()) as { derived: Derived[]; syncedViews: Synced[] }
+      // Tell the export control what "Everything" means for this base (read live).
+      const xpRoot = document.querySelector<HTMLElement>('[data-export-tab="relationships"]')
+      if (xpRoot) xpRoot.dataset.exportTotal = String(lastData.derived.length + lastData.syncedViews.length)
+      content.innerHTML = renderRelationships(lastData)
+    }
+
+    // Click-through: an entity chip opens EntityPanel (schema:openEntity).
+    content?.addEventListener('click', (e) => {
+      const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-entity-id]')
+      if (!chip?.dataset.entityId) return
+      document.dispatchEvent(
+        new CustomEvent('schema:openEntity', { detail: { id: chip.dataset.entityId } }),
+      )
+    })
+
+    // Confirm / dismiss inferred synced views.
+    content?.addEventListener('click', async (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-rel-action]')
+      if (!btn) return
+      const action = btn.dataset.relAction
+      const id = btn.dataset.relId
+      if (!action || !id) return
+      setButtonLoading(btn, true)
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/relationship-mutate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action, id }),
+        })
+        if (res.ok) await load()
+        else setButtonLoading(btn, false)
+      } catch {
+        setButtonLoading(btn, false)
+      }
+    })
+
+    let loaded = false
+    // Lazy-load on first open — shell cluster tabs are buttons (web-schema-round3-shell).
+    const relTabBtn = document.querySelector<HTMLButtonElement>('[data-tab="relationships"]')
+    relTabBtn?.addEventListener('click', () => {
+      if (!loaded) {
+        loaded = true
+        load()
+      }
+    })
+    select?.addEventListener('change', load)
+    includeRemoved?.addEventListener('change', load)
+
+    // Search re-filters the last fetched data (no refetch).
+    document.getElementById('rel-search')?.addEventListener('input', () => {
+      if (content && lastData) content.innerHTML = renderRelationships(lastData)
+    })
+
+    // Create a user-authored synced view (engine `create` action).
+    const createForm = document.getElementById('rel-create-form') as HTMLFormElement | null
+    const createSource = document.getElementById('rel-create-source') as HTMLSelectElement | null
+    const createDest = document.getElementById('rel-create-dest') as HTMLSelectElement | null
+    const createStatus = document.getElementById('rel-create-status')
+    type FvT = { tableId: string; baseId: string; name: string }
+    const fvData = document.getElementById('fv-schema-data')
+    const fvTables: FvT[] = fvData
+      ? ((JSON.parse(fvData.textContent || '{"tables":[]}') as { tables?: FvT[] }).tables ?? [])
+      : []
+    const populateCreate = () => {
+      if (!select || !createSource || !createDest) return
+      const opts = fvTables
+        .filter((t) => t.baseId === select.value)
+        .map((t) => `<option value="${esc(t.tableId)}">${esc(t.name)}</option>`)
+        .join('')
+      createSource.innerHTML = opts
+      createDest.innerHTML = opts
+    }
+    document.getElementById('rel-new')?.addEventListener('click', () => {
+      if (!createForm) return
+      const hidden = createForm.classList.toggle('hidden')
+      createForm.classList.toggle('flex', !hidden)
+      if (!hidden) populateCreate()
+    })
+    document.getElementById('rel-create-cancel')?.addEventListener('click', () => {
+      createForm?.classList.add('hidden')
+      createForm?.classList.remove('flex')
+    })
+    createForm?.addEventListener('submit', async (e) => {
+      e.preventDefault()
+      if (!select || !createSource || !createDest) return
+      const sourceTableId = createSource.value
+      const destTableId = createDest.value
+      if (!sourceTableId || !destTableId || sourceTableId === destTableId) {
+        if (createStatus) createStatus.textContent = 'Pick two different tables.'
+        return
+      }
+      if (createStatus) createStatus.textContent = 'Creating…'
+      const submitBtn = createForm.querySelector<HTMLButtonElement>('button[type="submit"]')
+      if (submitBtn) setButtonLoading(submitBtn, true)
+      try {
+        const res = await fetch(`/api/spaces/${spaceId}/relationship-mutate`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'create', baseId: select.value, sourceTableId, destTableId }),
+        })
+        if (res.ok) {
+          if (createStatus) createStatus.textContent = ''
+          createForm.classList.add('hidden')
+          createForm.classList.remove('flex')
+          await load()
+        } else {
+          if (createStatus) createStatus.textContent = 'Could not create synced view.'
+        }
+      } finally {
+        if (submitBtn) setButtonLoading(submitBtn, false)
+      }
+    })
+  }
+</script>

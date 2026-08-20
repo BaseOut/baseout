@@ -12,9 +12,10 @@ import {
   type SchemaEntityTable,
   type SchemaEntityView,
 } from '../lib/backup-engine';
+import { adaptEngineRelationships, type SchemaRelationship } from '../lib/schema-docs/adapt-relationships';
 import { resolveSchemaDocsLevel } from '../lib/schema-docs/proxy';
 import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities';
-import { backupRuns } from '../db/schema/core';
+import { atBases, backupRuns } from '../db/schema/core';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
 const breadcrumbs = getBreadcrumbs('/schema');
@@ -33,6 +34,7 @@ let schema: {
   fields: SchemaEntityField[];
   views: SchemaEntityView[];
 } = { bases: [], tables: [], fields: [], views: [] };
+let relationships: SchemaRelationship[] = [];
 let viewState: 'ok' | 'not_ready' | 'unconfigured' | 'error' = 'ok';
 
 if (level !== 'none' && spaceId) {
@@ -53,6 +55,18 @@ if (level !== 'none' && spaceId) {
         fields: schemaRes.fields,
         views: schemaRes.views,
       };
+      // SSR relationships for tip SchemaRelationships (include dismissed for History facet).
+      const relResults = await Promise.all(
+        schema.bases.map(async (b) => {
+          const res = await engine.getRelationships(spaceId, b.baseId, true);
+          if (!res.ok) return [] as SchemaRelationship[];
+          return adaptEngineRelationships(b.baseId, b.name, {
+            derived: res.derived,
+            syncedViews: res.syncedViews,
+          });
+        }),
+      );
+      relationships = relResults.flat();
     }
     if (!docsRes.ok && docsRes.code === 'space_db_not_ready') viewState = 'not_ready';
     else if (!docsRes.ok && !schemaRes.ok) viewState = 'error';
@@ -64,6 +78,8 @@ if (level !== 'none' && spaceId) {
 // Freshness stamp — the schema reflects the latest completed backup run.
 let lastBackupAt: string | null = null
 let lastBackupRunId: string | null = null
+/** at_bases workspace identity for Visualize "Group by workspace". */
+let baseWorkspaces: Record<string, { workspaceId?: string | null; workspaceName?: string | null }> = {}
 if (db && spaceId) {
   const [latest] = await db
     .select({ id: backupRuns.id, completedAt: backupRuns.completedAt })
@@ -73,6 +89,18 @@ if (db && spaceId) {
     .limit(1)
   lastBackupAt = latest?.completedAt?.toISOString() ?? null
   lastBackupRunId = latest?.id ?? null
+
+  const wsRows = await db
+    .select({
+      atBaseId: atBases.atBaseId,
+      workspaceId: atBases.workspaceId,
+      workspaceName: atBases.workspaceName,
+    })
+    .from(atBases)
+    .where(eq(atBases.spaceId, spaceId))
+  baseWorkspaces = Object.fromEntries(
+    wsRows.map((r) => [r.atBaseId, { workspaceId: r.workspaceId, workspaceName: r.workspaceName }]),
+  )
 }
 ---
 
@@ -97,6 +125,8 @@ if (db && spaceId) {
       level={level}
       docs={docs}
       schema={schema}
+      relationships={relationships}
+      baseWorkspaces={baseWorkspaces}
       state={viewState}
       lastBackupAt={lastBackupAt}
       lastBackupRunId={lastBackupRunId}

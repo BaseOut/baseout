@@ -101,8 +101,8 @@
   "src/views/schema/HealthTab.astro": [
     "Moved verbatim from the pre-split SchemaView.astro (web-health-tab): base `select`, Pro+ `btn` controls, and grade/metric/issue `stats`/`table`/`badge` markup rendered as innerHTML in the lazy-load client script."
   ],
-  "src/views/schema/RelationshipsTab.astro": [
-    "Moved verbatim from the pre-split SchemaView.astro (web-relationships-tab): base `select`, Include-removed `toggle`, `input` search, `btn` actions, and relationship groups rendered as innerHTML in the lazy-load client script."
+  "src/views/schema/RelationshipsTab.legacy.astro": [
+    "Pre-Phase-13 Relationships tab (lazy-fetch + innerHTML). Replaced by tip SchemaRelationships + engine mapper; kept for rollback."
   ],
   "src/views/ReportsView.astro": [
     "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier, Phase 8 / web-reports-page): report DEFINITION list composed from ui Table/Badge/ConfirmModal/UndoToast + schema FacetFilter. Catalog pattern-report / pattern-audit-table; not a single Storybook vessel."

@@ -11,6 +11,7 @@ import AccessScopeNote from '../components/integrations/AccessScopeNote.astro'
 import PanelHost from '../components/ui/PanelHost.astro'
 import UndoToast from '../components/ui/UndoToast.astro'
 import EntityPanel from '../components/schema/EntityPanel.astro'
+import RelationshipPanel from '../components/schema/RelationshipPanel.astro'
 import SchemaBrowse from '../components/schema/SchemaBrowse.astro'
 import ChangelogTab from './schema/ChangelogTab.astro'
 import RelationshipsTab from './schema/RelationshipsTab.astro'
@@ -29,6 +30,7 @@ import type {
   SchemaEntityView,
 } from '../lib/backup-engine'
 import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities'
+import type { SchemaRelationship } from '../lib/schema-docs/adapt-relationships'
 import { isRemoved } from '../lib/schema-docs/deleted-filter'
 import {
   mapDocSummariesToSchemaDocs,
@@ -46,6 +48,10 @@ interface Props {
     fields: SchemaEntityField[]
     views: SchemaEntityView[]
   }
+  /** Engine relationships mapped for tip SchemaRelationships + RelationshipPanel. */
+  relationships?: SchemaRelationship[]
+  /** at_bases workspace identity keyed by Airtable base id (for Visualize grouping). */
+  baseWorkspaces?: Record<string, { workspaceId?: string | null; workspaceName?: string | null }>
   state: 'ok' | 'not_ready' | 'unconfigured' | 'error'
   /** When the schema was last captured (latest succeeded backup). Freshness stamp. */
   lastBackupAt?: string | null
@@ -58,6 +64,8 @@ const {
   level,
   docs,
   schema,
+  relationships = [],
+  baseWorkspaces = {},
   state: _state,
   lastBackupAt = null,
   lastBackupRunId = null,
@@ -78,7 +86,18 @@ const entities: DocsTabEntity[] = [
 
 const schemaIndex = mapEngineToEntityIndex(schema, docs)
 const panelDocs = mapDocSummariesToSchemaDocs(docs)
-const browseBases = schema.bases.map((b) => ({ id: b.baseId, name: b.name }))
+const browseBases = schema.bases.map((b) => {
+  const ws = baseWorkspaces[b.baseId]
+  return {
+    id: b.baseId,
+    name: b.name,
+    workspaceId: ws?.workspaceId ?? undefined,
+    workspaceName: ws?.workspaceName ?? undefined,
+  }
+})
+const relTables = schema.tables
+  .filter((t) => !isRemoved(t.status))
+  .map((t) => ({ id: t.tableId, name: t.name, baseId: t.baseId }))
 
 const stampWhen = lastBackupAt ? asOfWhen(lastBackupAt) : ''
 const asOfStamp = lastBackupRunId && stampWhen
@@ -197,11 +216,17 @@ const asOfStamp = lastBackupRunId && stampWhen
       </div>
 
       <div class="sch-panel" data-panel="visualize" hidden>
-        <VisualizeTab spaceId={spaceId} level={level} hasSchema={hasSchema} schema={schema} />
+        <VisualizeTab
+          spaceId={spaceId}
+          level={level}
+          hasSchema={hasSchema}
+          schema={schema}
+          baseWorkspaces={baseWorkspaces}
+        />
       </div>
 
       <div class="sch-panel" data-panel="relationships" hidden>
-        <RelationshipsTab hasSchema={hasSchema} healthBases={healthBases} />
+        <RelationshipsTab hasSchema={hasSchema} relationships={relationships} bases={browseBases} />
       </div>
 
       <div class="sch-panel" data-panel="automations" hidden>
@@ -239,6 +264,9 @@ const asOfStamp = lastBackupRunId && stampWhen
         chatThreads={[]}
         aiState={aiState}
       />
+      {hasSchema && (
+        <RelationshipPanel relationships={relationships} tables={relTables} bases={browseBases} />
+      )}
     </>
   )}
 </section>
