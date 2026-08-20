@@ -27,6 +27,7 @@ const {
   <h2 class={cn('font-semibold text-base-content', compact ? 'mt-3 text-base' : 'mt-4 text-lg')}>{title}</h2>
   {description && <p class="mx-auto mt-2 max-w-[46ch] text-sm text-base-content/60">{description}</p>}
   {Astro.slots.has('default') && <div class="mx-auto mt-3 max-w-[46ch] text-sm text-base-content/60"><slot /></div>}
+  {Astro.slots.has('action') && <div class="mt-5"><slot name="action" /></div>}
   {actionHref && actionLabel && (
     <a href={actionHref} class="btn btn-primary mt-5">
       {actionLabel}
