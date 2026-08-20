@@ -175,6 +175,16 @@
     "classification": "daisyui-direct-styleguide",
     "rationale": "Faceted single/multi-select filter trigger + menu (promoted with Data surface, ui-only@9cf5b1ef): daisyUI dropdown/checkbox/radio markup driving the Data toolbar's Base/Table/type/date facets. Client filtering + emitted events live in its <script>. Styles via shared facet-filter.css."
   },
+  "schema/SchemaAutomations.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "styleguideId": "pattern-schema-automations-interfaces",
+    "rationale": "Schema Automations tab body (web-automations-interfaces-tabs): Base-grouped daisyUI collapse/table, catalog Drawer create/edit, EntitySearch tag-picker, Growth+ EmptyState upsell. Lazy-fetches space automations proxy; no scoped style. Fixture-free Storybook (upsell story only)."
+  },
+  "schema/SchemaInterfaces.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "styleguideId": "pattern-schema-automations-interfaces",
+    "rationale": "Schema Interfaces tab body (web-automations-interfaces-tabs): Interface\u25b8Page nesting, mergeInterfaceSources + provenanceBadges, catalog Drawer (page requires parent), Growth+ upsell. Lazy-fetches space interfaces proxy; no scoped style. Fixture-free Storybook (upsell story only)."
+  },
   "ui/Alert.astro": {
     "classification": "ui-primitive-storybook",
     "styleguideId": "alert",

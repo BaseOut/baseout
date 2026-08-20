@@ -38,7 +38,7 @@
 | Backups | **LIVE** (`BackupsListView` · Phase 7.5 visual) | Built | engine runs | **DONE** visual — preserve `backups.astro` poll |
 | Restore | **LIVE** | Built | restore paths | Later visual sync |
 | Schema — Browse / Visualize / Relationships / Health / Docs / Chat / Changelog* | **LIVE** (most tabs) | Re-architected (deferred) | yes | **Keep live shell**; Schema re-arch deferred (ledger) |
-| Schema — Automations / Interfaces | **SOON** | **BUILT** | engine **0/40** unbuilt | **In program** — `server-automations-interfaces-docs` first, then `web-automations-interfaces-tabs` |
+| Schema — Automations / Interfaces | **LIVE** (Phase 9) | **BUILT** | manual-CRUD engine + proxies | **DONE** — tabs + Drawer CRUD; MCP capture funnel still deferred |
 | Data — Browse / Changelog / Comments / Docs / Chat | **LIVE** (Slice A done) | **BUILT** (+ Attachments/Media) | records/changelog/media/docs/chat + comments read | **DONE** on this branch — zero SoonTabs |
 | Actions | **LIVE** (landing) | Built | n/a (static + feedback) | Low priority polish |
 | Reports | **LIVE** (definitions list + detail/run; Phase 8) | **BUILT** + in nav | engine + proxies | **DONE** — EntityPanel stub (Phase 9); PDF/email env-gated; migrate **0038** first |
@@ -72,7 +72,7 @@
 | **6** | Inbox full page | Promote `InboxView` → `/inbox`; reuse notification proxies | **DONE** · `d94fa4cc` |
 | **7** | Visual sync of LIVE surfaces | Restore → Sources → Destinations → Home → Backups; preserve polls & contracts | **DONE** · Restore `099360f3` · Sources `c962d74b` · Destinations `a72e57e4` · Home `a541120a` · Backups `598f11b5` |
 | **8** | Reports | Overturn V1 trim — finish engine + `web-reports-page`; restore `/reports` nav to match ui-only | **DONE** · backend `fdfd1e90` (from `4d3ff862`) · UI `9c4f1c63` · migration **0038** not applied to remote DB |
-| **9** | Schema Automations / Interfaces | Engine `server-automations-interfaces-docs` then web tabs | Engine 0/40 — **included** |
+| **9** | Schema Automations / Interfaces | Engine manual-CRUD + web tabs | **DONE** on this branch — engine `13b51873`/`33c7e667` + web proxies `6e4a2712` + UI tabs (this commit). Capture funnel (`server-automations-interfaces-docs`) still deferred. |
 | **10** | Support portal | `apps/support` from ui-only | **BLOCKED** client Q#6 |
 | **11** | Billing / usage | | **BLOCKED** client Q#4 + no fork design |
 | **12** | Design-audit convergence | 41-item ship order (`web-design-audit-convergence`) | After major promotions stabilize |
