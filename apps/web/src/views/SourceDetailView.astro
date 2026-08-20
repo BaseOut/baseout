@@ -21,6 +21,7 @@
  * identically in both modes with a "from capture" marker, never greyed: grey reads as
  * "broken", and these are facts.
  */
+import Alert from '../components/ui/Alert.astro';
 import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
 import ConfirmModal from '../components/ui/ConfirmModal.astro';
@@ -230,10 +231,7 @@ const usageStatus: Record<string, { badge: string; label: string }> = {
 
   <ConfirmModal id="reg-remove-modal" title={removal.title} cancelLabel="Keep it" confirmLabel={removal.confirmLabel} confirmClass={CONFIRM_DESTRUCTIVE} confirmIcon="lucide--trash-2">
     <p class="text-sm text-base-content/70">{removal.lead}</p>
-    <div role="alert" class="alert alert-soft alert-warning mt-3">
-      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
-      <span>{removal.consequence}</span>
-    </div>
+    <Alert severity="warning" trigger="overlay" class="mt-3" message={removal.consequence} />
   </ConfirmModal>
 </div>
 

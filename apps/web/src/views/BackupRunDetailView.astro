@@ -14,8 +14,10 @@
  */
 import { fmtDateTime, fmtDuration, formatNextScheduledAt } from '../lib/time';
 import { backupRunTitle } from '../lib/backups/format';
+import Alert from '../components/ui/Alert.astro';
 import Drawer from '../components/ui/Drawer.astro';
 import ConfirmModal from '../components/ui/ConfirmModal.astro';
+import UndoToast from '../components/ui/UndoToast.astro';
 import LiveRefresh from '../components/backups/LiveRefresh.astro';
 import { entityIconClass } from '../components/schema/entityIcon';
 import RunBackupNowModal from '../components/backups/RunBackupNowModal.astro';
@@ -301,25 +303,23 @@ const depthChips = [
       foot. The recovery is the shared credits-warning confirm — a recorded run is immutable, so
       "run again" is the only recovery this page can offer. */}
   {failed && (
-    <div role="alert" class="alert alert-soft alert-error rd-fail-alert">
-      <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
-      <span class="flex-1"><b>{failHeadline}</b>{' '}{failBody}</span>
+    <Alert severity="error" trigger="static" class="rd-fail-alert">
+      <span><b>{failHeadline}</b>{' '}{failBody}</span>
       {/* THE ONE WRITE VERB (Wave B, B4). It is the only control in the phone product that asks
           the engine to do anything; everything else below 1280 reads. It writes nothing into
           Airtable — it enqueues a new run — which is why it is the one verb that survived the cut
           rather than mute, acknowledge or restore. The confirm behind it is the SAME shared
           credits warning Home and the Backups list use. NOT-OURS: the retry handler itself. */}
-      <button type="button" class="btn btn-sm btn-ghost" onclick="document.getElementById('run-backup-now-modal').showModal()"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</button>
-    </div>
+      <button slot="action" type="button" class="btn btn-sm btn-ghost" onclick="document.getElementById('run-backup-now-modal').showModal()"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</button>
+    </Alert>
   )}
 
   {/* Failed-attachments banner — catalog Alert (soft) */}
   {run.failedAttachments.length > 0 && (
-    <div role="alert" class="alert alert-soft alert-warning">
-      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+    <Alert severity="warning" trigger="static">
       <span><b>{run.failedAttachments.length} attachment{run.failedAttachments.length === 1 ? '' : 's'}</b> couldn't be backed up. The rest of the run completed.</span>
-      <button type="button" class="btn btn-sm btn-ghost" data-open-failed>Review</button>
-    </div>
+      <button slot="action" type="button" class="btn btn-sm btn-ghost" data-open-failed>Review</button>
+    </Alert>
   )}
 
   {/* Summary — THE metrics strip (`.hm-kpis`), not daisyUI's `stats`.
@@ -511,10 +511,9 @@ const depthChips = [
         This stops the run and asks the backup engine to abort any tables still in
         flight. Tables already written to your destination are kept.
       </p>
-      <div role="alert" class="alert alert-soft alert-warning mt-3">
-        <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+      <Alert severity="warning" trigger="overlay" class="mt-3">
         <span>A cancelled run <strong>can’t be resumed</strong> — start a new one with Run backup now.</span>
-      </div>
+      </Alert>
       <button slot="confirm" type="button" class="btn btn-outline btn-error" data-confirm-cancel>
         <span class="iconify lucide--x size-4" aria-hidden="true"></span>
         Cancel run
@@ -533,7 +532,7 @@ const depthChips = [
         <li class="rd-fail">
           <span class="rd-fail-ic"><span class="iconify lucide--file-x"></span></span>
           <div class="min-w-0 flex-1">
-            <p class="rd-fail-name">{f.file}{f.permanent && <span class="badge badge-soft badge-neutral badge-sm ml-1.5">Won't retry</span>}</p>
+            <p class="rd-fail-name">{f.file}{f.permanent && <span class="badge badge-ghost badge-sm ml-1.5">Won't retry</span>}</p>
             <p class="rd-fail-loc">{f.base} · {f.table}</p>
             <p class="rd-fail-reason">{f.reason}</p>
           </div>
@@ -553,6 +552,9 @@ const depthChips = [
       </button>
     </Fragment>
   </Drawer>
+
+  {/* Item 16 — failed cancel posts land here via showUndoToast (no-ops if root missing). */}
+  <UndoToast />
 </div>
 )}
 

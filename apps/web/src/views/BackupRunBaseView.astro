@@ -15,6 +15,7 @@
  * the backup engine; nothing here is synthesized. Harness feeds a fixture.
  */
 import { fmtDateTime, fmtDuration } from '../lib/time';
+import Alert from '../components/ui/Alert.astro';
 import Drawer from '../components/ui/Drawer.astro';
 import RunBackupNowModal from '../components/backups/RunBackupNowModal.astro';
 interface FailedAttachment {
@@ -185,20 +186,18 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
       base opened on a stats strip and the reader met the counts before the reason. The sentence is
       the run's one canonical string, rendered again here rather than reworded. */}
   {failed && base.error && (
-    <div role="alert" class="alert alert-soft alert-error">
-      <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
-      <span class="flex-1"><b>{`${base.name} was not backed up in this run.`}</b>{' '}{base.error}</span>
-      <button type="button" class="btn btn-sm btn-ghost" onclick="document.getElementById('run-backup-now-modal').showModal()"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</button>
-    </div>
+    <Alert severity="error" trigger="static">
+      <span><b>{`${base.name} was not backed up in this run.`}</b>{' '}{base.error}</span>
+      <button slot="action" type="button" class="btn btn-sm btn-ghost" onclick="document.getElementById('run-backup-now-modal').showModal()"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</button>
+    </Alert>
   )}
 
   {/* Failed-attachments banner — catalog Alert (soft) */}
   {base.failedAttachments.length > 0 && (
-    <div role="alert" class="alert alert-soft alert-warning">
-      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+    <Alert severity="warning" trigger="static">
       <span><b>{base.failedAttachments.length} attachment{base.failedAttachments.length === 1 ? '' : 's'}</b> in this base couldn't be backed up. Every table below was otherwise captured.</span>
-      <button type="button" class="btn btn-sm btn-ghost" data-open-failed>Review</button>
-    </div>
+      <button slot="action" type="button" class="btn btn-sm btn-ghost" data-open-failed>Review</button>
+    </Alert>
   )}
 
   {/* Summary — catalog Stats primitive + a bespoke meta panel */}
@@ -323,7 +322,7 @@ const airtableHref = `https://airtable.com/${base.atBaseId}`;
         <li class="rb-fail">
           <span class="rb-fail-ic"><span class="iconify lucide--file-x"></span></span>
           <div class="min-w-0 flex-1">
-            <p class="rb-fail-name">{f.file}{f.permanent && <span class="badge badge-soft badge-neutral badge-sm ml-1.5">Won't retry</span>}</p>
+            <p class="rb-fail-name">{f.file}{f.permanent && <span class="badge badge-ghost badge-sm ml-1.5">Won't retry</span>}</p>
             <p class="rb-fail-loc">{f.table}</p>
             <p class="rb-fail-reason">{f.reason}</p>
           </div>

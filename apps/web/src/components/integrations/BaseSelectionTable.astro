@@ -16,6 +16,7 @@
 import type { BaseSummary, WorkspaceAlias, WorkspaceEnrollment, WorkspaceResolveState } from '../../stores/connections';
 import { AIRTABLE_GLYPH } from '../schema/airtableGlyph';
 import EntitySearch from '../schema/EntitySearch.astro';
+import Alert from '../ui/Alert.astro';
 import BasePickerRow from './BasePickerRow.astro';
 import { BASE_PICKER_TYPEAHEAD_GROUPS, buildBasePickerItems } from './basePickerSearch';
 
@@ -257,13 +258,13 @@ const Tag = embedded ? 'div' : 'form';
   {/* New-bases notify — appears when Airtable has bases discovered since the last
       backup. They never join silently; the user reviews and adds (up to the cap).
       The "auto-add future bases" toggle below is the opt-in alternative. */}
-  <div role="alert" class="alert alert-soft alert-info bst-newbases" data-bst-newbases hidden>
-    <span class="iconify lucide--sparkles size-4" aria-hidden="true"></span>
-    <span class="flex-1"><strong data-bst-newbases-count>0</strong> new base<span data-bst-newbases-plural>s</span> appeared in Airtable since your last backup — not backed up yet.</span>
-    <button type="button" class="btn btn-sm btn-ghost" data-bst-newbases-review>Review</button>
-    <button type="button" class="btn btn-sm btn-primary" data-bst-newbases-add>Add <span data-bst-newbases-addn>0</span></button>
-    <button type="button" class="btn btn-sm btn-ghost btn-square" data-bst-newbases-dismiss aria-label="Dismiss"><span class="iconify lucide--x size-4"></span></button>
-  </div>
+  <Alert severity="info" trigger="runtime" hidden class="bst-newbases" dismissible icon="lucide--sparkles">
+    <span><strong data-bst-newbases-count>0</strong> new base<span data-bst-newbases-plural>s</span> appeared in Airtable since your last backup — not backed up yet.</span>
+    <Fragment slot="action">
+      <button type="button" class="btn btn-sm btn-ghost" data-bst-newbases-review>Review</button>
+      <button type="button" class="btn btn-sm btn-primary" data-bst-newbases-add>Add <span data-bst-newbases-addn>0</span></button>
+    </Fragment>
+  </Alert>
 
   {/* ── The grouping band (v2, Oleh 2026-07-29) ──
       ONE band, and it REPLACES rather than joins: the toolbar's workspace status
@@ -379,11 +380,10 @@ const Tag = embedded ? 'div' : 'form';
         Removing it is what pays for that band. */}
   </div>
 
-  <div role="alert" class="alert alert-soft alert-warning bst-cap-note" data-bst-cap-note hidden>
-    <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
-    <span class="flex-1" data-bst-cap-text></span>
-    <a href="/settings/billing" class="font-bold underline whitespace-nowrap">Upgrade</a>
-  </div>
+  <Alert severity="warning" trigger="runtime" hidden class="bst-cap-note">
+    <span data-bst-cap-text></span>
+    <a slot="action" href="/settings/billing" class="font-bold underline whitespace-nowrap">Upgrade</a>
+  </Alert>
 
   {!wsCapable && (
     /* Legacy fallback (no workspace grouping available on this connection at all) —
@@ -748,7 +748,7 @@ const Tag = embedded ? 'div' : 'form';
       const search = root.querySelector<HTMLInputElement>('[data-es-field]');
       const sortSel = root.querySelector('[data-bst-sort]') as HTMLSelectElement | null;
       const countEl = root.querySelector<HTMLElement>('[data-bst-count]');
-      const capNote = root.querySelector<HTMLElement>('[data-bst-cap-note]');
+      const capNote = root.querySelector<HTMLElement>('.bst-cap-note');
       const capText = root.querySelector<HTMLElement>('[data-bst-cap-text]');
       const emptyEl = root.querySelector<HTMLElement>('[data-bst-empty]');
       const autoAddRow = root.querySelector<HTMLElement>('[data-bst-autoadd]');
@@ -1120,7 +1120,7 @@ const Tag = embedded ? 'div' : 'form';
       pagerSize?.addEventListener('change', () => { pageSize = Number(pagerSize.value) || 10; page = 1; applyView(); });
 
       // ── New bases discovered (notify; the auto-add toggle is the opt-in path) ──
-      const newBox = root.querySelector<HTMLElement>('[data-bst-newbases]');
+      const newBox = root.querySelector<HTMLElement>('.bst-newbases');
       const newCountEl = root.querySelector<HTMLElement>('[data-bst-newbases-count]');
       const newPluralEl = root.querySelector<HTMLElement>('[data-bst-newbases-plural]');
       const newAddnEl = root.querySelector<HTMLElement>('[data-bst-newbases-addn]');
@@ -1153,7 +1153,7 @@ const Tag = embedded ? 'div' : 'form';
         refreshCount(); applyView(); refreshNewBanner();
         boxes[0]?.dispatchEvent(new Event('change', { bubbles: true }));
       });
-      root.querySelector<HTMLButtonElement>('[data-bst-newbases-dismiss]')?.addEventListener('click', () => {
+      newBox?.querySelector<HTMLButtonElement>('[data-ui-alert-dismiss]')?.addEventListener('click', () => {
         newDismissed = true; showNew = false; if (newBox) newBox.hidden = true; applyView();
       });
 

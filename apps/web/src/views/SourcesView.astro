@@ -13,6 +13,7 @@
  * and one sort/keyboard controller, byte for byte, so the next divergence shows up in a diff
  * instead of hiding behind two spellings of the same rule.
  */
+import Alert from '../components/ui/Alert.astro';
 import Badge from '../components/ui/Badge.astro';
 import Button from '../components/ui/Button.astro';
 import type { SourceSummary } from '../stores/sources';
@@ -79,17 +80,16 @@ const detailHref = (s: SourceSummary) =>
   </header>
 
   {notice && (
-    <div role="alert" class="alert alert-soft alert-success"><span class="iconify lucide--circle-check size-4" aria-hidden="true"></span><span class="flex-1">{notice}</span><button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Dismiss" onclick="this.closest('.alert').remove()"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button></div>
+    <Alert severity="success" trigger="static" dismissible message={notice} />
   )}
 
   {needsAttention.length > 0 && (
-    <div role="alert" class="alert alert-soft alert-warning">
-      <span class="iconify lucide--triangle-alert size-4" aria-hidden="true"></span>
+    <Alert severity="warning" trigger="static">
       <span>
         <b>{needsAttention.length} source{needsAttention.length === 1 ? '' : 's'} need{needsAttention.length === 1 ? 's' : ''} reconnecting.</b>
         {' '}Backups from {needsAttention.length === 1 ? 'it are' : 'them are'} paused, affecting {affectedSpaces.length} Space{affectedSpaces.length === 1 ? '' : 's'}.
       </span>
-    </div>
+    </Alert>
   )}
 
   {sources.length === 0 ? (
