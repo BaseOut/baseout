@@ -1253,6 +1253,7 @@ export const SB_ENTRIES: SBEntry[] = [
     group: 'Primitives',
     name: 'Table',
     summary: 'daisyUI table — dense, scannable rows of records.',
+    reference: 'components/ui/Table.astro',
     description:
       'The workhorse for run history and audit data. Use <code>table</code>; headers in a small uppercase label; IDs and counts in <code>font-mono tabular-nums</code> so columns align; status via a soft badge; a row’s drill-in action as a primary-coloured ghost (<code>btn-ghost btn-sm text-sm text-primary</code> — btn-sm keeps the compact height, text-sm matches the 14px rows, text-primary reads as the interactive drill-in). Add <code>table-zebra</code> only when row scanning needs the help.',
     usageDo: [

@@ -317,13 +317,13 @@
     "styleguideId": "table"
   },
   "ui/TrendChart.astro": {
-    "classification": "ui-primitive-storybook",
-    "rationale": "The one time-series chart (catalog pattern-trend-chart). ApexCharts island reading --color-* tokens; compact sparkline + full chart. First consumer: Reports Trends/Data health.",
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "The one time-series chart (catalog pattern-trend-chart). ApexCharts island reading --color-* tokens; compact sparkline + full chart. First consumer: Reports Trends/Data health. Catalogued as a Pattern (not a Primitives Storybook vessel).",
     "styleguideId": "pattern-trend-chart"
   },
   "ui/UndoToast.astro": {
-    "classification": "ui-primitive-storybook",
-    "rationale": "Page-level undo toast mount (catalog pattern-undo-toast). daisyUI toast positioner + showUndoToast helper; promoted with Reports destructive flows.",
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Page-level undo toast mount (catalog pattern-undo-toast). daisyUI toast positioner + showUndoToast helper; promoted with Reports destructive flows. Catalogued as a Pattern.",
     "styleguideId": "pattern-undo-toast"
   }
 }

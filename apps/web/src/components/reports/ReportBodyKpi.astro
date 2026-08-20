@@ -990,8 +990,8 @@ const dhAttachmentColumns = [
        An earlier revision of this comment closed ITSELF half-way through — it quoted a comment
        terminator as prose, and CSS comments do not nest, so the sequence ended the comment where it
        appeared. The remaining prose then parsed as CSS and swallowed the rule under it: the text sat
-       in the `<style>` tag, the rule was absent from `document.styleSheets`, `Element.matches()`
-       returned true for the selector, and the button kept computing `display: flex`. Both gates
+       in the style element, the rule was absent from document.styleSheets, Element.matches()
+       returned true for the selector, and the button kept computing display:flex. Both gates
        stayed green throughout — a CSS parse error is invisible to every one of them. The only
        instrument that showed it was reading the computed value and then looking for the rule in
        the parsed sheet rather than in the file. */
