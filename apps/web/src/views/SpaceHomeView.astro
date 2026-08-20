@@ -12,10 +12,27 @@
  *
  * Visual prototype: numbers come from the Space's state + run history (the engine
  * counts records/tables/attachments as it writes them). No fabricated metrics.
+ *
+ * PROMOTION NOTE (ui-only@7c7202d7, web-space-home-dashboard): promoted verbatim
+ * from the fork with three live-wiring reconciliations, so the design stays
+ * diffable against the fork:
+ *   1. SpacePipelineHero is imported from ../components/patterns/ (its cataloged
+ *      location + Storybook story), not the fork's ../components/integrations/.
+ *   2. RunBackupNowModal keeps apps/web's REAL contract (spaceId + redirectTo →
+ *      POST /api/spaces/:spaceId/backup-runs), not the fork's navigation-only
+ *      `confirmHref` prototype.
+ *   3. The `.hm-kpi*` metric-strip rules stay scoped here (the fork moved them to
+ *      a global `pattern-metric-tiles`, but apps/web has no such block and this
+ *      is the tiles' only call site — see the note in <style>).
+ * The page-level 2s backup-status poll lives in pages/index.astro (the
+ * `data-backup-history` wrapper + home-live render) and is unchanged; this view's
+ * <LiveRefresh> is an additional manual control, not a replacement for it.
  */
 import SpacePipelineHero from '../components/patterns/SpacePipelineHero.astro';
 import RunBackupNowModal from '../components/backups/RunBackupNowModal.astro';
-import { formatNextScheduledAt } from '../lib/backups/format';
+import LiveRefresh from '../components/backups/LiveRefresh.astro';
+import { deriveSpaceHealth, isInFlightRun, runKind, runMovedAt } from '../lib/backups/format';
+import { fmtAbsolute, fmtRelative } from '../lib/time';
 import type { IntegrationsState } from '../stores/connections';
 import type { SourceSummary } from '../stores/sources';
 import type { DestinationSummary } from '../stores/destinations';
@@ -49,7 +66,11 @@ interface Props {
 }
 const { state, source = null, destinations = [], runs = [], statusCode = null, baseMetrics = [], usage = [] } = Astro.props;
 
-const spaceName = Astro.locals.account?.space?.name ?? 'this Space';
+// A Space either HAS a name or it does not. `'this Space'` used to stand in for one,
+// which put a placeholder everywhere a name belongs — the page title, the hero's hub
+// caption, the destination folder path. Null here, and every use below either drops
+// the name or switches to copy that needs none (D01 item 7).
+const spaceName = Astro.locals.account?.space?.name ?? null;
 const includedCount = state.bases.filter((b) => b.isIncluded).length;
 const fileDest = destinations.find((d) => d.kind === 'file') ?? null;
 const dbDest = destinations.find((d) => d.kind === 'database') ?? null;
@@ -65,35 +86,55 @@ const pipeOk = !paused;
 const running = statusCode === 'running' && !paused;
 const justSaved = statusCode === 'saved' && !paused;
 
+// ── The Space's verdict, DERIVED (audit decision D01) ───────────────────────
+// The rail used to read "Everything's backed up" off `!paused && !running` — a
+// flag about CONNECTIONS — while the runs one click away said "failed". Every
+// word the rail prints now comes from this one object, and the app-shell banner
+// and the Inbox read the same derivation, so the three cannot disagree.
+const health = deriveSpaceHealth({
+  runs,
+  sourceName: source?.name ?? null,
+  brokenSource: sourceBroken && source ? { name: source.name } : null,
+  brokenDestination: brokenDest ? { name: brokenDest.name } : null,
+  nextScheduledAt: state.policy.nextScheduledAt,
+});
+const inFlight = health.level === 'running';
+
 // Terminal runs, most recent first. The Schema section shows up to 5 bases, so
 // the history preview mirrors it with 5 runs (full log lives on /backups).
 const terminal = runs
   .filter((r) => ['succeeded', 'failed', 'cancelled', 'trial_succeeded'].includes(r.status))
   .sort((a, b) => new Date(b.completedAt ?? b.createdAt).getTime() - new Date(a.completedAt ?? a.createdAt).getTime());
-const lastSuccess = runs.find((r) => r.status === 'succeeded' || r.status === 'trial_succeeded') ?? null;
-const succeeded = runs.filter((r) => r.status === 'succeeded');
-// Δ records vs the previous backup — a drop can flag a mass deletion (anomaly).
-const recordDelta = succeeded.length >= 2 ? (succeeded[0].recordCount ?? 0) - (succeeded[1].recordCount ?? 0) : null;
+// The record/attachment KPIs describe a DATA backup. A schema-only run writes
+// neither, so reading them off "the last success" would have let a schema run
+// re-date figures it never touched (D01 item 3).
+const lastFull = health.lastFullSuccess;
+const fullSuccesses = terminal.filter((r) => (r.status === 'succeeded' || r.status === 'trial_succeeded') && runKind(r) === 'full');
+// Δ records vs the previous full backup — a drop can flag a mass deletion (anomaly).
+const recordDelta = fullSuccesses.length >= 2 ? (fullSuccesses[0].recordCount ?? 0) - (fullSuccesses[1].recordCount ?? 0) : null;
 const recent = terminal.slice(0, 5);
+// D07 item 6 — "go see it" lands on the THING. Home's two in-flight links ("track it on the
+// Backups page", "View progress") both pointed at the log, so the user arrived at 47 rows and had
+// to find the one the sentence had just been talking about. The run in flight is right here in
+// `runs`; with none, the log is the only honest destination and the sentence does not claim a run.
+const inFlightRun =
+  runs.filter(isInFlightRun).sort((a, b) => runMovedAt(b) - runMovedAt(a))[0] ?? null;
+const inFlightHref = inFlightRun ? `/backups/run?id=${inFlightRun.id}` : '/backups';
+// The failed newest run's OWN sentence, and its address. Both come off `health.lastRun` rather
+// than off a second search of `runs`, so the reason on screen can only ever belong to the run the
+// verdict was derived from. A restore row is excluded: its detail page is `/restore`.
+const failureReason = health.level === 'failed' ? (health.lastRun?.errorMessage ?? null) : null;
+const failedRunHref =
+  health.lastRun && health.lastRun.kind !== 'restore' ? `/backups/run?id=${health.lastRun.id}` : '/backups';
 
 const nf = new Intl.NumberFormat('en-US');
-const nextLabel = formatNextScheduledAt(state.policy.nextScheduledAt);
 const frequency = state.policy.frequency;
-
-function since(iso: string | null): string {
-  if (!iso) return '—';
-  const ms = Date.now() - new Date(iso).getTime();
-  const m = Math.round(ms / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.round(h / 24);
-  return `${d}d ago`;
-}
+const lastFullSince = fmtRelative(lastFull?.completedAt ?? null);
+const lastSuccessSince = fmtRelative(health.lastSuccessAt);
 
 const includedNames = state.bases.filter((b) => b.isIncluded).slice(0, 3).map((b) => b.name);
-const folder = fileDest ? `/Baseout/${spaceName}` : '';
+// The folder path is built from the Space's name. No name, no path to print.
+const folder = fileDest && spaceName ? `/Baseout/${spaceName}` : '';
 
 // Per-node pipeline status chip (top-right of each card) — conveys "everything is
 // connected and flowing" at a glance, and pinpoints the broken object when paused.
@@ -104,6 +145,25 @@ const destStatus = brokenDest ? { tone: 'warn', label: 'Reconnect' } : { tone: '
 // Schema section: top bases by attachment volume (most attachments = most to verify).
 const topBases = [...baseMetrics].sort((a, b) => b.attachments - a.attachments).slice(0, 5);
 
+// Health level → the rail's tone class and glyph. Lookup tables rather than nested
+// ternaries in the markup, so adding a level cannot leave a branch un-styled — the
+// fallthrough-to-success shape is exactly what D01 removes.
+const TONE: Record<string, string> = {
+  broken: 'paused', running: 'running', failed: 'failed',
+  degraded: 'warn', overdue: 'warn', ok: 'ok', unknown: 'idle',
+};
+const ICON: Record<string, string> = {
+  broken: 'lucide--triangle-alert', running: 'lucide--loader-circle hm-spin',
+  failed: 'lucide--circle-x', degraded: 'lucide--triangle-alert',
+  overdue: 'lucide--clock-alert', ok: 'lucide--shield-check', unknown: 'lucide--circle-dashed',
+};
+/** The word the rail uses for a run's status. Same vocabulary as the Backups log. */
+const STATUS_WORD: Record<string, string> = {
+  failed: 'failed', cancelled: 'cancelled', cancelling: 'cancelling',
+  queued: 'queued', running: 'running', paused: 'paused',
+  trial_succeeded: 'succeeded (trial)',
+};
+
 // Pipeline node status → catalog soft badge (same mapping as the rest of the app).
 const nodeBadge = (tone: string) =>
   tone === 'ok' ? 'badge-soft badge-success' : tone === 'warn' ? 'badge-soft badge-warning' : 'badge-ghost';
@@ -112,19 +172,36 @@ const nodeBadge = (tone: string) =>
 <div class="mx-auto max-w-[1400px]" data-space-home>
   {isConfigured ? (
     <>
-      {/* Slim page title — the health summary lives in the rail. */}
+      {/* THE PAGE IS CALLED HOME, and it is the only page in the app that said otherwise.
+          It rendered the SPACE name as its `<h1>` with `Home` as a small tag beside it — so the
+          app bar, which reads the page title, said `Home` while the page underneath said
+          `Core CRM` in 24px. Two names for one screen, and the bigger one was the wrong one
+          (Oleh: «вона дублюється великим шрифтом Core CRM… нам це не потрібно»).
+          `text-title` is the shared page-title class the other sixteen views use, which is also
+          what makes the narrow rule that hides a page `<h1>` below 1280 reach this one — it never
+          did, and that is why both titles were on screen at once. The Space now travels with the
+          title into the app bar (`Home · Core CRM`) and is stated twice in the sidebar besides. */}
       <div class="hm-title">
-        <h1 class="truncate">{spaceName}</h1>
-        <span class="hm-title-sub">Home</span>
+        <h1 class="text-title truncate">Home</h1>
       </div>
 
       {/* Transient just-finished-setup confirmation — read-once, so it's dismissible. */}
       {(running || justSaved) && (
         <div role="alert" class="alert alert-soft alert-success mb-4">
           <span class="iconify lucide--circle-check size-4" aria-hidden="true"></span>
-          <span class="flex-1">{running
-            ? <>Your Space is protected. The first backup is running — track it on the <a href="/backups" class="font-semibold underline">Backups page</a>.</>
-            : <>Backup configuration saved. Changes apply on the next scheduled run.</>}</span>
+          {/* "Protected" is reserved for a COMPLETED backup (D01 item 2). At this
+              moment the setup is done and the first run has started; nothing is
+              written yet, so nothing may be claimed as safe.
+              The two halves have different sources. "Setup complete" is a
+              NAVIGATION fact — the user just arrived from the wizard, and
+              `statusCode` is entitled to assert it. "Your first backup is running"
+              is a claim about a RUN, so it needs a run: it is shown only when the
+              data also carries one in flight. */}
+          <span class="flex-1">{running && inFlight
+            ? <>Setup complete. Your first backup is running — <a href={inFlightHref} class="font-semibold underline">track it</a>.</>
+            : running
+              ? <>Setup complete. Track backups on the <a href="/backups" class="font-semibold underline">Backups page</a>.</>
+              : <>Backup configuration saved. Changes apply on the next scheduled run.</>}</span>
           <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Dismiss" onclick="this.closest('.alert').remove()"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button>
         </div>
       )}
@@ -135,58 +212,113 @@ const nodeBadge = (tone: string) =>
 
           {/* Metrics strip, above the tables */}
           <div class="hm-kpis">
+            {/* "Protected" is a claim about a written snapshot, so the label only
+                says it once a full backup has completed. Until then these bases are
+                merely INCLUDED — selected, not yet safe.
+                The NUMBER has to come from the run too. It used to be `includedCount`
+                — the CURRENTLY included set — under a caption reading "in the last
+                full backup". They agree only while nobody edits the selection; add a
+                base today and the tile credits the last run with backing it up. The
+                count now comes off the run's own `includedBases`, and when there is
+                no run the caption stops claiming one. */}
             <div class="hm-kpi">
-              <div class="hm-kpi-top"><span class="hm-kpi-k">Bases protected</span><span class="iconify lucide--database hm-kpi-ic" aria-hidden="true"></span></div>
-              <span class="hm-kpi-v">{nf.format(includedCount)}</span>
-              <span class="hm-kpi-sub">in this Space</span>
+              <div class="hm-kpi-top"><span class="hm-kpi-k">{lastFull ? 'Bases protected' : 'Bases included'}</span><span class="iconify lucide--database hm-kpi-ic" aria-hidden="true"></span></div>
+              <span class="hm-kpi-v">{nf.format(lastFull ? lastFull.includedBases.length : includedCount)}</span>
+              <span class="hm-kpi-sub">{lastFull ? 'in the last full backup' : 'selected, not yet backed up'}</span>
             </div>
+            {/* Records and attachments come from the last FULL run — a schema-only
+                run writes neither, and must not re-date figures it never touched. */}
             <div class="hm-kpi">
               <div class="hm-kpi-top"><span class="hm-kpi-k">Records backed up</span><span class="iconify lucide--rows-3 hm-kpi-ic" aria-hidden="true"></span></div>
-              <span class="hm-kpi-v">{lastSuccess ? nf.format(lastSuccess.recordCount ?? 0) : '—'}</span>
+              <span class="hm-kpi-v">{lastFull ? nf.format(lastFull.recordCount ?? 0) : '—'}</span>
               {recordDelta !== null ? (
-                <span class={`hm-kpi-sub hm-delta ${recordDelta >= 0 ? 'is-up' : 'is-down'}`}><span class={`iconify ${recordDelta >= 0 ? 'lucide--arrow-up' : 'lucide--arrow-down'}`} aria-hidden="true"></span>{nf.format(Math.abs(recordDelta))} vs prev</span>
+                <span class={`hm-kpi-sub hm-delta ${recordDelta >= 0 ? 'is-up' : 'is-down'}`}><span class={`iconify ${recordDelta >= 0 ? 'lucide--arrow-up' : 'lucide--arrow-down'}`} aria-hidden="true"></span>{nf.format(Math.abs(recordDelta))} vs previous full backup</span>
               ) : (
-                <span class="hm-kpi-sub">last backup</span>
+                <span class="hm-kpi-sub">{lastFullSince ? `last full backup, ${lastFullSince}` : 'no full backup yet'}</span>
               )}
             </div>
             <div class="hm-kpi">
               <div class="hm-kpi-top"><span class="hm-kpi-k">Attachments</span><span class="iconify lucide--paperclip hm-kpi-ic" aria-hidden="true"></span></div>
-              <span class="hm-kpi-v">{lastSuccess ? nf.format(lastSuccess.attachmentCount ?? 0) : '—'}</span>
-              <span class="hm-kpi-sub">last backup</span>
+              <span class="hm-kpi-v">{lastFull ? nf.format(lastFull.attachmentCount ?? 0) : '—'}</span>
+              <span class="hm-kpi-sub">{lastFullSince ? `last full backup, ${lastFullSince}` : 'no full backup yet'}</span>
             </div>
             <div class="hm-kpi">
-              <div class="hm-kpi-top"><span class="hm-kpi-k">Backups run</span><span class="iconify lucide--history hm-kpi-ic" aria-hidden="true"></span></div>
-              <span class="hm-kpi-v">{nf.format(succeeded.length)}</span>
+              <div class="hm-kpi-top"><span class="hm-kpi-k">Full backups run</span><span class="iconify lucide--history hm-kpi-ic" aria-hidden="true"></span></div>
+              <span class="hm-kpi-v">{nf.format(fullSuccesses.length)}</span>
               <span class="hm-kpi-sub">all time</span>
             </div>
           </div>
 
-          {/* Backup history */}
-          <section class="hm-panel">
+          {/* Backup history. `data-hm` is a STACKING HANDLE, nothing else: below the boundary the
+              two columns flatten into one list whose order is set by rule, and the two panels are
+              both `.hm-panel` with no way to tell them apart. `:nth-child` would have bound the
+              order to the Schema panel's `topBases.length > 0` guard — the empty-fixture Space has
+              one panel here, not two. */}
+          <section class="hm-panel" data-hm="history">
             <div class="hm-panel-head"><h2>Backup history</h2><a href="/backups" class="btn btn-ghost btn-sm text-primary -mr-2">View all →</a></div>
-            <div class="hm-tablewrap">
+            {/* `data-narrow-pan`, NOT `data-mobile-rows` (Oleh, 2026-08-13) — HOME TAKES THE SAME
+                REVERSAL AS THE LOG IT PREVIEWS. «давай на Home застосуємо цей самий паттерн з
+                горизонтальним скролом — Backup history, Схема, хай там буде більше зрозумілої
+                інформації.» That is the THIRD rejection of the fold (Schema Browse in August, the
+                Backups log yesterday, Home now), and this table is the Backups log's preview: the
+                two must not be two different shapes, so when the log moved to a pan this had to
+                follow or the preview would contradict the thing it previews.
+
+                What the fold was costing here: `thead` is hidden, so `Succeeded`, a `Full` chip and
+                `2d ago` landed in one left-hand cluster with nothing naming which is which — and
+                `12,407` needed an invented `records` caption underneath it (`.hm-numcap`, 11px,
+                below the type floor) purely to replace the column header the fold had removed. The
+                column grid says what a value IS by where it sits; that caption and its 11px are
+                both gone with it.
+
+                `data-narrow-pan` (global.css) gives the wrapper the shared narrow scroller and
+                `panRail.ts` mounts the sticky rail above it automatically. `data-m` stays on the
+                cells for the same reason it stayed on the log's: it is how `pattern-mobile-row`
+                classifies a column, it costs nothing while unmatched, and removing it would make
+                Home's markup diverge from `BackupsListView`'s for no gain. `data-nrow` DOES go —
+                it is the fold's opt-in and nothing else reads it. */}
+            <div class="hm-tablewrap" data-narrow-pan>
               <table class="table text-sm">
                 <thead>
                   <tr class="text-xs uppercase tracking-wider text-base-content/60">
-                    <th>Status</th><th>Date</th><th class="text-right">Bases</th><th class="text-right">Records</th><th class="text-right">Attachments</th><th></th>
+                    {/* `hm-cx` = "cut this column below 1280", on the `th` AND on every matching
+                        `td` (a table has no column element to hang it off) — the same mechanism and
+                        the same two victims as the Backups log's `bl-cx`: BASES is a count of what
+                        was in scope, which the run's own page states properly, and FILES is the
+                        second number on a row that already carries the first one. */}
+                    <th>Status</th><th>Kind</th><th>When</th><th class="text-right hm-cx">Bases</th><th class="text-right">Records</th><th class="text-right hm-cx">Files</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {recent.length === 0 && (
-                    <tr><td colspan="6" class="hm-empty">{running ? 'First backup in progress — it will appear here when it finishes.' : 'No backups yet.'}</td></tr>
+                    <tr><td colspan="7" class="hm-empty">{inFlight ? 'A backup is running — it will appear here when it finishes.' : 'No backups yet.'}</td></tr>
                   )}
                   {recent.map((r) => {
                     const ok = r.status === 'succeeded' || r.status === 'trial_succeeded';
                     const failed = r.status === 'failed';
                     const badge = ok ? 'badge-soft badge-success' : failed ? 'badge-soft badge-error' : 'badge-ghost';
+                    const schema = runKind(r) === 'schema';
+                    const atIso = r.completedAt ?? r.createdAt;
+                    const at = fmtRelative(atIso);
                     return (
-                      <tr>
-                        <td><span class={`badge ${badge}`}>{ok ? 'Succeeded' : failed ? 'Failed' : 'Cancelled'}</span></td>
-                        <td class="mono-data text-base-content/64">{since(r.completedAt)}</td>
-                        <td class="text-right tabular-nums">{r.includedBases.length}</td>
-                        <td class="text-right tabular-nums">{ok ? nf.format(r.recordCount ?? 0) : '—'}</td>
-                        <td class="text-right tabular-nums">{ok ? nf.format(r.attachmentCount ?? 0) : '—'}</td>
-                        <td class="text-right"><a href={`/backups/run?id=${r.id}`} class="btn btn-ghost btn-sm text-sm text-primary">Details →</a></td>
+                      <tr class="row-clickable" role="button" tabindex="0" onclick={`window.location='/backups/run?id=${r.id}'`}>
+                        <td data-m="lead">
+                          <span class={`badge ${badge}`}>{ok ? 'Succeeded' : failed ? 'Failed' : 'Cancelled'}</span>
+                        </td>
+                        {/* KIND IS ITS OWN COLUMN, as it is on the Backups log. It rode inside the
+                            Status cell here, which is why Home's row read `Succeeded Full` as one
+                            blob while the log it previews put the two facts in two columns — and a
+                            schema-only run and a full data backup are different promises, so the
+                            column that says which one it was has to line up down the page. */}
+                        <td data-m="sub2"><span class="badge badge-sm badge-ghost gap-1"><span class:list={['iconify size-3', schema ? 'lucide--list-tree' : 'lucide--database']} aria-hidden="true"></span>{schema ? 'Schema' : 'Full'}</span></td>
+                        <td data-m="sub" class="mono-data text-base-content/64 tooltip" data-tip={fmtAbsolute(atIso)}>{at ?? '—'}</td>
+                        <td data-m="off" class="text-right tabular-nums hm-cx">{r.includedBases.length}</td>
+                        {/* A run that failed on one base still wrote the others. The
+                            em-dash is for data that is genuinely absent — a schema run
+                            has no record count — never for a number the run holds. */}
+                        <td data-m="num" class="text-right tabular-nums">{r.recordCount !== null ? nf.format(r.recordCount) : '—'}</td>
+                        <td data-m="off" class="text-right tabular-nums hm-cx">{r.attachmentCount !== null ? nf.format(r.attachmentCount) : '—'}</td>
+                        <td data-m="go" class="text-right"><span class="row-end"><span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span></span></td>
                       </tr>
                     );
                   })}
@@ -197,26 +329,45 @@ const nodeBadge = (tone: string) =>
 
           {/* Schema — top bases by attachment volume */}
           {topBases.length > 0 && (
-            <section class="hm-panel">
+            <section class="hm-panel" data-hm="schema">
               <div class="hm-panel-head"><h2>Schema</h2><a href="/schema" class="btn btn-ghost btn-sm text-primary -mr-2">View schema →</a></div>
-              <div class="hm-tablewrap">
+              {/* Panned for the reason written on the history table above, and this one has the
+                  stronger case of the two: Fields / Records / Attachments are three numerics read
+                  by comparing them DOWN the column — which base is the big one, which one is the
+                  attachment-heavy one — and that is precisely the comparison a fold destroys by
+                  turning every column into a per-row chip. It is also the argument Oleh made when
+                  he rejected the fold on Schema Browse in August; this is the same content. */}
+              <div class="hm-tablewrap" data-narrow-pan>
                 <table class="table text-sm">
                   <thead>
                     <tr class="text-xs uppercase tracking-wider text-base-content/60">
-                      <th>Base</th><th>Status</th><th class="text-right">Fields</th><th class="text-right">Records</th><th class="text-right">Attachments</th><th></th>
+                      {/* The row-action column is the one that cannot earn its width here: five
+                          `Schema →` buttons, 101px each, every one pointing at the SAME page the
+                          panel heading already links to. One link, not six. */}
+                      <th>Base</th><th>Status</th><th class="text-right">Fields</th><th class="text-right">Records</th><th class="text-right">Attachments</th><th class="hm-cx"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {topBases.map((b) => {
                       const badge = b.status === 'ok' ? 'badge-soft badge-success' : b.status === 'failed' ? 'badge-soft badge-error' : 'badge-ghost';
+                      // A base that was not backed up captured nothing — printing "0"
+                      // asserts a measurement that was never taken, and the em-dash is
+                      // correct precisely because nothing exists. A base that failed
+                      // AFTER writing something keeps its numbers, though: the em-dash
+                      // is for genuine absence, never for data a run holds.
+                      const unreached = b.status !== 'ok' && b.fields + b.records + b.attachments === 0;
+                      // The base NAME leads here and the status badge is the second line — the same
+                      // two slots the run row uses for its status word and its time, which is why
+                      // the grid areas are named `lead` / `sub` and not `status` / `when`: they are
+                      // POSITIONS in a row, not a fixed pair of fields.
                       return (
                         <tr>
-                          <td class="font-medium">{b.name}</td>
-                          <td><span class={`badge ${badge}`}>{b.status === 'ok' ? 'Backed up' : b.status === 'failed' ? 'Failed' : 'Pending'}</span></td>
-                          <td class="text-right tabular-nums">{nf.format(b.fields)}</td>
-                          <td class="text-right tabular-nums">{nf.format(b.records)}</td>
-                          <td class="text-right tabular-nums">{nf.format(b.attachments)}</td>
-                          <td class="text-right"><a href="/schema" class="btn btn-ghost btn-sm text-sm text-primary">Schema →</a></td>
+                          <td data-m="lead" class="font-medium">{b.name}</td>
+                          <td data-m="sub"><span class={`badge ${badge}`}>{b.status === 'ok' ? 'Backed up' : b.status === 'failed' ? 'Failed' : 'Pending'}</span></td>
+                          <td data-m="off" class="text-right tabular-nums">{unreached ? '—' : nf.format(b.fields)}</td>
+                          <td data-m="num" class="text-right tabular-nums">{unreached ? '—' : nf.format(b.records)}</td>
+                          <td data-m="off" class="text-right tabular-nums">{unreached ? '—' : nf.format(b.attachments)}</td>
+                          <td data-m="go" class="text-right hm-cx"><a href="/schema" class="btn btn-ghost btn-sm text-sm text-primary">Schema →</a></td>
                         </tr>
                       );
                     })}
@@ -233,33 +384,67 @@ const nodeBadge = (tone: string) =>
         <aside class="hm-rail">
           <div class="hm-rail-inner">
 
-            {/* Health */}
-            <div class={`hm-status ${paused ? 'is-paused' : running ? 'is-running' : 'is-ok'}`}>
+            {/* Health — every word below comes from `health`, nothing from a flag. */}
+            <div class={`hm-status is-${TONE[health.level]}`}>
+              {/* THE REFRESH SITS WITH THE STATUS IT REFRESHES (Oleh, 2026-08-12: «варто помістити
+                  її на рівень з лоудером… щоб воно було разом на одному рівні»). It used to be
+                  centred at the FOOT of the card, under the primary button — four facts and a CTA
+                  between the thing that goes stale and the control that un-stales it, which reads
+                  as a footnote about the card rather than an action on the headline.
+                  On the same line it is what it is: the card says `Backup queued`, and beside it,
+                  when that was last true and how to ask again. */}
               <div class="hm-status-top">
-                <span class="hm-status-ic" aria-hidden="true"><span class={`iconify ${paused ? 'lucide--triangle-alert' : running ? 'lucide--loader-circle hm-spin' : 'lucide--shield-check'}`}></span></span>
-                <span class="hm-status-line">{paused
-                  ? 'Backups paused'
-                  : running
-                    ? 'First backup running…'
-                    : <><span class="iconify lucide--check" aria-hidden="true"></span>Everything&rsquo;s backed up</>}</span>
+                <span class="hm-status-ic" aria-hidden="true"><span class={`iconify ${ICON[health.level]}`}></span></span>
+                <span class="hm-status-line">{health.level === 'ok' && <span class="iconify lucide--check" aria-hidden="true"></span>}{health.headline}</span>
+                <LiveRefresh class="hm-status-refresh" />
               </div>
-              {paused
-                ? <p class="hm-status-detail">{sourceBroken ? <>Source <b>{source!.name}</b> lost access.</> : <>Destination <b>{brokenDest!.name}</b> lost access.</>}</p>
-                : (
-                  <div class="hm-status-meta">
-                    <div><span class="hm-mk">Last backup</span><span class="hm-mv mono-data">{running ? 'in progress' : since(lastSuccess?.completedAt ?? null)}</span></div>
-                    <div><span class="hm-mk">Next backup</span><span class="hm-mv"><span class="mono-data">{nextLabel}</span> · <span class="capitalize">{frequency}</span></span></div>
-                  </div>
+              {health.level === 'broken' && (
+                <p class="hm-status-detail">{health.brokenSide === 'source' ? 'Source' : 'Destination'} <b>{health.brokenName}</b> lost access.</p>
+              )}
+              {/* WHAT IS WRONG, not just THAT something is. B1 asks this surface for four facts —
+                  working or not · when it last worked · what is running · what is wrong — and the
+                  rail could answer the first three. On a failure it printed "Last run failed" and
+                  stopped, so the only way to learn the cause was to open the run: two taps and a
+                  page load for the sentence the run is already carrying. That sentence is
+                  `errorMessage`, the SAME canonical string the Backups log renders on the row and
+                  the run page headlines with — rendered here, not written again. It is shown only
+                  when the failure IS the current verdict: a `degraded` or `overdue` Space has an
+                  older failure whose reason no longer describes the state. */}
+              {health.level === 'failed' && failureReason && (
+                <p class="hm-status-detail"><a href={failedRunHref} class="hm-status-why">{failureReason}</a></p>
+              )}
+              {/* Last backup stays on screen in EVERY state, paused included. A broken
+                  connection does not un-write the snapshot that already exists, and
+                  hiding it is how a user came to think they had lost everything.
+                  "Last backup" means the last RUN; when the newest run is not the
+                  newest success, both are named — an older success standing in for a
+                  fresh failure is the same lie in a quieter voice (D01 item 1). */}
+              <div class="hm-status-meta">
+                {health.lastRun ? (
+                  <div><span class="hm-mk">Last run</span><span class="hm-mv"><span class="mono-data">{health.lastRunLabel}</span>{health.lastRun.status !== 'succeeded' && <> · {STATUS_WORD[health.lastRun.status] ?? health.lastRun.status}</>}</span></div>
+                ) : (
+                  <div><span class="hm-mk">Last run</span><span class="hm-mv">None yet</span></div>
                 )}
-              {paused
-                ? <button type="button" class="btn btn-primary hm-status-btn"><span class="iconify lucide--plug size-4" aria-hidden="true"></span>Reconnect</button>
-                : running
-                  ? <a href="/backups" class="btn btn-primary hm-status-btn"><span class="iconify lucide--activity size-4" aria-hidden="true"></span>View progress</a>
+                {health.successDiffers && (
+                  <div><span class="hm-mk">Last success</span><span class="hm-mv mono-data">{lastSuccessSince ?? 'None yet'}</span></div>
+                )}
+                <div><span class="hm-mk">Next backup</span><span class="hm-mv"><span class="mono-data">{health.nextLabel}</span> · <span class="capitalize">{frequency}</span></span></div>
+              </div>
+              {/* All three branches are the SAME unsized (md) full-width control, which
+                  is the carve-out `decision-density-sm-is-default` allows for a surface's
+                  single primary action (see the `.hm-status-btn` note in <style>). Keeping
+                  them identical is also what stops the rail changing height as the Space
+                  moves between paused / running / idle. Reconnect became a link because a
+                  CTA that does not navigate is the defect D02 removes. */}
+              {health.level === 'broken'
+                ? <a href={health.brokenSide === 'destination' ? '/destinations' : '/sources'} class="btn btn-primary hm-status-btn"><span class="iconify lucide--plug size-4" aria-hidden="true"></span>Reconnect</a> /* ds-ok: md matches its two sibling branches, per the .hm-status-btn carve-out */
+                : inFlight
+                  ? <a href={inFlightHref} class="btn btn-primary hm-status-btn"><span class="iconify lucide--activity size-4" aria-hidden="true"></span>View progress</a> /* ds-ok: md matches its two sibling branches, per the .hm-status-btn carve-out */
                   : <button type="button" class="btn btn-primary hm-status-btn" onclick="document.getElementById('run-backup-now-modal').showModal()"><span class="iconify lucide--play size-4" aria-hidden="true"></span>Run backup now</button>}
             </div>
 
             {/* Pipeline — vertical */}
-            <div class="hm-sect">
+            <div class="hm-sect" data-hm="pipeline">
               <div class="hm-sect-head"><h3>Backup pipeline</h3><a href="/integrations/configure" class="btn btn-ghost btn-sm text-primary -mr-2"><span class="iconify lucide--settings size-4" aria-hidden="true"></span>Configure</a></div>
               <div class="hm-pipe">
                 <div class="hm-node">
@@ -284,7 +469,7 @@ const nodeBadge = (tone: string) =>
 
             {/* Usage */}
             {usage.length > 0 && (
-              <div class="hm-sect">
+              <div class="hm-sect" data-hm="usage">
                 <div class="hm-sect-head"><h3>Usage this month</h3><a href="/settings/billing" class="btn btn-ghost btn-sm text-primary -mr-2">Upgrade</a></div>
                 <div class="hm-usage">
                   {usage.map((u) => {
@@ -309,8 +494,10 @@ const nodeBadge = (tone: string) =>
     <>
       {/* Not set up — the product model, drawn */}
       <header class="hm-head mb-6">
+        {/* An unnamed Space gets copy that needs no name, not a placeholder wearing
+            one. "Set up backup" is true of any Space; "this Space" was not a name. */}
         <div class="min-w-0">
-          <h1 class="text-title truncate">{spaceName}</h1>
+          <h1 class="text-title truncate">{spaceName ?? 'Set up backup'}</h1>
           <p class="text-sm text-base-content/60 mt-1">Set up what this Space backs up, and where.</p>
         </div>
       </header>
@@ -318,17 +505,42 @@ const nodeBadge = (tone: string) =>
     </>
   )}
 
-  {/* Credits-warning confirm for the rail's "Run backup now" — triggers a real run. */}
+  {/* Credits-warning confirm for the rail's "Run backup now" (on-demand). Keeps
+      apps/web's real contract: the modal POSTs to the Space's backup-runs route,
+      then redirects to /?status=running. */}
   <RunBackupNowModal spaceId={Astro.locals.account?.space?.id ?? ''} redirectTo="/?status=running" />
 </div>
+
+<script>
+  /**
+   * Keyboard for the history rows — Enter/Space opens the run, the inline `onclick` navigates.
+   * `pattern-row-actions` requires the whole anatomy (role=button + tabindex + Enter/Space), and
+   * Home shipped only the click half. Same wiring as BackupsListView, so the two lists behave
+   * identically for a keyboard user.
+   */
+  function wireHomeRows() {
+    document.querySelectorAll<HTMLElement>('[data-space-home] tr.row-clickable[role="button"]').forEach((row) => {
+      if (row.dataset.hmKeyed === '1') return;
+      row.dataset.hmKeyed = '1';
+      row.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        row.click();
+      });
+    });
+  }
+  wireHomeRows();
+  document.addEventListener('astro:page-load', wireHomeRows);
+</script>
 
 <style>
   .hm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 
   /* Slim page title (health lives in the rail) */
-  .hm-title { display: flex; align-items: baseline; gap: .6rem; margin-bottom: 1.1rem; min-width: 0; }
-  .hm-title h1 { font-size: 1.5rem; font-weight: 680; letter-spacing: -.02em; line-height: 1.15; min-width: 0; }
-  .hm-title-sub { font-size: .8rem; color: oklch(from var(--color-base-content) l c h / .66); font-weight: 600; flex: none; }
+  .hm-title { display: flex; align-items: baseline; gap: 8px; margin-bottom: 16px; min-width: 0; }
+  /* No local type any more: the title IS `.text-title`, like every other page. The bespoke 1.5rem /
+     680 pair existed to make a SPACE name look like a heading, and there is no space name here. */
+  .hm-title h1 { min-width: 0; }
 
   /* Just-finished-setup confirmation banner */
   /* The just-finished-setup confirmation is a catalog dismissible alert now. */
@@ -338,9 +550,80 @@ const nodeBadge = (tone: string) =>
   /* Two-region grid: backups (left) + status rail (right) */
   .hm-cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 1.5rem; align-items: start; }
   .hm-main { display: flex; flex-direction: column; gap: 1.25rem; min-width: 0; }
-  @media (max-width: 1024px) { .hm-cols { grid-template-columns: 1fr; } .hm-rail { order: -1; } }
+  /* ── Below the boundary: THE ORDER IS THE ANSWER, then the evidence ───────────────────────────
+     2026-08-10. Stacking used to be `grid-template-columns: 1fr` + `.hm-rail { order: -1 }`, which
+     hoists the WHOLE rail — so a phone read status → Backup pipeline → Usage this month → KPIs →
+     history. Oleh scrolled it and found configuration and billing sitting where the answer belongs,
+     and he is right: the wave's thesis is that a phone opens to answer "is my data safe, and if
+     not, how bad". A pipeline diagram is configuration. A usage meter is billing. Neither is that
+     answer, and both were above the log that is.
 
-  /* Metrics strip */
+     THE ORDER, and why:
+       1 status    the verdict. Moment 2 ("did last night run?") is answered here with no scroll,
+                   and nothing may be inserted above it.
+       2 history   the evidence for the verdict, at run grain — the newest five runs.
+       3 schema    the same answer at BASE grain: which bases, how many records, backed up. Rows
+                   2 and 3 are one question asked twice, so they sit together.
+       4 kpis      MAGNITUDE, not verdict — "how much is safe", which is the follow-up question. It
+                   is also four aggregates summed FROM the runs above; putting the total before the
+                   ledger asks the reader to trust a number before seeing whether the run behind it
+                   succeeded. On a phone it is 2x2, ~4 rows of scroll, and it was buying that space
+                   ahead of the log.
+       5 foot      the counting footnote — it explains 3 and 4, so it follows them.
+       6 pipeline  configuration: what is wired to what. Read when the verdict is bad, not before.
+       7 usage     billing. Last, because it answers no question a phone visit asks.
+     DESKTOP IS UNTOUCHED — none of this exists above the boundary.
+
+     MECHANISM: `display: contents` on the three wrappers, so the two columns' children become
+     direct flex items of one list and `order` can interleave across what were separate columns.
+     The alternative was moving markup, which would have changed the DESKTOP DOM to fix a phone.
+     `contents` erases `.hm-rail-inner`'s border/radius/background, which is why the three blocks
+     that lived inside it take their own card chrome below — a rail is one object, and the moment
+     its parts are separated by the log they are three. */
+  @media (max-width: 1279.98px) {
+    /* `align-items` MUST be restated. The desktop rule sets `align-items: start`, which in a GRID
+       means "don't stretch rows vertically" and in a COLUMN FLEX means "don't stretch items
+       horizontally" — the same keyword, a different axis. Switching `display` silently changed what
+       that word did: measured at 375, the pipeline card sized to its content at 363px inside a
+       327px column and pushed the page 12px sideways, while history came out 312 and usage 262 —
+       three cards, three widths, one horizontal scrollbar. */
+    .hm-cols { display: flex; flex-direction: column; align-items: stretch; gap: 1.25rem; }
+    /* CHILD COMBINATORS ARE LOAD-BEARING, not tidiness. `.hm-rail-inner { display: flex }` is
+       declared BELOW this block in the same file at the same specificity, so a bare
+       `.hm-rail-inner { display: contents }` lost on source order — silently. Measured at 390: the
+       rail stayed one 933px block and the phone still read status → pipeline → usage → history,
+       i.e. the exact bug this block exists to fix, with every gate green. `.hm-main` collapsed and
+       `.hm-rail-inner` did not, which is the tell. (P24 §5: verify the rendered value.) */
+    .hm-cols > .hm-main,
+    .hm-cols > .hm-rail,
+    .hm-rail > .hm-rail-inner { display: contents; }
+
+    .hm-status          { order: 1; }
+    [data-hm='history'] { order: 2; }
+    [data-hm='schema']  { order: 3; }
+    .hm-kpis            { order: 4; }
+    .hm-foot            { order: 5; }
+    [data-hm='pipeline']{ order: 6; }
+    [data-hm='usage']   { order: 7; }
+
+    /* Card chrome for the three blocks that lost their shared shell. `.hm-sect[data-hm]` is 0,2,0
+       and sits LATER in the file than `.hm-sect + .hm-sect` (also 0,2,0), which is what actually
+       cancels that rule's border-top — a bare `[data-hm]` at 0,1,0 would have lost, and lost
+       invisibly, leaving a hairline across the top of two floating cards. Specificity checked, not
+       assumed (P24 §5). */
+    .hm-status, .hm-sect[data-hm] {
+      border: 1px solid var(--color-base-300);
+      border-top: 1px solid var(--color-base-300);
+      border-radius: .85rem;
+    }
+    .hm-sect[data-hm] { background: var(--color-base-100); }
+  }
+
+  /* Metrics strip. RECONCILED for apps/web (web-space-home-dashboard promotion): the fork moved
+     these `.hm-kpi*` rules to a global `pattern-metric-tiles` block because its Data page adopted
+     the same tiles. apps/web has no such block and this view is the tiles' ONLY call site, so per
+     CLAUDE.md §1.5 (no pre-emptive abstraction — wait for a second call site) they stay scoped
+     here, exactly as the pre-promotion SpaceHomeView carried them. */
   .hm-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); overflow: hidden; }
   .hm-kpi { display: flex; flex-direction: column; gap: .15rem; min-width: 0; padding: 1.05rem 1.25rem 1.1rem; }
   .hm-kpi + .hm-kpi { border-left: 1px dashed oklch(from var(--color-base-content) l c h / .16); }
@@ -355,30 +638,56 @@ const nodeBadge = (tone: string) =>
   @media (max-width: 560px) { .hm-kpis { grid-template-columns: 1fr 1fr; } .hm-kpi:nth-child(odd) { border-left: 0; } .hm-kpi:nth-child(n+3) { border-top: 1px dashed oklch(from var(--color-base-content) l c h / .16); } }
 
   /* Left panels + tables */
-  .hm-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 1.1rem 1.25rem 1.2rem; }
-  .hm-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .9rem; }
-  .hm-panel-head h2 { font-size: .95rem; font-weight: 660; }
+  .hm-panel { border: 1px solid var(--color-base-300); border-radius: .85rem; background: var(--color-base-100); padding: 16px 20px 20px; }
+  .hm-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .hm-panel-head h2 { font-size: var(--t-16); font-weight: 660; }
   /* Section-header "more / action" links are catalog buttons (btn-ghost btn-sm text-primary). */
   /* Tables are the daisyUI primitive (same as Backups); only the wrap + empty/foot are bespoke. */
   .hm-tablewrap { overflow-x: auto; }
+
+
+  /* ── THE SIDE PADDING, AND WHERE IT ACTUALLY WAS (Oleh, 2026-08-12: «в них завеликі бокові
+     відступи і їх зменшення дозволить більше контенту тримати разом») ─────────────────────────
+     He is right, and the number is not the one it looks like. The panel spends 20px a side; each
+     daisyUI CELL spends 16, and there are six of them — so a 419px row gave 192px to cell padding
+     and 40 to the card, which is **46% of the row on gaps between things**. The panel was the
+     visible frame and the smaller half of the problem by five times.
+     8px cells and a 12px card return 112px to the content on a 461px screen — a quarter more room,
+     and the row keeps its rhythm because 8 is still on the grid the whole app uses. Wide is
+     untouched: at 1400px of column the 16px reads as air rather than as loss. */
   .hm-tablewrap :is(th, td) { white-space: nowrap; }
-  .hm-empty { text-align: center !important; color: oklch(from var(--color-base-content) l c h / .64); padding: 1.1rem 0 !important; }
-  .hm-foot { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); }
+  .hm-empty { text-align: center !important; color: oklch(from var(--color-base-content) l c h / .65); padding: 16px 0 !important; }
+  .hm-foot { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
 
   /* Status rail — the set-apart control panel */
   .hm-rail { position: sticky; top: 1rem; }
   .hm-rail-inner { display: flex; flex-direction: column; border: 1px solid var(--color-base-300); border-radius: .9rem; background: var(--color-base-100); overflow: hidden; }
-  .hm-sect { padding: 1.05rem 1.15rem; }
-  .hm-sect + .hm-sect, .hm-status + .hm-sect { border-top: 1px solid oklch(from var(--color-base-content) l c h / .1); }
-  .hm-sect-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: .85rem; }
-  .hm-sect-head h3 { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .64); }
+  .hm-sect { padding: 16px 20px; }
+  /* THE NARROW BLOCK FOR THE PADDING ARGUMENT ABOVE LIVES HERE, below `.hm-sect`'s base rule, not
+     beside its comment (measured 2026-08-13). Written up there it had `.hm-panel` above it and
+     `.hm-sect` BELOW it, so the request landed by halves: `.hm-panel` computed 12px and `.hm-sect`
+     stayed on 20px. A later `padding` shorthand eats an earlier one at equal specificity. */
+  @media (max-width: 1279.98px) {
+    .hm-panel { padding: 16px 12px 12px; }
+    .hm-panel :is(th, td) { padding-inline: 8px; }
+    .hm-sect { padding: 16px 12px; }
+  }
+  .hm-sect + .hm-sect, .hm-status + .hm-sect { border-top: 1px solid oklch(from var(--color-base-content) l c h / .08); }
+  .hm-sect-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .hm-sect-head h3 { font-size: var(--t-12); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .65); }
 
   /* Health block (top of the rail) */
-  .hm-status { padding: 1.1rem 1.15rem; }
+  .hm-status { padding: 16px 20px; }
   .hm-status.is-ok { background: oklch(from var(--color-success) l c h / .08); }
   .hm-status.is-running { background: oklch(from var(--color-primary) l c h / .08); }
-  .hm-status.is-paused { background: oklch(from var(--color-warning) l c h / .11); }
-  .hm-status-top { display: flex; align-items: center; gap: .55rem; }
+  .hm-status.is-paused { background: oklch(from var(--color-warning) l c h / .08); }
+  /* Derived levels the rail could not previously express: a failed newest run, a
+     stale/overdue Space, and a Space with no runs at all. Each gets its own tone so
+     none of them can fall through to the success sentence. */
+  .hm-status.is-failed { background: oklch(from var(--color-error) l c h / .08); }
+  .hm-status.is-warn { background: oklch(from var(--color-warning) l c h / .08); }
+  .hm-status.is-idle { background: oklch(from var(--color-base-content) l c h / .08); }
+  .hm-status-top { display: flex; align-items: center; gap: 8px; }
   .hm-status-ic { width: 2rem; height: 2rem; border-radius: .55rem; display: grid; place-items: center; flex: none; }
   .hm-status-ic .iconify { font-size: 1.15rem; }
   .hm-status.is-ok .hm-status-ic { background: oklch(from var(--color-success) l c h / .16); }
@@ -387,33 +696,59 @@ const nodeBadge = (tone: string) =>
   .hm-status.is-running .hm-status-ic .iconify { color: var(--color-primary); }
   .hm-status.is-paused .hm-status-ic { background: oklch(from var(--color-warning) l c h / .16); }
   .hm-status.is-paused .hm-status-ic .iconify { color: var(--color-warning); }
-  .hm-status-line { display: inline-flex; align-items: center; gap: .3rem; font-size: .92rem; font-weight: 600; }
+  .hm-status.is-failed .hm-status-ic { background: oklch(from var(--color-error) l c h / .16); }
+  .hm-status.is-failed .hm-status-ic .iconify { color: var(--color-error); }
+  .hm-status.is-warn .hm-status-ic { background: oklch(from var(--color-warning) l c h / .16); }
+  .hm-status.is-warn .hm-status-ic .iconify { color: var(--color-warning); }
+  .hm-status.is-idle .hm-status-ic { background: oklch(from var(--color-base-content) l c h / .08); }
+  .hm-status.is-idle .hm-status-ic .iconify { color: oklch(from var(--color-base-content) l c h / .65); }
+  .hm-status-line { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-14); font-weight: 600; }
   .hm-status.is-ok .hm-status-line { color: var(--color-success); }
   .hm-status.is-running .hm-status-line { color: var(--color-primary); }
-  .hm-status.is-paused .hm-status-line { color: oklch(from var(--color-base-content) l c h / .9); }
-  .hm-status-line .iconify { font-size: 1rem; }
-  .hm-status-meta { display: flex; flex-direction: column; gap: .5rem; margin: .85rem 0; }
+  .hm-status.is-paused .hm-status-line { color: oklch(from var(--color-base-content) l c h / .85); }
+  .hm-status.is-failed .hm-status-line { color: var(--color-error); }
+  .hm-status.is-warn .hm-status-line,
+  .hm-status.is-idle .hm-status-line { color: oklch(from var(--color-base-content) l c h / .85); }
+  .hm-status-line .iconify { font-size: var(--t-16); }
+  .hm-status-meta { display: flex; flex-direction: column; gap: .5rem; margin: 12px 0; }
   .hm-status-meta > div { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-  .hm-status-detail { font-size: .82rem; color: oklch(from var(--color-base-content) l c h / .8); margin: .6rem 0 .85rem; }
+  .hm-status-detail { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .85); margin: 8px 0 12px; }
+  /* md, deliberately: the status rail carries the ONE action this surface exists to offer, and
+     Home's header is slim by design. See `decision-density-sm-is-default` — the carve-out is
+     about the ROLE (a surface's single primary action), not about sitting in a page header. */
   .hm-status-btn { width: 100%; }
+  /* The freshness stamp sits under the action, centred, on the 4px grid. */
+  /* `:global`, AND THAT IS THE WHOLE REASON THIS DID NOT WORK THE FIRST TIME. `.hm-status-refresh`
+     is passed as a `class` prop to `<LiveRefresh>`, so the class lands on that component's OWN root
+     — which carries LiveRefresh's `data-astro-cid-…`, never this view's. Astro appends the parent's
+     cid to a scoped selector, so `.hm-status-refresh` matched nothing and the computed
+     `margin-inline-start` read `0px` while the rule sat right there in the file looking correct.
+     Measured, not guessed: the control's right edge was 144px short of the card's.
+     In the headline row, pushed to the far end. The rail is a load-time snapshot of a state that
+     moves, and LiveRefresh is the app's one answer to that — manual, never auto-polling, the same
+     control the run-detail header and the Backups toolbar carry. */
+  :global(.hm-status-refresh) { margin-inline-start: auto; flex: none; }
+  /* The headline yields, not the refresh: a status word can truncate and still be read from its
+     icon, an `updated 20s ago · Refresh` pair cannot lose either half. */
+  .hm-status-line { min-width: 0; }
   /* Keep the label on one line; let the value wrap instead (e.g. a long "next backup" date). */
-  .hm-mk { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .66); white-space: nowrap; flex: none; }
-  .hm-mv { font-size: .82rem; font-weight: 600; text-align: right; min-width: 0; }
+  .hm-mk { font-size: var(--t-12); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; flex: none; }
+  .hm-mv { font-size: var(--t-13); font-weight: 600; text-align: right; min-width: 0; }
 
   /* Vertical pipeline */
   .hm-pipe { display: flex; flex-direction: column; }
-  .hm-node { display: flex; flex-direction: column; gap: .25rem; padding: .85rem .9rem; border: 1px solid var(--color-base-300); border-radius: .6rem; background: var(--color-base-100); min-width: 0; }
+  .hm-node { display: flex; flex-direction: column; gap: .25rem; padding: 12px 16px; border: 1px solid var(--color-base-300); border-radius: .6rem; background: var(--color-base-100); min-width: 0; }
   .hm-node-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
-  .hm-node-cap { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .66); }
+  .hm-node-cap { font-size: var(--t-12); font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: oklch(from var(--color-base-content) l c h / .65); }
   /* Per-node connection status chip = catalog daisyUI badge (badge-soft + leading dot). */
-  .hm-node-main { display: flex; align-items: center; gap: .4rem; font-size: .875rem; font-weight: 600; min-width: 0; }
+  .hm-node-main { display: flex; align-items: center; gap: 8px; font-size: var(--t-14); font-weight: 600; min-width: 0; }
   .hm-node-main .hm-mark { border-radius: 4px; flex: none; }
-  .hm-mark-ic { font-size: 1rem; color: oklch(from var(--color-base-content) l c h / .6); flex: none; }
-  .hm-node-sub { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hm-mark-ic { font-size: var(--t-16); color: oklch(from var(--color-base-content) l c h / .65); flex: none; }
+  .hm-node-sub { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hm-warn { color: var(--color-warning); font-weight: 600; }
   .hm-conn { position: relative; height: 1.4rem; display: grid; place-items: center; }
   .hm-conn::before { content: ''; position: absolute; top: -.3rem; bottom: -.3rem; left: 50%; width: 2px; transform: translateX(-50%); border-radius: 2px; }
-  .hm-conn.is-ok::before { background: oklch(from var(--color-success) l c h / .5); }
+  .hm-conn.is-ok::before { background: oklch(from var(--color-success) l c h / .55); }
   .hm-conn.is-warn::before { background: oklch(from var(--color-warning) l c h / .55); }
   .hm-conn-badge { position: relative; z-index: 1; width: 1rem; height: 1rem; border-radius: 999px; display: grid; place-items: center; box-shadow: 0 0 0 3px var(--color-base-100); }
   .hm-conn.is-ok .hm-conn-badge { background: var(--color-success); color: var(--color-success-content); }
@@ -421,12 +756,82 @@ const nodeBadge = (tone: string) =>
   .hm-conn-badge .iconify { font-size: .72rem; }
 
   /* Usage bars */
-  .hm-usage { display: flex; flex-direction: column; gap: .7rem; }
-  .hm-usage-row { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; font-size: .8rem; margin-bottom: .3rem; }
-  .hm-usage-val { color: oklch(from var(--color-base-content) l c h / .6); font-variant-numeric: tabular-nums; }
-  .hm-usage-track { height: 6px; border-radius: 999px; background: oklch(from var(--color-base-content) l c h / .1); overflow: hidden; }
+  .hm-usage { display: flex; flex-direction: column; gap: 12px; }
+  .hm-usage-row { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; font-size: var(--t-13); margin-bottom: 4px; }
+  .hm-usage-val { color: oklch(from var(--color-base-content) l c h / .65); font-variant-numeric: tabular-nums; }
+  .hm-usage-track { height: 6px; border-radius: 999px; background: oklch(from var(--color-base-content) l c h / .08); overflow: hidden; }
   .hm-usage-fill { display: block; height: 100%; border-radius: 999px; background: var(--color-primary); }
   .hm-usage-fill.is-hot { background: var(--color-warning); }
+
+  /* The reason the newest run failed, under the verdict. It is the run's own sentence and it
+     LINKS to that run, so "what is wrong" and "show me" are the same tap. Two lines, clamped —
+     the full sentence is one tap away on the run page, which is the honest fallback on a surface
+     with no hover. */
+  .hm-status-why {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    color: inherit;
+  }
+  .hm-status-why:hover { text-decoration: underline; }
+  /* It is a LINK, so below the boundary it takes the touch floor like every other one. Two clamped
+     lines come to 39px, which is the shape of a target that looks tappable and misses. */
+  @media (max-width: 1279.98px) {
+    .hm-status-why { min-height: var(--touch-min); align-items: center; }
+  }
+
+  /* `.hm-numcap` is gone with the fold, and it was the last `--t-11` in the tree. It existed only
+     because a folded row has no column headers, so `12,407` needed the word `records` under it at
+     11px — a caption invented to replace a header, printed below the type floor. Both tables keep
+     their headers at every width now, so the header does the naming and the 11px rung is unused. */
+
+  /* ── Below the 1280 product boundary ──────────────────────────────────────────────────────────
+     Scoped, not global, for the specificity reason written out in BackupsListView: Astro adds a
+     `[data-astro-cid-…]` attribute to every selector here, so `.hm-tablewrap :is(th, td)` above
+     out-specifies any shared rule that tries to undo it from global.css. This block sits BELOW
+     every base declaration it overrides — a media query changes when a rule is considered, never
+     whether it wins. */
+  @media (max-width: 1279.98px) {
+    /* `white-space: normal` is DELETED, not restated. It was the fold's rule: a folded cell is a
+       block that must wrap. A panned cell must not — a wrapped cell inside a horizontal scroller
+       makes the row taller instead of making the table wider, which is the one thing panning is
+       for. The base `.hm-tablewrap :is(th, td) { white-space: nowrap }` now governs both widths. */
+
+    /* THE COLUMNS THAT CANNOT EARN THEIR WIDTH ARE CUT, NOT SQUEEZED — the same rule and the same
+       reasoning the Backups log applies. Measured min-content per column at 390 (cells at the 8px
+       narrow padding) before the cut:
+         history  Status 110 · Kind 96 · When 58 · Bases 54 · Records 74 · Files 48 · chevron 32
+                  = 471 in 325 of room.
+         schema   Base 122 · Status 104 · Fields 56 · Records 74 · Attachments 107 · Schema→ 101
+                  = 564 in 325 of room.
+       Cut from history: Bases (54) and Files (48) — the identical pair the log cuts, for the
+       identical reasons, because this table IS that log's preview. 102px removed.
+       Cut from schema: the row-action column (101px), five buttons to one destination the panel
+       heading already links to. Nothing else goes: Fields / Records / Attachments are the three
+       numerics the section exists to be compared down, and cutting one of those is cutting the
+       content Oleh asked to see MORE of. 101px removed.
+       Nothing is truncated to fit — a cut column is absent, not abbreviated. */
+    .hm-cx { display: none; }
+
+    /* EVERY REMAINING COLUMN GETS A MEASURED FLOOR — `data-narrow-pan`'s contract. Without floors a
+       table in a scroller hands its slack to whichever column asks last, which is the 0px-track
+       failure the pan rule exists to prevent. Each floor is the measured min-content above, rounded
+       up to the 4px grid with one step of headroom for a longer value than the fixture happens to
+       carry (`Cancelled`, `1,204,556`, a longer base name). */
+    .hm-panel[data-hm='history'] :is(th, td):nth-child(1) { min-width: 112px; } /* Status  110 */
+    .hm-panel[data-hm='history'] :is(th, td):nth-child(2) { min-width: 96px; }  /* Kind     96 */
+    .hm-panel[data-hm='history'] :is(th, td):nth-child(3) { min-width: 72px; }  /* When     58 */
+    .hm-panel[data-hm='history'] :is(th, td):nth-child(5) { min-width: 88px; }  /* Records  74 */
+    .hm-panel[data-hm='schema'] :is(th, td):nth-child(1) { min-width: 128px; }  /* Base    122 */
+    .hm-panel[data-hm='schema'] :is(th, td):nth-child(2) { min-width: 112px; }  /* Status  104 */
+    .hm-panel[data-hm='schema'] :is(th, td):nth-child(3) { min-width: 64px; }   /* Fields   56 */
+    .hm-panel[data-hm='schema'] :is(th, td):nth-child(4) { min-width: 88px; }   /* Records  74 */
+    .hm-panel[data-hm='schema'] :is(th, td):nth-child(5) { min-width: 112px; }  /* Attach  107 */
+
+    .hm-panel-head .btn { margin-right: 0; }
+  }
 
   /* Light-theme contrast: the semantic status colors are tuned for accents/icons and for
      the dark theme; as SMALL TEXT on white they fail WCAG AA. Darken them on light only

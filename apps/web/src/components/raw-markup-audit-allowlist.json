@@ -53,6 +53,9 @@
   "src/views/SpaceHomeView.astro": [
     "daisyUI-direct in a view (CLAUDE.md §4.2 second tier): the two-region Home (primary + sticky status rail) uses alert/btn/badge and a daisyUI `table` for the backup-history + schema previews directly. The status rail, vertical pipeline, and KPI strip are a bespoke dashboard composition — not a single Storybook component."
   ],
+  "src/views/SpaceHomeView.legacy.astro": [
+    "Pre-promotion Home, kept as the rollback target for the Phase 7.4 Space Home visual promotion (ui-only@7c7202d7 via ref 53bbef82). Same daisyUI-direct composition (alert/btn/badge + `table`) as the live SpaceHomeView above; not routed."
+  ],
   "src/views/WelcomeView.astro": [
     "daisyUI-direct in a view (CLAUDE.md §4.2 second tier, web-auth-convergence): first-run onboarding form — per-field auth-form-note refusals from welcomeForm.ts + TextInput/Select/Checkbox/Button catalog primitives. Fork markup with real POST /api/onboarding/complete. Not a single Storybook component."
   ],

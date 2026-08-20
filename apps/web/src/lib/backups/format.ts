@@ -4,6 +4,15 @@
  */
 
 import type { BackupRunSummary } from '../backup-runs/types'
+// Space-health derivation (below) reuses the canonical time system. The
+// two-arg `formatNextScheduledAt(iso, now)` is aliased so it does not collide
+// with this file's own single-arg `formatNextScheduledAt` export (kept for
+// IntegrationsSetupWizard + its pinned tests).
+import {
+  fmtRelative,
+  formatNextScheduledAt as fmtNextScheduled,
+  isOverdue,
+} from '../time'
 
 export function statusLabel(status: string): string {
   switch (status) {
@@ -270,4 +279,189 @@ export function describeCounts(run: BackupRunSummary): string {
     )
   }
   return parts.join(' · ')
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Space health — ONE derivation, consumed by Home's status rail (and, in a
+ * later app-shell change, the connection banner + Inbox alike).
+ *
+ * Audit decision D01: any sentence that claims a state must be derived from the
+ * newest relevant data at render time; a claim that cannot be derived is not
+ * rendered. Home used to compute "Everything's backed up" from
+ * `!paused && !running` — a flag about CONNECTIONS — while the runs one click
+ * away said "failed". The verdict is computed once here so every surface reads
+ * the same object. (Promoted from ui-only@7c7202d7 for web-space-home-dashboard.)
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/** Run statuses that mean a snapshot was actually written. */
+const SUCCESS_STATUSES = ['succeeded', 'trial_succeeded', 'trial_complete']
+/**
+ * Run statuses that are NOT finished. `paused` belongs here: a held run has not
+ * produced a verdict, and treating it as terminal let the rail report a paused
+ * run as "last run" — a finished-sounding claim about something still open.
+ */
+const IN_FLIGHT_STATUSES = ['queued', 'running', 'cancelling', 'paused']
+/** After this long with no success, the Space is degraded (the banner's own threshold). */
+const DEGRADED_AFTER_MS = 24 * 60 * 60 * 1000
+
+export function isSuccessRun(run: BackupRunSummary): boolean {
+  return SUCCESS_STATUSES.includes(run.status)
+}
+
+export function isInFlightRun(run: BackupRunSummary): boolean {
+  return IN_FLIGHT_STATUSES.includes(run.status)
+}
+
+/** When a run last MOVED — completed, else started, else created. */
+export function runMovedAt(run: BackupRunSummary): number {
+  const t = new Date(run.completedAt ?? run.startedAt ?? run.createdAt).getTime()
+  return Number.isFinite(t) ? t : 0
+}
+
+export type SpaceHealthLevel =
+  | 'broken'
+  | 'running'
+  | 'failed'
+  | 'degraded'
+  | 'overdue'
+  | 'ok'
+  | 'unknown'
+
+export interface SpaceHealthInput {
+  /** Every run the Space knows about, any order. */
+  runs?: BackupRunSummary[]
+  /** The source connection's display name, broken or not. Names the degraded banner. */
+  sourceName?: string | null
+  /** The source connection, when it has lost access. */
+  brokenSource?: { name: string } | null
+  /** The destination connection, when it has lost access. */
+  brokenDestination?: { name: string } | null
+  /** `backup_configurations.next_scheduled_at`. */
+  nextScheduledAt?: string | null
+  now?: number
+}
+
+/** What the app-shell banner needs. Null when the shell must stay silent. */
+export interface SpaceHealthBanner {
+  state: 'broken' | 'degraded'
+  provider: string
+  side: 'source' | 'destination'
+  lastBackup?: string
+}
+
+export interface SpaceHealth {
+  level: SpaceHealthLevel
+  /** The rail's verdict sentence. Every word of it comes from the data below. */
+  headline: string
+  /** Which side lost access, when `level` is 'broken'. */
+  brokenSide: 'source' | 'destination' | null
+  brokenName: string | null
+  /** Newest run of any status — this is what "last backup" means. */
+  lastRun: BackupRunSummary | null
+  lastRunAt: string | null
+  lastRunLabel: string
+  /** Newest run that wrote a snapshot. */
+  lastSuccess: BackupRunSummary | null
+  lastSuccessAt: string | null
+  /** Newest FULL (data) success — a schema-only run carries no record counts. */
+  lastFullSuccess: BackupRunSummary | null
+  /** True when the newest run is not the newest success, so both must be named. */
+  successDiffers: boolean
+  nextLabel: string
+  overdue: boolean
+  banner: SpaceHealthBanner | null
+}
+
+export function runKind(run: BackupRunSummary): 'schema' | 'full' {
+  return run.kind === 'schema' ? 'schema' : 'full'
+}
+
+export function deriveSpaceHealth(input: SpaceHealthInput = {}): SpaceHealth {
+  const now = input.now ?? Date.now()
+  const runs = input.runs ?? []
+  const sorted = [...runs].sort((a, b) => runMovedAt(b) - runMovedAt(a))
+
+  const lastRun = sorted[0] ?? null
+  const inFlight = sorted.find(isInFlightRun) ?? null
+  const lastSuccess = sorted.find(isSuccessRun) ?? null
+  const lastFullSuccess =
+    sorted.find((r) => isSuccessRun(r) && runKind(r) === 'full') ?? null
+
+  const brokenSource = input.brokenSource ?? null
+  const brokenDestination = input.brokenDestination ?? null
+  const overdue = isOverdue(input.nextScheduledAt ?? null, now)
+  const nextLabel = fmtNextScheduled(input.nextScheduledAt ?? null, now)
+
+  const lastSuccessAt = lastSuccess?.completedAt ?? null
+  const successAge = lastSuccessAt
+    ? now - new Date(lastSuccessAt).getTime()
+    : Number.POSITIVE_INFINITY
+  // "Degraded" only means something once the Space has had a chance to run. A
+  // Space with no runs at all is 'unknown', not stale — and a Space with a run
+  // IN FLIGHT is not silent either: the sentence "no successful backup in 24
+  // hours, we're retrying" would be describing the attempt happening on screen.
+  const stale = runs.length > 0 && !inFlight && successAge > DEGRADED_AFTER_MS
+
+  let level: SpaceHealthLevel
+  if (brokenSource || brokenDestination) level = 'broken'
+  else if (inFlight) level = 'running'
+  else if (lastRun?.status === 'failed') level = 'failed'
+  else if (runs.length === 0) level = 'unknown'
+  else if (stale) level = 'degraded'
+  else if (overdue) level = 'overdue'
+  else level = 'ok'
+
+  const lastRunSince = fmtRelative(
+    lastRun?.completedAt ?? lastRun?.startedAt ?? lastRun?.createdAt ?? null,
+    now,
+  )
+  const lastSuccessSince = fmtRelative(lastSuccessAt, now)
+
+  let headline: string
+  if (level === 'broken') headline = 'Backups paused'
+  else if (level === 'running')
+    headline =
+      inFlight?.status === 'queued'
+        ? 'Backup queued'
+        : inFlight?.status === 'paused'
+          ? 'Backup paused'
+          : 'Backup running…'
+  else if (level === 'failed') headline = 'Last run failed'
+  else if (level === 'unknown') headline = 'No backup has run yet'
+  else if (level === 'degraded') headline = 'No successful backup in 24 hours'
+  else if (level === 'overdue') headline = nextLabel
+  else headline = lastSuccessSince ? `Backed up ${lastSuccessSince}` : 'Backed up'
+
+  const banner: SpaceHealthBanner | null = brokenSource
+    ? {
+        state: 'broken',
+        provider: brokenSource.name,
+        side: 'source',
+        ...(lastSuccessSince ? { lastBackup: lastSuccessSince } : {}),
+      }
+    : brokenDestination
+      ? { state: 'broken', provider: brokenDestination.name, side: 'destination' }
+      : // A degraded banner names the connection it is about. With no source name
+        // to print there is no sentence to derive, so the shell stays silent
+        // rather than printing a placeholder where a name belongs.
+        stale && input.sourceName
+        ? { state: 'degraded', provider: input.sourceName, side: 'source' }
+        : null
+
+  return {
+    level,
+    headline,
+    brokenSide: brokenSource ? 'source' : brokenDestination ? 'destination' : null,
+    brokenName: brokenSource?.name ?? brokenDestination?.name ?? null,
+    lastRun,
+    lastRunAt: lastRun?.completedAt ?? lastRun?.startedAt ?? lastRun?.createdAt ?? null,
+    lastRunLabel: lastRunSince ?? '—',
+    lastSuccess,
+    lastSuccessAt,
+    lastFullSuccess,
+    successDiffers: !!lastRun && lastRun !== lastSuccess,
+    nextLabel,
+    overdue,
+    banner,
+  }
 }

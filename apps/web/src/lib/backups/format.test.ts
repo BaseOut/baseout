@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  deriveSpaceHealth,
   describeCounts,
   expandedTimestamp,
   formatDeletedAt,
@@ -8,9 +9,13 @@ import {
   formatTriggeredBy,
   healthBadgeClass,
   healthStatus,
+  isInFlightRun,
+  isSuccessRun,
   isWebhookRun,
   kindBadgeClass,
   kindLabel,
+  runKind,
+  runMovedAt,
   statusBadgeClass,
   statusLabel,
   webhookSourceLine,
@@ -441,5 +446,151 @@ describe('webhookSourceLine', () => {
     expect(webhookSourceLine(run({ triggeredBy: 'webhook' }))).toBe(
       'Source: Webhook',
     )
+  })
+})
+
+// ── Space-health derivation (promoted from ui-only@7c7202d7) ──────────────────
+const NOW = Date.parse('2026-05-10T00:00:00.000Z')
+const HOUR = 60 * 60 * 1000
+const DAY = 24 * HOUR
+
+describe('runKind', () => {
+  it('maps schema runs to schema and everything else to full', () => {
+    expect(runKind(run({ kind: 'schema' }))).toBe('schema')
+    expect(runKind(run({ kind: 'full' }))).toBe('full')
+    expect(runKind(run({ kind: 'restore' }))).toBe('full')
+  })
+})
+
+describe('isSuccessRun / isInFlightRun', () => {
+  it('classifies terminal successes as success', () => {
+    expect(isSuccessRun(run({ status: 'succeeded' }))).toBe(true)
+    expect(isSuccessRun(run({ status: 'trial_succeeded' }))).toBe(true)
+    expect(isSuccessRun(run({ status: 'failed' }))).toBe(false)
+  })
+  it('treats queued/running/cancelling/paused as in-flight (paused is not terminal)', () => {
+    for (const status of ['queued', 'running', 'cancelling', 'paused']) {
+      expect(isInFlightRun(run({ status }))).toBe(true)
+    }
+    expect(isInFlightRun(run({ status: 'succeeded' }))).toBe(false)
+  })
+})
+
+describe('runMovedAt', () => {
+  it('prefers completedAt, then startedAt, then createdAt', () => {
+    expect(
+      runMovedAt(
+        run({
+          completedAt: '2026-05-09T03:00:00.000Z',
+          startedAt: '2026-05-09T02:00:00.000Z',
+          createdAt: '2026-05-09T01:00:00.000Z',
+        }),
+      ),
+    ).toBe(Date.parse('2026-05-09T03:00:00.000Z'))
+    expect(
+      runMovedAt(run({ completedAt: null, startedAt: '2026-05-09T02:00:00.000Z' })),
+    ).toBe(Date.parse('2026-05-09T02:00:00.000Z'))
+    expect(
+      runMovedAt(run({ completedAt: null, startedAt: null, createdAt: '2026-05-09T01:00:00.000Z' })),
+    ).toBe(Date.parse('2026-05-09T01:00:00.000Z'))
+  })
+})
+
+describe('deriveSpaceHealth', () => {
+  it('is unknown with no runs', () => {
+    const h = deriveSpaceHealth({ now: NOW })
+    expect(h.level).toBe('unknown')
+    expect(h.headline).toBe('No backup has run yet')
+    expect(h.lastRun).toBeNull()
+    expect(h.banner).toBeNull()
+  })
+
+  it('is broken (and names the side) when a connection lost access', () => {
+    const h = deriveSpaceHealth({
+      now: NOW,
+      runs: [run({ status: 'succeeded', completedAt: '2026-05-09T23:00:00.000Z' })],
+      brokenSource: { name: 'Acme Airtable' },
+      sourceName: 'Acme Airtable',
+    })
+    expect(h.level).toBe('broken')
+    expect(h.brokenSide).toBe('source')
+    expect(h.brokenName).toBe('Acme Airtable')
+    expect(h.headline).toBe('Backups paused')
+    expect(h.banner).toEqual({
+      state: 'broken',
+      provider: 'Acme Airtable',
+      side: 'source',
+      lastBackup: '1h ago',
+    })
+    // A broken connection does not un-write the last success.
+    expect(h.lastSuccessAt).toBe('2026-05-09T23:00:00.000Z')
+  })
+
+  it('is running while a run is in flight', () => {
+    const h = deriveSpaceHealth({
+      now: NOW,
+      runs: [run({ status: 'running', startedAt: '2026-05-09T23:59:00.000Z' })],
+    })
+    expect(h.level).toBe('running')
+    expect(h.headline).toBe('Backup running…')
+  })
+
+  it('is failed when the newest run failed, and flags successDiffers with an older success', () => {
+    const h = deriveSpaceHealth({
+      now: NOW,
+      runs: [
+        run({ id: 'r_new', status: 'failed', completedAt: '2026-05-09T23:00:00.000Z', errorMessage: 'boom' }),
+        run({ id: 'r_old', status: 'succeeded', completedAt: '2026-05-08T23:00:00.000Z' }),
+      ],
+    })
+    expect(h.level).toBe('failed')
+    expect(h.headline).toBe('Last run failed')
+    expect(h.lastRun?.id).toBe('r_new')
+    expect(h.lastSuccess?.id).toBe('r_old')
+    expect(h.successDiffers).toBe(true)
+  })
+
+  it('is ok after a recent success with a future schedule', () => {
+    const h = deriveSpaceHealth({
+      now: NOW,
+      runs: [run({ status: 'succeeded', completedAt: new Date(NOW - HOUR).toISOString() })],
+      nextScheduledAt: new Date(NOW + DAY).toISOString(),
+    })
+    expect(h.level).toBe('ok')
+    expect(h.headline).toBe('Backed up 1h ago')
+    expect(h.successDiffers).toBe(false)
+  })
+
+  it('is degraded when the last success is older than 24h and nothing is in flight', () => {
+    const h = deriveSpaceHealth({
+      now: NOW,
+      runs: [run({ status: 'succeeded', completedAt: new Date(NOW - 2 * DAY).toISOString() })],
+      sourceName: 'Acme Airtable',
+    })
+    expect(h.level).toBe('degraded')
+    expect(h.headline).toBe('No successful backup in 24 hours')
+    expect(h.banner).toEqual({ state: 'degraded', provider: 'Acme Airtable', side: 'source' })
+  })
+
+  it('is overdue when a recent success has a schedule already in the past', () => {
+    const h = deriveSpaceHealth({
+      now: NOW,
+      runs: [run({ status: 'succeeded', completedAt: new Date(NOW - HOUR).toISOString() })],
+      nextScheduledAt: new Date(NOW - HOUR).toISOString(),
+    })
+    expect(h.level).toBe('overdue')
+    expect(h.overdue).toBe(true)
+  })
+
+  it('picks the newest FULL success for lastFullSuccess, not a later schema run', () => {
+    const h = deriveSpaceHealth({
+      now: NOW,
+      runs: [
+        run({ id: 'r_schema', kind: 'schema', status: 'succeeded', completedAt: '2026-05-09T23:00:00.000Z' }),
+        run({ id: 'r_full', kind: 'full', status: 'succeeded', completedAt: '2026-05-09T20:00:00.000Z' }),
+      ],
+    })
+    expect(h.lastSuccess?.id).toBe('r_schema')
+    expect(h.lastFullSuccess?.id).toBe('r_full')
   })
 })

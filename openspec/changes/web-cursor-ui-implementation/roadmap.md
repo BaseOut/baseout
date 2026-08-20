@@ -34,7 +34,7 @@
 
 | Surface | main today | ui-only | Backend on main | Program action |
 |---|---|---|---|---|
-| Home | **LIVE** (`SpaceHomeView`) | Built | runs + integrations | Later visual sync if delta; don’t rebuild core |
+| Home | **LIVE** (`SpaceHomeView` · Phase 7.4 visual) | Built | runs + integrations | **DONE** visual — preserve `index.astro` poll |
 | Backups | **LIVE** | Built (richer) | engine runs | Later visual sync; preserve poll wiring |
 | Restore | **LIVE** | Built | restore paths | Later visual sync |
 | Schema — Browse / Visualize / Relationships / Health / Docs / Chat / Changelog* | **LIVE** (most tabs) | Re-architected (deferred) | yes | **Keep live shell**; Schema re-arch deferred (ledger) |
@@ -70,7 +70,7 @@
 | **4** | Settings hub | Promote ui-only Settings catalog; wire real rows; honest-gate the rest | **DONE** · `2390c175` |
 | **5** | Auth visual convergence | Promote Login/Welcome/Association; auth scroll contract; keep better-auth | **DONE** · `a11f2edd` |
 | **6** | Inbox full page | Promote `InboxView` → `/inbox`; reuse notification proxies | **DONE** · `d94fa4cc` |
-| **7** | Visual sync of LIVE surfaces | Restore → Sources → Destinations → Home → Backups; preserve polls & contracts | **IN PROGRESS** · Restore `099360f3` · Sources `c962d74b` · Destinations `a72e57e4` |
+| **7** | Visual sync of LIVE surfaces | Restore → Sources → Destinations → Home → Backups; preserve polls & contracts | **IN PROGRESS** · Restore `099360f3` · Sources `c962d74b` · Destinations `a72e57e4` · Home (this commit) |
 | **8** | Reports | Overturn V1 trim — finish engine + `web-reports-page`; restore `/reports` nav to match ui-only | `shared-backup-reports` |
 | **9** | Schema Automations / Interfaces | Engine `server-automations-interfaces-docs` then web tabs | Engine 0/40 — **included** |
 | **10** | Support portal | `apps/support` from ui-only | **BLOCKED** client Q#6 |

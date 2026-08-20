@@ -31,7 +31,9 @@
 - [ ] Orphaned cleanup (separate pass): legacy `IntegrationsView.astro` / `.v2` / `.v3` /
       `.redesign` and `IntegrationsConfigureView*.astro` are now unreferenced (were behind the
       old `?v=` switch) — delete once confirmed nothing in prod imports them. **`DashboardView.astro`
-      joined this orphan list 2026-06-26** (Home switched off it — see Applied note below)
+      joined this orphan list 2026-06-26** (Home switched off it — see Applied note below).
+      **RESOLVED 2026-08-20 (Phase 7.4):** `DashboardView.astro` retired → `DashboardView.legacy.astro`
+      (dead code — imported nowhere; the fork deleted it outright). Kept as `.legacy` for rollback.
 
 ## Applied to monorepo apps/web (2026-06-26)
 The harness state above was already true in the design app; this pass landed it in production `apps/web`:
@@ -51,3 +53,24 @@ The harness state above was already true in the design app; this pass landed it 
       (`SpacePipelineHero` → `components/patterns/`), added a raw-markup-allowlist entry (daisyUI-direct alert/btn/table).
       Verified: web `astro check` 0 errors (354 files) · unit 805/805 · governance 12/12 · design 0 errors.
 - `baseMetrics`/`usage` still passed empty (gated until the engine/billing feed them — the rail/Schema sections hide when empty).
+
+## Re-promoted the fork's grown Home (2026-08-20, Phase 7.4 on `autumn/cursor-ui-implementation-test`)
+Reference promotion `53bbef82` / ui-only@7c7202d7 (did **not** merge `web-ui-sync-promotion`). The 2026-06-26 pass ported an earlier `SpaceHomeView`. The fork then grew it ~2× (28KB→57KB) — a DERIVED space-health verdict (audit D01), Kind/When columns + clickable history rows, nullable-`spaceName` copy, and a manual `<LiveRefresh>` in the status header. This pass promotes that grown view into `apps/web` on the program branch:
+- [x] `views/SpaceHomeView.astro` (old → `.legacy.astro`) replaced with the ref view;
+      **Props contract IDENTICAL** → `pages/index.astro` UNCHANGED (real feed + the page-level 2s
+      `data-backup-history`/home-live poll both preserved; the poll wraps the view and keys off
+      page-level DOM, so the swap does not drop it).
+- [x] Health derivation grafted into `lib/backups/format.ts`: `deriveSpaceHealth` / `isInFlightRun` /
+      `isSuccessRun` / `runKind` / `runMovedAt` + `SpaceHealth*` types — ADDITIVE (no existing export
+      removed; `formatNextScheduledAt` from `lib/time` imported aliased). **+ unit tests** (+11 cases).
+- [x] `components/patterns/SpacePipelineHero.astro` widened to nullable `spaceName?: string | null`.
+- [x] Reconciliations vs fork-verbatim (same as ref): (1) `SpacePipelineHero` from `patterns/`;
+      (2) `RunBackupNowModal` real `spaceId`+`redirectTo`; (3) `.hm-kpi*` scoped in the view.
+- [x] `DashboardView.astro` retired → `DashboardView.legacy.astro` (dead code; fork deleted it).
+- [x] Governance: `SpaceHomeView.legacy.astro` added to `raw-markup-audit-allowlist.json`.
+
+## To do (this pass)
+- [ ] **Client / human browser smoke** of the grown Home on real data: healthy / paused / first-run-running /
+      failed / empty; confirm the 2s poll still flips a running run to done without a manual refresh.
+- [ ] Follow-up (separate app-shell surface): the fork's `SidebarLayout` connection banner reads the
+      same `deriveSpaceHealth` — promote when the app-shell change lands.
