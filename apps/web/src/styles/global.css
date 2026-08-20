@@ -669,3 +669,25 @@ html:has([data-schema][data-chat="drawer"]) {
   .es-empty { padding: 16px; text-align: center; font-size: 12.5px; color: oklch(from var(--color-base-content) l c h / .5); }
   .es-foot { display: flex; gap: 16px; padding: 8px 12px; border-top: 1px solid var(--color-base-300); font-size: 11px; color: oklch(from var(--color-base-content) l c h / .5); }
   .es-foot span { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ── THE 390 FLOOR GATE (S36-F3 / D35) ──────────────────────────────────────────────────────────
+   Rendered in `layouts/Layout.astro` (inherited by AuthLayout + SidebarLayout). Shown by CSS alone
+   below MIN_WIDTH from `lib/mobileNav.ts` (390). NOT drawn inside Airtable's extension panel: the
+   Blocks SDK takes a declared `ViewportConstraint minSize` and shows its own. */
+#too-narrow { display: none; }
+@media (max-width: 389.98px) {
+  #too-narrow {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 24px;
+    text-align: center;
+    background: var(--color-base-100);
+    color: var(--color-base-content);
+  }
+}

@@ -277,3 +277,17 @@
 .fieldset .fieldset-label:not(.text-error) {
   color: oklch(from var(--color-base-content) l c h / 0.5);
 }
+
+/* ── AN UNARMED CONTROL SAYS "NOT YET" WITHOUT GOING SILENT (batch F2 / web-auth-convergence)
+   Promoted from ui-only auth shell: `/welcome` submit carries `aria-disabled` while the required
+   set is unsatisfied. `aria-disabled`, NOT `disabled` — and NO `pointer-events: none` — so pressing
+   it still fires submit and the handler can refuse with an explanation.
+   UNLAYERED so it beats daisyUI's layered `.btn`. Values mirror daisyUI's `.btn:disabled` recipe. */
+.btn[aria-disabled='true']:not(.btn-link, .btn-ghost) {
+  --btn-border: transparent;
+  --btn-noise: none;
+  --btn-fg: color-mix(in oklch, var(--color-base-content) 20%, transparent);
+  background-color: color-mix(in oklab, var(--color-base-content) 10%, transparent);
+  box-shadow: none;
+  cursor: not-allowed;
+}

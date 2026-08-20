@@ -1,0 +1,289 @@
+---
+/**
+ * WelcomeView — the first-run details form after a successful sign-up.
+ *
+ * Markup converged from ui-only@4073f919 (web-auth-convergence) with per-field
+ * refusal slots from `welcomeForm.ts`. Also the destination of the association
+ * fork: if the user asked to join an existing organization, they land HERE with
+ * a pending banner rather than on a waiting screen. A pending request never
+ * blocks (web-signup-domain-association, Decision 3).
+ *
+ * WIRED TO THE REAL onboarding flow (do not take the fork fixture script):
+ * submit POSTs /api/onboarding/complete then navigates to / on success.
+ */
+import TextInput from '../components/ui/TextInput.astro';
+import Select from '../components/ui/Select.astro';
+import Checkbox from '../components/ui/Checkbox.astro';
+import Button from '../components/ui/Button.astro';
+import type { WelcomeViewProps } from '../lib/auth/types';
+import { welcomeErrorId } from './welcomeForm';
+
+interface Props extends WelcomeViewProps {}
+
+const { email, referralOptions, pendingJoinOrg = null } = Astro.props;
+---
+
+<div class="auth-card-inner" data-welcome-root>
+  <h2 class="auth-card-title">Welcome{email ? `, ${email}` : ''}</h2>
+  <p class="auth-card-subtitle">A few quick details and you're in.</p>
+
+  {pendingJoinOrg && (
+    <div role="alert" class="alert alert-soft alert-info mt-4">
+      <span class="iconify lucide--clock size-4" aria-hidden="true"></span>
+      <span>
+        Your request to join {pendingJoinOrg} is pending. Carry on setting up your own account — if
+        it's approved you'll get a notification in your inbox.
+      </span>
+    </div>
+  )}
+
+  {/*
+    EVERY REFUSAL SITS AT ITS OWN FIELD (Oleh, batch D3b).
+
+    Each required field owns a `.auth-form-note` slot inside an `.auth-field` wrapper, 4px under
+    its control, wired by `aria-describedby` + `aria-invalid` and reached by a focus move to the
+    FIRST offending field on submit. The slots and their copy come from `welcomeForm.ts`, which
+    the handler validates against — one required set, not two.
+
+    NONE of them is a live region, deliberately. Five `role="alert"` slots would queue five
+    assertive announcements on an empty submit. The single announcement a refusal should make is
+    the one the focus move produces.
+  */}
+  <form id="welcome-form" class="auth-form mt-4" novalidate>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div class="auth-field">
+        <TextInput
+          type="text"
+          name="firstName"
+          label="First name"
+          icon="user"
+          size="sm"
+          placeholder="Ada"
+          autocomplete="given-name"
+          autofocus
+          required
+        />
+        <p id={welcomeErrorId('firstName')} class="auth-form-note text-error flex items-center gap-1 hidden">
+          <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
+          <span data-welcome-error-text></span>
+        </p>
+      </div>
+      <div class="auth-field">
+        <TextInput
+          type="text"
+          name="lastName"
+          label="Last name"
+          size="sm"
+          placeholder="Lovelace"
+          autocomplete="family-name"
+          required
+        />
+        <p id={welcomeErrorId('lastName')} class="auth-form-note text-error flex items-center gap-1 hidden">
+          <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
+          <span data-welcome-error-text></span>
+        </p>
+      </div>
+    </div>
+
+    <div class="auth-field">
+      <TextInput
+        type="text"
+        name="jobTitle"
+        label="Job title"
+        icon="id-card"
+        size="sm"
+        placeholder="Founder"
+        autocomplete="organization-title"
+        required
+      />
+      <p id={welcomeErrorId('jobTitle')} class="auth-form-note text-error flex items-center gap-1 hidden">
+        <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
+        <span data-welcome-error-text></span>
+      </p>
+    </div>
+
+    <div class="auth-field">
+      <TextInput
+        type="text"
+        name="orgName"
+        label="Organization name"
+        icon="building-2"
+        size="sm"
+        placeholder="Acme Corp"
+        autocomplete="organization"
+        required
+      />
+      <p id={welcomeErrorId('orgName')} class="auth-form-note text-error flex items-center gap-1 hidden">
+        <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
+        <span data-welcome-error-text></span>
+      </p>
+    </div>
+
+    <Select
+      name="referralSource"
+      label="How did you hear about us?"
+      icon="megaphone"
+      size="sm"
+      placeholder="Select one (optional)"
+      options={referralOptions}
+    />
+
+    <Checkbox
+      name="marketingOptIn"
+      label="I'd like to receive product updates and announcements."
+    />
+
+    <div class="auth-field">
+      <Checkbox name="termsAccepted" label="I agree to the terms and privacy policy" />
+      <p id={welcomeErrorId('termsAccepted')} class="auth-form-note text-error flex items-center gap-1 hidden">
+        <span class="iconify lucide--circle-alert size-4" aria-hidden="true"></span>
+        <span data-welcome-error-text></span>
+      </p>
+    </div>
+
+    <Button
+      variant="primary"
+      size="sm"
+      type="submit"
+      class="w-full mt-1"
+      data-auth-submit
+      aria-disabled="true"
+    >
+      Continue
+      <span class="iconify lucide--arrow-right size-4 ml-1" aria-hidden="true"></span>
+    </Button>
+  </form>
+</div>
+
+<script>
+  import { setButtonLoading } from '../lib/ui';
+  import { showFormError, hideFormError } from '../lib/auth-utils';
+  import {
+    WELCOME_REQUIRED,
+    welcomeErrorId,
+    isFieldSatisfied,
+    controlShell,
+  } from './welcomeForm';
+
+  function init() {
+    const form = document.getElementById('welcome-form') as HTMLFormElement | null;
+    const submitBtn = form?.querySelector<HTMLButtonElement>('button[type="submit"]');
+    if (!form || !submitBtn) return;
+
+    interface Field {
+      readonly name: string;
+      readonly message: string;
+      readonly kind: 'text' | 'checkbox';
+      readonly el: HTMLInputElement;
+      readonly slot: HTMLElement;
+      readonly text: HTMLElement;
+    }
+
+    /** control · its message slot · the `<span>` inside it, resolved once. */
+    const fields = WELCOME_REQUIRED.flatMap<Field>((f) => {
+      const el = form.querySelector<HTMLInputElement>(`[name="${f.name}"]`);
+      const slot = document.getElementById(welcomeErrorId(f.name));
+      const text = slot?.querySelector<HTMLElement>('[data-welcome-error-text]') ?? null;
+      return el && slot && text
+        ? [{ name: f.name, message: f.message, kind: f.kind, el, slot, text }]
+        : [];
+    });
+
+    // The programmatic link is written ONCE, at init — not at the moment of refusal.
+    for (const f of fields) f.el.setAttribute('aria-describedby', f.slot.id);
+
+    const clear = (f: Field) => {
+      hideFormError(f.slot);
+      f.el.removeAttribute('aria-invalid');
+      controlShell(f.el, f.kind)?.classList.remove('input-error');
+    };
+
+    const refuse = (f: Field) => {
+      showFormError(f.slot, f.text, f.message);
+      f.el.setAttribute('aria-invalid', 'true');
+      controlShell(f.el, f.kind)?.classList.add('input-error');
+    };
+
+    /**
+     * D3a — the submit does not READ as ready until the form is.
+     * `aria-disabled`, never `disabled`: the button keeps its place in the tab order and still
+     * fires `submit`, so pressing it produces an explanation instead of silence.
+     */
+    const armed = () => fields.every((f) => isFieldSatisfied(f.el, f.kind));
+
+    const refresh = () => {
+      for (const f of fields) if (isFieldSatisfied(f.el, f.kind)) clear(f);
+      submitBtn.setAttribute('aria-disabled', armed() ? 'false' : 'true');
+    };
+
+    form.addEventListener('input', refresh);
+    form.addEventListener('change', refresh);
+    refresh();
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      let first: Field | null = null;
+      for (const f of fields) {
+        if (isFieldSatisfied(f.el, f.kind)) clear(f);
+        else {
+          refuse(f);
+          first ??= f;
+        }
+      }
+      if (first) {
+        first.el.focus();
+        return;
+      }
+
+      const data = new FormData(form);
+      const firstName = ((data.get('firstName') as string) ?? '').trim();
+      const lastName = ((data.get('lastName') as string) ?? '').trim();
+      const jobTitle = ((data.get('jobTitle') as string) ?? '').trim();
+      const orgName = ((data.get('orgName') as string) ?? '').trim();
+      const referralSourceRaw = ((data.get('referralSource') as string) ?? '').trim();
+      const marketingOptIn = !!data.get('marketingOptIn');
+      const termsAccepted = !!data.get('termsAccepted');
+
+      const payload: Record<string, unknown> = {
+        firstName,
+        lastName,
+        jobTitle,
+        orgName,
+        marketingOptIn,
+        termsAccepted,
+      };
+      if (referralSourceRaw) payload.referralSource = referralSourceRaw;
+
+      setButtonLoading(submitBtn, true);
+      try {
+        const res = await fetch('/api/onboarding/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as { error?: string };
+          // Surface a server refusal on the first field slot so the user still gets feedback.
+          const fallback = fields[0];
+          if (fallback) {
+            showFormError(
+              fallback.slot,
+              fallback.text,
+              body.error ?? 'Could not complete onboarding. Try again.',
+            );
+            fallback.el.focus();
+          }
+          return;
+        }
+        window.location.href = '/';
+      } finally {
+        setButtonLoading(submitBtn, false);
+      }
+    });
+  }
+
+  init();
+  document.addEventListener('astro:after-swap', init);
+</script>
