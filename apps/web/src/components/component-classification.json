@@ -15,6 +15,10 @@
     "classification": "daisyui-direct-styleguide",
     "rationale": "Data ▸ Changelog (Slice A Task 4, ui-only@9cf5b1ef): run-over-run record changes on the shared changelog row grid. daisyUI-direct markup composing FacetFilter, DateRangePicker, TablePager and patterns/ExportControl; run-detail drill-in registers a panel kind in the shared PanelHost. Styles in <style is:global>."
   },
+  "data/DataComments.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Data ▸ Comments feed (Slice A Task 9, ui-only@9cf5b1ef; fed by server-comments-read): captured record comments on the shared changelog row grid, newest-first, grouped by date/base/table. daisyUI-direct markup composing FacetFilter, DateRangePicker, TablePager and patterns/ExportControl; each row opens the record panel via PanelHost. Styles in <style is:global>, every selector qualified by the .cm feed-root class so the shared .cl-* grid overrides never reach the sibling feeds."
+  },
   "data/DataMedia.astro": {
     "classification": "daisyui-direct-styleguide",
     "rationale": "Data ▸ Attachments listing (Slice A Task 4, ui-only@9cf5b1ef): captured files as a table/grid with class/base/table/date facets. daisyUI-direct markup composing MediaThumb, FacetFilter, DateRangePicker, TablePager and patterns/ExportControl. Styles in <style is:global>."

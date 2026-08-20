@@ -1,6 +1,6 @@
 ---
 /**
- * /data — the Data page (Slice A Task 5 / web-data-page Stage-3 wiring). Space-scoped;
+ * /data — the Data page (Slice A / web-data-page + web-data-docs-chat). Space-scoped;
  * auth via middleware like every interior page. Mirrors /schema's loader shape and adds:
  *
  *  - `getSchema` decides `managedPg` — the per-Space read routes are managed_pg-only, so a
@@ -8,42 +8,55 @@
  *    (`backend_not_implemented`) means it cannot, and the record-data tabs render their
  *    honest managed-Postgres / LockedTab state (never fixtures).
  *  - `mode` from `backup_configurations.mode` when present (else `dynamic` with honest
- *    degrade on 501). Static Spaces get StaticImport / LockedTab on A1 panels.
+ *    degrade on 501). Static Spaces get StaticImport / LockedTab on record-data panels.
  *  - `hasData` (show the tabs at all) = captured tables exist OR a backup has succeeded.
- *  - When available, page-1 Records + Changelog sample + Attachments are read through the
- *    engine and mapped via `lib/data-browse/map`. Deeper pagination / filters ride the
- *    `/api/spaces/:id/data/*` proxies (setButtonLoading on any network-waiting button).
- *
- * Comments/Docs/Chat stay SoonTab until A2.
+ *  - When available, page-1 Records + Changelog sample + Attachments + Comments are read
+ *    through the engine and mapped via `lib/data-browse/map`. Deeper pagination / filters
+ *    ride the `/api/spaces/:id/data/*` proxies (setButtonLoading on any network-waiting button).
+ *  - Docs + Chat: `listDocuments` + `listChatThreads` (ChatTab still client-refreshes threads
+ *    like Schema) + Docs entitlement / Pro+ AI gate via resolveSchemaDocsLevel.
  */
 import { env } from 'cloudflare:workers';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import DataView from '../views/DataView.astro';
 import EmptyState from '../components/ui/EmptyState.astro';
 import { getBreadcrumbs } from '../lib/config';
-import { createBackupEngine } from '../lib/backup-engine';
+import { createBackupEngine, type SchemaDocSummary, type ChatThreadSummaryView } from '../lib/backup-engine';
 import {
   mapSchemaToData,
   mapRecords,
   mapRunTotals,
   mapChangelogRows,
   mapMediaAssets,
+  mapComments,
 } from '../lib/data-browse/map';
-import type { DataBase, DataTable, DataRecord, DataChangeEntry, MediaAsset, DataMode } from '../components/data/dataTypes';
+import { buildDataDocsEntities, dataBasesToHealthBases } from '../components/data/dataToSchema';
+import type { DocsTabEntity } from '../components/islands/DocsTab';
+import { resolveSchemaDocsLevel } from '../lib/schema-docs/proxy';
+import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities';
+import type { DataBase, DataTable, DataRecord, DataComment, DataChangeEntry, MediaAsset, DataMode } from '../components/data/dataTypes';
 import { backupRuns, backupConfigurations } from '../db/schema/core';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
 const breadcrumbs = getBreadcrumbs('/data');
 const { account, db } = Astro.locals;
+const orgId = account?.organization?.id ?? null;
 const spaceId = account?.space?.id ?? null;
+
+let docsLevel: SchemaDocsLevel = 'none';
+if (db && orgId) docsLevel = await resolveSchemaDocsLevel(db, orgId);
+const aiEnabled = docsLevel === 'manual_ai';
 
 let managedPg = false;
 let bases: DataBase[] = [];
 let tables: DataTable[] = [];
 let records: DataRecord[] = [];
+let comments: DataComment[] = [];
 let changelog: DataChangeEntry[] = [];
 let runTotals: Record<string, { created: number; updated: number; deleted: number }> = {};
 let assets: MediaAsset[] = [];
+let docs: SchemaDocSummary[] = [];
+let chatThreads: ChatThreadSummaryView[] = [];
 let landingTableId: string | undefined;
 /** Primary field id per table — Browse client pagination uses this when mapping proxy pages. */
 let primaryByTable: Record<string, string | undefined> = {};
@@ -96,9 +109,29 @@ if (spaceId && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
       const mediaRes = await engine.getMedia(spaceId, { limit: 50 });
       if (mediaRes.ok) assets = mapMediaAssets(mediaRes.items);
     }
+
+    // Comments — page 1 space-wide (server-comments-read). Not gated on landingTableId;
+    // deeper pages ride the /data/comments proxy.
+    const commentsRes = await engine.getDataComments(spaceId, { limit: 50 });
+    if (commentsRes.ok) comments = mapComments(commentsRes.comments);
   }
   // 501 backend_not_implemented (and any other non-ok) → managedPg stays false → honest empty.
+
+  // Docs + Chat — space-wide, same engine methods Schema uses (web-data-docs-chat).
+  if (docsLevel !== 'none') {
+    const [docsRes, threadsRes] = await Promise.all([
+      engine.listDocuments(spaceId),
+      engine.listChatThreads(spaceId, false),
+    ]);
+    if (docsRes.ok) docs = docsRes.documents;
+    if (threadsRes.ok) chatThreads = threadsRes.threads;
+  }
 }
+
+const docEntities: DocsTabEntity[] = buildDataDocsEntities(bases, tables, { records });
+const healthBases = dataBasesToHealthBases(bases);
+// chatThreads SSR-loaded for entitlement/warmth; ChatTab client-refreshes like Schema (D4).
+void chatThreads;
 
 // Freshness stamp — the data reflects the latest completed backup run.
 let lastSyncedAt: string | null = null;
@@ -150,6 +183,7 @@ const hasData = tables.length > 0 || lastSyncedAt !== null;
       bases={bases}
       tables={tables}
       records={records}
+      comments={comments}
       changelog={changelog}
       runTotals={runTotals}
       assets={assets}
@@ -157,6 +191,11 @@ const hasData = tables.length > 0 || lastSyncedAt !== null;
       primaryByTable={primaryByTable}
       recordsNextCursor={recordsNextCursor}
       loadState="ready"
+      docsLevel={docsLevel}
+      aiEnabled={aiEnabled}
+      docs={docs}
+      docEntities={docEntities}
+      healthBases={healthBases}
     />
   )}
 </SidebarLayout>

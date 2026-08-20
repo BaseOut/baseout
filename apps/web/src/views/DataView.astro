@@ -5,28 +5,35 @@
  * shell — the same tab grammar (`.sch-tabbar` / `.sch-panel` + `wireSectionTabs`), the same
  * empty/soon states, the same freshness stamp.
  *
- * Slice A Task 5 (A1): Records / Attachments / Changelog render the REAL fork components
- * (DataBrowse / DataMedia / DataChangelog) over engine data the loader maps through
- * `lib/data-browse/map`. Those routes are managed_pg-only — when `managedPg` is false the
- * record-data panels render an honest empty/LockedTab state (never fixtures). Static mode
- * uses StaticImport + LockedTab. Comments / Docs / Chat stay SoonTab until A2.
+ * Slice A: all six tabs are real — Records / Attachments / Comments / Changelog over
+ * `lib/data-browse/map` + engine reads; Docs / Chat reuse Schema `DocsTab` / `ChatTab` with
+ * `scope="data"` (web-data-docs-chat). managed_pg / static gates are honest (never fixtures).
+ * No EntityPanel / QuickAskDock / fork SchemaDocs / SchemaChat.
  *
  * DOM hooks (`data-dataview`, `data-tab`/`data-panel`) keep `browse|changelog|comments|docs|chat`
- * and add `attachments` so `?tab=` deep links stay stable.
+ * and add `attachments` so `?tab=` deep links stay stable. `data-schema-docs` + `data-space-id`
+ * satisfy ChatTab's existing spaceId contract (same attribute SchemaView uses).
  */
 import DataBrowse from '../components/data/DataBrowse.astro';
 import DataChangelog from '../components/data/DataChangelog.astro';
+import DataComments from '../components/data/DataComments.astro';
 import DataMedia from '../components/data/DataMedia.astro';
 import LockedTab from '../components/data/LockedTab.astro';
 import StaticImport from '../components/data/StaticImport.astro';
 import RecordPanel from '../components/data/RecordPanel.astro';
 import MediaPanel from '../components/data/MediaPanel.astro';
 import PanelHost from '../components/ui/PanelHost.astro';
-import SoonTab from './schema/SoonTab.astro';
+import EmptyState from '../components/ui/EmptyState.astro';
+import DocsTab from './schema/DocsTab.astro';
+import ChatTab from './schema/ChatTab.astro';
+import type { DocsTabEntity } from '../components/islands/DocsTab';
+import type { SchemaDocSummary } from '../lib/backup-engine';
+import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities';
 import type {
   DataBase,
   DataTable,
   DataRecord,
+  DataComment,
   DataChangeEntry,
   MediaAsset,
   DataMode,
@@ -46,6 +53,8 @@ interface Props {
   bases?: DataBase[];
   tables?: DataTable[];
   records?: DataRecord[];
+  /** Page-1 captured record comments across the Space (server-comments-read). */
+  comments?: DataComment[];
   changelog?: DataChangeEntry[];
   /** Per-run TRUE totals for the changelog rollup. */
   runTotals?: Record<string, { created: number; updated: number; deleted: number }>;
@@ -61,6 +70,16 @@ interface Props {
   recordsNextCursor?: string | null;
   /** Async surface state for Browse (SSR page-1 is `ready`). */
   loadState?: 'ready' | 'loading' | 'error';
+  /** Schema Docs entitlement (Features §7) — gates the Docs tab. */
+  docsLevel?: SchemaDocsLevel;
+  /** Pro+ AI chat entitlement — gates ChatTab (inherits existing Pro empty state). */
+  aiEnabled?: boolean;
+  /** Space-wide documents for DocsTab (listDocuments). */
+  docs?: SchemaDocSummary[];
+  /** Docs entity picker rows (from dataToSchema.buildDataDocsEntities). */
+  docEntities?: DocsTabEntity[];
+  /** Chat context bases (from dataToSchema.dataBasesToHealthBases). */
+  healthBases?: { baseId: string; name: string }[];
 }
 const {
   hasData,
@@ -71,6 +90,7 @@ const {
   bases = [],
   tables = [],
   records = [],
+  comments = [],
   changelog = [],
   runTotals = {},
   assets = [],
@@ -79,11 +99,17 @@ const {
   primaryByTable = {},
   recordsNextCursor,
   loadState = 'ready',
+  docsLevel = 'none',
+  aiEnabled = false,
+  docs = [],
+  docEntities = [],
+  healthBases = [],
 } = Astro.props;
 
 const isStatic = mode === 'static';
 // Live record-data panels only when the Space can serve managed_pg reads and is not static-only.
 const showData = hasData && managedPg && !isStatic;
+const showDocs = showData && docsLevel !== 'none' && !!spaceId;
 
 const fmtStamp = (iso: string) => {
   const d = new Date(iso);
@@ -93,7 +119,14 @@ const fmtStamp = (iso: string) => {
 };
 ---
 
-<div class="sch" data-dataview data-mode={mode} data-managed-pg={managedPg ? '1' : '0'}>
+<div
+  class="sch"
+  data-dataview
+  data-schema-docs
+  data-space-id={spaceId ?? undefined}
+  data-mode={mode}
+  data-managed-pg={managedPg ? '1' : '0'}
+>
   <header class="sch-head">
     <div class="min-w-0">
       <h1 class="text-title">Data</h1>
@@ -149,6 +182,7 @@ const fmtStamp = (iso: string) => {
             bases={bases}
             tables={tables}
             records={records}
+            comments={comments}
             landingTableId={landingTableId}
             primaryByTable={primaryByTable}
             recordsNextCursor={recordsNextCursor}
@@ -194,29 +228,68 @@ const fmtStamp = (iso: string) => {
         )}
       </div>
 
-      {/* Comments / Docs / Chat — SoonTab until Slice A2. */}
+      {/* Comments — captured record comments (server-comments-read), LockedTab, or managed-Postgres gate. */}
       <div class="sch-panel" data-panel="comments" hidden>
-        <SoonTab
-          icon="lucide--message-square-text"
-          title="Comments explorer is on its way"
-          description="Record comments are already captured with your backups, including edits and deletions. Browsing them — by record, author, and thread — lands here soon."
-        />
+        {isStatic ? (
+          <LockedTab title="Comments need a dynamic backup" what="Record comments are read from Airtable at backup time. Your Space stores static files, so there are no comments to capture — switch to a dynamic backup to see them." />
+        ) : showData ? (
+          <DataComments bases={bases} tables={tables} comments={comments} records={records} lastSyncedAt={lastSyncedAt ?? undefined} />
+        ) : (
+          <div class="sch-empty">
+            <span class="sch-empty-ic"><span class="iconify lucide--message-square-text"></span></span>
+            <p class="sch-empty-title">Comments are available on managed Postgres Spaces</p>
+            <p class="sch-empty-sub">Record comments captured with your backups — including edits and deletions — are indexed in a Baseout-managed Postgres store. This Space backs up to a different destination, so there's nothing to browse here yet.</p>
+          </div>
+        )}
       </div>
 
+      {/* Docs — Schema DocsTab scoped to data (web-data-docs-chat). */}
       <div class="sch-panel" data-panel="docs" hidden>
-        <SoonTab
-          icon="lucide--book-text"
-          title="Data docs are on its way"
-          description="The same documentation surface Schema has, scoped to your records — tag records in documents and see them referenced here."
-        />
+        {isStatic ? (
+          <LockedTab title="Data docs need a dynamic backup" what="Documenting your records queries a live database. Your Space stores static files, so there's nothing to tag — switch to a dynamic backup to document your data." />
+        ) : docsLevel === 'none' ? (
+          <EmptyState
+            icon="lucide--book-text"
+            title="Data Docs is a Launch-plan feature"
+            description="Upgrade to Launch or above to document the records inside your backups."
+            actionHref="/settings"
+            actionLabel="View plans"
+          />
+        ) : showDocs ? (
+          <DocsTab
+            spaceId={spaceId!}
+            docs={docs}
+            aiEnabled={aiEnabled}
+            entities={docEntities}
+            scope="data"
+          />
+        ) : (
+          <div class="sch-empty">
+            <span class="sch-empty-ic"><span class="iconify lucide--book-text"></span></span>
+            <p class="sch-empty-title">Data docs are available on managed Postgres Spaces</p>
+            <p class="sch-empty-sub">Documents are stored alongside your managed Postgres backup. This Space backs up elsewhere, so there's nothing to document here yet.</p>
+          </div>
+        )}
       </div>
 
+      {/* Chat — Schema ChatTab scoped to data; Pro+ gate inherited. */}
       <div class="sch-panel" data-panel="chat" hidden>
-        <SoonTab
-          icon="lucide--messages-square"
-          title="Data chat is on its way"
-          description="Ask questions about the records inside your backups. Ships with the AI controls."
-        />
+        {isStatic ? (
+          <LockedTab title="Data chat needs a dynamic backup" what="Chatting about your records queries a live database. Your Space stores static files, so there's nothing to query — switch to a dynamic backup to ask about your data." />
+        ) : showData ? (
+          <ChatTab
+            hasSchema={tables.length > 0}
+            aiEnabled={aiEnabled}
+            healthBases={healthBases}
+            scope="data"
+          />
+        ) : (
+          <div class="sch-empty">
+            <span class="sch-empty-ic"><span class="iconify lucide--messages-square"></span></span>
+            <p class="sch-empty-title">Data chat is available on managed Postgres Spaces</p>
+            <p class="sch-empty-sub">Asking about your records queries a Baseout-managed Postgres store. This Space backs up elsewhere, so there's nothing to chat about here yet.</p>
+          </div>
+        )}
       </div>
     </>
   ) : (
@@ -231,7 +304,7 @@ const fmtStamp = (iso: string) => {
 
 {/* ONE panel stack for the live record-data tabs (Oleh's law). No EntityPanel / QuickAskDock. */}
 {showData && <PanelHost mincontent={700} />}
-{showData && <RecordPanel bases={bases} tables={tables} records={records} mode={mode} lastSyncedAt={lastSyncedAt ?? undefined} />}
+{showData && <RecordPanel bases={bases} tables={tables} records={records} comments={comments} mode={mode} lastSyncedAt={lastSyncedAt ?? undefined} />}
 {showData && <MediaPanel mode={mode} />}
 
 <script>

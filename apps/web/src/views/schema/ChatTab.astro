@@ -4,6 +4,10 @@
  * async assistant polling. Moved verbatim from the pre-split SchemaView.astro
  * (web-schema-round3-shell §2.1); only the lazy-load trigger changed (button tab,
  * also fired by the header "Ask about your schema" launcher).
+ *
+ * `scope` / `noun` are additive (web-data-docs-chat): Schema's call site stays
+ * unchanged. Data mounts with `scope="data"`. `data-chat-scope` carries scope into
+ * the document-scoped script (single-instance selector — do not widen).
  */
 import EmptyState from '../../components/ui/EmptyState.astro'
 import ExportControl from '../../components/patterns/ExportControl.astro'
@@ -12,27 +16,49 @@ interface Props {
   hasSchema: boolean
   aiEnabled: boolean
   healthBases: { baseId: string; name: string }[]
+  /** Which Knowledge surface mounted this tab. Default `'schema'` preserves Schema markup. */
+  scope?: 'schema' | 'data'
+  /** Empty-state / export noun stem; defaults from scope (`schema` / `data`). */
+  noun?: string
 }
 
-const { hasSchema, aiEnabled, healthBases } = Astro.props
+const {
+  hasSchema,
+  aiEnabled,
+  healthBases,
+  scope = 'schema',
+  noun = scope === 'data' ? 'data' : 'schema',
+} = Astro.props
+
+const proDescription =
+  noun === 'data'
+    ? 'Upgrade to Pro to ask AI about your records — scoped to the bases you choose.'
+    : 'Upgrade to Pro to ask AI about your schema — scoped to the bases, tables and fields you choose.'
+const emptyTitle = noun === 'data' ? 'No data to chat about' : 'No schema to chat about'
+const emptyDescription =
+  noun === 'data'
+    ? 'Chat becomes available once a backup has captured records for this Space.'
+    : 'Chat becomes available once a backup has captured this Space’s schema.'
+const placeholder = noun === 'data' ? 'Ask about your data…' : 'Ask about your schema…'
+const exportNoun = noun === 'data' ? 'data threads' : 'threads'
 ---
 
       {!aiEnabled ? (
         <EmptyState
           icon="lucide--sparkles"
           title="Chat is a Pro feature"
-          description="Upgrade to Pro to ask AI about your schema — scoped to the bases, tables and fields you choose."
+          description={proDescription}
         >
           <a href="/settings/billing" class="btn btn-primary btn-sm">Upgrade to Pro</a>
         </EmptyState>
       ) : !hasSchema ? (
         <EmptyState
           icon="lucide--sparkles"
-          title="No schema to chat about"
-          description="Chat becomes available once a backup has captured this Space’s schema."
+          title={emptyTitle}
+          description={emptyDescription}
         />
       ) : (
-        <div data-chat-tab class="grid gap-4 lg:grid-cols-[15rem_1fr]" style="min-height: 28rem;">
+        <div data-chat-tab data-chat-scope={scope} class="grid gap-4 lg:grid-cols-[15rem_1fr]" style="min-height: 28rem;">
           <aside class="flex flex-col gap-2">
             <button type="button" id="chat-new" class="btn btn-sm btn-outline gap-1">
               <span class="iconify lucide--plus size-4" aria-hidden="true"></span> New chat
@@ -53,7 +79,7 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
               <span class="ml-auto flex items-center gap-1">
                 {/* total starts at 0 — threads are lazy-fetched; loadThreads() writes the
                     real total back onto data-export-total (ExportControl reads it live). */}
-                <ExportControl tab="chat" format="pdf" noun="threads" total={0} rowSelector="#chat-threads [data-thread-id]" />
+                <ExportControl tab="chat" format="pdf" noun={exportNoun} total={0} rowSelector="#chat-threads [data-thread-id]" />
                 <button type="button" id="chat-rename" class="btn btn-ghost btn-xs" disabled>Rename</button>
                 <button type="button" id="chat-archive" class="btn btn-ghost btn-xs" disabled>Archive</button>
               </span>
@@ -66,7 +92,7 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
                 id="chat-input"
                 rows="2"
                 class="textarea textarea-bordered textarea-sm flex-1 resize-none"
-                placeholder="Ask about your schema…"
+                placeholder={placeholder}
                 disabled
               ></textarea>
               <button type="submit" id="chat-send" class="btn btn-primary btn-sm" disabled>Send</button>
@@ -83,9 +109,13 @@ const { hasSchema, aiEnabled, healthBases } = Astro.props
   // resolves (mirrors the backup-status polling pattern). Pro+ gated server-side;
   // scoped-context controls + convert-to-doc + clickable refs are follow-ups.
   const chatTab = document.querySelector<HTMLElement>('[data-chat-tab]')
+  // spaceId lives on SchemaView's [data-schema-docs] OR DataView's same attribute
+  // (Data mounts data-schema-docs for this contract — do not widen [data-chat-tab]).
   const chatRoot = document.querySelector<HTMLElement>('[data-schema-docs]')
   if (chatTab && chatRoot) {
     const spaceId = chatRoot.dataset.spaceId!
+    const chatScope = chatTab.dataset.chatScope === 'data' ? 'data' : 'schema'
+    void chatScope // reserved for scope-aware client copy; SSR already switched empty states
     const esc = (s: string) =>
       String(s).replace(
         /[&<>"]/g,

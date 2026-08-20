@@ -32,12 +32,14 @@ export interface DocsTabProps {
   initialDocs: SchemaDocSummary[]
   aiEnabled: boolean
   entities: DocsTabEntity[]
+  /** Knowledge surface scope — reserved for Data vs Schema copy; Schema default. */
+  scope?: 'schema' | 'data'
 }
 
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : ''
 
-export default function DocsTab({ spaceId, initialDocs, aiEnabled, entities }: DocsTabProps) {
+export default function DocsTab({ spaceId, initialDocs, aiEnabled, entities, scope: _scope = 'schema' }: DocsTabProps) {
   const base = `/api/spaces/${spaceId}`
   const entityLabel = React.useMemo(() => {
     const m = new Map<string, string>()
