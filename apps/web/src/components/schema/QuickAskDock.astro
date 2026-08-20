@@ -1,0 +1,556 @@
+---
+/**
+ * QuickAskDock — the global quick-ask chat, as a PANEL KIND in the one shared stack.
+ *
+ * It used to be its own modal right drawer: a `position: fixed` scrim at z-60, a `position: fixed`
+ * aside at z-61, its own left-edge grip with its own persisted width, and Esc/scrim/× closing it.
+ * That made the chat the one thing on the right that behaved differently from everything else on the
+ * right (Oleh, 2026-08-06: «щоб цей чат відкривався рівнозначно до будь-якої іншої панельки»). It is
+ * now a `chat:` kind registered with `components/ui/panelHostRegistry.ts`, so it parks to a 46px
+ * strip, counts toward the cap, reorders, resizes on the shared grip, is evicted with the undo toast
+ * and is saved/restored under `panels:<section>` exactly like a record, a file or an entity sheet.
+ *
+ * ONE INSTANCE. The id is the constant `chat:quick` — there is one assistant, not one per thread —
+ * so `panelKey` is constant and a second launcher press lands on the stack's own reuse path:
+ * un-park, focus, flash. That is what every other kind does when you pick something already open.
+ *
+ * ── The controller-binding problem, and how it is solved ─────────────────────────────────────────
+ * A panel's markup is CLONED from the `<template>` below at open time and destroyed on close, so the
+ * old shape — «bind `[data-scd-*]` inside my own root, once, at module init» — has nothing to bind to
+ * at init and would leave listeners on a detached corpse after the first close. Every in-sheet read
+ * is therefore DELEGATED FROM THE PANEL ELEMENT (`p.el`), attached in `buildPanel` and never
+ * unbound: a listener on the element itself dies with the element, which is the only unbinding that
+ * cannot be forgotten. Per-panel STATE (the context chips) lives on the panel object, not in a
+ * module closure, for the same reason.
+ *
+ * The one listener that cannot live on a panel is the LAUNCHER delegate — `[data-sch-ask]` sits in
+ * the page header, outside every panel — so it is bound once per MODULE (not once per page) and
+ * reaches the stack through the lazy `host` proxy. Binding it per page was the corpse the old file
+ * actually had: `astro:after-swap` re-ran the wiring, the document survived the swap, and the
+ * previous page's listener stayed behind toggling a class on a detached root.
+ *
+ * Opened by any `[data-sch-ask]` launcher on the page; Expand ⤢ still jumps to the page's full Chat
+ * tab (`[data-tab="chat"]`) — the only route there. With `browseItem`, the Add-context picker offers
+ * "Current Browse view", a chip built from the live Browse state (table + active filter count).
+ */
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+import { entityIconClass } from './entityIcon';
+import type { ChatThread, ChatRef } from './schemaChatTypes';
+import type { SchemaEntity } from './schemaEntities';
+
+interface Props {
+  threads: ChatThread[];
+  index: SchemaEntity[];
+  docs: { id: string; title: string }[];
+  /** What the assistant is about — placeholder copy ("schema" | "data"). */
+  noun?: string;
+  /** Offer "Current Browse view" in the Add-context picker (Data page). */
+  browseItem?: boolean;
+}
+const { threads, index, docs, noun = 'schema', browseItem = false } = Astro.props;
+
+// The compact panel lists the same NON-ARCHIVED threads the full Chat tab rail uses and
+// swaps the shown exchange on select (presentational — the full Chat tab owns real history).
+const scdThreads = threads.filter((t) => !t.archived).map((t) => ({ id: t.id, title: t.title, messages: t.messages }));
+const scdCurrent = scdThreads[0];
+// Quiet reference-chip icon (kept simple; the full Chat tab has the rich set).
+const scdRefIcon = (r: ChatRef) =>
+  r.kind === 'doc' ? 'lucide--file-text'
+  : r.kind === 'record' ? 'lucide--circle-dot concept-ic-record'
+  // Was diverging from the canon: a bare `lucide--database` / `lucide--eye` without their
+  // `concept-ic-*` class, and `lucide--hash` for a FIELD where the app's field glyph is a tag.
+  : entityIconClass(r.entityKind || 'table');
+
+// Add-context picker — the same browsable + searchable list the full Chat composer uses.
+const scdFieldIcon = (type?: string) => {
+  const k = type ? airtableIconKey(type) : null;
+  return k ? `<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '';
+};
+const scdCtxIcon = (e: SchemaEntity) =>
+  e.kind === 'field' ? scdFieldIcon(e.fieldType) || '<span class="iconify lucide--tag"></span>'
+  : e.kind === 'table' ? '<span class="iconify lucide--table-2 concept-ic-table"></span>'
+  : e.kind === 'view' ? '<span class="iconify lucide--eye concept-ic-view"></span>'
+  : '<span class="iconify lucide--database"></span>';
+const scdCtxSearch = (e: SchemaEntity) => [e.name, e.tableName, e.baseName].filter(Boolean).join(' ').toLowerCase();
+const scdCtxGroups = [
+  { label: 'Bases', items: index.filter((e) => e.kind === 'base' && !e.removed) },
+  { label: 'Tables', items: index.filter((e) => e.kind === 'table' && !e.removed) },
+  { label: 'Fields', items: index.filter((e) => e.kind === 'field' && !e.removed) },
+  // view-schema-details: a view is askable context like anything else — omitting it here would
+  // make views silently unreachable from the assistant's picker, with no error.
+  { label: 'Views', items: index.filter((e) => e.kind === 'view' && !e.removed) },
+];
+---
+
+{/* NO ROOT, NO SCRIM, NO OWN GRIP (2026-08-06) — see the note at the top of this file. What is left
+    is this kind's sheet TEMPLATE; the host owns the frame, the control column, the toast and the
+    three stack verbs. The template's presence on the page is also this kind's mount signal and its
+    `canOpen` test, so a section that does not render the dock can never restore a chat panel. */}
+<template data-scd-tpl>
+  <aside class="scd-sheet" data-ps-panel data-scd-panel role="dialog" aria-modal="false" aria-label="Assistant">
+    <div class="scd-grip" data-ps-grip aria-hidden="true"><span class="scd-grip-line"></span></div>
+    {/* Anchor lock scrim — shown on the anchor during a reorder drag ("docked, can't be reordered"). */}
+    <div class="scd-lock" aria-hidden="true"><span class="iconify lucide--lock size-5"></span><span>Docked to the page</span></div>
+    <div class="scd-top">
+      {/* THE HOLD SLOT (pattern-multi-panel-drawer), 1:1 with the record / file / entity sheets:
+          Pin first, then the drag grip. Never both, and both ALWAYS laid out. */}
+      <button type="button" class="btn btn-sm btn-ghost btn-square scd-detach tooltip tooltip-bottom" data-ps-detach aria-label="Pin this panel so the next thing you open lands beside it" data-tip="Pin — next panel opens beside"><span class="iconify lucide--pin size-3.5" aria-hidden="true"></span></button>
+      <button type="button" class="btn btn-sm btn-ghost btn-square scd-reorder tooltip tooltip-bottom" data-ps-reorder aria-label="Drag to reorder" data-tip="Drag to reorder"><span class="iconify lucide--grip-vertical size-4" aria-hidden="true"></span></button>
+      {scdThreads.length > 0 ? (
+        <div class="dropdown scd-threadmenu">
+          <div tabindex="0" role="button" class="scd-threadbtn tooltip tooltip-bottom" data-tip="Switch chat" aria-label="Switch chat">
+            <span class="iconify lucide--sparkles size-4 scd-threadmark" aria-hidden="true"></span>
+            <span class="scd-threadttl" data-scd-current>{scdCurrent.title}</span>
+            <span class="iconify lucide--chevron-down size-3.5 scd-threadchev" aria-hidden="true"></span>
+          </div>
+          <ul tabindex="0" class="dropdown-content scd-threadlist">
+            {scdThreads.map((t) => (
+              <li>
+                <button type="button" class="scd-threaditem" data-scd-pick={t.id} data-scd-title={t.title}>
+                  <span class="iconify lucide--message-square size-3.5" aria-hidden="true"></span>
+                  <span class="scd-threaditem-ttl">{t.title}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <span class="scd-ttl"><span class="iconify lucide--sparkles size-4" aria-hidden="true"></span><span class="scd-threadttl">Assistant</span></span>
+      )}
+      <div class="scd-acts">
+        {/* Content-level verbs stay with the content. The three STACK verbs below them
+            (Collapse / Close) carry the neutral `data-ps-*` hooks the host answers for every kind. */}
+        <button type="button" class="btn btn-sm btn-ghost btn-square scd-act tooltip tooltip-bottom" data-scd-new data-tip="New chat" aria-label="New chat"><span class="iconify lucide--plus size-4" aria-hidden="true"></span></button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square scd-act tooltip tooltip-bottom" data-scd-expand data-tip="Open full chat" aria-label="Open full chat"><span class="iconify lucide--arrow-up-right size-4" aria-hidden="true"></span></button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square scd-park tooltip tooltip-bottom" data-ps-park aria-label="Collapse to strip" data-tip="Collapse"><span class="iconify lucide--chevrons-left size-4" aria-hidden="true"></span></button>
+        <button type="button" class="btn btn-sm btn-ghost btn-square scd-x tooltip tooltip-left" data-ps-close aria-label="Close" data-tip="Close"><span class="iconify lucide--x size-4" aria-hidden="true"></span></button>
+      </div>
+    </div>
+    <div class="scd-scope" data-scd-scope><span class="scd-chip scd-chip-whole" data-scd-whole><span class="iconify lucide--database size-3.5" aria-hidden="true"></span>Whole Space</span></div>
+    <div class="scd-convo" data-scd-convo>
+      {scdThreads.map((t) => (
+        <div class="scd-thread" data-scd-thread={t.id} hidden={t.id !== scdCurrent.id}>
+          {t.messages.map((m) => (
+            m.role === 'user' ? (
+              <div class="scd-msg-user">{m.text}</div>
+            ) : m.convertedDoc ? (
+              <div class="scd-msg-doc"><span class="iconify lucide--file-plus-2 size-3.5" aria-hidden="true"></span><span>Saved as a doc · <strong>{m.convertedDoc.title}</strong></span></div>
+            ) : (
+              <div class="scd-msg-ai">
+                <div class="scd-msg-ai-body">
+                  <div class="scd-msg-ai-text">{m.text}</div>
+                  {m.refs && m.refs.length > 0 && (
+                    <div class="scd-refs">
+                      <span class="scd-refs-lbl">References</span>
+                      {m.refs.map((r) => (
+                        <span class="scd-refchip"><span class={`iconify ${scdRefIcon(r)} size-3.5`} aria-hidden="true"></span>{r.name}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          ))}
+        </div>
+      ))}
+      <div class="scd-newempty" data-scd-empty hidden>
+        <span class="iconify lucide--sparkles size-5" aria-hidden="true"></span>
+        <p class="scd-newempty-ttl">Ask anything about your {noun}</p>
+        <p class="scd-newempty-sub">Start a new question below, or switch to an existing chat.</p>
+      </div>
+    </div>
+    <div class="scd-composer">
+      <div class="scd-box">
+        <div class="scd-input">Ask about your {noun}…</div>
+        <div class="scd-bar">
+          <div class="dropdown dropdown-top scd-addctxwrap">
+            <div tabindex="0" role="button" class="scd-addctx" data-scd-addctx><span class="iconify lucide--plus size-3.5" aria-hidden="true"></span>Add context</div>
+            <div tabindex="0" class="dropdown-content scd-addctx-pop">
+              <label class="input input-sm scd-addctx-search">
+                <span class="iconify lucide--search size-3.5 opacity-50" aria-hidden="true"></span>
+                <input type="text" data-scd-ctx-search placeholder="Search bases, tables, fields, views, docs…" aria-label="Search context" autocomplete="off" />
+              </label>
+              <div class="scd-addctx-list">
+                {browseItem && (
+                  <>
+                    <div class="scd-addctx-sec" data-scd-ctx-sec>Browse</div>
+                    <button type="button" class="scd-addctx-item" data-scd-add-browse data-search="current browse view filters table">
+                      <span class="scd-addctx-ic"><span class="iconify lucide--sliders-horizontal size-3.5" aria-hidden="true"></span></span>
+                      <span class="scd-addctx-item-name">Current Browse view</span>
+                      <span class="scd-addctx-item-path">table + filters</span>
+                    </button>
+                  </>
+                )}
+                {scdCtxGroups.map((g) => g.items.length > 0 && (
+                  <>
+                    <div class="scd-addctx-sec" data-scd-ctx-sec>{g.label}</div>
+                    {g.items.map((e) => (
+                      <button type="button" class="scd-addctx-item" data-scd-add-ent={e.id} data-ent-name={e.name} data-search={scdCtxSearch(e)}>
+                        <span class="scd-addctx-ic" set:html={scdCtxIcon(e)}></span>
+                        <span class="scd-addctx-item-name">{e.name}</span>
+                        {(e.tableName ?? e.baseName) && <span class="scd-addctx-item-path">{e.tableName ?? e.baseName}</span>}
+                      </button>
+                    ))}
+                  </>
+                ))}
+                {docs.length > 0 && <div class="scd-addctx-sec" data-scd-ctx-sec>Docs</div>}
+                {docs.map((d) => (
+                  <button type="button" class="scd-addctx-item" data-scd-add-doc={d.id} data-doc-title={d.title} data-search={d.title.toLowerCase()}>
+                    <span class="scd-addctx-ic"><span class="iconify lucide--file-text size-3.5" aria-hidden="true"></span></span>
+                    <span class="scd-addctx-item-name">{d.title}</span>
+                  </button>
+                ))}
+                <div class="scd-addctx-empty" data-scd-ctx-empty hidden>No match.</div>
+              </div>
+            </div>
+          </div>
+          <span class="scd-credits"><span class="iconify lucide--zap size-3.5" aria-hidden="true"></span>~2 credits</span>
+          <span class="scd-send"><span class="iconify lucide--arrow-up size-4" aria-hidden="true"></span></span>
+        </div>
+      </div>
+      <p class="scd-disclaimer">AI can make mistakes. Verify important details against your {noun}.</p>
+    </div>
+  </aside>
+</template>
+
+<script>
+  import { registerPanelKind, host, type HostPanel } from '../ui/panelHostRegistry';
+
+  /** Ids are ALWAYS kind-prefixed; one stack holds chat, record, asset, run and entity sheets. */
+  const PREFIX = 'chat:';
+  /** ONE instance — there is one assistant, not one per thread. `panelKey` is this constant. */
+  const CHAT_ID = 'chat:quick';
+
+  /** A `.scd-sheet`. The context chips are PER PANEL, not in a module closure — see the file header. */
+  type ChatP = HostPanel & { ctx: Map<string, { name: string; icon: string }> };
+
+  // ── The launcher delegate: once per MODULE, never per page ─────────────────────────────────
+  // `[data-sch-ask]` lives in the page header, outside every panel, so it cannot hang off `p.el`.
+  // Binding it inside the per-page wiring is what left a corpse behind: the document survives an
+  // `astro:after-swap`, so the previous page's copy stayed bound. It reaches the stack through the
+  // lazy `host` proxy, which resolves whichever host is mounted at CLICK time, and is a no-op on a
+  // page with no host at all.
+  let launcherBound = false;
+  function bindLauncher() {
+    if (launcherBound) return;
+    launcherBound = true;
+    document.addEventListener('click', (ev) => {
+      if (!(ev.target as HTMLElement).closest('[data-sch-ask]')) return;
+      // Always BESIDE, never `open()`: `open()` reuses the anchor, and the anchor is the record or
+      // file the user is reading — the chat is a companion to it, never a replacement for it. Beside
+      // is also the path that un-parks, focuses and FLASHES an already-open panel, which is how the
+      // second press of the launcher reads as "it is already here" instead of doing nothing.
+      host.openBeside(host.focused(), CHAT_ID);
+    });
+  }
+
+  function wireQuickAsk() {
+    bindLauncher();
+    // The sheet TEMPLATE is this kind's mount signal — there is no `.scd` root any more.
+    const tpl = document.querySelector<HTMLTemplateElement>('[data-scd-tpl]');
+    if (!tpl || tpl.dataset.scdWired) return;
+    tpl.dataset.scdWired = '1';
+
+    /**
+     * Every in-sheet read, delegated FROM THE PANEL ELEMENT. Two listeners per panel, both on
+     * `p.el`, so closing the panel unbinds them by construction — there is nothing left to forget.
+     */
+    function wirePanel(p: ChatP) {
+      const q = <T extends HTMLElement>(sel: string) => p.el.querySelector<T>(sel);
+
+      const showThread = (id: string | null) => {
+        p.el.querySelectorAll<HTMLElement>('[data-scd-thread]').forEach((el) => { el.hidden = el.dataset.scdThread !== id; });
+        const empty = q<HTMLElement>('[data-scd-empty]'); if (empty) empty.hidden = id !== null;
+        const convo = q<HTMLElement>('[data-scd-convo]'); if (convo) convo.scrollTop = 0;
+      };
+      const renderCtx = () => {
+        const scope = q<HTMLElement>('[data-scd-scope]');
+        scope?.querySelectorAll('[data-scd-ctxchip]').forEach((c) => c.remove());
+        scope?.toggleAttribute('data-has-ctx', p.ctx.size > 0);
+        p.ctx.forEach((v, key) => {
+          const chip = document.createElement('span');
+          chip.className = 'scd-ctxchip';
+          chip.dataset.scdCtxchip = key;
+          chip.innerHTML = `${v.icon}<span class="scd-ctxchip-name">${v.name}</span><button type="button" class="scd-ctxchip-x" data-scd-ctx-remove aria-label="Remove ${v.name}"><span class="iconify lucide--x size-3" aria-hidden="true"></span></button>`;
+          scope?.appendChild(chip);
+        });
+      };
+
+      p.el.addEventListener('click', (ev) => {
+        // A parked strip is the HOST's click (it expands it); nothing in here should read it.
+        if (p.collapsed) return;
+        const t = ev.target as HTMLElement;
+
+        // Expand ⤢ — the only route to the full Chat tab. The panel closes first: the tab IS the
+        // chat, so leaving a chat panel open over it would show the same conversation twice.
+        if (t.closest('[data-scd-expand]')) {
+          host.closePanel(p);
+          document.querySelector<HTMLButtonElement>('[data-tab="chat"]')?.click();
+          return;
+        }
+        // Thread switcher: pick a thread → swap the shown title + exchange; New chat → blank it
+        // (presentational — the full Chat tab owns real history). Blur closes the daisyUI dropdown.
+        const pick = t.closest<HTMLElement>('[data-scd-pick]');
+        if (pick) {
+          const cur = q<HTMLElement>('[data-scd-current]'); if (cur) cur.textContent = pick.dataset.scdTitle ?? '';
+          showThread(pick.dataset.scdPick ?? null);
+          (document.activeElement as HTMLElement | null)?.blur();
+          return;
+        }
+        if (t.closest('[data-scd-new]')) {
+          const cur = q<HTMLElement>('[data-scd-current]'); if (cur) cur.textContent = 'New chat';
+          showThread(null);
+          (document.activeElement as HTMLElement | null)?.blur();
+          return;
+        }
+        // "Current Browse view" — read the LIVE Browse state (table + active filter count) the grid
+        // mirrors onto its root (data-page spec: the widget attaches data scopes).
+        if (t.closest('[data-scd-add-browse]')) {
+          const dg = document.querySelector<HTMLElement>('[data-databrowse]');
+          const table = dg?.dataset.dgCtxTable || 'Browse';
+          const n = Number(dg?.dataset.dgCtxFilters || 0);
+          const name = n > 0 ? `Browse: ${table} · ${n} filter${n === 1 ? '' : 's'}` : `Browse: ${table}`;
+          p.ctx.set('view:browse', { name, icon: '<span class="iconify lucide--sliders-horizontal" aria-hidden="true"></span>' });
+          renderCtx();
+          (document.activeElement as HTMLElement | null)?.blur();
+          return;
+        }
+        const item = t.closest<HTMLElement>('[data-scd-add-ent],[data-scd-add-doc]');
+        if (item) {
+          const isDoc = item.hasAttribute('data-scd-add-doc');
+          const id = (isDoc ? item.dataset.scdAddDoc : item.dataset.scdAddEnt) || '';
+          const key = (isDoc ? 'doc:' : 'ent:') + id;
+          const name = (isDoc ? item.dataset.docTitle : item.dataset.entName) || id;
+          const icon = item.querySelector<HTMLElement>('.scd-addctx-ic')?.innerHTML || '';
+          if (!p.ctx.has(key)) p.ctx.set(key, { name, icon });
+          renderCtx();
+          (document.activeElement as HTMLElement | null)?.blur();
+          return;
+        }
+        const rm = t.closest<HTMLElement>('[data-scd-ctx-remove]');
+        if (rm) {
+          const chip = rm.closest<HTMLElement>('[data-scd-ctxchip]');
+          if (chip?.dataset.scdCtxchip) { p.ctx.delete(chip.dataset.scdCtxchip); renderCtx(); }
+        }
+      });
+
+      // Picker search filters items + hides empty section headers. `input` bubbles, so this is the
+      // same one-listener-on-the-panel deal as the clicks.
+      p.el.addEventListener('input', (ev) => {
+        const search = (ev.target as HTMLElement).closest<HTMLInputElement>('[data-scd-ctx-search]');
+        if (!search) return;
+        const query = search.value.trim().toLowerCase();
+        let shown = 0;
+        p.el.querySelectorAll<HTMLElement>('.scd-addctx-item').forEach((it) => {
+          const ok = !query || (it.dataset.search || '').includes(query);
+          it.hidden = !ok;
+          if (ok) shown++;
+        });
+        p.el.querySelectorAll<HTMLElement>('[data-scd-ctx-sec]').forEach((sec) => {
+          let any = false;
+          let n = sec.nextElementSibling as HTMLElement | null;
+          while (n && !n.hasAttribute('data-scd-ctx-sec') && !n.hasAttribute('data-scd-ctx-empty')) {
+            if (n.classList.contains('scd-addctx-item') && !n.hidden) { any = true; break; }
+            n = n.nextElementSibling as HTMLElement | null;
+          }
+          sec.hidden = !any;
+        });
+        const empty = q<HTMLElement>('[data-scd-ctx-empty]'); if (empty) empty.hidden = shown > 0;
+      });
+    }
+
+    function buildPanel(): ChatP {
+      const el = tpl!.content.firstElementChild!.cloneNode(true) as HTMLElement;
+      const p: ChatP = {
+        el, kind: PREFIX, ctx: new Map(),
+        uid: 0, anchor: false, w: 0, seq: 0, collapsed: false,
+      };
+      wirePanel(p);
+      return p;
+    }
+
+    // ── This component's KIND, registered with the ONE host ───────────────────────────────────
+    registerPanelKind<ChatP>({
+      prefix: PREFIX,
+      // The shared 360 floor (pattern-side-panel-width) — a conversation column, same as a record.
+      minw: 360,
+      buildPanel,
+      // No content id to load: `chat:quick` is the whole identity of this kind.
+      loadInto: () => {},
+      // Deliberately a NO-OP. The sheet arrives complete from the template clone, and `render` is
+      // also what the stack calls when you re-open something already open — rebuilding the body
+      // there would throw away the thread you had switched to and the context chips you had added.
+      render: () => {},
+      panelKey: () => CHAT_ID,
+      // False wherever the dock is not rendered, so a saved arrangement can never try to rebuild a
+      // panel whose template does not exist on this page. Read from the LIVE document rather than
+      // the captured `tpl`: the registry is a module singleton and survives a soft navigation.
+      canOpen: (id) => id === CHAT_ID && !!document.querySelector('[data-scd-tpl]'),
+      onMissing: () => host.toast('The assistant is not available on this page.', null),
+      // Escape belongs to an open picker before it belongs to the panel: the thread switcher and the
+      // Add-context popover are daisyUI focus-dropdowns, so blurring is what shuts them.
+      onEsc: (p) => {
+        const a = document.activeElement as HTMLElement | null;
+        if (a && p.el.contains(a) && a.closest('.dropdown')) { a.blur(); return true; }
+        return false;
+      },
+      // Listeners live on `p.el` and die with it; what is left is this panel's own state.
+      onDestroy: (p) => p.ctx.clear(),
+      detachedText: 'Pinned — the assistant stays put. The next thing you open starts a fresh anchor beside it.',
+    });
+  }
+  wireQuickAsk();
+  document.addEventListener('astro:after-swap', wireQuickAsk);
+</script>
+
+<style is:global>
+  /* GLOBAL, under a unique `.scd-` prefix — the whole sheet is CLONED FROM A TEMPLATE and injected
+     into the host's DOM at open time, which Astro's scoped styles never reach. This block used to be
+     scoped and was correct only because the dock rendered in place; moving one rule back into a
+     scoped block would silently unstyle the panel with every gate green. */
+
+  /* The sheet. Geometry constants (the 46px strip, `--panel-w`) are the stack controller's.
+     NO resting box-shadow here, deliberately: sheets are siblings in one stack, so a leftward
+     shadow (`-12px 0 …`) falls ON the neighbouring sheet, not on the page. `border-left` already
+     separates a sheet from what is behind it. Only the stack's LEFTMOST surface casts a shadow —
+     `.ps-rail` in styles/global.css:1055. The `.ps-focus` variant went with it — it was only a
+     heavier version of the same misplaced shadow, so this surface now carries no focus mark at all
+     (RecordPanel/DataChangelog mark focus with a head border-bottom; unresolved here on purpose). */
+  .scd-sheet {
+    position: relative; pointer-events: auto; display: flex; flex-direction: column;
+    width: var(--panel-w, 480px); flex: none; height: 100%;
+    background: var(--color-base-100); border-left: 1px solid var(--color-base-300);
+  }
+  /* The shared resize grip — `data-ps-grip`, the stack's, replacing this component's own left-edge
+     drag and its separately persisted `scd-w`. One remembered width app-wide. */
+  .scd-grip { position: absolute; left: -3px; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 2; }
+  .scd-grip-line { position: absolute; left: 3px; top: 0; bottom: 0; width: 2px; background: transparent; }
+  .scd-grip:hover .scd-grip-line, .ps-grip-on .scd-grip-line { background: var(--color-primary); }
+
+  /* Collapse-to-rail (pattern-panel-collapse-rail): a parked panel is a ~46px strip —
+     ✕ (top) · sparkles glyph · rotated thread title. */
+  .scd-sheet.ps-collapsed { width: 46px; overflow: hidden; }
+  .scd-sheet.ps-collapsed .scd-scope,
+  .scd-sheet.ps-collapsed .scd-convo,
+  .scd-sheet.ps-collapsed .scd-composer,
+  .scd-sheet.ps-collapsed .scd-threadchev,
+  .scd-sheet.ps-collapsed .scd-act,
+  .scd-sheet.ps-collapsed .scd-park { display: none !important; }
+  .scd-sheet.ps-collapsed .scd-top { flex-direction: column; align-items: center; gap: 12px; height: 100%; padding: 8px 0; border-bottom: 0; }
+  .scd-sheet.ps-collapsed .scd-acts { order: -1; margin-left: 0; }
+  .scd-sheet.ps-collapsed .scd-threadmenu, .scd-sheet.ps-collapsed .scd-ttl { flex: 0 1 auto; min-height: 0; max-height: 100%; }
+  .scd-sheet.ps-collapsed .scd-threadbtn { flex-direction: column; max-width: none; height: 100%; padding: 0; }
+  .scd-sheet.ps-collapsed .scd-ttl { flex-direction: column; }
+  .scd-sheet.ps-collapsed .scd-threadttl { writing-mode: vertical-rl; transform: rotate(180deg); overflow: hidden; max-height: 100%; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* The HOLD slot — one leading slot, one control: the anchor shows Pin, a movable panel shows the
+     drag grip. Ported 1:1 from the record / file / entity sheets. */
+  .scd-reorder { flex: none; opacity: .3; transition: opacity .12s ease; cursor: grab; }
+  .scd-top:hover .scd-reorder, .scd-top:focus-within .scd-reorder, .scd-reorder:focus-visible { opacity: 1; }
+  .scd-reorder.ps-grip-on { cursor: grabbing; }
+  .scd-detach { flex: none; color: var(--color-primary); }
+  .scd-sheet:not(.ps-anchor) .scd-detach,
+  .scd-sheet.ps-anchor .scd-reorder,
+  .scd-sheet.ps-collapsed .scd-detach,
+  .scd-sheet.ps-collapsed .scd-reorder,
+  .scd-sheet.ps-collapsed .scd-lock { display: none !important; }
+  .scd-sheet.ps-anchor .scd-top { box-shadow: inset 0 2px 0 var(--color-primary); }
+  .scd-sheet.ps-dragging { outline: 2px dashed var(--color-primary); outline-offset: -2px; z-index: 5; box-shadow: -12px 0 40px oklch(0 0 0 / .35); }
+  .scd-lock { display: none; }
+  .ps-reordering .scd-sheet.ps-anchor .scd-lock {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    position: absolute; inset: 0; z-index: 6; cursor: not-allowed; text-align: center; padding: 16px;
+    font-size: var(--t-13); background: oklch(from var(--color-base-100) l c h / .85); color: oklch(from var(--color-base-content) l c h / .65);
+  }
+
+  .scd-top { display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--color-base-300); min-width: 0; }
+  /* Focus, PORTED from `.rp-sheet.ps-focus .rp-head` because removing the drop shadow removed a
+     capability, not a decoration: on this host the heavier shadow was the ONLY thing marking the
+     focused sheet. Two of the four stack hosts already recolour the head hairline instead, and a
+     hairline cannot land on the neighbouring sheet the way a leftward shadow does. */
+  .scd-sheet.ps-focus .scd-top { border-bottom-color: oklch(from var(--color-primary) l c h / .45); }
+  .scd-ttl { display: inline-flex; align-items: center; gap: 4px; min-width: 0; font-size: var(--t-14); font-weight: 640; }
+  .scd-ttl .iconify { color: var(--color-primary); flex: none; }
+  /* thread switcher — a daisyUI dropdown whose trigger is the current chat title; menu lists the
+     non-archived threads (mirrors the full Chat tab rail). Compact, quiet, on the 4px grid. */
+  .scd-threadmenu { min-width: 0; }
+  .scd-threadbtn { display: inline-flex; align-items: center; gap: 4px; max-width: 15rem; padding: 4px; border-radius: var(--r-8); cursor: pointer; font-size: var(--t-14); font-weight: 640; color: var(--color-base-content); }
+  .scd-threadbtn:hover { background: oklch(from var(--color-base-content) l c h / .08); }
+  .scd-threadmark { color: var(--color-primary); flex: none; }
+  .scd-threadttl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scd-threadchev { flex: none; opacity: .5; }
+  .scd-threadlist { z-index: 62; margin-top: 4px; width: 17rem; max-height: 60dvh; overflow-y: auto; padding: 4px; border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: var(--color-base-100); box-shadow: 0 8px 28px oklch(0 0 0 / .16); }
+  .scd-threaditem { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 8px; border: 0; background: none; border-radius: var(--r-8); cursor: pointer; text-align: left; font-size: var(--t-13); color: var(--color-base-content); }
+  .scd-threaditem:hover { background: oklch(from var(--color-base-content) l c h / .08); }
+  .scd-threaditem .iconify { flex: none; opacity: .55; }
+  .scd-threaditem-ttl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scd-newempty { margin: auto; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; color: oklch(from var(--color-base-content) l c h / .65); }
+  .scd-newempty .iconify { color: var(--color-primary); opacity: .8; }
+  .scd-newempty-ttl { font-size: var(--t-14); font-weight: 640; color: var(--color-base-content); }
+  .scd-newempty-sub { font-size: var(--t-12); max-width: 30ch; }
+  .scd-acts { margin-left: auto; display: inline-flex; align-items: center; gap: 0; flex: none; }
+
+  /* scope row: injected context chips sit beside/replace "Whole Space" */
+  .scd-scope { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--color-base-200); }
+  .scd-scope[data-has-ctx] .scd-chip-whole { display: none; }
+  .scd-chip { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--color-base-300); background: oklch(from var(--color-base-200) l c h / .55); color: oklch(from var(--color-base-content) l c h / .65); } /* ds-ok: 2px optical inset on a pill */
+  .scd-chip .iconify { opacity: .6; }
+  .scd-convo { flex: 1; overflow-y: auto; min-height: 0; padding: 16px 16px 20px; }
+  .scd-thread { display: flex; flex-direction: column; gap: 20px; }
+  .scd-thread[hidden] { display: none; }
+  /* Same two-lane language as the full Chat tab (pattern-schema-chat): mine = pale-blue
+     bubble on the RIGHT, assistant = quiet grey plate on the LEFT (width-capped, no avatar
+     decoration), body text softened to ~85%. */
+  .scd-msg-user { align-self: flex-end; max-width: 85%; padding: 8px 12px; border-radius: var(--r-12) var(--r-12) var(--r-4) var(--r-12); background: oklch(from var(--color-primary) l c h / .08); color: oklch(from var(--color-base-content) l c h / .85); font-size: var(--t-13); line-height: 1.55; }
+  .scd-msg-ai { align-self: flex-start; max-width: 90%; }
+  .scd-msg-ai-body { min-width: 0; }
+  .scd-msg-ai-text { font-size: var(--t-13); line-height: 1.6; padding: 8px 12px; border-radius: var(--r-12) var(--r-12) var(--r-12) var(--r-4); background: oklch(from var(--color-base-200) l c h / .45); color: oklch(from var(--color-base-content) l c h / .85); }
+  /* "Saved as a doc" system line between turns. */
+  .scd-msg-doc { align-self: center; display: inline-flex; align-items: center; gap: 8px; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--color-base-300); background: oklch(from var(--color-base-200) l c h / .55); font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .85); }
+  .scd-msg-doc .iconify { color: var(--color-primary); opacity: .85; }
+  .scd-msg-doc strong { font-weight: 600; color: var(--color-base-content); }
+  .scd-refs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; align-items: center; }
+  .scd-refs-lbl { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .scd-refchip { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); padding: 2px 8px; border-radius: 999px; border: 1px solid var(--color-base-300); background: oklch(from var(--color-base-200) l c h / .55); color: oklch(from var(--color-base-content) l c h / .85); } /* ds-ok: 2px optical inset on a pill */
+  .scd-refchip .iconify { opacity: .6; }
+  .scd-composer { padding: 12px; border-top: 1px solid var(--color-base-300); }
+  .scd-box { border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: var(--color-base-100); padding: 12px 12px 8px; box-shadow: 0 1px 3px oklch(0 0 0 / .05); }
+  /* What the USER TYPES is a value, not a description — the mechanical mapping put it on the muted
+   floor, which is the one place the table lands on the wrong rung. Full strength, like every other
+   input value in the app. */
+  .scd-input { font-size: var(--t-14); color: var(--color-base-content); padding: 4px 0 12px; }
+  .scd-bar { display: flex; align-items: center; gap: 8px; }
+  .scd-addctx { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); cursor: pointer; padding: 4px; border-radius: var(--r-6); }
+  .scd-addctx:hover { background: oklch(from var(--color-base-content) l c h / .08); color: var(--color-base-content); }
+  /* Add-context picker (opens upward from the composer). Mirrors the full Chat picker. */
+  .scd-addctx-pop { width: 20rem; max-width: calc(100vw - 4rem); margin-bottom: 8px; padding: 8px; background: var(--color-base-100); border: 1px solid var(--color-base-300); border-radius: var(--r-12); box-shadow: 0 8px 28px oklch(0 0 0 / .18); z-index: 62; }
+  .scd-addctx-search { width: 100%; margin-bottom: 8px; }
+  .scd-addctx-list { max-height: 16rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; } /* ds-ok: 1px hairline between rows */
+  .scd-addctx-sec { font-size: var(--t-12); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .45; padding: 8px 4px 4px; }
+  .scd-addctx-sec[hidden] { display: none; }
+  .scd-addctx-item { display: flex; align-items: center; gap: 8px; padding: 4px; border: 0; background: none; border-radius: var(--r-6); cursor: pointer; font: inherit; font-size: var(--t-13); text-align: left; color: var(--color-base-content); width: 100%; }
+  .scd-addctx-item:hover { background: oklch(from var(--color-base-content) l c h / .08); }
+  .scd-addctx-item[hidden] { display: none; }
+  .scd-addctx-ic { display: inline-grid; place-items: center; width: 16px; flex: none; color: oklch(from var(--color-base-content) l c h / .65); }
+  .scd-addctx-ic svg { width: 13px; height: 13px; } /* ds-ok: intrinsic SVG glyph box, not spacing */
+  .scd-addctx-item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scd-addctx-item-path { margin-left: auto; font-size: var(--t-12); opacity: .5; white-space: nowrap; flex: none; }
+  .scd-addctx-empty { padding: 8px 4px; font-size: var(--t-13); opacity: .5; }
+  .scd-credits { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin-left: auto; }
+  .scd-send { display: grid; place-items: center; width: 32px; height: 32px; border-radius: var(--r-8); background: var(--color-primary); color: var(--color-primary-content); flex: none; }
+  .scd-disclaimer { text-align: center; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); margin-top: 8px; }
+
+  /* The JS-injected context chips (innerHTML). Matches the "Whole Space" chip's pill look. */
+  .scd-ctxchip { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-12); padding: 2px 4px 2px 8px; border-radius: 999px; border: 1px solid var(--color-base-300); background: oklch(from var(--color-primary) l c h / .08); color: oklch(from var(--color-base-content) l c h / .85); } /* ds-ok: 2px optical inset on a pill */
+  .scd-ctxchip .iconify, .scd-ctxchip svg { width: 12px; height: 12px; opacity: .7; flex: none; }
+  .scd-ctxchip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 11rem; }
+  .scd-ctxchip-x { display: inline-grid; place-items: center; width: 16px; height: 16px; border: 0; border-radius: 999px; background: none; cursor: pointer; color: oklch(from var(--color-base-content) l c h / .65); flex: none; }
+  .scd-ctxchip-x:hover { background: oklch(from var(--color-base-content) l c h / .16); color: var(--color-base-content); }
+  .scd-ctxchip-x .iconify { opacity: 1; }
+
+  /* Mobile: one full-width column, minus the 40px the host's control column keeps. */
+  @media (max-width: 1279.98px) {
+    .scd-sheet { width: calc(100% - 40px); }
+    .scd-grip, .scd-reorder { display: none; }
+  }
+</style>

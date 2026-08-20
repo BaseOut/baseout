@@ -92,14 +92,8 @@
   "src/views/schema/BrowseTab.legacy.astro": [
     "Rollback target for Phase 13 Slice 3 SchemaBrowse promotion. Pre-promotion Browse tab with inline #entity-detail card; not mounted."
   ],
-  "src/views/schema/ChangelogTab.astro": [
-    "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier, web-schema-changelog vanilla-in-view decision): base/kind `select`, Include-removed `toggle`, `input` search, and the day-grouped feed rows (`badge` kind chips, breadcrumb, before\u2192after delta, warning line) rendered as innerHTML in the lazy-load client script \u2014 same shape as RelationshipsTab/HealthTab."
-  ],
   "src/views/schema/ChatTab.astro": [
     "Moved verbatim from the pre-split SchemaView.astro (web-chat-tab): thread `menu`, context `select`, composer `textarea`/`btn`, and conversation bubbles rendered as innerHTML in the client script."
-  ],
-  "src/views/schema/HealthTab.astro": [
-    "Moved verbatim from the pre-split SchemaView.astro (web-health-tab): base `select`, Pro+ `btn` controls, and grade/metric/issue `stats`/`table`/`badge` markup rendered as innerHTML in the lazy-load client script."
   ],
   "src/views/schema/RelationshipsTab.legacy.astro": [
     "Pre-Phase-13 Relationships tab (lazy-fetch + innerHTML). Replaced by tip SchemaRelationships + engine mapper; kept for rollback."
@@ -112,5 +106,11 @@
   ],
   "src/views/ReportDetailView.astro": [
     "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier, Phase 8): single run document shell around ReportBodyKpi with Export dropdown; EntityPanel stub for schema refs."
+  ],
+  "src/views/schema/ChangelogTab.legacy.astro": [
+    "Pre-Phase-13 Changelog lazy-fetch tab; replaced by tip SchemaChangelog + adaptChangelogEntries."
+  ],
+  "src/views/schema/HealthTab.legacy.astro": [
+    "Pre-Phase-13 Health lazy-fetch tab; replaced by tip SchemaHealth + adaptHealthOverview."
   ]
 }

@@ -189,6 +189,10 @@
     "classification": "daisyui-direct-styleguide",
     "rationale": "Faceted single/multi-select filter trigger + menu (promoted with Data surface, ui-only@9cf5b1ef): daisyUI dropdown/checkbox/radio markup driving the Data toolbar's Base/Table/type/date facets. Client filtering + emitted events live in its <script>. Styles via shared facet-filter.css."
   },
+  "schema/QuickAskDock.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 Slice 5 QuickAskDock (ui-only tip): chat:quick PanelHost kind. Expand \u2192 live ChatTab. Threads empty until chat list SSR; no fixture composer. A&I CRUD untouched."
+  },
   "schema/RelationshipPanel.astro": {
     "classification": "daisyui-direct-styleguide",
     "rationale": "Phase 13 shared relationship detail overlay + declare-synced Drawer (ui-only tip). Opened via schema:openRelationship; Confirm/Dismiss wired to live mutate API."
@@ -201,6 +205,14 @@
   "schema/SchemaBrowse.astro": {
     "classification": "daisyui-direct-styleguide",
     "rationale": "Phase 13 Schema Browse (ui-only tip): Tree/Flat explorer with FacetFilter, EntitySearch, patterns/ExportControl, ui/Table + Badge. Rows use data-entity-open \u2192 EntityPanel. Scoped .br-* styles; real schema SSR index."
+  },
+  "schema/SchemaChangelog.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 Changelog (ui-only tip): day-grouped feed + FacetFilter + DateRangePicker. Entries from adaptChangelogEntries over live getSchemaChangelog; no fixtures."
+  },
+  "schema/SchemaHealth.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 Health (ui-only tip): hybrid tabs/console + grade report. BaseHealth from adaptHealthOverview over live getHealthOverview; insights empty; Pro+ space prompt/rerun hit health-prompt/health-rerun."
   },
   "schema/SchemaInterfaces.astro": {
     "classification": "daisyui-direct-styleguide",

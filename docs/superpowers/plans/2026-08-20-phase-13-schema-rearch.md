@@ -58,8 +58,8 @@ Most fork Schema components already exist under `apps/design/src/components/sche
 | **1** | EntityPanel promote + mapper + mount on Schema (+ Reports stub replacement); docs-by-entity; Internal Save honest-gated | **DONE** (`8bc16054`) |
 | **2** | Shell/nav → fork SchemaView chrome + PanelHost; keep tab modules mounted | **DONE** |
 | **3** | Browse → `SchemaBrowse` + drop inline `#entity-detail` | **DONE** |
-| **4** | Remaining tabs (Visualize/Relationships/Health/Changelog/Docs/Chat) one-by-one | **IN PROGRESS** — Visualize ws-grouping + Relationships tip UI DONE; Health→Chat still live `*Tab` |
-| **5** | A&I integration into new shell (no CRUD regression); QuickAskDock | next |
+| **4** | Remaining tabs (Visualize/Relationships/Health/Changelog/Docs/Chat) one-by-one | **DONE** — Visualize/Relationships/Health/Changelog tip+mappers; Docs/Chat **kept live** (Plate + chat poll) |
+| **5** | A&I integration into new shell (no CRUD regression); QuickAskDock | **DONE** — QuickAskDock mounted; A&I already in shell (Phase 9 CRUD preserved) |
 | **6** | Allowlist/stories polish; roadmap DONE; archive readiness | next |
 
 ## Slice 1 detail

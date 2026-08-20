@@ -13,6 +13,8 @@ import {
   type SchemaEntityView,
 } from '../lib/backup-engine';
 import { adaptEngineRelationships, type SchemaRelationship } from '../lib/schema-docs/adapt-relationships';
+import { adaptChangelogEntries, type TipChangelogEntry } from '../lib/schema-docs/adapt-changelog';
+import { adaptHealthOverview, type TipBaseHealth } from '../lib/schema-docs/adapt-health';
 import { resolveSchemaDocsLevel } from '../lib/schema-docs/proxy';
 import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities';
 import { atBases, backupRuns } from '../db/schema/core';
@@ -35,6 +37,8 @@ let schema: {
   views: SchemaEntityView[];
 } = { bases: [], tables: [], fields: [], views: [] };
 let relationships: SchemaRelationship[] = [];
+let changelogEntries: TipChangelogEntry[] = [];
+let healthRows: TipBaseHealth[] = [];
 let viewState: 'ok' | 'not_ready' | 'unconfigured' | 'error' = 'ok';
 
 if (level !== 'none' && spaceId) {
@@ -55,18 +59,56 @@ if (level !== 'none' && spaceId) {
         fields: schemaRes.fields,
         views: schemaRes.views,
       };
-      // SSR relationships for tip SchemaRelationships (include dismissed for History facet).
-      const relResults = await Promise.all(
-        schema.bases.map(async (b) => {
-          const res = await engine.getRelationships(spaceId, b.baseId, true);
-          if (!res.ok) return [] as SchemaRelationship[];
-          return adaptEngineRelationships(b.baseId, b.name, {
-            derived: res.derived,
-            syncedViews: res.syncedViews,
-          });
-        }),
-      );
+      const nameSchema = {
+        bases: schema.bases.map((b) => ({ baseId: b.baseId, name: b.name })),
+        tables: schema.tables.map((t) => ({ tableId: t.tableId, baseId: t.baseId, name: t.name })),
+        fields: schema.fields.map((f) => ({
+          fieldId: f.fieldId,
+          tableId: f.tableId,
+          baseId: f.baseId,
+          name: f.name,
+        })),
+        views: schema.views.map((v) => ({
+          viewId: v.viewId,
+          tableId: v.tableId,
+          baseId: v.baseId,
+          name: v.name,
+        })),
+      };
+      // SSR tip tabs: relationships + changelog + health (same engine proxies as the live *Tab modules).
+      const [relResults, clResults, hlResults] = await Promise.all([
+        Promise.all(
+          schema.bases.map(async (b) => {
+            const res = await engine.getRelationships(spaceId, b.baseId, true);
+            if (!res.ok) return [] as SchemaRelationship[];
+            return adaptEngineRelationships(b.baseId, b.name, {
+              derived: res.derived,
+              syncedViews: res.syncedViews,
+            });
+          }),
+        ),
+        Promise.all(
+          schema.bases.map(async (b) => {
+            const res = await engine.getSchemaChangelog(spaceId, b.baseId, 200);
+            if (!res.ok) return [] as TipChangelogEntry[];
+            return adaptChangelogEntries(res.entries, nameSchema);
+          }),
+        ),
+        Promise.all(
+          schema.bases.map(async (b) => {
+            const res = await engine.getHealthOverview(spaceId, b.baseId);
+            if (!res.ok) return null;
+            return adaptHealthOverview(b.baseId, b.name, {
+              grade: res.grade,
+              metrics: res.metrics,
+              issues: res.issues,
+            });
+          }),
+        ),
+      ]);
       relationships = relResults.flat();
+      changelogEntries = clResults.flat().sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+      healthRows = hlResults.filter((h): h is TipBaseHealth => h != null);
     }
     if (!docsRes.ok && docsRes.code === 'space_db_not_ready') viewState = 'not_ready';
     else if (!docsRes.ok && !schemaRes.ok) viewState = 'error';
@@ -126,6 +168,8 @@ if (db && spaceId) {
       docs={docs}
       schema={schema}
       relationships={relationships}
+      changelogEntries={changelogEntries}
+      healthRows={healthRows}
       baseWorkspaces={baseWorkspaces}
       state={viewState}
       lastBackupAt={lastBackupAt}

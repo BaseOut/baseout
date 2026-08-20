@@ -13,6 +13,7 @@ import UndoToast from '../components/ui/UndoToast.astro'
 import EntityPanel from '../components/schema/EntityPanel.astro'
 import RelationshipPanel from '../components/schema/RelationshipPanel.astro'
 import SchemaBrowse from '../components/schema/SchemaBrowse.astro'
+import QuickAskDock from '../components/schema/QuickAskDock.astro'
 import ChangelogTab from './schema/ChangelogTab.astro'
 import RelationshipsTab from './schema/RelationshipsTab.astro'
 import VisualizeTab from './schema/VisualizeTab.astro'
@@ -31,6 +32,8 @@ import type {
 } from '../lib/backup-engine'
 import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities'
 import type { SchemaRelationship } from '../lib/schema-docs/adapt-relationships'
+import type { TipChangelogEntry } from '../lib/schema-docs/adapt-changelog'
+import type { TipBaseHealth } from '../lib/schema-docs/adapt-health'
 import { isRemoved } from '../lib/schema-docs/deleted-filter'
 import {
   mapDocSummariesToSchemaDocs,
@@ -50,6 +53,10 @@ interface Props {
   }
   /** Engine relationships mapped for tip SchemaRelationships + RelationshipPanel. */
   relationships?: SchemaRelationship[]
+  /** Engine changelog mapped for tip SchemaChangelog. */
+  changelogEntries?: TipChangelogEntry[]
+  /** Engine health overviews mapped for tip SchemaHealth. */
+  healthRows?: TipBaseHealth[]
   /** at_bases workspace identity keyed by Airtable base id (for Visualize grouping). */
   baseWorkspaces?: Record<string, { workspaceId?: string | null; workspaceName?: string | null }>
   state: 'ok' | 'not_ready' | 'unconfigured' | 'error'
@@ -65,6 +72,8 @@ const {
   docs,
   schema,
   relationships = [],
+  changelogEntries = [],
+  healthRows = [],
   baseWorkspaces = {},
   state: _state,
   lastBackupAt = null,
@@ -98,6 +107,32 @@ const browseBases = schema.bases.map((b) => {
 const relTables = schema.tables
   .filter((t) => !isRemoved(t.status))
   .map((t) => ({ id: t.tableId, name: t.name, baseId: t.baseId }))
+
+const clBaseId = Object.fromEntries(schema.bases.map((b) => [b.name, b.baseId]))
+const clTableId = Object.fromEntries(
+  schema.tables.map((t) => {
+    const baseName = schema.bases.find((b) => b.baseId === t.baseId)?.name ?? t.baseId
+    return [`${baseName}::${t.name}`, t.tableId]
+  }),
+)
+const clBaseWorkspace = Object.fromEntries(
+  schema.bases.map((b) => {
+    const ws = baseWorkspaces[b.baseId]
+    return [
+      b.name,
+      {
+        workspaceId: ws?.workspaceId ?? undefined,
+        workspaceName: ws?.workspaceName ?? undefined,
+      },
+    ]
+  }),
+)
+const healthOverrideTargets = [
+  ...schema.bases.map((b) => ({ id: b.baseId, label: b.name, kind: 'base' })),
+  ...schema.tables
+    .filter((t) => !isRemoved(t.status))
+    .map((t) => ({ id: t.tableId, label: t.name, kind: 'table' })),
+]
 
 const stampWhen = lastBackupAt ? asOfWhen(lastBackupAt) : ''
 const asOfStamp = lastBackupRunId && stampWhen
@@ -238,11 +273,23 @@ const asOfStamp = lastBackupRunId && stampWhen
       </div>
 
       <div class="sch-panel" data-panel="changelog" hidden>
-        <ChangelogTab hasSchema={hasSchema} healthBases={healthBases} schema={schema} />
+        <ChangelogTab
+          hasSchema={hasSchema}
+          entries={changelogEntries}
+          baseId={clBaseId}
+          tableId={clTableId}
+          baseWorkspace={clBaseWorkspace}
+          asOf={lastBackupAt}
+        />
       </div>
 
       <div class="sch-panel" data-panel="health" hidden>
-        <HealthTab hasSchema={hasSchema} aiEnabled={aiEnabled} healthBases={healthBases} />
+        <HealthTab
+          hasSchema={hasSchema}
+          health={healthRows}
+          aiState={aiState}
+          overrideTargets={healthOverrideTargets}
+        />
       </div>
 
       <div class="sch-panel" data-panel="docs" hidden>
@@ -267,6 +314,12 @@ const asOfStamp = lastBackupRunId && stampWhen
       {hasSchema && (
         <RelationshipPanel relationships={relationships} tables={relTables} bases={browseBases} />
       )}
+      <QuickAskDock
+        threads={[]}
+        index={schemaIndex}
+        docs={panelDocs.map((d) => ({ id: d.id, title: d.title }))}
+        noun="schema"
+      />
     </>
   )}
 </section>
@@ -283,10 +336,8 @@ const asOfStamp = lastBackupRunId && stampWhen
       searchSelector: '[data-entity-search] input, .es-input, [data-sch-search]',
     })
     watchToolbars()
-    const chatTab = root.querySelector<HTMLButtonElement>('[data-tab="chat"]')
-    root.querySelectorAll<HTMLButtonElement>('[data-sch-ask]').forEach((btn) => {
-      btn.addEventListener('click', () => chatTab?.click())
-    })
+    // [data-sch-ask] is owned by QuickAskDock (panelHostRegistry chat:quick).
+    // Expand inside the dock still jumps to [data-tab="chat"] / live ChatTab.
   }
   wireSchemaShell()
   document.addEventListener('astro:after-swap', () => {

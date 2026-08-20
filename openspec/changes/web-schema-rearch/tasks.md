@@ -24,12 +24,14 @@
 
 ## 3. Remaining tabs
 
-- [ ] 3.1 Visualize / Relationships / Health / Changelog / Docs / Chat — one tab per sub-slice, preserve proxies
+- [x] 3.1 Visualize / Relationships / Health / Changelog / Docs / Chat — one tab per sub-slice, preserve proxies
   - [x] Visualize: tip workspace-grouping into live SchemaCanvas; atBases join; keep spaceId relationships fetch + adaptEngineRelationships
   - [x] Relationships: tip SchemaRelationships + RelationshipPanel; SSR engine map; Confirm/Dismiss/Declare → relationship-mutate
-  - [ ] Health → Changelog → Docs → Chat
-- [ ] 3.2 A&I: integrate Phase 9 CRUD into new shell (no regression)
-- [ ] 3.3 QuickAskDock (global launcher)
+  - [x] Health: tip SchemaHealth + adaptHealthOverview; Pro+ space prompt/rerun → health-prompt/health-rerun; insights empty
+  - [x] Changelog: tip SchemaChangelog + adaptChangelogEntries over getSchemaChangelog
+  - [x] Docs / Chat: **KEEP live** DocsTab island + ChatTab (Plate CRUD / async poll — tip is fixture redesign)
+- [x] 3.2 A&I: already in fork SchemaView shell (Phase 9 AutomationsTab/InterfacesTab) — no tip replace
+- [x] 3.3 QuickAskDock (global launcher) — Expand → live ChatTab; threads empty until chat list SSR
 
 ## 4. Close
 
