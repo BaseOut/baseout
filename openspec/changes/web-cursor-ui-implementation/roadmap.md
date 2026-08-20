@@ -37,11 +37,11 @@
 | Home | **LIVE** (`SpaceHomeView` · Phase 7.4 visual) | Built | runs + integrations | **DONE** visual — preserve `index.astro` poll |
 | Backups | **LIVE** (`BackupsListView` · Phase 7.5 visual) | Built | engine runs | **DONE** visual — preserve `backups.astro` poll |
 | Restore | **LIVE** | Built | restore paths | Later visual sync |
-| Schema — Browse / Visualize / Relationships / Health / Docs / Chat / Changelog* | **LIVE** (most tabs) | Re-architected (deferred) | yes | **Keep live shell**; Schema re-arch deferred (ledger) |
+| Schema — Browse / Visualize / Relationships / Health / Docs / Chat / Changelog* | **LIVE** (most tabs) | Re-architected | yes | **Phase 13 IN PROGRESS** — EntityPanel first; full shell later (`web-schema-rearch`) |
 | Schema — Automations / Interfaces | **LIVE** (Phase 9) | **BUILT** | manual-CRUD engine + proxies | **DONE** — tabs + Drawer CRUD; MCP capture funnel still deferred |
 | Data — Browse / Changelog / Comments / Docs / Chat | **LIVE** (Slice A done) | **BUILT** (+ Attachments/Media) | records/changelog/media/docs/chat + comments read | **DONE** on this branch — zero SoonTabs |
 | Actions | **LIVE** (landing) | Built | n/a (static + feedback) | Low priority polish |
-| Reports | **LIVE** (definitions list + detail/run; Phase 8) | **BUILT** + in nav | engine + proxies | **DONE** — EntityPanel stub (Phase 9); PDF/email env-gated; migrate **0038** first |
+| Reports | **LIVE** (definitions list + detail/run; Phase 8) | **BUILT** + in nav | engine + proxies | **DONE** — EntityPanel now Phase 13 real panel (was stub); PDF/email env-gated; migrate **0038** first |
 | Sources / Destinations | **LIVE** | Built | connections | Later visual sync; provider “coming soon” badges = **HONEST** (V2 platforms) |
 | Settings | **LIVE** (hub — Phase 4) | Catalog hub **BUILT** | partial | Hub LIVE; remaining gated rows need prefs/2FA backends |
 | Help | stub (“chat coming soon”) | Support portal separate app | — | `support` change; **BLOCKED** client Q#6 |
@@ -76,7 +76,7 @@
 | **10** | Support portal | `apps/support` from ui-only | **SKIP FOR NOW** (Q#6 — support channel not decided; revisit later) |
 | **11** | Billing / usage | Phase 1 portal rows now; usage/meters from pricing guide + honest gates (no fork Usage view) | **UNBLOCKED 2026-08-20** — build from PRD/`pricing-guide` / placeholders; do not wait on Q#4 |
 | **12** | Design-audit convergence | 41-item ship order (`web-design-audit-convergence`) | **IN PROGRESS** — census done (`census.md`); item 5 already on branch; closed this pass: **3, 4, 10b, 15b, 36(clear-filters half)**. ~28 ship items remain. Phase 13 can start in parallel. |
-| **13** | Schema re-architecture | Full fork Schema component set (~24 components + EntityPanel) | **UNBLOCKED 2026-08-20** — may start in parallel with Phase 12 remainder |
+| **13** | Schema re-architecture | Full fork Schema component set (~24 components + EntityPanel) | **IN PROGRESS 2026-08-20** — plan + EntityPanel slice; OpenSpec `web-schema-rearch`; plan [`docs/superpowers/plans/2026-08-20-phase-13-schema-rearch.md`](../../../docs/superpowers/plans/2026-08-20-phase-13-schema-rearch.md) |
 
 ### Slice A detail (first code after approval)
 
