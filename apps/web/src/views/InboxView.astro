@@ -1,0 +1,72 @@
+---
+/**
+ * InboxView — the notification centre, as a page.
+ *
+ * It was an overlay panel: a 24rem column pinned to the sidebar's edge, opened by a button that
+ * looked like a nav item, with its own close control and an open/close controller. Oleh, looking at
+ * it: *«треба переробити інбокс… зараз воно зовсім не юзабельна»* — and the measurement said why.
+ * At 1440 each row was **155px** tall, so four rows filled a 1110px column. A notification centre's
+ * job is TRIAGE — scan many, act on few — and at four rows you cannot scan.
+ *
+ * The rows were not the problem. Four facts (what happened · why · which Space · when) do not lay
+ * out side by side in 384px, so they stacked, and stacking is what made the row tall. The container
+ * was the constraint the whole time.
+ *
+ * SO THE STRUCTURE IS UNCHANGED, on purpose and on Oleh's instruction: two lanes, the same rows,
+ * the same filters, the same self-healing state-backed alerts. `Inbox.astro` is the same component
+ * with its overlay chrome removed (`asPage`). What it gains is a page's width.
+ *
+ * It also stops being the one destination in the app that is not a place. Every other section is a
+ * URL you can link, bookmark, open in a tab and come back to; the Inbox was a piece of client state
+ * that vanished on navigation, which is a strange property for the surface that tells you a backup
+ * failed.
+ *
+ * The header is the app's shared page-header shape — `text-title` plus the same
+ * `text-sm text-base-content/65 mt-1` description every other view uses — rather than two more
+ * bespoke classes. The `ds-guard` hook asked for exactly that on the first draft, and it was right.
+ *
+ * (web-notifications-inbox full-page promotion, ui-only@7c7202d7 — adapted with `asPage={true}`
+ * so the shared Inbox renders in document flow rather than as a hidden overlay.)
+ */
+import Inbox from '../components/layout/Inbox.astro';
+import type { InboxItem } from '../components/layout/inbox';
+
+interface Props {
+  items?: InboxItem[];
+}
+const { items = [] } = Astro.props;
+---
+
+<div class="ibxpage">
+  <header class="mb-4">
+    <h1 class="text-title">Inbox</h1>
+    <p class="text-sm text-base-content/65 mt-1">
+      What needs a decision, and what has been happening. Account-wide — every row says which Space
+      it came from.
+    </p>
+  </header>
+
+  {/* `tbl-frame` — the shared listing frame every other list in the app sits in (base-100, 1px
+      base-300, 12px radius). As a PANEL the Inbox supplied its own background, because an overlay
+      has to; as a page it inherited the page ground and the rows had nothing to sit on. Oleh:
+      «інбокс має бути на білому фоні, а не на цьому, тому що погано все-таки видно» — and the
+      contrast numbers agree: card against ground is 1.16:1 in light, which is a surface boundary,
+      not a background for text. */}
+  <div class="tbl-frame ibxpage-frame">
+    <Inbox items={items} asPage={true} />
+  </div>
+</div>
+
+<style>
+  /* CAPPED, because a page is not the same as "as wide as the window". The panel was 384px and the
+     row stacked its four facts to fit; given 1550 the same row keeps stacking and the trailing
+     action ends up ~600px from the sentence it belongs to, which is a different way of being hard
+     to read. 68rem is where the row's own line length settles — the sentence and its action stay
+     in one glance, and the lane still shows three times the rows the panel could.
+     The structure inside is untouched (Oleh: «структуру залишаємо таку як є»); this is only the
+     column it sits in. */
+  .ibxpage { display: flex; flex-direction: column; min-width: 0; max-width: 68rem; }
+  /* The frame clips to its own radius, so the first row's hover fill and the last row's border
+     stop where the card does. */
+  .ibxpage-frame { overflow: hidden; }
+</style>

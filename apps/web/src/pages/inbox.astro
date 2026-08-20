@@ -1,0 +1,52 @@
+---
+/**
+ * Inbox — the account-wide notification centre as a full page
+ * (web-notifications-inbox full-page promotion, ui-only@7c7202d7).
+ *
+ * SSR-loads the SAME engine-brokered feed the sidebar dropdown uses:
+ * `fetchInboxItems` fans `getNotifications` out across the account's Spaces in
+ * parallel and merges newest-first with Space labels. It then renders InboxView
+ * (the page-mode Inbox). Triage / mute persist through the SAME guarded proxies
+ * the dropdown hits — POST /api/spaces/:spaceId/inbox/{triage,mute}, addressed by
+ * each row's `data-space-id` / `data-base-id`; no new endpoints.
+ *
+ * The overlay dropdown is suppressed here (SidebarLayout `showInbox={false}`) so
+ * the page's panel is the sole `[data-inbox]` inbox-client wires — two would
+ * collide, and the client wires the first it finds. The feed is resolved ONCE and
+ * handed to BOTH the layout (its needs-decision badge) and the page body, so the
+ * fan-out runs a single time. Best-effort + guarded like the shell: any failure or
+ * timeout degrades to [] and the panel's designed zero-states — never a 500.
+ */
+import { env } from 'cloudflare:workers';
+import SidebarLayout from '../layouts/SidebarLayout.astro';
+import InboxView from '../views/InboxView.astro';
+import { createBackupEngine } from '../lib/backup-engine';
+import { fetchInboxItems } from '../lib/inbox-feed';
+import type { InboxItem } from '../components/layout/inbox';
+import type { Breadcrumb } from '../lib/types';
+
+const { account } = Astro.locals;
+
+let items: InboxItem[] = [];
+try {
+  const accountSpaces = account?.organization ? (account.spaces ?? []) : [];
+  if (accountSpaces.length > 0 && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+    const engine = createBackupEngine({
+      binding: env.BACKUP_ENGINE,
+      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    });
+    items = await fetchInboxItems(
+      engine,
+      accountSpaces.map((s) => ({ id: s.id, name: s.name })),
+    );
+  }
+} catch {
+  items = [];
+}
+
+const breadcrumbs: Breadcrumb[] = [{ label: 'Home', href: '/' }, { label: 'Inbox' }];
+---
+
+<SidebarLayout pageTitle="Inbox" breadcrumbs={breadcrumbs} inboxItems={items} showInbox={false}>
+  <InboxView items={items} />
+</SidebarLayout>

@@ -43,6 +43,13 @@ interface Props {
   // Page interior re-renders on Space switch when true.
   // Default false: switch updates the sidebar pill but leaves the page body alone.
   spaceScoped?:        boolean;
+
+  // Mount the sidebar-overlay Inbox dropdown. Default true — every page carries it.
+  // The /inbox page renders the SAME feed as a full page (InboxView) in its body,
+  // so it suppresses the overlay: two `[data-inbox]` panels would collide, and
+  // inbox-client wires the first one it finds. Suppressing leaves the page's panel
+  // as the sole `[data-inbox]`. (web-notifications-inbox full-page promotion.)
+  showInbox?:          boolean;
 }
 
 const ctx = getPageContext(Astro.locals);
@@ -107,6 +114,7 @@ const {
   breadcrumbs,
 
   spaceScoped   = false,
+  showInbox     = true,
 } = Astro.props;
 
 const currentPath = Astro.url.pathname;
@@ -142,8 +150,10 @@ const inboxAttentionCount = attentionCount(resolvedInboxItems, new Date());
     <div class="relative flex flex-1 flex-col min-w-0">
       {/* The Inbox OVERLAYS the work area from its left edge — it never pushes the
           page narrower (at 1280px that hid ~340px of the Backups table). Still
-          non-modal: no scrim, no focus trap, the page behind stays interactive. */}
-      <Inbox items={resolvedInboxItems} />
+          non-modal: no scrim, no focus trap, the page behind stays interactive.
+          Suppressed on /inbox, where the same feed renders as a full page in the
+          body and a second `[data-inbox]` would collide with it. */}
+      {showInbox && <Inbox items={resolvedInboxItems} />}
 
       <Header>
         {bannerProps?.state === 'broken' && (

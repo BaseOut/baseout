@@ -115,24 +115,45 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
 </label>
 
 <!-- Inbox — account-scoped, so it sits ABOVE the Space groups. Opens the side
-     panel rather than navigating; the badge counts rows that need a decision. -->
+     panel rather than navigating (dropdown preserved); the badge counts rows
+     that need a decision. On /inbox itself the overlay is suppressed
+     (`showInbox={false}`), so this item becomes a real link with aria-current
+     instead of a dead trigger. Overlay mode also exposes "Open full inbox"
+     inside the panel header. -->
 <div class="mb-2 px-2.5 group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-1">
-  <button
-    type="button"
-    data-inbox-trigger
-    aria-expanded="false"
-    aria-controls="layout-inbox"
-    data-tip="Inbox"
-    class="menu-item menu-item-link sidebar-tip w-full group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0"
-  >
-    <i class="iconify lucide--inbox size-4 shrink-0"></i>
-    <span class="grow text-start group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">Inbox</span>
-    <span
-      data-inbox-count
-      class="badge badge-sm badge-error badge-soft group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden"
-      hidden={inboxCount === 0}
-    >{inboxCount > 9 ? '9+' : String(inboxCount)}</span>
-  </button>
+  {currentPath === '/inbox' ? (
+    <a
+      href="/inbox"
+      aria-current="page"
+      data-tip="Inbox"
+      class="menu-item menu-item-link sidebar-tip active w-full group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0"
+    >
+      <i class="iconify lucide--inbox size-4 shrink-0"></i>
+      <span class="grow text-start group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">Inbox</span>
+      <span
+        data-inbox-count
+        class="badge badge-sm badge-error badge-soft group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden"
+        hidden={inboxCount === 0}
+      >{inboxCount > 9 ? '9+' : String(inboxCount)}</span>
+    </a>
+  ) : (
+    <button
+      type="button"
+      data-inbox-trigger
+      aria-expanded="false"
+      aria-controls="layout-inbox"
+      data-tip="Inbox"
+      class="menu-item menu-item-link sidebar-tip w-full group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0"
+    >
+      <i class="iconify lucide--inbox size-4 shrink-0"></i>
+      <span class="grow text-start group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden">Inbox</span>
+      <span
+        data-inbox-count
+        class="badge badge-sm badge-error badge-soft group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:hidden"
+        hidden={inboxCount === 0}
+      >{inboxCount > 9 ? '9+' : String(inboxCount)}</span>
+    </button>
+  )}
 </div>
 
 {organization && (
