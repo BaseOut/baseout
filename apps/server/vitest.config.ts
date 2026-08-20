@@ -17,6 +17,7 @@ const HANDLED_NOISE = /Stream was cancelled/;
 const TEST_BINDINGS = {
   INTERNAL_TOKEN: "test-only-internal-token-min-32-chars-aaaa",
   DATABASE_URL:
+    process.env.DATABASE_URL ??
     "postgres://postgres:postgres@127.0.0.1:5432/baseout_test_unused",
   // 32 zero bytes, base64 — tests inject their own keys via deps; this just
   // satisfies the typed Env shape so the worker entry boots.
@@ -27,18 +28,42 @@ const TEST_BINDINGS = {
   AIRTABLE_OAUTH_CLIENT_SECRET: "test-airtable-client-secret",
 };
 
+// Real-PG I/O suites (automations-interfaces-io) need Node — workerd does not
+// forward RUN_DB_TESTS/DATABASE_URL into the isolate, and postgres-js sockets
+// are unreliable under the workers pool. Everything else stays on workerd.
+const NODE_PG_TESTS = ["tests/integration/per-space/automations-interfaces-io.test.ts"];
+
 export default defineConfig({
-  plugins: [
-    cloudflareTest({
-      wrangler: { configPath: "./wrangler.test.jsonc" },
-      miniflare: { bindings: TEST_BINDINGS },
-    }),
-  ],
   test: {
-    include: ["tests/integration/**/*.test.ts"],
-    onUnhandledError(error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (HANDLED_NOISE.test(message)) return false;
-    },
+    projects: [
+      {
+        plugins: [
+          cloudflareTest({
+            wrangler: { configPath: "./wrangler.test.jsonc" },
+            miniflare: { bindings: TEST_BINDINGS },
+          }),
+        ],
+        test: {
+          name: "workers",
+          include: ["tests/integration/**/*.test.ts"],
+          exclude: NODE_PG_TESTS,
+          onUnhandledError(error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (HANDLED_NOISE.test(message)) return false;
+          },
+        },
+      },
+      {
+        test: {
+          name: "node-pg",
+          environment: "node",
+          include: NODE_PG_TESTS,
+          env: {
+            RUN_DB_TESTS: process.env.RUN_DB_TESTS ?? "",
+            DATABASE_URL: process.env.DATABASE_URL ?? "",
+          },
+        },
+      },
+    ],
   },
 });

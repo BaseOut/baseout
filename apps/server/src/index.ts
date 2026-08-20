@@ -34,6 +34,10 @@ import { spacesHealthOverviewHandler } from "./pages/api/internal/spaces/health-
 import { spacesRelationshipsOverviewHandler } from "./pages/api/internal/spaces/relationships-overview";
 import { spacesRelationshipsSyncHandler } from "./pages/api/internal/spaces/relationships-sync";
 import { spacesRelationshipsMutateHandler } from "./pages/api/internal/spaces/relationships-mutate";
+import { spacesAutomationsHandler } from "./pages/api/internal/spaces/automations";
+import { spacesAutomationsMutateHandler } from "./pages/api/internal/spaces/automations-mutate";
+import { spacesInterfacesHandler } from "./pages/api/internal/spaces/interfaces";
+import { spacesInterfacesMutateHandler } from "./pages/api/internal/spaces/interfaces-mutate";
 import { spacesChatThreadsHandler } from "./pages/api/internal/spaces/chat-threads";
 import { spacesChatThreadHandler } from "./pages/api/internal/spaces/chat-thread";
 import { spacesChatSendHandler } from "./pages/api/internal/spaces/chat-send";
@@ -151,6 +155,15 @@ const SPACES_RELATIONSHIPS_SYNC_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/relationships\/sync$/;
 const SPACES_RELATIONSHIPS_MUTATE_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/relationships\/mutate$/;
+// Automations / Interfaces manual CRUD (server-automations-interfaces-manual-crud).
+const SPACES_AUTOMATIONS_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/automations$/;
+const SPACES_AUTOMATIONS_MUTATE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/automations\/mutate$/;
+const SPACES_INTERFACES_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/interfaces$/;
+const SPACES_INTERFACES_MUTATE_RE =
+  /^\/api\/internal\/spaces\/([^/]+)\/interfaces\/mutate$/;
 // Chat tab (server-schema-chat).
 const SPACES_CHAT_THREADS_RE =
   /^\/api\/internal\/spaces\/([^/]+)\/chat\/threads$/;
@@ -615,6 +628,23 @@ export default {
       const relOverview = SPACES_RELATIONSHIPS_RE.exec(url.pathname);
       if (relOverview) {
         return await spacesRelationshipsOverviewHandler(request, env, ctx, locals, relOverview[1]!);
+      }
+
+      const automationsMutate = SPACES_AUTOMATIONS_MUTATE_RE.exec(url.pathname);
+      if (automationsMutate) {
+        return await spacesAutomationsMutateHandler(request, env, ctx, locals, automationsMutate[1]!);
+      }
+      const automations = SPACES_AUTOMATIONS_RE.exec(url.pathname);
+      if (automations) {
+        return await spacesAutomationsHandler(request, env, ctx, locals, automations[1]!);
+      }
+      const interfacesMutate = SPACES_INTERFACES_MUTATE_RE.exec(url.pathname);
+      if (interfacesMutate) {
+        return await spacesInterfacesMutateHandler(request, env, ctx, locals, interfacesMutate[1]!);
+      }
+      const interfacesList = SPACES_INTERFACES_RE.exec(url.pathname);
+      if (interfacesList) {
+        return await spacesInterfacesHandler(request, env, ctx, locals, interfacesList[1]!);
       }
 
       const chatThread = SPACES_CHAT_THREAD_RE.exec(url.pathname);
