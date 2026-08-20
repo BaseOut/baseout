@@ -364,6 +364,9 @@ export interface SchemaDocsError {
     | "space_db_not_ready"
     | "backend_not_implemented"
     | "document_not_found"
+    | "not_found"
+    | "duplicate_entity"
+    | "invalid_parent"
     | "engine_unreachable"
     | "engine_error";
   status: number;
@@ -658,6 +661,50 @@ export type GetRelationshipsResult =
   | SchemaDocsError;
 export type MutateRelationshipResult = { ok: true; id?: string } | SchemaDocsError;
 
+// Automations / Interfaces manual CRUD (server-automations-interfaces-manual-crud).
+export interface EntityTagView {
+  id: string;
+  targetType: "table" | "field";
+  targetId: string;
+  source: "auto" | "manual";
+  targetRemoved: boolean;
+}
+export interface AutomationView {
+  id: string;
+  baseId: string;
+  airtableEntityId: string | null;
+  name: string | null;
+  type: string | null;
+  definition: unknown;
+  status: string;
+  submittedVia: string | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  tags: EntityTagView[];
+}
+export interface InterfaceView {
+  id: string;
+  baseId: string;
+  airtableEntityId: string | null;
+  name: string | null;
+  type: "interface" | "page";
+  definition: unknown;
+  status: string;
+  submittedVia: string | null;
+  firstSeenAt: string | null;
+  lastSeenAt: string | null;
+  parentId: string | null;
+  tags: EntityTagView[];
+}
+export type GetAutomationsResult = { ok: true; automations: AutomationView[] } | SchemaDocsError;
+export type GetInterfacesResult = { ok: true; interfaces: InterfaceView[] } | SchemaDocsError;
+export type MutateAutomationResult =
+  | { ok: true; automation?: AutomationView }
+  | SchemaDocsError;
+export type MutateInterfaceResult =
+  | { ok: true; interface?: InterfaceView }
+  | SchemaDocsError;
+
 // Changelog tab (server-schema-changelog / web-schema-changelog).
 export interface ChangelogEntryView {
   runId: string | null;
@@ -874,6 +921,54 @@ export interface BackupEngineClient {
       | { action: "confirm" | "dismiss"; id: string }
       | { action: "create"; baseId: string; sourceTableId: string; destTableId: string },
   ): Promise<MutateRelationshipResult>;
+  getAutomations(spaceId: string, baseId?: string, includeRemoved?: boolean): Promise<GetAutomationsResult>;
+  mutateAutomation(
+    spaceId: string,
+    body:
+      | {
+          action: "create";
+          baseId: string;
+          airtableEntityId?: string | null;
+          name?: string | null;
+          type?: string | null;
+          definition?: unknown;
+          tags?: Array<{ targetType: "table" | "field"; targetId: string; source?: "auto" | "manual" }>;
+        }
+      | {
+          action: "update";
+          id: string;
+          name?: string | null;
+          type?: string | null;
+          definition?: unknown;
+          tags?: Array<{ targetType: "table" | "field"; targetId: string; source?: "auto" | "manual" }>;
+        }
+      | { action: "remove"; id: string },
+  ): Promise<MutateAutomationResult>;
+  getInterfaces(spaceId: string, baseId?: string, includeRemoved?: boolean): Promise<GetInterfacesResult>;
+  mutateInterface(
+    spaceId: string,
+    body:
+      | {
+          action: "create";
+          baseId: string;
+          type: "interface" | "page";
+          airtableEntityId?: string | null;
+          name?: string | null;
+          parentId?: string | null;
+          definition?: unknown;
+          tags?: Array<{ targetType: "table" | "field"; targetId: string; source?: "auto" | "manual" }>;
+        }
+      | {
+          action: "update";
+          id: string;
+          name?: string | null;
+          type?: "interface" | "page";
+          parentId?: string | null;
+          definition?: unknown;
+          tags?: Array<{ targetType: "table" | "field"; targetId: string; source?: "auto" | "manual" }>;
+        }
+      | { action: "remove"; id: string },
+  ): Promise<MutateInterfaceResult>;
   listChatThreads(spaceId: string, includeArchived?: boolean): Promise<ListChatThreadsResult>;
   createChatThread(spaceId: string, createdByUserId?: string | null): Promise<CreateChatThreadResult>;
   getChatThread(spaceId: string, threadId: string): Promise<GetChatThreadResult>;
@@ -930,6 +1025,9 @@ const KNOWN_SCHEMA_DOCS_ERROR_CODES: ReadonlySet<SchemaDocsError["code"]> = new 
   "space_db_not_ready",
   "backend_not_implemented",
   "document_not_found",
+  "not_found",
+  "duplicate_entity",
+  "invalid_parent",
 ]);
 
 /** Build `?a=1&b=2` from sparse params (omits nullish / empty). */
@@ -1842,6 +1940,48 @@ export function createBackupEngine(
       const res = await schemaDocsRequest(options, "POST", path, body);
       if (!res.ok) return res;
       return { ok: true, id: (res.body.id as string | undefined) ?? undefined };
+    },
+
+    async getAutomations(spaceId, baseId, includeRemoved) {
+      const q = engineQuery({
+        baseId: baseId ?? undefined,
+        includeRemoved: includeRemoved ? "1" : undefined,
+      });
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/automations${q}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return { ok: true, automations: (res.body.automations ?? []) as AutomationView[] };
+    },
+
+    async mutateAutomation(spaceId, body) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/automations/mutate`;
+      const res = await schemaDocsRequest(options, "POST", path, body);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        automation: (res.body.automation as AutomationView | undefined) ?? undefined,
+      };
+    },
+
+    async getInterfaces(spaceId, baseId, includeRemoved) {
+      const q = engineQuery({
+        baseId: baseId ?? undefined,
+        includeRemoved: includeRemoved ? "1" : undefined,
+      });
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/interfaces${q}`;
+      const res = await schemaDocsRequest(options, "GET", path);
+      if (!res.ok) return res;
+      return { ok: true, interfaces: (res.body.interfaces ?? []) as InterfaceView[] };
+    },
+
+    async mutateInterface(spaceId, body) {
+      const path = `/api/internal/spaces/${encodeURIComponent(spaceId)}/interfaces/mutate`;
+      const res = await schemaDocsRequest(options, "POST", path, body);
+      if (!res.ok) return res;
+      return {
+        ok: true,
+        interface: (res.body.interface as InterfaceView | undefined) ?? undefined,
+      };
     },
 
     async listChatThreads(spaceId, includeArchived) {
