@@ -157,6 +157,7 @@ export interface MediaQuery {
   minSize?: number
   maxSize?: number
   after?: string
+  before?: string
   cursor?: string
   limit?: number
 }
