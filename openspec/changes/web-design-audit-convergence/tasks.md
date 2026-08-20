@@ -40,12 +40,12 @@ Delegated elsewhere (struck here, tracked there): items 1 + 6 → [`web-auth-con
 
 ## 5. Vessel adoption — batched by surface family (Schema → Data → Backups/Restore → Reports → registries)
 
-- [ ] 5.1 **Item 13 — `Alert` adoption, scope A** — outstanding (~13 imports vs ~91 role=alert).
-- [ ] 5.2 **Item 13 — scope B** — outstanding.
-- [ ] 5.3 **Item 14 — `EmptyState` adoption** — partial vessel present; 46ch cap + full sweep outstanding.
+- [x] 5.1 **Item 13 — `Alert` adoption, scope A (Schema→Data start)** — vessel restored + DataBrowse `showAlert`, BrowseTab/mediaReadBody/Retention/SourceAdd. Registries/Backups/Reports still open → continues under 5.2.
+- [ ] 5.2 **Item 13 — scope B** — outstanding (registries, Backups/Restore, Reports, wizard).
+- [x] 5.3 **Item 14 — `EmptyState` adoption (Data clear wins)** — 46ch cap; DataView gates; DataChangelog/Comments/Media; SoonTab. Other families remain.
 - [ ] 5.4 **Item 15 — `Badge` as the only path** — vessel present; raw class sweep outstanding.
 - [x] 5.5 **Item 15b — `Running` is PRIMARY (blue)** — landed this session (`list-row.ts`, Backups/Restore/Run detail views).
-- [ ] 5.6 **Item 35 — `setButtonLoading`** — helper widely used; divergent idioms remain.
+- [x] 5.6 **Item 35 — `setButtonLoading` (DocsTab)** — DocsTab Save/Delete/New converged. Other one-offs remain (track under residue / follow-up).
 - [ ] 5.7 **Item 21** — connect wizard Alert — outstanding.
 
 ## 6. Tables, toolbars and headers
@@ -58,12 +58,12 @@ Delegated elsewhere (struck here, tracked there): items 1 + 6 → [`web-auth-con
 
 ## 7. Sweeps with no vessel
 
-- [ ] 7.1 **Item 18** — the three sub-12px icon rules (`global.css:1902` · `SpaceHomeView.astro:726` · `IntegrationsSetupWizard.astro:591`) → `var(--t-12)`, or a `ds-ok` with a stated reason. **Decide `.hm-conn-badge` at the element** — it is `1rem` square, so this may be a badge-size call (proposal open question 2). Two of the three are visible on Home.
+- [x] 7.1 **Item 18 — Home `.hm-conn-badge` glyph** — `var(--t-12)`; badge box stays 1rem (open Q2). Wizard/global residual rem icon sizes still open.
 - [ ] 7.2 **Item 22** — `refineFacetIcons` delegates to `entityIconClass`; the concept colour moves off `.lucide--table-2` onto `.concept-ic-table`. Confirmed **whole, not half**: `text-base-content/45` on `RestoreView.astro:345,643` computes *identically* to the bare global rule, because the global selector is (0,2,0) and the utility is (0,1,0) — Restore asks for muted and gets concept-green.
 - [ ] 7.3 **Item 31** — the twenty glyph bypasses collapse onto `entityIcon`; the six in-file twins delete.
 - [ ] 7.4 **Item 33** — `fmtRelative` adoption, plus `fmtCount` in `lib/` as a sibling of `time.ts`. The locale half is **smaller than it looked**: not a date bug but a thousands separator pinned in 13 places and floating in 45. Sweep the five shared files first — `tablePager.ts` alone (4 calls, 15 importers) corrects the pager total on every paged table. **Do not "fix" the 14 `Intl.*` constructors: all 14 already pin `en-US`.**
 - [x] 7.5 **Item 36 — Clear filters colour half** — `text-error` removed from benign Clear controls (Data/Backups/Reports/Restore/…); label/grammar residue still open.
-- [ ] 7.6 **Items 32 / 34 / 39 / 40 / 41** — one page name · one narrow tier · `wireViewState` on Schema's nine + Data's three tabs (plus the listSheet's overlay mode) · the pager threshold on **four** of six unbounded tables (**two are inside D15 — do not touch until task 8 is answered**) · the catalog's eight stale facts · `D38`'s remainder as **one `lib/registry/` module, not eighteen edits**.
+- [ ] 7.6 **Items 32 / 34 / 39 / 40 / 41** — one page name · one narrow tier · `wireViewState` on Schema's nine + Data's three tabs (plus the listSheet's overlay mode) · the pager threshold on **four** of six unbounded tables (**two are inside D15 — do not touch until task 8 is answered**) · the catalog's eight stale facts · `D38`'s remainder: **`registryEditMode.ts` landed** (items 2/23); rename/links modules still open.
 
 ## 8. ⛔ HARD GATE — re-open D15 before anything in task 9
 
@@ -78,6 +78,15 @@ Delegated elsewhere (struck here, tracked there): items 1 + 6 → [`web-auth-con
 
 - [x] **Item 3** — `spaceCategory(!space)` + Create Space `trigger` in SettingsView (`settingsCatalog.ts` / `.test.ts`).
 - [x] **Item 4** — BackupsListView + RestoreHistoryView → neutral `metaOf` / `statusUnknown` (no more `?? statusMeta.cancelled`).
+
+## 12. Closed this session (ship order 2 / 7 / 23 + vessel starts)
+
+- [x] **Items 2 / 23** — `lib/registry/registryEditMode.ts` + Source/Destination detail wiring.
+- [x] **Item 7** — `?name=` on list hrefs, Connect returnTo, detail page override.
+- [x] **Item 13 (start)** — D42 Alert vessel restored; Schema→Data showAlert/banners.
+- [x] **Item 14 (Data wins)** — EmptyState on Data gates/tab empties + 46ch.
+- [x] **Item 35 (DocsTab)** — `setButtonLoading` on Save/Delete/New.
+- [x] **Item 18 (Home glyph)** — `.hm-conn-badge .iconify` → `var(--t-12)`.
 
 ## 10. Verification
 
