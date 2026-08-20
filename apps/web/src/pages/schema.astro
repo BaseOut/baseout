@@ -62,15 +62,17 @@ if (level !== 'none' && spaceId) {
 }
 
 // Freshness stamp — the schema reflects the latest completed backup run.
-let lastBackupAt: string | null = null;
+let lastBackupAt: string | null = null
+let lastBackupRunId: string | null = null
 if (db && spaceId) {
   const [latest] = await db
-    .select({ completedAt: backupRuns.completedAt })
+    .select({ id: backupRuns.id, completedAt: backupRuns.completedAt })
     .from(backupRuns)
     .where(and(eq(backupRuns.spaceId, spaceId), eq(backupRuns.status, 'succeeded'), isNotNull(backupRuns.completedAt)))
     .orderBy(desc(backupRuns.completedAt))
-    .limit(1);
-  lastBackupAt = latest?.completedAt?.toISOString() ?? null;
+    .limit(1)
+  lastBackupAt = latest?.completedAt?.toISOString() ?? null
+  lastBackupRunId = latest?.id ?? null
 }
 ---
 
@@ -90,6 +92,14 @@ if (db && spaceId) {
       description="Select a Space to view its schema."
     />
   ) : (
-    <SchemaView spaceId={spaceId} level={level} docs={docs} schema={schema} state={viewState} lastBackupAt={lastBackupAt} />
+    <SchemaView
+      spaceId={spaceId}
+      level={level}
+      docs={docs}
+      schema={schema}
+      state={viewState}
+      lastBackupAt={lastBackupAt}
+      lastBackupRunId={lastBackupRunId}
+    />
   )}
 </SidebarLayout>

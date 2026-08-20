@@ -19,8 +19,8 @@
 
 ## 2. Shell + Browse
 
-- [ ] 2.1 Promote fork SchemaView chrome / nav; keep working tabs mounted
-- [ ] 2.2 Promote `SchemaBrowse`; retire Browse inline `#entity-detail`
+- [x] 2.1 Promote fork SchemaView chrome / nav; keep working tabs mounted
+- [x] 2.2 Promote `SchemaBrowse`; retire Browse inline `#entity-detail`
 
 ## 3. Remaining tabs
 

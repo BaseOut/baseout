@@ -57,7 +57,7 @@
     "Rollback target for the ui-only@5572f8f RestoreView promotion (ui-sync Stage 2.5). The pre-promotion view kept verbatim; same daisyUI-direct primitives as the live RestoreView, retained only as the revert path."
   ],
   "src/views/SchemaView.astro": [
-    "The Schema shell (web-schema-round3-shell): the clustered tab bar uses the daisyUI `tab` primitive inside `tabs tabs-border` cluster containers (icon-carrying buttons \u2014 the header-only ui/Tabs.astro carries no content panels, CLAUDE.md \u00a74.2), the chat launcher is a catalog Ghost Button (`btn btn-ghost`), and the shared entity modal uses `modal`/`btn`."
+    "Phase 13 Schema shell (web-schema-rearch): fork chrome (sch-headwrap, AccessScopeNote, as-of stamp, soft ask launcher, D17 empty) + daisyUI clustered `tabs tabs-border` via wireSectionTabs; panels mount SchemaBrowse + remaining *Tab modules. PanelHost/EntityPanel/UndoToast are cataloged components."
   ],
   "src/views/SecurityPanel.astro": [
     "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier): the 2FA lifecycle + linked-accounts panel (promoted from ui-only into the Settings hub, web-settings) uses daisyUI alert/badge + the shared stepper directly, composed with the ui Card/Button/Badge/Checkbox/CodeInput primitives. Rendered only when the caller supplies 2FA state; apps/web gates it off (SecurityPanel backend deferred) so the Security pane shows an honest note instead. Not a single Storybook component."
@@ -89,9 +89,8 @@
   "src/views/WelcomeView.legacy.astro": [
     "Pre-convergence /welcome page body, kept as the rollback target for web-auth-convergence. Same auth-card composition as the prior inlined welcome.astro; not routed."
   ],
-  "src/views/schema/BrowseTab.astro": [
-    "Moved verbatim from the pre-split SchemaView.astro (web-schema-round3-shell \u00a72.1): the Fields visibility `dropdown` + `input`/`checkbox` tree, the `toggle` Include-removed control, and Card-hosted entity tree (shared-schema-docs \u00a74).",
-    "The detail panel renders the canonical entity anatomy (badge chips, alert-soft removed notice, capped lists) as innerHTML in the client script \u2014 dynamic content, daisyUI classes only."
+  "src/views/schema/BrowseTab.legacy.astro": [
+    "Rollback target for Phase 13 Slice 3 SchemaBrowse promotion. Pre-promotion Browse tab with inline #entity-detail card; not mounted."
   ],
   "src/views/schema/ChangelogTab.astro": [
     "daisyUI-direct in a view (CLAUDE.md \u00a74.2 second tier, web-schema-changelog vanilla-in-view decision): base/kind `select`, Include-removed `toggle`, `input` search, and the day-grouped feed rows (`badge` kind chips, breadcrumb, before\u2192after delta, warning line) rendered as innerHTML in the lazy-load client script \u2014 same shape as RelationshipsTab/HealthTab."

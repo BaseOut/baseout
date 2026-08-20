@@ -55,9 +55,9 @@ Most fork Schema components already exist under `apps/design/src/components/sche
 | Slice | Deliverable | Status |
 |---|---|---|
 | **0** | Inventory + plan + openspec + ledger/roadmap IN PROGRESS | **DONE** |
-| **1** | EntityPanel promote + mapper + mount on Schema (+ Reports stub replacement); docs-by-entity; Internal Save honest-gated | **DONE** (this session) |
-| **2** | Shell/nav → fork SchemaView chrome + PanelHost; keep tab modules mounted | next |
-| **3** | Browse → `SchemaBrowse` + drop inline `#entity-detail` | next |
+| **1** | EntityPanel promote + mapper + mount on Schema (+ Reports stub replacement); docs-by-entity; Internal Save honest-gated | **DONE** (`8bc16054`) |
+| **2** | Shell/nav → fork SchemaView chrome + PanelHost; keep tab modules mounted | **DONE** |
+| **3** | Browse → `SchemaBrowse` + drop inline `#entity-detail` | **DONE** |
 | **4** | Remaining tabs (Visualize/Relationships/Health/Changelog/Docs/Chat) one-by-one | next |
 | **5** | A&I integration into new shell (no CRUD regression); QuickAskDock | next |
 | **6** | Allowlist/stories polish; roadmap DONE; archive readiness | next |

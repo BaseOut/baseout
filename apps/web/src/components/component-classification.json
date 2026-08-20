@@ -180,6 +180,10 @@
     "styleguideId": "pattern-schema-automations-interfaces",
     "rationale": "Schema Automations tab body (web-automations-interfaces-tabs): Base-grouped daisyUI collapse/table, catalog Drawer create/edit, EntitySearch tag-picker, Growth+ EmptyState upsell. Lazy-fetches space automations proxy; no scoped style. Fixture-free Storybook (upsell story only)."
   },
+  "schema/SchemaBrowse.astro": {
+    "classification": "daisyui-direct-styleguide",
+    "rationale": "Phase 13 Schema Browse (ui-only tip): Tree/Flat explorer with FacetFilter, EntitySearch, patterns/ExportControl, ui/Table + Badge. Rows use data-entity-open → EntityPanel. Scoped .br-* styles; real schema SSR index."
+  },
   "schema/SchemaInterfaces.astro": {
     "classification": "daisyui-direct-styleguide",
     "styleguideId": "pattern-schema-automations-interfaces",

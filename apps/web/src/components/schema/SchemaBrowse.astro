@@ -1,0 +1,1187 @@
+---
+/**
+ * SchemaBrowse — the Browse tab. The list/explorer counterpart to Visualize:
+ * find and inspect any base / table / field, then open the shared stacking
+ * detail panel. Two display modes (Tree ↔ Flat, the dbt Project/Database
+ * toggle), one global search (EntitySearch), a faceted filter bar (reusing
+ * FacetFilter), derived filters, a "showing N of M" count, and a staleness stamp.
+ * Read-only; all data is inside the Airtable metadata boundary (counts are
+ * "as of last backup"; no value statistics). The Bases facet groups by Airtable
+ * workspace (workspace-visual-grouping) when the base list has more than one.
+ */
+import { fmtDay } from '../../lib/time';
+import FacetFilter from './FacetFilter.astro';
+import { groupByWorkspace } from './workspaceGroups';
+import ExportControl from '../patterns/ExportControl.astro';
+import EntitySearch from './EntitySearch.astro';
+import Table from '../ui/Table.astro';
+import { BR_FLAT_COLUMNS } from './schemaTableHead';
+import Badge from '../ui/Badge.astro';
+import { fieldTypeLabel, viewTypeLabel, type SchemaEntity, type SchemaDoc } from './schemaEntities';
+import { AIRTABLE_FIELD_ICONS, airtableIconKey } from './airtableFieldIcons';
+import type { ChatThread } from './schemaChatTypes';
+
+interface Props {
+  index: SchemaEntity[];
+  bases: { id: string; name: string; workspaceId?: string; workspaceName?: string }[];
+  docs?: SchemaDoc[];
+  /** Chat threads — drive the chat-kind tags in the Tagged column (B9). */
+  chatThreads?: ChatThread[];
+}
+const { index, bases, docs = [], chatThreads = [] } = Astro.props;
+const multiBase = bases.length > 1;
+const docTitle = new Map(docs.map((d) => [d.id, d.title]));
+// Reverse chat-tag map: entity id → chats referencing it. PRODUCTION / ENGINE NOTE: this
+// aggregation is derived here in the mirror from fixtures — Airtable's API returns no chat
+// references, so the engine must emit it (same boundary as the reverse reference graph).
+const chatTagsById = new Map<string, { id: string; title: string }[]>();
+chatThreads.filter((t) => !t.archived).forEach((t) => {
+  const seen = new Set<string>();
+  t.messages.forEach((m) => (m.refs || []).forEach((r) => {
+    if (r.kind === 'entity' && !seen.has(r.id)) { seen.add(r.id); const a = chatTagsById.get(r.id) || []; a.push({ id: t.id, title: t.title }); chatTagsById.set(r.id, a); }
+  }));
+});
+/** Resolve an entity's doc tags into a "Tagged in …" label (one named doc, or a count). */
+const tagInfo = (docIds: string[]) =>
+  docIds.length === 0 ? null
+  : docIds.length === 1 ? { single: true, id: docIds[0], text: docTitle.get(docIds[0]) ?? 'a document' }
+  : { single: false, id: '', text: `${docIds.length} documents` };
+
+const basesIx = index.filter((e) => e.kind === 'base');
+const tablesIx = index.filter((e) => e.kind === 'table');
+const fieldsIx = index.filter((e) => e.kind === 'field');
+// view-schema-details: views are indexed separately from fields on purpose — a view is a LENS
+// over the whole table, not one more column in it, so it gets its own group in the tree.
+const viewsIx = index.filter((e) => e.kind === 'view');
+
+const fieldIconSvg = (type?: string) => {
+  const k = type ? airtableIconKey(type) : null;
+  return k ? `<svg viewBox="0 0 16 16" aria-hidden="true">${AIRTABLE_FIELD_ICONS[k]}</svg>` : '<span class="iconify lucide--circle size-3.5"></span>';
+};
+const HEALTH_RANK = { red: 0, amber: 1, green: 2 } as const;
+const searchStr = (e: SchemaEntity) => `${e.name} ${e.tableName ?? ''} ${e.baseName}`.toLowerCase();
+const descState = (e: SchemaEntity) => (e.hasDescription ? (e.aiDescription ? 'ai' : 'doc') : 'none');
+// deleted-items-filter: removed entities are kept for history, hidden by default.
+const removedCount = index.filter((e) => e.removed).length;
+/**
+ * Health as a soft semantic badge, matching the Backups list Status pills.
+ *
+ * D43 — a value the map does not know must not be GUESSED. The chain here was
+ * `green → Healthy : red → Needs attention : ELSE → Could improve`, so the `else` was doing two
+ * jobs: it painted the real `amber`, and it silently absorbed every value that is not one of the
+ * three. A health we cannot read was therefore told to the user as amber "Could improve" — a
+ * verdict on their schema that Baseout never reached. The fallback is a NEW neutral entry, never
+ * an alias onto an existing state, exactly as `views/SourcesView.astro:36-51` argues at length:
+ * every other entry here is a judgement, so borrowing one would invent a judgement.
+ */
+/*
+ * Batch T — the map now carries a catalog `<Badge>` VARIANT, not a raw class string. It used to
+ * hold `cls: 'badge-soft badge-success'`, which was interpolated into three JSX sites and one
+ * HTML-string helper; the class string was the thing `ds-lint` could not see through. `variant`
+ * names the catalog entry instead, and `Badge.astro` owns the classes it expands to — so the
+ * neutral fallback below cannot accidentally become the banned `badge-soft badge-neutral` pair
+ * (Badge maps `default` → `badge-ghost`, the neutral that is actually readable: 17.40 / 16.29).
+ */
+type HealthVariant = 'default' | 'success' | 'warning' | 'error';
+const HEALTH_BADGE: Record<string, { variant: HealthVariant; label: string }> = {
+  green: { variant: 'success', label: 'Healthy' },
+  amber: { variant: 'warning', label: 'Could improve' },
+  red: { variant: 'error', label: 'Needs attention' },
+};
+const healthUnknown: { variant: HealthVariant; label: string } = { variant: 'default', label: 'Unknown' };
+const healthBadge = (h: string) => HEALTH_BADGE[h] ?? healthUnknown;
+const escHtml = (s: string) => (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+// Tagged cell (B9) — an icon per tag KIND (doc = lucide--book-text, chat = lucide--messages-square)
+// with its count, and a hover popover (catalog daisyUI dropdown-hover) that lists EVERY tagged
+// place, each click-through (doc → opens the doc; chat → jumps to the Chat tab + opens the thread).
+// This reuses the Tagged-hover pattern Dan liked (A11) and the app's dropdown primitive. "—" when
+// none. Data: doc tags from e.docIds; chat tags from chatTagsById (see the engine note above).
+const taggedHtml = (e: SchemaEntity) => {
+  const docIds = e.docIds || [];
+  const chats = chatTagsById.get(e.id) || [];
+  const nDoc = docIds.length;
+  const nChat = chats.length;
+  if (!nDoc && !nChat) return '<span class="rl-dash">—</span>';
+  const kind = (icon: string, n: number) =>
+    `<span class="br-tagkind"><span class="iconify ${icon} size-4" aria-hidden="true"></span><span class="mono-data">${n}</span></span>`;
+  const kinds = [nDoc ? kind('lucide--book-text', nDoc) : '', nChat ? kind('lucide--messages-square', nChat) : ''].join('');
+  const label = escHtml(`${nDoc + nChat} tagged — show where`);
+  // Trigger = the catalog Ghost Button; the popover is a daisyUI menu of click-through rows.
+  const trigger = `<div tabindex="0" role="button" class="btn btn-ghost btn-sm gap-2 br-tagtrig" aria-label="${label}">${kinds}</div>`;
+  const items = [
+    ...docIds.map((id) => `<li><button type="button" data-doc-open="${escHtml(id)}"><span class="iconify lucide--book-text size-4" aria-hidden="true"></span><span class="br-tagitem-t">${escHtml(docTitle.get(id) ?? 'a document')}</span></button></li>`),
+    ...chats.map((c) => `<li><button type="button" data-chat-open="${escHtml(c.id)}"><span class="iconify lucide--messages-square size-4" aria-hidden="true"></span><span class="br-tagitem-t">${escHtml(c.title)}</span></button></li>`),
+  ].join('');
+  return `<div class="dropdown dropdown-hover dropdown-end br-tagdd">${trigger}<ul tabindex="0" class="dropdown-content menu br-tagmenu">${items}</ul></div>`;
+};
+// Batch T — `statusBadgeHtml` used to build the base/table Status pill as an HTML string and inject
+// it with `<Fragment set:html>`, while the field/flat rows built the SAME pill in JSX. Two vessels,
+// one pill. Both call sites are ordinary JSX positions, so the string builder had no reason to
+// exist: they now render `<Badge>` from `healthBadge()` directly, like every other Status cell here.
+
+// Tree: base ▸ tables ▸ fields.
+const tree = basesIx.map((b) => ({
+  base: b,
+  tables: tablesIx
+    .filter((t) => t.baseId === b.id)
+    .map((t) => ({
+      table: t,
+      fields: fieldsIx.filter((f) => f.tableId === t.id),
+      views: viewsIx.filter((v) => v.tableId === t.id),
+    })),
+  // view-schema-details: a view whose OWNING TABLE the capture didn't resolve (founder Q7 is still
+  // open on how a view is tied to its table). The tree nests views strictly under a table, so
+  // without this bucket such a view matches no table and renders NOWHERE — an inventory silently
+  // one row short, with nothing on screen to say so. It gets a named group under the base instead,
+  // distinct from "this table has no views", modelled on the base picker's "Still matching" bucket.
+  orphanViews: viewsIx.filter((v) => v.baseId === b.id && !v.tableId),
+}));
+
+// Flat: tables + fields, worst health first (trust-signals-first).
+const flat = [...tablesIx, ...fieldsIx, ...viewsIx].sort(
+  (a, b) => HEALTH_RANK[a.health] - HEALTH_RANK[b.health] || a.baseName.localeCompare(b.baseName) || a.name.localeCompare(b.name),
+);
+const totalCount = flat.length;
+
+// Facet groups.
+// Bases facet groups by Airtable workspace (workspace-visual-grouping) — unknown last,
+// single-workspace estates collapse back to today's flat list (groupToggles no-ops at 1 group).
+const baseGroups = groupByWorkspace(bases).map((g) => ({
+  label: g.name,
+  groupId: g.id,
+  unknown: g.unknown,
+  // No health dot on base rows — the grouped filter is uniform across tabs (health
+  // lives in the tree / Health tab, not here). Oleh 2026-07-27.
+  items: g.items.map((b) => ({ value: b.id, label: b.name })),
+}));
+const typeGroups = [{ items: [
+  { value: 'base', label: 'Bases' },
+  { value: 'table', label: 'Tables' },
+  { value: 'field', label: 'Fields' },
+  { value: 'view', label: 'Views' },
+] }];
+// View types present in this Space — the "View types" facet is a SIBLING of the field-types one
+// (a view type and a field type are different vocabularies; merging them would be nonsense).
+// The enum is open, so whatever string arrived is offered verbatim.
+const presentViewTypes = Array.from(new Set(viewsIx.map((v) => v.viewType))).filter(Boolean) as string[];
+const vtypeGroups = [{ items: presentViewTypes
+  .sort((a, b) => viewTypeLabel(a).localeCompare(viewTypeLabel(b)))
+  .map((t) => ({ value: t, label: viewTypeLabel(t) })) }];
+// Personal views are only visible to their owner in Airtable — worth naming in the row, and the
+// kind of thing that surprises someone mid-restore.
+// Batch T — was an HTML-string builder injected via `<Fragment set:html>`; all three call sites are
+// JSX, so the badge is now rendered as `<Badge>` inline at each. `PERSONAL_TIP` keeps the one
+// sentence in one place.
+const PERSONAL_TIP = 'Personal view — visible only to the collaborator who owns it';
+const presentTypes = Array.from(new Set(fieldsIx.map((f) => f.fieldType))).filter(Boolean) as string[];
+const ftypeGroups = [{ items: presentTypes
+  .sort((a, b) => fieldTypeLabel(a).localeCompare(fieldTypeLabel(b)))
+  .map((t) => ({ value: t, label: fieldTypeLabel(t), iconKey: t })) }];
+
+// Field-type category shortcuts (client 2026-07-14, Option B): chips over the flat type list, each toggling
+// a whole semantic category at once. Categories OVERLAP (a Lookup is both Calculated and Linked), so they
+// are set-shortcuts, not a rigid grouping. Only categories with ≥2 present types earn a chip.
+const CALC_TYPES = ['formula', 'rollup', 'lookup', 'count', 'created_time', 'last_modified_time', 'auto_number', 'created_by', 'last_modified_by'];
+const presentSet = new Set(presentTypes);
+const inPresent = (arr: string[]) => arr.filter((t) => presentSet.has(t));
+const ftypeQuick = [
+  { label: 'Calculated', values: inPresent(CALC_TYPES) },
+  { label: 'Linked', values: inPresent(['link', 'multiple_record_links', 'lookup', 'rollup', 'count']) },
+  { label: 'Editable', values: presentTypes.filter((t) => !CALC_TYPES.includes(t)) },
+  { label: 'Text', values: inPresent(['single_line_text', 'long_text', 'rich_text', 'email', 'url', 'phone']) },
+  { label: 'Number', values: inPresent(['number', 'currency', 'percent', 'rating', 'duration', 'auto_number']) },
+  { label: 'Date', values: inPresent(['date', 'created_time', 'last_modified_time']) },
+].filter((q) => q.values.length >= 2);
+const healthGroups = [{ items: [
+  { value: 'green', label: 'Healthy', dot: 'var(--color-success)' },
+  { value: 'amber', label: 'Could improve', dot: 'var(--color-warning)' },
+  { value: 'red', label: 'Needs attention', dot: 'var(--color-error)' },
+] }];
+---
+
+<section class="br" data-browse data-total={totalCount}>
+  {/* One toolbar row: search │ filters … → right cluster (count + Tree/Flat view toggle). */}
+  <div class="sch-tb">
+    <div class="sch-tb-search"><EntitySearch index={index} name="browse" placeholder="Search bases, tables, fields, views…" /></div>
+
+    {multiBase && <FacetFilter label="Bases" name="brbase" groups={baseGroups} groupToggles />}
+    <FacetFilter label="Type" name="bretype" groups={typeGroups} />
+    {presentTypes.length > 0 && <FacetFilter label="Field types" name="brftype" groups={ftypeGroups} quickGroups={ftypeQuick} />}
+    {presentViewTypes.length > 0 && <FacetFilter label="View types" name="brvtype" groups={vtypeGroups} />}
+    <FacetFilter label="Health" name="brhealth" groups={healthGroups} />
+
+    {/* Tri-state dropdowns (client 2026-07-14, Dan's video): replace the old on/off checkboxes so each has
+        a "show all / only with / only without" choice, not just one direction. */}
+    <FacetFilter single labelTrigger label="Description" name="brdesc" groups={[{ items: [
+      { value: 'all', label: 'All descriptions' },
+      { value: 'with', label: 'With description' },
+      { value: 'without', label: 'Without description' },
+    ] }]} />
+    {/* No standalone "Linked" filter — Field types → Categories → "Linked" (Link/Lookup/Rollup/Count)
+        covers that intent (and more richly), so a separate control would just duplicate it. */}
+    {/* "Status", not "Field status" — it governs tables, fields AND views now: a removed TABLE,
+        a removed FIELD and a removed VIEW all hide behind this one control. An Astro comment must
+        NOT live inside the `&&` parentheses below — `( {comment} <El/> )` is two sibling
+        expressions in one expression slot, which compiles CLEANLY and then 500s at render. */}
+    {removedCount > 0 && (
+      <FacetFilter single labelTrigger label="Status" name="brstatus" groups={[{ items: [
+        { value: 'active', label: 'Active' },
+        { value: 'removed', label: 'Removed only' },
+        { value: 'all', label: 'All' },
+      ] }]} />
+    )}
+
+    <button type="button" class="btn btn-sm btn-ghost text-error br-clear gap-1" data-br-clear hidden>
+      <span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear
+    </button>
+
+    <div class="sch-tb-right">
+      <span class="sch-tb-count" data-br-count>{totalCount} entities</span>
+      <ExportControl tab="browse" format="csv" noun="entities" total={totalCount} rowSelector=".br-row" />
+      <div class="join sch-tb-modes" role="tablist" aria-label="Display mode">
+        <button type="button" class="btn btn-sm join-item sch-tb-mode-active" data-br-mode="tree" role="tab">
+          <span class="iconify lucide--list-tree size-4" aria-hidden="true"></span>Tree
+        </button>
+        <button type="button" class="btn btn-sm join-item" data-br-mode="flat" role="tab">
+          <span class="iconify lucide--table size-4" aria-hidden="true"></span>Flat
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {/* Tree view */}
+  <div class="br-tree tbl-frame" data-br-view="tree" data-grid-fit data-narrow-pan>
+    {/* ONE sticky column header for the whole tree (Quicken/Productboard hierarchical-table
+        pattern). Every row (base ▸ table ▸ field) aligns its fixed columns under it; base/table
+        rows leave Type/Link/Cardinality blank and fill Status + Tagged. */}
+    <div class="br-fhead">
+      <button type="button" class="br-fmain br-sortbtn" data-br-tsort="name" aria-label="Sort by name"><span class="br-fhead-lbl">Name</span><span class="br-sortind" aria-hidden="true"></span></button>
+      <button type="button" class="br-fcol br-fcol-type br-sortbtn" data-br-tsort="type" aria-label="Sort by type"><span class="br-fhead-lbl">Type</span><span class="br-sortind" aria-hidden="true"></span></button>
+      <button type="button" class="br-fcol br-fcol-status br-sortbtn" data-br-tsort="status" aria-label="Sort by status"><span class="br-fhead-lbl">Status</span><span class="br-sortind" aria-hidden="true"></span></button>
+      <button type="button" class="br-fcol br-fcol-tags br-sortbtn" data-br-tsort="tags" aria-label="Sort by tagged"><span class="br-fhead-lbl">Tagged</span><span class="br-sortind" aria-hidden="true"></span></button>
+    </div>
+    {tree.map(({ base, tables, orphanViews }) => (
+      <div class="br-node" data-br-node-base={base.id}>
+        <div class="br-row br-row-base row-clickable" data-kind="base" data-base={base.id} data-health={base.health} data-desc="none" data-linked="0" data-search={searchStr(base)} data-entity-open={base.id} role="button" tabindex="0">
+          <button type="button" class="br-twist" data-br-toggle aria-label="Expand base"><span class="iconify lucide--chevron-right size-4"></span></button>
+          <span class="br-ic"><span class="iconify lucide--database size-4"></span></span>
+          <span class="br-fmain">
+            <span class="br-name">{base.name}</span>
+            <span class="br-sub">{tables.filter((t) => !t.removed).length} tables · {base.fieldCount} fields</span>
+          </span>
+          <span class="br-meta">
+          <span class="br-fcol br-fcol-type"></span>
+          <span class="br-fcol br-fcol-status"><Badge variant={healthBadge(base.health).variant} class="gap-1"><span class="size-1.5 rounded-full bg-current"></span>{healthBadge(base.health).label}</Badge></span>
+          <span class="br-fcol br-fcol-tags"><Fragment set:html={taggedHtml(base)} /></span></span><span class="row-go br-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+        </div>
+        <div class="br-group" data-br-group>
+          {tables.map(({ table, fields, views }) => (
+            <div class="br-node br-node-table" data-br-node-table={table.id}>
+              <div class="br-row br-row-table row-clickable" data-kind="table" data-base={base.id} data-health={table.health} data-desc={descState(table)} data-linked="0" data-removed={table.removed ? '1' : '0'} data-search={searchStr(table)} data-entity-open={table.id} role="button" tabindex="0">
+                <button type="button" class="br-twist" data-br-toggle aria-label="Expand table"><span class="iconify lucide--chevron-right size-4"></span></button>
+                <span class="br-ic"><span class="iconify lucide--table-2 size-4"></span></span>
+                <span class="br-fmain">
+                  <span class="br-name">{table.name}</span>
+                  <span class="br-sub">{table.fieldCount} fields{typeof table.recordCount === 'number' ? ` · ${table.recordCount.toLocaleString()} records` : ''}{views.length > 0 ? ` · ${views.length.toLocaleString()} views` : ''}</span>
+                </span>
+                <span class="br-meta">
+                <span class="br-fcol br-fcol-type"></span>
+                <span class="br-fcol br-fcol-status">{table.removed
+                  ? <Badge class="gap-1 tooltip tooltip-left" data-tip={`No longer in Airtable${table.removedAt ? ` since ${fmtDay(table.removedAt)}` : ''}`}>Deleted</Badge>
+                  : <Badge variant={healthBadge(table.health).variant} class="gap-1"><span class="size-1.5 rounded-full bg-current"></span>{healthBadge(table.health).label}</Badge>}</span>
+                <span class="br-fcol br-fcol-tags"><Fragment set:html={taggedHtml(table)} /></span></span><span class="row-go br-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+              </div>
+              <div class="br-group" data-br-group>
+                {fields.map((f) => (
+                  <div class="br-row br-row-field row-clickable" data-kind="field" data-base={base.id} data-ftype={f.fieldType} data-health={f.health} data-desc={descState(f)} data-linked={f.linkedTableId ? '1' : '0'} data-removed={f.removed ? '1' : '0'} data-search={searchStr(f)} data-entity-open={f.id} data-s-name={f.name.toLowerCase()} data-s-type={fieldTypeLabel(f.fieldType).toLowerCase()} data-s-status={HEALTH_RANK[f.health]} data-s-tags={f.docIds.length + (chatTagsById.get(f.id)?.length ?? 0)} role="button" tabindex="0">
+                    <span class="br-twist-spacer" aria-hidden="true"></span>
+                    <span class="br-ic br-ic-field" set:html={fieldIconSvg(f.fieldType)} />
+                    {/* Name column (flexes + truncates); the doc backlink stays hugging the name. */}
+                    <span class="br-fmain">
+                      <span class="br-name">{f.name}{f.isPrimary && <span class="br-primary">primary</span>}</span>
+                        </span>
+                    {/* Aligned columns — the type chip + the documented soft-semantic status badge.
+                        Link/Cardinality live in the field's detail panel, not the top-level table (B4). */}
+                    <span class="br-meta">
+                    <span class="br-fcol br-fcol-type"><Badge class="rl-type-badge">{fieldTypeLabel(f.fieldType)}</Badge></span>
+                    <span class="br-fcol br-fcol-status">{f.removed
+                      ? <Badge class="gap-1 tooltip tooltip-left" data-tip={`No longer in Airtable${f.removedAt ? ` since ${fmtDay(f.removedAt)}` : ''}`}>Deleted</Badge>
+                      : <Badge variant={healthBadge(f.health).variant} class="gap-1"><span class="size-1.5 rounded-full bg-current"></span>{healthBadge(f.health).label}</Badge>}</span>
+                    <span class="br-fcol br-fcol-tags"><Fragment set:html={taggedHtml(f)} /></span></span><span class="row-go br-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+                  </div>
+                ))}
+                {/* The tree's answer to a pager (pattern-node-showmore): a table reveals its fields
+                    in chunks, so neither a search auto-expanding every base nor a 900-field table
+                    opened by hand renders an unbounded list. Shown/hidden + counted by the script. */}
+                <button type="button" class="br-more" data-br-more="fields" hidden>
+                  <span class="iconify lucide--chevron-down size-4" aria-hidden="true"></span>
+                  <span data-br-more-label></span>
+                </button>
+
+                {/* view-schema-details, Decision 1: views are a SEPARATE collapsible group under
+                    the table, never interleaved with the fields — a view is a lens over the whole
+                    table, not one more column in it. It caps INDEPENDENTLY with its own
+                    "Show N more", so 4 fields aren't buried under 100 views (and vice versa). */}
+                {views.length > 0 && (
+                  <div class="br-vgroup" data-br-vgroup>
+                    <button type="button" class="br-vhead" data-br-vtoggle aria-expanded="true">
+                      <span class="iconify lucide--chevron-down size-4 br-vchev" aria-hidden="true"></span>
+                      <span class="br-vhead-lbl">Views</span>
+                      <Badge size="sm" class="mono-data" data-br-vcount>{views.length}</Badge>
+                    </button>
+                    <div class="br-vbody" data-br-vbody>
+                      {views.map((v) => (
+                        <div class="br-row br-row-view row-clickable" data-kind="view" data-base={base.id} data-vtype={v.viewType} data-health={v.health} data-desc="none" data-linked="0" data-removed={v.removed ? '1' : '0'} data-unknown={v.unknown ? '1' : '0'} data-search={searchStr(v)} data-entity-open={v.id} data-s-name={v.name.toLowerCase()} data-s-type={viewTypeLabel(v.viewType).toLowerCase()} data-s-status={HEALTH_RANK[v.health]} data-s-tags={v.docIds.length + (chatTagsById.get(v.id)?.length ?? 0)} role="button" tabindex="0">
+                          <span class="br-twist-spacer" aria-hidden="true"></span>
+                          <span class="br-ic br-ic-view"><span class="iconify lucide--eye size-4" aria-hidden="true"></span></span>
+                          <span class="br-fmain">
+                            <span class="br-name">{v.name}</span>
+                            {v.personalForUserId && <Badge size="sm" variant="primary" class="tooltip tooltip-left" data-tip={PERSONAL_TIP}>Personal</Badge>}
+                          </span>
+                          <span class="br-meta">
+                          <span class="br-fcol br-fcol-type"><Badge class="rl-type-badge">{viewTypeLabel(v.viewType)}</Badge></span>
+                          {/* Three distinct states — active · unknown (full opacity, soft INFO) ·
+                              removed (muted, ghost). `unknown` is deliberately NOT amber: amber is
+                              this app's Removed voice, and a missed capture is a gap in OUR read,
+                              not a defect in the user's base (pattern-deleted-items). */}
+                          <span class="br-fcol br-fcol-status">{v.removed
+                            ? <Badge class="gap-1 tooltip tooltip-left" data-tip={`No longer in Airtable${v.removedAt ? ` since ${fmtDay(v.removedAt)}` : ''}`}>Deleted</Badge>
+                            : v.unknown
+                            ? <span class="badge badge-ghost tooltip tooltip-left" data-tip="Not seen in the latest capture — it may still exist. Not deleted.">Not in latest capture</span>
+                            : <Badge variant={healthBadge(v.health).variant} class="gap-1"><span class="size-1.5 rounded-full bg-current"></span>{healthBadge(v.health).label}</Badge>}</span>
+                          <span class="br-fcol br-fcol-tags"><Fragment set:html={taggedHtml(v)} /></span></span><span class="row-go br-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+                        </div>
+                      ))}
+                      <button type="button" class="br-more br-more-view" data-br-more="views" hidden>
+                        <span class="iconify lucide--chevron-down size-4" aria-hidden="true"></span>
+                        <span data-br-more-label></span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+          {/* view-schema-details: the "we hold the view, not its table" bucket. It sits BESIDE the
+              table nodes, one level under the base, so a view with no resolved table is visible
+              rather than silently dropped. Its own node + its own cap key, so it never borrows a
+              table's budget. An Astro comment must NOT live inside the `&&` parentheses below —
+              `( {comment} <El/> )` is two sibling expressions in one slot, which compiles cleanly
+              and then 500s at render. */}
+          {orphanViews.length > 0 && (
+            <div class="br-node br-node-orphan" data-br-node-orphan>
+              <div class="br-vgroup br-vgroup-orphan" data-br-vgroup>
+                <button type="button" class="br-vhead br-vhead-orphan" data-br-vtoggle aria-expanded="true">
+                  <span class="iconify lucide--chevron-down size-4 br-vchev" aria-hidden="true"></span>
+                  <span class="br-vhead-lbl">Views · table not resolved</span>
+                  <Badge size="sm" class="mono-data" data-br-vcount>{orphanViews.length}</Badge>
+                </button>
+                <div class="br-vbody" data-br-vbody>
+                  <p class="br-orphan-note">Captured in this base, but the capture didn’t say which table they belong to.</p>
+                  {orphanViews.map((v) => (
+                    <div class="br-row br-row-view row-clickable" data-kind="view" data-base={base.id} data-vtype={v.viewType} data-health={v.health} data-desc="none" data-linked="0" data-removed={v.removed ? '1' : '0'} data-unknown={v.unknown ? '1' : '0'} data-search={searchStr(v)} data-entity-open={v.id} data-s-name={v.name.toLowerCase()} data-s-type={viewTypeLabel(v.viewType).toLowerCase()} data-s-status={HEALTH_RANK[v.health]} data-s-tags={v.docIds.length + (chatTagsById.get(v.id)?.length ?? 0)} role="button" tabindex="0">
+                      <span class="br-twist-spacer" aria-hidden="true"></span>
+                      <span class="br-ic br-ic-view"><span class="iconify lucide--eye size-4" aria-hidden="true"></span></span>
+                      <span class="br-fmain">
+                        <span class="br-name">{v.name}</span>
+                        {v.personalForUserId && <Badge size="sm" variant="primary" class="tooltip tooltip-left" data-tip={PERSONAL_TIP}>Personal</Badge>}
+                      </span>
+                      <span class="br-meta">
+                      <span class="br-fcol br-fcol-type"><Badge class="rl-type-badge">{viewTypeLabel(v.viewType)}</Badge></span>
+                      <span class="br-fcol br-fcol-status">{v.removed
+                        ? <Badge class="gap-1 tooltip tooltip-left" data-tip={`No longer in Airtable${v.removedAt ? ` since ${fmtDay(v.removedAt)}` : ''}`}>Deleted</Badge>
+                        : <span class="badge badge-ghost tooltip tooltip-left" data-tip="We hold this view, but not which table it belongs to. Not deleted.">Table not resolved</span>}</span>
+                      <span class="br-fcol br-fcol-tags"><Fragment set:html={taggedHtml(v)} /></span></span><span class="row-go br-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
+                    </div>
+                  ))}
+                  <button type="button" class="br-more br-more-view" data-br-more="views" hidden>
+                    <span class="iconify lucide--chevron-down size-4" aria-hidden="true"></span>
+                    <span data-br-more-label></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    ))}
+  </div>
+
+  {/* Flat */}
+  <div class="br-flat" data-br-view="flat" hidden>
+    {/* THE ONE TABLE (catalog `table`). The `<thead>`, the four hand-numbered `data-sort-col`s and
+        `data-narrow-pan` left this file; `scope="col"`, a live `aria-sort` and a sortable column
+        that is a real `<button>` arrive with the vessel. Browse's sort is its own (it knows the
+        health ranking), so what migrates is the HEADER contract: the handler now reads the index
+        the vessel computed and maps it through `BR_FLAT_SORT_KEYS`, instead of a `data-br-sort`
+        key hand-written beside a hand-written index.
+
+        `growth="paged"` — Flat is the mode that bounds a big schema, and the pager below is why:
+        an Airtable account's field count is not capped by anything. `narrow="pan"` is the default
+        and is what this table already did (`specs/16-responsive.md` §5).
+
+        The default sort (Health, ascending) used to be SSR-painted onto the `<th>`. The vessel
+        renders the header, so the initial `data-sort-dir` is applied by the mount below — which
+        also means `aria-sort` gets it, which the SSR attribute never produced. */}
+    <Table
+      class="br-table-wrap tbl-frame"
+      tableClass="br-table"
+      name="schema-browse-flat"
+      columns={BR_FLAT_COLUMNS}
+      rowCount={flat.length}
+      growth="paged"
+      narrow="pan"
+      pager={{ sizes: [25, 50, 100], selected: 50 }}
+      hook="brflat"
+      data-grid-fit
+    >
+          {flat.map((e) => (
+            <tr class="br-trow row-clickable" data-kind={e.kind} data-base={e.baseId} data-ftype={e.fieldType} data-vtype={e.viewType} data-unknown={e.unknown ? '1' : '0'} data-health={e.health} data-desc={descState(e)} data-linked={e.linkedTableId ? '1' : '0'} data-removed={e.removed ? '1' : '0'} data-search={searchStr(e)} data-name={e.name.toLowerCase()} data-type={e.kind === 'field' ? fieldTypeLabel(e.fieldType).toLowerCase() : e.kind === 'view' ? viewTypeLabel(e.viewType).toLowerCase() : e.kind} data-parent={(e.tableName ?? e.baseName).toLowerCase()} data-healthrank={HEALTH_RANK[e.health]} data-entity-open={e.id} role="button" tabindex="0">
+              <td class="br-td-name">
+                <div class="br-namecell">
+                  <span class="br-ic br-ic-field" set:html={e.kind === 'field' ? fieldIconSvg(e.fieldType) : e.kind === 'table' ? '<span class="iconify lucide--table-2 size-4"></span>' : e.kind === 'view' ? '<span class="iconify lucide--eye size-4 concept-ic-view"></span>' : '<span class="iconify lucide--database size-4"></span>'} />
+                  <span class="br-name">{e.name}{e.isPrimary && <span class="br-primary">primary</span>}</span>
+                  {e.removed && (<span class="br-deleted"><Badge size="sm" class="br-del-badge">Deleted</Badge><span class="br-del-since">no longer in Airtable{e.removedAt ? ` since ${fmtDay(e.removedAt)}` : ''}</span></span>)}
+                  {!e.removed && e.unknown && (<span class="badge badge-sm badge-ghost tooltip tooltip-right" data-tip="Not seen in the latest capture — it may still exist. Not deleted.">Not in latest capture</span>)}
+                  {e.kind === 'view' && e.personalForUserId && <Badge size="sm" variant="primary" class="tooltip tooltip-left" data-tip={PERSONAL_TIP}>Personal</Badge>}
+                  {e.docIds.length > 0 && (e.docIds.length === 1 ? (
+                    <button type="button" class="tooltip tooltip-right br-docmark br-docmark-btn" data-tip={`Tagged in ${docTitle.get(e.docIds[0]) ?? 'a document'}`} data-doc-open={e.docIds[0]} aria-label={`Tagged in ${docTitle.get(e.docIds[0]) ?? 'a document'}`}>
+                      <span class="iconify lucide--file-text size-3.5" aria-hidden="true"></span>
+                    </button>
+                  ) : (
+                    <span class="tooltip tooltip-right br-docmark" data-tip={`Tagged in ${e.docIds.length} documents`} aria-label={`Tagged in ${e.docIds.length} documents`}>
+                      <span class="iconify lucide--file-text size-3.5" aria-hidden="true"></span>
+                    </span>
+                  ))}
+                </div>
+              </td>
+              <td class="text-base-content/65">{e.kind === 'field' ? fieldTypeLabel(e.fieldType) : e.kind === 'table' ? 'Table' : e.kind === 'view' ? `View · ${viewTypeLabel(e.viewType)}` : 'Base'}</td>
+              <td class="text-base-content/65">{e.kind === 'field' || e.kind === 'view' ? e.tableName : e.baseName}</td>
+              <td>{e.removed ? <span class="text-base-content/35">—</span> : <Badge variant={healthBadge(e.health).variant}>{healthBadge(e.health).label}</Badge>}</td>
+              <td class="text-right"><span class="row-end"><span class="row-go" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span></span></td>
+            </tr>
+          ))}
+    </Table>
+    {/* Flat mode only. A tree cannot be paged — slicing rows 51–100 out of base ▸ table ▸ field
+        would cut a table away from its own fields — so Tree stays whole and Flat is the mode that
+        bounds a big schema (Oleh 2026-07-23). 50/page: an entity row is one line, like the record
+        grid. The pager itself is now the vessel's (`growth="paged"` refuses to render without
+        one), and it keeps the name `brflat` the controller already queries. */}
+  </div>
+
+  <div class="br-empty" data-br-empty hidden>
+    <span class="iconify lucide--search-x size-6 opacity-40" aria-hidden="true"></span>
+    <p>No entities match your filters.</p>
+    <button type="button" class="btn btn-sm btn-ghost text-error gap-1.5" data-br-clear><span class="iconify lucide--x size-3.5" aria-hidden="true"></span>Clear filters</button>
+  </div>
+</section>
+
+<style is:global>
+  /* ── THE FLAT TABLE'S HEADER AND CELL METRICS ──────────────────────────────────────────────
+     is:global, and NOT because of `set:html` this time. `<table class="br-table">`, its `<thead>`
+     and its `<th>`s are rendered by `components/ui/Table.astro`, so they carry the VESSEL's scope
+     hash, not this file's. Astro stamps `[data-astro-cid-…]` onto every compound of a scoped
+     selector (verified in the served stylesheet, not assumed), so a scoped `.br-table thead th`
+     compiles to `.br-table[cid] thead[cid] th[cid]` and matches nothing at all — with ds-lint,
+     typecheck, css-guard and smoke all green, which is exactly the failure this batch exists to
+     stop. The `<td>`s still arrive through the slot and still carry this file's hash, so anything
+     that names only `.br-trow`/`td` stays in the scoped block below.
+
+     `.br-` is already this file's unique prefix; nothing here can reach another surface. */
+  .br-table { margin: 0; }
+  /* The old `.br-table thead th` also set `font-weight: 700`, `white-space: nowrap`, `cursor` and
+     `user-select` — all four are now the shared `.tbl-colhead th` and `[data-sort-col]` rules,
+     verified by computed value (700 / nowrap on the migrated header), so restating them here would
+     be a second spelling of a rule that already applies. Only the hover survives. */
+  .tbl-colhead th.br-th:hover { color: var(--color-base-content); }
+  /* The active column. It has to out-specify `.tbl-colhead th`'s muted colour (0,1,1), which the
+     old scoped `.br-th-active[cid]` did by accident and a bare `.br-th-active` would not. The
+     `<th>` carries it rather than the button, because the vessel makes the button's colour
+     `inherit` — a class on the button would lose to that. */
+  .tbl-colhead th.br-th-active { color: var(--color-primary); }
+  /* Comfortable row height — a touch taller than the daisyUI default for breathing room. */
+  .br-table tbody td { padding-block: 16px; }
+  @media (max-width: 1279.98px) {
+    /* FLAT, COMPRESSED — see the scoped media block below for the full argument. `.br-flat` is
+       here to out-specify the 16px base rule above, which a media query alone never does. */
+    .br-flat .br-table tbody td, .br-flat .br-table thead th { padding-block: 8px; padding-inline: 8px; }
+    /* Column floors, measured against the widest CELL in each column at this width: NAME 144 ·
+       TYPE 104 · PARENT 107 · HEALTH 85. `width: 100%` on NAME makes one column ask for
+       everything, so every other column resolves to its content and the slack lands where a long
+       field path can use it. */
+    .br-table thead th:nth-child(1) { min-width: 8rem; width: 100%; }
+    .br-table thead th:nth-child(2) { min-width: 5.5rem; }
+    .br-table thead th:nth-child(3) { min-width: 5.5rem; }
+    .br-table thead th:nth-child(4) { min-width: 6rem; }
+  }
+
+  /* B9 — Tagged cell: one icon+count per tag kind (doc / chat) in a ghost-button trigger, with a
+     hover popover (daisyUI dropdown-hover) listing every tagged place. is:global (unique .br-tag*
+     prefix) because taggedHtml is injected via `set:html`, which scoped styles never reach. */
+  .br-tagkind { display: inline-flex; align-items: center; gap: 4px; }
+  .br-tagtrig { font-weight: 500; }
+  .br-tagmenu { z-index: 20; width: 16rem; max-width: 78vw; max-height: 60vh; overflow-y: auto; padding: 4px; background: var(--color-base-100); border-radius: var(--r-12); box-shadow: 0 8px 24px oklch(0 0 0 / .18); border: 1px solid var(--color-base-300); }
+  .br-tagmenu li > button { display: flex; align-items: center; gap: 8px; font-size: var(--t-13); }
+  .br-tagmenu li > button .iconify { flex: none; opacity: .7; }
+  .br-tagitem-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+
+<style is:global>
+  /* .br- prefix is unique to SchemaBrowse; is:global required so Table vessel
+     cells and set:html fragments still match (same rule as the block above). */
+  .br { display: flex; flex-direction: column; gap: 12px; }
+  /* Toolbar layout is the shared .sch-tb pattern (global.css). Only the Tree/Flat segment
+     keeps component-local styling. */
+  /* view toggle styling moved to the shared .sch-tb-modes in global.css */
+
+  /* tree */
+  /* No `overflow` here on purpose: the tree is a `[data-grid-fit]` listing, and lib/gridFit.ts
+     leans on the GLOBAL `[data-grid-fit] { overflow: auto }` to turn the bounded box into its own
+     scrollport. A scoped rule here carries the astro-cid attribute and would out-specify that
+     global one, leaving a box with a max-height and no way to reach the rows under it. `auto`
+     clips the rounded corners exactly as the old `clip` did. */
+  /* Chrome (border + radius + background) is the shared `.tbl-frame` on the element itself. */
+  .br-node-table > .br-group { display: none; }
+  .br-node-table.br-open > .br-group { display: block; }
+  .br-node[data-br-node-base] > .br-group { display: block; }
+  .br-node[data-br-node-base].br-collapsed > .br-group { display: none; }
+
+  /* Row rhythm matches the Backups/Flat table: roomy rows, 14px text. */
+  .br-row { display: flex; align-items: center; gap: 12px; padding: 12px 12px; cursor: pointer; border-bottom: 1px solid var(--color-base-200); min-height: 48px; }
+  /* .br-row hover from shared .row-clickable */
+  .br-row:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+  /* Stair-step indentation: each level's icon sits +20px deeper than its parent's.
+     Tables/bases carry a 20px twist; fields carry a 20px spacer in its place so the
+     field icon lands one full level inside the table name (not aligned with it). */
+  .br-row-base { padding-left: 12px; }
+  .br-row-table { padding-left: 32px; }
+  .br-row-field { padding-left: 52px; }
+  /* Views group (view-schema-details) — its own header row + body, one level deeper than the
+     fields so the two groups read as siblings under the table rather than one long list. */
+  .br-vhead { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px 8px 52px; min-height: 36px; border: 0; border-bottom: 1px solid var(--color-base-200); background: none; cursor: pointer; text-align: left; }
+  .br-vhead:hover { background: oklch(from var(--color-base-200) l c h / .55); }
+  .br-vhead:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+  .br-vhead-lbl { font-size: var(--t-11); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); }
+  .br-vchev { color: oklch(from var(--color-base-content) l c h / .65); transition: transform .15s ease; }
+  .br-vgroup[data-collapsed] .br-vchev { transform: rotate(-90deg); }
+  .br-vgroup[data-collapsed] .br-vbody { display: none; }
+  .br-vgroup[hidden] { display: none; }
+  .br-row-view { padding-left: 72px; }
+  /* `.br-more-view`'s indent is declared BELOW `.br-more` (line ~511), not here — see the note
+     there. Written at this point it computed 52px at every width. */
+  /* The unresolved-table bucket hangs off the BASE, not a table, so it sits one level shallower:
+     its header lands where a table name does (32px) and its rows where a field does (52px). */
+  .br-vhead-orphan { padding-left: 32px; }
+  .br-node-orphan .br-row-view,
+  .br-node-orphan .br-more-view { padding-left: 52px; }
+  .br-orphan-note { font-size: var(--t-12); line-height: 1.45; color: oklch(from var(--color-base-content) l c h / .65); padding: 8px 12px 8px 52px; border-bottom: 1px solid var(--color-base-200); }
+  .br-node-orphan[hidden] { display: none; }
+  .br-ic-view { color: color-mix(in oklch, var(--color-info) 70%, var(--color-base-content)); }
+  /* pattern-node-showmore — one more row in the list, not a control bar: same 12px rhythm and
+     52px field indent as .br-row-field, quieter text, and it borrows the row hover. */
+  .br-more { display: flex; align-items: center; gap: 8px; width: 100%; padding: 12px 12px 12px 52px; min-height: 40px; border: 0; border-bottom: 1px solid var(--color-base-200); background: none; cursor: pointer; font-size: var(--t-13); text-align: left; color: oklch(from var(--color-base-content) l c h / .65); }
+  .br-more:hover { background: oklch(from var(--color-base-200) l c h / .55); color: var(--color-base-content); }
+  .br-more:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+  .br-more[hidden] { display: none; }
+  /* THE VIEWS "SHOW N MORE" SITS AT THE VIEW INDENT, AND THIS RULE HAS TO BE BELOW `.br-more`
+     (measured 2026-08-13). It was declared with `.br-row-view` ~15 lines above, where the `padding`
+     SHORTHAND on `.br-more` right here ate it at equal specificity: computed `padding-left: 52px`
+     at 1440 AND at 390, so the button that reveals view rows stood 20px to the LEFT of every row it
+     reveals. Same defect shape as `.br-fhead` above — a later shorthand beats an earlier longhand,
+     and out-specifying would only have left half the shorthand dead. Move, do not out-specify.
+     `.br-node-orphan .br-more-view` (0,2,0) still wins over this (0,1,0), so an orphan's button
+     keeps its one-level-shallower 52px whatever the order. */
+  .br-more-view { padding-left: 72px; }
+  .br-row[hidden] { display: none; }
+  .br-twist-spacer { width: 20px; flex: none; }
+
+  .br-twist { display: grid; place-items: center; width: 20px; height: 20px; border: 0; background: none; cursor: pointer; border-radius: var(--r-6); flex: none; color: oklch(from var(--color-base-content) l c h / .65); padding: 0; }
+  .br-twist:hover { background: var(--color-base-300); }
+  .br-twist .iconify { transition: transform .15s ease; }
+  .br-node.br-open > .br-row .br-twist .iconify, .br-node-table.br-open > .br-row .br-twist .iconify { transform: rotate(90deg); }
+  .br-node[data-br-node-base]:not(.br-collapsed) > .br-row .br-twist .iconify { transform: rotate(90deg); }
+
+  .br-ic { width: 20px; flex: none; display: grid; place-items: center; color: oklch(from var(--color-base-content) l c h / .65); }
+  .br-ic-field svg { width: 15px; height: 15px; opacity: .82; }
+  /* Level colour-coding (palette tokens, softened toward neutral so it reads as a tint,
+     not a bright fill): base = primary (blue), table = success (green), field = neutral. */
+  .br-row-base .br-ic, .br-trow[data-kind="base"] .br-ic { color: color-mix(in oklch, var(--color-primary) 78%, var(--color-base-content)); }
+  .br-row-table .br-ic, .br-trow[data-kind="table"] .br-ic { color: color-mix(in oklch, var(--color-success) 78%, var(--color-base-content)); }
+  .br-name { font-size: var(--t-14); font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; gap: 8px; }
+  .br-row-base .br-name, .br-row-table .br-name { font-weight: 600; }
+  .br-primary { font-size: var(--t-11); font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--color-primary); background: color-mix(in oklch, var(--color-primary) 12%, transparent); padding: 1px 5px; border-radius: var(--r-4); } /* ds-ok: intentional micro-label pill (PRIMARY marker), not body/control text; pre-existing */
+  .br-sub { font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; }
+  /* Field rows are columnar (matching the Relationships table): the name flexes and truncates,
+     then fixed-width Type / Status columns line up across EVERY field row, regardless of name
+     length. (Link / Cardinality were dropped — they only apply to link fields and are visible in
+     the field's detail panel; see B4.) The Type chip is the shared Relationships element. */
+  .br-fmain { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: 8px; }
+  .br-fmain .br-name { flex: 0 1 auto; }
+  .br-fcol { flex: none; display: flex; align-items: center; }
+  .br-fcol-type { width: 9.5rem; }
+  .br-fcol-status { width: 9rem; }
+  .br-fcol-tags { width: 8rem; }
+
+  /* ── THE COLUMN GROUP (2026-08-11) ────────────────────────────────────────────────────────────
+     `.br-meta` wraps the three aligned columns — type · status · tagged — so they can move together.
+     On a desktop it is INERT: same gap as the row, so the row measures what it measured before
+     (verified 1119px). It exists for the narrow form below, where those three have to leave the
+     line and sit under the name.
+     A wrapper rather than `display: contents` on purpose: `contents` is the documented trap in this
+     codebase (P24 §5 / P30 §13) — it loses on source order and takes the element out of the box
+     tree, which is how a "harmless" flatten silently changes what `align-items` means. */
+  .br-meta { display: flex; align-items: center; gap: 12px; flex: none; }
+
+  .br-go { flex: none; }
+  /* Per-table column header — reuses the field-row column classes so the labels sit exactly
+     above their cells (mirrors the Relationships per-Base header). */
+  /* ONE sticky column header for the whole tree — pins to the top while the tree scrolls.
+     Field label aligns to the base-level name; the fixed columns align to every row's cells. */
+  /* top: 64px clears the app's sticky topbar (h-16) so the header pins just below it, not behind. */
+  /* It was NOT sticky (Oleh 2026-07-24): pinned at top:64px it detached from its own table and
+   hung in mid-air over the rows — because THE PAGE was the scroller, so the header floated with
+   no visible connection to what it labels. That reason is gone as of the scrollport above: the
+   tree scrolls inside itself now, so `top: 0` pins the header to the listing's own edge and it
+   never leaves the box it belongs to. Tied to `data-grid-fitted`, which lib/gridFit.ts sets only
+   once it has actually bounded the height — below its floor the page scrolls again and a pinned
+   header would be back to hanging in mid-air. */
+  .br-tree[data-grid-fitted] .br-fhead { position: sticky; top: 0; }
+  .br-fhead { z-index: 3; display: flex; align-items: center; gap: 12px; padding: 8px 12px 8px 72px; border-bottom: 1px solid var(--color-base-300); background: var(--color-base-200); border-radius: var(--r-12) var(--r-12) 0 0; }
+
+  /* ── THE NARROW BLOCK SITS HERE, BELOW EVERY BASE RULE IT MODIFIES (measured 2026-08-13) ─────
+     It used to sit ~90 lines higher, above `.br-fhead`, and two of its declarations were dead:
+     `padding-left: 40px` lost to the `padding` SHORTHAND on the `.br-fhead` rule directly above,
+     and `gap: 8px` lost to that rule's `gap: 12px`. Computed at 1200 the header kept the 72px
+     desktop indent while every row it labels had already halved to 16/28/40 — a legend standing
+     32px to the right of its own column. Out-specifying was the wrong repair: the winner uses a
+     shorthand, so a stronger `padding-left` would have left `padding` half-dead behind it. */
+  /* ── NO NARROW FOLD. THE GRID STAYS A GRID (Oleh, 2026-08-11) ────────────────────────────────
+     A fold shipped here first: below 900 the row wrapped, name on line one and the three columns as
+     chips beneath. It measured well — min-content 897 → 330 — and Oleh rejected it after using it:
+     *«може нам таблиці взагалі не колапсити… в нас там купа інформації може бути, це anyway буде
+     працювати погано»*.
+
+     He is choosing the OTHER strategy the reference research documented, not going against it.
+     Jira, monday and Craft all keep the grid and pan it sideways; only Attio drops to two columns,
+     and Attio's rows carry two attributes where ours carry five. **The reason a fold reads badly
+     here is that the columns are the point** — a schema is read by comparing type against status
+     against tags down a column, and a fold turns every column into a per-row chip, which is exactly
+     the comparison it destroys.
+
+     So the narrow treatment is DENSITY, not restructuring: smaller type, smaller controls, tighter
+     columns, and a horizontal scroll when it still does not fit. The columns get floors low enough
+     to be worth panning to rather than widths that force it. */
+  @media (max-width: 1279.98px) {
+    /* Every column to its own floor. These are content minimums measured at 400 — a type chip, a
+       status badge and a tag count each need what they need and no more. */
+    .br-fcol-type { width: auto; min-width: 6.5rem; }
+    .br-fcol-status { width: auto; min-width: 7.5rem; }
+    .br-fcol-tags { width: auto; min-width: 3.5rem; }
+    .br-row { padding-top: 8px; padding-bottom: 8px; min-height: 40px; gap: 8px; }
+    /* THE NAME GETS A FLOOR, AND THAT IS WHAT MAKES PANNING THE RIGHT ANSWER. Without one it is the
+       only flexible track, so it absorbs every squeeze: at 578 the four columns took their minimums
+       and "Sales CRM" rendered as "S", "Companies" as nothing at all. A name shrunk to a letter is
+       worse than a row you have to pan, which is the whole argument for this direction — so the name
+       stops shrinking at 12rem and the row overflows into the scroll that is now there for it. */
+    .br-fmain { min-width: 12rem; }
+    .br-tree { overflow-x: auto; }
+    /* THE SUB-LINE YIELDS BEFORE THE NAME. `.br-fmain` is a flex row holding the name and its meta,
+       and the meta was winning: measured at 578, "11 fields · 340 records · 8 views" took 154px and
+       left the name 30 of the 61 it wanted, so "Companies" rendered as "Comp".
+       A name is the row's identity; the meta is a description of it. When one of them has to give,
+       it is not the name. */
+    /* `.br-fmain .br-name` — two classes, matching the base rule at line 535 that sets `flex: 0 1
+       auto`. Written as `.br-name` alone it lost on specificity and the name stayed clipped: 52px
+       rendered against the 61 it wanted, so "Companies" came out "Companie". Third time today that
+       an exception had to be written at the strength of the rule it excepts. */
+    .br-fmain .br-name { flex: 0 0 auto; }
+    .br-sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* The tree's indent is what makes it a tree, but 32/52/72 is a desktop indent. Halved: still
+       legible as nesting, 36px of a narrow column back. */
+    .br-row-table { padding-left: 16px; }
+    .br-row-field { padding-left: 28px; }
+    .br-row-view { padding-left: 40px; }
+    /* The views "show N more" halves with the rows it reveals. Measured at 390 before this line:
+       52px against the rows' 40px — the same 20px-left defect as the desktop one, carried across the
+       boundary because the base rule it lost to (`.br-more`'s `padding` shorthand) is width-invariant.
+       Listed with `.br-row-view` because it is the same level, not because it is the same element. */
+    .br-more-view { padding-left: 40px; }
+    /* An ORPHAN view sits one level shallower, and its exception has to be written at the strength
+       of the rule it excepts: `.br-node-orphan .br-row-view` is (0,2,0) in the base layer, so the
+       bare `.br-row-view` above never reached it and orphan rows kept the 52px desktop indent while
+       every sibling level halved (measured at 1200: 52px against 40). Same halving, same ratio. */
+    .br-node-orphan .br-row-view,
+    .br-node-orphan .br-more-view { padding-left: 28px; }
+    /* The pan surface. `br-tree` already scrolls; this is the flat table joining it. */
+    .br-table-wrap { overflow-x: auto; }
+
+    /* THE TREE'S HEADER HAS TO BE AS WIDE AS WHAT IT LABELS. It is a flex row sized to the
+       CONTAINER, and the container now pans — so once the rows were wider than the view, the header's
+       background stopped where the viewport did and TAGGED sat on bare page. A legend that ends
+       before its columns do reads as a broken bar, which is what it looked like. */
+    /* The panned header (Oleh: «оця верхня шапка погано себе поводить»).
+       `.br-tree` is the horizontal scroller, so `width: 100%` on a child resolves against its
+       PADDING BOX — 459px — while the rows inside it lay out to 636. Pan right and the header's
+       background simply stops, leaving `TAGGED` sitting on bare page.
+       `width: max-content` was the first attempt and is wrong for a different reason: a child's
+       max-content is its OWN content, 594px, not the widest sibling's 636.
+       One grid column sized `minmax(100%, max-content)` is the shape that answers both — the track
+       takes the widest ITEM in the column, and every item stretches to the track, so the header and
+       every row are guaranteed to be the same width whatever that width turns out to be. Scoped to
+       narrow because nothing pans above 1280 and the tree stays block layout there.
+       `minmax(100%, max-content)` was the third wrong answer and measured as one: a track only grows
+       toward its MAX with free space, and inside a scroller there is none, so it pinned at its min
+       and every row collapsed to 459. `minmax(max-content, 1fr)` puts the widest item in the MIN,
+       where it is a floor rather than an aspiration, and lets `1fr` fill the container in the other
+       direction — so a short tree still paints edge to edge instead of stopping mid-page. */
+    .br-tree { display: grid; grid-template-columns: minmax(max-content, 1fr); align-content: start; }
+
+    /* FLAT, COMPRESSED. 16px of padding per cell is a desktop row; at this width it bought 61px
+       rows for one line of text. 8 halves the row and keeps the 4px grid. */
+    /* `.br-table tbody td` again, plus `.br-flat` to outweigh it — the base rule sets 16px and lives
+       BELOW this media block in the file, and a media query adds no specificity, so equal weight
+       loses on source order. Fourth time today; the pattern is now unmistakable: in this codebase an
+       exception is only an exception if it out-specifies what it excepts. */
+    /* MOVED to the is:global block at the top of this file — `.br-table`, `thead` and `th` are the
+       vessel's elements and carry no scope hash of this file, so the scoped copy matched nothing.
+       The `.br-flat` ancestor and the source-order argument above are unchanged there. */
+    /* Columns to their content floors — a type word, a parent name, a status badge. Narrower than
+       this and the header labels themselves start to clip. */
+    /* Floors measured against the widest CELL in each column at this width, not guessed: NAME 144
+       (`Notes` in a long path) · TYPE 104 (`Table`) · PARENT 107 (`Sales CRM`) · HEALTH 85
+       (`Needs attention`). The first pass gave HEALTH 7.5rem and it sat 46px wider than anything it
+       ever holds, because an auto table hands its leftover width to the last flexible column — which
+       is why the slack showed up in the column that needed it least.
+       `width: 100%` on NAME is the fix: one column asks for everything, so every OTHER column
+       resolves to its content, and the remainder lands where a long field path can use it. */
+    /* MOVED to the is:global block at the top of this file, same reason. */
+    /* THE COLUMN HEADER COMES BACK, and it broke because of the fold: the fold hid Type · Status ·
+       Tagged, leaving a bar reading only NAME above rows that no longer had columns. With the grid
+       kept, the header is the grid's legend again — and its 72px left pad was the tree's old indent,
+       so it follows the rows down to 40. */
+    .br-fhead { padding-left: 40px; gap: 8px; }
+  }
+  .br-fhead-lbl { font-size: var(--t-11); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; }
+  /* Click-to-sort headers — sort the fields WITHIN each table (base/table rows never move). */
+  .br-sortbtn { border: 0; background: none; cursor: pointer; font: inherit; padding: 0; gap: 4px; text-align: left; }
+  .br-sortbtn:hover .br-fhead-lbl { color: oklch(from var(--color-base-content) l c h / .85); }
+  .br-sortind { font-size: 8px; line-height: 1; color: var(--color-primary); min-width: 8px; } /* ds-ok — the ▲/▼ sort GLYPH, aria-hidden, not text; sized like an icon (P4), the ladder governs words */
+  .br-sortbtn[data-sort-active="asc"] .br-sortind::after { content: "▲"; }
+  .br-sortbtn[data-sort-active="desc"] .br-sortind::after { content: "▼"; }
+  /* Doc backlink icon on base / table rows — sits at the right, before the health dot. */
+  .br-row-base > .br-docmark-row, .br-row-table > .br-docmark-row { margin-left: auto; }
+  .br-docmark-row + .br-dot { margin-left: 12px; }
+  .br-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; margin-left: auto; }
+  /* "Tagged in {doc}" reverse backlink — written out in the tree (room to the right),
+     a clickable icon in the dense flat table. Clicking the named doc opens it in Docs. */
+  .br-taglink { display: inline-flex; align-items: center; gap: 4px; font-family: inherit; font-weight: 500; font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); border: 0; background: none; cursor: pointer; padding: 0; max-width: 300px; white-space: nowrap; }
+  .br-taglink .iconify { flex: none; }
+  .br-taglink-txt { overflow: hidden; text-overflow: ellipsis; }
+  button.br-taglink:hover { color: var(--color-primary); }
+  .br-row .br-taglink { margin-left: auto; }
+  .br-row .br-taglink + .br-dot { margin-left: 12px; }
+  .br-docmark { display: inline-grid; place-items: center; color: oklch(from var(--color-base-content) l c h / .65); flex: none; }
+  .br-docmark-btn { border: 0; background: none; cursor: pointer; padding: 0; }
+  .br-docmark:hover { color: var(--color-primary); }
+  .br-td-name .br-docmark { margin-left: 8px; }
+  .br-dot-green { background: var(--color-success); } .br-dot-amber { background: var(--color-warning); } .br-dot-red { background: var(--color-error); }
+  /* deleted-items-filter: removed rows render muted with a "Deleted" badge + "since" caption. */
+  .br-row[data-removed="1"], .br-trow[data-removed="1"] { opacity: .5; }
+  .br-deleted { display: inline-flex; align-items: center; gap: 8px; flex: none; min-width: 0; }
+  .br-del-badge { font-weight: 600; }
+  .br-del-since { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* flat */
+  /* Flat — same style as the Backups run-history table: daisyUI `table text-sm`
+     (default row height = generous spacing, 14px body), muted uppercase header (no fill),
+     soft semantic Health badge, whole-row clickable, a trailing Open affordance. */
+  /* `overflow` deliberately absent — see `.br-tree` above: the global `[data-grid-fit]` rule owns
+     it, and a scoped declaration here would win and strand the rows. */
+  /* Chrome is the shared `.tbl-frame` on the element itself. */
+  /* `.br-table`, its `<thead>` and its `<th>`s moved to the is:global block at the top of this
+     file — see the note there. They are rendered by `components/ui/Table.astro` now, so nothing
+     under the vessel's root carries THIS file's scope hash and a scoped rule naming them matches
+     nothing, silently, with every gate green. The `<td>`s below still arrive through the slot and
+     still carry the caller's hash, so they stay here. */
+  .br-trow { cursor: pointer; }
+  /* .br-trow hover from shared .row-clickable */
+  .br-trow[hidden] { display: none; }
+  .br-trow td { white-space: nowrap; }
+  /* Row height moved to is:global — it names `.br-table`, which is the vessel's `<table>`. */
+  /* Name cell: keep the <td> a normal table-cell so it stretches to the row height like its
+     siblings. A `display:flex` <td> drops out of the table model and shrinks to its content,
+     so it reads SHORTER than the neighbouring cells — do the icon+name flex on an inner wrapper. */
+  .br-td-name { vertical-align: middle; }
+  .br-namecell { display: flex; align-items: center; gap: 8px; }
+  .br-trow .br-name { font-size: var(--t-14); }
+  /* .br-openlink replaced by the shared .row-go chevron */
+
+  .br-empty { display: none; flex-direction: column; align-items: center; gap: 8px; padding: 48px 20px; text-align: center; color: oklch(from var(--color-base-content) l c h / .65); }
+  .br-empty[data-br-empty]:not([hidden]) { display: flex; }
+  .br-empty p { font-size: var(--t-13); margin: 0; }
+</style>
+
+<script>
+  import { createPager } from '../ui/tablePager';
+  import { mountRefineCollapse } from '../../lib/refineCollapse';
+  import { wireRowKeys } from '../../lib/wireRowKeys';
+  import { BR_FLAT_SORT_KEYS } from './schemaTableHead';
+
+  function wireBrowse() {
+    const root = document.querySelector<HTMLElement>('[data-browse]');
+    if (!root || root.dataset.brWired) return;
+    root.dataset.brWired = '1';
+
+    // Folded refinements — the shared control (lib/refineCollapse.ts), the same call every Data tab
+    // makes. Seven facets is the widest refinement row in the app, and measured it wrapped this
+    // toolbar to two lines at a 1440 laptop with one panel open (793px of toolbar). `always: true`
+    // for the same reason Data uses it and for Oleh's section rule: a fold that only fires when the
+    // column is small makes Browse disagree with Automations at the identical window size, and this
+    // section's whole complaint was toolbars that could not make up their mind.
+    const tb = root.querySelector<HTMLElement>('.sch-tb');
+    if (tb) mountRefineCollapse({ toolbar: tb, selectors: ['[data-facet]'], always: true });
+    // Totals exclude removed (deleted) rows by default; the All variants count them in when
+    // "Include removed" is on, so the entity count stays coherent either way.
+    const totalFlatAll = root.querySelectorAll('.br-trow').length;
+    const totalFlatActive = root.querySelectorAll('.br-trow:not([data-removed="1"])').length;
+    const totalTreeAll = root.querySelectorAll('.br-tree .br-row').length;
+    const totalTreeActive = root.querySelectorAll('.br-tree .br-row:not([data-removed="1"])').length;
+
+    const treeView = root.querySelector<HTMLElement>('[data-br-view="tree"]')!;
+    const flatView = root.querySelector<HTMLElement>('[data-br-view="flat"]')!;
+    const emptyEl = root.querySelector<HTMLElement>('[data-br-empty]')!;
+    const countEl = root.querySelector<HTMLElement>('[data-br-count]')!;
+    const clearBtns = Array.from(root.querySelectorAll<HTMLElement>('[data-br-clear]'));
+
+    // Filter state.
+    let query = '';
+    const hidden: Record<string, Set<string>> = { brbase: new Set(), bretype: new Set(), brftype: new Set(), brvtype: new Set(), brhealth: new Set() };
+    // Tri-state single-select filters (defaults = show everything active).
+    let descFilter = 'all';    // all | with | without
+    let statusFilter = 'active'; // active | removed | all  (removed = deleted-from-Airtable, kept for history)
+    /* TREE IS THE DEFAULT AT EVERY WIDTH. Flat-by-default shipped for one afternoon, on the
+       reference finding that five of six products drill rather than indent. Oleh's call after using
+       it: keep the desktop view and let it be panned — so the mode a reader lands in no longer
+       depends on how wide their window happens to be. The toggle is still one tap away. */
+    let mode: 'tree' | 'flat' = 'tree';
+
+    // How many fields a table node shows before the "Show N more" row, and how many each click
+    // adds. 25 fills a screen without the tree ever rendering a 900-row table in one go.
+    const FIELD_CHUNK = 25;
+    // Back to the first chunk everywhere — the tree's counterpart to a pager returning to page 1.
+    const resetChunks = () => root.querySelectorAll<HTMLElement>('[data-br-node-table]').forEach((n) => { delete n.dataset.brCap; delete n.dataset.brVcap; });
+
+    // Pager — Flat mode only (the shared control; page size is a user preference under its own key,
+    // page is ephemeral). Every filter / search / sort / mode change resets to page 1.
+    const pager = createPager({
+      root, name: 'brflat', sizes: [25, 50, 100], defaultSize: 50,
+      storageKey: 'sch-br-pagesize', onChange: () => apply(),
+    });
+
+    const rowVisible = (el: HTMLElement) => {
+      const kind = el.dataset.kind!;
+      const isRemoved = el.dataset.removed === '1';
+      if (statusFilter === 'active' && isRemoved) return false;
+      if (statusFilter === 'removed' && !isRemoved) return false;
+      if (query && !(el.dataset.search || '').includes(query)) return false;
+      if (hidden.bretype.has(kind)) return false;
+      if (el.dataset.base && hidden.brbase.has(el.dataset.base)) return false;
+      if (el.dataset.health && hidden.brhealth.has(el.dataset.health)) return false;
+      if (kind === 'field' && el.dataset.ftype && hidden.brftype.has(el.dataset.ftype)) return false;
+      if (kind === 'view' && el.dataset.vtype && hidden.brvtype.has(el.dataset.vtype)) return false;
+      if (descFilter === 'with' && el.dataset.desc === 'none') return false;
+      if (descFilter === 'without' && el.dataset.desc !== 'none') return false;
+      return true;
+    };
+
+    /**
+     * Bound ONE group of leaf rows inside a table node (pattern-node-showmore) and return how many
+     * MATCHED (not how many are on screen — the toolbar reports the filtered total). Each group
+     * owns its own cap key and its own "Show N more" button, so fields and views never share a
+     * budget: 4 fields don't disappear under 100 views, and 900 fields don't hide the views.
+     */
+    const capGroup = (tnode: HTMLElement, rowSel: string, moreSel: string, capKey: 'brCap' | 'brVcap'): number => {
+      const matches: HTMLElement[] = [];
+      tnode.querySelectorAll<HTMLElement>(rowSel).forEach((r) => {
+        r.hidden = true;
+        if (rowVisible(r)) matches.push(r);
+      });
+      const cap = Number(tnode.dataset[capKey]) || FIELD_CHUNK;
+      matches.slice(0, cap).forEach((r) => { r.hidden = false; });
+      const rest = matches.length - cap;
+      const moreBtn = tnode.querySelector<HTMLElement>(moreSel);
+      if (moreBtn) {
+        moreBtn.hidden = rest <= 0;
+        const label = moreBtn.querySelector<HTMLElement>('[data-br-more-label]');
+        if (label && rest > 0) label.textContent = `Show ${Math.min(FIELD_CHUNK, rest)} more of ${matches.length.toLocaleString()}`;
+      }
+      return matches.length;
+    };
+
+    function apply() {
+      // Flat rows — filter first, then the pager applies the window LAST (pattern-table-toolbar).
+      const matched: HTMLElement[] = [];
+      flatView.querySelectorAll<HTMLElement>('.br-trow').forEach((r) => {
+        r.hidden = true;
+        if (rowVisible(r)) matched.push(r);
+      });
+      const shown = matched.length;
+      pager.window(matched).forEach((r) => { r.hidden = false; });
+      // Tree rows: a field shows on its own merit; a table shows if it matches or has a visible field; a base if it matches or has a visible table.
+      let treeShown = 0;
+      root.querySelectorAll<HTMLElement>('[data-br-node-table]').forEach((tnode) => {
+        const tableRow = tnode.querySelector<HTMLElement>('.br-row-table')!;
+        // A tree gets no pager, but it still has to be bounded — cap each table's fields and offer
+        // the next chunk (pattern-node-showmore). `treeShown` still counts every MATCHING field, so
+        // the toolbar keeps reporting the filtered total rather than what is on screen.
+        const fieldMatches = capGroup(tnode, '.br-row-field', '[data-br-more="fields"]', 'brCap');
+        // Views cap SEPARATELY (view-schema-details, Decision 1). This is not cosmetic: the cap
+        // used to iterate `.br-row-field` only, so any row carrying a different class escaped it
+        // entirely — a table with 100+ views would have rendered all 100+ in one node.
+        const viewMatches = capGroup(tnode, '.br-row-view', '[data-br-more="views"]', 'brVcap');
+        treeShown += fieldMatches + viewMatches;
+        const anyField = fieldMatches > 0;
+        const anyView = viewMatches > 0;
+        // The group header carries the FILTERED count, not the fixture count.
+        const vgroup = tnode.querySelector<HTMLElement>('[data-br-vgroup]');
+        if (vgroup) {
+          vgroup.hidden = !anyView;
+          const vcount = vgroup.querySelector<HTMLElement>('[data-br-vcount]');
+          if (vcount) vcount.textContent = String(viewMatches);
+        }
+        const tableSelf = rowVisible(tableRow);
+        const showTable = tableSelf || anyField || anyView;
+        tnode.hidden = !showTable;
+        if (tableSelf) treeShown++;
+        if (anyField || anyView) tnode.classList.add('br-open');
+      });
+      // view-schema-details: the base-level "table not resolved" bucket. It is NOT a table node
+      // (it has no .br-row-table, so the loop above would dereference null on it), so it filters,
+      // caps and counts here — same cap key and same "Show N more" contract as a table's views.
+      root.querySelectorAll<HTMLElement>('[data-br-node-orphan]').forEach((onode) => {
+        const viewMatches = capGroup(onode, '.br-row-view', '[data-br-more="views"]', 'brVcap');
+        treeShown += viewMatches;
+        onode.hidden = viewMatches === 0;
+        const vcount = onode.querySelector<HTMLElement>('[data-br-vcount]');
+        if (vcount) vcount.textContent = String(viewMatches);
+      });
+      root.querySelectorAll<HTMLElement>('[data-br-node-base]').forEach((bnode) => {
+        const baseRow = bnode.querySelector<HTMLElement>('.br-row-base')!;
+        const anyTable = Array.from(bnode.querySelectorAll<HTMLElement>('[data-br-node-table],[data-br-node-orphan]')).some((t) => !t.hidden);
+        const baseSelf = rowVisible(baseRow);
+        bnode.hidden = !(baseSelf || anyTable);
+        if (baseSelf) treeShown++;
+        if (anyTable && (query || activeFilters())) bnode.classList.remove('br-collapsed');
+      });
+
+      const includeRemoved = statusFilter !== 'active';
+      const modeTotal = mode === 'flat' ? (includeRemoved ? totalFlatAll : totalFlatActive) : (includeRemoved ? totalTreeAll : totalTreeActive);
+      const visibleCount = mode === 'flat' ? shown : treeShown;
+      const any = activeFilters() || !!query;
+      countEl.textContent = any ? `Showing ${visibleCount} of ${modeTotal}` : `${modeTotal} entities`;
+
+      const noResults = visibleCount === 0;
+      emptyEl.hidden = !noResults;
+      (mode === 'flat' ? flatView : treeView).hidden = noResults;
+      clearBtns.forEach((b) => (b.hidden = !any));
+    }
+
+    const activeFilters = () => Object.values(hidden).some((s) => s.size) || descFilter !== 'all' || statusFilter !== 'active';
+
+    // Search (filter-in-place) from EntitySearch.
+    document.addEventListener('schema:searchInput', (ev) => {
+      const d = (ev as CustomEvent).detail;
+      if (d.name !== 'browse') return;
+      query = (d.query || '').toLowerCase();
+      pager.reset(); resetChunks();
+      apply();
+    });
+
+    // Facet changes — multi facets emit `hidden[]`; the tri-state single facets emit `value`.
+    document.addEventListener('facetchange', (ev) => {
+      const d = (ev as CustomEvent).detail;
+      if (d.name in hidden) { hidden[d.name] = new Set(d.hidden || []); pager.reset(); resetChunks(); apply(); return; }
+      if (d.name === 'brdesc') { descFilter = d.value || 'all'; pager.reset(); resetChunks(); apply(); return; }
+      if (d.name === 'brstatus') { statusFilter = d.value || 'active'; pager.reset(); resetChunks(); apply(); return; }
+    });
+
+    // Mode toggle.
+    root.querySelectorAll<HTMLElement>('[data-br-mode]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        mode = btn.dataset.brMode as 'tree' | 'flat';
+        root.querySelectorAll('[data-br-mode]').forEach((b) => b.classList.toggle('sch-tb-mode-active', b === btn));
+        treeView.hidden = mode !== 'tree';
+        flatView.hidden = mode !== 'flat';
+        pager.reset();
+        apply();
+      });
+    });
+
+    // Tagged column (B9): the hover popover lists doc/chat tags. Any click inside the Tagged
+    // dropdown must NOT open the row's entity panel — stop it bubbling to the document-level
+    // [data-entity-open] handler. A doc row opens the doc; a chat row jumps to the Chat tab + opens
+    // the thread; the bare trigger just toggles the popover.
+    root.addEventListener('click', (ev) => {
+      const target = ev.target as HTMLElement;
+      const inTagDd = target.closest<HTMLElement>('[data-br-tagdd]');
+      const docLink = target.closest<HTMLElement>('[data-doc-open]');
+      const chatLink = target.closest<HTMLElement>('[data-chat-open]');
+      if (!inTagDd && !docLink && !chatLink) return;
+      ev.preventDefault(); ev.stopPropagation();
+      if (docLink) { document.dispatchEvent(new CustomEvent('schema:openDoc', { detail: { id: docLink.dataset.docOpen } })); (document.activeElement as HTMLElement | null)?.blur(); return; }
+      if (chatLink) {
+        document.querySelector<HTMLElement>('[data-tab="chat"]')?.click();
+        document.dispatchEvent(new CustomEvent('schema:openChat', { detail: { id: chatLink.dataset.chatOpen } }));
+        (document.activeElement as HTMLElement | null)?.blur();
+      }
+    });
+
+    // "Show N more" — reveal the NEXT chunk, never the whole tail (pattern-node-showmore).
+    root.addEventListener('click', (ev) => {
+      const btn = (ev.target as HTMLElement).closest<HTMLElement>('[data-br-more]');
+      if (!btn) return;
+      ev.preventDefault(); ev.stopPropagation();
+      const node = btn.closest<HTMLElement>('[data-br-node-table]')!;
+      const key = btn.getAttribute('data-br-more') === 'views' ? 'brVcap' : 'brCap';
+      node.dataset[key] = String((Number(node.dataset[key]) || FIELD_CHUNK) + FIELD_CHUNK);
+      apply();
+    });
+
+    // Views group collapse/expand — its own twist, independent of the table's.
+    root.addEventListener('click', (ev) => {
+      const head = (ev.target as HTMLElement).closest<HTMLElement>('[data-br-vtoggle]');
+      if (!head) return;
+      ev.preventDefault(); ev.stopPropagation();
+      const g = head.closest<HTMLElement>('[data-br-vgroup]')!;
+      const collapsed = g.hasAttribute('data-collapsed');
+      if (collapsed) g.removeAttribute('data-collapsed'); else g.setAttribute('data-collapsed', '');
+      head.setAttribute('aria-expanded', String(collapsed));
+    });
+
+    // Tree expand/collapse (twist). Stop propagation so the row's open-panel doesn't fire.
+    root.addEventListener('click', (ev) => {
+      const twist = (ev.target as HTMLElement).closest<HTMLElement>('[data-br-toggle]');
+      if (!twist) return;
+      ev.preventDefault(); ev.stopPropagation();
+      const node = twist.closest<HTMLElement>('.br-node')!;
+      if (node.hasAttribute('data-br-node-base')) node.classList.toggle('br-collapsed');
+      else node.classList.toggle('br-open');
+    });
+    // Keyboard open on rows — D46: `lib/wireRowKeys` is the ONE implementation. The hand-rolled
+    // copy that stood here also fired on the twist and the views-group header, both of which are
+    // real <button>s inside the row; the module's nested-interactive stand-down ends that.
+    wireRowKeys(root, {
+      rowSelector: '[data-entity-open]',
+      onActivate: (row) =>
+        document.dispatchEvent(new CustomEvent('schema:openEntity', { detail: { id: row.dataset.entityOpen } })),
+    });
+
+    // Flat sort.
+    //
+    // `thead [data-sort-col]`, NOT the old `[data-br-sort]`. The vessel renders the header and puts
+    // the attribute on the `<button>` INSIDE the `<th>` — which is what makes this sort reachable
+    // from a keyboard for the first time; it was mouse-only on every Schema table. The column KEY
+    // is no longer written beside a hand-numbered index: the index is the vessel's, and
+    // `BR_FLAT_SORT_KEYS[i]` turns it into the `data-*` key the comparator reads, so the two
+    // cannot disagree the way `data-br-sort="health" data-sort-col="3"` invited them to.
+    let sortKey: string = 'health'; let sortDir = 1;
+    const tbody = flatView.querySelector<HTMLElement>('[data-brflat-body]')!;
+    const flatHeads = () => Array.from(flatView.querySelectorAll<HTMLElement>('thead [data-sort-col]'));
+    /**
+     * Paint the active column. `data-sort-dir` goes on the BUTTON (it drives the shared caret and
+     * is what `lib/table/tableA11y` mirrors into `aria-sort` on the `<th>`); `.br-th-active` goes on
+     * the `<th>`, because the vessel makes the button inherit its colour and a class on the button
+     * would be overridden by that inherit.
+     */
+    const paintFlatHeads = (active: HTMLElement | null) => {
+      flatHeads().forEach((h) => {
+        const on = h === active;
+        h.closest('th')?.classList.toggle('br-th-active', on);
+        if (on) h.setAttribute('data-sort-dir', sortDir === 1 ? 'asc' : 'desc');
+        else h.removeAttribute('data-sort-dir');
+      });
+    };
+    // The default order — Health, ascending — used to be SSR-painted as `data-sort-dir="asc"` on
+    // the `<th>`, which no screen reader ever heard because there was no `aria-sort` to carry it.
+    // Applying it here runs it through the same path a click takes, so the caret AND the
+    // announcement are both correct from first paint.
+    paintFlatHeads(flatHeads().find((h) => BR_FLAT_SORT_KEYS[Number(h.dataset.sortCol)] === 'health') ?? null);
+    flatHeads().forEach((th) => {
+      const key = BR_FLAT_SORT_KEYS[Number(th.dataset.sortCol)];
+      if (!key) return;
+      th.addEventListener('click', () => {
+        if (key === sortKey) sortDir *= -1; else { sortKey = key; sortDir = 1; }
+        // THE SAME AFFORDANCE AS EVERY OTHER SORTED TABLE IN THE APP (2026-08-11). Ten views use
+        // the shared `wireTableSort`, whose active header shows a ▲/▼ caret painted by CSS off
+        // `[data-sort-col][data-sort-dir]`. This table has its own sort, and its only feedback was
+        // turning the header blue — so clicking a column here looked like a selection and gave no
+        // direction. Oleh found it by using it; the audit missed it because a second implementation
+        // of one job is invisible to a rule that reads tokens on a line.
+        // The comparator below stays for now (it knows this table's health ranking). What changes is
+        // that the header speaks the shared contract, so the shared caret CSS applies unmodified.
+        paintFlatHeads(th);
+        const rows = Array.from(tbody.querySelectorAll<HTMLElement>('.br-trow'));
+        rows.sort((a, b) => {
+          let av: string | number, bv: string | number;
+          if (key === 'health') { av = Number(a.dataset.healthrank); bv = Number(b.dataset.healthrank); }
+          else { av = (a.dataset[key] || ''); bv = (b.dataset[key] || ''); }
+          return (av < bv ? -1 : av > bv ? 1 : 0) * sortDir;
+        });
+        rows.forEach((r) => tbody.appendChild(r));
+        // Re-sorting reorders the whole set, so page 1 is a different 50 rows — re-window.
+        pager.reset();
+        apply();
+      });
+    });
+
+    // Tree sort — clicking a column header sorts the FIELDS within each table group (contextual:
+    // the Base ▸ Table structure never moves, only the leaf field rows reorder inside their table).
+    let treeSortKey = ''; let treeSortDir = 1;
+    const numericSort = new Set(['status', 'tags']);
+    root.querySelectorAll<HTMLElement>('[data-br-tsort]').forEach((h) => {
+      h.addEventListener('click', () => {
+        const key = h.dataset.brTsort!;
+        if (key === treeSortKey) treeSortDir *= -1; else { treeSortKey = key; treeSortDir = 1; }
+        root.querySelectorAll('[data-br-tsort]').forEach((x) => x.removeAttribute('data-sort-active'));
+        h.setAttribute('data-sort-active', treeSortDir > 0 ? 'asc' : 'desc');
+        const dkey = 's' + key.charAt(0).toUpperCase() + key.slice(1); // e.g. name → sName
+        const numeric = numericSort.has(key);
+        const sortGroups: [string, string][] = [['.br-node-table > .br-group', ':scope > .br-row-field'], ['.br-node-table [data-br-vbody]', ':scope > .br-row-view'], ['.br-node-orphan [data-br-vbody]', ':scope > .br-row-view']];
+        sortGroups.forEach(([groupSel, rowSel]) => root.querySelectorAll<HTMLElement>(groupSel).forEach((group) => {
+          const rows = Array.from(group.querySelectorAll<HTMLElement>(rowSel));
+          rows.sort((a, b) => {
+            const av = a.dataset[dkey] ?? ''; const bv = b.dataset[dkey] ?? '';
+            let cmp: number;
+            if (numeric) cmp = (Number(av) || 0) - (Number(bv) || 0);
+            else { const ae = av === '', be = bv === ''; if (ae !== be) return ae ? 1 : -1; cmp = av.localeCompare(bv); }
+            return cmp * treeSortDir;
+          });
+          rows.forEach((r) => group.appendChild(r));
+          // Re-appending the rows walks them PAST the "Show N more" button (it is a child of the
+          // same group), so push it back to the end or the affordance ends up mid-list.
+          const more = group.querySelector<HTMLElement>(':scope > [data-br-more]');
+          if (more) group.appendChild(more);
+        }));
+      });
+    });
+
+    // Clear.
+    clearBtns.forEach((b) => b.addEventListener('click', () => {
+      query = ''; descFilter = 'all'; statusFilter = 'active';
+      Object.keys(hidden).forEach((k) => (hidden[k] = new Set()));
+      root.querySelectorAll<HTMLInputElement>('[data-es-field]').forEach((f) => (f.value = ''));
+      // facetreset resets every facet (multi → all on; single → first option = the default).
+      root.querySelectorAll<HTMLElement>('[data-facet]').forEach((ff) => ff.dispatchEvent(new CustomEvent('facetreset')));
+      pager.reset(); resetChunks();
+      apply();
+    }));
+
+    // The starting mode has to be APPLIED, not just chosen. Three things say which view you are in —
+    // the highlighted toggle button and the two `hidden` flags — and the click handler sets all
+    // three. Setting only the variable left a narrow reader looking at both views at once under a
+    // highlighted `Tree` button, which is what the measurement showed.
+    apply();
+  }
+  wireBrowse();
+  document.addEventListener('astro:after-swap', wireBrowse);
+</script>
