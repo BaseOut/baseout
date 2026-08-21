@@ -19,8 +19,9 @@
  *   · WIRES the real ones: billing "Open portal" → `action: 'billing-portal'` (POST /api/billing/portal);
  *     usage → `href: '/reports'`; retention → `href: '/retention'`; API tokens + AI keys render as
  *     real panels inside the Developer pane (SettingsView, not rows here).
- *   · GATES the rest honestly: `gated` renders a text row `readonly` and a select/toggle `disabled`
- *     (no fake "Saved"); deferred-action buttons/links keep their honest `note`. Nothing is invented.
+ *   · GATES the rest honestly: org identity, notification prefs, and sessions have no persistence
+ *     route yet. Account name, Space name, and auto-add now persist. `gated` still renders a text
+ *     row `readonly` and a select/toggle `disabled` (no fake "Saved").
  */
 
 /**
@@ -118,7 +119,7 @@ export interface SettingsCategory {
 export interface SettingsSubject {
   user: { name: string; email: string; image?: string | null };
   org: { name: string; slug: string } | null;
-  space: { name: string } | null;
+  space: { id: string; name: string; autoAddFutureBases: boolean } | null;
 }
 
 /** Initials for the avatar, from the real name — same derivation the sidebar uses. */
@@ -178,22 +179,20 @@ function spaceCategory(space: SettingsSubject['space']): SettingsCategory {
       {
         title: 'This Space',
         rows: [
-          {
-            id: 'space-name',
-            label: 'Space name',
-            desc: 'A Space is bound to one platform — currently Airtable.',
-            control: 'text',
-            value: space.name,
-            gated: true,
-          },
-          {
-            id: 'space-autoadd',
-            label: 'Auto-add new bases',
-            desc: 'Back up bases that appear in the source after this Space was set up. Configured per backup on the Backups screen.',
-            control: 'toggle',
-            on: true,
-            gated: true,
-          },
+            {
+              id: 'space-name',
+              label: 'Space name',
+              desc: 'A Space is bound to one platform — currently Airtable.',
+              control: 'text',
+              value: space.name,
+            },
+            {
+              id: 'space-autoadd',
+              label: 'Auto-add new bases',
+              desc: 'Back up bases that appear in the source after this Space was set up.',
+              control: 'toggle',
+              on: space.autoAddFutureBases,
+            },
         ],
       },
       {
@@ -275,8 +274,6 @@ export function buildCategories(subject: SettingsSubject): SettingsCategory[] {
               desc: 'Shown on activity and in reports.',
               control: 'text',
               value: user.name,
-              // No user-profile update route in apps/web yet — shown, not editable here.
-              gated: true,
             },
             {
               id: 'account-email',
@@ -473,6 +470,7 @@ export function buildCategories(subject: SettingsSubject): SettingsCategory[] {
         },
         {
           title: 'Channels',
+          help: 'Inbox already shows in-app events. Email and webhook delivery, and these toggles, are not saved yet.',
           rows: [
             { id: 'notify-email', label: 'Email', desc: 'Sent to your account address.', control: 'toggle', on: true, gated: true },
             { id: 'notify-inapp', label: 'In-app', desc: 'Appears in the Inbox.', control: 'toggle', on: true, gated: true },

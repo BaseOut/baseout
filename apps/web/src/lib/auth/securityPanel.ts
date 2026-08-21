@@ -18,10 +18,12 @@
  *     this list is the one dismissal in the product that can cost someone their
  *     account, so the gate is the feature.
  *
- * There is no backend in this mirror, so no code is ever checked. What IS real is
- * the shape of the flow: which control unlocks which, and what survives an
- * abandoned run.
+ * Production enrollment, verify, and disable go through `/api/auth/two-factor/*`
+ * (web-auth-2fa). Opening the wizard still changes nothing: `setEnabled(true)`
+ * is called only after verify-totp succeeds.
  */
+import { setButtonLoading } from '../ui';
+import { secretFromOtpauth } from './otpauth';
 
 export type SecurityStage = 'idle' | 'scan' | 'verify' | 'save' | 'disable' | 'regenerate';
 
@@ -152,11 +154,74 @@ function mount(root: HTMLElement): void {
   bindCodeGate(verifyForm, verifySubmit);
   bindCodeGate(disableForm, disableSubmit);
 
+  const errorEl = q<HTMLElement>('[data-sec-error]');
+  const setError = (message: string): void => {
+    if (!errorEl) return;
+    errorEl.textContent = message;
+    errorEl.hidden = !message;
+  };
+
+  const readCode = (form: HTMLFormElement | null): string => {
+    const input = form?.querySelector<HTMLInputElement>('input:not([type="checkbox"]):not([type="hidden"])');
+    return input?.value.replace(/\s/g, '') ?? '';
+  };
+
+  const authJson = async (
+    path: string,
+    body: Record<string, unknown>,
+  ): Promise<{ ok: boolean; data: Record<string, unknown> }> => {
+    const res = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body),
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    return { ok: res.ok, data };
+  };
+
+  const applyEnrollment = (totpURI: string, codes: string[]): void => {
+    const secret = secretFromOtpauth(totpURI);
+    const secretEl = q<HTMLElement>('[data-sec-secret]');
+    if (secretEl) secretEl.textContent = secret || totpURI;
+    paintCodes(codes);
+  };
+
+  const ensureEnrollment = async (btn: HTMLButtonElement): Promise<boolean> => {
+    if ((q<HTMLElement>('[data-sec-secret]')?.textContent ?? '').replace('—', '').trim()) {
+      return true;
+    }
+    setError('');
+    setButtonLoading(btn, true);
+    try {
+      const { ok, data } = await authJson('/api/auth/two-factor/enable', {});
+      const totpURI = typeof data.totpURI === 'string' ? data.totpURI : '';
+      const codes = Array.isArray(data.backupCodes) ? data.backupCodes.map(String) : [];
+      if (!ok || !totpURI) {
+        setError(typeof data.message === 'string' ? data.message : 'Could not start two-factor setup. Try again.');
+        return false;
+      }
+      applyEnrollment(totpURI, codes);
+      return true;
+    } catch {
+      setError('Could not start two-factor setup. Try again.');
+      return false;
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  };
+
   /* ---- transitions ---- */
 
   all<HTMLElement>('[data-sec-go]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const target = btn.dataset.secGo;
+      if (target === 'scan') {
+        void ensureEnrollment(btn as HTMLButtonElement).then((ok) => {
+          if (ok && isStage(target)) setStage(target);
+        });
+        return;
+      }
       if (isStage(target)) setStage(target);
     });
   });
@@ -165,17 +230,50 @@ function mount(root: HTMLElement): void {
   verifyForm?.addEventListener('submit', (e) => {
     e.preventDefault();
     if (verifySubmit?.disabled) return;
-    setEnabled(true);
-    paintCodes(firstCodes);
-    setCodeOrigin('enrol');
-    setStage('save');
+    const code = readCode(verifyForm);
+    if (!code) return;
+    setButtonLoading(verifySubmit, true);
+    void authJson('/api/auth/two-factor/verify-totp', { code })
+      .then(({ ok, data }) => {
+        if (!ok) {
+          setError(typeof data.message === 'string' ? data.message : 'That code was not accepted. Wait for the next one.');
+          return;
+        }
+        setError('');
+        setEnabled(true);
+        setCodeOrigin('enrol');
+        setStage('save');
+      })
+      .catch(() => {
+        setError('Could not verify that code. Try again.');
+      })
+      .finally(() => {
+        setButtonLoading(verifySubmit, false);
+      });
   });
 
   disableForm?.addEventListener('submit', (e) => {
     e.preventDefault();
     if (disableSubmit?.disabled) return;
-    setEnabled(false);
-    setStage('idle');
+    const code = readCode(disableForm);
+    if (!code) return;
+    setButtonLoading(disableSubmit, true);
+    void authJson('/api/auth/two-factor/disable', { code })
+      .then(({ ok, data }) => {
+        if (!ok) {
+          setError(typeof data.message === 'string' ? data.message : 'A valid two-factor code is required to turn this off.');
+          return;
+        }
+        setError('');
+        setEnabled(false);
+        setStage('idle');
+      })
+      .catch(() => {
+        setError('Could not turn two-factor off. Try again.');
+      })
+      .finally(() => {
+        setButtonLoading(disableSubmit, false);
+      });
   });
 
   q<HTMLButtonElement>('[data-sec-regen-confirm]')?.addEventListener('click', () => {

@@ -4,8 +4,8 @@
 // Harness fixture.
 import type { ReportDefinition } from '@web/lib/reports/types';
 import SidebarLayout from '../../layouts/SidebarLayout.astro';
-import ReportDefinitionView from '../../views/ReportDefinitionView.astro';
-import NotFoundView from '../../views/NotFoundView.astro';
+import ReportDefinitionView from '@web/views/ReportDefinitionView.astro';
+import NotFoundView from '@web/views/NotFoundView.astro';
 import { getBreadcrumbs } from '@web/lib/config';
 import { buildEntityIndex } from '../../components/schema/schemaEntities';
 import { reportDefinitions, reportMembers, reportDetails } from '../../fixtures/reports';

@@ -97,6 +97,8 @@ export interface BaseHealth {
   baseName: string;
   score: number;
   band: 'green' | 'amber' | 'red';
+  /** True when there is no real grade — show an honest empty/clean state, not a red 0. */
+  unscored?: boolean;
   metrics: HealthMetric[];
   issues: HealthIssue[];
   /** Recent grades (oldest → newest; last = current) — drives the score trend sparkline. */
@@ -124,11 +126,12 @@ const canEditPrompts = aiState === 'ready';
  * SOLID semantic used by the band dot/legend chips) stays a class string: it has no soft catalog
  * twin and is not a status pill.
  */
-type BandVariant = 'success' | 'warning' | 'error';
-const BAND: Record<string, { label: string; badge: string; scoreVariant: BandVariant; text: string; dot: string; means: string }> = {
+type BandVariant = 'default' | 'success' | 'warning' | 'error';
+const BAND: Record<string, { label: string; badge: string; scoreVariant: BandVariant | 'default'; text: string; dot: string; means: string }> = {
   green: { label: 'Green', badge: 'badge-success', scoreVariant: 'success', text: 'text-success', dot: 'var(--color-success)', means: 'In good shape. Minor polish at most.' },
   amber: { label: 'Yellow', badge: 'badge-warning', scoreVariant: 'warning', text: 'text-warning', dot: 'var(--color-warning)', means: 'A few things could be tidier. Your records are safe.' },
   red: { label: 'Red', badge: 'badge-error', scoreVariant: 'error', text: 'text-error', dot: 'var(--color-error)', means: 'Several things are worth a look. Nothing is broken by us.' },
+  unscored: { label: 'Unscored', badge: 'badge-ghost', scoreVariant: 'default', text: 'text-base-content/65', dot: 'oklch(from var(--color-base-content) l c h / .25)', means: 'No issues on file. This base has not been graded yet.' },
 };
 const SEV = {
   high: { label: 'High', badge: 'badge-soft badge-error', dot: 'var(--color-error)' },
@@ -160,8 +163,9 @@ const SORTS: { v: string; l: string }[] = [
 // Health always uses the two-pane console: a left base list (worst-first, searchable,
 // sortable, scrolls) + the selected base's report on the right. (Single layout — the
 // small-count tab-card variant was removed 2026-06-24.)
-const ordered = [...health].sort((a, b) => a.score - b.score);
+const ordered = [...health].sort((a, b) => Number(a.unscored) - Number(b.unscored) || a.score - b.score);
 const defaultId = ordered[0]?.baseId;
+const bandKey = (b: BaseHealth) => (b.unscored ? 'unscored' : b.band);
 
 // Insights — a typed category maps to a quiet lucide glyph (scanning aid; optional per insight).
 const INSIGHT_CAT_ICON: Record<string, string> = {
@@ -244,8 +248,8 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
         const cc = counts(b.issues);
         const tot = b.issues.length;
         return (
-          <button type="button" class:list={['hl-mrow', { 'is-active': i === 0 }]} role="tab" aria-selected={i === 0} data-hl-card={b.baseId} data-name={b.baseName.toLowerCase()} data-score={b.score}>
-            <Badge size="lg" variant={BAND[b.band].scoreVariant} class="hl-mrow-score">{b.score}<span class="sr-only"> out of 100, {BAND[b.band].label} band</span></Badge>
+          <button type="button" class:list={['hl-mrow', { 'is-active': i === 0 }]} role="tab" aria-selected={i === 0} data-hl-card={b.baseId} data-name={b.baseName.toLowerCase()} data-score={b.unscored ? 101 : b.score}>
+            <Badge size="lg" variant={BAND[bandKey(b)].scoreVariant} class="hl-mrow-score">{b.unscored ? '—' : b.score}<span class="sr-only">{b.unscored ? 'unscored' : ` out of 100, ${BAND[bandKey(b)].label} band`}</span></Badge>
             <span class="hl-mrow-name">{b.baseName}</span>
             <span class="row-go hl-mrow-chev" aria-hidden="true"><span class="iconify lucide--chevron-right size-4"></span></span>
             <span class="hl-mrow-sub">
@@ -268,11 +272,12 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
 
   <div class="hl-details">
     {health.map((b) => {
-      const off = RING_C * (1 - b.score / 100);
+      const bk = bandKey(b);
+      const off = b.unscored ? RING_C : RING_C * (1 - b.score / 100);
       const c = counts(b.issues);
       const tr = b.trend ?? [];
       const tPrev = tr.length > 1 ? tr[tr.length - 2] : null;
-      const tDelta = tPrev == null ? null : b.score - tPrev;
+      const tDelta = b.unscored || tPrev == null ? null : b.score - tPrev;
       const tDir = tDelta == null ? 'flat' : tDelta > 0 ? 'up' : tDelta < 0 ? 'down' : 'flat';
       const insAll = b.insights ?? [];
       const insActive = insAll.filter((i) => !i.archived);
@@ -284,12 +289,12 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
           {/* one block: overall ring (left) · recommendation, bars, freshness + methodology (right) */}
           <div class="hl-fblock">
             <div class="hl-ringwrap">
-              <div class="hl-ring" role="img" aria-label={`Health score ${b.score} of 100, ${BAND[b.band].label} band`}>
+              <div class="hl-ring" role="img" aria-label={b.unscored ? `${b.baseName} unscored` : `Health score ${b.score} of 100, ${BAND[bk].label} band`}>
                 <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true">
                   <circle cx="46" cy="46" r="34" fill="none" stroke="oklch(from var(--color-base-content) l c h / .08)" stroke-width="7" />
-                  <circle cx="46" cy="46" r="34" fill="none" stroke={BAND[b.band].dot} stroke-width="7" stroke-linecap="round" stroke-dasharray={RING_C} stroke-dashoffset={off} transform="rotate(-90 46 46)" />
+                  <circle cx="46" cy="46" r="34" fill="none" stroke={BAND[bk].dot} stroke-width="7" stroke-linecap="round" stroke-dasharray={RING_C} stroke-dashoffset={off} transform="rotate(-90 46 46)" />
                 </svg>
-                <span class={`hl-ring-num ${BAND[b.band].text}`}>{b.score}</span>
+                <span class={`hl-ring-num ${BAND[bk].text}`}>{b.unscored ? '—' : b.score}</span>
               </div>
               {tDelta != null && (
                 <span class={`hl-ring-trend hl-trend-${tDir}`}>
@@ -300,7 +305,9 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
             </div>
             <div class="hl-fblock-meta">
               <h2 class="hl-fblock-name">{b.baseName}</h2>
-              <p class="hl-means">{BAND[b.band].means}</p>
+              <p class="hl-means">{BAND[bk].means}</p>
+              {b.metrics.length > 0 ? (
+              <>
               <div class="hl-bd-head">
                 <span class="hl-bd-title">Score breakdown</span>
                 <span class="hl-bd-hint">Each area is scored 0–100 — lower scores are where to look. Expand a row to see what was found.</span>
@@ -349,6 +356,10 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
                 ))}
               </div>
               </div>
+              </>
+              ) : (
+                <p class="hl-bd-empty">No score breakdown yet. Areas appear once this base has been graded.</p>
+              )}
               {b.assessedAt && (
                 <div class="hl-fmeta">
                   <span class="hl-fmeta-time"><span class="iconify lucide--clock size-3.5" aria-hidden="true"></span>Assessed {fmtDateTime(b.assessedAt)}</span>
@@ -734,7 +745,7 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
   .hl-ring-cap { font-size: var(--t-11); color: oklch(from var(--color-base-content) l c h / .65); font-variant-numeric: tabular-nums; }
   .hl-fblock-meta { flex: 1; min-width: 0; }
   .hl-fblock-name { font-size: var(--t-18); font-weight: 680; }
-  .hl-means { font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-means { font-size: var(--t-14); color: oklch(from var(--color-base-content) l c h / .65); white-space: normal; overflow: visible; text-overflow: unset; }
   .hl-fblock-meta .hl-means { margin-top: 4px; margin-bottom: 0; }
 
   /* category composition */
@@ -748,9 +759,10 @@ const INSIGHTS_SHOWN = 6; // active insights shown before "Show N more"
   .hl-bar-fill { display: block; height: 100%; border-radius: 999px; }
 
   /* H1 — per-metric breakdown: expandable rows (tier badges · bar · weight · score → findings) */
-  .hl-bd-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-top: 20px; }
+  .hl-bd-head { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 20px; }
   .hl-bd-title { font-size: var(--t-14); font-weight: 650; }
-  .hl-bd-hint { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); }
+  .hl-bd-hint { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .65); white-space: normal; overflow: visible; text-overflow: unset; max-width: 62ch; }
+  .hl-bd-empty { margin-top: 16px; font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); }
   /* The metric grid measures its OWN width, not the viewport's — see the markup comment.
      `hl-metrics-wrap` is the query container; both the head band and the rows read it. */
   .hl-metrics-wrap { container-type: inline-size; container-name: hlmetrics; }

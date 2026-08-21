@@ -41,6 +41,7 @@ import {
   backupRuns,
   backupRunBases,
   backupRunTables,
+  connections,
   spaceDatabases,
   spaces,
   subscriptions,
@@ -526,11 +527,31 @@ export async function runsCompleteHandler(
   const result = await processRunComplete(input, {
     fetchRunById: async (id) => {
       const rows = await db
-        .select({ id: backupRuns.id })
+        .select({ id: backupRuns.id, connectionId: backupRuns.connectionId })
         .from(backupRuns)
         .where(eq(backupRuns.id, id))
         .limit(1);
       return rows[0] ?? null;
+    },
+    markConnectionPendingReauth: async ({ connectionId, reason }) => {
+      // Only active → pending_reauth. Preserve an existing pendingReauthAt so
+      // the ~10-day auto-invalidate grace clock does not reset on re-fail.
+      const truncated =
+        reason.length > 500 ? `${reason.slice(0, 497)}...` : reason;
+      await db
+        .update(connections)
+        .set({
+          status: "pending_reauth",
+          pendingReauthAt: sql`COALESCE(${connections.pendingReauthAt}, NOW())`,
+          oauthRefreshLastError: truncated,
+          modifiedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(connections.id, connectionId),
+            eq(connections.status, "active"),
+          ),
+        );
     },
     applyPerBaseCompletion: async (perBase) => {
       // Atomic per-base completion. Removes triggerRunId from trigger_run_ids

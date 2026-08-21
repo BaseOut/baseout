@@ -12,6 +12,7 @@
  * report; Daily dropped (covered by the "on each backup" cadences).
  */
 import { fmtDay, fmtDayShort, fmtRelative } from '../lib/time';
+import { latestRunPreviewCopy } from '../lib/reports/latest-run-preview';
 import type { ReportDefinition, ReportSummary, ReportCadence, ReportDetail, ReportSectionKey } from '../lib/reports/types';
 import type { SchemaEntity, SchemaDoc } from '../components/schema/schemaEntities';
 import { SECTION_ORDER, SECTION_LABEL, scopeLabel, cadenceLabel } from '../lib/reports/view2';
@@ -25,6 +26,7 @@ import { CONFIRM_DESTRUCTIVE } from '../lib/ui';
 import UndoToast from '../components/ui/UndoToast.astro';
 import { describeReportDeletion } from '../lib/reports/deleteReport';
 import Badge from '../components/ui/Badge.astro';
+import { hasRenderableDataHealth } from '../lib/reports/render-guards';
 // The badge vocabulary is IMPORTED, not re-declared. Four maps here were a verbatim second copy of
 // the ones in `lib/reports/view`, which is exactly how the preview miniature and the report body it
 // previews get to disagree about what a status looks like.
@@ -100,6 +102,9 @@ const curCad: ReportCadence = sched?.cadence ?? 'data_backup';
 const runs = (def.runs ?? []).slice().sort((a, b) => b.windowEnd.localeCompare(a.windowEnd));
 const hasRuns = runs.length > 0;
 const latestRun = runs[0] ?? null;
+const latestPreview = latestRun
+  ? latestRunPreviewCopy({ generatedAt: fmtRelative(latestRun.generatedAt) })
+  : null;
 
 /**
  * THE HISTORY COLUMNS, AS DATA (catalog `table`). Six hand-numbered `data-sort-col="0"…"5"` values
@@ -142,6 +147,7 @@ function sparkPoints(data: number[]): string {
 // The definition's scope, in the names a reader knows. `baseNames` is already here for `scopeLabel`;
 // the report body needs the same list so its scope line can name bases instead of `b-sales`.
 const scopeBaseNames = def.baseScope ? def.baseScope.map((id) => baseNames[id] ?? id) : null;
+const currentDataHealth = hasRenderableDataHealth(current?.dataHealth) ? current.dataHealth : null;
 
 ---
 
@@ -206,10 +212,10 @@ const scopeBaseNames = def.baseScope ? def.baseScope.map((id) => baseNames[id] ?
         </>
       ) : hasRuns && latestRun ? (
         /* A run exists but its rendered document isn't loaded in this preview — link out. */
-        <section class="rpd-empty">
+        <section class="rpd-empty rpd-empty-compact">
           <span class="rpd-empty-ic"><span class="iconify lucide--file-chart-column"></span></span>
           <p class="rpd-empty-title">Latest run · {runWindow(latestRun)}</p>
-          <p class="rpd-empty-sub">Generated {since(latestRun.generatedAt)}. Open it for the full breakdown.</p>
+          <p class="rpd-empty-sub">{latestPreview!.when}. {latestPreview!.body}</p>
           <a href={`/reports/run/${latestRun.id}`} class="btn btn-primary btn-sm"><span class="iconify lucide--maximize-2 size-4" aria-hidden="true"></span>Open full report</a>
         </section>
       ) : (
@@ -489,7 +495,7 @@ const scopeBaseNames = def.baseScope ? def.baseScope.map((id) => baseNames[id] ?
                     ) : key === 'trends' ? (
                       <Badge size="sm" class="ml-auto">{current.trends?.metrics.length ?? 0} metrics</Badge>
                     ) : (
-                      <Badge size="sm" class="ml-auto">{current.dataHealth?.records.byBase.length ?? 0} bases</Badge>
+                      <Badge size="sm" class="ml-auto">{currentDataHealth?.records.byBase.length ?? 0} bases</Badge>
                     )}
                   </div>
                   <div class="rpd-prev-rows">
@@ -531,7 +537,7 @@ const scopeBaseNames = def.baseScope ? def.baseScope.map((id) => baseNames[id] ?
                         ))}
                       </div>
                     )}
-                    {key === 'dataHealth' && (current.dataHealth?.records.byBase ?? []).slice(0, 4).map((b) => (
+                    {key === 'dataHealth' && (currentDataHealth?.records.byBase ?? []).slice(0, 4).map((b) => (
                       <div class="rpd-prev-row">
                         <span class="rpd-prev-row-name">{b.baseName}</span>
                         <span class="ml-auto tabular-nums text-base-content/65">{nf.format(b.recordCount)} · {b.storage}</span>
@@ -1278,10 +1284,11 @@ const scopeBaseNames = def.baseScope ? def.baseScope.map((id) => baseNames[id] ?
   .rpd-prev-spark-area { fill: color-mix(in oklch, var(--color-primary) 14%, transparent); stroke: none; }
 
   .rpd-empty { border: 1px dashed var(--color-base-300); border-radius: var(--r-12); background: oklch(from var(--color-base-200) l c h / .35); padding: 2.5rem 1.5rem; display: flex; flex-direction: column; align-items: center; text-align: center; gap: .5rem; }
+  .rpd-empty-compact { padding: 1.5rem 1.25rem; min-height: 0; max-width: 36rem; margin-inline: auto; width: 100%; }
   .rpd-empty-ic { width: 2.75rem; height: 2.75rem; border-radius: var(--r-8); display: grid; place-items: center; background: var(--color-base-100); border: 1px solid var(--color-base-300); margin-bottom: 4px; }
   .rpd-empty-ic .iconify { font-size: 1.3rem; color: oklch(from var(--color-base-content) l c h / .35); }
   .rpd-empty-title { font-size: var(--t-16); font-weight: 650; }
-  .rpd-empty-sub { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); max-width: 46ch; margin-bottom: 8px; }
+  .rpd-empty-sub { font-size: var(--t-13); color: oklch(from var(--color-base-content) l c h / .65); max-width: 52ch; margin-bottom: 8px; overflow: visible; white-space: normal; }
 </style>
 
 <style is:global>

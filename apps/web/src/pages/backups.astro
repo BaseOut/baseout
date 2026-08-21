@@ -32,15 +32,9 @@ const { account, db } = Astro.locals;
 const orgId = account?.organization?.id ?? null;
 const spaceId = account?.space?.id ?? null;
 
-const integrations =
-  orgId && spaceId ? await getIntegrationsState(db, orgId, spaceId) : null;
-const airtable =
-  integrations?.connections.find((c) => c.platformSlug === 'airtable') ?? null;
-const hasAirtableConnection = airtable?.status === 'active';
-
-const initialRuns: BackupRunSummary[] =
-  spaceId && db && hasAirtableConnection
-    ? await listRecentRuns(spaceId, 25, {
+const listBackupRuns = () =>
+  spaceId && db
+    ? listRecentRuns(spaceId, 25, {
         fetchRuns: async (sid, lim) => {
           const rows = await db
             .select({
@@ -97,7 +91,16 @@ const initialRuns: BackupRunSummary[] =
           return rows as IncludedBase[];
         },
       })
-    : [];
+    : Promise.resolve([] as BackupRunSummary[]);
+
+const [integrations, fetchedRuns] = await Promise.all([
+  orgId && spaceId ? getIntegrationsState(db, orgId, spaceId) : Promise.resolve(null),
+  listBackupRuns(),
+]);
+const airtable =
+  integrations?.connections.find((c) => c.platformSlug === 'airtable') ?? null;
+const hasAirtableConnection = airtable?.status === 'active';
+const initialRuns: BackupRunSummary[] = hasAirtableConnection ? fetchedRuns : [];
 
 const spaceName = account?.space?.name ?? null;
 

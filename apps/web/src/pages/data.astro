@@ -21,20 +21,13 @@ import SidebarLayout from '../layouts/SidebarLayout.astro';
 import DataView from '../views/DataView.astro';
 import EmptyState from '../components/ui/EmptyState.astro';
 import { getBreadcrumbs } from '../lib/config';
-import { createBackupEngine, type SchemaDocSummary, type ChatThreadSummaryView } from '../lib/backup-engine';
-import {
-  mapSchemaToData,
-  mapRecords,
-  mapRunTotals,
-  mapChangelogRows,
-  mapMediaAssets,
-  mapComments,
-} from '../lib/data-browse/map';
+import { createBackupEngine } from '../lib/backup-engine';
+import { emptyDataPagePayload, loadDataPageFromEngine } from '../lib/data-browse/ssr';
 import { buildDataDocsEntities, dataBasesToHealthBases } from '../components/data/dataToSchema';
 import type { DocsTabEntity } from '../components/islands/DocsTab';
 import { resolveSchemaDocsLevel } from '../lib/schema-docs/proxy';
 import type { SchemaDocsLevel } from '../lib/capabilities/tier-capabilities';
-import type { DataBase, DataTable, DataRecord, DataComment, DataChangeEntry, MediaAsset, DataMode } from '../components/data/dataTypes';
+import type { DataMode } from '../components/data/dataTypes';
 import { backupRuns, backupConfigurations } from '../db/schema/core';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
@@ -47,117 +40,69 @@ let docsLevel: SchemaDocsLevel = 'none';
 if (db && orgId) docsLevel = await resolveSchemaDocsLevel(db, orgId);
 const aiEnabled = docsLevel === 'manual_ai';
 
-let managedPg = false;
-let bases: DataBase[] = [];
-let tables: DataTable[] = [];
-let records: DataRecord[] = [];
-let comments: DataComment[] = [];
-let changelog: DataChangeEntry[] = [];
-let runTotals: Record<string, { created: number; updated: number; deleted: number }> = {};
-let assets: MediaAsset[] = [];
-let docs: SchemaDocSummary[] = [];
-let chatThreads: ChatThreadSummaryView[] = [];
-let landingTableId: string | undefined;
-/** Primary field id per table — Browse client pagination uses this when mapping proxy pages. */
-let primaryByTable: Record<string, string | undefined> = {};
-/** nextCursor after SSR page-1 for the landing table (`null` = exhausted). */
-let recordsNextCursor: string | null | undefined = undefined;
+const engine =
+  spaceId && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN
+    ? createBackupEngine({
+        binding: env.BACKUP_ENGINE,
+        internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+      })
+    : null;
 
-if (spaceId && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
-  const engine = createBackupEngine({
-    binding: env.BACKUP_ENGINE,
-    internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
-  });
+const latestRunQuery =
+  db && spaceId
+    ? db
+        .select({ id: backupRuns.id, completedAt: backupRuns.completedAt })
+        .from(backupRuns)
+        .where(and(eq(backupRuns.spaceId, spaceId), eq(backupRuns.status, 'succeeded'), isNotNull(backupRuns.completedAt)))
+        .orderBy(desc(backupRuns.completedAt))
+        .limit(1)
+    : Promise.resolve([] as { id: string; completedAt: Date | null }[]);
+const modeQuery =
+  db && spaceId
+    ? db
+        .select({ mode: backupConfigurations.mode })
+        .from(backupConfigurations)
+        .where(eq(backupConfigurations.spaceId, spaceId))
+        .limit(1)
+    : Promise.resolve([] as { mode: string | null }[]);
 
-  const schemaRes = await engine.getSchema(spaceId);
-  if (schemaRes.ok) {
-    // A readable schema means this Space's backend (managed_pg) serves the Data read API.
-    managedPg = true;
-    const mapped = mapSchemaToData(schemaRes);
-    bases = mapped.bases;
-    tables = mapped.tables;
-    primaryByTable = mapped.primaryByTable;
-    landingTableId = tables[0]?.id;
+const [payload, latestRows, cfgRows] = await Promise.all([
+  engine && spaceId
+    ? loadDataPageFromEngine(engine, spaceId, { docsLevel })
+    : Promise.resolve(emptyDataPagePayload()),
+  latestRunQuery,
+  modeQuery,
+]);
 
-    if (landingTableId) {
-      // Records — page 1 of the landing table (deeper pages via the proxy).
-      const recRes = await engine.getDataRecords(spaceId, landingTableId, { limit: 50 });
-      if (recRes.ok) {
-        records = mapRecords(recRes.records, landingTableId, mapped.primaryByTable[landingTableId]);
-        recordsNextCursor = recRes.nextCursor;
-      }
-
-      // Changelog — rollup totals for every run + a sample of the latest run's rows.
-      const rollupRes = await engine.getDataChangelog(spaceId, { limit: 50 });
-      if (rollupRes.ok && rollupRes.mode === 'rollup') {
-        runTotals = mapRunTotals(rollupRes.runs);
-        const top = rollupRes.runs[0];
-        if (top) {
-          const runAt = top.startedAt ?? top.completedAt ?? '';
-          const counts = { created: top.createdCount, updated: top.updatedCount, deleted: top.deletedCount };
-          const types = (['created', 'updated', 'deleted'] as const).filter((t) => counts[t] > 0);
-          for (const changeType of types) {
-            const rowsRes = await engine.getDataChangelog(spaceId, { runId: top.runId, changeType, limit: 25 });
-            if (rowsRes.ok && rowsRes.mode === 'rows') {
-              changelog = changelog.concat(mapChangelogRows(rowsRes.rows, top.runId, runAt));
-            }
-          }
-        }
-      }
-
-      // Attachments — newest-first page 1 (deeper pages via the proxy).
-      const mediaRes = await engine.getMedia(spaceId, { limit: 50 });
-      if (mediaRes.ok) assets = mapMediaAssets(mediaRes.items);
-    }
-
-    // Comments — page 1 space-wide (server-comments-read). Not gated on landingTableId;
-    // deeper pages ride the /data/comments proxy.
-    const commentsRes = await engine.getDataComments(spaceId, { limit: 50 });
-    if (commentsRes.ok) comments = mapComments(commentsRes.comments);
-  }
-  // 501 backend_not_implemented (and any other non-ok) → managedPg stays false → honest empty.
-
-  // Docs + Chat — space-wide, same engine methods Schema uses (web-data-docs-chat).
-  if (docsLevel !== 'none') {
-    const [docsRes, threadsRes] = await Promise.all([
-      engine.listDocuments(spaceId),
-      engine.listChatThreads(spaceId, false),
-    ]);
-    if (docsRes.ok) docs = docsRes.documents;
-    if (threadsRes.ok) chatThreads = threadsRes.threads;
-  }
-}
+const {
+  managedPg,
+  bases,
+  tables,
+  records,
+  comments,
+  changelog,
+  runTotals,
+  assets,
+  docs,
+  chatThreads,
+  landingTableId,
+  primaryByTable,
+  recordsNextCursor,
+} = payload;
 
 const docEntities: DocsTabEntity[] = buildDataDocsEntities(bases, tables, { records });
 const healthBases = dataBasesToHealthBases(bases);
 // chatThreads SSR-loaded for entitlement/warmth; ChatTab client-refreshes like Schema (D4).
 void chatThreads;
 
-// Freshness stamp — the data reflects the latest completed backup run.
-let lastSyncedAt: string | null = null;
-let lastSyncedRunId: string | null = null;
-if (db && spaceId) {
-  const [latest] = await db
-    .select({ id: backupRuns.id, completedAt: backupRuns.completedAt })
-    .from(backupRuns)
-    .where(and(eq(backupRuns.spaceId, spaceId), eq(backupRuns.status, 'succeeded'), isNotNull(backupRuns.completedAt)))
-    .orderBy(desc(backupRuns.completedAt))
-    .limit(1);
-  lastSyncedAt = latest?.completedAt?.toISOString() ?? null;
-  lastSyncedRunId = latest?.id ?? null;
-}
+const latest = latestRows[0];
+const lastSyncedAt = latest?.completedAt?.toISOString() ?? null;
+const lastSyncedRunId = latest?.id ?? null;
 
-// Backup mode — when config is missing, default dynamic and rely on managedPg gate for 501.
 let mode: DataMode = 'dynamic';
-if (db && spaceId) {
-  const [cfg] = await db
-    .select({ mode: backupConfigurations.mode })
-    .from(backupConfigurations)
-    .where(eq(backupConfigurations.spaceId, spaceId))
-    .limit(1);
-  if (cfg?.mode === 'static' || cfg?.mode === 'dynamic' || cfg?.mode === 'both') {
-    mode = cfg.mode;
-  }
+const cfgMode = cfgRows[0]?.mode;
+if (cfgMode === 'static' || cfgMode === 'dynamic' || cfgMode === 'both') {
+  mode = cfgMode;
 }
 
 // Show the tab shell when there is anything to browse: captured tables, or a succeeded backup

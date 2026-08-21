@@ -15,7 +15,7 @@ function makeFakeDb(resultSets: unknown[][]): AppDb {
   chain.where = passthrough
   chain.limit = passthrough
   chain.then = (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
-    Promise.resolve(resultSets[i++]).then(onF, onR)
+    Promise.resolve(resultSets[i++] ?? []).then(onF, onR)
   return { select: () => chain } as unknown as AppDb
 }
 
@@ -23,12 +23,13 @@ const FREQUENCY = ['one_time', 'monthly', 'weekly', 'daily', 'instant']
 
 describe('resolveEntitlements (query wrapper)', () => {
   it('returns null when the org has no plan-carrying subscription', async () => {
-    const db = makeFakeDb([[]]) // empty plan lookup
+    const db = makeFakeDb([[], []]) // internal lookup, empty plan lookup
     expect(await resolveEntitlements(db, 'org_1')).toBeNull()
   })
 
   it('composes plan values, an override, and an add-on end to end', async () => {
     const db = makeFakeDb([
+      [], // not an internal owner/admin org
       [{ planId: 'plan_core', planSlug: 'core' }],
       [
         { slug: 'spaces', valueType: 'limit', enumValues: null, meterable: true, meterKind: 'creation', valueBool: null, valueNumeric: '10', valueEnum: null },
@@ -50,5 +51,45 @@ describe('resolveEntitlements (query wrapper)', () => {
     expect(res!.entitlements.spaces.addonBonus).toBe(2)
     expect(getBool(res!.entitlements, 'byo_ai_key')).toBe(false)
     expect(getEnum(res!.entitlements, 'backup_frequency_max')).toBe('weekly')
+  })
+
+  it('upgrades an org owned by an openside admin to enterprise entitlements', async () => {
+    const db = makeFakeDb([
+      [{ email: 'Autumn@OpenSide.COM' }],
+      [{ planId: 'plan_enterprise', planSlug: 'enterprise' }],
+      [
+        { slug: 'spaces', valueType: 'limit', enumValues: null, meterable: true, meterKind: 'creation', valueBool: null, valueNumeric: null, valueEnum: null },
+        { slug: 'byo_ai_key', valueType: 'boolean', enumValues: null, meterable: false, meterKind: null, valueBool: true, valueNumeric: null, valueEnum: null },
+        { slug: 'backup_frequency_max', valueType: 'enum', enumValues: FREQUENCY, meterable: false, meterKind: null, valueBool: null, valueNumeric: null, valueEnum: 'instant' },
+      ],
+    ])
+
+    const res = await resolveEntitlements(db, 'org_internal')
+
+    expect(res).not.toBeNull()
+    expect(res!.planSlug).toBe('enterprise')
+    expect(getLimit(res!.entitlements, 'spaces')).toBeNull()
+    expect(getBool(res!.entitlements, 'byo_ai_key')).toBe(true)
+    expect(getEnum(res!.entitlements, 'backup_frequency_max')).toBe('instant')
+  })
+
+  it('does not upgrade a customer org just because an openside member was invited', async () => {
+    const db = makeFakeDb([
+      [], // owner/admin lookup excludes members
+      [{ planId: 'plan_core', planSlug: 'core' }],
+      [
+        { slug: 'spaces', valueType: 'limit', enumValues: null, meterable: true, meterKind: 'creation', valueBool: null, valueNumeric: '10', valueEnum: null },
+        { slug: 'byo_ai_key', valueType: 'boolean', enumValues: null, meterable: false, meterKind: null, valueBool: false, valueNumeric: null, valueEnum: null },
+      ],
+      [],
+      [],
+    ])
+
+    const res = await resolveEntitlements(db, 'org_customer')
+
+    expect(res).not.toBeNull()
+    expect(res!.planSlug).toBe('core')
+    expect(getLimit(res!.entitlements, 'spaces')).toBe(10)
+    expect(getBool(res!.entitlements, 'byo_ai_key')).toBe(false)
   })
 })

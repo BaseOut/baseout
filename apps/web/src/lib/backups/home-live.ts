@@ -17,6 +17,16 @@
 
 import type { BackupRunSummary } from '../backup-runs/types'
 
+export type RecordDelta = { dir: 'up' | 'down' | 'flat'; amount: number }
+
+/** Signed change vs the previous full backup. Zero is flat — not an up-arrow. */
+export function recordCountDelta(currentOrDelta: number, previous?: number): RecordDelta {
+  const delta = previous === undefined ? currentOrDelta : currentOrDelta - previous
+  if (delta === 0) return { dir: 'flat', amount: 0 }
+  if (delta > 0) return { dir: 'up', amount: delta }
+  return { dir: 'down', amount: Math.abs(delta) }
+}
+
 /**
  * Identity of the run list for change detection: ids + statuses only.
  * Progress counters mutate every poll tick on a running run and must not

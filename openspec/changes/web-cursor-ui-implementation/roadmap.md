@@ -37,14 +37,14 @@
 | Home | **LIVE** (`SpaceHomeView` · Phase 7.4 visual) | Built | runs + integrations | **DONE** visual — preserve `index.astro` poll |
 | Backups | **LIVE** (`BackupsListView` · Phase 7.5 visual) | Built | engine runs | **DONE** visual — preserve `backups.astro` poll |
 | Restore | **LIVE** | Built | restore paths | Later visual sync |
-| Schema — Browse / Visualize / Relationships / Health / Docs / Chat / Changelog* | **LIVE** (most tabs) | Re-architected | yes | **Phase 13 IN PROGRESS** — EntityPanel first; full shell later (`web-schema-rearch`) |
+| Schema — Browse / Visualize / Relationships / Health / Docs / Chat / Changelog* | **LIVE** (most tabs) | Re-architected | yes | **DONE** — Phase 13 Schema re-arch complete; `web-schema-rearch` archive-ready |
 | Schema — Automations / Interfaces | **LIVE** (Phase 9) | **BUILT** | manual-CRUD engine + proxies | **DONE** — tabs + Drawer CRUD; MCP capture funnel still deferred |
 | Data — Browse / Changelog / Comments / Docs / Chat | **LIVE** (Slice A done) | **BUILT** (+ Attachments/Media) | records/changelog/media/docs/chat + comments read | **DONE** on this branch — zero SoonTabs |
 | Actions | **LIVE** (landing) | Built | n/a (static + feedback) | Low priority polish |
 | Reports | **LIVE** (definitions list + detail/run; Phase 8) | **BUILT** + in nav | engine + proxies | **DONE** — EntityPanel now Phase 13 real panel (was stub); PDF/email env-gated; migrate **0038** first |
 | Sources / Destinations | **LIVE** | Built | connections | Later visual sync; provider “coming soon” badges = **HONEST** (V2 platforms) |
 | Settings | **LIVE** (hub — Phase 4) | Catalog hub **BUILT** | partial | Hub LIVE; remaining gated rows need prefs/2FA backends |
-| Help | stub (“chat coming soon”) | Support portal separate app | — | `support` change; **BLOCKED** client Q#6 |
+| Help | stub (“chat coming soon”) | Support portal separate app | — | `apps/support` **PROVISIONAL** locally; apps/web CTA retargeting still **BLOCKED** on client Q#6 |
 | Inbox (full page) | missing (dropdown may exist via layout work) | **BUILT** | notifications APIs exist | Promote `/inbox` after shell sync |
 | Auth (login/welcome/2FA) | **LIVE** (page markup) | Redesigned views | better-auth | Promote views; keep auth logic |
 
@@ -73,10 +73,10 @@
 | **7** | Visual sync of LIVE surfaces | Restore → Sources → Destinations → Home → Backups; preserve polls & contracts | **DONE** · Restore `099360f3` · Sources `c962d74b` · Destinations `a72e57e4` · Home `a541120a` · Backups `598f11b5` |
 | **8** | Reports | Overturn V1 trim — finish engine + `web-reports-page`; restore `/reports` nav to match ui-only | **DONE** · backend `fdfd1e90` (from `4d3ff862`) · UI `9c4f1c63` · migration **0038** not applied to remote DB |
 | **9** | Schema Automations / Interfaces | Engine manual-CRUD + web tabs | **DONE** on this branch — engine `13b51873`/`33c7e667` + web proxies `6e4a2712` + UI tabs (this commit). Capture funnel (`server-automations-interfaces-docs`) still deferred. |
-| **10** | Support portal | `apps/support` from ui-only | **SKIP FOR NOW** (Q#6 — support channel not decided; revisit later) |
+| **10** | Support portal | `apps/support` from ui-only | **PROVISIONAL LOCAL IMPORT** — docs/search/contact/roadmap/chat shell build; D1/KV, auth bridge, chat engine, DNS, and apps/web CTA retargeting still blocked/deferred |
 | **11** | Billing / usage | Phase 1 portal rows now; usage/meters from pricing guide + honest gates (no fork Usage view) | **UNBLOCKED 2026-08-20** — build from PRD/`pricing-guide` / placeholders; do not wait on Q#4 |
 | **12** | Design-audit convergence | 41-item ship order (`web-design-audit-convergence`) | **PAUSED for program close** — census + vessels advanced; item **16** closed; ~18 long-tail + D15 gate remain (`census.md`) |
-| **13** | Schema re-architecture | Fork Schema set + EntityPanel; Docs/Chat kept on live product paths | **NEARLY DONE** — Slices 0–5 landed (`cbec58d0`); Slice 6 docs; archive after smoke. OpenSpec `web-schema-rearch` |
+| **13** | Schema re-architecture | Fork Schema set + EntityPanel; Docs/Chat kept on live product paths | **DONE** — Slices 0–6 complete; managed_pg smoke passed; OpenSpec `web-schema-rearch` archive-ready |
 
 ### Slice A detail (first code after approval)
 

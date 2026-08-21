@@ -18,3 +18,17 @@ The admin console SHALL grant staff access to a user whose session belongs to a 
 
 - **WHEN** a user has `role === 'super'` regardless of email domain
 - **THEN** access is granted exactly as before — the domain rule is additive, not a replacement
+
+### Requirement: Future staff Support surfaces reuse the staff predicate
+
+Any future in-app Support staff surface SHALL gate staff-only access with the same `isStaff({ role, email })` policy as the admin console: explicit `role === 'super'` OR a verified exact-domain `@openside.com` session. Support SHALL NOT introduce a separate email allowlist or weaker substring domain check.
+
+#### Scenario: @openside.com support access
+
+- **WHEN** a verified `@openside.com` user opens a future staff-only Support surface
+- **THEN** access is granted by the shared staff predicate, matching admin-console behavior
+
+#### Scenario: Support denies lookalike domains
+
+- **WHEN** a non-super user with a lookalike or external email opens a future staff-only Support surface
+- **THEN** access is denied by the same exact-domain predicate used by admin

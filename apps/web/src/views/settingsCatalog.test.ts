@@ -10,7 +10,7 @@ import {
 const subject: SettingsSubject = {
   user: { name: 'Ada Lovelace', email: 'ada@example.com', image: null },
   org: { name: 'Acme Analytics', slug: 'acme' },
-  space: { name: 'Growth Ops' },
+  space: { id: 'space-1', name: 'Growth Ops', autoAddFutureBases: false },
 };
 
 function findRow(cats: ReturnType<typeof buildCategories>, id: string): SettingsRow | undefined {
@@ -82,8 +82,15 @@ describe('buildCategories — apps/web wiring vs honest gating', () => {
     expect(findRow(cats, 'space-destination')?.href).toBe('/destinations');
   });
 
+  it('ungates the rows that now have a persistence route', () => {
+    expect(findRow(cats, 'account-name')?.gated).toBeUndefined();
+    expect(findRow(cats, 'space-name')?.gated).toBeUndefined();
+    expect(findRow(cats, 'space-autoadd')?.gated).toBeUndefined();
+    expect(findRow(cats, 'space-autoadd')?.on).toBe(false);
+  });
+
   it('gates the rows with no persistence route (never a fake save)', () => {
-    for (const id of ['account-name', 'org-name', 'org-slug', 'space-name', 'space-autoadd', 'notify-failed', 'notify-quiet']) {
+    for (const id of ['org-name', 'org-slug', 'notify-failed', 'notify-quiet']) {
       expect(findRow(cats, id)?.gated, `${id} must be gated`).toBe(true);
     }
     // The account email stays a read-only fact, not a gated control.

@@ -23,25 +23,30 @@ import { describe, expect, it, vi } from "vitest";
 import { processRunComplete } from "../../src/lib/runs/complete";
 
 const RUN_ID = "11111111-1111-1111-1111-111111111111";
+const CONNECTION_ID = "22222222-2222-2222-2222-222222222222";
 const TRIGGER_RUN_ID_A = "run_aaaaaaaaaaaaaaaaaaaaaaaa";
 const TRIGGER_RUN_ID_B = "run_bbbbbbbbbbbbbbbbbbbbbbbb";
 const AT_BASE_ID = "appAAA111";
 const NOW = new Date("2026-05-08T19:30:00.000Z");
+const AIRTABLE_403 =
+  'Airtable returned 403: {"error":{"type":"INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND","message":"Invalid permissions';
 
 interface DepsBag {
   fetchRunById: ReturnType<typeof vi.fn>;
   applyPerBaseCompletion: ReturnType<typeof vi.fn>;
   finalizeRun: ReturnType<typeof vi.fn>;
+  markConnectionPendingReauth: ReturnType<typeof vi.fn>;
 }
 
 function makeDeps(): DepsBag {
   return {
-    fetchRunById: vi.fn(async () => ({ id: RUN_ID })),
+    fetchRunById: vi.fn(async () => ({ id: RUN_ID, connectionId: CONNECTION_ID })),
     applyPerBaseCompletion: vi.fn(async () => ({
       remainingCount: 0,
       hasFailure: false,
     })),
     finalizeRun: vi.fn(async () => {}),
+    markConnectionPendingReauth: vi.fn(async () => {}),
   };
 }
 
@@ -225,6 +230,85 @@ describe("processRunComplete — failure semantics", () => {
       finalStatus: "failed",
       completedAt: NOW,
     });
+  });
+});
+
+describe("processRunComplete — Airtable auth failure → pending_reauth", () => {
+  it("marks the connection pending_reauth on Airtable 403 even when other bases remain", async () => {
+    const deps = makeDeps();
+    deps.applyPerBaseCompletion = vi.fn(async () => ({
+      remainingCount: 1,
+      hasFailure: true,
+    }));
+
+    await processRunComplete(
+      {
+        runId: RUN_ID,
+        triggerRunId: TRIGGER_RUN_ID_A,
+        atBaseId: AT_BASE_ID,
+        status: "failed",
+        tablesProcessed: 0,
+        recordsProcessed: 0,
+        attachmentsProcessed: 0,
+        errorMessage: AIRTABLE_403,
+      },
+      { ...deps, now: () => NOW },
+    );
+
+    expect(deps.markConnectionPendingReauth).toHaveBeenCalledWith({
+      connectionId: CONNECTION_ID,
+      reason: AIRTABLE_403,
+    });
+    expect(deps.finalizeRun).not.toHaveBeenCalled();
+  });
+
+  it("does not mark pending_reauth for non-auth failures", async () => {
+    const deps = makeDeps();
+    deps.applyPerBaseCompletion = vi.fn(async () => ({
+      remainingCount: 0,
+      hasFailure: true,
+    }));
+
+    await processRunComplete(
+      {
+        runId: RUN_ID,
+        triggerRunId: TRIGGER_RUN_ID_A,
+        atBaseId: AT_BASE_ID,
+        status: "failed",
+        tablesProcessed: 0,
+        recordsProcessed: 0,
+        attachmentsProcessed: 0,
+        errorMessage: "lock_unavailable",
+      },
+      { ...deps, now: () => NOW },
+    );
+
+    expect(deps.markConnectionPendingReauth).not.toHaveBeenCalled();
+  });
+
+  it("skips mark when the run has no connectionId", async () => {
+    const deps = makeDeps();
+    deps.fetchRunById = vi.fn(async () => ({ id: RUN_ID }));
+    deps.applyPerBaseCompletion = vi.fn(async () => ({
+      remainingCount: 0,
+      hasFailure: true,
+    }));
+
+    await processRunComplete(
+      {
+        runId: RUN_ID,
+        triggerRunId: TRIGGER_RUN_ID_A,
+        atBaseId: AT_BASE_ID,
+        status: "failed",
+        tablesProcessed: 0,
+        recordsProcessed: 0,
+        attachmentsProcessed: 0,
+        errorMessage: AIRTABLE_403,
+      },
+      { ...deps, now: () => NOW },
+    );
+
+    expect(deps.markConnectionPendingReauth).not.toHaveBeenCalled();
   });
 });
 

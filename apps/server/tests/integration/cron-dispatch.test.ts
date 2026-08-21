@@ -31,9 +31,12 @@ describe("resolveCronJobs", () => {
     ]);
   });
 
-  it("maps the hourly cron to webhook renewal (server-cron-webhook-renewal)", () => {
+  it("maps the hourly cron to webhook renewal + report schedule sweep", () => {
     expect(WEBHOOK_RENEWAL_CRON).toBe("0 * * * *");
-    expect(resolveCronJobs(WEBHOOK_RENEWAL_CRON)).toEqual(["webhook-renewal"]);
+    expect(resolveCronJobs(WEBHOOK_RENEWAL_CRON)).toEqual([
+      "webhook-renewal",
+      "report-schedule-sweep",
+    ]);
   });
 
   it("the crons are distinct strings (no accidental collision)", () => {

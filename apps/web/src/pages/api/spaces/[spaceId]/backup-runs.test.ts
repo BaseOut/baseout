@@ -117,15 +117,22 @@ describe('handlePost', () => {
   })
 
   it('returns 200 with runId + triggerRunIds on the happy path', async () => {
+    const ensureInternalSpaceReady = vi.fn(async () => {})
     const res = await handlePost({
       account: makeAccount(),
       spaceId: SPACE_ID,
       startDeps: makeStartDeps(),
+      ensureInternalSpaceReady,
     })
     expect(res.status).toBe(200)
     expect(await readJson(res)).toEqual({
       runId: RUN_ID,
       triggerRunIds: ['run_a', 'run_b'],
+    })
+    expect(ensureInternalSpaceReady).toHaveBeenCalledWith({
+      organizationId: ORG_ID,
+      spaceId: SPACE_ID,
+      userId: 'u_1',
     })
   })
 

@@ -9,14 +9,17 @@ import ReportDetailView from '../../../views/ReportDetailView.astro';
 import NotFoundView from '../../../views/NotFoundView.astro';
 import { getBreadcrumbs } from '../../../lib/config';
 import { createBackupEngine } from '../../../lib/backup-engine';
-import { mapDefinitionFromEngine, mapDetailFromEngine } from '../../../lib/reports/mapFromEngine';
+import {
+  createMasterDbReportDefinitionRepository,
+  getReportRunForPage,
+} from '../../../lib/reports/list-page-definitions';
 import type { ReportDetail, ReportSectionKey } from '../../../lib/reports/types';
 
 export const prerender = false;
 
 const { runId } = Astro.params;
 const breadcrumbs = getBreadcrumbs('/reports');
-const { account } = Astro.locals;
+const { account, db } = Astro.locals;
 const spaceId = account?.space?.id ?? null;
 
 let report: ReportDetail | null = null;
@@ -26,24 +29,27 @@ let parentSections: ReportSectionKey[] | null = null;
 let parentWindow: import('../../../lib/reports/types').ReportDefinition['window'] | null = null;
 let parentBaseScope: string[] | null = null;
 
-if (spaceId && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN && runId) {
+if (spaceId && db && runId) {
   try {
-    const engine = createBackupEngine({
-      binding: env.BACKUP_ENGINE,
-      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    const engine = env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN
+      ? createBackupEngine({
+          binding: env.BACKUP_ENGINE,
+          internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+        })
+      : null;
+    const page = await getReportRunForPage({
+      spaceId,
+      runId,
+      engine,
+      repository: createMasterDbReportDefinitionRepository(db),
     });
-    const runRes = await engine.getReportRun(spaceId, runId);
-    if (runRes.ok) {
-      report = mapDetailFromEngine(runRes.document, runRes.run);
-      parentReportId = runRes.run.reportDefinitionId;
-      const defRes = await engine.getReportDefinition(spaceId, runRes.run.reportDefinitionId);
-      if (defRes.ok) {
-        const def = mapDefinitionFromEngine(defRes.definition, defRes.runs);
-        parentReportName = def.name;
-        parentSections = def.sections;
-        parentWindow = def.window;
-        parentBaseScope = def.baseScope;
-      }
+    if (page) {
+      report = page.report;
+      parentReportId = page.parentReportId;
+      parentReportName = page.parentReportName;
+      parentSections = page.parentSections;
+      parentWindow = page.parentWindow;
+      parentBaseScope = page.parentBaseScope;
     }
   } catch {
     report = null;

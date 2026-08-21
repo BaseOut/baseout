@@ -1,18 +1,31 @@
 # Auth
 
-Google SSO only via better-auth's Google provider. No magic-link, no passwords, no customer flows.
+Admin currently has no login runtime of its own. It reuses `apps/web`'s
+better-auth session, either via the shared local cookie or a deployed handoff
+token from web.
 
-Access is gated by an explicit staff allowlist (email / domain) loaded from Cloudflare Secrets — not by a database role table. This keeps admin access provisionable from outside the app, even if the master DB is unreachable.
+Local dev reads the shared `better-auth.session_token` cookie, while deployed
+dev receives a short-lived AES-GCM handoff token from web's
+`/api/admin/handoff` and stores the same session value in
+`baseout_admin_session`.
 
-## Allowlist
+Access is gated by the shared staff predicate: `users.role === 'super'` OR a
+verified exact-domain `@openside.com` email. The web handoff mint and admin
+middleware both apply this rule so the deployed path cannot pass one gate and
+fail the other. Web also best-effort promotes verified `@openside.com` users to
+`role='super'`; admin remains read-only on sessions and user rows.
 
-Staff identity check happens in middleware. Implementation lands with the auth scaffold in Phase 1; the contract:
+## Staff Predicate
 
-- Cloudflare Secret holds a JSON allowlist of `{ emails: [], domains: [] }`.
-- Middleware resolves the SSO claim, then matches against the allowlist.
-- Mismatches return 403 with a generic error — no information disclosure about who is or isn't authorised.
+Staff identity check happens in middleware via `decideAccess`:
 
-Adding or removing staff is a Cloudflare Secret update, not a code change.
+- Session lookup joins Better Auth's `sessions` row to the linked `users` row.
+- Expired or missing sessions are denied.
+- `role === 'super'` is granted.
+- Otherwise, email is lowercased and must end with the exact suffix
+  `@openside.com`; lookalikes such as `@openside.com.evil.net` are denied.
+
+Google Workspace SSO remains deferred to the broader admin umbrella change.
 
 ## CSRF
 
@@ -24,4 +37,5 @@ Pointers to root rules and the related auth surface.
 
 - Root security model: [root security-model](../../../lat.md/security-model.md)
 - Frontend auth (for comparison): [apps/web auth](../../web/lat.md/auth.md)
-- better-auth Google provider: <https://www.better-auth.com/docs/authentication/google>
+- Admin session gate: [src/lib/admin-session.ts](../src/lib/admin-session.ts)
+- Web handoff mint: [apps/web handoff](../../web/src/pages/api/admin/handoff.ts)

@@ -1293,7 +1293,6 @@ function Canvas({ tables, bases, baseHealth, spaceId, genState = 'ready', embed 
   const prevMode = useRef(mode);
   const prevGroupWs = useRef(groupByWs);
   useEffect(() => {
-    if (!didMount.current) { didMount.current = true; prevVis.current = visibleTables; return; }
     const l = mode === 'relationships'
       ? relLayout(visibleTables, liveRels, { hiddenRelTypes })
       : mode === 'appLayer'
@@ -1301,15 +1300,17 @@ function Canvas({ tables, bases, baseHealth, spaceId, genState = 'ready', embed 
       : layout(visibleTables, { hiddenTypes, hiddenFields, hiddenRel, bases, groupByWorkspace: groupByWs, collapsedWorkspaces: collapsedWs, onToggleWorkspace: toggleWsCollapse });
     setNodes(l.nodes);
     setEdges(l.edges);
-    // Re-fit when the visible SET changes (base/table toggles), the mode switches, or the
-    // workspace-grouping toggle flips (it repositions the whole diagram, not just a filter).
-    if (prevVis.current !== visibleTables || prevMode.current !== mode || prevGroupWs.current !== groupByWs) {
+    const visChanged = prevVis.current !== visibleTables;
+    const modeChanged = prevMode.current !== mode;
+    const groupChanged = prevGroupWs.current !== groupByWs;
+    if (!didMount.current || visChanged || modeChanged || groupChanged) {
       setSelectedId(null);
       setSelectedEdgeId(null);
       setHoveredEdgeId(null);
       setEdgeTip(null);
-      requestAnimationFrame(() => rf.fitView({ padding: 0.2, duration: 450 }));
+      requestAnimationFrame(() => rf.fitView({ padding: 0.2, duration: didMount.current ? 450 : 0 }));
     }
+    didMount.current = true;
     prevVis.current = visibleTables;
     prevMode.current = mode;
     prevGroupWs.current = groupByWs;
@@ -1331,20 +1332,25 @@ function Canvas({ tables, bases, baseHealth, spaceId, genState = 'ready', embed 
     return () => document.removeEventListener('schema:visualizeScope', onScope);
   }, [embed, tables]);
 
-  // Embedded diagrams (Docs) mount while their tab/panel is hidden (0×0), so the initial
-  // fitView runs against an empty box. Re-fit once the container gains real width.
+  // The Visualize tab (and Docs embeds) can mount while the panel is hidden (0×0),
+  // so the initial fitView runs against an empty box. Re-fit once the container
+  // gains real width — including the first time the user opens the tab.
   const wrapRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (!embed || !wrapRef.current) return;
+    if (!wrapRef.current) return;
     const el = wrapRef.current;
     let lastW = 0;
     const ro = new ResizeObserver(() => {
       const w = el.clientWidth;
-      if (w > 0 && Math.abs(w - lastW) > 4) { lastW = w; requestAnimationFrame(() => rf.fitView({ padding: 0.18 })); }
+      const h = el.clientHeight;
+      if (w > 0 && h > 0 && (Math.abs(w - lastW) > 4 || lastW === 0)) {
+        lastW = w;
+        requestAnimationFrame(() => rf.fitView({ padding: 0.18 }));
+      }
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [embed, rf]);
+  }, [rf]);
 
   // Follow the app's theme (data-theme), not the OS — our dark theme is set by
   // attribute, not prefers-color-scheme. (The chrome is also re-themed via CSS

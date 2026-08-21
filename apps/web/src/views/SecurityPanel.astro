@@ -36,7 +36,7 @@ const {
   previewStage = 'idle',
 } = Astro.props;
 
-const codeSlots = Array.from({ length: backupCodes.length }, (_, i) => i);
+const codeSlots = Array.from({ length: Math.max(backupCodes.length, 10) }, (_, i) => i);
 const remaining = backupCodesRemaining ?? backupCodes.length;
 const linkedOn = identity.linked;
 ---
@@ -119,13 +119,14 @@ const linkedOn = identity.linked;
       </p>
 
       <div class="sec-scan">
-        <img class="sec-qr" src={enrollment.qrSrc} alt="Two-factor setup QR code" width="176" height="176" />
+        <img class="sec-qr" data-sec-qr src={enrollment.qrSrc} alt="Two-factor setup QR code" width="176" height="176" hidden={!enrollment.qrSrc} />
         <div class="sec-manual">
           <p class="sec-manuallabel">Can't scan? Enter this key by hand</p>
-          <code class="sec-secret">{enrollment.manualSecret}</code>
+          <code class="sec-secret" data-sec-secret>{enrollment.manualSecret || '—'}</code>
           <p class="sec-note">It will be saved in your app as {enrollment.accountLabel}.</p>
         </div>
       </div>
+      <p class="sec-note sec-error" data-sec-error hidden></p>
 
       <div class="sec-actions">
         <Button variant="primary" size="sm" data-sec-go="verify">Next</Button>
@@ -350,6 +351,7 @@ const linkedOn = identity.linked;
   .sec-subtitle { font-size: var(--t-14); font-weight: 600; margin: 0; }
   .sec-body { font-size: var(--t-13); line-height: 1.5; color: oklch(from var(--color-base-content) l c h / .85); margin: 0; }
   .sec-note { font-size: var(--t-12); color: oklch(from var(--color-base-content) l c h / .55); margin: 0; }
+  .sec-error { color: var(--color-error); }
   .sec-alert { font-size: var(--t-13); }
 
   .sec-rest { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; }

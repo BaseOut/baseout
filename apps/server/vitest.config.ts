@@ -26,6 +26,7 @@ const TEST_BINDINGS = {
   TRIGGER_PROJECT_REF: "proj_test_unused",
   AIRTABLE_OAUTH_CLIENT_ID: "test-airtable-client-id",
   AIRTABLE_OAUTH_CLIENT_SECRET: "test-airtable-client-secret",
+  AIRTABLE_ON_DEMAND_REFRESH_ENABLED: "0",
 };
 
 // Real-PG I/O suites (automations-interfaces-io) need Node — workerd does not

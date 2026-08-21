@@ -48,6 +48,10 @@ import type {
   BackupRunSummary,
 } from '../../../../lib/backup-runs/types'
 import { mapEngineCodeToStatus } from '../../connections/airtable/_engine-status'
+import {
+  buildInternalSpaceReadyDeps,
+  ensureInternalSpaceReady,
+} from '../../../../lib/internal-space-ready'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -97,6 +101,11 @@ export interface HandlePostInput {
   account: AccountContext | null
   spaceId: string | undefined
   startDeps: StartBackupRunDeps
+  ensureInternalSpaceReady?: (input: {
+    organizationId: string
+    spaceId: string
+    userId: string
+  }) => Promise<void>
 }
 
 export async function handlePost(input: HandlePostInput): Promise<Response> {
@@ -105,6 +114,17 @@ export async function handlePost(input: HandlePostInput): Promise<Response> {
   }
   if (!input.spaceId || !UUID_RE.test(input.spaceId)) {
     return jsonResponse({ error: 'invalid_request' }, 400)
+  }
+
+  try {
+    await input.ensureInternalSpaceReady?.({
+      organizationId: input.account.organization.id,
+      spaceId: input.spaceId,
+      userId: input.account.user.id,
+    })
+  } catch {
+    // Best-effort: the backup can still run as a file/static snapshot, and the
+    // readiness ensure retries on config save / next backup.
   }
 
   const result = await startBackupRun(
@@ -273,6 +293,11 @@ export const POST: APIRoute = async ({ locals, params }) => {
     account: locals.account ?? null,
     spaceId: params.spaceId,
     startDeps: buildStartDeps(db, engine),
+    ensureInternalSpaceReady: (input) =>
+      ensureInternalSpaceReady(
+        { ...input, kickBackupIfIdle: false },
+        buildInternalSpaceReadyDeps(db, engine),
+      ),
   })
 }
 

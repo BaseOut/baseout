@@ -12,6 +12,8 @@ export const FIXTURE_INTEGRATIONS_STATE: IntegrationsState = {
       isEnterprise: false,
       basesCount: 3,
       createdAt: '2026-04-15T14:22:00.000Z',
+      invalidatedAt: null,
+      pendingReauthAt: null,
     },
   ],
   bases: [

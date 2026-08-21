@@ -139,6 +139,28 @@ export interface SwitchSpaceInput {
   spaceId: string
 }
 
+export async function renameSpace(
+  db: AppDb,
+  input: { spaceId: string; organizationId: string; name: string },
+): Promise<{ id: string; name: string }> {
+  const name = validateSpaceName(input.name)
+  const [updated] = await db
+    .update(spaces)
+    .set({ name, modifiedAt: new Date() })
+    .where(
+      and(eq(spaces.id, input.spaceId), eq(spaces.organizationId, input.organizationId)),
+    )
+    .returning({ id: spaces.id, name: spaces.name })
+
+  if (!updated) {
+    throw new SpaceError({
+      kind: 'forbidden',
+      message: 'That Space is not available.',
+    })
+  }
+  return updated
+}
+
 export async function switchActiveSpace(
   db: AppDb,
   input: SwitchSpaceInput,

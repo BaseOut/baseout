@@ -35,5 +35,5 @@
 
 ## 4. Close
 
-- [ ] 4.1 Ledger §4 rows + roadmap Phase 13 DONE
-- [ ] 4.2 Human smoke on managed_pg Space
+- [x] 4.1 Ledger §4 rows + roadmap Phase 13 DONE
+- [x] 4.2 Human smoke on managed_pg Space

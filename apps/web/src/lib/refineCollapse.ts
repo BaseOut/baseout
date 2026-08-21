@@ -33,6 +33,7 @@
  */
 import { refineFacetIcon, refineFacetLabel } from './refineFacetIcons';
 import { clampBelow } from '../components/ui/popoverPlace';
+import { isRefineFacetActive } from './refine-facet-active';
 
 /**
  * Two-pane above this much TOOLBAR width, drill below it.
@@ -99,11 +100,17 @@ function present(el: HTMLElement): boolean {
 
 /** Wherever the control keeps its "this filter is doing something" mark. */
 function isActive(el: HTMLElement): boolean {
-  if (el.hasAttribute('data-tbf-active')) return el.dataset.tbfActive === '1';
-  if (el.querySelector('.ff-on')) return true;
-  const sel = el.querySelector<HTMLElement>('.ff-selbadge');
-  if (sel && !sel.hidden) return true;
-  return Array.from(el.querySelectorAll<HTMLElement>('.ff-count')).some((c) => !c.hidden);
+  const declared = el.hasAttribute('data-tbf-active')
+    ? (el.dataset.tbfActive === '1' ? '1' : '0')
+    : undefined
+  const sel = el.querySelector<HTMLElement>('.ff-selbadge')
+  const count = Array.from(el.querySelectorAll<HTMLElement>('.ff-count')).find((c) => !c.hidden)
+  return isRefineFacetActive({
+    declared,
+    triggerOn: !!el.querySelector('.ff-on'),
+    selectionVisible: !!(sel && !sel.hidden),
+    countBadgeText: count ? (count.textContent || '').trim() : null,
+  })
 }
 
 /** The control's key — what the icon map, the rows and the chips are all addressed by. */

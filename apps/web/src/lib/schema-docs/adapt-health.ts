@@ -26,6 +26,8 @@ export interface TipBaseHealth {
   baseName: string
   score: number
   band: HealthBand
+  /** True when there is no real grade (null/zero score and zero issues). */
+  unscored?: boolean
   metrics: TipHealthMetric[]
   issues: TipHealthIssue[]
   assessedAt?: string
@@ -84,8 +86,17 @@ export function adaptHealthOverview(
   baseName: string,
   payload: EngineHealthOverview,
 ): TipBaseHealth {
-  const score = payload.grade?.score ?? 0
-  const band = bandOf(payload.grade?.band, score)
+  const issues: TipHealthIssue[] = payload.issues.map((i) => ({
+    severity: sevOf(i.severity),
+    text: i.message,
+    airtableUrl: i.airtableDeeplink ?? undefined,
+  }))
+  // A missing or zero grade with nothing on the punch-list is "not scored",
+  // not an emergency. Banding that as red 0 next to "No issues" contradicts itself.
+  const rawScore = payload.grade?.score
+  const unscored = issues.length === 0 && (payload.grade == null || rawScore == null || rawScore === 0)
+  const score = unscored ? 0 : (rawScore ?? 0)
+  const band: HealthBand = unscored ? 'green' : bandOf(payload.grade?.band, score)
   const metrics: TipHealthMetric[] = payload.metrics.map((m) => ({
     name: m.name,
     tiers: tiersOf(m.entityTier),
@@ -93,11 +104,6 @@ export function adaptHealthOverview(
     weight: m.weight,
     lastGenerated: m.lastGeneratedAt ?? undefined,
     ruleId: m.ruleId,
-  }))
-  const issues: TipHealthIssue[] = payload.issues.map((i) => ({
-    severity: sevOf(i.severity),
-    text: i.message,
-    airtableUrl: i.airtableDeeplink ?? undefined,
   }))
   const latest = payload.metrics
     .map((m) => m.lastGeneratedAt)
@@ -109,6 +115,7 @@ export function adaptHealthOverview(
     baseName,
     score,
     band,
+    unscored: unscored || undefined,
     metrics,
     issues,
     assessedAt: latest,

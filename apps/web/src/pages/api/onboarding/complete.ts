@@ -17,6 +17,10 @@ import {
   extractSessionTokenCookie,
   invalidateSessionCache,
 } from '../../../lib/session-cache'
+import {
+  buildInternalSpaceReadyDeps,
+  ensureInternalSpaceReady,
+} from '../../../lib/internal-space-ready'
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
@@ -97,16 +101,32 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // must not block onboarding (the space_databases row records status='error'
   // for retry). records_enabled=false — the DB always exists for schema;
   // record tables turn on with dynamic mode.
-  if (env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
-    const engine = createBackupEngine({
-      binding: env.BACKUP_ENGINE,
-      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
-    })
+  const engine =
+    env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN
+      ? createBackupEngine({
+          binding: env.BACKUP_ENGINE,
+          internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+        })
+      : null
+  if (engine) {
     await engine.provisionDatabase(snapshot.spaceId, {
       backend: 'managed_pg',
       recordsEnabled: false,
       provisionedByUserId: locals.user.id,
     })
+  }
+  try {
+    await ensureInternalSpaceReady(
+      {
+        organizationId: snapshot.organizationId,
+        spaceId: snapshot.spaceId,
+        userId: locals.user.id,
+      },
+      buildInternalSpaceReadyDeps(locals.db, engine),
+    )
+  } catch {
+    // Best-effort, same as initial provisioning. Config save and first backup
+    // retry the readiness ensure.
   }
 
   if (stripeResolution.kind === 'configured') {

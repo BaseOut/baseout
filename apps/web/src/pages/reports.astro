@@ -3,8 +3,8 @@
  * Reports — list of named report DEFINITIONS for the active Space
  * (Phase 8 / web-reports-page; ui-only tip views + engine API from 4d3ff862).
  *
- * SSR-loads via createBackupEngine().listReportDefinitions. Empty/error degrade
- * to the designed zero-state (hasBackups=false) rather than a 500.
+ * SSR-loads via createBackupEngine().listReportDefinitions, with a master-DB
+ * fallback because report definitions are canonically owned by apps/web.
  */
 import { env } from 'cloudflare:workers';
 import { and, eq, sql } from 'drizzle-orm';
@@ -12,7 +12,10 @@ import SidebarLayout from '../layouts/SidebarLayout.astro';
 import ReportsView from '../views/ReportsView.astro';
 import { getBreadcrumbs } from '../lib/config';
 import { createBackupEngine } from '../lib/backup-engine';
-import { mapDefinitionFromEngine } from '../lib/reports/mapFromEngine';
+import {
+  createMasterDbReportDefinitionRepository,
+  listReportDefinitionsForPage,
+} from '../lib/reports/list-page-definitions';
 import type { ReportDefinition } from '../lib/reports/types';
 import { atBases, backupConfigurationBases, backupConfigurations, backupRuns } from '../db/schema';
 
@@ -24,18 +27,19 @@ let definitions: ReportDefinition[] = [];
 let baseNames: Record<string, string> = {};
 let hasBackups = false;
 
-if (spaceId && db && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN) {
+if (spaceId && db) {
   try {
-    const engine = createBackupEngine({
-      binding: env.BACKUP_ENGINE,
-      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    const engine = env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN
+      ? createBackupEngine({
+          binding: env.BACKUP_ENGINE,
+          internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+        })
+      : null;
+    definitions = await listReportDefinitionsForPage({
+      spaceId,
+      engine,
+      repository: createMasterDbReportDefinitionRepository(db),
     });
-    const res = await engine.listReportDefinitions(spaceId);
-    if (res.ok) {
-      definitions = res.definitions.map(({ definition, latestRun }) =>
-        mapDefinitionFromEngine(definition, latestRun ? [latestRun] : []),
-      );
-    }
   } catch {
     definitions = [];
   }

@@ -685,6 +685,7 @@ const fieldIconSvg = (type?: string) => {
   import { setButtonLoading } from '../../lib/ui';
   import { hideAlert, showAlert } from '../ui/alert';
   import { ensureRecordsCover } from '../../lib/data-browse/records-cursor';
+  import { defaultRecordsPreset } from '../../lib/data-browse/system-preset';
   import type { CellAttachment } from './dataTypes';
 
   // ── Types ───────────────────────────────────────────────────────────────────
@@ -894,7 +895,17 @@ const fieldIconSvg = (type?: string) => {
     }
     let viewSearch = '';
     // Always have at least one view to browse in.
-    if (!views.length) views = [{ id: 'v0', name: 'All records', tableId: snap.landing || snap.tables[0].id, pinned: false, temporary: true, hiddenCols: new Set(), filterTree: emptyGroup(), sortField: '', sortDir: 1, query: '', showRecId: false, colOrder: [], commentFilter: 'all', saved: false }];
+    if (!views.length) {
+      const system = defaultRecordsPreset(snap.landing || snap.tables[0].id);
+      const v: View = {
+        id: system.id, name: system.name, tableId: system.tableId, pinned: system.pinned,
+        temporary: system.temporary, hiddenCols: new Set(), filterTree: emptyGroup(),
+        sortField: '', sortDir: 1, query: '', showRecId: false, colOrder: [],
+        commentFilter: 'all', saved: system.saved,
+      };
+      v.baseline = snapConfig(v);
+      views = [v];
+    }
     // Landing table overrides the first view's table if provided (the `big` fixture).
     let activeId = views[0].id;
     // Runtime ids look like `v-new-<n>` off a shared counter — resume past whatever drafts came back

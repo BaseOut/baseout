@@ -101,7 +101,7 @@ export function assembleReport(input: AssembleInput): ReportDetail {
     doc.backupSummary = buildBackupsSection(bases);
     strip.push({
       label: "Backups",
-      icon: "database",
+      icon: "lucide--database-backup",
       value: `${ok}/${bases.length}`,
       tone: failed > 0 ? "error" : "success",
       delta: countDelta(failed, input.prior?.backupsFailed, false),
@@ -116,7 +116,7 @@ export function assembleReport(input: AssembleInput): ReportDetail {
     const issues = section.rows.length;
     strip.push({
       label: "Connections",
-      icon: "plug",
+      icon: "lucide--plug-zap",
       value: String(issues),
       tone: section.tone,
       delta: countDelta(issues, input.prior?.connectionIssues, false),
@@ -129,7 +129,7 @@ export function assembleReport(input: AssembleInput): ReportDetail {
     doc.schemaHealth = section;
     strip.push({
       label: "Schema",
-      icon: "layers",
+      icon: "lucide--list-tree",
       value: schemaInput.healthScore
         ? String(schemaInput.healthScore.current)
         : String(section.rows.length),
@@ -142,7 +142,7 @@ export function assembleReport(input: AssembleInput): ReportDetail {
     doc.documentation = section;
     strip.push({
       label: "Docs",
-      icon: "file-text",
+      icon: "lucide--file-text",
       value: String(section.rows.length),
       tone: "neutral",
       delta: countDelta(section.rows.length, input.prior?.docUpdates, true),

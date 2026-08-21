@@ -21,6 +21,7 @@ import {
   nf, docWhen, deltaClass, toneBadgeOf, toneDotOf, sectionEmptyAlert, changeToneOf, backupBadge, connBadge, connUrl,
   UNKNOWN_BADGE,
 } from '../../lib/reports/view';
+import { getTrendBases, hasRenderableDataHealth } from '../../lib/reports/render-guards';
 import Table from '../ui/Table.astro';
 import TrendChart from '../ui/TrendChart.astro';
 import Badge from '../ui/Badge.astro';
@@ -72,8 +73,10 @@ const fmtVal = (v: number, unit: 'count' | 'bytes') => (unit === 'bytes' ? fmtBy
 
 // Shared base filter for the Trends charts — one "Bases" facet controls the per-base lines across ALL 6
 // charts at once (client 2026-07-14: one shared filter, scales to many bases). Overall is a toggle too.
-const trendBases = report.trends ? report.trends.metrics[0].byBase.map((b) => b.baseName) : [];
+const trendBases = getTrendBases(report.trends);
 const trendBaseItems = ['Overall', ...trendBases].map((n) => ({ value: n, label: n }));
+const dataHealth = hasRenderableDataHealth(report.dataHealth) ? report.dataHealth : null;
+const generating = report.generationState === 'running';
 
 // Triage: any non-healthy section becomes a jump-link chip in the attention strip under the KPI band.
 // A healthy report has an empty `attention`, so the strip does not render at all.
@@ -90,7 +93,7 @@ const attention = sections.filter((s) => s.sec.tone !== 'success');
 const navSections: { name: string; icon: string; anchor: string; tone?: string }[] = [
   ...sections.map((s) => ({ name: s.name, icon: s.icon, anchor: s.anchor, tone: s.sec.tone })),
   ...(shows('trends') && report.trends && report.trends.metrics.length > 0 ? [{ name: 'Trends', icon: 'lucide--trending-up', anchor: 'rpt-sec-trends' }] : []),
-  ...(shows('dataHealth') && report.dataHealth ? [{ name: 'Data health', icon: 'lucide--database', anchor: 'rpt-sec-datahealth' }] : []),
+  ...(shows('dataHealth') && dataHealth ? [{ name: 'Data health', icon: 'lucide--database', anchor: 'rpt-sec-datahealth' }] : []),
 ];
 
 // The scope note. A scoped report must SAY it is scoped, or a reader cannot tell a one-section report
@@ -230,7 +233,7 @@ const dhAttachmentColumns = [
     first child of a `{cond ? ( … ) : ( … )}` branch is an SSR-500 with an EMPTY BODY, and neither
     `astro check` nor `ds-lint` sees it (`infra-astro-comment-in-expression-ssr500` — this is
     occurrence 7, caught by `pnpm smoke`). Do not move it inside the ternary. */}
-<div class:list={['hm-kpis', report.strip.length === 3 && 'hm-kpis-3']}>
+<div class:list={['hm-kpis rptk-kpis', report.strip.length === 3 && 'hm-kpis-3']} hidden={report.strip.length === 0}>
   {report.strip.map((s: ReportStat) => (
     <div class="hm-kpi">
       <div class="hm-kpi-top"><span class="hm-kpi-k">{s.label}</span><span class:list={['iconify hm-kpi-ic', s.icon]} aria-hidden="true"></span></div>
@@ -243,6 +246,13 @@ const dhAttachmentColumns = [
     </div>
   ))}
 </div>
+
+{report.strip.length === 0 && (
+  <div role="status" class="alert alert-soft rptk-empty-strip">
+    <span class="iconify lucide--info size-4" aria-hidden="true"></span>
+    <span>{generating ? 'This run is still generating. Headline metrics appear when it finishes.' : 'No headline metrics for this window yet.'}</span>
+  </div>
+)}
 
 {/* Attention strip — the report's triage line: jump straight to the sections that need a look.
     Only rendered when something is off; a clean report skips it entirely. */}
@@ -556,7 +566,7 @@ const dhAttachmentColumns = [
 )}
 
 {/* ── Data health — record data + attachment data (client 2026-07-14; shell) ───────── */}
-{shows('dataHealth') && report.dataHealth && (
+{shows('dataHealth') && dataHealth && (
   <section id="rpt-sec-datahealth" class="rptk-card rptk-anchor" data-mobile-rows data-rptk-section="dataHealth">
     <div class="rptk-head" data-rptk-toggle role="button" tabindex="0" aria-expanded="true"><span class="iconify lucide--chevron-down size-4 rptk-chev" aria-hidden="true"></span>
       <span class="iconify lucide--database size-4 opacity-70" aria-hidden="true"></span>
@@ -566,7 +576,7 @@ const dhAttachmentColumns = [
 
     {/* Record data */}
     <div class="rptk-dh-sub">
-      <div class="rptk-dh-head"><span class="iconify lucide--rows-3 size-3.5 opacity-60" aria-hidden="true"></span>Record data<span class="rptk-dh-total tabular-nums">{nf.format(report.dataHealth.records.total)} records</span></div>
+      <div class="rptk-dh-head"><span class="iconify lucide--rows-3 size-3.5 opacity-60" aria-hidden="true"></span>Record data<span class="rptk-dh-total tabular-nums">{nf.format(dataHealth.records.total)} records</span></div>
     </div>
     {/* THE ONE PLACE THE `growth` QUESTION HAS NO HONEST ANSWER IN THIS VOCABULARY, recorded here
         because ship-order item 39 asked for the answer per table rather than a shrug.
@@ -586,7 +596,7 @@ const dhAttachmentColumns = [
       tableClass="rptk-table"
       name="rptk-datahealth-records"
       columns={dhRecordColumns}
-      rowCount={report.dataHealth.records.byBase.length}
+      rowCount={dataHealth.records.byBase.length}
       growth="fixed"
       narrow="fold"
       narrowReason={RPTK_NARROW}
@@ -596,7 +606,7 @@ const dhAttachmentColumns = [
             subject — is the second line, with the table count beside it. Fields goes off: it is the
             finest-grained structural count, it is stated per base in Schema Browse and in this
             report's own Backup summary columns, and one of the two sub slots has to hold size. */}
-        {report.dataHealth.records.byBase.map((b) => (
+        {dataHealth.records.byBase.map((b) => (
           <tr data-nrow>
             <td data-m="lead" class="font-medium">{b.baseName}</td>
             <td data-m="sub2" class="text-right tabular-nums text-base-content/65">{nf.format(b.tableCount)}<span class="rptk-subcap"> tables</span></td>
@@ -609,7 +619,7 @@ const dhAttachmentColumns = [
 
     {/* Attachment data */}
     <div class="rptk-dh-sub rptk-dh-sub-sep">
-      <div class="rptk-dh-head"><span class="iconify lucide--paperclip size-3.5 opacity-60" aria-hidden="true"></span>Attachment data<span class="rptk-dh-total tabular-nums">{nf.format(report.dataHealth.attachments.totalFiles)} files · {report.dataHealth.attachments.totalStorage}</span></div>
+      <div class="rptk-dh-head"><span class="iconify lucide--paperclip size-3.5 opacity-60" aria-hidden="true"></span>Attachment data<span class="rptk-dh-total tabular-nums">{nf.format(dataHealth.attachments.totalFiles)} files · {dataHealth.attachments.totalStorage}</span></div>
     </div>
     {/* `growth="fixed"` — deliberately the same answer and the same shape as the Record-data table
         above it; the caveat stated there covers this one too. */}
@@ -617,7 +627,7 @@ const dhAttachmentColumns = [
       tableClass="rptk-table"
       name="rptk-datahealth-attachments"
       columns={dhAttachmentColumns}
-      rowCount={report.dataHealth.attachments.byBase.length}
+      rowCount={dataHealth.attachments.byBase.length}
       growth="fixed"
       narrow="fold"
       narrowReason={RPTK_NARROW}
@@ -626,7 +636,7 @@ const dhAttachmentColumns = [
             the two halves of Data health do not read as two different objects: base leads, the one
             count is the number (Files here, Records there), storage is the second line and the
             structural count sits beside it. */}
-        {report.dataHealth.attachments.byBase.map((b) => (
+        {dataHealth.attachments.byBase.map((b) => (
           <tr data-nrow>
             <td data-m="lead" class="font-medium">{b.baseName}</td>
             <td data-m="sub2" class="text-right tabular-nums text-base-content/65">{nf.format(b.attachmentFieldCount)}<span class="rptk-subcap"> attachment fields</span></td>
@@ -754,15 +764,33 @@ const dhAttachmentColumns = [
      copy of it, and the two `ds-ok` comments licensing them cited a Home that had already moved.
      The delta is the one thing the shared tile has no slot for; `pattern-report` mandates it, so it
      stays as a documented composition ON the tile rather than a reason to keep a private tile. */
+  .rptk-empty-strip { margin-block: 16px 20px; }
   .rptk-delta { margin-left: 4px; font-size: var(--t-11); font-weight: 500; letter-spacing: normal; } /* ds-ok: pattern-metric-tiles delta */
+  .rptk-kpis {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-block: 16px 20px;
+    border: 1px solid var(--color-base-300);
+    border-radius: .85rem;
+    background: var(--color-base-100);
+    overflow: hidden;
+  }
+  .rptk-kpis.hm-kpis-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .rptk-kpis .hm-kpi { display: flex; flex-direction: column; justify-content: space-between; gap: .2rem; min-width: 0; min-height: 104px; padding: 1.05rem 1.25rem 1.1rem; }
+  .rptk-kpis .hm-kpi + .hm-kpi { border-left: 1px dashed oklch(from var(--color-base-content) l c h / .16); }
+  .rptk-kpis .hm-kpi-top { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .rptk-kpis .hm-kpi-k { font-size: .76rem; font-weight: 500; color: oklch(from var(--color-base-content) l c h / .64); }
+  .rptk-kpis .hm-kpi-ic { font-size: 1.2rem; color: var(--color-primary); flex: none; }
+  .rptk-kpis .hm-kpi-v { font-size: 1.65rem; font-weight: 740; letter-spacing: -.02em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+  .rptk-kpis .hm-kpi-sub { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); display: inline-flex; align-items: center; gap: .22rem; }
 
   /* The narrow row's borrowed column labels — hidden above 1280, where a real <thead> says this. */
   .rptk-numcap, .rptk-subcap { display: none; }
 
-  .rptk-card { border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: var(--color-base-100); overflow: hidden; }
+  .rptk-card { border: 1px solid var(--color-base-300); border-radius: var(--r-12); background: var(--color-base-100); overflow: hidden; box-shadow: 0 1px 0 oklch(0 0 0 / .05); }
   /* The Trends card hosts the Bases dropdown in its header — let the menu escape the card's clip. */
   .rptk-card[data-rptk-section="trends"] { overflow: visible; }
-  .rptk-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--color-base-300); cursor: pointer; user-select: none; }
+  .rptk-head { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--color-base-300); cursor: pointer; user-select: none; }
   .rptk-head:hover { background: oklch(from var(--color-base-200) l c h / .35); }
   .rptk-title { font-size: var(--t-14); font-weight: 650; }
 
@@ -776,7 +804,7 @@ const dhAttachmentColumns = [
 
   /* Section aggregate rides INLINE on the header line (uses its empty space), left of the status badge —
      keeps the unique numbers, drops the extra row. */
-  .rptk-headsub { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-left: 12px; }
+  .rptk-headsub { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin-left: 12px; min-width: 0; }
   .rptk-sub-item { display: inline-flex; align-items: baseline; gap: 4px; font-size: var(--t-12); }
   .rptk-sub-sep { margin-right: 4px; color: oklch(from var(--color-base-content) l c h / .35); }
   .rptk-sub-label { color: oklch(from var(--color-base-content) l c h / .65); }
@@ -873,6 +901,11 @@ const dhAttachmentColumns = [
      the shared `[data-mobile-rows] …` rules compute as (0,2,2). The shared sheet LOSES while
      reading as correct in both files, so each view undoes its own rules, after the rule it undoes. */
   @media (max-width: 1279.98px) {
+    .rptk-kpis,
+    .rptk-kpis.hm-kpis-3 { grid-template-columns: 1fr 1fr; }
+    .rptk-kpis .hm-kpi:nth-child(odd) { border-left: 0; }
+    .rptk-kpis .hm-kpi:nth-child(n+3) { border-top: 1px dashed oklch(from var(--color-base-content) l c h / .16); }
+
     /* THE TWO RULES THAT CAUSED THE CLIPPING, both undone here rather than softened.
        `nowrap` is a desktop contract — a column that cannot wrap can only grow — and the 200px
        first column was sized to fit the longest status badge across four tables so they would share

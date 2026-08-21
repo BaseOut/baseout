@@ -1,0 +1,47 @@
+---
+/**
+ * Overlay inbox chrome — loaded after first paint via `server:defer` so the
+ * engine fan-out never blocks page HTML. A 15s isolate cache covers ClientRouter
+ * navigations that re-request the island.
+ */
+import { env } from 'cloudflare:workers';
+import Inbox from '../components/layout/Inbox.astro';
+import { createBackupEngine } from '../lib/backup-engine';
+import { fetchInboxItems } from '../lib/inbox-feed';
+import { readInboxCache, writeInboxCache } from '../lib/shell-chrome';
+import type { InboxItem } from '../components/layout/inbox';
+
+let items: InboxItem[] = [];
+const orgId = Astro.locals.account?.organization?.id ?? null;
+if (orgId) {
+  const cached = readInboxCache(orgId);
+  if (cached) {
+    items = cached;
+  } else {
+    try {
+      const accountSpaces = Astro.locals.account?.organization
+        ? (Astro.locals.account.spaces ?? [])
+        : [];
+      if (
+        accountSpaces.length > 0 &&
+        env.BACKUP_ENGINE &&
+        env.BACKUP_ENGINE_INTERNAL_TOKEN
+      ) {
+        const engine = createBackupEngine({
+          binding: env.BACKUP_ENGINE,
+          internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+        });
+        items = await fetchInboxItems(
+          engine,
+          accountSpaces.map((s) => ({ id: s.id, name: s.name })),
+        );
+        writeInboxCache(orgId, items);
+      }
+    } catch {
+      items = [];
+    }
+  }
+}
+---
+
+<Inbox items={items} />

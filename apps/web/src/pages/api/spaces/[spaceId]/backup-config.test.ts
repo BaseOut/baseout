@@ -54,6 +54,7 @@ function makeDeps(
     // Setup promotion: defaults to a no-op vi.fn(). Tests asserting on it
     // override; tests not asserting don't care.
     promoteSpaceIfReady: vi.fn(async () => {}),
+    ensureInternalSpaceReady: vi.fn(async () => {}),
     // Multi-destination: swap-primary validation. Defaults to "connected"
     // so existing tests pass unchanged; the swap tests override.
     hasConnectedDestination: vi.fn(async () => true),
@@ -210,6 +211,23 @@ describe('handlePatch', () => {
       spaceId: SPACE_ID,
       frequency: 'daily',
       storageType: 'r2_managed',
+    })
+  })
+
+  it('ensures internal Space readiness after a successful save', async () => {
+    const d = makeDeps()
+    const res = await handlePatch({
+      account: makeAccount({ user: { id: 'u_1', name: 'Ada', email: 'ada@openside.com', image: null } }),
+      spaceId: SPACE_ID,
+      body: { frequency: 'daily' },
+      ...d,
+    })
+
+    expect(res.status).toBe(200)
+    expect(d.ensureInternalSpaceReady).toHaveBeenCalledWith({
+      organizationId: ORG_ID,
+      spaceId: SPACE_ID,
+      userId: 'u_1',
     })
   })
 

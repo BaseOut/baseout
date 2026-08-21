@@ -21,14 +21,18 @@
  *     Cloudflare worker types those names resolve to workerd globals (not lib.dom), so `astro check`
  *     rejects them — the same DOM-type-shadow rewrite `wireCopyId`/`wireTableSort` already use. The
  *     single call site passes the real `[data-settings-root]` HTMLElement, so nothing widens.
- *  2. GENERIC ROWS DO NOT FAKE A SAVE. In apps/web the account/org/space/notification knobs have no
- *     persistence route yet, so they are rendered `readonly`/`disabled` by the catalog (`gated`) and
- *     never reach these handlers — a disabled control fires no `change`. The one genuinely-mutating
- *     control on this surface is the billing "Open portal" button, wired below to the REAL
- *     `POST /api/billing/portal` with a `setButtonLoading` spinner (§4.5). Everything else is either
- *     a real `<a href>` (usage → /reports, retention → /retention) or an honest deferred-action note.
+ *  2. GENERIC ROWS THAT STILL HAVE NO ROUTE stay `gated`. Account name, Space
+ *     name, and auto-add persist through `/api/auth/update-user`, `PATCH /api/spaces/:id`,
+ *     and `PATCH /api/spaces/:id/backup-config`. The one extra mutation is billing
+ *     "Open portal" (`POST /api/billing/portal` with a `setButtonLoading` spinner, §4.5).
+ *     Everything else is either a real `<a href>` or an honest deferred-action note.
  */
 import { setButtonLoading } from '../lib/ui';
+import {
+  persistAccountName,
+  persistSpaceAutoAdd,
+  persistSpaceName,
+} from '../lib/settings/persist';
 
 const FLASH_MS = 2400;
 
@@ -108,7 +112,7 @@ function syncInitials(root: HTMLElement, name: string): void {
   if (initials) target.textContent = initials;
 }
 
-function commitText(root: HTMLElement, input: HTMLInputElement): void {
+async function commitText(root: HTMLElement, input: HTMLInputElement): Promise<void> {
   const row = rowOf(input);
   if (!row) return;
   const next = input.value.trim();
@@ -122,6 +126,19 @@ function commitText(root: HTMLElement, input: HTMLInputElement): void {
   }
   if (next === last) return;
 
+  const id = input.dataset.setId;
+  const spaceId = root.dataset.spaceId ?? '';
+  let persisted = { ok: true as boolean, error: undefined as string | undefined };
+  if (id === 'account-name') persisted = await persistAccountName(next);
+  else if (id === 'space-name' && spaceId) persisted = await persistSpaceName(spaceId, next);
+
+  if (!persisted.ok) {
+    input.value = last;
+    setNote(row, persisted.error ?? `${labelOf(row)} could not be saved.`, 'error');
+    announce(root, persisted.error ?? `${labelOf(row)} could not be saved.`);
+    return;
+  }
+
   input.value = next;
   input.dataset.setLast = next;
   clearNote(row);
@@ -130,13 +147,22 @@ function commitText(root: HTMLElement, input: HTMLInputElement): void {
   if (input.dataset.setId === 'account-name') syncInitials(root, next);
 }
 
-function commitChoice(root: HTMLElement, el: HTMLInputElement | HTMLElement): void {
+async function commitChoice(root: HTMLElement, el: HTMLInputElement | HTMLElement): Promise<void> {
   const row = rowOf(el);
   if (!row) return;
+  const id = el instanceof HTMLInputElement ? el.dataset.setId : undefined;
+  const spaceId = root.dataset.spaceId ?? '';
+  if (id === 'space-autoadd' && el instanceof HTMLInputElement && spaceId) {
+    const persisted = await persistSpaceAutoAdd(spaceId, el.checked);
+    if (!persisted.ok) {
+      el.checked = !el.checked;
+      setNote(row, persisted.error ?? `${labelOf(row)} could not be saved.`, 'error');
+      announce(root, persisted.error ?? `${labelOf(row)} could not be saved.`);
+      return;
+    }
+  }
   clearNote(row);
   flashSaved(row);
-  // A `<select>`'s value is read structurally: `HTMLSelectElement` trips the worker-config DOM-type
-  // shadow (see BackupsListView / FrequencyPicker), so the select is queried as `HTMLElement`.
   const state =
     el instanceof HTMLInputElement ? (el.checked ? 'on' : 'off') : ((el as { value?: string }).value ?? '');
   announce(root, `${labelOf(row)} set to ${state}.`);

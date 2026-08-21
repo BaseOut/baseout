@@ -10,7 +10,11 @@ import ReportDefinitionView from '../../views/ReportDefinitionView.astro';
 import NotFoundView from '../../views/NotFoundView.astro';
 import { getBreadcrumbs } from '../../lib/config';
 import { createBackupEngine } from '../../lib/backup-engine';
-import { mapDefinitionFromEngine, mapDetailFromEngine } from '../../lib/reports/mapFromEngine';
+import { mapDetailFromEngine } from '../../lib/reports/mapFromEngine';
+import {
+  createMasterDbReportDefinitionRepository,
+  getReportDefinitionForPage,
+} from '../../lib/reports/list-page-definitions';
 import type { ReportDefinition, ReportDetail } from '../../lib/reports/types';
 import { atBases, backupConfigurationBases, backupConfigurations } from '../../db/schema';
 
@@ -45,17 +49,24 @@ let current: ReportDetail | null = null;
 let baseNames: Record<string, string> = {};
 let members: { email: string; name: string }[] = [];
 
-if (spaceId && db && env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN && id && !isNew) {
+if (spaceId && db && id && !isNew) {
   try {
-    const engine = createBackupEngine({
-      binding: env.BACKUP_ENGINE,
-      internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+    const engine = env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN
+      ? createBackupEngine({
+          binding: env.BACKUP_ENGINE,
+          internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+        })
+      : null;
+    const res = await getReportDefinitionForPage({
+      spaceId,
+      definitionId: id,
+      engine,
+      repository: createMasterDbReportDefinitionRepository(db),
     });
-    const res = await engine.getReportDefinition(spaceId, id);
-    if (res.ok) {
-      def = mapDefinitionFromEngine(res.definition, res.runs);
+    if (res) {
+      def = res.definition;
       const newest = res.runs[0];
-      if (newest) {
+      if (newest && engine) {
         const runRes = await engine.getReportRun(spaceId, newest.id);
         if (runRes.ok) {
           latest = mapDetailFromEngine(runRes.document, runRes.run);

@@ -21,6 +21,7 @@ import type {
   ReportStatus,
   ReportGenerationState,
 } from './types'
+import { lucideStripIcon } from './strip-icons'
 
 const SECTION_KEYS = new Set<ReportSectionKey>([
   'backups',
@@ -143,18 +144,22 @@ export function mapDetailFromEngine(
   run: ReportRunView,
 ): ReportDetail | null {
   if (!document) {
-    // Still generating / failed before assemble — synthesize a stub for the shell.
-    if (run.generationState === 'running') {
-      return {
-        ...runFromWire(run),
-        strip: [],
-        backupSummary: EMPTY_SECTION('Generating…'),
-        connectionHealth: EMPTY_SECTION('Generating…'),
-        schemaHealth: EMPTY_SECTION('Generating…'),
-        documentation: EMPTY_SECTION('Generating…'),
-      }
+    // Engine or storage missed the assembled JSON — still render the run shell so
+    // `/reports/run/:id` is not a 404 when the run row itself exists.
+    const emptyLine =
+      run.generationState === 'running'
+        ? 'Generating…'
+        : run.generationState === 'failed'
+          ? 'This run failed to generate.'
+          : 'No details stored for this run.'
+    return {
+      ...runFromWire(run),
+      strip: [],
+      backupSummary: EMPTY_SECTION(emptyLine),
+      connectionHealth: EMPTY_SECTION(emptyLine),
+      schemaHealth: EMPTY_SECTION(emptyLine),
+      documentation: EMPTY_SECTION(emptyLine),
     }
-    return null
   }
 
   const summary = runFromWire(run)
@@ -176,7 +181,12 @@ export function mapDetailFromEngine(
     windowStart:
       typeof document.windowStart === 'string' ? document.windowStart : summary.windowStart,
     windowEnd: typeof document.windowEnd === 'string' ? document.windowEnd : summary.windowEnd,
-    strip: Array.isArray(document.strip) ? (document.strip as ReportDetail['strip']) : [],
+    strip: Array.isArray(document.strip)
+      ? (document.strip as ReportDetail['strip']).map((s) => ({
+          ...s,
+          icon: lucideStripIcon(typeof s.icon === 'string' ? s.icon : 'circle-help'),
+        }))
+      : [],
     backupSummary: asSec(document.backupSummary, 'No backup issues this period.'),
     connectionHealth: asSec(document.connectionHealth, 'No connection issues this period.'),
     schemaHealth: asSec(document.schemaHealth, 'No schema issues this period.'),

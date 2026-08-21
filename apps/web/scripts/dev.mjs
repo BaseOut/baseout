@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { connect } from 'node:net';
@@ -89,6 +89,42 @@ function run(cmd, args) {
   });
 }
 
+/**
+ * Copy dist/client → dist/client-stable and retarget dist/server/wrangler.json
+ * assets.directory. Keeps wrangler --remote restarts from ENOENT when Astro
+ * deletes dist/client mid-rebuild (common when a second `pnpm web dev` or an
+ * editor save races the running preview).
+ */
+function stabilizeClientAssets() {
+  const client = resolve(ROOT, 'dist/client');
+  const stable = resolve(ROOT, 'dist/client-stable');
+  const wranglerConfig = resolve(ROOT, 'dist/server/wrangler.json');
+
+  if (!existsSync(client)) {
+    console.error('');
+    console.error('  dist/client missing after build — cannot start wrangler.');
+    console.error('');
+    process.exit(1);
+  }
+
+  rmSync(stable, { recursive: true, force: true });
+  mkdirSync(resolve(ROOT, 'dist'), { recursive: true });
+  cpSync(client, stable, { recursive: true });
+
+  if (!existsSync(wranglerConfig)) {
+    console.error('');
+    console.error('  dist/server/wrangler.json missing after build.');
+    console.error('');
+    process.exit(1);
+  }
+
+  const cfg = JSON.parse(readFileSync(wranglerConfig, 'utf8'));
+  if (!cfg.assets) cfg.assets = {};
+  cfg.assets.directory = '../client-stable';
+  writeFileSync(wranglerConfig, JSON.stringify(cfg));
+  console.log('  ✓ Assets snapshotted to dist/client-stable (wrangler ENOENT guard).');
+}
+
 async function main() {
   await ensureHostsEntry();
 
@@ -114,9 +150,18 @@ async function main() {
   // migration-drift check, and the astro build.
   await run('node', ['--env-file-if-exists=.env', 'scripts/launch.mjs', 'build', 'local']);
 
+  // wrangler `dev --remote` restarts on file changes and scandirs the assets
+  // directory. Astro's rebuild briefly deletes `dist/client` mid-restart →
+  // ENOENT crash. Snapshot client assets to a stable dir and point the
+  // generated wrangler config at it so a concurrent wipe of `dist/client`
+  // cannot take the preview down.
+  stabilizeClientAssets();
+
   const wranglerArgs = [
     'dev',
     ...(useRemoteEngine ? ['--remote'] : []),
+    '--config',
+    'dist/server/wrangler.json',
     '--local-protocol',
     'https',
     '--port',

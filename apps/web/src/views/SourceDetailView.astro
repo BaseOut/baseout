@@ -107,11 +107,21 @@ const usageStatus: Record<string, { badge: string; label: string }> = {
       <p class="text-sm text-base-content/60 mt-1.5">Airtable · {authLabel} · {s.account} · added {s.addedAt}</p>
     </div>
     <div class="flex items-center gap-2 shrink-0">
-      {(needsReconnect || needsConnect) && (
+      {/* Always offer Reconnect for OAuth sources — backup can 403 while status stays
+          `active` (refresh cron still succeeds). Primary when already broken; ghost
+          when Connected so operators can repair stale scopes without Disconnect first. */}
+      {s.auth === 'oauth' && (
         <form method="POST" action="/api/connections/airtable/start" data-astro-reload data-airtable-connect>
           <input type="hidden" name="returnTo" value={`/sources/detail?id=${s.id}${needsConnect ? `&new=1&method=${s.auth}&name=${encodeURIComponent(s.name)}` : ''}`} />
-          <Button type="submit" variant="primary" size="sm" data-airtable-connect-btn>{needsConnect ? 'Connect' : 'Reconnect'}</Button>
+          <Button type="submit" variant={needsReconnect || needsConnect ? 'primary' : 'ghost'} size="sm" data-airtable-connect-btn>
+            {needsConnect ? 'Connect' : 'Reconnect'}
+          </Button>
         </form>
+      )}
+      {s.auth === 'oauth' && status === 'connected' && (
+        <Button type="button" variant="danger-ghost" size="sm" data-disconnect-open title="Pause backups until you reconnect">
+          <span class="iconify lucide--unplug size-4" aria-hidden="true"></span> Disconnect
+        </Button>
       )}
       {/* The canonical segmented control from styles/global.css — never a local copy. */}
       <span class="join sch-modeswitch" role="group" aria-label="Read or edit this source" data-reg-modes>
@@ -233,6 +243,13 @@ const usageStatus: Record<string, { badge: string; label: string }> = {
     <p class="text-sm text-base-content/70">{removal.lead}</p>
     <Alert severity="warning" trigger="overlay" class="mt-3" message={removal.consequence} />
   </ConfirmModal>
+
+  <ConfirmModal id="disconnect-airtable-modal" title="Disconnect Airtable?" confirmClass="btn-outline btn-error">
+    <p class="text-sm text-base-content/70">Backups from this connection pause until you reconnect. Your backed-up data is not deleted. The Connection row is kept so reconnect restores the same source.</p>
+    <Button slot="confirm" type="button" variant="danger" data-disconnect-confirm>
+      <span class="iconify lucide--unplug size-4" aria-hidden="true"></span> Disconnect
+    </Button>
+  </ConfirmModal>
 </div>
 
 <style>
@@ -298,4 +315,28 @@ const usageStatus: Record<string, { badge: string; label: string }> = {
     const btn = form.querySelector('[data-airtable-connect-btn]');
     if (btn instanceof HTMLButtonElement) setButtonLoading(btn, true);
   });
+
+  // Disconnect → pending_reauth/invalid via existing API; reload shows Reconnect primary.
+  const wireDisconnect = () => {
+    const modal = document.getElementById('disconnect-airtable-modal') as HTMLDialogElement | null;
+    document.querySelectorAll('[data-disconnect-open]').forEach((b) => {
+      b.addEventListener('click', () => modal?.showModal());
+    });
+    document.querySelector('[data-disconnect-confirm]')?.addEventListener('click', async (event) => {
+      const btn = event.currentTarget as HTMLButtonElement;
+      setButtonLoading(btn, true);
+      try {
+        const res = await fetch('/api/connections/airtable/disconnect', { method: 'POST' });
+        if (res.ok) {
+          window.location.reload();
+          return;
+        }
+        modal?.close();
+      } finally {
+        setButtonLoading(btn, false);
+      }
+    });
+  };
+  wireDisconnect();
+  document.addEventListener('astro:page-load', wireDisconnect);
 </script>

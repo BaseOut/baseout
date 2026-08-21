@@ -43,8 +43,8 @@ interface Props extends SettingsSubject {
   /** Which category is open. The rail passes it via ?tab=. */
   active?: string;
   /**
-   * Props for the Security category. apps/web has not wired the 2FA backend yet (SecurityPanel
-   * deferred at the Auth promotion), so the page passes nothing and the pane shows an honest note.
+   * Props for the Security category. When omitted, the pane shows an honest note.
+   * apps/web now passes live 2FA state from the two-factor plugin.
    */
   security?: SecurityPanelProps;
   /** Real API-token data for the Developer pane (web-api-tokens). */
@@ -70,7 +70,7 @@ const destructiveRows = current.sections
   .filter((r) => r.control === 'destructive');
 ---
 
-<div class="set" data-settings-root data-drill={drilled ? 'section' : 'list'}>
+<div class="set" data-settings-root data-drill={drilled ? 'section' : 'list'} data-space-id={space?.id ?? ''}>
   {/* Left rail — the spec's category nav. Below 1280 this same element is the DRILL LIST. */}
   <nav class="set-rail" data-mobile-rows aria-label="Settings categories">
     {/* The spec's cross-settings search slot: present, honestly inert, list-only. */}
@@ -156,7 +156,7 @@ const destructiveRows = current.sections
               )}
               {row.control === 'toggle' && (
                 <label>
-                  <input type="checkbox" class="toggle toggle-sm toggle-primary" checked={row.on} aria-label={row.label} data-set-toggle disabled={row.gated} />
+                  <input type="checkbox" class="toggle toggle-sm toggle-primary" checked={row.on} aria-label={row.label} data-set-toggle data-set-id={row.id} disabled={row.gated} />
                 </label>
               )}
               {/* The billing "Open portal" button is a REAL mutation (settingsControls posts to

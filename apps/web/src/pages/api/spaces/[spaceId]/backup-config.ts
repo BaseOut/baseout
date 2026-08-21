@@ -34,6 +34,10 @@ import { resolveCapabilities } from '../../../../lib/capabilities/resolve'
 import type { Tier } from '../../../../lib/capabilities/tier-capabilities'
 import { createBackupEngine, type SpaceScheduleInput } from '../../../../lib/backup-engine'
 import { promoteSpaceIfSetupIncomplete } from '../../../../lib/spaces'
+import {
+  buildInternalSpaceReadyDeps,
+  ensureInternalSpaceReady,
+} from '../../../../lib/internal-space-ready'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -96,6 +100,11 @@ export interface HandlePatchInput {
    * load-bearing write, the status flip is presentation.
    */
   promoteSpaceIfReady: (spaceId: string) => Promise<void>
+  ensureInternalSpaceReady: (input: {
+    organizationId: string
+    spaceId: string
+    userId: string
+  }) => Promise<void>
   /**
    * web-instant-webhook: whether the Space's dynamic DB is ready
    * (space_databases.status = 'active' — the schema's provisioned-terminal
@@ -258,6 +267,16 @@ export async function handlePatch(input: HandlePatchInput): Promise<Response> {
     } catch {
       // Swallow — the flip can be re-attempted on the next save.
     }
+    try {
+      await input.ensureInternalSpaceReady({
+        organizationId: input.account.organization.id,
+        spaceId: input.spaceId,
+        userId: input.account.user.id,
+      })
+    } catch {
+      // Best-effort. Dynamic readiness retries on Space creation and first
+      // backup; don't fail an otherwise-valid config save.
+    }
     return jsonResponse({ ok: true }, 200)
   }
   switch (result.error) {
@@ -388,6 +407,16 @@ export const PATCH: APIRoute = async ({ locals, params, request }) => {
         : null
     },
     promoteSpaceIfReady: (spaceId) => promoteSpaceIfSetupIncomplete(db, spaceId),
+    ensureInternalSpaceReady: async (input) => {
+      const engine =
+        env.BACKUP_ENGINE && env.BACKUP_ENGINE_INTERNAL_TOKEN
+          ? createBackupEngine({
+              binding: env.BACKUP_ENGINE,
+              internalToken: env.BACKUP_ENGINE_INTERNAL_TOKEN,
+            })
+          : null
+      await ensureInternalSpaceReady(input, buildInternalSpaceReadyDeps(db, engine))
+    },
     // web-instant-webhook: dynamic-DB readiness gate for Instant.
     // 'active' is the provisioned-terminal status in space_databases'
     // vocabulary (pending | provisioning | active | migrating | error).

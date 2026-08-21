@@ -1,6 +1,7 @@
 ---
 import type { NavItem, UserInfo } from '../../lib/types';
 import CreateSpaceModal from '../ui/CreateSpaceModal.astro';
+import { navPrefetchStrategy } from '../../lib/shell-chrome';
 
 interface Props {
   brandName?: string;
@@ -344,7 +345,7 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
                         href={child.href ?? '#'}
                         class={`menu-item ${childActive ? 'active' : ''} ${child.isDimmed ? 'opacity-30 text-base-content/65' : ''}`}
                         aria-current={childActive ? 'page' : undefined}
-                        data-astro-prefetch={child.href?.startsWith('/') ? 'viewport' : undefined}
+                        data-astro-prefetch={navPrefetchStrategy(child.href)}
                       >
                         {child.icon && <i class={`${child.icon} size-4 shrink-0`}></i>}
                         <span class="grow">{child.label}</span>
@@ -368,7 +369,7 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
             href={item.href ?? '#'}
             class={`menu-item sidebar-tip ${active ? 'active' : ''} ${item.isDimmed ? 'opacity-30 text-base-content/65' : ''} group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0`}
             aria-current={active ? 'page' : undefined}
-            data-astro-prefetch={item.href?.startsWith('/') ? 'viewport' : undefined}
+            data-astro-prefetch={navPrefetchStrategy(item.href)}
             data-tip={item.label}
           >
             <i class={`${item.icon} size-4 shrink-0`}></i>
@@ -400,6 +401,7 @@ const hasMultipleSpaces = !!(spaces && spaces.length > 1);
             href={item.href ?? '#'}
             class={`menu-item sidebar-tip ${active ? 'active' : ''} group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:justify-center group-has-[[id=layout-sidebar-hover-trigger]:checked]/html:px-0`}
             aria-current={active ? 'page' : undefined}
+            data-astro-prefetch={navPrefetchStrategy(item.href)}
             data-tip={item.label}
           >
             <i class={`${item.icon} size-4 shrink-0`}></i>

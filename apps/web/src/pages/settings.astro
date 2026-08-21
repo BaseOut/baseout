@@ -9,7 +9,7 @@
  * client scripts live in ApiTokensPanel / AiKeysPanel. The pre-hub bodies are preserved at
  * views/SettingsHub.legacy.astro + views/AiKeysView.legacy.astro (rollback targets, not routed).
  */
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { getBool } from '@baseout/db-schema';
 import SidebarLayout from '../layouts/SidebarLayout.astro';
 import SettingsView, {
@@ -17,7 +17,17 @@ import SettingsView, {
   type SettingsAiKeysProps,
 } from '../views/SettingsView.astro';
 import type { TokenRowView } from '../views/ApiTokensPanel.astro';
-import { apiTokens, aiProviderKeys, AI_PROVIDERS, type AiProvider } from '../db/schema';
+import type { SecurityPanelProps } from '../lib/auth/types';
+import {
+  apiTokens,
+  aiProviderKeys,
+  AI_PROVIDERS,
+  backupConfigurations,
+  connections,
+  platforms,
+  type AiProvider,
+} from '../db/schema';
+import { usersWithTwoFactor } from '../lib/two-factor/adapter-schema';
 import { resolveEntitlements } from '../lib/entitlements/resolve';
 import { getBreadcrumbs } from '../lib/config';
 
@@ -146,6 +156,59 @@ const aiKeys: SettingsAiKeysProps = {
     key: byProvider.get(id) ?? null,
   })),
 };
+
+let autoAddFutureBases = false;
+if (account.space?.id) {
+  const [config] = await db
+    .select({ autoAddFutureBases: backupConfigurations.autoAddFutureBases })
+    .from(backupConfigurations)
+    .where(eq(backupConfigurations.spaceId, account.space.id))
+    .limit(1);
+  autoAddFutureBases = config?.autoAddFutureBases ?? false;
+}
+
+let twoFactorEnabled = false;
+try {
+  const [tf] = await db
+    .select({ twoFactorEnabled: usersWithTwoFactor.twoFactorEnabled })
+    .from(usersWithTwoFactor)
+    .where(eq(usersWithTwoFactor.id, account.user.id))
+    .limit(1);
+  twoFactorEnabled = tf?.twoFactorEnabled ?? false;
+} catch {
+  twoFactorEnabled = false;
+}
+
+const [airtableConn] = await db
+  .select({
+    displayName: connections.displayName,
+    createdAt: connections.createdAt,
+    status: connections.status,
+  })
+  .from(connections)
+  .innerJoin(platforms, eq(platforms.id, connections.platformId))
+  .where(and(eq(connections.organizationId, orgId), eq(platforms.slug, 'airtable')))
+  .limit(1);
+
+const security: SecurityPanelProps = {
+  twoFactorEnabled,
+  enrollment: {
+    qrSrc: '',
+    manualSecret: '',
+    accountLabel: `Baseout: ${account.user.email}`,
+  },
+  backupCodes: Array.from({ length: 10 }, () => ''),
+  identity: {
+    provider: 'airtable',
+    linked: Boolean(airtableConn),
+    accountEmail: airtableConn?.displayName ?? undefined,
+    linkedAt: airtableConn?.createdAt?.toISOString().slice(0, 10),
+  },
+};
+
+const space = account.space
+  ? { id: account.space.id, name: account.space.name, autoAddFutureBases }
+  : null;
 ---
 
 <SidebarLayout pageTitle="Settings" breadcrumbs={breadcrumbs}>
@@ -153,7 +216,8 @@ const aiKeys: SettingsAiKeysProps = {
     active={active}
     user={account.user}
     org={account.organization}
-    space={account.space}
+    space={space}
+    security={security}
     tokens={tokens}
     aiKeys={aiKeys}
   />

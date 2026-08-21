@@ -14,6 +14,8 @@ export * from "./spaces";
 export * from "./platforms";
 export * from "./subscriptions";
 export * from "./subscription-items";
+export * from "./users";
+export * from "./organization-members";
 export * from "./space-events";
 export * from "./space-workspaces";
 export * from "./storage-destinations";

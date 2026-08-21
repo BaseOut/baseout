@@ -32,6 +32,7 @@ import SpacePipelineHero from '../components/patterns/SpacePipelineHero.astro';
 import RunBackupNowModal from '../components/backups/RunBackupNowModal.astro';
 import LiveRefresh from '../components/backups/LiveRefresh.astro';
 import { deriveSpaceHealth, isInFlightRun, runKind, runMovedAt } from '../lib/backups/format';
+import { recordCountDelta } from '../lib/backups/home-live';
 import { fmtAbsolute, fmtRelative } from '../lib/time';
 import type { IntegrationsState } from '../stores/connections';
 import type { SourceSummary } from '../stores/sources';
@@ -111,7 +112,9 @@ const terminal = runs
 const lastFull = health.lastFullSuccess;
 const fullSuccesses = terminal.filter((r) => (r.status === 'succeeded' || r.status === 'trial_succeeded') && runKind(r) === 'full');
 // Δ records vs the previous full backup — a drop can flag a mass deletion (anomaly).
-const recordDelta = fullSuccesses.length >= 2 ? (fullSuccesses[0].recordCount ?? 0) - (fullSuccesses[1].recordCount ?? 0) : null;
+const recordDelta = fullSuccesses.length >= 2
+  ? recordCountDelta(fullSuccesses[0].recordCount ?? 0, fullSuccesses[1].recordCount ?? 0)
+  : null;
 const recent = terminal.slice(0, 5);
 // D07 item 6 — "go see it" lands on the THING. Home's two in-flight links ("track it on the
 // Backups page", "View progress") both pointed at the log, so the user arrived at 47 rows and had
@@ -232,7 +235,7 @@ const nodeBadge = (tone: string) =>
               <div class="hm-kpi-top"><span class="hm-kpi-k">Records backed up</span><span class="iconify lucide--rows-3 hm-kpi-ic" aria-hidden="true"></span></div>
               <span class="hm-kpi-v">{lastFull ? nf.format(lastFull.recordCount ?? 0) : '—'}</span>
               {recordDelta !== null ? (
-                <span class={`hm-kpi-sub hm-delta ${recordDelta >= 0 ? 'is-up' : 'is-down'}`}><span class={`iconify ${recordDelta >= 0 ? 'lucide--arrow-up' : 'lucide--arrow-down'}`} aria-hidden="true"></span>{nf.format(Math.abs(recordDelta))} vs previous full backup</span>
+                <span class={`hm-kpi-sub hm-delta ${recordDelta.dir === 'up' ? 'is-up' : recordDelta.dir === 'down' ? 'is-down' : 'is-flat'}`}><span class={`iconify ${recordDelta.dir === 'up' ? 'lucide--arrow-up' : recordDelta.dir === 'down' ? 'lucide--arrow-down' : 'lucide--minus'}`} aria-hidden="true"></span>{recordDelta.dir === 'flat' ? 'No change' : nf.format(recordDelta.amount)} vs previous full backup</span>
               ) : (
                 <span class="hm-kpi-sub">{lastFullSince ? `last full backup, ${lastFullSince}` : 'no full backup yet'}</span>
               )}
@@ -634,6 +637,7 @@ const nodeBadge = (tone: string) =>
   .hm-kpi-sub { font-size: .75rem; color: oklch(from var(--color-base-content) l c h / .64); display: inline-flex; align-items: center; gap: .22rem; }
   .hm-delta.is-up { color: var(--color-success); font-weight: 600; }
   .hm-delta.is-down { color: var(--color-warning); font-weight: 600; }
+  .hm-delta.is-flat { color: oklch(from var(--color-base-content) l c h / .64); font-weight: 500; }
   .hm-delta .iconify { font-size: .74rem; }
   @media (max-width: 560px) { .hm-kpis { grid-template-columns: 1fr 1fr; } .hm-kpi:nth-child(odd) { border-left: 0; } .hm-kpi:nth-child(n+3) { border-top: 1px dashed oklch(from var(--color-base-content) l c h / .16); } }
 

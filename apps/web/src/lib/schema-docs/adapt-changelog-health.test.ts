@@ -98,4 +98,45 @@ describe('adaptHealthOverview', () => {
     expect(out.issues[0].airtableUrl).toContain('airtable.com')
     expect(out.insights).toEqual([])
   })
+
+  it('does not band a clean unscored base as red 0', () => {
+    const out = adaptHealthOverview('app1', 'Demo', {
+      grade: null,
+      metrics: [],
+      issues: [],
+    })
+    expect(out.band).not.toBe('red')
+    expect(out.unscored).toBe(true)
+    expect(out.issues).toEqual([])
+  })
+
+  it('treats a zero score with no issues as unscored, not an emergency', () => {
+    const out = adaptHealthOverview('app1', 'Demo', {
+      grade: { score: 0, band: 'red' },
+      metrics: [],
+      issues: [],
+    })
+    expect(out.band).not.toBe('red')
+    expect(out.unscored).toBe(true)
+  })
+
+  it('keeps a real red grade when issues exist', () => {
+    const out = adaptHealthOverview('app1', 'Demo', {
+      grade: { score: 0, band: 'red' },
+      metrics: [],
+      issues: [
+        {
+          ruleId: 'r1',
+          severity: 'high',
+          tableId: 'tbl1',
+          fieldId: null,
+          message: 'Empty table',
+          airtableDeeplink: null,
+        },
+      ],
+    })
+    expect(out.band).toBe('red')
+    expect(out.unscored).not.toBe(true)
+    expect(out.score).toBe(0)
+  })
 })
